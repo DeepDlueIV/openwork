@@ -99,10 +99,15 @@ import {
 } from "../../capability-sources/external-mcp-oauth-contract.js"
 import type { MemberTeamSummary } from "../../orgs.js"
 import {
-  EXTERNAL_MCP_PRESETS,
   externalMcpPresetListResponseSchema,
   externalMcpPresetResponseSchema,
 } from "../../capability-sources/external-mcp-presets.js"
+import {
+  deploymentPreRegisteredOAuthClientForUrl,
+  externalMcpPresetsForDeployment,
+  pluginMcpRequiresAdminOAuthClient,
+  requirementsForDeployment,
+} from "../../capability-sources/external-mcp-deployment-oauth-clients.js"
 import {
   MAX_RESOLVE_QUERY_LENGTH,
   classifyResolveQuery,
@@ -1247,7 +1252,7 @@ async function toConnectionResponse(
   const authPolicyConfirmed = options.identityManagedBy.length === 0 || requiredAuthTypes.length > 0
     || (row.kind === "external_mcp" && matchExternalMcpPresetForUrl(row.url) !== null)
   const authTypeMismatch = requiredAuthTypes.some((requiredAuthType) => !existingPluginMcpAuthTypeCompatible({ authType: row.authType, requiredAuthType }))
-  const oauthClientRequired = row.kind === "external_mcp" && row.authType === "oauth" && pluginMcpRequiresPreRegisteredOAuthClient(row.url)
+  const oauthClientRequired = row.kind === "external_mcp" && row.authType === "oauth" && pluginMcpRequiresAdminOAuthClient(row.url)
   const oauthClientConfigured = Boolean(oauthClient)
   const setupRequired = options.identityManagedBy.length > 0 && (
     !authPolicyConfirmed
@@ -1783,7 +1788,9 @@ async function createExternalConnectionResponse(
     },
   })
 
-  const oauthClient = body.authType === "oauth" ? body.oauthClient ?? externalMcpPresetOAuthClient(body.url) : undefined
+  const oauthClient = body.authType === "oauth"
+    ? body.oauthClient ?? deploymentPreRegisteredOAuthClientForUrl(body.url) ?? externalMcpPresetOAuthClient(body.url)
+    : undefined
   if (oauthClient) {
     const callbackMode = created.oauthConfiguration?.callbackMode ?? "legacy-v1"
     await upsertOrgOAuthClient({
@@ -1939,11 +1946,24 @@ async function replaceExternalConnectionResponse(
   if (body.oauthClient && body.authType !== "oauth") {
     return c.json({ error: "invalid_request", message: "oauthClient is only allowed when authType is oauth." }, 400)
   }
-  const existingOAuthClient = body.oauthClient
+  const existingOAuthClient = body.authType === "oauth"
     ? await getOrgOAuthClient(payload.organization.id, connection.id)
     : null
-  const preservedTokenEndpointAuthMethod = body.oauthClient
-    && existingOAuthClient?.clientId === body.oauthClient.clientId
+  const effectiveCallbackMode = oauthConfiguration?.callbackMode
+    ?? connection.oauthConfiguration?.callbackMode
+    ?? (connection.authType === "oauth" ? "legacy-v1" : "shared-v1")
+  // Same precedence as creation: an admin-supplied OAuth app wins, a client
+  // already stored for this connection is kept, and only then does a client
+  // the deployment holds for the server fill the gap. An identity change
+  // discards the stored client, so it is treated as absent. That client is
+  // bound to the deployment-wide callback, so rows still on a per-connection
+  // callback are left for the admin to configure.
+  const oauthClient = body.oauthClient
+    ?? (body.authType === "oauth" && (!existingOAuthClient || identityChanged) && effectiveCallbackMode === "shared-v1"
+      ? deploymentPreRegisteredOAuthClientForUrl(body.url) ?? undefined
+      : undefined)
+  const preservedTokenEndpointAuthMethod = oauthClient
+    && existingOAuthClient?.clientId === oauthClient.clientId
     ? tokenEndpointAuthMethod(existingOAuthClient.extra?.tokenEndpointAuthMethod)
     : undefined
   if (body.authType !== "oauth" && (
@@ -2034,20 +2054,18 @@ async function replaceExternalConnectionResponse(
     ...(body.exposeDirectly !== undefined ? { exposeDirectly: body.exposeDirectly } : {}),
     ...(body.apiKey !== undefined ? { apiKey: body.apiKey } : {}),
     apiKeyAuthScheme,
-    ...(body.oauthClient ? {
+    ...(oauthClient ? {
       oauthClient: {
-        ...body.oauthClient,
+        ...oauthClient,
         extra: {
           enterpriseMcpRegistrationSource: "pre-registered",
           registrationContractVersion: 2,
           registeredRedirectUri: externalMcpCallbackUrl({
             connectionId: connection.id,
-            callbackMode: oauthConfiguration?.callbackMode
-              ?? connection.oauthConfiguration?.callbackMode
-              ?? (connection.authType === "oauth" ? "legacy-v1" : "shared-v1"),
+            callbackMode: effectiveCallbackMode,
           }),
           authorizationServerIssuer: oauthConfiguration?.authorizationServerIssuer ?? undefined,
-          tokenEndpointAuthMethod: body.oauthClient.tokenEndpointAuthMethod ?? preservedTokenEndpointAuthMethod,
+          tokenEndpointAuthMethod: oauthClient.tokenEndpointAuthMethod ?? preservedTokenEndpointAuthMethod,
         },
       },
     } : {}),
@@ -2194,7 +2212,7 @@ export function registerMcpConnectionRoutes<T extends { Variables: OrgRouteVaria
           serverUrl: url,
           fetch: externalMcpDiscoveryFetch,
         })
-        return c.json(result)
+        return c.json(requirementsForDeployment(result))
       } catch (error) {
         return c.json({
           error: "requirements_discovery_failed" as const,
@@ -2328,7 +2346,7 @@ export function registerMcpConnectionRoutes<T extends { Variables: OrgRouteVaria
     }),
     orgMemberRoute(),
     async (c) => {
-      return c.json({ presets: EXTERNAL_MCP_PRESETS })
+      return c.json({ presets: externalMcpPresetsForDeployment() })
     },
   )
 
@@ -2355,16 +2373,16 @@ export function registerMcpConnectionRoutes<T extends { Variables: OrgRouteVaria
         return c.json({ resolution: "not_found" as const, attempted: [], reason: classification.reason })
       }
 
-      const preset = matchPresetForQuery(query, EXTERNAL_MCP_PRESETS)
+      const preset = matchPresetForQuery(query, externalMcpPresetsForDeployment())
       const candidates = preset ? [preset.url] : resolveCandidateUrls(classification)
       const guessed = !preset && classification.kind === "name"
       const probes = await Promise.all(candidates.map(async (candidateUrl) => {
         try {
-          const discovery = await discoverConnectionRequirements({
+          const discovery = requirementsForDeployment(await discoverConnectionRequirements({
             serverUrl: candidateUrl,
             fetch: externalMcpDiscoveryFetch,
             timeoutMs: MCP_RESOLVE_PROBE_TIMEOUT_MS,
-          })
+          }))
           return { url: candidateUrl, discovery }
         } catch {
           // A candidate that cannot even be fetched (guard rejection, bad

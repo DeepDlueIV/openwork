@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs"
 import path from "node:path"
 import { denUrls } from "@openwork-ee/utils/den-urls"
 import { parseGatewayDeploymentEnv } from "@openwork-ee/utils/gateway-env"
+import { parseExternalMcpPreRegisteredOAuthClients } from "./capability-sources/external-mcp-preregistered-oauth-clients.js"
 import { DEN_WORKER_POLL_INTERVAL_MS } from "./CONSTS.js"
 import { normalizeConfiguredPublicApiBaseUrl } from "./request-url.js"
 import { resolveDenServiceVersion } from "./service-version.js"
@@ -160,6 +161,7 @@ const EnvSchema = z.object({
   VERCEL_TEAM_SLUG: z.string().optional(),
   VERCEL_DNS_DOMAIN: z.string().optional(),
   DEN_PLAN_GATING_ENABLED: z.string().optional(),
+  DEN_EXTERNAL_MCP_PREREGISTERED_OAUTH_CLIENTS: z.string().optional(),
   DEN_GENERATED_ARTIFACT_VIEWS_ENABLED: z.string().optional(),
   DEN_APP_MCP_SERVERS_ENABLED: z.string().optional(),
   SCIM_MAINTENANCE_INTERVAL_MS: z.string().optional(),
@@ -507,6 +509,13 @@ const planGatingEnabled =
 
 const initialAdminBootstrapCode = optionalString(parsed.DEN_INITIAL_ADMIN_BOOTSTRAP_CODE)
   ?? readOptionalSecretFile("DEN_INITIAL_ADMIN_BOOTSTRAP_CODE_FILE", parsed.DEN_INITIAL_ADMIN_BOOTSTRAP_CODE_FILE)
+// OAuth clients a provider issued to this deployment for MCP servers that
+// support neither client metadata documents nor dynamic registration. Keyed
+// by MCP server URL; each client is bound to this deployment's callback URL.
+const externalMcpPreRegisteredOAuthClients = parseExternalMcpPreRegisteredOAuthClients(
+  parsed.DEN_EXTERNAL_MCP_PREREGISTERED_OAUTH_CLIENTS,
+)
+
 // Generated custom views require the matching desktop MCP Apps host release.
 // Keep the Den capability fail-closed so a Den deployment cannot advertise
 // bridge-dependent resources to older published desktop builds.
@@ -695,6 +704,7 @@ export const env = {
   gatewayKey: optionalString(parsed.DEN_GATEWAY_KEY),
   gatewayOrigin: normalizeOptionalHttpsOrigin("DEN_GATEWAY_ORIGIN", parsed.DEN_GATEWAY_ORIGIN),
   planGatingEnabled,
+  externalMcpPreRegisteredOAuthClients,
   generatedArtifactViewsEnabled,
   appMcpServersEnabled,
   scimMaintenanceIntervalMs: Number(parsed.SCIM_MAINTENANCE_INTERVAL_MS ?? "300000"),

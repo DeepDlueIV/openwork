@@ -456,6 +456,7 @@ async function executeMarketplaceSource(
     redirectUriBase: ctx.redirectUriBase,
     auditWorkflowExecution: workflowExecutionAudit(ctx),
     usageVia,
+    describeUnavailable: (missing) => liveArtifactConnectionFailure(ctx, missing),
   })
 }
 

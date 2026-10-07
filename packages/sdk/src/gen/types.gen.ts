@@ -747,6 +747,7 @@ export type AdminFeature = {
     | "workbot"
     | "automationCalendar"
     | "permissions"
+    | "permissionRules"
     | "teamRoles"
     | "sharedRoles"
     | "agentPermissions"
@@ -812,6 +813,7 @@ export type AdminOrganizationsPageResponse = {
       workbot: boolean;
       automationCalendar: boolean;
       permissions: boolean;
+      permissionRules: boolean;
       teamRoles: boolean;
       sharedRoles: boolean;
       agentPermissions: boolean;
@@ -962,6 +964,15 @@ export type AdminOrganizationsPageResponse = {
         overrideApplies: boolean;
       };
       permissions: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      permissionRules: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -1156,6 +1167,7 @@ export type AdminOverviewResponse = {
       workbot: boolean;
       automationCalendar: boolean;
       permissions: boolean;
+      permissionRules: boolean;
       teamRoles: boolean;
       sharedRoles: boolean;
       agentPermissions: boolean;
@@ -1306,6 +1318,15 @@ export type AdminOverviewResponse = {
         overrideApplies: boolean;
       };
       permissions: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      permissionRules: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -1570,6 +1591,13 @@ export type UpdateCurrentUserProfileResponse = {
   };
 };
 
+export type DenSourcedPolicyRule = {
+  action: "shell" | "webfetch" | "skill" | "mcp";
+  resource: string;
+  effect: "allow" | "deny";
+  source: string;
+};
+
 export type DenDesktopAgentPermissions = {
   rules: Array<{
     action: string;
@@ -1601,6 +1629,7 @@ export type CurrentUserDesktopConfigResponse = {
     browserOrigins?: Array<string>;
     blockBrowserUploads?: boolean;
   };
+  rules?: Array<DenSourcedPolicyRule>;
   allowedDesktopVersions?: Array<string>;
   brandAppName?: string;
   brandLogoUrl?: string;
@@ -3564,6 +3593,43 @@ export type MemberPermissions = {
     key: string;
     label: string;
     sources: Array<PermissionSource>;
+  }>;
+};
+
+export type DenPolicyRule = {
+  action: "shell" | "webfetch" | "skill" | "mcp";
+  resource: string;
+  effect: "allow" | "deny";
+};
+
+export type PermissionSetRules = {
+  /**
+   * Each action's rules in order: shell, webfetch, skill, then mcp.
+   */
+  rules: Array<DenPolicyRule>;
+};
+
+export type PermissionRulesNotFoundError = {
+  error: "permission_set_not_found" | "organization_not_found" | "feature_disabled";
+  [key: string]: unknown;
+};
+
+export type PermissionRulesConflictError = {
+  error: "permission_set_archived";
+  message: string;
+};
+
+export type UpdatePermissionSetRulesBody = {
+  /**
+   * The OpenCode permission action these rules are for: shell (commands), webfetch (websites), skill (local skills) or mcp (local MCP servers).
+   */
+  action: "shell" | "webfetch" | "skill" | "mcp";
+  /**
+   * The action's whole rule list, checked from first to last; the last rule whose pattern matches decides. An empty list removes the action's rules.
+   */
+  rules: Array<{
+    resource: string;
+    effect: "allow" | "deny";
   }>;
 };
 
@@ -7455,6 +7521,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       workbot: boolean;
       automationCalendar: boolean;
       permissions: boolean;
+      permissionRules: boolean;
       teamRoles: boolean;
       sharedRoles: boolean;
       agentPermissions: boolean;
@@ -7605,6 +7672,15 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       permissions: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      permissionRules: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -7787,6 +7863,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       workbot: boolean;
       automationCalendar: boolean;
       permissions: boolean;
+      permissionRules: boolean;
       teamRoles: boolean;
       sharedRoles: boolean;
       agentPermissions: boolean;
@@ -7937,6 +8014,15 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       permissions: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      permissionRules: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -23024,6 +23110,94 @@ export type GetV1MembersByMemberIdPermissionsResponses = {
 
 export type GetV1MembersByMemberIdPermissionsResponse =
   GetV1MembersByMemberIdPermissionsResponses[keyof GetV1MembersByMemberIdPermissionsResponses];
+
+export type GetV1PermissionsSetsByPermissionSetIdRulesData = {
+  body?: never;
+  path: {
+    /**
+     * Den TypeID with 'pms_' prefix and a 26-character base32 suffix.
+     */
+    permissionSetId: string;
+  };
+  query?: never;
+  url: "/v1/permissions/sets/{permissionSetId}/rules";
+};
+
+export type GetV1PermissionsSetsByPermissionSetIdRulesErrors = {
+  /**
+   * The caller must be signed in.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller lacks permissions.view.
+   */
+  403: ForbiddenError;
+  /**
+   * The permission set or organization was not found, or a feature is turned off.
+   */
+  404: PermissionRulesNotFoundError;
+};
+
+export type GetV1PermissionsSetsByPermissionSetIdRulesError =
+  GetV1PermissionsSetsByPermissionSetIdRulesErrors[keyof GetV1PermissionsSetsByPermissionSetIdRulesErrors];
+
+export type GetV1PermissionsSetsByPermissionSetIdRulesResponses = {
+  /**
+   * The set's rules.
+   */
+  200: PermissionSetRules;
+};
+
+export type GetV1PermissionsSetsByPermissionSetIdRulesResponse =
+  GetV1PermissionsSetsByPermissionSetIdRulesResponses[keyof GetV1PermissionsSetsByPermissionSetIdRulesResponses];
+
+export type PutV1PermissionsSetsByPermissionSetIdRulesData = {
+  body: UpdatePermissionSetRulesBody;
+  path: {
+    /**
+     * Den TypeID with 'pms_' prefix and a 26-character base32 suffix.
+     */
+    permissionSetId: string;
+  };
+  query?: never;
+  url: "/v1/permissions/sets/{permissionSetId}/rules";
+};
+
+export type PutV1PermissionsSetsByPermissionSetIdRulesErrors = {
+  /**
+   * The body was invalid.
+   */
+  400: InvalidRequestError;
+  /**
+   * The caller must be signed in.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller lacks permissions.manage, needs a recent sign-in, or tried to change Admin permissions without being the owner or an admin.
+   */
+  403: ForbiddenError;
+  /**
+   * The permission set or organization was not found, or a feature is turned off.
+   */
+  404: PermissionRulesNotFoundError;
+  /**
+   * The permission set is archived.
+   */
+  409: PermissionRulesConflictError;
+};
+
+export type PutV1PermissionsSetsByPermissionSetIdRulesError =
+  PutV1PermissionsSetsByPermissionSetIdRulesErrors[keyof PutV1PermissionsSetsByPermissionSetIdRulesErrors];
+
+export type PutV1PermissionsSetsByPermissionSetIdRulesResponses = {
+  /**
+   * Rules updated; the set's rules are returned.
+   */
+  200: PermissionSetRules;
+};
+
+export type PutV1PermissionsSetsByPermissionSetIdRulesResponse =
+  PutV1PermissionsSetsByPermissionSetIdRulesResponses[keyof PutV1PermissionsSetsByPermissionSetIdRulesResponses];
 
 export type GetV1OauthProvidersByProviderIdClientData = {
   body?: never;

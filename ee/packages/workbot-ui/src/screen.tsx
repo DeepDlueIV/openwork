@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowUp, Check, CircleAlert, Copy, FileText, Lock, Pencil } from "lucide-react";
-import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from "react";
+import { lazy, Suspense, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from "react";
 import { setWorkbotHost, workbotHost, type WorkbotHost } from "./host";
 import { OpenWorkMark } from "./mark";
 import { ChatsButton, ChatsDrawer, chatTitle, RemoveChatButton, SideChatTitle, useChatLocation } from "./chats";
@@ -31,6 +31,9 @@ import { PreviewPanel } from "./preview";
 import { Welcome } from "./welcome";
 import { WorkbotCalendar } from "./calendar";
 import { useQueryClient } from "@tanstack/react-query";
+
+/** Apps in replies load their MCP Apps bridge only when a reply has one. */
+const WorkbotAppCard = lazy(() => import("./apps"));
 
 /**
  * Workbot: one thread, instant. Layout and values follow the Paper file "WorkBot — one chat, set up once",
@@ -1057,6 +1060,11 @@ function ErrorLine({ children, action = null, align = "start" }: { children: Rea
 
 const Gap = () => <span aria-hidden className="h-3.5 w-px shrink-0" />;
 
+/** Where an App in a reply will be while its card loads: the same size and frame, so nothing shifts (DESIGN P11). */
+const AppCardPlaceholder = ({ callId }: { callId: string }) => (
+  <div aria-hidden data-workbot-app={callId} className="my-1.5 h-[280px] w-full rounded-[16px] bg-[var(--wb-surface)] shadow-[var(--wb-card-shadow)] sm:max-w-[600px]" />
+);
+
 function pendingAttachments(entry: Pending): { attachments: WorkbotAttachment[]; urls: Record<string, string | null> } {
   const urls: Record<string, string | null> = {};
   const attachments = entry.uploads.map((upload) => {
@@ -1353,8 +1361,11 @@ function useSettled(flag: boolean, ms: number) {
   return flag && settled;
 }
 
-/** One thing a turn shows: a model call's words (one bubble each) or the steps between them. */
-type TurnItem = { kind: "text"; key: string; text: string } | { kind: "steps"; key: string; steps: WorkbotStep[]; live: boolean };
+/** One thing a turn shows: a model call's words (one bubble each), the steps between them, or an App a step opened. */
+type TurnItem =
+  | { kind: "text"; key: string; text: string }
+  | { kind: "steps"; key: string; steps: WorkbotStep[]; live: boolean }
+  | { kind: "app"; key: string; callId: string; app: string | null };
 
 function TurnView(props: {
   canChange: boolean;
@@ -1383,6 +1394,7 @@ function TurnView(props: {
   const items: TurnItem[] = [];
   parts.forEach((part, index) => {
     if (part.kind === "text") items.push({ kind: "text", key: `text-${part.step ?? `part-${index}`}`, text: part.text });
+    else if (part.kind === "app") items.push({ kind: "app", key: `app-${part.callId}`, callId: part.callId, app: part.app });
     else items.push({ kind: "steps", key: `steps-${index}`, steps: part.steps, live: working && index === parts.length - 1 && lastIsLive });
   });
   if (working && props.live) {
@@ -1430,6 +1442,10 @@ function TurnView(props: {
             <AssistantBubble key={item.key} trailing={turn.status === "done" && index === lastText ? <CopyAnswer text={copyText} /> : null}>
               <StreamingText text={item.text} instant={!(props.newestText && index === lastText && watched.current)} />
             </AssistantBubble>
+          ) : item.kind === "app" ? (
+            <Suspense key={item.key} fallback={<AppCardPlaceholder callId={item.callId} />}>
+              <WorkbotAppCard turnId={turn.id} callId={item.callId} app={item.app} onMessage={props.onSuggestion} />
+            </Suspense>
           ) : (
             <StepsSegment key={item.key} steps={item.steps} live={item.live} />
           ),

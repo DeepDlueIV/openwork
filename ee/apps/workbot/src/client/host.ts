@@ -68,5 +68,6 @@ export function createHost(me: Me): WorkbotHost {
     sideChats: me.sideChats,
     calendarPolish: me.calendarPolish,
     identity: me.userId && me.organizationId ? { principalId: me.userId, organizationId: me.organizationId } : undefined,
+    appSandboxUrl: "/mcp-apps/sandbox.html",
   }
 }

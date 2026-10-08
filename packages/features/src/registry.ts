@@ -158,6 +158,13 @@ export const FEATURES = defineFeatures({
     deployments: everywhere,
     default: false,
   },
+  workbotApps: {
+    label: "Workbot: Apps",
+    description: "Apps open inside Workbot's replies, so members use them right in the chat: Apps built in OpenWork and Apps from connected MCP servers. Needs Workbot.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
   remoteSessionEvents: {
     label: "Remote session events",
     description: "MCP clients can subscribe to changes in their remote session receipts and read the current state after reconnecting.",

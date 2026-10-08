@@ -31,6 +31,11 @@ export type WorkbotHost = {
   calendarPolish?: boolean
   /** Authenticated identity for permission-protected model-setting caches; absent on older hosts. */
   identity?: { principalId: string; organizationId: string }
+  /**
+   * Where the host serves the MCP Apps sandbox proxy, for the Apps in Workbot's replies. Apps can't open without it.
+   * The page frames it without same-origin access, so an App never reaches the host's page or cookies.
+   */
+  appSandboxUrl?: string
 }
 
 let current: WorkbotHost | null = null

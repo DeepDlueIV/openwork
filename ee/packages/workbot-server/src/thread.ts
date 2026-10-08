@@ -64,7 +64,14 @@ export type WorkbotStep = {
  * What Workbot said and did, in order. A text part is one model call's words, `step` being that call (counted from 0
  * within the turn): the page keeps one bubble per call, from its first streamed word to its stored copy.
  */
-export type WorkbotPart = { kind: "text"; text: string; step: number } | { kind: "steps"; steps: WorkbotStep[] }
+export type WorkbotPart =
+  | { kind: "text"; text: string; step: number }
+  | { kind: "steps"; steps: WorkbotStep[] }
+  /**
+   * An App a tool result opened, shown where it opened; the page opens it by `callId` in this turn. `app` is the
+   * connected app it came from, when known (for its logo).
+   */
+  | { kind: "app"; callId: string; app: string | null }
 
 /**
  * A bigger job this message handed to a background task: the page keeps it in view where it started, so the person
@@ -291,7 +298,8 @@ function outputsOf(files: FileNames, startedAt: number | null, finishedAt: numbe
   return [...latest.values()]
 }
 
-export function buildWorkbotTurns(snapshot: RunnerSnapshot, files: FileNames = new Map()): WorkbotTurn[] {
+/** `apps`: the Apps tool results opened show where they opened (the workbotApps feature). */
+export function buildWorkbotTurns(snapshot: RunnerSnapshot, files: FileNames = new Map(), options: { apps?: boolean } = {}): WorkbotTurn[] {
   const byTurn = new Map<string, RunnerMessage[]>()
   for (const message of snapshot.messages) {
     if (!message.messageId) continue
@@ -339,20 +347,25 @@ export function buildWorkbotTurns(snapshot: RunnerSnapshot, files: FileNames = n
         // Only work in a connected app is worth a line ("Searching Slack"); lookups, notes to self and files stay
         // out of sight: files it made show as cards under the answer.
         const app = call.name === "execute_capability" ? appOf(call.name, call.input) : null
-        if (!app) continue
         const result = results.get(call.id)
-        const step: WorkbotStep = {
-          label: appActionLabel(app, String(call.input.name ?? "")),
-          icon: "app",
-          status: result === undefined ? "running" : "done",
-          app,
-          startedAt: message.createdAt ?? null,
-          finishedAt: result?.createdAt ?? null,
-          updates: [],
+        if (app) {
+          const step: WorkbotStep = {
+            label: appActionLabel(app, String(call.input.name ?? "")),
+            icon: "app",
+            status: result === undefined ? "running" : "done",
+            app,
+            startedAt: message.createdAt ?? null,
+            finishedAt: result?.createdAt ?? null,
+            updates: [],
+          }
+          const last = parts.at(-1)
+          if (last?.kind === "steps") last.steps.push(step)
+          else parts.push({ kind: "steps", steps: [step] })
         }
-        const last = parts.at(-1)
-        if (last?.kind === "steps") last.steps.push(step)
-        else parts.push({ kind: "steps", steps: [step] })
+        // An App opens right where the call that opened it is, after what was said before it.
+        if (options.apps && result?.role === "tool" && result.app?.connectionId && !result.isError) {
+          parts.push({ kind: "app", callId: call.id, app })
+        }
       }
     }
 

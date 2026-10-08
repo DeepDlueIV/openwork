@@ -1,5 +1,7 @@
-import { parseMockGmailMime, startMockGoogleServer, type MockGoogleThread } from "./mock-google-server.ts";
+import { parseMockGmailMime, startMockGoogleServer, type MockGoogleThread, type MockTokenScopes } from "./mock-google-server.ts";
 import { trimTrailingSlashes } from "./strings.ts";
+
+export type { MockTokenScopes };
 
 export interface MockGoogleDraft {
   to: string;
@@ -38,7 +40,7 @@ export interface MockGoogleHandle {
   tokenUrl: string;
   userinfoUrl: string;
   /** Drive the real chooser page shown when prompt=select_account. Resolves once the callback has been served. */
-  chooseAccount(email: string, opts?: { timeoutMs?: number }): Promise<void>;
+  chooseAccount(email: string, opts?: { timeoutMs?: number }): Promise<{ status: number; html: string }>;
   /** Drafts attributed to ONE mailbox. Must be able to return [] as a real negative assertion. */
   draftsFor(email: string, opts?: { since?: string; timeoutMs?: number; atLeast?: number }): Promise<MockGoogleDraft[]>;
   /** Drive uploads attributed to ONE account, including provider-observed bytes. */
@@ -64,6 +66,8 @@ export interface StartMockGoogleOptions {
   threads?: Record<string, MockGoogleThread[]>;
   accessTokenTtlSeconds?: number;
   driveFiles?: Record<string, import("./mock-google-drive.ts").MockDriveFileSeed[]>;
+  /** "entra" reports token scopes the way Microsoft Entra ID does (no offline_access); add `withhold` for unconsented permissions. Default "echo". */
+  tokenScopes?: MockTokenScopes;
 }
 
 export async function startMockGoogle(options: StartMockGoogleOptions): Promise<MockGoogleHandle> {
@@ -72,7 +76,7 @@ export async function startMockGoogle(options: StartMockGoogleOptions): Promise<
   const externalUrl = options.publicUrl ? trimTrailingSlashes(options.publicUrl.trim()) || undefined : undefined;
   const local = externalUrl
     ? null
-    : await startMockGoogleServer({ accounts, port: options.port ?? 3980, autoApprove: options.autoApprove ?? true, threads: options.threads, accessTokenTtlSeconds: options.accessTokenTtlSeconds, driveFiles: options.driveFiles });
+    : await startMockGoogleServer({ accounts, port: options.port ?? 3980, autoApprove: options.autoApprove ?? true, threads: options.threads, accessTokenTtlSeconds: options.accessTokenTtlSeconds, driveFiles: options.driveFiles, tokenScopes: options.tokenScopes });
   const url = externalUrl ?? local?.baseUrl;
   if (!url) throw new Error("Mock Google did not expose a URL.");
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -245,10 +249,11 @@ export async function startMockGoogle(options: StartMockGoogleOptions): Promise<
       if (choice.status !== 302 || !callbackUrl) {
         throw new Error(`Mock Google chooser failed: HTTP ${choice.status}`);
       }
-      await fetch(callbackUrl, {
+      const page = await fetch(callbackUrl, {
         redirect: "manual",
         signal: AbortSignal.timeout(Math.max(1, deadline - Date.now())),
       });
+      return { status: page.status, html: await page.text() };
     },
     async draftsFor(email, opts = {}) {
       const timeoutMs = opts.timeoutMs ?? 120_000;

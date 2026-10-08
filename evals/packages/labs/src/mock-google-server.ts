@@ -16,6 +16,22 @@ interface MockGoogleServerOptions {
   /** Access-token lifetime returned by /token; below Den's 60 s safety window forces a refresh on every call. */
   accessTokenTtlSeconds?: number;
   driveFiles?: Record<string, MockDriveFileSeed[]>;
+  tokenScopes?: MockTokenScopes;
+}
+
+/**
+ * How the token endpoint reports granted scopes. "echo" returns the requested
+ * list verbatim. "entra" matches Microsoft Entra ID v2.0: offline_access is
+ * honored (a refresh token is issued) but never listed in the response scope.
+ */
+export type MockTokenScopes = "echo" | "entra" | { mode: "entra"; withhold: string[] };
+
+function reportedScope(mode: MockTokenScopes, scope: string): string {
+  if (mode === "echo") return scope;
+  // `withhold` models a permission the tenant never consented to: Entra issues
+  // the token without it instead of failing the sign-in.
+  const omitted = new Set(["offline_access", ...(typeof mode === "object" ? mode.withhold : [])].map((entry) => entry.toLowerCase()));
+  return scope.split(/\s+/).filter((entry) => entry && !omitted.has(entry.toLowerCase())).join(" ");
 }
 
 export interface MockGoogleThread {
@@ -113,6 +129,7 @@ interface MockGoogleState {
   accounts: Account[];
   autoApprove: boolean;
   accessTokenTtlSeconds: number;
+  tokenScopes: MockTokenScopes;
   baseUrl: string;
   requests: RequestEntry[];
   pending: Map<string, PendingAuthorization>;
@@ -422,7 +439,7 @@ async function token(state: MockGoogleState, request: IncomingMessage, response:
     refresh_token: issued.refreshToken,
     token_type: "Bearer",
     expires_in: state.accessTokenTtlSeconds,
-    scope: credential.scope,
+    scope: reportedScope(state.tokenScopes, credential.scope),
     id_token: issued.idToken,
   });
 }
@@ -853,6 +870,7 @@ export async function startMockGoogleServer(options: MockGoogleServerOptions): P
     accounts: normalizeAccounts(options.accounts),
     autoApprove: options.autoApprove,
     accessTokenTtlSeconds: options.accessTokenTtlSeconds ?? 3600,
+    tokenScopes: options.tokenScopes ?? "echo",
     baseUrl: options.baseUrl ?? "http://127.0.0.1",
     requests: [],
     pending: new Map(),

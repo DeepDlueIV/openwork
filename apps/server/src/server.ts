@@ -4,6 +4,7 @@ import { managedDesktopPolicy } from "./managed-desktop-policy.js";
 import { createTaskRecovery, setTaskRecovery } from "./task-recovery.js";
 import { managedPolicyActionSchema } from "./managed-policy-rules.js";
 import { beginOpencodeStop, opencodeSessionIsStopping } from "./opencode-stop-fence.js";
+import { agentPermissionMcpDenial, agentPermissionRulesOf } from "./agent-permission-engine.js";
 import { readFile, realpath, writeFile, rm, stat } from "node:fs/promises";
 import { homedir, hostname } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
@@ -3525,6 +3526,17 @@ function createRoutes(
     if (!opencode && !openwork) {
       throw new ApiError(400, "invalid_payload", "opencode or openwork updates required");
     }
+    // Adding or changing an MCP server here is the same as through /mcp: names
+    // OpenWork reserves for the organization's servers are refused, and so is
+    // a local server the member's agent permissions block.
+    if (isRecord(opencode?.mcp)) {
+      const saved = runtimeMcpMap(await readRuntimeOpencodeConfig(config, workspace.id));
+      for (const [name, server] of Object.entries(opencode.mcp)) {
+        if (server === null || JSON.stringify(server) === JSON.stringify(saved[name])) continue;
+        validateUserMcpName(name);
+        await managedDesktopPolicy(config).assertAgentPermission("mcp", name);
+      }
+    }
 
     await requireApproval(ctx, {
       workspaceId: workspace.id,
@@ -3758,6 +3770,7 @@ function createRoutes(
     const workspace = await resolveWorkspace(config, ctx.params.id);
     const body = await readJsonBody(ctx.request);
     const name = String(body.name ?? "");
+    await managedDesktopPolicy(config).assertAgentPermission("skill", name);
     const content = String(body.content ?? "");
     const description = body.description ? String(body.description) : undefined;
     await requireApproval(ctx, {
@@ -4009,6 +4022,7 @@ function createRoutes(
     const body = await readJsonBody(ctx.request);
     const name = String(body.name ?? "").trim();
     validateUserMcpName(name);
+    await managedDesktopPolicy(config).assertAgentPermission("mcp", name);
     const serverUrl = typeof body.url === "string" ? body.url.trim() : "";
     const oauth = body.oauth && typeof body.oauth === "object" && !Array.isArray(body.oauth)
       ? body.oauth as Record<string, unknown>
@@ -4120,6 +4134,7 @@ function createRoutes(
     const body = await readJsonBody(ctx.request);
     const name = String(body.name ?? "");
     validateUserMcpName(name);
+    await managedDesktopPolicy(config).assertAgentPermission("mcp", name);
     const configPayload = body.config as Record<string, unknown> | undefined;
     if (!configPayload) {
       throw new ApiError(400, "invalid_payload", "MCP config is required");
@@ -5347,9 +5362,12 @@ async function runRuntimeMcpSyncToOpencodeEngine(
   }
 
   const runtimeConfig = await readEffectiveRuntimeOpencodeConfig(config, workspace.id);
+  const agentPermissionRules = agentPermissionRulesOf(runtimeConfig.managedPolicy);
   const entries = Object.entries(runtimeMcpMap(runtimeConfig)).filter(
     ([name]) => !name.startsWith(CONNECT_MCP_SERVER_NAME_PREFIX)
-      && (!onlyNames || onlyNames.includes(name)),
+      && (!onlyNames || onlyNames.includes(name))
+      // Local servers the member's agent permissions block are not registered.
+      && !agentPermissionMcpDenial(agentPermissionRules, name),
   );
   if (entries.length === 0) {
     if (!onlyNames) {

@@ -116,6 +116,13 @@ export const FEATURES = defineFeatures({
     deployments: everywhere,
     default: false,
   },
+  agentPermissions: {
+    label: "Agent permissions",
+    description: "Organization admins choose what agents can do on members' computers: run commands, edit files, open websites and use local skills and MCP servers, for everyone or per team.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
   engineV2Upgrade: {
     label: "Desktop: upgrade prompt to OpenCode v2",
     description: "Desktop members still on OpenCode v1 see a short notice offering to upgrade: their chats are copied to v2 with a backup, then OpenWork switches engines.",

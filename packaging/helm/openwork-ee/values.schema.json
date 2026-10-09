@@ -318,6 +318,16 @@
               ],
               "description": "Retired: no longer a feature switch. Ignored."
             },
+            "agentPermissions": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Agent permissions: Organization admins choose what agents can do on members' computers: run commands, edit files, open websites and use local skills and MCP servers, for everyone or per team. Renders DEN_FEATURE_AGENT_PERMISSIONS."
+            },
             "platformAuditReads": {
               "enum": [
                 "",

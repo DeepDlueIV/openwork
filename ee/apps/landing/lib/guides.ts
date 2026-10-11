@@ -84,15 +84,15 @@ export const guides: Guide[] = [
     sections: [
       {
         id: "openwork-connect",
-        heading: "OpenWork Connect: the short answer",
+        heading: "What is OpenWork Connect?",
         paragraphs: [
           "OpenWork Connect is an AI Gateway, MCP Gateway, and Skills Gateway that lets organizations centrally manage models, tools, reusable skills, and access from one admin panel.",
-          "MCP delivers tools and reusable skill instructions. Model inference uses a separate AI Gateway endpoint; MCP does not carry model requests. The opencode-openwork plugin joins both in OpenCode through one sign-in, without requiring the OpenWork desktop app."
+          "In OpenCode, the opencode-openwork plugin brings all three in with one sign-in. You don't need the OpenWork desktop app."
         ],
         bullets: [
-          "AI Gateway: share approved models without handing people upstream provider keys, review usage, and apply supported spend allowances.",
-          "MCP Gateway: make approved service tools available to authorized people in compatible agents.",
-          "Skills Gateway: publish reusable skills and let agents retrieve the instructions their users may access."
+          "AI Gateway: approved models, without giving people provider keys. Usage and spend limits in one place.",
+          "MCP Gateway: connected tools, such as Slack or Google Workspace, for the people allowed to use them.",
+          "Skills Gateway: reusable instructions your team publishes once and every agent can use."
         ]
       },
       {

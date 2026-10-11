@@ -1,0 +1,19 @@
+{
+  "name": "@openwork/agent-gateway-core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Shared OpenWork sign-in, state, and AI Gateway helpers for the codex-openwork and claude-openwork CLIs. Imported by relative path and bundled; never published.",
+  "type": "module",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test src/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.6.3"
+  }
+}

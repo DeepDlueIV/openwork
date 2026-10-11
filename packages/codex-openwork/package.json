@@ -1,0 +1,40 @@
+{
+  "name": "codex-openwork",
+  "version": "0.1.0",
+  "description": "Use OpenWork Cloud in Codex CLI: sign in once, then run Codex on your organization's AI Gateway models and OpenWork MCP connections.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/different-ai/openwork.git",
+    "directory": "packages/codex-openwork"
+  },
+  "homepage": "https://github.com/different-ai/openwork/tree/dev/packages/codex-openwork",
+  "keywords": [
+    "codex",
+    "codex-cli",
+    "openwork",
+    "mcp",
+    "ai-gateway"
+  ],
+  "bin": {
+    "codex-openwork": "dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "tsup",
+    "test": "node --test src/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsup": "^8.5.0",
+    "typescript": "^5.6.3"
+  }
+}

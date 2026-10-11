@@ -604,8 +604,12 @@ for (const destination of ["skip", "invite", "models"]) {
     await step("a person enters their name and creates an account", async () => {
       if (modelsIntent) await user.navigate(new URL("/?intent=models", world.den.ref.webUrl).toString());
       await user.see({ role: "textbox", label: "Email" }, { timeoutMs: 90_000 });
+      await user.see({ text: "Invite (optional)" });
+      await user.notSee({ text: "Good work starts here." });
       await user.type({ role: "textbox", label: "Email" }, world.owner.email);
       await user.click({ role: "button", label: "Next" });
+      await user.see({ role: "textbox", label: "Name" });
+      await user.screenshot();
       await user.type({ role: "textbox", label: "Name" }, world.owner.name);
       await user.type({ role: "textbox", label: "Password" }, world.owner.password);
       await user.click({ role: "button", label: "Sign up" });

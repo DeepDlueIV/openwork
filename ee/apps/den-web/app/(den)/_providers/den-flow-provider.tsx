@@ -928,7 +928,8 @@ export function DenFlowProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    void requestJson("/v1/features", { method: "GET", cache: "no-store" }, 12000)
+    // Short timeout: setup frames hold their layout until this answers, and any failure means off.
+    void requestJson("/v1/features", { method: "GET", cache: "no-store" }, 5000)
       .then(({ response, payload }) => {
         if (cancelled) return;
         const simplifiedOnboarding = response.ok && isRecord(payload) && payload.version === 1
@@ -1189,7 +1190,11 @@ export function DenFlowProvider({ children }: { children: ReactNode }) {
 
 /** Plain consent frames also render outside the signed-in flow provider. */
 export function useDeploymentSimplifiedOnboarding() {
-  return useContext(DenFlowContext)?.deploymentFeatures.simplifiedOnboarding ?? false;
+  const value = useContext(DenFlowContext);
+  return {
+    simplified: value?.deploymentFeatures.simplifiedOnboarding ?? false,
+    loading: value?.deploymentFeaturesLoading ?? false,
+  };
 }
 
 export function useDenFlow() {

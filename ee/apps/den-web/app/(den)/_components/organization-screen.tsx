@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { LogOut, Settings } from "lucide-react";
+import { ChevronRight, LogOut, Settings } from "lucide-react";
 import { getErrorMessage, requestJson } from "../_lib/den-flow";
 import { type DenOrgSummary, formatRoleLabel, getJoinOrgRoute, getOnboardingPeopleRoute, getOrgDashboardRoute, parseOrgListPayload } from "../_lib/den-org";
 import { useOrgListWindow } from "../_lib/use-org-list-window";
@@ -173,18 +173,19 @@ export function OrganizationScreen() {
 
   const creationForm = simplified ? <form onSubmit={handleCreate} className="grid gap-5" aria-busy={createBusy}>
     <label className="grid gap-2">
-      <span className="text-sm font-medium text-[var(--dls-text-primary)]">Workspace name</span>
-      <DenInput value={createName} onChange={(event) => setCreateName(event.target.value)} placeholder="My workspace" minLength={2} maxLength={120} disabled={createBusy || Boolean(createdOrg)} required />
+      <span className="text-[13px] font-medium text-gray-900">Workspace name</span>
+      <DenInput value={createName} onChange={(event) => setCreateName(event.target.value)} placeholder="My workspace" minLength={2} maxLength={120} disabled={createBusy || Boolean(createdOrg)} required autoFocus />
     </label>
-    {createError ? <p role="alert" className="text-sm text-rose-600">{createError}</p> : null}
-    <DenButton type="submit" disabled={createBusy || createName.trim().length < 2} className="w-full">
-      {createBusy ? "Creating workspace…" : "Create workspace"}
-    </DenButton>
-    <details className="text-sm text-[var(--dls-text-secondary)]">
-      <summary className="cursor-pointer">Join an existing workspace</summary>
+    {createError ? <p role="alert" className="text-[13px] text-red-600">{createError}</p> : null}
+    <DenButton type="submit" loading={createBusy} disabled={createName.trim().length < 2} className="w-full">Create workspace</DenButton>
+    <details className="group">
+      <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 rounded-md text-[13px] font-medium text-gray-500 hover:text-gray-900 [&::-webkit-details-marker]:hidden">
+        <ChevronRight aria-hidden className="size-4 transition-transform duration-150 ease-out group-open:rotate-90 motion-reduce:transition-none" />
+        Join an existing workspace
+      </summary>
       <div className="mt-3 grid gap-3">
         <label className="grid gap-2">
-          <span>Team invitation link</span>
+          <span className="text-[13px] font-medium text-gray-900">Team invitation link</span>
           <DenInput value={invitationLink} onChange={(event) => setInvitationLink(event.target.value)} placeholder="Paste your invitation link" disabled={createBusy || Boolean(createdOrg)} />
         </label>
         <DenButton type="button" variant="secondary" disabled={createBusy || Boolean(createdOrg) || !invitationLink.trim()} onClick={reviewInvitation}>Review invitation</DenButton>
@@ -232,7 +233,7 @@ export function OrganizationScreen() {
       {error ? <p role="alert" className="mb-4 text-sm text-rose-600">{error}</p> : null}
       {creationForm}
       <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-5 text-xs text-gray-500">
-        <span className="max-w-[260px] truncate">{user?.email}</span>
+        <span className="min-w-0 max-w-[260px] truncate" title={user?.email}>{user?.email}</span>
         {!createBusy && !createdOrg && orgs.length > 0 ? <button type="button" className="font-medium text-gray-700" onClick={() => { setShowCreate(false); setCreateName(""); setIntent(null); setDesktopSetup(null); setCreateError(null); }}>Cancel</button> : <button type="button" disabled={createBusy} onClick={() => void signOut()} className="font-medium text-gray-700">Log out</button>}
       </div>
     </SetupFrame>;

@@ -133,9 +133,13 @@
    controls are normalised to the Den primitives (DenInput 42px, DenButton
    40px, 8px radius, #0f172a ink) so all three steps read as one flow. */
 .simplified { background: #fafafa; }
-.simplified .top { grid-template-columns: 1fr; }
-.simpleBody { max-width: 440px; margin: clamp(40px, 9vh, 88px) auto 48px; }
-.simpleBody .progress { margin-bottom: 20px; }
+/* Brand, progress and panel share one left edge, so nothing floats in a corner. */
+.simpleBody { max-width: 440px; margin: clamp(24px, 7vh, 72px) auto 48px; }
+.simpleBody > .brand { margin-bottom: 36px; font-size: 16px; letter-spacing: -.4px; gap: 9px; }
+.simpleBody > .brand img { width: 22px; height: 22px; }
+.simpleBody .progress { margin-bottom: 16px; }
+/* The dithered band is the brand moment of every step: same height, flush to the panel edge. */
+.simplified .panelVisual { height: 88px; margin-bottom: 24px; }
 .simplified .panel { --panel-padding: 28px; --panel-radius: 16px; border-color: #e5e7eb; box-shadow: none; animation: none; }
 .simpleTitle, .simplified .panel h2 { margin: 0; font-size: 20px; line-height: 1.4; font-weight: 600; letter-spacing: -.02em; color: #0f172a; overflow-wrap: anywhere; }
 .simpleTitle { margin-bottom: 20px; }
@@ -186,7 +190,7 @@
   .footer { font-size: 11px; line-height: 1.6; }
   .footer > span:last-child { display: none; }
 }
-@media (max-width: 760px) { .simpleBody { margin: 24px auto 30px; } .simplified .panel { --panel-padding: 20px; } }
+@media (max-width: 760px) { .simpleBody { margin: 8px auto 30px; } .simpleBody > .brand { margin-bottom: 24px; } .simplified .panel { --panel-padding: 20px; } .simplified .panelVisual { height: 64px; margin-bottom: 20px; } }
 @media (max-width: 420px) { .frame, .embedded { padding-inline: 16px; } }
 /* Explicit opt-in: do not change the display headline on other setup flows. */
 .intro h1.compactHeading { font-size: var(--text-xl); line-height: var(--text-xl--line-height); letter-spacing: -.03em; font-weight: var(--font-weight-semibold); }

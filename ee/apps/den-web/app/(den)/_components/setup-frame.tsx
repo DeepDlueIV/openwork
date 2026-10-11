@@ -3,6 +3,7 @@
 import type { ReactNode } from "react";
 import { ArrowRight, ArrowUpRight, ChevronDown, ChevronRight, FileText, Folder, LayoutDashboard, MessageSquare, Network, Paperclip, Play, Plug, Search, Users, Workflow } from "lucide-react";
 import { useDeploymentSimplifiedOnboarding } from "../_providers/den-flow-provider";
+import { OnboardingTexture } from "./onboarding-texture";
 import styles from "./setup-frame.module.css";
 
 const steps = [
@@ -127,7 +128,6 @@ export function SetupFrame({ step, title, description, children, aside, panelVis
   const deployment = useDeploymentSimplifiedOnboarding();
   const sharedStep = step === "account" || step === "space" || step === "people";
   const useSimplifiedSteps = Boolean(sharedStep && (simplified ?? deployment.simplified));
-  // Until the rollout is known, show only the header so neither layout flashes.
   const layoutPending = sharedStep && simplified === undefined && deployment.loading;
   const visibleSteps = useSimplifiedSteps ? simplifiedSteps : steps;
   const current = step ? visibleSteps.findIndex((item) => item.id === step) : -1;
@@ -151,23 +151,28 @@ export function SetupFrame({ step, title, description, children, aside, panelVis
       ))}</ol>
     </nav>
   );
+  const brand = <div className={styles.brand}><img src="/openwork-mark.svg" alt="" width={25} height={25} /><span>OpenWork<span className={styles.cloud}> / Cloud</span></span></div>;
   return (
     <section className={`${styles.frame} ${embedded ? styles.embedded : ""} ${plain ? styles.plain : ""} ${useSimplifiedSteps ? styles.simplified : ""}`} data-testid="setup-frame" data-step={step ?? "none"}>
-      <header className={styles.top}>
-        <div className={styles.brand}><img src="/openwork-mark.svg" alt="" width={25} height={25} /><span>OpenWork<span className={styles.cloud}> / Cloud</span></span></div>
-        {step && !layoutPending && !useSimplifiedSteps ? progress : null}
-      </header>
+      {/* Until the rollout is known nothing renders, so neither the brand nor a layout jumps. */}
       {layoutPending ? null : useSimplifiedSteps ? (
-        // One column (P7): progress, then one panel that owns the title and the
-        // form. No product preview, step eyebrow, description or tagline (P1, P2, C7).
+        // One column (P7): brand, progress, then one panel that owns the brand
+        // texture, the title and the form. No product preview, step eyebrow,
+        // description or tagline (P1, P2, C7).
         <div className={styles.simpleBody}>
+          {brand}
           {progress}
           <div className={styles.panel}>
+            <div className={styles.panelVisual}>{panelVisual ?? <OnboardingTexture />}</div>
             {title ? <h1 className={styles.simpleTitle}>{title}</h1> : null}
             {children}
           </div>
         </div>
       ) : <>
+        <header className={styles.top}>
+          {brand}
+          {step ? progress : null}
+        </header>
         <div className={styles.grid}>
           <aside className={styles.story}>
             <div className={styles.intro}>

@@ -538,7 +538,169 @@ export const guides: Guide[] = [
       secondary: { label: "AI Gateway docs", href: "/docs/ai-gateway/overview" }
     }
   },
-
+  {
+    slug: "openwork-and-litellm",
+    label: "OpenWork and LiteLLM",
+    title: "OpenWork and LiteLLM: when to use both",
+    description:
+      "Keep LiteLLM for model routing and budgets; add OpenWork for an agent workspace, shared skills, and connections. Native integration is in preview.",
+    heading: "Should you use OpenWork, LiteLLM, or both?",
+    answer:
+      "Use LiteLLM alone when your applications need a model API and already have an interface. Choose OpenWork for an agent workspace and organization-managed access. Use both to keep your existing proxy beneath that workspace. OpenWork's native LiteLLM integration requires preview access.",
+    updated: "2026-10-11",
+    keyFacts: [
+      "Native LiteLLM integration: organization preview access required",
+      "Three key modes: organization, member, or issued",
+      "OpenWork priced allowances: organization-key mode only",
+      "Tools and skills use a separate MCP gateway"
+    ],
+    sections: [
+      {
+        id: "different-layers",
+        heading: "A workspace and a proxy are different layers",
+        paragraphs: [
+          "LiteLLM offers a Python SDK and a self-hosted proxy for calling models across providers. Its documentation covers routing, fallbacks, virtual keys, budgets, logging, and an admin UI. LiteLLM also documents MCP functionality; it is not simply a product without tool support.",
+          "OpenWork gives people an agent workspace for files and connected-service tasks, plus organization-managed model access, shared skills, and MCP connections. Its OpenCode plugin loads granted models and connections into an existing terminal agent. Some gateway features overlap, but the products are not interchangeable."
+        ],
+        table: {
+          caption: "Choosing a layer for your workflow",
+          columns: ["Need", "LiteLLM", "OpenWork"],
+          rows: [
+            ["Common model API for an application", "SDK or proxy", "Use approved models in an agent workspace"],
+            ["Keep existing routing and virtual-key budgets", "Keep the existing proxy setup", "Connect to it rather than replace it"],
+            ["Interactive work on files", "Evaluate its current interfaces against your workflow", "Desktop workspace; Web depends on deployment and availability"],
+            ["Organization models and tools in OpenCode", "Depends on the client's configuration", "Plugin joins model grants and MCP connections"],
+            ["Reusable skills and service tools", "Evaluate current MCP and agent capabilities", "Organization skill and connection delivery through MCP"]
+          ]
+        }
+      },
+      {
+        id: "choose-litellm",
+        heading: "Choose LiteLLM alone",
+        bullets: [
+          "Your applications need a common model API, and people already have the interface they need.",
+          "Routing, fallbacks, virtual keys, and proxy budgets are your main requirements.",
+          "Another workspace would add operating cost without improving the workflow."
+        ],
+        paragraphs: [
+          "You do not need to migrate a functioning proxy to use OpenWork. If your team already has the interface it needs, LiteLLM alone may be enough."
+        ]
+      },
+      {
+        id: "choose-openwork",
+        heading: "Choose OpenWork, or use both",
+        bullets: [
+          "Choose OpenWork when people need an interactive agent workspace for their files, with approved models, shared skills, and service connections.",
+          "Use both when LiteLLM already handles routing and budgets: retain it beneath OpenWork, with a clear owner for each layer.",
+          "Use the OpenWork plugin when engineers want the organization's granted models and tools without leaving OpenCode."
+        ],
+        paragraphs: [
+          "Keep a clear owner for each layer: your proxy, the workspace, and the models and tools people can use."
+        ]
+      },
+      {
+        id: "key-modes",
+        heading: "Pick a key mode before you connect",
+        table: {
+          caption: "Keys and budget authority in the native LiteLLM integration",
+          columns: ["Mode", "Admin supplies", "Member does", "Budget authority"],
+          rows: [
+            ["One organization key", "A shared LiteLLM virtual key", "Nothing", "LiteLLM's shared-key budget; OpenWork priced usage allowances also apply when model prices are available"],
+            ["Each person's own key", "A LiteLLM admin key for synchronization", "Connect their virtual key once", "LiteLLM budgets and rate limits; OpenWork records tokens, not cost"],
+            ["OpenWork creates keys", "A LiteLLM admin key for synchronization and issuance", "Nothing, if their matching LiteLLM user already exists", "LiteLLM budgets and rate limits; OpenWork records tokens, not cost"]
+          ]
+        },
+        paragraphs: [
+          "Do not assume OpenWork dollar limits or cost reporting apply in member or issued mode. LiteLLM is the budget authority for those modes. For issued keys, an admin can choose one key per LiteLLM team or a copy of an existing key.",
+          "Copies retain supported settings such as team and models, but intentionally do not copy key-level budgets or rate limits: duplicating those would duplicate the allowance. Applicable user and team controls still matter. OpenWork does not create LiteLLM users or invent their team memberships."
+        ]
+      },
+      {
+        id: "prerequisites",
+        heading: "Before you start",
+        badge: "In preview",
+        bullets: [
+          "A platform administrator must enable the native LiteLLM preview for your organization. If the provider is missing, check availability first.",
+          "The proxy must be reachable from both Den and the AI Gateway. Use HTTPS on a public host; a private origin requires an explicit operator allowlist on both services.",
+          "Prepare the proxy URL, a mode-appropriate key, at least one chat model, and the people or teams who should receive access.",
+          "Keep admin keys on the server, not on employees' computers. The native integration uses LiteLLM virtual keys, not LiteLLM JWT sign-in."
+        ]
+      },
+      {
+        id: "walkthrough",
+        heading: "Keep your proxy and add OpenWork",
+        steps: [
+          {
+            title: "Add the provider",
+            body: "In the OpenWork admin panel, open AI Gateway → AI Providers → Add a provider → LiteLLM. Enter the proxy URL, with or without /v1. If LiteLLM is absent, confirm preview access rather than substituting a different integration."
+          },
+          {
+            title: "Choose the key mode",
+            body: "Use an organization virtual key for shared access. Use an admin key only for member or issued modes that need to read users, teams, and keys or create keys. OpenWork checks the key before saving; the UI does not display it again."
+          },
+          {
+            title: "Grant access",
+            body: "Select the people or teams who may use the provider. Model groups follow callable model sets: appearing in a proxy catalog does not itself authorize a request. In issued mode, each person must already have a LiteLLM user with the matching email. If the provider shows No key yet, add that person in LiteLLM and sync again."
+          },
+          {
+            title: "Verify a member's model request",
+            body: "Sign into OpenWork or the OpenCode plugin and confirm a granted provider and model appear. In member mode, connect the virtual key once. The client subsequently uses its AI Gateway key, not the underlying LiteLLM key. Send a short prompt to confirm the connection.",
+            code: "OpenWork or OpenCode\n  → OpenWork AI Gateway (member identity and grants)\n  → LiteLLM (the selected mode's virtual key)\n  → configured model endpoint"
+          },
+          {
+            title: "Check denied and revoked access",
+            body: "Check access with a member account, including a model they should not be able to use. In issued mode, check that their LiteLLM user exists. Model requests use the AI Gateway; skills and tool requests use the separate MCP gateway."
+          },
+          {
+            title: "Sync deliberately",
+            body: "After changing models, users, teams, or keys in LiteLLM, select Sync models and read reported errors. If LiteLLM cannot be read, OpenWork can retain the last synced models. If a sync fails, fix the reported error and sync again."
+          }
+        ]
+      },
+      {
+        id: "costs",
+        heading: "Compare costs without counting inference twice",
+        paragraphs: [
+          "Evaluate incremental workspace costs, upstream inference, proxy hosting, database costs, and operational effort separately. Do not add both gateways' displayed estimates as though they were separate model invoices for the same request.",
+          "Compare the cost of adding a workspace to your existing proxy with the cost of replacing infrastructure. Check current plan prices and your model provider's rates."
+        ]
+      }
+    ],
+    cards: [
+      { icon: "key", title: "OpenWork native LiteLLM integration", link: { label: "Integration docs", href: "https://openworklabs.com/docs/ai-gateway/litellm" } },
+      { icon: "route", title: "OpenWork gateway request flow", link: { label: "Request flow docs", href: "https://openworklabs.com/docs/ai-gateway/how-requests-flow" } },
+      { icon: "cpu", title: "LiteLLM SDK, proxy, and MCP capabilities", link: { label: "Official LiteLLM docs", href: "https://docs.litellm.ai/docs/" } },
+      { icon: "users", title: "LiteLLM virtual keys and budgets", link: { label: "Official key docs", href: "https://docs.litellm.ai/docs/proxy/virtual_keys" } }
+    ],
+    faq: [
+      {
+        question: "Do I need to replace LiteLLM to use OpenWork?",
+        answer: "No. Keep an existing proxy and connect OpenWork to it for an agent workspace and organization-managed access. Native LiteLLM integration requires preview enablement for your organization."
+      },
+      {
+        question: "Does LiteLLM support tools or MCP?",
+        answer: "LiteLLM documents MCP functionality. Evaluate its current capabilities against your requirements rather than treating it as a proxy with no tool support."
+      },
+      {
+        question: "Do OpenWork spend limits apply in every LiteLLM key mode?",
+        answer: "No. OpenWork priced usage allowances apply to organization-key mode when prices are available. In member and issued modes, OpenWork records tokens but not cost; LiteLLM budgets and rate limits apply."
+      },
+      {
+        question: "Why is LiteLLM missing from Add a provider?",
+        answer: "The native integration is in preview and off until a platform administrator enables it for your organization. Confirm preview availability before starting."
+      },
+      {
+        question: "Does connecting models also connect skills and tools?",
+        answer: "Model inference uses the AI Gateway. Skills and tools use the separate MCP gateway. The OpenCode plugin brings granted models, skills and connections into OpenCode through one sign-in."
+      }
+    ],
+    cta: {
+      heading: "Keep the proxy that works for you.",
+      sub: "Review the native integration requirements before adding a workspace.",
+      primary: { label: "Read LiteLLM integration docs", href: "/docs/ai-gateway/litellm" },
+      secondary: { label: "Review the OpenCode plugin", href: "/guides/openwork-and-opencode" }
+    }
+  }
 ];
 
 export function guidePath(guide: Guide): string {

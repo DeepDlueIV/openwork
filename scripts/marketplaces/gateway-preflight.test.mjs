@@ -9,7 +9,7 @@ import { annotationSummary, main, parseRpcResponse, skillBody, toolData } from "
 
 const scriptUrl = new URL("./gateway-preflight.mjs", import.meta.url);
 const checkout = dirname(dirname(dirname(fileURLToPath(scriptUrl))));
-const fixtureUrl = new URL("../../integrations/marketplace-submissions/fixtures/reviewer-weekly-brief/SKILL.md", import.meta.url);
+const fixtureUrl = new URL("./fixtures/reviewer-weekly-brief/SKILL.md", import.meta.url);
 const gateway = "https://api.openworklabs.com/mcp/agent";
 const resourceMetadata = "https://api.openworklabs.com/.well-known/oauth-protected-resource/mcp/agent";
 const authorizationMetadata = "https://app.openworklabs.com/.well-known/oauth-authorization-server/api/auth";

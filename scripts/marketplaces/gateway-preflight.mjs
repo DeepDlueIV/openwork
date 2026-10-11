@@ -7,7 +7,7 @@ const gatewayUrl = "https://api.openworklabs.com/mcp/agent";
 const apiOrigin = "https://api.openworklabs.com";
 const authOrigin = "https://app.openworklabs.com";
 const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
-const fixtureUrl = new URL("../../integrations/marketplace-submissions/fixtures/reviewer-weekly-brief/SKILL.md", import.meta.url);
+const fixtureUrl = new URL("./fixtures/reviewer-weekly-brief/SKILL.md", import.meta.url);
 
 class PreflightError extends Error {}
 

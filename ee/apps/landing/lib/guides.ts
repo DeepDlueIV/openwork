@@ -566,7 +566,7 @@ export const guides: Guide[] = [
           caption: "Choosing a layer for your workflow",
           columns: ["Need", "LiteLLM", "OpenWork"],
           rows: [
-            ["Common model API for an application", "SDK or proxy", "Consume an approved provider; not a claim of SDK parity"],
+            ["Common model API for an application", "SDK or proxy", "Use approved models in an agent workspace"],
             ["Keep existing routing and virtual-key budgets", "Keep the existing proxy setup", "Connect to it rather than replace it"],
             ["Interactive work on files", "Evaluate its current interfaces against your workflow", "Desktop workspace; Web depends on deployment and availability"],
             ["Organization models and tools in OpenCode", "Depends on the client's configuration", "Plugin joins model grants and MCP connections"],
@@ -583,7 +583,7 @@ export const guides: Guide[] = [
           "Another workspace would add operating cost without improving the workflow."
         ],
         paragraphs: [
-          "You do not need to migrate a functioning proxy just to evaluate an OpenWork interface. A comparison claim omitted here means it has not been verified here, not that LiteLLM lacks it."
+          "You do not need to migrate a functioning proxy to use OpenWork. If your team already has the interface it needs, LiteLLM alone may be enough."
         ]
       },
       {
@@ -595,7 +595,7 @@ export const guides: Guide[] = [
           "Use the OpenWork plugin when engineers want the organization's granted models and tools without leaving OpenCode."
         ],
         paragraphs: [
-          "OpenWork adds setup and operating responsibility. You still need appropriate entitlements, access grants, and a model suited to the task. Open source or a private endpoint alone does not establish compliance, zero egress, or control over every application on a device."
+          "Keep a clear owner for each layer: your proxy, the workspace, and the models and tools people can use."
         ]
       },
       {
@@ -621,9 +621,9 @@ export const guides: Guide[] = [
         badge: "In preview",
         bullets: [
           "A platform administrator must enable the native LiteLLM preview for your organization. If the provider is missing, check availability first.",
-          "The proxy must be reachable from both Den and the AI Gateway. Use HTTPS on a public host; a private origin requires an explicit operator allowlist on both services. Do not disable egress controls for a demo.",
+          "The proxy must be reachable from both Den and the AI Gateway. Use HTTPS on a public host; a private origin requires an explicit operator allowlist on both services.",
           "Prepare the proxy URL, a mode-appropriate key, at least one chat model, and the people or teams who should receive access.",
-          "Keep keys out of recordings and examples. Never give a master or admin key to end users or directory crawlers. The native integration uses LiteLLM virtual keys, not LiteLLM JWT sign-in."
+          "Keep admin keys on the server, not on employees' computers. The native integration uses LiteLLM virtual keys, not LiteLLM JWT sign-in."
         ]
       },
       {
@@ -640,20 +640,20 @@ export const guides: Guide[] = [
           },
           {
             title: "Grant access",
-            body: "Select the people or teams who may use the provider. Model groups follow callable model sets: appearing in a proxy catalog does not itself authorize a request. In issued mode, each person must already have a LiteLLM user with the matching email; investigate No key yet before calling setup complete."
+            body: "Select the people or teams who may use the provider. Model groups follow callable model sets: appearing in a proxy catalog does not itself authorize a request. In issued mode, each person must already have a LiteLLM user with the matching email. If the provider shows No key yet, add that person in LiteLLM and sync again."
           },
           {
             title: "Verify a member's model request",
-            body: "Sign into OpenWork or the OpenCode plugin and confirm a granted provider and model appear. In member mode, connect the virtual key once. The client subsequently uses its AI Gateway key, not the underlying LiteLLM key. Test a small synthetic prompt and inspect the request path; a visible model alone does not prove a completion.",
+            body: "Sign into OpenWork or the OpenCode plugin and confirm a granted provider and model appear. In member mode, connect the virtual key once. The client subsequently uses its AI Gateway key, not the underlying LiteLLM key. Send a short prompt to confirm the connection.",
             code: "OpenWork or OpenCode\n  → OpenWork AI Gateway (member identity and grants)\n  → LiteLLM (the selected mode's virtual key)\n  → configured model endpoint"
           },
           {
             title: "Check denied and revoked access",
-            body: "Verify wrong or revoked keys, a model the member cannot use, missing LiteLLM users in issued mode, and the selected budget authority. Inspect synthetic request witnesses without exposing credentials. Skill and tool requests use the separate MCP gateway; the inference diagram does not validate them."
+            body: "Check access with a member account, including a model they should not be able to use. In issued mode, check that their LiteLLM user exists. Model requests use the AI Gateway; skills and tool requests use the separate MCP gateway."
           },
           {
             title: "Sync deliberately",
-            body: "After changing models, users, teams, or keys in LiteLLM, select Sync models and read reported errors. If LiteLLM cannot be read, OpenWork can retain the last synced models. A cached catalog is not proof that the latest sync succeeded."
+            body: "After changing models, users, teams, or keys in LiteLLM, select Sync models and read reported errors. If LiteLLM cannot be read, OpenWork can retain the last synced models. If a sync fails, fix the reported error and sync again."
           }
         ]
       },
@@ -662,16 +662,7 @@ export const guides: Guide[] = [
         heading: "Compare costs without counting inference twice",
         paragraphs: [
           "Evaluate incremental workspace costs, upstream inference, proxy hosting, database costs, and operational effort separately. Do not add both gateways' displayed estimates as though they were separate model invoices for the same request.",
-          "Check current plan and pricing documents for your deployment. This guide does not establish measured savings, model quality, or billing accuracy. A deterministic response can validate plumbing, not the quality or cost of real model work."
-        ]
-      },
-      {
-        id: "validation-boundaries",
-        heading: "What we verified—and what we haven't",
-        paragraphs: [
-          "On October 11, 2026, the native OpenCode sign-in/MCP connection journey and LiteLLM preview UI journey each passed on Daytona: two tests passed, with no failures or skips. The preview test checked catalog recovery, preview access and the setup form; it did not save a LiteLLM provider or send inference through it.",
-          "The broader provider-contract run was blocked by sandbox provisioning, so this is not an end-to-end real-proxy verdict. The repository's native provider-contract spec uses a LiteLLM-compatible fake, not a production LiteLLM service. No live model quality, savings or billing-accuracy result is claimed here.",
-          "Before relying on this setup, validate your real proxy version, credentials, model completion, access-denial cases, and budgets in the chosen key mode. Published-plugin sign-in, real inference, and approved tool execution are separate checkpoints; this guide does not claim they have all passed end to end."
+          "Compare the cost of adding a workspace to your existing proxy with the cost of replacing infrastructure. Check current plan prices and your model provider's rates."
         ]
       }
     ],
@@ -700,7 +691,7 @@ export const guides: Guide[] = [
       },
       {
         question: "Does connecting models also connect skills and tools?",
-        answer: "Model inference uses the AI Gateway. Skills and tools use the separate MCP gateway. The OpenCode plugin joins granted models and connections through one sign-in, but each path needs its own verification."
+        answer: "Model inference uses the AI Gateway. Skills and tools use the separate MCP gateway. The OpenCode plugin brings granted models, skills and connections into OpenCode through one sign-in."
       }
     ],
     cta: {

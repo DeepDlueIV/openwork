@@ -1,0 +1,41 @@
+---
+title: "Integrations"
+description: "Use OpenWork Connect in your existing AI client through MCP or a specialized client plugin."
+---
+
+OpenWork Connect is an AI Gateway, MCP Gateway, and Skills Gateway that lets organizations centrally manage models, tools, reusable skills, and access from one admin panel.
+
+You do not have to use the OpenWork desktop app to access your organization's resources. Connect the AI client you already use.
+
+## Two ways to connect
+
+<CardGroup cols={2}>
+  <Card title="MCP integration" icon="plug" href="/integrations/mcp">
+    Use shared skills and connected tools from any compatible MCP client. Add one URL and sign in with your OpenWork account.
+  </Card>
+  <Card title="Specialized client plugins" icon="terminal" href="/integrations/client-plugins">
+    Bring organization models into the client alongside MCP tools and skills. The OpenCode plugin is ready; Cursor and Codex integrations are in progress.
+  </Card>
+</CardGroup>
+
+## What each gateway provides
+
+| Gateway | What your organization manages | How your client uses it |
+| --- | --- | --- |
+| AI Gateway | Approved models, provider credentials, usage, and supported spend limits | Model requests go through the AI Gateway |
+| MCP Gateway | Shared service connections and tool access | Your agent discovers and calls authorized tools |
+| Skills Gateway | Reusable skills assigned to people and teams | Your agent retrieves the skills it can use through OpenWork MCP |
+
+MCP carries tools and skills, not model inference. A specialized client plugin can connect both paths through one sign-in.
+
+## Client availability
+
+| Client | MCP integration | Specialized integration |
+| --- | --- | --- |
+| OpenCode | [Available](/model-context-protocol/opencode) | **Ready:** [install `opencode-openwork`](/model-context-protocol/opencode-plugin) |
+| Cursor | [Available](/model-context-protocol/cursor) | **In progress** |
+| Codex | [Available](/model-context-protocol/codex) | **In progress** |
+| Claude Code | [Available](/model-context-protocol/claude-code) | Use MCP |
+| Other compatible clients | [MCP setup guides](/start-here/connect-openwork-mcp) | Depends on the client |
+
+An integration uses the signed-in member's organization access. It does not grant additional models, skills, or connections just because it is installed.

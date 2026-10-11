@@ -6,6 +6,23 @@ description: "Install the opencode-openwork plugin in OpenCode 2 and sign in onc
 
 The OpenWork plugin for OpenCode 2 brings your organization's AI Gateway models and OpenWork MCP into a plain OpenCode install. You sign in once; OpenCode loads them every time it starts.
 
+The [`opencode-openwork`](https://www.npmjs.com/package/opencode-openwork) package is published and ready to install. You do not need the OpenWork desktop app.
+
+## Requirements
+
+- OpenCode 2 with the integration, provider, and MCP plugin APIs. The plugin is tested with 2.0.26; OpenCode 1 is not supported.
+- An OpenWork account and organization membership. An admin grants the models, skills, and connections you can use.
+
+Check your installed version first:
+
+```sh
+opencode --version
+```
+
+Installing the plugin does not install or upgrade OpenCode.
+
+## Install and sign in
+
 <Steps>
 <Step title="Install the plugin">
 
@@ -28,6 +45,7 @@ On SSH or a machine without a browser, use `opencode auth login openwork --metho
 <Step title="Check what you got">
 
 ```sh
+opencode auth list
 opencode models | grep ipr_
 opencode mcp list
 ```
@@ -77,3 +95,9 @@ Add OpenWork MCP to OpenCode directly: [Connect OpenCode](/model-context-protoco
 
   </Accordion>
 </AccordionGroup>
+
+## Related integrations
+
+- [Integrations overview](/integrations/overview)
+- [How the MCP integration works across clients](/integrations/mcp)
+- [Specialized plugins: OpenCode ready, Cursor and Codex in progress](/integrations/client-plugins)

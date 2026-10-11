@@ -1,0 +1,37 @@
+---
+title: "Specialized client plugins"
+description: "The OpenCode plugin brings OpenWork AI Gateway models and MCP resources into one client. Cursor and Codex integrations are in progress."
+---
+
+Specialized integrations connect your client's model picker to the OpenWork AI Gateway while also loading organization tools and skills through the MCP gateway.
+
+An [MCP connection](/integrations/mcp) alone provides tools and skills. A specialized integration also loads the AI Gateway models your organization grants you, so you do not have to configure the two separately.
+
+## OpenCode — ready
+
+The published [`opencode-openwork`](https://www.npmjs.com/package/opencode-openwork) plugin is available for OpenCode 2. No OpenWork desktop app is required.
+
+```sh
+opencode plugin add opencode-openwork
+opencode auth login openwork
+```
+
+Choose **Browser**, sign in, select your organization, and approve the matching code. OpenCode loads your granted AI Gateway models and OpenWork MCP resources on startup.
+
+[Follow the complete OpenCode plugin guide](/model-context-protocol/opencode-plugin) for requirements, model and MCP checks, self-hosted options, and signing out.
+
+## Cursor — in progress
+
+We are working on a specialized Cursor integration for organization AI Gateway models alongside MCP resources. It is not available yet.
+
+You can already use the MCP gateway for skills and connected tools: [connect Cursor to OpenWork MCP](/model-context-protocol/cursor).
+
+## Codex — in progress
+
+We are working on a specialized Codex integration for organization AI Gateway models alongside MCP resources. It is not available yet.
+
+You can already use the MCP gateway for skills and connected tools: [connect Codex to OpenWork MCP](/model-context-protocol/codex).
+
+## Other clients
+
+Use [MCP integration](/integrations/mcp) with any compatible client. The client continues to use its own configured model provider unless a specialized integration connects the AI Gateway too.

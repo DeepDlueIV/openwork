@@ -118,6 +118,20 @@
         ]
       },
       {
+        "tab": "Integrations",
+        "pages": [
+          "integrations/overview",
+          "integrations/mcp",
+          "integrations/client-plugins",
+          {
+            "group": "OpenCode — ready",
+            "pages": [
+              "model-context-protocol/opencode-plugin"
+            ]
+          }
+        ]
+      },
+      {
         "tab": "Slack",
         "pages": [
           {
@@ -178,7 +192,6 @@
             "group": "Connect a client",
             "pages": [
               "model-context-protocol/opencode",
-              "model-context-protocol/opencode-plugin",
               "model-context-protocol/claude-code",
               "model-context-protocol/codex",
               "model-context-protocol/claude-desktop",

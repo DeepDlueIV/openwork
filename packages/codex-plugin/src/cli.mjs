@@ -41,7 +41,7 @@ export async function main(args = process.argv.slice(2)) {
     const { installPlugin } = await import("../scripts/install.mjs")
     print(await installPlugin())
   } else if (command === "help") {
-    console.log(`OpenWork Codex local prototype\n\n  login [--api URL] [--org ID]\n  doctor [--directory FOLDER] [--source-thread THREAD_ID]\n  enable --directory FOLDER --confirm [--source-thread THREAD_ID] [--label NAME]\n  run\n  status\n  disable\n  logout\n  install\n\nCURRENT LIMIT: new GUI-chat creation is unverified; remote enrollment fails closed.\nLogin and the read-only doctor are usable. Existing Codex approvals stay in the GUI.\nOnce creation is verified: use remote-session:targets and its exact Codex computerId.`)
+    console.log(`OpenWork Codex local prototype\n\n  login [--api URL] [--org ID]\n  doctor [--directory FOLDER] [--source-thread THREAD_ID]\n  enable --directory FOLDER --confirm [--source-thread THREAD_ID] [--label NAME]\n  run\n  status\n  disable\n  logout\n  install\n\nNative creation requires the installed GUI plugin's genuine coordinator loop.\nTerminal login/status/doctor do not substitute for GUI enrollment or creation.\nLive installed-plugin verification is still required. Native approvals stay in Codex.\nFrom OpenCode use remote-session:targets and the exact Codex computerId.`)
   } else throw new Error("Unknown command. Use help.")
 }
 

@@ -5,6 +5,7 @@ import { chmod, lstat, mkdir, open, rename, rm } from "node:fs/promises"
 import { normalizeApiBaseUrl } from "./auth.mjs"
 
 const MAX_STATE_BYTES = 1024 * 1024
+const stateLimit = name => /^journal-[a-f0-9]{32}\.json$/.test(name) ? 32 * 1024 * 1024 : MAX_STATE_BYTES
 const isRecord = (value) => value !== null && typeof value === "object" && !Array.isArray(value)
 
 export function defaultStateDirectory() {
@@ -69,9 +70,9 @@ async function readState(name, directory = defaultStateDirectory()) {
   const handle = await open(file, "r")
   try {
     const opened = await handle.stat()
-    if (opened.ino !== info.ino || opened.dev !== info.dev || opened.size > MAX_STATE_BYTES) throw new Error("OpenWork state file changed or exceeded the size limit.")
+    if (opened.ino !== info.ino || opened.dev !== info.dev || opened.size > stateLimit(name)) throw new Error("OpenWork state file changed or exceeded the size limit.")
     const text = await handle.readFile("utf8")
-    if (Buffer.byteLength(text) > MAX_STATE_BYTES) throw new Error("OpenWork state exceeded the size limit.")
+    if (Buffer.byteLength(text) > stateLimit(name)) throw new Error("OpenWork state exceeded the size limit.")
     try { return JSON.parse(text) } catch { throw new Error("OpenWork state contains invalid JSON.") }
   } finally { await handle.close() }
 }
@@ -79,7 +80,7 @@ async function readState(name, directory = defaultStateDirectory()) {
 async function writeState(name, value, directory = defaultStateDirectory()) {
   assertFileName(name)
   const text = `${JSON.stringify(value, null, 2)}\n`
-  if (Buffer.byteLength(text) > MAX_STATE_BYTES) throw new Error("OpenWork state exceeded the size limit.")
+  if (Buffer.byteLength(text) > stateLimit(name)) throw new Error("OpenWork state exceeded the size limit.")
   const { path } = await secureDirectory(directory, true)
   const destination = join(path, name)
   const existing = await optionalStat(destination)

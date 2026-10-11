@@ -1,8 +1,8 @@
 {
   "name": "@openwork/codex-plugin",
-  "version": "0.1.0-local",
+  "version": "0.2.0-local",
   "private": true,
-  "description": "Internal local Codex prototype using OpenWork's existing remote-session runner.",
+  "description": "Local GUI coordinator prototype for receiving OpenWork tasks in native Codex chats.",
   "type": "module",
   "license": "MIT",
   "engines": { "node": ">=22" },

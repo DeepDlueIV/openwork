@@ -59,7 +59,7 @@ export async function installPlugin({ home = homedir(), installDirectory, source
   const manifest = JSON.parse(await readFile(join(source, "plugin.json"), "utf8"))
   if (manifest.name !== PLUGIN_NAME) throw new Error("Unexpected plugin source identity.")
   // Built runtime is mandatory: installed plugin cannot depend on repository imports.
-  for (const name of ["lib/index.mjs", "src/mcp.mjs", "src/cli.mjs", ".mcp.json", ".codex-plugin/plugin.json", "skills/setup/SKILL.md"]) {
+  for (const name of ["lib/index.mjs", "src/mcp.mjs", "src/cli.mjs", "scripts/launch-mcp.sh", ".mcp.json", ".codex-plugin/plugin.json", "skills/setup/SKILL.md"]) {
     if (!(await lstat(join(source, name))).isFile()) throw new Error(`Missing plugin runtime file: ${name}. Build the prototype first.`)
   }
   await assertSourceTree(source)
@@ -99,7 +99,7 @@ export async function installPlugin({ home = homedir(), installDirectory, source
     await mkdir(dirname(destination), { recursive: true, mode: 0o700 })
     await cp(source, staging, { recursive: true, filter: (path) => !["node_modules", ".git"].includes(path.split(sep).at(-1)) })
     const mcp = JSON.parse(await readFile(join(staging, ".mcp.json"), "utf8"))
-    mcp.mcpServers[PLUGIN_NAME] = { command: process.execPath, args: [join(destination, "src", "mcp.mjs")] }
+    mcp.mcpServers[PLUGIN_NAME] = { ...mcp.mcpServers[PLUGIN_NAME], command: "/bin/sh", args: [join(destination, "scripts", "launch-mcp.sh"), join(destination, "src", "mcp.mjs")] }
     await writeFile(join(staging, ".mcp.json"), `${JSON.stringify(mcp, null, 2)}\n`, { mode: 0o600 })
     // Also provide the new portable format; no undocumented MCP path variable.
     await writeFile(join(staging, "mcp.json"), `${JSON.stringify({

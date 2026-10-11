@@ -18,6 +18,39 @@ test("MCP initialization and tool discovery require no sign-in or native effects
   assert.deepEqual(responses[1].result.tools, [{ name: "status" }])
 })
 
+test("provider tool-call metadata is forwarded separately from model arguments", async () => {
+  const input = new PassThrough(); const output = new PassThrough()
+  const calls = []
+  output.resume()
+  const metadata = { "x-codex-turn-metadata": "provider-context" }
+  const handlers = { initialize: async () => {}, close: async () => {}, call: async (...args) => { calls.push(args); return { ok: true } } }
+  const running = serve({ input, output, handlers })
+  input.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize" })}\n`)
+  input.write(`${JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "diagnose_native_context", arguments: {}, _meta: metadata } })}\n`)
+  input.end()
+  await running
+  assert.deepEqual(calls.map(call => call.slice(0, 3)), [["diagnose_native_context", {}, metadata]])
+  assert.equal(calls[0][3].signal.aborted, true)
+})
+
+test("MCP cancellation aborts the current native invocation before its context can be reused", async () => {
+  const input = new PassThrough(); const output = new PassThrough()
+  output.resume()
+  let actualSignal
+  const handlers = { initialize: async () => {}, close: async () => {}, call: async (_name, _args, _metadata, invocation) => {
+    actualSignal = invocation.signal
+    await new Promise(resolve => invocation.signal.addEventListener("abort", resolve, { once: true }))
+    return { cancelled: true }
+  } }
+  const running = serve({ input, output, handlers })
+  input.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "initialize" })}\n`)
+  input.write(`${JSON.stringify({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "wait_remote_task", arguments: {} } })}\n`)
+  input.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/cancelled", params: { requestId: 2 } })}\n`)
+  input.end()
+  await running
+  assert.equal(actualSignal.aborted, true)
+})
+
 test("explicit enrollment gates runner startup and rejects unexpected argument keys", async () => {
   const calls = []
   const handlers = createHandlers({ setup: {

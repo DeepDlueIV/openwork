@@ -90,6 +90,9 @@ export interface Inventory {
 export interface HarnessAdapter {
   /** Opt in only when deterministic ID creation AND metadata/ownership checks make replay safe. */
   readonly creation?: CreationMode
+  /** Omitted means separate send. Included create returns only after native creation AND the first prompt are accepted.
+   * Included idempotent creation must deduplicate the entire combined effect, not just the session ID. */
+  readonly creationPrompt?: "included"
   /** Defaults to idempotent; native ports without durable message-ID deduplication MUST opt into at_most_once. */
   readonly sendReplay?: SendReplayMode
   create(command: Command, signal: AbortSignal): Promise<Receipt>
@@ -109,12 +112,15 @@ export interface JournalStore { load(): Promise<Journal>; save(journal: Journal)
 export interface Turn {
   messageId: string
   baselineMessageCount: number | null
+  /** Observed running/waiting, or acceptance proven by combined creation of a fresh session's first turn. */
   seenActive: boolean
 }
 export interface CommandEntry {
   command: Command
   /** Creation capability is pinned at admission; upgrades must not reinterpret old ambiguous effects. */
   creation: CreationMode
+  /** Pinned at admission; absence always means separate send, even after adapter upgrades. */
+  creationPrompt?: "included"
   sendReplay: SendReplayMode
   intendedSessionId: string
   /** Durable logical clock includes rejected/dropped reports, not just acknowledged reports. */

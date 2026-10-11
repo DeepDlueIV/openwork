@@ -1,6 +1,6 @@
 {
   "name": "openwork-local",
-  "version": "0.1.0-local",
+  "version": "0.2.0-local",
   "description": "Internal local prototype: explicit Codex enrollment for OpenWork remote sessions.",
   "skills": "./skills/",
   "mcpServers": "./.mcp.json",
@@ -8,8 +8,8 @@
     "com.openai": { "onboardingSkill": "./skills/setup/SKILL.md" }
   },
   "interface": {
-    "displayName": "OpenWork Local Prototype",
-    "shortDescription": "Opt in to OpenWork remote sessions",
+    "displayName": "OpenWork Codex Receiver",
+    "shortDescription": "Receive tasks in native Codex chats",
     "developerName": "OpenWork",
     "category": "Productivity"
   }

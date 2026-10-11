@@ -212,13 +212,14 @@ export function parseJournal(value: unknown): Journal {
     version: 1,
     commands: array(v.commands, MAX_COMMAND_ENTRIES, value => {
       const e = object(value)
-      keys(e, ["command", "creation", "sendReplay", "intendedSessionId", "lastObservedAt", "phase", "receipt", "promptMessageId", "turn", "lastMessageId", "completion", "completionAcknowledged", "progress", "reportedProgress"])
+      keys(e, ["command", "creation", "creationPrompt", "sendReplay", "intendedSessionId", "lastObservedAt", "phase", "receipt", "promptMessageId", "turn", "lastMessageId", "completion", "completionAcknowledged", "progress", "reportedProgress"])
       if (e.phase !== "prepared" && e.phase !== "created" && e.phase !== "delivered" && e.phase !== "failed") return invalid()
       const command = parseCommand(e.command)
       // Pre-capability version-1 entries are always at-most-once; never infer replay safety from today's adapter.
       const legacyCreation = e.creation === undefined && e.intendedSessionId === undefined
       if (!legacyCreation && e.creation !== "idempotent" && e.creation !== "at_most_once") return invalid()
       const creation = e.creation === "idempotent" ? "idempotent" : "at_most_once"
+      if (e.creationPrompt !== undefined && e.creationPrompt !== "included") return invalid()
       if (e.sendReplay !== undefined && e.sendReplay !== "idempotent" && e.sendReplay !== "at_most_once") return invalid()
       const sendReplay = e.sendReplay === "idempotent" ? "idempotent" : "at_most_once" // Unlabelled dev journals never assume native send safety.
       const intendedSessionId = legacyCreation ? sessionIdForCommand(command.commandId) : text(e.intendedSessionId, 240)
@@ -248,7 +249,7 @@ export function parseJournal(value: unknown): Journal {
       if (e.phase === "created" && lastMessageId !== null && lastMessageId !== promptMessageId) return invalid()
       if (e.phase === "delivered" && command.prompt !== null && lastMessageId === null) return invalid()
       if ((progress || reportedProgress) && e.phase !== "delivered") return invalid()
-      return { command, creation, sendReplay, intendedSessionId, lastObservedAt, phase: e.phase, receipt, promptMessageId, turn, lastMessageId, completion,
+      return { command, creation, ...(e.creationPrompt === "included" ? { creationPrompt: e.creationPrompt } : {}), sendReplay, intendedSessionId, lastObservedAt, phase: e.phase, receipt, promptMessageId, turn, lastMessageId, completion,
         completionAcknowledged: acknowledged, progress, reportedProgress }
     }),
     requests: array(v.requests, MAX_REQUEST_ENTRIES, value => {

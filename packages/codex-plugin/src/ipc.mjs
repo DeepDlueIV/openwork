@@ -113,7 +113,9 @@ export function createIpcClient({ socketPath, timeoutMs = 5000, clientType = "op
       else entry.reject(new IpcError("invalid_response", { dispatched: entry.dispatched }))
     } else if (message.type === "broadcast") {
       if (message.targetClientIds && !message.targetClientIds.includes(clientId)) return
-      if (BROADCAST_VERSIONS[message.method] !== message.version) return
+      if (!Object.hasOwn(BROADCAST_VERSIONS, message.method)) return
+      // Consumers must see a known method's unexpected version so they can fail
+      // closed on schema changes, rather than mistaking it for a missing child.
       for (const listener of listeners) listener(message)
     }
   }

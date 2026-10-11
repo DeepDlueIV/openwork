@@ -13,16 +13,17 @@ export async function login({ apiBaseUrl = DEFAULT_API_BASE_URL, orgId, onAuthor
   return { signedIn: true, user: credential.user, organization: credential.organization, remoteSessions: false }
 }
 
-export async function enable({ directory, confirm = false, sourceThreadId, label, stateDirectory = defaultStateDirectory() } = {}) {
-  if (confirm !== true) throw new Error("Explicit confirmation is required to allow OpenWork to control Codex in this folder.")
+export async function enable({ directory, confirm = false, sourceThreadId, label, project, coordinatorThreadId, confirmNativeProjectScope = false, adapterFactory = nativeFactory, stateDirectory = defaultStateDirectory() } = {}) {
+  if (confirm !== true) throw new Error("Explicit confirmation is required to allow OpenWork to control Codex.")
+  if (project && confirmNativeProjectScope !== true) throw new Error("Explicitly approve native project scope, including its current and future roots. This is not a fixed-folder sandbox.")
   if (!directory || typeof directory !== "string") throw new Error("Choose one allowed local folder.")
   const canonical = await realpath(directory)
   if (!(await stat(canonical)).isDirectory()) throw new Error("The allowed folder must be a directory.")
   if (!await readCredentials(stateDirectory)) throw new Error("Sign in to OpenWork first.")
   const config = await readConfig(stateDirectory)
   const next = { ...config, installationId: config.installationId || randomUUID(), directory: canonical, remoteSessions: true,
-    ...(sourceThreadId ? { sourceThreadId } : {}), ...(label ? { label: String(label).slice(0, 120) } : {}) }
-  const adapter = await nativeFactory(next)
+    ...(sourceThreadId ? { sourceThreadId } : {}), ...(label ? { label: String(label).slice(0, 120) } : {}), ...(project ? { project } : {}), ...(coordinatorThreadId ? { coordinatorThreadId } : {}), nativeProjectScope: Boolean(project && confirmNativeProjectScope === true) }
+  const adapter = await adapterFactory(next)
   try {
     const diagnostic = await adapter.diagnose(AbortSignal.timeout(10_000))
     if (diagnostic.nativeCreation === false) throw new Error("Remote enrollment is not ready: this Codex build has no verified new-GUI-chat creation path. Sign-in and the read-only doctor work; no runner was registered or enabled.")

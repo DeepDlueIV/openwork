@@ -1,8 +1,8 @@
 import test from "node:test"
 import assert from "node:assert/strict"
-import { createCodexRunner } from "../src/runner.mjs"
+import { createCodexRunner, joinFlight, sessionRunnerIdentity } from "../src/runner.mjs"
 
-function fixture(overrides = {}) {
+function fixture(overrides = {}, runnerOptions = {}) {
   const now = 1_800_000_000_000
   let config = { apiBaseUrl: "https://den.example.test", token: "member-token", orgId: "org_test", userId: "usr_test", enabled: true, directory: "/approved", installationId: "install-test", expiresAt: now + 1000000, ...overrides }
   const calls = []; const native = []; const journals = new Map()
@@ -30,9 +30,27 @@ function fixture(overrides = {}) {
     else throw new Error(`Unexpected path: ${path}`)
     return Response.json(result)
   }
-  const runner = createCodexRunner({ account: async () => config, adapter, now: () => now, fetcher, journal: async identity => ({ load: async () => journals.get(identity), save: async value => journals.set(identity, structuredClone(value)) }) })
+  const runner = createCodexRunner({ ...runnerOptions, account: async () => config, adapter, now: () => now, fetcher, journal: async identity => ({ load: async () => journals.get(identity), save: async value => journals.set(identity, structuredClone(value)) }) })
   return { runner, adapter, calls, native, journals, setConfig: value => { config = { ...config, ...value } } }
 }
+
+test("joining a shared poll is cancellable without cancelling the original flight", async () => {
+  let finish
+  const flight = new Promise(resolve => { finish = resolve })
+  const controller = new AbortController()
+  const joined = joinFlight(flight, controller.signal)
+  controller.abort()
+  await assert.rejects(joined)
+  finish("original-poll-completed")
+  assert.equal(await flight, "original-poll-completed")
+})
+
+test("account, project and installation are independent ownership partitions", () => {
+  const base = { apiBaseUrl: "https://den.example.test", orgId: "org-a", userId: "user-a", installationId: "install-a", directory: "/approved", projectId: "project-a" }
+  const original = sessionRunnerIdentity(base)
+  for (const change of [{ userId: "user-b" }, { orgId: "org-b" }, { projectId: "project-b" }, { installationId: "install-b" }]) assert.notEqual(sessionRunnerIdentity({ ...base, ...change }), original)
+  assert.equal(sessionRunnerIdentity({ ...base, token: "rotated-token" }), original)
+})
 
 test("sign-in alone never registers or controls Codex", async () => {
   const f = fixture({ enabled: false })
@@ -65,6 +83,44 @@ test("uses durable existing create protocol and advertises no fabricated OpenCod
   assert.equal(f.native.filter(value => value === "create").length, 1)
   assert.equal(f.native.filter(value => value === "send").length, 1)
 })
+test("manual native creation only dispatches an offered command and includes its first prompt once", async () => {
+  const f = fixture({}, { creationDispatch: "manual" })
+  f.adapter.creationPrompt = "included"
+  await f.runner.poll()
+  assert.deepEqual(f.native, ["diagnose"])
+  assert.deepEqual(f.runner.pendingCreations(), ["rsc_test"])
+  assert.equal(f.calls.some(call => call.path.endsWith("/claim")), false)
+  await assert.rejects(f.runner.dispatchCreation("not-offered"), /creation_not_offered/)
+  const result = await f.runner.dispatchCreation("rsc_test")
+  assert.equal(result.status, "delivered")
+  assert.deepEqual(f.native, ["diagnose", "create"])
+  assert.deepEqual(f.runner.pendingCreations(), [])
+  assert.equal([...f.journals.values()][0].commands[0].creationPrompt, "included")
+})
+
+test("without an active coordinator, register control only and do not claim creates", async () => {
+  const f = fixture({}, { creationDispatch: "manual", canAcceptCreations: () => false })
+  await f.runner.poll()
+  const register = f.calls.find(call => call.path.endsWith("/token"))
+  assert.equal(register.body.capabilities.includes("remote_session_v1"), false)
+  assert.equal(register.body.capabilities.includes("remote_session_control_v1"), true)
+  assert.deepEqual(f.runner.pendingCreations(), [])
+  assert.equal(f.calls.some(call => call.path.endsWith("/claim")), false)
+  assert.deepEqual(f.native, ["diagnose"])
+})
+
+test("native creation unavailability does not poison a manual receiver's existing control capability", async () => {
+  const f = fixture({}, { creationDispatch: "manual" })
+  f.adapter.diagnose = async () => ({ connected: true, nativeCreation: false, requiresCoordinator: true })
+  await f.runner.poll()
+  const register = f.calls.find(call => call.path.endsWith("/token"))
+  assert.equal(register.body.capabilities.includes("remote_session_v1"), false)
+  assert.equal(register.body.capabilities.includes("remote_session_control_v1"), true)
+  assert.equal(f.calls.some(call => call.path.endsWith("/work")), true)
+  assert.equal(f.runner.inspectStatus().nativeCreationReady, false)
+  assert.deepEqual(f.runner.pendingCreations(), [])
+})
+
 test("changed member identity fails before native discovery and registration", async () => {
   const f = fixture({ userId: "usr_other" })
   await assert.rejects(f.runner.poll(), /identity_changed/)

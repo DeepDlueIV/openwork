@@ -5,13 +5,29 @@ import { createRemoteSessionTransport, createSessionRunner, parseJournal, emptyJ
 const CAPABILITIES = ["remote_session_v1", "remote_session_control_v1", "remote_session_only_v1", "remote_session_recovery_v1"]
 const hash = value => createHash("sha256").update(value).digest("hex").slice(0, 32)
 const record = value => value !== null && typeof value === "object" && !Array.isArray(value)
+export function sessionRunnerIdentity(credentials) {
+  return hash(JSON.stringify([credentials.apiBaseUrl, credentials.orgId, credentials.userId, credentials.installationId, credentials.directory, credentials.projectId ?? null]))
+}
+
+export function joinFlight(promise, signal) {
+  signal.throwIfAborted()
+  return new Promise((resolve, reject) => {
+    const finish = (fn, value) => { signal.removeEventListener("abort", abort); fn(value) }
+    const abort = () => finish(reject, signal.reason)
+    signal.addEventListener("abort", abort, { once: true })
+    promise.then(value => finish(resolve, value), error => finish(reject, error))
+    if (signal.aborted) abort()
+  })
+}
 
 /** Native effects, journal and transport use the existing OpenWork runner, not a new inbox. */
-export function createCodexRunner({ account, adapter, journal, fetcher = fetch, now = Date.now, label = `Codex · ${hostname()}`, platform = process.platform }) {
+export function createCodexRunner({ account, adapter, journal, fetcher = fetch, now = Date.now, label = `Codex · ${hostname()}`, platform = process.platform, creationDispatch = "automatic", canAcceptCreations = () => true }) {
   let active = null
   let flight = null
   let closed = false
   let status = { state: "waiting", phase: "opt_in", error: null }
+  let pendingCreations = []
+  let nativeCreationReady = false
   const update = (state, phase, error = null) => { status = { state, phase, error } }
   async function json(credentials, path, method = "GET", body, signal) {
     const url = new URL(credentials.apiBaseUrl)
@@ -38,6 +54,7 @@ export function createCodexRunner({ account, adapter, journal, fetcher = fetch, 
   }
   async function cycle(signal) {
     if (closed) return
+    pendingCreations = []
     const credentials = await account()
     if (!credentials?.enabled) { active = null; update("waiting", "opt_in"); return }
     if (!credentials.token || !credentials.orgId || !credentials.userId || !credentials.installationId || !credentials.directory || credentials.expiresAt <= now()) { active = null; update("waiting", "sign_in"); return }
@@ -46,7 +63,7 @@ export function createCodexRunner({ account, adapter, journal, fetcher = fetch, 
     // Verify every replacement member token before registration or native effects.
     const me = await json(credentials, "/v1/me", "GET", undefined, signal)
     if (!record(me) || !record(me.user) || me.user.id !== credentials.userId) { active = null; throw new Error("identity_changed") }
-    const identity = hash(JSON.stringify([credentials.apiBaseUrl, credentials.orgId, credentials.userId, credentials.installationId, credentials.directory]))
+    const identity = sessionRunnerIdentity(credentials)
     if (!active || active.identity !== identity) {
       active = null
       const token = { value: null, expiresAt: 0 }
@@ -56,24 +73,29 @@ export function createCodexRunner({ account, adapter, journal, fetcher = fetch, 
         save: value => store.save(value),
       }, transport: createRemoteSessionTransport({ baseUrl: credentials.apiBaseUrl, token: () => closed || token.expiresAt <= now() ? null : token.value, fetch: fetcher }), now })
       await runner.inspect()
-      active = { identity, token, runner, registeredAt: 0, inventoryAt: 0, runnerId: `codex_runner_${identity}` }
+      active = { identity, token, runner, registeredAt: 0, inventoryAt: 0, capabilityKey: null, apiBaseUrl: credentials.apiBaseUrl, runnerId: `codex_runner_${identity}` }
     }
     const state = active
     // Probe the actual GUI before advertising presence or claiming commands.
     update("connecting", "codex")
+    nativeCreationReady = true
     if (adapter.diagnose) {
       const diagnostic = await adapter.diagnose(signal)
-      if (diagnostic?.nativeCreation === false) throw new Error("native_creation_unavailable")
+      nativeCreationReady = diagnostic?.nativeCreation !== false
+      if (!nativeCreationReady && creationDispatch !== "manual") throw new Error("native_creation_unavailable")
     }
-    if (!state.token.value || state.token.expiresAt <= now() + 120_000 || now() - state.registeredAt >= 30 * 60_000) {
+    const creationAvailable = nativeCreationReady && canAcceptCreations()
+    const capabilities = creationAvailable ? CAPABILITIES : CAPABILITIES.filter(value => value !== "remote_session_v1")
+    const capabilityKey = capabilities.join(",")
+    if (!state.token.value || state.token.expiresAt <= now() + 120_000 || now() - state.registeredAt >= 30 * 60_000 || state.capabilityKey !== capabilityKey) {
       update("connecting", "registration")
       const result = await json(credentials, "/v1/session-runners/token", "POST", {
-        runnerId: state.runnerId, protocolVersion: 1, supportedExecutionTargets: ["desktop"], capabilities: CAPABILITIES,
-        platform, appVersion: "codex-openwork-local/0.1.0", concurrency: 1,
+        runnerId: state.runnerId, protocolVersion: 1, supportedExecutionTargets: ["desktop"], capabilities,
+        platform, appVersion: "codex-openwork-local/0.2.0", concurrency: 1,
       }, signal)
       if (!record(result) || typeof result.token !== "string" || result.token.length < 32 || /[\r\n]/.test(result.token) || !Number.isFinite(result.expiresAt) || result.expiresAt <= now()) throw new Error("invalid_registration")
       state.token.value = result.token; state.token.expiresAt = Math.min(result.expiresAt, credentials.expiresAt)
-      state.registeredAt = now(); state.inventoryAt = 0
+      state.registeredAt = now(); state.inventoryAt = 0; state.capabilityKey = capabilityKey
     }
     const runnerCredentials = { ...credentials, token: state.token.value }
     if (!state.inventoryAt || now() - state.inventoryAt >= 60_000) {
@@ -81,7 +103,7 @@ export function createCodexRunner({ account, adapter, journal, fetcher = fetch, 
       // Codex COMPUTER honestly, with no fabricated engine/workspace/model inventory.
       // Existing computerId-only routing explicitly accepts an empty workspace list.
       const published = await json(runnerCredentials, "/v1/session-runners/inventory", "PUT", {
-        computer: { label: label.slice(0, 120), platform, appVersion: "codex-openwork-local/0.1.0" }, workspaces: [],
+        computer: { label: label.slice(0, 120), platform, appVersion: "codex-openwork-local/0.2.0" }, workspaces: [],
       }, signal)
       if (!record(published) || published.ok !== true) throw new Error("invalid_inventory")
       state.inventoryAt = now()
@@ -96,7 +118,11 @@ export function createCodexRunner({ account, adapter, journal, fetcher = fetch, 
       signal.throwIfAborted()
       if (!record(item)) throw new Error("invalid_work")
       try {
-        if (item.kind === "remote_session_create" && typeof item.commandId === "string") await state.runner.accept(await transport.claimCommand(item.commandId, signal), signal)
+        if (item.kind === "remote_session_create" && typeof item.commandId === "string") {
+          if (!creationAvailable) continue
+          if (creationDispatch === "manual") pendingCreations.push(item.commandId)
+          else await state.runner.accept(await transport.claimCommand(item.commandId, signal), signal)
+        }
         else if (item.kind === "remote_session_request" && typeof item.requestId === "string") await state.runner.execute(await transport.claimRequest(item.requestId, signal), signal)
         else throw new Error("unexpected_work_kind")
       } catch (error) { if (!(error instanceof RemoteSessionHttpError && error.status === 409)) throw error }
@@ -108,15 +134,31 @@ export function createCodexRunner({ account, adapter, journal, fetcher = fetch, 
     update("connected", "work")
   }
   return {
-    inspectStatus: () => ({ ...status }),
+    inspectStatus: () => ({ ...status, nativeCreationReady, awaitingNativeDispatch: pendingCreations.length }),
+    pendingCreations: () => [...pendingCreations],
+    async dispatchCreation(commandId, signal = AbortSignal.timeout(60_000)) {
+      if (creationDispatch !== "manual" || !nativeCreationReady || !canAcceptCreations() || !pendingCreations.includes(commandId) || !active) throw new Error("creation_not_offered")
+      const state = active
+      const credentials = await account()
+      const identity = credentials && sessionRunnerIdentity(credentials)
+      if (!credentials?.enabled || credentials.expiresAt <= now() || identity !== state.identity || state.token.expiresAt <= now()) throw new Error("identity_changed")
+      // Revalidate member authority before this native effect, even between polling cycles.
+      const me = await json(credentials, "/v1/me", "GET", undefined, signal)
+      if (!record(me) || !record(me.user) || me.user.id !== credentials.userId) throw new Error("identity_changed")
+      const transport = createRemoteSessionTransport({ baseUrl: state.apiBaseUrl, token: () => closed || state.token.expiresAt <= now() ? null : state.token.value, fetch: fetcher })
+      const command = await transport.claimCommand(commandId, signal)
+      const completion = await state.runner.accept(command, signal)
+      pendingCreations = pendingCreations.filter(id => id !== commandId)
+      return completion
+    },
     async poll(signal = AbortSignal.timeout(60_000)) {
-      if (flight) return flight
+      if (flight) return joinFlight(flight, signal)
       flight = cycle(signal).catch(error => {
         // Never persist/log provider errors, tokens or prompts in health output.
         update("retrying", status.phase, error instanceof RemoteSessionHttpError ? `http_${error.status}` : error.message === "native_creation_unavailable" ? "native_creation_unavailable" : "runner_unavailable")
         throw error
       }).finally(() => { flight = null })
-      return flight
+      return joinFlight(flight, signal)
     },
     async run(signal) {
       while (!closed && !signal.aborted) {

@@ -297,12 +297,13 @@ function parseJournal(value) {
     version: 1,
     commands: array(v.commands, MAX_COMMAND_ENTRIES, (value2) => {
       const e = object(value2);
-      keys(e, ["command", "creation", "sendReplay", "intendedSessionId", "lastObservedAt", "phase", "receipt", "promptMessageId", "turn", "lastMessageId", "completion", "completionAcknowledged", "progress", "reportedProgress"]);
+      keys(e, ["command", "creation", "creationPrompt", "sendReplay", "intendedSessionId", "lastObservedAt", "phase", "receipt", "promptMessageId", "turn", "lastMessageId", "completion", "completionAcknowledged", "progress", "reportedProgress"]);
       if (e.phase !== "prepared" && e.phase !== "created" && e.phase !== "delivered" && e.phase !== "failed") return invalid();
       const command = parseCommand(e.command);
       const legacyCreation = e.creation === void 0 && e.intendedSessionId === void 0;
       if (!legacyCreation && e.creation !== "idempotent" && e.creation !== "at_most_once") return invalid();
       const creation = e.creation === "idempotent" ? "idempotent" : "at_most_once";
+      if (e.creationPrompt !== void 0 && e.creationPrompt !== "included") return invalid();
       if (e.sendReplay !== void 0 && e.sendReplay !== "idempotent" && e.sendReplay !== "at_most_once") return invalid();
       const sendReplay = e.sendReplay === "idempotent" ? "idempotent" : "at_most_once";
       const intendedSessionId = legacyCreation ? sessionIdForCommand(command.commandId) : text(e.intendedSessionId, 240);
@@ -333,6 +334,7 @@ function parseJournal(value) {
       return {
         command,
         creation,
+        ...e.creationPrompt === "included" ? { creationPrompt: e.creationPrompt } : {},
         sendReplay,
         intendedSessionId,
         lastObservedAt,
@@ -438,7 +440,9 @@ function createSessionRunner(options) {
   const timeoutMs = integer(options.operationTimeoutMs ?? DEFAULT_OPERATION_TIMEOUT_MS, 1, 12e4);
   const creation = adapter.creation ?? "at_most_once";
   if (creation !== "idempotent" && creation !== "at_most_once") throw new SessionRunnerError("invalid_data", "Invalid adapter creation capability.");
-  const canReplayCreation = (entry) => entry.creation === "idempotent" && creation === "idempotent";
+  const creationPrompt = adapter.creationPrompt;
+  if (creationPrompt !== void 0 && creationPrompt !== "included") throw new SessionRunnerError("invalid_data", "Invalid adapter creation prompt capability.");
+  const canReplayCreation = (entry) => entry.creation === "idempotent" && creation === "idempotent" && entry.creationPrompt === creationPrompt;
   const sendReplay = adapter.sendReplay ?? "idempotent";
   if (sendReplay !== "idempotent" && sendReplay !== "at_most_once") throw new SessionRunnerError("invalid_data", "Invalid adapter send replay capability.");
   const canReplaySend = (entry) => entry.sendReplay === "idempotent" && sendReplay === "idempotent";
@@ -559,6 +563,12 @@ function createSessionRunner(options) {
       return;
     }
     try {
+      if (entry.creationPrompt !== creationPrompt) {
+        throw new SessionRunnerError("creation_prompt_changed", "The adapter's creation prompt capability changed. Restore the original adapter before creating this session.");
+      }
+      if (entry.creationPrompt === "included" && !entry.command.prompt?.trim()) {
+        throw new SessionRunnerError("prompt_required", "This native harness requires a nonblank initial prompt when creating a session.");
+      }
       const receipt = parseReceipt(await local(signal, (s) => adapter.create(structuredClone(entry.command), s)));
       if (entry.command.workspaceId && receipt.workspaceId !== entry.command.workspaceId) {
         throw new SessionRunnerError("invalid_data", "The adapter created a session in a different workspace.");
@@ -566,7 +576,17 @@ function createSessionRunner(options) {
       if (entry.creation === "idempotent" && receipt.sessionId !== entry.intendedSessionId) {
         throw new SessionRunnerError("invalid_data", "Idempotent creation must return the journal's deterministic session ID.");
       }
-      await saveCommand({ ...command(id), phase: "created", receipt });
+      if (entry.creationPrompt === "included") {
+        const messageId2 = stableMessageId(entry.command.commandId);
+        await saveCommand({
+          ...command(id),
+          phase: "delivered",
+          receipt,
+          turn: { messageId: messageId2, baselineMessageCount: 0, seenActive: true },
+          lastMessageId: messageId2,
+          completion: { status: "delivered", sessionId: receipt.sessionId, workspaceId: receipt.workspaceId }
+        });
+      } else await saveCommand({ ...command(id), phase: "created", receipt });
     } catch (error) {
       if (signal.aborted) throw error;
       const proven = definitive(error);
@@ -767,6 +787,7 @@ function createSessionRunner(options) {
           await persist({ ...state(), commands: [...state().commands, {
             command: value,
             creation,
+            ...creationPrompt === "included" ? { creationPrompt } : {},
             sendReplay,
             intendedSessionId: sessionIdForCommand(value.commandId),
             lastObservedAt: null,

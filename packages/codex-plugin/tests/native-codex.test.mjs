@@ -137,7 +137,7 @@ test("old answer never becomes latest turn finalText; unknown snapshot version f
   f.state.turns.push({ ...completed("message-2"), items: [] })
   assert.equal((await f.adapter.observe(receipt, signal())).finalText, undefined)
   f.snapshotVersion = 12
-  await assert.rejects(f.adapter.observe(receipt, signal()), { code: "native_snapshot_unavailable" })
+  await assert.rejects(f.adapter.observe(receipt, signal()), { code: "native_schema_mismatch" })
 })
 test("explicit runtime enrollment requires confirmation and is not persisted by adapter", async t => {
   const f = await fixture(t, { unenrolled: true })

@@ -80,7 +80,8 @@ async function pluginFixture(root) {
     "lib/index.mjs": "export const test = true\n",
     "src/mcp.mjs": "// runtime\n",
     "src/cli.mjs": "// CLI\n",
-    ".mcp.json": JSON.stringify({ mcpServers: { "openwork-local": { command: "node", args: ["./src/mcp.mjs"] } } }),
+    ".mcp.json": JSON.stringify({ mcpServers: { "openwork-local": { command: "/bin/sh", args: ["./scripts/launch-mcp.sh", "./src/mcp.mjs"], env_vars: ["CODEX_APP_TOOLS_PIPE_PATH", "CODEX_MCP_NODE_PATH"] } } }),
+    "scripts/launch-mcp.sh": "#!/bin/sh\nexec node \"$@\"\n",
     ".codex-plugin/plugin.json": JSON.stringify({ name: "openwork-local" }),
     "skills/setup/SKILL.md": "# Setup\n",
     "scripts/helper.mjs": "// helper\n",
@@ -118,7 +119,7 @@ test("installer preserves marketplace identity and all existing entries, rewrite
   assert.equal(updated.plugins[1].policy.installation, "AVAILABLE")
   assert.equal(updated.plugins[1].source.path, "./.codex/plugins/openwork-local")
   const mcp = JSON.parse(await readFile(join(result.installDirectory, ".mcp.json"), "utf8"))
-  assert.deepEqual(mcp.mcpServers["openwork-local"], { command: process.execPath, args: [join(result.installDirectory, "src", "mcp.mjs")] })
+  assert.deepEqual(mcp.mcpServers["openwork-local"], { command: "/bin/sh", args: [join(result.installDirectory, "scripts", "launch-mcp.sh"), join(result.installDirectory, "src", "mcp.mjs")], env_vars: ["CODEX_APP_TOOLS_PIPE_PATH", "CODEX_MCP_NODE_PATH"] })
   assert.equal(JSON.parse(await readFile(join(result.installDirectory, "mcp.json"), "utf8")).mcpServers["openwork-local"].type, "stdio")
   assert.equal(await readFile(join(result.installDirectory, "scripts", "helper.mjs"), "utf8"), "// helper\n")
   const text = await readFile(marketplace, "utf8")

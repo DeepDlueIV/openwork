@@ -1,21 +1,22 @@
-# OpenWork for Codex — local prototype
+# OpenWork for Codex — local receiver prototype
 
-Installable, dependency-free Codex plugin in a separate development worktree. It packages OpenWork device-code sign-in, explicit remote enrollment, a native desktop IPC adapter, and the **existing** `@openwork/remote-sessions` journal/transport. It does not copy OpenAI credentials, spawn another Codex CLI/app-server, or create a second queue.
+This plugin connects a **dedicated Codex GUI coordinator chat** to OpenWork's existing remote-session queue. Each incoming task is created through Codex's own app tools as a real local GUI chat, with its initial prompt included once. Existing child chats are read, messaged, observed and stopped through the GUI-owned follower connection.
 
-## Current status — not full remote-session parity
+It does not spawn a separate Codex CLI/app-server, invent caller IDs, reuse a waiter's native call identity, or automatically approve native permissions.
 
-The desktop IPC connection and existing-thread owner/settings discovery were verified against the running macOS desktop build 155. Sending, observing, reading and guarded interruption use contracts extracted from that installed runtime and have mock tests; they still need an explicitly authorized live write test.
+## Verification status
 
-**New GUI-chat creation is not verified.** The follower socket does not expose the bundled app-tools `create_thread` operation. That operation requires a genuine executor context and an authorized native pipe; this prototype does not fabricate those or bypass peer authorization. Until a verified creation path is available, the runner **fails closed before registering or claiming remote commands**. Installing/signing in is not evidence that remote control works.
+The desktop follower connection was tested live on macOS build 155. Native project discovery/creation contracts and signed-process requirements were inspected in that installed runtime. Automated tests cover the bridge and durable runner.
 
-This limitation is intentional: an existing-thread bridge or a separate CLI session must not be advertised as full `remote-session:create/send/read/stop` support.
+**Full installed-plugin creation and end-to-end OpenCode → Codex → reply still require a human-approved live test.** Passing unit tests or seeing a pipe variable is not proof that native peer authorization or GUI creation works on your build. These are internal desktop APIs, not a public compatibility guarantee. Unknown schemas, missing genuine context and unsafe connections fail closed.
 
-## Install from the branch
+## Install or update
 
-Run these on the **same Mac as the Codex desktop app**, using Node 22 or newer. The branch includes the bundled runtime, so there is **no dependency install or build step**.
+Run on the same **Mac as the Codex desktop app**, with Node 22 or newer. The bundled runner is committed; **no dependency install or build is needed**.
+
+For a new clone:
 
 ```sh
-node --version
 git clone --single-branch --branch prototype/codex-remote-plugin \
   https://github.com/different-ai/openwork.git \
   "$HOME/openwork-codex-prototype"
@@ -23,63 +24,93 @@ node "$HOME/openwork-codex-prototype/packages/codex-plugin/scripts/install.mjs" 
 node "$HOME/openwork-codex-prototype/packages/codex-plugin/scripts/install.mjs"
 ```
 
-If the clone directory already exists, choose a different empty directory rather than overwriting it. If `node` is not on your terminal PATH on an Apple Silicon Mac, use `/opt/homebrew/bin/node` only if that executable is already installed.
-
-### Prompt to paste into Codex
-
-> Install the local OpenWork prototype from https://github.com/different-ai/openwork/tree/prototype/codex-remote-plugin. First read packages/codex-plugin/README.md. Clone this branch into a new directory outside my existing checkout; do not overwrite any files. It includes the bundled runtime, so do not install dependencies or rebuild it. Run the installer's dry-run, show me its destination and marketplace change, then run the installer with my approval. Do not restart Codex, sign me in, enable remote control, create chats, or send messages automatically. This version only has working sign-in and read-only diagnostics; full remote enrollment deliberately fails closed.
-
-From an existing checkout of this branch, the equivalent commands are:
+If that directory already exists, do not overwrite it. For an unmodified existing clone on this branch:
 
 ```sh
-node packages/codex-plugin/scripts/install.mjs --dry-run
-node packages/codex-plugin/scripts/install.mjs
+git -C "$HOME/openwork-codex-prototype" status --short
+git -C "$HOME/openwork-codex-prototype" pull --ff-only
+node "$HOME/openwork-codex-prototype/packages/codex-plugin/scripts/install.mjs" --dry-run
+node "$HOME/openwork-codex-prototype/packages/codex-plugin/scripts/install.mjs"
 ```
 
-The installer copies the package to `~/.codex/plugins/openwork-local`, adds one entry to your existing personal marketplace, and preserves other entries and its name. It refuses unfamiliar destinations. It does **not** enable the plugin, sign in, or allow remote control.
+Stop if your checkout contains work you need to preserve or pull cannot fast-forward. On Apple Silicon, `/opt/homebrew/bin/node` can replace `node` if already installed but absent from PATH.
 
-In Codex, restart when convenient, open Plugins, choose your personal marketplace and install **openwork-local**. The package includes the `setup` skill and local MCP tools. Do not restart Codex while an important turn is running.
+The installer copies to `~/.codex/plugins/openwork-local` and preserves your personal marketplace's name and existing entries. It does not enable the plugin, sign in, restart Codex, approve tools or start remote control.
 
-In a Codex conversation:
+In Codex, open **Plugins**, choose your personal marketplace, and install/enable **openwork-local**. After updating, refresh/reload the plugin and start a new chat. Only restart the app if refresh fails, when no important turn is running. The MCP launcher selects the runtime **Codex supplies** through its normal environment allowlist; it never disables signing/ancestry checks. A terminal substitute is not a native-context test.
 
-> Use the OpenWork local plugin to sign me in. Show me the browser approval link. Do not enable remote control yet.
+### Paste this installation prompt into Codex
 
-Approve the code in your browser, then ask it to check `sign_in_status` and `status`.
+> Install or update the local OpenWork receiver prototype from https://github.com/different-ai/openwork/tree/prototype/codex-remote-plugin. Read packages/codex-plugin/README.md first. Preserve any existing checkout changes and personal marketplace entries. No dependency install or build is needed. Show the installer dry-run before applying it. Do not restart Codex, approve tools, sign me in, enroll or create chats automatically.
 
-### Terminal alternative
+## Setup in a dedicated Codex coordinator chat
 
-Use the installed copy (on the same machine as the Codex desktop app):
+Do these in a new **desktop Codex** chat, not through a shell pretending to be the plugin:
+
+1. Call `diagnose_native_context`. It reports only presence booleans. Native pipe, thread/turn context and real call correlation must be present.
+2. In a **separate native tool invocation**, call `list_codex_projects`. Choose a saved **local** project. Discovery is read-only; it is not enrollment.
+3. Call `sign_in`, open its browser approval link and approve the code yourself. Check `sign_in_status`. This uses OpenWork's existing device-login client and may be labeled OpenWork CLI on the approval page. OpenAI credentials are not copied.
+4. Explicitly approve the project and call `enable_remote_sessions` with the discovered `projectId`, its initial `directory`, `confirm: true`, and **`confirmNativeProjectScope: true`**.
+5. Start the wait/create loop below in **that same coordinator chat**. Approval of this project is bound to the genuine chat identity; another chat cannot silently act as its coordinator.
+
+### Project scope is not a folder sandbox
+
+Codex's native creation API resolves a saved project's **current roots**, including additional roots and future changes made in Codex. It has no atomic expected-folder/version guard. Enrollment therefore explicitly authorizes that native **project resource**, not an immutable directory or a new filesystem sandbox. Native permissions/managed policy continue to control actions.
+
+Creation records the accepted native receipt before snapshot verification. Child controls stay disabled while verification is pending. Once verified, the child is pinned to its actual canonical root; later unexpected child-root changes are denied. Never claim that post-creation checking confines the initial prompt to the initially displayed folder.
+
+If you require fixed-folder confinement, **do not enroll** with this prototype.
+
+### Paste this receiver prompt after setup
+
+> Use openwork-local as this dedicated OpenWork receiver. Keep calling wait_remote_task until I stop you. When it returns task_available, call create_remote_task with exactly its commandId in a fresh, separate tool invocation, then wait again. Do not execute the task content in this coordinator; the new native GUI child chat receives the immutable queued prompt. Do not combine project discovery and creation in one Code Mode script, synthesize metadata, reuse caller IDs, run a terminal substitute, or approve permissions yourself. If a wait returns waiting, wait again. On errors, stop and report them; do not retry uncertain creation under a new command ID.
+
+**Keep the coordinator running.** A background daemon cannot create new GUI chats using stale caller context. The plugin advertises creation while a genuine coordinator wait/create operation is active; when that stops, it withdraws creation capability while retaining control of already-owned children. If the model finishes instead of waiting, resume the receiver prompt. Native tool approval may require your action; review it yourself.
+
+## Test from OpenCode
+
+Once the receiver is waiting and the existing `remoteSessionTargets` organization feature is enabled:
+
+> Find my registered remote-session targets. Select the entry labeled Codex, not OpenWork, using its exact computerId. Create a task titled “OpenWork smoke test” with prompt “Reply exactly OPENWORK_CODEX_OK. Do not use tools or access files.” Use target registered, without workspace or model overrides. Read its commandId until delivered, then read the returned native session and report its reply. Do not blindly retry an uncertain creation.
+
+Successful proof requires **both** the reply and a real new chat visible in Codex. A native RPC success, mocked test, or separate CLI session is insufficient.
+
+Use `remote-session:send/read/stop` with the delivered receipt for followups. New-task creation includes the first prompt; it is not sent twice. Model/thinking overrides, worktrees, cloud targets, projectless targets and empty-prompt creation are not supported in this pilot. Choose native model settings in Codex.
+
+Codex and OpenWork on one machine have separate runner identities/computerIds. The default Codex label is `Codex · <hostname>`. Released inventories only recognize OpenCode v1/v2, so this prototype honestly reports a Codex **computer with no workspace/model inventory**, rather than pretending to be either engine.
+
+## Stop, recover and troubleshoot
+
+- `disable_remote_sessions` stops receiver control without deleting/interfering with native chats.
+- `sign_out` additionally removes the local OpenWork credential, not the OpenAI login.
+- Credential/account/project changes stop the pinned host; token renewal within the same identity does not erase journals.
+- Lost acknowledgements replay receipts, not model/tool effects. Unknown creation is inspected, never blindly repeated. Known accepted-but-unverified children retain private ownership records and can verify later without creating again.
+- A temporarily unavailable historical child does not block healthy-child controls or new work. Unknown observed schemas and authority inconsistencies still fail closed.
+- Missing context/peer authorization: run the installed plugin in the GUI, not a terminal, check the presence diagnostic and supplied runtime, and report the safe error code. Never hardcode pipe values, alter signatures or use debug authorization bypasses.
+- No target: ensure the coordinator is waiting and ask your organization admin to enable the existing `remoteSessionTargets` feature. Do not reconnect unrelated connections or invent credentials.
+- Another coordinator owns the receiver: close/disable it before starting a second. A crash can leave `runner.lock`; verify its PID is no longer running and close all receivers before removing that lock. Never remove journals/native ownership records to force a replay.
+- Storage/claim limits intentionally apply backpressure; inspect rather than deleting idempotency history.
+
+Credentials, config and journals use owner-only files outside Git at `~/.openwork/codex-plugin`; `OPENWORK_CODEX_STATE_DIR` can change that location. These are protected local files, not a claim of Keychain encryption. Native Windows ACL enforcement is not implemented; the verified prototype is macOS.
+
+Terminal setup/diagnostics remain available:
 
 ```sh
 node ~/.codex/plugins/openwork-local/src/cli.mjs login
 node ~/.codex/plugins/openwork-local/src/cli.mjs status
-node ~/.codex/plugins/openwork-local/src/cli.mjs doctor --directory /absolute/project/path --source-thread YOUR_NATIVE_THREAD_UUID
+node ~/.codex/plugins/openwork-local/src/cli.mjs doctor --directory /absolute/project/path --source-thread NATIVE_THREAD_UUID
 ```
 
-Copy a chat deep link from Codex to obtain its technical native thread UUID. The diagnostic only discovers its owner and lists settings key names; it does not read/print prompts, send messages, enroll the thread or change its settings.
+Do not use terminal `enable`/`run` as a substitute for genuine GUI coordinator creation.
 
-Credentials and config are outside your repository in `~/.openwork/codex-plugin`, with owner-only permissions on POSIX. `OPENWORK_CODEX_STATE_DIR` changes this path; repository paths and symlinks are refused. Native Windows ACL protection is not implemented in this prototype. Logout disables enrollment and removes the local OpenWork credential; it does not sign out of OpenAI.
-
-## Intended full flow once creation is verified
-
-1. Explicitly enroll one folder, separately from sign-in.
-2. Run the local receiver while Codex is open (the MCP process can own it, or `cli.mjs run` can).
-3. From OpenCode, discover the registered Codex computer using `remote-session:targets`.
-4. Create a task with `target: "registered"` and its exact `computerId`.
-5. Read delivery with `commandId`, then read/send/stop using its returned native session receipt.
-6. Answer native permissions/questions **inside Codex**. The runner never approves them.
-
-The existing `remoteSessionTargets` organization gate must be enabled. No production routes, contracts, feature flags or deployment settings are changed by this local prototype. Released inventory schemas only recognize OpenCode v1/v2: the receiver reports an honestly labeled Codex **computer with no workspace/model inventory**, rather than pretending to be either engine. Use computerId-only routing, without model/workspace overrides.
-
-Creation and send use conservative at-most-once recovery. Unknown delivery is not replayed automatically. A crash can leave a stale `runner.lock`: first close all other local receiver instances and verify its recorded PID is no longer running before removing that file. Native chats and execution journals are never deleted by disabling enrollment.
-
-## Development
+## Development and Claude research
 
 ```sh
-node scripts/build.mjs
-node --test tests/*.test.mjs
+node packages/codex-plugin/scripts/build.mjs
+node --test packages/codex-plugin/tests/*.test.mjs
+node --test packages/remote-sessions/test/*.test.ts
 ```
 
-The build bundles the dependency-free shared runner using the repository's already-installed builder. The installed package needs no package-manager install. Tests use fake native sockets and HTTP responses; no real prompts, credentials or user conversation contents are fixtures.
+Build uses the repository's installed builder; shipped runtime has no dependencies. Fixtures contain synthetic IDs, not real credentials/transcripts. See `docs/claude-mod-remote-sessions.md` for the parallel Claude Code mods investigation: native existing-session control is documented, but top-level Desktop session creation is not.
 
-References: [plugin packaging](https://developers.openai.com/plugins/build/plugins), [plugin extensions](https://developers.openai.com/plugins/build/extensions), and `docs/session-offloading-architecture.md` in the repository.
+References: [plugin packaging](https://developers.openai.com/plugins/build/plugins), [Codex MCP](https://developers.openai.com/codex/mcp), and `docs/session-offloading-architecture.md`.

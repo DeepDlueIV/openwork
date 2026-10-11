@@ -38,7 +38,10 @@ export function createSessionRunner(options: SessionRunnerOptions): SessionRunne
   const timeoutMs = integer(options.operationTimeoutMs ?? DEFAULT_OPERATION_TIMEOUT_MS, 1, 120_000)
   const creation = adapter.creation ?? "at_most_once"
   if (creation !== "idempotent" && creation !== "at_most_once") throw new SessionRunnerError("invalid_data", "Invalid adapter creation capability.")
+  const creationPrompt = adapter.creationPrompt
+  if (creationPrompt !== undefined && creationPrompt !== "included") throw new SessionRunnerError("invalid_data", "Invalid adapter creation prompt capability.")
   const canReplayCreation = (entry: CommandEntry) => entry.creation === "idempotent" && creation === "idempotent"
+    && entry.creationPrompt === creationPrompt
   const sendReplay = adapter.sendReplay ?? "idempotent"
   if (sendReplay !== "idempotent" && sendReplay !== "at_most_once") throw new SessionRunnerError("invalid_data", "Invalid adapter send replay capability.")
   const canReplaySend = (entry: CommandEntry | RequestEntry) => entry.sendReplay === "idempotent" && sendReplay === "idempotent"
@@ -140,6 +143,12 @@ export function createSessionRunner(options: SessionRunnerOptions): SessionRunne
       return
     }
     try {
+      if (entry.creationPrompt !== creationPrompt) {
+        throw new SessionRunnerError("creation_prompt_changed", "The adapter's creation prompt capability changed. Restore the original adapter before creating this session.")
+      }
+      if (entry.creationPrompt === "included" && !entry.command.prompt?.trim()) {
+        throw new SessionRunnerError("prompt_required", "This native harness requires a nonblank initial prompt when creating a session.")
+      }
       const receipt = parseReceipt(await local(signal, s => adapter.create(structuredClone(entry.command), s)))
       if (entry.command.workspaceId && receipt.workspaceId !== entry.command.workspaceId) {
         throw new SessionRunnerError("invalid_data", "The adapter created a session in a different workspace.")
@@ -147,8 +156,18 @@ export function createSessionRunner(options: SessionRunnerOptions): SessionRunne
       if (entry.creation === "idempotent" && receipt.sessionId !== entry.intendedSessionId) {
         throw new SessionRunnerError("invalid_data", "Idempotent creation must return the journal's deterministic session ID.")
       }
-      // Receipt MUST survive before any prompt is sent, even if cancellation has arrived.
-      await saveCommand({ ...command(id), phase: "created", receipt })
+      // Separate creation MUST save the receipt before sending any prompt, even after cancellation.
+      // Included creation cannot do that: its durable prepared intent precedes the combined native
+      // effect, and receipt + accepted first turn + completion survive atomically before HTTP ack.
+      if (entry.creationPrompt === "included") {
+        const messageId = stableMessageId(entry.command.commandId)
+        // Combined creation proves the first turn was accepted in a fresh session, with no
+        // previous turn to mistake for it. Preserve even an immediate error/stop with no
+        // assistant message; separate sends and followups still require observed activity.
+        await saveCommand({ ...command(id), phase: "delivered", receipt,
+          turn: { messageId, baselineMessageCount: 0, seenActive: true }, lastMessageId: messageId,
+          completion: { status: "delivered", sessionId: receipt.sessionId, workspaceId: receipt.workspaceId } })
+      } else await saveCommand({ ...command(id), phase: "created", receipt })
     } catch (error) {
       if (signal.aborted) throw error
       const proven = definitive(error)
@@ -348,7 +367,8 @@ export function createSessionRunner(options: SessionRunnerOptions): SessionRunne
           if (state().commands.length >= MAX_COMMAND_ENTRIES) throw new SessionRunnerError("journal_full", "Prune acknowledged commands before accepting more work.")
           const expired = value.expiresAt <= now()
           await persist({ ...state(), commands: [...state().commands, {
-            command: value, creation, sendReplay, intendedSessionId: sessionIdForCommand(value.commandId), lastObservedAt: null,
+            command: value, creation, ...(creationPrompt === "included" ? { creationPrompt } : {}), sendReplay,
+            intendedSessionId: sessionIdForCommand(value.commandId), lastObservedAt: null,
             phase: expired ? "failed" : "prepared", receipt: null,
             promptMessageId: value.prompt === null ? null : stableMessageId(value.commandId), turn: null, lastMessageId: null,
             completion: expired ? { status: "failed", error: failure("expired", "The command expired before creation.") } : null,

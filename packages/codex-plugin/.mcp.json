@@ -1,8 +1,23 @@
 {
   "mcpServers": {
     "openwork-local": {
-      "command": "node",
-      "args": ["./src/mcp.mjs"]
+      "command": "/bin/sh",
+      "args": ["./scripts/launch-mcp.sh", "./src/mcp.mjs"],
+      "tool_timeout_sec": 3600,
+      "default_tools_approval_mode": "prompt",
+      "tools": {
+        "enable_remote_sessions": { "approval_mode": "prompt" },
+        "create_remote_task": { "approval_mode": "prompt" }
+      },
+      "env_vars": [
+        "CODEX_APP_TOOLS_PIPE_PATH",
+        "CODEX_MCP_NODE_PATH",
+        "CODEX_BROWSER_USE_NODE_PATH",
+        "CODEX_ELECTRON_RESOURCES_PATH",
+        "OPENWORK_CODEX_STATE_DIR",
+        "HOME",
+        "PATH"
+      ]
     }
   }
 }

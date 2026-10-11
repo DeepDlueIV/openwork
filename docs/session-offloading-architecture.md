@@ -82,9 +82,14 @@ owner-scoped targets and receipts, without a separate registration mechanism.
   computer after a disconnect. Reassignment could duplicate a native session.
 - Recovery-capable runners rediscover their own claimed work. Released runners
   continue receiving the older pending-only protocol.
-- Persist the prepared command **before** native creation. Persist the native
-  session receipt **before** initial prompt admission. Persist completion and
-  control results **before** acknowledging them remotely.
+- Persist the prepared command **before** native creation. Normally, persist the
+  native session receipt **before** initial prompt admission. A harness that can
+  only create-and-submit together explicitly declares `creationPrompt: "included"`;
+  this mode is pinned in its journal. Its prepared intent precedes the combined
+  effect, and its accepted receipt, initial turn and completion are saved together
+  before remote acknowledgement. The core must not send that first prompt again.
+  Uncertain combined creation remains at-most-once, not an empty-session guarantee.
+  Persist completion and control results **before** acknowledging them remotely.
 - Stable command/request-derived `msg_` IDs make native V2 prompt admission
   replayable when the adapter opts into that guarantee. Mixed V1/V2 desktop
   adapters conservatively treat uncertain sends as `ambiguous_send` rather

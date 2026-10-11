@@ -10,10 +10,12 @@ import { DenButton } from "../../_components/ui/button";
 import { getDesktopGrant } from "../../_lib/desktop-handoff";
 import {
   getRequestError,
+  normalizeAuthIntentParam,
+  PENDING_AUTH_INTENT_STORAGE_KEY,
   requestJson,
   WORKSPACE_REAUTH_SECURITY_MESSAGE,
 } from "../../_lib/den-flow";
-import { getOnboardingToolsRoute, getOrgAccessFlags, getOrgDashboardRoute, orgFeatureEnabled } from "../../_lib/den-org";
+import { getInferenceRoute, getOnboardingToolsRoute, getOrgAccessFlags, getOrgDashboardRoute, orgFeatureEnabled } from "../../_lib/den-org";
 import { ORG_SCOPE_HEADER } from "../../_lib/org-scope";
 import { useDenFlow } from "../../_providers/den-flow-provider";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
@@ -165,12 +167,13 @@ function TeammatesForm({ orgId, orgSlug, organizationName, selfEmail, selfName, 
     setCompleting(true);
     setCompletionError(null);
     try {
+      const intent = normalizeAuthIntentParam(window.sessionStorage.getItem(PENDING_AUTH_INTENT_STORAGE_KEY));
       const completed = await completeSetup(orgId);
       if (!alive.current) return;
       if (!completed) {
         setCompletionError("Could not complete setup. Try again.");
       } else if (!desktopAuthRequested) {
-        router.push(getOrgDashboardRoute(orgSlug));
+        router.push(intent === "models" ? getInferenceRoute(orgSlug) : getOrgDashboardRoute(orgSlug));
         void refreshOrgData();
       }
     } catch (error) {

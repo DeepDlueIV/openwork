@@ -593,12 +593,16 @@ const simplifiedTest = spec.world((seed) => signupWorkspace(seed, { simplified: 
   timeout: 900_000, resources: { surfaces: ["web"], services: ["den"] },
 });
 
-for (const invite of [false, true]) {
-  simplifiedTest(`a new owner reaches the dashboard after name, workspace, and ${invite ? "sending an invitation" : "skipping optional invitations"}`, async ({ world, user, probe, evidence, step }) => {
+for (const destination of ["skip", "invite", "models"]) {
+  const invite = destination === "invite";
+  const modelsIntent = destination === "models";
+  simplifiedTest(`a new owner reaches ${modelsIntent ? "their requested model settings" : "the dashboard"} after name, workspace, and ${invite ? "sending an invitation" : "skipping optional invitations"}`, async ({ world, user, probe, evidence, step }) => {
+    const expectedPath = modelsIntent ? "/dashboard/ai-gateway" : "/dashboard";
     let orgId = "";
     const scope = () => ({ "x-openwork-org-id": orgId });
 
     await step("a person enters their name and creates an account", async () => {
+      if (modelsIntent) await user.navigate(new URL("/?intent=models", world.den.ref.webUrl).toString());
       await user.see({ role: "textbox", label: "Email" }, { timeoutMs: 90_000 });
       await user.type({ role: "textbox", label: "Email" }, world.owner.email);
       await user.click({ role: "button", label: "Next" });
@@ -638,27 +642,27 @@ for (const invite of [false, true]) {
       await user.screenshot();
       await user.click({ role: "button", label: invite ? "Open workspace" : "Skip and open workspace" });
       await user.see({ testId: "den-org-sidebar" }, { timeoutMs: 90_000 });
-      expect(await world.pathname()).toBe("/dashboard");
+      await probe.eventually(() => world.pathname(), { within: 30_000, label: "requested destination", until: (path) => path === expectedPath });
       const result = await probe.api(world.den.admin, "/v1/org", { headers: scope() });
       if (!isRecord(result.body) || !Array.isArray(result.body.invitations)) throw new Error("Expected invitations");
       expect(result.body.invitations.filter(isRecord).map((entry) => entry.email)).toEqual(invite ? [world.invitees[0]] : []);
-      evidence.recordAssertionEvidence("Only explicit send creates an invitation", `Invitations: ${invite ? world.invitees[0] : "none"}; the owner went directly to the dashboard.`, true);
+      evidence.recordAssertionEvidence("Only explicit send creates an invitation", `Invitations: ${invite ? world.invitees[0] : "none"}; the owner went directly to ${expectedPath}.`, true);
     });
 
-    await step("after: the dashboard stays open on reload without tools or model setup", async () => {
+    await step(`after: ${modelsIntent ? "requested model settings" : "the dashboard"} stay open on reload without extra setup steps`, async () => {
       await user.notSee({ testId: "onboarding-tools" });
       await user.notSee({ testId: "marketplace-onboarding" });
       await user.notSee({ text: "Back to setup" });
       await user.reload();
       await user.see({ testId: "den-org-sidebar" }, { timeoutMs: 90_000 });
       await user.notSee({ text: "Back to setup" });
-      expect(await world.pathname()).toBe("/dashboard");
+      await probe.eventually(() => world.pathname(), { within: 30_000, label: "requested destination", until: (path) => path === expectedPath });
       const connections = await probe.api(world.den.admin, "/v1/mcp-connections?scope=manageable", { headers: scope() });
       expect(isRecord(connections.body) && connections.body.connections).toEqual([]);
       const models = await probe.api(world.den.admin, "/v1/inference", { headers: scope() });
       expect(isRecord(models.body) && isRecord(models.body.inference) && models.body.inference.enabled).toBe(false);
       await user.screenshot();
-      evidence.recordAssertionEvidence("Finishing setup clears its continuation without provisioning tools or models", "Reload stays on the dashboard; no Back to setup, connections, or enabled models.", true);
+      evidence.recordAssertionEvidence("Finishing setup clears its continuation without enabling connections or paid models", `Reload stays on ${expectedPath}; no Back to setup, connections, or enabled paid models.`, true);
     });
   });
 }

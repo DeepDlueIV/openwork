@@ -5,16 +5,16 @@ description: "Use OpenWork Connect in your existing AI client through MCP or a s
 
 OpenWork Connect is an AI Gateway, MCP Gateway, and Skills Gateway that lets organizations centrally manage models, tools, reusable skills, and access from one admin panel.
 
-You do not have to use the OpenWork desktop app to access your organization's resources. Connect the AI client you already use.
+Use them from the AI client you already have. The OpenWork desktop app is optional.
 
 ## Two ways to connect
 
 <CardGroup cols={2}>
   <Card title="MCP integration" icon="plug" href="/integrations/mcp">
-    Use shared skills and connected tools from any compatible MCP client. Add one URL and sign in with your OpenWork account.
+    Skills and connected tools in any MCP client. One URL, one sign-in.
   </Card>
   <Card title="Specialized client plugins" icon="terminal" href="/integrations/client-plugins">
-    Bring organization models into the client alongside MCP tools and skills. The OpenCode plugin is ready; Cursor and Codex integrations are in progress.
+    Models plus skills and tools in one plugin. OpenCode is ready; Cursor and Codex are in progress.
   </Card>
 </CardGroup>
 
@@ -26,7 +26,7 @@ You do not have to use the OpenWork desktop app to access your organization's re
 | MCP Gateway | Shared service connections and tool access | Your agent discovers and calls authorized tools |
 | Skills Gateway | Reusable skills assigned to people and teams | Your agent retrieves the skills it can use through OpenWork MCP |
 
-MCP carries tools and skills, not model inference. A specialized client plugin can connect both paths through one sign-in.
+MCP carries tools and skills, not model calls. A client plugin connects both with one sign-in.
 
 ## Client availability
 
@@ -38,4 +38,4 @@ MCP carries tools and skills, not model inference. A specialized client plugin c
 | Claude Code | [Available](/model-context-protocol/claude-code) | Use MCP |
 | Other compatible clients | [MCP setup guides](/start-here/connect-openwork-mcp) | Depends on the client |
 
-An integration uses the signed-in member's organization access. It does not grant additional models, skills, or connections just because it is installed.
+Every integration uses the signed-in person's access. Installing one doesn't grant anything extra.

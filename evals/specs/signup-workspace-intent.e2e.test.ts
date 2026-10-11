@@ -407,7 +407,7 @@ test("signup distinguishes joining, personal work, and restricted team setup wit
     await mobileUser.see({ role: "button", label: "Open menu" }, { timeoutMs: 30_000 });
     await mobileUser.notSee({ testId: "den-onboarding-shell" });
     await mobileUser.click({ role: "button", label: "Open menu" });
-    await mobileUser.see({ testId: "den-org-sidebar", nth: 1 });
+    await mobileUser.see({ testId: "den-org-sidebar" });
     evidence.recordAssertionEvidence("Mobile onboarding finishes without downloading and reveals working dashboard navigation", "Tools and Ready omit the menu; completion restores it and opening the menu reveals the sidebar. Configured tools are unchanged.", true);
   });
   await step("the public signup also fits a narrow screen", async () => {

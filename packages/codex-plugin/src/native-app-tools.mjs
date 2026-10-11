@@ -1,7 +1,7 @@
 import net from "node:net"
 import { createHash } from "node:crypto"
-import { lstat } from "node:fs/promises"
-import { dirname, isAbsolute } from "node:path"
+import { isAbsolute } from "node:path"
+import { validateNativeSocket, recheckNativeSocket } from "./native-socket.mjs"
 import { createFrameDecoder, encodeFrame, MAX_FRAME_BYTES } from "./ipc.mjs"
 
 const record = value => value !== null && typeof value === "object" && !Array.isArray(value)
@@ -153,23 +153,17 @@ export function createNativeAppToolsClient({ pipePath = process.env.CODEX_APP_TO
   async function connect(expectedGeneration) {
     if (closed) throw new NativeAppToolsError("closed")
     if (expectedGeneration !== generation) throw new NativeAppToolsError("native_disconnected")
-    if (socket?.readyState === "open") return socket
     if (connecting) return connecting.promise
+    if (socket?.readyState === "open") return socket
     const connection = { promise: undefined, reject: undefined }
     connecting = connection
     connection.promise = (async () => {
-      try {
-        const uid = process.getuid?.()
-        const [parent, pipe] = await Promise.all([lstat(dirname(pipePath)), lstat(pipePath)])
-        if (uid === undefined || !parent.isDirectory() || parent.uid !== uid || (parent.mode & 0o077)
-            || !pipe.isSocket() || pipe.uid !== uid || (pipe.mode & 0o077)) reject("unsafe_native_pipe")
-      } catch (error) {
-        if (error instanceof NativeAppToolsError) throw error
-        throw new NativeAppToolsError("native_pipe_unavailable")
-      }
+      let endpoint
+      try { endpoint = await validateNativeSocket(pipePath) }
+      catch (error) { throw new NativeAppToolsError(error.message === "unsafe_native_pipe" ? "unsafe_native_pipe" : "native_pipe_unavailable", { rejection: true }) }
       if (closed) throw new NativeAppToolsError("closed")
       if (expectedGeneration !== generation) throw new NativeAppToolsError("native_disconnected")
-      const transport = net.createConnection(pipePath)
+      const transport = net.createConnection(endpoint.path)
       socket = transport
       await new Promise((resolve, rejectConnection) => {
         connection.reject = rejectConnection
@@ -179,7 +173,16 @@ export function createNativeAppToolsClient({ pipePath = process.env.CODEX_APP_TO
           if (!current()) return
           try { decode(chunk) } catch { fail("invalid_native_frame", expectedGeneration) }
         })
-        transport.once("connect", resolve)
+        transport.once("connect", async () => {
+          try {
+            await recheckNativeSocket(endpoint)
+            if (!current()) return rejectConnection(new NativeAppToolsError("native_disconnected"))
+            resolve()
+          } catch {
+            rejectConnection(new NativeAppToolsError("unsafe_native_pipe", { rejection: true }))
+            if (current()) fail("unsafe_native_pipe", expectedGeneration)
+          }
+        })
         transport.on("error", () => {
           rejectConnection(new NativeAppToolsError("native_connection_failed"))
           if (current()) fail("native_connection_failed", expectedGeneration)

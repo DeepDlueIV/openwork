@@ -110,7 +110,7 @@ export async function serve({ input = process.stdin, output = process.stdout, ha
       let result
       if (request.method === "initialize") {
         initialized = true
-        result = { protocolVersion: "2025-11-25", capabilities: { tools: {} }, serverInfo: { name: "openwork-local", version: "0.3.0" }, instructions: "OpenWork remote control is opt-in. Never enroll a folder without explicit user confirmation. Browser sign-in must be completed by the user. Native Codex permissions remain in the GUI." }
+        result = { protocolVersion: "2025-11-25", capabilities: { tools: {} }, serverInfo: { name: "openwork-local", version: "0.3.1" }, instructions: "OpenWork remote control is opt-in. Never enroll a folder without explicit user confirmation. Browser sign-in must be completed by the user. Native Codex permissions remain in the GUI." }
         // Do not block protocol initialization on network or native GUI availability.
         void handlers.initialize().catch(() => {})
       } else if (!initialized) throw new Error("Initialize the MCP connection first.")

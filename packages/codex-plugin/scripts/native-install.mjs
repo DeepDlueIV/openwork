@@ -2,6 +2,7 @@ import { access } from "node:fs/promises"
 import { constants } from "node:fs"
 import { isAbsolute, join, delimiter } from "node:path"
 import { spawn } from "node:child_process"
+import { verifyNativeMcp } from "./verify-native-mcp.mjs"
 
 export async function findCodexBinary({ environment = process.env, executable } = {}) {
   const candidates = [executable, environment.CODEX_CLI_PATH,
@@ -41,14 +42,16 @@ export function runCodexJson(executable, args) {
   })
 }
 
-export async function installIntoCodex({ executable, pluginName, marketplaceName, version, run = runCodexJson }) {
+export async function installIntoCodex({ executable, pluginName, marketplaceName, version, marketplacePath, run = runCodexJson, verify = verifyNativeMcp }) {
   const pluginId = `${pluginName}@${marketplaceName}`
   const result = await run(executable, ["plugin", "add", pluginId, "--json"])
   if (result?.pluginId !== pluginId || result?.name !== pluginName || result?.marketplaceName !== marketplaceName || result?.version !== version || typeof result?.installedPath !== "string") throw new Error("Codex did not confirm installation of the requested receiver version.")
   const listed = await run(executable, ["plugin", "list", "--marketplace", marketplaceName, "--json"])
   const installed = listed?.installed?.find(plugin => plugin.pluginId === pluginId)
   if (!installed || installed.installed !== true || installed.enabled !== true || installed.version !== version) throw new Error("The receiver is not installed and enabled in Codex. Review its native plugin status; permissions were not approved automatically.")
-  return { pluginId, installed: true, enabled: true, installedPath: result.installedPath,
+  const declaration = await verify({ executable, marketplacePath, marketplaceName, pluginName })
+  if (declaration?.pluginId !== pluginId || !Array.isArray(declaration.mcpServers) || !declaration.mcpServers.includes(pluginName)) throw new Error("The native loader discarded the receiver MCP server. Installation is not ready.")
+  return { pluginId, installed: true, enabled: true, mcpDeclared: declaration.mcpServers.includes(pluginName), installedPath: result.installedPath,
     pluginUrl: `codex://plugins/install/${encodeURIComponent(pluginName)}?marketplace=${encodeURIComponent(marketplaceName)}`,
     message: "Codex confirms the receiver is installed and enabled. Sign-in, project consent and native permissions remain yours to approve. Tools must still be loaded in a genuine Codex chat." }
 }

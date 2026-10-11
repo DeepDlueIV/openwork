@@ -9,12 +9,13 @@ const installed = { pluginId: "openwork-local@local-personal", name: "openwork-l
 
 test("native installation uses official add/list and verifies exact installed enabled identity", async () => {
   const calls = []
-  const result = await installIntoCodex({ executable: "/fixture/codex", pluginName: "openwork-local", marketplaceName: "local-personal", version: installed.version, run: async (executable, args) => {
+  const result = await installIntoCodex({ executable: "/fixture/codex", pluginName: "openwork-local", marketplaceName: "local-personal", version: installed.version, verify: async () => ({ pluginId: installed.pluginId, mcpServers: ["openwork-local"] }), run: async (executable, args) => {
     calls.push({ executable, args })
     return args[1] === "add" ? installed : { installed: [{ ...installed, installed: true, enabled: true }] }
   } })
   assert.equal(result.installed, true)
   assert.equal(result.enabled, true)
+  assert.equal(result.mcpDeclared, true)
   assert.deepEqual(calls.map(call => call.args), [["plugin", "add", installed.pluginId, "--json"], ["plugin", "list", "--marketplace", "local-personal", "--json"]])
   assert.equal(calls.some(call => call.args.includes("--enable")), false)
   assert.match(result.message, /remain yours to approve/)
@@ -25,6 +26,12 @@ test("catalogued-only, disabled or wrong-version entries can never be reported i
     await assert.rejects(installIntoCodex({ executable: "/fixture/codex", pluginName: "openwork-local", marketplaceName: "local-personal", version: installed.version, run: async (_executable, args) => args[1] === "add" ? installed : list }), /not installed and enabled/)
   }
   await assert.rejects(installIntoCodex({ executable: "/fixture/codex", pluginName: "openwork-local", marketplaceName: "local-personal", version: installed.version, run: async () => ({ ...installed, pluginId: "different-cloud-plugin" }) }), /requested receiver/)
+})
+
+test("enabled plugin with no native MCP declaration fails readiness verification", async () => {
+  await assert.rejects(installIntoCodex({ executable: "/fixture/codex", pluginName: "openwork-local", marketplaceName: "local-personal", version: installed.version,
+    run: async (_executable, args) => args[1] === "add" ? installed : { installed: [{ ...installed, installed: true, enabled: true }] },
+    verify: async () => ({ pluginId: installed.pluginId, mcpServers: [] }) }), /discarded the receiver/)
 })
 
 test("explicit executable is preferred without a shell or permission override", async () => {

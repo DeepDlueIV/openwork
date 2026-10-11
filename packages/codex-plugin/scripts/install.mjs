@@ -57,7 +57,7 @@ export async function installPlugin({ home = homedir(), installDirectory, source
   if (destination === marketplacePath || inside(destination, marketplacePath) || inside(join(root, ".agents"), destination)) throw new Error("Install directory must not overlap the personal marketplace configuration.")
   await noSymlinkParents(destination)
   await noSymlinkParents(marketplacePath)
-  const manifest = JSON.parse(await readFile(join(source, "plugin.json"), "utf8"))
+  const manifest = JSON.parse(await readFile(join(source, ".codex-plugin", "plugin.json"), "utf8"))
   if (manifest.name !== PLUGIN_NAME) throw new Error("Unexpected plugin source identity.")
   // Built runtime is mandatory: installed plugin cannot depend on repository imports.
   for (const name of ["lib/index.mjs", "src/mcp.mjs", "src/cli.mjs", "scripts/launch-mcp.sh", ".mcp.json", ".codex-plugin/plugin.json", "skills/setup/SKILL.md"]) {
@@ -103,11 +103,13 @@ export async function installPlugin({ home = homedir(), installDirectory, source
     const mcp = JSON.parse(await readFile(join(staging, ".mcp.json"), "utf8"))
     mcp.mcpServers[PLUGIN_NAME] = { ...mcp.mcpServers[PLUGIN_NAME], command: "/bin/sh", args: [join(destination, "scripts", "launch-mcp.sh"), join(destination, "src", "mcp.mjs")] }
     await writeFile(join(staging, ".mcp.json"), `${JSON.stringify(mcp, null, 2)}\n`, { mode: 0o600 })
-    // Also provide the new portable format; no undocumented MCP path variable.
-    await writeFile(join(staging, "mcp.json"), `${JSON.stringify({
-      $schema: "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
-      mcpServers: { [PLUGIN_NAME]: { type: "stdio", ...mcp.mcpServers[PLUGIN_NAME] } },
-    }, null, 2)}\n`, { mode: 0o600 })
+    // This Codex-specific package uses the supported legacy manifest so its
+    // env_vars, timeout and approval policy are parsed as Codex settings.
+    // A root Agent Plugins manifest would select strict portable mcp.json and
+    // silently discard this server. Never ship mixed formats again.
+    for (const portable of ["plugin.json", "mcp.json"]) {
+      if (await statOptional(join(staging, portable))) throw new Error("Receiver source contains a conflicting portable manifest/configuration.")
+    }
     if (existing) { await rename(destination, backup); backedUp = true }
     await rename(staging, destination)
     installed = true
@@ -131,7 +133,7 @@ export async function installPlugin({ home = homedir(), installDirectory, source
   if (filesOnly) return { ...result, nativeInstalled: false }
   const executable = await findCodexBinary({ executable: codexBinary })
   if (!executable) throw new Error("Receiver files are copied, but Codex was not found. Native installation is incomplete; rerun with --codex-path pointing to the installed Codex CLI.")
-  const native = await nativeInstall({ executable, pluginName: PLUGIN_NAME, marketplaceName: catalog.name, version: manifest.version })
+  const native = await nativeInstall({ executable, pluginName: PLUGIN_NAME, marketplaceName: catalog.name, marketplacePath, version: manifest.version })
   return { ...result, nativeInstalled: true, native }
 }
 

@@ -75,14 +75,13 @@ test("state rejects symlinks, insecure files, repository directories and travers
 async function pluginFixture(root) {
   const source = join(root, "source")
   const files = {
-    "plugin.json": JSON.stringify({ name: "openwork-local", version: "0.1.0-local" }),
     "package.json": JSON.stringify({ name: "@openwork/codex-plugin" }),
     "lib/index.mjs": "export const test = true\n",
     "src/mcp.mjs": "// runtime\n",
     "src/cli.mjs": "// CLI\n",
     ".mcp.json": JSON.stringify({ mcpServers: { "openwork-local": { command: "/bin/sh", args: ["./scripts/launch-mcp.sh", "./src/mcp.mjs"], env_vars: ["CODEX_APP_TOOLS_PIPE_PATH", "CODEX_MCP_NODE_PATH"] } } }),
     "scripts/launch-mcp.sh": "#!/bin/sh\nexec node \"$@\"\n",
-    ".codex-plugin/plugin.json": JSON.stringify({ name: "openwork-local" }),
+    ".codex-plugin/plugin.json": JSON.stringify({ name: "openwork-local", version: "0.1.0-local", mcpServers: "./.mcp.json" }),
     "skills/setup/SKILL.md": "# Setup\n",
     "scripts/helper.mjs": "// helper\n",
   }
@@ -120,12 +119,23 @@ test("installer preserves marketplace identity and all existing entries, rewrite
   assert.equal(updated.plugins[1].source.path, "./.codex/plugins/openwork-local")
   const mcp = JSON.parse(await readFile(join(result.installDirectory, ".mcp.json"), "utf8"))
   assert.deepEqual(mcp.mcpServers["openwork-local"], { command: "/bin/sh", args: [join(result.installDirectory, "scripts", "launch-mcp.sh"), join(result.installDirectory, "src", "mcp.mjs")], env_vars: ["CODEX_APP_TOOLS_PIPE_PATH", "CODEX_MCP_NODE_PATH"] })
-  assert.equal(JSON.parse(await readFile(join(result.installDirectory, "mcp.json"), "utf8")).mcpServers["openwork-local"].type, "stdio")
+  await assert.rejects(lstat(join(result.installDirectory, "plugin.json")), { code: "ENOENT" })
+  await assert.rejects(lstat(join(result.installDirectory, "mcp.json")), { code: "ENOENT" })
+  assert.equal(JSON.parse(await readFile(join(result.installDirectory, ".codex-plugin", "plugin.json"), "utf8")).mcpServers, "./.mcp.json")
   assert.equal(await readFile(join(result.installDirectory, "scripts", "helper.mjs"), "utf8"), "// helper\n")
   const text = await readFile(marketplace, "utf8")
   await installPlugin({ home, sourceDirectory: source, filesOnly: true })
   assert.equal(await readFile(marketplace, "utf8"), text)
   await assert.rejects(lstat(join(home, ".codex", "config.toml")), { code: "ENOENT" })
+})
+
+test("conflicting portable configuration cannot silently discard the native receiver", async t => {
+  const root = await fixture(t)
+  const source = await pluginFixture(root)
+  const home = join(root, "home")
+  await writeFile(join(source, "plugin.json"), JSON.stringify({ $schema: "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json", name: "openwork-local" }))
+  await assert.rejects(installPlugin({ home, sourceDirectory: source, filesOnly: true }), /conflicting portable/)
+  await assert.rejects(lstat(join(home, ".codex", "plugins", "openwork-local")), { code: "ENOENT" })
 })
 
 test("default installation performs the native step; copying alone cannot claim installed status", async t => {

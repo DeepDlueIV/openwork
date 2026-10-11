@@ -91,7 +91,7 @@ export function createCodexRunner({ account, adapter, journal, fetcher = fetch, 
       update("connecting", "registration")
       const result = await json(credentials, "/v1/session-runners/token", "POST", {
         runnerId: state.runnerId, protocolVersion: 1, supportedExecutionTargets: ["desktop"], capabilities,
-        platform, appVersion: "codex-openwork-local/0.2.0", concurrency: 1,
+        platform, appVersion: "codex-openwork-local/0.3.0", concurrency: 1,
       }, signal)
       if (!record(result) || typeof result.token !== "string" || result.token.length < 32 || /[\r\n]/.test(result.token) || !Number.isFinite(result.expiresAt) || result.expiresAt <= now()) throw new Error("invalid_registration")
       state.token.value = result.token; state.token.expiresAt = Math.min(result.expiresAt, credentials.expiresAt)
@@ -103,7 +103,7 @@ export function createCodexRunner({ account, adapter, journal, fetcher = fetch, 
       // Codex COMPUTER honestly, with no fabricated engine/workspace/model inventory.
       // Existing computerId-only routing explicitly accepts an empty workspace list.
       const published = await json(runnerCredentials, "/v1/session-runners/inventory", "PUT", {
-        computer: { label: label.slice(0, 120), platform, appVersion: "codex-openwork-local/0.2.0" }, workspaces: [],
+        computer: { label: label.slice(0, 120), platform, appVersion: "codex-openwork-local/0.3.0" }, workspaces: [],
       }, signal)
       if (!record(published) || published.ok !== true) throw new Error("invalid_inventory")
       state.inventoryAt = now()

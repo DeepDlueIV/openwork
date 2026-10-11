@@ -1,5 +1,7 @@
 # OpenWork for Codex — local receiver prototype
 
+This Codex-specific package uses `.codex-plugin/plugin.json` and `.mcp.json`, not a mixed portable Agent Plugins manifest. The installer also checks the native loader's MCP declarations; an enabled plugin with no MCP server is a failure, not readiness.
+
 This plugin connects a **dedicated Codex GUI coordinator chat** to OpenWork's existing remote-session queue. Each incoming task is created through Codex's own app tools as a real local GUI chat, with its initial prompt included once. Existing child chats are read, messaged, observed and stopped through the GUI-owned follower connection.
 
 It does not spawn a separate Codex CLI/app-server, invent caller IDs, reuse a waiter's native call identity, or automatically approve native permissions.

@@ -35,9 +35,17 @@ node "$HOME/openwork-codex-prototype/packages/codex-plugin/scripts/install.mjs"
 
 Stop if your checkout contains work you need to preserve or pull cannot fast-forward. On Apple Silicon, `/opt/homebrew/bin/node` can replace `node` if already installed but absent from PATH.
 
-The installer copies to `~/.codex/plugins/openwork-local` and preserves your personal marketplace's name and existing entries. It does not enable the plugin, sign in, restart Codex, approve tools or start remote control.
+The installer copies to `~/.codex/plugins/openwork-local`, preserves your personal marketplace, then runs Codex's **official plugin add** operation. It verifies that the exact receiver version is **installed and enabled** using Codex's plugin list. Copying/cataloguing alone is not success. It does not sign in, restart Codex, approve tool permissions or start remote control. `--files-only` is an explicit development option and reports that the native plugin is not installed.
 
-In Codex, open **Plugins**, choose your personal marketplace, and install/enable **openwork-local**. After updating, refresh/reload the plugin and start a new chat. Only restart the app if refresh fails, when no important turn is running. The MCP launcher selects the runtime **Codex supplies** through its normal environment allowlist; it never disables signing/ancestry checks. A terminal substitute is not a native-context test.
+The receiver is **OpenWork Codex Receiver**, ID `openwork-local@local-personal` for the default marketplace. It is distinct from an existing cloud plugin named **OpenWork**. Do not choose that cloud plugin as a substitute for the receiver.
+
+After installation, use one setup prompt in a dedicated desktop Codex chat:
+
+> [@OpenWork Codex Receiver](plugin://openwork-local@local-personal) Set me up using your setup skill. Guide me through sign-in and one explicit native-project enrollment, then start receiving tasks. Do not approve permissions for me.
+
+If your existing marketplace has a different name, use the exact `pluginId` returned by the installer rather than the example's `local-personal`. You do not need to type individual diagnostic/tool commands. Sign-in and project consent are still human actions; mandatory Codex permissions cannot be bypassed or guaranteed to collapse into a single approval.
+
+Existing chats can retain an old tool catalogue. Refresh/reload the receiver or start a new dedicated chat if needed. Only restart the app if refresh fails, when no important turn is running. The MCP launcher selects the runtime **Codex supplies** through its normal environment allowlist; it never disables signing/ancestry checks. A terminal substitute is not a native-context test.
 
 ### Paste this installation prompt into Codex
 

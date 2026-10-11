@@ -5,6 +5,7 @@ import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import { randomUUID } from "node:crypto"
 import { cp, lstat, mkdir, open, readFile, readdir, rename, rm, writeFile } from "node:fs/promises"
+import { findCodexBinary, installIntoCodex } from "./native-install.mjs"
 
 const PLUGIN_NAME = "openwork-local"
 const sourceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..")
@@ -46,7 +47,7 @@ async function loadMarketplace(path) {
 }
 
 /** Personal marketplace root is HOME, not HOME/.agents/plugins (OpenAI docs). */
-export async function installPlugin({ home = homedir(), installDirectory, sourceDirectory = sourceRoot, dryRun = false } = {}) {
+export async function installPlugin({ home = homedir(), installDirectory, sourceDirectory = sourceRoot, dryRun = false, filesOnly = false, codexBinary, nativeInstall = installIntoCodex } = {}) {
   const root = resolve(home)
   const destination = resolve(installDirectory ?? join(root, ".codex", "plugins", PLUGIN_NAME))
   const source = resolve(sourceDirectory)
@@ -83,7 +84,8 @@ export async function installPlugin({ home = homedir(), installDirectory, source
   // Preserve all existing fields, entries, ordering, policies, and marketplace name.
   const updated = match ? catalog : { ...catalog, plugins: [...catalog.plugins, entry] }
   const result = { dryRun, installDirectory: destination, marketplacePath, marketplaceName: catalog.name, sourcePath: path,
-    message: "Copy the plugin and add its marketplace entry only. Review/install it in Codex; login and remote enrollment remain separate explicit steps." }
+    pluginId: `${PLUGIN_NAME}@${catalog.name}`, nativeInstallationPlanned: !filesOnly,
+    message: filesOnly ? "Files/catalogue only: the receiver is NOT installed or enabled in Codex." : "Copy the receiver, install it with Codex's official plugin manager, and verify installed/enabled status. No sign-in, remote consent or native permission is approved." }
   if (dryRun) return result
 
   await mkdir(dirname(marketplacePath), { recursive: true, mode: 0o700 })
@@ -126,16 +128,22 @@ export async function installPlugin({ home = homedir(), installDirectory, source
     await lock.close()
     await rm(lockPath, { force: true })
   }
-  return result
+  if (filesOnly) return { ...result, nativeInstalled: false }
+  const executable = await findCodexBinary({ executable: codexBinary })
+  if (!executable) throw new Error("Receiver files are copied, but Codex was not found. Native installation is incomplete; rerun with --codex-path pointing to the installed Codex CLI.")
+  const native = await nativeInstall({ executable, pluginName: PLUGIN_NAME, marketplaceName: catalog.name, version: manifest.version })
+  return { ...result, nativeInstalled: true, native }
 }
 
 async function main(args) {
   const options = {}
   for (let i = 0; i < args.length; i++) {
     if (args[i] === "--dry-run") options.dryRun = true
+    else if (args[i] === "--files-only") options.filesOnly = true
+    else if (args[i] === "--codex-path" && args[i + 1]) options.codexBinary = args[++i]
     else if (args[i] === "--install-dir" && args[i + 1]) options.installDirectory = args[++i]
     else if (["--help", "-h"].includes(args[i])) {
-      console.log("Usage: node scripts/install.mjs [--dry-run] [--install-dir <directory-inside-home>]\nCopies the built local plugin and preserves your personal marketplace. Does not enable plugins or remote control.")
+      console.log("Usage: node scripts/install.mjs [--dry-run] [--codex-path PATH] [--install-dir DIRECTORY] [--files-only]\nCopies the built local plugin, preserves your marketplace, and verifies official Codex installation/enabling. Does not approve sign-in, remote control or native permissions.")
       return
     } else throw new Error("Unknown installer option. Use --help.")
   }

@@ -189,7 +189,7 @@ function TeammatesForm({ orgId, orgSlug, organizationName, selfEmail, selfName, 
   </DenButton>;
 
   const preview = <div className="rounded-[28px] border border-neutral-200 bg-white p-6 sm:p-7">
-    <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-neutral-400">Your workspace</p>
+    <p className={simplified ? "text-sm font-medium text-[var(--dls-text-secondary)]" : "text-[11px] font-medium uppercase tracking-[0.16em] text-neutral-400"}>Your workspace</p>
     <h2 className="mt-2 text-xl font-semibold tracking-[-0.03em] text-neutral-950">{organizationName}</h2>
     <div className="mt-6 flex items-center gap-3">
       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-neutral-900 text-sm font-medium text-white" aria-hidden>{(selfName || selfEmail).slice(0, 1).toUpperCase()}</span>
@@ -199,7 +199,7 @@ function TeammatesForm({ orgId, orgSlug, organizationName, selfEmail, selfName, 
       <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-neutral-200 bg-neutral-50 text-sm font-medium text-neutral-500" aria-hidden>{row.email.trim().slice(0, 1).toUpperCase()}</span>
       <div className="min-w-0"><p className="truncate text-sm text-neutral-800">{row.email.trim()}</p><p className="text-xs text-neutral-500">{row.status === "sent" ? "Invited · Member" : "Not sent yet"}</p></div>
     </div>)}
-    <div className="mt-7 border-t border-neutral-100 pt-5 text-sm leading-6 text-neutral-500">A shared place for tools, connections, and the way your team works.</div>
+    {!simplified ? <div className="mt-7 border-t border-neutral-100 pt-5 text-sm leading-6 text-neutral-500">A shared place for tools, connections, and the way your team works.</div> : null}
   </div>;
 
   return <SetupFrame step="people" simplified={simplified} title={simplified ? "Invite your teammates." : "Bring your people."} description={description} aside={preview}>

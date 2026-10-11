@@ -26,6 +26,7 @@ config:
   #   "false" off for everyone; /admin shows "Set by deployment config"
   # The /admin kill switch still turns a feature off, even when locked on.
   features:
+    simplifiedOnboarding: ""  # default off (cloud only) · People enter their name, create a workspace, and optionally invite teammates before going straight to the dashboard.
     managedDeployments: ""    # default off (cloud only) · Organization admins install OpenWork in their own cloud account (AWS first) and see its health and updates in OpenWork.
     installLinks: ""          # default on · Workspace admins can create desktop install links for their organization.
     mcpConnections: ""        # default on · Members see the organization's connections, marketplace capabilities on the agent rail, and the desktop Connect tab.

@@ -18,6 +18,16 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "simplifiedOnboarding": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Simplified Cloud onboarding: People enter their name, create a workspace, and optionally invite teammates before going straight to the dashboard. Renders DEN_FEATURE_SIMPLIFIED_ONBOARDING."
+            },
             "managedDeployments": {
               "enum": [
                 "",

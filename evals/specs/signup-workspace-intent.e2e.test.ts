@@ -588,3 +588,77 @@ desktopTest("desktop-origin signup completes the questions before issuing a fres
     await modelsOff();
   });
 });
+
+const simplifiedTest = spec.world((seed) => signupWorkspace(seed, { simplified: true }), {
+  timeout: 900_000, resources: { surfaces: ["web"], services: ["den"] },
+});
+
+for (const invite of [false, true]) {
+  simplifiedTest(`a new owner reaches the dashboard after name, workspace, and ${invite ? "sending an invitation" : "skipping optional invitations"}`, async ({ world, user, probe, evidence, step }) => {
+    let orgId = "";
+    const scope = () => ({ "x-openwork-org-id": orgId });
+
+    await step("a person enters their name and creates an account", async () => {
+      await user.see({ role: "textbox", label: "Email" }, { timeoutMs: 90_000 });
+      await user.type({ role: "textbox", label: "Email" }, world.owner.email);
+      await user.click({ role: "button", label: "Next" });
+      await user.type({ role: "textbox", label: "Name" }, world.owner.name);
+      await user.type({ role: "textbox", label: "Password" }, world.owner.password);
+      await user.click({ role: "button", label: "Sign up" });
+      await user.see({ role: "textbox", label: "Workspace name" }, { timeoutMs: 90_000 });
+      await world.adoptSignedInOwner();
+      const result = await probe.api(world.den.admin, "/v1/me/orgs");
+      expect(isRecord(result.body) && result.body.orgs).toEqual([]);
+      evidence.recordAssertionEvidence("Account creation keeps workspace creation separate", "The new owner has no workspaces and sees the workspace name field.", true);
+    });
+
+    await step("after: the owner names a workspace without setup choices", async () => {
+      await user.notSee({ text: "On my own" });
+      await user.notSee({ text: "How should your team’s desktop app work?" });
+      await user.notSee({ text: /^Tools$/ });
+      await user.screenshot();
+      await user.type({ role: "textbox", label: "Workspace name" }, "Simple workspace");
+      await user.click({ role: "button", label: "Create workspace" });
+      await user.see({ testId: "onboarding-teammates" }, { timeoutMs: 90_000 });
+      const result = await probe.api(world.den.admin, "/v1/me/orgs");
+      if (!isRecord(result.body) || !Array.isArray(result.body.orgs)) throw new Error("Expected workspaces");
+      expect(result.body.orgs).toHaveLength(1);
+      const org = result.body.orgs.find(isRecord);
+      if (typeof org?.id !== "string" || typeof org.slug !== "string") throw new Error("Expected created workspace");
+      orgId = org.id;
+      evidence.recordAssertionEvidence("One name creates one workspace", "Exactly one workspace was created; no personal/team or restricted-policy choice was required.", true);
+    });
+
+    await step(invite ? "the owner explicitly sends an invitation" : "the owner skips invitations without sending a typed address", async () => {
+      await user.type({ role: "textbox", label: "Teammate email 1" }, world.invitees[0]);
+      if (invite) {
+        await user.click({ role: "button", label: "Send invitations" });
+        await user.see({ text: /^Invitation sent$/ }, { timeoutMs: 30_000 });
+      }
+      await user.screenshot();
+      await user.click({ role: "button", label: invite ? "Open workspace" : "Skip and open workspace" });
+      await user.see({ testId: "den-org-sidebar" }, { timeoutMs: 90_000 });
+      expect(await world.pathname()).toBe("/dashboard");
+      const result = await probe.api(world.den.admin, "/v1/org", { headers: scope() });
+      if (!isRecord(result.body) || !Array.isArray(result.body.invitations)) throw new Error("Expected invitations");
+      expect(result.body.invitations.filter(isRecord).map((entry) => entry.email)).toEqual(invite ? [world.invitees[0]] : []);
+      evidence.recordAssertionEvidence("Only explicit send creates an invitation", `Invitations: ${invite ? world.invitees[0] : "none"}; the owner went directly to the dashboard.`, true);
+    });
+
+    await step("after: the dashboard stays open on reload without tools or model setup", async () => {
+      await user.notSee({ testId: "onboarding-tools" });
+      await user.notSee({ testId: "marketplace-onboarding" });
+      await user.notSee({ text: "Back to setup" });
+      await user.reload();
+      await user.see({ testId: "den-org-sidebar" }, { timeoutMs: 90_000 });
+      await user.notSee({ text: "Back to setup" });
+      expect(await world.pathname()).toBe("/dashboard");
+      const connections = await probe.api(world.den.admin, "/v1/mcp-connections?scope=manageable", { headers: scope() });
+      expect(isRecord(connections.body) && connections.body.connections).toEqual([]);
+      const models = await probe.api(world.den.admin, "/v1/inference", { headers: scope() });
+      expect(isRecord(models.body) && isRecord(models.body.inference) && models.body.inference.enabled).toBe(false);
+      await user.screenshot();
+      evidence.recordAssertionEvidence("Finishing setup clears its continuation without provisioning tools or models", "Reload stays on the dashboard; no Back to setup, connections, or enabled models.", true);
+    });
+  });
+}

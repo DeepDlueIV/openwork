@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { ArrowRight, ArrowUpRight, ChevronDown, ChevronRight, FileText, Folder, LayoutDashboard, MessageSquare, Network, Paperclip, Play, Plug, Search, Users, Workflow } from "lucide-react";
+import { useDeploymentSimplifiedOnboarding } from "../_providers/den-flow-provider";
 import styles from "./setup-frame.module.css";
 
 const steps = [
@@ -10,6 +11,12 @@ const steps = [
   { id: "people", label: "People" },
   { id: "tools", label: "Tools" },
   { id: "ready", label: "Get to work" },
+];
+
+const simplifiedSteps = [
+  { id: "account", label: "Name" },
+  { id: "space", label: "Workspace" },
+  { id: "people", label: "Invite (optional)" },
 ];
 
 export type SetupStep = "account" | "space" | "people" | "tools" | "ready";
@@ -104,7 +111,7 @@ function WorkPreview({ step }: { step: SetupStep }) {
  * claim codes, connection links): no stepper, no eyebrows, and the story column
  * shows who is asking through `aside` instead of the product preview.
  */
-export function SetupFrame({ step, title, description, children, aside, panelVisual, embedded = false, compactHeader = false }: {
+export function SetupFrame({ step, title, description, children, aside, panelVisual, embedded = false, compactHeader = false, simplified }: {
   step?: SetupStep;
   title: string;
   description: string;
@@ -114,20 +121,25 @@ export function SetupFrame({ step, title, description, children, aside, panelVis
   embedded?: boolean;
   /** Keep the consent panel focal in a device approval flow; other callers retain display type. */
   compactHeader?: boolean;
+  /** Organization-resolved state takes precedence once a workspace exists. */
+  simplified?: boolean;
 }) {
-  const current = step ? steps.findIndex((item) => item.id === step) : -1;
+  const deploymentSimplified = useDeploymentSimplifiedOnboarding();
+  const useSimplifiedSteps = Boolean(step && (simplified ?? deploymentSimplified) && step !== "tools" && step !== "ready");
+  const visibleSteps = useSimplifiedSteps ? simplifiedSteps : steps;
+  const current = step ? visibleSteps.findIndex((item) => item.id === step) : -1;
   const plain = !step;
   return (
-    <section className={`${styles.frame} ${embedded ? styles.embedded : ""} ${plain ? styles.plain : ""}`} data-testid="setup-frame" data-step={step ?? "none"}>
+    <section className={`${styles.frame} ${embedded ? styles.embedded : ""} ${plain ? styles.plain : ""} ${useSimplifiedSteps ? styles.simplified : ""}`} data-testid="setup-frame" data-step={step ?? "none"}>
       <header className={styles.top}>
         <div className={styles.brand}><img src="/openwork-mark.svg" alt="" width={25} height={25} /><span>OpenWork<span className={styles.cloud}> / Cloud</span></span></div>
         {step ? (
           <nav className={styles.progress} aria-label="Setup progress">
             <div className={styles.progressSummary}>
-              <span>{steps[current]?.label}</span>
-              <span>Step {current + 1} of {steps.length}</span>
+              <span>{visibleSteps[current]?.label}</span>
+              <span>Step {current + 1} of {visibleSteps.length}</span>
             </div>
-            <ol className={styles.steps}>{steps.map((item, index) => (
+            <ol className={styles.steps}>{visibleSteps.map((item, index) => (
               <li
                 key={item.id}
                 aria-current={item.id === step ? "step" : undefined}
@@ -144,10 +156,10 @@ export function SetupFrame({ step, title, description, children, aside, panelVis
       <div className={styles.grid}>
         <aside className={styles.story}>
           <div className={styles.intro}>
-            {step ? <p className={styles.eyebrow}>A LITTLE LESS BUSYWORK</p> : null}
+            {step && !useSimplifiedSteps ? <p className={styles.eyebrow}>A LITTLE LESS BUSYWORK</p> : null}
             <h1 className={compactHeader ? styles.compactHeading : undefined}>{title}</h1>
-            <p className={styles.description}>{description}</p>
-            {step ? (
+            {description && !useSimplifiedSteps ? <p className={styles.description}>{description}</p> : null}
+            {step && !useSimplifiedSteps ? (
               <div className={styles.modelSupport}>
                 <p>Your choice of model. One place to work.</p>
                 <span>OpenAI</span><i aria-hidden="true">·</i><span>Anthropic</span><i aria-hidden="true">·</i><span>Google</span><i aria-hidden="true">·</i><span>and more</span>
@@ -155,11 +167,11 @@ export function SetupFrame({ step, title, description, children, aside, panelVis
             ) : null}
           </div>
           {aside ? <div className={styles.customPreview}>{aside}</div> : step ? <WorkPreview step={step} /> : null}
-          {step ? <p className={styles.storyNote}>Switch models while keeping your tools and the work in one place.</p> : null}
+          {step && !useSimplifiedSteps ? <p className={styles.storyNote}>Switch models while keeping your tools and the work in one place.</p> : null}
         </aside>
         <div className={styles.panel} key={step ?? "plain"}>
           {panelVisual ? <div className={styles.panelVisual}>{panelVisual}</div> : null}
-          {step ? <div className={styles.panelEyebrow}><span>0{current + 1}</span><span>{steps[current]?.label}</span><span className={styles.panelRule} /></div> : null}
+          {step ? <div className={styles.panelEyebrow}><span>0{current + 1}</span><span>{visibleSteps[current]?.label}</span><span className={styles.panelRule} /></div> : null}
           {children}
         </div>
       </div>

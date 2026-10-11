@@ -5,12 +5,15 @@ import { useRouter } from "next/navigation";
 import { ArrowRight, Check, LoaderCircle, Plus, X } from "lucide-react";
 import { z } from "zod";
 import { SetupFrame } from "../../_components/setup-frame";
+import { DesktopHandoffAction } from "../../_components/auth-panel";
+import { DenButton } from "../../_components/ui/button";
+import { getDesktopGrant } from "../../_lib/desktop-handoff";
 import {
   getRequestError,
   requestJson,
   WORKSPACE_REAUTH_SECURITY_MESSAGE,
 } from "../../_lib/den-flow";
-import { getOnboardingToolsRoute, getOrgAccessFlags } from "../../_lib/den-org";
+import { getOnboardingToolsRoute, getOrgAccessFlags, getOrgDashboardRoute, orgFeatureEnabled } from "../../_lib/den-org";
 import { ORG_SCOPE_HEADER } from "../../_lib/org-scope";
 import { useDenFlow } from "../../_providers/den-flow-provider";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
@@ -30,25 +33,31 @@ export function OnboardingTeammatesScreen() {
   const { orgId, orgSlug, orgContext, orgError } = useOrgDashboard();
   const { user } = useDenFlow();
   if (!orgId || !orgContext || orgContext.organization.id !== orgId || !user) {
-    return <SetupFrame step="people" title="Bring your people." description={description}>
+    return <SetupFrame step="people" simplified={false} title="Bring your people." description={description}>
       <p role={orgError ? "alert" : "status"} className="text-sm text-neutral-500">{orgError ?? "Getting your workspace ready…"}</p>
     </SetupFrame>;
   }
   return <TeammatesForm key={`${orgId}:${user.id}`} orgId={orgId} orgSlug={orgSlug}
     organizationName={orgContext.organization.name} selfEmail={user.email} selfName={user.name}
+    simplified={orgFeatureEnabled(orgContext, "simplifiedOnboarding")}
     canInvite={getOrgAccessFlags(orgContext.currentMember.role, orgContext.currentMember.isOwner, orgContext.currentMember.permissions).canInviteMembers} />;
 }
 
-function TeammatesForm({ orgId, orgSlug, organizationName, selfEmail, selfName, canInvite }: {
+function TeammatesForm({ orgId, orgSlug, organizationName, selfEmail, selfName, canInvite, simplified }: {
   orgId: string;
   orgSlug: string | null;
   organizationName: string;
   selfEmail: string;
   selfName: string | null;
   canInvite: boolean;
+  simplified: boolean;
 }) {
   const router = useRouter();
   const { runReauthableAction, refreshOrgData } = useOrgDashboard();
+  const { completeSetup, desktopAuthRequested, desktopRedirectUrl, authError } = useDenFlow();
+  const [completing, setCompleting] = useState(false);
+  const [completionError, setCompletionError] = useState<string | null>(null);
+  const completingRef = useRef(false);
   const [rows, setRows] = useState<InvitationRow[]>([
     { id: 1, email: "", status: "draft", error: null },
     { id: 2, email: "", status: "draft", error: null },
@@ -61,6 +70,7 @@ function TeammatesForm({ orgId, orgSlug, organizationName, selfEmail, selfName, 
   const inputRefs = useRef(new Map<number, HTMLInputElement>());
   const sentCount = rows.filter((row) => row.status === "sent").length;
   const pendingRows = rows.filter((row) => row.status !== "sent" && row.email.trim());
+  const interactionBusy = sending || completing;
 
   useEffect(() => {
     alive.current = true;
@@ -95,7 +105,7 @@ function TeammatesForm({ orgId, orgSlug, organizationName, selfEmail, selfName, 
   }
 
   async function sendInvitations() {
-    if (sendingRef.current || !canInvite || pendingRows.length === 0) return;
+    if (sendingRef.current || completingRef.current || !canInvite || pendingRows.length === 0) return;
     const normalized = rows.map((row) => ({ ...row, email: row.email.trim().toLowerCase() }));
     const errors = new Map<number, string>();
     for (const row of normalized) {
@@ -143,13 +153,37 @@ function TeammatesForm({ orgId, orgSlug, organizationName, selfEmail, selfName, 
     }
   }
 
-  function continueSetup() {
-    if (sendingRef.current) return;
-    router.push(getOnboardingToolsRoute(orgSlug));
-    // The admin layout unmounts its children during a full organization refresh.
-    // Refresh only after leaving this form, so sent and failed rows survive retries.
-    void refreshOrgData();
+  async function continueSetup() {
+    if (sendingRef.current || completingRef.current) return;
+    if (!simplified) {
+      router.push(getOnboardingToolsRoute(orgSlug));
+      // Refresh after leaving so sent and failed rows survive retries.
+      void refreshOrgData();
+      return;
+    }
+    completingRef.current = true;
+    setCompleting(true);
+    setCompletionError(null);
+    try {
+      const completed = await completeSetup(orgId);
+      if (!alive.current) return;
+      if (!completed) {
+        setCompletionError("Could not complete setup. Try again.");
+      } else if (!desktopAuthRequested) {
+        router.push(getOrgDashboardRoute(orgSlug));
+        void refreshOrgData();
+      }
+    } catch (error) {
+      if (alive.current) setCompletionError(error instanceof Error ? error.message : "Could not complete setup. Try again.");
+    } finally {
+      completingRef.current = false;
+      if (alive.current) setCompleting(false);
+    }
   }
+
+  const finishButton = <DenButton type="button" disabled={interactionBusy} onClick={() => void continueSetup()}>
+    {completing ? "Completing setup…" : completionError ? "Retry setup" : desktopAuthRequested ? "Complete and open the app" : sentCount > 0 ? "Open workspace" : "Skip and open workspace"}
+  </DenButton>;
 
   const preview = <div className="rounded-[28px] border border-neutral-200 bg-white p-6 sm:p-7">
     <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-neutral-400">Your workspace</p>
@@ -165,9 +199,10 @@ function TeammatesForm({ orgId, orgSlug, organizationName, selfEmail, selfName, 
     <div className="mt-7 border-t border-neutral-100 pt-5 text-sm leading-6 text-neutral-500">A shared place for tools, connections, and the way your team works.</div>
   </div>;
 
-  return <SetupFrame step="people" title="Bring your people." description={description} aside={preview}>
-    <div data-testid="onboarding-teammates" aria-busy={sending}>
-      {canInvite ? <form noValidate onSubmit={(event) => { event.preventDefault(); void sendInvitations(); }}>
+  return <SetupFrame step="people" simplified={simplified} title={simplified ? "Invite your teammates." : "Bring your people."} description={description} aside={preview}>
+    <div data-testid="onboarding-teammates" aria-busy={interactionBusy}>
+      {simplified && (authError || completionError) ? <p role="alert" className="mb-4 text-sm text-rose-600">{authError || completionError}</p> : null}
+      {simplified && desktopRedirectUrl ? <DesktopHandoffAction openworkUrl={desktopRedirectUrl} grant={getDesktopGrant(desktopRedirectUrl)} organizationName={organizationName} showCopyLinkByDefault /> : canInvite ? <form noValidate onSubmit={(event) => { event.preventDefault(); void sendInvitations(); }}>
         <div className="mb-5 flex items-center justify-between gap-3">
           <h2 className="text-sm font-medium text-neutral-900">Who would you like to invite?</h2>
           <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] font-medium text-neutral-500">Optional</span>
@@ -180,26 +215,26 @@ function TeammatesForm({ orgId, orgSlug, organizationName, selfEmail, selfName, 
                 <input id={`teammate-email-${row.id}`} aria-label={`Teammate email ${index + 1}`} type="email" autoComplete="off" autoCapitalize="none" spellCheck={false}
                   placeholder={index === 0 ? "teammate@company.com" : "another@company.com"} value={row.email}
                   ref={(element) => { if (element) inputRefs.current.set(row.id, element); else inputRefs.current.delete(row.id); }}
-                  disabled={sending || row.status === "sent"} aria-invalid={row.status === "error"} aria-describedby={row.error ? `teammate-error-${row.id}` : undefined}
+                  disabled={interactionBusy || row.status === "sent"} aria-invalid={row.status === "error"} aria-describedby={row.error ? `teammate-error-${row.id}` : undefined}
                   onChange={(event) => updateRow(row.id, { email: event.target.value, status: "draft", error: null })}
                   className={`min-h-14 w-full rounded-2xl border bg-white px-4 py-3 pr-11 text-sm text-neutral-900 outline-hidden transition focus:border-neutral-900 focus:ring-4 focus:ring-neutral-900/5 disabled:bg-neutral-50 disabled:text-neutral-500 ${row.status === "error" ? "border-red-400" : "border-neutral-200"}`} />
                 {row.status === "sending" ? <LoaderCircle aria-hidden className="absolute right-4 top-5 h-4 w-4 animate-spin text-neutral-500 motion-reduce:animate-none" /> : null}
                 {row.status === "sent" ? <Check aria-hidden className="absolute right-4 top-5 h-4 w-4 text-neutral-700" /> : null}
               </div>
-              {rows.length > 1 && row.status !== "sent" ? <button type="button" disabled={sending} aria-label={`Remove teammate ${index + 1}`} onClick={() => { setRows((current) => current.filter((entry) => entry.id !== row.id)); setFocusId(rows.find((entry) => entry.id !== row.id && entry.status !== "sent")?.id ?? null); }} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900 focus-visible:ring-2 focus-visible:ring-neutral-900 disabled:opacity-40"><X className="h-4 w-4" /></button> : <span className="w-10 shrink-0" />}
+              {rows.length > 1 && row.status !== "sent" ? <button type="button" disabled={interactionBusy} aria-label={`Remove teammate ${index + 1}`} onClick={() => { setRows((current) => current.filter((entry) => entry.id !== row.id)); setFocusId(rows.find((entry) => entry.id !== row.id && entry.status !== "sent")?.id ?? null); }} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-neutral-400 hover:bg-neutral-100 hover:text-neutral-900 focus-visible:ring-2 focus-visible:ring-neutral-900 disabled:opacity-40"><X className="h-4 w-4" /></button> : <span className="w-10 shrink-0" />}
             </div>
             {row.error ? <p id={`teammate-error-${row.id}`} role="alert" className="mt-2 text-xs leading-5 text-red-700">{row.error}</p> : null}
             {row.status === "sending" || row.status === "sent" ? <p role="status" className="mt-2 text-xs text-neutral-500">{row.status === "sent" ? "Invitation sent" : "Sending invitation…"}</p> : null}
           </div>)}
         </div>
-        <button type="button" disabled={sending || rows.length >= 5} onClick={() => { const id = nextId.current++; setRows((current) => [...current, { id, email: "", status: "draft", error: null }]); setFocusId(id); }} className="mt-4 inline-flex min-h-10 items-center gap-2 rounded-xl text-sm text-neutral-500 hover:text-neutral-900 focus-visible:ring-2 focus-visible:ring-neutral-900 disabled:opacity-40"><Plus className="h-4 w-4" />Add another person</button>
+        <button type="button" disabled={interactionBusy || rows.length >= 5} onClick={() => { const id = nextId.current++; setRows((current) => [...current, { id, email: "", status: "draft", error: null }]); setFocusId(id); }} className="mt-4 inline-flex min-h-10 items-center gap-2 rounded-xl text-sm text-neutral-500 hover:text-neutral-900 focus-visible:ring-2 focus-visible:ring-neutral-900 disabled:opacity-40"><Plus className="h-4 w-4" />Add another person</button>
         <p className="mt-5 max-w-md text-xs leading-5 text-neutral-500">Invite up to five people now. Everyone joins as a member. An owner can change roles later.</p>
         {sentCount > 0 ? <p role="status" className="mt-5 text-sm font-medium text-neutral-900">{sentCount} {sentCount === 1 ? "invitation sent." : "invitations sent."}</p> : null}
         <div className="mt-8 flex flex-wrap items-center gap-3">
-          {pendingRows.length > 0 || sentCount === 0 ? <button type="submit" disabled={sending || pendingRows.length === 0} className={`${buttonClass} bg-neutral-950 text-white hover:bg-neutral-800`}>{sending ? "Sending invitations…" : "Send invitations"}<ArrowRight className="h-4 w-4" /></button> : null}
-          <button type="button" disabled={sending} onClick={continueSetup} className={`${buttonClass} ${sentCount > 0 && pendingRows.length === 0 ? "bg-neutral-950 text-white hover:bg-neutral-800" : sentCount > 0 ? "border border-neutral-200 bg-white text-neutral-900 hover:bg-neutral-50" : "text-neutral-500 hover:text-neutral-900"}`}>{sentCount > 0 ? "Continue" : "Do this later"}</button>
+          {pendingRows.length > 0 || sentCount === 0 ? <button type="submit" disabled={interactionBusy || pendingRows.length === 0} className={`${buttonClass} bg-neutral-950 text-white hover:bg-neutral-800`}>{sending ? "Sending invitations…" : "Send invitations"}<ArrowRight className="h-4 w-4" /></button> : null}
+          {simplified ? finishButton : <button type="button" disabled={interactionBusy} onClick={() => void continueSetup()} className={`${buttonClass} ${sentCount > 0 && pendingRows.length === 0 ? "bg-neutral-950 text-white hover:bg-neutral-800" : sentCount > 0 ? "border border-neutral-200 bg-white text-neutral-900 hover:bg-neutral-50" : "text-neutral-500 hover:text-neutral-900"}`}>{sentCount > 0 ? "Continue" : "Do this later"}</button>}
         </div>
-      </form> : <div className="space-y-6"><p className="text-sm leading-6 text-neutral-600">An owner or admin can invite teammates. You can continue setting up your own app.</p><button type="button" onClick={continueSetup} className={`${buttonClass} bg-neutral-950 text-white hover:bg-neutral-800`}>Do this later<ArrowRight className="h-4 w-4" /></button></div>}
+      </form> : <div className="space-y-6"><p className="text-sm leading-6 text-neutral-600">An owner or admin can invite teammates. You can continue setting up your own app.</p>{simplified ? finishButton : <button type="button" onClick={() => void continueSetup()} className={`${buttonClass} bg-neutral-950 text-white hover:bg-neutral-800`}>Do this later<ArrowRight className="h-4 w-4" /></button>}</div>}
     </div>
   </SetupFrame>;
 }

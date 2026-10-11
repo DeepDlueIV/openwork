@@ -329,6 +329,7 @@ OpenWork Cloud. Don't change it on a customer install.
 <!-- BEGIN GENERATED features (pnpm features:sync) -->
 | `config.features.*` | Environment variable | Default | What it does |
 | --- | --- | --- | --- |
+| `simplifiedOnboarding` | `DEN_FEATURE_SIMPLIFIED_ONBOARDING` | default off (cloud only) | People enter their name, create a workspace, and optionally invite teammates before going straight to the dashboard. |
 | `managedDeployments` | `DEN_FEATURE_MANAGED_DEPLOYMENTS` | default off (cloud only) | Organization admins install OpenWork in their own cloud account (AWS first) and see its health and updates in OpenWork. |
 | `installLinks` | `DEN_FEATURE_INSTALL_LINKS` | default on | Workspace admins can create desktop install links for their organization. |
 | `mcpConnections` | `DEN_FEATURE_MCP_CONNECTIONS` | default on | Members see the organization's connections, marketplace capabilities on the agent rail, and the desktop Connect tab. |

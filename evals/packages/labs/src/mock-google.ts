@@ -42,6 +42,10 @@ export interface MockGoogleHandle {
   /** Drive uploads attributed to ONE account, including provider-observed bytes. */
   driveUploadsFor(email: string, opts?: { since?: string; timeoutMs?: number; atLeast?: number }): Promise<MockGoogleDriveUpload[]>;
   authorizeRequestSince(iso: string, opts?: { timeoutMs?: number }): Promise<{ params: URLSearchParams }>;
+  /** Revoke every token issued for ONE account, as if the member removed the app's access. */
+  revoke(email: string): Promise<void>;
+  /** Token-endpoint requests seen so far, oldest first. */
+  tokenRequests(): Promise<Record<string, unknown>[]>;
   stop(): Promise<void>;
   [Symbol.asyncDispose](): Promise<void>;
 }
@@ -52,6 +56,7 @@ export interface StartMockGoogleOptions {
   publicUrl?: string;
   autoApprove?: boolean;
   threads?: Record<string, MockGoogleThread[]>;
+  accessTokenTtlSeconds?: number;
 }
 
 export async function startMockGoogle(options: StartMockGoogleOptions): Promise<MockGoogleHandle> {
@@ -60,7 +65,7 @@ export async function startMockGoogle(options: StartMockGoogleOptions): Promise<
   const externalUrl = options.publicUrl ? trimTrailingSlashes(options.publicUrl.trim()) || undefined : undefined;
   const local = externalUrl
     ? null
-    : await startMockGoogleServer({ accounts, port: options.port ?? 3980, autoApprove: options.autoApprove ?? true, threads: options.threads });
+    : await startMockGoogleServer({ accounts, port: options.port ?? 3980, autoApprove: options.autoApprove ?? true, threads: options.threads, accessTokenTtlSeconds: options.accessTokenTtlSeconds });
   const url = externalUrl ?? local?.baseUrl;
   if (!url) throw new Error("Mock Google did not expose a URL.");
   const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -267,6 +272,13 @@ export async function startMockGoogle(options: StartMockGoogleOptions): Promise<
         await sleep(100);
       }
       throw new Error(`No GET /authorize reached the mock Google provider after ${iso}.`);
+    },
+    async revoke(email) {
+      const response = await fetch(`${url}/__mock-google/revoke?email=${encodeURIComponent(email)}`, { method: "POST", signal: AbortSignal.timeout(10_000) });
+      if (!response.ok) throw new Error(`Mock Google revoke failed: HTTP ${response.status}`);
+    },
+    async tokenRequests() {
+      return (await requests()).filter((entry) => entry.method === "POST" && entry.path === "/token");
     },
     stop,
     [Symbol.asyncDispose]: stop,

@@ -415,12 +415,17 @@ async function googleWorkspaceToken(input: {
       ?? { kind: "needs_connection", message: CONNECT_GOOGLE_ACCOUNT_MESSAGE }
   }
 
-  const token = await getValidAccessToken({
-    provider,
-    credentialProviderId,
-    organizationId: input.organizationId,
-    orgMembershipId: input.orgMembershipId,
-  })
+  let token: Awaited<ReturnType<typeof getValidAccessToken>>
+  try {
+    token = await getValidAccessToken({
+      provider,
+      credentialProviderId,
+      organizationId: input.organizationId,
+      orgMembershipId: input.orgMembershipId,
+    })
+  } catch (error) {
+    return { kind: "google_api_error", message: error instanceof Error ? error.message : "Google OAuth token refresh failed." }
+  }
   if ("error" in token) {
     return { kind: "needs_connection", message: CONNECT_GOOGLE_ACCOUNT_MESSAGE }
   }

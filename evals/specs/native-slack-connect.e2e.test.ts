@@ -17,9 +17,13 @@ async function openConnections(user: User) {
 }
 
 async function closeConnections(user: User) {
-  // Escape from the connector submenu returns to the root menu, which still
-  // covers the composer. Close the whole picker through its visible toggle.
-  await user.click({ role: "button", label: "Add files, skills, connectors, and more" });
+  // The picker handles Escape as Back in a submenu and Close at the root.
+  // Focus each observed search field so both keys reach that menu, not a
+  // different browser window left in front by an admin/OAuth interaction.
+  await user.click({ placeholder: "Search connectors" });
+  await user.press("Escape");
+  await user.click({ placeholder: "Search files, skills, connectors" });
+  await user.press("Escape");
   await user.notSee({ role: "option", label: /^Connectors/ });
 }
 

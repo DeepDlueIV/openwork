@@ -720,6 +720,10 @@ test("a platform admin rolls Slack search out by organization while members keep
     await probe.eventually(() => world.connection("first"), {
       within: 30_000, label: "the member removed their blocked Slack account", until: value => value === undefined,
     });
+    await memberProbe.eventually(() => memberProbe.dom('[data-testid="disconnect-my-mcp-account-slack"]'), {
+      within: 30_000, label: "the account list reflects the completed disconnect",
+      until: value => value.elements.length === 0,
+    });
     await member.notSee({ testId: "disconnect-my-mcp-account-slack" });
     expect(world.slack.calls()).toHaveLength(before);
     expect(await world.connection("other")).toMatchObject({ connected: true, connectedForMe: true });

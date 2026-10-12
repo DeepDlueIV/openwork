@@ -43,6 +43,7 @@ test("a contractor's agent asks before commands, runs the ones the team allows, 
   const reason = (call: { error: string; output: string } | null) => `${call?.error ?? ""} ${call?.output ?? ""}`.trim();
   const shell = (command: string): MockAgentToolStep => ({ tool: world.shellTool, arguments: { command, description: "Run a command" } });
   const blockedCommand = "printf '%s' 'saved by the agent' > 'note.txt'";
+  const wrappedCommand = `bash -c "printf '%s' 'saved through bash' > 'wrapped-note.txt'"`;
   const allowedCommand = "echo 'checked in'";
   const askedCommand = "pwd";
 
@@ -79,6 +80,24 @@ test("a contractor's agent asks before commands, runs the ones the team allows, 
       !wrote && told.includes("Your organization's agent permissions block") && told.includes('"printf *" is blocked for Contractors'));
     expect(wrote).toBe(false);
     expect(told).toContain("Your organization's agent permissions block");
+    expect(told).toContain('"printf *" is blocked for Contractors');
+  });
+
+  await step("before: the agent hands the same printf to another shell with bash -c", async () => {
+    await turn("Save the note through bash.", [shell(wrappedCommand)]);
+    const call = await settled(world.shellTool, (input) => input.command === wrappedCommand);
+    evidence.recordAssertionEvidence("the agent's bash -c call", `${call?.status ?? "none"}: ${wrappedCommand}`, call?.status === "error");
+    expect(call?.status).toBe("error");
+    await user.screenshot();
+  });
+
+  await step("after: the wrapped printf never ran either, and the agent was told the same rule", async () => {
+    const call = await world.toolCall(world.shellTool, (input) => input.command === wrappedCommand);
+    const wrote = await world.wrote("wrapped-note.txt");
+    const told = reason(call);
+    evidence.recordAssertionEvidence("wrapped command blocked before it ran", `note written: ${wrote}; the agent was told: ${told || "(nothing)"}`,
+      !wrote && told.includes('"printf *" is blocked for Contractors'));
+    expect(wrote).toBe(false);
     expect(told).toContain('"printf *" is blocked for Contractors');
   });
 

@@ -108,7 +108,7 @@ export function agentPermissionEngineV2Decision(
 ): { effect: "allow" | "ask" | "deny"; message?: string } {
   const ourAction = v2Action(action);
   if (!ourAction) return { effect: engineEffect };
-  const ours = decideAgentPermission(rules, ourAction, resources);
+  const ours = decideAgentPermission(rules, ourAction, ourAction === "shell" ? resources.flatMap(shellCommands) : resources);
   if (ours.effect === "deny" && ours.rule) return { effect: "deny", message: agentPermissionDenialMessage(ours.rule, ours.resource) };
   if (ours.effect === "ask" && engineEffect === "allow") return { effect: "ask" };
   return { effect: engineEffect };
@@ -257,19 +257,76 @@ function withoutAssignments(command: string): string {
   return words.slice(first).join(" ");
 }
 
+/** The words of a command, with quotes and backslash escapes removed. */
+function shellWords(command: string): string[] {
+  const words: string[] = [];
+  let word: string | null = null;
+  let quote: "'" | '"' | null = null;
+  for (let index = 0; index < command.length; index++) {
+    const char = command[index]!;
+    if (quote) {
+      if (char === quote) quote = null;
+      else if (char === "\\" && quote === '"' && index + 1 < command.length) word += command[++index]!;
+      else word += char;
+    } else if (char === "'" || char === '"') {
+      quote = char;
+      word ??= "";
+    } else if (char === "\\" && index + 1 < command.length) {
+      word = (word ?? "") + command[++index]!;
+    } else if (/\s/.test(char)) {
+      if (word !== null) words.push(word);
+      word = null;
+    } else {
+      word = (word ?? "") + char;
+    }
+  }
+  if (word !== null) words.push(word);
+  return words;
+}
+
+const SHELL_INTERPRETERS = new Set(["sh", "bash", "zsh", "dash", "ksh", "mksh", "ash", "fish"]);
+
+/**
+ * The scripts a command hands to another shell (`bash -c '…'`,
+ * `sudo -u x sh -lc '…'`, `eval '…'`), so a rule for the commands inside
+ * applies to them too. Any word may start one, so a wrapper in front never
+ * hides it.
+ */
+function interpreterPayloads(command: string): string[] {
+  const words = shellWords(command);
+  const found: string[] = [];
+  words.forEach((word, index) => {
+    const program = word.slice(word.lastIndexOf("/") + 1);
+    if (program === "eval") {
+      found.push(words.slice(index + 1).join(" "));
+      return;
+    }
+    if (!SHELL_INTERPRETERS.has(program)) return;
+    for (let flag = index + 1; flag < words.length && /^-[A-Za-z]+$/.test(words[flag]!); flag++) {
+      if (words[flag]!.includes("c")) {
+        found.push(words[flag + 1] ?? "");
+        return;
+      }
+    }
+  });
+  return found;
+}
+
 /**
  * The commands a shell command line runs, roughly as the engine's parser finds
- * them: the line, each part between separators, and each command
- * substitution, searched again in turn. A rough split only adds candidates, so
- * a pattern can block more than the line runs, never less.
+ * them: the line, each part between separators, each command substitution and
+ * each script handed to another shell, searched again in turn. A rough split
+ * only adds candidates, so a pattern can block more than the line runs, never
+ * less.
  */
-function shellCommands(command: string): string[] {
+export function shellCommands(command: string): string[] {
   const found = new Set<string>();
   const visit = (text: string, depth: number) => {
     const line = text.trim();
     if (!line || found.has(line) || depth > 8) return;
     found.add(line);
     found.add(withoutAssignments(line));
+    for (const payload of interpreterPayloads(line)) visit(payload, depth + 1);
     for (const inner of shellSubstitutions(line)) visit(inner, depth + 1);
     for (const part of line.split(/&&|\|\||[;|&\n]/)) visit(part, depth + 1);
   };

@@ -95,6 +95,8 @@ jobs:
         run: pnpm --filter @openwork-ee/headless-runner test:conversation
       - name: Boot the app provider tree
         run: pnpm test:boot
+      - name: Check desktop links open real Den pages
+        run: pnpm --filter @openwork/app test:den-links
       - name: Test the shared Calendar logic
         run: pnpm --filter @openwork/calendar test
       - name: Test fork authorization and free screening policy

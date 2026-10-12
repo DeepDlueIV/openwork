@@ -184,6 +184,7 @@ import { buildCommandPaletteSessions } from "./command-palette-sessions";
 import { useCommandPaletteShortcut } from "./use-shell-shortcuts";
 import { buildFeedbackUrl } from "@/app/lib/feedback";
 import { getDenInferenceUrl, readDenSettings, type DenSettings } from "@/app/lib/den";
+import { denDashboardUrl } from "@/app/lib/den-dashboard-links";
 import { readActiveWorkspaceId, writeActiveWorkspaceId } from "./session-memory";
 import { useUiStateStore } from "./ui-state-store";
 import {
@@ -991,7 +992,7 @@ function SettingsRouteContent(props: SettingsSurfaceProps = {}) {
     reloadPending: providerAuthSnapshot.cloudProviderServerSync?.reloadPending === true,
   });
   const openProvidersInDen = useCallback(() => {
-    platform.openLink(new URL("/dashboard/gateway-providers", cloudSession.baseUrl).href);
+    platform.openLink(denDashboardUrl(cloudSession.baseUrl, "gatewayProviders"));
   }, [cloudSession.baseUrl, platform]);
   const autoClient = isDesktopRuntime() && openworkServerSnapshot.openworkServerClient && isLoopbackOpenworkServerUrl(openworkServerSnapshot.openworkServerClient.baseUrl) ? openworkServerSnapshot.openworkServerClient : null;
   const [autoPreferences, setAutoPreferences] = useState<DesktopFreePreferences | null>(null);
@@ -2234,7 +2235,7 @@ function SettingsRouteContent(props: SettingsSurfaceProps = {}) {
                 key={`${cloudSession.baseUrl}:${cloudSession.activeOrganization?.id ?? "signed-out"}`}
                 embedded
                 onOpenDen={openProvidersInDen}
-                onOpenModelConnections={() => { void platform.openLink(new URL("/dashboard/model-connections", readDenSettings().baseUrl).toString()); }}
+                onOpenModelConnections={() => { void platform.openLink(denDashboardUrl(readDenSettings().baseUrl, "modelConnections")); }}
                 gatewayConnectProviders={gatewayConnectProviders}
                 connectingGatewayProviderId={connectingGatewayProviderId}
                 onConnectGatewayProvider={(provider) => { void handleConnectGatewayProvider(provider); }}

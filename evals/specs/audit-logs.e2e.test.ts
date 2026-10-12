@@ -74,8 +74,13 @@ test("an owner reads, filters and pauses audit history in compact Den rows, and 
     const selector = `[id="audit-operation-${operation.id}"] [data-testid="audit-event"]`;
     const events = await audit.eventually(() => audit.dom(selector), { within: 30_000, label: "Expanded operation lists every event", until: (value) => value.elements.length === count });
     // Each event starts with two lines: title + result, then actor + time.
-    const heads = (await audit.dom(`${selector} > div > *`)).elements.map((element) => element.text);
-    const cells = (await audit.dom(`${selector} tbody td`)).elements.map((cell) => cell.text);
+    // The later change-table div is not part of the event's headline.
+    const heads = (await audit.dom(`${selector} > div:nth-child(-n+2) > *`)).elements.map((element) => element.text);
+    expect(heads).toHaveLength(count * 4);
+    // Read the main change table's field/value spans, not the CSS-hidden mobile
+    // Before/After labels or the ID rows inside collapsed Technical details.
+    const cells = (await audit.dom(`${selector} > div table tbody td:first-child > span, ${selector} > div table tbody td > span > span:last-child`)).elements.map((cell) => cell.text);
+    expect(cells.length % 3).toBe(0);
     return {
       events: events.elements.map((event, index) => ({ headline: heads.slice(index * 4, index * 4 + 3).join(" · "), text: event.text })),
       changes: Array.from({ length: cells.length / 3 }, (_, index) => cells.slice(index * 3, index * 3 + 3).join(" | ")),

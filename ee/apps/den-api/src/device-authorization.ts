@@ -13,7 +13,7 @@ import { db } from "./db.js"
  * otherwise get a session with no active organization.
  */
 
-export { DEN_DEVICE_CLIENT_IDS, DEN_OPENCODE_PLUGIN_DEVICE_CLIENT_ID, isDenDeviceClientId, isEnabledDenDeviceClientId } from "./device-clients.js"
+export { DEN_DEVICE_CLIENT_IDS, DEN_OPENCODE_PLUGIN_DEVICE_CLIENT_ID, isDenDeviceClientId } from "./device-clients.js"
 
 export const DEN_DEVICE_CODE_EXPIRES_IN = "15m"
 export const DEN_DEVICE_CODE_POLL_INTERVAL = "5s"

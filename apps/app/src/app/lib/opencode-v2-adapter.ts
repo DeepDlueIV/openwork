@@ -1,4 +1,5 @@
 import type {
+  Agent,
   ApiError,
   ConfigProvidersResponse,
   FilePart,
@@ -992,6 +993,30 @@ function mapV2Model(value: unknown): Model | null {
   };
 }
 
+/**
+ * Map a native v2 `/api/agent` row onto the v1 SDK `Agent` the picker expects.
+ * Use the API `id` as `name` — selection and `POST …/session/:id/agent` speak ids
+ * (`build`, `plan`), not the display title (`Build`, `Plan`).
+ */
+export function mapV2Agent(value: unknown): Agent | null {
+  if (!isRecord(value)) return null;
+  const id = readString(value, "id");
+  if (!id) return null;
+  const mode = readString(value, "mode");
+  if (mode !== "subagent" && mode !== "primary" && mode !== "all") return null;
+  const description = readString(value, "description");
+  const color = readString(value, "color");
+  return {
+    name: id,
+    mode,
+    hidden: value.hidden === true,
+    permission: [],
+    options: {},
+    ...(description ? { description } : {}),
+    ...(color ? { color } : {}),
+  };
+}
+
 function mapDefaultModels(value: unknown): Record<string, string> {
   const data = responseData(value);
   const defaults: Record<string, string> = {};
@@ -1965,6 +1990,52 @@ export function createClientV2(
     return { payload: await readPayload(response), request: transportRequest, response };
   };
 
+  // The engine fails every prompt whose agent it does not define, such as
+  // v1's `openwork` kept by migrated chats and their forks, or a saved v1
+  // pick. Those run on the default agent, which the engine lists first.
+  // Agents are re-read only for a name the latest read did not answer, and a
+  // chat is checked once per client, so later sends cost no request.
+  let agentCatalog: Agent[] = [];
+  let agentsMissingFromCatalog = new Set<string>();
+  const readAgentCatalog = async (signal?: AbortSignal): Promise<TransportResult> => {
+    const result = await request("GET", "/api/agent", undefined, signal);
+    if (result.response.ok) {
+      agentCatalog = responseItems(result.payload).flatMap((item) => {
+        const agent = mapV2Agent(item);
+        return agent ? [agent] : [];
+      });
+      agentsMissingFromCatalog = new Set();
+    }
+    return result;
+  };
+  const checkedAgentSessions = new Set<string>();
+  const resolvePromptAgent = async (
+    sessionID: string,
+    picked: string | undefined,
+    signal?: AbortSignal,
+  ): Promise<{ agent?: string; known: boolean } | { failed: TransportResult }> => {
+    if (!picked && checkedAgentSessions.has(sessionID)) return { known: true };
+    let current: string | undefined;
+    if (!picked) {
+      const session = await request("GET", `/api/session/${encodeURIComponent(sessionID)}`, undefined, signal);
+      if (!session.response.ok) return { failed: session };
+      current = readString(responseData(session.payload), "agent");
+    }
+    const wanted = picked ?? current;
+    if (!wanted) return { known: true };
+    if (!agentCatalog.some((agent) => agent.name === wanted) && !agentsMissingFromCatalog.has(wanted)) {
+      const agents = await readAgentCatalog(signal);
+      if (!agents.response.ok) return { failed: agents };
+      if (agentCatalog.length && !agentCatalog.some((agent) => agent.name === wanted)) agentsMissingFromCatalog.add(wanted);
+    }
+    // A starting engine can list no agents yet; keep the choice then.
+    if (!agentCatalog.length) return { agent: picked, known: false };
+    const agent = agentCatalog.some((candidate) => candidate.name === wanted)
+      ? wanted
+      : agentCatalog.find((candidate) => candidate.mode !== "subagent" && !candidate.hidden)?.name ?? "build";
+    return { agent: agent === current ? undefined : agent, known: true };
+  };
+
   const listSessionPermissions = async (
     parameters: SessionParameters,
     options?: RequestOptions,
@@ -2312,17 +2383,31 @@ export function createClientV2(
           return unsupportedResult(baseUrl, "skill.attachment", message);
         }
       }
-      const modelResult = await request(
-        "POST",
-        `/api/session/${encodeURIComponent(parameters.sessionID)}/model`,
-        { model: {
-          providerID: parameters.model.providerID,
-          id: parameters.model.modelID,
-          ...(parameters.variant === undefined ? {} : { variant: parameters.variant }),
-        } },
-        options?.signal,
-      );
+      const [modelResult, agentResolution] = await Promise.all([
+        request(
+          "POST",
+          `/api/session/${encodeURIComponent(parameters.sessionID)}/model`,
+          { model: {
+            providerID: parameters.model.providerID,
+            id: parameters.model.modelID,
+            ...(parameters.variant === undefined ? {} : { variant: parameters.variant }),
+          } },
+          options?.signal,
+        ),
+        resolvePromptAgent(parameters.sessionID, parameters.agent, options?.signal),
+      ]);
       if (!modelResult.response.ok) return failedResult(modelResult);
+      if ("failed" in agentResolution) return failedResult(agentResolution.failed);
+      if (agentResolution.agent) {
+        const agentResult = await request(
+          "POST",
+          `/api/session/${encodeURIComponent(parameters.sessionID)}/agent`,
+          { agent: agentResolution.agent },
+          options?.signal,
+        );
+        if (!agentResult.response.ok) return failedResult(agentResult);
+      }
+      if (agentResolution.known) checkedAgentSessions.add(parameters.sessionID);
       if (parameters.system !== undefined) {
         const instructions = await request("PUT",
           `/api/experimental/session/${encodeURIComponent(parameters.sessionID)}/instructions/entries/openwork-context`,
@@ -2500,7 +2585,13 @@ export function createClientV2(
       list: (parameters?: DirectoryParameters, options?: RequestOptions) => listProviders(parameters, options),
     },
     app: {
-      agents: async (): Promise<FieldsResult<never[]>> => localResult(baseUrl, "/api/agent", []),
+      agents: async (
+        _parameters: DirectoryParameters = {},
+        options?: RequestOptions,
+      ): Promise<FieldsResult<Agent[]>> => {
+        const result = await readAgentCatalog(options?.signal);
+        return result.response.ok ? successfulResult(result, agentCatalog) : failedResult(result);
+      },
     },
     command: {
       list: async (): Promise<FieldsResult<never[]>> => localResult(baseUrl, "/api/command", []),

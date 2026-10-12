@@ -3,9 +3,8 @@ import { aiGatewayAdmin } from "./ai-gateway-admin.ts";
 import { readDenStickyActionBar } from "./den-sticky-action-bar.ts";
 
 /**
- * The AI Gateway admin world with AWS and Microsoft sign-in still off for the
- * organization (the gatewayCloudSignIn feature), so the journey can show the
- * locked state before a platform admin turns it on. No request reaches AWS,
+ * The AI Gateway admin world with a teammate signed in by password, so the
+ * journey can follow AWS and Microsoft member sign-in. No request reaches AWS,
  * Microsoft or the gateway: the journey stops at the page that hands off to AWS.
  */
 export async function aiGatewayCloudSignIn(seed: Seed, context: { place: Place }) {

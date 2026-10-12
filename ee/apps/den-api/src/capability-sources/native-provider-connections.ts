@@ -2,7 +2,6 @@ import type { DenTypeId } from "@openwork-ee/utils/typeid"
 import { and, eq } from "@openwork-ee/den-db/drizzle"
 import { ConnectedAccountTable, OrganizationTable } from "@openwork-ee/den-db/schema"
 import { db } from "../db.js"
-import { env } from "../env.js"
 import {
   clientSelectedFeatures,
   NATIVE_OAUTH_PROVIDERS,
@@ -15,7 +14,6 @@ import { getNativeOAuthClient } from "./native-oauth-client.js"
 import { parseSlackAccountIdentity, slackCloudPolicyError } from "./slack-policy.js"
 import { readProviderTenantId } from "./oauth-tenant.js"
 import { listExternalMcpConnections, listUsableNativeProviderConnections } from "./external-mcp-connections.js"
-import { organizationFeatureEnabled } from "../features.js"
 
 /**
  * Native providers (google-workspace, ...) surface in the SAME member-facing
@@ -126,6 +124,13 @@ export function buildNativeProviderEntry(
 
 export type NativeProviderPolicyError = { kind: "policy_blocked"; message: string }
 
+/**
+ * Connect is generally available: the per-organization `mcpConnections` opt-out
+ * was retired on purpose (product decision, 2026-10), so a stored `false`
+ * override no longer blocks native actions. Keep the live organization check
+ * and Slack's separate default-off Cloud rollout. Connection grants and each
+ * member's own credentials are enforced where the connection is resolved.
+ */
 export async function nativeProviderConnectionPolicyError(organizationId: DenTypeId<"organization">, nativeProviderKey?: string): Promise<NativeProviderPolicyError | null> {
   if (nativeProviderKey === "slack") {
     const slackPolicy = await slackCloudPolicyError(organizationId)
@@ -136,12 +141,10 @@ export async function nativeProviderConnectionPolicyError(organizationId: DenTyp
     .from(OrganizationTable)
     .where(eq(OrganizationTable.id, organizationId))
     .limit(1)
-  if (organization && await organizationFeatureEnabled(organization.id, "mcpConnections")) return null
+  if (organization) return null
   return {
     kind: "policy_blocked",
-    message: organization
-      ? "Connect is disabled for this organization. Ask your administrator to have it re-enabled."
-      : "This organization is unavailable. Ask your administrator to check your organization access.",
+    message: "This organization is unavailable. Ask your administrator to check your organization access.",
   }
 }
 
@@ -150,7 +153,7 @@ export async function listNativeProviderUsableEntries(input: {
   orgMembershipId: DenTypeId<"member">
   teamIds?: DenTypeId<"team">[]
 }): Promise<NativeProviderConnectionEntry[]> {
-  // Recheck at resolution so retained capability names and Code Mode calls cannot bypass an org disable.
+  // Require a live organization at resolution; Slack's own rollout is checked by its client resolver.
   if (await nativeProviderConnectionPolicyError(input.organizationId)) return []
   const entries: NativeProviderConnectionEntry[] = []
   const connections = await listUsableNativeProviderConnections({

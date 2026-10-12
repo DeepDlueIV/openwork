@@ -308,19 +308,17 @@ scope, even when the provider advertises `readOnlyHint: true`. Discovery and
 connection-status checks work with `mcp:read`. See
 [MCP token scopes](/cloud/run-in-the-cloud/cloud-mcp#reference).
 
-**Organization policy.** Connect is on by default. A platform administrator can
-turn off member-facing connections with the organization's
-`capabilities.mcpConnections` setting. Native Google Workspace and Microsoft
-365 actions follow the same policy, including existing clients that use legacy
-or default accounts. Client version doesn't bypass it. A blocked native action
-returns `policy_blocked` with an administrator-directed message; native REST
-routes return HTTP `403`. This isn't a sign-in failure, so reconnecting an
-account doesn't turn Connect back on. Missing credentials in an enabled
-organization still return `needs_connection` and HTTP `409`. Admins can still
-manage connector settings while Connect is off. Turning it back on restores
-access, subject to each member's existing grants and credentials. **Tool
-Tester** appears in the sidebar only while Connect is on.
+**Availability.** Connect is available in every organization, on Cloud and
+self-hosted; there is no switch to turn on or off. Access still follows each
+member's grants and credentials. Missing credentials return `needs_connection`
+and HTTP `409`.
 
-**Self-hosted.** There is no deployment-level switch for Connect; the
-organization metadata policy is authoritative.
+**Retired organization switch.** Earlier releases let a platform administrator
+turn Connect off for one organization (`capabilities.mcpConnections`). That
+switch is retired on purpose: an organization that had it off now has Connect
+on, including native Google Workspace and Microsoft 365 actions. To limit who
+can use a service, set the connection's access to specific teams, or remove
+the connection. Google Workspace or Microsoft 365 set up with an older
+organization OAuth client applies to the whole organization; remove that setup
+to stop members from using it.
 </Accordion>

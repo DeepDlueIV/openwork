@@ -1,11 +1,10 @@
 import { expect } from "vitest";
 import { spec } from "@openwork/testkit";
-import { denDownloadAdmin, denDownloadCapabilityOff, denDownloadFailures, denDownloadMember } from "../worlds/den-download-openwork.ts";
+import { denDownloadAdmin, denDownloadFailures, denDownloadMember } from "../worlds/den-download-openwork.ts";
 
 const admin = spec.world(denDownloadAdmin, { resources: { surfaces: ["web"], services: ["den"] }, timeout: 420_000 });
 const failures = spec.world(denDownloadFailures, { resources: { surfaces: ["web"], services: ["den"] }, timeout: 420_000 });
 const member = spec.world(denDownloadMember, { resources: { surfaces: ["web"], services: ["den"] }, timeout: 420_000 });
-const capabilityOff = spec.world(denDownloadCapabilityOff, { resources: { surfaces: ["web"], services: ["den"] }, timeout: 420_000 });
 const download = { testId: "den-download-openwork" };
 const popover = { testId: "workspace-install-popover" };
 const copy = { testId: "workspace-install-copy" };
@@ -110,7 +109,8 @@ admin("an admin shares and opens a workspace download from the shared header", a
       expect(label.elements[0].rect.width > 0).toBe(width >= 640);
       const title = await probe.dom('header > div:first-child > span');
       expect(title.elements[0].rect.width).toBeGreaterThan(0);
-      await user.click({ testId: "den-command-palette-trigger", nth: width >= 1024 ? 0 : 1 });
+      // Only the trigger rendered at this width is targetable (hidden duplicates are skipped).
+      await user.click({ testId: "den-command-palette-trigger" });
       await user.see({ testId: "den-command-palette-input" });
       await user.press("Escape");
       await closes(probe, '[data-testid="den-command-palette"]', "Escape closes the command palette");
@@ -221,37 +221,6 @@ member("a member keeps both download actions and uses the header to go straight 
     expect(location).toBe("/install");
     expect(await world.mintRequests()).toHaveLength(0);
     evidence.recordAssertionEvidence("The original member download action is unchanged", `path=${location}; no minted share link`, location === "/install");
-    await user.screenshot();
-  });
-});
-
-capabilityOff("an admin without workspace install links gets the same direct download as a member", async ({ world, user, probe, evidence, step }) => {
-  await step("before: workspace install links are disabled and the admin sees a direct header link", async () => {
-    await user.see({ ...download, role: "link", label: "Download OpenWork" }, { timeoutMs: 90_000 });
-    await user.notSee({ testId: "workspace-install-card" });
-    await user.notSee(popover);
-    const href = await probe.dom('header a[data-testid="den-download-openwork"][href="/install"]');
-    expect(href.elements).toHaveLength(1);
-    evidence.recordAssertionEvidence("Admin role alone does not expose workspace sharing", "installLinks=false; header href=/install; old card and panel absent", true);
-    await user.screenshot();
-  });
-
-  await step("the admin follows Download OpenWork straight to install", async () => {
-    await user.click(download);
-    await user.see({ role: "heading", label: "Download OpenWork" }, { timeoutMs: 60_000 });
-    const location = await world.location();
-    expect(location).toBe("/install");
-    await user.notSee(popover);
-    evidence.recordAssertionEvidence("The disabled capability falls back to the ordinary install page", `path=${location}; no sharing panel`, location === "/install");
-    await user.screenshot();
-  });
-
-  await step("after: the direct download offers installers without minting a shareable link", async () => {
-    await user.see({ role: "link", label: "I already installed OpenWork" });
-    await user.notSee(copy);
-    const requests = await world.mintRequests();
-    expect(requests).toHaveLength(0);
-    evidence.recordAssertionEvidence("The capability-off admin never requests a workspace share link", `workspace=${world.organizationName}; mint requests=${requests.length}`, requests.length === 0);
     await user.screenshot();
   });
 });

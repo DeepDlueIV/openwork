@@ -127,10 +127,6 @@ test.skipIf(skipReason !== "")(title, { timeout: 300_000 }, async ({ evidence, p
   const dbUrl = scratchDatabaseUrl(den);
   const admin = den.admin;
   const orgId = await organizationIdNamed(admin, organizationName);
-  const enabled = await denFetch(admin, `/v1/admin/organizations/${orgId}/capabilities`, {
-    method: "PUT", headers: { authorization: `Bearer ${admin.token}` }, body: JSON.stringify({ capabilities: { auditLogs: true } }),
-  });
-  expect(enabled.response.status, enabled.text).toBe(200);
   const identity = await memberIdentity(admin, orgId);
   const minted = await denFetch(admin, "/v1/mcp/token", { method: "POST", headers: orgHeaders(admin, orgId), body: JSON.stringify({ scopes: ["mcp:read", "mcp:write"] }) });
   expect(minted.response.status, minted.text).toBe(200);
@@ -195,22 +191,5 @@ test.skipIf(skipReason !== "")(title, { timeout: 300_000 }, async ({ evidence, p
     "3. MCP transport requests record nothing",
     `${allEvents.length} tenant events in the org, ${transportTenant.length} with a transport route; ${transportPlatform.length} platform_audit_event rows for MCP transport routes.`,
     transportTenant.length === 0 && transportPlatform.length === 0,
-  );
-
-  // 4. An admin tool that turns audit off for its own organization keeps its outcome as platform evidence.
-  const beforeOff = await watermark(dbUrl, orgId);
-  const offResult = await callTool(den, token, "execute_capability", { name: "admin:den_set_org_capability", body: { organizationId: orgId, capability: "auditLogs", enabled: false } });
-  expect(offResult.isError, JSON.stringify(offResult)).not.toBe(true);
-  const offEvents = (await eventsAfter(dbUrl, orgId, beforeOff)).filter((event) => event.action.startsWith("organization.capability.set."));
-  expect(offEvents.map((event) => `${event.action}/${event.outcome}`)).toEqual(["organization.capability.set.requested/unknown"]);
-  const fallback = await sql(dbUrl, "SELECT method, route, action, outcome, reason_code, origin, actor_id, target_type, target_id FROM platform_audit_event WHERE route = ? AND target_id = ?", ["service:organization.capability.set", orgId]);
-  expect(fallback).toEqual([{
-    method: "SERVICE", route: "service:organization.capability.set", action: "organization.capability.set.succeeded", outcome: "succeeded",
-    reason_code: "tenant_audit_disabled", origin: "platform_admin", actor_id: identity.userId, target_type: "organization", target_id: orgId,
-  }]);
-  evidence.recordAssertionEvidence(
-    "4. den_set_org_capability auditLogs=false records its intent in the organization and its outcome in the platform store",
-    `Tenant: ${summary(offEvents)}; platform: ${JSON.stringify(fallback)}.`,
-    offEvents.length === 1 && fallback.length === 1,
   );
 });

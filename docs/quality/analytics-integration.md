@@ -1,7 +1,8 @@
 # Analytics integration
 
 The `library-usage`, `workflow-run-previews`, and `org-model-analytics`
-journeys compare the existing presentation with `analyticsIntegrated` on.
+journeys compare the existing presentation with the integrated one, which
+comes with `libraryUsage` (it replaced the retired `analyticsIntegrated` flag).
 The Library journey also records Members and Connectors in the same workspace.
 
 ## Mismatches
@@ -21,7 +22,7 @@ The Library journey also records Members and Connectors in the same workspace.
 
 ## Scope and rollback
 
-`analyticsIntegrated` starts off on cloud and self-hosted. It changes
+The integrated presentation follows `libraryUsage`. It changes
 presentation only: no counts, collection, consent, entitlements, permissions,
 API queries, or persisted history change. Turning it off restores the original
 views immediately. Rows keep their existing Library/Connectors destinations;

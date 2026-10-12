@@ -7,7 +7,7 @@ import type { Context, Hono } from "hono"
 import type { RequestIdVariables } from "hono/request-id"
 import { describeRoute, type DescribeRouteOptions } from "hono-openapi"
 import { z } from "zod"
-import { initializeAuditPolicyInTx, requireAuditFeature, readEffectiveAuditPolicy, recheckAuditEntitlement } from "../../audit/capture.js"
+import { initializeAuditPolicyInTx, readAuditAvailability, readEffectiveAuditPolicy, recheckAuditEntitlement } from "../../audit/capture.js"
 import { supportedAuditEventTypes } from "../../audit/coverage.js"
 import { AuditReadError } from "../../audit/cursors.js"
 import { auditCsv, auditNdjson } from "../../audit/exports.js"
@@ -27,13 +27,13 @@ type AuditRouteContext = Pick<Context, "req" | "header" | "json"> & {
   get: <K extends "organizationContext" | "apiKey" | "requestId">(key: K) => Variables[K]
 }
 const describeAuditRoute = (options: AuditRouteDescription) => describeRoute({ security: [{ denApiKey: [] }, { bearerAuth: [] }], ...options })
-const coverage = "Organization administrator access to currently captured, retained audit history only; this is not coverage of every cloud action. Requires the auditLogs feature to be on for the organization (read fresh) and deployment visibility; feature disable returns 403 audit_feature_disabled without deleting history or changing capture preference. Legacy arbitrary payloads are preserved separately and are not backfilled or returned. One operation may contain multiple child events. Visibility is independent of capture entitlement. No duration, charge or continuous-drain guarantee is made."
+const coverage = "Organization administrator access to currently captured, retained audit history only; this is not coverage of every cloud action. Requires deployment visibility. Legacy arbitrary payloads are preserved separately and are not backfilled or returned. One operation may contain multiple child events. Visibility is independent of capture entitlement. No duration, charge or continuous-drain guarantee is made."
 const pagination = "Default limit 50, maximum 100. Cursors are signed, organization/filter/mode scoped and expire 24 hours after the first page (not renewed). Repeat the same filters; limit may change. snapshotAt freezes the page set: events recorded after it are excluded, including later children of an existing operation. Events are ordered by their time-ordered IDs; there is no per-organization sequence. Exports leave out the last few seconds so in-flight writes cannot land behind a page already read. Start a new snapshot to see newer events. This is not a lossless-drain or retention protection guarantee."
 const filterDescription = "Time filters are inclusive operation-start bounds (ISO date or offset date-time; date-only means UTC midnight). actorId is the initiating user ID; outcome is the current OPERATION outcome, not an event outcome. action matches an exact stable action of any child event within the snapshot. searchId is an exact case-sensitive ID match (1..255 characters, no controls), not free-text search: operation ID OR any canonical retained child event ID, child envelope requestId or child resource reference ID, scoped to this organization and operation within the snapshot. Legacy payloads are not searched. All other filters are AND combined with searchId. Resource filters match stored references within the snapshot, without live-resource joins; resourceType requires resourceId. Operation outcome/count/byte projections remain current rather than historical as-of-snapshot values."
 const errors = {
   400: jsonResponse("Malformed query, cursor, mismatched filters, operation scope or export format.", z.object({ error: z.enum(["audit_invalid_query", "audit_invalid_cursor"]) })),
   401: jsonResponse("Authentication required.", unauthorizedSchema),
-  403: jsonResponse("Organization administrator permission, audit feature and visibility required.", z.object({ error: z.enum(["forbidden", "audit_feature_disabled", "audit_visibility_disabled"]), message: z.string().optional() })),
+  403: jsonResponse("Organization administrator permission and visibility required.", z.object({ error: z.enum(["forbidden", "audit_visibility_disabled"]), message: z.string().optional() })),
   404: jsonResponse("Organization or retained operation not found, including foreign-tenant targets.", z.object({ error: z.enum(["organization_not_found", "audit_operation_not_found"]) })),
   410: jsonResponse("Cursor expired.", z.object({ error: z.enum(["audit_cursor_expired"]) })),
   503: jsonResponse("Audit storage or required access capture unavailable; no audit content is released.", z.object({ error: z.enum(["audit_unavailable", "audit_storage_inconsistent"]) })),
@@ -80,7 +80,7 @@ async function serveAudit(c: AuditRouteContext, action: "event_types" | "operati
     // Both appends are request-bound with idempotency keys, so a transient-failure retry is a replay.
     const retry = { idempotent: true, requestId: context.requestId ?? null, organizationId: context.organizationId }
     const capture = await withAuditRetry(() => db.transaction(async (tx) => {
-      await requireAuditFeature(tx, context.organizationId)
+      await readAuditAvailability(tx, context.organizationId)
       const policy = await readEffectiveAuditPolicy(tx, context.organizationId, env.auditCaptureEnabled)
       const category = policy?.categories.includes("access") ? "access" : policy?.categories.includes("read") ? "read" : null
       if (!policy || !category) return null
@@ -91,7 +91,7 @@ async function serveAudit(c: AuditRouteContext, action: "event_types" | "operati
     }), { ...retry, label: `audit.${action}.requested` })
     const response = await read(organization.organization.id)
     await withAuditRetry(() => db.transaction(async (tx) => {
-      await requireAuditFeature(tx, context.organizationId)
+      await readAuditAvailability(tx, context.organizationId)
       if (!capture) return
       await recheckAuditEntitlement(tx, context.organizationId)
       const served = await appendAuditEvent(tx, { context, policy: capture.policy, event: { ...capture.event, action: `audit.${action}.served`, outcome: "succeeded", idempotencyKey: `${context.requestId}:served` } })
@@ -115,12 +115,12 @@ async function serveAudit(c: AuditRouteContext, action: "event_types" | "operati
 export function registerOrgAuditRoutes<T extends { Variables: Variables }>(app: Hono<T>) {
   app.patch("/v1/audit/settings", describeAuditRoute({
     operationId: "updateAuditCapture", tags: ["Organizations"], "x-mcp": false, summary: "Set organization audit capture",
-    description: "Fresh organization administrator authorization, the auditLogs feature on for the organization and visibility required. Only captureOn and expectedRevision are accepted. Enabling requires Enterprise or explicit installation entitlement and capture rollout availability. A missing policy is initialized with server-owned temporary defaults; expectedRevision=0 is accepted only by the initializing request. Explicit OFF initializes and disables atomically, never publishing intermediate ON. Disabling remains available after entitlement loss while flagged. Revision conflicts require refresh; matching no-ops do not record duplicate events. Changes and immutable lifecycle evidence commit atomically. Existing capacity configuration and retained history are unchanged.",
+    description: "Fresh organization administrator authorization and visibility required. Only captureOn and expectedRevision are accepted. Enabling requires Enterprise or explicit installation entitlement and capture rollout availability. A missing policy is initialized with server-owned temporary defaults; expectedRevision=0 is accepted only by the initializing request. Explicit OFF initializes and disables atomically, never publishing intermediate ON. Disabling remains available after entitlement loss. Revision conflicts require refresh; matching no-ops do not record duplicate events. Changes and immutable lifecycle evidence commit atomically. Existing capacity configuration and retained history are unchanged.",
     responses: { ...errors,
       200: jsonResponse("Latest audit policy, entitlement and retained usage.", auditUsageResponseSchema),
       400: jsonResponse("Only captureOn and a nonnegative safe expectedRevision are accepted.", invalidRequestSchema),
       402: jsonResponse("Enabling capture requires audit availability.", enterprisePlanRequiredSchema),
-      403: jsonResponse("Administrator permission, fresh authentication, audit feature and visibility required.", z.union([forbiddenSchema, z.object({ error: z.enum(["audit_feature_disabled", "audit_visibility_disabled"]) })])),
+      403: jsonResponse("Administrator permission, fresh authentication and visibility required.", z.union([forbiddenSchema, z.object({ error: z.enum(["audit_visibility_disabled"]) })])),
       409: jsonResponse("Refresh a changed policy or wait for capture rollout.", z.object({ error: z.enum(["audit_policy_changed", "audit_policy_not_configured", "audit_capture_unavailable"]) })),
     },
   } satisfies AuditRouteDescription), orgPermissionRoute("audit.manage"), jsonValidator(auditCaptureUpdateSchema), async (c) => {
@@ -130,7 +130,7 @@ export function registerOrgAuditRoutes<T extends { Variables: Variables }>(app: 
     const input = c.req.valid("json")
     try {
       const rejection = await db.transaction(async (tx) => {
-        const { entitlement } = await requireAuditFeature(tx, organization.organization.id)
+        const { entitlement } = await readAuditAvailability(tx, organization.organization.id)
         const [member] = await tx.select().from(MemberTable).where(and(eq(MemberTable.id, organization.currentMember.id), eq(MemberTable.organizationId, organization.organization.id), eq(MemberTable.userId, organization.currentMember.userId), isNull(MemberTable.removedAt))).limit(1)
         if (!member) return "forbidden"
         // Re-check Manage audit settings through this transaction (read-only, share locks), so a

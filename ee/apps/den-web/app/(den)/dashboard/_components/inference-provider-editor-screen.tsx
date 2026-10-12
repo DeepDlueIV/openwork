@@ -17,7 +17,7 @@ import { DenSkeleton } from "../../_components/ui/skeleton";
 import { DenStickyActionBar } from "../../_components/ui/sticky-action-bar";
 import { DenSwitch } from "../../_components/ui/switch";
 import { DenTextarea } from "../../_components/ui/textarea";
-import { getAiGatewayProvidersRoute, getNewAiGatewayProviderRoute, orgFeatureEnabled } from "../../_lib/den-org";
+import { getAiGatewayProvidersRoute, getNewAiGatewayProviderRoute } from "../../_lib/den-org";
 import { gatewayMemberSignInMethod } from "@openwork/types/den/inference";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
 import { ConfirmDialog } from "./item-list";
@@ -148,9 +148,7 @@ export function InferenceProviderEditorScreen({ inferenceProviderId, catalogProv
   const reusableKeyProviders = !inferenceProviderId && bedrock ? getReusableAwsKeyProviders(inferenceProviders) : [];
   const reuseSource = reusableKeyProviders.find((entry) => entry.id === reuseKeysFrom) ?? null;
   const envNames = detail ? getProviderEnvNames(detail.config) : [];
-  // AWS and Microsoft sign-in roll out behind gatewayCloudSignIn; Google sign-in is always offered.
-  const cloudSignIn = orgFeatureEnabled(orgContext, "gatewayCloudSignIn");
-  const signInMethod = getMemberSignInMethod(providerId, cloudSignIn);
+  const signInMethod = getMemberSignInMethod(providerId);
   const offeredSignInMethod = gatewayMemberSignInMethod(providerId);
   const memberSignInSupported = signInMethod !== null;
   const configuredSet = provider?.credentialSets[0] ?? null;

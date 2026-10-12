@@ -14,33 +14,7 @@ test("a person signs OpenCode in from the browser despite one rate-limited token
   const page = probe.on(world.web);
   const consent = `Only approve if you started this in your own terminal and the code matches. OpenWork - OpenCode Plugin will act as ${world.den.admin.email} in ${world.organizationName} until you sign out of it.`;
 
-  await step("before: with the plugin sign-in switched off, OpenCode still signs in as the OpenWork CLI", async () => {
-    await world.setPluginSignIn(false);
-    const login = await world.startLogin("code");
-    await person.navigate(login.verificationUrl);
-    await person.see({ text: "Sign in OpenWork CLI?" }, { timeoutMs: 90_000 });
-    await person.see({ testId: "device-user-code", text: login.userCode });
-    await person.see({ role: "button", label: "Sign in OpenWork CLI" });
-    const heading = await world.approvalHeading();
-    expect(heading.text).toBe("Sign in OpenWork CLI.");
-    expect(heading.fontSize).toBeGreaterThan(20);
-    await person.screenshot();
-    await person.click({ role: "button", label: "Deny" });
-    await person.see({ text: /Sign-in denied/ });
-    const result = await login.finished;
-    const refused = result.status !== 0;
-    evidence.recordAssertionEvidence(
-      "Den falls back to the CLI client and a denied code gives OpenCode nothing",
-      `page: "Sign in OpenWork CLI?"; unchanged "${heading.text}" headline at ${heading.fontSize}px; opencode auth login exit ${result.status}`,
-      refused,
-    );
-    expect(refused).toBe(true);
-  });
-
-  const login = await (async () => {
-    await world.setPluginSignIn(true);
-    return world.startLogin("browser", { throttleTokenPoll: true });
-  })();
+  const login = await world.startLogin("browser", { throttleTokenPoll: true });
 
   await step("the browser names OpenCode and shows the code from the terminal", async () => {
     const url = new URL(login.verificationUrl);

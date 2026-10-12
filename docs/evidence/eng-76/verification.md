@@ -1,5 +1,22 @@
 # ENG-76 implementation verification
 
+## Current merge status — 2026-10-13
+
+The merge of `dev` at `7fe1289d2` retires the general Connect rollout control.
+Connect is GA; stored `mcpConnections` opt-outs are ignored, its Admin controls
+are absent, and the member API compatibility field remains true. Native Slack
+still uses the default-off, Cloud-only `nativeSlack` feature and the existing
+organization/default/operator-lock/kill-switch precedence.
+
+The synthetic journey now checks the ignored legacy Connect opt-out and GA
+compatibility instead of toggling the retired control. Browser identity,
+member/workspace isolation, partial consent, and Slack rollout assertions remain.
+No checks were run by this merge-reconciliation child; current verification is
+**Incomplete** pending the parent's synthetic local checks. All receipts and
+screenshots below are historical, not evidence for this merged tree. Historical
+package-level Slack unit commands are no longer available; use the current
+[E2E world notes](../../../evals/worlds/native-slack-connect.md).
+
 ## Cloud multi-workspace revision — 2026-09-30
 
 Code commits `cc721346f` and `ce9ebb215` replace the earlier fixed

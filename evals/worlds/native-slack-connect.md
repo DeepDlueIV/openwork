@@ -40,7 +40,9 @@ The world calls `seed.den` **once**, with Den-web enabled and a testkit-owned
 All values are synthetic and process-scoped. Inherited shared-feature operator
 locks are cleared, as is the Slack signing secret. There is no bespoke rollout
 flag, second gate-off process, database feature write, or seeded Slack override.
-The registry starts `nativeSlack` off; Connect retains its existing default.
+The registry starts `nativeSlack` off; Connect is generally available, without a
+registry key or organization/deployment control. Its member API compatibility
+field `capabilities.mcpConnections` remains true.
 Workspace/member identity is discovered through OAuth and `auth.test`, not env.
 
 `seed.den` makes only its `den.admin` platform-allowlisted. Two members belong to
@@ -75,8 +77,10 @@ step but never supply a pass verdict.
 3. The platform admin opens `/admin` → Organizations → A → Features and checks
    **Slack search**. A gets Connect; B remains absent and generates no provider
    calls. Slack Assistant and Workbot replies remain off.
-4. Turning **OpenWork Connect** off still blocks A despite its true Slack
-   override. Restoring Connect restores the consent entry, not an account.
+4. Connect has no organization or deployment control. An old admin request with
+   `mcpConnections=false` is accepted and ignored; registry state omits the key,
+   while the member API's compatibility field stays true. A's enabled Slack
+   starts still succeed but search needs personal consent; B stays policy-blocked.
 5. Preserve the member-owned OAuth, read-only MCP, four conversation categories,
    bounded/incomplete thread, second Slack workspace, private membership and
    limited-consent assertions from the existing journey.
@@ -97,8 +101,10 @@ step but never supply a pass verdict.
 10. Disable A again; its member removes their blocked account through Your
     Connections, without affecting B or calling the provider.
 
-All positive feature mutations use the generated UI. Observation helpers only
-GET `/v1/admin/organizations/:id/capabilities` and `/v1/admin/features`. Negative
+All effective feature mutations use the generated UI. Observation helpers only
+GET `/v1/admin/organizations/:id/capabilities` and `/v1/admin/features`. The legacy
+compatibility probe submits `{ capabilities: { mcpConnections: false } }` to the
+real admin PUT route and verifies it is ignored, not a new rollout action. Negative
 owner writes use the real PUT routes with `{ capabilities: { nativeSlack: true } }`
 and `{ enabled: true }`. No `seed` calls occur after the first user action.
 
@@ -106,8 +112,9 @@ and `{ enabled: true }`. No `seed` calls occur after the first user action.
 
 - Organization search waits for exactly one `admin-org-row-<slug>`, then uses
   `admin-capability-nativeSlack`, `admin-capability-source-nativeSlack`, and
-  `admin-capability-reset-nativeSlack`. Connect uses the same generated selectors
-  with `mcpConnections`; no parallel admin UI was added.
+  `admin-capability-reset-nativeSlack`. The retired `admin-capability-mcpConnections`
+  and `admin-feature-mcpConnections` controls must be absent; no parallel admin UI
+  was added.
 - `/admin/features` uses `admin-feature-nativeSlack`, its state, kill and restore
   test IDs. The existing On/Off radios lack scoped testkit targets: their index
   is derived from the actual rendered feature rows, not a copied registry order.

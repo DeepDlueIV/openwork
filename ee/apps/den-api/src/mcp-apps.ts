@@ -52,7 +52,7 @@ export class McpAppError extends Error {
 
 type Revision = typeof ConfigObjectVersionTable.$inferSelect
 type DatabaseReader = Pick<typeof db, "select">
-export type McpAppAccessInput = { organizationId: string; member: McpMemberIdentity | null; enabled?: boolean; requestScope?: object }
+export type McpAppAccessInput = { organizationId: string; member: McpMemberIdentity | null; requestScope?: object }
 export type McpAppResource = { app: McpAppSummary; html: string; csp: McpAppCsp; resourceDigest: string }
 /** An App a member may use, without its compiled HTML. */
 export type McpAppEntry = { appId: string; pluginId: string; revisionId: string; title: string; description: string | null; serverPath: string }
@@ -506,7 +506,7 @@ function accessibleRevision(input: McpAppAccessInput & { appId: string }) {
   if (!input.requestScope) return accessibleRevisionUncached(input)
   let revisions = requestRevisions.get(input.requestScope)
   if (!revisions) { revisions = new Map(); requestRevisions.set(input.requestScope, revisions) }
-  const key = JSON.stringify([input.organizationId, input.member?.orgMembershipId, input.member?.teamIds, input.enabled, input.appId])
+  const key = JSON.stringify([input.organizationId, input.member?.orgMembershipId, input.member?.teamIds, input.appId])
   let revision = revisions.get(key)
   if (!revision) { revision = accessibleRevisionUncached(input); revisions.set(key, revision) }
   return revision

@@ -170,16 +170,14 @@ export function getAwsKeysError(keys: AwsKeysInput): string | null {
 
 /**
  * How members sign in to a provider in credentialMode "member", mirroring den-api
- * (`unsupported_credential_mode` otherwise). AWS and Microsoft sign-in are behind
- * the gatewayCloudSignIn feature.
+ * (`unsupported_credential_mode` otherwise).
  */
-export function getMemberSignInMethod(providerId: string, cloudSignIn = true): GatewayMemberSignInMethod | null {
-  const method = gatewayMemberSignInMethod(providerId);
-  return method === "google" || (method !== null && cloudSignIn) ? method : null;
+export function getMemberSignInMethod(providerId: string): GatewayMemberSignInMethod | null {
+  return gatewayMemberSignInMethod(providerId);
 }
 
-export function supportsMemberCredentialMode(providerId: string, cloudSignIn = true): boolean {
-  return getMemberSignInMethod(providerId, cloudSignIn) !== null;
+export function supportsMemberCredentialMode(providerId: string): boolean {
+  return getMemberSignInMethod(providerId) !== null;
 }
 
 /** The account people sign in with, in their words. */
@@ -608,8 +606,6 @@ export function validateInferenceProviderForm(input: {
   awsKeys?: AwsKeysInput;
   oauthTenantId?: string;
   awsSso?: AwsSsoInput;
-  /** gatewayCloudSignIn: AWS and Microsoft sign-in. */
-  cloudSignIn?: boolean;
 }): string | null {
   if (!input.providerId) return "Select a provider.";
   if (!isSupportedGatewayNpm(input.npm)) {
@@ -628,7 +624,7 @@ export function validateInferenceProviderForm(input: {
   const awsKeysError = input.awsKeys ? getAwsKeysError(input.awsKeys) : null;
   if (awsKeysError) return awsKeysError;
   if (input.credentialMode === "member") {
-    const method = getMemberSignInMethod(input.providerId, input.cloudSignIn ?? true);
+    const method = getMemberSignInMethod(input.providerId);
     if (!method) {
       return "Each member signs in isn't available for this provider.";
     }

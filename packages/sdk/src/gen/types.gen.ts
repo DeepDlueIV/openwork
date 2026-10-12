@@ -163,21 +163,12 @@ export type NotFoundError = {
 
 export type AdminFeature = {
   key:
-    | "simplifiedOnboarding"
     | "managedDeployments"
-    | "installLinks"
-    | "mcpConnections"
-    | "connectorReadiness"
-    | "driveResumableUploads"
-    | "implicitCloudSkills"
     | "denFlatPageHeaders"
-    | "analyticsIntegrated"
     | "dashboardActivity"
     | "libraryIntegrated"
     | "libraryUsage"
     | "modelsAnalytics"
-    | "auditLogs"
-    | "auditLogsCompact"
     | "orgManagedDashboards"
     | "nativeSlack"
     | "slackAssistant"
@@ -186,17 +177,9 @@ export type AdminFeature = {
     | "workbot"
     | "calendarPolish"
     | "automationCalendar"
-    | "workbotCalendar"
-    | "workbotSideChats"
-    | "workbotDefaultModel"
-    | "litellm"
     | "permissions"
-    | "gatewayCloudSignIn"
     | "engineV2Upgrade"
-    | "remoteSessionTargets"
-    | "remoteSessionEvents"
-    | "opencodePlugin"
-    | "platformAuditReads";
+    | "remoteSessionEvents";
   label: string;
   description: string;
   since: string;
@@ -235,21 +218,12 @@ export type AdminUsersPageResponse = {
 export type AdminOrganizationsPageResponse = {
   organizations: Array<{
     capabilities: {
-      simplifiedOnboarding: boolean;
       managedDeployments: boolean;
-      installLinks: boolean;
-      mcpConnections: boolean;
-      connectorReadiness: boolean;
-      driveResumableUploads: boolean;
-      implicitCloudSkills: boolean;
       denFlatPageHeaders: boolean;
-      analyticsIntegrated: boolean;
       dashboardActivity: boolean;
       libraryIntegrated: boolean;
       libraryUsage: boolean;
       modelsAnalytics: boolean;
-      auditLogs: boolean;
-      auditLogsCompact: boolean;
       orgManagedDashboards: boolean;
       nativeSlack: boolean;
       slackAssistant: boolean;
@@ -258,17 +232,9 @@ export type AdminOrganizationsPageResponse = {
       workbot: boolean;
       calendarPolish: boolean;
       automationCalendar: boolean;
-      workbotCalendar: boolean;
-      workbotSideChats: boolean;
-      workbotDefaultModel: boolean;
-      litellm: boolean;
       permissions: boolean;
-      gatewayCloudSignIn: boolean;
       engineV2Upgrade: boolean;
-      remoteSessionTargets: boolean;
       remoteSessionEvents: boolean;
-      opencodePlugin: boolean;
-      platformAuditReads: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -280,15 +246,6 @@ export type AdminOrganizationsPageResponse = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates: {
-      simplifiedOnboarding: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
       managedDeployments: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -298,61 +255,7 @@ export type AdminOrganizationsPageResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      installLinks: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      mcpConnections: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      connectorReadiness: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      driveResumableUploads: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      implicitCloudSkills: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
       denFlatPageHeaders: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      analyticsIntegrated: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -389,24 +292,6 @@ export type AdminOrganizationsPageResponse = {
         overrideApplies: boolean;
       };
       modelsAnalytics: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      auditLogs: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      auditLogsCompact: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -487,52 +372,7 @@ export type AdminOrganizationsPageResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      workbotCalendar: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      workbotSideChats: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      workbotDefaultModel: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      litellm: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
       permissions: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      gatewayCloudSignIn: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -550,34 +390,7 @@ export type AdminOrganizationsPageResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      remoteSessionTargets: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
       remoteSessionEvents: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      opencodePlugin: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      platformAuditReads: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -649,21 +462,12 @@ export type AdminOverviewResponse = {
   }>;
   organizations: Array<{
     capabilities: {
-      simplifiedOnboarding: boolean;
       managedDeployments: boolean;
-      installLinks: boolean;
-      mcpConnections: boolean;
-      connectorReadiness: boolean;
-      driveResumableUploads: boolean;
-      implicitCloudSkills: boolean;
       denFlatPageHeaders: boolean;
-      analyticsIntegrated: boolean;
       dashboardActivity: boolean;
       libraryIntegrated: boolean;
       libraryUsage: boolean;
       modelsAnalytics: boolean;
-      auditLogs: boolean;
-      auditLogsCompact: boolean;
       orgManagedDashboards: boolean;
       nativeSlack: boolean;
       slackAssistant: boolean;
@@ -672,17 +476,9 @@ export type AdminOverviewResponse = {
       workbot: boolean;
       calendarPolish: boolean;
       automationCalendar: boolean;
-      workbotCalendar: boolean;
-      workbotSideChats: boolean;
-      workbotDefaultModel: boolean;
-      litellm: boolean;
       permissions: boolean;
-      gatewayCloudSignIn: boolean;
       engineV2Upgrade: boolean;
-      remoteSessionTargets: boolean;
       remoteSessionEvents: boolean;
-      opencodePlugin: boolean;
-      platformAuditReads: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -694,15 +490,6 @@ export type AdminOverviewResponse = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates: {
-      simplifiedOnboarding: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
       managedDeployments: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -712,61 +499,7 @@ export type AdminOverviewResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      installLinks: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      mcpConnections: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      connectorReadiness: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      driveResumableUploads: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      implicitCloudSkills: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
       denFlatPageHeaders: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      analyticsIntegrated: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -803,24 +536,6 @@ export type AdminOverviewResponse = {
         overrideApplies: boolean;
       };
       modelsAnalytics: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      auditLogs: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      auditLogsCompact: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -901,52 +616,7 @@ export type AdminOverviewResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      workbotCalendar: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      workbotSideChats: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      workbotDefaultModel: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      litellm: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
       permissions: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      gatewayCloudSignIn: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -964,34 +634,7 @@ export type AdminOverviewResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      remoteSessionTargets: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
       remoteSessionEvents: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      opencodePlugin: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      platformAuditReads: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -2267,45 +1910,6 @@ export type CreateInstallLinkResponse = {
    */
   connectUrl: string;
   connectExpiresAt: string;
-};
-
-export type CapabilityDisabledError = {
-  error: "capability_disabled";
-  capability:
-    | "simplifiedOnboarding"
-    | "managedDeployments"
-    | "installLinks"
-    | "mcpConnections"
-    | "connectorReadiness"
-    | "driveResumableUploads"
-    | "implicitCloudSkills"
-    | "denFlatPageHeaders"
-    | "analyticsIntegrated"
-    | "dashboardActivity"
-    | "libraryIntegrated"
-    | "libraryUsage"
-    | "modelsAnalytics"
-    | "auditLogs"
-    | "auditLogsCompact"
-    | "orgManagedDashboards"
-    | "nativeSlack"
-    | "slackAssistant"
-    | "slackWorkbotReplies"
-    | "headlessAutomations"
-    | "workbot"
-    | "calendarPolish"
-    | "automationCalendar"
-    | "workbotCalendar"
-    | "workbotSideChats"
-    | "workbotDefaultModel"
-    | "litellm"
-    | "permissions"
-    | "gatewayCloudSignIn"
-    | "engineV2Upgrade"
-    | "remoteSessionTargets"
-    | "remoteSessionEvents"
-    | "opencodePlugin"
-    | "platformAuditReads";
 };
 
 export type CreateInstallLinkRequest = {
@@ -6609,21 +6213,12 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
    */
   200: {
     capabilities: {
-      simplifiedOnboarding: boolean;
       managedDeployments: boolean;
-      installLinks: boolean;
-      mcpConnections: boolean;
-      connectorReadiness: boolean;
-      driveResumableUploads: boolean;
-      implicitCloudSkills: boolean;
       denFlatPageHeaders: boolean;
-      analyticsIntegrated: boolean;
       dashboardActivity: boolean;
       libraryIntegrated: boolean;
       libraryUsage: boolean;
       modelsAnalytics: boolean;
-      auditLogs: boolean;
-      auditLogsCompact: boolean;
       orgManagedDashboards: boolean;
       nativeSlack: boolean;
       slackAssistant: boolean;
@@ -6632,17 +6227,9 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       workbot: boolean;
       calendarPolish: boolean;
       automationCalendar: boolean;
-      workbotCalendar: boolean;
-      workbotSideChats: boolean;
-      workbotDefaultModel: boolean;
-      litellm: boolean;
       permissions: boolean;
-      gatewayCloudSignIn: boolean;
       engineV2Upgrade: boolean;
-      remoteSessionTargets: boolean;
       remoteSessionEvents: boolean;
-      opencodePlugin: boolean;
-      platformAuditReads: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -6654,15 +6241,6 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates: {
-      simplifiedOnboarding: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
       managedDeployments: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -6672,61 +6250,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      installLinks: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      mcpConnections: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      connectorReadiness: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      driveResumableUploads: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      implicitCloudSkills: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
       denFlatPageHeaders: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      analyticsIntegrated: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6763,24 +6287,6 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       modelsAnalytics: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      auditLogs: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      auditLogsCompact: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6861,52 +6367,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      workbotCalendar: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      workbotSideChats: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      workbotDefaultModel: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      litellm: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
       permissions: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      gatewayCloudSignIn: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6924,34 +6385,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      remoteSessionTargets: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
       remoteSessionEvents: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      opencodePlugin: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      platformAuditReads: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -7011,21 +6445,12 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       id: string;
     };
     capabilities: {
-      simplifiedOnboarding: boolean;
       managedDeployments: boolean;
-      installLinks: boolean;
-      mcpConnections: boolean;
-      connectorReadiness: boolean;
-      driveResumableUploads: boolean;
-      implicitCloudSkills: boolean;
       denFlatPageHeaders: boolean;
-      analyticsIntegrated: boolean;
       dashboardActivity: boolean;
       libraryIntegrated: boolean;
       libraryUsage: boolean;
       modelsAnalytics: boolean;
-      auditLogs: boolean;
-      auditLogsCompact: boolean;
       orgManagedDashboards: boolean;
       nativeSlack: boolean;
       slackAssistant: boolean;
@@ -7034,17 +6459,9 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       workbot: boolean;
       calendarPolish: boolean;
       automationCalendar: boolean;
-      workbotCalendar: boolean;
-      workbotSideChats: boolean;
-      workbotDefaultModel: boolean;
-      litellm: boolean;
       permissions: boolean;
-      gatewayCloudSignIn: boolean;
       engineV2Upgrade: boolean;
-      remoteSessionTargets: boolean;
       remoteSessionEvents: boolean;
-      opencodePlugin: boolean;
-      platformAuditReads: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -7056,15 +6473,6 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates: {
-      simplifiedOnboarding: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
       managedDeployments: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -7074,61 +6482,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      installLinks: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      mcpConnections: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      connectorReadiness: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      driveResumableUploads: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      implicitCloudSkills: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
       denFlatPageHeaders: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      analyticsIntegrated: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -7165,24 +6519,6 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       modelsAnalytics: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      auditLogs: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      auditLogsCompact: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -7263,52 +6599,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      workbotCalendar: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      workbotSideChats: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      workbotDefaultModel: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      litellm: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
       permissions: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      gatewayCloudSignIn: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -7326,34 +6617,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      remoteSessionTargets: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
       remoteSessionEvents: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      opencodePlugin: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      platformAuditReads: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -10874,12 +10138,12 @@ export type UpdateAuditCaptureErrors = {
    */
   402: EnterprisePlanRequiredError;
   /**
-   * Administrator permission, fresh authentication, audit feature and visibility required.
+   * Administrator permission, fresh authentication and visibility required.
    */
   403:
     | ForbiddenError
     | {
-        error: "audit_feature_disabled" | "audit_visibility_disabled";
+        error: "audit_visibility_disabled";
       };
   /**
    * Organization or retained operation not found, including foreign-tenant targets.
@@ -10965,10 +10229,10 @@ export type GetAuditEventTypesErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Organization administrator permission, audit feature and visibility required.
+   * Organization administrator permission and visibility required.
    */
   403: {
-    error: "forbidden" | "audit_feature_disabled" | "audit_visibility_disabled";
+    error: "forbidden" | "audit_visibility_disabled";
     message?: string;
   };
   /**
@@ -11068,10 +10332,10 @@ export type GetAuditOperationsErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Organization administrator permission, audit feature and visibility required.
+   * Organization administrator permission and visibility required.
    */
   403: {
-    error: "forbidden" | "audit_feature_disabled" | "audit_visibility_disabled";
+    error: "forbidden" | "audit_visibility_disabled";
     message?: string;
   };
   /**
@@ -11162,10 +10426,10 @@ export type GetAuditOperationEventsErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Organization administrator permission, audit feature and visibility required.
+   * Organization administrator permission and visibility required.
    */
   403: {
-    error: "forbidden" | "audit_feature_disabled" | "audit_visibility_disabled";
+    error: "forbidden" | "audit_visibility_disabled";
     message?: string;
   };
   /**
@@ -11276,10 +10540,10 @@ export type GetAuditUsageErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Organization administrator permission, audit feature and visibility required.
+   * Organization administrator permission and visibility required.
    */
   403: {
-    error: "forbidden" | "audit_feature_disabled" | "audit_visibility_disabled";
+    error: "forbidden" | "audit_visibility_disabled";
     message?: string;
   };
   /**
@@ -11406,10 +10670,10 @@ export type GetAuditExportErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Organization administrator permission, audit feature and visibility required.
+   * Organization administrator permission and visibility required.
    */
   403: {
-    error: "forbidden" | "audit_feature_disabled" | "audit_visibility_disabled";
+    error: "forbidden" | "audit_visibility_disabled";
     message?: string;
   };
   /**
@@ -15490,9 +14754,9 @@ export type PostV1OrgsByOrganizationIdInstallLinksErrors = {
    */
   401: UnauthorizedError;
   /**
-   * The organization needs the installLinks capability enabled, and rotating existing links needs the Rotate install links permission.
+   * Rotating existing links needs the Rotate install links permission.
    */
-  403: ForbiddenError | CapabilityDisabledError;
+  403: ForbiddenError;
   /**
    * The organization could not be found.
    */
@@ -22068,13 +21332,6 @@ export type CreateGoogleDriveUploadSessionErrors = {
     message: string;
   };
   /**
-   * Resumable uploads are disabled.
-   */
-  404: {
-    error: "feature_disabled";
-    feature: "driveResumableUploads";
-  };
-  /**
    * Connect Google with Drive write access.
    */
   409: {
@@ -22137,13 +21394,6 @@ export type PrepareHostGoogleDriveUploadSessionErrors = {
   403: {
     error: string;
     message: string;
-  };
-  /**
-   * Resumable uploads are disabled.
-   */
-  404: {
-    error: "feature_disabled";
-    feature: "driveResumableUploads";
   };
   /**
    * Connect Google with Drive write access.
@@ -25231,7 +24481,7 @@ export type GetV1CapabilitiesSlackThreadsErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Slack or Connect is disabled by policy.
+   * Slack is unavailable for this organization.
    */
   403: {
     error:
@@ -25404,7 +24654,7 @@ export type GetV1CapabilitiesSlackSearchErrors = {
    */
   401: UnauthorizedError;
   /**
-   * Slack or Connect is disabled by policy.
+   * Slack is unavailable for this organization.
    */
   403: {
     error:
@@ -25903,7 +25153,7 @@ export type PostV1McpConnectionsByConnectionIdCheckErrors = {
    */
   403: ForbiddenError;
   /**
-   * Unknown connection or feature disabled.
+   * Unknown connection.
    */
   404: ExternalMcpConnectionNotFoundError;
   /**
@@ -31178,7 +30428,7 @@ export type GetV1OrgWorkbotSettingsErrors = {
    */
   403: ForbiddenError;
   /**
-   * The organization was not found, or Workbot or its workbotDefaultModel feature is off.
+   * The organization was not found, or Workbot is off.
    */
   404: {
     error: "feature_disabled";
@@ -31218,7 +30468,7 @@ export type PutV1OrgWorkbotSettingsErrors = {
    */
   403: ForbiddenError;
   /**
-   * The organization was not found, or Workbot or its workbotDefaultModel feature is off.
+   * The organization was not found, or Workbot is off.
    */
   404: {
     error: "feature_disabled";

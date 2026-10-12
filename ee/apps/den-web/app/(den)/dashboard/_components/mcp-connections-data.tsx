@@ -73,7 +73,7 @@ export function useCheckMcpConnection() {
 }
 
 export type ExternalMcpConnection = {
-  /** Absent when connectorReadiness is off; null means no stored check. */
+  /** Absent from older servers; null means no stored check. */
   readiness?: ConnectionReadiness | null;
   id: string;
   name: string;

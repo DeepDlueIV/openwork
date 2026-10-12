@@ -40,13 +40,13 @@ const sessionSchema = z.object({
   enabled: z.boolean(),
   /** Workbot may set up recurring work: the organization runs Automations on the headless runner. */
   canSchedule: z.boolean(),
-  /** Workbot shows its Calendar tab: Workbot and the workbotCalendar feature are on. Older Dens omit it. */
+  /** Workbot shows its Calendar tab: Workbot is on. Older Dens omit it. */
   calendar: z.boolean().optional(),
-  /** The person can start side chats next to their main chat (the workbotSideChats feature). */
+  /** The person can start side chats next to their main chat (while Workbot is on). */
   sideChats: z.boolean(),
   calendarPolish: z.boolean().optional(),
   /**
-   * The model Workbot's turns run on: the organization's default model (the workbotDefaultModel feature). Null, and
+   * The model Workbot's turns run on: the organization's default model. Null, and
    * omitted by older Dens, means the headless runner's default.
    */
   model: z.string().nullable().optional(),
@@ -152,7 +152,7 @@ async function attributeWorkbot(c: Context, resolved: Resolved) {
 }
 
 async function workbotCalendarEnabled(organizationId: string) {
-  return await organizationFeatureEnabled(organizationId, "workbot") && await organizationFeatureEnabled(organizationId, "workbotCalendar")
+  return await organizationFeatureEnabled(organizationId, "workbot")
 }
 
 const ID = "[A-Za-z0-9_-]{1,160}"
@@ -235,8 +235,8 @@ export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono
         memberId,
         enabled: features.workbot,
         canSchedule,
-        calendar: features.workbot && features.workbotCalendar,
-        sideChats: features.workbot && features.workbotSideChats,
+        calendar: features.workbot,
+        sideChats: features.workbot,
         calendarPolish: features.workbot && features.calendarPolish,
         model,
       })

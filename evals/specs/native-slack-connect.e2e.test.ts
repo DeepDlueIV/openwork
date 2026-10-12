@@ -170,10 +170,10 @@ test("a platform admin rolls Slack search out by organization while members keep
     }
     retainedAccounts.set(identity, { connectedAt: account.connectedAt, externalAccountId: account.externalAccountId });
   };
-  const featureState = async (organizationId: string, key = "nativeSlack") =>
-    record(record((await world.organizationFeatures(organizationId)).featureStates)[key]);
-  const expectFeature = async (organizationId: string, enabled: boolean, override: boolean | null, source: string, key = "nativeSlack") => {
-    const state = await probe.eventually(() => featureState(organizationId, key), {
+  const featureState = async (organizationId: string) =>
+    record(record((await world.organizationFeatures(organizationId)).featureStates).nativeSlack);
+  const expectFeature = async (organizationId: string, enabled: boolean, override: boolean | null, source: string) => {
+    const state = await probe.eventually(() => featureState(organizationId), {
       within: 30_000, label: "the shared feature setting is saved",
       until: value => value.enabled === enabled && value.override === override && value.source === source,
     });
@@ -198,13 +198,13 @@ test("a platform admin rolls Slack search out by organization while members keep
     await admin.see({ testId: `admin-org-row-${slug}` });
     await admin.see({ testId: "admin-capability-nativeSlack" });
   };
-  const toggleOrganization = async (organizationId: string, slug: string, enabled: boolean, key = "nativeSlack") => {
+  const toggleOrganization = async (organizationId: string, slug: string, enabled: boolean) => {
     await openOrganization(slug);
-    expect((await featureState(organizationId, key)).enabled).toBe(!enabled);
-    await admin.click({ testId: `admin-capability-${key}` });
-    await expectFeature(organizationId, enabled, enabled, "override", key);
-    await admin.see({ testId: `admin-capability-source-${key}` }, { text: "Set for this organization" });
-    expect((await adminProbe.dom(`[data-testid="admin-capability-${key}"]:checked`)).elements).toHaveLength(enabled ? 1 : 0);
+    expect((await featureState(organizationId)).enabled).toBe(!enabled);
+    await admin.click({ testId: "admin-capability-nativeSlack" });
+    await expectFeature(organizationId, enabled, enabled, "override");
+    await admin.see({ testId: "admin-capability-source-nativeSlack" }, { text: "Set for this organization" });
+    expect((await adminProbe.dom('[data-testid="admin-capability-nativeSlack"]:checked')).elements).toHaveLength(enabled ? 1 : 0);
   };
   const setEveryone = async (enabled: boolean) => {
     await navigateAdmin(world.featuresUrl);
@@ -322,7 +322,10 @@ test("a platform admin rolls Slack search out by organization while members keep
     await toggleOrganization(world.organizationId, world.organizationSlug, true);
     await expectFeature(world.otherOrganizationId, false, null, "everyone");
     const report = await world.organizationFeatures(world.organizationId);
-    expect(report.capabilities).toMatchObject({ nativeSlack: true, mcpConnections: true, slackAssistant: false, slackWorkbotReplies: false });
+    expect(report.capabilities).toMatchObject({ nativeSlack: true, slackAssistant: false, slackWorkbotReplies: false });
+    expect(record(report.capabilities).mcpConnections).toBeUndefined();
+    const context = await world.memberRequest("first", "/v1/org");
+    expect(context).toMatchObject({ status: 200, body: { capabilities: { mcpConnections: true }, features: { nativeSlack: true } } });
     expect(await world.connection("first")).toMatchObject({ id: "slack", connectedForMe: false });
     expect(await world.connection("other")).toBeUndefined();
     const statuses = await expectBlocked("other");
@@ -348,26 +351,42 @@ test("a platform admin rolls Slack search out by organization while members keep
     await closeConnections(user, probe);
   });
 
-  await step("turning off Connect still blocks an explicitly enabled Slack feature", async () => {
-    await toggleOrganization(world.organizationId, world.organizationSlug, false, "mcpConnections");
-    await expectFeature(world.organizationId, true, true, "override");
+  await step("Connect is GA: its retired opt-out is ignored without granting Slack access", async () => {
+    await openOrganization(world.organizationSlug);
+    await admin.notSee({ testId: "admin-capability-mcpConnections" });
     const before = world.slack.calls().length;
-    const denied = await world.memberRequest("first", "/v1/capabilities/slack/search?query=Amber%20launch");
-    expect(denied).toMatchObject({ status: 403, body: { error: "policy_blocked" } });
+    const legacy = await world.submitRetiredConnectOverride(world.organizationId);
+    expect(legacy).toMatchObject({ status: 200, body: { ok: true } });
+    const report = await world.organizationFeatures(world.organizationId);
+    expect(record(report.capabilities).mcpConnections).toBeUndefined();
+    expect(record(report.featureStates).mcpConnections).toBeUndefined();
+    await expectFeature(world.organizationId, true, true, "override");
+    const context = await world.memberRequest("first", "/v1/org");
+    expect(context).toMatchObject({ status: 200, body: { capabilities: { mcpConnections: true }, features: { nativeSlack: true } } });
+    expect(record(record(context.body).features).mcpConnections).toBeUndefined();
+    for (const path of ["/v1/mcp-connections/slack/connect/start", "/v1/oauth-providers/slack/connect/start"]) {
+      expect((await world.memberRequest("first", path)).status).toBe(200);
+    }
+    const unconnected = await world.memberRequest("first", "/v1/capabilities/slack/search?query=Amber%20launch");
+    expect(unconnected).toMatchObject({ status: 409, body: { error: "needs_connection" } });
+    await expectFeature(world.otherOrganizationId, false, null, "everyone");
+    await expectBlocked("other");
     expect(world.slack.calls()).toHaveLength(before);
-    evidence.recordAssertionEvidence("Slack search does not bypass Connect", `A keeps its Slack search=true override but Connect=false; native search returned ${denied.status} policy_blocked with 0 provider calls.`, true);
+    await navigateAdmin(world.featuresUrl);
+    await admin.see({ testId: "admin-feature-nativeSlack" });
+    await admin.notSee({ testId: "admin-feature-mcpConnections" });
+    evidence.recordAssertionEvidence("Retired Connect controls cannot disable GA or grant Slack consent", "The legacy mcpConnections=false input is accepted and ignored, with no organization or deployment control. The member API keeps compatibility=true while registry features omit the retired key. A's Slack override stays true: starts succeed, but search still needs its own account (409). B stays policy-blocked; 0 provider calls.", true);
     await admin.screenshot();
   });
 
-  await step("restoring Connect makes the first member's authorization entry available again", async () => {
-    await toggleOrganization(world.organizationId, world.organizationSlug, true, "mcpConnections");
+  await step("GA Connect leaves the enabled member's authorization entry available", async () => {
     await reloadApp(firstApp);
     await user.see("composer", { editable: true });
     await openConnections(firstApp);
     await user.see({ role: "button", label: "Connect Slack" });
     expect(await world.connection("first")).toMatchObject({ connectedForMe: false });
     expect(await world.connection("other")).toBeUndefined();
-    evidence.recordAssertionEvidence("Both shared switches are necessary", "Connect=true and Slack search=true restore A's Connect entry; B remains off and both members still need their own OAuth consent. No account was injected.", true);
+    evidence.recordAssertionEvidence("Slack rollout and personal consent remain separate requirements", "A retains its Connect Slack entry after the ignored legacy opt-out. B remains off and both members still need their own OAuth consent. No account was injected.", true);
     await user.screenshot();
   });
 

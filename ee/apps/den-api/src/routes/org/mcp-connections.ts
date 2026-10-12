@@ -139,7 +139,6 @@ import {
 } from "./shared.js"
 import type { OrgRouteVariables } from "./shared.js"
 import { beginNativeProviderConnect } from "./oauth-providers.js"
-import { organizationFeatureEnabled, requireFeature } from "../../features.js"
 import { createExternalMcpLifecycleDeadline } from "../../capability-sources/external-mcp-client.js"
 import { readinessFingerprint, rotateReadinessCredentialBinding, saveReadinessCheck, visibleReadiness } from "../../capability-sources/external-mcp-readiness.js"
 
@@ -1173,7 +1172,6 @@ async function toConnectionResponse(
   row: ExternalMcpConnectionRow,
   options: {
     callerOrgMembershipId: DenTypeId<"member">
-    readinessEnabled: boolean
     createdByName?: string | null
     includeAccess: boolean
     identityManagedBy: ConnectionRequiredBy[]
@@ -1286,7 +1284,7 @@ async function toConnectionResponse(
     credentialHealth: callerCredentialHealth?.status ?? "unknown",
     credentialHealthReason: callerCredentialHealth?.reason ?? null,
     credentialHealthCheckedAt: callerCredentialHealth?.checkedAt ?? null,
-    ...(row.kind === "external_mcp" && options.readinessEnabled
+    ...(row.kind === "external_mcp"
       ? { readiness: visibleReadiness(readinessCheck, fingerprint) } : {}),
     issuerReviewRequired,
     reconnectActionOwner,
@@ -1341,10 +1339,6 @@ export async function listMemberUsableConnectionFacts(input: {
   context: PluginArchActorContext
 }): Promise<MemberUsableConnectionFacts[]> {
   const organization = input.context.organizationContext.organization
-  if (!(await organizationFeatureEnabled(organization.id, "mcpConnections"))) {
-    return []
-  }
-
   const member = input.context.organizationContext.currentMember
   const teamIds = input.context.memberTeams.map((team) => team.id)
   const rows = await listVisibleExternalMcpConnections({
@@ -1356,7 +1350,6 @@ export async function listMemberUsableConnectionFacts(input: {
   const connections = await Promise.all(rows.map((row) =>
     toConnectionResponse(row, {
       callerOrgMembershipId: member.id,
-      readinessEnabled: input.context.organizationContext.features.connectorReadiness,
       createdByName: resolveCreatorName(input.context.organizationContext, row.createdByOrgMembershipId),
       // The member who added a connection manages who can use it.
       includeAccess: row.createdByOrgMembershipId === member.id,
@@ -1605,13 +1598,11 @@ async function handleExternalMcpOAuthCallback(input: {
       referenceId: diagnostic.referenceId,
     }), 400)
   }
-  // Re-grants invalidate earlier checks even while the rollout is disabled.
-  // Ordinary SDK refresh writes never change this separate grant binding.
+  // Re-grants invalidate earlier checks. Ordinary SDK refresh writes never
+  // change this separate grant binding.
   await rotateReadinessCredentialBinding(connection, statePayload.orgMembershipId)
-  if (await organizationFeatureEnabled(connection.organizationId, "connectorReadiness")) {
-    const refreshed = await getExternalMcpConnection({ organizationId: connection.organizationId, connectionId: connection.id })
-    if (refreshed) await checkConnectionReadiness(refreshed, statePayload.orgMembershipId, input.requestId)
-  }
+  const refreshedConnection = await getExternalMcpConnection({ organizationId: connection.organizationId, connectionId: connection.id })
+  if (refreshedConnection) await checkConnectionReadiness(refreshedConnection, statePayload.orgMembershipId, input.requestId)
   if (member) {
     const { bindSlackOAuthMember } = await import("../../slack-assistant/repository.js")
     try {
@@ -1811,14 +1802,12 @@ async function createExternalConnectionResponse(
   }
 
   let refreshed = await getExternalMcpConnection({ organizationId: payload.organization.id, connectionId: created.id })
-  if (refreshed && body.authType !== "oauth" && body.credentialMode === "shared"
-    && await organizationFeatureEnabled(payload.organization.id, "connectorReadiness")) {
+  if (refreshed && body.authType !== "oauth" && body.credentialMode === "shared") {
     await checkConnectionReadiness(refreshed, payload.currentMember.id, requestId)
     refreshed = await getExternalMcpConnection({ organizationId: payload.organization.id, connectionId: created.id })
   }
   const response = await toConnectionResponse(refreshed ?? created, {
     callerOrgMembershipId: payload.currentMember.id,
-    readinessEnabled: payload.features.connectorReadiness,
     createdByName: resolveCreatorName(payload, (refreshed ?? created).createdByOrgMembershipId),
     includeAccess: true,
     requiredBy: [],
@@ -2063,7 +2052,6 @@ async function replaceExternalConnectionResponse(
   })
   const response = await toConnectionResponse(result.connection, {
     callerOrgMembershipId: payload.currentMember.id,
-    readinessEnabled: payload.features.connectorReadiness,
     createdByName: resolveCreatorName(payload, result.connection.createdByOrgMembershipId),
     includeAccess: true,
     requiredBy: provenance.requiredBy.get(result.connection.id) ?? [],
@@ -2407,7 +2395,6 @@ export function registerMcpConnectionRoutes<T extends { Variables: OrgRouteVaria
         const connections = await Promise.all(rows.map((row) =>
           toConnectionResponse(row, {
             callerOrgMembershipId: payload.currentMember.id,
-            readinessEnabled: payload.features.connectorReadiness,
             createdByName: resolveCreatorName(payload, row.createdByOrgMembershipId),
             includeAccess: true,
             requiredBy: provenance.requiredBy.get(row.id) ?? [],
@@ -2510,18 +2497,17 @@ export function registerMcpConnectionRoutes<T extends { Variables: OrgRouteVaria
     describeRoute({
       tags: ["Capability Sources"],
       summary: "Check and record connection readiness",
-      description: "Checks initialize and tools/list with Den-managed credentials, without executing tools. Stores the result and time. Requires connections.manage and connectorReadiness.",
+      description: "Checks initialize and tools/list with Den-managed credentials, without executing tools. Stores the result and time. Requires connections.manage.",
       responses: {
         200: jsonResponse("Recorded readiness check.", z.object({ readiness: connectionReadinessSchema })),
         400: jsonResponse("This connection cannot be checked.", invalidRequestSchema),
         401: jsonResponse("Sign in required.", unauthorizedSchema),
         403: jsonResponse("Connection management permission required.", forbiddenSchema),
-        404: jsonResponse("Unknown connection or feature disabled.", connectionNotFoundSchema),
+        404: jsonResponse("Unknown connection.", connectionNotFoundSchema),
         409: jsonResponse("Sign in or finish setup before checking.", connectionNotReadySchema),
       },
     }),
     orgPermissionRoute("connections.manage"),
-    requireFeature("connectorReadiness"),
     paramValidator(connectionParamsSchema),
     async (c) => {
       const payload = c.get("organizationContext")
@@ -2573,12 +2559,11 @@ export function registerMcpConnectionRoutes<T extends { Variables: OrgRouteVaria
       const canViewAnyConnection = await hasPermission(c, "connections.view")
       if (!canViewAnyConnection) {
         const memberTeams: MemberTeamSummary[] = c.get("memberTeams") ?? []
-        const canUse = await organizationFeatureEnabled(payload.organization.id, "mcpConnections")
-          && await memberCanUseExternalMcpConnection({
-            connectionId: connection.id,
-            orgMembershipId: payload.currentMember.id,
-            teamIds: memberTeams.map((team) => team.id),
-          })
+        const canUse = await memberCanUseExternalMcpConnection({
+          connectionId: connection.id,
+          orgMembershipId: payload.currentMember.id,
+          teamIds: memberTeams.map((team) => team.id),
+        })
         if (!canUse) {
           return c.json({ error: "forbidden", message: `You have not been granted access to "${connection.name}".` }, 403)
         }
@@ -2764,12 +2749,11 @@ export function registerMcpConnectionRoutes<T extends { Variables: OrgRouteVaria
       }
 
       const memberTeams: MemberTeamSummary[] = c.get("memberTeams") ?? []
-      const canUse = await organizationFeatureEnabled(payload.organization.id, "mcpConnections")
-        && await memberCanUseExternalMcpConnection({
-          connectionId: connection.id,
-          orgMembershipId: payload.currentMember.id,
-          teamIds: memberTeams.map((team) => team.id),
-        })
+      const canUse = await memberCanUseExternalMcpConnection({
+        connectionId: connection.id,
+        orgMembershipId: payload.currentMember.id,
+        teamIds: memberTeams.map((team) => team.id),
+      })
       if (!canUse) {
         return c.json({ error: "forbidden", message: `You have not been granted access to "${connection.name}".` }, 403)
       }
@@ -2869,9 +2853,7 @@ export function registerMcpConnectionRoutes<T extends { Variables: OrgRouteVaria
       let body = parsedBody
       if (!(await hasPermission(c, "connections.manage"))) {
         const canShareOrgWide = await hasPermission(c, "sharing.share_org_wide")
-        const denial = !(await organizationFeatureEnabled(payload.organization.id, "mcpConnections"))
-          ? "Connections are not enabled for this organization."
-          : memberConnectionCreateDenial(parsedBody, { canShareOrgWide })
+        const denial = memberConnectionCreateDenial(parsedBody, { canShareOrgWide })
         if (denial || parsedBody.kind === "native_provider") {
           return c.json({ error: "forbidden", message: denial ?? "Only workspace owners and admins can set up this service." }, 403)
         }
@@ -2921,7 +2903,6 @@ export function registerMcpConnectionRoutes<T extends { Variables: OrgRouteVaria
         })
         const response = await toConnectionResponse(created, {
           callerOrgMembershipId: payload.currentMember.id,
-          readinessEnabled: payload.features.connectorReadiness,
           createdByName: resolveCreatorName(payload, created.createdByOrgMembershipId),
           includeAccess: true,
           requiredBy: [],
@@ -3165,7 +3146,6 @@ export function registerMcpConnectionRoutes<T extends { Variables: OrgRouteVaria
       })
       return c.json(await toConnectionResponse(connection, {
         callerOrgMembershipId: payload.currentMember.id,
-        readinessEnabled: payload.features.connectorReadiness,
         createdByName: resolveCreatorName(payload, connection.createdByOrgMembershipId),
         includeAccess: true,
         requiredBy: provenance.requiredBy.get(connection.id) ?? [],
@@ -3281,9 +3261,7 @@ export function registerMcpConnectionRoutes<T extends { Variables: OrgRouteVaria
         changes: { accessToken: parsed.data.apiKey, tokenType: "api_key", refreshToken: null, expiresAt: null, scopes: null, pendingCodeVerifier: null, credentialHealth: null },
       })
       if (!saved) return c.json({ error: "conflict", message: "Connection settings changed. Reload and try again." }, 409)
-      if (await organizationFeatureEnabled(connection.organizationId, "connectorReadiness")) {
-        await checkConnectionReadiness(connection, payload.currentMember.id, c.get("requestId"))
-      }
+      await checkConnectionReadiness(connection, payload.currentMember.id, c.get("requestId"))
       return c.json({ ok: true })
     },
   )
@@ -3678,7 +3656,6 @@ export function registerMcpConnectionRoutes<T extends { Variables: OrgRouteVaria
       })
       return c.json(await toConnectionResponse(connection, {
         callerOrgMembershipId: payload.currentMember.id,
-        readinessEnabled: payload.features.connectorReadiness,
         createdByName: resolveCreatorName(payload, connection.createdByOrgMembershipId),
         includeAccess: true,
         requiredBy: provenance.requiredBy.get(connection.id) ?? [],

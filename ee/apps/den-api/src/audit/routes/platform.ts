@@ -19,7 +19,7 @@ function platform(method: AuditRouteMethod, path: string, action: string, kind: 
   return route(method, path, "platform", action, kind, type, idParam, notes)
 }
 
-/** Side-effect-free platform GET (pure metadata, docs, discovery or session read): successes need the platformAuditReads feature. */
+/** Side-effect-free platform GET (pure metadata, docs, discovery or session read). */
 function readOnly(path: string, action: string, kind: string, type: string, idParam: string | null, notes?: string): AuditRouteDeclaration {
   return { ...platform("GET", path, action, kind, type, idParam, notes), readOnly: true }
 }

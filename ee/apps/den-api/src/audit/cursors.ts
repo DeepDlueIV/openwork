@@ -29,12 +29,11 @@ const cursorSchema = z.object({
 export type AuditCursor = z.infer<typeof cursorSchema>
 export type AuditCursorBinding = Pick<AuditCursor, "organizationId" | "mode" | "filterHash" | "operationId">
 export class AuditReadError extends Error {
-  constructor(readonly code: "audit_feature_disabled" | "audit_invalid_query" | "audit_invalid_cursor" | "audit_cursor_expired" | "audit_operation_not_found" | "audit_storage_inconsistent") {
+  constructor(readonly code: "audit_invalid_query" | "audit_invalid_cursor" | "audit_cursor_expired" | "audit_operation_not_found" | "audit_storage_inconsistent") {
     super(code)
     this.name = "AuditReadError"
   }
   get status() {
-    if (this.code === "audit_feature_disabled") return 403
     if (this.code === "audit_cursor_expired") return 410
     if (this.code === "audit_operation_not_found") return 404
     if (this.code === "audit_storage_inconsistent") return 503

@@ -9,6 +9,7 @@ import {
   parseFeatureEnvironment,
   resolveFeature,
   resolveFeatures,
+  RETIRED_FEATURE_KEYS,
   type FeatureContext,
 } from "@openwork/features"
 
@@ -37,8 +38,8 @@ test("precedence: unavailable, kill switch, lock, override, everyone", () => {
 })
 
 test("an organization override can turn a feature off while it is on for everyone", () => {
-  const key = "installLinks"
-  const resolved = resolveFeature(key, { ...base, overrides: { [key]: false } })
+  const key = "workbot"
+  const resolved = resolveFeature(key, { ...base, rollouts: { [key]: { enabled: true, killed: false } }, overrides: { [key]: false } })
   assert.equal(resolved.everyone, true)
   assert.equal(resolved.enabled, false)
 })
@@ -79,6 +80,7 @@ test("mapFeatures and the key schema cover exactly the registry", () => {
   for (const key of FEATURE_KEYS) assert.equal(featureKeySchema.parse(key), key)
   assert.equal(featureKeySchema.safeParse("notAFeature").success, false)
   assert.equal(featureKeySchema.safeParse("appMcpServers").success, false)
+  for (const key of RETIRED_FEATURE_KEYS) assert.equal(featureKeySchema.safeParse(key).success, false, `${key} is retired`)
   assert.deepEqual(Object.keys(resolveFeatures(base)).sort(), [...FEATURE_KEYS].sort())
 })
 
@@ -98,12 +100,12 @@ test("environment: self_hosted by default, strict values, unknown keys warn", ()
   const parsed = parseFeatureEnvironment({
     DEN_DEPLOYMENT: "cloud",
     DEN_FEATURE_WORKBOT: "true",
-    DEN_FEATURE_INSTALL_LINKS: "false",
+    DEN_FEATURE_PERMISSIONS: "false",
     DEN_FEATURE_ORG_MANAGED_DASHBOARDS: "",
     DEN_FEATURE_NOT_A_THING: "true",
   })
   assert.equal(parsed.deployment, "cloud")
-  assert.deepEqual(parsed.locks, { workbot: true, installLinks: false })
+  assert.deepEqual(parsed.locks, { workbot: true, permissions: false })
   assert.deepEqual(parsed.problems.map((problem) => [problem.variable, problem.fatal]), [["DEN_FEATURE_NOT_A_THING", false]])
 
   const fatal = parseFeatureEnvironment({ DEN_DEPLOYMENT: "prod", DEN_FEATURE_WORKBOT: "yes" })

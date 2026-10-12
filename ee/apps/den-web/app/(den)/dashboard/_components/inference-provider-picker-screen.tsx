@@ -9,9 +9,9 @@ import { DenChip } from "../../_components/ui/chip";
 import { DenInput } from "../../_components/ui/input";
 import { DenNotice } from "../../_components/ui/notice";
 import { DenSkeleton } from "../../_components/ui/skeleton";
-import { getAiGatewayProvidersRoute, getNewAiGatewayProviderRoute, orgFeatureEnabled } from "../../_lib/den-org";
+import { getAiGatewayProvidersRoute, getNewAiGatewayProviderRoute } from "../../_lib/den-org";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
-import { isMicrosoftFoundryProvider, isSupportedGatewayNpm } from "./inference-provider-request";
+import { isSupportedGatewayNpm } from "./inference-provider-request";
 import { getProviderIconSlug, requestLlmProviderCatalog, type DenModelsDevProviderSummary } from "./llm-provider-data";
 import { LITELLM_DOC_URL, LITELLM_PROVIDER_ID } from "./litellm-provider-data";
 
@@ -47,11 +47,7 @@ export function orderCatalog<T extends { id: string; name: string }>(providers: 
 
 export function InferenceProviderPickerScreen({ embedded = false }: { embedded?: boolean }) {
   const Heading = embedded ? "h2" : "h1";
-  const { orgId, orgSlug, orgContext } = useOrgDashboard();
-  // LiteLLM is in preview: offered only where a platform admin turned it on.
-  const liteLlmOffered = orgFeatureEnabled(orgContext, "litellm");
-  // Microsoft Foundry is rolled out with AWS and Microsoft sign-in.
-  const foundryOffered = orgFeatureEnabled(orgContext, "gatewayCloudSignIn");
+  const { orgId, orgSlug } = useOrgDashboard();
   const [catalog, setCatalog] = useState<DenModelsDevProviderSummary[]>([]);
   const [query, setQuery] = useState("");
   const [showAll, setShowAll] = useState(false);
@@ -73,12 +69,12 @@ export function InferenceProviderPickerScreen({ embedded = false }: { embedded?:
   }, [orgId, catalogAttempt]);
 
   const providers = useMemo(() => {
-    const supported = catalog.filter((item) => item.id !== LITELLM_PROVIDER_ID && isSupportedGatewayNpm(item.npm) && (foundryOffered || !isMicrosoftFoundryProvider(item.id)));
-    if (liteLlmOffered) supported.push({ id: LITELLM_PROVIDER_ID, name: "LiteLLM", npm: null, env: [], doc: LITELLM_DOC_URL, api: null, modelCount: 0 });
+    const supported = catalog.filter((item) => item.id !== LITELLM_PROVIDER_ID && isSupportedGatewayNpm(item.npm));
+    supported.push({ id: LITELLM_PROVIDER_ID, name: "LiteLLM", npm: null, env: [], doc: LITELLM_DOC_URL, api: null, modelCount: 0 });
     const ordered = orderCatalog(supported);
     const normalized = query.trim().toLowerCase();
     return normalized ? ordered.filter((item) => item.name.toLowerCase().includes(normalized) || item.id.toLowerCase().includes(normalized) || providerTagline(item).toLowerCase().includes(normalized)) : ordered;
-  }, [catalog, query, foundryOffered, liteLlmOffered]);
+  }, [catalog, query]);
   const visible = showAll || query.trim() ? providers : providers.slice(0, INITIAL_ROWS);
   const hidden = providers.length - visible.length;
   const compatible = catalog.find((item) => item.npm === "@ai-sdk/openai-compatible");

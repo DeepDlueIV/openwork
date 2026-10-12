@@ -15,7 +15,6 @@ import {
 } from "@openwork/types/automations"
 import { db } from "../db.js"
 import { env } from "../env.js"
-import { organizationFeatureEnabled } from "../features.js"
 import { appLogger } from "../observability/logger.js"
 import {
   getOpenWorkWebRuntimeAccess,
@@ -356,8 +355,6 @@ export type RemoteSessionExecuteDeps = {
     ownerMemberId: string
     runnerId: string
   }) => Promise<{ connected: boolean; controlCapable: boolean; registered?: boolean }>
-  /** The organization rollout, independently of Automations and Cloud hosting. */
-  registeredTargetsEnabled?: (scope: { organizationId: DenTypeId<"organization">; userId: string }) => Promise<boolean>
   /** How long a desktop request is awaited before returning its requestId. */
   requestWait?: { timeoutMs: number; pollMs: number }
   /**
@@ -410,16 +407,6 @@ const CLOUD_NOT_AVAILABLE_MESSAGE =
 
 function cloudRemoteSessionsAvailable(): boolean {
   return cloudHostingAvailable({ orgMode: env.orgMode, openworkWebEnabled: env.openworkWebEnabled }) && cloudRuntimeAvailable()
-}
-
-export function remoteSessionCapabilitiesEnabled(
-  registeredTargetsEnabled = false,
-): boolean {
-  return registeredTargetsEnabled || env.automations.runtimeEnabled || cloudRemoteSessionsAvailable()
-}
-
-async function registeredTargetsEnabled(scope: { organizationId: DenTypeId<"organization">; userId: string }): Promise<boolean> {
-  return organizationFeatureEnabled(scope.organizationId, "remoteSessionTargets")
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -577,7 +564,6 @@ async function defaultDesktopTargets(scope: {
 }): Promise<RemoteSessionDesktopTargets> {
   const ownerMemberId = await activeMemberId(scope)
   if (!ownerMemberId) return { ownerMemberId: null, computers: [] }
-  const enabled = await registeredTargetsEnabled(scope)
   const rows = await automationRepository.listRemoteSessionDesktops({
     organizationId: scope.organizationId,
     ownerMemberId,
@@ -586,7 +572,7 @@ async function defaultDesktopTargets(scope: {
   })
   return {
     ownerMemberId,
-    computers: rows.filter((row) => enabled || !row.capabilities.includes("remote_session_only_v1")).map((row) => {
+    computers: rows.map((row) => {
       // Stored reports were validated on the way in; a row that no longer
       // parses (an older shape) reads as a desktop that reported nothing.
       const inventory = row.inventory ? desktopRunnerInventorySchema.safeParse(row.inventory) : null
@@ -643,7 +629,6 @@ export const DEFAULT_REMOTE_SESSION_DEPS: RemoteSessionExecuteDeps = {
     (await import("../slack-assistant/desktop-handoff.js")).linkDesktopCommandToSlack(input),
   desktopTargets: defaultDesktopTargets,
   cloudAvailable: cloudRemoteSessionsAvailable,
-  registeredTargetsEnabled,
 }
 
 const PLATFORM_LABELS: Record<RemoteSessionDesktopRecord["platform"], string> = {
@@ -1131,29 +1116,18 @@ async function executeRemoteSession(
 
   // Registered clients are an OpenWork offload surface, not an entitlement to
   // a Cloud worker. Keep Cloud and legacy desktop access rules unchanged.
-  const registeredEnabled = await (deps.registeredTargetsEnabled ?? registeredTargetsEnabled)({
-    organizationId: input.organizationId, userId: input.userId,
-  })
   const registeredCreate = input.action === "create" && createBodySchema.parse(parsedBody.data).target === "registered"
-  if (registeredCreate && !registeredEnabled) {
-    return errorResult({ error: "feature_disabled", message: "Remote session targets are not enabled for your organization.", retryable: false })
-  }
   if (input.action === "read" || input.action === "send" || input.action === "stop") {
     const session = await findDesktopSession(input, parsedBody.data, deps)
     if (session) {
       const runner = await deps.desktopRunner({ organizationId: input.organizationId, ownerMemberId: session.ownerMemberId, runnerId: session.runnerId })
       if (runner.registered) {
-        // Turning off a rollout must not hide history or prevent stopping an
-        // admitted task. A new turn, however, is new offloaded work.
-        if (input.action === "send" && !registeredEnabled) {
-          return errorResult({ error: "feature_disabled", message: "New remote turns are disabled; you can still read or stop this session.", retryable: false })
-        }
         return executeDesktopSessionAction(input, parsedBody.data, session, deps)
       }
     }
   }
   const webAccess = registeredCreate ? { hasAccess: false } : await deps.getOpenWorkWebAccess(input.organizationId)
-  if (input.action === "targets" && registeredEnabled) {
+  if (input.action === "targets") {
     const body = targetsBodySchema.parse(parsedBody.data)
     const targets = await (deps.desktopTargets ?? defaultDesktopTargets)({ organizationId: input.organizationId, userId: input.userId })
     return jsonResult(targetsPayload(targets, {
@@ -1175,24 +1149,10 @@ async function executeRemoteSession(
     if (desktopSession) return executeDesktopSessionAction(input, parsedBody.data, desktopSession, deps)
   }
 
-  if (input.action === "targets") {
-    const body = targetsBodySchema.parse(parsedBody.data)
-    const targets = env.automations.runtimeEnabled
-      ? await (deps.desktopTargets ?? defaultDesktopTargets)({ organizationId: input.organizationId, userId: input.userId })
-      : { ownerMemberId: null, computers: [] }
-    return jsonResult(targetsPayload(targets, {
-      includeModels: body.includeModels === true,
-      cloudAvailable: (deps.cloudAvailable ?? cloudRemoteSessionsAvailable)(),
-      now: Date.now(),
-    }))
-  }
-
   if (input.action === "create") {
     const body = createBodySchema.parse(parsedBody.data)
     if (body.target === "registered" || (body.target === "desktop" && (body.computerId !== undefined || body.workspaceId !== undefined))) {
-      const targets = registeredEnabled || env.automations.runtimeEnabled
-        ? await (deps.desktopTargets ?? defaultDesktopTargets)({ organizationId: input.organizationId, userId: input.userId })
-        : { ownerMemberId: null, computers: [] }
+      const targets = await (deps.desktopTargets ?? defaultDesktopTargets)({ organizationId: input.organizationId, userId: input.userId })
       // Registered admission has separate access rules. Never let that alias
       // select a legacy desktop that still requires Web access.
       const computers = body.target === "registered"

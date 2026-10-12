@@ -34,8 +34,8 @@ remote session lifecycle.
 - Standalone `opencode-openwork` uses the existing approved OpenWork account.
   It requires explicit `remoteSessions: true`; signing in for models or MCP
   connections alone does not authorize remote control.
-- `remoteSessionTargets` is off by default for Cloud and self-hosted installs.
-  Den's ordinary feature resolver controls admission; no second rollout system.
+- Registered offloading is available on Cloud and self-hosted installs; there
+  is no rollout switch.
 - Runner tokens are time-limited, audience-bound credentials. Every runner
   request rechecks the owner's active membership. Credentials are not stored
   in execution journals.
@@ -121,8 +121,6 @@ context is not a session error. Native status events are live hints, not a
 replayable source of truth. Recovered observation uses native session/context
 and permission state rather than an in-memory event alone.
 
-Turning off `remoteSessionTargets` prevents new registered offloads/turns. It
-must not hide existing receipts or prevent stopping an admitted session.
 Runner unload/account switch stops its control loop and releases ownership;
 normal native permission handling is never bypassed.
 

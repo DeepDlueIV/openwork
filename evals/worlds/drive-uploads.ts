@@ -72,15 +72,9 @@ export async function driveUploads(seed: Seed) {
       const envelope = object(JSON.parse(line ? line.slice(5) : raw));
       if (envelope.error) throw new Error("MCP protocol error"); return object(envelope.result);
     };
-    const orgResult = await denFetch(den.admin, "/v1/org", { headers: { authorization: `Bearer ${den.admin.token}` } });
-    const orgId = text(object(object(orgResult.body).organization).id);
     return {
       google, mailboxes, selectedId: selected.id, unavailableId: unavailable.id, readOnlyId: readOnly.id,
       mcp, objects,
-      async rollout(enabled: boolean) {
-        const result = await denFetch(den.admin, `/v1/admin/organizations/${orgId}/capabilities`, { method: "PUT", headers: { authorization: `Bearer ${den.admin.token}` }, body: JSON.stringify({ capabilities: { driveResumableUploads: enabled } }) });
-        if (!result.response.ok) throw new Error(`Feature rollout HTTP ${result.response.status}: ${result.text.slice(0, 300)}`);
-      },
       async host(path: "drive-files" | "drive-upload-sessions", body: BodyInit, identity: "first" | "second" | "missing" = "first", json = false) {
         const headers = new Headers(json ? { "content-type": "application/json" } : {});
         if (identity !== "missing") headers.set("authorization", `Bearer ${tokens[identity]}`);

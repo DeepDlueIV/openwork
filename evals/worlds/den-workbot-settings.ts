@@ -70,7 +70,7 @@ export async function denWorkbotSettings(seed: Seed, { place }: { place: Place }
     const reader = den.members.reader;
     if (!reader) throw new Error("The read-only member was not provisioned");
     const orgId = await enableOrganizationCapabilities(seed, den.admin, {
-      workbot: true, workbotDefaultModel: true, permissions: true,
+      workbot: true, permissions: true,
     });
     const context = await seed.api(den.admin, "/v1/org");
     const membership = isRecord(context.body)

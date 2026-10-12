@@ -62,7 +62,6 @@ export function canUseSlackAssistant(input: {
   capabilityEnabled: boolean
   enabled: boolean
   individualAccounts: boolean
-  mcpEnabled: boolean
   activeMember: boolean
   granted: boolean
   connected: boolean
@@ -71,7 +70,6 @@ export function canUseSlackAssistant(input: {
     input.capabilityEnabled &&
     input.enabled &&
     input.individualAccounts &&
-    input.mcpEnabled &&
     input.activeMember &&
     input.granted &&
     input.connected

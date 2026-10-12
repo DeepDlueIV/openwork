@@ -114,11 +114,10 @@ import {
   DEN_DEVICE_CODE_EXPIRES_IN,
   DEN_DEVICE_CODE_POLL_INTERVAL,
   clearDeviceSessionOrganization,
-  isEnabledDenDeviceClientId,
+  isDenDeviceClientId,
   stageDeviceSessionOrganization,
   takeDeviceSessionOrganization,
 } from "./device-authorization.js";
-import { deploymentFeatureEnabled } from "./features.js";
 import { WORKBOT_OAUTH_CLIENT_ID } from "./workbot/config.js";
 import { ensureWorkbotOAuthClient } from "./workbot/oauth-client.js";
 
@@ -1769,7 +1768,7 @@ export const auth = betterAuth({
       expiresIn: DEN_DEVICE_CODE_EXPIRES_IN,
       interval: DEN_DEVICE_CODE_POLL_INTERVAL,
       verificationUri: `${env.betterAuthUrl}/device`,
-      validateClient: (clientId) => isEnabledDenDeviceClientId(clientId, deploymentFeatureEnabled),
+      validateClient: (clientId) => isDenDeviceClientId(clientId),
     }),
     apiKey({
       defaultPrefix: DEN_API_KEY_DEFAULT_PREFIX,

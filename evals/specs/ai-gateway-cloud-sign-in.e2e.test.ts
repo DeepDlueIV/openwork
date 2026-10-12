@@ -32,36 +32,21 @@ test("an owner lets each person sign in to Amazon Bedrock with AWS and to Micros
   const teammate = user.on(world.memberWeb);
   const manageable = "/v1/inference-providers?scope=manageable";
 
-  await step("before: Amazon Bedrock offers only a shared key and Microsoft Foundry is not in the catalog", async () => {
+  await step("before: Amazon Bedrock offers member sign-in and Microsoft Foundry is in the catalog", async () => {
     await owner.see({ testId: "gateway-providers-empty" }, { timeoutMs: 90_000 });
     await owner.click({ testId: "gateway-provider-create" });
     await owner.see({ role: "heading", label: "Add a provider" }, { timeoutMs: 30_000 });
     await owner.type({ testId: "gateway-provider-catalog-filter" }, "Foundry");
-    await owner.notSee({ testId: "gateway-provider-pick-microsoft-foundry" }, { timeoutMs: 10_000 });
+    await owner.see({ testId: "gateway-provider-pick-microsoft-foundry" }, { timeoutMs: 10_000 });
     await owner.screenshot();
     await owner.type({ testId: "gateway-provider-catalog-filter" }, "Bedrock", { replace: true });
     await owner.click({ testId: "gateway-provider-pick-amazon-bedrock" });
     await owner.see({ testId: "gateway-provider-title" }, { text: "Add Amazon Bedrock", timeoutMs: 30_000 });
-    await owner.see({ testId: "gateway-member-sign-in-locked" }, { text: "AWS sign-in isn't turned on for your organization yet. Ask an OpenWork platform admin to turn it on." });
-    const locked = (await probe.on(world.web).dom('[data-testid="gateway-member-sign-in-locked"]')).elements;
-    expect(locked).toHaveLength(1);
-    expect(locked[0]?.text).toContain("OpenWork platform admin");
-    const disabled = (await probe.on(world.web).dom('[role="radio"]:disabled')).elements;
-    expect(disabled).toHaveLength(1);
-    evidence.recordAssertionEvidence("the locked AWS sign-in names the person who can enable it", `${locked[0]?.text}; member sign-in remains disabled and Microsoft Foundry is absent from the catalog.`, locked[0]?.text.includes("OpenWork platform admin") === true && disabled.length === 1);
-    await owner.screenshot();
-  });
-
-  await step("a platform admin turns on AWS and Microsoft sign-in for the organization", async () => {
-    const result = await seed.api(world.den.admin, `/v1/admin/organizations/${world.orgId}/capabilities`, {
-      method: "PUT", body: JSON.stringify({ capabilities: { gatewayCloudSignIn: true } }),
-    });
-    evidence.recordAssertionEvidence("the feature is on for Acme Studio", `PUT capabilities → ${result.response.status}`, result.response.ok);
-    expect(result.response.ok).toBe(true);
-    await owner.reload();
-    await owner.see({ testId: "gateway-provider-title" }, { text: "Add Amazon Bedrock", timeoutMs: 30_000 });
+    await owner.see({ role: "radio", label: "Each member signs in" });
     await owner.notSee({ testId: "gateway-member-sign-in-locked" });
-    expect((await probe.on(world.web).dom('[role="radio"]:disabled')).elements).toHaveLength(0);
+    const disabled = (await probe.on(world.web).dom('[role="radio"]:disabled')).elements;
+    expect(disabled).toHaveLength(0);
+    evidence.recordAssertionEvidence("AWS member sign-in is available without a platform admin", `Microsoft Foundry is in the catalog; Amazon Bedrock shows "Each member signs in" with ${disabled.length} disabled options and no locked notice.`, disabled.length === 0);
     await owner.screenshot();
   });
 

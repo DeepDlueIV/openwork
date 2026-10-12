@@ -3,7 +3,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useState } from "react";
 import { DenButton } from "../../_components/ui/button";
-import { orgFeatureEnabled, getAddConnectorRoute, getMcpConnectionRoute, getMcpConnectionsRoute, getOrgAccessFlags } from "../../_lib/den-org";
+import { getAddConnectorRoute, getMcpConnectionRoute, getMcpConnectionsRoute, getOrgAccessFlags } from "../../_lib/den-org";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
 import { type AccessDraft, accessPeopleIds, peopleLabel } from "./access-summary";
 import { useConnectorSetup } from "./connector-setup";
@@ -181,14 +181,13 @@ export function AdminConnectorSetupScreen({ catalogId }: { catalogId: string }) 
     setError(null);
     try {
       await saveAccess(connection.id, access);
-      const readinessEnabled = orgContext && orgFeatureEnabled(orgContext, "connectorReadiness");
       // Individual-key setup publishes the connection; each person's key is
       // checked when they enroll it, not against an admin's nonexistent key.
-      const checked = readinessEnabled && !usesIndividualKeys
+      const checked = !usesIndividualKeys
         ? await checkConnection.mutateAsync(connection.id) : null;
       const connectionId = connection.id;
       toast({
-        title: readinessEnabled && usesIndividualKeys ? `${name} is set up` : checked?.status === "could_not_verify" ? `${name} couldn't be verified` : `${name} is ready`,
+        title: usesIndividualKeys ? `${name} is set up` : checked?.status === "could_not_verify" ? `${name} couldn't be verified` : `${name} is ready`,
         description: `${reached > 0 ? `${peopleLabel(reached)} will find it in My Library.` : "Only you have it so far."}`,
         action: { label: "View", onClick: () => router.push(getMcpConnectionRoute(orgSlug, connectionId)) },
       });
@@ -221,7 +220,7 @@ export function AdminConnectorSetupScreen({ catalogId }: { catalogId: string }) 
       <ItemHeader
         back={back}
         logo={<ConnectorLogo name={name} url={target.url} size="md" />}
-        title={usesIndividualKeys ? orgContext && orgFeatureEnabled(orgContext, "connectorReadiness") ? `${name} is set up` : `${name} is ready` : `${name} passed all ${checks.length} checks`}
+        title={usesIndividualKeys ? `${name} is set up` : `${name} passed all ${checks.length} checks`}
       />
       {signsIn || usesKey ? (
         <section className="flex flex-col gap-2.5">

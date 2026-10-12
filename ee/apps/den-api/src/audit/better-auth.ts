@@ -12,7 +12,7 @@ import { memberRemovedEvent } from "./domain/members.js"
 import { oauthTokenIssuedEvent, oauthTokenRevokedEvent } from "./domain/oauth-tokens.js"
 import { findAuditUserIdByEmail, recordSessionOrganizationEntered, recordSignInFailed } from "./domain/sessions.js"
 import { appendDomainChangesAfterCommit, finishLegacyAuditAction } from "./domain/legacy.js"
-import { attributeCurrentAuditRequest, auditLogsFeatureEnabled, auditServiceAttribution, auditSessionUserAttribution, currentAuditChangeCapture, currentAuditRequestId, currentAuditRequestKey, type AuditRequestAttribution } from "./request-capture.js"
+import { attributeCurrentAuditRequest, auditServiceAttribution, auditSessionUserAttribution, currentAuditChangeCapture, currentAuditRequestId, currentAuditRequestKey, type AuditRequestAttribution } from "./request-capture.js"
 
 // Tenant attribution for the org-attributable better-auth endpoints declared in
 // ./routes/auth.ts (served by the `* /api/auth/*` catch-all). hooks.before
@@ -21,9 +21,8 @@ import { attributeCurrentAuditRequest, auditLogsFeatureEnabled, auditServiceAttr
 // where the organization is known from the endpoint's own verified result
 // (SSO callbacks/ACS, sso/get-provider) with phase "after".
 // Cost and availability: nothing runs while deployment capture is off; the
-// candidate organization's auditLogs feature is read first and member,
-// consent-owner and SCIM-token lookups only run for an organization with the
-// feature on (attribution then rereads it fresh for that organization). A lookup error means "no attribution" (platform store, logged
+// candidate organization is looked up first and member, consent-owner and
+// SCIM-token lookups only run for an existing organization. A lookup error means "no attribution" (platform store, logged
 // at warn); only a failed intent append refuses the endpoint (503).
 // The organization is never taken from a request value alone: a body/query
 // organization id counts only once the session user's active membership in it
@@ -36,11 +35,11 @@ type HookInput = Readonly<{
   request: Request | undefined
   body: unknown
   query: unknown
-  /** Lazy: only read once a flagged organization needs the session user. */
+  /** Lazy: only read once an existing organization needs the session user. */
   session: () => Promise<BetterAuthHookSession>
 }>
 type HookResult = { ok: true } | { ok: false }
-type FlaggedOrganization = Readonly<{ id: string }>
+type ExistingOrganization = Readonly<{ id: string }>
 
 const logger = appLogger.child({ component: "better_auth_audit" })
 const ORG_READS = new Set([
@@ -79,10 +78,10 @@ function errorName(error: unknown) {
   return error instanceof Error ? error.name : typeof error
 }
 
-/** The existing organization (by id or slug) when its auditLogs feature is on. */
-async function flaggedOrganization(where: Readonly<{ id: string | null }> | Readonly<{ slug: string | null }>): Promise<FlaggedOrganization | null> {
+/** The existing organization (by id or slug). */
+async function existingOrganization(where: Readonly<{ id: string | null }> | Readonly<{ slug: string | null }>): Promise<ExistingOrganization | null> {
   const columns = { id: OrganizationTable.id }
-  let row: FlaggedOrganization | undefined
+  let row: ExistingOrganization | undefined
   if ("id" in where) {
     const id = organizationIdOrNull(where.id)
     if (!id) return null
@@ -91,7 +90,7 @@ async function flaggedOrganization(where: Readonly<{ id: string | null }> | Read
     if (!where.slug) return null
     ;[row] = await db.select(columns).from(OrganizationTable).where(eq(OrganizationTable.slug, where.slug)).limit(1)
   }
-  return row && await auditLogsFeatureEnabled(row.id) ? row : null
+  return row ?? null
 }
 
 async function activeMember(organizationId: string | null, userId: string) {
@@ -107,13 +106,13 @@ async function activeMember(organizationId: string | null, userId: string) {
   return member ?? null
 }
 
-async function attribute(organization: FlaggedOrganization, input: Pick<AuditRequestAttribution, "actor" | "principalKey" | "phase">): Promise<HookResult> {
+async function attribute(organization: ExistingOrganization, input: Pick<AuditRequestAttribution, "actor" | "principalKey" | "phase">): Promise<HookResult> {
   const result = await attributeCurrentAuditRequest({ organizationId: organization.id, ...input })
   return result.ok ? { ok: true } : { ok: false }
 }
 
-/** Attribute to a flagged organization only when the session user is an active member of it. */
-async function attributeVerifiedMember(organization: FlaggedOrganization | null, userId: string, phase: "before" | "after" = "before") {
+/** Attribute to an organization only when the session user is an active member of it. */
+async function attributeVerifiedMember(organization: ExistingOrganization | null, userId: string, phase: "before" | "after" = "before") {
   if (!organization) return { result: NO_ATTRIBUTION, member: null }
   const member = await activeMember(organization.id, userId)
   if (!member) return { result: NO_ATTRIBUTION, member: null }
@@ -131,9 +130,9 @@ async function attributeBefore(input: HookInput): Promise<HookResult> {
   const { path } = input
   if (SCIM_READS.has(path)) {
     const token = bearerToken(input.request)
-    // The token's organization part only selects the flag read; the provider
+    // The token's organization part only selects the organization; the provider
     // lookup verifies the token before it names the tenant.
-    const organization = token ? await flaggedOrganization({ id: scimTokenOrganizationId(token) }) : null
+    const organization = token ? await existingOrganization({ id: scimTokenOrganizationId(token) }) : null
     if (!token || !organization) return NO_ATTRIBUTION
     const { resolveScimProviderFromBearerToken } = await import("../scim.js")
     const provider = await resolveScimProviderFromBearerToken(token)
@@ -141,7 +140,7 @@ async function attributeBefore(input: HookInput): Promise<HookResult> {
     return attribute(organization, auditServiceAttribution("scim", provider.providerId))
   }
   if (path === "/organization/leave") {
-    const organization = await flaggedOrganization({ id: stringField(input.body, "organizationId") })
+    const organization = await existingOrganization({ id: stringField(input.body, "organizationId") })
     const session = organization ? await input.session() : null
     if (!session) return NO_ATTRIBUTION
     const { result, member } = await attributeVerifiedMember(organization, session.userId)
@@ -157,7 +156,7 @@ async function attributeBefore(input: HookInput): Promise<HookResult> {
     try { id = normalizeDenTypeId("invitation", invitationId ?? "") } catch { return NO_ATTRIBUTION }
     const [invitation] = await db.select({ id: InvitationTable.id, organizationId: InvitationTable.organizationId, email: InvitationTable.email, status: InvitationTable.status })
       .from(InvitationTable).innerJoin(OrganizationTable, eq(OrganizationTable.id, InvitationTable.organizationId)).where(eq(InvitationTable.id, id)).limit(1)
-    if (!invitation || invitation.status !== "pending" || !(await auditLogsFeatureEnabled(invitation.organizationId))) return NO_ATTRIBUTION
+    if (!invitation || invitation.status !== "pending") return NO_ATTRIBUTION
     const session = await input.session()
     if (!session?.email || session.email.toLowerCase() !== invitation.email.toLowerCase()) return NO_ATTRIBUTION
     const attribution = auditSessionUserAttribution(session.userId, null)
@@ -168,7 +167,7 @@ async function attributeBefore(input: HookInput): Promise<HookResult> {
   }
   if (path === "/organization/set-active") {
     const organizationId = stringField(input.body, "organizationId")
-    const organization = await flaggedOrganization(organizationId ? { id: organizationId } : { slug: stringField(input.body, "organizationSlug") })
+    const organization = await existingOrganization(organizationId ? { id: organizationId } : { slug: stringField(input.body, "organizationSlug") })
     const session = organization ? await input.session() : null
     return session ? (await attributeVerifiedMember(organization, session.userId)).result : NO_ATTRIBUTION
   }
@@ -176,7 +175,7 @@ async function attributeBefore(input: HookInput): Promise<HookResult> {
     const organizationId = stringField(input.query, "organizationId")
     const slug = path === "/organization/get-full-organization" ? stringField(input.query, "organizationSlug") : null
     const session = organizationId || slug ? null : await input.session()
-    const organization = await flaggedOrganization(organizationId ? { id: organizationId } : slug ? { slug } : { id: session?.activeOrganizationId ?? null })
+    const organization = await existingOrganization(organizationId ? { id: organizationId } : slug ? { slug } : { id: session?.activeOrganizationId ?? null })
     const user = organization ? session ?? await input.session() : null
     return user ? (await attributeVerifiedMember(organization, user.userId)).result : NO_ATTRIBUTION
   }
@@ -184,7 +183,7 @@ async function attributeBefore(input: HookInput): Promise<HookResult> {
     // consentReferenceId (auth.ts postLogin) is the session's active organization.
     const session = await input.session()
     if (!session) return NO_ATTRIBUTION
-    return (await attributeVerifiedMember(await flaggedOrganization({ id: session.activeOrganizationId }), session.userId)).result
+    return (await attributeVerifiedMember(await existingOrganization({ id: session.activeOrganizationId }), session.userId)).result
   }
   if (CONSENT_BY_ID.has(path)) {
     const consentId = stringField(input.body, "id")
@@ -192,10 +191,10 @@ async function attributeBefore(input: HookInput): Promise<HookResult> {
     let id: ReturnType<typeof normalizeDenTypeId<"oauthConsent">>
     try { id = normalizeDenTypeId("oauthConsent", consentId) } catch { return NO_ATTRIBUTION }
     // The consent's organization is unknown before the consent row: one joined
-    // read returns its owner and existing organization, then its feature state.
+    // read returns its owner and existing organization.
     const [consent] = await db.select({ userId: OAuthConsentTable.userId, organizationId: OrganizationTable.id })
       .from(OAuthConsentTable).innerJoin(OrganizationTable, eq(OrganizationTable.id, OAuthConsentTable.referenceId)).where(eq(OAuthConsentTable.id, id)).limit(1)
-    if (!consent || !(await auditLogsFeatureEnabled(consent.organizationId))) return NO_ATTRIBUTION
+    if (!consent) return NO_ATTRIBUTION
     const session = await input.session()
     if (!session || consent.userId !== session.userId) return NO_ATTRIBUTION
     return (await attributeVerifiedMember({ id: consent.organizationId }, session.userId)).result
@@ -253,7 +252,7 @@ export async function auditBetterAuthAfter(input: HookInput & Readonly<{ params:
     if (!providerId) return
     const [provider] = await db.select({ organizationId: OrganizationTable.id })
       .from(SsoProviderTable).innerJoin(OrganizationTable, eq(OrganizationTable.id, SsoProviderTable.organizationId)).where(eq(SsoProviderTable.providerId, providerId)).limit(1)
-    if (!provider || !(await auditLogsFeatureEnabled(provider.organizationId))) return
+    if (!provider) return
     // The provider that validated the assertion names the organization; the
     // new session's user is the actor (a member once JIT provisioning ran).
     const member = await activeMember(provider.organizationId, input.newSessionUserId)
@@ -262,7 +261,7 @@ export async function auditBetterAuthAfter(input: HookInput & Readonly<{ params:
     return
   }
   if (path === "/sso/get-provider" && !isFailure(input.returned)) {
-    const organization = await flaggedOrganization({ id: stringField(input.returned, "organizationId") })
+    const organization = await existingOrganization({ id: stringField(input.returned, "organizationId") })
     const session = organization ? await input.session() : null
     if (session) await attributeVerifiedMember(organization, session.userId, "after")
   }
@@ -422,7 +421,7 @@ function failedResult(returned: unknown): boolean {
 
 async function verifiedTokenMember(referenceId: string | null, userId: string | null) {
   if (!referenceId || !userId) return null
-  const organization = await flaggedOrganization({ id: referenceId })
+  const organization = await existingOrganization({ id: referenceId })
   if (!organization) return null
   const member = await activeMember(organization.id, userId)
   const attribution = member ? auditSessionUserAttribution(userId, member.id) : null
@@ -467,11 +466,11 @@ async function auditOAuthAfter(path: string, returned: unknown): Promise<void> {
 
 export const RAW_ENDPOINT_REFUSED = "raw_endpoint_refused"
 
-/** The refusal attribution, or null (no session, unflagged organization, not an active member, lookup failure). */
+/** The refusal attribution, or null (no session, unknown organization, not an active member, lookup failure). */
 export async function rawRefusalAttribution(input: Readonly<{ userId: string | null; requestedOrganizationId: string | null; activeOrganizationId: string | null }>): Promise<AuditRequestAttribution | null> {
   if (!env.auditCaptureEnabled || !input.userId) return null
   try {
-    const organization = await flaggedOrganization({ id: input.requestedOrganizationId ?? input.activeOrganizationId })
+    const organization = await existingOrganization({ id: input.requestedOrganizationId ?? input.activeOrganizationId })
     if (!organization) return null
     const member = await activeMember(organization.id, input.userId)
     const attribution = member ? auditSessionUserAttribution(input.userId, member.id) : null

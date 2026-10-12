@@ -12,7 +12,7 @@ This folder owns organization-facing Den API routes.
 - `scim.ts`: active-organization SCIM connector metadata and token rotation
 - `templates.ts`: shared template CRUD
 - `web-origins.ts`: approved exact HTTPS web origins for sign-in handoff and Den API CORS
-- `workbot-settings.ts`: the organization default model for Workbot, the Slack assistant and cloud-default Automations (`workbotDefaultModel`)
+- `workbot-settings.ts`: the organization default model for Workbot, the Slack assistant and cloud-default Automations
 - `shared.ts`: shared route-local helpers, param schemas, and guard helpers
 
 ## Active organization model

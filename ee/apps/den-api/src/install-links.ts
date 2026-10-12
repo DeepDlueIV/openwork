@@ -5,7 +5,6 @@ import { createHash, randomBytes } from "node:crypto"
 import { OPENWORK_DOWNLOAD_URL } from "./CONSTS.js"
 import { db } from "./db.js"
 import { env } from "./env.js"
-import { organizationFeatureEnabled } from "./features.js"
 import { appLogger } from "./observability/logger.js"
 
 type InstallLinkInsert = typeof InstallLinkTable.$inferInsert
@@ -29,10 +28,6 @@ function installPageUrl(token: string) {
 }
 
 export async function mintOrganizationInstallLink(input: MintOrganizationInstallLinkInput) {
-  if (!(await organizationFeatureEnabled(input.organizationId, "installLinks"))) {
-    return null
-  }
-
   const token = randomBytes(32).toString("base64url")
 
   if (input.rotate) {
@@ -68,7 +63,7 @@ export async function resolveInvitationDownloadUrl(input: InvitationDownloadUrlI
       organizationId: normalizeDenTypeId("organization", input.organizationId),
       createdByUserId: normalizeDenTypeId("user", input.createdByUserId),
     })
-    return installLink?.installPageUrl ?? OPENWORK_DOWNLOAD_URL
+    return installLink.installPageUrl
   } catch (error) {
     logger.error("invite install link failed", { organization_id: input.organizationId, error })
     return OPENWORK_DOWNLOAD_URL

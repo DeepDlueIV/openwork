@@ -1,6 +1,5 @@
 import type { Seed, Place } from "@openwork/env";
 import { faultProxy } from "@openwork/env";
-import { enableOrganizationCapabilities } from "./dashboards.ts";
 import { isRecord, records } from "./library.ts";
 import { engineBinary } from "./openwork-server-cli.ts";
 
@@ -28,17 +27,9 @@ export async function connectorReadiness(seed: Seed, ctx: { place: Place }) {
   await seed.signIn(app, den.admin, "Connection admin");
   return {
     den, web, memberWeb, app, id, upstream,
-    async enable() { await enableOrganizationCapabilities(seed, den.admin, { connectorReadiness: true }); },
     async breakServer() { await upstream.faults.status("/mcp", 503, { times: 10000 }); },
     async fixServer() { await upstream.faults.clear(); },
     async refuseMemberCheck() { return seed.api(den.members.teammate, `/v1/mcp-connections/${id}/check`, { method: "POST" }); },
-    async disable() {
-      const context = await seed.api(den.admin, "/v1/org");
-      const org = isRecord(context.body) && isRecord(context.body.organization) ? context.body.organization.id : null;
-      if (typeof org !== "string") throw new Error("Missing test organization.");
-      const result = await seed.api(den.admin, `/v1/admin/organizations/${org}/capabilities`, { method: "PUT", body: JSON.stringify({ capabilities: { connectorReadiness: false } }) });
-      if (!result.response.ok) throw new Error("Could not disable readiness.");
-    },
     async saved(name = "Team Notes") {
       const response = await seed.api(den.admin, "/v1/mcp-connections?scope=manageable");
       return isRecord(response.body) ? records(response.body.connections).find((row) => row.name === name) : undefined;

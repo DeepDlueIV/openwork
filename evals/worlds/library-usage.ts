@@ -42,12 +42,6 @@ export async function libraryUsage(seed: Seed) {
     mocks: { tracker: seed.mock({ allowUnauthenticatedMcp: true, tools: trackerTools }) },
   });
   const orgId = await enableOrganizationCapabilities(seed, den.admin, { libraryUsage: true, denFlatPageHeaders: true });
-  const setAnalyticsIntegrated = async (enabled: boolean) => {
-    const result = await seed.api(den.admin, `/v1/admin/organizations/${orgId}/capabilities`, {
-      method: "PUT", body: JSON.stringify({ capabilities: { analyticsIntegrated: enabled } }),
-    });
-    if (!result.response.ok) throw new Error(`Analytics presentation rollout: HTTP ${result.response.status}`);
-  };
   const api = async (path: string, init: RequestInit = {}) => {
     const result = await seed.api(den.admin, path, init);
     if (!result.response.ok) throw new Error(`Library usage arrangement ${path}: HTTP ${result.response.status}: ${result.text.slice(0, 300)}`);
@@ -136,7 +130,7 @@ export async function libraryUsage(seed: Seed) {
   return {
     faults,
     async [Symbol.asyncDispose]() { await faults[Symbol.asyncDispose](); },
-    den, web, memberWeb, orgId, skills: capabilities, connectors, loadSkill, callConnector, setAnalyticsIntegrated, baseUrl: den.ref.webUrl,
+    den, web, memberWeb, orgId, skills: capabilities, connectors, loadSkill, callConnector, baseUrl: den.ref.webUrl,
     // Read-only layout witness: probe.dom reports document width and rectangles,
     // but not body scrollWidth or whether sideways scrolling stays in the table.
     usageLayout: () => evaluateOnSurface(web, () => {

@@ -2,7 +2,7 @@
 
 Dependency-free OpenWork offload ownership, shared by desktop and bundled harness plugins. Source imports **only this package's own `.ts` files**, with no workspace dependencies, Node imports, SDK, Zod, Electron, scheduler, or native HTTP client. Build with `pnpm --filter @openwork/remote-sessions build` before desktop consumption: default package exports resolve standalone `dist/*.js` ESM, and TypeScript resolves `dist/*.d.ts`. Bun and `development` conditions select source for bundling; a plugin can also bundle `src/index.ts` directly. Normal Node imports never rely on TypeScript stripping inside `node_modules` (which Node refuses). Source tests use Node TypeScript stripping (22.18+).
 
-The `remoteSessionTargets` rollout is enforced by callers, not by this core. Callers own polling, account discovery, inventory collection, and lifecycle. Disabling admission must not erase journals or stop recovery of already delivered work.
+Callers own admission, polling, account discovery, inventory collection, and lifecycle; this core does not decide whether offloading is allowed. Refusing admission must not erase journals or stop recovery of already delivered work.
 
 ## Ownership
 

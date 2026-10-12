@@ -118,11 +118,6 @@ export function remoteSessionGateway(identities: Record<string, GatewayIdentity>
       } finally { await messages.close(); }
     },
     remote: (persona: string, action: "targets" | "create" | "read" | "list" | "send" | "stop", body: Record<string, unknown>) => call(persona, "execute_capability", { name: `remote-session:${action}`, body }),
-    async rollout(enabled: boolean, killed = false) {
-      const result = await api("owner", "/v1/admin/features/remoteSessionTargets", "PUT", { enabled, killed });
-      if (result.status !== 200) throw new Error(`Remote-session rollout failed: HTTP ${result.status} ${JSON.stringify(result.body)}`);
-      return result;
-    },
   };
 }
 

@@ -131,7 +131,7 @@ const EnvSchema = z.object({
   WORKER_ACTIVITY_BASE_URL: z.string().optional(),
   DEN_AUTOMATIONS_ENABLED: z.string().optional(),
   DEN_DASHBOARDS_ENABLED: z.string().optional(),
-  // Default-on deployment kill switches; the per-org auditLogs capability stays opt-in.
+  // Default-on deployment kill switches.
   DEN_AUDIT_CAPTURE_ENABLED: z.enum(["true", "false"]).default("true"),
   DEN_AUDIT_VISIBILITY_ENABLED: z.enum(["true", "false"]).default("true"),
   // Explicit installation entitlement, separate from feature availability and capture preference.

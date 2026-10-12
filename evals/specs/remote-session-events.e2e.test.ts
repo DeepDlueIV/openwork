@@ -37,7 +37,6 @@ test("an owner watches a private registered-runner receipt and recovers offline 
   });
 
   await step("when the owner registers a wire runner, the administrator can separately enable its receipt events", async () => {
-    expect((await world.rollout(true)).status).toBe(200);
     expect((await world.register("owner")).status).toBe(200);
     expect((await world.inventory("owner")).status).toBe(200);
     const targets = await world.remote("owner", "targets", {});
@@ -55,7 +54,7 @@ test("an owner watches a private registered-runner receipt and recovers offline 
     try { expect(disabled.status).toBe(400); expect((await disabled.next())?.error).toBeDefined(); }
     finally { await disabled.close(); }
     expect((await world.eventsRollout(true)).status).toBe(200);
-    evidence.recordAssertionEvidence("Registration and receipt rollout are independent", `Target registration/inventory HTTP 200; 1 online registered computer; events-off create queued ${commandId} without URI, exact-URI listen HTTP 400; platform admin enabled events HTTP 200`, true);
+    evidence.recordAssertionEvidence("Registration works before receipt events are enabled", `Target registration/inventory HTTP 200; 1 online registered computer; events-off create queued ${commandId} without URI, exact-URI listen HTTP 400; platform admin enabled events HTTP 200`, true);
   });
 
   await step("after: retrying the owner's task adds a stable status URI without enqueueing another command", async () => {

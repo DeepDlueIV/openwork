@@ -30,16 +30,13 @@ export type ConnectMcpServerIndexEntry = {
  * Which member-usable connections an index reader may see. The App host sees
  * every ready connection; an ordinary client sees only the ones an
  * administrator exposed directly, because those are the only per-connection
- * URLs that serve it a provider catalog, and none at all while the
- * organization has member-facing MCP connections disabled.
+ * URLs that serve it a provider catalog.
  */
 export function selectConnectMcpServerIndexConnections(input: {
   appHostClient: boolean
-  memberFacingMcpConnectionsEnabled: boolean
   connections: ExternalMcpConnectionRow[]
 }): ExternalMcpConnectionRow[] {
   if (input.appHostClient) return input.connections
-  if (!input.memberFacingMcpConnectionsEnabled) return []
   return input.connections.filter((connection) => connection.exposeDirectly)
 }
 
@@ -63,12 +60,11 @@ export function connectMcpServerIndexAppCapacity(connectionCount: number): numbe
  * connection index it has always been.
  */
 export function buildConnectMcpServerIndex(input: {
-  enabled: boolean
   connections: ExternalMcpConnectionRow[]
   apps?: McpAppEntry[]
   publicOrigin: string
 }) {
-  const connections = (input.enabled ? input.connections : [])
+  const connections = input.connections
     .map((connection): ConnectMcpServerIndexEntry => ({
       connectionId: connection.id,
       name: connection.name,
@@ -77,7 +73,7 @@ export function buildConnectMcpServerIndex(input: {
       exposeDirectly: connection.exposeDirectly,
     }))
     .sort(byName)
-  const apps = (input.enabled ? input.apps ?? [] : [])
+  const apps = (input.apps ?? [])
     .map((app): ConnectMcpServerIndexEntry => ({
       connectionId: app.appId,
       name: app.title,
@@ -95,7 +91,6 @@ export function buildConnectMcpServerIndex(input: {
 
 export function registerConnectMcpServerIndex(input: {
   server: McpServer
-  enabled: boolean
   connections: ExternalMcpConnectionRow[]
   apps?: McpAppEntry[]
   publicOrigin: string

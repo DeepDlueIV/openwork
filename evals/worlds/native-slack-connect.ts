@@ -58,7 +58,7 @@ export async function nativeSlackConnect(seed: Seed, { place }: { place: Place }
     // Do not inherit an operator lock: this world proves the fresh registry
     // default and platform-admin overrides, not deployment configuration.
     ...Object.fromEntries(Object.keys(process.env).filter(key => key.startsWith("DEN_FEATURE_")).map(key => [key, ""])),
-    DEN_FEATURE_NATIVE_SLACK: "", DEN_FEATURE_MCP_CONNECTIONS: "", DEN_FEATURE_SLACK_ASSISTANT: "",
+    DEN_FEATURE_NATIVE_SLACK: "", DEN_FEATURE_SLACK_ASSISTANT: "",
     DEN_SLACK_CLIENT_ID: slackFixtureClientId, DEN_SLACK_CLIENT_SECRET: slackFixtureClientSecret,
     DEN_SLACK_API_BASE_URL: slack.apiUrl, DEN_SLACK_OAUTH_AUTHORIZE_URL: slack.authorizeUrl, DEN_SLACK_OAUTH_TOKEN_URL: slack.tokenUrl,
   } });
@@ -201,6 +201,16 @@ export async function nativeSlackConnect(seed: Seed, { place }: { place: Place }
       });
       if (!result.response.ok) throw new Error(`Admin feature observation failed: ${result.response.status}`);
       return object(result.body);
+    },
+    async submitRetiredConnectOverride(organizationId: string) {
+      // Compatibility probe, not a rollout action: the retired key must be
+      // accepted and ignored, without disabling Connect or changing Slack.
+      const result = await denFetch(den.admin, `/v1/admin/organizations/${organizationId}/capabilities`, {
+        method: "PUT",
+        headers: { authorization: `Bearer ${den.admin.token}`, "content-type": "application/json" },
+        body: JSON.stringify({ capabilities: { mcpConnections: false } }),
+      });
+      return { status: result.response.status, body: result.body };
     },
     async globalSlackFeature() {
       const result = await denFetch(den.admin, "/v1/admin/features", { headers: { authorization: `Bearer ${den.admin.token}` } });

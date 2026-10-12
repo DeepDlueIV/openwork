@@ -100,7 +100,6 @@ type CodemodeMemberIdentity = {
 export async function resolveCodemodeConnectionNamespaceContext(input: {
   organizationId: string
   member: CodemodeMemberIdentity | null
-  includeExternalMcp?: boolean
 }): Promise<CodemodeConnectionNamespaceContext> {
   if (!input.member) {
     return {
@@ -119,13 +118,11 @@ export async function resolveCodemodeConnectionNamespaceContext(input: {
       orgMembershipId: input.member.orgMembershipId,
       teamIds: input.member.teamIds,
     }),
-    input.includeExternalMcp === false
-      ? Promise.resolve([])
-      : listUsableExternalMcpConnections({
-        organizationId,
-        orgMembershipId: input.member.orgMembershipId,
-        teamIds: input.member.teamIds,
-      }),
+    listUsableExternalMcpConnections({
+      organizationId,
+      orgMembershipId: input.member.orgMembershipId,
+      teamIds: input.member.teamIds,
+    }),
   ])
   const codemodeNativeProviderEntries = nativeProviderEntries.filter((entry) => entry.connectedForMe === true)
   // Search chooses a bounded, query-ranked set to probe. Workflow namespaces

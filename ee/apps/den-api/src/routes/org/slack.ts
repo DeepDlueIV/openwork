@@ -45,7 +45,7 @@ async function slackSession(member: Member, headers: Headers) {
 const errorResponses = {
   400: jsonResponse("Invalid request.", invalidRequestSchema),
   401: jsonResponse("Sign in required.", unauthorizedSchema),
-  403: jsonResponse("Slack or Connect is disabled by policy.", slackErrorSchema),
+  403: jsonResponse("Slack is unavailable for this organization.", slackErrorSchema),
   404: jsonResponse("Conversation or message unavailable to this member.", slackErrorSchema),
   409: jsonResponse("Connect Slack or grant the requested permissions.", slackErrorSchema),
   429: jsonResponse("Slack rate limit; no automatic retry.", slackErrorSchema),

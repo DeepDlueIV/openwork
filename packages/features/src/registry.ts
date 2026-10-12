@@ -39,8 +39,8 @@ export type FeatureDefinition = {
   /** On or off for everyone on a fresh deployment: false for new work, true once everyone has it. */
   default: boolean
   /**
-   * The switch is part of the product (e.g. platform admins turn Connect off for
-   * one organization), not a temporary rollout. Rollouts are deleted once done;
+   * The switch is part of the product (e.g. operators keep a feature off for
+   * their installation), not a temporary rollout. Rollouts are deleted once done;
    * `pnpm features:check` asks for a decision six months after `since`.
    */
   permanent?: boolean
@@ -53,13 +53,6 @@ function defineFeatures<const T extends Record<string, FeatureDefinition>>(featu
 const everywhere = ["cloud", "self_hosted"] as const
 
 export const FEATURES = defineFeatures({
-  simplifiedOnboarding: {
-    label: "Simplified Cloud onboarding",
-    description: "People enter their name, create a workspace, and optionally invite teammates before going straight to the dashboard.",
-    since: "2026-10",
-    deployments: ["cloud"],
-    default: false,
-  },
   managedDeployments: {
     label: "Managed deployments",
     description: "Organization admins install OpenWork in their own cloud account (AWS first) and see its health and updates in OpenWork.",
@@ -67,51 +60,9 @@ export const FEATURES = defineFeatures({
     deployments: ["cloud"],
     default: false,
   },
-  installLinks: {
-    label: "Install links",
-    description: "Workspace admins can create desktop install links for their organization.",
-    since: "2026-10",
-    deployments: everywhere,
-    default: true,
-  },
-  mcpConnections: {
-    label: "OpenWork Connect",
-    description: "Members see the organization's connections, marketplace capabilities on the agent rail, and the desktop Connect tab.",
-    since: "2026-10",
-    deployments: everywhere,
-    default: true,
-  },
-  connectorReadiness: {
-    label: "Connector readiness",
-    description: "Members see when a connection was checked, and admins can check it again.",
-    since: "2026-10",
-    deployments: everywhere,
-    default: false,
-  },
-  driveResumableUploads: {
-    label: "Resumable Google Drive uploads",
-    description: "Members upload larger workspace files to Google Drive and prepare upload sessions for external clients.",
-    since: "2026-10",
-    deployments: everywhere,
-    default: false,
-  },
-  implicitCloudSkills: {
-    label: "Implicit Cloud skills",
-    description: "Agents discover organization skills automatically without waiting for Cloud before starting a task.",
-    since: "2026-10",
-    deployments: everywhere,
-    default: false,
-  },
   denFlatPageHeaders: {
     label: "Den: flat page headers",
     description: "Members see compact, readable page headings in Den instead of decorative gradient banners.",
-    since: "2026-10",
-    deployments: everywhere,
-    default: false,
-  },
-  analyticsIntegrated: {
-    label: "Den: integrated analytics",
-    description: "Admins see analytics in the same style as Library and Connectors, with links to manage the items they use.",
     since: "2026-10",
     deployments: everywhere,
     default: false,
@@ -131,8 +82,8 @@ export const FEATURES = defineFeatures({
     default: false,
   },
   libraryUsage: {
-    label: "Library usage",
-    description: "Organization admins see in Analytics how often each skill, plugin and connector is used, by how many people, which calls fail, and what nobody uses, so they can decide what to keep.",
+    label: "Analytics: integrated views and Library usage",
+    description: "Organization admins see Analytics in the same style as Library and Connectors, including how often each skill, plugin and connector is used, by how many people, which calls fail, and what nobody uses, so they can decide what to keep.",
     since: "2026-10",
     deployments: everywhere,
     default: false,
@@ -140,20 +91,6 @@ export const FEATURES = defineFeatures({
   modelsAnalytics: {
     label: "OpenWork Models task analytics",
     description: "Organization admins can opt in to task analytics for OpenWork Models.",
-    since: "2026-10",
-    deployments: everywhere,
-    default: false,
-  },
-  auditLogs: {
-    label: "Audit logs",
-    description: "Organization admins can read and configure audit logs. Capture still needs an audit entitlement.",
-    since: "2026-10",
-    deployments: everywhere,
-    default: false,
-  },
-  auditLogsCompact: {
-    label: "Audit logs: compact Den rows",
-    description: "Organization admins read audit operations and capture settings in compact Den rows, with changes and technical details expanded on demand.",
     since: "2026-10",
     deployments: everywhere,
     default: false,
@@ -195,7 +132,7 @@ export const FEATURES = defineFeatures({
   },
   workbot: {
     label: "Workbot",
-    description: "Members can use Workbot. Needs the deployment's Workbot app.",
+    description: "Members can use Workbot, with side chats and a Calendar tab of its scheduled work, and organization admins choose the default model Workbot, the Slack assistant and cloud Automations answer with. Needs the deployment's Workbot app.",
     since: "2026-10",
     deployments: everywhere,
     default: false,
@@ -214,44 +151,9 @@ export const FEATURES = defineFeatures({
     deployments: everywhere,
     default: false,
   },
-  workbotCalendar: {
-    label: "Calendar: Workbot",
-    description: "Workbot members see a Calendar tab with Workbot's scheduled work next to meetings from their connected Google or Outlook calendar. Needs Workbot.",
-    since: "2026-10",
-    deployments: everywhere,
-    default: false,
-  },
-  workbotSideChats: {
-    label: "Workbot: side chats",
-    description: "Members can start side chats in Workbot next to their main chat, for one topic at a time. Needs Workbot.",
-    since: "2026-10",
-    deployments: everywhere,
-    default: false,
-  },
-  workbotDefaultModel: {
-    label: "Workbot: default model",
-    description: "Organization admins choose, in Manage › Workbot, the model Workbot, the Slack assistant and cloud Automations set to the cloud default answer with. Needs Workbot.",
-    since: "2026-10",
-    deployments: everywhere,
-    default: false,
-  },
-  litellm: {
-    label: "AI Gateway: LiteLLM",
-    description: "Organization admins can connect their own LiteLLM proxy to AI Gateway, with one shared key, each person's own key, or keys OpenWork creates for each person.",
-    since: "2026-10",
-    deployments: everywhere,
-    default: false,
-  },
   permissions: {
     label: "Permissions",
     description: "Organization admins choose what members, admins and each team can do, instead of the fixed Member and Admin defaults.",
-    since: "2026-10",
-    deployments: everywhere,
-    default: false,
-  },
-  gatewayCloudSignIn: {
-    label: "AI Gateway: AWS and Microsoft sign-in",
-    description: "Organization admins can add Microsoft Foundry, and let each person sign in to Amazon Bedrock with AWS IAM Identity Center or to Microsoft Foundry with Microsoft Entra ID instead of sharing one key.",
     since: "2026-10",
     deployments: everywhere,
     default: false,
@@ -263,30 +165,9 @@ export const FEATURES = defineFeatures({
     deployments: everywhere,
     default: false,
   },
-  remoteSessionTargets: {
-    label: "Remote session targets",
-    description: "Members can register OpenWork and OpenCode clients as computers for remote sessions from MCP, Slack, and chat.",
-    since: "2026-10",
-    deployments: everywhere,
-    default: false,
-  },
   remoteSessionEvents: {
     label: "Remote session events",
     description: "MCP clients can subscribe to changes in their remote session receipts and read the current state after reconnecting.",
-    since: "2026-10",
-    deployments: everywhere,
-    default: false,
-  },
-  opencodePlugin: {
-    label: "OpenCode plugin sign-in",
-    description: "People can sign in to OpenWork from the OpenCode plugin, approve it as \"OpenWork - OpenCode Plugin\", and land back on OpenCode afterwards. Applies to the whole deployment; organization overrides have no effect.",
-    since: "2026-10",
-    deployments: everywhere,
-    default: false,
-  },
-  platformAuditReads: {
-    label: "Platform audit: read-only requests",
-    description: "Platform administrators also get evidence of successful read-only platform requests (session reads, discovery documents). Applies to the whole deployment; organization overrides have no effect.",
     since: "2026-10",
     deployments: everywhere,
     default: false,

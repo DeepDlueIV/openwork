@@ -8,7 +8,7 @@ import { newChatId, useRemoveWorkbotChat, type WorkbotChats } from "./data";
 
 /**
  * Side chats: next to the person's main chat (one ongoing conversation), side chats keep one topic apart. They share
- * the main chat's memory. Shown only where side chats are on (the workbotSideChats feature).
+ * the main chat's memory. Shown only where side chats are on.
  */
 
 const CHAT_PARAM = "chat";

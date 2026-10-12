@@ -7,7 +7,7 @@ Build and demo first; complete Slack Marketplace/RTS distribution approval befor
 1. Deploy the branch and migrations through `0142_slack_cloud_installations.sql`, after the shared feature tables in `0129_organization_features.sql`. The deployment must be `DEN_DEPLOYMENT=cloud` and `DEN_ORG_MODE=multi_org`; self-hosted and single-org deployments do not expose the platform app.
 2. Configure one OpenWork-owned Slack app. Register the exact callback at the configured **Den web** origin: `/oauth/slack/callback`. Its fixed adapter forwards the signed browser session cookie to the API callback, including when web and API use separate hosts. Add this web callback to the Slack app's allowed redirects before enabling the integration; old pending authorization attempts must restart.
 3. Configure the user scope contract below. Set platform credentials through deployment secrets, never the customer Connections settings.
-4. In the existing **Admin → Overview → Organizations**, find the intended OpenWork organization and enable **Features → Slack search**. This is the registered `nativeSlack` feature, default-off. The organization's **OpenWork Connect** feature must also allow use.
+4. In the existing **Admin → Overview → Organizations**, find the intended OpenWork organization and enable **Features → Slack search**. This is the registered `nativeSlack` feature, default-off. OpenWork Connect is generally available; its retired `mcpConnections` override is ignored and has no Admin control.
 5. Members select **Slack search — Provided by OpenWork**, then **Connect Slack**, from the connector catalog or Library. Dashboard Quick add exposes the same personal action when that dashboard variant is active. OAuth plus `auth.test` discovers and verifies the workspace and member automatically. An explicit new authorization replaces that member's one workspace slot; background refresh cannot change it.
 
 | Deployment setting | Purpose |
@@ -41,13 +41,13 @@ The feature registry automatically supplies this row and the existing API/MCP co
 - **Operator locks:** the standard generated `DEN_FEATURE_NATIVE_SLACK` / Helm feature control remains available as part of the shared system, not a required Slack-specific enablement step. A lock disables effective per-organization editing; a kill switch still wins over a forced-on lock.
 - **Deployment eligibility:** Cloud-only is declared in `packages/features/src/registry.ts`; an organization override cannot make it available on self-hosted deployments. Single-org topology remains excluded.
 
-The shared order is: deployment exclusion → kill switch → operator lock → organization override → everyone default. The general OpenWork Connect gate and individual Slack consent remain additional requirements. The Slack Assistant and its Workbot replies feature are separate and are not enabled by this switch.
+The shared order is: deployment exclusion → kill switch → operator lock → organization override → everyone default. Individual Slack consent remains an additional requirement; GA Connect does not grant Slack rollout access or authorize a member's account. The Slack Assistant and its Workbot replies feature are separate and are not enabled by this switch.
 
 Disabling native Slack blocks subsequent authorization, status, search, thread, and retained capability requests, even when a saved token has not expired. Stored accounts stay available for disconnect; a valid retained grant can resume after re-enabling. A toggle does not cancel already-dispatched Slack requests, uninstall the Slack app, or erase transcripts.
 
 ## Managed discovery and the custom-app option
 
-- Both connector catalogs and Dashboard Quick add derive managed availability from the two organization feature flags and the server's usable native Slack row. Configured credentials alone do not expose it.
+- Both connector catalogs and Dashboard Quick add derive managed availability from the organization's `nativeSlack` feature and the server's usable native Slack row. Configured credentials or GA Connect alone do not expose it.
 - The UI target is `slack-search`; the credential/provider identity remains `slack`. The managed action uses the existing personal OAuth start endpoint and never enters the custom-app wizard.
 - A connected member can select **Manage account**. Limited access stays explicit. A blocked saved account remains available for disconnect, not reconnect.
 - **Use your own Slack app** stays collapsed until requested. It uses the existing custom preset and setup route; it does not migrate or rename existing connections. Library links select only connections the member can use, even when that member has management permission.

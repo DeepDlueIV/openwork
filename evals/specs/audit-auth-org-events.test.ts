@@ -214,11 +214,6 @@ async function memberIdentity(den: Den, admin: DenSession, orgId: string, email:
   return { memberId: text(member.id, "member.id"), userId: text(member.userId ?? user.id, "member.userId") };
 }
 
-async function setAuditFlag(den: Den, admin: DenSession, orgId: string) {
-  const result = await call(den, `/v1/admin/organizations/${orgId}/capabilities`, { method: "PUT", headers: { authorization: `Bearer ${admin.token}` }, body: { capabilities: { auditLogs: true } } });
-  expect(result.response.status, result.text).toBe(200);
-}
-
 let booted: Promise<World> | null = null;
 const owned = new AsyncDisposableStack();
 afterAll(async () => {
@@ -241,7 +236,6 @@ function world(place: Place): Promise<World> {
         DEN_AUDIT_SELF_HOSTED_ENABLED: "true",
         DEN_AUDIT_CAPTURE_ENABLED: undefined,
         DEN_AUDIT_VISIBILITY_ENABLED: undefined,
-        DEN_FEATURE_PLATFORM_AUDIT_READS: undefined,
         DEN_PLAN_GATING_ENABLED: "false",
         RESEND_API_KEY: "",
         STRIPE_SECRET_KEY: "",
@@ -252,12 +246,10 @@ function world(place: Place): Promise<World> {
     const member = den.members.member;
     if (!member) throw new Error("Expected the synthetic member session");
     const orgA = await organizationIdNamed(admin, organizationName);
-    // The admin also owns flagged B; the member belongs to A only.
+    // The admin also owns B; the member belongs to A only.
     const createdB = await call(den, "/v1/org", { method: "POST", headers: { authorization: `Bearer ${admin.token}` }, body: { name: `Audit auth org B ${stamp}` } });
     expect(createdB.response.status, createdB.text).toBe(201);
     const orgB = text(record(record(createdB.body, "org").organization, "organization").id, "B id");
-    await setAuditFlag(den, admin, orgA);
-    await setAuditFlag(den, admin, orgB);
     return {
       den, dbUrl, stamp, orgA, orgB, admin, member,
       secrets: new Set([admin.token, member.token, admin.password, member.password]),
@@ -384,7 +376,7 @@ test.skipIf(skip)(name("2. a refused raw better-auth mutation records a denied a
   const role = await sql(w, "SELECT role FROM member WHERE id = ?", [w.memberA.memberId]);
   expect(role[0]?.role).toBe("member");
   evidence.recordAssertionEvidence(
-    "A member's cookie POST /api/auth/organization/update-member-role naming their own organization A answers 403 and records auth.organization.member.role.update.attempted (denied, raw_endpoint_refused, security, member actor, no intent) in A; the same call naming flagged B (not a member) answers the same 403 and records nothing in B, only platform evidence; the role is unchanged",
+    "A member's cookie POST /api/auth/organization/update-member-role naming their own organization A answers 403 and records auth.organization.member.role.update.attempted (denied, raw_endpoint_refused, security, member actor, no intent) in A; the same call naming B (not a member) answers the same 403 and records nothing in B, only platform evidence; the role is unchanged",
     `A: ${summary(attempts)}; B: ${summary(inB)}; platform rows +${platformAfter - platformBefore}; bodies equal=${JSON.stringify(foreign.body) === JSON.stringify(own.body)}`,
     true,
   );

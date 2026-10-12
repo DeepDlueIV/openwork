@@ -6,8 +6,8 @@ import type { Den } from "@openwork/testkit";
 
 // Behaviour proof for den-api's single-writer legacy audit bridge
 // (src/audit/domain/legacy.ts + LEGACY_ACTION_BRIDGE). An organization without
-// the auditLogs rollout keeps writing legacy audit_event rows unchanged; once
-// the flag is on, the same management actions append operation change events
+// the audit entitlement keeps writing legacy audit_event rows unchanged; once
+// it is on Enterprise, the same management actions append operation change events
 // with allowlisted before/after snapshots inside the business transaction and
 // write no legacy row. Observed over HTTP plus the disposable scratch database
 // server() owns (openwork_eval_*). All identities are synthetic example.test.
@@ -25,7 +25,7 @@ const skipReason = attached
       : !redisOpen ? "needs Redis on 127.0.0.1:6379 (pnpm dev:den:mysql)" : "";
 const title = skipReason
   ? `legacy organization audit actions bridge to operation change events (skipped — ${skipReason})`
-  : "an unflagged org keeps legacy audit rows while a flagged org records allowlisted change events instead, never both";
+  : "an org without the audit entitlement keeps legacy audit rows, and on Enterprise records allowlisted change events instead, never both";
 
 type Row = Record<string, unknown>;
 type Changes = { before: Row | null; after: Row | null; changedFields: string[] };
@@ -125,7 +125,8 @@ test.skipIf(skipReason !== "")(title, { timeout: 300_000 }, async ({ evidence, p
       members: { teammate: { name: "Audit Bridge Teammate", email: `audit-bridge-teammate+${stamp}@example.test` } },
     },
     env: {
-      DEN_AUDIT_SELF_HOSTED_ENABLED: "true",
+      // Per-organization entitlement (the plan) instead of the self-hosted switch.
+      DEN_AUDIT_SELF_HOSTED_ENABLED: undefined,
       DEN_AUDIT_CAPTURE_ENABLED: undefined,
       DEN_PLAN_GATING_ENABLED: "false",
       RESEND_API_KEY: "",
@@ -141,7 +142,7 @@ test.skipIf(skipReason !== "")(title, { timeout: 300_000 }, async ({ evidence, p
   const adminHeaders = { authorization: `Bearer ${admin.token}` };
 
   // Permission sets (the audited replacement for custom roles) need the
-  // Permissions feature; it is independent of the auditLogs rollout.
+  // Permissions feature; it is independent of the audit entitlement.
   const permissionsOn = await denFetch(admin, `/v1/admin/organizations/${orgId}/capabilities`, { method: "PUT", headers: adminHeaders, body: JSON.stringify({ capabilities: { permissions: true } }) });
   expect(permissionsOn.response.status, permissionsOn.text).toBe(200);
   // Organization API keys are the owner's by default (they used to need
@@ -159,27 +160,27 @@ test.skipIf(skipReason !== "")(title, { timeout: 300_000 }, async ({ evidence, p
     return text(record(record(created.body, "team response").team, "team").id, `team ${name}`);
   };
 
-  // 1. Unflagged: legacy rows exactly as before, no operation evidence at all.
+  // 1. Not entitled: legacy rows exactly as before, no operation evidence at all.
   const legacyTeamId = await createTeam(`Legacy reviewers ${stamp}`);
   const legacySet = await denFetch(admin, "/v1/permissions/sets", { method: "POST", headers, body: JSON.stringify({ teamId: legacyTeamId, permissions: [{ key: "teams.view", status: "allow" }] }) });
   expect(legacySet.response.status, legacySet.text).toBe(201);
   const legacyDpa = await denFetch(admin, `/v1/admin/organizations/${orgId}/dpa`, { method: "PATCH", headers: adminHeaders, body: JSON.stringify({ dpaSigned: false, reason: "Synthetic unsigned agreement" }) });
   expect(legacyDpa.response.status, legacyDpa.text).toBe(200);
-  const unflaggedLegacy = await legacyRows(dbUrl, orgId);
-  const unflaggedOperations = await sql(dbUrl, "SELECT COUNT(*) AS n FROM audit_event WHERE org_id = ? AND operation_id IS NOT NULL", [orgId]);
-  const legacyActions = unflaggedLegacy.map((row) => String(row.action));
-  const dpaPayload = unflaggedLegacy.find((row) => row.action === "organization.dpa_signed.updated")?.payload;
+  const unentitledLegacy = await legacyRows(dbUrl, orgId);
+  const unentitledOperations = await sql(dbUrl, "SELECT COUNT(*) AS n FROM audit_event WHERE org_id = ? AND operation_id IS NOT NULL", [orgId]);
+  const legacyActions = unentitledLegacy.map((row) => String(row.action));
+  const dpaPayload = unentitledLegacy.find((row) => row.action === "organization.dpa_signed.updated")?.payload;
   const dpaPayloadRecord = record(typeof dpaPayload === "string" ? JSON.parse(dpaPayload) : dpaPayload, "legacy DPA payload");
   expect(legacyActions).toEqual(expect.arrayContaining(["organization.permission_set.created", "organization.dpa_signed.updated"]));
   expect(dpaPayloadRecord).toEqual({ previousDpaSigned: null, dpaSigned: false, reason: "Synthetic unsigned agreement" });
-  expect(Number(unflaggedOperations[0]?.n ?? -1)).toBe(0);
+  expect(Number(unentitledOperations[0]?.n ?? -1)).toBe(0);
   evidence.recordAssertionEvidence(
-    "1. Without the auditLogs rollout the legacy audit_event rows are written unchanged",
-    `Legacy rows: ${legacyActions.join(", ")}; DPA payload ${JSON.stringify(dpaPayloadRecord)}; operation-bound audit rows: ${String(unflaggedOperations[0]?.n)}.`,
-    legacyActions.includes("organization.permission_set.created") && Number(unflaggedOperations[0]?.n) === 0,
+    "1. Without the audit entitlement the legacy audit_event rows are written unchanged",
+    `Legacy rows: ${legacyActions.join(", ")}; DPA payload ${JSON.stringify(dpaPayloadRecord)}; operation-bound audit rows: ${String(unentitledOperations[0]?.n)}.`,
+    legacyActions.includes("organization.permission_set.created") && Number(unentitledOperations[0]?.n) === 0,
   );
 
-  const enabled = await denFetch(admin, `/v1/admin/organizations/${orgId}/capabilities`, { method: "PUT", headers: adminHeaders, body: JSON.stringify({ capabilities: { auditLogs: true } }) });
+  const enabled = await denFetch(admin, `/v1/admin/organizations/${orgId}/plan`, { method: "PATCH", headers: adminHeaders, body: JSON.stringify({ tier: "enterprise", seatLimit: 25 }) });
   expect(enabled.response.status, enabled.text).toBe(200);
   const legacyBefore = (await legacyRows(dbUrl, orgId)).length;
   const start = await watermark(dbUrl, orgId);
@@ -334,7 +335,7 @@ test.skipIf(skipReason !== "")(title, { timeout: 300_000 }, async ({ evidence, p
     dpaEvent.operation.origin === "platform_admin" && memberRemoved.length === 1,
   );
 
-  // Single writer: no legacy row for any bridged action once the org is flagged.
+  // Single writer: no legacy row for any bridged action once the org is entitled.
   const legacyAfter = await legacyRows(dbUrl, orgId);
   expect(legacyAfter.length, JSON.stringify(legacyAfter.slice(legacyBefore).map((row) => row.action))).toBe(legacyBefore);
   // Allowlisted evidence: no secret field names or values anywhere in change snapshots.
@@ -344,8 +345,8 @@ test.skipIf(skipReason !== "")(title, { timeout: 300_000 }, async ({ evidence, p
   expect(leakedKeys).toEqual([]);
   expect(leakedValues).toEqual([]);
   evidence.recordAssertionEvidence(
-    "7. A flagged org writes no legacy row and its snapshots carry no secret fields or values",
-    `Legacy rows before/after flagged actions: ${legacyBefore}/${legacyAfter.length}; change events: ${summary(changeEvents)}; forbidden keys present: ${JSON.stringify(leakedKeys)}; plaintext secrets found: ${leakedValues.length} of ${secrets.length}.`,
+    "7. An entitled org writes no legacy row and its snapshots carry no secret fields or values",
+    `Legacy rows before/after entitled actions: ${legacyBefore}/${legacyAfter.length}; change events: ${summary(changeEvents)}; forbidden keys present: ${JSON.stringify(leakedKeys)}; plaintext secrets found: ${leakedValues.length} of ${secrets.length}.`,
     legacyAfter.length === legacyBefore && leakedKeys.length === 0 && leakedValues.length === 0,
   );
 

@@ -20,7 +20,7 @@ import { useMcpAccountAuthorization } from "./use-mcp-account-authorization";
 export function useManagedSlackDiscovery() {
   const { orgContext } = useOrgDashboard();
   const usable = useMcpConnections("usable");
-  const enabled = orgFeatureEnabled(orgContext, "nativeSlack") && orgFeatureEnabled(orgContext, "mcpConnections");
+  const enabled = orgFeatureEnabled(orgContext, "nativeSlack");
   return {
     connection: enabled ? usable.data?.find((connection) => isManagedSlackConnection(connection) && !connection.policyBlocked) : undefined,
     loading: usable.isLoading,
@@ -37,7 +37,7 @@ export function useManagedSlackAction(connection: ExternalMcpConnection | undefi
     void queryClient.invalidateQueries({ queryKey: libraryQueryKeys.items });
   });
   const available = Boolean(connection && isManagedSlackConnection(connection) && !connection.policyBlocked
-    && orgFeatureEnabled(orgContext, "nativeSlack") && orgFeatureEnabled(orgContext, "mcpConnections"));
+    && orgFeatureEnabled(orgContext, "nativeSlack"));
   const reconnect = Boolean(connection && (connection.needsReconnect || connectorLimitedAccess(connection)));
   const connected = Boolean(connection && connectorAccountReady(connection) && !reconnect);
   return {

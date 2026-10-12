@@ -38,8 +38,7 @@ export type AuditRouteDeclaration = Readonly<{
   jobOutcome?: string
   /**
    * Platform GET/HEAD only, and only when the route has no side effect (pure metadata,
-   * docs, discovery or session reads): a successful request is then recorded only with
-   * the deployment-wide platformAuditReads feature. Every other platform request is always recorded.
+   * docs, discovery or session reads). Every platform request is recorded.
    */
   readOnly?: true
   notes?: string

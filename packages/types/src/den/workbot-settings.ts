@@ -1,7 +1,7 @@
 import { z } from "zod"
 
 /**
- * Organization settings for Workbot (Den › Manage › Workbot), behind the `workbotDefaultModel` feature.
+ * Organization settings for Workbot (Den › Manage › Workbot), available while the `workbot` feature is on.
  *
  * The model is the organization's default for its cloud agents: Workbot, the Slack assistant, and cloud Automations
  * set to the cloud default. It is a headless runner model id (the runner's `GET /v1/models`); null means the runner's

@@ -66,7 +66,7 @@ export function calendarOutputs(mock: CalendarMock, desktop: { handle: { cdpUrl:
   return {
     calendarMock: output(mock.baseUrl, { group: "Calendar", note: "Den-contract calendar routes, provider upstreams and /mcp; POST /scenario {\"google\":\"expired_token\"} to try error states" }),
     calendarMockState: output(`${mock.baseUrl}/state`, { group: "Calendar", note: "The seeded meetings, as Google and Graph return them" }),
-    calendarAutomations: output("5 Automations, two weeks of runs", { group: "Calendar", note: "Seeded for alex@acme.test; automationCalendar and workbotCalendar are on for Acme" }),
+    calendarAutomations: output("5 Automations, two weeks of runs", { group: "Calendar", note: "Seeded for alex@acme.test; Workbot and automationCalendar are on for Acme" }),
     ...(desktop ? {
       calendarDesktop: output("OpenWork desktop window", { group: "Calendar", note: "Open Calendar in the sidebar; meetings come from the mock" }),
       calendarCdp: secret(desktop.handle.cdpUrl, { group: "Calendar" }),

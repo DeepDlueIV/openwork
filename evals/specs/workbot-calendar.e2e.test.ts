@@ -55,7 +55,7 @@ const test = spec.world(workbotCalendar, {
   timeout: 900_000,
 });
 
-test("a Workbot member sees their Automations next to Google and Outlook meetings and pauses one, behind Workbot's own Calendar switch", async ({ world, user, probe, step, evidence }) => {
+test("a Workbot member sees their Automations next to Google and Outlook meetings and pauses one", async ({ world, user, probe, step, evidence }) => {
   const count = async (selector: string) => (await probe.dom(selector)).elements.length;
   const lastModel = world.pickerModels.at(-1);
   if (!lastModel) throw new Error("The picker world needs a last model");
@@ -95,13 +95,12 @@ test("a Workbot member sees their Automations next to Google and Outlook meeting
     expect(logos).toBe(meetings.length);
     expect(meetings.every((meeting) => !meeting.text.includes("Google Calendar") && !meeting.text.includes("Outlook Calendar"))).toBe(true);
     await user.click({ role: "button", label: /^Weekly launch update, / });
-    await user.see({ text: "Organization default" });
+    await user.see({ text: /^Organization default/ });
     await user.screenshot();
     evidence.recordAssertionEvidence("Provider identity stays accessible without repeating it in meeting text", `${logos} meeting logos; both provider names remain in the buttons' accessible names; Organization default is distinct from Auto.`, true);
   });
 
   await step("after: a known organization default names the actual resolved model in the open chooser", async () => {
-    await world.enableDefaultModel();
     const resolvedName = await world.resolvedDefaultModelName();
     await user.reload();
     await user.see({ role: "button", label: /^Weekly launch update, / });
@@ -313,16 +312,6 @@ test("a Workbot member sees their Automations next to Google and Outlook meeting
     });
   }
   await user.resizeViewport({ width: 1440, height: 960, deviceScaleFactor: 1 });
-
-  await step("Workbot's Calendar has its own switch: turning it off stops Workbot's Calendar and leaves the desktop's on", async () => {
-    await world.turnOffWorkbotCalendar();
-    const features = await world.features();
-    const status = await world.calendarApiStatus();
-    evidence.recordAssertionEvidence("separate switches", `workbotCalendar ${features.workbotCalendar}, automationCalendar ${features.automationCalendar}; Workbot's Calendar API answers ${status}`, !features.workbotCalendar && features.automationCalendar && status === 403);
-    expect(features).toEqual({ workbotCalendar: false, automationCalendar: true });
-    expect(status).toBe(403);
-    await user.see({ text: /^Every Wednesday at 12:30 PM/ });
-  });
 });
 
 const shortListTest = spec.world(workbotCalendarShortList, {

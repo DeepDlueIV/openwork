@@ -44,17 +44,13 @@ test("an owner sees which plugins, skills and connectors the team uses, which fa
     await owner.screenshot();
   });
 
-  await step("after: the same fresh workspace has one neutral empty state", async () => {
-    await world.setAnalyticsIntegrated(true);
+  await step("after: a reload keeps one neutral empty state", async () => {
     await owner.reload();
     await owner.see({ testId: "library-usage-no-usage" }, { timeoutMs: 60_000 });
     expect((await page.dom('[data-testid="library-usage-no-usage"] svg')).elements).toHaveLength(0);
     expect((await page.dom("[data-item-unused]")).elements).toHaveLength(2);
     evidence.recordAssertionEvidence("no recorded usage stays an empty state, not a fabricated zero report", "No usage yet; both real plugins remain Not used, with no decorative icon tile.", true);
     await owner.screenshot();
-    await world.setAnalyticsIntegrated(false);
-    await owner.reload();
-    await owner.see({ testId: "library-usage-no-usage" }, { timeoutMs: 60_000 });
   });
 
   await step("when teammates' agents load skills and make two successful connector calls through OpenWork", async () => {
@@ -88,11 +84,12 @@ test("an owner sees which plugins, skills and connectors the team uses, which fa
     }, { within: 60_000, intervalMs: 1_000, label: "two successful calls are recorded with zero failures" });
     await owner.see({ testId: "library-usage-failed" });
     const neutral = (await page.dom('[data-testid="library-usage-failed"][data-state="neutral"]')).elements;
-    const neutralIcons = (await page.dom('[data-testid="library-usage-failed"] svg[class~="text-[var(--dls-text-secondary)]"]')).elements;
-    const attentionIcons = (await page.dom('[data-testid="library-usage-failed"] svg[class~="text-[var(--ow-danger)]"]')).elements;
+    // Analytics stat cards carry attention as data, not a colored icon.
+    const calm = (await page.dom('[data-testid="library-usage-failed"] [data-analytics-stat][data-attention="false"]')).elements;
+    const flagged = (await page.dom('[data-testid="library-usage-failed"] [data-attention="true"], [data-testid="library-usage-failed"] [class~="text-[var(--ow-danger)]"]')).elements;
     const card = (await page.dom('[data-testid="library-usage-failed"] > div > div')).elements.map((entry) => oneLine(entry.text)).join(" ");
-    const ok = neutral.length === 1 && neutralIcons.length === 1 && attentionIcons.length === 0 && card === "Failed 0 0% of uses";
-    evidence.recordAssertionEvidence("zero failures is a neutral measured state", `Team tracker has 2 real uses and 0 failures; card reads ${card}; ${neutral.length} neutral card, ${neutralIcons.length} muted icon and ${attentionIcons.length} attention icons`, ok);
+    const ok = neutral.length === 1 && calm.length === 1 && flagged.length === 0 && card === "Failed 0 0% of uses";
+    evidence.recordAssertionEvidence("zero failures is a neutral measured state", `Team tracker has 2 real uses and 0 failures; card reads ${card}; ${neutral.length} neutral card, ${calm.length} calm stat and ${flagged.length} attention markers`, ok);
     expect(ok).toBe(true);
     await owner.screenshot();
   });
@@ -166,8 +163,8 @@ test("an owner sees which plugins, skills and connectors the team uses, which fa
     const tracker = await rowText(world.connectors.tracker);
     const wiki = await rowText(world.connectors.wiki);
     const attention = (await page.dom('[data-testid="library-usage-failed"][data-state="attention"]')).elements;
-    const attentionIcons = (await page.dom('[data-testid="library-usage-failed"] svg[class~="text-[var(--ow-danger)]"]')).elements;
-    const neutralIcons = (await page.dom('[data-testid="library-usage-failed"] svg[class~="text-[var(--dls-text-secondary)]"]')).elements;
+    const flagged = (await page.dom('[data-testid="library-usage-failed"] [data-analytics-stat][data-attention="true"]')).elements;
+    const dangerValue = (await page.dom('[data-testid="library-usage-failed"] [data-analytics-stat] > div[class~="text-[var(--ow-danger)]"]')).elements;
     const card = (await page.dom('[data-testid="library-usage-failed"] > div > div')).elements.map((entry) => oneLine(entry.text)).join(" ");
     // Both fixtures are custom MCP names, not named services. A generic
     // tracker must not acquire a made-up Linear, Slack or other brand logo.
@@ -175,8 +172,8 @@ test("an owner sees which plugins, skills and connectors the team uses, which fa
     await owner.click({ role: "radio", label: "Failing" });
     const failing = (await page.dom('[data-testid="library-usage-row"]')).elements.map((entry) => oneLine(entry.text));
     const ok = wiki.includes("Not used") && failing.length === 1 && attention.length === 1
-      && attentionIcons.length === 1 && neutralIcons.length === 0 && card === "Failed 1 33% of uses" && inventedLogos.length === 0;
-    evidence.recordAssertionEvidence("only a real failed call gets the attention state", `Team tracker: ${tracker}; Old wiki: ${wiki}; Failing shows ${failing.length} row; card ${card}, ${attentionIcons.length} attention icon, ${neutralIcons.length} muted icons; ${inventedLogos.length} fabricated service logos`, ok);
+      && flagged.length === 1 && dangerValue.length === 1 && card === "Failed 1 33% of uses" && inventedLogos.length === 0;
+    evidence.recordAssertionEvidence("only a real failed call gets the attention state", `Team tracker: ${tracker}; Old wiki: ${wiki}; Failing shows ${failing.length} row; card ${card}, ${flagged.length} attention stat, ${dangerValue.length} danger value; ${inventedLogos.length} fabricated service logos`, ok);
     expect(ok).toBe(true);
     await owner.screenshot();
   });
@@ -201,24 +198,20 @@ test("an owner sees which plugins, skills and connectors the team uses, which fa
     await owner.resizeViewport({ width: 1280, height: 1000, deviceScaleFactor: 1 });
   });
 
-  await step("before: Members and Connectors use Den rows while Analytics still uses accent tiles", async () => {
+  await step("before: Members and Connectors use Den rows", async () => {
     await owner.navigate(`${world.baseUrl}/dashboard/members`);
     await owner.see({ role: "heading", label: "Members" }, { timeoutMs: 60_000 });
     await owner.screenshot();
     await owner.navigate(`${world.baseUrl}/dashboard/mcp-connections`);
     await owner.see({ text: world.connectors.tracker }, { timeoutMs: 60_000 });
     await owner.screenshot();
-    await owner.navigate(`${world.baseUrl}/dashboard/analytics/library`);
-    await owner.see({ testId: "library-usage-row" }, { timeoutMs: 60_000 });
-    const legacy = (await page.dom('[data-analytics-integrated="false"]')).elements.length;
-    expect(legacy).toBe(1);
-    evidence.recordAssertionEvidence("the presentation rollout starts off", `Members and Connectors are shown next to Analytics; ${legacy} legacy Analytics header; the same usage rows remain.`, legacy === 1);
-    await owner.screenshot();
+    evidence.recordAssertionEvidence("Den's management pages are the comparison", "Members and Connectors are shown before Analytics.", true);
   });
 
   await step("after: Analytics uses neutral stats and the same Den rows without changing counts", async () => {
+    await owner.navigate(`${world.baseUrl}/dashboard/analytics/library`);
+    await owner.see({ testId: "library-usage-row" }, { timeoutMs: 60_000 });
     const previous = await rowText("Support kit");
-    await world.setAnalyticsIntegrated(true);
     await owner.reload();
     await owner.see({ testId: "library-usage-row" }, { timeoutMs: 60_000 });
     const current = await rowText("Support kit");
@@ -308,17 +301,6 @@ test("an owner sees which plugins, skills and connectors the team uses, which fa
     evidence.recordAssertionEvidence("usage is for owners and admins only", `teammate API reads: ${statuses.join(", ")}; teammate page headings: ${headings.join(", ") || "none"}`, statuses.every((status) => status === 403));
     expect(statuses).toEqual([403, 403, 403]);
     await teammate.screenshot();
-  });
-
-  await step("turning the rollout off restores the original presentation and counts", async () => {
-    await world.setAnalyticsIntegrated(false);
-    await owner.navigate(`${world.baseUrl}/dashboard/analytics/library`);
-    await owner.see({ testId: "library-usage-row" }, { timeoutMs: 60_000 });
-    expect((await page.dom("[data-analytics-stat]")).elements).toHaveLength(0);
-    expect((await page.dom('[data-analytics-integrated="false"]')).elements).toHaveLength(1);
-    expect((await page.dom(`${row("Support kit")} [data-item-uses]`)).elements[0]?.text).toBe("3");
-    evidence.recordAssertionEvidence("rollback keeps usage history intact", "The original colored presentation is restored; Support kit still has 3 measured uses.", true);
-    await owner.screenshot();
   });
 });
 

@@ -6,8 +6,8 @@ export async function signupWorkspace(seed: Seed, options: { simplified?: boolea
   // Capture real rendered emails locally; never use an inherited mail provider.
   const den = await seed.den({ provision: options.simplified === true,
     ...(options.simplified ? { org: {
-      name: "Onboarding rollout controls",
-      admin: { name: "Rollout Admin", email: `onboarding-admin-${Date.now()}@openwork.test` },
+      name: "Existing workspace",
+      admin: { name: "Existing Admin", email: `onboarding-admin-${Date.now()}@openwork.test` },
     } } : {}),
     env: {
     OPENWORK_DEV_MODE: "1", RESEND_API_KEY: "", SMTP_HOST: "",
@@ -15,12 +15,6 @@ export async function signupWorkspace(seed: Seed, options: { simplified?: boolea
     DEN_OPENWORK_WEB_ENABLED: "true",
     ...(options.simplified ? { DEN_DEPLOYMENT: "cloud" } : {}),
   } });
-  if (options.simplified) {
-    const rollout = await seed.api(den.admin, "/v1/admin/features/simplifiedOnboarding", {
-      method: "PUT", body: JSON.stringify({ enabled: true }),
-    });
-    if (!rollout.response.ok) throw new Error(`Could not enable simplified onboarding: ${rollout.text}`);
-  }
   const owner = {
     name: "Workspace Owner",
     email: `workspace-owner-${Date.now()}@openwork.test`,

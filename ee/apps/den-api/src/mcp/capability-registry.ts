@@ -69,7 +69,6 @@ import {
 import {
   executeRemoteSessionCapability,
   parseRemoteSessionCapabilityName,
-  remoteSessionCapabilitiesEnabled,
   searchRemoteSessionCapabilities,
   type RemoteSessionAction,
 } from "./remote-session-capabilities.js"
@@ -127,8 +126,6 @@ export type CapabilityRegistryContext = {
   member: McpMemberIdentity | null
   redirectUriBase: string
   generatedArtifactViewsEnabled: boolean
-  externalMcpConnectionsEnabled: boolean
-  remoteSessionsEnabled: boolean
   remoteSessionEventsEnabled: boolean
   resolvePlatformAdmin: () => Promise<boolean>
   resolveNamespaceContext: () => Promise<CodemodeConnectionNamespaceContext>
@@ -146,13 +143,12 @@ export type CapabilityRegistryContextInput = {
   redirectUriBase: string
   generatedArtifactViewsEnabled: boolean
   /** Effective features of the organization (see features.ts). */
-  organizationFeatures: Pick<FeatureMap, "mcpConnections"> & Partial<Pick<FeatureMap, "remoteSessionTargets" | "remoteSessionEvents">>
+  organizationFeatures: Partial<Pick<FeatureMap, "remoteSessionEvents">>
   /** MCP transports pass the verified caller; route and Automation contexts omit it (their route records the request). */
   audit?: McpAuditPrincipal | null
 }
 
 export function createCapabilityRegistryContext(input: CapabilityRegistryContextInput): CapabilityRegistryContext {
-  const externalMcpConnectionsEnabled = input.organizationFeatures.mcpConnections
   let platformAdmin: Promise<boolean> | undefined
   const resolvePlatformAdmin = () => {
     platformAdmin ??= isPlatformAdminUserId(input.principal.userId)
@@ -163,7 +159,6 @@ export function createCapabilityRegistryContext(input: CapabilityRegistryContext
     namespaceContext ??= resolveCodemodeConnectionNamespaceContext({
       organizationId: input.organizationId,
       member: input.member,
-      includeExternalMcp: externalMcpConnectionsEnabled,
     })
     return namespaceContext
   }
@@ -176,8 +171,6 @@ export function createCapabilityRegistryContext(input: CapabilityRegistryContext
     member: input.member,
     redirectUriBase: input.redirectUriBase,
     generatedArtifactViewsEnabled: input.generatedArtifactViewsEnabled,
-    externalMcpConnectionsEnabled,
-    remoteSessionsEnabled: remoteSessionCapabilitiesEnabled(input.organizationFeatures.remoteSessionTargets === true),
     remoteSessionEventsEnabled: input.organizationFeatures.remoteSessionEvents === true,
     resolvePlatformAdmin,
     resolveNamespaceContext,
@@ -459,7 +452,6 @@ async function executeMarketplaceSource(
     configObjectId: parsed.configObjectId,
     body: input.body,
     validateScriptOutput: true,
-    enabled: ctx.externalMcpConnectionsEnabled,
     redirectUriBase: ctx.redirectUriBase,
     auditWorkflowExecution: workflowExecutionAudit(ctx),
     usageVia,
@@ -559,7 +551,7 @@ const externalMcpSource: CapabilitySource = {
     return parsed ? { kind: "externalMcp", name, ...parsed } : null
   },
   search: async (ctx, query, limit) => {
-    if (!ctx.sourceFilter.mcp || !ctx.externalMcpConnectionsEnabled) return []
+    if (!ctx.sourceFilter.mcp) return []
     return searchExternalCapabilities({
       organizationId: ctx.organizationId,
       member: ctx.member,
@@ -571,7 +563,6 @@ const externalMcpSource: CapabilitySource = {
     })
   },
   enumerate: async (ctx) => {
-    if (!ctx.externalMcpConnectionsEnabled) return []
     return leavesFromBuilt(await buildExternalMcpToolTree({
       organizationId: ctx.organizationId,
       member: ctx.member,
@@ -582,15 +573,6 @@ const externalMcpSource: CapabilitySource = {
   },
   execute: async (ctx, parsed, input) => {
     if (!parsedForKind(parsed, "externalMcp")) return unknownCapabilityResult(input.name)
-    if (!ctx.externalMcpConnectionsEnabled) {
-      return {
-        isError: true,
-        content: textContent(JSON.stringify({
-          error: "unknown_capability",
-          message: "No external MCP connection capabilities are available for this organization.",
-        })),
-      }
-    }
     if (parsed.toolName === "*") {
       // A connection_status match: probing is the capability. Report the live
       // state as a successful result carrying the first-party connection
@@ -637,25 +619,22 @@ const marketplaceSource: CapabilitySource = {
     return parsed ? { kind: "marketplace", name, ...parsed } : null
   },
   search: async (ctx, query, limit) => {
-    if (!ctx.sourceFilter.marketplace || !ctx.externalMcpConnectionsEnabled) return []
+    if (!ctx.sourceFilter.marketplace) return []
     const matches = await searchMarketplaceCapabilities({
       organizationId: ctx.organizationId,
       member: ctx.member,
       objectTypes: ctx.marketplaceObjectTypes,
       query,
       limit,
-      enabled: ctx.externalMcpConnectionsEnabled,
     })
     return matches.map((match) => match.kind !== "workflow"
       ? { ...match, scriptPath: codemodeScriptPath("marketplace", match.name) }
       : match)
   },
   enumerate: async (ctx) => {
-    if (!ctx.externalMcpConnectionsEnabled) return []
     const references = await listAccessibleMarketplaceCapabilityReferences({
       organizationId: ctx.organizationId,
       member: ctx.member,
-      enabled: ctx.externalMcpConnectionsEnabled,
     })
     const uniqueReferences = new Map(references
       .filter((reference) => reference.objectType !== "workflow")
@@ -733,7 +712,7 @@ const remoteSessionSource: CapabilitySource = {
     return action ? { kind: "remoteSession", name, action } : null
   },
   search: async (ctx, query, limit) => {
-    if (!ctx.sourceFilter.api || !ctx.member || !ctx.remoteSessionsEnabled) return []
+    if (!ctx.sourceFilter.api || !ctx.member) return []
     return searchRemoteSessionCapabilities(query, limit)
   },
   // Deliberately absent from the confined-script tool tree in v1: remote
@@ -742,17 +721,6 @@ const remoteSessionSource: CapabilitySource = {
   enumerate: () => Promise.resolve([]),
   execute: async (ctx, parsed, input) => {
     if (!parsedForKind(parsed, "remoteSession")) return unknownCapabilityResult(input.name)
-    // A rollout revert stops admitting new work, never access to an existing
-    // receipt or the ability to stop an already admitted native session.
-    if (!ctx.remoteSessionsEnabled && parsed.action !== "read" && parsed.action !== "list" && parsed.action !== "stop") {
-      return {
-        isError: true,
-        content: textContent(JSON.stringify({
-          error: "unknown_capability",
-          message: "Remote session capabilities are not available for this organization.",
-        })),
-      }
-    }
     if (!ctx.member) {
       return {
         isError: true,

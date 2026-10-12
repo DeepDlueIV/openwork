@@ -57,7 +57,7 @@ export type HeadlessAgentExecutorDeps = {
   ownerUserId: (scope: OwnerScope) => Promise<string | null>
   /** Live check that the organization still runs Automations headless. */
   stillHeadless: (organizationId: string) => Promise<boolean>
-  /** The organization's default model for runs on the cloud default (workbotDefaultModel); null: the runner's. */
+  /** The organization's default model for runs on the cloud default; null: the runner's. */
   defaultModel: (organizationId: string) => Promise<string | null>
   sleep: (ms: number, signal: AbortSignal) => Promise<void>
   pollIntervalMs: number

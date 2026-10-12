@@ -12,6 +12,8 @@ import {
   readBrowserState,
   readBrowserTabMetrics,
   readConnectorCatalog,
+  readDocumentState,
+  readWorkspaceReadiness,
   renameSessionAndWait,
   signInDesktopAs,
   waitUntilInteractive,
@@ -1153,6 +1155,17 @@ export class ProbeChannel implements Probe {
   connectorCatalog() {
     const surface = requireSurface(this.#surface);
     return this.#runtime.call("probe", "connectorCatalog", "connectorCatalog", surface, () => readConnectorCatalog(surface));
+  }
+
+  documentState(targetUrl: string) {
+    const surface = requireSurface(this.#surface);
+    // Even a caller-supplied destination may contain OAuth parameters; do not log it.
+    return this.#runtime.call("probe", "documentState", "documentState", surface, () => readDocumentState(surface, targetUrl));
+  }
+
+  workspaceReadiness(workspaceId: string) {
+    const surface = requireSurface(this.#surface);
+    return this.#runtime.call("probe", "workspaceReadiness", "workspaceReadiness", surface, () => readWorkspaceReadiness(surface, workspaceId));
   }
 
   credentialInputState(selector: string, candidate = ""): Promise<CredentialInputState> {

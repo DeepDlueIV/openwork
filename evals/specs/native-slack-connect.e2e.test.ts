@@ -1,5 +1,5 @@
 import { expect } from "vitest";
-import { browserScript, spec, type Agent, type Probe, type User } from "@openwork/testkit";
+import { spec, type Agent, type Probe, type User } from "@openwork/testkit";
 import { nativeSlackConnect } from "../worlds/native-slack-connect.ts";
 
 const test = spec.world(nativeSlackConnect, {
@@ -66,21 +66,7 @@ test("a platform admin rolls Slack search out by organization while members keep
       within: 60_000, label: `${app.label}: the expected account has finished restoring`,
       until: state => state.status === "signed_in" && state.expectedMember,
     });
-    // probe.eval is needed for the public route inspector and browser document
-    // metadata: these are read-only observations, not React internals or app writes.
-    const route = await app.probe.eventually(() => app.probe.eval(browserScript((workspaceId) => {
-      const state = window.__openwork?.slice?.("route");
-      const workspace = state?.workspaces.find(item => item.id === workspaceId);
-      return {
-        connected: Boolean(state && "connected" in state && state.connected === true),
-        notLoading: Boolean(state && "loading" in state && state.loading === false),
-        connectionReady: Boolean(state && "connectionPending" in state && state.connectionPending === false),
-        noRouteError: Boolean(state && "routeError" in state && state.routeError === null),
-        expectedWorkspaceSelected: state?.selectedWorkspaceId === workspaceId,
-        workspaceLoaded: workspace?.loading === false,
-        noWorkspaceError: workspace?.error === null,
-      };
-    }, [app.workspaceId])), {
+    const route = await app.probe.eventually(() => app.probe.workspaceReadiness(app.workspaceId), {
       within: 60_000, label: `${app.label}: the expected workspace is connected and loaded`,
       until: state => Object.values(state).every(value => value === true),
     });
@@ -89,36 +75,40 @@ test("a platform admin rolls Slack search out by organization while members keep
       recordedReadyApps.add(app.workspaceId);
     }
   };
-  const readDocument = (app: AppActor) => app.probe.eval(() => ({ url: location.href, timeOrigin: performance.timeOrigin }));
   const waitForAppDocument = async (app: AppActor, previousTimeOrigin: number, requiresNewDocument: boolean) => {
-    await app.probe.eventually(() => app.probe.eval(browserScript((origin, previousTimeOrigin) => ({
-      expectedOrigin: location.origin === origin,
-      complete: document.readyState === "complete",
-      changedDocument: performance.timeOrigin !== previousTimeOrigin,
-    }), [new URL(app.url).origin, previousTimeOrigin])), {
+    await app.probe.eventually(() => app.probe.documentState(app.url), {
       within: 60_000, label: `${app.label}: ${requiresNewDocument ? "a new app document has loaded" : "the app document is ready"}`,
-      until: state => state.expectedOrigin && state.complete && (!requiresNewDocument || state.changedDocument),
+      until: state => state.sameOrigin && state.complete && (!requiresNewDocument || state.timeOrigin !== previousTimeOrigin),
     });
     await waitForAccountReady(app);
   };
   const reloadApp = async (app: AppActor) => {
-    const before = await readDocument(app);
+    const before = await app.probe.documentState(app.url);
     await app.user.reload();
     // readyState alone can still describe the retiring document after Page.reload.
     await waitForAppDocument(app, before.timeOrigin, true);
   };
   const navigateToApp = async (app: AppActor) => {
-    const before = await readDocument(app);
-    const source = new URL(before.url);
-    const destination = new URL(app.url);
+    const before = await app.probe.documentState(app.url);
     // user.navigate uses Page.navigate. Returning from OAuth changes the document;
-    // navigation to a fragment within the same origin/path/query need not do so.
-    const sameDocumentFragment = destination.hash !== "" && source.origin === destination.origin
-      && source.pathname === destination.pathname && source.search === destination.search;
-    await app.user.navigate(app.url);
+    // a fragment-only navigation or an exact-URL no-op does not require a new epoch.
+    if (!before.sameUrl) await app.user.navigate(app.url);
     // The web router may canonicalize the fragment URL to a pathname. Observe
     // the app origin plus the public selected-workspace state, not a frozen URL.
-    await waitForAppDocument(app, before.timeOrigin, !sameDocumentFragment);
+    await waitForAppDocument(app, before.timeOrigin, !before.sameUrl && !before.sameDocumentFragment);
+  };
+  const navigateAdmin = async (url: string) => {
+    const before = await adminProbe.documentState(url);
+    // Do not reload an already-selected /admin page and type into its retiring
+    // input. Page.navigate only dispatches navigation; wait for the new document
+    // before observing controls. Fragment-only transitions keep the current epoch.
+    if (!before.sameUrl) await admin.navigate(url);
+    const requiresNewDocument = !before.sameUrl && !before.sameDocumentFragment;
+    await adminProbe.eventually(() => adminProbe.documentState(url), {
+      within: 60_000, label: "the requested admin document is ready",
+      until: state => state.sameUrl && state.sameOrigin && state.complete
+        && (!requiresNewDocument || state.timeOrigin !== before.timeOrigin),
+    });
   };
   const openConnections = async (app: AppActor) => {
     await waitForAccountReady(app);
@@ -190,9 +180,18 @@ test("a platform admin rolls Slack search out by organization while members keep
     expect(state).toMatchObject({ enabled, override, source });
   };
   const openOrganization = async (slug: string) => {
-    await admin.navigate(world.adminUrl);
+    await navigateAdmin(world.adminUrl);
+    await admin.see({ role: "button", label: /Organizations \(/ });
     await admin.click({ role: "button", label: /Organizations \(/ });
-    await admin.type({ placeholder: "Org name, slug, or id" }, slug, { replace: true });
+    await admin.see({ placeholder: "Org name, slug, or id" }, { editable: true });
+    // The loading banner sits above the filter. Wait for the known organization
+    // inventory before measuring/clicking an input that can still move vertically.
+    await adminProbe.eventually(async () => {
+      const rows = await adminProbe.dom('[data-testid^="admin-org-row-"]');
+      const busy = await adminProbe.dom('[aria-busy="true"]');
+      return { rows: rows.elements.length, busy: busy.elements.some(element => element.rect.width > 0 && element.rect.height > 0) };
+    }, { within: 30_000, label: "the organization inventory has loaded", until: value => value.rows > 0 && !value.busy });
+    await admin.type({ placeholder: "Org name, slug, or id" }, slug, { replace: true, verify: true });
     await probe.eventually(() => adminProbe.dom('[data-testid^="admin-org-row-"]'), {
       within: 30_000, label: "only the requested organization is on screen", until: value => value.elements.length === 1,
     });
@@ -208,7 +207,7 @@ test("a platform admin rolls Slack search out by organization while members keep
     expect((await adminProbe.dom(`[data-testid="admin-capability-${key}"]:checked`)).elements).toHaveLength(enabled ? 1 : 0);
   };
   const setEveryone = async (enabled: boolean) => {
-    await admin.navigate(world.featuresUrl);
+    await navigateAdmin(world.featuresUrl);
     await admin.see({ testId: "admin-feature-nativeSlack" });
     // Testkit targets cannot be scoped to an ancestor. Resolve the radio index
     // from the actual generated rows, never from a copied registry key order.
@@ -292,7 +291,7 @@ test("a platform admin rolls Slack search out by organization while members keep
   });
 
   await step("before: managed Slack stays out of the loaded catalogs while its feature is off", async () => {
-    await admin.navigate(denUrl("/dashboard/mcp-connections/new"));
+    await navigateAdmin(denUrl("/dashboard/mcp-connections/new"));
     await admin.see({ testId: "slack-custom-app-disclosure" });
     await admin.notSee({ testId: "connector-picker-slack-search" });
     await admin.notSee({ testId: "connect-slack-search" });
@@ -431,11 +430,11 @@ test("a platform admin rolls Slack search out by organization while members keep
   });
 
   await step("after: the dashboard and catalogs offer the OpenWork app without custom setup", async () => {
-    await admin.navigate(denUrl("/dashboard"));
+    await navigateAdmin(denUrl("/dashboard"));
     await admin.see({ testId: "quick-add-slack-search" });
     await admin.see({ text: "Provided by OpenWork" });
     await admin.screenshot();
-    await admin.navigate(denUrl("/dashboard/mcp-connections/new"));
+    await navigateAdmin(denUrl("/dashboard/mcp-connections/new"));
     await admin.see({ testId: "connector-picker-slack-search" });
     await admin.see({ testId: "connect-slack-search" }, { text: "Connect Slack" });
     expect((await adminProbe.dom('[data-testid="slack-custom-app-disclosure"][open]')).elements).toHaveLength(0);
@@ -806,7 +805,7 @@ test("a platform admin rolls Slack search out by organization while members keep
   });
 
   await step("turning Slack off everywhere overrides both explicit grants without erasing either account", async () => {
-    await admin.navigate(world.featuresUrl);
+    await navigateAdmin(world.featuresUrl);
     await admin.see({ testId: "admin-feature-kill-nativeSlack" });
     await Promise.all([world.confirmAdminKill(), admin.click({ testId: "admin-feature-kill-nativeSlack" })]);
     await admin.see({ testId: "admin-feature-state-nativeSlack" }, { text: "Turned off everywhere" });

@@ -1702,6 +1702,10 @@ export function DenAdminPanel() {
   }, []);
 
   const loadOrganizations = useCallback(async (search: string, offset: number, signal?: AbortSignal, existingRequestId?: number) => {
+    // A cached overview can make this tab usable before its refresh finishes.
+    // This live read checks access itself; an older overview must not erase it.
+    overviewRequestIdRef.current += 1;
+    setRefreshing(false);
     const requestId = existingRequestId ?? organizationRequestIdRef.current + 1;
     organizationRequestIdRef.current = requestId;
     setOrganizationsLoading(true);

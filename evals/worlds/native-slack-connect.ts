@@ -110,13 +110,18 @@ export async function nativeSlackConnect(seed: Seed, { place }: { place: Place }
   const revokedWeb = await seed.web({ den, signedInAs: first, startPath: "/dashboard/your-connections", headless: true, viewport });
   // Independent browser sign-in, not identity derived from the OAuth URL or
   // desktop bearer. Reuse the gateway browser-OAuth world's real sign-in seam.
-  const signInBrowser = async (surface: Surface, session: DenSession) => {
+  const signInBrowser = async (surface: Surface, session: DenSession, activeOrganizationId = organizationId) => {
     const signedIn = await seed.api(session, "/api/auth/sign-in/email", {
       method: "POST", body: JSON.stringify({ email: session.email, password: session.password }),
     });
     const cookie = signedIn.response.headers.getSetCookie().find(value => value.includes("session_token="))?.split(";")[0] ?? "";
     const separator = cookie.indexOf("=");
     if (!signedIn.response.ok || separator < 1) throw new Error("Could not arrange an independently signed-in Den browser");
+    const browserSession = { ...session, token: text(object(signedIn.body).token) };
+    const selected = await seed.api(browserSession, "/v1/me/active-organization", {
+      method: "POST", body: JSON.stringify({ organizationId: activeOrganizationId }),
+    });
+    if (!selected.response.ok) throw new Error("Could not select the browser session's organization");
     const applied = object(await surface.client.send("Network.setCookie", {
       name: cookie.slice(0, separator), value: cookie.slice(separator + 1), url: den.ref.webUrl,
       path: "/", httpOnly: true, sameSite: "Lax",
@@ -126,7 +131,7 @@ export async function nativeSlackConnect(seed: Seed, { place }: { place: Place }
   };
   const revocableCookie = await signInBrowser(revokedWeb, first);
   await signInBrowser(adminWeb, den.admin);
-  await signInBrowser(otherWeb, otherOwner);
+  await signInBrowser(otherWeb, otherOwner, otherOrganizationId);
   await signInBrowser(memberWeb, first);
   const makeApp = async (identity: "first" | "second") => {
     const directory = seed.tmpPath(`native-slack-${identity}`);

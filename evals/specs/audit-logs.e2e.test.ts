@@ -751,7 +751,7 @@ test("an owner reads, filters and pauses audit history in compact Den rows, and 
     const timeline = await expandedTimeline(operation, events.length);
     expect(timeline.changes).toContain("DPA signed | None | Yes");
     await owner.notSee({ text: reason });
-    evidence.recordAssertionEvidence("Platform admin changes are attributed without a member identity", `PATCH /v1/admin/organizations/:id/dpa returned ${dpa.response.status}; the row reads “${row.summary}”; the change reads “${timeline.changes.join("; ")}” and the reason text is not retained.`, operation.origin === "platform_admin" && row.actor === "Platform administrator");
+    evidence.recordAssertionEvidence("Platform admin changes are attributed without a member identity", `PATCH /v1/admin/organizations/:id/dpa returned ${dpa.response.status}; the row reads “${row.summary}”; the change reads “${timeline.changes.join("; ")}” and the reason text is not retained.`, operation.origin === "platform_admin" && row.summary.startsWith("Platform administrator "));
     await owner.screenshot();
   });
 

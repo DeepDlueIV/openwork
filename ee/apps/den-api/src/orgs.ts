@@ -1663,18 +1663,7 @@ async function listOrganizationTeams(organizationId: OrgId) {
   }))
 }
 
-/**
- * Read on most org requests (permission checks, team-scoped routes, MCP), so
- * served from the Redis cache; see cache.org.memberTeams for invalidation.
- * Reads that must see uncommitted rows or hold locks query the tables in their
- * transaction instead.
- */
-export async function listTeamsForMember(input: {
-  organizationId: OrgId
-  memberId: MemberRow["id"]
-}): Promise<MemberTeamSummary[]> {
-  return cache.org.memberTeams(input)
-}
+export { listTeamsForMember } from "./member-teams.js"
 
 async function listActiveOrganizationMemberGuardRows(organizationId: OrgId) {
   return db

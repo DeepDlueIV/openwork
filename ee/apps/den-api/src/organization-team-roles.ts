@@ -1,7 +1,6 @@
 import { and, eq, isNull, or } from "@openwork-ee/den-db/drizzle"
 import { listAuthoritativeTeamMemberships } from "@openwork-ee/den-db/permissions"
 import { InvitationTable, MemberTable, OrganizationTable, TeamMemberTable, TeamTable } from "@openwork-ee/den-db/schema"
-import { cache } from "./cache.js"
 import { db } from "./db.js"
 import { withGatewayUsageEntitlementMutation } from "@openwork-ee/den-db/gateway-usage-limits"
 import { organizationRoleValueSatisfies } from "./organization-role-hierarchy.js"
@@ -13,20 +12,15 @@ export type TeamMutationTransaction = Parameters<Parameters<typeof db.transactio
 
 // Share this lock with invitations and SCIM teardown so a concurrent grant cannot
 // turn an already-authorized routine membership edit into a role assignment.
-// Every team and team-membership write runs here, so this is also where the
-// cached member-teams reads (cache.org.memberTeams) are invalidated: once, after
-// commit, so a concurrent reader cannot cache the pre-commit rows.
-export async function withOrganizationTeamMutation<T>(
+export function withOrganizationTeamMutation<T>(
   organizationId: typeof TeamTable.$inferSelect.organizationId,
   mutation: (tx: TeamMutationTransaction) => Promise<T>,
 ) {
-  const result = await db.transaction(async (tx) => {
+  return db.transaction(async (tx) => {
     await tx.select({ id: OrganizationTable.id }).from(OrganizationTable)
       .where(eq(OrganizationTable.id, organizationId)).for("update")
     return mutation(tx)
   })
-  await cache.org.invalidateMemberTeams(organizationId)
-  return result
 }
 
 export function withOrganizationMembershipUsageMutation<T>(

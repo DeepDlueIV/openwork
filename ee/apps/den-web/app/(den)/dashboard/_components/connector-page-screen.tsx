@@ -10,7 +10,9 @@ import { getLibraryConnectorShareRoute, getLibraryRoute } from "../../_lib/den-o
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
 import { ownedAccessStatus } from "./access-summary";
 import { connectorChatDeepLink, connectorChatPrompt } from "./connector-catalog";
-import { connectorAccountLabel, connectorAccountReady, connectorLimitedAccess } from "./connector-detail";
+import { connectorAccountLabel, connectorAccountReady, connectorLimitedAccess, isManagedSlackConnection } from "./connector-detail";
+import { ManagedSlackAccount } from "./managed-slack";
+import { useLibraryIntegrated } from "./use-library-integrated";
 import { toolSummary, toolTitle, useMemberSignIn } from "./connector-setup";
 import { useDenToast } from "./den-toast";
 import { formatAddedDate } from "./item-dates";
@@ -93,6 +95,7 @@ export function LibraryConnectorScreen({ connectionId }: { connectionId: string 
   const queryClient = useQueryClient();
   const toast = useDenToast();
   const { orgSlug, orgContext } = useOrgDashboard();
+  const integrated = useLibraryIntegrated();
   const library = useLibrary();
   const usable = useMcpConnections("usable");
   const signIn = useMemberSignIn();
@@ -138,6 +141,20 @@ export function LibraryConnectorScreen({ connectionId }: { connectionId: string 
     await disconnect.mutateAsync(connection);
     await queryClient.invalidateQueries({ queryKey: libraryQueryKeys.items });
   }
+
+  if (isManagedSlackConnection(connection)) return (
+    <ItemPage testId="library-connector">
+      <ItemHeader
+        compact={integrated}
+        back={back}
+        logo={<ConnectorLogo name="Slack search" url={connection.url} size="lg" />}
+        title="Slack search"
+        description="Provided by OpenWork"
+        actions={<ChatButton name="Slack search" disabled={!signedIn} />}
+      />
+      <ManagedSlackAccount connection={connection} mode="member" />
+    </ItemPage>
+  );
 
   return (
     <ItemPage testId="library-connector">

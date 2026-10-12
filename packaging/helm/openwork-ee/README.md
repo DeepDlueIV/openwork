@@ -329,17 +329,39 @@ OpenWork Cloud. Don't change it on a customer install.
 <!-- BEGIN GENERATED features (pnpm features:sync) -->
 | `config.features.*` | Environment variable | Default | What it does |
 | --- | --- | --- | --- |
+| `simplifiedOnboarding` | `DEN_FEATURE_SIMPLIFIED_ONBOARDING` | default off (cloud only) | People enter their name, create a workspace, and optionally invite teammates before going straight to the dashboard. |
+| `managedDeployments` | `DEN_FEATURE_MANAGED_DEPLOYMENTS` | default off (cloud only) | Organization admins install OpenWork in their own cloud account (AWS first) and see its health and updates in OpenWork. |
 | `installLinks` | `DEN_FEATURE_INSTALL_LINKS` | default on | Workspace admins can create desktop install links for their organization. |
 | `mcpConnections` | `DEN_FEATURE_MCP_CONNECTIONS` | default on | Members see the organization's connections, marketplace capabilities on the agent rail, and the desktop Connect tab. |
+| `connectorReadiness` | `DEN_FEATURE_CONNECTOR_READINESS` | default off | Members see when a connection was checked, and admins can check it again. |
+| `driveResumableUploads` | `DEN_FEATURE_DRIVE_RESUMABLE_UPLOADS` | default off | Members upload larger workspace files to Google Drive and prepare upload sessions for external clients. |
+| `implicitCloudSkills` | `DEN_FEATURE_IMPLICIT_CLOUD_SKILLS` | default off | Agents discover organization skills automatically without waiting for Cloud before starting a task. |
+| `denFlatPageHeaders` | `DEN_FEATURE_DEN_FLAT_PAGE_HEADERS` | default off | Members see compact, readable page headings in Den instead of decorative gradient banners. |
+| `analyticsIntegrated` | `DEN_FEATURE_ANALYTICS_INTEGRATED` | default off | Admins see analytics in the same style as Library and Connectors, with links to manage the items they use. |
+| `dashboardActivity` | `DEN_FEATURE_DASHBOARD_ACTIVITY` | default off | Organization admins see recent additions and skill updates on their dashboard instead of Quick add. |
+| `libraryIntegrated` | `DEN_FEATURE_LIBRARY_INTEGRATED` | default off | Members see Library lists, details and add flows that match the rest of Den and the desktop app. |
+| `libraryUsage` | `DEN_FEATURE_LIBRARY_USAGE` | default off | Organization admins see in Analytics how often each skill, plugin and connector is used, by how many people, which calls fail, and what nobody uses, so they can decide what to keep. |
 | `modelsAnalytics` | `DEN_FEATURE_MODELS_ANALYTICS` | default off | Organization admins can opt in to task analytics for OpenWork Models. |
 | `auditLogs` | `DEN_FEATURE_AUDIT_LOGS` | default off | Organization admins can read and configure audit logs. Capture still needs an audit entitlement. |
+| `auditLogsCompact` | `DEN_FEATURE_AUDIT_LOGS_COMPACT` | default off | Organization admins read audit operations and capture settings in compact Den rows, with changes and technical details expanded on demand. |
 | `orgManagedDashboards` | `DEN_FEATURE_ORG_MANAGED_DASHBOARDS` | default off | Organization admins publish dashboards to members in Den and the desktop app. |
 | `nativeSlack` | `DEN_FEATURE_NATIVE_SLACK` | default off (cloud only) | Members connect their own Slack account to search messages and read threads through the OpenWork-provided app. |
 | `slackAssistant` | `DEN_FEATURE_SLACK_ASSISTANT` | default off | Answers Slack mentions and DMs for the organization after the Slack connector is set up. |
-| `slackAssistantHeadless` | `DEN_FEATURE_SLACK_ASSISTANT_HEADLESS` | default off | Answers Slack on the shared headless runner instead of each member's OpenWork Web computer. Needs the deployment's headless runner. |
+| `slackWorkbotReplies` | `DEN_FEATURE_SLACK_WORKBOT_REPLIES` | default off | OpenWork in Slack writes its reply as it works, reacts to messages with an emoji, and takes bigger jobs into the background, posting the result in the thread when done. |
 | `headlessAutomations` | `DEN_FEATURE_HEADLESS_AUTOMATIONS` | default off | Runs the organization's cloud Automations on the shared headless runner. Needs the deployment's headless runner and a plan that includes it. |
 | `workbot` | `DEN_FEATURE_WORKBOT` | default off | Members can use Workbot. Needs the deployment's Workbot app. |
+| `calendarPolish` | `DEN_FEATURE_CALENDAR_POLISH` | default off | Members recognize their organization's default model and meeting providers, and can run stopped Workbot tasks again. |
+| `automationCalendar` | `DEN_FEATURE_AUTOMATION_CALENDAR` | default off | Members see a Calendar in the desktop app with their Automations next to meetings from their connected Google or Outlook calendar. |
+| `workbotCalendar` | `DEN_FEATURE_WORKBOT_CALENDAR` | default off | Workbot members see a Calendar tab with Workbot's scheduled work next to meetings from their connected Google or Outlook calendar. Needs Workbot. |
+| `workbotSideChats` | `DEN_FEATURE_WORKBOT_SIDE_CHATS` | default off | Members can start side chats in Workbot next to their main chat, for one topic at a time. Needs Workbot. |
+| `workbotDefaultModel` | `DEN_FEATURE_WORKBOT_DEFAULT_MODEL` | default off | Organization admins choose, in Manage › Workbot, the model Workbot, the Slack assistant and cloud Automations set to the cloud default answer with. Needs Workbot. |
 | `litellm` | `DEN_FEATURE_LITELLM` | default off | Organization admins can connect their own LiteLLM proxy to AI Gateway, with one shared key, each person's own key, or keys OpenWork creates for each person. |
+| `permissions` | `DEN_FEATURE_PERMISSIONS` | default off | Organization admins choose what members, admins and each team can do, instead of the fixed Member and Admin defaults. |
+| `gatewayCloudSignIn` | `DEN_FEATURE_GATEWAY_CLOUD_SIGN_IN` | default off | Organization admins can add Microsoft Foundry, and let each person sign in to Amazon Bedrock with AWS IAM Identity Center or to Microsoft Foundry with Microsoft Entra ID instead of sharing one key. |
+| `engineV2Upgrade` | `DEN_FEATURE_ENGINE_V2_UPGRADE` | default off | Desktop members still on OpenCode v1 see a short notice offering to upgrade: their chats are copied to v2 with a backup, then OpenWork switches engines. |
+| `remoteSessionTargets` | `DEN_FEATURE_REMOTE_SESSION_TARGETS` | default off | Members can register OpenWork and OpenCode clients as computers for remote sessions from MCP, Slack, and chat. |
+| `remoteSessionEvents` | `DEN_FEATURE_REMOTE_SESSION_EVENTS` | default off | MCP clients can subscribe to changes in their remote session receipts and read the current state after reconnecting. |
+| `opencodePlugin` | `DEN_FEATURE_OPENCODE_PLUGIN` | default off | People can sign in to OpenWork from the OpenCode plugin, approve it as "OpenWork - OpenCode Plugin", and land back on OpenCode afterwards. Applies to the whole deployment; organization overrides have no effect. |
 | `platformAuditReads` | `DEN_FEATURE_PLATFORM_AUDIT_READS` | default off | Platform administrators also get evidence of successful read-only platform requests (session reads, discovery documents). Applies to the whole deployment; organization overrides have no effect. |
 <!-- END GENERATED features -->
 
@@ -510,6 +532,47 @@ secret:
   values:
     databaseRedisUrl: "redis://red-...:6379"
 ```
+
+## Audit usage refresh
+
+Audit writes never update an organization's audit usage totals (retained
+operations, events, logical bytes). That keeps each audit write independent, so
+writes never queue behind each other on a shared row. A daily CronJob recomputes
+the totals instead by calling den-api's `POST /internal/audit/usage/refresh`
+with a maintenance token. The audit usage screen shows when the totals were last
+measured. The CronJob is off by default. Turn it on with a token of 24 or more
+characters, either in the chart Secret:
+
+```yaml
+denApi:
+  auditUsage:
+    enabled: true
+secret:
+  values:
+    maintenanceToken: "<random 32+ character string>"
+```
+
+or from your own Secret:
+
+```yaml
+denApi:
+  auditUsage:
+    enabled: true
+    tokenSecret: den-maintenance
+    tokenKey: token
+```
+
+The same token is passed to den-api as `DEN_MAINTENANCE_TOKEN`; den-api answers
+404 on `/internal/*` when it is unset. `schedule` (default `30 3 * * *`) and
+`timeZone` (default `Etc/UTC`) are configurable. Non-Helm deployments need their
+own scheduled caller, for example:
+
+```sh
+curl -fsS -X POST -H "Authorization: Bearer $DEN_MAINTENANCE_TOKEN" \
+  http://<den-api>/internal/audit/usage/refresh
+```
+
+Render-only verification: `bash packaging/helm/openwork-ee/tests/den-audit-usage.sh`.
 
 ## Custom CA certificates
 

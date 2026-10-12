@@ -73,7 +73,7 @@ resource "aws_iam_role_policy_attachment" "execution" {
 data "aws_iam_policy_document" "execution_secrets" {
   statement {
     actions   = ["secretsmanager:GetSecretValue"]
-    resources = concat([aws_secretsmanager_secret.app.arn], [for a in local.extra_secret_resource_arns : a if strcontains(a, ":secretsmanager:")])
+    resources = concat([aws_secretsmanager_secret.app.arn], aws_secretsmanager_secret.runner[*].arn, [for a in local.extra_secret_resource_arns : a if strcontains(a, ":secretsmanager:")])
   }
 
   dynamic "statement" {
@@ -146,7 +146,7 @@ resource "aws_ecs_task_definition" "api" {
       essential   = false
       command     = ["node", "/app/ee/packages/den-db/dist/scripts/bootstrap.js"]
       environment = local.environment_list
-      secrets     = local.secrets_list
+      secrets     = local.api_secrets_list
       logConfiguration = {
         logDriver = "awslogs"
         options   = merge(local.log_options.api, { "awslogs-stream-prefix" = "migrate" })
@@ -158,7 +158,7 @@ resource "aws_ecs_task_definition" "api" {
       essential    = true
       portMappings = [{ containerPort = 8788, protocol = "tcp" }]
       environment  = concat(local.environment_list, [{ name = "PORT", value = "8788" }])
-      secrets      = local.secrets_list
+      secrets      = local.api_secrets_list
       dependsOn    = [{ containerName = "migrate", condition = "SUCCESS" }]
       logConfiguration = {
         logDriver = "awslogs"
@@ -166,6 +166,17 @@ resource "aws_ecs_task_definition" "api" {
       }
     },
   ])
+
+  lifecycle {
+    precondition {
+      condition     = !var.workbot.enabled || var.headless_runner.enabled
+      error_message = "workbot.enabled needs headless_runner.enabled: every Workbot turn runs on the headless runner."
+    }
+    precondition {
+      condition     = !local.runner_enabled || local.runner_managed || length(var.headless_runner_token) >= 32
+      error_message = "headless_runner.external_url needs headless_runner_token matching the fleet's HEADLESS_API_TOKEN (at least 32 characters)."
+    }
+  }
 }
 
 resource "aws_ecs_task_definition" "web" {
@@ -202,7 +213,7 @@ resource "aws_ecs_task_definition" "web" {
 # Services -------------------------------------------------------------------
 
 resource "aws_ecs_service" "api" {
-  name                  = "den-api"
+  name                  = "${var.service_name_prefix}den-api"
   cluster               = local.cluster_arn
   task_definition       = aws_ecs_task_definition.api.arn
   desired_count         = var.den_api.desired_count
@@ -231,16 +242,25 @@ resource "aws_ecs_service" "api" {
     registry_arn = aws_service_discovery_service.api.arn
   }
 
+  # Client only: resolves http://headless-runner.
+  dynamic "service_connect_configuration" {
+    for_each = local.runner_managed ? [1] : []
+    content {
+      enabled   = true
+      namespace = aws_service_discovery_private_dns_namespace.this.arn
+    }
+  }
+
   deployment_circuit_breaker {
     enable   = true
     rollback = true
   }
 
-  depends_on = [aws_lb_listener_rule.api_host, aws_secretsmanager_secret_version.app]
+  depends_on = [aws_lb_listener_rule.api_host, aws_secretsmanager_secret_version.app, aws_secretsmanager_secret_version.runner]
 }
 
 resource "aws_ecs_service" "web" {
-  name                  = "den-web"
+  name                  = "${var.service_name_prefix}den-web"
   cluster               = local.cluster_arn
   task_definition       = aws_ecs_task_definition.web.arn
   desired_count         = var.den_web.desired_count

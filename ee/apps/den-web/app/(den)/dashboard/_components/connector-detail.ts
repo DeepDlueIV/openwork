@@ -22,6 +22,15 @@ export function connectorAccountReady(connection: ExternalMcpConnection): boolea
     && (connection.credentialMode === "per_member" ? connection.connectedForMe : connection.connected);
 }
 
+export function isManagedSlackConnection(connection: Pick<ExternalMcpConnection, "id" | "nativeProviderKey">): boolean {
+  return connection.id === "slack" && connection.nativeProviderKey === "slack";
+}
+
+/** Never rename the organization's existing custom Slack connections. */
+export function connectorDisplayName(connection: Pick<ExternalMcpConnection, "id" | "nativeProviderKey" | "name">): string {
+  return isManagedSlackConnection(connection) ? "Slack search" : connection.name;
+}
+
 /** Slack's stored account identity is encoded workspace/user data, not an email. */
 export function connectorAccountLabel(connection: ExternalMcpConnection): string | null {
   if (connection.nativeProviderKey === "slack") return connection.connectedForMe ? "Your Slack account" : null;

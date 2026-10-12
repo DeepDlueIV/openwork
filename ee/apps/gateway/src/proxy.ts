@@ -31,7 +31,7 @@ import { completeChatResponse, inferenceError, readResponseJson, relayChatStream
 import { gatewayModelEndpoints, gatewayModelsPath, registerGatewayRoutes } from "./gateway.js"
 import type { GatewayDependencies } from "./gateway.js"
 import { isJsonContentType, readBoundedBody, RequestBodyLimitError } from "./relay.js"
-import { createRequestLogRecorder, insertRequestLogIntoDb } from "./request-log.js"
+import { createRequestLogRecorder, insertRequestLogIntoDb, REQUEST_LOG_UNAVAILABLE_MESSAGE } from "./request-log.js"
 import type { InsertRequestLog, RequestLogRecorder, RequestLogRecorderDependencies } from "./request-log.js"
 import { createOpenAiChatSseUsageParser, parseOpenAiChatJsonUsage } from "./usage/openai-chat.js"
 import type { FreeMemberHandler } from "./free/member/handler.js"
@@ -75,8 +75,9 @@ function isSharedGatewayRequest(request: Request, path: string) {
 }
 
 /**
- * Free Auto on a key whose organization pays for OpenWork Models: the Auto status check, or a chat request for the
- * Auto model. Those go to the free handler, which bills the member's free allowance, never the organization.
+ * Free Auto on a key whose organization pays for OpenWork Models: the Auto status check, or a request for the Auto
+ * model that OpenWork Models do not serve. Those go to the free handler, which bills the member's free allowance,
+ * never the organization.
  */
 async function isFreeAutoRequest(request: Request): Promise<boolean> {
   const path = new URL(request.url).pathname
@@ -84,7 +85,10 @@ async function isFreeAutoRequest(request: Request): Promise<boolean> {
   if (request.method !== "POST" || (path !== chatCompletionsPath && path !== MEMBER_FREE_RESPONSES_PATH)) return false
   try {
     const body: unknown = await request.clone().json()
+    // Once OpenWork Models list Auto's model, chat completions for it use the organization's own usage;
+    // free Auto still reaches it through the Responses API.
     return isJsonObject(body) && body.model === INFERENCE_FREE_MODEL_ID
+      && (path === MEMBER_FREE_RESPONSES_PATH || !resolveModelAlias(INFERENCE_FREE_MODEL_ID))
   } catch { return false }
 }
 const topLevelModelSelectorFields = ["models", "fallbacks", "preset", "route"]
@@ -592,6 +596,7 @@ export function registerProxyRoutes(app: Hono, dependencies: ProxyDependencies =
         stream: input.stream,
         requestBytes: input.requestBytes,
         startedAt,
+        signal: c.req.raw.signal,
       })
     }
     const reject = (response: Response, errorCode: string) => {
@@ -654,7 +659,7 @@ export function registerProxyRoutes(app: Hono, dependencies: ProxyDependencies =
     }
     startRecorder({ ...prepared, requestBytes: Buffer.byteLength(JSON.stringify(prepared.body)) })
     if (await recorder.whenStarted?.() === false) {
-      return reject(openAiError(503, "request_log_unavailable", "Inference accounting is temporarily unavailable."), "request_log_unavailable")
+      return reject(openAiError(503, "request_log_unavailable", REQUEST_LOG_UNAVAILABLE_MESSAGE), "request_log_unavailable")
     }
 
     const limits = await dependencies.ensureUsableBuckets(inferenceKey.organization_id)

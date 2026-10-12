@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import { LogOut, Settings } from "lucide-react";
+import { ChevronRight, LogOut, Settings } from "lucide-react";
 import { getErrorMessage, requestJson } from "../_lib/den-flow";
 import { type DenOrgSummary, formatRoleLabel, getJoinOrgRoute, getOnboardingPeopleRoute, getOrgDashboardRoute, parseOrgListPayload } from "../_lib/den-org";
 import { useOrgListWindow } from "../_lib/use-org-list-window";
@@ -11,12 +11,14 @@ import { useDenFlow } from "../_providers/den-flow-provider";
 import { DesktopSetupChoices, WorkspaceIntentChoices, type DesktopSetup, type WorkspaceIntent } from "./workspace-intent";
 import { applyRestrictedSetup } from "../_lib/restricted-setup";
 import { SetupFrame } from "./setup-frame";
+import { DenButton } from "./ui/button";
+import { DenInput } from "./ui/input";
 
 type SettingsTab = "profile" | "organizations";
 
 export function OrganizationScreen() {
   const router = useRouter();
-  const { user, sessionHydrated, signOut, runtimeConfig, runtimeConfigLoaded, continueSetup } = useDenFlow();
+  const { user, sessionHydrated, signOut, runtimeConfig, runtimeConfigLoaded, continueSetup, deploymentFeatures, deploymentFeaturesLoading } = useDenFlow();
   const [orgs, setOrgs] = useState<DenOrgSummary[]>([]);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -44,6 +46,7 @@ export function OrganizationScreen() {
 
   const activeOrg = useMemo(() => orgs.find((org) => org.isActive) ?? null, [orgs]);
   const isSingleOrgMode = runtimeConfigLoaded && runtimeConfig.orgMode === "single_org";
+  const simplified = !isSingleOrgMode && deploymentFeatures.simplifiedOnboarding;
   const singleOrgName = runtimeConfig.singleOrgName || "OpenWork";
   const singleOrgSlug = runtimeConfig.singleOrgSlug.trim();
   const showDirectCreateFlow = !isSingleOrgMode && !error && orgs.length === 0;
@@ -105,6 +108,19 @@ export function OrganizationScreen() {
     };
   }, [isSingleOrgMode, runtimeConfigLoaded, sessionHydrated, user, router]);
 
+  function reviewInvitation() {
+    try {
+      const url = new URL(invitationLink.trim(), window.location.origin);
+      const invitationId = url.searchParams.get("invite")?.trim();
+      if (url.origin !== window.location.origin || url.pathname !== "/join-org" || !invitationId) {
+        throw new Error("Paste the invitation link for this OpenWork Cloud. Ask your team owner if you do not have one yet.");
+      }
+      router.push(getJoinOrgRoute(invitationId));
+    } catch (err) {
+      setCreateError(err instanceof Error ? err.message : "Enter a valid invitation link.");
+    }
+  }
+
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     if (isSingleOrgMode) {
@@ -112,21 +128,12 @@ export function OrganizationScreen() {
       return;
     }
 
-    if (intent === "join") {
-      try {
-        const url = new URL(invitationLink.trim(), window.location.origin);
-        const invitationId = url.searchParams.get("invite")?.trim();
-        if (url.origin !== window.location.origin || url.pathname !== "/join-org" || !invitationId) {
-          throw new Error("Paste the invitation link for this OpenWork Cloud. Ask your team owner if you do not have one yet.");
-        }
-        router.push(getJoinOrgRoute(invitationId));
-      } catch (err) {
-        setCreateError(err instanceof Error ? err.message : "Enter a valid invitation link.");
-      }
+    if (!simplified && intent === "join") {
+      reviewInvitation();
       return;
     }
     const trimmed = createName.trim();
-    if (!intent || trimmed.length < 2 || (intent === "team" && !desktopSetup)) return;
+    if (deploymentFeaturesLoading || trimmed.length < 2 || (!simplified && (!intent || (intent === "team" && !desktopSetup)))) return;
 
     setCreateBusy(true);
     setCreateError(null);
@@ -153,7 +160,7 @@ export function OrganizationScreen() {
         nextOrg = { id: organization.id, slug: organization.slug };
         setCreatedOrg(nextOrg);
       }
-      if (intent === "team" && desktopSetup === "restricted") {
+      if (!simplified && intent === "team" && desktopSetup === "restricted") {
         await applyRestrictedSetup(nextOrg.id);
       }
       continueSetup(nextOrg.id, getOnboardingPeopleRoute(nextOrg.slug));
@@ -164,7 +171,27 @@ export function OrganizationScreen() {
     }
   }
 
-  const creationForm = <form onSubmit={handleCreate} className="grid gap-5" aria-busy={createBusy}>
+  const creationForm = simplified ? <form onSubmit={handleCreate} className="grid gap-5" aria-busy={createBusy}>
+    <label className="grid gap-2">
+      <span className="text-[13px] font-medium text-gray-900">Workspace name</span>
+      <DenInput value={createName} onChange={(event) => setCreateName(event.target.value)} placeholder="My workspace" minLength={2} maxLength={120} disabled={createBusy || Boolean(createdOrg)} required autoFocus />
+    </label>
+    {createError ? <p role="alert" className="text-[13px] text-red-600">{createError}</p> : null}
+    <DenButton type="submit" loading={createBusy} disabled={createName.trim().length < 2} className="w-full">Create workspace</DenButton>
+    <details className="group">
+      <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 rounded-md text-[13px] font-medium text-gray-500 hover:text-gray-900 [&::-webkit-details-marker]:hidden">
+        <ChevronRight aria-hidden className="size-4 transition-transform duration-150 ease-out group-open:rotate-90 motion-reduce:transition-none" />
+        Join an existing workspace
+      </summary>
+      <div className="mt-3 grid gap-3">
+        <label className="grid gap-2">
+          <span className="text-[13px] font-medium text-gray-900">Team invitation link</span>
+          <DenInput value={invitationLink} onChange={(event) => setInvitationLink(event.target.value)} placeholder="Paste your invitation link" disabled={createBusy || Boolean(createdOrg)} />
+        </label>
+        <DenButton type="button" variant="secondary" disabled={createBusy || Boolean(createdOrg) || !invitationLink.trim()} onClick={reviewInvitation}>Review invitation</DenButton>
+      </div>
+    </details>
+  </form> : <form onSubmit={handleCreate} className="grid gap-5" aria-busy={createBusy}>
     <WorkspaceIntentChoices intent={intent} disabled={createBusy || Boolean(createdOrg)} onChange={(next) => { setIntent(next); setCreateError(null); }} />
     {intent === "join" ? <label className="grid gap-2">
       <span className="text-sm font-medium text-gray-700">Team invitation link</span>
@@ -189,7 +216,7 @@ export function OrganizationScreen() {
     router.push(getOrgDashboardRoute(slug));
   }
 
-  if (!sessionHydrated || !runtimeConfigLoaded || busy) {
+  if (!sessionHydrated || !runtimeConfigLoaded || deploymentFeaturesLoading || busy) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#fafafa]">
         <p className="text-sm text-gray-500">Loading organizations...</p>
@@ -198,15 +225,15 @@ export function OrganizationScreen() {
   }
 
   if (!isSingleOrgMode && (showDirectCreateFlow || showCreate)) {
-    return <SetupFrame step="space" title="Make it yours." description="A space for your tools, your team, and whatever comes next.">
-      <div className="mb-6">
+    return <SetupFrame step="space" simplified={simplified} title={simplified ? "Create your workspace." : "Make it yours."} description={simplified ? "" : "A space for your tools, your team, and whatever comes next."}>
+      {!simplified ? <div className="mb-6">
         <h2 className="text-[23px] font-semibold tracking-[-.035em]">A little about your work.</h2>
         <p className="mt-2 text-[13px] leading-6 text-gray-500">Choose a starting point. You can invite people in the next step.</p>
-      </div>
+      </div> : null}
       {error ? <p role="alert" className="mb-4 text-sm text-rose-600">{error}</p> : null}
       {creationForm}
       <div className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-5 text-xs text-gray-500">
-        <span className="max-w-[260px] truncate">{user?.email}</span>
+        <span className="min-w-0 max-w-[260px] truncate" title={user?.email}>{user?.email}</span>
         {!createBusy && !createdOrg && orgs.length > 0 ? <button type="button" className="font-medium text-gray-700" onClick={() => { setShowCreate(false); setCreateName(""); setIntent(null); setDesktopSetup(null); setCreateError(null); }}>Cancel</button> : <button type="button" disabled={createBusy} onClick={() => void signOut()} className="font-medium text-gray-700">Log out</button>}
       </div>
     </SetupFrame>;

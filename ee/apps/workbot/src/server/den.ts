@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import { z } from "zod"
-import type { Tokens } from "./store.js"
+import type { Tokens } from "./sealed.js"
 
 /**
  * Workbot signs people in with Den, as Den's first-party OAuth client `openwork-workbot` (no consent screen, one
@@ -26,6 +26,13 @@ export const denSessionSchema = z.object({
   memberId: z.string(),
   enabled: z.boolean(),
   canSchedule: z.boolean(),
+  /** Workbot's Calendar tab is on (Workbot and workbotCalendar). Older Dens omit it: off. */
+  calendar: z.boolean().optional(),
+  /** Side chats are on for this person. A Den from before side chats doesn't say: off. */
+  sideChats: z.boolean().default(false),
+  calendarPolish: z.boolean().default(false),
+  /** The organization's default model for Workbot's turns. Null, or a Den from before it, means the runner's default. */
+  model: z.string().nullable().default(null),
 })
 export type DenSession = z.infer<typeof denSessionSchema>
 
@@ -102,7 +109,7 @@ export function createDen(options: { apiUrl: string; publicUrl: string }) {
     }
   }
 
-  const authorized = async (method: "GET" | "POST", path: string, accessToken: string, body?: unknown) => {
+  const authorized = async (method: "GET" | "POST" | "PATCH", path: string, accessToken: string, body?: unknown) => {
     const response = await fetch(`${options.apiUrl}${path}`, {
       method,
       headers: { authorization: `Bearer ${accessToken}`, accept: "application/json", ...(body ? { "content-type": "application/json" } : {}) },
@@ -165,6 +172,13 @@ export function createDen(options: { apiUrl: string; publicUrl: string }) {
       if (status !== 200 || !parsed.success) throw new Error(`den_connections_${status}`)
       return parsed.data.connections
     },
+    /**
+     * One request Workbot's Calendar makes for the person (their Automations, runs and calendar meetings), through
+     * Den's allowlisted `/v1/workbot/calendar/*`. Den's status and body come back as they are.
+     */
+    async calendar(accessToken: string, input: { method: "GET" | "POST" | "PATCH"; path: string; body?: unknown }) {
+      return authorized(input.method, `/v1/workbot/calendar${input.path}`, accessToken, input.body)
+    },
     /** Den's web app, from its sign-in issuer, for links back to OpenWork and app logos. */
     async webUrl() {
       return new URL((await discover()).issuer).origin
@@ -176,7 +190,7 @@ const workbotConnectionsSchema = z.object({
   connections: z.array(z.object({
     id: z.string(),
     name: z.string(),
-    app: z.enum(["gmail", "slack", "microsoft"]),
+    app: z.enum(["gmail", "googleCalendar", "slack", "microsoft"]),
     ready: z.boolean(),
     connectUrl: z.string().nullable(),
   })),

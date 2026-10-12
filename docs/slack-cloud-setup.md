@@ -4,7 +4,7 @@ Build and demo first; complete Slack Marketplace/RTS distribution approval befor
 
 ## Platform setup
 
-1. Deploy the branch and migrations through `0132_slack_cloud_installations.sql`, after the shared feature tables in `0129_organization_features.sql`. The deployment must be `DEN_DEPLOYMENT=cloud` and `DEN_ORG_MODE=multi_org`; self-hosted and single-org deployments do not expose the platform app.
+1. Deploy the branch and migrations through `0142_slack_cloud_installations.sql`, after the shared feature tables in `0129_organization_features.sql`. The deployment must be `DEN_DEPLOYMENT=cloud` and `DEN_ORG_MODE=multi_org`; self-hosted and single-org deployments do not expose the platform app.
 2. Configure one OpenWork-owned Slack app. Register the exact callback at the public **API** origin: `/v1/oauth-providers/slack/connect/callback`.
 3. Configure the user scope contract below. Set platform credentials through deployment secrets, never the customer Connections settings.
 4. In the existing **Admin → Overview → Organizations**, find the intended OpenWork organization and enable **Features → Slack search**. This is the registered `nativeSlack` feature, default-off. The organization's **OpenWork Connect** feature must also allow use.
@@ -40,7 +40,7 @@ The feature registry automatically supplies this row and the existing API/MCP co
 - **Operator locks:** the standard generated `DEN_FEATURE_NATIVE_SLACK` / Helm feature control remains available as part of the shared system, not a required Slack-specific enablement step. A lock disables effective per-organization editing; a kill switch still wins over a forced-on lock.
 - **Deployment eligibility:** Cloud-only is declared in `packages/features/src/registry.ts`; an organization override cannot make it available on self-hosted deployments. Single-org topology remains excluded.
 
-The shared order is: deployment exclusion → kill switch → operator lock → organization override → everyone default. The general OpenWork Connect gate and individual Slack consent remain additional requirements. The Slack Assistant and its headless-runtime feature are separate and are not enabled by this switch.
+The shared order is: deployment exclusion → kill switch → operator lock → organization override → everyone default. The general OpenWork Connect gate and individual Slack consent remain additional requirements. The Slack Assistant and its Workbot replies feature are separate and are not enabled by this switch.
 
 Disabling native Slack blocks subsequent authorization, status, search, thread, and retained capability requests, even when a saved token has not expired. Stored accounts stay available for disconnect; a valid retained grant can resume after re-enabling. A toggle does not cancel already-dispatched Slack requests, uninstall the Slack app, or erase transcripts.
 

@@ -108,6 +108,13 @@ export const platformAuditRoutes: readonly AuditRouteDeclaration[] = [
   platform("GET", "/api/auth/scim/get-provider-connection", "scim_raw.provider_connection.read", "platform.auth", "scim_connection", null, "Blocked: always 401/403."),
   handler("POST", "/api/auth/scim/delete-provider-connection", "tenant_change", "scim_raw.provider_connection.delete", "platform.auth.raw_mutation", "scim_connection", `Den-shadowed raw better-auth route; use DELETE /v1/scim. ${RAW_REFUSED}`),
 
+  // Raw better-auth custom-role management. dynamicAccessControl is off, so better-auth no
+  // longer registers these endpoints; Den shadows them (routes/auth/raw-role-refusals.ts) so
+  // denied attempts stay in the tenant security audit (always 403).
+  handler("POST", "/api/auth/organization/create-role", "tenant_change", "auth.organization.role.create", "platform.auth.raw_mutation", "role", `Den-shadowed raw better-auth route; custom organization roles are not supported (permission sets are managed through /v1/permissions). ${RAW_REFUSED}`),
+  handler("POST", "/api/auth/organization/update-role", "tenant_change", "auth.organization.role.update", "platform.auth.raw_mutation", "role", `Den-shadowed raw better-auth route; custom organization roles are not supported (permission sets are managed through /v1/permissions). ${RAW_REFUSED}`),
+  handler("POST", "/api/auth/organization/delete-role", "tenant_change", "auth.organization.role.delete", "platform.auth.raw_mutation", "role", `Den-shadowed raw better-auth route; custom organization roles are not supported (permission sets are managed through /v1/permissions). ${RAW_REFUSED}`),
+
   // Auth helpers
   platform("GET", "/v1/auth/login-options", "auth.login_options.read", "platform.auth", "login_options", null, "Public, bot-protected; reveals account sign-in methods."),
   platform("GET", "/v1/orgs/sso/resolve", "auth.sso.resolve", "platform.auth", "login_options", null, "Public, bot-protected email -> SSO routing."),
@@ -130,6 +137,9 @@ export const platformAuditRoutes: readonly AuditRouteDeclaration[] = [
   platform("POST", "/v1/me/send-download-link", "user.download_link.send", "platform.user", "user", null, "Sends a download link email to the caller (Resend)."),
   platform("POST", "/v1/org", "organization.create", "platform.user", "organization", null, "Creates a new org; no tenant exists before the handler and the new org has no audit rollout."),
   platform("POST", "/v1/bootstrap/workspace", "workspace.bootstrap.create", "workspace.bootstrap", "workspace_bootstrap", null, "Public, rate limited; creates a provisional org and returns a preclaim assertion."),
+
+  // Scheduled maintenance (bearer DEN_MAINTENANCE_TOKEN; 404 when unset)
+  platform("POST", "/internal/audit/usage/refresh", "audit.usage.refresh", "platform.maintenance", "audit_usage", null, "Called by the den-audit-usage cron (Helm CronJob, Render cron job). Recomputes every organization's audit_state totals from stored rows; no organization activity, so platform evidence only."),
 
   // Global platform admin
   platform("GET", "/v1/admin/overview", "platform.overview.read", "platform.admin", "platform_report", null, ADMIN),

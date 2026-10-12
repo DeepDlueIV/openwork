@@ -9,12 +9,17 @@ import { useOrgDashboard } from "../_providers/org-dashboard-provider";
 import { managedAccessStatus } from "./access-summary";
 import { usePrefetchConnectorCatalog } from "./connector-catalog-screen";
 import { GOOGLE_WORKSPACE_QUICK_ADD_ID, MICROSOFT_365_QUICK_ADD_ID } from "./connector-catalog";
-import { connectorAccountReady, displayedConnectorConnections } from "./connector-detail";
+import { connectorAccountReady, connectorDisplayName, connectorLimitedAccess, displayedConnectorConnections, isManagedSlackConnection } from "./connector-detail";
+import { ManagedSlackAccountAction } from "./managed-slack";
 import { useDenToast } from "./den-toast";
 import { ItemPage } from "./item-header";
 import { FilterInput, ItemMenu, removeEntry, ItemPanel, ItemRow, ItemRowsSkeleton, LinkButton } from "./item-list";
 import { ConnectorLogo } from "./item-logo";
 import { ConnectorLogoStrip } from "./library-add-dialog";
+import { DenButton } from "../../_components/ui/button";
+import { connectorReadinessState, connectorReadinessNote } from "./connector-readiness";
+import { useCheckMcpConnection } from "./mcp-connections-data";
+import { getOrgAccessFlags } from "../../_lib/den-org";
 import { connectorSetupUnfinished, finishSetupHref } from "./admin-connectors";
 import { type ExternalMcpConnection, isNativeProviderConnectionId, useDeleteMcpConnection, useMcpConnections } from "./mcp-connections-data";
 
@@ -45,10 +50,13 @@ export function AdminConnectorsScreen() {
   const connections = useMcpConnections("manageable");
   const usable = useMcpConnections("usable");
   const deleteConnection = useDeleteMcpConnection();
+  const checkConnection = useCheckMcpConnection();
+  const canCheck = orgContext ? getOrgAccessFlags(orgContext.currentMember.role, orgContext.currentMember.isOwner, orgContext.currentMember.permissions).canManageConnections : false;
   const prefetchCatalog = usePrefetchConnectorCatalog();
   const [query, setQuery] = useState("");
   const viewerId = orgContext?.currentMember.id ?? null;
-  const all = displayedConnectorConnections(connections.data ?? [], usable.data ?? []);
+  const all = displayedConnectorConnections(connections.data ?? [], usable.data ?? [])
+    .map((connection) => ({ ...connection, name: connectorDisplayName(connection) }));
   const needle = query.trim().toLowerCase();
   const visible = needle ? all.filter((connection) => connection.name.toLowerCase().includes(needle)) : all;
   const empty = !connections.isLoading && !connections.error && all.length === 0;
@@ -62,6 +70,7 @@ export function AdminConnectorsScreen() {
     <ItemPage testId="admin-connectors">
       <DenPageHeader
         title="Connectors"
+        className={all.some((connection) => connection.readiness !== undefined) ? "[&>div:first-child]:basis-full sm:[&>div:first-child]:basis-0" : undefined}
         description="Apps your organization's AI can use."
         action={empty ? undefined : (
           <LinkButton variant="primary" href={getAddConnectorRoute(orgSlug)} onPointerEnter={prefetchCatalog} onFocus={prefetchCatalog}>
@@ -89,13 +98,16 @@ export function AdminConnectorsScreen() {
             <ItemPanel>
               {visible.map((connection) => {
                 const href = getMcpConnectionRoute(orgSlug, connection.id);
+                const readinessState = connection.policyBlocked ? null : connectorReadinessState(connection);
                 const unfinished = !connection.policyBlocked && connectorSetupUnfinished(connection);
-                const status = connection.policyBlocked ? <DenBadge icon={Lock}>Blocked</DenBadge> : unfinished
-                  ? "Setup not finished"
+                const managedSlack = isManagedSlackConnection(connection);
+                const status = connection.policyBlocked ? <DenBadge icon={Lock}>Blocked</DenBadge> : managedSlack
+                  ? connectorLimitedAccess(connection) ? "Limited access" : connectorAccountReady(connection) ? "Connected" : connection.needsReconnect ? "Reconnect required" : "Not connected"
+                  : unfinished ? "Setup not finished"
                   : !connection.access && isNativeProviderConnectionId(connection.id, connection.nativeProviderKey)
                     ? "Everyone"
                     : orgContext ? managedAccessStatus(connection.access, orgContext, viewerId) : "";
-                const signInNote = connection.credentialMode === "per_member" && connection.authType === "oauth"
+                const signInNote = managedSlack ? "Provided by OpenWork" : connection.credentialMode === "per_member" && connection.authType === "oauth"
                   ? "Each person signs in"
                   : connection.authType === "none" ? "No sign-in needed" : connectorAccountReady(connection) ? "One account for everyone" : undefined;
                 return (
@@ -104,15 +116,22 @@ export function AdminConnectorsScreen() {
                       href={href}
                       logo={<ConnectorLogo name={connection.name} url={connection.url} />}
                       title={connection.name}
-                      description={connection.policyBlocked ? connection.policyMessage : signInNote}
-                      status={status}
-                      action={unfinished ? (
+                      description={connection.policyBlocked ? connection.policyMessage : readinessState ? connectorReadinessNote(connection) ?? signInNote : signInNote}
+                      status={readinessState ?? status}
+                      statusOnNarrow={connection.policyBlocked || readinessState !== null}
+                      wideAction={managedSlack || readinessState !== null}
+                      wrapDescription={connection.policyBlocked || readinessState === "Couldn't verify"}
+                      action={managedSlack && !connection.policyBlocked ? <ManagedSlackAccountAction connection={connection} /> : readinessState === "Couldn't verify" ? (
+                        <DenButton size="xs" variant="secondary" disabled={!canCheck || checkConnection.isPending} title={!canCheck ? "An admin can check this connection." : undefined}
+                          onClick={() => void checkConnection.mutateAsync(connection.id).catch(() => toast({ title: "Could not check this connection", description: "Try again." }))}>Check again</DenButton>
+                      ) : unfinished ? (
                         <LinkButton size="xs" href={finishSetupHref(orgSlug, connection)}>Finish</LinkButton>
                       ) : (
                         <ItemMenu
                           label={`More for ${connection.name}`}
                           entries={[
                             { label: "Open", href },
+                            ...(readinessState && canCheck ? [{ label: "Check again", onSelect: () => void checkConnection.mutateAsync(connection.id).catch(() => toast({ title: "Could not check this connection", description: "Try again." })) }] : []),
                             ...(connection.id === GOOGLE_WORKSPACE_QUICK_ADD_ID || connection.id === MICROSOFT_365_QUICK_ADD_ID || connection.nativeProviderKey === "slack"
                               ? []
                               : [removeEntry(connection.name, () => remove(connection))]),

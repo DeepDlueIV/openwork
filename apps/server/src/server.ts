@@ -3,6 +3,7 @@ import { createNativeCloudMcpResolver, createRoutedCloudMcpRegistrar } from "./c
 import { managedDesktopPolicy } from "./managed-desktop-policy.js";
 import { createTaskRecovery, setTaskRecovery } from "./task-recovery.js";
 import { managedPolicyActionSchema } from "./managed-policy-rules.js";
+import { beginOpencodeStop, opencodeSessionIsStopping } from "./opencode-stop-fence.js";
 import { readFile, realpath, writeFile, rm, stat } from "node:fs/promises";
 import { homedir, hostname } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
@@ -763,6 +764,10 @@ function admitSessionCommand(
   return "accepted";
 }
 
+// Backoff for re-sending managed provider credentials the engine did not take
+// during startup. After the last attempt, the next launch tries again.
+const STARTUP_PROVIDER_AUTH_RETRY_DELAYS_MS = [2_000, 10_000, 30_000, 120_000];
+
 export async function startServer(
   config: ServerConfig,
   // Callers that spawn a managed engine after binding must complete startup
@@ -1232,6 +1237,29 @@ export async function startServer(
 
   engineInstanceReaper.start();
 
+  // A credential the engine did not take at startup is retried in the
+  // background, so one refused provider never stops the whole app from
+  // starting. Undelivered credentials are re-sent on every attempt because
+  // the sync only skips fingerprints it has delivered.
+  let startupAuthRetryTimer: ReturnType<typeof setTimeout> | undefined;
+  const scheduleStartupProviderAuthRetry = (attempt: number) => {
+    const delayMs = STARTUP_PROVIDER_AUTH_RETRY_DELAYS_MS[attempt];
+    if (stopped || delayMs === undefined) return;
+    startupAuthRetryTimer = setTimeout(() => {
+      startupAuthRetryTimer = undefined;
+      if (stopped) return;
+      void syncManagedProviderAuth({ config, env, logger: toManagedProviderAuthLogger(logger) })
+        .then((result) => {
+          if (result.delivered.length > 0 || result.removed.length > 0) {
+            cloudProviderSync.markReloadPending();
+          }
+          if (result.failed.length > 0) scheduleStartupProviderAuthRetry(attempt + 1);
+        })
+        .catch(() => scheduleStartupProviderAuthRetry(attempt + 1));
+    }, delayMs);
+    startupAuthRetryTimer.unref?.();
+  };
+
   return {
     ...server,
     completeManagedEngineStartup: async () => {
@@ -1243,9 +1271,22 @@ export async function startServer(
       }
       // Seed the fresh primary before readiness, so there are no serving SDK
       // clients to invalidate and no startup-only rollover to schedule.
-      const result = await syncManagedProviderAuth({ config, env, logger: toManagedProviderAuthLogger(logger) });
-      if (result.failed.length > 0) {
-        throw new Error("Managed provider auth delivery failed during startup");
+      // Delivery is best effort here: a refused or timed-out credential leaves
+      // that one provider unavailable until a background retry lands it,
+      // instead of failing every launch (seen on Windows, where the engine's
+      // auth store can be locked by antivirus or a leftover engine process).
+      const result = await syncManagedProviderAuth({ config, env, logger: toManagedProviderAuthLogger(logger) })
+        .catch((error: unknown) => {
+          logger.log("warn", "Managed provider credentials could not be synced during startup.", {
+            "error.message": error instanceof Error ? error.message : String(error),
+          });
+          return null;
+        });
+      if (!result || result.failed.length > 0) {
+        logger.log("warn", "Starting without some managed provider credentials; retrying in the background.", {
+          "provider.auth.failed": result?.failed.map((entry) => entry.providerId).join(",") ?? "sync_error",
+        });
+        scheduleStartupProviderAuthRetry(0);
       }
       if (stopped || enginePoolForConfig(config) !== pool || !pool.primaryProcess()?.isAlive()
         || pool.connections().find((connection) => connection.role === "primary")?.generationId !== primary.generationId) {
@@ -1258,6 +1299,7 @@ export async function startServer(
     },
     stop: async () => {
       stopped = true;
+      if (startupAuthRetryTimer) clearTimeout(startupAuthRetryTimer);
       let recoveryError: unknown;
       try { await taskRecovery?.stop(); } catch (error) { recoveryError = error; }
       managedDesktopPolicy(config).onChange = undefined;
@@ -1340,10 +1382,10 @@ export async function proxyOpencodeV2Request(input: {
   const forwardedPath = withoutPrefix || "/";
   // Runtime provider configuration contains server-owned credentials. The
   // renderer uses the catalog/status APIs; it must not read or mutate this file.
-  if (/^\/api\/config(?:\/|$)/.test(decodeURIComponent(forwardedPath))) {
+  if (/^\/api\/(?:experimental\/)?config(?:\/|$)/.test(decodeURIComponent(forwardedPath))) {
     throw new ApiError(403, "engine_config_private", "Engine configuration is private");
   }
-  if (method !== "GET" && method !== "HEAD" && /^\/api\/mcp(?:\/|$)/.test(decodeURIComponent(forwardedPath))) {
+  if (method !== "GET" && method !== "HEAD" && /^\/api\/(?:experimental\/)?mcp(?:\/|$)/.test(decodeURIComponent(forwardedPath))) {
     throw new ApiError(403, "engine_mcp_managed", "Manage connections through OpenWork");
   }
   const v1Connect = method === "POST" ? /^\/mcp\/([^/]+)\/connect$/.exec(forwardedPath) : null;
@@ -1394,7 +1436,7 @@ export async function proxyOpencodeV2Request(input: {
   };
   const homes = createV2SessionHomes(input.config, readNative);
   const expectedHome = await homes.canonical(input.workspace.path);
-  const sessionMatch = forwardedPath.match(/^\/api\/session\/([^/]+)(?:\/|$)/);
+  const sessionMatch = forwardedPath.match(/^\/api\/(?:experimental\/)?session\/([^/]+)(?:\/|$)/);
   const sessionId = sessionMatch?.[1] ? decodeURIComponent(sessionMatch[1]) : null;
   let executionDirectory = input.workspace.path;
   // Authorization follows the persistent home, not the agent's mutable CWD.
@@ -1428,7 +1470,7 @@ export async function proxyOpencodeV2Request(input: {
     // catalog can exceed the engine's instruction-entry request limit.
     const value = buildOpenWorkV2Instructions(connectReady);
     const instructionUrl = new URL(target);
-    instructionUrl.pathname = `/api/session/${encodeURIComponent(sessionId)}/instructions/entries/${OPENWORK_V2_INSTRUCTION_KEY}`;
+    instructionUrl.pathname = `/api/experimental/session/${encodeURIComponent(sessionId)}/instructions/entries/${OPENWORK_V2_INSTRUCTION_KEY}`;
     const synced = await engineFetch(instructionUrl.toString(), {
       method: "PUT", headers: internalHeaders, body: JSON.stringify({ value }), signal: AbortSignal.timeout(15_000),
     });
@@ -1567,7 +1609,8 @@ export async function proxyOpencodeV2Request(input: {
     responseHeaders.delete("content-encoding");
     return sanitizeProxyResponse(new Response(scopedBody, { status: response.status, headers: responseHeaders }));
   }
-  const pendingKind = forwardedPath.match(/^\/api\/(form|permission)\/request\/?$/)?.[1];
+  const pendingKind = /^\/api\/form\/?$/.test(forwardedPath) ? "form"
+    : /^\/api\/permission\/request\/?$/.test(forwardedPath) ? "permission" : undefined;
   if (method === "GET" && pendingKind && response.ok) {
     // Native pending lists belong to an execution location. The sidebar belongs
     // to conversation homes, so include moved sessions through their native
@@ -1959,7 +2002,14 @@ export async function proxyOpencodeRequest(input: {
     return sanitizeProxyResponse(response);
   };
 
-  return forward();
+  const stoppedSession = method === "POST" ? /^\/session\/([^/]+)\/abort$/.exec(normalizeOpencodeProxyPath(proxyPath))?.[1] : undefined;
+  const releaseStop = directory && stoppedSession
+    ? beginOpencodeStop(input.config, directory, decodeURIComponent(stoppedSession)) : undefined;
+  try {
+    return await forward();
+  } finally {
+    releaseStop?.();
+  }
 }
 
 function isEngineEventPath(proxyPath: string): boolean {
@@ -3237,6 +3287,15 @@ function createRoutes(
     return jsonResponse(await cloudProviderSync.startProviderOAuth(ctx.params.id, body.orgId, body.credentialSetId));
   });
 
+  addRoute(routes, "POST", "/experimental/session-stop-fence/check", "client", async (ctx) => {
+    const body = await readJsonBody(ctx.request);
+    if (typeof body.directory !== "string" || !body.directory || typeof body.sessionID !== "string" || !body.sessionID) {
+      throw new ApiError(400, "invalid_payload", "A conversation and its workspace are required");
+    }
+    if (opencodeSessionIsStopping(config, body)) throw new ApiError(409, "session_stopping", "This task was stopped.");
+    return jsonResponse({ allowed: true });
+  });
+
   addRoute(routes, "GET", "/managed-policy", "client", async () =>
     jsonResponse({ policy: await managedDesktopPolicy(config).current() }));
   addRoute(routes, "POST", "/managed-policy/evaluate", "policy", async (ctx) => {
@@ -3487,6 +3546,10 @@ function createRoutes(
       // rendered from the ENGINE_GLOBAL row only, so a workspace-row write
       // would never reach the engine.
       const providerUpdate = isRecord(provider) ? provider : {};
+      // Opt-in per provider: add the patch's models to the ones already saved instead of replacing them.
+      const mergeProviderModels = new Set(Array.isArray(body.mergeProviderModels)
+        ? body.mergeProviderModels.filter((id): id is string => typeof id === "string")
+        : []);
       // Removing a provider is always allowed; adding or changing one must fit the organization's model access.
       if (Object.keys(providerUpdate).length) await managedDesktopPolicy(config).assert("provider", {
         providerIDs: Object.entries(providerUpdate).filter(([, value]) => value !== null).map(([id]) => id),
@@ -3494,7 +3557,7 @@ function createRoutes(
       if (Object.keys(providerUpdate).length) {
         const providerResult = await writeGlobalRuntimeOpencodeConfig(config, (current) => ({
           ...current,
-          provider: mergeRuntimeProviderUpdate(current.provider, providerUpdate),
+          provider: mergeRuntimeProviderUpdate(current.provider, providerUpdate, mergeProviderModels),
         }));
         runtimeChanged = providerResult.changed || runtimeChanged;
       }
@@ -4082,6 +4145,7 @@ function createRoutes(
       summary: `Added MCP ${name}`,
       timestamp: Date.now(),
     });
+    await engineV2Preview.settleWorkspaceMcp(workspace.id, workspace.path, name);
     emitReloadEvent(ctx.reloadEvents, workspace, "mcp", {
       type: "mcp",
       name,
@@ -4127,6 +4191,7 @@ function createRoutes(
         for (const removedName of removedNames) {
           deleteEngineMcpRegistration(config, engineMcpServerState, affectedWorkspace, removedName);
           await disconnectMcpFromOpencodeEngine(config, affectedWorkspace, removedName).catch(() => undefined);
+          await engineV2Preview.settleWorkspaceMcp(affectedWorkspace.id, affectedWorkspace.path, removedName);
         }
       }));
       emitReloadEvent(ctx.reloadEvents, workspace, "mcp", {
@@ -4180,6 +4245,7 @@ function createRoutes(
       summary: `${enabled ? "Enabled" : "Disabled"} MCP ${name}`,
       timestamp: Date.now(),
     });
+    await engineV2Preview.settleWorkspaceMcp(workspace.id, workspace.path, name);
     // ReloadTrigger.action only allows added/removed/updated, so toggle => "updated".
     emitReloadEvent(ctx.reloadEvents, workspace, "mcp", {
       type: "mcp",

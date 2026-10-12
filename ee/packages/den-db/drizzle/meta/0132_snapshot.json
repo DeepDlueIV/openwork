@@ -1,7 +1,7 @@
 {
   "version": "5",
   "dialect": "mysql",
-  "id": "3891f8d0-d530-485c-86fa-71171f670df0",
+  "id": "76c97185-2063-4bac-8e95-45ebcbe4f8cb",
   "prevId": "b97ac07f-dbed-4d7e-a419-6d84ef88051b",
   "tables": {
     "account": {
@@ -6884,6 +6884,20 @@
           "notNull": false,
           "autoincrement": false
         },
+        "oauth_tenant_id": {
+          "name": "oauth_tenant_id",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "aws_sso": {
+          "name": "aws_sso",
+          "type": "json",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "status": {
           "name": "status",
           "type": "enum('active','disabled')",
@@ -7502,7 +7516,7 @@
         },
         "kind": {
           "name": "kind",
-          "type": "enum('api_key','api_key_map','aws_keys','gcp_service_account','oauth_google','oauth_azure')",
+          "type": "enum('api_key','api_key_map','aws_keys','gcp_service_account','oauth_google','oauth_azure','aws_sso')",
           "primaryKey": false,
           "notNull": true,
           "autoincrement": false
@@ -12553,67 +12567,6 @@
           "name": "plugin_mcp_requirement_binding_id",
           "columns": [
             "id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "checkConstraint": {}
-    },
-    "slack_installation": {
-      "name": "slack_installation",
-      "columns": {
-        "client_id": {
-          "name": "client_id",
-          "type": "varchar(512)",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "access_token": {
-          "name": "access_token",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "refresh_token": {
-          "name": "refresh_token",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp(3)",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp(3)",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "slack_installation_client_id_workspace_id_pk": {
-          "name": "slack_installation_client_id_workspace_id_pk",
-          "columns": [
-            "client_id",
-            "workspace_id"
           ]
         }
       },

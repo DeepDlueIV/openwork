@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Check, Globe, Plus, Users } from "lucide-react";
 
-import { getOrgAccessFlags } from "../../_lib/den-org";
+import { getOrgAccessFlags, permissionLockReason } from "../../_lib/den-org";
 import { DenButton } from "../../_components/ui/button";
 import { DenInput } from "../../_components/ui/input";
 import { DenNotice } from "../../_components/ui/notice";
@@ -16,6 +16,8 @@ import {
   useRevokePluginAccess,
 } from "./plugin-access-data";
 import { OrgMemberIdentity } from "./org-member-identity";
+import { SectionTitle } from "./item-header";
+import { useLibraryIntegrated } from "./use-library-integrated";
 
 type PluginAccessSectionProps = {
   pluginId: string;
@@ -239,12 +241,13 @@ export function PluginAccessSection({
   error,
 }: PluginAccessSectionProps) {
   const { orgContext } = useOrgDashboard();
+  const integrated = useLibraryIntegrated();
   const grantMutation = useGrantPluginAccess();
   const revokeMutation = useRevokePluginAccess();
   const access = getOrgAccessFlags(
     orgContext?.currentMember.role ?? "member",
     orgContext?.currentMember.isOwner ?? false,
-    orgContext?.roles ?? [],
+    orgContext?.currentMember.permissions,
   );
   const members = orgContext?.members ?? [];
   const teams = orgContext?.teams ?? [];
@@ -257,6 +260,8 @@ export function PluginAccessSection({
     (grant) => grant.orgMembershipId !== pluginCreatedByOrgMembershipId,
   );
   const busy = grantMutation.isPending || revokeMutation.isPending;
+  // Turning org-wide sharing on needs `sharing.share_org_wide`; turning it off does not.
+  const orgWideLocked = !orgWideGrant && !access.canShareWithEveryone;
 
   const memberCandidates: AccessCandidate[] = members
     .filter((member) => !memberGrants.some((grant) => grant.orgMembershipId === member.id))
@@ -311,9 +316,9 @@ export function PluginAccessSection({
 
   return (
     <section>
-      <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-400">
+      {integrated ? <div className="mb-3"><SectionTitle title="Who can use it" /></div> : <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-400">
         Who can access this
-      </h2>
+      </h2>}
 
       {error ? (
         <DenNotice
@@ -326,37 +331,37 @@ export function PluginAccessSection({
             <p className="px-6 py-4 text-[13px] text-gray-400">Loading access…</p>
           ) : (
             <>
-              {access.isAdmin ? (
-                <button
-                  type="button"
-                  onClick={() => void handleToggleOrgWide()}
-                  disabled={busy}
-                  className="flex w-full items-center gap-4 rounded-t-2xl px-6 py-4 text-left transition hover:bg-gray-50/60 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] ${orgWideGrant ? "bg-emerald-50 text-emerald-600" : "bg-gray-100 text-gray-500"}`}>
-                    <Globe className="h-4 w-4" aria-hidden />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-[14px] font-semibold tracking-[-0.01em] text-gray-900">
-                      Everyone in the organization
-                    </p>
-                    <p className="mt-0.5 text-[12.5px] leading-[1.55] text-gray-500">
-                      {orgWideGrant
-                        ? "All organization members can use this plugin in chat."
+              <button
+                type="button"
+                onClick={() => void handleToggleOrgWide()}
+                disabled={busy || orgWideLocked}
+                className="flex w-full items-center gap-4 rounded-t-2xl px-6 py-4 text-left transition hover:bg-gray-50/60 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] ${orgWideGrant ? "bg-emerald-50 text-emerald-600" : "bg-gray-100 text-gray-500"}`}>
+                  <Globe className="h-4 w-4" aria-hidden />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="text-[14px] font-semibold tracking-[-0.01em] text-gray-900">
+                    Everyone in the organization
+                  </p>
+                  <p className="mt-0.5 text-[12.5px] leading-[1.55] text-gray-500">
+                    {orgWideGrant
+                      ? "All organization members can use this plugin in chat."
+                      : orgWideLocked
+                        ? permissionLockReason("sharing.share_org_wide")
                         : "Only people and teams you add below can use this plugin in chat."}
-                    </p>
-                  </div>
-                  <div
-                    role="switch"
-                    aria-checked={Boolean(orgWideGrant)}
-                    className={`relative inline-flex h-6 w-[42px] shrink-0 items-center rounded-full transition-colors ${orgWideGrant ? "bg-[#0f172a]" : "bg-gray-200"}`}
-                  >
-                    <span className={`inline-block h-5 w-5 rounded-full bg-white transition-transform ${orgWideGrant ? "translate-x-[18px]" : "translate-x-0.5"}`} />
-                  </div>
-                </button>
-              ) : null}
+                  </p>
+                </div>
+                <div
+                  role="switch"
+                  aria-checked={Boolean(orgWideGrant)}
+                  className={`relative inline-flex h-6 w-[42px] shrink-0 items-center rounded-full transition-colors ${orgWideGrant ? "bg-[#0f172a]" : "bg-gray-200"}`}
+                >
+                  <span className={`inline-block h-5 w-5 rounded-full bg-white transition-transform ${orgWideGrant ? "translate-x-[18px]" : "translate-x-0.5"}`} />
+                </div>
+              </button>
 
-              <div className={`${access.isAdmin ? "border-t" : ""} divide-y divide-gray-100 border-gray-100`}>
+              <div className="divide-y divide-gray-100 border-t border-gray-100">
                 {memberGrants.map((grant) => {
                   const member = grant.orgMembershipId ? membersById.get(grant.orgMembershipId) : null;
                   const creatorGrant = grant.orgMembershipId === pluginCreatedByOrgMembershipId;
@@ -376,7 +381,7 @@ export function PluginAccessSection({
                         <AccessRolePill role={grant.role} />
                       </div>
                       {creatorGrant ? (
-                        <span className="text-[12px] font-medium text-gray-400">creator</span>
+                        <span className={integrated ? "text-[13px] text-[var(--dls-text-secondary)]" : "text-[12px] font-medium text-gray-400"}>{integrated ? "Creator" : "creator"}</span>
                       ) : (
                         <>
                           <p className="text-[11.5px] text-gray-400">

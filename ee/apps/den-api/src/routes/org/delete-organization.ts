@@ -65,6 +65,9 @@ import {
   OrganizationTable,
   OrganizationWebOriginTable,
   OrgSubscriptionTable,
+  PermissionSetPermissionTable,
+  PermissionSetTable,
+  PermissionSetTeamTable,
   PluginAccessGrantTable,
   PluginConfigObjectTable,
   PluginMcpRequirementBindingTable,
@@ -78,6 +81,8 @@ import {
   SsoProviderTable,
   TeamMemberTable,
   TeamTable,
+  TelemetryEventTable,
+  TelemetrySessionDimensionTable,
   WorkerBundleTable,
   WorkerInstanceTable,
   WorkerTable,
@@ -513,6 +518,10 @@ export function registerDeleteOrganizationRoutes<T extends { Variables: OrgRoute
         await tx.delete(WorkspaceBootstrapTable).where(eq(WorkspaceBootstrapTable.organizationId, organizationId))
         await tx.delete(InstallLinkTable).where(eq(InstallLinkTable.organizationId, organizationId))
         await tx.delete(OrganizationRoleTable).where(eq(OrganizationRoleTable.organizationId, organizationId))
+        // Permission rows are append-only; organization erasure is the one sanctioned hard delete.
+        await tx.delete(PermissionSetTeamTable).where(eq(PermissionSetTeamTable.organizationId, organizationId))
+        await tx.delete(PermissionSetPermissionTable).where(eq(PermissionSetPermissionTable.organizationId, organizationId))
+        await tx.delete(PermissionSetTable).where(eq(PermissionSetTable.organizationId, organizationId))
 
         await tx.delete(ScimProviderTable).where(eq(ScimProviderTable.organizationId, organizationId))
         await tx.delete(ScimSyncEventTable).where(eq(ScimSyncEventTable.organizationId, organizationId))
@@ -523,7 +532,6 @@ export function registerDeleteOrganizationRoutes<T extends { Variables: OrgRoute
         // Explicit owner-authorized organization erasure, not resource cleanup.
         // No settlement is active for these pilot facts. Billing evidence needs
         // a separate retention policy before commercial settlement is enabled.
-        await tx.select().from(AuditStateTable).where(eq(AuditStateTable.organization_id, organizationId)).for("update")
         await tx.delete(AuditEventResourceTable).where(eq(AuditEventResourceTable.organization_id, organizationId))
         await tx.delete(AuditEventTable).where(eq(AuditEventTable.org_id, organizationId))
         await tx.delete(AuditOperationStepTable).where(eq(AuditOperationStepTable.organization_id, organizationId))
@@ -532,6 +540,8 @@ export function registerDeleteOrganizationRoutes<T extends { Variables: OrgRoute
         await tx.delete(AuditPolicyTable).where(eq(AuditPolicyTable.organization_id, organizationId))
         await tx.delete(AuditStateTable).where(eq(AuditStateTable.organization_id, organizationId))
         await tx.delete(WorkerTable).where(eq(WorkerTable.org_id, organizationId))
+        await tx.delete(TelemetryEventTable).where(eq(TelemetryEventTable.org_id, organizationId))
+        await tx.delete(TelemetrySessionDimensionTable).where(eq(TelemetrySessionDimensionTable.org_id, organizationId))
         await tx.delete(TeamTable).where(eq(TeamTable.organizationId, organizationId))
 
         await tx.delete(OrgSubscriptionTable).where(eq(OrgSubscriptionTable.organization_id, organizationId))

@@ -1,6 +1,7 @@
 "use client";
 
 import { Dialog } from "@base-ui/react/dialog";
+import { Tooltip } from "@base-ui/react/tooltip";
 import { Download, FileText, Paperclip, Trash2, X } from "lucide-react";
 import { useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { workbotHost } from "./host";
@@ -8,6 +9,7 @@ import {
   downloadWorkbotFile,
   uploadWorkbotFile,
   useDeleteWorkbotFile,
+  useWorkbotChat,
   useWorkbotFiles,
   useWorkbotImageUrl,
   type WorkbotAttachment,
@@ -115,10 +117,12 @@ export function useUploads() {
   const waiters = useRef(new Map<string, { promise: Promise<WorkbotFile | null>; controller: AbortController }>());
 
   const update = (key: string, patch: Partial<Upload>) => setUploads((current) => current.map((upload) => (upload.key === key ? { ...upload, ...patch } : upload)));
+  // Files are kept in the chat they are sent in; the page starts a fresh tray for each chat.
+  const chat = useWorkbotChat();
 
   const start = useCallback((file: File, key: string = crypto.randomUUID()) => {
     const controller = new AbortController();
-    const promise = uploadWorkbotFile(file, (loaded) => update(key, { loaded }), controller.signal)
+    const promise = uploadWorkbotFile(file, (loaded) => update(key, { loaded }), controller.signal, chat)
       .then((saved) => {
         update(key, { status: "done", saved, loaded: file.size });
         return saved;
@@ -129,7 +133,7 @@ export function useUploads() {
       });
     waiters.current.set(key, { promise, controller });
     return key;
-  }, []);
+  }, [chat]);
 
   const add = useCallback((files: FileList | File[]) => {
     const added = Array.from(files).map((file) => ({
@@ -235,28 +239,39 @@ export function UploadTray({ uploads, onRemove, onRetry }: { uploads: Upload[]; 
 export function AttachButton({ enabled, onFiles }: { enabled: boolean; onFiles: (files: FileList) => void }) {
   const input = useRef<HTMLInputElement>(null);
   const [showLock, setShowLock] = useState(false);
+  // A press (mouse click or touch tap) pins the explanation: on touch, the emulated hover and focus changes that
+  // follow a tap would otherwise close it before it can be read. Only Escape or a press elsewhere dismisses it.
+  const pinned = useRef(false);
   if (!enabled) {
     return (
-      <span className="relative shrink-0">
-        <button
+      <Tooltip.Root
+        open={showLock}
+        onOpenChange={(open, details) => {
+          if (!open && pinned.current && (details.reason === "trigger-hover" || details.reason === "trigger-focus")) return;
+          if (!open) pinned.current = false;
+          setShowLock(open);
+        }}
+      >
+        <Tooltip.Trigger
           type="button"
           aria-disabled="true"
           aria-label="Attach files. Files aren't set up on this server; your admin can turn them on."
-          onClick={() => setShowLock((open) => !open)}
-          onBlur={() => setShowLock(false)}
-          onMouseEnter={() => setShowLock(true)}
-          onMouseLeave={() => setShowLock(false)}
-          className="grid h-9 w-9 place-items-center rounded-full bg-[var(--wb-chip)] text-[var(--wb-disabled)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus)]"
+          delay={0}
+          closeOnClick={false}
+          onClick={() => { pinned.current = true; setShowLock(true); }}
+          className="grid size-9 shrink-0 place-items-center rounded-full bg-[var(--wb-chip)] text-[var(--wb-disabled)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus)]"
         >
           <Paperclip size={18} strokeWidth={1.75} aria-hidden />
-        </button>
-        {showLock ? (
-          <span role="tooltip" className="absolute bottom-[calc(100%+10px)] left-0 z-10 flex w-[300px] items-center gap-2 rounded-xl bg-[var(--wb-text)] px-3 py-2 text-[13px] leading-4 text-[var(--wb-mark-text)]">
-            <LockGlyph />
-            Files aren&apos;t set up on this server. Your admin can turn them on.
-          </span>
-        ) : null}
-      </span>
+        </Tooltip.Trigger>
+        <Tooltip.Portal>
+          <Tooltip.Positioner side="top" align="start" sideOffset={10} collisionPadding={8} positionMethod="fixed" collisionAvoidance={{ side: "flip", align: "shift", fallbackAxisSide: "none" }} className="z-50">
+            <Tooltip.Popup data-workbot-attachment-hint className="workbot flex w-[300px] max-w-[min(var(--available-width),calc(100vw-1rem))] max-h-[var(--available-height)] items-center gap-2 overflow-y-auto rounded-xl bg-[var(--wb-text)] px-3 py-2 text-[13px] leading-4 text-[var(--wb-mark-text)]">
+              <LockGlyph />
+              <span className="min-w-0">Files aren&apos;t set up on this server. Your admin can turn them on.</span>
+            </Tooltip.Popup>
+          </Tooltip.Positioner>
+        </Tooltip.Portal>
+      </Tooltip.Root>
     );
   }
   return (
@@ -363,6 +378,7 @@ export function FilesButton({ open, onOpen }: { open: boolean; onOpen: () => voi
 
 function FileRow({ file, assistantName, onOpen }: { file: WorkbotFile; assistantName: string; onOpen: (file: WorkbotFile) => void }) {
   const remove = useDeleteWorkbotFile();
+  const chat = useWorkbotChat();
   const thumb = useWorkbotImageUrl(isImage(file.mediaType) ? file.id : null);
   const when = dayLabel(file.createdAt);
   return (
@@ -386,7 +402,7 @@ function FileRow({ file, assistantName, onOpen }: { file: WorkbotFile; assistant
       </button>
       <button
         type="button"
-        onClick={() => void downloadWorkbotFile(file)}
+        onClick={() => void downloadWorkbotFile(file, chat)}
         aria-label={`Download ${file.name}`}
         title="Download"
         className="grid h-8 w-8 shrink-0 place-items-center rounded-full text-[var(--wb-muted)] transition-colors duration-150 hover:bg-[var(--wb-chip)] hover:text-[var(--wb-text)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus)]"

@@ -1,8 +1,9 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { Plus } from "lucide-react";
+import { Lock, Plus } from "lucide-react";
 import { useState } from "react";
+import { DenBadge } from "../../_components/ui/badge";
 import { DenButton } from "../../_components/ui/button";
 import {
   getAddConnectorRoute,
@@ -11,11 +12,14 @@ import {
   getLibraryRoute,
   getMcpConnectionRoute,
   getMcpConnectionsRoute,
+  getOrgAccessFlags,
 } from "../../_lib/den-org";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
-import { connectionForPresetUrl, GOOGLE_WORKSPACE_QUICK_ADD_ID, MICROSOFT_365_QUICK_ADD_ID } from "./connector-catalog";
+import { connectionForPresetUrl, GOOGLE_WORKSPACE_QUICK_ADD_ID, MICROSOFT_365_QUICK_ADD_ID, SLACK_SEARCH_QUICK_ADD_ID } from "./connector-catalog";
+import { ManagedSlackAccountAction, useManagedSlackDiscovery } from "./managed-slack";
 import { displayedConnectorConnections } from "./connector-detail";
 import { type CatalogEntry, catalogEntriesFromPresets, ConnectorPicker } from "./connector-picker";
+import { useLibraryIntegrated } from "./use-library-integrated";
 import { ItemHeader, ItemPage } from "./item-header";
 import { preloadConnectorLogo } from "./item-logo";
 import {
@@ -54,7 +58,10 @@ function nativeConnection(connections: readonly ExternalMcpConnection[], provide
 
 /** A1 to A3 and C1 to C2: pick what to connect. */
 export function ConnectorCatalogScreen({ mode }: { mode: ConnectorFlowMode }) {
-  const { orgSlug } = useOrgDashboard();
+  const { orgSlug, orgContext } = useOrgDashboard();
+  const integrated = useLibraryIntegrated();
+  const managedSlack = useManagedSlackDiscovery();
+  const canSetUpCustom = orgContext ? getOrgAccessFlags(orgContext.currentMember.role, orgContext.currentMember.isOwner, orgContext.currentMember.permissions).canManageConnections : false;
   const presets = useMcpConnectionPresets();
   const connections = useMcpConnections(mode === "admin" ? "manageable" : "usable");
   const usable = useMcpConnections("usable");
@@ -65,9 +72,11 @@ export function ConnectorCatalogScreen({ mode }: { mode: ConnectorFlowMode }) {
     ? displayedConnectorConnections(connections.data ?? [], usable.data ?? [])
     : connections.data ?? [];
 
-  const presetEntries = catalogEntriesFromPresets(presets.data ?? []).map((entry) => {
+  const presetEntries = catalogEntriesFromPresets(presets.data ?? []).map((entry): CatalogEntry => {
     const existing = connectionForPresetUrl(known, entry.url);
-    return existing ? { ...entry, openHref: openRoute(existing.id) } : entry;
+    if (existing) return { ...entry, name: entry.customSlackApp ? existing.name : entry.name, openHref: openRoute(existing.id) };
+    if (entry.customSlackApp && !canSetUpCustom) return { ...entry, action: <DenBadge icon={Lock}>Organization admin required</DenBadge> };
+    return entry;
   });
   const nativeEntries = mode === "admin"
     ? NATIVE_CATALOG_ENTRIES.map((entry): CatalogEntry => {
@@ -78,14 +87,22 @@ export function ConnectorCatalogScreen({ mode }: { mode: ConnectorFlowMode }) {
       return existing ? { ...entry, openHref: openRoute(existing.id) } : entry;
     })
     : [];
-  const entries = presets.isLoading ? [] : [...nativeEntries, ...presetEntries];
+  const managedEntries: CatalogEntry[] = managedSlack.connection ? [{
+    id: SLACK_SEARCH_QUICK_ADD_ID,
+    name: "Slack search",
+    description: "Provided by OpenWork",
+    url: managedSlack.connection.url,
+    action: <ManagedSlackAccountAction connection={managedSlack.connection} />,
+  }] : [];
+  const entries = [...managedEntries, ...nativeEntries, ...presetEntries];
 
   return (
     <ItemPage testId="connector-catalog">
       <ItemHeader
+        compact={integrated}
         back={mode === "admin" ? { href: getMcpConnectionsRoute(orgSlug), label: "Connectors" } : { href: getLibraryRoute(orgSlug), label: "My Library" }}
         title="Add a connector"
-        actions={mode === "admin" ? (
+        actions={mode === "admin" && !integrated ? (
           <DenButton variant="secondary" size="sm" icon={Plus} className="h-9" onClick={() => setCustomName("")} data-testid="add-any-mcp">
             Add any MCP
           </DenButton>
@@ -94,13 +111,15 @@ export function ConnectorCatalogScreen({ mode }: { mode: ConnectorFlowMode }) {
       {presets.error ? (
         <p className="text-[13px] text-red-600">{presets.error instanceof Error ? presets.error.message : "The list did not load."}</p>
       ) : null}
+      {managedSlack.error ? <p role="alert" className="text-[13px] text-destructive">Your account availability could not be checked. Reload the page to try again.</p> : null}
       <ConnectorPicker
         entries={entries}
-        loading={presets.isLoading}
+        loading={presets.isLoading || managedSlack.loading}
         mode={mode}
         customName={customName}
         onCustomNameChange={setCustomName}
-        addHref={(entry) => setupRoute(entry.id)}
+        addHref={(entry) => entry.id === SLACK_SEARCH_QUICK_ADD_ID ? getLibraryConnectorRoute(orgSlug, "slack")
+          : entry.customSlackApp && canSetUpCustom ? getAddConnectorRoute(orgSlug, "slack") : setupRoute(entry.id)}
         customHref={(input) => `${setupRoute("custom")}${customConnectorQuery(input)}`}
       />
     </ItemPage>

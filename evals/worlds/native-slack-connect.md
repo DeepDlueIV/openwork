@@ -70,7 +70,7 @@ step but never supply a pass verdict.
 2. B's ordinary owner cannot write organization or everyone feature settings.
 3. The platform admin opens `/admin` → Organizations → A → Features and checks
    **Slack search**. A gets Connect; B remains absent and generates no provider
-   calls. Slack Assistant/headless remain off.
+   calls. Slack Assistant and Workbot replies remain off.
 4. Turning **OpenWork Connect** off still blocks A despite its true Slack
    override. Restoring Connect restores the consent entry, not an account.
 5. Preserve the member-owned OAuth, read-only MCP, four conversation categories,
@@ -119,6 +119,16 @@ and `{ enabled: true }`. No `seed` calls occur after the first user action.
   native thread reads, MCP discovery, and (once discovered) retained execution.
   Native reads/retained execution must specifically report `policy_blocked`;
   a wrong-audience authentication failure is not accepted as rollout evidence.
+
+## Submission readiness
+
+Each of the three app prompts is typed exactly once with retained-input verification.
+The matching app's composer witness must show the exact prompt, an editable composer,
+a visible/enabled Run task button, and an available model before the single click.
+The wait is bounded to 30 seconds. Failure records the observed flags and a screenshot;
+it does not retry typing, change models, reload, or submit through an agent-only API.
+This closes an observation gap in the earlier CI failure; it does not establish that
+failure's underlying cause from incomplete historical screenshots.
 
 ## Engine preparation
 

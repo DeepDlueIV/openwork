@@ -60,7 +60,11 @@ export type WorkbotStep = {
   /** What it did, in its own plain words: the updates it gave while working on its computer. */
   updates: string[]
 }
-export type WorkbotPart = { kind: "text"; text: string } | { kind: "steps"; steps: WorkbotStep[] }
+/**
+ * What Workbot said and did, in order. A text part is one model call's words, `step` being that call (counted from 0
+ * within the turn): the page keeps one bubble per call, from its first streamed word to its stored copy.
+ */
+export type WorkbotPart = { kind: "text"; text: string; step: number } | { kind: "steps"; steps: WorkbotStep[] }
 
 /**
  * A bigger job this message handed to a background task: the page keeps it in view where it started, so the person
@@ -98,6 +102,8 @@ export type WorkbotTurn = {
    */
   modelSteps: number
   error: string | null
+  /** A failed turn that can work if sent again: the page offers "Try again", which answers it again in place. */
+  retryable: boolean
   /** Background tasks this message started, oldest first. */
   tasks: WorkbotTask[]
   /** Workbot's first hello: it spoke first, so there is no message from the person above it. */
@@ -141,9 +147,28 @@ function tasksOf(snapshot: RunnerSnapshot, parent: string, byTurn: Map<string, R
     })
 }
 
-/** One short line for a failed turn. The page puts "Try again" beside it, so the line doesn't say so again. */
+/** The model refused the request as it was: sending it again gets the same answer. */
+const REFUSED = /^model_(http_(400|413|422)|stream_invalid_request_error)$/
+/** Workbot's model access is broken (key, permission, model): only an admin can fix it. */
+const MISCONFIGURED = /^model_(credentials_missing|http_(401|402|403|404)|stream_(authentication_error|permission_error|not_found_error))$/
+
+/**
+ * Whether trying the same message again can work, so the page offers "Try again" only then: not when the model
+ * refused it as it was, its setup is broken, or the message asked for more than one turn can do.
+ */
+export function retryableError(code: string | null): boolean {
+  if (!code) return true
+  return !REFUSED.test(code) && !MISCONFIGURED.test(code) && code !== "max_steps_exceeded" && code !== "stuck_repeating"
+}
+
+/**
+ * One short line for a failed turn that says what to do next. When trying again can work the page puts "Try again"
+ * beside it, so the line doesn't say so again.
+ */
 function friendlyError(code: string | null): string {
   if (!code) return "Something went wrong on my side."
+  if (REFUSED.test(code)) return "I couldn't take that request as it is. Try asking it a different way."
+  if (MISCONFIGURED.test(code)) return "I can't reach the AI model. An admin needs to check how Workbot is set up."
   if (code.startsWith("model_")) return "I couldn't reach the AI model just now."
   if (code === "mcp_unavailable") return "I couldn't reach your connected apps just now."
   if (code === "turn_timeout") return "That took too long, so I stopped."
@@ -280,9 +305,13 @@ export function buildWorkbotTurns(snapshot: RunnerSnapshot, files: FileNames = n
     // A background task's own work stays out of the conversation; its report shows instead.
     if (!turn.messageId.startsWith(WORKBOT_MESSAGE_PREFIX) || turn.kind === "task") continue
     const messages = byTurn.get(turn.messageId) ?? []
-    const user = messages.find((message) => message.role === "user")
-    // Queued follow-ups join the transcript only when they start; the page shows its own copy until then.
-    if (!user || user.role !== "user") continue
+    // A message joins the transcript only when its turn starts; until then (waiting behind the answer in progress, or
+    // stopped before it started) the runner sends what it was sent with, so it stays in the conversation through a
+    // reload, a chat switch or Stop.
+    const stored = messages.find((message) => message.role === "user")
+    const waiting = turn.kind === undefined && !isGreetingRunnerId(turn.messageId) && turn.prompt !== undefined ? { role: "user" as const, text: turn.prompt, attachments: undefined } : null
+    const user = stored?.role === "user" ? stored : waiting
+    if (!user) continue
     const results = new Map(messages.flatMap((message) => (message.role === "tool" ? [[message.callId, message] as const] : [])))
 
     const parts: WorkbotPart[] = []
@@ -293,12 +322,9 @@ export function buildWorkbotTurns(snapshot: RunnerSnapshot, files: FileNames = n
       if (message.role !== "assistant") continue
       modelSteps += 1
       const text = message.text.trim()
-      // Workbot's hello is one finished message: what it said to itself between lookups ("retrying that") stays out.
-      if (text && !(greeting && message.toolCalls.length > 0)) {
-        const last = parts.at(-1)
-        if (last?.kind === "text") last.text = `${last.text}\n\n${text}`
-        else parts.push({ kind: "text", text })
-      }
+      // Each model call's words are their own bubble, the same one the page streamed, so two never become one once
+      // stored. The greeting follows the same streaming contract as other replies.
+      if (text) parts.push({ kind: "text", text, step: modelSteps - 1 })
       for (const call of message.toolCalls) {
         if (call.name === "react") {
           const result = results.get(call.id)
@@ -359,6 +385,7 @@ export function buildWorkbotTurns(snapshot: RunnerSnapshot, files: FileNames = n
       parts,
       modelSteps,
       error: status === "failed" ? friendlyError(turn.error) : null,
+      retryable: status === "failed" && retryableError(turn.error),
       tasks: turn.kind === undefined ? tasksOf(snapshot, turn.messageId, byTurn) : [],
       greeting,
       suggestions,

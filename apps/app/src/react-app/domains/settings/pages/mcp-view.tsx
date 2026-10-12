@@ -29,7 +29,7 @@ import { isBuiltInOpenWorkExtension, getMcpServerName, type McpDirectoryInfo } f
 import { evaluateEnablement } from "../../../../app/enablement";
 import type { EnablementResult } from "../../../../app/extensions";
 import type { CloudImportedPlugin, CloudImportedPluginFile } from "../../../../app/cloud/import-state";
-import { ExtensionCard, libraryRowLanes } from "../../../design-system/extension-card";
+import { ExtensionCard, LibraryPresentationContext, libraryRowLanes } from "../../../design-system/extension-card";
 import { ExtensionDetailModal } from "../../../design-system/extension-detail-modal";
 import { resolveExtensionIconUrl } from "../../../design-system/extension-icon-src";
 import {
@@ -54,6 +54,7 @@ import {
   type ExtensionTaxonomy,
 } from "../extension-taxonomy";
 import { RefreshButton } from "../settings-section";
+import { recordedConnectorState, recordedConnectorNote } from "../connector-readiness";
 import { SettingsListSearchInput } from "../settings-list";
 import {
   openDesktopUrl,
@@ -523,6 +524,15 @@ export function McpView(props: McpViewProps) {
   const libraryCloudSignedIn = cloudSession.isSignedIn
     || (Boolean(cloudSession.authToken.trim()) && denAuth.isSignedIn);
   const activeOrganizationId = cloudSession.activeOrganization?.id.trim() ?? "";
+  const featureOrganizationId = cloudSession.authToken.trim() ? activeOrganizationId : "";
+  const libraryFeatures = useQuery({
+    queryKey: ["library-presentation-features", cloudSession.baseUrl, featureOrganizationId],
+    staleTime: 30_000,
+    queryFn: () => featureOrganizationId
+      ? cloudSession.client.getOrgFeatures(featureOrganizationId)
+      : cloudSession.client.getDeploymentFeatures(),
+  });
+  const libraryIntegrated = libraryFeatures.data?.libraryIntegrated === true;
   // The connector catalog rarely changes; keep it across visits so the Add dialog shows its logos at once.
   const connectorPresetsQuery = useQuery({
     queryKey: ["library-connector-presets", cloudSession.baseUrl, activeOrganizationId],
@@ -545,6 +555,18 @@ export function McpView(props: McpViewProps) {
       return result.orgs.find((org) => org.id === identity?.organizationId)?.role ?? null;
     },
   });
+  const [checkingConnection, setCheckingConnection] = useState<string | null>(null);
+  async function checkAgain(connectionId: string) {
+    setCheckingConnection(connectionId);
+    try {
+      await cloudSession.client.checkMcpConnection(activeOrganizationId, connectionId);
+      props.onRefresh?.();
+    } catch {
+      toast.error("Could not check this connection. Try again.");
+    } finally {
+      setCheckingConnection(null);
+    }
+  }
   const canManageCloudConnections = denAuth.isSignedIn
     && identity?.organizationId === activeOrganizationId
     && isConnectAdminRole(organizationRole.data);
@@ -1171,7 +1193,7 @@ export function McpView(props: McpViewProps) {
   };
 
   const detailPanels = (
-    <>
+    <LibraryPresentationContext.Provider value={libraryIntegrated}>
       {detailEntry ? (() => {
         const extensionConfigSlot = props.configSlotForEntry?.(detailEntry) ?? null;
         const hasConfigSlot = extensionConfigSlot !== null;
@@ -1504,6 +1526,7 @@ export function McpView(props: McpViewProps) {
       {detailOrgMcpItem && isOrgMcpConnectionItem(detailOrgMcpItem) ? (() => {
         const connection = detailOrgMcpItem.orgMcpConnection;
         const ready = isOrgMcpConnectionReady(connection);
+        const recordedState = connection.policyBlocked || connection.nativeProviderKey ? null : recordedConnectorState(connection);
         const canAuthorize = canMemberAuthorizeConnection(connection);
         const canDisconnect = canDisconnectMemberConnection(connection);
         const policyReason = connection.policyBlocked ? orgMcpConnectionDescription(connection) : undefined;
@@ -1524,14 +1547,14 @@ export function McpView(props: McpViewProps) {
             backLabel={t("extensions.title")}
             name={displayName}
             iconSrc={connection.nativeProviderKey === "slack" ? "/ext-slack.svg" : undefined}
-            description={policyReason ?? (!ready && addedByMe ? ownPlugin?.description : null) ?? detailOrgMcpItem.description ?? orgMcpConnectionActionLabel(connection)}
+            description={policyReason ?? (recordedState ? recordedConnectorNote(connection) : (!ready && addedByMe ? ownPlugin?.description : null) ?? detailOrgMcpItem.description ?? orgMcpConnectionActionLabel(connection))}
             taxonomy="connection"
-            connected={ready}
-            connectedLabel={orgMcpConnectionActionLabel(connection)}
+            connected={recordedState ? recordedState === "Ready" : ready}
+            connectedLabel={recordedState ?? orgMcpConnectionActionLabel(connection)}
             savedKeyOnly={connection.authType === "apikey" && connection.credentialMode === "per_member"}
-            disconnectedLabel={connection.policyBlocked ? "Blocked" : connection.authType === "apikey" && connection.credentialMode === "per_member" ? t("extensions.detail_no_key") : undefined}
+            disconnectedLabel={connection.policyBlocked ? "Blocked" : recordedState ?? (connection.authType === "apikey" && connection.credentialMode === "per_member" ? t("extensions.detail_no_key") : undefined)}
             disabledReason={policyReason}
-            uninstallAvailable={connection.policyBlocked ? canDisconnect : undefined}
+            uninstallAvailable={canDisconnect}
             connecting={connectingBusy || disconnectingBusy}
             connectingLabel={disconnectingBusy ? t("mcp.org_connection_disconnecting_action") : t("mcp.org_connection_waiting_browser")}
             beta
@@ -1573,7 +1596,7 @@ export function McpView(props: McpViewProps) {
           />
         );
       })() : null}
-    </>
+    </LibraryPresentationContext.Provider>
   );
 
   const cloudPlugins = [...libraryCloud.pluginById.values()];
@@ -1700,8 +1723,15 @@ export function McpView(props: McpViewProps) {
     });
   }
 
+  // Use the account row for native/policy states too; a plugin row would lose
+  // limited access and blocked-account cleanup when deduplicating the Library.
+  const detailedConnectionFor = (name: string) => orgMcpItems.filter(isOrgMcpConnectionItem).find((item) =>
+    connectionPluginName(item.name) === name.toLowerCase()
+    && (item.orgMcpConnection.readiness !== undefined || item.orgMcpConnection.nativeProviderKey || item.orgMcpConnection.policyBlocked));
+
   for (const plugin of ownedPlugins) {
     const taxonomy = libraryCloudItemTaxonomy(plugin.componentKinds, plugin.componentCount);
+    if (taxonomy === "connection" && detailedConnectionFor(plugin.name)) continue;
     const audience = libraryCloud.audienceFor(plugin.id);
     const shared = isLibraryAudienceShared(audience);
     const group = taxonomy === "connection" ? connectorGroup(plugin.name) : "ready";
@@ -1742,6 +1772,7 @@ export function McpView(props: McpViewProps) {
   }
 
   for (const entry of availableConnectMcpServers) {
+    if (detailedConnectionFor(entry.pluginName ?? entry.name)) continue;
     if (entry.pluginName && pluginRowNames.has(entry.pluginName.toLowerCase())) continue;
     const group = connectMcpInventoryGroup(entry, props.availableConnectMcpStatuses ?? {});
     const attention = libraryRowAttention(group);
@@ -1778,6 +1809,7 @@ export function McpView(props: McpViewProps) {
     const taxonomy = (cloudItem
       ? libraryCloudItemTaxonomy(cloudItem.componentKinds, cloudItem.componentCount)
       : libraryCloudItemTaxonomy(plugin.files.map((file) => file.objectType), plugin.files.length));
+    if (taxonomy === "connection" && detailedConnectionFor(plugin.name)) continue;
     const group = taxonomy === "connection" ? connectorGroup(plugin.name) : "ready";
     const attention = libraryRowAttention(group);
     const hidden = isOpenWorkExtensionHidden(`plugin:${plugin.pluginId}`);
@@ -1806,28 +1838,34 @@ export function McpView(props: McpViewProps) {
 
   for (const item of orgMcpItems.filter(isOrgMcpConnectionItem)) {
     const connection = item.orgMcpConnection;
-    if (myConnectionIds.has(connection.id) || ownedPluginNames.has(connectionPluginName(item.name))) continue;
+    const recordedState = connection.policyBlocked || connection.nativeProviderKey ? null : recordedConnectorState(connection);
+    if (!recordedState && !connection.nativeProviderKey && !connection.policyBlocked && (myConnectionIds.has(connection.id) || ownedPluginNames.has(connectionPluginName(item.name)))) continue;
     const group = resolveExtensionInventoryGroup(item);
     const attention = libraryRowAttention(group);
     rows.push({
       needsSignIn: group === "needs_signin",
       key: item.id,
-      section: "openwork",
+      section: myConnectionIds.has(connection.id) ? "mine" : "openwork",
       taxonomy: "connection",
       searchText: `${item.name} ${item.description ?? ""} ${connection.url}`,
       node: (
         <ExtensionCard
           name={item.name}
-          description={item.description?.trim() || t("extensions.row_shared_connection")}
+          description={recordedState ? `${recordedConnectorNote(connection)}${!canManageCloudConnections && recordedState === "Couldn't verify" ? " An admin can check again." : ""}` : item.description?.trim() || t("extensions.row_shared_connection")}
           taxonomy="connection"
           url={connection.url}
           iconSrc={connection.nativeProviderKey === "slack" ? "/ext-slack.svg" : undefined}
-          connected={group === "ready"}
-          connectedLabel={orgMcpConnectionActionLabel(connection)}
-          meta={orgCaption}
+          connected={recordedState ? recordedState === "Ready" : group === "ready"}
+          connectedLabel={recordedState ?? orgMcpConnectionActionLabel(connection)}
+          stateLabel={recordedState ?? undefined}
+          meta={recordedState ? null : orgCaption}
           disabledReason={connection.policyBlocked ? orgMcpConnectionDescription(connection) : undefined}
           statusChip={connection.policyBlocked ? { label: "Blocked", tone: "blocked" } : attention.statusChip}
-          nextActionLabel={connection.policyBlocked ? undefined : attention.actionLabel}
+          nextActionLabel={connection.policyBlocked ? undefined : recordedState === "Sign in" ? "Sign in" : recordedState === "Set up" ? "Set up" : recordedState ? undefined : attention.actionLabel}
+          onNextAction={recordedState === "Sign in" && canMemberAuthorizeConnection(connection) && props.connectOrgMcp ? () => props.connectOrgMcp?.(connection.id) : undefined}
+          trailing={recordedState === "Couldn't verify" || recordedState === "Ready" ? (
+            <Button size="sm" variant="outline" disabled={!canManageCloudConnections || checkingConnection !== null} title={!canManageCloudConnections ? "An admin can check this connection." : undefined} onClick={() => void checkAgain(connection.id)}>Check again</Button>
+          ) : undefined}
           onClick={() => openDetail({ kind: "org-mcp", item })}
         />
       ),
@@ -1847,6 +1885,7 @@ export function McpView(props: McpViewProps) {
 
   const inventory = (
     <LibraryInventory
+      integrated={libraryIntegrated}
       rows={rows}
       loading={props.inventoryLoading === true}
       filter={filter}
@@ -2387,6 +2426,7 @@ export function LibraryInventory(props: {
   signedOut?: boolean;
   onSignUp?: () => void;
   emptyState?: ReactNode;
+  integrated?: boolean;
 }) {
   const needle = props.search?.trim().toLowerCase() ?? "";
   const category = primaryLibraryFilter(props.filter);
@@ -2401,6 +2441,7 @@ export function LibraryInventory(props: {
   const showLocked = props.signedOut === true && category === "all" && !needle && !props.onlyNeedsSignIn;
 
   return (
+    <LibraryPresentationContext.Provider value={props.integrated === true}>
     <div className="space-y-6">
       {props.signedOut ? <LibrarySignUpBanner onSignUp={props.onSignUp} /> : null}
       {sections.length === 0 && props.loading ? (
@@ -2413,7 +2454,7 @@ export function LibraryInventory(props: {
         // The column labels belong to the rows: they sit directly on the first
         // section instead of floating one section-gap above it.
         <div>
-          <LibraryColumnHeader />
+          {!props.integrated ? <LibraryColumnHeader /> : null}
           <div className="space-y-6">
             {sections.map(({ section, rows }) => (
               <div key={section} data-library-section={section}>
@@ -2438,6 +2479,7 @@ export function LibraryInventory(props: {
                         meta={t("extensions.row_locked_from")}
                         taxonomy="connection"
                         disabled
+                        statusChip={props.integrated ? { label: t("extensions.row_chip_sign_in"), tone: "attention" } : undefined}
                         trailing={<Lock size={13} className="text-dls-secondary" aria-label={t("extensions.row_locked")} />}
                       />
                     </div>
@@ -2450,6 +2492,7 @@ export function LibraryInventory(props: {
         </div>
       )}
     </div>
+    </LibraryPresentationContext.Provider>
   );
 }
 

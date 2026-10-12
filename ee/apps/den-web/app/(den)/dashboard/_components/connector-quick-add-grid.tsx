@@ -1,7 +1,9 @@
 "use client";
 
 import { ArrowRight, Check, Loader2, Plus } from "lucide-react";
-import { GOOGLE_WORKSPACE_QUICK_ADD_ID, MICROSOFT_365_QUICK_ADD_ID } from "./connector-catalog";
+import { GOOGLE_WORKSPACE_QUICK_ADD_ID, MICROSOFT_365_QUICK_ADD_ID, SLACK_SEARCH_QUICK_ADD_ID } from "./connector-catalog";
+import { DenButton } from "../../_components/ui/button";
+import { SlackCustomAppDisclosure } from "./managed-slack";
 import { EFFORT_LABELS, type ConnectorEffort, presetEffort } from "./connector-effort";
 import type { ExternalMcpConnection, ExternalMcpPreset } from "./mcp-connections-data";
 import { IntegrationIcon } from "./integration-icon";
@@ -62,7 +64,7 @@ function AddedPill() {
 }
 
 function GroupHeader({ children }: { children: string }) {
-  return <h4 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-gray-400">{children}</h4>;
+  return <h4 className="mb-3 text-[12px] font-medium text-gray-500">{children}</h4>;
 }
 
 export function ConnectorQuickAddGrid({
@@ -73,6 +75,7 @@ export function ConnectorQuickAddGrid({
   onManage,
   onInstantAdd,
   instantAddingPresetId,
+  managedSlack,
 }: {
   connections: ExternalMcpConnection[];
   presets: ExternalMcpPreset[];
@@ -81,6 +84,7 @@ export function ConnectorQuickAddGrid({
   onManage: (connectionId: string) => void;
   onInstantAdd: (preset: ExternalMcpPreset) => void;
   instantAddingPresetId: string | null;
+  managedSlack?: { label: string; pending: boolean; error: string | null };
 }) {
   const normalizedFilter = filter.trim().toLowerCase();
   const matchesFilter = (displayName: string, description: string, id: string) => (
@@ -90,10 +94,12 @@ export function ConnectorQuickAddGrid({
     || id.toLowerCase().includes(normalizedFilter)
   );
   const suites = SUITE_CONNECTORS.filter((suite) => matchesFilter(suite.displayName, suite.description, suite.id));
-  const filteredPresets = presets.filter((preset) => matchesFilter(preset.displayName, preset.description, preset.presetId));
+  const filteredPresets = presets.filter((preset) => matchesFilter(preset.displayName, preset.description, preset.presetId))
+    .sort((left, right) => Number(left.presetId === "slack") - Number(right.presetId === "slack"));
+  const showManagedSlack = managedSlack && matchesFilter("Slack search", "Provided by OpenWork", SLACK_SEARCH_QUICK_ADD_ID);
   const microsoftConfigured = connections.some((connection) => connection.id === MICROSOFT_365_QUICK_ADD_ID);
 
-  if (normalizedFilter && suites.length === 0 && filteredPresets.length === 0) {
+  if (normalizedFilter && !showManagedSlack && suites.length === 0 && filteredPresets.length === 0) {
     return <p className="text-[13px] text-gray-400" data-testid="connector-quick-add-grid">No connectors match &quot;{filter}&quot;.</p>;
   }
 
@@ -139,15 +145,31 @@ export function ConnectorQuickAddGrid({
         </section>
       ) : null}
 
-      {filteredPresets.length > 0 ? (
+      {showManagedSlack || filteredPresets.length > 0 ? (
         <section>
-          <GroupHeader>MCP servers</GroupHeader>
+          <GroupHeader>More apps</GroupHeader>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            {showManagedSlack && managedSlack ? (
+              <div className="rounded-2xl border border-border bg-background p-3.5" data-testid="quick-add-slack-search">
+                <div className="flex items-start gap-2.5">
+                  <IntegrationIcon name="Slack search" simpleIconSlug="slack" className="h-9 w-9 rounded-[11px]" imageClassName="h-[18px] w-[18px]" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[13.5px] font-semibold leading-[18px] text-foreground">Slack search</p>
+                    <p className="mt-0.5 text-[11.5px] leading-4 text-muted-foreground">Provided by OpenWork</p>
+                  </div>
+                </div>
+                <div className="mt-2.5 flex justify-end">
+                  <DenButton size="xs" variant="secondary" loading={managedSlack.pending} onClick={() => onSelect(SLACK_SEARCH_QUICK_ADD_ID)}>{managedSlack.label}</DenButton>
+                </div>
+                {managedSlack.error ? <p role="alert" className="mt-2 text-xs text-destructive">{managedSlack.error}</p> : null}
+              </div>
+            ) : null}
             {filteredPresets.map((preset) => {
               const connection = connections.find((entry) => entry.url === preset.url);
               const effort = presetEffort(preset);
               const instantAdding = instantAddingPresetId === preset.presetId;
-              return (
+              const name = preset.presetId === "slack" ? connection?.name ?? "Slack (custom app)" : preset.displayName;
+              const card = (
                 <button
                   key={preset.presetId}
                   type="button"
@@ -170,7 +192,7 @@ export function ConnectorQuickAddGrid({
                       imageClassName="h-[18px] w-[18px]"
                     />
                     <div className="min-w-0 flex-1">
-                      <p className="text-[13.5px] font-semibold leading-[18px] text-gray-900">{preset.displayName}</p>
+                      <p className="text-[13.5px] font-semibold leading-[18px] text-gray-900">{name}</p>
                       <p className="mt-0.5 line-clamp-2 text-[11.5px] leading-4 text-gray-500" title={preset.description}>
                         {preset.description}
                       </p>
@@ -178,10 +200,11 @@ export function ConnectorQuickAddGrid({
                   </div>
                   <div className="mt-2.5 flex items-center justify-between">
                     {connection ? <AddedPill /> : <EffortPill effort={effort} />}
-                    {connection ? <ManageAffordance /> : <AddAffordance loading={instantAdding} />}
+                    {connection ? <ManageAffordance /> : preset.presetId === "slack" ? <span className="text-xs font-medium">Set up your app</span> : <AddAffordance loading={instantAdding} />}
                   </div>
                 </button>
               );
+              return preset.presetId === "slack" ? <SlackCustomAppDisclosure key={preset.presetId}>{card}</SlackCustomAppDisclosure> : card;
             })}
           </div>
         </section>

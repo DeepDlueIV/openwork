@@ -32,9 +32,11 @@ import { registerCloudRoutes } from "./routes/cloud/index.js"
 import { registerDeprecatedMemoryRoutes } from "./routes/deprecated-memory.js"
 import { registerDeprecatedSkillHubRoutes } from "./routes/deprecated-skill-hubs.js"
 import { registerDevRoutes } from "./routes/dev/index.js"
+import { registerInternalRoutes } from "./routes/internal/index.js"
 import { registerMcpTokenRoutes } from "./routes/mcp/index.js"
 import { registerAutomationRoutes } from "./routes/automations/index.js"
-import { configureCloudAgentExecutor, configureCloudWorkflowExecutor, configureHeadlessAgentExecutor } from "./automations/service.js"
+import { registerSessionRunnerRoutes } from "./routes/session-runners/index.js"
+import { automationService, configureCloudAgentExecutor, configureCloudWorkflowExecutor, configureHeadlessAgentExecutor } from "./automations/service.js"
 import { cloudAgentRuntimeAvailable, executeCloudAgent } from "./automations/cloud-agent-executor.js"
 import { executeHeadlessAgent } from "./automations/headless-agent-executor.js"
 import { getCatalog } from "./mcp/index.js"
@@ -44,6 +46,7 @@ import { resolveMcpMemberIdentity } from "./mcp/external-capabilities.js"
 import { DEN_MCP_REQUESTED_SCOPES } from "./mcp/scopes.js"
 import { registerMeRoutes } from "./routes/me/index.js"
 import { registerOrgRoutes } from "./routes/org/index.js"
+import { registerTelemetryRoutes } from "./routes/telemetry/index.js"
 import { registerVersionRoutes } from "./routes/version/index.js"
 import { registerFeatureRoutes } from "./routes/features/index.js"
 import { registerWebhookRoutes } from "./routes/webhooks/index.js"
@@ -92,7 +95,7 @@ const strictTransportSecurityHeader = "max-age=31536000; includeSubDomains"
 // its own `security` (an empty array marks a public route). Declared at
 // document level and copied onto every operation that declares none, so tools
 // that ignore document-level security still see it.
-const defaultOperationSecurity: Array<Record<string, string[]>> = [{ bearerAuth: [] }, { denApiKey: [] }]
+const defaultOperationSecurity: Array<Record<string, string[]>> = [{ denApiKey: [] }, { bearerAuth: [] }]
 const openApiOperationMethods = ["get", "post", "put", "patch", "delete", "head", "options", "trace"] as const
 
 type OpenApiDocument = Awaited<ReturnType<typeof generateSpecs>>
@@ -283,7 +286,10 @@ registerDeprecatedMemoryRoutes(app)
 registerDeprecatedSkillHubRoutes(app)
 registerDevRoutes(app)
 registerMeRoutes(app)
-registerAutomationRoutes(app, { enabled: env.automations.runtimeEnabled })
+// Interactive sessions are not a scheduler feature: their credentials, polls,
+// inventory and receipts stay available when the Automation runtime is off.
+registerSessionRunnerRoutes(app, { automationService: env.automations.runtimeEnabled ? automationService : undefined })
+registerAutomationRoutes(app, { enabled: env.automations.runtimeEnabled, sessionRunners: false })
 registerOrgRoutes(app)
 registerSlackAssistantRoutes(app)
 registerWorkbotRoutes(app)
@@ -291,12 +297,14 @@ registerVersionRoutes(app)
 registerFeatureRoutes(app)
 registerWebhookRoutes(app)
 registerSlackAppHomeRoutes(app, signedWebhookRoute, getSlackHomeToken, slackHomePolicyError)
+registerInternalRoutes(app)
 registerWorkerRoutes(app)
 registerMcpTokenRoutes(app)
 registerMcpRoutes(app)
 registerAgentMcpRoutes(app)
 registerExternalConnectionProxyRoutes(app)
 registerAdminMcpRoutes(app)
+registerTelemetryRoutes(app)
 
 configureCloudAgentExecutor({ execute: executeCloudAgent, runtimeAvailable: cloudAgentRuntimeAvailable })
 configureHeadlessAgentExecutor((input) => executeHeadlessAgent(input))
@@ -378,13 +386,14 @@ const openApiOptions: Parameters<typeof generateSpecs>[1] = {
         "OpenAPI spec for the Den control plane API.",
         "",
         "Authentication:",
-        "- Use `Authorization: Bearer <session-token>` for user-authenticated routes that require a Den session.",
-        "- Use `x-api-key: <den-api-key>` for organization API-key calls. API keys resolve to the issuing user and the organization member they were scoped to when created, so they can call ordinary user and organization routes without a separate signed-in session.",
+        "- API keys (they start with `den_`) go in the `x-api-key` header as the raw value. Do not send them as `Authorization: Bearer`; that header only accepts Den session tokens, so an API key there returns 401.",
         "  Example: `curl https://api.openworklabs.com/v1/me -H \"x-api-key: den_...\"`.",
+        "  API keys resolve to the issuing user and the organization member they were scoped to when created, so they can call ordinary user and organization routes without a separate signed-in session.",
+        "- Use `Authorization: Bearer <session-token>` for user-authenticated routes that require a Den session.",
         "- Session-only flows still require a signed-in user session, including organization creation, invitation acceptance, active-organization switching, and MCP token minting.",
         "- Public routes like health and documentation do not require authentication.",
         "",
-        "Swagger tip: use the security schemes in the Authorize dialog to set either `bearerAuth` or `denApiKey` before trying protected endpoints.",
+        "Swagger tip: use the security schemes in the Authorize dialog to set `denApiKey` (your API key) or `bearerAuth` (a session token) before trying protected endpoints.",
       ].join("\n"),
     },
     servers: env.apiPublicUrl ? [{ url: env.apiPublicUrl }] : [],
@@ -404,8 +413,8 @@ const openApiOptions: Parameters<typeof generateSpecs>[1] = {
       { name: "Organizations", description: "Organization creation, context, brand assets, and install links." },
       { name: "Invitations", description: "Invitation preview, acceptance, creation, and cancellation routes." },
       { name: "Members", description: "Organization member management routes." },
-      { name: "Roles", description: "Organization custom role management routes." },
       { name: "Teams", description: "Organization team management routes." },
+      { name: "Permissions", description: "Organization permissions: the permission catalog, Member, Admin and team permission sets, their history, and each member's effective permissions." },
       { name: "API Keys", description: "Organization API key management routes." },
       { name: "Desktop Policies", description: "Desktop app policies applied to the organization, members, or teams." },
       { name: "LLM Providers", description: "Organization LLM provider catalog, configuration, and access routes." },
@@ -415,6 +424,7 @@ const openApiOptions: Parameters<typeof generateSpecs>[1] = {
       { name: "Cloud", description: "Organization Cloud instance lifecycle and browser gateway resolution." },
       { name: "Workers", description: "List and delete the organization's workers, including OpenWork Web instances." },
       { name: "Worker Activity", description: "Worker heartbeat and activity reporting routes." },
+      { name: "Managed deployments", description: "OpenWork installations in an organization's own cloud account: launch approval, installer milestones and health reports." },
       { name: "Automations", description: "Scheduled Automations, their runs, and desktop runner presence." },
       { name: "Workbot", description: "The signed-in member's single Workbot conversation." },
       { name: "Workflows", description: "Saved Workflows (Code Mode scripts), their versions, snapshots, and views." },
@@ -431,10 +441,11 @@ const openApiOptions: Parameters<typeof generateSpecs>[1] = {
       { name: "Connectors", description: "Connector accounts and instances (GitHub and other sources) and their sync state." },
       { name: "GitHub", description: "GitHub App installation, repository discovery, and plugin import from GitHub." },
       { name: "Diagnostics", description: "Controlled egress diagnostics for self-hosted deployments." },
+      { name: "Telemetry", description: "Telemetry event ingestion and adoption analytics." },
       { name: "Webhooks", description: "Signed inbound webhooks from third-party providers." },
       { name: "Admin", description: "Platform administration routes for allowlisted OpenWork administrators." },
       { name: "Deprecated", description: "Removed features that answer with 410 or an empty result for old clients." },
-      { name: "Internal", description: "Runner and development-only routes; excluded from the published document." },
+      { name: "Internal", description: "Runner, scheduled-maintenance and development-only routes; excluded from the published document." },
     ],
     components: {
       securitySchemes: {
@@ -442,7 +453,7 @@ const openApiOptions: Parameters<typeof generateSpecs>[1] = {
           type: "http",
           scheme: "bearer",
           bearerFormat: "session-token",
-          description: "Session token passed as `Authorization: Bearer <session-token>` for user-authenticated Den routes.",
+          description: "Den session token passed as `Authorization: Bearer <session-token>` for user-authenticated Den routes. Not for API keys: send `den_` keys in the `x-api-key` header instead.",
         },
         denApiKey: {
           type: "apiKey",
@@ -465,6 +476,11 @@ const openApiOptions: Parameters<typeof generateSpecs>[1] = {
           type: "http",
           scheme: "bearer",
           description: "Short-lived Automation runner token issued when a desktop runner registers, passed as `Authorization: Bearer <token>`.",
+        },
+        maintenanceToken: {
+          type: "http",
+          scheme: "bearer",
+          description: "Deployment maintenance token (DEN_MAINTENANCE_TOKEN) used by scheduled jobs, passed as `Authorization: Bearer <token>`.",
         },
         workerHeartbeatToken: {
           type: "http",

@@ -1,8 +1,8 @@
 import { execFile, spawn } from "node:child_process";
 import { constants, existsSync, openSync } from "node:fs";
-import { access, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { access, copyFile, mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { delimiter, dirname, join, resolve } from "node:path";
+import { basename, delimiter, dirname, join, resolve } from "node:path";
 import { allocateFreePort, allocateFreePorts, listTargets, waitForCdp } from "@openwork/cdp";
 import type { SurfaceExit } from "@openwork/cdp";
 import {
@@ -354,7 +354,9 @@ function chromeArgs(cdpPort: number, profileDir: string, startUrl: string, headl
     ...(mouse ? [MOUSE_POINTER_CHROME_ARG] : []),
     startUrl,
   ];
-  return headless ? ["--headless=new", ...args] : args;
+  // Match Linux/Windows' classic gutter on headless macOS too, without changing
+  // windowed previews. Never hide scrollbars: narrow proof must include their width.
+  return headless ? ["--headless=new", "--lang=en-US", "--disable-features=OverlayScrollbar,FluentOverlayScrollbar", ...args] : args;
 }
 
 async function waitForCdpOrExit(label: string, cdpUrl: string, spawned: SpawnedDetached, logPath: string, requirePageTarget = false): Promise<void> {
@@ -699,6 +701,23 @@ export function ownedSurfaceFilePaths(handle: SurfaceHandle): string[] {
     : [];
 }
 
+/**
+ * Copy a surface's process log out of its profile before the profile is removed.
+ * The copy is named after the profile root, which is unique per launch. The
+ * logs directory must sit outside the surfaces root: every launch prunes every
+ * entry there that is not a live profile. Returns the copy's path, or null when
+ * there is no log to keep.
+ */
+export async function preserveSurfaceLog(handle: SurfaceHandle, logsDir: string): Promise<string | null> {
+  const logPath = handle.meta?.log;
+  if (!logPath || !existsSync(logPath)) return null;
+  const source = handle.meta?.profileRoot ?? handle.profileDir ?? dirname(logPath);
+  const target = join(logsDir, `${basename(source)}-${basename(logPath)}`);
+  await mkdir(logsDir, { recursive: true });
+  await copyFile(logPath, target);
+  return target;
+}
+
 export async function removeOwnedSurfaceFiles(handle: SurfaceHandle): Promise<void> {
   for (const path of ownedSurfaceFilePaths(handle)) {
     await rm(path, { recursive: true, force: true });
@@ -958,6 +977,10 @@ async function ensureDisplay(repoRoot: string, env: NodeJS.ProcessEnv, log: (mes
       const env: NodeJS.ProcessEnv = { ...process.env };
       const cdpUrl = `http://127.0.0.1:${cdpPort}`;
       const launch = async (headless: boolean): Promise<SpawnedDetached> => {
+        if (headless) {
+          await mkdir(join(profileDir, "Default"), { recursive: true });
+          await writeFile(join(profileDir, "Default", "Preferences"), JSON.stringify({ intl: { accept_languages: "en-US,en", selected_languages: "en-US,en" } }), "utf8");
+        }
         const spawned = spawnDetached(binary, chromeArgs(cdpPort, profileDir, startUrl, headless, opts.mouse === true), { cwd: profileRoot, env, logPath });
         await writeFile(join(profileDir, "openwork-eval-chrome.pid"), `${spawned.pid}\n`, "utf8");
         try {
@@ -1021,6 +1044,13 @@ async function ensureDisplay(repoRoot: string, env: NodeJS.ProcessEnv, log: (mes
         await killLocalPid(handle.pid, { log });
       }
       await disposeKnownPorts(handle);
+      // CI uploads these copies; the profile, and the log inside it, is removed next.
+      const logsDir = process.env.OPENWORK_EVAL_SURFACE_LOGS_DIR?.trim();
+      if (logsDir) {
+        await preserveSurfaceLog(handle, logsDir)
+          .then((kept) => { if (kept) log(`Kept ${handle.name} log at ${kept}`); })
+          .catch((error: unknown) => log(`Could not keep ${handle.name} log: ${messageText(error)}`));
+      }
       await removeOwnedSurfaceFiles(handle);
       if (handle.meta?.profileOwner !== "caller" && handle.meta?.profileRoot) unregisterLiveProfileRoot(handle.meta.profileRoot);
       spawnedSurfaces.delete(handle);

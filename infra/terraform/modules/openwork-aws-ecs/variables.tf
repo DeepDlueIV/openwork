@@ -139,6 +139,17 @@ variable "ecs_cluster_arn" {
   }
 }
 
+variable "service_name_prefix" {
+  description = "Prefix for the ECS service names (den-api, den-web, ...). ECS service names must be unique in a cluster, so set it (for example \"openwork-\") when sharing ecs_cluster_arn with other services or another OpenWork deployment. Changing it on an existing deployment replaces the services."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = can(regex("^([A-Za-z][A-Za-z0-9_-]{0,31})?$", var.service_name_prefix))
+    error_message = "service_name_prefix must be empty or up to 32 letters, digits, hyphens or underscores, starting with a letter."
+  }
+}
+
 variable "cpu_architecture" {
   description = "X86_64 or ARM64 (Graviton). The published images support both."
   type        = string
@@ -298,6 +309,120 @@ variable "daytona" {
     name_prefix = optional(string, "")
   })
   default = {}
+}
+
+variable "headless_runner" {
+  description = <<-EOT
+    The headless runner: Den's private agent service for Slack replies, headless
+    Automations and Workbot. It calls the model directly (any Anthropic- or
+    OpenAI-compatible endpoint; key in headless_model_api_key) and reaches tools
+    through Den's /mcp/agent. Runs as one task with its SQLite database on EFS
+    (one mount target per service subnet, so service_subnet_ids must be in
+    different availability zones). Set external_url to use an already deployed
+    celld/S3 fleet instead; this module then creates no Node runner or EFS.
+    Configure that fleet's model, computer and file storage separately.
+  EOT
+  type = object({
+    enabled        = optional(bool, false)
+    external_url   = optional(string, "")
+    model_protocol = optional(string, "anthropic")
+    model_base_url = optional(string, "https://api.anthropic.com/v1")
+    model          = optional(string, "")
+    cpu            = optional(number, 512)
+    memory         = optional(number, 1024)
+  })
+  default = {}
+
+  validation {
+    condition     = contains(["anthropic", "openai"], var.headless_runner.model_protocol)
+    error_message = "headless_runner.model_protocol must be anthropic or openai."
+  }
+
+  validation {
+    condition = var.headless_runner.external_url == "" || can(regex(
+      "^(https://[A-Za-z0-9.-]+|http://[A-Za-z0-9-]+)(:[0-9]+)?$",
+      var.headless_runner.external_url
+    ))
+    error_message = "headless_runner.external_url must be an HTTPS origin, or an HTTP origin with a single-label private hostname, without a path or trailing slash."
+  }
+}
+
+variable "headless_runner_token" {
+  description = "Existing fleet's HEADLESS_API_TOKEN (at least 32 characters), required with headless_runner.external_url. Stored in Secrets Manager; only den-api and Workbot receive it. Ignored for the managed Node runner."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "headless_computer" {
+  description = "Optional computer tools for Workbot/headless turns. Off by default. Daytona reuses daytona_api_key/api_url/target but needs its own computer snapshot; Freestyle uses headless_computer_api_key."
+  type = object({
+    provider      = optional(string, "off")
+    snapshot      = optional(string, "")
+    pause_seconds = optional(number, 300)
+    keep_days     = optional(number, 14)
+  })
+  default = {}
+
+  validation {
+    condition     = contains(["off", "freestyle", "daytona"], var.headless_computer.provider)
+    error_message = "headless_computer.provider must be off, freestyle or daytona."
+  }
+}
+
+variable "headless_computer_api_key" {
+  description = "Freestyle key for headless_computer.provider = freestyle; stored in the runner secret. Daytona uses daytona_api_key instead."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "headless_model_api_key" {
+  description = "API key for headless_runner's model endpoint. Stored in Secrets Manager; only the runner receives it."
+  type        = string
+  default     = ""
+  sensitive   = true
+}
+
+variable "headless_runner_image" {
+  description = "Full headless runner image reference. Empty uses ghcr.io/different-ai/openwork-headless-runner:<openwork_version>."
+  type        = string
+  default     = ""
+}
+
+variable "workbot" {
+  description = "Workbot: a chat app at domain_name (default chat.<domain_name>) whose turns run on the headless runner. Requires headless_runner.enabled."
+  type = object({
+    enabled       = optional(bool, false)
+    domain_name   = optional(string, "")
+    cpu           = optional(number, 256)
+    memory        = optional(number, 512)
+    desired_count = optional(number, 1)
+  })
+  default = {}
+
+  validation {
+    condition     = var.workbot.desired_count >= 1 && floor(var.workbot.desired_count) == var.workbot.desired_count
+    error_message = "workbot.desired_count must be a positive integer."
+  }
+}
+
+variable "workbot_image" {
+  description = "Full Workbot image reference. Empty uses ghcr.io/different-ai/openwork-workbot:<openwork_version>."
+  type        = string
+  default     = ""
+}
+
+variable "workbot_listener_rule_priority" {
+  description = "Priority of the Workbot host rule on the HTTPS listener (created with workbot.enabled). Must be unique on that listener."
+  type        = number
+  default     = 40
+}
+
+variable "slack_assistant_enabled" {
+  description = "Turn on the Slack assistant (members mention OpenWork in Slack and get replies in the thread). Replies run on the headless runner, so enable it too. You still create the Slack app in Den's connector settings."
+  type        = bool
+  default     = false
 }
 
 variable "extra_environment" {

@@ -18,7 +18,7 @@ test("a member understands Workbot and keeps chatting while a real background jo
     await probe.eventually(async () => (await probe.dom("button:not([disabled])")).elements.some((button) => button.text === "Get started"), { within: 30_000, label: "The connection choice is ready" });
     await user.click("Get started");
     await user.see({ text: "You're all connected" });
-    expect(world.witness().greetingRequests).toBe(0);
+    await probe.eventually(async () => world.witness().greetingRequests > 0, { within: 30_000, label: "With all apps connected, the greeting starts while the member reads the next screen" });
     await user.click("Start chatting");
     await user.see({ text: world.hello }, { timeoutMs: 60_000 });
     await user.see(composer, { editable: true });
@@ -178,6 +178,52 @@ recovery("a member retries a failed greeting without losing the conversation", a
 
 
 const threadUI = spec.world(workbotThreadWorld, { resources: { surfaces: ["appWeb"], services: [] }, needs: { placement: "local" }, timeout: 120_000 });
+threadUI("a member explicitly runs a stopped job again without changing its stopped history", async ({ world, user, probe, step, evidence }) => {
+  await step("before: a stopped task stays final with Calendar polish off", async () => {
+    world.respond("brief", "done");
+    await user.navigate(world.url);
+    await user.see({ role: "button", text: "Stop" });
+    await user.click({ role: "button", text: "Stop" });
+    await user.see({ text: "Stopped" });
+    await user.notSee({ role: "button", text: "Run again" });
+    expect(world.taskWitness()).toHaveLength(2);
+    await user.screenshot();
+    evidence.recordAssertionEvidence("The off switch keeps Stop final and offers no restart", "Two historical tasks remain; the stopped Meeting notes task has no Run again control.", true);
+  });
+  await step("after: a stopped task offers a quiet explicit Run again action", async () => {
+    world.setCalendarPolish(true);
+    await user.reload();
+    await user.see({ role: "button", text: "Run again" });
+    await user.see({ text: "Stopped" });
+    expect((await probe.dom('[data-workbot-task] button button')).elements).toHaveLength(0);
+    expect(world.taskWitness()).toHaveLength(2);
+    await user.screenshot();
+    evidence.recordAssertionEvidence("Turning on polish does not restart any stopped task", "Run again appears beside Stopped; task count remains two until the member acts.", true);
+  });
+  await step("the member runs the same job again and its old stopped card remains untouched", async () => {
+    await user.click({ role: "button", text: "Run again" });
+    await user.see({ text: 'Try the "Meeting notes" background task again.' });
+    await user.see({ role: "button", text: "Stop" });
+    const tasks = world.taskWitness();
+    expect(tasks).toHaveLength(3);
+    expect(tasks.find((task) => task.id === "notes")?.status).toBe("stopped");
+    expect(tasks.at(-1)?.status).toBe("working");
+    expect(tasks.at(-1)?.id).not.toBe("notes");
+    expect(tasks.at(-1)?.request).toBe('Try the "Meeting notes" background task again.');
+    await user.screenshot();
+    evidence.recordAssertionEvidence("Run again sends the same job request as Try again and creates a separate task", `${tasks.length} fixture API tasks; original notes is stopped; new ${tasks.at(-1)?.id} is working under the explicit retry message. This proves real client submission and fixture task creation, not live runner execution.`, true);
+  });
+  await step("turning polish off hides Run again without interrupting the new job", async () => {
+    world.setCalendarPolish(false);
+    await user.reload();
+    await user.notSee({ role: "button", text: "Run again" });
+    await user.see({ role: "button", text: "Stop" });
+    expect(world.taskWitness().at(-1)?.status).toBe("working");
+    await user.screenshot();
+    evidence.recordAssertionEvidence("The kill switch restores presentation without mutating work", "The new task is still working; the old stopped task has no restart action.", true);
+  });
+});
+
 threadUI("a member keeps task cards in their original turn until all work finishes", async ({ world, user, probe, step, evidence }) => {
   let briefNode = 0;
   const dots = '[aria-label="Workbot is processing"] .workbot-typing-dot';
@@ -258,7 +304,8 @@ threadUI("a member keeps task cards in their original turn until all work finish
   });
   await step("a failed edit puts the message back and says why", async () => {
     await user.hover({ text: "What is two plus two?" });
-    await user.click({ role: "button", label: "Edit message", nth: 1 });
+    // Only the hovered message's Edit control is visible on desktop.
+    await user.click({ role: "button", label: "Edit message" });
     await user.type({ label: "Edit your message" }, "What is three plus three?", { replace: true });
     await user.press("Enter");
     await user.see({ text: "That didn't send." });
@@ -280,5 +327,144 @@ threadUI("a member keeps task cards in their original turn until all work finish
     await user.click({ role: "button", text: "Cancel" });
     await user.see({ text: "Draft the brief and meeting notes." });
     evidence.recordAssertionEvidence("Touch shows Edit at rest, under each message", "With touch input at phone width and no hover, both Edit icons are visible under their bubbles' trailing edges with 44px tap targets, and a tap opens the inline editor.", true);
+  });
+});
+
+threadUI("a member can read why attachments are blocked without opening a file picker, even at 320px", async ({ world, user, probe, step, evidence }) => {
+  const attach = { label: "Attach files. Files aren't set up on this server; your admin can turn them on." };
+  const reason = { text: "Files aren't set up on this server. Your admin can turn them on." };
+  const triggerSelector = 'button[aria-disabled="true"][aria-label^="Attach files."]';
+  const tooltipLayout = async (height: number) => {
+    // The previous in-place hint had role=tooltip; Base UI's visual-only Tooltip has the source marker instead.
+    const snapshot = await probe.dom('[data-workbot-attachment-hint], [role="tooltip"]');
+    const rect = snapshot.elements[0]?.rect;
+    const overflowing = snapshot.documentWidth > snapshot.viewportWidth ? await world.overflowingElements() : [];
+    return {
+      fits: snapshot.elements.length === 1 && Boolean(rect && rect.width > 0 && rect.height > 0
+        && rect.left >= 7 && rect.top >= 7 && rect.right <= snapshot.viewportWidth - 7 && rect.bottom <= height - 7),
+      noSidewaysScroll: snapshot.documentWidth <= snapshot.viewportWidth,
+      description: `${snapshot.viewportWidth}×${height}; page ${snapshot.documentWidth}px${overflowing.length ? ` (past the edge: ${overflowing.join(", ")})` : ""}; tooltip ${rect ? `${Math.round(rect.left)},${Math.round(rect.top)}–${Math.round(rect.right)},${Math.round(rect.bottom)}` : "missing"}`,
+    };
+  };
+  // notSee proves stable absence from now on; first let a dismissed hint stop painting.
+  const hintCloses = (label: string) => probe.eventually(async () => (await probe.dom('[data-workbot-attachment-hint], [role="tooltip"]')).elements.filter((hint) => hint.rect.width > 0 && hint.rect.height > 0).length, {
+    within: 10_000, label, until: (painted) => painted === 0,
+  });
+  const noFileAction = () => {
+    const witness = world.fileAccessWitness();
+    return witness.nativePickers.ready && witness.nativePickers.opened === 0 && witness.fileWrites.length === 0 && witness.allWrites.length === 0;
+  };
+
+  await step("before: files are unavailable but the member can still discover the attachment control", async () => {
+    await user.navigate(world.url);
+    await user.see(composer, { editable: true });
+    await user.see(attach);
+    await user.notSee({ role: "button", text: "Files" });
+    const state = await world.blockedAttachmentState();
+    const witness = world.fileAccessWitness();
+    evidence.recordAssertionEvidence("the server's blocked file state reaches the real composer", `filesEnabled ${witness.filesEnabled}; ${witness.threadReads} thread reads; blocked control ${state.blocked}; ${state.nativeFileInputs} native file inputs; picker monitor ready ${witness.nativePickers.ready}`, !witness.filesEnabled && witness.threadReads > 0 && state.blocked && state.nativeFileInputs === 0 && noFileAction());
+    expect(witness.filesEnabled).toBe(false);
+    expect(witness.threadReads).toBeGreaterThan(0);
+    expect(state.blocked).toBe(true);
+    expect(state.nativeFileInputs).toBe(0);
+    expect(noFileAction()).toBe(true);
+    await user.screenshot();
+  });
+
+  for (const viewport of [{ width: 1440, height: 1000 }, { width: 320, height: 568 }]) {
+    await step(`hover shows the full blocked attachment reason at ${viewport.width}×${viewport.height}`, async () => {
+      await user.resizeViewport({ ...viewport, deviceScaleFactor: 1 });
+      expect((await probe.dom("html")).viewportWidth).toBe(viewport.width - 15);
+      await user.hover(attach);
+      await user.see(reason);
+      await user.screenshot();
+      if (viewport.width === 320) {
+        const browser = await world.browserLayout();
+        const fits = browser.documentWidth <= browser.clientWidth && browser.sendRight <= browser.composerRight - 7;
+        evidence.recordAssertionEvidence("the narrow composer fits with a real classic scrollbar", `page ${browser.documentWidth}px; client ${browser.clientWidth}px; root gutter ${browser.rootScrollbarWidth}px; conversation gutter ${browser.scrollbarWidth}px; Send right ${browser.sendRight}px; composer right ${browser.composerRight}px; language ${browser.language}; locale ${browser.locale}`, fits && browser.rootScrollbarWidth === 15 && browser.scrollbarWidth > 0 && browser.language === "en-US" && browser.locale === "en-US");
+        expect(browser.rootScrollbarWidth).toBe(15);
+        expect(browser.clientWidth).toBe(305);
+        expect(browser.scrollbarWidth).toBeGreaterThan(0);
+        expect(browser.language).toBe("en-US");
+        expect(browser.locale).toBe("en-US");
+        expect(browser.documentWidth).toBeLessThanOrEqual(browser.clientWidth);
+        expect(browser.sendRight).toBeLessThanOrEqual(browser.composerRight - 7);
+      }
+      const layout = await tooltipLayout(viewport.height);
+      const state = await world.blockedAttachmentState();
+      evidence.recordAssertionEvidence("the hover hint is portaled, matches its accessible label and stays entirely on screen", `${layout.description}; portaled ${state.portaled}; reason in the control's accessible name ${state.reasonInAccessibleName}; native picker opens ${world.fileAccessWitness().nativePickers.opened}`, layout.fits && layout.noSidewaysScroll && state.portaled && state.reasonInAccessibleName && noFileAction());
+      expect(layout.fits && layout.noSidewaysScroll).toBe(true);
+      expect(state.portaled && state.reasonInAccessibleName).toBe(true);
+      expect(noFileAction()).toBe(true);
+      await user.press("Escape");
+      await hintCloses("Escape dismisses the hover hint");
+      await user.notSee(reason);
+      await user.see(composer, { editable: true });
+    });
+
+    await step(`keyboard focus shows the same attachment reason at ${viewport.width}×${viewport.height}`, async () => {
+      await user.hover(composer);
+      await user.click(composer);
+      await user.press("Shift+Tab");
+      await user.see(reason);
+      const focused = (await probe.dom(triggerSelector)).elements[0]?.focused === true;
+      await user.screenshot();
+      const layout = await tooltipLayout(viewport.height);
+      const state = await world.blockedAttachmentState();
+      await user.press("Escape");
+      await hintCloses("Escape dismisses the attachment hint");
+      await user.notSee(reason);
+      const after = await world.blockedAttachmentState();
+      evidence.recordAssertionEvidence("Escape dismisses the keyboard hint without moving focus or accessing files", `${layout.description}; blocked control focused before ${focused}, after Escape ${after.focused}; ${state.nativeFileInputs} native file inputs; ${world.fileAccessWitness().fileWrites.length} file writes`, layout.fits && layout.noSidewaysScroll && focused && state.reasonInAccessibleName && after.focused && noFileAction());
+      expect(layout.fits && layout.noSidewaysScroll).toBe(true);
+      expect(focused && state.reasonInAccessibleName && after.focused).toBe(true);
+      expect(noFileAction()).toBe(true);
+    });
+
+    await step(`clicking the blocked attachment control explains why at ${viewport.width}×${viewport.height}`, async () => {
+      await user.hover(composer);
+      await user.click(composer);
+      await hintCloses("moving to the composer hides the attachment hint");
+      await user.notSee(reason);
+      const before = world.fileAccessWitness().blockedPointerClicks;
+      const inputKind = viewport.width === 320 ? "touch" : "mouse";
+      // The fixture's narrow trusted-input helper intentionally clicks this aria-disabled explanation control;
+      // normal user.click correctly refuses disabled actions. The phone tap has no preceding hover, and no
+      // ARIA attributes or DOM nodes are modified.
+      await world.clickBlockedAttachment(inputKind);
+      await user.see(reason);
+      await user.screenshot();
+      const layout = await tooltipLayout(viewport.height);
+      const state = await world.blockedAttachmentState();
+      await user.press("Escape");
+      await hintCloses("Escape dismisses the attachment hint");
+      await user.notSee(reason);
+      const after = await world.blockedAttachmentState();
+      const witness = world.fileAccessWitness();
+      evidence.recordAssertionEvidence("the real blocked-control click opens only its reason, never a picker or upload", `${layout.description}; trusted ${inputKind} clicks ${before}→${witness.blockedPointerClicks}; focused after Escape ${after.focused}; picker opens ${witness.nativePickers.opened}; file writes ${witness.fileWrites.length}; all writes ${witness.allWrites.length}`, layout.fits && layout.noSidewaysScroll && state.blocked && state.reasonInAccessibleName && after.focused && witness.blockedPointerClicks === before + 1 && noFileAction());
+      expect(layout.fits && layout.noSidewaysScroll).toBe(true);
+      expect(state.blocked && state.reasonInAccessibleName && after.focused).toBe(true);
+      expect(witness.blockedPointerClicks).toBe(before + 1);
+      expect(witness.nativePickers).toEqual({ ready: true, opened: 0 });
+      expect(witness.fileWrites).toEqual([]);
+      expect(witness.allWrites).toEqual([]);
+      expect(after.nativeFileInputs).toBe(0);
+    });
+  }
+
+  await step("after: the member keeps writing without enabling files or changing their running work", async () => {
+    await user.type(composer, "Keep this draft while attachments are unavailable");
+    await user.see(composer, { value: "Keep this draft while attachments are unavailable" });
+    await user.notSee(reason);
+    await user.see({ text: "Launch brief" });
+    await user.see({ text: "Meeting notes" });
+    const tasks = (await probe.dom('[data-workbot-task]')).elements.length;
+    const witness = world.fileAccessWitness();
+    evidence.recordAssertionEvidence("the attachment hint leaves the conversation and file policy unchanged", `${tasks} original task cards; ${witness.blockedPointerClicks} trusted blocked-control clicks; native picker opens ${witness.nativePickers.opened}; file writes ${witness.fileWrites.length}; conversation writes ${witness.allWrites.length}; filesEnabled ${witness.filesEnabled}`, tasks === 2 && witness.blockedPointerClicks === 2 && !witness.filesEnabled && noFileAction());
+    expect(tasks).toBe(2);
+    expect(witness.blockedPointerClicks).toBe(2);
+    expect(witness.filesEnabled).toBe(false);
+    expect(noFileAction()).toBe(true);
+    await user.screenshot();
   });
 });

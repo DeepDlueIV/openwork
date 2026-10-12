@@ -1,5 +1,5 @@
 import { expect } from "vitest";
-import { spec, type User } from "@openwork/testkit";
+import { spec, type Probe, type User } from "@openwork/testkit";
 import { nativeSlackConnect } from "../worlds/native-slack-connect.ts";
 
 const test = spec.world(nativeSlackConnect, {
@@ -28,6 +28,50 @@ test("a platform admin rolls Slack search out by organization while members keep
   const adminProbe = probe.on(world.adminWeb);
   const otherOwner = user.on(world.otherWeb);
   const member = user.on(world.memberWeb);
+  const memberProbe = probe.on(world.memberWeb);
+  const denUrl = (path: string) => new URL(path, world.connectionsUrl).toString();
+  const preparePrompt = async (actor: User, actorProbe: Probe, prompt: string, label: string) => {
+    await step(`${label}: verify the draft and submission readiness`, async () => {
+      const readReadiness = async () => {
+        const state = await actorProbe.composer();
+        // Compare the actual draft exactly; evidence contains only flags and
+        // length, never arbitrary draft contents or credentials.
+        return {
+          draftMatchesPrompt: state.draftText === prompt,
+          draftLength: state.draftText.length,
+          composerEditable: state.composerEditable,
+          runTaskVisible: state.runTaskVisible,
+          runTaskEnabled: state.runTaskEnabled,
+          modelUnavailable: state.modelUnavailable,
+        };
+      };
+      const before = await readReadiness();
+      let afterTyping: Awaited<ReturnType<typeof readReadiness>> | null = null;
+      let last = before;
+      const assertion = `${label}: the exact draft is ready for one Run task click`;
+      try {
+        await actor.type("composer", prompt, { verify: true });
+        afterTyping = await readReadiness();
+        last = afterTyping;
+        const ready = await actorProbe.eventually(async () => {
+          last = await readReadiness();
+          return last;
+        }, {
+          within: 30_000, label: assertion,
+          until: state => state.draftMatchesPrompt && state.composerEditable && state.runTaskVisible
+            && state.runTaskEnabled && !state.modelUnavailable,
+        });
+        expect(ready).toMatchObject({ draftMatchesPrompt: true, composerEditable: true, runTaskVisible: true, runTaskEnabled: true, modelUnavailable: false });
+        evidence.recordAssertionEvidence(assertion, `Before typing: ${JSON.stringify(before)}; after verified typing: ${JSON.stringify(afterTyping)}; ready: ${JSON.stringify(ready)}.`, true);
+      } catch (error) {
+        const current = await readReadiness().catch(() => null);
+        evidence.recordAssertionEvidence(assertion, `Before typing: ${JSON.stringify(before)}; after typing: ${JSON.stringify(afterTyping)}; last observed: ${JSON.stringify(last)}; current: ${JSON.stringify(current)}. No submission was attempted.`, false);
+        // Diagnostics must not replace the original typing/readiness failure.
+        await actor.screenshot().catch(() => undefined);
+        throw error;
+      }
+    });
+  };
   const privateConversation = world.slack.conversations.find(entry => entry.type === "private_channel");
   if (!privateConversation) throw new Error("The synthetic private conversation is missing");
   let retainedSearchName = "";
@@ -150,6 +194,21 @@ test("a platform admin rolls Slack search out by organization while members keep
     await user.press("Escape");
   });
 
+  await step("before: managed Slack stays out of the loaded catalogs while its feature is off", async () => {
+    await admin.navigate(denUrl("/dashboard/mcp-connections/new"));
+    await admin.see({ testId: "slack-custom-app-disclosure" });
+    await admin.notSee({ testId: "connector-picker-slack-search" });
+    await admin.notSee({ testId: "connect-slack-search" });
+    await admin.screenshot();
+    await member.navigate(denUrl("/dashboard/library/connectors/new"));
+    await member.see({ testId: "slack-custom-app-disclosure" });
+    await member.notSee({ testId: "connector-picker-slack-search" });
+    await member.notSee({ testId: "connect-slack-search" });
+    expect(await world.connection("first")).toBeUndefined();
+    evidence.recordAssertionEvidence("The organization switch also controls web discovery", "The loaded admin catalog retains the custom-app choice but offers no managed Slack row or action. The member catalog likewise has no managed action, and the server has no native connection for the member.", true);
+    await member.screenshot();
+  });
+
   await step("an organization owner cannot grant themselves a platform feature", async () => {
     await otherOwner.see({ role: "heading", label: "Admin access required" }, { timeoutMs: 60_000 });
     const context = await world.memberRequest("other", "/v1/org");
@@ -167,12 +226,12 @@ test("a platform admin rolls Slack search out by organization while members keep
     await toggleOrganization(world.organizationId, world.organizationSlug, true);
     await expectFeature(world.otherOrganizationId, false, null, "everyone");
     const report = await world.organizationFeatures(world.organizationId);
-    expect(report.capabilities).toMatchObject({ nativeSlack: true, mcpConnections: true, slackAssistant: false, slackAssistantHeadless: false });
+    expect(report.capabilities).toMatchObject({ nativeSlack: true, mcpConnections: true, slackAssistant: false, slackWorkbotReplies: false });
     expect(await world.connection("first")).toMatchObject({ id: "slack", connectedForMe: false });
     expect(await world.connection("other")).toBeUndefined();
     const statuses = await expectBlocked("other");
     expect(world.slack.calls()).toHaveLength(0);
-    evidence.recordAssertionEvidence("One organization receives the shared feature override", `The generated Slack search checkbox saved A=true while B inherits false. Slack Assistant and its headless runtime remain false. B's start/status/search/threads returned ${statuses.join(" / ")}; 0 provider requests.`, true);
+    evidence.recordAssertionEvidence("One organization receives the shared feature override", `The generated Slack search checkbox saved A=true while B inherits false. Slack Assistant and its Workbot replies feature remain false. B's start/status/search/threads returned ${statuses.join(" / ")}; 0 provider requests.`, true);
     await admin.screenshot();
   });
 
@@ -216,9 +275,33 @@ test("a platform admin rolls Slack search out by organization while members keep
     await user.screenshot();
   });
 
-  await step("the member authorizes their own read-only Slack identity", async () => {
-    await user.click({ role: "button", label: "Connect Slack" });
-    const consent = user.on(await world.oauthSurface(world.app));
+  await step("after: the dashboard and catalogs offer the OpenWork app without custom setup", async () => {
+    await admin.navigate(denUrl("/dashboard"));
+    await admin.see({ testId: "quick-add-slack-search" });
+    await admin.see({ text: "Provided by OpenWork" });
+    await admin.screenshot();
+    await admin.navigate(denUrl("/dashboard/mcp-connections/new"));
+    await admin.see({ testId: "connector-picker-slack-search" });
+    await admin.see({ testId: "connect-slack-search" }, { text: "Connect Slack" });
+    expect((await adminProbe.dom('[data-testid="slack-custom-app-disclosure"][open]')).elements).toHaveLength(0);
+    await admin.click({ testId: "slack-custom-app-disclosure" });
+    await admin.see({ text: "Slack (custom app)" });
+    await admin.see({ role: "link", text: "Set up your app" });
+    await admin.screenshot();
+    await member.navigate(denUrl("/dashboard/library/connectors/new"));
+    await member.see({ testId: "connector-picker-slack-search" });
+    await member.see({ testId: "connect-slack-search" }, { text: "Connect Slack" });
+    expect((await memberProbe.dom('[data-testid="slack-custom-app-disclosure"][open]')).elements).toHaveLength(0);
+    await member.notSee({ text: /^Client ID$/i });
+    await member.notSee({ text: /^Client secret$/i });
+    expect(await world.connection("first")).toMatchObject({ connectedForMe: false });
+    evidence.recordAssertionEvidence("Managed Slack is discoverable without configuring a custom app", "Dashboard Quick add and both catalogs show Slack search with its personal Connect Slack action. The admin's custom-app option opens only on request; the member catalog asks for no developer credentials. No member is connected by these page visits.", true);
+    await member.screenshot();
+  });
+
+  await step("the member authorizes their own read-only Slack identity from the catalog", async () => {
+    await member.click({ testId: "connect-slack-search" });
+    const consent = user.on(await world.oauthSurface(world.memberWeb));
     await consent.see({ text: "Synthetic Slack consent" });
     await consent.screenshot();
     await consent.click({ role: "button", text: "Authorize member one" });
@@ -234,6 +317,15 @@ test("a platform admin rolls Slack search out by organization while members keep
     const identity = world.slack.calls().find(call => call.path === "/api/auth.test");
     expect(identity).toMatchObject({ member: "first", workspace: "TSYNTHETIC", error: null });
     expect(await world.connection("second")).toMatchObject({ connectedForMe: false });
+    await member.see({ testId: "connect-slack-search" }, { text: "Manage account", timeoutMs: 30_000 });
+    await member.click({ testId: "connect-slack-search" });
+    await member.see({ testId: "slack-search-account" });
+    await member.see({ testId: "disconnect-slack-search" });
+    await member.screenshot();
+    await member.navigate(world.connectionsUrl);
+    await user.reload();
+    await user.see("composer", { editable: true });
+    await openConnections(user);
     await probe.eventually(async () => (await probe.dom('button[aria-label="Connect Slack"]')).elements.length, {
       within: 60_000, label: "the connection menu observes the completed authorization", until: count => count === 0,
     });
@@ -246,7 +338,7 @@ test("a platform admin rolls Slack search out by organization while members keep
   await step("after: a natural request returns public, private and direct-message sources with bounded thread context", async () => {
     for (const conversation of world.slack.conversations) expect(world.prompt.first).not.toContain(conversation.id);
     expect(world.prompt.first).not.toContain("native:");
-    await user.type("composer", world.prompt.first);
+    await preparePrompt(user, probe, world.prompt.first, "First member");
     await user.click("Run task");
     for (const conversation of world.slack.conversations) await user.see({ text: conversation.text }, { timeoutMs: 90_000 });
     await user.see({ text: "Incomplete thread context: this is a bounded excerpt, not the complete thread." });
@@ -353,7 +445,7 @@ test("a platform admin rolls Slack search out by organization while members keep
   });
 
   await step("the second member cannot search or directly read the first member's private conversation", async () => {
-    await second.type("composer", world.prompt.second);
+    await preparePrompt(second, secondProbe, world.prompt.second, "Second member");
     await second.click("Run task");
     const publicConversation = world.slack.conversations.find(entry => entry.type === "public_channel");
     if (!publicConversation) throw new Error("Missing public fixture");
@@ -384,7 +476,7 @@ test("a platform admin rolls Slack search out by organization while members keep
     await user.see({ role: "heading", text: "You're connected" }, { timeoutMs: 30_000 });
     await user.navigate(world.appUrl);
     await user.see("composer", { editable: true });
-    await user.type("composer", world.prompt.partial);
+    await preparePrompt(user, probe, world.prompt.partial, "First member with partial consent");
     await user.click("Run task");
     await user.see({ text: "Limited access: private channels and direct messages were not searched, not reported as empty." }, { timeoutMs: 90_000 });
     await user.see("Run task");
@@ -435,7 +527,7 @@ test("a platform admin rolls Slack search out by organization while members keep
   await step("Slack search does not enable an assistant or accept organization app credentials", async () => {
     await otherOwner.see({ testId: "connect-my-mcp-account-slack" });
     expect((await world.organizationFeatures(world.otherOrganizationId)).capabilities).toMatchObject({
-      nativeSlack: true, slackAssistant: false, slackAssistantHeadless: false,
+      nativeSlack: true, slackAssistant: false, slackWorkbotReplies: false,
     });
     const before = world.slack.calls().length;
     const custom = await world.memberRequest("other", "/v1/oauth-providers/slack/client", "POST", {

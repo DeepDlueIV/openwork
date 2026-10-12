@@ -54,6 +54,15 @@ export const automationModelSchema = z.object({
 })
 export type AutomationModel = z.infer<typeof automationModelSchema>
 
+export function automationModelAllowedByProvider(config: Record<string, unknown>, modelId: string): boolean {
+  const readList = (value: unknown): string[] => Array.isArray(value)
+    ? value.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+    : []
+  const blacklist = readList(config.blacklist)
+  const whitelist = readList(config.whitelist)
+  return !blacklist.includes(modelId) && (!Array.isArray(config.whitelist) || whitelist.includes(modelId))
+}
+
 export const automationSavedScriptReferenceSchema = z.object({
   pluginId: idSchema,
   configObjectId: idSchema,
@@ -216,13 +225,19 @@ export const REMOTE_SESSION_DESKTOP_RUNNER_CAPABILITY = "remote_session_v1"
  * misread the request work item, so Den routes requests by this capability.
  */
 export const REMOTE_SESSION_CONTROL_RUNNER_CAPABILITY = "remote_session_control_v1"
+/** An interactive session runner, never a scheduled Automation executor. */
+export const REMOTE_SESSION_ONLY_RUNNER_CAPABILITY = "remote_session_only_v1"
+/** Sticky, same-owner recovery backed by a local effects journal. */
+export const REMOTE_SESSION_RECOVERY_RUNNER_CAPABILITY = "remote_session_recovery_v1"
 export const AUTOMATION_MODEL_ATTENTION_CAPABILITY_HEADER = "x-openwork-automation-model-attention" as const
 export const automationDesktopRunnerCapabilitySchema = z.enum([
   AUTOMATION_MODEL_ATTENTION_CAPABILITY,
   REMOTE_SESSION_DESKTOP_RUNNER_CAPABILITY,
   REMOTE_SESSION_CONTROL_RUNNER_CAPABILITY,
+  REMOTE_SESSION_ONLY_RUNNER_CAPABILITY,
+  REMOTE_SESSION_RECOVERY_RUNNER_CAPABILITY,
 ])
-export const AUTOMATION_DESKTOP_RUNNER_CAPABILITY_LIMIT = 3
+export const AUTOMATION_DESKTOP_RUNNER_CAPABILITY_LIMIT = 5
 export type AutomationDesktopRunnerCapability = z.infer<typeof automationDesktopRunnerCapabilitySchema>
 
 export const automationDesktopRunnerRegistrationSchema = z.object({
@@ -509,6 +524,8 @@ export const remoteSessionTranscriptMessageSchema = z.object({
 })
 export type RemoteSessionTranscriptMessage = z.infer<typeof remoteSessionTranscriptMessageSchema>
 export const remoteSessionReadResultSchema = z.object({
+  /** Whether the engine returned full history or only its current context. */
+  historyScope: z.enum(["full", "context"]).optional(),
   title: z.string().max(240).nullable(),
   status: remoteSessionStatusSchema,
   waitingFor: remoteSessionWaitingForSchema.nullable(),
@@ -757,6 +774,30 @@ export const automationListSchema = z.object({
   nextCursor: z.string().nullable(),
 }).meta({ ref: "AutomationList" })
 export type AutomationList = z.infer<typeof automationListSchema>
+
+/** Most days one calendar range read may cover (a month view plus padding). */
+export const AUTOMATION_RUN_RANGE_MAX_DAYS = 45
+
+export const automationRunRangeQuerySchema = z.object({
+  from: z.coerce.number().int().nonnegative().describe("Inclusive lower bound, epoch milliseconds."),
+  to: z.coerce.number().int().positive().describe("Exclusive upper bound, epoch milliseconds."),
+  cursor: z.string().trim().min(1).max(160).optional().describe("nextCursor from the previous page."),
+  limit: z.coerce.number().int().min(1).max(500).optional().describe("Maximum runs to scan for this page (default 200)."),
+}).refine((value) => value.to > value.from, { message: "to must be after from", path: ["to"] })
+  .refine((value) => value.to - value.from <= AUTOMATION_RUN_RANGE_MAX_DAYS * 24 * 60 * 60 * 1_000, {
+    message: `The range may cover at most ${AUTOMATION_RUN_RANGE_MAX_DAYS} days`, path: ["to"],
+  })
+export type AutomationRunRangeQuery = z.infer<typeof automationRunRangeQuerySchema>
+
+/**
+ * Runs of every Automation the caller owns, placed by scheduledFor (else
+ * startedAt, else createdAt). A non-null `nextCursor` means more may exist.
+ */
+export const automationRunRangeSchema = z.object({
+  items: z.array(automationRunSchema),
+  nextCursor: z.string().nullable(),
+}).meta({ ref: "AutomationRunRange" })
+export type AutomationRunRange = z.infer<typeof automationRunRangeSchema>
 
 export const automationDetailSchema = z.object({
   automation: automationSchema,

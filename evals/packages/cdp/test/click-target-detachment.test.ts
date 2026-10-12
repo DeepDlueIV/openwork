@@ -64,11 +64,13 @@ function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-type Fault = "detach" | "disabled" | "hidden" | "covered" | "dispatch-error";
+type Fault = "detach" | "disabled" | "hidden" | "covered" | "dispatch-error" | "activation-shift";
 
 function inject(surface: Surface, fault: Fault) {
   const inspections: unknown[] = [];
   const input: unknown[] = [];
+  const mousePoints: unknown[] = [];
+  const activations: { focused: boolean; moved: boolean; center: { x: number; y: number } }[] = [];
   const dispatchError = new TargetNotFoundError("Injected lost acknowledgement after the trusted click");
   const instrumented: Surface = {
     handle: surface.handle,
@@ -76,7 +78,23 @@ function inject(surface: Surface, fault: Fault) {
       close() {},
       async send(method, params, options) {
         if (method.startsWith("Input.")) input.push(params?.type);
+        if (method === "Input.dispatchMouseEvent") mousePoints.push({ x: params?.x, y: params?.y });
         const response = await surface.client.send(method, params, options);
+        if (method === "Page.bringToFront" && fault === "activation-shift") {
+          assert.deepEqual(input, [], "activation must precede input dispatch");
+          // Model a focus-driven layout update at the real activation reply.
+          // Reactivating the already focused page is idempotent: move only once.
+          activations.push(await callFunction(surface.client, (move) => {
+            const button = document.querySelector("button");
+            if (!button) throw new Error("Fixture button missing during activation");
+            if (move) button.style.marginLeft = "240px";
+            const rect = button.getBoundingClientRect();
+            return {
+              focused: document.hasFocus(), moved: move,
+              center: { x: rect.x + rect.width / 2, y: rect.y + rect.height / 2 },
+            };
+          }, [activations.length === 0]));
+        }
         if (method === "Input.dispatchMouseEvent" && params?.type === "mouseReleased" && fault === "dispatch-error") {
           // The browser has already delivered the click. Even an error of the
           // retryable locator class must not cause an input sequence to replay.
@@ -86,7 +104,7 @@ function inject(surface: Surface, fault: Fault) {
         assert.ok(record(response) && record(response.result) && record(response.result.value));
         const found = response.result.value;
         inspections.push(found);
-        if (inspections.length === 2 && fault !== "dispatch-error") {
+        if (inspections.length === 2 && fault !== "dispatch-error" && fault !== "activation-shift") {
           assert.equal(found.visible, true);
           assert.equal(found.hitTestOk, true);
           assert.equal(found.disabled, null);
@@ -131,7 +149,7 @@ function inject(surface: Surface, fault: Fault) {
       },
     },
   };
-  return { surface: instrumented, inspections, input, dispatchError };
+  return { surface: instrumented, inspections, input, mousePoints, activations, dispatchError };
 }
 
 async function clickCounts(surface: Surface) {
@@ -178,6 +196,22 @@ describe("clickTarget pre-dispatch target detachment (real Chrome)", { concurren
     assert.ok(outcome.value && outcome.value.center.x > 240, "must use the replacement's fresh geometry");
     assert.deepEqual(fixture.input, ["mouseMoved", "mousePressed", "mouseReleased"]);
     assert.deepEqual(counts, { clicks: 1, trusted: 1, reattached: true });
+  });
+
+  it("activates before measuring and delivers one trusted click at the post-activation geometry", async () => {
+    const fixture = inject(chrome.surface, "activation-shift");
+    const found = await clickTarget(fixture.surface, target, { timeoutMs: 1_000 });
+    assert.deepEqual(fixture.input, ["mouseMoved", "mousePressed", "mouseReleased"]);
+    assert.deepEqual(await clickCounts(chrome.surface), { clicks: 1, trusted: 1, reattached: false },
+      "activation moved the real target; stale pre-activation coordinates must not absorb the click");
+    assert.deepEqual(fixture.activations.map(({ focused, moved }) => ({ focused, moved })), [
+      { focused: true, moved: true }, { focused: true, moved: false },
+    ], "clickAt must retain activation without repeating the focused page's layout change");
+    const center = fixture.activations[0].center;
+    assert.ok(center.x > 240, "the activation must actually move the DOM button");
+    assert.deepEqual(fixture.activations[1].center, center, "second activation must be idempotent");
+    assert.deepEqual(found.center, center);
+    assert.deepEqual(fixture.mousePoints, [center, center, center]);
   });
 
   for (const fault of ["disabled", "hidden", "covered"] satisfies Fault[]) {

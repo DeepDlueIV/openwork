@@ -1,5 +1,5 @@
 import { expect } from "vitest";
-import { spec, type Probe, type User } from "@openwork/testkit";
+import { browserScript, spec, type Agent, type Probe, type User } from "@openwork/testkit";
 import { nativeSlackConnect } from "../worlds/native-slack-connect.ts";
 
 const test = spec.world(nativeSlackConnect, {
@@ -11,10 +11,15 @@ const test = spec.world(nativeSlackConnect, {
   needs: { commands: ["pnpm", "bun"] },
 });
 
-async function openConnections(user: User) {
-  await user.click({ role: "button", label: "Add files, skills, connectors, and more" });
-  await user.click({ role: "option", label: /^Connectors/ });
-}
+type AppActor = {
+  user: User;
+  probe: Probe;
+  agent: Agent;
+  email: string;
+  workspaceId: string;
+  url: string;
+  label: string;
+};
 
 async function closeConnections(user: User, probe: Probe) {
   // The picker handles Escape as Back in a submenu and Close at the root.
@@ -36,17 +41,94 @@ function record(value: unknown): Record<string, unknown> {
   return Object.fromEntries(Object.entries(value));
 }
 
-test("a platform admin rolls Slack search out by organization while members keep their own private access", async ({ world, user, probe, step, evidence }) => {
+test("a platform admin rolls Slack search out by organization while members keep their own private access", async ({ world, user, agent, probe, step, evidence }) => {
   const second = user.on(world.secondApp);
   const secondProbe = probe.on(world.secondApp);
+  const firstApp: AppActor = { user, probe, agent, email: world.first.email, workspaceId: world.workspaceId, url: world.appUrl, label: "First member" };
+  const secondApp: AppActor = { user: second, probe: secondProbe, agent: agent.on(world.secondApp), email: world.second.email, workspaceId: world.secondWorkspaceId, url: world.secondAppUrl, label: "Second member" };
   const admin = user.on(world.adminWeb);
   const adminProbe = probe.on(world.adminWeb);
   const otherOwner = user.on(world.otherWeb);
   const member = user.on(world.memberWeb);
   const memberProbe = probe.on(world.memberWeb);
   const denUrl = (path: string) => new URL(path, world.connectionsUrl).toString();
-  const preparePrompt = async (actor: User, actorProbe: Probe, prompt: string, label: string) => {
+  const recordedReadyApps = new Set<string>();
+  const waitForAccountReady = async (app: AppActor) => {
+    // An editable hero can precede Den restoration. Its draft-owner key changes
+    // when the verified identity arrives, remounting the composer and its menu.
+    // Both members were signed in by world setup; a persisted credential alone
+    // or an unavailable/checking auth state is not readiness for these actions.
+    const auth = await app.probe.eventually(async () => {
+      const state = record(await app.agent.run("auth.status"));
+      const member = state.user === null ? null : record(state.user);
+      return { status: state.status, expectedMember: member?.email === app.email };
+    }, {
+      within: 60_000, label: `${app.label}: the expected account has finished restoring`,
+      until: state => state.status === "signed_in" && state.expectedMember,
+    });
+    // probe.eval is needed for the public route inspector and browser document
+    // metadata: these are read-only observations, not React internals or app writes.
+    const route = await app.probe.eventually(() => app.probe.eval(browserScript((workspaceId) => {
+      const state = window.__openwork?.slice?.("route");
+      const workspace = state?.workspaces.find(item => item.id === workspaceId);
+      return {
+        connected: Boolean(state && "connected" in state && state.connected === true),
+        notLoading: Boolean(state && "loading" in state && state.loading === false),
+        connectionReady: Boolean(state && "connectionPending" in state && state.connectionPending === false),
+        noRouteError: Boolean(state && "routeError" in state && state.routeError === null),
+        expectedWorkspaceSelected: state?.selectedWorkspaceId === workspaceId,
+        workspaceLoaded: workspace?.loading === false,
+        noWorkspaceError: workspace?.error === null,
+      };
+    }, [app.workspaceId])), {
+      within: 60_000, label: `${app.label}: the expected workspace is connected and loaded`,
+      until: state => Object.values(state).every(value => value === true),
+    });
+    if (!recordedReadyApps.has(app.workspaceId)) {
+      evidence.recordAssertionEvidence(`${app.label}: account and workspace readiness`, JSON.stringify({ auth, route }), true);
+      recordedReadyApps.add(app.workspaceId);
+    }
+  };
+  const readDocument = (app: AppActor) => app.probe.eval(() => ({ url: location.href, timeOrigin: performance.timeOrigin }));
+  const waitForAppDocument = async (app: AppActor, previousTimeOrigin: number, requiresNewDocument: boolean) => {
+    await app.probe.eventually(() => app.probe.eval(browserScript((origin, previousTimeOrigin) => ({
+      expectedOrigin: location.origin === origin,
+      complete: document.readyState === "complete",
+      changedDocument: performance.timeOrigin !== previousTimeOrigin,
+    }), [new URL(app.url).origin, previousTimeOrigin])), {
+      within: 60_000, label: `${app.label}: ${requiresNewDocument ? "a new app document has loaded" : "the app document is ready"}`,
+      until: state => state.expectedOrigin && state.complete && (!requiresNewDocument || state.changedDocument),
+    });
+    await waitForAccountReady(app);
+  };
+  const reloadApp = async (app: AppActor) => {
+    const before = await readDocument(app);
+    await app.user.reload();
+    // readyState alone can still describe the retiring document after Page.reload.
+    await waitForAppDocument(app, before.timeOrigin, true);
+  };
+  const navigateToApp = async (app: AppActor) => {
+    const before = await readDocument(app);
+    const source = new URL(before.url);
+    const destination = new URL(app.url);
+    // user.navigate uses Page.navigate. Returning from OAuth changes the document;
+    // navigation to a fragment within the same origin/path/query need not do so.
+    const sameDocumentFragment = destination.hash !== "" && source.origin === destination.origin
+      && source.pathname === destination.pathname && source.search === destination.search;
+    await app.user.navigate(app.url);
+    // The web router may canonicalize the fragment URL to a pathname. Observe
+    // the app origin plus the public selected-workspace state, not a frozen URL.
+    await waitForAppDocument(app, before.timeOrigin, !sameDocumentFragment);
+  };
+  const openConnections = async (app: AppActor) => {
+    await waitForAccountReady(app);
+    await app.user.click({ role: "button", label: "Add files, skills, connectors, and more" });
+    await app.user.click({ role: "option", label: /^Connectors/ });
+  };
+  const preparePrompt = async (app: AppActor, prompt: string, label: string) => {
+    const { user: actor, probe: actorProbe } = app;
     await step(`${label}: verify the draft and submission readiness`, async () => {
+      await waitForAccountReady(app);
       const readReadiness = async () => {
         const state = await actorProbe.composer();
         // Compare the actual draft exactly; evidence contains only flags and
@@ -201,7 +283,7 @@ test("a platform admin rolls Slack search out by organization while members keep
     await expectBlocked("other");
     expect(world.slack.calls()).toHaveLength(0);
     await user.see("composer", { editable: true });
-    await openConnections(user);
+    await openConnections(firstApp);
     await user.notSee({ role: "button", label: "Connect Slack" });
     evidence.recordAssertionEvidence("Credentials do not grant the feature", "Both organizations inherit Slack search=false; neither has a native connection or catalog entry. Start/status/search/threads are denied and Slack received 0 requests despite configured synthetic client credentials.", true);
     await admin.screenshot();
@@ -251,9 +333,9 @@ test("a platform admin rolls Slack search out by organization while members keep
   });
 
   await step("after: the first member gets Connect Slack while the other organization has no entry", async () => {
-    await user.reload();
+    await reloadApp(firstApp);
     await user.see("composer", { editable: true });
-    await openConnections(user);
+    await openConnections(firstApp);
     await user.see({ role: "button", label: "Connect Slack" });
     await user.notSee({ text: /^Client ID$/i });
     await user.notSee({ text: /^Client secret$/i });
@@ -280,9 +362,9 @@ test("a platform admin rolls Slack search out by organization while members keep
 
   await step("restoring Connect makes the first member's authorization entry available again", async () => {
     await toggleOrganization(world.organizationId, world.organizationSlug, true, "mcpConnections");
-    await user.reload();
+    await reloadApp(firstApp);
     await user.see("composer", { editable: true });
-    await openConnections(user);
+    await openConnections(firstApp);
     await user.see({ role: "button", label: "Connect Slack" });
     expect(await world.connection("first")).toMatchObject({ connectedForMe: false });
     expect(await world.connection("other")).toBeUndefined();
@@ -398,9 +480,9 @@ test("a platform admin rolls Slack search out by organization while members keep
     await member.see({ testId: "disconnect-slack-search" });
     await member.screenshot();
     await member.navigate(world.connectionsUrl);
-    await user.reload();
+    await reloadApp(firstApp);
     await user.see("composer", { editable: true });
-    await openConnections(user);
+    await openConnections(firstApp);
     await probe.eventually(async () => (await probe.dom('button[aria-label="Connect Slack"]')).elements.length, {
       within: 60_000, label: "the connection menu observes the completed authorization", until: count => count === 0,
     });
@@ -413,7 +495,7 @@ test("a platform admin rolls Slack search out by organization while members keep
   await step("after: a natural request returns public, private and direct-message sources with bounded thread context", async () => {
     for (const conversation of world.slack.conversations) expect(world.prompt.first).not.toContain(conversation.id);
     expect(world.prompt.first).not.toContain("native:");
-    await preparePrompt(user, probe, world.prompt.first, "First member");
+    await preparePrompt(firstApp, world.prompt.first, "First member");
     await user.click("Run task");
     for (const conversation of world.slack.conversations) await user.see({ text: conversation.text }, { timeoutMs: 90_000 });
     await user.see({ text: "Incomplete thread context: this is a bounded excerpt, not the complete thread." });
@@ -477,7 +559,7 @@ test("a platform admin rolls Slack search out by organization while members keep
 
   await step("another Slack workspace connects automatically and cannot read the first workspace", async () => {
     await second.see("composer", { editable: true });
-    await openConnections(second);
+    await openConnections(secondApp);
     await second.click({ role: "button", label: "Connect Slack" });
     const consent = user.on(await world.oauthSurface(world.secondApp));
     await consent.see({ text: "Synthetic Slack consent" });
@@ -513,14 +595,14 @@ test("a platform admin rolls Slack search out by organization while members keep
     const secondIdentity = world.slack.calls().find(call => call.path === "/api/auth.test" && call.member === "second");
     expect(secondIdentity?.tokenId).toBeTruthy();
     expect(secondIdentity?.tokenId).not.toBe(firstIdentity?.tokenId);
-    await second.navigate(world.secondAppUrl);
+    await navigateToApp(secondApp);
     await second.see("composer", { editable: true });
     evidence.recordAssertionEvidence("Each member authorizes a distinct user token", "Both accounts completed the same read-only OAuth request, but auth.test observed different user-token fingerprints and different Slack user IDs in the same synthetic workspace.", true);
     await second.screenshot();
   });
 
   await step("the second member cannot search or directly read the first member's private conversation", async () => {
-    await preparePrompt(second, secondProbe, world.prompt.second, "Second member");
+    await preparePrompt(secondApp, world.prompt.second, "Second member");
     await second.click("Run task");
     const publicConversation = world.slack.conversations.find(entry => entry.type === "public_channel");
     if (!publicConversation) throw new Error("Missing public fixture");
@@ -549,9 +631,9 @@ test("a platform admin rolls Slack search out by organization while members keep
     await user.see({ text: "Synthetic Slack consent" });
     await user.click({ role: "button", text: "Authorize public access only" });
     await user.see({ role: "heading", text: "You're connected" }, { timeoutMs: 30_000 });
-    await user.navigate(world.appUrl);
+    await navigateToApp(firstApp);
     await user.see("composer", { editable: true });
-    await preparePrompt(user, probe, world.prompt.partial, "First member with partial consent");
+    await preparePrompt(firstApp, world.prompt.partial, "First member with partial consent");
     await user.click("Run task");
     await user.see({ text: "Limited access: private channels and direct messages were not searched, not reported as empty." }, { timeoutMs: 90_000 });
     await user.see("Run task");
@@ -585,7 +667,7 @@ test("a platform admin rolls Slack search out by organization while members keep
     expect(connection?.missingFeatures).toEqual(expect.arrayContaining(["privateChannels", "directMessages", "groupMessages"]));
     evidence.recordAssertionEvidence("Limited access is product state, not just model prose", "The Library says Connected with limited access while the native account remains connected and does not require reconnect. Optional private/DM feature omissions are retained; the encoded workspace/user identifier is not displayed.", true);
     await user.screenshot();
-    await user.navigate(world.appUrl);
+    await navigateToApp(firstApp);
   });
 
   await step("the platform admin separately enables Slack search for the other organization", async () => {

@@ -664,14 +664,17 @@ function assertInteractive(found: Located): void {
 }
 
 /**
- * Wait for a visible target, then re-inspect it immediately before dispatching so
- * a disabled state or a layout shift after the first inspection cannot absorb the click.
+ * Activate the surface, wait for a visible target, then re-inspect it before dispatching
+ * so a disabled state or a layout shift after the first inspection cannot absorb the click.
  */
 export async function clickTarget(
   surface: Surface,
   target: Target,
   options: { timeoutMs?: number; mustHitTest?: boolean; button?: "left" | "right" | "middle"; clickCount?: number } = {},
 ): Promise<Located> {
+  // Focus can change layout. Activate before measuring, not only inside clickAt;
+  // clickAt keeps its activation for callers that supply coordinates directly.
+  await surface.client.send("Page.bringToFront");
   const mustHitTest = options.mustHitTest ?? true;
   let remainingMs = options.timeoutMs ?? 30_000;
   const deadline = Date.now() + remainingMs;

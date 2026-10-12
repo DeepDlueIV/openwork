@@ -193,7 +193,8 @@ export async function nativeSlackConnect(seed: Seed, { place }: { place: Place }
     slack, model, engine, engineVersion, first: sessions.first, second: sessions.second,
     organizationId, otherOrganizationId, organizationSlug: text(organization.slug), otherOrganizationSlug: text(otherOrganization.slug),
     adminUrl: `${den.ref.webUrl}/admin`, featuresUrl: `${den.ref.webUrl}/admin/features`, connectionsUrl: `${den.ref.webUrl}/dashboard/your-connections`,
-    workspaceId: memberOne.workspace.workspaceId, memberRequest, searchHits: slackSearchHits, incomplete: slackIncomplete, limited: slackLimited, objects: slackResultObjects,
+    workspaceId: memberOne.workspace.workspaceId, secondWorkspaceId: memberTwo.workspace.workspaceId,
+    memberRequest, searchHits: slackSearchHits, incomplete: slackIncomplete, limited: slackLimited, objects: slackResultObjects,
     async organizationFeatures(organizationId: string) {
       const result = await denFetch(den.admin, `/v1/admin/organizations/${organizationId}/capabilities`, {
         headers: { authorization: `Bearer ${den.admin.token}` },

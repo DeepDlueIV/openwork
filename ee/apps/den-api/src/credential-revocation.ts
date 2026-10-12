@@ -33,6 +33,10 @@ export async function revokeMembershipSessionCredentials(input: {
     return { sessions: 0, oauthAccessTokens: 0, oauthRefreshTokens: 0 }
   }
 
+  // A request that read the membership before this change must not cache it
+  // again: MCP requests check membership through this cache.
+  await cache.org.revokeMembership({ organizationId: input.organizationId, userId: input.userId })
+
   const sessions = await db
     .select({ id: AuthSessionTable.id, token: AuthSessionTable.token, userId: AuthSessionTable.userId, expiresAt: AuthSessionTable.expiresAt, activeOrganizationId: AuthSessionTable.activeOrganizationId })
     .from(AuthSessionTable)

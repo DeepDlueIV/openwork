@@ -345,12 +345,39 @@ const ProjectionProviderTable = alias(ScimProviderTable, "scim_projection_provid
  * hand to an IdP-managed team fail closed. Active (not removed) members only.
  * Never cache: IdP removals and designation changes apply on the next check.
  * `lock: "share"` reads the latest committed memberships inside a transaction.
+ *
+ * Runs on most requests (the caller's Admin teams), and almost always matches
+ * nothing. The SCIM facts can only drop a membership, never add one
+ * (isAuthoritativeTeamMembership), so an unlocked read first checks the
+ * memberships alone and returns early when there are none; the SCIM joins
+ * only run when there is something for them to filter.
  */
 export async function listAuthoritativeTeamMemberships(
   database: PermissionDatabase,
   input: { organizationId: OrganizationId; memberId?: MemberId; adminTeamsOnly?: boolean; lock?: "share" },
 ): Promise<AuthoritativeTeamMembership[]> {
   const { organizationId } = input
+  const membershipJoin = and(
+    eq(MemberTable.id, TeamMemberTable.orgMembershipId),
+    eq(MemberTable.organizationId, TeamTable.organizationId),
+    isNull(MemberTable.removedAt),
+  )
+  const membershipFilter = and(
+    eq(TeamTable.organizationId, organizationId),
+    input.memberId !== undefined ? eq(MemberTable.id, input.memberId) : undefined,
+    input.adminTeamsOnly ? eq(TeamTable.grantsOrganizationAdmin, true) : undefined,
+  )
+
+  if (!input.lock) {
+    const candidates = await database.select({ teamMemberId: TeamMemberTable.id })
+      .from(TeamTable)
+      .innerJoin(TeamMemberTable, eq(TeamMemberTable.teamId, TeamTable.id))
+      .innerJoin(MemberTable, membershipJoin)
+      .where(membershipFilter)
+      .limit(1)
+    if (candidates.length === 0) return []
+  }
+
   const query = database.select({
     teamMemberId: TeamMemberTable.id,
     memberId: MemberTable.id,
@@ -366,11 +393,7 @@ export async function listAuthoritativeTeamMemberships(
   })
     .from(TeamTable)
     .innerJoin(TeamMemberTable, eq(TeamMemberTable.teamId, TeamTable.id))
-    .innerJoin(MemberTable, and(
-      eq(MemberTable.id, TeamMemberTable.orgMembershipId),
-      eq(MemberTable.organizationId, TeamTable.organizationId),
-      isNull(MemberTable.removedAt),
-    ))
+    .innerJoin(MemberTable, membershipJoin)
     .leftJoin(ScimGroupTable, and(eq(ScimGroupTable.teamId, TeamTable.id), eq(ScimGroupTable.organizationId, organizationId)))
     .leftJoin(ScimProviderTable, and(
       eq(ScimProviderTable.providerId, ScimGroupTable.providerId),
@@ -391,11 +414,7 @@ export async function listAuthoritativeTeamMemberships(
       eq(ProjectionProviderTable.providerId, ProjectionGroupTable.providerId),
       eq(ProjectionProviderTable.organizationId, organizationId),
     ))
-    .where(and(
-      eq(TeamTable.organizationId, organizationId),
-      input.memberId !== undefined ? eq(MemberTable.id, input.memberId) : undefined,
-      input.adminTeamsOnly ? eq(TeamTable.grantsOrganizationAdmin, true) : undefined,
-    ))
+    .where(membershipFilter)
   const rows = input.lock ? await query.for(input.lock) : await query
 
   // The left joins can repeat a membership; fold its rows into one set of facts.

@@ -46,10 +46,9 @@ import {
   readFeatureRollouts,
   readOrganizationFeatureOverrides,
   readOrganizationFeatureOverridesForMany,
-  setFeatureRollout,
-  setOrganizationFeatureOverrides,
   type FeatureOverrideChanges,
 } from "@openwork-ee/den-db/organization-features"
+import { updateFeatureRollout, updateOrganizationFeatureOverrides } from "../../features.js"
 import {
   FEATURE_KEYS,
   featureAvailableOn,
@@ -2165,7 +2164,7 @@ export function registerAdminRoutes<T extends { Variables: AuthContextVariables 
         }
         changes[key] = value
       }
-      const overrides = await setOrganizationFeatureOverrides(db, {
+      const overrides = await updateOrganizationFeatureOverrides({
         organizationId,
         changes,
         source: "platform",
@@ -2227,7 +2226,7 @@ export function registerAdminRoutes<T extends { Variables: AuthContextVariables 
       // every organization. Each organization's default sets are created on
       // first use by permission resolution (ensureDefaultPermissionSets), and
       // deploy-time reconciliation keeps existing sets current.
-      const rollouts = await setFeatureRollout(db, {
+      const rollouts = await updateFeatureRollout({
         key: key.data,
         enabled: body.data.enabled,
         killed: body.data.killed,

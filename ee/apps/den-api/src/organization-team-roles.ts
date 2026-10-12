@@ -1,6 +1,7 @@
 import { and, eq, isNull, or } from "@openwork-ee/den-db/drizzle"
 import { listAuthoritativeTeamMemberships } from "@openwork-ee/den-db/permissions"
 import { InvitationTable, MemberTable, OrganizationTable, TeamMemberTable, TeamTable } from "@openwork-ee/den-db/schema"
+import { cache } from "./cache.js"
 import { db } from "./db.js"
 import { withGatewayUsageEntitlementMutation } from "@openwork-ee/den-db/gateway-usage-limits"
 import { organizationRoleValueSatisfies } from "./organization-role-hierarchy.js"
@@ -12,15 +13,20 @@ export type TeamMutationTransaction = Parameters<Parameters<typeof db.transactio
 
 // Share this lock with invitations and SCIM teardown so a concurrent grant cannot
 // turn an already-authorized routine membership edit into a role assignment.
-export function withOrganizationTeamMutation<T>(
+// Every team and team-membership write runs here, so this is also where the
+// cached member-teams reads (cache.org.memberTeams) are invalidated: once, after
+// commit, so a concurrent reader cannot cache the pre-commit rows.
+export async function withOrganizationTeamMutation<T>(
   organizationId: typeof TeamTable.$inferSelect.organizationId,
   mutation: (tx: TeamMutationTransaction) => Promise<T>,
 ) {
-  return db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     await tx.select({ id: OrganizationTable.id }).from(OrganizationTable)
       .where(eq(OrganizationTable.id, organizationId)).for("update")
     return mutation(tx)
   })
+  await cache.org.invalidateMemberTeams(organizationId)
+  return result
 }
 
 export function withOrganizationMembershipUsageMutation<T>(
@@ -63,20 +69,28 @@ export async function listOrganizationAdminTeamGrants(organizationId: typeof Tea
   return grants.map((grant) => ({ memberId: grant.memberId, id: grant.teamId, name: grant.teamName }))
 }
 
+/** One member's Admin teams, under the same rule as listOrganizationAdminTeamGrants. */
+export async function listMemberAdminTeams(input: {
+  organizationId: typeof TeamTable.$inferSelect.organizationId
+  memberId: typeof MemberTable.$inferSelect.id
+}): Promise<OrganizationAdminTeam[]> {
+  const grants = await listAuthoritativeTeamMemberships(db, { ...input, adminTeamsOnly: true })
+  return grants.map((grant) => ({ id: grant.teamId, name: grant.teamName }))
+}
+
 export async function resolveOrganizationMemberAuthority(input: {
   organizationId: typeof MemberTable.$inferSelect.organizationId
   memberId: typeof MemberTable.$inferSelect.id
 }) {
-  const [members, grants] = await Promise.all([
+  const [members, adminTeams] = await Promise.all([
     db.select().from(MemberTable).where(and(
       eq(MemberTable.id, input.memberId),
       eq(MemberTable.organizationId, input.organizationId),
       isNull(MemberTable.removedAt),
     )).limit(1),
-    listOrganizationAdminTeamGrants(input.organizationId),
+    listMemberAdminTeams(input),
   ])
   const member = members[0]
   if (!member?.userId) return null
-  const adminTeams = grants.filter((grant) => grant.memberId === member.id).map(({ id, name }) => ({ id, name }))
   return { ...member, directRole: member.role, role: effectiveOrganizationRole(member.role, adminTeams), adminTeams }
 }

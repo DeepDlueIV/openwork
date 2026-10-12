@@ -73,6 +73,7 @@ import {
   RETIRED_STARTER_MARKETPLACE_NAME,
   RETIRED_STARTER_PLUGIN_NAMES,
 } from "./default-marketplaces.js"
+import { cache, type CachedOrgMember } from "../../../cache.js"
 import { db } from "../../../db.js"
 import { keysetAfter, keysetPage, type KeysetCursor } from "../../../list-pagination.js"
 import { resolveOrganizationMemberAuthority } from "../../../organization-team-roles.js"
@@ -1111,8 +1112,8 @@ function serializeConnectorAccount(row: ConnectorAccountRow, creatorName: string
   }
 }
 
-function resolveCreatorName(context: PluginArchActorContext, memberId: string) {
-  const member = context.organizationContext.members.find((entry) => entry.id === memberId)
+function resolveCreatorName(members: readonly CachedOrgMember[], memberId: string) {
+  const member = members.find((entry) => entry.id === memberId)
   if (!member) return null
   return member.user.name?.trim() || member.user.email || null
 }
@@ -3934,12 +3935,13 @@ export async function listConnectorAccounts(input: { context: PluginArchActorCon
     .from(ConnectorAccountTable)
     .where(eq(ConnectorAccountTable.organizationId, input.context.organizationContext.organization.id))
     .orderBy(desc(ConnectorAccountTable.updatedAt), desc(ConnectorAccountTable.id))
+  const members = await cache.org.members(input.context.organizationContext.organization.id)
 
   const filtered = rows
     .filter((row) => !input.connectorType || row.connectorType === input.connectorType)
     .filter((row) => !input.status || row.status === input.status)
     .filter((row) => !input.q || `${row.displayName}\n${row.remoteId}\n${row.externalAccountRef ?? ""}`.toLowerCase().includes(input.q.toLowerCase()))
-    .map((row) => serializeConnectorAccount(row, resolveCreatorName(input.context, row.createdByOrgMembershipId)))
+    .map((row) => serializeConnectorAccount(row, resolveCreatorName(members, row.createdByOrgMembershipId)))
 
   return pageItems(filtered, input.cursor, input.limit)
 }
@@ -3968,7 +3970,7 @@ export async function getConnectorAccountDetail(context: PluginArchActorContext,
   if (!row) {
     throw new PluginArchRouteFailure(404, "connector_account_not_found", "Connector account not found.")
   }
-  return serializeConnectorAccount(row, resolveCreatorName(context, row.createdByOrgMembershipId))
+  return serializeConnectorAccount(row, resolveCreatorName(await cache.org.members(context.organizationContext.organization.id), row.createdByOrgMembershipId))
 }
 
 export async function disconnectConnectorAccount(input: { connectorAccountId: ConnectorAccountId; context: PluginArchActorContext; reason?: string }) {
@@ -6711,8 +6713,6 @@ async function buildConnectorAutomationContext(input: { connectorInstance: Conne
         adminTeams: member.adminTeams,
         userId: member.userId,
       },
-      invitations: [],
-      members: [],
       organization: {
         allowedEmailDomains: organization.allowedEmailDomains ?? null,
         createdAt: organization.createdAt,
@@ -6724,7 +6724,6 @@ async function buildConnectorAutomationContext(input: { connectorInstance: Conne
         updatedAt: organization.updatedAt,
       },
       features,
-      teams: [],
     },
   } satisfies PluginArchActorContext
 }

@@ -148,6 +148,10 @@ before running the new runtime. Do not deploy it against the old table names.
   payloads, including multipart uploads, return `unsupported_media_type`.
   Provider-stored resources, prior-response/conversation references and hosted
   tools return `unsupported_gateway_resource` until ownership checks exist.
+  Clients that replay their own history (Codex) may give items ids when every
+  item's content is inline: messages, reasoning with encrypted content, and
+  client tool calls with their results. Tool namespaces may group only
+  client-executed tools, and `client_metadata` is caller telemetry.
   Caller-selected OpenAI organization/project headers and Bedrock guardrail
   references are also rejected before credential lookup.
   Inline content and client-executed function tools remain supported.

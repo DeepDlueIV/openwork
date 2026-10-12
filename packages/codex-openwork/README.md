@@ -56,8 +56,9 @@ npx codex-openwork setup --model gwm_… --yes
   The profile sets an `openwork` model provider that points at your
   organization's OpenWork AI Gateway (`…/api/v1`, OpenAI Responses format).
 - **`~/.openwork/codex-openwork/`** (or `$CODEX_OPENWORK_STATE_DIR`): your
-  sign-in (`credentials.json`, readable only by you) and `token-helper.mjs`, a
-  small script Codex runs to get your gateway key. The key is never written into
+  sign-in (`credentials.json`, readable only by you), `models-<profile>.json`
+  (model details for the profile) and `token-helper.mjs`, a small script Codex
+  runs to get your gateway key. The key is never written into
   Codex's config.
 - **The OpenWork MCP server** is declared inside the same profile file
   (`[mcp_servers.openwork]`), so it never changes `config.toml`. Sign in once
@@ -73,15 +74,23 @@ npx codex-openwork setup --model gwm_… --yes
   Anthropic, Gemini, and similar models are not offered. `models --all` shows
   them, marked as not compatible.
 - **Needs a gateway update.** The OpenWork AI Gateway currently rejects Codex's
-  requests (`unsupported_gateway_resource`): Codex sends message ids, tool
-  namespaces and thread ids in `client_metadata`, which the gateway treats as
-  stored provider state. The fix is in `ee/apps/gateway/src/payload-policy.ts`
-  in this branch; Codex works once that is deployed.
+  requests (`unsupported_gateway_resource`): Codex replays its history with item
+  ids, groups tools into namespaces and sends thread ids in `client_metadata`,
+  which the gateway treats as stored provider state. The fix is in
+  `ee/apps/gateway/src/payload-policy.ts` in this branch; Codex works once that
+  is deployed.
+- **Codex desktop app: not supported.** The app cannot select a profile
+  ([openai/codex#39527](https://github.com/openai/codex/issues/39527)), and this
+  tool never changes your main `config.toml`. Use the Codex CLI.
 - Codex's built-in web search is turned off in this profile, because the
   gateway does not run OpenAI-hosted tools. Use web search tools from your
   OpenWork MCP connections instead.
-- The profile is for the Codex CLI. It has not been tested with the Codex
-  desktop app or IDE extensions.
+- **Model details** come from Codex's own cached model list
+  (`models_cache.json`, present once you have used Codex signed in to ChatGPT).
+  Setup copies each gateway model's upstream entry, so Codex knows its context
+  window, reasoning levels and tools, and lists the gateway models in `/model`.
+  Models Codex does not know run with generic defaults. Run setup again after
+  updating Codex.
 - MCP sign-in is handled by Codex (`codex mcp login openwork`) in your browser.
 - The profile stores the path of the Node.js you ran setup with (the stable
   `node` on your PATH when it is the same program, so Homebrew upgrades keep

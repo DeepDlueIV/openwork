@@ -9,10 +9,12 @@ import {
   pick,
   readCredential,
   readTextFile,
+  remove,
   removeCredential,
   signOut,
   validateApiBaseUrl,
   writeCredential,
+  writeTextFileWithBackup,
   type Fetch,
   type GatewayInventory,
   type GatewayModelEntry,
@@ -32,6 +34,7 @@ import {
   type McpLookup,
   type RunCommand,
 } from "./codex.ts"
+import { buildCatalog, catalogFileName, catalogPath, readCodexModelCache, renderCatalog } from "./catalog.ts"
 import { installTokenHelper, removeTokenHelper } from "./helper.ts"
 import { compatibleModels, incompatibleModels, keyProvider, modelLabel } from "./models.ts"
 import {
@@ -261,6 +264,9 @@ export async function setup(args: ParsedArgs, deps: Deps): Promise<number> {
   const plan = withMcp ? planMcp(await lookupMcp(deps), url) : null
   const addMcp = plan?.kind === "add" || (plan?.kind === "unknown" && version === null)
 
+  const catalog = buildCatalog(models, await readCodexModelCache(home))
+  const catalogFile = catalog.models.some((entry) => entry.slug === model) ? catalogPath(dir, profileName) : null
+
   const helper = helperPath(dir)
   say(deps, "This will:")
   say(deps, `  • ${existing.kind === "missing" ? "Create" : "Replace"} the Codex profile ${profileFile}`)
@@ -268,6 +274,8 @@ export async function setup(args: ParsedArgs, deps: Deps): Promise<number> {
   if (addMcp) say(deps, `    It also adds the OpenWork MCP server (${url}) to that profile.`)
   say(deps, "    Your normal Codex setup (config.toml) is not changed.")
   say(deps, `  • Save a small helper at ${helper} that gives Codex your gateway key.`)
+  if (catalogFile) say(deps, `  • Save model details (context window, reasoning levels) for ${catalog.models.length} model(s) at ${catalogFile}.`)
+  else say(deps, "    Codex has no details for this model, so it uses generic defaults (run Codex signed in to ChatGPT once, then setup again, to fix this).")
   if (existing.kind === "foreign") say(deps, "    The existing profile file was not created by codex-openwork; a backup copy is kept.")
   say(deps)
   if (!(await agree(deps, "Continue?", yes))) {
@@ -276,6 +284,8 @@ export async function setup(args: ParsedArgs, deps: Deps): Promise<number> {
   }
 
   const helperFile = await installTokenHelper(dir)
+  if (catalogFile) await writeTextFileWithBackup(catalogFile, renderCatalog(catalog), { mode: 0o600, backup: false })
+  else await remove(dir, catalogFileName(profileName))
   const written = await writeProfile(
     profileFile,
     renderProfile({
@@ -284,6 +294,8 @@ export async function setup(args: ParsedArgs, deps: Deps): Promise<number> {
       gatewayBaseUrl,
       nodePath: deps.nodePath,
       helperPath: helperFile,
+      modelCatalogPath: catalogFile,
+      reasoningEffort: catalogFile ? catalog.defaultEffort.get(model) ?? null : null,
       mcp: addMcp ? { name: MCP_SERVER_NAME, url } : null,
     }),
     { stateDir: dir, force, now: deps.now },
@@ -449,6 +461,7 @@ export async function uninstall(args: ParsedArgs, deps: Deps): Promise<number> {
   else if (removed.status === "missing") say(deps, `No profile at ${profileFile}.`)
   else say(deps, `Left ${profileFile} alone: it was not created by codex-openwork.`)
   if (await removeTokenHelper(dir)) say(deps, "Removed the key helper.")
+  await remove(dir, catalogFileName(profileName))
   return 0
 }
 

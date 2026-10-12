@@ -45,6 +45,10 @@ export interface ProfileInput {
   readonly nodePath: string
   /** Absolute path of the token helper script. */
   readonly helperPath: string
+  /** Model catalog file giving Codex real metadata for the gwm ids, or null. */
+  readonly modelCatalogPath?: string | null
+  /** Default reasoning effort for the model, from the catalog. */
+  readonly reasoningEffort?: string | null
   /** OpenWork MCP gateway URL to add for this profile only, or null to leave MCP alone. */
   readonly mcp?: { readonly name: string; readonly url: string } | null
 }
@@ -55,6 +59,11 @@ export function renderProfile(input: ProfileInput): string {
     `# Use it with: codex --profile ${input.profileName}`,
     `model_provider = ${tomlString(PROVIDER_ID)}`,
     `model = ${tomlString(input.model)}`,
+    ...(input.modelCatalogPath ? [
+      "# Context window, reasoning levels and tools for the gateway's models, copied from Codex's own model list.",
+      `model_catalog_json = ${tomlString(input.modelCatalogPath)}`,
+    ] : []),
+    ...(input.reasoningEffort ? [`model_reasoning_effort = ${tomlString(input.reasoningEffort)}`] : []),
     "# The OpenWork AI Gateway does not run OpenAI-hosted tools such as web search.",
     `web_search = ${tomlString("disabled")}`,
     "",

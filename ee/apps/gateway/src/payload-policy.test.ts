@@ -40,6 +40,26 @@ test("still rejects hosted tools, including inside a namespace", () => {
   assert.equal(unsupportedGatewayPayload(codexRequest({ tools: [{ type: "namespace", name: "x" }] }), "openai", "openai"), "resource")
 })
 
+test("accepts a replayed Codex tool turn: calls and results with ids, all inline", () => {
+  const turn = [
+    { type: "function_call", id: "fc_1", call_id: "call_1", name: "exec_command", arguments: "{\"cmd\":\"ls\"}" },
+    { type: "function_call_output", id: "fco_1", call_id: "call_1", output: "calc.py" },
+    { type: "custom_tool_call", id: "ctc_1", call_id: "call_2", name: "apply_patch", input: "*** Begin Patch" },
+    { type: "custom_tool_call_output", id: "ctco_1", call_id: "call_2", output: [{ type: "input_text", text: "Done" }] },
+    { type: "message", id: "msg_a", role: "assistant", phase: "commentary", content: [{ type: "output_text", text: "Fixed." }] },
+  ]
+  assert.equal(unsupportedGatewayPayload(codexRequest({ input: turn }), "openai", "openai"), null)
+})
+
+test("tool results that point at stored files or remote images are rejected", () => {
+  const remote = { type: "function_call_output", id: "fco_1", call_id: "call_1", output: [{ type: "input_image", image_url: "https://example.test/a.png" }] }
+  const file = { type: "function_call_output", call_id: "call_1", output: [{ type: "input_file", file_id: "file_1" }] }
+  const noCall = { type: "function_call_output", id: "fco_1", output: "x" }
+  for (const item of [remote, file, noCall]) {
+    assert.equal(unsupportedGatewayPayload(codexRequest({ input: [item] }), "openai", "openai"), "resource")
+  }
+})
+
 test("an item id without complete inline content still counts as a stored reference", () => {
   const remoteImage = { type: "message", id: "msg_1", role: "user", content: [{ type: "input_image", image_url: "https://example.test/a.png" }] }
   const fileRef = { type: "message", id: "msg_2", role: "user", content: [{ type: "input_file", file_id: "file_1" }] }

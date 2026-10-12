@@ -17,8 +17,17 @@ function isInlineInputPart(part: unknown) {
 // Clients such as Codex give every replayed item an id, even with store:false.
 // Only items whose complete content is inline are accepted; an id alone never
 // refers to provider-stored state here.
+function isInlineToolOutput(output: unknown) {
+  return typeof output === "string" || (Array.isArray(output) && output.every(isInlineInputPart))
+}
+
 function isInlineResponseItem(item: JsonObject) {
-  if (item.type === "function_call") return typeof item.call_id === "string" && typeof item.name === "string" && typeof item.arguments === "string"
+  if (typeof item.call_id === "string") {
+    // Client-executed tool calls and their results replayed from the client's own history.
+    if (item.type === "function_call") return typeof item.name === "string" && typeof item.arguments === "string"
+    if (item.type === "custom_tool_call") return typeof item.name === "string" && typeof item.input === "string"
+    if (item.type === "function_call_output" || item.type === "custom_tool_call_output") return isInlineToolOutput(item.output)
+  }
   if (typeof item.id !== "string" || !item.id) return false
   if (item.type === "message") {
     if (!Array.isArray(item.content) || item.content.length === 0) return false

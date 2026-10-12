@@ -673,16 +673,31 @@ export async function clickTarget(
   options: { timeoutMs?: number; mustHitTest?: boolean; button?: "left" | "right" | "middle"; clickCount?: number } = {},
 ): Promise<Located> {
   const mustHitTest = options.mustHitTest ?? true;
-  const found = await waitForLocated(surface, target, { timeoutMs: options.timeoutMs, mustHitTest });
-  assertInteractive(found);
-  const fresh = await locate(surface, target);
-  assertInteractive(fresh);
-  if (!fresh.visible || (mustHitTest && !fresh.hitTestOk)) {
-    const covering = fresh.covering ? ` Covered by ${fresh.covering.tag}${fresh.covering.text ? ` text=${JSON.stringify(fresh.covering.text)}` : ""}.` : "";
-    throw new Error(`Target ${JSON.stringify(fresh.name)} moved before the click could be dispatched: ${describeRect(found.rect)} → ${describeRect(fresh.rect)} (visible=${fresh.visible}, hitTestOk=${fresh.hitTestOk}).${covering}`);
+  let remainingMs = options.timeoutMs ?? 30_000;
+  const deadline = Date.now() + remainingMs;
+  for (;;) {
+    const found = await waitForLocated(surface, target, { timeoutMs: remainingMs, mustHitTest });
+    assertInteractive(found);
+    let fresh: Located;
+    try {
+      fresh = await locate(surface, target);
+    } catch (error) {
+      // A rerender can detach the target after the stable snapshots. No input
+      // has been sent: reacquire within the original timeout, never click stale
+      // coordinates. Disabled/covered assertions and dispatch errors stay fatal.
+      if (!(error instanceof TargetNotFoundError) || Date.now() >= deadline) throw error;
+      remainingMs = Math.max(0, deadline - Date.now());
+      continue;
+    }
+    assertInteractive(fresh);
+    if (!fresh.visible || (mustHitTest && !fresh.hitTestOk)) {
+      const covering = fresh.covering ? ` Covered by ${fresh.covering.tag}${fresh.covering.text ? ` text=${JSON.stringify(fresh.covering.text)}` : ""}.` : "";
+      throw new Error(`Target ${JSON.stringify(fresh.name)} moved before the click could be dispatched: ${describeRect(found.rect)} → ${describeRect(fresh.rect)} (visible=${fresh.visible}, hitTestOk=${fresh.hitTestOk}).${covering}`);
+    }
+    // Deliberately outside the catch: once dispatch starts, never replay input.
+    await clickAt(surface, fresh.center, { button: options.button, clickCount: options.clickCount });
+    return fresh;
   }
-  await clickAt(surface, fresh.center, { button: options.button, clickCount: options.clickCount });
-  return fresh;
 }
 
 /** Require every inspection in the interval to observe a missing or hidden target. */

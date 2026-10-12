@@ -1,5 +1,6 @@
 "use client";
 
+import { AlertDialog } from "@base-ui/react/alert-dialog";
 import {
   AGENT_PERMISSION_DEFAULT_DECISION,
   AGENT_PERMISSION_EVERYONE,
@@ -20,32 +21,44 @@ import {
   type AgentPermissionSetting,
   type AgentPermissionSettings,
 } from "@openwork/types/den/agent-permissions";
-import { Check, CircleHelp, Lock, Plus, RotateCcw, Search, X } from "lucide-react";
-import { useId, useMemo, useState, type FormEvent, type ReactNode } from "react";
-import { DenButton } from "../../_components/ui/button";
+import { Check, ChevronRight, CircleHelp, Lock, LockKeyhole, Plus, RotateCcw, X } from "lucide-react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useId, useRef, useState, type FormEvent } from "react";
+import { DenButton, buttonVariants } from "../../_components/ui/button";
 import { DenChip } from "../../_components/ui/chip";
 import { DenInput } from "../../_components/ui/input";
 import { DenNotice } from "../../_components/ui/notice";
-import { DenPageHeader } from "../../_components/ui/page-header";
 import { DenSelect } from "../../_components/ui/select";
 import { DenSkeleton } from "../../_components/ui/skeleton";
 import { DenStickyActionBar } from "../../_components/ui/sticky-action-bar";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../../_components/ui/tooltip";
-import { getOrgAccessFlags, orgFeatureEnabled, permissionLockReason } from "../../_lib/den-org";
+import {
+  getAgentPermissionsRoute,
+  getAgentPermissionsScopeRoute,
+  getMembersRoute,
+  getNewTeamAgentPermissionsRoute,
+  getOrgAccessFlags,
+  orgFeatureEnabled,
+  permissionLockReason,
+} from "../../_lib/den-org";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
 import {
   EVERYONE_SCOPE,
+  hasTeamRecord,
   useAgentPermissions,
+  useRemoveTeamAgentPermissions,
   useSaveAgentPermissions,
+  type AgentPermissionPolicies,
   type AgentPermissionPolicy,
   type AgentPermissionScopeId,
 } from "./agent-permissions-data";
 import { useDenToast } from "./den-toast";
+import { LinkButton } from "./item-list";
+import { PermissionAreaSection, PermissionsPage } from "./permissions-ui";
 
 const INHERIT = "inherit";
-const TEAM_SEARCH_THRESHOLD = 8;
-
-type Drafts = Record<AgentPermissionScopeId, AgentPermissionSettings>;
+const TITLE = "Agent permissions";
 
 function sameSettings(left: AgentPermissionSettings, right: AgentPermissionSettings): boolean {
   return JSON.stringify(normalizeAgentPermissionSettings(left)) === JSON.stringify(normalizeAgentPermissionSettings(right));
@@ -62,7 +75,7 @@ function withSetting(settings: AgentPermissionSettings, key: AgentPermissionDefi
   return next;
 }
 
-function overrideCount(settings: AgentPermissionSettings): number {
+function setCount(settings: AgentPermissionSettings): number {
   return Object.keys(normalizeAgentPermissionSettings(settings)).length;
 }
 
@@ -77,89 +90,255 @@ function formatUpdated(value: string | null): string | null {
   return `Updated ${date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`;
 }
 
-function AgentPermissionsPage({ children }: { children: ReactNode }) {
-  return (
-    <section aria-label="Agent permissions" className="mx-auto flex w-full max-w-5xl flex-col gap-5 px-4 py-6 text-[13px] text-gray-900 sm:px-6">
-      <DenPageHeader size="compact" title="Agent permissions" />
-      {children}
-    </section>
-  );
+/** Who a record applies to, as state (DESIGN.md P1), like Permissions' rows. */
+function appliesTo(policy: AgentPermissionPolicy, memberCount: number): string {
+  return policy.scopeId === EVERYONE_SCOPE
+    ? `Everyone in the organization, ${plural(memberCount, "member", "members")}`
+    : `${policy.name} team, ${plural(policy.memberCount ?? 0, "member", "members")}`;
 }
 
-export function AgentPermissionsScreen() {
-  const { orgId, orgContext, orgBusy, orgError, refreshOrgData } = useOrgDashboard();
-  if (orgError && !orgBusy) {
-    return (
-      <AgentPermissionsPage>
-        <DenNotice tone="error" message="Couldn't verify workspace access." action={<DenButton variant="secondary" size="sm" onClick={() => void refreshOrgData()}>Try again</DenButton>} />
-      </AgentPermissionsPage>
-    );
-  }
-  if (orgBusy || !orgContext || !orgId) return <AgentPermissionsPage><EditorSkeleton /></AgentPermissionsPage>;
-  if (!orgFeatureEnabled(orgContext, "agentPermissions")) {
-    return (
-      <AgentPermissionsPage>
-        <div className="flex flex-col items-start gap-3" data-testid="agent-permissions-feature-off">
-          <DenNotice tone="neutral" icon={Lock} message="Agent permissions is an Enterprise feature. Contact us to turn it on for your organization." className="w-full" />
-        </div>
-      </AgentPermissionsPage>
-    );
-  }
-  if (!getOrgAccessFlags(orgContext.currentMember.role, orgContext.currentMember.isOwner, orgContext.currentMember.permissions).canViewAgentPermissions) {
-    return (
-      <AgentPermissionsPage>
-        <DenNotice tone="neutral" icon={Lock} message={permissionLockReason("agent_permissions.view")} />
-      </AgentPermissionsPage>
-    );
-  }
-  return (
-    <AgentPermissionsEditor
-      key={orgId}
-      orgId={orgId}
-      memberCount={orgContext.members.length}
-    />
-  );
+function setSummary(policy: AgentPermissionPolicy): string {
+  const count = setCount(policy.settings);
+  if (policy.scopeId === EVERYONE_SCOPE) return count === 0 ? "Everything allowed" : `${plural(count, "permission", "permissions")} set`;
+  return `${plural(count, "override", "overrides")}`;
 }
 
-function AgentPermissionsEditor({ orgId, memberCount }: { orgId: string; memberCount: number }) {
+type AgentPermissionsAccess =
+  | { state: "checking" | "error" | "feature_off" | "no_access" }
+  | { state: "ready"; orgId: string; orgSlug: string | null; canManage: boolean; memberCount: number };
+
+function useAgentPermissionsAccess(): AgentPermissionsAccess {
+  const { orgId, orgSlug, orgContext, orgBusy, orgError } = useOrgDashboard();
+  if (orgError && !orgBusy) return { state: "error" };
+  if (orgBusy || !orgContext || !orgId) return { state: "checking" };
+  if (!orgFeatureEnabled(orgContext, "agentPermissions")) return { state: "feature_off" };
+  const access = getOrgAccessFlags(orgContext.currentMember.role, orgContext.currentMember.isOwner, orgContext.currentMember.permissions);
+  if (!access.canViewAgentPermissions) return { state: "no_access" };
+  return { state: "ready", orgId, orgSlug, canManage: access.canManageAgentPermissions, memberCount: orgContext.members.length };
+}
+
+function AccessState({ access }: { access: AgentPermissionsAccess }) {
+  const { refreshOrgData } = useOrgDashboard();
+  if (access.state === "feature_off") {
+    return (
+      <div className="flex flex-col items-start gap-3" data-testid="agent-permissions-feature-off">
+        <DenNotice tone="neutral" icon={Lock} message="Agent permissions is an Enterprise feature. Contact us to turn it on for your organization." className="w-full" />
+      </div>
+    );
+  }
+  if (access.state === "no_access") return <DenNotice tone="neutral" icon={Lock} message={permissionLockReason("agent_permissions.view")} />;
+  if (access.state === "error") {
+    return <DenNotice tone="error" message="Couldn't verify workspace access." action={<DenButton variant="secondary" size="sm" onClick={() => void refreshOrgData()}>Try again</DenButton>} />;
+  }
+  return <EditorSkeleton />;
+}
+
+/** Loads every record, then renders `children` with them, or the loading and error states. */
+function WithPolicies({ orgId, children }: { orgId: string; children: (data: AgentPermissionPolicies) => React.ReactNode }) {
   const query = useAgentPermissions(orgId);
-  const save = useSaveAgentPermissions(orgId);
-  const toast = useDenToast();
-  const [selectedId, setSelectedId] = useState<AgentPermissionScopeId>(EVERYONE_SCOPE);
-  const [drafts, setDrafts] = useState<Drafts>({});
-  const [saveError, setSaveError] = useState<string | null>(null);
-
-  const policies = useMemo(() => query.data ? [query.data.everyone, ...query.data.teams] : [], [query.data]);
-
-  if (query.isPending) return <AgentPermissionsPage><EditorSkeleton /></AgentPermissionsPage>;
+  if (query.isPending) return <EditorSkeleton />;
   if (query.isError) {
     return (
-      <AgentPermissionsPage>
-        <DenNotice
-          tone="error"
-          message={query.error instanceof Error ? query.error.message : "Couldn't load agent permissions."}
-          action={<DenButton variant="secondary" size="sm" loading={query.isFetching} onClick={() => void query.refetch()}>Try again</DenButton>}
-        />
-      </AgentPermissionsPage>
+      <DenNotice
+        tone="error"
+        message={query.error instanceof Error ? query.error.message : "Couldn't load agent permissions."}
+        action={<DenButton variant="secondary" size="sm" loading={query.isFetching} onClick={() => void query.refetch()}>Try again</DenButton>}
+      />
+    );
+  }
+  return <>{children(query.data)}</>;
+}
+
+function ReadOnlyNotice() {
+  return <DenNotice tone="neutral" icon={LockKeyhole} message={<span id="agent-permissions-read-only">Read only. {permissionLockReason("agent_permissions.manage")}</span>} />;
+}
+
+// ---------------------------------------------------------------------------
+// The list: Everyone and every team that has its own record
+// ---------------------------------------------------------------------------
+
+export function AgentPermissionsScreen() {
+  const access = useAgentPermissionsAccess();
+  if (access.state !== "ready") return <PermissionsPage title={TITLE} testId="agent-permissions-landing"><AccessState access={access} /></PermissionsPage>;
+  const newButton = access.canManage ? (
+    <LinkButton href={getNewTeamAgentPermissionsRoute(access.orgSlug)} variant="secondary" size="sm" data-testid="new-team-agent-permissions">
+      <Plus className="size-3.5" aria-hidden="true" />
+      Create team agent permissions
+    </LinkButton>
+  ) : (
+    <DenButton variant="secondary" size="sm" icon={LockKeyhole} disabled aria-describedby="agent-permissions-read-only">Create team agent permissions</DenButton>
+  );
+  return (
+    <PermissionsPage title={TITLE} testId="agent-permissions-landing">
+      {!access.canManage ? <ReadOnlyNotice /> : null}
+      <WithPolicies orgId={access.orgId}>
+        {(data) => {
+          const teams = data.teams.filter(hasTeamRecord);
+          return (
+            <>
+              <div className="flex flex-col gap-2">
+                <PermissionAreaSection label="Defaults" testId="agent-permissions-defaults">
+                  <PolicyRow policy={data.everyone} memberCount={access.memberCount} href={getAgentPermissionsScopeRoute(access.orgSlug, EVERYONE_SCOPE)} />
+                </PermissionAreaSection>
+                <p className="text-[12px] text-gray-500">Everyone's agent permissions apply to every member, unless their team has its own.</p>
+              </div>
+              <PermissionAreaSection label="Team agent permissions" meta={newButton} testId="agent-permissions-teams">
+                {teams.length === 0 ? (
+                  <div className="flex min-h-12 items-center py-3 text-[13px] text-gray-500" data-testid="agent-permissions-teams-empty">
+                    No team agent permissions yet.
+                  </div>
+                ) : teams.map((policy) => (
+                  <PolicyRow key={policy.scopeId} policy={policy} memberCount={access.memberCount} href={getAgentPermissionsScopeRoute(access.orgSlug, policy.scopeId)} />
+                ))}
+              </PermissionAreaSection>
+            </>
+          );
+        }}
+      </WithPolicies>
+    </PermissionsPage>
+  );
+}
+
+function PolicyRow({ policy, memberCount, href }: { policy: AgentPermissionPolicy; memberCount: number; href: string }) {
+  return (
+    <Link
+      href={href}
+      data-testid={`agent-permissions-row-${policy.scopeId}`}
+      className="group flex min-h-12 items-center gap-3 py-2 transition-colors hover:bg-gray-50/70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400"
+    >
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="truncate text-[13px] font-medium text-gray-900">{policy.name}</span>
+        <span className="truncate text-[12px] text-gray-500">{appliesTo(policy, memberCount)}</span>
+      </div>
+      <span className="shrink-0 text-[12px] text-gray-700">{setSummary(policy)}</span>
+      <ChevronRight className="size-4 shrink-0 text-gray-300 transition-colors group-hover:text-gray-500" aria-hidden="true" strokeWidth={1.5} />
+    </Link>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Create: choose a team without its own record, set what differs from Everyone
+// ---------------------------------------------------------------------------
+
+export function NewTeamAgentPermissionsScreen() {
+  const access = useAgentPermissionsAccess();
+  const title = "New team agent permissions";
+  if (access.state !== "ready") return <PermissionsPage title={title} testId="new-team-agent-permissions"><AccessState access={access} /></PermissionsPage>;
+  const back = { href: getAgentPermissionsRoute(access.orgSlug), label: TITLE };
+  return (
+    <PermissionsPage title={title} back={back} testId="new-team-agent-permissions">
+      <WithPolicies orgId={access.orgId}>
+        {(data) => <NewTeamAgentPermissions access={access} data={data} />}
+      </WithPolicies>
+    </PermissionsPage>
+  );
+}
+
+function NewTeamAgentPermissions({ access, data }: { access: Extract<AgentPermissionsAccess, { state: "ready" }>; data: AgentPermissionPolicies }) {
+  const router = useRouter();
+  const toast = useDenToast();
+  const save = useSaveAgentPermissions(access.orgId);
+  const [teamId, setTeamId] = useState("");
+  const [settings, setSettings] = useState<AgentPermissionSettings>({});
+  const [error, setError] = useState<string | null>(null);
+  const teams = data.teams.filter((policy) => !hasTeamRecord(policy)).sort((a, b) => a.name.localeCompare(b.name));
+  const team = teams.find((entry) => entry.scopeId === teamId) ?? null;
+  const count = setCount(settings);
+
+  if (teams.length === 0) {
+    return (
+      <div className="flex flex-col items-start gap-2 py-2" data-testid="new-team-agent-permissions-empty">
+        <p className="text-[13px] text-gray-600">{data.teams.length === 0 ? "No teams yet. Create a team first, then give it agent permissions." : "Every team already has agent permissions."}</p>
+        {data.teams.length === 0 ? <LinkButton href={getMembersRoute(access.orgSlug)} variant="secondary" size="sm">Go to Members</LinkButton> : null}
+      </div>
     );
   }
 
-  const data = query.data;
-  const baseSettings = (scopeId: AgentPermissionScopeId) => policies.find((policy) => policy.scopeId === scopeId)?.settings ?? {};
-  const settingsFor = (scopeId: AgentPermissionScopeId) => drafts[scopeId] ?? baseSettings(scopeId);
-  const dirtyScopes = Object.keys(drafts).filter((scopeId) => !sameSettings(drafts[scopeId] ?? {}, baseSettings(scopeId)));
-  const editable = data.canEdit;
-  const selected = policies.find((policy) => policy.scopeId === selectedId) ?? data.everyone;
-  const everyone = settingsFor(EVERYONE_SCOPE);
-
-  function updateSettings(scopeId: AgentPermissionScopeId, update: (settings: AgentPermissionSettings) => AgentPermissionSettings) {
-    setSaveError(null);
-    setDrafts((current) => ({ ...current, [scopeId]: update(current[scopeId] ?? baseSettings(scopeId)) }));
+  async function create() {
+    if (!team || count === 0) return;
+    setError(null);
+    try {
+      await save.mutateAsync([{ scopeId: team.scopeId, settings: normalizeAgentPermissionSettings(settings) }]);
+      toast({ title: `Created agent permissions for ${team.name}`, description: "Members' apps apply them the next time they refresh." });
+      router.replace(getAgentPermissionsScopeRoute(access.orgSlug, team.scopeId));
+    } catch (failure) {
+      setError(failure instanceof Error && failure.message ? failure.message : "Couldn't create these agent permissions. Try again.");
+    }
   }
 
-  async function saveChanges(changes: { scopeId: AgentPermissionScopeId; settings: AgentPermissionSettings }[]) {
+  return (
+    <>
+      <div className="flex max-w-sm flex-col gap-1.5">
+        <span id="new-team-agent-permissions-team-label" className="text-[13px] font-medium text-gray-700">Team</span>
+        <DenSelect aria-labelledby="new-team-agent-permissions-team-label" data-testid="new-team-agent-permissions-team" value={teamId} onChange={(event) => { setError(null); setTeamId(event.target.value); }}>
+          <option value="">Choose a team</option>
+          {teams.map((entry) => <option key={entry.scopeId} value={entry.scopeId}>{entry.name}</option>)}
+        </DenSelect>
+        <p className="text-[12px] text-gray-500">Anything left as is follows Everyone's agent permissions.</p>
+      </div>
+      {error ? <DenNotice tone="error" message={error} /> : null}
+      <SettingsEditor
+        scopeId={team?.scopeId ?? "new"}
+        team={team?.name ?? "This team"}
+        settings={settings}
+        base={{}}
+        everyone={data.everyone.settings}
+        editable
+        onChange={(next) => { setError(null); setSettings(next); }}
+      />
+      <DenStickyActionBar testId="new-team-agent-permissions-save-bar" summary={<span>{team ? `${plural(count, "override", "overrides")} for ${team.name}` : "Choose a team to save"}</span>}>
+        <LinkButton variant="secondary" href={getAgentPermissionsRoute(access.orgSlug)}>Cancel</LinkButton>
+        <DenButton disabled={!team || count === 0} loading={save.isPending} onClick={() => void create()}>Create team agent permissions</DenButton>
+      </DenStickyActionBar>
+    </>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// One record: Everyone's or a team's
+// ---------------------------------------------------------------------------
+
+export function AgentPermissionsScopeScreen({ scopeId }: { scopeId: AgentPermissionScopeId }) {
+  const access = useAgentPermissionsAccess();
+  if (access.state !== "ready") return <PermissionsPage title={TITLE} testId="agent-permissions-scope"><AccessState access={access} /></PermissionsPage>;
+  const back = { href: getAgentPermissionsRoute(access.orgSlug), label: TITLE };
+  return (
+    <WithPolicies orgId={access.orgId}>
+      {(data) => {
+        const policy = scopeId === EVERYONE_SCOPE ? data.everyone : data.teams.find((entry) => entry.scopeId === scopeId && hasTeamRecord(entry));
+        if (!policy) {
+          return (
+            <PermissionsPage title={TITLE} back={back} testId="agent-permissions-scope">
+              <DenNotice tone="neutral" message="These agent permissions don't exist anymore. Go back to Agent permissions to see what's current." />
+            </PermissionsPage>
+          );
+        }
+        return <ScopeEditor key={`${policy.scopeId}-${policy.updatedAt ?? ""}`} access={access} data={data} policy={policy} back={back} />;
+      }}
+    </WithPolicies>
+  );
+}
+
+function ScopeEditor({ access, data, policy, back }: {
+  access: Extract<AgentPermissionsAccess, { state: "ready" }>;
+  data: AgentPermissionPolicies;
+  policy: AgentPermissionPolicy;
+  back: { href: string; label: string };
+}) {
+  const save = useSaveAgentPermissions(access.orgId);
+  const toast = useDenToast();
+  const [draft, setDraft] = useState<AgentPermissionSettings | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const editable = data.canEdit;
+  const isTeam = policy.scopeId !== EVERYONE_SCOPE;
+  const settings = draft ?? policy.settings;
+  const dirty = draft !== null && !sameSettings(draft, policy.settings);
+  const updated = formatUpdated(policy.updatedAt);
+  const caption = [appliesTo(policy, access.memberCount), setSummary({ ...policy, settings }), updated].filter(Boolean).join(" · ");
+
+  async function saveSettings(next: AgentPermissionSettings) {
     try {
-      await save.mutateAsync(changes);
+      await save.mutateAsync([{ scopeId: policy.scopeId, settings: next }]);
       return true;
     } catch (error) {
       setSaveError(error instanceof Error && error.message ? error.message : "Couldn't save agent permissions. Try again.");
@@ -168,175 +347,125 @@ function AgentPermissionsEditor({ orgId, memberCount }: { orgId: string; memberC
   }
 
   async function handleSave() {
-    const changes = dirtyScopes.map((scopeId) => ({ scopeId, settings: normalizeAgentPermissionSettings(drafts[scopeId]) }));
-    const previous = dirtyScopes.map((scopeId) => ({ scopeId, settings: baseSettings(scopeId) }));
-    if (!(await saveChanges(changes))) return;
-    setDrafts({});
+    if (!draft) return;
+    const previous = policy.settings;
+    setSaveError(null);
+    if (!(await saveSettings(normalizeAgentPermissionSettings(draft)))) return;
+    setDraft(null);
     toast({
       title: "Agent permissions saved",
       description: "Members' apps apply them the next time they refresh.",
       action: {
         label: "Undo",
         onClick: async () => {
-          if (await saveChanges(previous)) toast({ title: "Agent permissions restored" });
+          if (await saveSettings(previous)) toast({ title: "Agent permissions restored" });
         },
       },
     });
   }
 
-  const dirtyNames = dirtyScopes.map((scopeId) => policies.find((policy) => policy.scopeId === scopeId)?.name ?? AGENT_PERMISSION_EVERYONE);
-
   return (
-    <AgentPermissionsPage>
-      {!data.canEdit ? <DenNotice tone="neutral" icon={Lock} message={`Read only. ${permissionLockReason("agent_permissions.manage")}`} /> : null}
-      <div className="grid gap-6 md:grid-cols-[220px_minmax(0,1fr)]">
-        <ScopeRail
-          policies={policies}
-          selectedId={selected.scopeId}
-          memberCount={memberCount}
-          settingsFor={settingsFor}
-          dirtyScopes={dirtyScopes}
-          onSelect={setSelectedId}
-        />
-        <div className="min-w-0" data-testid="agent-permissions-editor" data-scope={selected.scopeId}>
-          <ScopeHeader
-            policy={selected}
-            memberCount={memberCount}
-            overrides={selected.scopeId === EVERYONE_SCOPE ? null : overrideCount(settingsFor(selected.scopeId))}
-            editable={editable}
-            onReset={() => updateSettings(selected.scopeId, () => ({}))}
-          />
-          <div className="mt-4 divide-y divide-gray-100 rounded-xl border border-gray-200 bg-white">
-            {agentPermissionSections.map((section) => (
-              <div key={section.id} className="py-1">
-                <h3 className="px-4 pb-1 pt-3 text-[12px] font-medium text-gray-500">{section.label}</h3>
-                {agentPermissionDefinitions.filter((definition) => definition.section === section.id).map((definition) => (
-                  <PermissionRow
-                    key={`${selected.scopeId}-${definition.key}`}
-                    definition={definition}
-                    team={selected.scopeId === EVERYONE_SCOPE ? null : selected.name}
-                    setting={settingsFor(selected.scopeId)[definition.key]}
-                    everyoneSetting={everyone[definition.key]}
-                    edited={!sameSetting(definition, settingsFor(selected.scopeId)[definition.key], baseSettings(selected.scopeId)[definition.key])}
-                    editable={editable}
-                    onChange={(setting) => updateSettings(selected.scopeId, (settings) => withSetting(settings, definition.key, setting))}
-                  />
-                ))}
-              </div>
-            ))}
-          </div>
-          <TryRequest everyone={everyone} team={selected.scopeId === EVERYONE_SCOPE ? null : { name: selected.name, settings: settingsFor(selected.scopeId) }} />
-        </div>
-      </div>
+    <PermissionsPage
+      title={policy.name}
+      back={back}
+      caption={<span data-testid="agent-permissions-scope-state">{caption}</span>}
+      action={isTeam && access.canManage ? <RemoveTeamAgentPermissions access={access} policy={policy} /> : undefined}
+      testId="agent-permissions-scope"
+    >
+      {!editable ? <ReadOnlyNotice /> : null}
+      <SettingsEditor
+        scopeId={policy.scopeId}
+        team={isTeam ? policy.name : null}
+        settings={settings}
+        base={policy.settings}
+        everyone={data.everyone.settings}
+        editable={editable}
+        onChange={(next) => { setSaveError(null); setDraft(next); }}
+      />
       {saveError ? <DenNotice tone="error" message={saveError} /> : null}
-      {dirtyScopes.length > 0 ? (
-        <DenStickyActionBar
-          testId="agent-permissions-save-bar"
-          summary={<span>Unsaved changes for {dirtyNames.join(", ")}</span>}
-        >
-          <DenButton variant="ghost" size="sm" disabled={save.isPending} onClick={() => { setDrafts({}); setSaveError(null); }}>Discard</DenButton>
+      {dirty ? (
+        <DenStickyActionBar testId="agent-permissions-save-bar" summary={<span>Unsaved changes for {policy.name}</span>}>
+          <DenButton variant="ghost" size="sm" disabled={save.isPending} onClick={() => { setDraft(null); setSaveError(null); }}>Discard</DenButton>
           <DenButton variant="primary" size="sm" loading={save.isPending} disabled={!editable} onClick={() => void handleSave()}>Save changes</DenButton>
         </DenStickyActionBar>
       ) : null}
-    </AgentPermissionsPage>
+    </PermissionsPage>
   );
 }
 
-function ScopeRail({ policies, selectedId, memberCount, settingsFor, dirtyScopes, onSelect }: {
-  policies: AgentPermissionPolicy[];
-  selectedId: AgentPermissionScopeId;
-  memberCount: number;
-  settingsFor: (scopeId: AgentPermissionScopeId) => AgentPermissionSettings;
-  dirtyScopes: AgentPermissionScopeId[];
-  onSelect: (scopeId: AgentPermissionScopeId) => void;
-}) {
-  const [search, setSearch] = useState("");
-  const teams = policies.filter((policy) => policy.scopeId !== EVERYONE_SCOPE);
-  const visibleTeams = teams.filter((team) => team.name.toLowerCase().includes(search.trim().toLowerCase()));
+function RemoveTeamAgentPermissions({ access, policy }: { access: Extract<AgentPermissionsAccess, { state: "ready" }>; policy: AgentPermissionPolicy }) {
+  const router = useRouter();
+  const toast = useDenToast();
+  const cancelRef = useRef<HTMLButtonElement>(null);
+  const [open, setOpen] = useState(false);
+  const remove = useRemoveTeamAgentPermissions(access.orgId, policy.scopeId);
+
+  async function confirm() {
+    try {
+      await remove.mutateAsync();
+      setOpen(false);
+      toast({ title: `Removed agent permissions for ${policy.name}` });
+      router.push(getAgentPermissionsRoute(access.orgSlug));
+    } catch {
+      return;
+    }
+  }
+
   return (
-    <nav aria-label="Who the permissions apply to" className="flex flex-col gap-1">
-      {policies.filter((policy) => policy.scopeId === EVERYONE_SCOPE).map((policy) => (
-        <ScopeButton
-          key={policy.scopeId}
-          policy={policy}
-          meta={plural(memberCount, "member", "members")}
-          selected={selectedId === policy.scopeId}
-          dirty={dirtyScopes.includes(policy.scopeId)}
-          customized={false}
-          onSelect={onSelect}
-        />
-      ))}
-      {teams.length > 0 ? <p className="px-3 pb-1 pt-4 text-[12px] font-medium text-gray-500">Teams</p> : null}
-      {teams.length > TEAM_SEARCH_THRESHOLD ? (
-        <label className="relative mb-1 block">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-gray-400" aria-hidden="true" />
-          <DenInput aria-label="Find a team" placeholder="Find a team" className="pl-8" value={search} onChange={(event) => setSearch(event.target.value)} />
-        </label>
-      ) : null}
-      {visibleTeams.map((team) => (
-        <ScopeButton
-          key={team.scopeId}
-          policy={team}
-          meta={plural(team.memberCount ?? 0, "member", "members")}
-          selected={selectedId === team.scopeId}
-          dirty={dirtyScopes.includes(team.scopeId)}
-          customized={overrideCount(settingsFor(team.scopeId)) > 0}
-          onSelect={onSelect}
-        />
-      ))}
-      {teams.length > TEAM_SEARCH_THRESHOLD && visibleTeams.length === 0 ? <p className="px-3 py-2 text-[12px] text-gray-500">No team matches. Try another name.</p> : null}
-    </nav>
+    <AlertDialog.Root open={open} onOpenChange={(next) => { if (!remove.isPending) { remove.reset(); setOpen(next); } }}>
+      <AlertDialog.Trigger className={buttonVariants({ variant: "secondary", size: "sm" })} data-testid="remove-team-agent-permissions">Remove</AlertDialog.Trigger>
+      <AlertDialog.Portal>
+        <AlertDialog.Backdrop className="fixed inset-0 z-50 bg-gray-950/45" />
+        <AlertDialog.Popup initialFocus={cancelRef} className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-[16px] border border-gray-200 bg-white p-5 outline-none">
+          <AlertDialog.Title className="text-[15px] font-medium text-gray-950">Remove agent permissions for {policy.name}?</AlertDialog.Title>
+          <AlertDialog.Description className="mt-2 text-[13px] leading-5 text-gray-600">
+            People in {policy.name} get Everyone's agent permissions again the next time their apps refresh.
+          </AlertDialog.Description>
+          {remove.error ? <DenNotice tone="error" className="mt-3" message={remove.error.message} /> : null}
+          <div className="mt-5 flex justify-end gap-2">
+            <AlertDialog.Close ref={cancelRef} disabled={remove.isPending} className={buttonVariants({ variant: "secondary" })}>Cancel</AlertDialog.Close>
+            <DenButton variant="destructive" loading={remove.isPending} onClick={() => void confirm()}>Remove permissions</DenButton>
+          </div>
+        </AlertDialog.Popup>
+      </AlertDialog.Portal>
+    </AlertDialog.Root>
   );
 }
 
-function ScopeButton({ policy, meta, selected, dirty, customized, onSelect }: {
-  policy: AgentPermissionPolicy;
-  meta: string;
-  selected: boolean;
-  dirty: boolean;
-  customized: boolean;
-  onSelect: (scopeId: AgentPermissionScopeId) => void;
-}) {
-  return (
-    <button
-      type="button"
-      aria-current={selected ? "true" : undefined}
-      data-testid={`agent-permissions-scope-${policy.scopeId}`}
-      onClick={() => onSelect(policy.scopeId)}
-      className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-900 ${selected ? "bg-gray-100" : "hover:bg-gray-50"}`}
-    >
-      <span className="min-w-0">
-        <span className="flex items-center gap-1.5">
-          <span className="truncate text-[13px] font-medium text-gray-900">{policy.name}</span>
-          {dirty ? <span className="size-1.5 shrink-0 rounded-full bg-sky-500" aria-label="Unsaved changes" /> : null}
-        </span>
-        <span className="block text-[12px] text-gray-500">{meta}</span>
-      </span>
-      {customized ? <DenChip>Custom</DenChip> : null}
-    </button>
-  );
-}
-
-function ScopeHeader({ policy, memberCount, overrides, editable, onReset }: {
-  policy: AgentPermissionPolicy;
-  memberCount: number;
-  /** Null for everyone. */
-  overrides: number | null;
+/** Every permission for one record, then Try a request. */
+function SettingsEditor({ scopeId, team, settings, base, everyone, editable, onChange }: {
+  scopeId: AgentPermissionScopeId;
+  /** The team's name, or null for Everyone's record. */
+  team: string | null;
+  settings: AgentPermissionSettings;
+  /** What is saved, to mark edited rows. */
+  base: AgentPermissionSettings;
+  everyone: AgentPermissionSettings;
   editable: boolean;
-  onReset: () => void;
+  onChange: (settings: AgentPermissionSettings) => void;
 }) {
-  const people = plural(policy.memberCount ?? memberCount, "member", "members");
-  const state = overrides === null ? `All ${people}` : overrides === 0 ? `${people}, same as Everyone` : `${people}, ${plural(overrides, "override", "overrides")}`;
-  const updated = formatUpdated(policy.updatedAt);
   return (
-    <div className="flex flex-wrap items-start justify-between gap-3">
-      <div className="min-w-0">
-        <h2 className="text-[16px] font-semibold tracking-[-0.01em] text-gray-950">{policy.name}</h2>
-        <p className="mt-0.5 text-[12px] text-gray-500" data-testid="agent-permissions-scope-state">{updated ? `${state}. ${updated}` : state}</p>
+    <div className="min-w-0" data-testid="agent-permissions-editor" data-scope={scopeId}>
+      <div className="divide-y divide-gray-100 rounded-xl border border-gray-200 bg-white">
+        {agentPermissionSections.map((section) => (
+          <div key={section.id} className="py-1">
+            <h3 className="px-4 pb-1 pt-3 text-[12px] font-medium text-gray-500">{section.label}</h3>
+            {agentPermissionDefinitions.filter((definition) => definition.section === section.id).map((definition) => (
+              <PermissionRow
+                key={`${scopeId}-${definition.key}`}
+                definition={definition}
+                team={team}
+                setting={settings[definition.key]}
+                everyoneSetting={team === null ? settings[definition.key] : everyone[definition.key]}
+                edited={!sameSetting(definition, settings[definition.key], base[definition.key])}
+                editable={editable}
+                onChange={(setting) => onChange(withSetting(settings, definition.key, setting))}
+              />
+            ))}
+          </div>
+        ))}
       </div>
-      {overrides ? (
-        <DenButton variant="secondary" size="sm" icon={RotateCcw} disabled={!editable} onClick={onReset}>Use Everyone's permissions</DenButton>
-      ) : null}
+      <TryRequest everyone={team === null ? settings : everyone} team={team === null ? null : { name: team, settings }} />
     </div>
   );
 }
@@ -680,22 +809,13 @@ function TryRequest({ everyone, team }: { everyone: AgentPermissionSettings; tea
 
 function EditorSkeleton() {
   return (
-    <div className="grid gap-6 md:grid-cols-[220px_minmax(0,1fr)]" data-testid="agent-permissions-loading">
-      <div className="flex flex-col gap-2">
-        {[0, 1, 2].map((index) => <DenSkeleton key={index} className="h-11 w-full rounded-lg" />)}
-      </div>
-      <div className="flex flex-col gap-3">
-        <DenSkeleton className="h-5 w-32" />
-        <DenSkeleton className="h-3 w-48" />
-        <div className="mt-2 flex flex-col gap-2 rounded-xl border border-gray-200 p-4">
-          {[0, 1, 2, 3, 4, 5].map((index) => (
-            <div key={index} className="flex items-center justify-between py-1.5">
-              <DenSkeleton className="h-3.5 w-36" />
-              <DenSkeleton className="h-8 w-[190px] rounded-lg" />
-            </div>
-          ))}
+    <div className="flex flex-col gap-2 rounded-xl border border-gray-200 p-4" data-testid="agent-permissions-loading">
+      {[0, 1, 2, 3, 4, 5].map((index) => (
+        <div key={index} className="flex items-center justify-between py-1.5">
+          <DenSkeleton className="h-3.5 w-36" />
+          <DenSkeleton className="h-8 w-[190px] rounded-lg" />
         </div>
-      </div>
+      ))}
     </div>
   );
 }

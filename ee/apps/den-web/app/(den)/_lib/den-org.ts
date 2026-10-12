@@ -735,6 +735,15 @@ export function getAgentPermissionsRoute(orgSlug?: string | null): string {
   return `${getOrgDashboardRoute(orgSlug)}/agent-permissions`;
 }
 
+export function getNewTeamAgentPermissionsRoute(orgSlug?: string | null): string {
+  return `${getAgentPermissionsRoute(orgSlug)}/new`;
+}
+
+/** One record: "everyone" or a team's id. */
+export function getAgentPermissionsScopeRoute(orgSlug: string | null | undefined, scopeId: string): string {
+  return `${getAgentPermissionsRoute(orgSlug)}/${encodeURIComponent(scopeId)}`;
+}
+
 export function getDesktopPoliciesRoute(orgSlug?: string | null): string {
   return `${getOrgDashboardRoute(orgSlug)}/desktop-policies`;
 }

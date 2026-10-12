@@ -119,3 +119,29 @@ export function useSaveAgentPermissions(orgId: string) {
     onSettled: () => queryClient.invalidateQueries({ queryKey: agentPermissionsQueryKey(orgId) }),
   });
 }
+
+/** Removes a team's agent permissions, so its members get Everyone's again. */
+export function useRemoveTeamAgentPermissions(orgId: string, teamId: string) {
+  const queryClient = useQueryClient();
+  const { runReauthableAction } = useOrgDashboard();
+  return useMutation({
+    mutationKey: [...agentPermissionsQueryKey(orgId), "remove", teamId],
+    retry: false,
+    mutationFn: async () => {
+      await runReauthableAction("remove-team-agent-permissions", async () => {
+        const { response, payload } = await requestJson(
+          scopePath(teamId),
+          { method: "DELETE", headers: { [ORG_SCOPE_HEADER]: orgId } },
+          15000,
+        );
+        if (!response.ok) throw getRequestError(payload, response, `Couldn't remove these agent permissions (${response.status}).`);
+      });
+    },
+    onSettled: () => queryClient.invalidateQueries({ queryKey: agentPermissionsQueryKey(orgId) }),
+  });
+}
+
+/** Whether a team has its own agent permissions: a saved record, not Everyone's. */
+export function hasTeamRecord(policy: AgentPermissionPolicy): boolean {
+  return policy.scopeId !== EVERYONE_SCOPE && policy.updatedAt !== null;
+}

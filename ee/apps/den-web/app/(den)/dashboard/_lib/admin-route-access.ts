@@ -75,6 +75,7 @@ const ADMIN_ROUTE_RULES: readonly AdminRouteRule[] = [
   { prefix: getPermissionsRoute(), allowed: (access) => access.canViewPermissions, needs: ["permissions.view"] },
   { prefix: `${getPermissionsRoute()}/new`, allowed: (access) => access.canManagePermissions, needs: ["permissions.manage"] },
   { prefix: getAgentPermissionsRoute(), allowed: (access) => access.canViewAgentPermissions, needs: ["agent_permissions.view"] },
+  { prefix: `${getAgentPermissionsRoute()}/new`, allowed: (access) => access.canManageAgentPermissions, needs: ["agent_permissions.manage"] },
   { prefix: getMcpConnectionsRoute(), allowed: (access) => access.canViewAllConnections, needs: ["connections.view"] },
   { prefix: `${getMcpConnectionsRoute()}/new`, allowed: (access) => access.canManageConnections, needs: ["connections.manage"] },
   {

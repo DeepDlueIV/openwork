@@ -131,6 +131,10 @@ export type DenOrgAccessFlags = {
   canViewPermissions: boolean;
   /** `permissions.manage`: change Member, Admin and team permissions. */
   canManagePermissions: boolean;
+  /** `agent_permissions.view`: what agents can do on members' computers. */
+  canViewAgentPermissions: boolean;
+  /** `agent_permissions.manage`: change what agents can do on members' computers. */
+  canManageAgentPermissions: boolean;
   /** `api_keys.view` */
   canViewApiKeys: boolean;
   /** `api_keys.manage` */
@@ -588,6 +592,8 @@ export function getOrgAccessFlags(roleValue: string, isOwner: boolean, permissio
     canManageAdminTeams: can("teams.manage_admin"),
     canViewPermissions: can("permissions.view"),
     canManagePermissions: can("permissions.manage"),
+    canViewAgentPermissions: can("agent_permissions.view"),
+    canManageAgentPermissions: can("agent_permissions.manage"),
     canViewApiKeys: can("api_keys.view"),
     canManageApiKeys: can("api_keys.manage"),
     canViewScim: can("scim.view"),

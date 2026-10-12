@@ -52,7 +52,6 @@ const ADMIN_ROUTE_RULES: readonly AdminRouteRule[] = [
   { prefix: getCustomLlmProvidersRoute(), allowed: (access) => access.canViewAllLlmProviders, needs: ["llm_providers.view"] },
   { prefix: getDesktopPoliciesRoute(), allowed: (access) => access.canViewDesktopPolicies, needs: ["desktop_policies.view"] },
   { prefix: getWorkbotSettingsRoute(), allowed: (access) => access.canViewModelsSettings, needs: ["inference.view"] },
-  { prefix: getAgentPermissionsRoute(), allowed: (access) => access.canViewDesktopPolicies, needs: ["desktop_policies.view"] },
   { prefix: getDeploymentsRoute(), allowed: (access) => access.canViewDeployments, needs: ["deployments.view"] },
   { prefix: getAnalyticsRoute(), allowed: (access) => access.canViewUsageAnalytics, needs: ["usage_analytics.view"] },
   { prefix: getDiagnosticsRoute(), allowed: (access) => access.canViewEgressDiagnostics, needs: ["egress_diagnostics.view"] },
@@ -75,6 +74,7 @@ const ADMIN_ROUTE_RULES: readonly AdminRouteRule[] = [
   // Feature-off and read-only states are shown by the Permissions screens themselves.
   { prefix: getPermissionsRoute(), allowed: (access) => access.canViewPermissions, needs: ["permissions.view"] },
   { prefix: `${getPermissionsRoute()}/new`, allowed: (access) => access.canManagePermissions, needs: ["permissions.manage"] },
+  { prefix: getAgentPermissionsRoute(), allowed: (access) => access.canViewAgentPermissions, needs: ["agent_permissions.view"] },
   { prefix: getMcpConnectionsRoute(), allowed: (access) => access.canViewAllConnections, needs: ["connections.view"] },
   { prefix: `${getMcpConnectionsRoute()}/new`, allowed: (access) => access.canManageConnections, needs: ["connections.manage"] },
   {

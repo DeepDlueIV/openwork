@@ -87,8 +87,6 @@ export function useAgentPermissions(orgId: string) {
   });
 }
 
-export class AgentPermissionPlanRequiredError extends Error {}
-
 function scopePath(scopeId: AgentPermissionScopeId): string {
   return scopeId === EVERYONE_SCOPE
     ? `${AGENT_PERMISSIONS_PATH}/everyone`
@@ -114,7 +112,6 @@ export function useSaveAgentPermissions(orgId: string) {
             },
             15000,
           );
-          if (response.status === 402) throw new AgentPermissionPlanRequiredError("Agent permissions are part of the Enterprise plan.");
           if (!response.ok) throw getRequestError(payload, response, `Couldn't save agent permissions (${response.status}).`);
         }
       });

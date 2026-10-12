@@ -10,7 +10,6 @@ import {
   ScrollText,
   Server,
   Plug,
-  ShieldCheck,
   SlidersHorizontal,
   Sparkles,
   Users,
@@ -143,9 +142,6 @@ export function buildDashboardNavSections({
         { href: getDesktopPoliciesRoute(orgSlug), label: "Desktop policies", icon: Laptop },
         ...(workbotSettings ? [{ href: getWorkbotSettingsRoute(orgSlug), label: "Workbot", icon: MessageCircle, testId: "dashboard-nav-workbot-settings" }] : []),
         ...(managedDeployments ? [{ href: getDeploymentsRoute(orgSlug), label: "Deployments", icon: Server }] : []),
-        ...(agentPermissionsEnabled
-          ? [{ href: getAgentPermissionsRoute(orgSlug), label: "Agent permissions", icon: ShieldCheck, testId: "dashboard-nav-agent-permissions" }]
-          : []),
       ].filter((item) => canOpen(item.href))
     : [];
   const observabilityItems: DashboardNavItem[] = orgSlug
@@ -170,6 +166,7 @@ export function buildDashboardNavSections({
           { href: getApiKeysRoute(orgSlug), label: "API Keys" },
         ].filter((item) => canOpen(item.href)),
         ...permissionsNavChildren(orgSlug, access, permissionsEnabled, teamRoles ? { membersOpen: canOpen(getMembersRoute(orgSlug)) } : null),
+        ...agentPermissionsNavChildren(orgSlug, access, agentPermissionsEnabled),
         ...(access.canViewSso ? [{ href: getSsoRoute(orgSlug), label: "SSO" }] : []),
         ...(access.canViewScim ? [{ href: getScimRoute(orgSlug), label: "SCIM" }] : []),
         ...(canOpen(getMarketplacesRoute(orgSlug))
@@ -216,6 +213,13 @@ function permissionsNavChildren(orgSlug: string, access: DenOrgAccessFlags, enab
   if (enabled && teamRoles) return access.canViewPermissions && !teamRoles.membersOpen ? [{ href, label: "Roles" }] : [];
   if (enabled) return access.canViewPermissions ? [{ href, label: "Permissions" }] : [];
   return access.canManagePermissions ? [{ href, label: "Permissions", badge: "Enterprise" }] : [];
+}
+
+/** Agent permissions sits next to Permissions and follows the same rule. */
+function agentPermissionsNavChildren(orgSlug: string, access: DenOrgAccessFlags, enabled: boolean): DashboardNavChild[] {
+  const href = getAgentPermissionsRoute(orgSlug);
+  if (enabled) return access.canViewAgentPermissions ? [{ href, label: "Agent permissions" }] : [];
+  return access.canManageAgentPermissions ? [{ href, label: "Agent permissions", badge: "Enterprise" }] : [];
 }
 
 // Alias order is ranking priority in the command palette.

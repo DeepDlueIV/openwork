@@ -46,6 +46,7 @@ test("no key is locked on: the owner can always restore access", () => {
  * admins (docs/permissions/route-inventory.md).
  */
 const ADMIN_SCOPE_KEYS = [
+  "agent_permissions.view",
   "analytics.manage",
   "analytics.view",
   "api_keys.view",
@@ -91,6 +92,7 @@ const ADMIN_SCOPE_KEYS = [
 
 /** Formerly super-admin (or owner) only: nobody but the owner holds these until granted. */
 const OWNER_ONLY_KEYS = [
+  "agent_permissions.manage",
   "api_keys.manage",
   "billing_portal.use",
   "branding.update",

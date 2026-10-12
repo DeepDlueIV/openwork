@@ -4631,7 +4631,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Set everyone's agent permissions
    *
-   * Replaces the agent permissions that apply to every member. A permission left out allows, so members' own settings apply. Members' apps pick up the change the next time they refresh their organization's settings. Requires the desktop_policies.manage permission with a recent sign-in, and the Enterprise plan.
+   * Replaces the agent permissions that apply to every member. A permission left out allows, so members' own settings apply. Members' apps pick up the change the next time they refresh their organization's settings. Requires the agent_permissions.manage permission with a recent sign-in and the Agent permissions feature.
    */
   public putV1AgentPermissionsEveryone<ThrowOnError extends boolean = false>(
     parameters: {
@@ -4659,7 +4659,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Remove a team's agent permissions
    *
-   * Removes one team's overrides, so its members get everyone's agent permissions. Idempotent. Requires the desktop_policies.manage permission with a recent sign-in, and the Enterprise plan.
+   * Removes one team's overrides, so its members get everyone's agent permissions. Idempotent. Requires the agent_permissions.manage permission with a recent sign-in and the Agent permissions feature.
    */
   public deleteV1AgentPermissionsTeamsByTeamId<ThrowOnError extends boolean = false>(
     parameters: {
@@ -4682,7 +4682,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Set a team's agent permissions
    *
-   * Replaces one team's overrides. A team's decision replaces everyone's for its members (the strictest wins when a member is in several teams that set one), and its allowed and blocked patterns add to everyone's. A permission left out inherits everyone's; saving no permissions removes the team's overrides. Requires the desktop_policies.manage permission with a recent sign-in, and the Enterprise plan.
+   * Replaces one team's overrides. A team's decision replaces everyone's for its members (the strictest wins when a member is in several teams that set one), and its allowed and blocked patterns add to everyone's. A permission left out inherits everyone's; saving no permissions removes the team's overrides. Requires the agent_permissions.manage permission with a recent sign-in and the Agent permissions feature.
    */
   public putV1AgentPermissionsTeamsByTeamId<ThrowOnError extends boolean = false>(
     parameters: {

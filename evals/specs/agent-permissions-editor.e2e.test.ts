@@ -276,7 +276,7 @@ adminViewTest("an admin who is not an owner can read the permissions but not cha
   const admin = user.on(world.web);
 
   await step("Morgan, an admin, sees Contractors' permissions with every control locked", async () => {
-    await admin.see({ text: "Read only. Needs the “Manage desktop policies” permission. Ask the organization owner." }, { timeoutMs: 90_000 });
+    await admin.see({ text: "Read only. Needs the “Manage agent permissions” permission. Ask the organization owner." }, { timeoutMs: 90_000 });
     await admin.click({ testId: `agent-permissions-scope-${world.teamId}` });
     await admin.see({ testId: "agent-permissions-scope-state" }, { text: /1 member, 1 override/ });
     const controls = await world.permissionControls();
@@ -298,9 +298,9 @@ adminViewTest("an admin who is not an owner can read the permissions but not cha
 featureOffTest("agent permissions stay off until a platform admin turns them on for the organization", async ({ world, user, step, evidence }) => {
   const owner = user.on(world.web);
 
-  await step("before: the page says agent permissions are off, the menu has no entry, and the API and members' apps have none", async () => {
-    await owner.see({ text: "Agent permissions aren't turned on for this organization." }, { timeoutMs: 90_000 });
-    await owner.notSee({ testId: "dashboard-nav-agent-permissions" });
+  await step("before: the owner sees Agent permissions locked as an Enterprise feature, and the API and members' apps have none", async () => {
+    await owner.see({ testId: "agent-permissions-feature-off" }, { timeoutMs: 90_000 });
+    await owner.see({ text: "Agent permissions is an Enterprise feature. Contact us to turn it on for your organization." });
     const read = await world.readStatus("owner");
     const received = await world.receivedRules("riley");
     evidence.recordAssertionEvidence("while off", `GET /v1/agent-permissions → HTTP ${read}; Riley: ${describeRules(received)}`, read === 404 && received === null);
@@ -309,11 +309,10 @@ featureOffTest("agent permissions stay off until a platform admin turns them on 
     await owner.screenshot();
   });
 
-  await step("after: once it is on, the owner sees the editor and the menu entry, and members' apps receive empty rules", async () => {
+  await step("after: once it is on, the owner sees the editor, and members' apps receive empty rules", async () => {
     await world.enableFeature();
     await owner.reload();
     await owner.see({ testId: "agent-permissions-scope-everyone" }, { timeoutMs: 60_000 });
-    await owner.see({ testId: "dashboard-nav-agent-permissions" });
     const read = await world.readStatus("owner");
     const received = await world.receivedRules("riley");
     evidence.recordAssertionEvidence("once on", `GET /v1/agent-permissions → HTTP ${read}; Riley: ${describeRules(received)}`, read === 200 && received?.length === 0);

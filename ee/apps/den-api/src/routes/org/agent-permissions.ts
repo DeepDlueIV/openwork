@@ -12,12 +12,10 @@ import {
   listAgentPermissionPolicies,
   saveAgentPermissionPolicy,
 } from "../../agent-permissions.js"
-import { checkEntitlement } from "../../entitlements.js"
 import { requireFeature } from "../../features.js"
-import { jsonValidator, orgPermissionRoute, paramValidator } from "../../middleware/index.js"
+import { jsonValidator, orgMemberRoute, paramValidator, requireOrgPermission } from "../../middleware/index.js"
 import {
   emptyResponse,
-  enterprisePlanRequiredSchema,
   forbiddenSchema,
   invalidRequestSchema,
   jsonResponse,
@@ -41,7 +39,7 @@ const agentPermissionPolicySchema = z.object({
 const agentPermissionPolicyListSchema = z.object({
   everyone: agentPermissionPolicySchema,
   teams: z.array(agentPermissionPolicySchema),
-  /** Whether the caller can change them (desktop_policies.manage). */
+  /** Whether the caller can change them (agent_permissions.manage). */
   canEdit: z.boolean(),
 }).meta({ ref: "AgentPermissionPolicyList" })
 
@@ -64,10 +62,8 @@ async function savePolicy(
   payload: ResourceOrganizationContext,
   input: { teamId: DenTypeId<"team"> | null; settings: AgentPermissionSettings },
 ) {
-  const permission = await requirePermission(c, "desktop_policies.manage")
+  const permission = await requirePermission(c, "agent_permissions.manage")
   if (!permission.ok) return c.json(permission.response, orgAccessFailureStatus(permission.response), permissionFailureHeaders(permission.response))
-  const entitlement = checkEntitlement(payload.organization.metadata, "desktopPolicies")
-  if (!entitlement.ok) return c.json(entitlement.response, entitlement.status)
 
   const team = input.teamId ? await findOrganizationTeam(payload.organization.id, input.teamId) : null
   if (input.teamId && !team) return c.json({ error: "team_not_found" }, 404)
@@ -108,12 +104,13 @@ export function registerOrgAgentPermissionRoutes<T extends { Variables: OrgRoute
       responses: {
         200: jsonResponse("Agent permissions returned successfully.", agentPermissionPolicyListSchema),
         401: jsonResponse("The caller must be signed in.", unauthorizedSchema),
-        403: jsonResponse("The caller needs the desktop_policies.view permission.", forbiddenSchema),
+        403: jsonResponse("The caller needs the agent_permissions.view permission.", forbiddenSchema),
         404: jsonResponse("Agent permissions are not turned on for this organization.", notFoundSchema),
       },
     }),
-    orgPermissionRoute("desktop_policies.view"),
+    orgMemberRoute(),
     requireFeature("agentPermissions"),
+    requireOrgPermission("agent_permissions.view"),
     async (c) => {
       const payload = c.get("organizationContext")
       if (!payload) return c.json({ error: "organization_not_found" }, 404)
@@ -133,7 +130,7 @@ export function registerOrgAgentPermissionRoutes<T extends { Variables: OrgRoute
           settings: team.settings,
           updatedAt: serializeDate(team.updatedAt),
         })),
-        canEdit: await hasPermission(c, "desktop_policies.manage"),
+        canEdit: await hasPermission(c, "agent_permissions.manage"),
       })
     },
   )
@@ -143,18 +140,18 @@ export function registerOrgAgentPermissionRoutes<T extends { Variables: OrgRoute
     describeRoute({
       tags: ["Agent Permissions"],
       summary: "Set everyone's agent permissions",
-      description: "Replaces the agent permissions that apply to every member. A permission left out allows, so members' own settings apply. Members' apps pick up the change the next time they refresh their organization's settings. Requires the desktop_policies.manage permission with a recent sign-in, and the Enterprise plan.",
+      description: "Replaces the agent permissions that apply to every member. A permission left out allows, so members' own settings apply. Members' apps pick up the change the next time they refresh their organization's settings. Requires the agent_permissions.manage permission with a recent sign-in and the Agent permissions feature.",
       responses: {
         200: jsonResponse("Everyone's agent permissions saved.", agentPermissionPolicyResponseSchema),
         400: jsonResponse("A permission or pattern was not valid.", invalidRequestSchema),
         401: jsonResponse("The caller must be signed in.", unauthorizedSchema),
-        402: jsonResponse("Agent permissions require an Enterprise plan.", enterprisePlanRequiredSchema),
-        403: jsonResponse("The caller needs the desktop_policies.manage permission and a recent sign-in.", forbiddenSchema),
+        403: jsonResponse("The caller needs the agent_permissions.manage permission and a recent sign-in.", forbiddenSchema),
         404: jsonResponse("Agent permissions are not turned on for this organization.", notFoundSchema),
       },
     }),
-    orgPermissionRoute("desktop_policies.manage"),
+    orgMemberRoute(),
     requireFeature("agentPermissions"),
+    requireOrgPermission("agent_permissions.manage"),
     jsonValidator(agentPermissionPolicyWriteSchema),
     async (c) => {
       const payload = c.get("organizationContext")
@@ -168,18 +165,18 @@ export function registerOrgAgentPermissionRoutes<T extends { Variables: OrgRoute
     describeRoute({
       tags: ["Agent Permissions"],
       summary: "Set a team's agent permissions",
-      description: "Replaces one team's overrides. A team's decision replaces everyone's for its members (the strictest wins when a member is in several teams that set one), and its allowed and blocked patterns add to everyone's. A permission left out inherits everyone's; saving no permissions removes the team's overrides. Requires the desktop_policies.manage permission with a recent sign-in, and the Enterprise plan.",
+      description: "Replaces one team's overrides. A team's decision replaces everyone's for its members (the strictest wins when a member is in several teams that set one), and its allowed and blocked patterns add to everyone's. A permission left out inherits everyone's; saving no permissions removes the team's overrides. Requires the agent_permissions.manage permission with a recent sign-in and the Agent permissions feature.",
       responses: {
         200: jsonResponse("The team's agent permissions saved.", agentPermissionPolicyResponseSchema),
         400: jsonResponse("A permission or pattern was not valid.", invalidRequestSchema),
         401: jsonResponse("The caller must be signed in.", unauthorizedSchema),
-        402: jsonResponse("Agent permissions require an Enterprise plan.", enterprisePlanRequiredSchema),
-        403: jsonResponse("The caller needs the desktop_policies.manage permission and a recent sign-in.", forbiddenSchema),
+        403: jsonResponse("The caller needs the agent_permissions.manage permission and a recent sign-in.", forbiddenSchema),
         404: jsonResponse("The team was not found, or agent permissions are not turned on for this organization.", notFoundSchema),
       },
     }),
-    orgPermissionRoute("desktop_policies.manage"),
+    orgMemberRoute(),
     requireFeature("agentPermissions"),
+    requireOrgPermission("agent_permissions.manage"),
     paramValidator(teamParamsSchema),
     jsonValidator(agentPermissionPolicyWriteSchema),
     async (c) => {
@@ -195,25 +192,23 @@ export function registerOrgAgentPermissionRoutes<T extends { Variables: OrgRoute
     describeRoute({
       tags: ["Agent Permissions"],
       summary: "Remove a team's agent permissions",
-      description: "Removes one team's overrides, so its members get everyone's agent permissions. Idempotent. Requires the desktop_policies.manage permission with a recent sign-in, and the Enterprise plan.",
+      description: "Removes one team's overrides, so its members get everyone's agent permissions. Idempotent. Requires the agent_permissions.manage permission with a recent sign-in and the Agent permissions feature.",
       responses: {
         204: emptyResponse("The team's overrides were removed."),
         401: jsonResponse("The caller must be signed in.", unauthorizedSchema),
-        402: jsonResponse("Agent permissions require an Enterprise plan.", enterprisePlanRequiredSchema),
-        403: jsonResponse("The caller needs the desktop_policies.manage permission and a recent sign-in.", forbiddenSchema),
+        403: jsonResponse("The caller needs the agent_permissions.manage permission and a recent sign-in.", forbiddenSchema),
         404: jsonResponse("The team was not found, or agent permissions are not turned on for this organization.", notFoundSchema),
       },
     }),
-    orgPermissionRoute("desktop_policies.manage"),
+    orgMemberRoute(),
     requireFeature("agentPermissions"),
+    requireOrgPermission("agent_permissions.manage"),
     paramValidator(teamParamsSchema),
     async (c) => {
       const payload = c.get("organizationContext")
       if (!payload) return c.json({ error: "organization_not_found" }, 404)
-      const permission = await requirePermission(c, "desktop_policies.manage")
+      const permission = await requirePermission(c, "agent_permissions.manage")
       if (!permission.ok) return c.json(permission.response, orgAccessFailureStatus(permission.response), permissionFailureHeaders(permission.response))
-      const entitlement = checkEntitlement(payload.organization.metadata, "desktopPolicies")
-      if (!entitlement.ok) return c.json(entitlement.response, entitlement.status)
       const team = await findOrganizationTeam(payload.organization.id, normalizeDenTypeId("team", c.req.valid("param").teamId))
       if (!team) return c.json({ error: "team_not_found" }, 404)
       await saveAgentPermissionPolicy({

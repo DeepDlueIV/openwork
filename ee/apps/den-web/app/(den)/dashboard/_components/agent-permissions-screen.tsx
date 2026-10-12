@@ -34,7 +34,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "../../_components/ui/to
 import { getOrgAccessFlags, orgFeatureEnabled, permissionLockReason } from "../../_lib/den-org";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
 import {
-  AgentPermissionPlanRequiredError,
   EVERYONE_SCOPE,
   useAgentPermissions,
   useSaveAgentPermissions,
@@ -42,7 +41,6 @@ import {
   type AgentPermissionScopeId,
 } from "./agent-permissions-data";
 import { useDenToast } from "./den-toast";
-import { EnterprisePlanNotice } from "./enterprise-plan-notice";
 
 const INHERIT = "inherit";
 const TEAM_SEARCH_THRESHOLD = 8;
@@ -101,14 +99,16 @@ export function AgentPermissionsScreen() {
   if (!orgFeatureEnabled(orgContext, "agentPermissions")) {
     return (
       <AgentPermissionsPage>
-        <DenNotice tone="neutral" icon={Lock} message="Agent permissions aren't turned on for this organization." />
+        <div className="flex flex-col items-start gap-3" data-testid="agent-permissions-feature-off">
+          <DenNotice tone="neutral" icon={Lock} message="Agent permissions is an Enterprise feature. Contact us to turn it on for your organization." className="w-full" />
+        </div>
       </AgentPermissionsPage>
     );
   }
-  if (!getOrgAccessFlags(orgContext.currentMember.role, orgContext.currentMember.isOwner, orgContext.currentMember.permissions).canViewDesktopPolicies) {
+  if (!getOrgAccessFlags(orgContext.currentMember.role, orgContext.currentMember.isOwner, orgContext.currentMember.permissions).canViewAgentPermissions) {
     return (
       <AgentPermissionsPage>
-        <DenNotice tone="neutral" icon={Lock} message={permissionLockReason("desktop_policies.view")} />
+        <DenNotice tone="neutral" icon={Lock} message={permissionLockReason("agent_permissions.view")} />
       </AgentPermissionsPage>
     );
   }
@@ -116,20 +116,18 @@ export function AgentPermissionsScreen() {
     <AgentPermissionsEditor
       key={orgId}
       orgId={orgId}
-      entitled={orgContext.entitlements.desktopPolicies}
       memberCount={orgContext.members.length}
     />
   );
 }
 
-function AgentPermissionsEditor({ orgId, entitled, memberCount }: { orgId: string; entitled: boolean; memberCount: number }) {
+function AgentPermissionsEditor({ orgId, memberCount }: { orgId: string; memberCount: number }) {
   const query = useAgentPermissions(orgId);
   const save = useSaveAgentPermissions(orgId);
   const toast = useDenToast();
   const [selectedId, setSelectedId] = useState<AgentPermissionScopeId>(EVERYONE_SCOPE);
   const [drafts, setDrafts] = useState<Drafts>({});
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [planRequired, setPlanRequired] = useState(false);
 
   const policies = useMemo(() => query.data ? [query.data.everyone, ...query.data.teams] : [], [query.data]);
 
@@ -150,7 +148,7 @@ function AgentPermissionsEditor({ orgId, entitled, memberCount }: { orgId: strin
   const baseSettings = (scopeId: AgentPermissionScopeId) => policies.find((policy) => policy.scopeId === scopeId)?.settings ?? {};
   const settingsFor = (scopeId: AgentPermissionScopeId) => drafts[scopeId] ?? baseSettings(scopeId);
   const dirtyScopes = Object.keys(drafts).filter((scopeId) => !sameSettings(drafts[scopeId] ?? {}, baseSettings(scopeId)));
-  const editable = data.canEdit && entitled && !planRequired;
+  const editable = data.canEdit;
   const selected = policies.find((policy) => policy.scopeId === selectedId) ?? data.everyone;
   const everyone = settingsFor(EVERYONE_SCOPE);
 
@@ -164,7 +162,6 @@ function AgentPermissionsEditor({ orgId, entitled, memberCount }: { orgId: strin
       await save.mutateAsync(changes);
       return true;
     } catch (error) {
-      if (error instanceof AgentPermissionPlanRequiredError) setPlanRequired(true);
       setSaveError(error instanceof Error && error.message ? error.message : "Couldn't save agent permissions. Try again.");
       return false;
     }
@@ -191,8 +188,7 @@ function AgentPermissionsEditor({ orgId, entitled, memberCount }: { orgId: strin
 
   return (
     <AgentPermissionsPage>
-      {!entitled || planRequired ? <EnterprisePlanNotice feature="Agent permissions" /> : null}
-      {!data.canEdit ? <DenNotice tone="neutral" icon={Lock} message={`Read only. ${permissionLockReason("desktop_policies.manage")}`} /> : null}
+      {!data.canEdit ? <DenNotice tone="neutral" icon={Lock} message={`Read only. ${permissionLockReason("agent_permissions.manage")}`} /> : null}
       <div className="grid gap-6 md:grid-cols-[220px_minmax(0,1fr)]">
         <ScopeRail
           policies={policies}

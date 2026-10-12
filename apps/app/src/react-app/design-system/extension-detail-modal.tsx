@@ -642,7 +642,7 @@ export function ExtensionDetailModal({
                     index < contents.length - 1 ? "border-b border-border" : "",
                   )}
                 >
-                  <span className="w-20 shrink-0 text-[10px] font-medium uppercase tracking-[0.08em] text-muted-foreground">
+                  <span className="w-20 shrink-0 text-xs font-medium uppercase tracking-[0.08em] text-muted-foreground">
                     {item.kindLabel}
                   </span>
                   <span className="min-w-0 flex-1 truncate text-sm font-medium text-card-foreground">{item.name}</span>

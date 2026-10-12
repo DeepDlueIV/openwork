@@ -189,7 +189,7 @@ export function ExtensionCard(props: ExtensionCardProps) {
           {props.stateLabel ? <span className="truncate text-xs text-muted-foreground" data-library-state>{props.stateLabel}<span className="lg:hidden"> · {description}</span></span> : readyDot}
           {props.statusChip ? (
             props.statusChip.tone === "blocked" ? (
-              <span data-library-status={props.statusChip.label} className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md bg-dls-hover px-1.5 py-0.5 text-[10px] font-medium text-dls-text">
+              <span data-library-status={props.statusChip.label} className="inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-md bg-dls-hover px-1.5 py-0.5 text-xs font-medium text-dls-text">
                 <Lock size={16} strokeWidth={1.5} aria-hidden />
                 {props.statusChip.label}
               </span>

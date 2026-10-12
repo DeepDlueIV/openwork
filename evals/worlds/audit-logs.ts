@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { allocateFreePort, evaluateOnSurface } from "@openwork/cdp";
+import { allocateFreePort, callFunctionOnSurface, evaluateOnSurface } from "@openwork/cdp";
 import { createAdmin, localMysqlIsRunning, localRedisIsRunning, queryDenDatabase, SkipError, type Den, type Place, type Seed } from "@openwork/env";
 import { defaultDaytonaExec, execInSandbox } from "@openwork/hosts";
 
@@ -177,5 +177,10 @@ export async function auditLogs(seed: Seed, { place }: { place: Place }) {
       .filter((element) => element.checkVisibility())
       .map((element) => ({ outcome: element.getAttribute("data-audit-outcome"), color: getComputedStyle(element).color })));
   }
-  return { den, refreshAuditUsage, eventOptionLayout, outcomeColors, web, memberWeb, teammate, teammateUserId, platformAdmin, orgId, providerId, originalCredential, replacementCredential, reviewersTeamId, reviewersTeamName, viewport };
+  // The browser may run in a different time zone/locale from the test runner.
+  // Compute the expected local display there without reading the product's value.
+  function localDateTime(value: string) {
+    return callFunctionOnSurface(web, (timestamp: string) => new Date(timestamp).toLocaleString(), [value]);
+  }
+  return { den, refreshAuditUsage, eventOptionLayout, outcomeColors, localDateTime, web, memberWeb, teammate, teammateUserId, platformAdmin, orgId, providerId, originalCredential, replacementCredential, reviewersTeamId, reviewersTeamName, viewport };
 }

@@ -898,7 +898,10 @@ test("an owner reads, filters and pauses audit history in compact Den rows, and 
     const created = setOperation.events.find((event) => event.action === "permission_set.created");
     const createdAt = created?.changes?.after?.createdAt;
     if (typeof createdAt !== "string") throw new Error("The permission set change must record its creation date");
-    await owner.see({ text: new Date(createdAt).toLocaleString() });
+    const localCreatedAt = await world.localDateTime(createdAt);
+    await owner.see({ text: localCreatedAt });
+    const timeline = await expandedTimeline(setOperation.operation, setOperation.events.length);
+    expect(timeline.changes).toContain(`Created at | None | ${localCreatedAt}`);
     await owner.notSee({ text: createdAt });
     await owner.notSee({ text: world.reviewersTeamId });
     await owner.screenshot();

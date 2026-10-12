@@ -22,7 +22,6 @@ import { sortedPermissionKeys } from "../../permissions/effective.js"
 import { denTypeIdSchema, enterprisePlanRequiredSchema, forbiddenSchema, invalidRequestSchema, jsonResponse, notFoundSchema, unauthorizedSchema } from "../../openapi.js"
 import { validateInvitationAcceptVerification } from "../../organization-join-verification.js"
 import { normalizeOrganizationMetadata } from "../../organization-limits.js"
-import { getOrganizationFeatures } from "../../features.js"
 import { workbotOrigin } from "../../workbot/config.js"
 import { isOpenWorkWebAvailableForOrganization } from "../../openwork-web-availability.js"
 import { getOpenWorkWebAccess } from "../../stripe-billing.js"
@@ -680,9 +679,9 @@ export function registerOrgCoreRoutes<T extends { Variables: OrgRouteVariables }
 
       // Same per-request resolution the middleware made.
       const memberPermissions = await memberPermissionsForOrganizationContext(payload, c.get("memberTeams"))
-      const [currentOrganization] = await db.select({ metadata: OrganizationTable.metadata }).from(OrganizationTable).where(eq(OrganizationTable.id, payload.organization.id)).limit(1)
-      if (!currentOrganization) return c.json({ error: "organization_not_found" }, 404)
-      const features = await getOrganizationFeatures(payload.organization.id)
+      // The organization context read the organization row and its features fresh for this request.
+      const currentOrganization = payload.organization
+      const features = payload.features
       const owner = payload.members.find((member: typeof payload.members[number]) => member.isOwner) ?? null
       // Cloud is entitled by OpenWork Web access (paid subscription or the
       // platform-admin complimentary grant) on hosted deployments; there is no

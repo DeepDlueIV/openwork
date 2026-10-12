@@ -631,18 +631,18 @@ test("a platform admin rolls Slack search out by organization while members keep
     expect(retained.status).toBe(200);
     expect(world.objects(retained.body).some(entry => entry.error === "needs_connection")).toBe(true);
     expect(world.slack.calls()).toHaveLength(before);
-    await user.navigate(await world.startAuthorization("other"));
-    await user.click({ role: "button", text: "Authorize another workspace" });
-    await user.see({ role: "heading", text: "You're connected" }, { timeoutMs: 30_000 });
+    await otherOwner.navigate(await world.startAuthorization("other"));
+    await otherOwner.click({ role: "button", text: "Authorize another workspace" });
+    await otherOwner.see({ role: "heading", text: "You're connected" }, { timeoutMs: 30_000 });
     expect(await world.connection("other")).toMatchObject({ connectedForMe: true });
     await rememberAccount("other");
     const ownSearch = await world.memberRequest("other", "/v1/capabilities/slack/search?query=Amber%20launch");
     expect(ownSearch.status).toBe(200);
     expect(ownSearch.text).toContain(world.slack.otherConversations[0].text);
     expect(JSON.stringify(await world.connection("first"))).toContain("TSYNTHETIC");
-    evidence.recordAssertionEvidence("Availability never substitutes for member consent", "After B's explicit rollout, both start aliases returned 200 but search/threads returned 409 and retained execution required a connection. Browser OAuth then connected B's own workspace; its search succeeded without sharing A's grant.", true);
-    await user.screenshot();
-    await user.navigate(world.appUrl);
+    evidence.recordAssertionEvidence("Availability never substitutes for member consent", "After B's explicit rollout, both start aliases returned 200 but search/threads returned 409 and retained execution required a connection. B's independently signed-in browser then connected its own workspace; search succeeded without sharing A's grant.", true);
+    await otherOwner.screenshot();
+    await otherOwner.navigate(world.connectionsUrl);
   });
 
   await step("turning off the first organization blocks retained grants while the second keeps working", async () => {

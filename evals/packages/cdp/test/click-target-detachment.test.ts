@@ -24,9 +24,19 @@ async function startChrome() {
   ], { stdio: ["ignore", "ignore", "pipe"] });
   const exited = once(chrome, "exit");
   async function stop() {
-    if (chrome.exitCode === null && chrome.signalCode === null) chrome.kill("SIGKILL");
-    await exited;
-    await rm(profile, { recursive: true, force: true });
+    if (chrome.exitCode === null && chrome.signalCode === null) chrome.kill("SIGTERM");
+    const force = setTimeout(() => {
+      if (chrome.exitCode === null && chrome.signalCode === null) chrome.kill("SIGKILL");
+    }, 2_000);
+    force.unref();
+    try {
+      await exited;
+    } finally {
+      clearTimeout(force);
+      // Chrome's child processes can finish profile writes after the main process
+      // exits. Retry removal of this test-owned directory; do not swallow failure.
+      await rm(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+    }
   }
   try {
     const cdpUrl = await new Promise<string>((resolve, reject) => {

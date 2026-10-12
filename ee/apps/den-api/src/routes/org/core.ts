@@ -23,6 +23,8 @@ import { denTypeIdSchema, enterprisePlanRequiredSchema, forbiddenSchema, invalid
 import { validateInvitationAcceptVerification } from "../../organization-join-verification.js"
 import { normalizeOrganizationMetadata } from "../../organization-limits.js"
 import { getOrganizationFeatures } from "../../features.js"
+import { connectAvailable } from "../../connect-opt-out.js"
+import { appMcpServersEnabled } from "../../mcp-app-rollout.js"
 import { workbotOrigin } from "../../workbot/config.js"
 import { isOpenWorkWebAvailableForOrganization } from "../../openwork-web-availability.js"
 import { getOpenWorkWebAccess } from "../../stripe-billing.js"
@@ -682,7 +684,10 @@ export function registerOrgCoreRoutes<T extends { Variables: OrgRouteVariables }
       const memberPermissions = await memberPermissionsForOrganizationContext(payload, c.get("memberTeams"))
       const [currentOrganization] = await db.select({ metadata: OrganizationTable.metadata }).from(OrganizationTable).where(eq(OrganizationTable.id, payload.organization.id)).limit(1)
       if (!currentOrganization) return c.json({ error: "organization_not_found" }, 404)
-      const features = await getOrganizationFeatures(payload.organization.id)
+      const [features, connectIsAvailable] = await Promise.all([
+        getOrganizationFeatures(payload.organization.id),
+        connectAvailable(payload.organization.id),
+      ])
       const owner = payload.members.find((member: typeof payload.members[number]) => member.isOwner) ?? null
       // Cloud is entitled by OpenWork Web access (paid subscription or the
       // platform-admin complimentary grant) on hosted deployments; there is no
@@ -736,11 +741,12 @@ export function registerOrgCoreRoutes<T extends { Variables: OrgRouteVariables }
           // rollout instead of calling an endpoint that does not exist yet.
           // Per-organization and default-off: platform admins enable it in /admin.
           orgManagedDashboards: features.orgManagedDashboards,
-          // Compatibility field for published clients: Connect is always on.
-          mcpConnections: true,
+          // Connect is generally available; false only for an organization
+          // that turned it off before the switch was retired (connect-opt-out.ts).
+          mcpConnections: connectIsAvailable,
           // Building your own Apps is on for every organization unless the
-          // deployment turns it off.
-          appMcpServers: env.appMcpServersEnabled,
+          // deployment or a legacy Connect opt-out turns it off.
+          appMcpServers: appMcpServersEnabled(connectIsAvailable),
           // Workflows/Code Mode are enabled for every organization; the field
           // remains for published clients that still read it.
           workflows: true,

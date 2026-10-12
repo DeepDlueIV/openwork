@@ -29,8 +29,8 @@ import {
 import { EXTERNAL_MCP_PRESETS } from "../capability-sources/external-mcp-presets.js"
 import { getConnectedAccount, getOrgOAuthClient } from "../capability-sources/oauth-credentials.js"
 import { db } from "../db.js"
-import { env } from "../env.js"
 import { recordSkillUse } from "../capability-usage.js"
+import { organizationBuildsMcpApps } from "../mcp-app-rollout.js"
 import { resolvePluginArchGrantRole } from "../routes/org/plugin-system/access.js"
 import { openworkOrganizationConnectionsUrl, openworkYourConnectionsUrl } from "./connection-navigation.js"
 import { parseCodemodeScriptPayload, type CodemodeScriptInputIssue } from "./codemode-script-object.js"
@@ -685,10 +685,11 @@ async function filterVisibleRows(input: {
 }
 
 export async function listAccessibleMarketplaceCapabilityReferences(input: {
+  enabled?: boolean
   member: McpMemberIdentity | null
   organizationId: string
 }): Promise<AccessibleMarketplaceCapabilityReference[]> {
-  if (!input.member) return []
+  if (input.enabled === false || !input.member) return []
   const organizationId = normalizeDenTypeId("organization", input.organizationId)
   if (!(await getActiveMember(organizationId, input.member))) return []
 
@@ -723,10 +724,11 @@ export async function listAccessibleMarketplaceCapabilityReferences(input: {
 }
 
 export async function listAccessibleMarketplaceSkillDescriptors(input: {
+  enabled?: boolean
   member: McpMemberIdentity | null
   organizationId: string
 }): Promise<RemoteSkillDescriptor[]> {
-  if (!input.member) return []
+  if (input.enabled === false || !input.member) return []
 
   const organizationId = normalizeDenTypeId("organization", input.organizationId)
   const memberRow = await getActiveMember(organizationId, input.member)
@@ -1453,13 +1455,14 @@ function commandArguments(body: unknown): string {
 }
 
 export async function searchMarketplaceCapabilities(input: {
+  enabled?: boolean
   limit?: number
   member: McpMemberIdentity | null
   objectTypes?: MarketplaceCapabilityObjectType[]
   organizationId: string
   query: string
 }): Promise<MarketplaceCapabilityMatch[]> {
-  if (!input.member) return []
+  if (input.enabled === false || !input.member) return []
   const queryTokens = tokenize(input.query)
   if (queryTokens.length === 0) return []
 
@@ -1574,6 +1577,7 @@ export async function executeMarketplaceCapability(input: {
   configObjectId: string
   configObjectVersionId?: string
   automationRunId?: DenTypeId<"automationRun">
+  enabled?: boolean
   member: McpMemberIdentity | null
   organizationId: string
   pluginId: string
@@ -1588,6 +1592,9 @@ export async function executeMarketplaceCapability(input: {
   const liveRuntime = input.liveRuntime === undefined ? undefined : artifactRunInputSchema.safeParse(input.liveRuntime)
   if (liveRuntime && (!liveRuntime.success || input.body !== undefined)) {
     return { ok: false, error: "invalid_capability_arguments", message: "Live runs accept only timeZone, never caller input.", issues: [], sameArgumentsRetryable: false, retry: { action: "correct_arguments", searchRequired: false } }
+  }
+  if (input.enabled === false) {
+    return { ok: false, error: "unknown_capability", message: "No such capability." }
   }
   if (!input.member) {
     return { ok: false, error: "forbidden", message: "No active org membership for this token." }
@@ -1637,9 +1644,9 @@ export async function executeMarketplaceCapability(input: {
       result: {
         ...basePayload(row),
         status: "unsupported",
-        hint: env.appMcpServersEnabled
+        hint: await organizationBuildsMcpApps(input.organizationId)
           ? `This App is its own MCP server at ${mcpAppServerPath(row.configObject.id)}; its ${MCP_APP_LAUNCH_TOOL_NAME} tool opens it. Code Mode and generic Plugin execution do not open Apps or return their source. Editors can use read_app to edit it. No App was opened.`
-          : "Apps built in OpenWork are turned off on this server, so this App cannot be opened or edited here. No App was opened.",
+          : "Apps built in OpenWork are turned off for this organization, so this App cannot be opened or edited here. No App was opened.",
       },
     }
   }

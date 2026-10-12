@@ -126,6 +126,7 @@ export type CapabilityRegistryContext = {
   member: McpMemberIdentity | null
   redirectUriBase: string
   generatedArtifactViewsEnabled: boolean
+  externalMcpConnectionsEnabled: boolean
   remoteSessionEventsEnabled: boolean
   resolvePlatformAdmin: () => Promise<boolean>
   resolveNamespaceContext: () => Promise<CodemodeConnectionNamespaceContext>
@@ -144,11 +145,14 @@ export type CapabilityRegistryContextInput = {
   generatedArtifactViewsEnabled: boolean
   /** Effective features of the organization (see features.ts). */
   organizationFeatures: Partial<Pick<FeatureMap, "remoteSessionEvents">>
+  /** Whether Connect is available to the organization (connectAvailable in connect-opt-out.ts). */
+  connectAvailable: boolean
   /** MCP transports pass the verified caller; route and Automation contexts omit it (their route records the request). */
   audit?: McpAuditPrincipal | null
 }
 
 export function createCapabilityRegistryContext(input: CapabilityRegistryContextInput): CapabilityRegistryContext {
+  const externalMcpConnectionsEnabled = input.connectAvailable
   let platformAdmin: Promise<boolean> | undefined
   const resolvePlatformAdmin = () => {
     platformAdmin ??= isPlatformAdminUserId(input.principal.userId)
@@ -159,6 +163,7 @@ export function createCapabilityRegistryContext(input: CapabilityRegistryContext
     namespaceContext ??= resolveCodemodeConnectionNamespaceContext({
       organizationId: input.organizationId,
       member: input.member,
+      includeExternalMcp: externalMcpConnectionsEnabled,
     })
     return namespaceContext
   }
@@ -171,6 +176,7 @@ export function createCapabilityRegistryContext(input: CapabilityRegistryContext
     member: input.member,
     redirectUriBase: input.redirectUriBase,
     generatedArtifactViewsEnabled: input.generatedArtifactViewsEnabled,
+    externalMcpConnectionsEnabled,
     remoteSessionEventsEnabled: input.organizationFeatures.remoteSessionEvents === true,
     resolvePlatformAdmin,
     resolveNamespaceContext,
@@ -452,6 +458,7 @@ async function executeMarketplaceSource(
     configObjectId: parsed.configObjectId,
     body: input.body,
     validateScriptOutput: true,
+    enabled: ctx.externalMcpConnectionsEnabled,
     redirectUriBase: ctx.redirectUriBase,
     auditWorkflowExecution: workflowExecutionAudit(ctx),
     usageVia,
@@ -551,7 +558,7 @@ const externalMcpSource: CapabilitySource = {
     return parsed ? { kind: "externalMcp", name, ...parsed } : null
   },
   search: async (ctx, query, limit) => {
-    if (!ctx.sourceFilter.mcp) return []
+    if (!ctx.sourceFilter.mcp || !ctx.externalMcpConnectionsEnabled) return []
     return searchExternalCapabilities({
       organizationId: ctx.organizationId,
       member: ctx.member,
@@ -563,6 +570,7 @@ const externalMcpSource: CapabilitySource = {
     })
   },
   enumerate: async (ctx) => {
+    if (!ctx.externalMcpConnectionsEnabled) return []
     return leavesFromBuilt(await buildExternalMcpToolTree({
       organizationId: ctx.organizationId,
       member: ctx.member,
@@ -573,6 +581,15 @@ const externalMcpSource: CapabilitySource = {
   },
   execute: async (ctx, parsed, input) => {
     if (!parsedForKind(parsed, "externalMcp")) return unknownCapabilityResult(input.name)
+    if (!ctx.externalMcpConnectionsEnabled) {
+      return {
+        isError: true,
+        content: textContent(JSON.stringify({
+          error: "unknown_capability",
+          message: "No external MCP connection capabilities are available for this organization.",
+        })),
+      }
+    }
     if (parsed.toolName === "*") {
       // A connection_status match: probing is the capability. Report the live
       // state as a successful result carrying the first-party connection
@@ -619,22 +636,25 @@ const marketplaceSource: CapabilitySource = {
     return parsed ? { kind: "marketplace", name, ...parsed } : null
   },
   search: async (ctx, query, limit) => {
-    if (!ctx.sourceFilter.marketplace) return []
+    if (!ctx.sourceFilter.marketplace || !ctx.externalMcpConnectionsEnabled) return []
     const matches = await searchMarketplaceCapabilities({
       organizationId: ctx.organizationId,
       member: ctx.member,
       objectTypes: ctx.marketplaceObjectTypes,
       query,
       limit,
+      enabled: ctx.externalMcpConnectionsEnabled,
     })
     return matches.map((match) => match.kind !== "workflow"
       ? { ...match, scriptPath: codemodeScriptPath("marketplace", match.name) }
       : match)
   },
   enumerate: async (ctx) => {
+    if (!ctx.externalMcpConnectionsEnabled) return []
     const references = await listAccessibleMarketplaceCapabilityReferences({
       organizationId: ctx.organizationId,
       member: ctx.member,
+      enabled: ctx.externalMcpConnectionsEnabled,
     })
     const uniqueReferences = new Map(references
       .filter((reference) => reference.objectType !== "workflow")

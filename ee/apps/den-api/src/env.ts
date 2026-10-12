@@ -559,7 +559,17 @@ const fatalFeatureProblems = featureEnvironment.problems.filter((problem) => pro
 if (fatalFeatureProblems.length > 0) {
   throw new Error(fatalFeatureProblems.map((problem) => `${problem.variable} ${problem.message}`).join(" "))
 }
+// OpenWork Connect is generally available and no longer a registry feature, but
+// an operator lock set before it was retired still applies (see
+// connect-opt-out.ts). Read it here so it is not reported as unknown.
+const LEGACY_CONNECT_LOCK_VARIABLE = "DEN_FEATURE_MCP_CONNECTIONS"
+const rawLegacyConnectLock = process.env[LEGACY_CONNECT_LOCK_VARIABLE]?.trim() ?? ""
+const legacyConnectLock = rawLegacyConnectLock === "true" ? true : rawLegacyConnectLock === "false" ? false : null
+if (rawLegacyConnectLock !== "" && legacyConnectLock === null) {
+  console.warn(`[features] ${LEGACY_CONNECT_LOCK_VARIABLE} must be "true", "false" or empty, got "${rawLegacyConnectLock}"; it is ignored.`)
+}
 for (const problem of featureEnvironment.problems) {
+  if (problem.variable === LEGACY_CONNECT_LOCK_VARIABLE) continue
   console.warn(`[features] ${problem.variable} ${problem.message}`)
 }
 
@@ -857,6 +867,8 @@ export const env = {
   },
   dashboardsEnabled,
   features: { deployment: featureEnvironment.deployment, locks: featureEnvironment.locks },
+  /** DEN_FEATURE_MCP_CONNECTIONS from before Connect was generally available; null when unset. */
+  legacyConnectLock,
   auditCaptureEnabled: parsed.DEN_AUDIT_CAPTURE_ENABLED === "true",
   auditVisibilityEnabled: parsed.DEN_AUDIT_VISIBILITY_ENABLED === "true",
   auditSelfHostedEnabled: parsed.DEN_AUDIT_SELF_HOSTED_ENABLED === "true",

@@ -139,6 +139,7 @@ import {
 } from "./shared.js"
 import type { OrgRouteVariables } from "./shared.js"
 import { beginNativeProviderConnect } from "./oauth-providers.js"
+import { connectAvailable } from "../../connect-opt-out.js"
 import { createExternalMcpLifecycleDeadline } from "../../capability-sources/external-mcp-client.js"
 import { readinessFingerprint, rotateReadinessCredentialBinding, saveReadinessCheck, visibleReadiness } from "../../capability-sources/external-mcp-readiness.js"
 
@@ -1334,6 +1335,10 @@ export async function listMemberUsableConnectionFacts(input: {
   context: PluginArchActorContext
 }): Promise<MemberUsableConnectionFacts[]> {
   const organization = input.context.organizationContext.organization
+  if (!(await connectAvailable(organization.id))) {
+    return []
+  }
+
   const member = input.context.organizationContext.currentMember
   const teamIds = input.context.memberTeams.map((team) => team.id)
   const rows = await listVisibleExternalMcpConnections({
@@ -2546,11 +2551,12 @@ export function registerMcpConnectionRoutes<T extends { Variables: OrgRouteVaria
       const canViewAnyConnection = await hasPermission(c, "connections.view")
       if (!canViewAnyConnection) {
         const memberTeams: MemberTeamSummary[] = c.get("memberTeams") ?? []
-        const canUse = await memberCanUseExternalMcpConnection({
-          connectionId: connection.id,
-          orgMembershipId: payload.currentMember.id,
-          teamIds: memberTeams.map((team) => team.id),
-        })
+        const canUse = await connectAvailable(payload.organization.id)
+          && await memberCanUseExternalMcpConnection({
+            connectionId: connection.id,
+            orgMembershipId: payload.currentMember.id,
+            teamIds: memberTeams.map((team) => team.id),
+          })
         if (!canUse) {
           return c.json({ error: "forbidden", message: `You have not been granted access to "${connection.name}".` }, 403)
         }
@@ -2736,11 +2742,12 @@ export function registerMcpConnectionRoutes<T extends { Variables: OrgRouteVaria
       }
 
       const memberTeams: MemberTeamSummary[] = c.get("memberTeams") ?? []
-      const canUse = await memberCanUseExternalMcpConnection({
-        connectionId: connection.id,
-        orgMembershipId: payload.currentMember.id,
-        teamIds: memberTeams.map((team) => team.id),
-      })
+      const canUse = await connectAvailable(payload.organization.id)
+        && await memberCanUseExternalMcpConnection({
+          connectionId: connection.id,
+          orgMembershipId: payload.currentMember.id,
+          teamIds: memberTeams.map((team) => team.id),
+        })
       if (!canUse) {
         return c.json({ error: "forbidden", message: `You have not been granted access to "${connection.name}".` }, 403)
       }
@@ -2840,7 +2847,9 @@ export function registerMcpConnectionRoutes<T extends { Variables: OrgRouteVaria
       let body = parsedBody
       if (!(await hasPermission(c, "connections.manage"))) {
         const canShareOrgWide = await hasPermission(c, "sharing.share_org_wide")
-        const denial = memberConnectionCreateDenial(parsedBody, { canShareOrgWide })
+        const denial = !(await connectAvailable(payload.organization.id))
+          ? "Connections are not enabled for this organization."
+          : memberConnectionCreateDenial(parsedBody, { canShareOrgWide })
         if (denial || parsedBody.kind === "native_provider") {
           return c.json({ error: "forbidden", message: denial ?? "Only workspace owners and admins can set up this service." }, 403)
         }

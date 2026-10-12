@@ -16,7 +16,7 @@ async function openConnections(user: User) {
   await user.click({ role: "option", label: /^Connectors/ });
 }
 
-async function closeConnections(user: User) {
+async function closeConnections(user: User, probe: Probe) {
   // The picker handles Escape as Back in a submenu and Close at the root.
   // Focus each observed search field so both keys reach that menu, not a
   // different browser window left in front by an admin/OAuth interaction.
@@ -24,6 +24,10 @@ async function closeConnections(user: User) {
   await user.press("Escape");
   await user.click({ placeholder: "Search files, skills, connectors" });
   await user.press("Escape");
+  await probe.eventually(() => probe.dom("[data-composer-plus-menu]"), {
+    within: 5_000, label: "the picker has finished closing",
+    until: value => value.elements.every(element => element.rect.width === 0 || element.rect.height === 0),
+  });
   await user.notSee({ role: "option", label: /^Connectors/ });
 }
 
@@ -202,7 +206,7 @@ test("a platform admin rolls Slack search out by organization while members keep
     evidence.recordAssertionEvidence("Credentials do not grant the feature", "Both organizations inherit Slack search=false; neither has a native connection or catalog entry. Start/status/search/threads are denied and Slack received 0 requests despite configured synthetic client credentials.", true);
     await admin.screenshot();
     await user.screenshot();
-    await closeConnections(user);
+    await closeConnections(user, probe);
   });
 
   await step("before: managed Slack stays out of the loaded catalogs while its feature is off", async () => {
@@ -260,7 +264,7 @@ test("a platform admin rolls Slack search out by organization while members keep
     evidence.recordAssertionEvidence("The member experience follows the organization switch", "A offers Connect Slack without developer credential fields. B's Your Connections has no Slack connect action and its usable-connection response has no Slack row; no provider request has occurred.", true);
     await user.screenshot();
     await otherOwner.screenshot();
-    await closeConnections(user);
+    await closeConnections(user, probe);
   });
 
   await step("turning off Connect still blocks an explicitly enabled Slack feature", async () => {
@@ -343,7 +347,7 @@ test("a platform admin rolls Slack search out by organization while members keep
     await user.notSee({ role: "button", label: "Connect Slack" });
     evidence.recordAssertionEvidence("Own-member OAuth does not connect another member", "Slack received state and comma-separated read-only user scopes; auth.test used the nested user token for the first identity. The second member remains disconnected.", true);
     await user.screenshot();
-    await closeConnections(user);
+    await closeConnections(user, probe);
   });
 
   await step("after: a natural request returns public, private and direct-message sources with bounded thread context", async () => {

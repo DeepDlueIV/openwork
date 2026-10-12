@@ -3,7 +3,6 @@ import { describeRoute } from "hono-openapi"
 import { z } from "zod"
 import { GOOGLE_DRIVE_UPLOAD_CHUNK_BYTES, GOOGLE_DRIVE_UPLOAD_MAX_BYTES, isGoogleDriveUploadSessionUrl } from "@openwork/types/google-drive-upload"
 import { env } from "../../env.js"
-import { requireFeature } from "../../features.js"
 import { cloudTransportRoute, jsonValidator, orgMemberRoute } from "../../middleware/index.js"
 import { invalidRequestSchema, jsonResponse, unauthorizedSchema } from "../../openapi.js"
 import { requestGoogleAction, type GoogleWorkspaceActionDependencies } from "./google-workspace-actions.js"
@@ -34,7 +33,6 @@ export function registerGoogleDriveUploadRoutes<T extends { Variables: OrgRouteV
     400: jsonResponse("Invalid upload metadata.", invalidRequestSchema),
     401: jsonResponse("Sign in first.", unauthorizedSchema),
     403: jsonResponse("Organization policy blocks the selected connection.", z.object({ error: z.string(), message: z.string() })),
-    404: jsonResponse("Resumable uploads are disabled.", z.object({ error: z.literal("feature_disabled"), feature: z.literal("driveResumableUploads") })),
     409: jsonResponse("Connect Google with Drive write access.", z.object({ error: z.string(), message: z.string() })),
     502: jsonResponse("Google did not confirm upload preparation.", z.object({ error: z.string(), message: z.string() })),
   }
@@ -75,11 +73,11 @@ export function registerGoogleDriveUploadRoutes<T extends { Variables: OrgRouteV
     summary: "Prepare a resumable Google Drive file upload for a client with local file transport",
     description: sessionDescription,
     responses: { 200: jsonResponse("Secret upload session; file not yet uploaded.", driveUploadSessionResponseSchema), ...responseErrors },
-  }), orgMemberRoute(), requireFeature("driveResumableUploads"), jsonValidator(driveUploadSessionBodySchema), async (c) => handler(c, c.req.valid("json")))
+  }), orgMemberRoute(), jsonValidator(driveUploadSessionBodySchema), async (c) => handler(c, c.req.valid("json")))
   app.post("/v1/direct-uploads/google-workspace/drive-upload-sessions", describeRoute({
     operationId: "prepareHostGoogleDriveUploadSession", tags: ["Direct uploads"],
     summary: "Prepare a Google Drive session for host file transport", description: sessionDescription,
     responses: { 200: jsonResponse("Secret upload session for host transport.", driveUploadSessionResponseSchema), ...responseErrors },
-  }), cloudTransportRoute(), requireFeature("driveResumableUploads"), jsonValidator(hostBody), async (c) => handler(c, c.req.valid("json")))
+  }), cloudTransportRoute(), jsonValidator(hostBody), async (c) => handler(c, c.req.valid("json")))
   routeApp.route("/", app)
 }

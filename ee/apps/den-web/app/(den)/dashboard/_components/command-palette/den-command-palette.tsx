@@ -125,7 +125,7 @@ export function DenCommandPalette({ open, onOpenChange }: DenCommandPaletteProps
   ), [orgContext?.currentMember.role, orgContext?.currentMember.isOwner, orgContext?.currentMember.permissions]);
   const capabilities = orgContext?.capabilities ?? EMPTY_CAPABILITIES;
   const permissionsEnabled = orgFeatureEnabled(orgContext, "permissions");
-  const workbotSettings = capabilities.workbot === true && orgFeatureEnabled(orgContext, "workbotDefaultModel");
+  const workbotSettings = capabilities.workbot === true;
   // Plugin results open the admin plugin page, which needs `sharing.manage_all`.
   const pluginsQuery = usePluginSummaries({ enabled: open && access.canManageAllShared });
   const automationsQuery = useAutomations({ enabled: open && capabilities.workflows });

@@ -4,7 +4,7 @@ import { parseStoredAuditEnvelope, readAuditPolicy, type AuditDatabase, type Aud
 import { normalizeDenTypeId, typeId } from "@openwork-ee/utils/typeid"
 import { auditEventsResponseSchema, auditOperationOutcomeSchema, auditOperationsResponseSchema, auditOriginSchema, auditUsageResponseSchema, type AuditOperationSummary } from "@openwork/types/den/audit"
 import { z } from "zod"
-import { initializeAuditPolicyInTx, requireAuditFeature } from "./capture.js"
+import { initializeAuditPolicyInTx, readAuditAvailability } from "./capture.js"
 import { AUDIT_CURSOR_TTL_MS, AuditReadError, auditFilterHash, readAuditCursor, signAuditCursor, type AuditCursor, type AuditCursorBinding } from "./cursors.js"
 
 const safeText = (maximum: number) => z.string().min(1).max(maximum).regex(/^[^\u0000-\u001f\u007f]+$/)
@@ -88,7 +88,7 @@ function operationFilters(reader: AuditReader, organizationId: string, visibleBe
 }
 
 async function snapshot(reader: AuditReader, binding: AuditCursorBinding, cursor?: AuditCursor): Promise<Snapshot> {
-  await requireAuditFeature(reader, binding.organizationId)
+  await readAuditAvailability(reader, binding.organizationId)
   if (cursor) return { visibleBefore: cursor.visibleBefore, issuedAt: cursor.issuedAt, expiresAt: cursor.expiresAt }
   const issuedAt = Date.now()
   const settle = binding.mode === "export-csv" || binding.mode === "export-ndjson" ? AUDIT_EXPORT_SETTLE_MS : 0
@@ -172,8 +172,8 @@ async function eventPage(context: QueryContext, query: Page, binding: AuditCurso
 export async function readAuditUsage(context: Pick<QueryContext, "database" | "organizationId">, captureEnabled: boolean) {
   const organizationId = normalizeDenTypeId("organization", context.organizationId)
   return context.database.transaction(async (tx) => {
-    const { entitlement, featureEnabled } = await requireAuditFeature(tx, organizationId)
-    const captureAvailable = featureEnabled && captureEnabled
+    const { entitlement } = await readAuditAvailability(tx, organizationId)
+    const captureAvailable = captureEnabled
     // GET usage can provision a ready org.
     await initializeAuditPolicyInTx(tx, organizationId, captureAvailable)
     const [state] = await tx.select({ retainedOperations: AuditStateTable.retained_operations, eventCount: AuditStateTable.event_count, logicalBytes: AuditStateTable.logical_bytes, measuredAt: AuditStateTable.updated_at }).from(AuditStateTable).where(eq(AuditStateTable.organization_id, organizationId)).limit(1)

@@ -39,7 +39,6 @@ export async function slackAssistantSetup(seed: Seed, { place }: { place: Place 
         DEN_HEADLESS_RUNNER_TOKEN: randomBytes(32).toString("base64url"),
         // Prove organization overrides, without inherited deployment locks.
         DEN_FEATURE_SLACK_ASSISTANT: undefined, DEN_FEATURE_PERMISSIONS: undefined,
-        DEN_FEATURE_WORKBOT_DEFAULT_MODEL: undefined,
         RESEND_API_KEY: "", STRIPE_SECRET_KEY: "", SENTRY_DSN: "",
       },
       org: {
@@ -84,7 +83,7 @@ export async function slackAssistantSetup(seed: Seed, { place }: { place: Place 
     if (!unflagged.response.ok || !unflaggedOrgId) throw new Error(`Could not arrange the unflagged workspace: HTTP ${unflagged.response.status}`);
     for (const [id, enabled] of [[orgId, true], [unflaggedOrgId, false]] satisfies [string, boolean][]) {
       const flags = await seed.api(den.admin, `/v1/admin/organizations/${id}/capabilities`, {
-        method: "PUT", body: JSON.stringify({ capabilities: { slackAssistant: enabled, workbotDefaultModel: false } }),
+        method: "PUT", body: JSON.stringify({ capabilities: { slackAssistant: enabled } }),
       });
       if (!flags.response.ok) throw new Error(`Could not arrange Slack rollout: HTTP ${flags.response.status}`);
     }

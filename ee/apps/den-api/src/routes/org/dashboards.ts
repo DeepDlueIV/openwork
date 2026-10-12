@@ -13,7 +13,7 @@ import type { Hono, MiddlewareHandler } from "hono"
 import { describeRoute } from "hono-openapi"
 import { z } from "zod"
 import { db } from "../../db.js"
-import { organizationBuildsMcpApps } from "../../mcp-app-rollout.js"
+import { env } from "../../env.js"
 import { currentMcpAppRevisionIds } from "../../mcp-apps.js"
 import {
   jsonValidator,
@@ -283,7 +283,7 @@ export function registerOrgDashboardRoutes<T extends { Variables: OrgRouteVariab
         .from(DashboardTable)
         .where(and(eq(DashboardTable.organizationId, payload.organization.id), isNull(DashboardTable.deletedAt)))
         .orderBy(asc(DashboardTable.name), asc(DashboardTable.id))
-      return c.json({ items: (await withCurrentAppRevisions(payload.organization.id, rows, await organizationBuildsMcpApps(payload.organization.id))).map(serializeDashboard) })
+      return c.json({ items: (await withCurrentAppRevisions(payload.organization.id, rows, env.appMcpServersEnabled)).map(serializeDashboard) })
     },
   )
 
@@ -318,7 +318,7 @@ export function registerOrgDashboardRoutes<T extends { Variables: OrgRouteVariab
         deletedAt: null,
       }
       await db.insert(DashboardTable).values(row)
-      const [current] = await withCurrentAppRevisions(payload.organization.id, [row], await organizationBuildsMcpApps(payload.organization.id))
+      const [current] = await withCurrentAppRevisions(payload.organization.id, [row], env.appMcpServersEnabled)
       return c.json({ item: serializeDashboard(current ?? row) }, 201)
     },
   )
@@ -346,7 +346,7 @@ export function registerOrgDashboardRoutes<T extends { Variables: OrgRouteVariab
         normalizeDenTypeId("dashboard", c.req.valid("param").dashboardId),
       )
       if (!row) return c.json({ error: "dashboard_not_found" }, 404)
-      const [current] = await withCurrentAppRevisions(payload.organization.id, [row], await organizationBuildsMcpApps(payload.organization.id))
+      const [current] = await withCurrentAppRevisions(payload.organization.id, [row], env.appMcpServersEnabled)
       return c.json({ item: serializeDashboard(current ?? row) })
     },
   )
@@ -388,7 +388,7 @@ export function registerOrgDashboardRoutes<T extends { Variables: OrgRouteVariab
         .update(DashboardTable)
         .set({ name: next.name, elementsJson: next.elementsJson, updatedAt })
         .where(eq(DashboardTable.id, existing.id))
-      const [current] = await withCurrentAppRevisions(payload.organization.id, [next], await organizationBuildsMcpApps(payload.organization.id))
+      const [current] = await withCurrentAppRevisions(payload.organization.id, [next], env.appMcpServersEnabled)
       return c.json({ item: serializeDashboard(current ?? next) })
     },
   )
@@ -642,7 +642,7 @@ export function registerOrgDashboardRoutes<T extends { Variables: OrgRouteVariab
         ))
         .orderBy(asc(DashboardTable.name), asc(DashboardTable.id))
       const seen = new Set<string>()
-      const items = (await withCurrentAppRevisions(payload.organization.id, rows, await organizationBuildsMcpApps(payload.organization.id))).flatMap((row) => {
+      const items = (await withCurrentAppRevisions(payload.organization.id, rows, env.appMcpServersEnabled)).flatMap((row) => {
         if (seen.has(row.id)) return []
         seen.add(row.id)
         return [{

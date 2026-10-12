@@ -6,8 +6,8 @@ import type { Den, Place } from "@openwork/testkit";
 
 // Behaviour proof for user-scoped audit events (attribution user_memberships):
 // session lifecycle and organization switching land in the session's
-// organization (every flagged membership when the session has none); account
-// security changes and failed sign-ins fan out to every flagged organization
+// organization (every entitled membership when the session has none); account
+// security changes and failed sign-ins fan out to every entitled organization
 // where the user is an active member; Den's direct session revocation on member
 // removal lands in the affected organization exactly once per session. Observed
 // across the public HTTP boundary plus the disposable scratch database that
@@ -208,10 +208,10 @@ async function memberIdentity(den: Den, admin: DenSession, orgId: string, email:
   return { memberId: text(member.id, "member.id"), userId: text(member.userId ?? user.id, "member.userId") };
 }
 
-async function setAuditFlag(den: Den, admin: DenSession, orgId: string, value: boolean) {
-  const result = await call(den, `/v1/admin/organizations/${orgId}/capabilities`, { method: "PUT", headers: { authorization: `Bearer ${admin.token}` }, body: { capabilities: { auditLogs: value } } });
+/** Audit capture follows the Enterprise entitlement; the platform admin sets the plan. */
+async function setEnterprisePlan(den: Den, admin: DenSession, orgId: string) {
+  const result = await call(den, `/v1/admin/organizations/${orgId}/plan`, { method: "PATCH", headers: { authorization: `Bearer ${admin.token}` }, body: { tier: "enterprise", seatLimit: 25 } });
   expect(result.response.status, result.text).toBe(200);
-  expect(record(record(result.body, "capabilities").capabilities, "capabilities").auditLogs).toBe(value);
 }
 
 async function createOrganization(den: Den, admin: DenSession, organizationName: string): Promise<string> {
@@ -258,10 +258,10 @@ function world(place: Place): Promise<World> {
         },
       },
       env: {
-        DEN_AUDIT_SELF_HOSTED_ENABLED: "true",
+        // Without the self-hosted switch the entitlement is per organization (its plan).
+        DEN_AUDIT_SELF_HOSTED_ENABLED: undefined,
         DEN_AUDIT_CAPTURE_ENABLED: undefined,
         DEN_AUDIT_VISIBILITY_ENABLED: undefined,
-        DEN_FEATURE_PLATFORM_AUDIT_READS: undefined,
         DEN_PLAN_GATING_ENABLED: "false",
         RESEND_API_KEY: "",
         STRIPE_SECRET_KEY: "",
@@ -273,11 +273,11 @@ function world(place: Place): Promise<World> {
     const leaver = den.members.leaver;
     if (!member || !leaver) throw new Error("Expected the synthetic member sessions");
     const orgA = await organizationIdNamed(admin, organizationName);
-    // The admin owns two more organizations: B flagged, C never flagged.
+    // The admin owns two more organizations: B on Enterprise, C never entitled.
     const orgB = await createOrganization(den, admin, `Audit sessions B ${stamp}`);
     const orgC = await createOrganization(den, admin, `Audit sessions C ${stamp}`);
-    await setAuditFlag(den, admin, orgA, true);
-    await setAuditFlag(den, admin, orgB, true);
+    await setEnterprisePlan(den, admin, orgA);
+    await setEnterprisePlan(den, admin, orgB);
     const secrets = new Set([admin.token, member.token, leaver.token, admin.password, member.password, leaver.password]);
     return {
       den, dbUrl, stamp, orgA, orgB, orgC, admin, member, leaver, secrets,
@@ -294,7 +294,7 @@ const state: { adminCookie: string; adminSessionId: string; adminPassword: strin
   adminCookie: "", adminSessionId: "", adminPassword: "", failedStatus: 0, failedBody: null,
 };
 
-test.skipIf(skip)(name("1. a password sign-in records session.created in the session's organization, or every flagged membership when it has none, never with the token"), LONG, async ({ evidence, place }) => {
+test.skipIf(skip)(name("1. a password sign-in records session.created in the session's organization, or every entitled membership when it has none, never with the token"), LONG, async ({ evidence, place }) => {
   const w = await world(place);
   const markA = await watermark(w, w.orgA);
   const markB = await watermark(w, w.orgB);
@@ -319,7 +319,7 @@ test.skipIf(skip)(name("1. a password sign-in records session.created in the ses
   expect(event.raw.includes(session.token)).toBe(false);
 
   // A user with several memberships starts without an organization: the session
-  // can act in all of them, so session.created fans out to every flagged membership.
+  // can act in all of them, so session.created fans out to every entitled membership.
   const adminCookie = await signInCookie(w, w.admin.email, w.admin.password);
   const adminSession = await sessionOf(w, adminCookie);
   state.adminCookie = adminCookie;
@@ -336,9 +336,9 @@ test.skipIf(skip)(name("1. a password sign-in records session.created in the ses
   expect(adminInB[0]?.operationId).not.toBe(adminInA[0]?.operationId);
   expect(record(adminInB[0]?.changes?.after, "after")).toEqual({ method: "password", expiresAt: expect.any(String) });
   expect(adminInB[0]?.raw.includes(adminSession.token)).toBe(false);
-  expect(await envelopeRows(w, w.orgC), "unflagged C stores nothing").toBe(0);
+  expect(await envelopeRows(w, w.orgC), "unentitled C stores nothing").toBe(0);
   evidence.recordAssertionEvidence(
-    "Signing in records session.created (method password, expiresAt) in the session's organization with the user/member actor, the session id as target and no token; a multi-membership session without an organization fans session.created out to every flagged membership (own operation each, shared request id) and nothing to unflagged C",
+    "Signing in records session.created (method password, expiresAt) in the session's organization with the user/member actor, the session id as target and no token; a multi-membership session without an organization fans session.created out to every entitled membership (own operation each, shared request id) and nothing to unentitled C",
     `A: ${summary(created)} actor=${JSON.stringify(event.actor)} after=${JSON.stringify(event.changes?.after)}; admin session ${adminSession.id} active=${String(adminSession.activeOrganizationId)} → A: ${summary(adminInA)} B: ${summary(adminInB)} request=${adminInA[0]?.requestId}; C envelope rows=0`,
     true,
   );
@@ -406,17 +406,17 @@ test.skipIf(skip)(name("3. a desktop handoff records desktop_handoff.created and
   const secondCreated = [...await tenantEvents(w, w.orgA, markA), ...await tenantEvents(w, w.orgB, markB)].filter((event) => event.action === "session.created" && targets(event, "session", state.adminSessionId));
   expect(summary(secondCreated), "the handed-over session already exists: no second session.created").toBe("(none)");
   const inB = (await tenantEvents(w, w.orgB, markB)).filter((event) => event.action.startsWith("session.") || event.action.startsWith("desktop_handoff."));
-  expect(summary(inB), "the admin is a member of flagged B, but the session is in A").toBe("(none)");
+  expect(summary(inB), "the admin is a member of entitled B, but the session is in A").toBe("(none)");
   const audit = await allAuditText(w);
   expect(audit.includes(grantValue), "grant stored").toBe(false);
   evidence.recordAssertionEvidence(
-    "Creating a desktop handoff grant is attributed to the session's organization A (requested → desktop_handoff.created → succeeded, one operation, target the session, no grant); exchanging it records session.handed_off (method desktop_handoff) in A, no second session.created for the same session id anywhere, and nothing in flagged B",
+    "Creating a desktop handoff grant is attributed to the session's organization A (requested → desktop_handoff.created → succeeded, one operation, target the session, no grant); exchanging it records session.handed_off (method desktop_handoff) in A, no second session.created for the same session id anywhere, and nothing in entitled B",
     `create: ${summary(createEvents)}; exchange: ${summary(handedOff)}; second session.created: ${summary(secondCreated)}; B: ${summary(inB)}; grant stored=false`,
     true,
   );
 });
 
-test.skipIf(skip)(name("4. a password change fans account.password_changed out to every flagged membership and nothing to an unflagged one"), STEP, async ({ evidence, place }) => {
+test.skipIf(skip)(name("4. a password change fans account.password_changed out to every entitled membership and nothing to an unentitled one"), STEP, async ({ evidence, place }) => {
   const w = await world(place);
   const markA = await watermark(w, w.orgA);
   const markB = await watermark(w, w.orgB);
@@ -438,13 +438,13 @@ test.skipIf(skip)(name("4. a password change fans account.password_changed out t
   expect(targets(inB[0], "user", w.adminB.userId)).toBe(true);
   expect(await envelopeRows(w, w.orgC)).toBe(0);
   evidence.recordAssertionEvidence(
-    "POST /api/auth/change-password records account.password_changed (method only) in flagged organizations A and B, each with its own operation and member actor and the same request id; unflagged C stores nothing",
+    "POST /api/auth/change-password records account.password_changed (method only) in entitled organizations A and B, each with its own operation and member actor and the same request id; unentitled C stores nothing",
     `A: ${summary(inA)} actor=${JSON.stringify(inA[0]?.actor)}; B: ${summary(inB)} actor=${JSON.stringify(inB[0]?.actor)}; request=${inA[0]?.requestId}; C envelope rows=0`,
     true,
   );
 });
 
-test.skipIf(skip)(name("5. a failed password sign-in for an existing member records session.sign_in_failed in each flagged organization without the attempt"), STEP, async ({ evidence, place }) => {
+test.skipIf(skip)(name("5. a failed password sign-in for an existing member records session.sign_in_failed in each entitled organization without the attempt"), STEP, async ({ evidence, place }) => {
   const w = await world(place);
   const markA = await watermark(w, w.orgA);
   const markB = await watermark(w, w.orgB);
@@ -480,7 +480,7 @@ test.skipIf(skip)(name("5. a failed password sign-in for an existing member reco
   expect(leakedPassword, "attempted password stored").toBe(false);
   expect(leakedEmail, "submitted email stored").toBe(false);
   evidence.recordAssertionEvidence(
-    "A wrong password for an existing member answers 401 as before and records session.sign_in_failed (security, denied, invalid_credentials, actor unknown, target user) in flagged A and B; the platform row shares the request id; neither the attempted password nor the email is stored",
+    "A wrong password for an existing member answers 401 as before and records session.sign_in_failed (security, denied, invalid_credentials, actor unknown, target user) in entitled A and B; the platform row shares the request id; neither the attempted password nor the email is stored",
     `A: ${summary(inA)}; B: ${summary(inB)}; platform=${JSON.stringify(platform)}; password stored=${leakedPassword}; email stored=${leakedEmail}`,
     true,
   );

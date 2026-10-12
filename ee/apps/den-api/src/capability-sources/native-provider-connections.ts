@@ -13,7 +13,6 @@ import {
 import { getConnectedAccount, getOrgOAuthClient } from "./oauth-credentials.js"
 import { readProviderTenantId } from "./oauth-tenant.js"
 import { listExternalMcpConnections, listUsableNativeProviderConnections } from "./external-mcp-connections.js"
-import { organizationFeatureEnabled } from "../features.js"
 
 /**
  * Native providers (google-workspace, ...) surface in the SAME member-facing
@@ -122,12 +121,10 @@ export async function nativeProviderConnectionPolicyError(organizationId: DenTyp
     .from(OrganizationTable)
     .where(eq(OrganizationTable.id, organizationId))
     .limit(1)
-  if (organization && await organizationFeatureEnabled(organization.id, "mcpConnections")) return null
+  if (organization) return null
   return {
     kind: "policy_blocked",
-    message: organization
-      ? "Connect is disabled for this organization. Ask your administrator to have it re-enabled."
-      : "This organization is unavailable. Ask your administrator to check your organization access.",
+    message: "This organization is unavailable. Ask your administrator to check your organization access.",
   }
 }
 

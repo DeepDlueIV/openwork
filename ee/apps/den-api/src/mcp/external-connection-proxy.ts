@@ -30,7 +30,6 @@ import {
   readExternalMcpResource,
 } from "../capability-sources/external-mcp-client-runtime.js"
 import { externalMcpDiagnosticForResponse } from "../capability-sources/external-mcp-diagnostics.js"
-import { organizationFeatureEnabled } from "../features.js"
 import { evaluateToolPolicy } from "../capability-sources/external-mcp-tool-policy.js"
 import { env } from "../env.js"
 import { tokenRoute } from "../middleware/index.js"
@@ -491,10 +490,7 @@ export function registerExternalConnectionProxyRoutes<T extends { Variables: Req
       return c.json({ error: "connection_not_available", message: "Connect your personal API key in Your Connections." }, 403)
     }
 
-    // The direct provider catalog is a member-facing MCP surface, so it obeys
-    // the same organization flag as the member-facing connection list.
     const directExposureEnabled = connection.exposeDirectly
-      && await organizationFeatureEnabled(organizationId, "mcpConnections")
 
     const redirectUriBase = resolvePublicOrigin(c.req.raw, env.apiPublicUrl)
     const redirectUri = `${redirectUriBase}/v1/mcp-connections/${encodeURIComponent(connection.id)}/connect/callback`

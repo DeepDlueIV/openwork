@@ -178,7 +178,6 @@ export async function workbotConversations(_seed: Seed, context: { place: Place 
       live: false,
       upstream: { baseUrl: upstream, key, model: "workbot-journey" },
       runnerEnv: { HEADLESS_CONTEXT_CHAR_BUDGET: "12000" },
-      features: { workbotSideChats: true },
     });
     const login = await signInWorkbot(world);
     const app = stack.use(await chrome({ name: "workbot-conversations", host: context.place.host(), headless: true, startUrl: "about:blank" }));

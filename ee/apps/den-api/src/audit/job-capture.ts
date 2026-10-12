@@ -2,12 +2,11 @@ import type { AuditActor, AuditEventInput, AuditOrigin } from "@openwork-ee/den-
 import { normalizeDenTypeId } from "@openwork-ee/utils/typeid"
 import { env } from "../env.js"
 import type { AuditJobOutcomeEventType } from "./job-outcomes.js"
-import { appendAuditEventInOwnTransaction, readEffectiveAuditPolicyWithRetry, auditLogsFeatureEnabled, auditOperationOutcome, logAuditOutcomeLost } from "./request-capture.js"
+import { appendAuditEventInOwnTransaction, readEffectiveAuditPolicyWithRetry, auditOperationOutcome, logAuditOutcomeLost } from "./request-capture.js"
 
 // Background job outcomes (src/audit/job-outcomes.ts). Never throws into the
 // job: a lost outcome is logged [audit-outcome-lost] and the job continues.
-// No-op unless the organization has the auditLogs feature (features registry), capture is
-// on, an enabled policy exists (lazy default allowed) and "execution" is selected.
+// No-op unless capture is on, an enabled policy exists (lazy default allowed) and "execution" is selected.
 
 export type AuditJobOutcome = Readonly<{
   organizationId: string
@@ -38,7 +37,6 @@ export async function recordAuditJobOutcome(input: AuditJobOutcome): Promise<boo
   if (!env.auditCaptureEnabled) return false
   try {
     const organizationId = normalizeDenTypeId("organization", input.organizationId)
-    if (!(await auditLogsFeatureEnabled(organizationId))) return false
     const policy = await readEffectiveAuditPolicyWithRetry(organizationId)
     if (!policy || !policy.categories.includes("execution")) return false
     await appendAuditEventInOwnTransaction({

@@ -10,11 +10,11 @@ export const meSchema = z.object({
   email: z.string(),
   organizationName: z.string(),
   enabled: z.boolean(),
-  /** Workbot's Calendar tab (Den's workbotCalendar feature); older servers omit it. */
+  /** Workbot's Calendar tab (on while Workbot is on); older servers omit it. */
   calendar: z.boolean().default(false),
   /** The organization runs Automations in the cloud, so the Calendar can create them. */
   canSchedule: z.boolean().default(false),
-  /** Side chats are on for this person (the workbotSideChats feature). */
+  /** Side chats are on for this person (while Workbot is on). */
   sideChats: z.boolean().default(false),
   calendarPolish: z.boolean().default(false),
   denUrl: z.string().nullable(),

@@ -207,7 +207,6 @@ export async function resolveSlackActor(installation: InstallationRow, slackUser
       capabilityEnabled: features.slackAssistant,
       enabled: installation.enabled,
       individualAccounts: true,
-      mcpEnabled: features.mcpConnections,
       activeMember: true,
       granted,
       connected: account.current && Boolean(account.value?.accessToken),

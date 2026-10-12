@@ -117,7 +117,7 @@ import {
 import { resolveImportedConnectorTarget } from "../../../capability-sources/claude-connector-aliases.js"
 import { NATIVE_OAUTH_PROVIDERS } from "../../../capability-sources/provider-registry.js"
 import type { MemberUsableConnectionFacts } from "../mcp-connections.js"
-import { getOrganizationFeatures, organizationFeatureEnabled } from "../../../features.js"
+import { getOrganizationFeatures } from "../../../features.js"
 
 type OrganizationId = PluginArchActorContext["organizationContext"]["organization"]["id"]
 const logger = appLogger.child({ component: "plugin_system_store" })
@@ -3804,17 +3804,15 @@ export async function getMarketplaceResolved(input: { context: PluginArchActorCo
     counts.set(objectType, (counts.get(objectType) ?? 0) + 1)
   }
 
-  const cloudReadinessByPlugin = (await organizationFeatureEnabled(input.context.organizationContext.organization.id, "mcpConnections"))
-    ? await resolveMarketplacePluginCloudReadiness({
-        organizationId,
-        member: {
-          orgMembershipId: input.context.organizationContext.currentMember.id,
-          teamIds: input.context.memberTeams.map((team) => team.id),
-        },
-        pluginIds,
-        desktopManifestPluginIds: pluginRows.flatMap((row) => defaultOpenWorkManifestForPlugin(row) ? [row.id] : []),
-      })
-    : new Map<string, never>()
+  const cloudReadinessByPlugin = await resolveMarketplacePluginCloudReadiness({
+    organizationId,
+    member: {
+      orgMembershipId: input.context.organizationContext.currentMember.id,
+      teamIds: input.context.memberTeams.map((team) => team.id),
+    },
+    pluginIds,
+    desktopManifestPluginIds: pluginRows.flatMap((row) => defaultOpenWorkManifestForPlugin(row) ? [row.id] : []),
+  })
 
   const plugins = pluginRows.map((row) => {
     const componentCounts = Object.fromEntries(componentCountsByPlugin.get(row.id) ?? new Map())

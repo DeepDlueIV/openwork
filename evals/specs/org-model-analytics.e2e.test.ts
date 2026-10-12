@@ -127,7 +127,7 @@ test("organization model analytics aggregate session dimensions without cross-or
     await user.screenshot();
   });
   await step("after: adoption uses neutral statistics without changing model sessions", async () => {
-    await world.setAnalyticsIntegrated(true);
+    await world.setLibraryUsage(true);
     await user.reload();
     await user.see({ text: /^prov\/model-a\s+1$/ }, { timeoutMs: 60_000 });
     const stats = (await probe.dom('[data-analytics-stat]')).elements;

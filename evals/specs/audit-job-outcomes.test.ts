@@ -180,8 +180,6 @@ function world(place: Place): Promise<World> {
     const dbUrl = guardedDatabaseUrl(den);
     const admin = den.admin;
     const orgId = await organizationIdNamed(admin, organizationName);
-    const flagged = await call(den, `/v1/admin/organizations/${orgId}/capabilities`, { method: "PUT", headers: { authorization: `Bearer ${admin.token}` }, body: { capabilities: { auditLogs: true } } });
-    expect(flagged.response.status, flagged.text).toBe(200);
     const identity = await memberIdentity(den, admin, orgId, admin.email);
     return { den, dbUrl, orgId, admin, adminUserId: identity.userId, adminMemberId: identity.memberId, stamp };
   })();

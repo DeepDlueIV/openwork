@@ -272,7 +272,7 @@ async function recordSignInFailedNow(input: AuditSignInFailure, requestId: strin
 /**
  * hooks.after once the failure response is decided: runs detached so neither
  * the status, the body nor the response timing depends on whether the account
- * exists or is a member of a flagged organization. Known trade-off: anyone who
+ * exists or is a member of an organization. Known trade-off: anyone who
  * guesses a member's email can append these events (no rate limit).
  */
 export function recordSignInFailed(input: AuditSignInFailure): void {

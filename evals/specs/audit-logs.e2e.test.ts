@@ -20,12 +20,10 @@ async function enterPastDate(owner: User, label: string, day: string) {
   await owner.see({ label }, { value: `2000-01-${day.padStart(2, "0")}T01:00` });
 }
 
-test("an owner switches audit history to compact Den rows without changing capture, filters or teammate access", { timeout: 1_200_000 }, async ({ world, user, probe, seed, step, evidence }) => {
+test("an owner reads, filters and pauses audit history in compact Den rows, and a teammate cannot read it", { timeout: 1_200_000 }, async ({ world, user, probe, seed, step, evidence }) => {
   const owner = user.on(world.web);
   const audit = probe.on(world.web);
   const teammate = user.on(world.memberWeb);
-  const unflaggedOwner = user.on(world.unflaggedWeb);
-  const hiddenAudit = probe.on(world.unflaggedWeb);
   const operationsPath = "/v1/audit/operations?limit=50";
   const providerOperationsPath = `${operationsPath}&action=provider.credential.updated&resourceId=${encodeURIComponent(world.providerId)}`;
   const groupedRow = { role: "button", label: "View changes for Provider configuration update committed" } satisfies Parameters<User["see"]>[0];
@@ -201,11 +199,12 @@ test("an owner switches audit history to compact Den rows without changing captu
     return dates.elements.map((date) => date.rect.width.toFixed(1)).join(" / ");
   }
 
-  await step("before: audit history uses a seven-column operation table", async () => {
+  await step("before: audit history uses compact Den rows", async () => {
     await owner.see({ role: "heading", label: "Audit logs" }, { timeoutMs: 90_000 });
     await historySettled();
-    expect((await audit.dom('thead th')).elements).toHaveLength(7);
-    evidence.recordAssertionEvidence("Current audit table is visible", "The owner sees Operation, Actor, Origin, Started, Result, First recorded target and Details.", true);
+    const lists = (await audit.dom('[data-testid="audit-compact-list"]')).elements;
+    expect(lists).toHaveLength(1);
+    evidence.recordAssertionEvidence("Compact audit rows are visible", `The owner sees ${lists.length} compact operation list.`, lists.length === 1);
     await owner.screenshot();
   });
 
@@ -221,50 +220,7 @@ test("an owner switches audit history to compact Den rows without changing captu
   }
   await owner.navigate(`${world.den.ref.webUrl}/dashboard/audit-logs`);
 
-  await step("before: an entitled owner without the release flag has no audit navigation", async () => {
-    await unflaggedOwner.see({ testId: "den-org-sidebar" }, { timeoutMs: 90_000 });
-    const response = await probe.api(world.unflaggedOwner, "/v1/org");
-    expect(response.response.status).toBe(200);
-    expect(response.body).toMatchObject({ organization: { id: world.unflaggedOrgId }, currentMember: { isOwner: true }, entitlements: { auditLogs: true }, capabilities: { auditLogs: false } });
-    await unflaggedOwner.notSee({ role: "link", label: "Audit logs" });
-    const links = await hiddenAudit.dom('[data-testid="den-org-sidebar"] a[href="/dashboard/audit-logs"]');
-    expect(links.elements).toHaveLength(0);
-    evidence.recordAssertionEvidence("Entitlement does not reveal the hidden feature", `The second organization owner is entitled, its auditLogs capability is false, and ${links.elements.length} audit sidebar links are present.`, links.elements.length === 0);
-    await unflaggedOwner.screenshot();
-  });
-
-  await step("before: the unflagged owner cannot find audit logs in the command palette", async () => {
-    await unflaggedOwner.click({ role: "button", label: "Search or jump to" });
-    await unflaggedOwner.see({ testId: "den-command-palette" });
-    await unflaggedOwner.type({ testId: "den-command-palette-input" }, "Audit logs", { verify: true });
-    await unflaggedOwner.see({ text: "No matches for “Audit logs”." });
-    await unflaggedOwner.notSee({ role: "option", label: "Audit logs" });
-    const options = await hiddenAudit.dom('[data-testid="den-command-palette"] [role="option"]');
-    expect(options.elements).toHaveLength(0);
-    evidence.recordAssertionEvidence("Hidden audit logs are absent from search", `Searching Audit logs returns ${options.elements.length} command-palette options and the no-matches state.`, options.elements.length === 0);
-    await unflaggedOwner.screenshot();
-    await unflaggedOwner.press("Escape");
-  });
-
-  await step("before: the unflagged owner's direct link is unavailable and the API denies audit access", async () => {
-    await unflaggedOwner.navigate(`${world.den.ref.webUrl}/dashboard/audit-logs`);
-    await unflaggedOwner.see({ testId: "audit-locked" }, { text: "Audit logs are not enabled for this organization.", timeoutMs: 60_000 });
-    await unflaggedOwner.notSee({ label: "Search IDs" });
-    await unflaggedOwner.notSee({ role: "button", label: "Refresh history" });
-    await unflaggedOwner.notSee({ role: "switch", label: "Capture audit logs" });
-    await unflaggedOwner.notSee({ text: "Capture and storage" });
-    const statuses: number[] = [];
-    for (const path of [operationsPath, "/v1/audit/event-types", "/v1/audit/usage", "/v1/audit/export"]) {
-      const response = await probe.api(world.unflaggedOwner, path);
-      statuses.push(response.response.status);
-      expect(response.response.status).toBe(403);
-      expect(response.body).toEqual({ error: "audit_feature_disabled" });
-    }
-    evidence.recordAssertionEvidence("The release flag is enforced despite owner permission and entitlement", `Operations, catalog, usage and export return ${statuses.join("/")} audit_feature_disabled; the direct route shows the neutral unavailable message.`, statuses.every((status) => status === 403));
-    await unflaggedOwner.screenshot();
-  });
-
-  await step("before: the flagged owner is already recording with no provider changes retained", async () => {
+  await step("before: the owner is already recording with no provider changes retained", async () => {
     await owner.see({ role: "heading", label: "Audit logs" }, { timeoutMs: 90_000 });
     await filterProviderHistory();
     await owner.see({ testId: "audit-empty" }, { text: /No operations match these filters/ });
@@ -300,7 +256,7 @@ test("an owner switches audit history to compact Den rows without changing captu
     expect((await audit.dom('[role="switch"][aria-label="Capture audit logs"][aria-checked="true"]')).elements).toHaveLength(1);
     // Bring the allowance into the viewport alongside the recording state.
     await owner.click({ text: "Operation allowance" });
-    evidence.recordAssertionEvidence("Default rollout records before any manual toggle", `No policy was seeded. The lazily initialized revision ${usage.policy?.revision} operator/keep_all policy is ON with a displayed 6,000,000-operation allowance, 300-second window and access capture; ${usage.retainedOperations} total operations already exist, with ${history.operations.length} matching provider credential changes.`, usage.captureAvailable && usage.captureOn && usage.captureEnabled && usage.policy?.allowance === 6_000_000 && history.operations.length === 0);
+    evidence.recordAssertionEvidence("Default rollout records before any manual toggle", `The automatically initialized revision ${usage.policy?.revision} operator/keep_all policy is ON with a displayed 6,000,000-operation allowance, 300-second window and access capture; ${usage.retainedOperations} total operations already exist, with ${history.operations.length} matching provider credential changes.`, usage.captureAvailable && usage.captureOn && usage.captureEnabled && usage.policy?.allowance === 6_000_000 && history.operations.length === 0);
     await owner.screenshot();
     await owner.click({ text: "Capture and storage" });
     await owner.click({ role: "heading", label: "Audit logs" });
@@ -424,7 +380,6 @@ test("an owner switches audit history to compact Den rows without changing captu
     await owner.click({ role: "link", label: "Audit logs" });
     await owner.see({ role: "heading", label: "Audit logs" }, { timeoutMs: 30_000 });
     await filterProviderHistory();
-    await owner.see({ text: "First recorded target" });
     await owner.see({ role: "button", label: "View changes for Provider configuration update committed" });
     const response = await probe.api(world.den.admin, providerOperationsPath);
     expect(response.response.status).toBe(200);
@@ -811,88 +766,73 @@ test("an owner switches audit history to compact Den rows without changing captu
     await teammate.screenshot();
   });
 
-  async function compactFlag(enabled: boolean) {
-    const response = await seed.api(world.platformAdmin, `/v1/admin/organizations/${encodeURIComponent(world.orgId)}/capabilities`, {
-      method: "PUT", body: JSON.stringify({ capabilities: { auditLogsCompact: enabled } }),
-    });
-    expect(response.response.status).toBe(200);
-    const context = await probe.api(world.den.admin, "/v1/org");
-    expect(context.body).toMatchObject({ features: { auditLogsCompact: enabled } });
+  async function reloadAuditHistory() {
     await owner.reload();
     await owner.see({ role: "heading", label: "Audit logs" }, { timeoutMs: 60_000 });
     await filterProviderHistory();
   }
 
-  for (const compact of [false, true]) {
-    const phase = compact ? "after:" : "before:";
-    await step(`${phase} the owner reads the same saved operation with compact audit rows ${compact ? "on" : "off"}`, async () => {
-      await compactFlag(compact);
-      await owner.see(groupedRow);
-      const rows = await audit.dom(`[aria-controls="audit-operation-${operationId}"]`);
-      expect(rows.elements).toHaveLength(1);
-      expect((await audit.dom('[data-testid="audit-compact-list"]')).elements).toHaveLength(compact ? 1 : 0);
-      const response = await probe.api(world.den.admin, `/v1/audit/operations/${encodeURIComponent(operationId)}/events?limit=50`);
-      expect(auditEventsResponseSchema.parse(response.body).events.map((event) => event.id)).toEqual(originalEventIds);
-      evidence.recordAssertionEvidence("Presentation preserves retained evidence", `Compact rows ${compact ? "on" : "off"}; exactly one saved operation and the same ${originalEventIds.length} event IDs.`, rows.elements.length === 1);
-      await owner.screenshot();
-    });
+  await step("after a reload the owner reads the same saved operation in compact rows", async () => {
+    await reloadAuditHistory();
+    await owner.see(groupedRow);
+    const rows = await audit.dom(`[aria-controls="audit-operation-${operationId}"]`);
+    expect(rows.elements).toHaveLength(1);
+    expect((await audit.dom('[data-testid="audit-compact-list"]')).elements).toHaveLength(1);
+    const response = await probe.api(world.den.admin, `/v1/audit/operations/${encodeURIComponent(operationId)}/events?limit=50`);
+    expect(auditEventsResponseSchema.parse(response.body).events.map((event) => event.id)).toEqual(originalEventIds);
+    evidence.recordAssertionEvidence("Presentation preserves retained evidence", `Compact rows; exactly one saved operation and the same ${originalEventIds.length} event IDs.`, rows.elements.length === 1);
+    await owner.screenshot();
+  });
 
-    await step(`${phase} expanded changes keep secrets hidden and diagnostics one level deeper`, async () => {
-      await owner.click(groupedRow);
-      await owner.see({ text: "Changed; values not retained" });
-      await owner.notSee({ text: world.originalCredential });
-      await owner.notSee({ text: world.replacementCredential });
-      await owner.notSee({ text: operationId });
-      const events = await audit.dom(`[id="audit-operation-${operationId}"] [data-testid="audit-event"]`);
-      expect(events.elements.length).toBeGreaterThan(1);
-      const times = await audit.dom(`[id="audit-operation-${operationId}"] time`);
-      expect(times.elements.every((time) => !/\d{4}-\d{2}-\d{2}T/.test(time.text))).toBe(true);
-      if (compact) {
-        await owner.notSee({ text: "No field changes recorded." });
-        await owner.notSee({ text: /\(name unavailable\)/ });
-        expect((await audit.dom(`[id="audit-operation-${operationId}"] details[open]`)).elements).toHaveLength(0);
-      }
-      evidence.recordAssertionEvidence("Changes are readable without disclosing credentials", `${events.elements.length} retained events; ${times.elements.length} localized event times; operation identifiers and request routes remain collapsed.`, events.elements.length > 1);
-      await owner.screenshot();
-      await owner.click({ role: "button", label: "Hide changes for Provider configuration update committed" });
-    });
+  await step("expanded changes keep secrets hidden and diagnostics one level deeper", async () => {
+    await owner.click(groupedRow);
+    await owner.see({ text: "Changed; values not retained" });
+    await owner.notSee({ text: world.originalCredential });
+    await owner.notSee({ text: world.replacementCredential });
+    await owner.notSee({ text: operationId });
+    const events = await audit.dom(`[id="audit-operation-${operationId}"] [data-testid="audit-event"]`);
+    expect(events.elements.length).toBeGreaterThan(1);
+    const times = await audit.dom(`[id="audit-operation-${operationId}"] time`);
+    expect(times.elements.every((time) => !/\d{4}-\d{2}-\d{2}T/.test(time.text))).toBe(true);
+    await owner.notSee({ text: "No field changes recorded." });
+    await owner.notSee({ text: /\(name unavailable\)/ });
+    expect((await audit.dom(`[id="audit-operation-${operationId}"] details[open]`)).elements).toHaveLength(0);
+    evidence.recordAssertionEvidence("Changes are readable without disclosing credentials", `${events.elements.length} retained events; ${times.elements.length} localized event times; operation identifiers and request routes remain collapsed.`, events.elements.length > 1);
+    await owner.screenshot();
+    await owner.click({ role: "button", label: "Hide changes for Provider configuration update committed" });
+  });
 
-    await step(`${phase} all seven audit filters remain available`, async () => {
-      await owner.click({ text: "More filters" });
-      for (const label of ["Actor", "Result", "Origin"]) await owner.see({ role: "button", label });
-      const fields = await audit.dom('form[aria-label="Filter audit operations"] [aria-label]');
-      expect(fields.elements).toHaveLength(7);
-      evidence.recordAssertionEvidence("Presentation preserves all audit filters", `${fields.elements.length} controls: local From/To, Event type, Search IDs, Actor, Result and Origin.`, fields.elements.length === 7);
-      await owner.screenshot();
-      await owner.click({ text: "More filters" });
-    });
+  await step("all seven audit filters remain available", async () => {
+    await owner.click({ text: "More filters" });
+    for (const label of ["Actor", "Result", "Origin"]) await owner.see({ role: "button", label });
+    const fields = await audit.dom('form[aria-label="Filter audit operations"] [aria-label]');
+    expect(fields.elements).toHaveLength(7);
+    evidence.recordAssertionEvidence("Presentation preserves all audit filters", `${fields.elements.length} controls: local From/To, Event type, Search IDs, Actor, Result and Origin.`, fields.elements.length === 7);
+    await owner.screenshot();
+    await owner.click({ text: "More filters" });
+  });
 
-    await step(`${phase} capture and storage keeps the same recording state and owner control`, async () => {
-      await owner.click({ text: "Capture and storage" });
-      await owner.see({ role: "switch", label: "Capture audit logs" });
-      await owner.see({ text: "Recording" });
-      const response = await probe.api(world.den.admin, "/v1/audit/usage");
-      const usage = auditUsageResponseSchema.parse(response.body);
-      expect(usage.captureOn && usage.captureEnabled).toBe(true);
-      expect(usage.policy?.allowance).toBe(6_000_000);
-      if (compact) {
-        await owner.notSee({ text: /One operation can include many requests/ });
-        await owner.notSee({ text: /Read-only capacity policy/ });
-        expect((await audit.dom('[data-testid="audit-compact-usage"]')).elements).toHaveLength(1);
-      }
-      evidence.recordAssertionEvidence("Capture policy and control are unchanged", `Capture On; effective Recording; allowance ${usage.policy?.allowance}; billing ${usage.billing}; cleanup ${usage.cleanup}.`, usage.captureOn && usage.captureEnabled);
-      await owner.screenshot();
-      if (compact) {
-        await owner.click({ text: "Technical details" });
-        await owner.see({ text: "Categories" });
-        await owner.see({ text: "Keep all" });
-        await owner.see({ text: "Dry run only — no deletion" });
-        await owner.screenshot();
-        await owner.click({ text: "Technical details" });
-      }
-      await owner.click({ text: "Capture and storage" });
-    });
-  }
+  await step("capture and storage keeps the same recording state and owner control", async () => {
+    await owner.click({ text: "Capture and storage" });
+    await owner.see({ role: "switch", label: "Capture audit logs" });
+    await owner.see({ text: "Recording" });
+    const response = await probe.api(world.den.admin, "/v1/audit/usage");
+    const usage = auditUsageResponseSchema.parse(response.body);
+    expect(usage.captureOn && usage.captureEnabled).toBe(true);
+    expect(usage.policy?.allowance).toBe(6_000_000);
+    await owner.notSee({ text: /One operation can include many requests/ });
+    await owner.notSee({ text: /Read-only capacity policy/ });
+    expect((await audit.dom('[data-testid="audit-compact-usage"]')).elements).toHaveLength(1);
+    evidence.recordAssertionEvidence("Capture policy and control are unchanged", `Capture On; effective Recording; allowance ${usage.policy?.allowance}; billing ${usage.billing}; cleanup ${usage.cleanup}.`, usage.captureOn && usage.captureEnabled);
+    await owner.screenshot();
+    await owner.click({ text: "Technical details" });
+    await owner.see({ text: "Categories" });
+    await owner.see({ text: "Keep all" });
+    await owner.see({ text: "Dry run only — no deletion" });
+    await owner.screenshot();
+    await owner.click({ text: "Technical details" });
+    await owner.click({ text: "Capture and storage" });
+  });
 
   await step("after: the compact capture control pauses and resumes recording without losing history", async () => {
     await owner.click({ text: "Capture and storage" });
@@ -993,15 +933,4 @@ test("an owner switches audit history to compact Den rows without changing captu
       await owner.click({ role: "button", label: "Hide changes for Provider configuration update committed" });
     });
   }
-
-  await step("after: turning compact rows off restores the previous table and preserves history", async () => {
-    await owner.resizeViewport({ ...world.viewport, deviceScaleFactor: 1 });
-    await compactFlag(false);
-    await owner.see({ text: "First recorded target" });
-    await owner.notSee({ testId: "audit-compact-list" });
-    const response = await probe.api(world.den.admin, `/v1/audit/operations/${encodeURIComponent(operationId)}/events?limit=50`);
-    expect(auditEventsResponseSchema.parse(response.body).events.map((event) => event.id)).toEqual(originalEventIds);
-    evidence.recordAssertionEvidence("Rollback changes only presentation", `The seven-column table returns with every one of the original ${originalEventIds.length} events intact.`, response.response.status === 200);
-    await owner.screenshot();
-  });
 });

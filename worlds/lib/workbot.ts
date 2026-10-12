@@ -63,7 +63,7 @@ export type WorkbotWorldOptions = {
   runnerProxy?: (runnerUrl: string) => Promise<string>;
   /** Extra runner settings, for example a small HEADLESS_CONTEXT_CHAR_BUDGET so a short journey outgrows the context. */
   runnerEnv?: Record<string, string>;
-  /** Features turned on for the seeded organization besides Workbot itself, for example `workbotSideChats`. */
+  /** Features turned on for the seeded organization besides Workbot itself, for example `slackAssistant`. */
   features?: Record<string, boolean>;
 };
 
@@ -282,8 +282,8 @@ export async function bootWorkbot(stack: AsyncDisposableStack, preview?: { den: 
       } : {}),
     },
   });
-  // --calendar turns on both Calendars (desktop and Workbot), each behind its own feature.
-  const orgId = await enableWorkbot(den, { ...options.features, ...(options.calendar ? { automationCalendar: true, workbotCalendar: true } : {}) });
+  // --calendar also turns on the desktop Calendar; Workbot's Calendar comes with Workbot.
+  const orgId = await enableWorkbot(den, { ...options.features, ...(options.calendar ? { automationCalendar: true } : {}) });
   // --calendar: a real provider (Anthropic, fixture key) so the Calendar's model pickers show logos and choices.
   if (options.calendar) await publishCalendarModels(den.admin, orgId);
   // The Acme team's apps (in memory), so Workbot has a real-looking calendar, inbox and Slack to read.

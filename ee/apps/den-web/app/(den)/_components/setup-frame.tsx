@@ -2,7 +2,6 @@
 
 import type { ReactNode } from "react";
 import { ArrowRight, ArrowUpRight, ChevronDown, ChevronRight, FileText, Folder, LayoutDashboard, MessageSquare, Network, Paperclip, Play, Plug, Search, Users, Workflow } from "lucide-react";
-import { useDeploymentSimplifiedOnboarding } from "../_providers/den-flow-provider";
 import { OnboardingTexture } from "./onboarding-texture";
 import styles from "./setup-frame.module.css";
 
@@ -122,13 +121,11 @@ export function SetupFrame({ step, title, description, children, aside, panelVis
   embedded?: boolean;
   /** Keep the consent panel focal in a device approval flow; other callers retain display type. */
   compactHeader?: boolean;
-  /** Organization-resolved state takes precedence once a workspace exists. */
+  /** Shared onboarding steps use the simplified layout unless a caller opts out (single-organization mode). */
   simplified?: boolean;
 }) {
-  const deployment = useDeploymentSimplifiedOnboarding();
   const sharedStep = step === "account" || step === "space" || step === "people";
-  const useSimplifiedSteps = Boolean(sharedStep && (simplified ?? deployment.simplified));
-  const layoutPending = sharedStep && simplified === undefined && deployment.loading;
+  const useSimplifiedSteps = sharedStep && (simplified ?? true);
   const visibleSteps = useSimplifiedSteps ? simplifiedSteps : steps;
   const current = step ? visibleSteps.findIndex((item) => item.id === step) : -1;
   const plain = !step;
@@ -154,8 +151,7 @@ export function SetupFrame({ step, title, description, children, aside, panelVis
   const brand = <div className={styles.brand}><img src="/openwork-mark.svg" alt="" width={25} height={25} /><span>OpenWork<span className={styles.cloud}> / Cloud</span></span></div>;
   return (
     <section className={`${styles.frame} ${embedded ? styles.embedded : ""} ${plain ? styles.plain : ""} ${useSimplifiedSteps ? styles.simplified : ""}`} data-testid="setup-frame" data-step={step ?? "none"}>
-      {/* Until the rollout is known nothing renders, so neither the brand nor a layout jumps. */}
-      {layoutPending ? null : useSimplifiedSteps ? (
+      {useSimplifiedSteps ? (
         // One column (P7): brand, progress, then one panel that owns the brand
         // texture, the title and the form. No product preview, step eyebrow,
         // description or tagline (P1, P2, C7).

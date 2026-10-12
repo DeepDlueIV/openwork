@@ -242,7 +242,7 @@ For `redirect_uri_mismatch`, compare the exact displayed callback with Google's 
 
 Members can also sign in with their own account to **Amazon Bedrock** and **Amazon Bedrock (OpenAI)** through AWS IAM Identity Center, and to **Microsoft Foundry (Claude)** through Microsoft Entra ID. Follow [Amazon Bedrock](/ai-gateway/amazon-bedrock) and [Microsoft Foundry](/ai-gateway/microsoft-foundry) for the cloud-side setup.
 
-Both, and the Microsoft Foundry provider itself, are behind the **AI Gateway: AWS and Microsoft sign-in** feature (`gatewayCloudSignIn`). Turn it on for one organization in `/admin`, or lock it on for the whole install with the Helm value `config.features.gatewayCloudSignIn` (`DEN_FEATURE_GATEWAY_CLOUD_SIGN_IN`). Turning it off stops new Foundry providers and new AWS or Microsoft sign-ins; people already signed in keep working until they sign out.
+Both, and the Microsoft Foundry provider itself, are available in every organization; there is nothing to turn on in `/admin`.
 
 Run the release's database migration first: it adds the `aws_sso` credential kind and the credential-set columns `oauth_tenant_id` and `aws_sso`.
 

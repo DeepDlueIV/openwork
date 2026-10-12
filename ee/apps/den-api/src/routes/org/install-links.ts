@@ -11,7 +11,6 @@ import { describeRoute } from "hono-openapi"
 import { z } from "zod"
 import { OPENWORK_DOWNLOAD_URL } from "../../CONSTS.js"
 import { resolvePublicOrigin } from "../../capability-sources/generic-oauth.js"
-import { organizationFeatureEnabled } from "../../features.js"
 import { attributeAuditRequest, auditServiceAttribution } from "../../audit/request-capture.js"
 import { db } from "../../db.js"
 import { mintDesktopConnectLink } from "../../desktop-connect-link.js"
@@ -26,7 +25,6 @@ import { env } from "../../env.js"
 import { hashInstallLinkToken, mintOrganizationInstallLink } from "../../install-links.js"
 import { jsonValidator, orgMemberRoute, publicRoute, queryValidator } from "../../middleware/index.js"
 import { denTypeIdSchema, emptyResponse, forbiddenSchema, invalidRequestSchema, jsonResponse, notFoundSchema, textResponse, unauthorizedSchema } from "../../openapi.js"
-import { featureKeySchema } from "@openwork/features"
 import { normalizeOrganizationMetadata } from "../../organization-limits.js"
 import {
   cloudDesktopReleaseAssetName,
@@ -93,11 +91,6 @@ const authenticatedInstallConfigSchema = installConfigSchema.extend({
 const installLinkNotFoundSchema = z.object({
   error: z.literal("install_link_not_found"),
 }).meta({ ref: "InstallLinkNotFoundError" })
-
-const capabilityDisabledSchema = z.object({
-  error: z.literal("capability_disabled"),
-  capability: featureKeySchema,
-}).meta({ ref: "CapabilityDisabledError" })
 
 const rateLimitedSchema = z.object({
   error: z.literal("rate_limited"),
@@ -394,7 +387,7 @@ export function registerOrgInstallLinkRoutes<T extends { Variables: OrgRouteVari
         200: jsonResponse("Install link created successfully.", createInstallLinkResponseSchema),
         400: jsonResponse("The install-link request was invalid.", invalidRequestSchema),
         401: jsonResponse("The caller must be signed in to create install links.", unauthorizedSchema),
-        403: jsonResponse("The organization needs the installLinks capability enabled, and rotating existing links needs the Rotate install links permission.", forbiddenSchema.or(capabilityDisabledSchema)),
+        403: jsonResponse("Rotating existing links needs the Rotate install links permission.", forbiddenSchema),
         404: jsonResponse("The organization could not be found.", notFoundSchema),
         429: jsonResponse("The member has created too many install links.", rateLimitedSchema),
       },
@@ -405,10 +398,6 @@ export function registerOrgInstallLinkRoutes<T extends { Variables: OrgRouteVari
     async (c) => {
       const input = c.req.valid("json")
       const payload = c.get("organizationContext")
-
-      if (!(await organizationFeatureEnabled(payload.organization.id, "installLinks"))) {
-        return c.json({ error: "capability_disabled", capability: "installLinks" }, 403)
-      }
 
       if (input.rotate) {
         const permission = await requirePermission(c, "install_links.update")
@@ -433,10 +422,6 @@ export function registerOrgInstallLinkRoutes<T extends { Variables: OrgRouteVari
         createdByUserId: payload.currentMember.userId,
         rotate: input.rotate,
       })
-
-      if (!installLink) {
-        return c.json({ error: "capability_disabled", capability: "installLinks" }, 403)
-      }
 
       const { handoff } = await mintInstallHandoff(installer, {
         installLinkId: installLink.installLinkId,

@@ -73,22 +73,6 @@ function ActivatedAutomationRunnerBridge() {
           if (!isCurrent()) return
           const agent = navigator.userAgent
           const platform = /Mac/i.test(agent) ? "darwin" : /Win/i.test(agent) ? "win32" : "linux"
-          // Recovery changes admission semantics. Negotiate it only for an
-          // explicitly enabled organization; old Den/missing features fail
-          // closed to the released capability ladder, not to a new engine.
-          const features = await client.getOrgFeatures(organizationId).catch((error): Record<string, boolean> => {
-            // Released Automation registration can fall back to its old
-            // protocol. A remote-only desktop must retry an unavailable
-            // feature lookup rather than silently wait thirty minutes.
-            if (deploymentEnabled) return {}
-            throw error
-          })
-          if (!isCurrent()) return
-          const recoveryEnabled = features.remoteSessionTargets === true
-          if (!deploymentEnabled && !recoveryEnabled) {
-            await disconnect()
-            return
-          }
           const mintToken = deploymentEnabled ? client.mintAutomationRunnerToken : client.mintSessionRunnerToken
           const mintRunner = async (id: string) => {
             const registration = (
@@ -112,7 +96,7 @@ function ActivatedAutomationRunnerBridge() {
               REMOTE_SESSION_RECOVERY_RUNNER_CAPABILITY,
             ]
             const capabilitySets: AutomationDesktopRunnerCapability[][] = deploymentEnabled ? [
-              ...(recoveryEnabled ? [recoveryCapabilities] : []),
+              recoveryCapabilities,
               [
                 AUTOMATION_MODEL_ATTENTION_CAPABILITY,
                 REMOTE_SESSION_DESKTOP_RUNNER_CAPABILITY,
@@ -140,6 +124,14 @@ function ActivatedAutomationRunnerBridge() {
           try {
             runner = await mintRunner(runnerId)
           } catch (error) {
+            // An older Den answers 404 for remote session targets when that
+            // organization never had them turned on (or the route predates
+            // them). Nothing to connect: wait for the next refresh quietly
+            // instead of retrying every few seconds.
+            if (!deploymentEnabled && error instanceof DenApiError && error.status === 404) {
+              await disconnect()
+              return
+            }
             if (!(error instanceof DenApiError) || error.status !== 409 || error.code !== "automation_runner_identity_conflict") {
               throw error
             }

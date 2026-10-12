@@ -89,7 +89,7 @@ export type BuildDashboardNavSectionsInput = {
   permissionsEnabled?: boolean;
   /** The managedDeployments feature is on for this organization. */
   managedDeployments?: boolean;
-  /** Workbot and its workbotDefaultModel feature are on: admins choose the organization's default model. */
+  /** Workbot is on: admins choose the organization's default model. */
   workbotSettings?: boolean;
 };
 

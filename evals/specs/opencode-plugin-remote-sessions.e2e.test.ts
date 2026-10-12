@@ -11,7 +11,7 @@ const test = spec.world(opencodePluginRemoteSessions, {
 
 // The only browser is Den's real approval page. Session creation and observation
 // use the installed, integrity-pinned OpenCode 2.0.26 service, never an adapter mock.
-test("an opted-in OpenCode member offloads an empty native session, recovers a lost receipt, and keeps history when the rollout is killed", async ({ world, user, probe, step, evidence }) => {
+test("an opted-in OpenCode member offloads an empty native session, recovers a lost receipt, and keeps its history readable", async ({ world, user, probe, step, evidence }) => {
   const person = user.on(world.web);
   let computerId = "";
   let workspaceId = "";
@@ -19,9 +19,7 @@ test("an opted-in OpenCode member offloads an empty native session, recovers a l
   let sessionId = "";
   const title = "Remote native proof";
 
-  await step("before: the rollout is off and an unsigned OpenCode directory registers nothing", async () => {
-    const feature = await world.featureState();
-    expect(feature).toMatchObject({ default: false, enabled: false, killed: false });
+  await step("before: an unsigned OpenCode directory registers nothing", async () => {
     const provenance = world.fixtureProvenance;
     expect(provenance.hostKind).toBe(world.web.handle.hostKind);
     expect(provenance.artifactSha).toMatch(/^[0-9a-f]{64}$/);
@@ -44,12 +42,10 @@ test("an opted-in OpenCode member offloads an empty native session, recovers a l
     expect(unavailable.isError).toBe(true);
     const requests = (await world.runnerWitness()).requests;
     expect(requests).toHaveLength(0);
-    evidence.recordAssertionEvidence("Off by default means no registered directory", `OpenCode 2.0.26 PID ${server.pid} on ${provenance.hostKind}/${provenance.platform}, browser/native sandbox=${provenance.sandboxId ?? "local"}; current plugin artifact SHA-256 ${provenance.artifactSha}, source ${provenance.sourceSha}, verified helper ${provenance.helperSourceSha}; registry default=false, enabled=false; unsigned client made ${requests.length} runner requests; create refused with ${unavailable.body.error}`, true);
+    evidence.recordAssertionEvidence("An unsigned directory is not a registered target", `OpenCode 2.0.26 PID ${server.pid} on ${provenance.hostKind}/${provenance.platform}, browser/native sandbox=${provenance.sandboxId ?? "local"}; current plugin artifact SHA-256 ${provenance.artifactSha}, source ${provenance.sourceSha}, verified helper ${provenance.helperSourceSha}; unsigned client made ${requests.length} runner requests; create refused with ${unavailable.body.error}`, true);
   });
 
-  await step("when the owner enables offloading, OpenCode still waits for browser approval", async () => {
-    await world.rollout(true);
-    await world.setPluginSignIn(true);
+  await step("when the owner signs OpenCode in, it waits for browser approval", async () => {
     const login = await world.startLogin("browser");
     await person.navigate(login.verificationUrl);
     await person.see({ text: "Sign in OpenWork - OpenCode Plugin?" }, { timeoutMs: 90_000 });
@@ -59,7 +55,7 @@ test("an opted-in OpenCode member offloads an empty native session, recovers a l
     expect(unsigned.isError).toBe(false);
     expect(records(unsigned.body.computers)).toEqual([]);
     expect((await world.runnerWitness()).requests).toHaveLength(0);
-    evidence.recordAssertionEvidence("Enabling the rollout is not approval of this machine", `Browser displays the terminal's code ${login.userCode}; targets has 0 computers and the plugin has made 0 runner requests before approval`, true);
+    evidence.recordAssertionEvidence("Starting sign-in is not approval of this machine", `Browser displays the terminal's code ${login.userCode}; targets has 0 computers and the plugin has made 0 runner requests before approval`, true);
     await person.screenshot();
     await person.click({ role: "button", label: "Sign in OpenWork - OpenCode Plugin" });
     await person.see({ text: "OpenCode is connected to OpenWork" }, { timeoutMs: 30_000 });
@@ -182,17 +178,7 @@ test("an opted-in OpenCode member offloads an empty native session, recovers a l
     evidence.recordAssertionEvidence("Another signed-in member owns no target or command from this machine", `Other member: 0 targets, 0 registered sessions; command read=${receipt.body.error}, session read=${read.body.error}, stop=${stop.body.error}, create=${create.body.error}; native service still has exactly the original session`, true);
   });
 
-  await step("after: killing the rollout refuses new work but preserves history and safe stopping", async () => {
-    await world.rollout(true, true);
-    const feature = await world.featureState();
-    expect(feature).toMatchObject({ killed: true });
-    const create = await world.remote("create", { target: "registered", computerId, workspaceId, title: "Refused after kill" });
-    const send = await world.remote("send", { sessionId, workspaceId, prompt: "This new turn must not be admitted." });
-    for (const result of [create, send]) {
-      expect(result.isError).toBe(true);
-      expect(["feature_disabled", "unknown_capability"]).toContain(result.body.error);
-      expect(result.body.commandId).toBeUndefined();
-    }
+  await step("after: history, recent context and safe stopping stay available to the owner", async () => {
     const history = await world.remote("list", { target: "registered" });
     expect(records(history.body.sessions).map(item => item.sessionId)).toEqual([sessionId]);
     const receipt = await world.remote("read", { commandId });
@@ -205,7 +191,7 @@ test("an opted-in OpenCode member offloads an empty native session, recovers a l
     expect(await world.nativeInbox(sessionId)).toEqual([]);
     expect((await world.nativeContext(sessionId)).filter(item => item.type === "user")).toEqual([]);
     expect((await world.nativeSessions()).map(item => item.id)).toEqual([sessionId]);
-    evidence.recordAssertionEvidence("A kill switch is not a history deletion or an abandoned task", `Killed=true; create=${create.body.error}, follow-up=${send.body.error}, neither has a commandId; list and command/recent-context reads retain ${sessionId}; stop acknowledges idle without interruption; 0 admitted prompts, 1 native session`, true);
+    evidence.recordAssertionEvidence("The owner keeps history and safe stopping", `List and command/recent-context reads retain ${sessionId}; stop acknowledges idle without interruption; 0 admitted prompts, 1 native session`, true);
   });
 });
 

@@ -86,8 +86,6 @@ type ClaimInput = {
   now: number
   /** Recovery clients may re-read their own sticky claim, never another runner's. */
   recoverClaimed?: boolean
-  /** A killed feature can drain claims without assigning new commands. */
-  allowPending?: boolean
 }
 
 type CompleteInput = RemoteSessionCommandCompleteRequest & {
@@ -396,7 +394,7 @@ export const databaseRemoteSessionCommandStore: RemoteSessionCommandStore = {
       const existing = rows[0] ? mapCommand(rows[0]) : null
       if (!existing || existing.expiresAt <= input.now) return null
       if (input.recoverClaimed && remoteSessionCommandRecoverable(existing, input)) return existing
-      if (input.allowPending === false || existing.status !== "pending") return null
+      if (existing.status !== "pending") return null
       if (existing.targetComputerId && !input.computerIds.includes(existing.targetComputerId)) return null
       const now = new Date(input.now)
       await tx.update(RemoteSessionCommandTable).set({

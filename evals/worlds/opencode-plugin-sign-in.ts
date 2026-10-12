@@ -2,7 +2,6 @@ import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { denFetch } from "@openwork/behaviors";
 import { allocateFreePort, evaluateOnSurface, type Surface } from "@openwork/cdp";
 import { defaultDaytonaExec, execInSandbox, readSandboxRepoSourceReceipt, startScriptOnSandbox } from "@openwork/hosts";
 import type { Place, Seed } from "@openwork/env";
@@ -230,16 +229,10 @@ export async function opencodePluginSignIn(seed: Seed, options: { remoteSessions
     void finished.catch(() => undefined);
     return { verificationUrl: string(value.verificationUrl), userCode: string(value.userCode), finished, async stop() { await control("login-stop", { id }); } };
   }
-  async function setPluginSignIn(enabled: boolean) {
-    const result = await denFetch(den.ref, "/v1/admin/features/opencodePlugin", {
-      method: "PUT", headers: { authorization: `Bearer ${den.admin.token}` }, body: JSON.stringify({ enabled }),
-    });
-    if (!result.response.ok) throw new Error(`Turning opencodePlugin ${enabled ? "on" : "off"} failed: HTTP ${result.response.status} ${result.text.slice(0, 300)}`);
-  }
   const gateway = remoteSessionGateway({ owner: { session: den.admin }, ...(den.members.other ? { other: { session: den.members.other } } : {}) });
   const cleanup = setup.move();
   return {
-    den, web, organizationName, home, directory, fixtureProvenance, run, native, startLogin, setPluginSignIn,
+    den, web, organizationName, home, directory, fixtureProvenance, run, native, startLogin,
     approvalHeading: () => deviceApprovalHeading(web),
     get nativeWorkspaceDirectory() { return directory; },
     nativePlugins: () => native(`/api/plugin?location%5Bdirectory%5D=${encodeURIComponent(home)}`),
@@ -249,14 +242,6 @@ export async function opencodePluginSignIn(seed: Seed, options: { remoteSessions
     async nativeInbox(sessionId: string) { return records(object(await native(`/api/session/${encodeURIComponent(sessionId)}/inbox`)).data); },
     remote: (action: "targets" | "create" | "read" | "list" | "send" | "stop", body: Record<string, unknown>, persona = "owner") => gateway.remote(persona, action, body),
     searchRemote: () => gateway.call("owner", "search_capabilities", { query: "remote session targets registered computer", limit: 20 }),
-    rollout: gateway.rollout,
-    async featureState() {
-      const result = await gateway.api("owner", "/v1/admin/features");
-      if (result.status !== 200) throw new Error(`Feature inventory failed: HTTP ${result.status}`);
-      const feature = records(object(result.body).features).find(item => item.key === "remoteSessionTargets");
-      if (!feature) throw new Error("Remote session rollout is absent from the feature inventory");
-      return feature;
-    },
     webAccess: () => gateway.api("owner", "/v1/billing/web"),
     automationRoute: () => gateway.api("owner", "/v1/automations"),
     async disconnectAfterNextCompletion() { await control("disconnect-next-completion"); },

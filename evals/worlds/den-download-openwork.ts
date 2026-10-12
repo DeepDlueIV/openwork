@@ -2,10 +2,9 @@ import { allocateFreePorts, connect, debuggerUrlFor, listTargets } from "@openwo
 import type { Surface } from "@openwork/cdp";
 import { faultProxy } from "@openwork/env";
 import type { Place, Seed } from "@openwork/env";
-import { enableOrganizationCapabilities } from "./dashboards.ts";
 import { isRecord, stringField } from "./library.ts";
 
-type DownloadScenario = "admin" | "failures" | "member" | "capability-off";
+type DownloadScenario = "admin" | "failures" | "member";
 
 /** Real Den minting and real Chromium clipboard/popups; only the first failed mint is synthetic. */
 async function downloadWorkspace(seed: Seed, ctx: { place: Place }, scenario: DownloadScenario) {
@@ -26,13 +25,9 @@ async function downloadWorkspace(seed: Seed, ctx: { place: Place }, scenario: Do
     },
     webApiBase: proxy.ref.webUrl,
   });
-  const organizationId = await enableOrganizationCapabilities(seed, den.admin, { installLinks: true });
-  if (scenario === "capability-off") {
-    const disabled = await seed.api(den.admin, `/v1/admin/organizations/${organizationId}/capabilities`, {
-      method: "PUT", body: JSON.stringify({ capabilities: { installLinks: false } }),
-    });
-    if (!disabled.response.ok) throw new Error(`Disabling install links failed: HTTP ${disabled.response.status}`);
-  }
+  const context = await seed.api(den.admin, "/v1/org");
+  const organizationId = isRecord(context.body) ? stringField(context.body.organization, "id") : "";
+  if (!organizationId) throw new Error("Could not resolve the seeded organization.");
   const mintPath = `/v1/orgs/${organizationId}/install-links`;
   if (scenario === "failures") {
     await proxy.faults.status(mintPath, 503, { times: 1, body: { error: "Install link temporarily unavailable. Please retry." } });
@@ -110,4 +105,3 @@ async function downloadWorkspace(seed: Seed, ctx: { place: Place }, scenario: Do
 export const denDownloadAdmin = (seed: Seed, ctx: { place: Place }) => downloadWorkspace(seed, ctx, "admin");
 export const denDownloadFailures = (seed: Seed, ctx: { place: Place }) => downloadWorkspace(seed, ctx, "failures");
 export const denDownloadMember = (seed: Seed, ctx: { place: Place }) => downloadWorkspace(seed, ctx, "member");
-export const denDownloadCapabilityOff = (seed: Seed, ctx: { place: Place }) => downloadWorkspace(seed, ctx, "capability-off");

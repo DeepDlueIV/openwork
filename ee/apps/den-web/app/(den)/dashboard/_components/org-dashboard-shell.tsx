@@ -453,7 +453,7 @@ export function OrgDashboardShell({ children }: { children: React.ReactNode }) {
     runtimeConfigLoaded,
     permissionsEnabled: orgFeatureEnabled(orgContext, "permissions"),
     managedDeployments: orgFeatureEnabled(orgContext, "managedDeployments"),
-    workbotSettings: orgContext?.capabilities.workbot === true && orgFeatureEnabled(orgContext, "workbotDefaultModel"),
+    workbotSettings: orgContext?.capabilities.workbot === true,
   });
 
   const orgSwitcher = isSingleOrgMode ? (

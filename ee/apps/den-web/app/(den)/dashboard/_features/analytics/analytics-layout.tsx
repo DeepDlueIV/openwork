@@ -15,10 +15,10 @@ import { useLibraryUsageAvailable } from "../library-usage/use-library-usage";
 
 export const analyticsSurfaceClass = "analytics-surface rounded-2xl border border-[#e3e7ee] bg-white";
 
-/** Presentation only: killing this rollout restores the original views and data. */
+/** Presentation only: integrated analytics ships with library usage; turning libraryUsage off restores the original views. */
 export function useAnalyticsIntegrated() {
   const { orgContext } = useOrgDashboard();
-  return orgFeatureEnabled(orgContext, "analyticsIntegrated");
+  return orgFeatureEnabled(orgContext, "libraryUsage");
 }
 export const analyticsPageClass = "mx-auto grid w-full max-w-[1160px] gap-6 px-4 pb-12 pt-5 sm:px-6 lg:px-8";
 /** Same content inset as DashboardPageTemplate; header ownership stays separate. */

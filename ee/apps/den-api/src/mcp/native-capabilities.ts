@@ -1,7 +1,6 @@
 import { recordConnectorCall, toolCallFailed } from "../capability-usage.js"
 import type { DenTypeId } from "@openwork-ee/utils/typeid"
 import type { Hono } from "hono"
-import { organizationFeatureEnabled } from "../features.js"
 import { listNativeProviderUsableEntries, nativeProviderConnectionPolicyError, type NativeProviderConnectionEntry } from "../capability-sources/native-provider-connections.js"
 import type { McpPrincipal } from "./auth.js"
 import type { AgentToolContentPart } from "./tool-content.js"
@@ -62,12 +61,6 @@ function operationScore(connection: NativeProviderConnectionEntry, operation: Mc
     queryTokens,
     tokenize(operation.path),
   )
-}
-
-export async function enabledNativeCatalog(catalog: readonly McpToolOperation[], organizationId: string): Promise<readonly McpToolOperation[]> {
-  if (!catalog.some((operation) => operation.name === "createGoogleDriveUploadSession")) return catalog
-  if (await organizationFeatureEnabled(organizationId, "driveResumableUploads")) return catalog
-  return catalog.filter((operation) => operation.name !== "createGoogleDriveUploadSession")
 }
 
 export function nativeOperations(catalog: readonly McpToolOperation[], nativeProviderKey: string): McpToolOperation[] {
@@ -144,7 +137,7 @@ export async function searchNativeCapabilities(input: {
     orgMembershipId: input.member.orgMembershipId,
     teamIds: input.member.teamIds,
   })
-  const catalog = await enabledNativeCatalog(input.catalog, input.organizationId)
+  const catalog = input.catalog
   const queryTokens = tokenize(input.query)
   const matches: NativeCapabilityMatch[] = []
   for (const connection of connections) {
@@ -183,7 +176,7 @@ async function resolveNativeCapability(input: {
   })
   const connection = connections.find((candidate) => candidate.id === input.connectionId)
   if (!connection) return null
-  const operation = nativeOperations(await enabledNativeCatalog(input.catalog, input.organizationId), connection.nativeProviderKey)
+  const operation = nativeOperations(input.catalog, connection.nativeProviderKey)
     .find((candidate) => candidate.name === input.toolName)
   return operation ? { connection, operation } : null
 }

@@ -23,7 +23,6 @@ import { denTypeIdSchema, enterprisePlanRequiredSchema, forbiddenSchema, invalid
 import { validateInvitationAcceptVerification } from "../../organization-join-verification.js"
 import { normalizeOrganizationMetadata } from "../../organization-limits.js"
 import { getOrganizationFeatures } from "../../features.js"
-import { appMcpServersEnabled } from "../../mcp-app-rollout.js"
 import { workbotOrigin } from "../../workbot/config.js"
 import { isOpenWorkWebAvailableForOrganization } from "../../openwork-web-availability.js"
 import { getOpenWorkWebAccess } from "../../stripe-billing.js"
@@ -729,7 +728,7 @@ export function registerOrgCoreRoutes<T extends { Variables: OrgRouteVariables }
         features,
         // Frozen for published clients; new clients read `features`.
         capabilities: {
-          auditLogs: features.auditLogs && env.auditVisibilityEnabled,
+          auditLogs: env.auditVisibilityEnabled,
           gatewayDashboard: true,
           // Protocol capability: clients must see this explicit signal before
           // calling the dashboard routes. Older Den versions omit the field,
@@ -737,16 +736,16 @@ export function registerOrgCoreRoutes<T extends { Variables: OrgRouteVariables }
           // rollout instead of calling an endpoint that does not exist yet.
           // Per-organization and default-off: platform admins enable it in /admin.
           orgManagedDashboards: features.orgManagedDashboards,
-          // Expose the effective value, not the raw stored flag: Connect is
-          // member-facing default-on unless an explicit org kill switch says no.
-          mcpConnections: features.mcpConnections,
+          // Compatibility field for published clients: Connect is always on.
+          mcpConnections: true,
           // Building your own Apps is on for every organization unless the
-          // deployment or the org's member-facing MCP connections turn it off.
-          appMcpServers: appMcpServersEnabled(features),
+          // deployment turns it off.
+          appMcpServers: env.appMcpServersEnabled,
           // Workflows/Code Mode are enabled for every organization; the field
           // remains for published clients that still read it.
           workflows: true,
-          installLinks: features.installLinks,
+          // Compatibility field for published clients: install links are always on.
+          installLinks: true,
           // Effective offer: the deployment switch enables Web generally,
           // while the platform-admin complimentary grant enables only this
           // organization when the deployment switch is off.

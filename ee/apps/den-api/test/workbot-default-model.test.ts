@@ -26,21 +26,15 @@ const catalog = {
     { id: "gateway/model-b", name: "Model B" },
   ],
 }
-const on = async () => ({ workbot: true, workbotDefaultModel: true })
+const on = async () => ({ workbot: true })
 
-test("the default model applies only while Workbot and its feature are on", async () => {
+test("the default model applies only while Workbot is on", async () => {
   let reads = 0
   const chosenModel = async () => {
     reads += 1
     return "gateway/model-a"
   }
-  for (const features of [
-    { workbot: false, workbotDefaultModel: true },
-    { workbot: true, workbotDefaultModel: false },
-    { workbot: false, workbotDefaultModel: false },
-  ]) {
-    assert.deepEqual(await organizationModelPolicy("org_1", { features: async () => features, chosenModel, catalog: async () => catalog }), { enabled: false, model: null })
-  }
+  assert.deepEqual(await organizationModelPolicy("org_1", { features: async () => ({ workbot: false }), chosenModel, catalog: async () => catalog }), { enabled: false, model: null })
   // Off ignores the saved value without reading it.
   assert.equal(reads, 0)
 })
@@ -61,7 +55,7 @@ test("unset, unavailable and available saved models", async () => {
 
 test("Slack uses the organization default while on, and its own model while off", async () => {
   const installation = { organizationId: "org_1", model: "gateway/model-b" }
-  const off = async () => ({ workbot: true, workbotDefaultModel: false })
+  const off = async () => ({ workbot: false })
   assert.equal(await slackAssistantModel(installation, { features: off, catalog: async () => catalog }), "gateway/model-b")
   assert.equal(await slackAssistantModel({ ...installation, model: null }, { features: off }), undefined)
   assert.equal(

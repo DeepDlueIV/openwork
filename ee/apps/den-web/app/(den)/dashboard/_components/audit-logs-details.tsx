@@ -36,10 +36,10 @@ export function auditLabel(value: string): string {
 
 const auditCollectionPrefix = "collection:";
 
-export function auditResourceLabel(resource: AuditOperationSummary["resources"][number], compact = false) {
+export function auditResourceLabel(resource: AuditOperationSummary["resources"][number]) {
   if (resource.label) return resource.label;
   if (resource.id.startsWith(auditCollectionPrefix)) return `${auditLabel(resource.type)} collection`;
-  return compact ? auditLabel(resource.type) : `${auditLabel(resource.type)} (name unavailable)`;
+  return auditLabel(resource.type);
 }
 
 function auditSentenceNoun(value: string): string {
@@ -160,27 +160,27 @@ function changeField(values: Record<string, unknown> | null, field: string): unk
   return value;
 }
 
-export function AuditChanges({ changes, compact = false, technical = false }: { changes: AuditEventEnvelope["changes"]; compact?: boolean; technical?: boolean }) {
-  if (!changes || !changes.changedFields.length) return compact ? null : <p className="py-2 text-[var(--dls-text-secondary)]">No field changes recorded.</p>;
-  const fields = [...new Set(changes.changedFields)].filter((field) => !compact || /(?:^|[._])id$|Ids?$/.test(field) === technical);
+export function AuditChanges({ changes, technical = false }: { changes: AuditEventEnvelope["changes"]; technical?: boolean }) {
+  if (!changes || !changes.changedFields.length) return null;
+  const fields = [...new Set(changes.changedFields)].filter((field) => /(?:^|[._])id$|Ids?$/.test(field) === technical);
   if (!fields.length) return null;
   function valueFor(field: string, side: "before" | "after") {
     if ((field === "credentialMaterial" || field === "configuration")
       && changeField(changes?.before ?? null, field) === undefined && changeField(changes?.after ?? null, field) === undefined) {
       return side === "before" ? "Not retained" : "Changed; values not retained";
     }
-    return safeChangeValue(field, changeField(changes?.[side] ?? null, field), 0, compact);
+    return safeChangeValue(field, changeField(changes?.[side] ?? null, field), 0, true);
   }
-  return <div className={compact ? "[&_table]:w-full [&_table]:table-fixed [&_td]:break-words max-sm:[&_table]:block max-sm:[&_thead]:hidden max-sm:[&_tbody]:block max-sm:[&_tr]:block max-sm:[&_td]:block max-sm:[&_td]:py-1.5" : undefined}><DenTable density="compact" columns={[
-    { key: "field", header: "Field", render: (field: string) => compact ? <span className="font-medium">{auditLabel(field)}</span> : auditLabel(field) },
-    { key: "before", header: "Before", render: (field: string) => <span className="whitespace-pre-wrap break-words">{compact ? <span className="block text-xs text-[var(--dls-text-secondary)] sm:hidden">Before</span> : null}<span>{valueFor(field, "before")}</span></span> },
-    { key: "after", header: "After", render: (field: string) => <span className="whitespace-pre-wrap break-words">{compact ? <span className="block text-xs text-[var(--dls-text-secondary)] sm:hidden">After</span> : null}<span>{valueFor(field, "after")}</span></span> },
+  return <div className="[&_table]:w-full [&_table]:table-fixed [&_td]:break-words max-sm:[&_table]:block max-sm:[&_thead]:hidden max-sm:[&_tbody]:block max-sm:[&_tr]:block max-sm:[&_td]:block max-sm:[&_td]:py-1.5"><DenTable density="compact" columns={[
+    { key: "field", header: "Field", render: (field: string) => <span className="font-medium">{auditLabel(field)}</span> },
+    { key: "before", header: "Before", render: (field: string) => <span className="whitespace-pre-wrap break-words"><span className="block text-xs text-[var(--dls-text-secondary)] sm:hidden">Before</span><span>{valueFor(field, "before")}</span></span> },
+    { key: "after", header: "After", render: (field: string) => <span className="whitespace-pre-wrap break-words"><span className="block text-xs text-[var(--dls-text-secondary)] sm:hidden">After</span><span>{valueFor(field, "after")}</span></span> },
   ]} rows={fields} getRowKey={(field) => field} /></div>;
 }
 
 type DetailProps = { scope: AuditScope; onAccessError: (error: AuditReadError) => void };
 
-export function AuditTimeline({ scope, operationId, members, onAccessError, compact = false }: DetailProps & { operationId: string; members: readonly DenOrgMember[]; compact?: boolean }) {
+export function AuditTimeline({ scope, operationId, members, onAccessError }: DetailProps & { operationId: string; members: readonly DenOrgMember[] }) {
   const query = useAuditEvents(scope, operationId);
   const events = (query.data?.pages.flatMap((page) => page.events) ?? []).sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   const accessError = isAuditAccessError(query.error) ? query.error : null;
@@ -193,11 +193,11 @@ export function AuditTimeline({ scope, operationId, members, onAccessError, comp
       {events.map((event) => <li key={event.id} className="flex flex-col gap-2 border-l border-[var(--dls-border)] pl-4" data-testid="audit-event">
         <div className="flex flex-wrap items-center justify-between gap-3"><span className="font-medium">{auditLabel(event.action)}</span><AuditOutcome outcome={event.outcome} /></div>
         <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-[var(--dls-text-secondary)]"><span>{auditActorLabel(event.actor, members, event.operation.origin)}</span><AuditTime value={event.occurredAt} /></div>
-        {event.resources.length ? <p>{compact ? [...new Set(event.resources.filter((resource) => resource.relationship === "target").map((resource) => auditResourceLabel(resource, true)))].join(", ") : event.resources.map((resource) => auditResourceLabel(resource)).join(", ")}</p> : null}
+        {event.resources.length ? <p>{[...new Set(event.resources.filter((resource) => resource.relationship === "target").map((resource) => auditResourceLabel(resource)))].join(", ")}</p> : null}
         {event.reasonCode ? <p>{auditLabel(event.reasonCode)}</p> : null}
-        <AuditChanges changes={event.changes} compact={compact} />
-        <details className={compact ? "group/audit-technical" : "group"}><summary className={compact ? auditTechnicalSummaryClass : auditSummaryClass}><AuditChevron technical={compact} />Technical details</summary>
-          {compact ? <AuditChanges changes={event.changes} compact technical /> : null}
+        <AuditChanges changes={event.changes} />
+        <details className="group/audit-technical"><summary className={auditTechnicalSummaryClass}><AuditChevron technical />Technical details</summary>
+          <AuditChanges changes={event.changes} technical />
           <dl className="flex flex-col gap-2 break-all text-xs text-[var(--dls-text-secondary)]">
             <div><dt>Event</dt><dd className="font-mono">{event.id}</dd></div>
             <div><dt>Action</dt><dd className="font-mono">{event.action}</dd></div>
@@ -206,7 +206,7 @@ export function AuditTimeline({ scope, operationId, members, onAccessError, comp
             {event.http ? <div><dt>HTTP request</dt><dd className="font-mono">{event.http.method} {event.http.route}</dd></div> : null}
             {event.http?.status !== undefined ? <div><dt>HTTP status</dt><dd className="font-mono">{event.http.status}</dd></div> : null}
             <div><dt>Recorded</dt><dd><AuditTime value={event.recordedAt} /></dd></div>
-            {event.resources.map((resource) => <div key={`${resource.type}-${resource.id}-${resource.relationship}`}><dt>{auditLabel(resource.relationship)}</dt><dd className="font-mono">{compact && resource.label ? `${resource.label}: ` : null}{resource.type}: {resource.id}</dd></div>)}
+            {event.resources.map((resource) => <div key={`${resource.type}-${resource.id}-${resource.relationship}`}><dt>{auditLabel(resource.relationship)}</dt><dd className="font-mono">{resource.label ? `${resource.label}: ` : null}{resource.type}: {resource.id}</dd></div>)}
           </dl>
         </details>
       </li>)}
@@ -215,7 +215,7 @@ export function AuditTimeline({ scope, operationId, members, onAccessError, comp
   </div>;
 }
 
-export function AuditUsageFacts({ usage, captureControl, compact = false }: { usage: AuditUsageResponse; captureControl?: ReactNode; compact?: boolean }) {
+export function AuditUsageFacts({ usage, captureControl }: { usage: AuditUsageResponse; captureControl?: ReactNode }) {
   const policy = usage.policy;
   const facts: { label: string; value: ReactNode }[] = [
     { label: "Available", value: usage.entitlement.enabled
@@ -243,24 +243,17 @@ export function AuditUsageFacts({ usage, captureControl, compact = false }: { us
     { label: "Cleanup", value: "Dry run only — no deletion" },
     { label: "External drains", value: "Not configured" },
   ];
-  if (compact) {
-    const settingsRows = (rows: typeof facts) => rows.map(({ label, value }) => ({ label, value: <span className="block whitespace-normal break-words">{value}</span> }));
-    return <div className="flex flex-col gap-3" data-testid="audit-compact-usage">
-      <DetailRows rows={settingsRows(facts.slice(0, 9))} />
-      <details className="group/audit-technical">
-        <summary className={auditTechnicalSummaryClass}><AuditChevron technical />Technical details</summary>
-        <DetailRows rows={settingsRows([{ label: "Policy access", value: "Read only" }, ...facts.slice(9)])} />
-      </details>
-    </div>;
-  }
-  return <div className="flex flex-col gap-3">
-    <p className="text-[var(--dls-text-secondary)]">One operation can include many requests and events. Available history reflects retained operations, not a guaranteed number of days.</p>
-    <dl className="divide-y divide-[var(--dls-border)]">{facts.map(({ label, value }) => <div key={label} className="flex flex-wrap justify-between gap-3 py-3"><dt className="text-[var(--dls-text-secondary)]">{label}</dt><dd>{value}</dd></div>)}</dl>
-    <p className="text-[var(--dls-text-secondary)]">Read-only capacity policy. {policy?.source === "operator" ? "An instance operator manages this configuration." : "Ask an instance administrator about policy configuration."} Billing is disabled and cleanup only previews deletions; the configured excess policy is not a purchase or deletion action.</p>
+  const settingsRows = (rows: typeof facts) => rows.map(({ label, value }) => ({ label, value: <span className="block whitespace-normal break-words">{value}</span> }));
+  return <div className="flex flex-col gap-3" data-testid="audit-compact-usage">
+    <DetailRows rows={settingsRows(facts.slice(0, 9))} />
+    <details className="group/audit-technical">
+      <summary className={auditTechnicalSummaryClass}><AuditChevron technical />Technical details</summary>
+      <DetailRows rows={settingsRows([{ label: "Policy access", value: "Read only" }, ...facts.slice(9)])} />
+    </details>
   </div>;
 }
 
-export function AuditUsage({ scope, onAccessError, compact = false }: DetailProps & { compact?: boolean }) {
+export function AuditUsage({ scope, onAccessError }: DetailProps) {
   const capture = useAuditCapture(scope, onAccessError);
   const { query } = capture;
   const accessError = isAuditAccessError(query.error) ? query.error : null;
@@ -283,7 +276,7 @@ export function AuditUsage({ scope, onAccessError, compact = false }: DetailProp
       {query.data && !query.data.captureEnabled && !capture.needsRefresh && !query.isError ? <p className="text-[var(--dls-text-secondary)]">New activity is not recorded. Retained history remains available.</p> : null}
     </div>
     {capture.needsRefresh || query.isError ? <div><DenButton variant="secondary" size="sm" disabled={capture.busy} onClick={capture.refresh}>Refresh status</DenButton></div> : null}
-    {query.data ? <AuditUsageFacts usage={query.data} captureControl={control} compact={compact} /> : <>
+    {query.data ? <AuditUsageFacts usage={query.data} captureControl={control} /> : <>
       <div className="flex items-center justify-between gap-3 py-3"><span>Capture audit logs</span>{control}</div>
       {query.isPending ? <AuditSkeleton rows={4} /> : null}
     </>}

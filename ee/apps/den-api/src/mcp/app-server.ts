@@ -27,7 +27,6 @@ import { resolvePublicOrigin } from "../capability-sources/generic-oauth.js"
 import { db } from "../db.js"
 import { env } from "../env.js"
 import { getOrganizationFeatures } from "../features.js"
-import { appMcpServersEnabled } from "../mcp-app-rollout.js"
 import {
   loadMcpAppResource,
   loadMcpAppServerDefinition,
@@ -257,8 +256,7 @@ async function handleMcpAppServerRequestUntimed(input: {
   if (!member) return refuse("not_a_member")
   // A client authorized for one organization cannot reach an App built in another.
   if (home && home.id !== organizationId) return refuse("other_organization", home.name)
-  // Building your own Apps is per-organization and default-off.
-  if (!appMcpServersEnabled(organizationFeatures)) return refuse("apps_off")
+  if (!env.appMcpServersEnabled) return refuse("apps_off")
   const capabilityContext = createCapabilityRegistryContext({
     app: input.app,
     env: context.env,
@@ -271,7 +269,7 @@ async function handleMcpAppServerRequestUntimed(input: {
     organizationFeatures,
     audit: mcpAuditPrincipal({ organizationId, userId: principal.userId, memberId: member.orgMembershipId, credentialId: mcpPrincipalCredentialId(principal) }),
   })
-  const access = { organizationId, member, enabled: capabilityContext.externalMcpConnectionsEnabled, requestScope: {} }
+  const access = { organizationId, member, requestScope: {} }
   let definition: McpAppServerDefinition
   try {
     definition = await loadMcpAppServerDefinition({ ...access, appId: input.appId })

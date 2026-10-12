@@ -44,17 +44,13 @@ test("an owner sees which plugins, skills and connectors the team uses, which fa
     await owner.screenshot();
   });
 
-  await step("after: the same fresh workspace has one neutral empty state", async () => {
-    await world.setAnalyticsIntegrated(true);
+  await step("after: a reload keeps one neutral empty state", async () => {
     await owner.reload();
     await owner.see({ testId: "library-usage-no-usage" }, { timeoutMs: 60_000 });
     expect((await page.dom('[data-testid="library-usage-no-usage"] svg')).elements).toHaveLength(0);
     expect((await page.dom("[data-item-unused]")).elements).toHaveLength(2);
     evidence.recordAssertionEvidence("no recorded usage stays an empty state, not a fabricated zero report", "No usage yet; both real plugins remain Not used, with no decorative icon tile.", true);
     await owner.screenshot();
-    await world.setAnalyticsIntegrated(false);
-    await owner.reload();
-    await owner.see({ testId: "library-usage-no-usage" }, { timeoutMs: 60_000 });
   });
 
   await step("when teammates' agents load skills and make two successful connector calls through OpenWork", async () => {
@@ -201,24 +197,20 @@ test("an owner sees which plugins, skills and connectors the team uses, which fa
     await owner.resizeViewport({ width: 1280, height: 1000, deviceScaleFactor: 1 });
   });
 
-  await step("before: Members and Connectors use Den rows while Analytics still uses accent tiles", async () => {
+  await step("before: Members and Connectors use Den rows", async () => {
     await owner.navigate(`${world.baseUrl}/dashboard/members`);
     await owner.see({ role: "heading", label: "Members" }, { timeoutMs: 60_000 });
     await owner.screenshot();
     await owner.navigate(`${world.baseUrl}/dashboard/mcp-connections`);
     await owner.see({ text: world.connectors.tracker }, { timeoutMs: 60_000 });
     await owner.screenshot();
-    await owner.navigate(`${world.baseUrl}/dashboard/analytics/library`);
-    await owner.see({ testId: "library-usage-row" }, { timeoutMs: 60_000 });
-    const legacy = (await page.dom('[data-analytics-integrated="false"]')).elements.length;
-    expect(legacy).toBe(1);
-    evidence.recordAssertionEvidence("the presentation rollout starts off", `Members and Connectors are shown next to Analytics; ${legacy} legacy Analytics header; the same usage rows remain.`, legacy === 1);
-    await owner.screenshot();
+    evidence.recordAssertionEvidence("Den's management pages are the comparison", "Members and Connectors are shown before Analytics.", true);
   });
 
   await step("after: Analytics uses neutral stats and the same Den rows without changing counts", async () => {
+    await owner.navigate(`${world.baseUrl}/dashboard/analytics/library`);
+    await owner.see({ testId: "library-usage-row" }, { timeoutMs: 60_000 });
     const previous = await rowText("Support kit");
-    await world.setAnalyticsIntegrated(true);
     await owner.reload();
     await owner.see({ testId: "library-usage-row" }, { timeoutMs: 60_000 });
     const current = await rowText("Support kit");
@@ -308,17 +300,6 @@ test("an owner sees which plugins, skills and connectors the team uses, which fa
     evidence.recordAssertionEvidence("usage is for owners and admins only", `teammate API reads: ${statuses.join(", ")}; teammate page headings: ${headings.join(", ") || "none"}`, statuses.every((status) => status === 403));
     expect(statuses).toEqual([403, 403, 403]);
     await teammate.screenshot();
-  });
-
-  await step("turning the rollout off restores the original presentation and counts", async () => {
-    await world.setAnalyticsIntegrated(false);
-    await owner.navigate(`${world.baseUrl}/dashboard/analytics/library`);
-    await owner.see({ testId: "library-usage-row" }, { timeoutMs: 60_000 });
-    expect((await page.dom("[data-analytics-stat]")).elements).toHaveLength(0);
-    expect((await page.dom('[data-analytics-integrated="false"]')).elements).toHaveLength(1);
-    expect((await page.dom(`${row("Support kit")} [data-item-uses]`)).elements[0]?.text).toBe("3");
-    evidence.recordAssertionEvidence("rollback keeps usage history intact", "The original colored presentation is restored; Support kit still has 3 measured uses.", true);
-    await owner.screenshot();
   });
 });
 

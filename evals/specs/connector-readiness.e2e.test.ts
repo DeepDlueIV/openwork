@@ -7,16 +7,8 @@ const test = spec.world(connectorReadiness, { timeout: 600_000, resources: { sur
 
 test("an admin checks a connection and a teammate sees the recorded result without permission to check it", async ({ world, user: driver, agent, probe, step, evidence }) => {
   const user = driver.on(world.web);
-  await step("before: the connection shows who can use it, not an unverified Ready", async () => {
+  await step("before: a connection with no saved check says Couldn't verify, not an unverified Ready", async () => {
     await user.see({ testId: "admin-connectors" }, { text: /Team Notes/, timeoutMs: 120_000 });
-    await user.see({ text: "No sign-in needed" });
-    expect((await world.saved())?.readiness).toBeUndefined();
-    evidence.recordAssertionEvidence("the rollout is off and the original row is unchanged", "No sign-in needed; no readiness field returned", true);
-    await user.screenshot();
-  });
-  await step("an enabled connection with no saved check says Couldn't verify", async () => {
-    await world.enable();
-    await user.reload();
     await user.see({ text: "Couldn't verify" }, { timeoutMs: 60_000 });
     await user.see({ role: "button", label: "Check again" });
     expect((await world.saved())?.readiness).toBeNull();
@@ -99,15 +91,6 @@ test("an admin checks a connection and a teammate sees the recorded result witho
     const saved = await world.saved("Reference Notes");
     expect(saved?.readiness).toMatchObject({ status: "ready" });
     evidence.recordAssertionEvidence("setup completion retains a successful server probe", JSON.stringify(saved?.readiness), true);
-    await user.screenshot();
-  });
-  await step("turning the rollout off restores the original row without deleting the connection", async () => {
-    await world.disable();
-    await user.reload();
-    await user.see({ text: "No sign-in needed" }, { timeoutMs: 60_000 });
-    await user.notSee({ role: "button", label: "Check again" });
-    expect((await world.saved())?.readiness).toBeUndefined();
-    evidence.recordAssertionEvidence("the feature can be safely turned off", "Team Notes remains; No sign-in needed; stored checks are not exposed", true);
     await user.screenshot();
   });
 });

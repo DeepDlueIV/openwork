@@ -1,6 +1,6 @@
 import { denFetch } from "@openwork/behaviors";
 import { createOrg, type Place, type Seed } from "@openwork/env";
-import { object, records, remoteSessionGateway, string } from "./fixtures/remote-session-gateway.ts";
+import { object, remoteSessionGateway, string } from "./fixtures/remote-session-gateway.ts";
 
 export { object, record, records, string } from "./fixtures/remote-session-gateway.ts";
 export const SHARED_INSTALL_ID = "synthetic_shared_session_install";
@@ -42,16 +42,8 @@ async function registrationWorld(seed: Seed, options: { automations?: boolean; p
   return {
     den, organizationId, otherOrganizationId: otherOrg.id,
     api: gateway.api,
-    rollout: gateway.rollout,
     remote: gateway.remote,
     search: (persona = "owner") => gateway.call(persona, "search_capabilities", { query: "remote session targets registered computer", limit: 20 }),
-    async featureState() {
-      const result = await gateway.api("owner", "/v1/admin/features");
-      if (result.status !== 200) throw new Error(`Feature inventory HTTP ${result.status}`);
-      const feature = records(object(result.body).features).find(item => item.key === "remoteSessionTargets");
-      if (!feature) throw new Error("Missing remote-session rollout");
-      return feature;
-    },
     async register(persona: string, runnerId = SHARED_INSTALL_ID, options: { legacy?: boolean; scheduling?: boolean } = {}) {
       const result = await gateway.api(persona, options.legacy ? "/v1/automation-runners/token" : "/v1/session-runners/token", "POST", {
         runnerId, protocolVersion: 1, supportedExecutionTargets: ["desktop"],

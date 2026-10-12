@@ -191,17 +191,10 @@ async function memberIdentity(den: Den, admin: DenSession, orgId: string, email:
   return { memberId: text(member.id, "member.id"), userId: text(member.userId ?? user.id, "member.userId") };
 }
 
-async function setAuditFlag(den: Den, admin: DenSession, orgId: string, value: boolean) {
-  const before = await call(den, `/v1/admin/organizations/${orgId}/capabilities`, { headers: { authorization: `Bearer ${admin.token}` } });
-  expect(before.response.status, before.text).toBe(200);
-  const result = await call(den, `/v1/admin/organizations/${orgId}/capabilities`, { method: "PUT", headers: { authorization: `Bearer ${admin.token}` }, body: { capabilities: { auditLogs: value } } });
+/** Platform admin changes the organization's plan; recorded as organization.plan.update.* in that organization. */
+async function setPlan(den: Den, admin: DenSession, orgId: string, tier: string) {
+  const result = await call(den, `/v1/admin/organizations/${orgId}/plan`, { method: "PATCH", headers: { authorization: `Bearer ${admin.token}` }, body: { tier, seatLimit: 25 } });
   expect(result.response.status, result.text).toBe(200);
-  const previous = record(record(before.body, "capabilities").capabilities, "capabilities");
-  const next = record(record(result.body, "capabilities").capabilities, "capabilities");
-  expect(next.auditLogs).toBe(value);
-  for (const [key, current] of Object.entries(previous)) {
-    if (key !== "auditLogs") expect(next[key], `capability ${key} preserved`).toEqual(current);
-  }
 }
 
 async function createTeam(den: Den, headers: Record<string, string>, teamName: string): Promise<string> {
@@ -267,7 +260,6 @@ function world(place: Place): Promise<World> {
         // Remove inherited overrides: prove the deployment defaults.
         DEN_AUDIT_CAPTURE_ENABLED: undefined,
         DEN_AUDIT_VISIBILITY_ENABLED: undefined,
-        DEN_FEATURE_PLATFORM_AUDIT_READS: undefined,
         DEN_PLAN_GATING_ENABLED: "false",
         DEN_MAINTENANCE_TOKEN: MAINTENANCE_TOKEN,
         RESEND_API_KEY: "",
@@ -279,7 +271,6 @@ function world(place: Place): Promise<World> {
     const reader = den.members.reader;
     if (!reader) throw new Error("Expected the synthetic reader session");
     const orgId = await organizationIdNamed(admin, organizationName);
-    await setAuditFlag(den, admin, orgId, true);
     const adminIdentity = await memberIdentity(den, admin, orgId, admin.email);
     const readerIdentity = await memberIdentity(den, admin, orgId, reader.email);
     return { den, dbUrl, orgId, admin, reader, adminUserId: adminIdentity.userId, adminMemberId: adminIdentity.memberId, readerMemberId: readerIdentity.memberId, stamp };
@@ -419,7 +410,7 @@ test.skipIf(skip)(name("2. rejected team changes record .attempted with validati
   );
 });
 
-test.skipIf(skip)(name("3. unauthenticated and sign-in failures go to the tenantless platform store without secrets; platform reads are not recorded by default"), STEP, async ({ evidence, place }) => {
+test.skipIf(skip)(name("3. unauthenticated and sign-in failures go to the tenantless platform store without secrets; successful platform reads are recorded too"), STEP, async ({ evidence, place }) => {
   const w = await world(place);
   const columns = await sql(w, "SELECT COLUMN_NAME AS c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'platform_audit_event'");
   const columnNames = columns.map((row) => String(row.c));
@@ -437,6 +428,8 @@ test.skipIf(skip)(name("3. unauthenticated and sign-in failures go to the tenant
   const knownVersion = new Set((await platformRows(w, "/v1/app-version")).map((row) => String(row.id)));
   const version = await call(w.den, "/v1/app-version");
   expect(version.response.status, version.text).toBe(200);
+  const versionRow = await pollPlatform(w, "/v1/app-version", knownVersion, () => true);
+  expect(versionRow).toMatchObject({ method: "GET", outcome: "succeeded", status: 200 });
 
   const platformTotalBeforeUnmatched = count(await sql(w, "SELECT COUNT(*) AS n FROM platform_audit_event"));
   const unmatched = await call(w.den, `/v1/no-such-audit-route-${w.stamp}`, { method: "POST", headers: { authorization: `Bearer ${w.admin.token}` }, body: {} });
@@ -448,11 +441,6 @@ test.skipIf(skip)(name("3. unauthenticated and sign-in failures go to the tenant
   expect([400, 401, 403]).toContain(signInFailure.response.status);
   const signInRow = await pollPlatform(w, "/api/auth/sign-in/email", knownSignIn, (row) => row.action === "auth.sign_in.email.attempted");
   expect(signInRow).toMatchObject({ method: "POST", outcome: "denied", actor_type: "unknown", actor_id: null });
-  // The sign-in write was issued after the app-version read; give the read's
-  // (would-be) fire-and-forget insert the same window before asserting absence.
-  await sleep(500);
-  const versionRows = (await platformRows(w, "/v1/app-version")).filter((row) => !knownVersion.has(String(row.id)));
-  expect(versionRows).toEqual([]);
   // Only the sign-in row is new since the unmatched 404 (anonymous write was earlier).
   const platformTotalAfter = count(await sql(w, "SELECT COUNT(*) AS n FROM platform_audit_event"));
   const unmatchedRows = count(await sql(w, "SELECT COUNT(*) AS n FROM platform_audit_event WHERE route LIKE '%no-such-audit-route%' OR route IN ('/v1/*', '/*')"));
@@ -462,7 +450,7 @@ test.skipIf(skip)(name("3. unauthenticated and sign-in failures go to the tenant
   expect(dump.includes(wrongPassword)).toBe(false);
   const platformDump = JSON.stringify(await sql(w, "SELECT * FROM platform_audit_event"));
   expect(platformDump.includes(w.reader.email)).toBe(false);
-  // The failed sign-in targets an existing member of this flagged organization:
+  // The failed sign-in targets an existing member of this organization:
   // the only tenant row is the detached session.sign_in_failed (actor unknown).
   const signInRequestId = text((await sql(w, "SELECT request_id FROM platform_audit_event WHERE id = ?", [String(signInRow.id)]))[0]?.request_id, "sign-in request id");
   let signInFailed: Envelope[] = [];
@@ -473,8 +461,8 @@ test.skipIf(skip)(name("3. unauthenticated and sign-in failures go to the tenant
   expect(signInFailed.map((event) => event.actor), summary(signInFailed)).toEqual([{ type: "unknown", id: null }]);
   expect(await totalTenantRows(w, w.orgId)).toBe(tenantBefore + 1);
   evidence.recordAssertionEvidence(
-    "An anonymous org write and a failed sign-in are platform rows with an unknown actor and no organization; a successful platform GET is not recorded; the failed sign-in of an existing member adds only session.sign_in_failed to the member's flagged organization",
-    `columns=${columnNames.join(",")}; anonymous=${JSON.stringify(anonymousRow)}; sign-in(${signInFailure.response.status})=${JSON.stringify(signInRow)}; app-version rows=${versionRows.length}; unmatched 404 rows=${unmatchedRows} (platform rows +${platformTotalAfter - platformTotalBeforeUnmatched} = the sign-in only); password in audit rows=false, email in platform rows=false; tenant rows ${tenantBefore} → +1 (${summary(signInFailed)})`,
+    "An anonymous org write and a failed sign-in are platform rows with an unknown actor and no organization; a successful platform GET is recorded as succeeded; the failed sign-in of an existing member adds only session.sign_in_failed to the member's organization",
+    `columns=${columnNames.join(",")}; anonymous=${JSON.stringify(anonymousRow)}; sign-in(${signInFailure.response.status})=${JSON.stringify(signInRow)}; app-version=${JSON.stringify(versionRow)}; unmatched 404 rows=${unmatchedRows} (platform rows +${platformTotalAfter - platformTotalBeforeUnmatched} = the sign-in only); password in audit rows=false, email in platform rows=false; tenant rows ${tenantBefore} → +1 (${summary(signInFailed)})`,
     true,
   );
 });
@@ -741,7 +729,7 @@ test.skipIf(skip)(name("6. capture OFF stops recording but keeps history readabl
   );
 });
 
-test.skipIf(skip)(name("7. an organization without the auditLogs flag records nothing"), STEP, async ({ evidence, place }) => {
+test.skipIf(skip)(name("7. a new organization records its own changes from its first team, with nothing to turn on"), STEP, async ({ evidence, place }) => {
   const w = await world(place);
   const outsiderEmail = `audit-outsider+${w.stamp}@example.test`;
   const password = "Audit-Outsider-Example-1!";
@@ -753,19 +741,17 @@ test.skipIf(skip)(name("7. an organization without the auditLogs flag records no
   expect(createdOrg.response.status, createdOrg.text).toBe(201);
   state.orgB = text(record(record(createdOrg.body, "org").organization, "organization").id, "org B id");
   const headersB = orgHeaders(outsider, state.orgB);
-  const team = await createTeam(w.den, headersB, `Unflagged team ${w.stamp}`);
-  const rename = await call(w.den, `/v1/teams/${team}`, { method: "PATCH", headers: headersB, body: { name: `Unflagged renamed ${w.stamp}` } });
+  const team = await createTeam(w.den, headersB, `Org B first team ${w.stamp}`);
+  const rename = await call(w.den, `/v1/teams/${team}`, { method: "PATCH", headers: headersB, body: { name: `Org B renamed ${w.stamp}` } });
   expect(rename.response.status, rename.text).toBe(200);
-  const rows = await totalTenantRows(w, state.orgB);
+  const events = (await tenantEvents(w, state.orgB)).filter((event) => event.action.startsWith("team.create.") || event.action.startsWith("team.update."));
   const policies = count(await sql(w, "SELECT COUNT(*) AS n FROM audit_policy WHERE organization_id = ?", [state.orgB]));
-  const operations = count(await sql(w, "SELECT COUNT(*) AS n FROM audit_operation WHERE organization_id = ?", [state.orgB]));
-  expect(rows).toBe(0);
-  expect(operations).toBe(0);
-  expect(policies).toBe(0);
+  expect(events.map((event) => event.action), summary(events)).toEqual(["team.create.requested", "team.create.succeeded", "team.update.requested", "team.update.succeeded"]);
+  expect(policies).toBe(1);
   evidence.recordAssertionEvidence(
-    "An unflagged organization's team create and rename write no audit rows and no policy",
-    `org B audit_event=${rows}, audit_operation=${operations}, audit_policy=${policies}`,
-    rows === 0 && operations === 0 && policies === 0,
+    "A new entitled organization's team create and rename are recorded without turning anything on",
+    `org B → ${summary(events)}; audit_policy=${policies}`,
+    events.length === 4 && policies === 1,
   );
 });
 
@@ -773,7 +759,6 @@ test.skipIf(skip)(name("8. tenants are isolated: another organization's owner se
   const w = await world(place);
   const outsider = state.outsider;
   if (!outsider || !state.orgB) throw new Error("case 7 must create org B first");
-  await setAuditFlag(w.den, w.admin, state.orgB, true);
   const headersA = orgHeaders(w.admin, w.orgId);
   const headersB = orgHeaders(outsider, state.orgB);
   const markA = await watermark(w, w.orgId);
@@ -810,11 +795,11 @@ test.skipIf(skip)(name("8. tenants are isolated: another organization's owner se
   const aRowsSince = await tenantEvents(w, w.orgId, markA);
   expect(JSON.stringify(aRowsSince).includes(state.orgB)).toBe(false);
 
-  // The platform admin acting on flagged org B is attributed to org B only.
+  // The platform admin acting on org B is attributed to org B only.
   const markB = await watermark(w, state.orgB);
-  await setAuditFlag(w.den, w.admin, state.orgB, true);
-  const adminEvents = (await tenantEvents(w, state.orgB, markB)).filter((event) => event.action.startsWith("organization.capabilities.update."));
-  expect(adminEvents.map((event) => event.action), summary(adminEvents)).toEqual(["organization.capabilities.update.requested", "organization.capabilities.update.succeeded"]);
+  await setPlan(w.den, w.admin, state.orgB, "enterprise");
+  const adminEvents = (await tenantEvents(w, state.orgB, markB)).filter((event) => event.action.startsWith("organization.plan.update."));
+  expect(adminEvents.map((event) => event.action), summary(adminEvents)).toEqual(["organization.plan.update.requested", "organization.plan.update.succeeded"]);
   expect(adminEvents[1]?.operation.origin).toBe("platform_admin");
   expect(adminEvents[1]?.actor).toEqual({ type: "user", id: w.adminUserId });
   const bRowsBeforeKey = await totalTenantRows(w, state.orgB);
@@ -1164,7 +1149,7 @@ test.skipIf(skip)(name("16. runner and worker signals (inventory, work poll, act
   );
 });
 
-test.skipIf(skip)(name("18. platform requests are filtered by effect: a token-issuing GET is recorded, a read-only session GET is not, and bearer codes in the path are never stored"), STEP, async ({ evidence, place }) => {
+test.skipIf(skip)(name("18. platform GETs are recorded, a token-issuing GET with its user and a read-only session GET as succeeded, and bearer codes in the path are never stored"), STEP, async ({ evidence, place }) => {
   const w = await world(place);
   const cookie = await sessionCookie(w.den, w.reader.email, w.reader.password);
   const authHeaders = { cookie, origin: new URL(w.den.ref.apiUrl).origin };
@@ -1199,15 +1184,13 @@ test.skipIf(skip)(name("18. platform requests are filtered by effect: a token-is
   const deviceRow = await pollPlatform(w, "/v1/auth/device/:userCode", knownDevice, () => true);
   expect(deviceRow).toMatchObject({ action: "auth.device_code.lookup.attempted", target_type: "device_code", target_id: null });
 
-  // The get-session read was issued first; give its (would-be) fire-and-forget insert time.
-  await sleep(500);
-  const sessionRows = (await platformRows(w, "/api/auth/get-session")).filter((row) => !knownSession.has(String(row.id)));
-  expect(sessionRows).toEqual([]);
+  const sessionRow = await pollPlatform(w, "/api/auth/get-session", knownSession, () => true);
+  expect(sessionRow).toMatchObject({ method: "GET", outcome: "succeeded", status: 200 });
   const dump = await allAuditText(w);
   for (const secret of [issued, forgedToken, claimCode, deviceCode, cookie.split("=")[1] ?? cookie]) expect(dump.includes(secret), "secret found in audit tables").toBe(false);
   evidence.recordAssertionEvidence(
-    "GET /api/auth/token (issues a JWT) is a platform row for the signed-in user while GET /api/auth/get-session (readOnly) records nothing by default; a forged unsubscribe link, an unknown claim code and an unknown device code are recorded without their codes",
-    `token → ${JSON.stringify(tokenRow)}; get-session rows=${sessionRows.length}; unsubscribe → ${JSON.stringify(unsubscribeRow)}; claim → ${JSON.stringify(claimRow)}; device → ${JSON.stringify(deviceRow)}; JWT, forged token, claim code, device code and session cookie absent from audit rows`,
+    "GET /api/auth/token (issues a JWT) is a platform row for the signed-in user and GET /api/auth/get-session (read-only) is recorded as succeeded; a forged unsubscribe link, an unknown claim code and an unknown device code are recorded without their codes",
+    `token → ${JSON.stringify(tokenRow)}; get-session → ${JSON.stringify(sessionRow)}; unsubscribe → ${JSON.stringify(unsubscribeRow)}; claim → ${JSON.stringify(claimRow)}; device → ${JSON.stringify(deviceRow)}; JWT, forged token, claim code, device code and session cookie absent from audit rows`,
     true,
   );
 });
@@ -1231,7 +1214,6 @@ test.skipIf(skip)(name("19. deleting an organization leaves platform evidence th
   const created = await call(w.den, "/v1/org", { method: "POST", headers: { authorization: `Bearer ${owner.token}` }, body: { name: `Audit doomed org ${w.stamp}` } });
   expect(created.response.status, created.text).toBe(201);
   const doomedId = text(record(record(created.body, "org").organization, "organization").id, "doomed org id");
-  await setAuditFlag(w.den, w.admin, doomedId, true);
   await createTeam(w.den, orgHeaders(owner, doomedId), `Doomed team ${w.stamp}`);
   expect(await totalTenantRows(w, doomedId)).toBeGreaterThan(0);
   const ownerUserId = text((await sql(w, "SELECT id FROM user WHERE email = ?", [ownerEmail]))[0]?.id, "owner user id");
@@ -1287,7 +1269,7 @@ test.skipIf(skip)(name("17. leaving through better-auth organization/leave is re
   );
 });
 
-test.skipIf(skip)(name("7b. a flagged organization that loses its Enterprise entitlement stops recording and keeps its history"), LONG, async ({ evidence, place }) => {
+test.skipIf(skip)(name("7b. an organization records only while it has the Enterprise entitlement and keeps its history after losing it"), LONG, async ({ evidence, place }) => {
   const stamp = `${Date.now().toString(36)}${process.pid.toString(36)}e`;
   const organizationName = `Audit entitlement ${stamp}`;
   // A separate install without DEN_AUDIT_SELF_HOSTED_ENABLED: that switch
@@ -1302,7 +1284,6 @@ test.skipIf(skip)(name("7b. a flagged organization that loses its Enterprise ent
   const admin = den.admin;
   const orgId = await organizationIdNamed(admin, organizationName);
   const headers = orgHeaders(admin, orgId);
-  await setAuditFlag(den, admin, orgId, true);
   await createTeam(den, headers, `Not entitled ${stamp}`);
   const unentitledRows = await totalTenantRows(w, orgId);
   expect(unentitledRows).toBe(0);
@@ -1336,7 +1317,7 @@ test.skipIf(skip)(name("7b. a flagged organization that loses its Enterprise ent
   const historyIds = Array.isArray(operations) ? operations.filter(isRecord).map((op) => String(op.id)) : [];
   expect(historyIds).toContain(entitled[1]?.operationId);
   evidence.recordAssertionEvidence(
-    "Flag without entitlement records nothing; with Enterprise it records; the downgrade's outcome lands in the platform store targeting the organization; afterwards it records nothing and the earlier operation stays readable",
+    "Without the entitlement nothing is recorded; with Enterprise it records; the downgrade's outcome lands in the platform store targeting the organization; afterwards it records nothing and the earlier operation stays readable",
     `before Enterprise rows=${unentitledRows}; Enterprise → ${summary(entitled)}; downgrade intent ${String(downgradeIntent?.action)} + platform outcome ${JSON.stringify(downgradeRow)}; after downgrade rows stayed ${rowsAfterLoss}; history contains ${String(entitled[1]?.operationId)}=${historyIds.includes(entitled[1]?.operationId ?? "")}`,
     true,
   );

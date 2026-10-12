@@ -8,23 +8,23 @@ import { createHeadlessRunnerClient, defaultHeadlessRunnerDeps, type HeadlessMod
 
 /**
  * The organization's default model for its cloud agents on the headless runner: Workbot, the Slack assistant, and
- * cloud Automations set to the cloud default. Admins choose it in Den › Manage › Workbot (`workbotDefaultModel`).
+ * cloud Automations set to the cloud default. Admins choose it in Den › Manage › Workbot.
  *
  * It is a default, not a lock: an Automation with its own model keeps it. Null means the runner's default. A saved
- * model the runner no longer serves also gives null, so a removed model never breaks every chat. With the feature
+ * model the runner no longer serves also gives null, so a removed model never breaks every chat. With Workbot
  * off the saved value is ignored and every caller keeps its earlier behaviour, which is what makes the kill switch
  * safe. One organization-wide value; per-team overrides could later be resolved on top of it here.
  */
 export type OrganizationModelPolicy = {
-  /** The feature is on: callers use `model` instead of their own earlier choice. */
+  /** Workbot is on: callers use `model` instead of their own earlier choice. */
   enabled: boolean
   /** The model to send to the runner; null means the runner's default. Always null when not enabled. */
   model: string | null
 }
 
-/** The admin page exists, and the saved model applies, only while Workbot and its default-model feature are on. */
-export function defaultModelFeatureOn(features: Pick<FeatureMap, "workbot" | "workbotDefaultModel">): boolean {
-  return features.workbot && features.workbotDefaultModel
+/** The admin page exists, and the saved model applies, only while Workbot is on. */
+export function defaultModelFeatureOn(features: Pick<FeatureMap, "workbot">): boolean {
+  return features.workbot
 }
 
 const CATALOG_CACHE_MS = 60_000
@@ -84,7 +84,7 @@ export function checkWorkbotModelChoice(model: string | null, catalog: HeadlessM
 }
 
 export type OrganizationModelPolicyDeps = {
-  features: (organizationId: string) => Promise<Pick<FeatureMap, "workbot" | "workbotDefaultModel">>
+  features: (organizationId: string) => Promise<Pick<FeatureMap, "workbot">>
   chosenModel: (organizationId: string) => Promise<string | null>
   catalog: () => Promise<HeadlessModelCatalog | null>
 }

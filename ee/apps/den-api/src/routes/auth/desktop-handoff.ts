@@ -6,7 +6,6 @@ import type { Hono } from "hono"
 import { describeRoute } from "hono-openapi"
 import { z } from "zod"
 import { cloudHostingAvailable } from "../../capability-sources/cloud-hosting.js"
-import { organizationFeatureEnabled } from "../../features.js"
 import { recordDesktopHandoffCreated, recordSessionHandedOff } from "../../audit/domain/sessions.js"
 import { attributeAuditRequest, auditSessionUserAttribution } from "../../audit/request-capture.js"
 import { jsonValidator, publicRoute, userSessionRoute } from "../../middleware/index.js"
@@ -710,20 +709,12 @@ export function registerDesktopAuthRoutes<T extends { Variables: AuthContextVari
     // organization, or every active membership when it has none.
     await recordSessionHandedOff({ ...exchange.session, activeOrganizationId: exchange.activeOrganizationId })
 
-    let connectEnabled: boolean | null = null
-    if (organization) {
-      try {
-        connectEnabled = await organizationFeatureEnabled(organization.id, "mcpConnections")
-      } catch {
-        connectEnabled = null
-      }
-    }
-
     return c.json({
       token: exchange.token,
       user: exchange.user,
       organization,
-      connectEnabled,
+      // Compatibility field for published desktops: Connect is always on.
+      connectEnabled: organization ? true : null,
     })
     },
   )

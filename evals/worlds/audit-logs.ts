@@ -16,7 +16,7 @@ async function requireCurrentRemoteSource(place: Place) {
 
 async function seedAuditDatabase(den: Den, statement: string, values: string[]) {
   if (den.placement?.kind === "daytona") {
-    if (den.placement.sandboxId === process.env.OPENWORK_EVAL_DAYTONA_DEN_SANDBOX?.trim()) throw new Error("Refusing audit release-flag writes to a prewarmed Den sandbox");
+    if (den.placement.sandboxId === process.env.OPENWORK_EVAL_DAYTONA_DEN_SANDBOX?.trim()) throw new Error("Refusing audit seed writes to a prewarmed Den sandbox");
     const script = `
       import { createRequire } from "node:module";
       const { createConnection } = createRequire("/workspace/ee/packages/den-db/package.json")("mysql2/promise");
@@ -30,14 +30,14 @@ async function seedAuditDatabase(den: Den, statement: string, values: string[]) 
       }
     `;
     const encoded = Buffer.from(script).toString("base64");
-    const result = await execInSandbox(defaultDaytonaExec, den.placement.sandboxId, `printf %s ${encoded} | base64 -d | node --input-type=module`, { timeoutMs: 30_000, context: "Seed audit release flag in the journey-owned Den sandbox" });
+    const result = await execInSandbox(defaultDaytonaExec, den.placement.sandboxId, `printf %s ${encoded} | base64 -d | node --input-type=module`, { timeoutMs: 30_000, context: "Seed audit state in the journey-owned Den sandbox" });
     if (!result.stdout.includes("audit-seeded")) throw new Error("The owned sandbox did not confirm its audit seed");
     return;
   }
   const databaseUrl = den.database?.url;
   if (den.placement?.kind !== "local" || !databaseUrl) throw new Error("Audit journey requires a testkit-owned scratch database");
   const database = new URL(databaseUrl);
-  if (!["127.0.0.1", "localhost", "[::1]"].includes(database.hostname) || !database.pathname.startsWith("/openwork_eval_")) throw new Error("Refusing audit release-flag writes outside a disposable loopback testkit database");
+  if (!["127.0.0.1", "localhost", "[::1]"].includes(database.hostname) || !database.pathname.startsWith("/openwork_eval_")) throw new Error("Refusing audit seed writes outside a disposable loopback testkit database");
   await queryDenDatabase(databaseUrl, statement, values);
 }
 
@@ -75,7 +75,6 @@ export async function auditLogs(seed: Seed, { place }: { place: Place }) {
       admin: { name: "Audit Owner", email: "audit-owner@example.test" },
       members: {
         teammate: { name: "Audit Teammate", email: "audit-teammate@example.test" },
-        unflaggedOwner: { name: "Unflagged Owner", email: "unflagged-owner@example.test" },
       },
     },
   });
@@ -84,13 +83,12 @@ export async function auditLogs(seed: Seed, { place }: { place: Place }) {
   const org = await seed.api(den.admin, "/v1/org");
   if (!org.response.ok) throw new Error(`Synthetic organization lookup failed: ${org.response.status}`);
   const orgId = identifier(record(record(org.body).organization).id);
-  const unflaggedOwner = den.members.unflaggedOwner;
-  if (!unflaggedOwner) throw new Error("Expected a separate synthetic unflagged owner session");
-  const unflagged = await seed.api(unflaggedOwner, "/v1/org", {
-    method: "POST", body: JSON.stringify({ name: "Unflagged audit workspace" }),
-  });
-  if (!unflagged.response.ok) throw new Error(`Unflagged organization setup failed: ${unflagged.response.status}`);
-  const unflaggedOrgId = identifier(record(record(unflagged.body).organization).id);
+  // Audit capture is on from the start. Provision the default policy (GET usage
+  // does), then pause it while fixtures are arranged so the journey's history
+  // holds only its own changes; the policy stays at revision 1.
+  const provisioned = await seed.api(den.admin, "/v1/audit/usage");
+  if (!provisioned.response.ok) throw new Error(`Audit policy provisioning failed: ${provisioned.response.status}`);
+  await seedAuditDatabase(den, "UPDATE audit_policy SET enabled = FALSE WHERE organization_id = ?", [orgId]);
   const catalog = await seed.api(den.admin, "/v1/llm-provider-catalog/anthropic");
   if (!catalog.response.ok) throw new Error(`Provider catalog unavailable: ${catalog.response.status}`);
   const models = record(record(catalog.body).provider).models;
@@ -118,23 +116,21 @@ export async function auditLogs(seed: Seed, { place }: { place: Place }) {
   const platformAdmin = await createAdmin(den, { name: "Audit Platform Admin", email: platformAdminEmail });
   // createAdmin also replaces den.admin; the organization owner stays the primary session.
   den.admin = owner;
-  // Seed only the auditLogs feature override, leaving every other feature alone.
-  // Provider setup predates the grant; browser/API traffic initializes the real
-  // default policy and records access events before the user's provider save.
+  // Provider setup happens while capture is paused; browser/API traffic after
+  // it resumes records access events before the user's provider save.
   // Custom roles were removed; the audited access change is now a team's
   // permission set, which needs the Permissions feature and a team. Both are
-  // arranged before audit capture starts, so the journey's own team creation
+  // arranged before audit capture resumes, so the journey's own team creation
   // stays the only team operation in the history.
   const reviewersTeamName = "Audit reviewers";
   const reviewers = await seed.api(den.admin, "/v1/teams", { method: "POST", body: JSON.stringify({ name: reviewersTeamName, memberIds: [] }) });
   if (reviewers.response.status !== 201) throw new Error(`Synthetic team setup failed: ${reviewers.response.status}`);
   const reviewersTeamId = identifier(record(record(reviewers.body).team).id);
   await seedAuditDatabase(den, "INSERT INTO organization_feature (organization_id, feature_key, enabled, source) VALUES (?, 'permissions', TRUE, 'platform') ON DUPLICATE KEY UPDATE enabled = TRUE", [orgId]);
-  await seedAuditDatabase(den, "INSERT INTO organization_feature (organization_id, feature_key, enabled, source) VALUES (?, 'auditLogs', TRUE, 'platform') ON DUPLICATE KEY UPDATE enabled = TRUE", [orgId]);
+  await seedAuditDatabase(den, "UPDATE audit_policy SET enabled = TRUE WHERE organization_id = ?", [orgId]);
   const viewport = { width: 1440, height: 1100 };
   const web = await seed.web({ den, signedInAs: den.admin, startPath: "/dashboard/audit-logs", headless: true, viewport });
   const memberWeb = await seed.web({ den, signedInAs: teammate, startPath: "/dashboard/audit-logs", headless: true, viewport });
-  const unflaggedWeb = await seed.web({ den, signedInAs: unflaggedOwner, startPath: "/dashboard", headless: true, viewport });
   // Audit writes never update usage totals; the scheduled refresh does
   // (POST /internal/audit/usage/refresh, the den-audit-usage cron). Run it on demand.
   async function refreshAuditUsage() {
@@ -181,5 +177,5 @@ export async function auditLogs(seed: Seed, { place }: { place: Place }) {
       .filter((element) => element.checkVisibility())
       .map((element) => ({ outcome: element.getAttribute("data-audit-outcome"), color: getComputedStyle(element).color })));
   }
-  return { den, refreshAuditUsage, eventOptionLayout, outcomeColors, web, memberWeb, unflaggedWeb, unflaggedOwner, unflaggedOrgId, teammate, teammateUserId, platformAdmin, orgId, providerId, originalCredential, replacementCredential, reviewersTeamId, reviewersTeamName, viewport };
+  return { den, refreshAuditUsage, eventOptionLayout, outcomeColors, web, memberWeb, teammate, teammateUserId, platformAdmin, orgId, providerId, originalCredential, replacementCredential, reviewersTeamId, reviewersTeamName, viewport };
 }

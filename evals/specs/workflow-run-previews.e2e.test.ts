@@ -35,11 +35,11 @@ const test = spec.world(async (seed) => {
   const organization = record((await seed.api(den.admin, "/v1/org")).body);
   const organizationId = field(organization.organization, "id");
   await enableOrganizationCapabilities(seed, den.admin, { denFlatPageHeaders: true }, organizationId);
-  const setAnalyticsIntegrated = async (enabled: boolean) => {
+  const setLibraryUsage = async (enabled: boolean) => {
     const result = await seed.api(den.admin, `/v1/admin/organizations/${organizationId}/capabilities`, {
-      method: "PUT", body: JSON.stringify({ capabilities: { analyticsIntegrated: enabled } }),
+      method: "PUT", body: JSON.stringify({ capabilities: { libraryUsage: enabled } }),
     });
-    if (!result.response.ok) throw new Error(`Analytics presentation rollout: HTTP ${result.response.status}`);
+    if (!result.response.ok) throw new Error(`Library usage rollout: HTTP ${result.response.status}`);
   };
   if (!Array.isArray(organization.members)) throw new Error("Expected organization members");
   const planViewerMember = organization.members.map(record).find((member) => String(record(member.user).email).toLowerCase() === den.members.planViewer.email.toLowerCase()); // Den stores emails lowercased.
@@ -106,7 +106,7 @@ const test = spec.world(async (seed) => {
   const memberWeb = await seed.web({ den, signedInAs: den.members.colleague, startPath: "/dashboard", headless: true, viewport });
   const planViewerWeb = await seed.web({ den, signedInAs: den.members.planViewer, startPath: "/dashboard/analytics", headless: true, viewport });
   const faults = await activityTransportFaults(web, new URL(den.ref.webUrl).origin, "/api/browser/v1/workflow-runs");
-  return { faults, async [Symbol.asyncDispose]() { await faults[Symbol.asyncDispose](); }, den, web, memberWeb, planViewerWeb, planNotice: () => enterprisePlanNoticeMeasurements(web), planViewerNotice: () => enterprisePlanNoticeMeasurements(planViewerWeb), setEnterprise, setAnalyticsIntegrated, configObjectId, pluginId, configObjectVersionId, receiptId: field(firstRun, "receiptId"), originalGraph: record(saved.body).graph, revisedGraph: record(revised.body).graph };
+  return { faults, async [Symbol.asyncDispose]() { await faults[Symbol.asyncDispose](); }, den, web, memberWeb, planViewerWeb, planNotice: () => enterprisePlanNoticeMeasurements(web), planViewerNotice: () => enterprisePlanNoticeMeasurements(planViewerWeb), setEnterprise, setLibraryUsage, configObjectId, pluginId, configObjectVersionId, receiptId: field(firstRun, "receiptId"), originalGraph: record(saved.body).graph, revisedGraph: record(revised.body).graph };
 }, { timeout: 600_000, resources: { surfaces: ["web"], services: ["den"] } });
 
 test("workflow activity shows linked version diagrams and keeps one-off and inaccessible runs readable", async ({ world, user, probe, seed, evidence, step }) => {
@@ -366,7 +366,7 @@ test("workflow activity shows linked version diagrams and keeps one-off and inac
 
   await step("after: workflow history shares Den rows and opens the executed preview on demand", async () => {
     const receipts = await readRuns();
-    await world.setAnalyticsIntegrated(true);
+    await world.setLibraryUsage(true);
     await world.faults.delay();
     await user.reload();
     await user.see({ testId: "item-rows-skeleton" }, { timeoutMs: 5_000 });

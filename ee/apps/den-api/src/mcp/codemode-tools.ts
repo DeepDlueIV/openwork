@@ -28,7 +28,6 @@ import {
   buildNativeCapabilityName,
   executeNativeCapability,
   nativeOperations,
-  enabledNativeCatalog,
 } from "./native-capabilities.js"
 
 export {
@@ -220,7 +219,7 @@ export async function buildNativeProviderToolTree(input: {
     member: memberIdentity,
   })
   const organizationId = normalizeDenTypeId("organization", input.organizationId)
-  const catalog = await enabledNativeCatalog(input.catalog, organizationId)
+  const catalog = input.catalog
   const namespaceEntries = namespaceContext.codemodeNativeProviderEntries.flatMap((connection) => {
     const namespace = namespaceContext.namespaces.native.get(connection.id)
     if (!namespace) return []

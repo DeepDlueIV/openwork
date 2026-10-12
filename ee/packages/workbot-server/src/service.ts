@@ -49,7 +49,7 @@ export type WorkbotDeps = {
   /** Whether Workbot may set up recurring work (Automations on the headless runner) for this organization. */
   canSchedule: (organizationId: string) => Promise<boolean>
   /**
-   * The organization's default model for Workbot (Den's workbotDefaultModel), or null for the runner's default.
+   * The organization's default model for Workbot, or null for the runner's default.
    * Unset: the runner's default.
    */
   model?: (organizationId: string) => Promise<string | null>

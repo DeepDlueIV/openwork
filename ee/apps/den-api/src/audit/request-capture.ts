@@ -11,7 +11,6 @@ import { db } from "../db.js"
 import { env } from "../env.js"
 import { appLogger } from "../observability/logger.js"
 import { AUDIT_OUTCOME_LOST_OPERATIONAL_MARKER, PLATFORM_AUDIT_LOST_OPERATIONAL_MARKER } from "../operational-log-markers.js"
-import { deploymentFeatureEnabled, organizationFeatureEnabled } from "../features.js"
 import type { OrganizationContext } from "../orgs.js"
 import { readInternalMcpPrincipalCredentialId, type AuthContextVariables } from "../session.js"
 import { readEffectiveAuditPolicy, recheckAuditEntitlement } from "./capture.js"
@@ -46,7 +45,7 @@ export type AuditRequestAttribution = Readonly<{
    */
   refusal?: Readonly<{ reasonCode: string }>
 }>
-type TenantAttribution = { organizationId: string; actor: AuditActor; principalKey: string; origin: AuditOrigin; flagged: boolean }
+type TenantAttribution = { organizationId: string; actor: AuditActor; principalKey: string; origin: AuditOrigin }
 type ResolvedDeclaration = { declaration: AuditRouteDeclaration; params: Record<string, string> }
 type AuditRequestResource = AuditEventInput["resources"][number]
 type AuditRequestState = {
@@ -226,15 +225,6 @@ export function readEffectiveAuditPolicyWithRetry(organizationId: string) {
   return withAuditRetry(() => readEffectiveAuditPolicy(db, organizationId, true), { label: "audit.policy.read", idempotent: true, organizationId })
 }
 
-/**
- * The auditLogs feature for one organization, read fresh from the features
- * registry (one query). Callers check env.auditCaptureEnabled first; appends
- * recheck it with a fresh, unlocked read (readAuditAvailability).
- */
-export function auditLogsFeatureEnabled(organizationId: string): Promise<boolean> {
-  return organizationFeatureEnabled(organizationId, "auditLogs")
-}
-
 async function organizationExists(organizationId: string): Promise<boolean> {
   const [row] = await db.select({ id: OrganizationTable.id }).from(OrganizationTable).where(eq(OrganizationTable.id, normalizeDenTypeId("organization", organizationId))).limit(1)
   return Boolean(row)
@@ -346,7 +336,7 @@ async function startTenantCapture(c: Context, state: AuditRequestState, resolved
   state.began = true
   state.tenant = tenant
   if (refusal) state.refusalReasonCode = refusal.reasonCode
-  if (!tenant.flagged || !env.auditCaptureEnabled) return null
+  if (!env.auditCaptureEnabled) return null
   const auditClass = declaration.class
   try {
     const policy = await readEffectiveAuditPolicyWithRetry(tenant.organizationId)
@@ -397,7 +387,7 @@ async function startTenantCapture(c: Context, state: AuditRequestState, resolved
 
 type VerifiedMembership = Readonly<{ organizationId: string; userId: string; memberId: string }>
 
-function memberTenant(c: Context, state: AuditRequestState, membership: VerifiedMembership, flagged: boolean): TenantAttribution {
+function memberTenant(c: Context, state: AuditRequestState, membership: VerifiedMembership): TenantAttribution {
   const apiKey: DenApiKeySession | null | undefined = c.get("apiKey")
   // API key first; an MCP-internal re-entry names the MCP grant/client instead.
   const credentialId = apiKey?.id ?? (state.origin === "mcp" ? state.mcpCredentialId : null)
@@ -407,17 +397,15 @@ function memberTenant(c: Context, state: AuditRequestState, membership: Verified
     actor: { type: "user", id: membership.userId, memberId: membership.memberId, ...(credentialId ? { credentialId } : {}) },
     principalKey: auditUserPrincipalKey({ userId: membership.userId, memberId: membership.memberId, credentialId: keyPart }),
     origin: state.origin,
-    flagged,
   }
 }
 
 function orgContextTenant(c: Context, state: AuditRequestState, organization: OrganizationContext): TenantAttribution {
   const member = organization.currentMember
-  // Features were read with the organization context in this request: no extra query.
-  return memberTenant(c, state, { organizationId: organization.organization.id, userId: member.userId, memberId: member.id }, organization.features.auditLogs)
+  return memberTenant(c, state, { organizationId: organization.organization.id, userId: member.userId, memberId: member.id })
 }
 
-function pathTenantBase(c: Context, declaration: AuditRouteDeclaration, adminUserId: string): Omit<TenantAttribution, "flagged"> | null {
+function pathTenantBase(c: Context, declaration: AuditRouteDeclaration, adminUserId: string): TenantAttribution | null {
   const organizationId = safeOrganizationId(c.req.param(declaration.attribution.slice("path:".length)))
   if (!organizationId) return null
   const actor: AuditActor = { type: "user", id: adminUserId }
@@ -451,22 +439,23 @@ export async function beginAuditRequest(c: Context, options: { origin?: AuditOri
   if (declaration.attribution.startsWith("path:") && state.platformAdminUserId) {
     const base = pathTenantBase(c, declaration, state.platformAdminUserId)
     if (!base) return null
-    if (!env.auditCaptureEnabled) return startTenantCapture(c, state, resolved, { ...base, flagged: false })
+    if (!env.auditCaptureEnabled) return startTenantCapture(c, state, resolved, base)
     try {
-      const flagged = await auditLogsFeatureEnabled(base.organizationId)
       // The path id is admin input: an organization that does not exist is never a tenant.
-      if (flagged && !(await organizationExists(base.organizationId))) return null
-      return startTenantCapture(c, state, resolved, { ...base, flagged })
+      if (!(await organizationExists(base.organizationId))) return null
     } catch (error) {
       if (!auditClassNeedsIntent(declaration.class)) {
         // Reads and signals continue without capture.
         logger.warn("audit platform-admin attribution unavailable; request served without capture", { request_id: state.requestId, http_route: declaration.path, error_name: errorName(error) })
-        return startTenantCapture(c, state, resolved, { ...base, flagged: false })
+        state.began = true
+        state.tenant = base
+        return null
       }
       state.blocked = true
       logger.warn("audit platform-admin attribution unavailable; request refused", { request_id: state.requestId, http_route: declaration.path, error_name: errorName(error) })
       return unavailable(c)
     }
+    return startTenantCapture(c, state, resolved, base)
   }
   return null
 }
@@ -475,8 +464,7 @@ export async function beginAuditRequest(c: Context, options: { origin?: AuditOri
  * Pre-handler hook for orgMemberRoute({ useUserOrganizations: true }) routes
  * (declared org_context): resolveUserOrganizationsMiddleware has no
  * organizationContext, but its active organization is one of the caller's
- * verified memberships, which carries the member id. Its auditLogs feature is
- * read once, only when the route is tenant-captured and capture is on.
+ * verified memberships, which carries the member id.
  */
 export async function beginUserOrganizationsAuditRequest(c: Context, membership: VerifiedMembership): Promise<Response | null> {
   const state = stateFor(c)
@@ -488,30 +476,7 @@ export async function beginUserOrganizationsAuditRequest(c: Context, membership:
   if (!isTenantAuditClass(resolved.declaration.class) || resolved.declaration.attribution !== "org_context") return null
   const organizationId = safeOrganizationId(membership.organizationId)
   if (!organizationId) return null
-  const flag = await resolveAuditLogsFlag(c, state, resolved.declaration.path, resolved.declaration.class, organizationId)
-  if (!flag.ok) return flag.response
-  return startTenantCapture(c, state, resolved, memberTenant(c, state, { ...membership, organizationId }, flag.flagged))
-}
-
-/**
- * auditLogs for a verified tenant outside org-context routes, read only after
- * the deployment capture switch passes. A read failure refuses requests that
- * need durable intent (503) and serves the others without capture.
- */
-async function resolveAuditLogsFlag(c: Context, state: AuditRequestState, route: string, auditClass: TenantAuditClass, organizationId: string, refusal: AuditRequestAttribution["refusal"] = undefined): Promise<{ ok: true; flagged: boolean } | { ok: false; response: Response }> {
-  if (!env.auditCaptureEnabled) return { ok: true, flagged: false }
-  try {
-    return { ok: true, flagged: await auditLogsFeatureEnabled(organizationId) }
-  } catch (error) {
-    if (auditClassNeedsIntent(auditClass) && !refusal) {
-      state.blocked = true
-      logger.warn("audit tenant attribution unavailable; request refused", { request_id: state.requestId, http_route: route, error_name: errorName(error) })
-      return { ok: false, response: unavailable(c) }
-    }
-    // Reads and signals continue without capture (the tenant stays known, nothing is recorded).
-    logger.warn("audit tenant attribution unavailable; request served without capture", { request_id: state.requestId, http_route: route, error_name: errorName(error) })
-    return { ok: true, flagged: false }
-  }
+  return startTenantCapture(c, state, resolved, memberTenant(c, state, { ...membership, organizationId }))
 }
 
 /**
@@ -544,11 +509,7 @@ export async function attributeAuditRequest(c: Context, input: AuditRequestAttri
   if (!resolved || !isTenantAuditClass(resolved.declaration.class)) return { ok: true }
   const organizationId = safeOrganizationId(input.organizationId)
   if (!organizationId) return { ok: true }
-  const base = { organizationId, actor: input.actor, principalKey: input.principalKey, origin: input.origin ?? state.origin }
-  // Always the verified organization's own feature state (never caller-supplied).
-  const flag = await resolveAuditLogsFlag(c, state, resolved.declaration.path, resolved.declaration.class, organizationId, input.refusal)
-  if (!flag.ok) return flag
-  const tenant: TenantAttribution = { ...base, flagged: flag.flagged }
+  const tenant: TenantAttribution = { organizationId, actor: input.actor, principalKey: input.principalKey, origin: input.origin ?? state.origin }
   const blocked = await startTenantCapture(c, state, resolved, tenant, input.phase, input.refusal)
   return blocked ? { ok: false, response: blocked } : { ok: true }
 }
@@ -645,8 +606,8 @@ async function recordTenantOutcome(c: Context, state: AuditRequestState, resolve
       return
     }
     logAuditOutcomeLost({ requestId: state.requestId, organizationId: capture.context.organizationId, action: event.action, route: declaration.path, method: c.req.method, error })
-    // The request itself turned tenant capture off (auditLogs feature override off,
-    // plan without the entitlement) after its intent was recorded: keep the
+    // The request itself turned tenant capture off (plan without the
+    // entitlement) after its intent was recorded: keep the
     // outcome as platform evidence targeting the verified organization.
     if (state.intentRecorded && state.tenant && error instanceof AuditLogError && error.code === "audit_policy_changed") {
       await writePlatformEvent(state, {
@@ -659,16 +620,6 @@ async function recordTenantOutcome(c: Context, state: AuditRequestState, resolve
 }
 
 type PlatformEventFields = Omit<PlatformAuditEventInput, "requestId" | "occurredAt">
-
-/** Deployment-wide platformAuditReads feature (no organization applies); a failed read counts as off. */
-async function platformAuditReadsEnabled(): Promise<boolean> {
-  try {
-    return await deploymentFeatureEnabled("platformAuditReads")
-  } catch (error) {
-    logger.warn("platformAuditReads feature unavailable; read-only platform success not recorded", { error_name: errorName(error) })
-    return false
-  }
-}
 
 export function platformActorOf(actor: AuditActor): PlatformAuditEventInput["actor"] {
   if ((actor.type === "user" || actor.type === "service") && actor.id) return { type: actor.type, id: actor.id, credentialId: actor.credentialId ?? null }
@@ -737,8 +688,6 @@ async function recordPlatform(c: Context, state: AuditRequestState, resolved: Re
   const declaration = resolved.declaration
   const method = c.req.method.toUpperCase()
   const mapped = auditRequestOutcome(auditClass, status)
-  // Filter by effect, not method: only side-effect-free platform reads are optional.
-  if (mapped.outcome === "succeeded" && declaration.readOnly === true && !(await platformAuditReadsEnabled())) return
   const user: AuthContextVariables["user"] | undefined = c.get("user")
   const apiKey: DenApiKeySession | null | undefined = c.get("apiKey")
   let userId: string | null = null

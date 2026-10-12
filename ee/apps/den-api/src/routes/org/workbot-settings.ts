@@ -26,7 +26,7 @@ const runnerUnavailableSchema = z
 export const UNKNOWN_MODEL_MESSAGE = "Workbot can't use that model. Choose one from the list."
 export const RUNNER_UNAVAILABLE_MESSAGE = "Workbot's models can't be checked right now. Try again in a minute."
 
-const notFound = jsonResponse("The organization was not found, or Workbot or its workbotDefaultModel feature is off.", featureDisabledSchema)
+const notFound = jsonResponse("The organization was not found, or Workbot is off.", featureDisabledSchema)
 
 /**
  * Manage › Workbot: the organization's default model for its cloud agents (Workbot, the Slack assistant, and cloud
@@ -39,7 +39,7 @@ export function registerOrgWorkbotSettingsRoutes<T extends { Variables: OrgRoute
       tags: ["Organizations"],
       summary: "Get Workbot settings",
       description:
-        "Returns the organization's default model for Workbot, the Slack assistant and cloud Automations set to the cloud default (null means the headless runner's default), and the models the runner can serve. Requires the View OpenWork Models settings permission, Workbot and the workbotDefaultModel feature.",
+        "Returns the organization's default model for Workbot, the Slack assistant and cloud Automations set to the cloud default (null means the headless runner's default), and the models the runner can serve. Requires the View OpenWork Models settings permission and Workbot.",
       responses: {
         200: jsonResponse("Workbot settings returned.", workbotSettingsDocumentSchema),
         401: jsonResponse("Authentication required.", unauthorizedSchema),
@@ -49,7 +49,6 @@ export function registerOrgWorkbotSettingsRoutes<T extends { Variables: OrgRoute
     }),
     orgMemberRoute(),
     requireFeature("workbot"),
-    requireFeature("workbotDefaultModel"),
     requireOrgPermission("inference.view"),
     async (c) => {
       c.header("Cache-Control", "no-store")
@@ -65,7 +64,7 @@ export function registerOrgWorkbotSettingsRoutes<T extends { Variables: OrgRoute
       tags: ["Organizations"],
       summary: "Set Workbot's default model",
       description:
-        "Sets the organization's default model for Workbot, the Slack assistant and cloud Automations set to the cloud default, from their next message or run; null uses the headless runner's default. Automations with their own model keep it. Only models the runner serves are accepted. Requires the Manage OpenWork Models permission, a recent sign-in, Workbot and the workbotDefaultModel feature.",
+        "Sets the organization's default model for Workbot, the Slack assistant and cloud Automations set to the cloud default, from their next message or run; null uses the headless runner's default. Automations with their own model keep it. Only models the runner serves are accepted. Requires the Manage OpenWork Models permission, a recent sign-in and Workbot.",
       responses: {
         200: jsonResponse("Workbot settings saved.", workbotSettingsDocumentSchema),
         400: jsonResponse("The model is not one the runner serves, or the request was invalid.", z.union([unknownModelSchema, invalidRequestSchema])),
@@ -77,7 +76,6 @@ export function registerOrgWorkbotSettingsRoutes<T extends { Variables: OrgRoute
     }),
     orgMemberRoute(),
     requireFeature("workbot"),
-    requireFeature("workbotDefaultModel"),
     requireOrgPermission("inference.manage"),
     jsonValidator(workbotSettingsInputDocumentSchema),
     async (c) => {

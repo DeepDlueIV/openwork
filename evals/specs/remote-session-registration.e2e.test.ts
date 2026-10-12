@@ -24,20 +24,15 @@ test("a member's registered runner survives retries without sharing commands wit
   const sessionId = "synthetic_owned_native_session";
   const receipt = { status: "delivered", sessionId, workspaceId: WORKSPACE_ID, resultSummary: "Synthetic boundary receipt" };
 
-  await step("before: registration is off by default even though the runner endpoints exist without Automations", async () => {
-    const feature = await world.featureState();
-    expect(feature).toMatchObject({ default: false, enabled: false });
-    const registration = await world.register("owner");
-    expect(registration).toMatchObject({ status: 404, body: { error: "feature_disabled" } });
+  await step("before: the runner endpoints exist without Automations", async () => {
     const automation = await world.api("owner", "/v1/automations");
     expect(automation.status).toBe(404);
     const work = await world.api("owner", "/v1/session-runners/work");
     expect(work).toMatchObject({ status: 401, body: { error: "runner_unauthorized" } });
-    evidence.recordAssertionEvidence("The session protocol is mounted independently but cannot register before rollout", `Default=false, enabled=false; token HTTP ${registration.status} feature_disabled; session work HTTP ${work.status} runner_unauthorized (mounted); Automations HTTP ${automation.status}`, true);
+    evidence.recordAssertionEvidence("The session protocol is mounted independently of Automations", `Session work HTTP ${work.status} runner_unauthorized (mounted); Automations HTTP ${automation.status}`, true);
   });
 
   await step("after: three owners can reuse the same install identity without sharing a computer", async () => {
-    await world.rollout(true);
     const computers: string[] = [];
     for (const persona of ["owner", "otherMember", "otherOrg"]) {
       const registered = await world.register(persona);
@@ -144,30 +139,6 @@ test("a member's registered runner survives retries without sharing commands wit
     expect(records(own.body.sessions).map(item => item.sessionId)).toEqual([sessionId]);
     evidence.recordAssertionEvidence("Remote history and control are private to the member and organization", `Owner lists 1 session; other member lists 0; other org/member command reads return unknown_command and completed request reads return unknown_request; other member stop=${foreignStop.body.error}`, true);
   });
-
-  await step("after: killing the rollout drains an admitted claim but rejects any new offloaded work", async () => {
-    const queued = await world.remote("owner", "create", { target: "registered", computerId, workspaceId: WORKSPACE_ID, title: "Already admitted before kill" });
-    expect(queued.isError).toBe(false);
-    const drainId = string(queued.body.commandId);
-    expect((await world.claim("owner", drainId)).status).toBe(200);
-    await world.rollout(true, true);
-    expect((await world.claim("owner", drainId)).status).toBe(200);
-    const drained = await world.complete("owner", drainId, { ...receipt, sessionId: "synthetic_drained_native_session" });
-    expect(drained.status).toBe(200);
-    const read = await world.remote("owner", "read", { commandId });
-    expect(read).toMatchObject({ isError: false, body: { state: "delivered", sessionId } });
-    const history = await world.remote("owner", "list", { target: "registered" });
-    expect(records(history.body.sessions).map(item => item.sessionId)).toContain(sessionId);
-    const create = await world.remote("owner", "create", { target: "registered", computerId, title: "Refused new work" });
-    const send = await world.remote("owner", "send", { sessionId, prompt: "Must not be admitted after the kill." });
-    for (const result of [create, send]) {
-      expect(result.isError).toBe(true);
-      expect(["feature_disabled", "unknown_capability"]).toContain(result.body.error);
-      expect(result.body.commandId).toBeUndefined();
-    }
-    expect((await world.work("owner")).body).toMatchObject({ items: [] });
-    evidence.recordAssertionEvidence("Kill switches refuse new effects without stranding admitted effects", `A pre-kill claim is reclaimed and completed HTTP 200 after kill; delivered command and registered history remain readable; create=${create.body.error}, send=${send.body.error}, neither has a commandId; runner work has 0 new commands`, true);
-  });
 });
 
 presenceTest("a session-only member's connected computer is not counted as an Automation runner", async ({ world, step, evidence }) => {
@@ -177,7 +148,6 @@ presenceTest("a session-only member's connected computer is not counted as an Au
     evidence.recordAssertionEvidence("Automation presence starts empty in a live scheduling runtime", `With Automations enabled, presence HTTP ${result.status}: connected=false, lastSeenAt=null`, true);
   });
   await step("when the member registers an interactive computer, it becomes a remote target only", async () => {
-    await world.rollout(true);
     expect((await world.register("owner")).status).toBe(200);
     expect((await world.inventory("owner")).status).toBe(200);
     expect((await world.work("owner")).status).toBe(200);

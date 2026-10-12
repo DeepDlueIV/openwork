@@ -18,11 +18,6 @@ type Credential = Pick<typeof GatewayProviderCredentialTable.$inferSelect, "kind
 export { gatewayMemberSignInMethod }
 export type { GatewayMemberSignInMethod }
 
-/** Sign-in methods behind the gatewayCloudSignIn feature. */
-export function isCloudSignInMethod(method: GatewayMemberSignInMethod | null): method is "aws_sso" | "microsoft" {
-  return method === "aws_sso" || method === "microsoft"
-}
-
 export function memberSignInCredentialKind(method: GatewayMemberSignInMethod) {
   return GATEWAY_MEMBER_SIGN_IN_CREDENTIAL_KINDS[method]
 }

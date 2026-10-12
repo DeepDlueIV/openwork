@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { formatOpenApiSnapshot } from "../../ee/apps/den-api/scripts/openapi-snapshot-format.ts";
 
-const flags = ["installLinks", "mcpConnections", "workbot", "workbotSideChats", "litellm"];
+const flags = ["managedDeployments", "libraryUsage", "workbot", "calendarPolish", "permissions"];
 
 function document(paths = {}, featureKeys = flags) {
   const featureKey = { type: "string", enum: featureKeys };
@@ -63,10 +63,10 @@ test("Git merges edits to neighbouring routes without a conflict", () => {
 
 test("Git merges two PRs that each add a feature flag without a conflict", () => {
   // Same shape as #5823 against #5820: each side inserts one flag elsewhere in the registry.
-  const left = [...flags.slice(0, 2), "driveResumableUploads", ...flags.slice(2)];
-  const right = [...flags.slice(0, 4), "workbotNaturalChat", ...flags.slice(4)];
+  const left = [...flags.slice(0, 2), "slackAssistant", ...flags.slice(2)];
+  const right = [...flags.slice(0, 4), "automationCalendar", ...flags.slice(4)];
   const merged = merge(document({}), document({}, left), document({}, right));
-  const expected = ["installLinks", "mcpConnections", "driveResumableUploads", "workbot", "workbotSideChats", "workbotNaturalChat", "litellm"];
+  const expected = ["managedDeployments", "libraryUsage", "slackAssistant", "workbot", "calendarPolish", "automationCalendar", "permissions"];
   assert.deepEqual(merged.components.schemas.AdminFeature.properties.key.enum, expected);
   assert.deepEqual(merged.components.schemas.CapabilityDisabledError.properties.feature.enum, expected);
 });

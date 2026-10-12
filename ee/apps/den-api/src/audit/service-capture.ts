@@ -4,7 +4,7 @@ import { createDenTypeId, normalizeDenTypeId } from "@openwork-ee/utils/typeid"
 import { env } from "../env.js"
 import { statusFromError } from "../observability/hono.js"
 import { appLogger } from "../observability/logger.js"
-import { appendAuditEventInOwnTransaction, readEffectiveAuditPolicyWithRetry, auditClassCategory, auditClassNeedsIntent, auditOperationOutcome, auditRequestOutcome, auditTargetResources, auditLogsFeatureEnabled, currentAuditRequestId, logAuditOutcomeLost, platformActorOf, writePlatformAuditEvent, type AuditChangeCapture, type TenantAuditClass } from "./request-capture.js"
+import { appendAuditEventInOwnTransaction, readEffectiveAuditPolicyWithRetry, auditClassCategory, auditClassNeedsIntent, auditOperationOutcome, auditRequestOutcome, auditTargetResources, currentAuditRequestId, logAuditOutcomeLost, platformActorOf, writePlatformAuditEvent, type AuditChangeCapture, type TenantAuditClass } from "./request-capture.js"
 
 // Non-HTTP mutation paths (design §6): MCP tools that mutate state without
 // re-entering a den-api route, and platform-admin MCP tools. Same intent and
@@ -39,14 +39,13 @@ const logger = appLogger.child({ component: "audit_service" })
  * request is not attributed to (DELETE /v1/admin/users/:userId removes the
  * user's memberships in several organizations): actor = the admin user,
  * origin platform_admin, the enclosing request id. Null when capture, the
- * organization rollout, the policy or the change category is off — callers
+ * policy or the change category is off — callers
  * then write the legacy row (single writer, finishLegacyAuditAction).
  */
 export async function platformAdminChangeCapture(input: Readonly<{ organizationId: string; adminUserId: string; kind: string; scope: string }>): Promise<AuditChangeCapture | null> {
   if (!env.auditCaptureEnabled) return null
   const organizationId = normalizeDenTypeId("organization", input.organizationId)
   const adminUserId = normalizeDenTypeId("user", input.adminUserId)
-  if (!(await auditLogsFeatureEnabled(organizationId))) return null
   const policy = await readEffectiveAuditPolicyWithRetry(organizationId)
   if (!policy || !policy.categories.includes("change")) return null
   return {
@@ -79,8 +78,6 @@ export async function runAuditedServiceAction<T>(input: AuditedServiceAction, fn
   const resources: AuditEventInput["resources"] = auditTargetResources(input.resource.type, resourceId, organizationId)
   let intentRecorded = false
   try {
-    // Resolved here for the target organization, never passed in by callers.
-    if (!(await auditLogsFeatureEnabled(organizationId))) return fn(null)
     const policy = await readEffectiveAuditPolicyWithRetry(organizationId)
     if (!policy) return fn(null)
     capture = {

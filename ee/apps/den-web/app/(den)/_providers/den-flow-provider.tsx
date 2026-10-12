@@ -114,8 +114,6 @@ type DenFlowContextValue = {
   resolveUserLandingRoute: () => Promise<string | null>;
   runtimeConfig: DenWebRuntimeConfig;
   runtimeConfigLoaded: boolean;
-  deploymentFeatures: { simplifiedOnboarding: boolean };
-  deploymentFeaturesLoading: boolean;
 };
 
 const DenFlowContext = createContext<DenFlowContextValue | null>(null);
@@ -195,8 +193,6 @@ export function DenFlowProvider({ children }: { children: ReactNode }) {
   const [webRedirectAttempted, setWebRedirectAttempted] = useState(false);
   const [runtimeConfig, setRuntimeConfig] = useState<DenWebRuntimeConfig>(EMPTY_RUNTIME_CONFIG);
   const [runtimeConfigLoaded, setRuntimeConfigLoaded] = useState(false);
-  const [deploymentFeatures, setDeploymentFeatures] = useState({ simplifiedOnboarding: false });
-  const [deploymentFeaturesLoading, setDeploymentFeaturesLoading] = useState(true);
   const isSingleOrgMode = runtimeConfigLoaded && runtimeConfig.orgMode === "single_org";
 
   const socialSignupHandledRef = useRef<string | null>(null);
@@ -928,26 +924,6 @@ export function DenFlowProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
-    // Short timeout: setup frames hold their layout until this answers, and any failure means off.
-    void requestJson("/v1/features", { method: "GET", cache: "no-store" }, 5000)
-      .then(({ response, payload }) => {
-        if (cancelled) return;
-        const simplifiedOnboarding = response.ok && isRecord(payload) && payload.version === 1
-          && payload.deployment === "cloud" && isRecord(payload.features)
-          && payload.features.simplifiedOnboarding === true;
-        setDeploymentFeatures({ simplifiedOnboarding });
-      })
-      .catch(() => {
-        if (!cancelled) setDeploymentFeatures({ simplifiedOnboarding: false });
-      })
-      .finally(() => {
-        if (!cancelled) setDeploymentFeaturesLoading(false);
-      });
-    return () => { cancelled = true; };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
 
     void getRuntimeConfig().then((config) => {
       if (!cancelled) {
@@ -1181,20 +1157,9 @@ export function DenFlowProvider({ children }: { children: ReactNode }) {
     resolveUserLandingRoute,
     runtimeConfig,
     runtimeConfigLoaded,
-    deploymentFeatures,
-    deploymentFeaturesLoading,
   };
 
   return createElement(DenFlowContext.Provider, { value }, children);
-}
-
-/** Plain consent frames also render outside the signed-in flow provider. */
-export function useDeploymentSimplifiedOnboarding() {
-  const value = useContext(DenFlowContext);
-  return {
-    simplified: value?.deploymentFeatures.simplifiedOnboarding ?? false,
-    loading: value?.deploymentFeaturesLoading ?? false,
-  };
 }
 
 export function useDenFlow() {

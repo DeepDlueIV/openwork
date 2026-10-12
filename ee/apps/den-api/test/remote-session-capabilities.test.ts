@@ -41,7 +41,6 @@ function computer(id = "synthetic-computer"): RemoteSessionDesktopRecord {
 function deps(overrides: Partial<RemoteSessionExecuteDeps> = {}): RemoteSessionExecuteDeps {
   return {
     ...DEFAULT_REMOTE_SESSION_DEPS,
-    registeredTargetsEnabled: async () => true,
     getOpenWorkWebAccess: async () => ({ hasAccess: false }),
     desktopTargets: async () => ({ ownerMemberId, computers: [computer()] }),
     cloudAvailable: () => true,
@@ -79,15 +78,6 @@ test("registered client creation does not provision Cloud or require Web access"
   assert.equal(result.payload.target, "registered")
   assert.equal(result.payload.commandId, queued.id)
   assert.equal(enqueued, 1)
-})
-
-test("the rollout switch refuses new registered work before touching a target", async () => {
-  const result = await call("create", { target: "registered" }, deps({
-    registeredTargetsEnabled: async () => false,
-    desktopTargets: async () => { throw new Error("Disabled work must not inspect a target") },
-  }))
-  assert.equal(result.payload.error, "feature_disabled")
-  assert.equal(result.error, true)
 })
 
 test("registered targets are discoverable without Web access but do not claim Cloud availability", async () => {
@@ -154,24 +144,6 @@ test("registered automatic targeting excludes a newer legacy computer", async ()
   }))
   assert.equal(result.error, false)
   assert.deepEqual(selected, ["synthetic-computer"])
-})
-
-test("killing the rollout leaves admitted history readable and refuses another turn", async () => {
-  const queued = command()
-  const session: RemoteSessionDesktopSession = {
-    commandId: queued.id, ownerMemberId, runnerId: "synthetic-runner", sessionId: "ses_synthetic", workspaceId: "synthetic-workspace",
-    title: queued.title, engine: "v2", status: "idle", updatedAt: Date.now(),
-  }
-  const dependencies = deps({
-    registeredTargetsEnabled: async () => false,
-    commandStore: { ...DEFAULT_REMOTE_SESSION_DEPS.commandStore, get: async () => ({ ...queued, status: "delivered", sessionId: session.sessionId }), findDesktopSession: async () => session },
-    desktopRunner: async () => ({ registered: true, controlCapable: true, connected: true }),
-  })
-  const read = await call("read", { commandId: queued.id }, dependencies, false)
-  assert.equal(read.error, false)
-  assert.equal(read.payload.state, "delivered")
-  const send = await call("send", { sessionId: session.sessionId, prompt: "New work" }, dependencies)
-  assert.equal(send.payload.error, "feature_disabled")
 })
 
 test("a stable create key is namespaced to the authenticated member and organization", async () => {

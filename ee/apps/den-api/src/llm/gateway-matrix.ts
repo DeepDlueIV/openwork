@@ -93,13 +93,24 @@ function catalogCompatible(catalog: ModelsDevProvider, provider: GatewayProvider
   return catalog.id === provider.provider_id && isSupportedGatewayNpm(catalog.npm) && catalog.npm === readProviderConfigNpm(provider.provider_config)
 }
 
+export type GatewayCatalogRefreshOptions = {
+  /** False computes the catalog warning only and never writes (callers without Manage Gateway providers). Defaults to true. */
+  write?: boolean
+  /**
+   * Re-checks, inside the write transaction after the provider row lock, that
+   * the caller may still change the provider (read only through `tx`). False
+   * skips the write and returns the stored configuration.
+   */
+  mayWrite?: (tx: GatewayTx) => Promise<boolean>
+}
+
 /**
  * Sync the provider's stored models with the models.dev catalog. Runs only on
  * provider/group writes and the explicit models endpoint, never on reads.
  * Nearly every call is a no-op, so the diff is checked without locking first;
  * the provider row lock is taken only when there is something to write.
  */
-export async function refreshGatewayCatalog(provider: GatewayProvider, audit?: ProviderAuditCapture | null) {
+export async function refreshGatewayCatalog(provider: GatewayProvider, audit?: ProviderAuditCapture | null, options: GatewayCatalogRefreshOptions = {}) {
   if (audit && (audit.context.scope !== provider.id || audit.context.organizationId !== provider.organization_id)) throw new Error("audit_provider_scope_mismatch")
   // Audit policy is only read when the refresh writes or fails; no-op refreshes record nothing.
   const resolveCapture = async (): Promise<ProviderAuditCapture | null> => audit === undefined
@@ -120,6 +131,7 @@ export async function refreshGatewayCatalog(provider: GatewayProvider, audit?: P
     const preview = resolveGatewayCatalog(catalog, snapshot.model_ids, snapshot.provider_config, false)
     const stored = await db.select().from(GatewayProviderModelTable).where(eq(GatewayProviderModelTable.gateway_provider_id, snapshot.id))
     if (!gatewayModelsChanged(stored, preview.models)) return { provider: snapshot, catalogWarning: preview.catalogWarning }
+    if (options.write === false) return { provider: snapshot, catalogWarning: preview.catalogWarning }
     const writeCapture = capture = await resolveCapture()
     return await db.transaction(async (tx) => {
       if (writeCapture) await recheckAuditEntitlement(tx, provider.organization_id)
@@ -130,6 +142,7 @@ export async function refreshGatewayCatalog(provider: GatewayProvider, audit?: P
       const lockedCatalog = litellm ? liteLlmCatalogProvider(current) : catalog
       if (!catalogCompatible(lockedCatalog, current)) return { provider: current, catalogWarning: catalogSdkChangedWarning }
       const resolved = resolveGatewayCatalog(lockedCatalog, current.model_ids, current.provider_config, false)
+      if (options.mayWrite && !(await options.mayWrite(tx))) return { provider: current, catalogWarning: resolved.catalogWarning }
       return providerAuditMutation(tx, writeCapture, async () => {
         if (await writeGatewayModels(tx, current, resolved.models)) {
           current.updated_at = new Date()
@@ -168,7 +181,9 @@ export function gatewayModelsChanged(existing: GatewayModelRow[], models: Gatewa
  */
 export async function writeGatewayModels(tx: GatewayTx, provider: GatewayProvider, models: GatewayModelInput[]) {
   const existing = await tx.select().from(GatewayProviderModelTable).where(eq(GatewayProviderModelTable.gateway_provider_id, provider.id))
-  const removed = existing.filter((row) => !models.some((model) => model.id === row.model_id)).map((row) => row.id)
+  const desiredModelIds = new Set(models.map((model) => model.id))
+  const existingByModelId = new Map(existing.map((row) => [row.model_id, row]))
+  const removed = existing.filter((row) => !desiredModelIds.has(row.model_id)).map((row) => row.id)
   let changed = removed.length > 0
   if (removed.length) {
     // Caller holds the provider fence: links and rows disappear in one transaction.
@@ -176,7 +191,7 @@ export async function writeGatewayModels(tx: GatewayTx, provider: GatewayProvide
     await tx.delete(GatewayProviderModelTable).where(and(eq(GatewayProviderModelTable.gateway_provider_id, provider.id), inArray(GatewayProviderModelTable.id, removed)))
   }
   for (const model of models) {
-    const row = existing.find((row) => row.model_id === model.id)
+    const row = existingByModelId.get(model.id)
     if (row && modelRowCurrent(row, model)) continue
     changed = true
     if (row) await tx.update(GatewayProviderModelTable).set({ name: model.name, model_config: model.config }).where(eq(GatewayProviderModelTable.id, row.id))
@@ -421,9 +436,20 @@ export function publicGatewayPinnedModelIds(pinnedModelIds: readonly string[], u
   return [...new Set(pinnedModelIds.flatMap((id) => usableModels.filter((model) => model.upstreamModelId === id).map((model) => model.id)))]
 }
 
-export function gatewaySummary(provider: GatewayProvider, memberId: GatewayMemberId, baseUrl: string, manage: true): Promise<GatewayProviderDetails>
-export function gatewaySummary(provider: GatewayProvider, memberId: GatewayMemberId, baseUrl: string, manage: boolean): Promise<GatewayProviderSummary>
-export async function gatewaySummary(provider: GatewayProvider, memberId: GatewayMemberId, baseUrl: string, manage: boolean): Promise<GatewayProviderDetails | GatewayProviderSummary> {
+/**
+ * Management details include people (who created each credential set, whose each member credential
+ * is, LiteLLM people needing attention) and upstream configuration (the upstream base URL, OAuth
+ * client, Entra tenant and IAM Identity Center settings). `managerDetails` (default false) returns
+ * them; pass it only for callers holding Manage Gateway providers. View-only callers get no
+ * per-person rows at all: credentials is replaced by credentialCounts and LiteLLM attention entries
+ * are dropped (attentionCount stays); createdBy, oauthTenantId, awsSso and settings.upstreamBaseUrl
+ * are omitted, and oauthClientId and litellm.baseUrl are null.
+ */
+export type GatewaySummaryOptions = { managerDetails?: boolean }
+export function gatewaySummary(provider: GatewayProvider, memberId: GatewayMemberId, baseUrl: string, manage: true, options?: GatewaySummaryOptions): Promise<GatewayProviderDetails>
+export function gatewaySummary(provider: GatewayProvider, memberId: GatewayMemberId, baseUrl: string, manage: boolean, options?: GatewaySummaryOptions): Promise<GatewayProviderSummary>
+export async function gatewaySummary(provider: GatewayProvider, memberId: GatewayMemberId, baseUrl: string, manage: boolean, options: GatewaySummaryOptions = {}): Promise<GatewayProviderDetails | GatewayProviderSummary> {
+  const identities = manage && options.managerDetails === true
   const [member] = await db.select({ userId: MemberTable.userId }).from(MemberTable).where(and(eq(MemberTable.id, memberId), eq(MemberTable.organizationId, provider.organization_id), isNull(MemberTable.removedAt)))
   if (!member?.userId) throw new GatewayWriteError(403, "forbidden")
   // Read-only: never refreshes the catalog or locks the provider. Catalog sync
@@ -443,10 +469,22 @@ export async function gatewaySummary(provider: GatewayProvider, memberId: Gatewa
         and(eq(GatewayProviderCredentialTable.subject, memberId), eq(GatewayProviderCredentialTable.org_membership_id, memberId)),
       )))
   const teams = await memberGatewayTeams(db, provider.organization_id, memberId)
-  const activeAccess = access.filter((grant) => groups.some((group) => group.id === grant.model_group_id && group.status === "active") && sets.some((set) => set.id === grant.credential_set_id && set.status === "active"))
+  // Index this request's live rows only; access and credential state are never
+  // reused across reads. Large catalogs otherwise rescan every link per model.
+  const groupsById = new Map(groups.map((group) => [group.id, group]))
+  const activeGroupIds = new Set(groups.filter((group) => group.status === "active").map((group) => group.id))
+  const activeSetIds = new Set(sets.filter((set) => set.status === "active").map((set) => set.id))
+  const linkedModelIds = new Map<string, Set<string>>()
+  for (const link of links) {
+    const ids = linkedModelIds.get(link.model_group_id) ?? new Set<string>()
+    ids.add(link.gateway_provider_model_id)
+    linkedModelIds.set(link.model_group_id, ids)
+  }
+  const modelsByGroupId = new Map(groups.map((group) => [group.id, models.filter((model) => linkedModelIds.get(group.id)?.has(model.id))]))
+  const activeAccess = access.filter((grant) => activeGroupIds.has(grant.model_group_id) && activeSetIds.has(grant.credential_set_id))
   const grants = provider.status === "active" ? effectiveGatewayGrants(activeAccess, memberId, teams.map((team) => team.id)) : []
   const creatorIds = sets.flatMap((set) => set.created_by_org_membership_id ? [set.created_by_org_membership_id] : [])
-  const creators = manage && creatorIds.length ? await db.select({ id: MemberTable.id, name: AuthUserTable.name, email: AuthUserTable.email }).from(MemberTable)
+  const creators = identities && creatorIds.length ? await db.select({ id: MemberTable.id, name: AuthUserTable.name, email: AuthUserTable.email }).from(MemberTable)
     .leftJoin(AuthUserTable, eq(AuthUserTable.id, MemberTable.userId))
     .where(and(inArray(MemberTable.id, creatorIds), eq(MemberTable.organizationId, provider.organization_id), isNull(MemberTable.removedAt))) : []
   const setSummaries: GatewayCredentialSet[] = sets.map((set) => {
@@ -474,10 +512,11 @@ export async function gatewaySummary(provider: GatewayProvider, memberId: Gatewa
     }
     const awsSso = readAwsSsoSettings(set.aws_sso)
     return { id: set.id, name: set.name, credentialMode: set.credential_mode, status: set.status, configured,
-      ...(manage ? { createdAt: set.created_at.toISOString(), createdBy: set.created_by_org_membership_id ? { id: set.created_by_org_membership_id, name: creator?.name ?? null, email: creator?.email ?? null } : null } : {}),
+      ...(manage ? { createdAt: set.created_at.toISOString() } : {}),
+      ...(identities ? { createdBy: set.created_by_org_membership_id ? { id: set.created_by_org_membership_id, name: creator?.name ?? null, email: creator?.email ?? null } : null } : {}),
       credentialStatus: provider.status === "active" && set.status === "active" && configured && usable ? "ready" : set.credential_mode === "member" ? "member_auth_required" : "org_credential_missing",
-      oauthClientId: set.oauth_client_id, hasOauthClientSecret: Boolean(set.oauth_client_secret),
-      ...(set.oauth_tenant_id ? { oauthTenantId: set.oauth_tenant_id } : {}), ...(awsSso ? { awsSso } : {}) }
+      oauthClientId: identities ? set.oauth_client_id : null, hasOauthClientSecret: Boolean(set.oauth_client_secret),
+      ...(identities && set.oauth_tenant_id ? { oauthTenantId: set.oauth_tenant_id } : {}), ...(identities && awsSso ? { awsSso } : {}) }
   })
   // LiteLLM keys created by OpenWork need nothing from the person once any key exists.
   const liteLlmSettings = isLiteLlmProviderId(provider.provider_id) ? readLiteLlmSettings(provider.settings) : null
@@ -489,13 +528,14 @@ export async function gatewaySummary(provider: GatewayProvider, memberId: Gatewa
       return { credentialSetId: set.id, name: set.name, authUrl: `${baseUrl}/v1/inference-providers/${provider.id}/oauth/start?credentialSetId=${encodeURIComponent(set.id)}`, models }
     })
   const usableModels: GatewayUsableModel[] = []
+  const setSummariesById = new Map(setSummaries.map((set) => [set.id, set]))
   for (const grant of grants) {
-    const group = groups.find((group) => group.id === grant.model_group_id)
-    const set = setSummaries.find((set) => set.id === grant.credential_set_id)
+    const group = groupsById.get(grant.model_group_id)
+    const set = setSummariesById.get(grant.credential_set_id)
     if (!group || !set) continue
     const targetModels = set.credentialStatus === "ready" ? usableModels : authorizationRequests.find((request) => request.credentialSetId === set.id)?.models
     if (!targetModels) continue
-    for (const model of models.filter((model) => links.some((link) => link.model_group_id === group.id && link.gateway_provider_model_id === model.id))) {
+    for (const model of modelsByGroupId.get(group.id) ?? []) {
       const id = createGatewayModelAlias({ modelGroupId: group.id, credentialSetId: grant.credential_set_id, gatewayProviderModelId: model.id })
       const name = model.name
       targetModels.push({ id, name, config: buildGatewayModelConfig({ id, name, config: model.model_config }), upstreamModelId: model.model_id, modelGroupId: group.id, modelGroupName: group.name, credentialSetId: set.id, credentialSetName: set.name })
@@ -519,8 +559,18 @@ export async function gatewaySummary(provider: GatewayProvider, memberId: Gatewa
   }
   if (!manage) return summary
   const modelGroups: GatewayModelGroup[] = groups.map((group) => ({ id: group.id, name: group.name, description: group.description, status: group.status,
-    modelIds: models.filter((model) => links.some((link) => link.model_group_id === group.id && link.gateway_provider_model_id === model.id)).map((model) => model.model_id) }))
-  const litellm = await liteLlmStatus(provider)
-  return { ...summary, ...(litellm ? { litellm } : {}), settings: publicProviderSettings(provider.settings), modelGroups, credentialSets: setSummaries, accessGrants: access.map(gatewayGrantSummary), oauthCallbackUrl: `${baseUrl}/v1/inference-providers/oauth/callback`,
-    credentials: credentials.map(({ credential, memberName, memberEmail }) => ({ id: credential.id, credentialSetId: credential.credential_set_id, subject: credential.subject, orgMembershipId: credential.org_membership_id, memberName, memberEmail, kind: credential.kind, status: credential.status, expiresAt: credential.expires_at?.toISOString() ?? null })) }
+    modelIds: (modelsByGroupId.get(group.id) ?? []).map((model) => model.model_id) }))
+  const status = await liteLlmStatus(provider)
+  const litellm = status && !identities ? { ...status, baseUrl: null, attention: [] } : status
+  const settings = publicProviderSettings(provider.settings)
+  if (!identities) delete settings.upstreamBaseUrl
+  return { ...summary, ...(litellm ? { litellm } : {}), settings, modelGroups, credentialSets: setSummaries, accessGrants: access.map(gatewayGrantSummary), oauthCallbackUrl: `${baseUrl}/v1/inference-providers/oauth/callback`,
+    ...(identities
+      ? { credentials: credentials.map(({ credential, memberName, memberEmail }) => ({ id: credential.id, credentialSetId: credential.credential_set_id, subject: credential.subject, orgMembershipId: credential.org_membership_id, memberName, memberEmail, kind: credential.kind, status: credential.status, expiresAt: credential.expires_at?.toISOString() ?? null })) }
+      : { credentialCounts: {
+        total: credentials.length,
+        active: credentials.filter(({ credential }) => credential.status === "active").length,
+        revoked: credentials.filter(({ credential }) => credential.status === "revoked").length,
+        refreshFailed: credentials.filter(({ credential }) => credential.status === "refresh_failed").length,
+      } }) }
 }

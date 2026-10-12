@@ -1,4 +1,5 @@
 import { createOrg, type Seed } from "@openwork/env";
+import { evaluateOnSurface, type Surface } from "@openwork/cdp";
 import type { DenSession } from "@openwork/behaviors";
 import { activityTransportFaults } from "./den-dashboard-activity-faults.ts";
 import { enableOrganizationCapabilities } from "./dashboards.ts";
@@ -18,15 +19,80 @@ function field(value: unknown, key: string): string {
   return result;
 }
 
+// Read-only, fixed-role witness: probe.dom includes geometry but not font size,
+// text transform, contrast, or text-node counts. Observe the rendered page rather
+// than matching Tailwind classes or changing the design-review overlap rubric.
+function dashboardTypography(surface: Surface) {
+  return evaluateOnSurface(surface, () => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 1;
+    canvas.height = 1;
+    const paint = canvas.getContext("2d", { willReadFrequently: true });
+    if (!paint) throw new Error("Could not measure dashboard text colors.");
+    const color = (value: string) => {
+      paint.clearRect(0, 0, 1, 1);
+      paint.fillStyle = value;
+      paint.fillRect(0, 0, 1, 1);
+      const data = paint.getImageData(0, 0, 1, 1).data;
+      return { red: data[0] ?? 0, green: data[1] ?? 0, blue: data[2] ?? 0, alpha: (data[3] ?? 0) / 255 };
+    };
+    const luminance = (value: ReturnType<typeof color>) => {
+      const linear = (channel: number) => {
+        const srgb = channel / 255;
+        return srgb <= 0.04045 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4;
+      };
+      return 0.2126 * linear(value.red) + 0.7152 * linear(value.green) + 0.0722 * linear(value.blue);
+    };
+    const read = (selector: string) => Array.from(document.querySelectorAll(selector), (element) => {
+      const style = getComputedStyle(element);
+      let background = { red: 255, green: 255, blue: 255, alpha: 1 };
+      for (let parent: Element | null = element; parent; parent = parent.parentElement) {
+        const fill = color(getComputedStyle(parent).backgroundColor);
+        if (fill.alpha === 1) {
+          background = fill;
+          break;
+        }
+      }
+      const ink = luminance(color(style.color));
+      const backdrop = luminance(background);
+      return {
+        text: element.textContent?.trim() ?? "",
+        fontSize: Number.parseFloat(style.fontSize),
+        fontWeight: Number.parseInt(style.fontWeight, 10),
+        textTransform: style.textTransform,
+        letterSpacing: style.letterSpacing === "normal" ? 0 : Number.parseFloat(style.letterSpacing),
+        contrast: (Math.max(ink, backdrop) + 0.05) / (Math.min(ink, backdrop) + 0.05),
+        textNodes: Array.from(element.childNodes).filter((node) => node.nodeType === Node.TEXT_NODE && node.textContent?.trim()).length,
+      };
+    });
+    return {
+      sidebarLabels: read('[data-testid="den-org-sidebar"] [data-sidebar-section] > p'),
+      sidebarBadges: read('[data-testid="den-org-sidebar"] [data-testid="nav-badge"]'),
+      quickAddHeadings: read('[data-testid="connector-quick-add-grid"] h4'),
+      memberHeadings: read('[data-testid="member-dashboard"] h1'),
+    };
+  });
+}
+
 /**
  * Real Den, two opted-in workspaces, one default-off workspace, and a member.
  * Only the external MCP server is synthetic; all additions and skill versions
  * are persisted by Den. Nothing writes Activity's responses or browser cache.
  */
 export async function denDashboardActivity(seed: Seed) {
+  return activityWorkspace(seed, false);
+}
+
+export async function denDashboardActivityLoading(seed: Seed) {
+  return activityWorkspace(seed, true);
+}
+
+async function activityWorkspace(seed: Seed, populated: boolean) {
   const stamp = Date.now();
   const names = {
-    workspace: `Activity workspace ${stamp}`,
+    // Persist a real long organization name; the member home must wrap it without
+    // replacing DOM text or relying on an artificial screenshot-only fixture.
+    workspace: `Activity workspace for the internal operations and knowledge sharing team ${stamp}`,
     otherWorkspace: `Activity archive ${stamp}`,
     disabledWorkspace: `Activity rollout off ${stamp}`,
     connection: "Team reference notes",
@@ -104,6 +170,35 @@ export async function denDashboardActivity(seed: Seed) {
     }),
   });
 
+  const performanceEvents: { id: string; title: string; createdAt: string; href: string }[] = [];
+  if (populated) {
+    for (let p = 0; p < 12; p++) {
+      const created = await otherApi("/v1/plugins", {
+        method: "POST",
+        body: JSON.stringify({
+          name: `Reference handbook ${p}`, orgWide: true,
+          components: Array.from({ length: 8 }, (_, s) => ({ type: "skill", input: {
+            rawSourceText: `---\nname: reference-${p}-${s}\ndescription: Summarize supplied notes.\n---\n\nSummarize the supplied notes.`,
+            metadata: { name: `reference-${p}-${s}`, description: "Summarize supplied notes." },
+          } })),
+        }),
+      });
+      const id = field(isRecord(created) ? created.item : undefined, "id");
+      const contents = await otherApi(`/v1/plugins/${id}/resolved`);
+      const skills = records(isRecord(contents) ? contents.items : undefined).map((entry) => entry.configObject).filter(isRecord);
+      for (const skill of skills) {
+        performanceEvents.push({
+          id: `skill:${field(skill.latestVersion, "id")}`,
+          title: `A new version of ${field(skill, "title")} was published`,
+          createdAt: field(skill.latestVersion, "createdAt"),
+          href: `/dashboard/plugins/${id}/skills/${field(skill, "id")}`,
+        });
+      }
+    }
+    if (performanceEvents.length !== 96) throw new Error("Performance fixture must persist 96 dated skills.");
+    performanceEvents.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt) || a.id.localeCompare(b.id));
+  }
+
   const activityPath = "/api/browser/v1/mcp-connections?scope=manageable";
   const viewport = { width: 1440, height: 900 };
   async function signedInBrowser(person: DenSession, startPath: string) {
@@ -136,14 +231,21 @@ export async function denDashboardActivity(seed: Seed) {
   const faults = await activityTransportFaults(web, new URL(den.ref.webUrl).origin, activityPath);
   return {
     den, web, memberWeb, names, orgId, otherOrgId, additions, pluginId, skillId, skillTitle,
-    disabledOrgId: disabledOrg.id, disabledConnectionId,
+    disabledOrgId: disabledOrg.id, disabledConnectionId, performanceEvents: performanceEvents.slice(0, 5),
     baseUrl: den.ref.webUrl,
     async [Symbol.asyncDispose]() {
       try { await faults[Symbol.asyncDispose](); }
-      finally { await Promise.all([otherOrg[Symbol.asyncDispose](), disabledOrg[Symbol.asyncDispose]()]); }
+      finally {
+        // Both handles use the same owner. Do not overlap their session/org
+        // deletion flows, particularly with the populated performance fixture.
+        try { await otherOrg[Symbol.asyncDispose](); }
+        finally { await disabledOrg[Symbol.asyncDispose](); }
+      }
     },
     connector: den.mocks.connector,
     activityPath,
     faults,
+    ownerTypography: () => dashboardTypography(web),
+    memberTypography: () => dashboardTypography(memberWeb),
   };
 }

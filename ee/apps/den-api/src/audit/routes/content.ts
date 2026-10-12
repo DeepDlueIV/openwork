@@ -13,7 +13,7 @@ function route(
   return { method, path, class: auditClass, action, kind, resource: { type, idParam }, attribution, ...extra }
 }
 
-/** orgMemberRoute / orgRoleRoute: organizationContext supplies the member actor. */
+/** orgMemberRoute / orgRoleRoute / orgPermissionRoute: organizationContext supplies the member actor. */
 function member(
   method: AuditRouteMethod, path: string, auditClass: AuditRouteClass, action: string, kind: string,
   type: string, idParam: string | null, extra: Extra = {},
@@ -55,6 +55,10 @@ export const contentAuditRoutes: readonly AuditRouteDeclaration[] = [
   alias("ALL", "/v1/codemode-scripts", "workflow.alias.proxy", "One-release alias re-dispatched through app.fetch to /v1/workflows; the destination records."),
   alias("ALL", "/v1/codemode-scripts/*", "workflow.alias_subpath.proxy", "One-release alias re-dispatched through app.fetch to /v1/workflows/*; the destination records."),
   alias("ALL", "/v1/programs/*", "program.alias.proxy", "One-release alias re-dispatched through app.fetch to /v1/workflows/*; the destination records."),
+  alias("ALL", "/v1/codemode-runs", "workflow_run.alias.proxy", "Legacy alias re-dispatched through app.fetch to GET /v1/workflow-runs; the destination records."),
+
+  // Workflow run history (Organization Analytics)
+  member("GET", "/v1/workflow-runs", "tenant_read", "workflow_run.list", "workflow.run", "workflow_run", null, { notes: "Owners and admins; run receipts with tool call names, status and error text. No inputs or results." }),
 
   // Automations
   member("GET", "/v1/automations", "tenant_access", "automation.list", "automation.management", "automation", null, { notes: `Returns automation instructions. Read may persist needs_attention_reason (reconcileModelAttention). mcp/agent.ts also lists automations directly as a read-only resource index. ${MCP_NATIVE}` }),
@@ -83,13 +87,19 @@ export const contentAuditRoutes: readonly AuditRouteDeclaration[] = [
   runner("GET", "/v1/automation-runner/work", "tenant_signal", "automation_runner.work.poll", "automation.runner", "automation_runner", null, { notes: "Frequent poll; writes last_seen_at presence. Lists pending automation runs and remote-session commands/requests." }),
   runner("PUT", "/v1/automation-runner/inventory", "tenant_signal", "automation_runner.inventory.update", "automation.runner", "automation_runner", null, { notes: "High-frequency device inventory; read by MCP remote-session:targets." }),
 
+  // Independent session-runner aliases retain the same credential and actor
+  // attribution as released Automation runners; they never schedule work.
+  member("POST", "/v1/session-runners/token", "tenant_access", "automation_runner.token.issue", "automation.runner", "automation_runner", null, { notes: "Registers a remote-only session target behind remoteSessionTargets and issues an audience-bound runner credential. Never snapshot the token. Blocked from MCP." }),
+  runner("GET", "/v1/session-runners/work", "tenant_signal", "automation_runner.work.poll", "automation.runner", "automation_runner", null, { notes: "Owner-scoped remote command/request discovery and sticky recovery; updates presence, never lists scheduled Automations." }),
+  runner("PUT", "/v1/session-runners/inventory", "tenant_signal", "automation_runner.inventory.update", "automation.runner", "automation_runner", null, { notes: "Reports the opted-in client's approved workspaces and models for remote-session:targets." }),
+
   // Remote-session runner callbacks
   runner("GET", "/v1/remote-session-requests/pending", "tenant_signal", "remote_session.request.pending.list", "remote_session.execution", "remote_session_request", null),
   runner("POST", "/v1/remote-session-commands/:id/claim", "tenant_change", "remote_session.command.claim", "remote_session.execution", "remote_session_command", "id", { notes: `${REMOTE_SESSION_JOB} Response carries the user prompt.` }),
   runner("POST", "/v1/remote-session-commands/:id/complete", "tenant_change", "remote_session.command.complete", "remote_session.execution", "remote_session_command", "id", { notes: REMOTE_SESSION_JOB }),
   runner("POST", "/v1/remote-session-commands/:id/session", "tenant_change", "remote_session.command.session.report", "remote_session.execution", "remote_session_command", "id", { notes: `${REMOTE_SESSION_JOB} Repeated progress reports store final text / last error (user content).` }),
   runner("POST", "/v1/remote-session-requests/:id/claim", "tenant_change", "remote_session.request.claim", "remote_session.execution", "remote_session_request", "id", { notes: `${REMOTE_SESSION_JOB} Response carries follow-up prompt input.` }),
-  runner("POST", "/v1/remote-session-requests/:id/complete", "tenant_change", "remote_session.request.complete", "remote_session.execution", "remote_session_request", "id", { notes: `${REMOTE_SESSION_JOB} A send also marks the command turn started (two UPDATEs, no transaction).` }),
+  runner("POST", "/v1/remote-session-requests/:id/complete", "tenant_change", "remote_session.request.complete", "remote_session.execution", "remote_session_request", "id", { notes: `${REMOTE_SESSION_JOB} A send atomically records its receipt and resets the command for the new turn; immutable retries never reset newer progress.` }),
 
   // Workflows and artifact views
   member("GET", "/v1/workflows", "tenant_read", "workflow.list", "workflow.management", "workflow", null, { notes: `Metadata, schemas and capability names only. ${MCP_NATIVE}` }),
@@ -177,9 +187,9 @@ export const contentAuditRoutes: readonly AuditRouteDeclaration[] = [
   member("GET", "/v1/resources/marketplace-capabilities", "tenant_read", "marketplace_capability.list", "resource.discovery", "marketplace_capability", null),
   route("GET", "/v1/workbot/session", "tenant_read", "workbot.session.read", "workbot.execution", "workbot_session", null, "handler", { notes: "Handler verifies the MCP OAuth token (verifyMcpRequest) and active membership, then attributes the token's org and user." }),
   route("GET", "/v1/workbot/connections", "tenant_read", "workbot.connection.list", "workbot.execution", "mcp_connection", null, "handler", { notes: "Handler verifies the MCP OAuth token and active membership, returns 403 while the workbot feature is off, then lists the Gmail/Google Workspace, Slack and Microsoft 365 connections this member may use (id, name, readiness, Den connect URL; no secrets)." }),
-  route("GET", "/v1/workbot/calendar/*", "proxy", "workbot.calendar.read", "workbot.execution", "automation", null, "handler", { notes: "Handler verifies the MCP OAuth token, membership and the workbot + workbotCalendar features, then re-dispatches an allowlisted read (the member's Automations, runs, run receipts, native calendar events) through app.fetch with a signed internal principal; the destination route records." }),
-  route("POST", "/v1/workbot/calendar/*", "proxy", "workbot.calendar.action", "workbot.execution", "automation", null, "handler", { notes: "Handler verifies the MCP OAuth token (write scope), membership and the workbot + workbotCalendar features, then re-dispatches POST /v1/automations/:id/{activate|deactivate|run} through app.fetch as the member; the destination route records." }),
-  route("PATCH", "/v1/workbot/calendar/*", "proxy", "workbot.calendar.schedule", "workbot.execution", "automation", null, "handler", { notes: "Handler verifies the MCP OAuth token (write scope), membership and the workbot + workbotCalendar features, accepts a body with only `schedule`, then re-dispatches PATCH /v1/automations/:id through app.fetch as the member; the destination route records." }),
+  route("GET", "/v1/workbot/calendar/*", "proxy", "workbot.calendar.read", "workbot.execution", "automation", null, "handler", { notes: "Handler verifies the MCP OAuth token, membership and the workbot + workbotCalendar features, then re-dispatches an allowlisted read (the member's Automations, runs, run receipts, native calendar events, and usable LLM providers trimmed to names and model IDs) through app.fetch with a signed internal principal; the destination route records." }),
+  route("POST", "/v1/workbot/calendar/*", "proxy", "workbot.calendar.action", "workbot.execution", "automation", null, "handler", { notes: "Handler verifies the MCP OAuth token (write scope), membership and the workbot + workbotCalendar features, then re-dispatches POST /v1/automations/:id/{activate|deactivate|run} or POST /v1/cloud-automations (create, body forwarded) through app.fetch as the member; the destination route records." }),
+  route("PATCH", "/v1/workbot/calendar/*", "proxy", "workbot.calendar.schedule", "workbot.execution", "automation", null, "handler", { notes: "Handler verifies the MCP OAuth token (write scope), membership and the workbot + workbotCalendar features, accepts a body limited to `name`, `schedule`, `instructions` and `model` (never where it runs), then re-dispatches PATCH /v1/automations/:id through app.fetch as the member; the destination route records." }),
   route("POST", "/v1/workbot/run-token", "tenant_access", "workbot.run_token.issue", "workbot.execution", "oauth_access_token", null, "handler", { notes: "Handler verifies the MCP OAuth token, membership and workbot capability, then mints a ≤1h headless-run MCP token (credential issuance; plaintext returned once, never snapshot). mintHeadlessRunMcpToken is also called by the headless automation executor without an HTTP route." }),
   route("GET", "/v1/brand-assets/:organizationId/:kind/:version", "tenant_read", "brand_asset.download", "organization.branding", "brand_asset", "version", "handler", { notes: "Public capability URL: the HMAC signature binds organizationId, kind, version and extension, so the handler attributes the path organization only after verifyBrandAssetSignature; actor is the anonymous signed-URL holder. Public, immutable, CDN-cached logo (login pages, emails): read category, not access. Invalid signatures 404 before attribution (platform)." }),
 

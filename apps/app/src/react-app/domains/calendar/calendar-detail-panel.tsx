@@ -21,6 +21,8 @@ import {
   formatTime,
   runPlacement,
 } from "@openwork/calendar"
+import { CalendarModelSummary } from "./calendar-model-summary"
+import type { AutomationModelOption } from "@/react-app/domains/automations/automation-model-options"
 import { AutomationStatusIcon } from "./calendar-grid"
 
 type AutomationListItem = AutomationList["items"][number]
@@ -55,16 +57,22 @@ export type AutomationPanelActions = {
   onResume: () => void
   onRunNow: () => void
   onSaveSchedule: (schedule: AutomationSchedule) => Promise<boolean>
+  /** Opens the full editor (instructions, model, where it runs). Workflow Automations only change their schedule. */
+  onEdit?: () => void
   onOpenRun: (run: AutomationRun) => void
 }
 
 /** Right-hand panel for one Automation: when it runs, where, its recent runs, and Pause / Edit schedule / Run now. */
 export function AutomationDetailPanel(props: {
+  polish?: boolean
+  organizationDefaultName?: string | null
   item: AutomationListItem
   selectedBlock: AutomationCalendarItem | null
   runs: readonly AutomationRun[] | undefined
   runsLoading: boolean
   timeZone: string
+  /** The models this Automation's place can use, for its model row. */
+  modelOptions: readonly AutomationModelOption[]
   actions: AutomationPanelActions
   onClose: () => void
 }) {
@@ -76,7 +84,7 @@ export function AutomationDetailPanel(props: {
   const pastRuns = (props.runs ?? []).slice(0, PAST_RUN_LIMIT)
 
   return (
-    <aside className="flex w-[25rem] shrink-0 flex-col border-l border-border bg-background" aria-label={automation.name} data-calendar-detail={automation.id}>
+    <aside className="flex w-full min-w-0 shrink-0 flex-col border-t border-border bg-background lg:w-[25rem] lg:border-l lg:border-t-0" aria-label={automation.name} data-calendar-detail={automation.id}>
       <div className="flex items-start gap-2 border-b border-border px-4 py-3">
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-[15px] font-semibold tracking-[-0.2px]">{automation.name}</h2>
@@ -90,14 +98,14 @@ export function AutomationDetailPanel(props: {
           <Alert className="my-2" data-calendar-blocked>
             <Lock aria-hidden="true" />
             <AlertTitle>Needs attention</AlertTitle>
-            <AlertDescription>{automation.needsAttentionReason.message}</AlertDescription>
+            <AlertDescription data-calendar-recovery>{automation.needsAttentionReason.message}</AlertDescription>
           </Alert>
         ) : null}
 
         {props.selectedBlock?.run ? (
-          <div className="my-2 flex items-center gap-2 rounded-md bg-muted/60 px-2.5 py-2 text-xs" data-calendar-selected-run={props.selectedBlock.run.id}>
+          <div className="my-2 flex items-start gap-2 rounded-md bg-muted/60 px-2.5 py-2 text-xs" data-calendar-selected-run={props.selectedBlock.run.id}>
             <AutomationStatusIcon item={props.selectedBlock} />
-            <span className="min-w-0 flex-1 truncate">{formatInstant(runPlacement(props.selectedBlock.run), props.timeZone)} · {describeRunOutcome(props.selectedBlock.run)}</span>
+            <span className="min-w-0 flex-1 break-words">{formatInstant(runPlacement(props.selectedBlock.run), props.timeZone)} · {describeRunOutcome(props.selectedBlock.run)}</span>
             <Button variant="link" size="xs" onClick={() => props.selectedBlock?.run && props.actions.onOpenRun(props.selectedBlock.run)}>Open</Button>
           </div>
         ) : props.selectedBlock?.status === "blocked" ? (
@@ -107,6 +115,12 @@ export function AutomationDetailPanel(props: {
         <dl className="divide-y divide-border">
           <Row label="Repeats">{describeSchedule(revision.schedule, props.timeZone)}</Row>
           <Row label="Runs on">{runsOnLine(props.item)}</Row>
+          {revision.action?.kind === "saved_script" ? null : (
+            <>
+              <Row label="Model"><CalendarModelSummary model={revision.model} options={props.modelOptions} polish={props.polish} organizationDefaultName={props.organizationDefaultName} /></Row>
+              <Row label="Instructions"><p className="line-clamp-4 whitespace-pre-line" data-calendar-instructions>{revision.instructions}</p></Row>
+            </>
+          )}
         </dl>
 
         <div className="mt-3">
@@ -118,11 +132,11 @@ export function AutomationDetailPanel(props: {
           ) : (
             <ul className="mt-1 divide-y divide-border" data-calendar-past-runs>
               {pastRuns.map((run) => (
-                <li key={run.id} className="flex items-center gap-2 py-2 text-sm">
+                <li key={run.id} className="flex items-start gap-2 py-2 text-sm">
                   <AutomationStatusIcon item={{ status: run.status === "succeeded" ? "succeeded" : run.status === "failed" ? "failed" : run.status === "skipped" || run.status === "cancelled" ? "skipped" : "running", executionTarget: run.executionTarget }} />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate">{formatInstant(runPlacement(run), props.timeZone)}</span>
-                    <span className="block truncate text-xs text-muted-foreground">{describeRunOutcome(run)}</span>
+                    <span data-calendar-run-outcome data-calendar-run-status={run.status} className="block break-words text-xs text-muted-foreground">{describeRunOutcome(run)}</span>
                   </span>
                   <Button variant="ghost" size="xs" onClick={() => props.actions.onOpenRun(run)}>Open</Button>
                 </li>
@@ -138,7 +152,11 @@ export function AutomationDetailPanel(props: {
         ) : automation.state === "inactive" ? (
           <Button variant="outline" size="sm" disabled={busy} onClick={props.actions.onResume}><Play />Resume</Button>
         ) : null}
-        <Button variant="outline" size="sm" disabled={busy} onClick={() => { setDraft(revision.schedule); setEditing(true) }}><Pencil />Edit schedule</Button>
+        {props.actions.onEdit && revision.action?.kind !== "saved_script" ? (
+          <Button variant="outline" size="sm" disabled={busy} onClick={props.actions.onEdit}><Pencil />Edit</Button>
+        ) : (
+          <Button variant="outline" size="sm" disabled={busy} onClick={() => { setDraft(revision.schedule); setEditing(true) }}><Pencil />Edit schedule</Button>
+        )}
         <Button size="sm" disabled={busy || blocked || automation.state === "archived"} onClick={props.actions.onRunNow}><Play />Run now</Button>
       </div>
 
@@ -175,7 +193,7 @@ export function MeetingDetailPanel(props: { event: CalendarEvent; timeZone: stri
       ? `${formatDate(event.timing.startDate)} · All day`
       : `${formatDate(event.timing.startDate)} – ${formatDate(addDays(event.timing.endDate, -1))} · All day`
   return (
-    <aside className="flex w-[25rem] shrink-0 flex-col border-l border-border bg-background" aria-label={event.title} data-calendar-meeting-detail={event.key}>
+    <aside className="flex w-full min-w-0 shrink-0 flex-col border-t border-border bg-background lg:w-[25rem] lg:border-l lg:border-t-0" aria-label={event.title} data-calendar-meeting-detail={event.key}>
       <div className="flex items-start gap-2 border-b border-border px-4 py-3">
         <div className="min-w-0 flex-1">
           <h2 className="truncate text-[15px] font-semibold tracking-[-0.2px]">{event.title}</h2>

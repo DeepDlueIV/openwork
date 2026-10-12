@@ -1,6 +1,8 @@
 /** @jsxImportSource react */
-import { useState, type ReactNode } from "react";
-import { Loader2 } from "lucide-react";
+import { createContext, useContext, useState, type ReactNode } from "react";
+import { ArrowRight, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+
 import type { EnablementResult } from "../../app/extensions";
 import { t } from "../../i18n";
 import {
@@ -9,6 +11,9 @@ import {
 } from "../domains/settings/extension-taxonomy";
 import { resolveExtensionIconUrl } from "./extension-icon-src";
 import { ExtensionMeshAvatar } from "./extension-mesh-avatar";
+
+/** Library-only presentation rollout; other consumers retain their existing rows. */
+export const LibraryPresentationContext = createContext(false);
 
 /**
  * Column widths shared by every Library row and the column header above
@@ -39,6 +44,8 @@ export type ExtensionCardProps = {
   /** Whether the extension is already installed/connected. */
   connected?: boolean;
   connectedLabel?: string;
+  /** Stored server-check state, shown only by the connector readiness rollout. */
+  stateLabel?: string;
   /** Per-condition enablement results. When provided, overrides `connected`. */
   enablement?: EnablementResult[];
   /** Whether a connect operation is in progress. */
@@ -76,6 +83,7 @@ function ExtensionIcon(props: {
   connecting: boolean;
 }) {
   const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const integrated = useContext(LibraryPresentationContext);
   return (
     <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-dls-hover">
       {props.connecting ? (
@@ -84,7 +92,7 @@ function ExtensionIcon(props: {
         <div className="flex size-5 items-center justify-center rounded-md bg-white">
           <img src={props.iconSrc} alt="" width={16} height={16} loading="lazy" style={{ display: "block" }} onError={() => setFailedSrc(props.iconSrc)} />
         </div>
-      ) : (
+      ) : integrated ? <span aria-hidden className="text-[13px] font-medium text-muted-foreground">{props.name.trim().charAt(0).toUpperCase()}</span> : (
         <ExtensionMeshAvatar
           name={props.name}
           category={props.taxonomy}
@@ -106,6 +114,7 @@ function connectsToSomething(taxonomy: ExtensionTaxonomy) {
  * from `libraryRowLanes` keep rows aligned with the column header.
  */
 export function ExtensionCard(props: ExtensionCardProps) {
+  const integrated = useContext(LibraryPresentationContext);
   const {
     name,
     description,
@@ -140,6 +149,23 @@ export function ExtensionCard(props: ExtensionCardProps) {
   ) : null;
   const summary = disabledReason ?? description;
 
+  if (integrated) return (
+    <div className="group flex h-[52px] w-full items-center gap-3" data-library-integrated-row>
+      <button type="button" disabled={disabled || connecting} onClick={onClick} data-library-row={name} title={summary || undefined} className="flex min-w-0 flex-1 items-center gap-3 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <ExtensionIcon name={name} taxonomy={taxonomy} iconSrc={resolvedIconSrc} connecting={connecting} />
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="truncate text-[13px] font-medium text-foreground">{name}</span>
+          <span data-library-description className="truncate text-xs text-muted-foreground">{summary || extensionTaxonomyLabel(taxonomy)}</span>
+        </span>
+      </button>
+      <span data-library-status className="w-14 shrink-0 whitespace-nowrap text-right text-xs text-muted-foreground">{hidden ? "Hidden" : disabledReason ? "Blocked" : props.statusChip?.label ?? (readiness === "ready" ? "Ready" : "Set up")}</span>
+      <span data-library-action className="flex w-[72px] shrink-0 items-center justify-end gap-1">
+        {!disabledReason && !connecting && nextActionLabel ? <Button variant="outline" size="icon-sm" aria-label={nextActionLabel} onClick={() => (onNextAction ? onNextAction() : onClick?.())}><ArrowRight data-icon="inline-start" /></Button> : null}
+        {props.trailing}
+      </span>
+    </div>
+  );
+
   return (
     <div className={`group flex h-[52px] w-full items-center gap-3 ${hidden ? "opacity-60" : ""}`}>
       <button
@@ -151,9 +177,9 @@ export function ExtensionCard(props: ExtensionCardProps) {
         className="flex min-w-0 flex-1 items-center gap-3 rounded-lg text-left outline-none focus-visible:ring-2 focus-visible:ring-ring"
       >
         <ExtensionIcon name={name} taxonomy={taxonomy} iconSrc={resolvedIconSrc} connecting={connecting} />
-        <div className={`flex shrink-0 items-center gap-1.5 ${libraryRowLanes.name}`}>
+        <div className={props.stateLabel ? `flex min-w-0 flex-1 flex-col gap-0.5 lg:flex-none ${libraryRowLanes.name}` : `flex shrink-0 items-center gap-1.5 ${libraryRowLanes.name}`}>
           <h4 className="min-w-0 truncate text-[13px] font-medium text-dls-text group-hover:underline group-hover:decoration-dls-border group-hover:underline-offset-4">{name}</h4>
-          {readyDot}
+          {props.stateLabel ? <span className="truncate text-xs text-muted-foreground" data-library-state>{props.stateLabel}<span className="lg:hidden"> · {description}</span></span> : readyDot}
           {props.statusChip ? (
             <span data-library-status={props.statusChip.label} className="sr-only">{props.statusChip.label}</span>
           ) : null}
@@ -163,6 +189,8 @@ export function ExtensionCard(props: ExtensionCardProps) {
         <span data-library-kind className={`shrink-0 text-xs text-dls-secondary ${libraryRowLanes.kind}`}>{extensionTaxonomyLabel(taxonomy)}</span>
         {meta ? (
           <p data-library-caption className={`truncate text-xs text-dls-secondary ${libraryRowLanes.from}`}>{meta}</p>
+        ) : props.stateLabel ? (
+          <span aria-hidden className={`hidden lg:block ${libraryRowLanes.from}`} />
         ) : (
           // Nothing to say about the source: narrow rows fall back to what it
           // does, wide rows keep the empty lane so the next column stays aligned.

@@ -20,7 +20,8 @@ locals {
   # Den and Workbot reach the runner at a dotless Service Connect alias: both
   # accept plain http only for loopback or single-label internal hosts.
   runner_enabled  = var.headless_runner.enabled
-  runner_url      = "http://headless-runner:8795"
+  runner_managed  = local.runner_enabled && var.headless_runner.external_url == ""
+  runner_url      = var.headless_runner.external_url != "" ? var.headless_runner.external_url : "http://headless-runner:8795"
   runner_image    = var.headless_runner_image != "" ? var.headless_runner_image : "ghcr.io/different-ai/openwork-headless-runner:${var.openwork_version}"
   workbot_enabled = var.workbot.enabled
   workbot_host    = var.workbot.domain_name != "" ? var.workbot.domain_name : "chat.${var.domain_name}"
@@ -100,10 +101,10 @@ locals {
 
   # Feature locks (DEN_FEATURE_*) turn each capability on for the organization.
   agent_environment = {
-    DEN_HEADLESS_RUNNER_URL              = local.runner_enabled ? local.runner_url : ""
-    DEN_FEATURE_HEADLESS_AUTOMATIONS     = local.runner_enabled && var.automations_enabled ? "true" : ""
-    DEN_FEATURE_SLACK_ASSISTANT          = var.slack_assistant_enabled ? "true" : ""
-    DEN_FEATURE_SLACK_ASSISTANT_HEADLESS = var.slack_assistant_enabled && local.runner_enabled ? "true" : ""
+    DEN_HEADLESS_RUNNER_URL          = local.runner_enabled ? local.runner_url : ""
+    DEN_FEATURE_HEADLESS_AUTOMATIONS = local.runner_enabled && var.automations_enabled ? "true" : ""
+    # Slack replies run on the headless runner; without it, Slack setup says the runner is needed.
+    DEN_FEATURE_SLACK_ASSISTANT = var.slack_assistant_enabled ? "true" : ""
     # Work a Slack reply hands to a member's desktop needs the automations runtime.
     DEN_AUTOMATIONS_RUNTIME_ENABLED = var.slack_assistant_enabled ? "true" : ""
     DEN_WORKBOT_URL                 = local.workbot_enabled ? local.workbot_url : ""

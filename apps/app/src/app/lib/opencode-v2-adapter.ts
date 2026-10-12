@@ -23,7 +23,7 @@ import { isDesktopRuntime } from "./runtime-env";
 import type { McpStatusMap, OpencodeEvent } from "../types";
 import { normalizeDirectoryPath } from "../utils";
 import { dispatchProviderCatalogChanged } from "./provider-events";
-import { composeV2Prompt, splitV2Prompt, wrapPastedText } from "./v2-prompt-context";
+import { attachmentMarker, attachmentNoteFilenames, composeV2Prompt, splitV2Prompt, wrapPastedText, type PromptAttachment } from "./v2-prompt-context";
 
 type RequestOptions = {
   signal?: AbortSignal;
@@ -75,7 +75,12 @@ function partText(part: PromptPart): string | null {
  * transcript can show the words without them (see v2-prompt-context).
  */
 export function v2PromptText(parts: readonly PromptPart[]): string {
+  const attached = new Set(parts.flatMap((part) => {
+    const text = partText(part);
+    return text !== null && part.synthetic === true ? attachmentNoteFilenames(text) : [];
+  }));
   const words = parts.flatMap((part) => {
+    if (part.type === "file" && typeof part.filename === "string" && attached.has(part.filename)) return [attachmentMarker(part.filename)];
     const text = partText(part);
     if (text === null || part.synthetic === true) return [];
     return [isPastedText(part) ? wrapPastedText(text) : text];
@@ -485,6 +490,12 @@ function toolMetadata(
   callID: string,
   associations: TaskSessionAssociations,
 ): Record<string, unknown> {
+  // Engine progress replaces a running call's saved metadata, so a reload can
+  // find only the results plugin's per-call details. Rebuild the call list.
+  if (tool === "execute" && !Array.isArray(metadata.toolCalls) && Array.isArray(metadata.openworkToolDetails)) {
+    return { ...metadata, toolCalls: metadata.openworkToolDetails.flatMap((detail) => isRecord(detail) && typeof detail.tool === "string"
+      ? [{ tool: detail.tool, status: detail.status, ...(detail.input === undefined ? {} : { input: detail.input }) }] : []) };
+  }
   if (tool !== "subagent") return metadata;
   const explicit = readString(metadata, "sessionId")?.trim() || readString(metadata, "sessionID")?.trim();
   if (explicit) rememberTaskSession(associations, parentSessionID, messageID, callID, explicit);
@@ -790,19 +801,24 @@ function mapV2ReplyModel(value: Record<string, unknown>) {
 function mapV2UserPart(part: Part): Part[] {
   if (part.type !== "text") return [part];
   const { segments, context, attachments } = splitV2Prompt(part.text);
-  if (!context && !segments.some((segment) => segment.kind === "pasted")) return [part];
-  const words = segments.map((segment, index): Part => ({
-    ...part,
-    id: index === 0 ? part.id : `${part.id}:${index}`,
-    text: segment.text,
-    ...(segment.kind === "pasted" ? { metadata: { openworkPastedText: true } } : {}),
-  }));
+  if (!context && !segments.some((segment) => segment.kind !== "text")) return [part];
+  // A marked attachment shows where it was attached; the rest follow the words.
+  const unplaced: PromptAttachment[] = [...attachments];
+  const words = segments.map((segment, index): Part => {
+    const id = index === 0 ? part.id : `${part.id}:${index}`;
+    if (segment.kind !== "attachment") {
+      return { ...part, id, text: segment.text, ...(segment.kind === "pasted" ? { metadata: { openworkPastedText: true } } : {}) };
+    }
+    const at = unplaced.findIndex((item) => item.filename === segment.filename);
+    const placed = at < 0 ? [] : unplaced.splice(at, 1);
+    return { ...part, id, text: "", synthetic: true, ...(placed.length ? { metadata: { openworkAttachments: placed } } : {}) };
+  });
   return context === null ? words : [...words, {
     ...part,
     id: `${part.id}:context`,
     text: context,
     synthetic: true,
-    ...(attachments.length ? { metadata: { openworkAttachments: attachments } } : {}),
+    ...(unplaced.length ? { metadata: { openworkAttachments: unplaced } } : {}),
   }];
 }
 
@@ -1250,7 +1266,27 @@ export function createV2EventTranslationState(): V2EventTranslationState {
 
 function updateToolStreamMetadata(stream: ToolStream, properties: Record<string, unknown>): void {
   const metadata = readRecord(properties, "metadata") ?? readRecord(properties, "structured");
-  if (metadata) stream.metadata = metadata;
+  if (!metadata) return;
+  const previous = stream.metadata;
+  if (stream.tool !== "execute") { stream.metadata = metadata; return; }
+  stream.metadata = { ...previous, ...metadata };
+  // Native progress reports call lists as invocation-ordered prefixes. A
+  // later partial update must not erase retained results or regress a call.
+  for (const key of ["toolCalls", "openworkToolDetails"]) {
+    const oldCalls = previous[key];
+    const newCalls = metadata[key];
+    if (!Array.isArray(oldCalls) || !Array.isArray(newCalls)) continue;
+    stream.metadata[key] = Array.from({ length: Math.max(oldCalls.length, newCalls.length) }, (_, ordinal) => {
+      const old = oldCalls[ordinal];
+      const next = newCalls[ordinal];
+      if (!isRecord(old)) return next;
+      if (!isRecord(next)) return old;
+      if (old.tool !== next.tool || (key === "openworkToolDetails"
+        && (old.invocationId !== next.invocationId || old.ordinal !== next.ordinal))) return old;
+      if ((old.status === "completed" || old.status === "error") && next.status === "running") return old;
+      return { ...old, ...next };
+    });
+  }
 }
 
 export function translateV2Event(
@@ -2031,7 +2067,7 @@ export function createClientV2(
     parameters: DirectoryParameters & { sessionID?: string } = {}, options?: RequestOptions,
   ): Promise<FieldsResult<QuestionRequest[]>> => {
     const path = parameters.sessionID
-      ? `/api/session/${encodeURIComponent(parameters.sessionID)}/form` : "/api/form/request";
+      ? `/api/session/${encodeURIComponent(parameters.sessionID)}/form` : "/api/form";
     const result = await request("GET", path, undefined, options?.signal);
     if (!result.response.ok) return failedResult(result);
     const questions = responseItems(result.payload).flatMap((item) => {
@@ -2067,7 +2103,7 @@ export function createClientV2(
     const question = questionFormsByID.get(parameters.requestID);
     if (!question) return {
       error: { name: "QuestionNotFound", requestID: parameters.requestID },
-      request: new Request(`${baseUrl}/api/form/request`),
+      request: new Request(`${baseUrl}/api/form`),
       response: new Response(null, { status: 404 }),
     };
     const answer = parameters.answers ? Object.fromEntries(question.fields.map((field, index) => {
@@ -2075,8 +2111,8 @@ export function createClientV2(
         field.options.find((option) => option.label === label)?.value ?? label);
       return [field.key, field.multiple ? values : values[0] ?? ""];
     })) : undefined;
-    const result = await request("POST",
-      `/api/session/${encodeURIComponent(question.request.sessionID)}/form/${encodeURIComponent(parameters.requestID)}/${answer ? "reply" : "cancel"}`,
+    const result = await request(answer ? "POST" : "DELETE",
+      `/api/session/${encodeURIComponent(question.request.sessionID)}/form/${encodeURIComponent(parameters.requestID)}${answer ? "/reply" : ""}`,
       answer ? { answer } : undefined, options?.signal);
     if (!result.response.ok) return failedResult(result);
     questionFormsByID.delete(parameters.requestID);
@@ -2289,7 +2325,7 @@ export function createClientV2(
       if (!modelResult.response.ok) return failedResult(modelResult);
       if (parameters.system !== undefined) {
         const instructions = await request("PUT",
-          `/api/session/${encodeURIComponent(parameters.sessionID)}/instructions/entries/openwork-context`,
+          `/api/experimental/session/${encodeURIComponent(parameters.sessionID)}/instructions/entries/openwork-context`,
           { value: parameters.system }, options?.signal);
         if (!instructions.response.ok) return failedResult(instructions);
       }
@@ -2331,8 +2367,8 @@ export function createClientV2(
       }
       if (!parameters.title) return getSession(parameters, options);
       const result = await request(
-        "POST",
-        `/api/session/${encodeURIComponent(parameters.sessionID)}/rename`,
+        "PATCH",
+        `/api/session/${encodeURIComponent(parameters.sessionID)}`,
         { title: parameters.title },
         options?.signal,
       );
@@ -2379,7 +2415,7 @@ export function createClientV2(
       parameters: SessionParameters,
       options?: RequestOptions,
     ): Promise<FieldsResult<Session>> => {
-      const result = await request("POST", `/api/session/${encodeURIComponent(parameters.sessionID)}/revert/clear`, undefined, options?.signal);
+      const result = await request("DELETE", `/api/session/${encodeURIComponent(parameters.sessionID)}/revert`, undefined, options?.signal);
       return result.response.ok ? getSession(parameters, options) : failedResult(result);
     },
     summarize: async (): Promise<FieldsResult<boolean>> => unsupportedResult(baseUrl, "session.summarize"),
@@ -2437,11 +2473,11 @@ export function createClientV2(
   const adapter = {
     global: {
       health: async (options?: RequestOptions): Promise<FieldsResult<{ healthy: boolean; version: string }>> => {
-        const result = await request("GET", "/api/health", undefined, options?.signal);
+        const result = await request("GET", "/api/info", undefined, options?.signal);
         if (!result.response.ok) return failedResult(result);
         const data = responseData(result.payload);
         return successfulResult(result, {
-          healthy: isRecord(data) && data.healthy === true,
+          healthy: isRecord(data) && typeof data.version === "string" && typeof data.pid === "number",
           version: readString(data, "version") ?? "v2",
         });
       },

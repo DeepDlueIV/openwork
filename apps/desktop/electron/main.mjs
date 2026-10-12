@@ -1303,6 +1303,7 @@ const desktopAutomationRunner = createDesktopAutomationRunner({
   // v1 credentials predate token audiences. Keep them usable during the Den
   // rollout only for endpoints trusted before the renderer starts issuing IPC.
   legacyBaseUrls: legacyRunnerBaseUrls,
+  getJournalRoot: () => path.join(app.getPath("userData"), "session-runner"),
   getLocalRuntime: async () => {
     const server = await runtimeManager.openworkServerInfo();
     return { baseUrl: server.baseUrl, token: server.clientToken ?? server.ownerToken };
@@ -1484,14 +1485,24 @@ async function bootRuntimeForSelectedWorkspace() {
   return { ok: true, skipped: false, engine, openworkServer, workspaceId: bootWorkspace.id ?? null };
 }
 
-function ensureRuntimeBootstrap() {
-  if (!runtimeBootstrapPromise) {
-    runtimeBootstrapPromise = bootRuntimeForSelectedWorkspace().catch((error) => ({
-      ok: false,
-      error: error instanceof Error ? error.message : String(error),
-    }));
-  }
+function startRuntimeBootstrap() {
+  runtimeBootstrapPromise = bootRuntimeForSelectedWorkspace().catch((error) => ({
+    ok: false,
+    error: error instanceof Error ? error.message : String(error),
+  }));
   return runtimeBootstrapPromise;
+}
+
+function ensureRuntimeBootstrap() {
+  const attempt = runtimeBootstrapPromise ?? startRuntimeBootstrap();
+  return attempt.then((result) => {
+    // A failed boot is reported once. The next request, such as Reload on the
+    // error screen, starts a fresh attempt instead of replaying this failure.
+    if (result?.ok === false && runtimeBootstrapPromise === attempt) {
+      runtimeBootstrapPromise = null;
+    }
+    return result;
+  });
 }
 
 function resolveOpencodeConfigPath(scope, projectDir) {
@@ -2740,10 +2751,7 @@ or use: pnpm dev:worktree`);
       });
     }
     if (!desktopActivationRequired(DESKTOP_DISTRIBUTION, bootstrapConfig)) {
-      runtimeBootstrapPromise = bootRuntimeForSelectedWorkspace().catch((error) => ({
-        ok: false,
-        error: error instanceof Error ? error.message : String(error),
-      }));
+      startRuntimeBootstrap();
     }
 
     queueDeepLinks(forwardedDeepLinks(process.argv));

@@ -1,10 +1,9 @@
 /** @jsxImportSource react */
 import { useEffect, useMemo, useState } from "react"
-import { AlertCircle, CalendarDays, ChevronLeft, ChevronRight, Lock, RefreshCw } from "lucide-react"
+import { AlertCircle, CalendarDays, ChevronLeft, ChevronRight, Lock, Plus, RefreshCw } from "lucide-react"
 import { useNavigate, useSearchParams } from "react-router"
 import type { AutomationRun } from "@openwork/types/automations"
 
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
@@ -38,15 +37,23 @@ import {
   formatTime,
   type LocalDate,
   localDateOf,
+  nextOpenSlot,
   parseDateKey,
   shiftAnchor,
 } from "@openwork/calendar"
 import { AutomationDetailPanel, MeetingDetailPanel } from "./calendar-detail-panel"
+import { CreateAutomationCard, type CreateAnchor } from "./calendar-create"
+import { CalendarEditDialog } from "./calendar-edit"
+import type { AutomationProviderCatalog } from "@/react-app/domains/automations/automation-model-options"
+import { useAutomationEditorSetup } from "@/react-app/domains/automations/use-automation-editor-setup"
+import { globalSettingsRoute, workspaceSettingsRoute } from "@/react-app/shell/workspace-routes"
+import { toast } from "@/components/ui/sonner"
 import { CalendarMonthGrid, CalendarTimeGrid, type CalendarSelection } from "./calendar-grid"
 import {
   calendarProviderPresence,
   useAutomationRunsInRange,
   useCalendarFeature,
+  useCalendarDefaultModelName,
   useCalendarMeetings,
   useCalendarTransport,
 } from "./use-calendar-data"
@@ -111,7 +118,13 @@ function CalendarSkeleton() {
  * from their connected Google or Outlook calendar. Automations come from Den;
  * meetings are read-only overlays (nothing is written to the member's calendar).
  */
-export function CalendarPage(props: { onSignIn?: () => void; onOpenConnections?: () => void }) {
+export function CalendarPage(props: {
+  onSignIn?: () => void
+  onOpenConnections?: () => void
+  onOpenProviderSettings?: () => void
+  workspaceId?: string | null
+  providerCatalog?: AutomationProviderCatalog
+}) {
   const denAuth = useDenAuth()
   const navigate = useNavigate()
   const platform = usePlatform()
@@ -148,6 +161,11 @@ export function CalendarPage(props: { onSignIn?: () => void; onOpenConnections?:
     }
   })
   const [layers, setLayers] = useState<Layers>(readLayers)
+  const [creating, setCreating] = useState<CreateAnchor | null>(null)
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const editorSetup = useAutomationEditorSetup(denContext, props.providerCatalog, props.workspaceId)
+  const openProviderSettings = props.onOpenProviderSettings
+    ?? (() => navigate(props.workspaceId?.trim() ? workspaceSettingsRoute(props.workspaceId.trim(), "ai") : globalSettingsRoute("ai")))
   const [hiddenProviders, setHiddenProviders] = useState<ReadonlySet<CalendarProviderId>>(new Set())
 
   useEffect(() => {
@@ -165,7 +183,9 @@ export function CalendarPage(props: { onSignIn?: () => void; onOpenConnections?:
   const { year, month, day } = anchor
   const range = useMemo(() => calendarRange(view, { year, month, day }, timeZone, WEEK_STARTS_ON), [day, month, timeZone, view, year])
   const feature = useCalendarFeature(denContext)
+  const polish = useCalendarFeature(denContext, "calendarPolish").data === true
   const enabled = feature.data === true
+  const organizationDefaultName = useCalendarDefaultModelName(denContext, polish && enabled).data
   const listQuery = useAutomationListQuery(denContext)
   const automationItems = listQuery.data?.items
   const runsQuery = useAutomationRunsInRange(denContext, range, automationItems, enabled && layers.automations)
@@ -211,13 +231,13 @@ export function CalendarPage(props: { onSignIn?: () => void; onOpenConnections?:
   }
   if (!organizationId || !client) {
     return (
-      <div className="mx-auto max-w-xl p-6 pt-16">
-        <Alert variant="warning">
-          <AlertCircle aria-hidden="true" />
-          <AlertTitle>Select an organization</AlertTitle>
-          <AlertDescription>Your Calendar shows the Automations of your active organization.</AlertDescription>
-        </Alert>
-      </div>
+      <Empty className="pt-16" data-calendar-no-organization>
+        <EmptyHeader>
+          <EmptyMedia variant="icon"><CalendarDays /></EmptyMedia>
+          <EmptyTitle>Select an organization</EmptyTitle>
+        </EmptyHeader>
+        <Button variant="outline" onClick={() => navigate(globalSettingsRoute("cloud-account"))}>Open account settings</Button>
+      </Empty>
     )
   }
   if (feature.isLoading || (enabled && listQuery.isLoading)) return <CalendarSkeleton />
@@ -252,13 +272,24 @@ export function CalendarPage(props: { onSignIn?: () => void; onOpenConnections?:
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-calendar-page>
-      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-4 py-2.5">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-border px-4 py-2.5" data-calendar-toolbar>
         <Button variant="outline" size="sm" onClick={goToday}>Today</Button>
         <div className="flex items-center">
           <Button variant="ghost" size="icon-sm" aria-label="Previous" onClick={() => setAnchor((current) => shiftAnchor(view, current, -1))}><ChevronLeft /></Button>
           <Button variant="ghost" size="icon-sm" aria-label="Next" onClick={() => setAnchor((current) => shiftAnchor(view, current, 1))}><ChevronRight /></Button>
         </div>
         <h2 className="text-[15px] font-semibold tracking-[-0.2px]" data-calendar-range-label>{formatRangeLabel(range, anchor)}</h2>
+        <Button
+          variant="outline"
+          size="sm"
+          data-calendar-new
+          onClick={(event) => {
+            const box = event.currentTarget.getBoundingClientRect()
+            setCreating({ slot: nextOpenSlot(Date.now(), timeZone), x: box.left, y: box.bottom + 8 })
+          }}
+        >
+          <Plus />New automation
+        </Button>
         <ToggleGroup
           className="ml-auto"
           aria-label="Calendar view"
@@ -301,7 +332,7 @@ export function CalendarPage(props: { onSignIn?: () => void; onOpenConnections?:
           if (info?.presence === "not_connected") {
             return (
               <span key={provider} className="flex items-center gap-1.5 text-xs text-muted-foreground" data-calendar-provider-status={provider} data-state="not_connected">
-                <Lock className="size-3" aria-hidden="true" />
+                <ProviderLogo provider={provider} />
                 <Button variant="link" size="xs" className="h-auto p-0" onClick={() => info.connectionId ? void orgConnections.connect(info.connectionId) : props.onOpenConnections?.()}>
                   Connect {CALENDAR_PROVIDER_LABEL[provider]}
                 </Button>
@@ -315,7 +346,7 @@ export function CalendarPage(props: { onSignIn?: () => void; onOpenConnections?:
                 <TooltipTrigger
                   render={<span className="flex items-center gap-1.5 text-xs text-muted-foreground" data-calendar-provider-status={provider} data-state={query.error.kind} />}
                 >
-                  {copy ? <Lock className="size-3" aria-hidden="true" /> : <AlertCircle className="size-3" aria-hidden="true" />}
+                  {query.error.kind === "policy_blocked" ? <Lock className="size-3" aria-hidden="true" /> : <ProviderLogo provider={provider} />}
                   {copy ? (
                     copy.canConnect && (info?.connectionId || props.onOpenConnections) ? (
                       <Button variant="link" size="xs" className="h-auto p-0" onClick={() => info?.connectionId ? void orgConnections.connect(info.connectionId, { forceFreshAuthorization: true }) : props.onOpenConnections?.()}>{copy.label}</Button>
@@ -355,10 +386,11 @@ export function CalendarPage(props: { onSignIn?: () => void; onOpenConnections?:
         {transport?.kind === "mock" ? <span className="ml-auto rounded bg-amber-3 px-1.5 py-0.5 text-[11px] text-amber-11" data-calendar-mock>Mock calendar</span> : null}
       </div>
 
-      <div className="flex min-h-0 flex-1">
-        <div className="relative flex min-h-0 min-w-0 flex-1 flex-col">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden">
+        <div className="relative flex h-[max(24rem,calc(100dvh-10rem))] min-w-0 shrink-0 flex-col lg:h-auto lg:min-h-0 lg:flex-1">
           {view === "month" ? (
             <CalendarMonthGrid
+              polish={polish}
               range={range}
               timeZone={timeZone}
               now={now}
@@ -371,6 +403,7 @@ export function CalendarPage(props: { onSignIn?: () => void; onOpenConnections?:
             />
           ) : (
             <CalendarTimeGrid
+              polish={polish}
               range={range}
               timeZone={timeZone}
               now={now}
@@ -378,27 +411,62 @@ export function CalendarPage(props: { onSignIn?: () => void; onOpenConnections?:
               meetings={meetings}
               selection={selection}
               onSelect={setSelection}
+              onCreateAt={setCreating}
             />
           )}
           {noAutomations && layers.automations ? (
             <div className="pointer-events-none absolute inset-x-0 bottom-6 flex justify-center">
               <div className="pointer-events-auto flex items-center gap-3 rounded-xl border border-border bg-background px-4 py-2.5 text-sm shadow-[var(--dls-card-shadow)]" data-calendar-empty>
-                <span>No Automations yet.</span>
-                <Button size="sm" onClick={() => navigate("/automations?create=1")}>New Automation</Button>
+                <span>No automations yet.</span>
+                <Button size="sm" onClick={() => navigate("/automations?create=1")}>New automation</Button>
               </div>
             </div>
           ) : null}
         </div>
+        {creating ? (
+          <CreateAutomationCard
+            polish={polish}
+            organizationDefaultName={organizationDefaultName}
+            key={creating.slot.at}
+            anchor={creating}
+            context={denContext}
+            setup={editorSetup}
+            providerCatalog={props.providerCatalog}
+            workspaceId={props.workspaceId ?? null}
+            onOpenProviderSettings={openProviderSettings}
+            onClose={() => setCreating(null)}
+            onCreated={(detail) => {
+              setCreating(null)
+              setSelection({ kind: "automation", automationId: detail.automation.id, itemKey: null })
+              toast.success("Automation created")
+            }}
+          />
+        ) : null}
+        {selectedAutomation && editingId === selectedAutomation.automation.id ? (
+          <CalendarEditDialog
+            item={selectedAutomation}
+            context={denContext}
+            setup={editorSetup}
+            providerCatalog={props.providerCatalog}
+            workspaceId={props.workspaceId ?? null}
+            onOpenProviderSettings={openProviderSettings}
+            onClose={() => setEditingId(null)}
+          />
+        ) : null}
         {selectedAutomation ? (
           <AutomationDetailPanel
+            polish={polish}
+            organizationDefaultName={organizationDefaultName}
             key={selectedAutomation.automation.id}
             item={selectedAutomation}
             selectedBlock={selectedBlock}
             runs={selectedRuns.data?.items}
             runsLoading={selectedRuns.isLoading}
             timeZone={timeZone}
+            modelOptions={editorSetup.modelsFor(selectedAutomation.revision.executionTarget ?? "desktop", selectedAutomation.revision.workspaceId)}
             onClose={() => setSelection(null)}
             actions={{
+              onEdit: () => setEditingId(selectedAutomation.automation.id),
               busyAction,
               onOpenRun: openRun,
               onPause: () => void act("deactivate", async () => {

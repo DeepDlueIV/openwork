@@ -1,8 +1,9 @@
 /** @jsxImportSource react */
 import { useEffect, useMemo, useRef } from "react"
-import { CheckCircle2, Cloud, Loader2, Lock, MinusCircle, Monitor, XCircle } from "lucide-react"
+import { CheckCircle2, Cloud, Loader2, Lock, MinusCircle, Monitor, Plus, XCircle } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { resolveExtensionIconSrc } from "@/react-app/design-system/extension-icon-src"
 import {
   addDays,
   type AutomationCalendarItem,
@@ -19,6 +20,10 @@ import {
   localDateOf,
   minutesIntoDay,
   startOfDay,
+  dateKey,
+  formatDate,
+  slotAt,
+  type CalendarSlot,
 } from "@openwork/calendar"
 
 export const HOUR_HEIGHT_PX = 48
@@ -31,6 +36,7 @@ export type CalendarSelection =
   | null
 
 type GridProps = {
+  polish?: boolean
   range: CalendarRange
   timeZone: string
   now: number
@@ -38,6 +44,8 @@ type GridProps = {
   meetings: readonly CalendarEvent[]
   selection: CalendarSelection
   onSelect: (selection: CalendarSelection) => void
+  /** Opens "New automation" at an empty half hour; the card is placed near the click. */
+  onCreateAt?: (anchor: { slot: CalendarSlot; x: number; y: number }) => void
 }
 
 const STATUS_LABEL: Record<AutomationCalendarItem["status"], string> = {
@@ -116,7 +124,7 @@ function AutomationBlock(props: { item: AutomationCalendarItem; timeZone: string
   )
 }
 
-function MeetingBlock(props: { event: CalendarEvent; timeZone: string; selected: boolean; compact?: boolean; fill?: boolean; onSelect: () => void }) {
+function MeetingBlock(props: { polish?: boolean; event: CalendarEvent; timeZone: string; selected: boolean; compact?: boolean; fill?: boolean; onSelect: () => void }) {
   const { event } = props
   const source = CALENDAR_PROVIDER_LABEL[event.provider]
   return (
@@ -126,11 +134,16 @@ function MeetingBlock(props: { event: CalendarEvent; timeZone: string; selected:
       data-calendar-provider={event.provider}
       aria-pressed={props.selected}
       aria-label={`${event.title}, ${source}${event.timing.kind === "timed" ? `, ${formatTime(event.timing.start, props.timeZone)}` : ", all day"}`}
-      title={`${event.title} — ${source}`}
+      title={`${event.title}, ${source}`}
       className={cn(meetingBlockClass(props.selected), props.fill && "h-full")}
       onClick={props.onSelect}
     >
-      <span className="truncate font-medium">{event.title} <span className="font-normal text-muted-foreground">— {source}</span></span>
+      {props.polish ? (
+        <span className="flex min-w-0 items-start gap-1.5 font-medium">
+          <img aria-hidden="true" alt="" data-calendar-provider-logo={event.provider} className="size-3 shrink-0" src={resolveExtensionIconSrc(event.provider === "google" ? "/ext-google-workspace.svg" : "/ext-microsoft-365.svg")} />
+          <span className="min-w-0 flex-1 truncate">{event.title}</span>
+        </span>
+      ) : <span className="truncate font-medium">{event.title} <span className="font-normal text-muted-foreground">{source}</span></span>}
       {props.compact || event.timing.kind !== "timed" ? null : (
         <span className="truncate text-muted-foreground">{formatTime(event.timing.start, props.timeZone)}</span>
       )}
@@ -179,7 +192,8 @@ export function CalendarTimeGrid(props: GridProps) {
 
   useEffect(() => {
     const node = scrollRef.current
-    if (node) node.scrollTop = SCROLL_TO_HOUR * HOUR_HEIGHT_PX
+    // Hour labels are centered on their lines. Land half an hour earlier so the first label is fully visible.
+    if (node) node.scrollTop = SCROLL_TO_HOUR * HOUR_HEIGHT_PX - HOUR_HEIGHT_PX / 2
   }, [props.range.start])
 
   const dayBlocks = useMemo(() => props.range.days.map((day) => {
@@ -195,7 +209,7 @@ export function CalendarTimeGrid(props: GridProps) {
           const header = formatDayHeader(day)
           const isToday = isSameDate(day, today)
           return (
-            <div key={`${day.year}-${day.month}-${day.day}`} className="flex items-baseline gap-1.5 border-l border-border px-2 py-2 text-xs" data-calendar-day={`${day.year}-${String(day.month).padStart(2, "0")}-${String(day.day).padStart(2, "0")}`}>
+            <div key={`${day.year}-${day.month}-${day.day}`} className="flex min-w-0 flex-col items-center justify-center gap-0.5 border-l border-border px-1 py-2 text-xs sm:flex-row sm:items-baseline sm:justify-start sm:gap-1.5 sm:px-2" data-calendar-day={`${day.year}-${String(day.month).padStart(2, "0")}-${String(day.day).padStart(2, "0")}`}>
               <span className="text-muted-foreground">{header.weekday}</span>
               <span className={cn("font-medium", isToday && "flex size-5 items-center justify-center rounded-full bg-primary text-primary-foreground")}>{header.day}</span>
             </div>
@@ -209,6 +223,7 @@ export function CalendarTimeGrid(props: GridProps) {
             <div key={`all-day-${day.year}-${day.month}-${day.day}`} className="flex min-w-0 flex-col gap-0.5 border-l border-border p-0.5">
               {allDay.filter((event) => allDayCovers(event, day)).map((event) => (
                 <MeetingBlock
+                  polish={props.polish}
                   key={event.key}
                   event={event}
                   timeZone={props.timeZone}
@@ -221,11 +236,11 @@ export function CalendarTimeGrid(props: GridProps) {
           ))}
         </div>
       ) : null}
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+      <div ref={scrollRef} data-calendar-scroll className="min-h-0 flex-1 overflow-y-auto">
         <div className="relative grid" style={{ gridTemplateColumns: columns, height: 24 * HOUR_HEIGHT_PX }}>
           <div className="relative">
             {Array.from({ length: 24 }, (_, hour) => (
-              <span key={hour} className="absolute right-2 -translate-y-1/2 text-[11px] text-muted-foreground" style={{ top: hour * HOUR_HEIGHT_PX }}>
+              <span key={hour} data-calendar-hour={hour} className="absolute right-2 -translate-y-1/2 text-xs text-muted-foreground" style={{ top: hour * HOUR_HEIGHT_PX }}>
                 {hour === 0 ? "" : formatHourLabel(hour)}
               </span>
             ))}
@@ -238,6 +253,29 @@ export function CalendarTimeGrid(props: GridProps) {
                 className="relative border-l border-border"
                 style={{ backgroundImage: `repeating-linear-gradient(to bottom, transparent 0, transparent ${HOUR_HEIGHT_PX - 1}px, var(--border) ${HOUR_HEIGHT_PX - 1}px, var(--border) ${HOUR_HEIGHT_PX}px)` }}
               >
+                {props.onCreateAt ? Array.from({ length: 48 }, (_, index) => {
+                  // Empty half hours: hover shows where a new automation would go; a click opens the card there.
+                  const slot = slotAt(day, index * 30, props.timeZone)
+                  const time = formatTime(slot.at, props.timeZone)
+                  return (
+                    <button
+                      key={`slot-${index}`}
+                      type="button"
+                      tabIndex={-1}
+                      aria-label={`New automation on ${formatDate(day)} at ${time}`}
+                      data-calendar-slot={`${dateKey(day)}T${String(slot.hour).padStart(2, "0")}:${String(slot.minute).padStart(2, "0")}`}
+                      className="group absolute inset-x-0 z-0 px-0.5 focus-visible:outline-none"
+                      style={{ top: index * (HOUR_HEIGHT_PX / 2) + 1, height: HOUR_HEIGHT_PX / 2 - 2 }}
+                      onClick={(event) => props.onCreateAt?.({ slot, x: event.clientX + 12, y: event.clientY - 28 })}
+                    >
+                      <span className="hidden h-full items-center gap-1 rounded-md border border-dashed border-foreground/35 bg-foreground/[0.04] px-1.5 text-xs group-hover:flex">
+                        <Plus className="size-3 shrink-0" aria-hidden="true" />
+                        <span className="truncate font-medium">New automation</span>
+                        <span className="shrink-0 text-muted-foreground">{time}</span>
+                      </span>
+                    </button>
+                  )
+                }) : null}
                 {blocks.map((block) => {
                   const placement = placements.get(block.key) ?? { column: 0, columns: 1 }
                   const top = Math.min(minutesIntoDay(block.start, day, props.timeZone), DAY_MINUTES) / 60 * HOUR_HEIGHT_PX
@@ -262,6 +300,7 @@ export function CalendarTimeGrid(props: GridProps) {
                         />
                       ) : (
                         <MeetingBlock
+                          polish={props.polish}
                           event={block.event}
                           timeZone={props.timeZone}
                           compact={compact}
@@ -333,6 +372,7 @@ export function CalendarMonthGrid(props: GridProps & { anchorMonth: number; onOp
               />
             ) : (
               <MeetingBlock
+                polish={props.polish}
                 key={entry.event.key}
                 event={entry.event}
                 timeZone={props.timeZone}

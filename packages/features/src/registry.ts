@@ -53,6 +53,20 @@ function defineFeatures<const T extends Record<string, FeatureDefinition>>(featu
 const everywhere = ["cloud", "self_hosted"] as const
 
 export const FEATURES = defineFeatures({
+  simplifiedOnboarding: {
+    label: "Simplified Cloud onboarding",
+    description: "People enter their name, create a workspace, and optionally invite teammates before going straight to the dashboard.",
+    since: "2026-10",
+    deployments: ["cloud"],
+    default: false,
+  },
+  managedDeployments: {
+    label: "Managed deployments",
+    description: "Organization admins install OpenWork in their own cloud account (AWS first) and see its health and updates in OpenWork.",
+    since: "2026-10",
+    deployments: ["cloud"],
+    default: false,
+  },
   installLinks: {
     label: "Install links",
     description: "Workspace admins can create desktop install links for their organization.",
@@ -67,6 +81,20 @@ export const FEATURES = defineFeatures({
     deployments: everywhere,
     default: true,
   },
+  connectorReadiness: {
+    label: "Connector readiness",
+    description: "Members see when a connection was checked, and admins can check it again.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
+  driveResumableUploads: {
+    label: "Resumable Google Drive uploads",
+    description: "Members upload larger workspace files to Google Drive and prepare upload sessions for external clients.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
   implicitCloudSkills: {
     label: "Implicit Cloud skills",
     description: "Agents discover organization skills automatically without waiting for Cloud before starting a task.",
@@ -74,9 +102,37 @@ export const FEATURES = defineFeatures({
     deployments: everywhere,
     default: false,
   },
+  denFlatPageHeaders: {
+    label: "Den: flat page headers",
+    description: "Members see compact, readable page headings in Den instead of decorative gradient banners.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
+  analyticsIntegrated: {
+    label: "Den: integrated analytics",
+    description: "Admins see analytics in the same style as Library and Connectors, with links to manage the items they use.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
   dashboardActivity: {
     label: "Dashboard activity",
     description: "Organization admins see recent additions and skill updates on their dashboard instead of Quick add.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
+  libraryIntegrated: {
+    label: "Integrated Library",
+    description: "Members see Library lists, details and add flows that match the rest of Den and the desktop app.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
+  libraryUsage: {
+    label: "Library usage",
+    description: "Organization admins see in Analytics how often each skill, plugin and connector is used, by how many people, which calls fail, and what nobody uses, so they can decide what to keep.",
     since: "2026-10",
     deployments: everywhere,
     default: false,
@@ -95,6 +151,13 @@ export const FEATURES = defineFeatures({
     deployments: everywhere,
     default: false,
   },
+  auditLogsCompact: {
+    label: "Audit logs: compact Den rows",
+    description: "Organization admins read audit operations and capture settings in compact Den rows, with changes and technical details expanded on demand.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
   orgManagedDashboards: {
     label: "Dashboards",
     description: "Organization admins publish dashboards to members in Den and the desktop app.",
@@ -109,9 +172,9 @@ export const FEATURES = defineFeatures({
     deployments: everywhere,
     default: false,
   },
-  slackAssistantHeadless: {
-    label: "Slack Assistant: headless runtime",
-    description: "Answers Slack on the shared headless runner instead of each member's OpenWork Web computer. Needs the deployment's headless runner.",
+  slackWorkbotReplies: {
+    label: "Slack: replies like Workbot",
+    description: "OpenWork in Slack writes its reply as it works, reacts to messages with an emoji, and takes bigger jobs into the background, posting the result in the thread when done.",
     since: "2026-10",
     deployments: everywhere,
     default: false,
@@ -126,6 +189,13 @@ export const FEATURES = defineFeatures({
   workbot: {
     label: "Workbot",
     description: "Members can use Workbot. Needs the deployment's Workbot app.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
+  calendarPolish: {
+    label: "Calendar and Workbot polish",
+    description: "Members recognize their organization's default model and meeting providers, and can run stopped Workbot tasks again.",
     since: "2026-10",
     deployments: everywhere,
     default: false,
@@ -151,6 +221,13 @@ export const FEATURES = defineFeatures({
     deployments: everywhere,
     default: false,
   },
+  workbotDefaultModel: {
+    label: "Workbot: default model",
+    description: "Organization admins choose, in Manage › Workbot, the model Workbot, the Slack assistant and cloud Automations set to the cloud default answer with. Needs Workbot.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
   litellm: {
     label: "AI Gateway: LiteLLM",
     description: "Organization admins can connect their own LiteLLM proxy to AI Gateway, with one shared key, each person's own key, or keys OpenWork creates for each person.",
@@ -158,9 +235,44 @@ export const FEATURES = defineFeatures({
     deployments: everywhere,
     default: false,
   },
+  permissions: {
+    label: "Permissions",
+    description: "Organization admins choose what members, admins and each team can do, instead of the fixed Member and Admin defaults.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
   gatewayCloudSignIn: {
     label: "AI Gateway: AWS and Microsoft sign-in",
     description: "Organization admins can add Microsoft Foundry, and let each person sign in to Amazon Bedrock with AWS IAM Identity Center or to Microsoft Foundry with Microsoft Entra ID instead of sharing one key.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
+  engineV2Upgrade: {
+    label: "Desktop: upgrade prompt to OpenCode v2",
+    description: "Desktop members still on OpenCode v1 see a short notice offering to upgrade: their chats are copied to v2 with a backup, then OpenWork switches engines.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
+  remoteSessionTargets: {
+    label: "Remote session targets",
+    description: "Members can register OpenWork and OpenCode clients as computers for remote sessions from MCP, Slack, and chat.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
+  remoteSessionEvents: {
+    label: "Remote session events",
+    description: "MCP clients can subscribe to changes in their remote session receipts and read the current state after reconnecting.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
+  opencodePlugin: {
+    label: "OpenCode plugin sign-in",
+    description: "People can sign in to OpenWork from the OpenCode plugin, approve it as \"OpenWork - OpenCode Plugin\", and land back on OpenCode afterwards. Applies to the whole deployment; organization overrides have no effect.",
     since: "2026-10",
     deployments: everywhere,
     default: false,

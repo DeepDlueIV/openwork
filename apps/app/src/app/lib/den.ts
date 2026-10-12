@@ -8,6 +8,7 @@ import {
   AUTOMATION_MODEL_ATTENTION_CAPABILITY_HEADER,
 } from "@openwork/types/automations";
 import type { GatewayProviderSummary } from "@openwork/types/den/gateway";
+import { workbotSettingsSchema } from "@openwork/types/den/workbot-settings";
 import { parseDenMcpDiscovery, type DenMcpDiscovery } from "./den-mcp-discovery";
 import type {
   AutomationDetail,
@@ -230,7 +231,7 @@ export type DenBootstrapConfig = DenBaseUrls & {
 
 export type DenDesktopConfig = SharedDesktopConfig;
 
-export type DenCanonicalOrgRole = "super-admin" | "owner" | "admin" | "member";
+export type DenCanonicalOrgRole = "owner" | "admin" | "member";
 export type DenOrgRole = string;
 
 export type DenOrgSummary = {
@@ -242,9 +243,9 @@ export type DenOrgSummary = {
 
 function normalizeDenCanonicalOrgRole(role: string): DenCanonicalOrgRole | null {
   const normalized = role.trim().toLowerCase().replace(/[\s_]+/g, "-");
-  if (normalized === "super-admin") return "super-admin";
   if (normalized === "owner") return "owner";
-  if (normalized === "admin") return "admin";
+  // Super-admin was merged into admin; a stray value from an older server reads as admin.
+  if (normalized === "admin" || normalized === "super-admin") return "admin";
   if (normalized === "member") return "member";
   return null;
 }
@@ -261,7 +262,6 @@ function denCanonicalOrgRoles(roleValue: string) {
 export function getDenCanonicalOrgRole(roleValue: string): DenCanonicalOrgRole {
   const roles = denCanonicalOrgRoles(roleValue);
   if (roles.has("owner")) return "owner";
-  if (roles.has("super-admin")) return "super-admin";
   if (roles.has("admin")) return "admin";
   return "member";
 }
@@ -272,13 +272,12 @@ export function isDenOrgAdminRole(roleValue: string | null | undefined) {
 }
 
 export function formatDenOrgRoleLabel(roleValue: string) {
-  return roleValue
+  const labels = roleValue
     .split(",")
     .map((role) => role.trim())
     .filter(Boolean)
     .map((role) => {
       const canonicalRole = normalizeDenCanonicalOrgRole(role);
-      if (canonicalRole === "super-admin") return "Super admin";
       if (canonicalRole === "owner") return "Owner";
       if (canonicalRole === "admin") return "Admin";
       if (canonicalRole === "member") return "Member";
@@ -287,8 +286,9 @@ export function formatDenOrgRoleLabel(roleValue: string) {
         .filter(Boolean)
         .map((part) => `${part.slice(0, 1).toUpperCase()}${part.slice(1)}`)
         .join(" ");
-    })
-    .join(", ");
+    });
+  // "admin,super-admin" from an older server must not read "Admin, Admin".
+  return [...new Set(labels)].join(", ");
 }
 
 export type DenCloudInstance = {
@@ -368,6 +368,8 @@ export type DenOrgLlmProvider = {
 };
 
 export type DenExternalMcpConnection = {
+  readiness?: { status: "ready" | "could_not_verify"; checkedAt: string; lastSuccessfulAt: string | null; reason: string | null } | null;
+  setupRequired?: boolean;
   credentialHealth?: "unknown" | "ready" | "reconnect_required";
   id: string;
   name: string;
@@ -2062,6 +2064,13 @@ function getDenOrgGatewayProviders(payload: unknown): DenOrgGatewayProvider[] {
   });
 }
 
+function parseConnectionReadiness(value: unknown): DenExternalMcpConnection["readiness"] {
+  if (value === undefined) return undefined;
+  if (!isRecord(value) || (value.status !== "ready" && value.status !== "could_not_verify")
+    || typeof value.checkedAt !== "string" || !Number.isFinite(Date.parse(value.checkedAt))) return null;
+  return { status: value.status, checkedAt: value.checkedAt, lastSuccessfulAt: typeof value.lastSuccessfulAt === "string" ? value.lastSuccessfulAt : null, reason: typeof value.reason === "string" ? value.reason : null };
+}
+
 function parseDenExternalMcpConnection(value: unknown): DenExternalMcpConnection | null {
   if (
     !isRecord(value) ||
@@ -2076,6 +2085,8 @@ function parseDenExternalMcpConnection(value: unknown): DenExternalMcpConnection
 
   return {
     id: value.id,
+    ...(value.readiness !== undefined ? { readiness: parseConnectionReadiness(value.readiness) } : {}),
+    ...(typeof value.setupRequired === "boolean" ? { setupRequired: value.setupRequired } : {}),
     ...(value.credentialHealth === "unknown" || value.credentialHealth === "ready" || value.credentialHealth === "reconnect_required"
       ? { credentialHealth: value.credentialHealth } : {}),
     name: value.name,
@@ -3206,6 +3217,15 @@ export function createDenClient(options: {
       });
     },
 
+    async mintSessionRunnerToken(orgId: string, registration: AutomationDesktopRunnerRegistration): Promise<AutomationRunnerTokenResponse> {
+      return requestJson<AutomationRunnerTokenResponse>(baseUrls, "/v1/session-runners/token", {
+        method: "POST",
+        token,
+        organizationId: orgId,
+        body: registration,
+      });
+    },
+
     async createAutomation(orgId: string, input: CreateAutomation): Promise<AutomationDetail> {
       return requestJson<AutomationDetail>(baseUrls, "/v1/automations", {
         method: "POST",
@@ -3347,6 +3367,19 @@ export function createDenClient(options: {
       );
     },
 
+    /** The existing organization default-model settings, subject to Den's feature and permission guards. */
+    async getWorkbotSettings(orgId: string) {
+      const payload = await requestJson<unknown>(baseUrls, "/v1/org/workbot-settings", { method: "GET", token, organizationId: orgId });
+      return workbotSettingsSchema.parse(payload);
+    },
+
+    /** Deployment switches for people without an organization; missing keys are off. */
+    async getDeploymentFeatures(): Promise<Record<string, boolean>> {
+      const payload = await requestJson<unknown>(baseUrls, "/v1/features", { method: "GET" });
+      const features = isRecord(payload) && isRecord(payload.features) ? payload.features : {};
+      return Object.fromEntries(Object.entries(features).filter((entry): entry is [string, boolean] => typeof entry[1] === "boolean"));
+    },
+
     /** Effective feature switches for the active organization (`GET /v1/org` `features`); missing keys are off. */
     async getOrgFeatures(orgId: string): Promise<Record<string, boolean>> {
       const payload = await requestJson<unknown>(baseUrls, "/v1/org", { method: "GET", token, organizationId: orgId });
@@ -3426,6 +3459,12 @@ export function createDenClient(options: {
         throw new DenApiError(500, "invalid_mcp_discovery_payload", "MCP discovery response was invalid.");
       }
       return discovery;
+    },
+
+    async checkMcpConnection(orgId: string, connectionId: string): Promise<void> {
+      await requestJson<unknown>(baseUrls, `/v1/mcp-connections/${encodeURIComponent(connectionId)}/check`, {
+        method: "POST", token, organizationId: orgId,
+      });
     },
 
     async startMcpConnectionConnect(orgId: string, connectionId: string): Promise<DenMcpConnectionConnectStart> {

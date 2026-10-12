@@ -1,7 +1,5 @@
-import { mkdirSync } from "node:fs"
-import { dirname } from "node:path"
 import { randomUUID } from "node:crypto"
-import { DatabaseSync } from "node:sqlite"
+import type { SqlDriver } from "./sql.js"
 import { z } from "zod"
 import type { Usage } from "./model.js"
 import { withoutAttachments } from "./tool-files.js"
@@ -250,21 +248,20 @@ function toTurn(row: unknown): Turn {
 const CONVERSATION_ROWS = "message_id NOT IN (SELECT message_id FROM turns WHERE session_id = ? AND kind = 'task')"
 
 /**
- * Durable state in one SQLite file (WAL mode). Every transcript step is written
+ * Durable state in SQLite, supplied by the host runtime. Every transcript step is written
  * before the next one starts, so a crash loses at most the in-flight step.
  */
 export class Store {
-  readonly db: DatabaseSync
   /** Called after every write to a turn or its transcript, so live readers can re-read. */
   onChange: ((sessionId: string, messageId: string, status?: TurnStatus) => void) | null = null
 
-  constructor(path: string, private readonly now: () => number = Date.now) {
-    if (path !== ":memory:") mkdirSync(dirname(path), { recursive: true })
-    this.db = new DatabaseSync(path)
+  constructor(readonly db: SqlDriver, private readonly now: () => number = Date.now) {
+    this.migrate()
+  }
+
+  /** Schema changes are shared by every SQLite host; connection settings belong to the driver. */
+  migrate() {
     this.db.exec(`
-      PRAGMA journal_mode = WAL;
-      PRAGMA synchronous = NORMAL;
-      PRAGMA foreign_keys = ON;
       CREATE TABLE IF NOT EXISTS sessions (
         id TEXT PRIMARY KEY,
         title TEXT NOT NULL,
@@ -343,15 +340,7 @@ export class Store {
   }
 
   transaction<T>(fn: () => T): T {
-    this.db.exec("BEGIN IMMEDIATE")
-    try {
-      const result = fn()
-      this.db.exec("COMMIT")
-      return result
-    } catch (error) {
-      this.db.exec("ROLLBACK")
-      throw error
-    }
+    return this.db.transaction(fn)
   }
 
   createSession(input: SessionInput): Session {
@@ -718,6 +707,21 @@ export class Store {
       : this.db.prepare("SELECT * FROM turns WHERE session_id = ? ORDER BY rowid DESC LIMIT ?").all(sessionId, limit + 1)
     const turns = rows.slice(0, limit).map(toTurn).reverse()
     return { turns, hasEarlier: rows.length > limit }
+  }
+
+  /**
+   * What caller-sent turns with no transcript yet were sent with: a message waiting behind the answer in progress, or
+   * one stopped before it started. Its transcript only starts when it runs, so a reader shows it from this.
+   */
+  waitingPrompts(sessionId: string, messageIds: string[]): Map<string, string> {
+    if (messageIds.length === 0) return new Map()
+    const rows = this.db
+      .prepare(
+        `SELECT message_id, prompt FROM turns WHERE session_id = ? AND kind IS NULL AND message_id IN (${messageIds.map(() => "?").join(", ")})
+         AND NOT EXISTS (SELECT 1 FROM messages WHERE messages.session_id = turns.session_id AND messages.message_id = turns.message_id)`,
+      )
+      .all(sessionId, ...messageIds)
+    return new Map(z.array(z.object({ message_id: z.string(), prompt: z.string() })).parse(rows).map((row) => [row.message_id, row.prompt]))
   }
 
   /** The transcript of the given turns only. */

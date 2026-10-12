@@ -1,6 +1,7 @@
 import { Tool, toolError } from "@openwork/codemode"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import type { DenTypeId } from "@openwork-ee/utils/typeid"
+import type { CapabilityUsageVia } from "@openwork-ee/den-db/schema"
 import { Effect } from "effect"
 import type { Hono } from "hono"
 import { z } from "zod"
@@ -84,6 +85,7 @@ import {
   type SearchCapabilityType,
 } from "./search.js"
 import { externalToolContent } from "./tool-content.js"
+import { withRemoteSessionReceiptUri } from "./remote-session-resources.js"
 
 export const CAPABILITY_SOURCE_KINDS = ["catalog", "native", "externalMcp", "marketplace", "builtinSkill", "remoteSession", "admin"] as const
 export type CapabilitySourceKind = (typeof CAPABILITY_SOURCE_KINDS)[number]
@@ -127,6 +129,7 @@ export type CapabilityRegistryContext = {
   generatedArtifactViewsEnabled: boolean
   externalMcpConnectionsEnabled: boolean
   remoteSessionsEnabled: boolean
+  remoteSessionEventsEnabled: boolean
   resolvePlatformAdmin: () => Promise<boolean>
   resolveNamespaceContext: () => Promise<CodemodeConnectionNamespaceContext>
   /** Set only by MCP transports: direct service mutations are audited for this caller (src/audit/service-actions.ts). */
@@ -143,7 +146,7 @@ export type CapabilityRegistryContextInput = {
   redirectUriBase: string
   generatedArtifactViewsEnabled: boolean
   /** Effective features of the organization (see features.ts). */
-  organizationFeatures: Pick<FeatureMap, "mcpConnections">
+  organizationFeatures: Pick<FeatureMap, "mcpConnections"> & Partial<Pick<FeatureMap, "remoteSessionTargets" | "remoteSessionEvents">>
   /** MCP transports pass the verified caller; route and Automation contexts omit it (their route records the request). */
   audit?: McpAuditPrincipal | null
 }
@@ -174,7 +177,8 @@ export function createCapabilityRegistryContext(input: CapabilityRegistryContext
     redirectUriBase: input.redirectUriBase,
     generatedArtifactViewsEnabled: input.generatedArtifactViewsEnabled,
     externalMcpConnectionsEnabled,
-    remoteSessionsEnabled: remoteSessionCapabilitiesEnabled(),
+    remoteSessionsEnabled: remoteSessionCapabilitiesEnabled(input.organizationFeatures.remoteSessionTargets === true),
+    remoteSessionEventsEnabled: input.organizationFeatures.remoteSessionEvents === true,
     resolvePlatformAdmin,
     resolveNamespaceContext,
     audit: input.audit ?? null,
@@ -445,6 +449,7 @@ async function executeMarketplaceSource(
   ctx: CapabilityRegistryContext,
   parsed: Extract<ParsedCapability, { kind: "marketplace" }>,
   input: CapabilityExecuteInput,
+  usageVia: CapabilityUsageVia,
 ): Promise<MarketplaceCapabilityExecuteResult> {
   return executeMarketplaceCapability({
     buildTools: () => buildCapabilityToolTree(ctx),
@@ -457,6 +462,7 @@ async function executeMarketplaceSource(
     enabled: ctx.externalMcpConnectionsEnabled,
     redirectUriBase: ctx.redirectUriBase,
     auditWorkflowExecution: workflowExecutionAudit(ctx),
+    usageVia,
   })
 }
 
@@ -670,7 +676,7 @@ const marketplaceSource: CapabilitySource = {
         readOnly: true,
         authority: "den",
         run: async (args) => {
-          const result = await executeMarketplaceSource(ctx, parsed, { name: capabilityName, body: args })
+          const result = await executeMarketplaceSource(ctx, parsed, { name: capabilityName, body: args }, "codemode")
           if (!result.ok) throw toolError(result.message)
           const content = result.result.content ?? result.result.source ?? result.result.definition
           return typeof content === "string" ? content : JSON.stringify(result.result)
@@ -680,7 +686,7 @@ const marketplaceSource: CapabilitySource = {
   },
   execute: async (ctx, parsed, input) => {
     if (!parsedForKind(parsed, "marketplace")) return unknownCapabilityResult(input.name)
-    const result = await executeMarketplaceSource(ctx, parsed, input)
+    const result = await executeMarketplaceSource(ctx, parsed, input, "execute_capability")
     if (!result.ok) {
       return result.error === "unknown_capability"
         ? unknownCapabilityResult(input.name)
@@ -736,7 +742,9 @@ const remoteSessionSource: CapabilitySource = {
   enumerate: () => Promise.resolve([]),
   execute: async (ctx, parsed, input) => {
     if (!parsedForKind(parsed, "remoteSession")) return unknownCapabilityResult(input.name)
-    if (!ctx.remoteSessionsEnabled) {
+    // A rollout revert stops admitting new work, never access to an existing
+    // receipt or the ability to stop an already admitted native session.
+    if (!ctx.remoteSessionsEnabled && parsed.action !== "read" && parsed.action !== "list" && parsed.action !== "stop") {
       return {
         isError: true,
         content: textContent(JSON.stringify({
@@ -754,14 +762,14 @@ const remoteSessionSource: CapabilitySource = {
         })),
       }
     }
-    const run = () => executeRemoteSessionCapability({
+    const run = async () => withRemoteSessionReceiptUri(await executeRemoteSessionCapability({
       action: parsed.action,
       organizationId: ctx.organizationId,
       userId: ctx.principal.userId,
       hasWriteScope: ctx.principal.scopes.has(DEN_MCP_WRITE_SCOPE),
       body: input.body,
       headlessRunTokenId: headlessRunTokenId(ctx.principal.payload),
-    })
+    }), ctx.remoteSessionEventsEnabled)
     const auditAction = remoteSessionAuditActions[parsed.action]
     if (!auditAction || !ctx.audit) return run()
     try {

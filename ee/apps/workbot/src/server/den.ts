@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import { z } from "zod"
-import type { Tokens } from "./store.js"
+import type { Tokens } from "./sealed.js"
 
 /**
  * Workbot signs people in with Den, as Den's first-party OAuth client `openwork-workbot` (no consent screen, one
@@ -30,6 +30,9 @@ export const denSessionSchema = z.object({
   calendar: z.boolean().optional(),
   /** Side chats are on for this person. A Den from before side chats doesn't say: off. */
   sideChats: z.boolean().default(false),
+  calendarPolish: z.boolean().default(false),
+  /** The organization's default model for Workbot's turns. Null, or a Den from before it, means the runner's default. */
+  model: z.string().nullable().default(null),
 })
 export type DenSession = z.infer<typeof denSessionSchema>
 
@@ -187,7 +190,7 @@ const workbotConnectionsSchema = z.object({
   connections: z.array(z.object({
     id: z.string(),
     name: z.string(),
-    app: z.enum(["gmail", "slack", "microsoft"]),
+    app: z.enum(["gmail", "googleCalendar", "slack", "microsoft"]),
     ready: z.boolean(),
     connectUrl: z.string().nullable(),
   })),

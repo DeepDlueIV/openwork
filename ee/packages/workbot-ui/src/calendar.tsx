@@ -16,8 +16,10 @@ import {
   layoutOverlappingBlocks,
   localDateOf,
   minutesIntoDay,
+  nextOpenSlot,
   runPlacement,
   shiftAnchor,
+  slotAt,
   startOfDay,
   weekdayOf,
   zonedParts,
@@ -29,11 +31,16 @@ import {
   type CalendarView,
   type LocalDate,
 } from "@openwork/calendar";
+import { Dialog } from "@base-ui/react/dialog";
+import { AppMark } from "./files";
 import { useMeetingsQuery, useRunsInRangeQuery } from "@openwork/calendar/react";
-import type { AutomationList, AutomationRun, AutomationSchedule } from "@openwork/types/automations";
-import { ChevronLeft, ChevronRight, Lock, X } from "lucide-react";
+import type { AutomationList, AutomationModel, AutomationRun, AutomationSchedule } from "@openwork/types/automations";
+import { Check as CheckMark, ChevronLeft, ChevronRight, Cloud, Lock, Monitor, Plus, X } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { calendarKey, useAutomationRuns, useCalendarAction, useCalendarSources, useRunReceipt, useWorkbotAutomations } from "./calendar-data";
+import { CreateAutomationCard, type CreateAnchor } from "./calendar-create";
+import { ModelPicker, ModelSummary } from "./model-picker";
+import { workbotHost } from "./host";
+import { calendarKey, useAutomationModels, useAutomationRuns, useCalendarAction, useCalendarSources, useRunReceipt, useWorkbotAutomations, type AutomationChanges } from "./calendar-data";
 
 /**
  * Workbot's Calendar: the person's Automations next to their meetings, with the selected one's details and
@@ -130,8 +137,17 @@ function MeetingBlock({ event, selected, compact, onSelect }: { event: CalendarE
       data-calendar-provider={event.provider}
       className={`flex h-full w-full flex-col gap-0.5 overflow-hidden rounded-md bg-white px-2 text-left focus-visible:outline-none focus-visible:shadow-[var(--wb-focus)] ${compact ? "justify-center" : "py-1.5"} ${selected ? "shadow-[inset_0_0_0_1.5px_#011627]" : "shadow-[inset_0_0_0_1px_#D7DBDF]"}`}
     >
-      <span className="truncate text-[11px] font-semibold leading-3.5 text-[#687076]">{event.title}</span>
-      {compact ? null : <span className="truncate text-[11px] leading-3.5 text-[#687076]">{source}</span>}
+      {workbotHost().calendarPolish === true ? (
+        <span className="flex min-w-0 items-start gap-1.5 text-[11px] font-semibold leading-3.5 text-[var(--wb-text)]">
+          <span aria-hidden="true" data-calendar-provider-logo={event.provider}><AppMark name={event.provider === "google" ? "Google Calendar" : "Microsoft 365"} size={12} /></span>
+          <span className={compact ? "min-w-0 flex-1 truncate" : "min-w-0 flex-1 line-clamp-2 break-words"}>{event.title}</span>
+        </span>
+      ) : (
+        <>
+          <span className="truncate text-[11px] font-semibold leading-3.5 text-[#687076]">{event.title}</span>
+          {compact ? null : <span className="truncate text-[11px] leading-3.5 text-[#687076]">{source}</span>}
+        </>
+      )}
     </button>
   );
 }
@@ -172,6 +188,8 @@ function TimeGrid(props: {
   range: CalendarRange; days: LocalDate[]; zone: string; now: number;
   automations: AutomationCalendarItem[]; meetings: CalendarEvent[]; list: readonly ListItem[];
   selection: Selection; onSelect: (selection: Selection) => void;
+  /** Opens "New automation" at an empty slot; the card is placed near the click. */
+  onCreateAt: (anchor: CreateAnchor) => void;
 }) {
   const today = localDateOf(props.now, props.zone);
   const perDay = props.days.map((day) => {
@@ -203,7 +221,7 @@ function TimeGrid(props: {
         {props.days.map((day) => {
           const isToday = compareDates(day, today) === 0;
           return (
-            <div key={dateKey(day)} className="flex h-11 flex-1 basis-0 items-center gap-1.5 px-2.5" data-calendar-day={dateKey(day)}>
+            <div key={dateKey(day)} className="flex h-11 min-w-0 flex-1 basis-0 flex-col items-center justify-center gap-0.5 px-1 sm:flex-row sm:justify-start sm:gap-1.5 sm:px-2.5" data-calendar-day={dateKey(day)}>
               <span className="text-[12px] font-medium leading-4 text-[#687076]">{formatDate(day, "en-US", { weekday: "short" })}</span>
               {isToday
                 ? <span className="flex h-5.5 min-w-5.5 items-center justify-center rounded-full bg-[#011627] px-1.5 text-[12px] font-semibold leading-4 text-[#E6EDF3]">{day.day}</span>
@@ -230,7 +248,7 @@ function TimeGrid(props: {
           <div className="flex w-14 shrink-0 flex-col">
             {hours.map((hour) => (
               <div key={hour} className="flex h-14.5 shrink-0 justify-end pr-2.5">
-                <span className="-mt-1.75 text-[11px] leading-3.5 text-[#9BA1A6]">{hourLabel(hour)}</span>
+                <span data-calendar-hour={hour} className="-mt-1.75 text-[12px] leading-4 text-[var(--wb-muted)]">{hourLabel(hour)}</span>
               </div>
             ))}
           </div>
@@ -238,6 +256,29 @@ function TimeGrid(props: {
             {perDay.map(({ day, blocks, placements }) => (
               <div key={`col-${dateKey(day)}`} className="relative flex flex-1 basis-0 flex-col border-l border-[#0116270F]">
                 {hours.map((hour) => <div key={hour} className="h-14.5 shrink-0 border-t border-[#0116270F]" />)}
+                {/* Empty half hours: hover shows where a new automation would go, a click opens the card there. */}
+                {hours.flatMap((hour) => [0, 30].map((minute) => {
+                  const slot = slotAt(day, hour * 60 + minute, props.zone);
+                  const time = formatTime(slot.at, props.zone);
+                  return (
+                    <button
+                      key={`slot-${hour}-${minute}`}
+                      type="button"
+                      tabIndex={-1}
+                      aria-label={`New automation on ${formatDate(day, "en-US")} at ${time}`}
+                      data-calendar-slot={`${dateKey(day)}T${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`}
+                      onClick={(event) => props.onCreateAt({ slot, x: event.clientX + 12, y: event.clientY - 28 })}
+                      className="group absolute inset-x-0 z-0 pl-1 pr-1.5 focus-visible:outline-none"
+                      style={{ top: (hour - firstHour) * HOUR_PX + (minute ? HOUR_PX / 2 : 0) + 1, height: HOUR_PX / 2 - 1 }}
+                    >
+                      <span className="hidden h-full items-center gap-1.5 rounded-md border-[1.5px] border-dashed border-[#01162759] bg-[#0116270A] px-2 group-hover:flex">
+                        <Plus size={11} strokeWidth={2.25} className="shrink-0 text-[#011627]" aria-hidden />
+                        <span className="truncate text-[11px] font-semibold leading-3.5 text-[#011627]">New automation</span>
+                        <span className="shrink-0 text-[11px] leading-3.5 text-[#687076]">{time}</span>
+                      </span>
+                    </button>
+                  );
+                }))}
                 {blocks.map((block) => {
                   const placement = placements.get(block.key) ?? { column: 0, columns: 1 };
                   const y = Math.max(0, top(block.start, day));
@@ -307,9 +348,9 @@ function MonthGrid(props: { range: CalendarRange; zone: string; now: number; anc
 
 function Row({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="flex min-h-9 items-center border-b border-[#0116270F] py-2">
-      <span className="w-24 shrink-0 text-[12px] leading-4 text-[#687076]">{label}</span>
-      <span className="min-w-0 flex-1 text-[13px] leading-4 text-black">{children}</span>
+    <div className="flex min-h-9 items-start border-b border-[var(--wb-hairline)] py-2">
+      <span className="w-24 shrink-0 text-[12px] leading-4 text-[var(--wb-muted)]">{label}</span>
+      <span className="min-w-0 flex-1 break-words text-[13px] leading-4 text-[var(--wb-text)]">{children}</span>
     </div>
   );
 }
@@ -330,11 +371,11 @@ function PastRun({ run, zone }: { run: AutomationRun; zone: string }) {
   const detail = receipt.data?.run.resultSummary ?? receipt.data?.run.error?.message ?? null;
   return (
     <li className="flex flex-col" data-calendar-past-run={run.id}>
-      <div className="flex h-8.5 shrink-0 items-center gap-2.5">
-        <RunIcon run={run} />
-        <span className="w-22.5 shrink-0 text-[13px] leading-4 text-black">{shortDate(runPlacement(run), zone)}</span>
-        <span className="min-w-0 flex-1 truncate text-[12px] leading-4 text-[#687076]">{describeRunOutcome(run)}</span>
-        <button type="button" onClick={() => setOpen((value) => !value)} aria-expanded={open} className="text-[12px] font-medium leading-4 text-black hover:underline">{open ? "Close" : "Open"}</button>
+      <div className="flex min-h-8.5 shrink-0 items-start gap-2.5 py-2">
+        <span className="mt-0.5 shrink-0"><RunIcon run={run} /></span>
+        <span className="w-22.5 shrink-0 text-[13px] leading-4 text-[var(--wb-text)]">{shortDate(runPlacement(run), zone)}</span>
+        <span data-calendar-run-outcome data-calendar-run-status={run.status} className="min-w-0 flex-1 break-words text-[12px] leading-4 text-[var(--wb-muted)]">{describeRunOutcome(run)}</span>
+        <button type="button" onClick={() => setOpen((value) => !value)} aria-expanded={open} className="shrink-0 rounded text-[12px] font-medium leading-4 text-[var(--wb-text)] hover:underline focus-visible:outline-none focus-visible:shadow-[var(--wb-focus)]">{open ? "Close" : "Open"}</button>
       </div>
       {open ? (
         <p className="mb-2 ml-[23px] whitespace-pre-wrap rounded-md bg-[#F4F6F7] px-2.5 py-2 text-[12px] leading-4 text-[#11181C]">
@@ -347,8 +388,7 @@ function PastRun({ run, zone }: { run: AutomationRun; zone: string }) {
 
 const WEEKDAYS = [["Mon", 1], ["Tue", 2], ["Wed", 3], ["Thu", 4], ["Fri", 5], ["Sat", 6], ["Sun", 0]] as const;
 
-function ScheduleDialog({ schedule, busy, onClose, onSave }: { schedule: AutomationSchedule; busy: boolean; onClose: () => void; onSave: (schedule: AutomationSchedule) => void }) {
-  const [draft, setDraft] = useState<AutomationSchedule>(schedule);
+function ScheduleFields({ draft, setDraft }: { draft: AutomationSchedule; setDraft: (schedule: AutomationSchedule) => void }) {
   const time = draft.kind === "once" ? null : `${String(draft.hour).padStart(2, "0")}:${String(draft.minute).padStart(2, "0")}`;
   const setKind = (kind: "daily" | "weekly") => {
     const hour = draft.kind === "once" ? 9 : draft.hour;
@@ -356,52 +396,131 @@ function ScheduleDialog({ schedule, busy, onClose, onSave }: { schedule: Automat
     setDraft(kind === "daily" ? { kind, timezone: draft.timezone, hour, minute } : { kind, timezone: draft.timezone, hour, minute, daysOfWeek: draft.kind === "weekly" ? draft.daysOfWeek : [1, 2, 3, 4, 5] });
   };
   return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-[#01162733] p-4" role="dialog" aria-modal="true" aria-label="Edit schedule" onKeyDown={(event) => { if (event.key === "Escape") onClose(); }}>
-      <form className="w-full max-w-sm rounded-xl bg-white p-5 shadow-[var(--wb-panel-shadow)]" onSubmit={(event) => { event.preventDefault(); onSave(draft); }}>
-        <div className="flex items-center justify-between">
-          <h2 className="text-[15px] font-semibold tracking-[-0.01em] text-black">Edit schedule</h2>
-          <button type="button" onClick={onClose} aria-label="Close" className="grid size-7 place-items-center rounded-[7px] text-[#687076] hover:bg-[#F1F3F5]"><X size={15} strokeWidth={1.75} /></button>
+    <>
+      {draft.kind === "once" ? (
+        <p className="text-[13px] text-[#687076]">This runs once, {formatInstant(draft.at, draft.timezone)}. Change it to repeat:</p>
+      ) : null}
+      <div className="flex rounded-lg bg-[#F1F3F5] p-0.5" role="radiogroup" aria-label="Repeats">
+        {(["daily", "weekly"] as const).map((kind) => (
+          <button key={kind} type="button" role="radio" aria-checked={draft.kind === kind} onClick={() => setKind(kind)} className={`h-6.5 flex-1 rounded-md text-[12px] leading-4 ${draft.kind === kind ? "bg-white font-semibold text-black shadow-[0_1px_2px_#0116271A]" : "font-medium text-[#687076]"}`}>
+            {kind === "daily" ? "Every day" : "Some days"}
+          </button>
+        ))}
+      </div>
+      {draft.kind === "weekly" ? (
+        <div className="flex flex-wrap gap-1.5" aria-label="Days">
+          {WEEKDAYS.map(([label, value]) => {
+            const on = draft.daysOfWeek.includes(value);
+            return (
+              <button key={label} type="button" aria-pressed={on} onClick={() => {
+                const days = on ? draft.daysOfWeek.filter((day) => day !== value) : [...draft.daysOfWeek, value].sort((left, right) => left - right);
+                if (days.length > 0) setDraft({ ...draft, daysOfWeek: days });
+              }} className={`h-7 rounded-md px-2.5 text-[12px] font-medium ${on ? "bg-[#011627] text-[#E6EDF3]" : "text-black shadow-[0_0_0_1px_#0116271F]"}`}>{label}</button>
+            );
+          })}
         </div>
-        {draft.kind === "once" ? (
-          <p className="mt-3 text-[13px] text-[#687076]">This runs once, {formatInstant(draft.at, draft.timezone)}. Change it to repeat:</p>
-        ) : null}
-        <div className="mt-4 flex rounded-lg bg-[#F1F3F5] p-0.5" role="radiogroup" aria-label="Repeats">
-          {(["daily", "weekly"] as const).map((kind) => (
-            <button key={kind} type="button" role="radio" aria-checked={draft.kind === kind} onClick={() => setKind(kind)} className={`h-6.5 flex-1 rounded-md text-[12px] leading-4 ${draft.kind === kind ? "bg-white font-semibold text-black shadow-[0_1px_2px_#0116271A]" : "font-medium text-[#687076]"}`}>
-              {kind === "daily" ? "Every day" : "Some days"}
-            </button>
-          ))}
-        </div>
-        {draft.kind === "weekly" ? (
-          <div className="mt-3 flex flex-wrap gap-1.5" aria-label="Days">
-            {WEEKDAYS.map(([label, value]) => {
-              const on = draft.daysOfWeek.includes(value);
-              return (
-                <button key={label} type="button" aria-pressed={on} onClick={() => {
-                  const days = on ? draft.daysOfWeek.filter((day) => day !== value) : [...draft.daysOfWeek, value].sort((left, right) => left - right);
-                  if (days.length > 0) setDraft({ ...draft, daysOfWeek: days });
-                }} className={`h-7 rounded-md px-2.5 text-[12px] font-medium ${on ? "bg-[#011627] text-[#E6EDF3]" : "text-black shadow-[0_0_0_1px_#0116271F]"}`}>{label}</button>
-              );
-            })}
-          </div>
-        ) : null}
-        <label className="mt-3 flex items-center gap-3 text-[13px] text-black">
-          <span className="w-16 text-[12px] text-[#687076]">Time</span>
+      ) : null}
+      <div className="flex gap-2">
+        <label className="flex min-w-0 flex-1 flex-col gap-1">
+          <span className="text-[12px] text-[#687076]">Time</span>
           <input type="time" value={time ?? "09:00"} onChange={(event) => {
             const [hour, minute] = event.currentTarget.value.split(":").map(Number);
             if (Number.isInteger(hour) && Number.isInteger(minute)) setDraft(draft.kind === "once" ? { kind: "daily", timezone: draft.timezone, hour, minute } : { ...draft, hour, minute });
-          }} className="h-8 flex-1 rounded-md px-2 shadow-[0_0_0_1px_#0116271F] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus)]" />
+          }} className="h-8 min-w-0 w-full rounded-md px-2 text-[13px] shadow-[0_0_0_1px_var(--wb-ring)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus)]" />
         </label>
-        <label className="mt-2 flex items-center gap-3 text-[13px] text-black">
-          <span className="w-16 text-[12px] text-[#687076]">Time zone</span>
-          <input value={draft.timezone} onChange={(event) => setDraft({ ...draft, timezone: event.currentTarget.value })} className="h-8 flex-1 rounded-md px-2 shadow-[0_0_0_1px_#0116271F] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus)]" />
+        <label className="flex min-w-0 flex-[1.4] flex-col gap-1">
+          <span className="text-[12px] text-[#687076]">Time zone</span>
+          <input value={draft.timezone} onChange={(event) => setDraft({ ...draft, timezone: event.currentTarget.value })} className="h-8 min-w-0 w-full rounded-md px-2 text-[13px] shadow-[0_0_0_1px_var(--wb-ring)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus)]" />
         </label>
-        <div className="mt-5 flex gap-2">
-          <button type="button" onClick={onClose} className="h-8.5 flex-1 rounded-lg text-[13px] font-medium text-black shadow-[0_0_0_1px_#0116271F]">Cancel</button>
-          <button type="submit" disabled={busy} className="h-8.5 flex-1 rounded-lg bg-[#011627] text-[13px] font-medium text-[#E6EDF3] disabled:opacity-60">{busy ? "Saving…" : "Save schedule"}</button>
-        </div>
-      </form>
+      </div>
+    </>
+  );
+}
+
+function FieldLabel({ children }: { children: ReactNode }) {
+  return <span className="text-[12px] font-medium leading-4 text-[#11181C]">{children}</span>;
+}
+
+/** Where it runs, read-only: Workbot creates and keeps Automations in the cloud; desktop ones move from the app. */
+function RunsOnCard({ target }: { target: "desktop" | "cloud" }) {
+  return (
+    <div className="flex items-start gap-2.5 rounded-lg px-3 py-2.5 shadow-[inset_0_0_0_1px_#0116271A]" data-calendar-runs-on={target}>
+      <span className="mt-0.5 text-[#011627]">{target === "cloud" ? <Cloud size={15} strokeWidth={1.75} aria-hidden /> : <Monitor size={15} strokeWidth={1.75} aria-hidden />}</span>
+      <span className="flex min-w-0 flex-col gap-0.5">
+        <span className="text-[13px] font-medium leading-4.5 text-black">{target === "cloud" ? "Cloud: Only connected accounts" : "Desktop: Connected accounts and files on your computer"}</span>
+        <span className="text-[12px] leading-4 text-[#687076]">{target === "cloud" ? "Runs in the cloud, even when your computer is off." : "Needs OpenWork open on one of your computers. Move it to the cloud from the OpenWork app."}</span>
+      </span>
     </div>
+  );
+}
+
+/**
+ * Edit an Automation: what it does, when it repeats, where it runs and its model. Only what changed is sent;
+ * Den's Workbot allowlist accepts the name, schedule, instructions and model.
+ */
+function EditDialog({ item, busy, onClose, onSave }: { item: ListItem; busy: boolean; onClose: () => void; onSave: (changes: AutomationChanges) => void }) {
+  const { revision } = item;
+  const target = revision.executionTarget ?? "desktop";
+  const agent = revision.action?.kind !== "saved_script";
+  const { models, isLoading } = useAutomationModels({ includeCloudDefault: target === "cloud" && workbotHost().canSchedule === true });
+  const [schedule, setSchedule] = useState<AutomationSchedule>(revision.schedule);
+  const [instructions, setInstructions] = useState(revision.instructions);
+  const [model, setModel] = useState<AutomationModel>(revision.model);
+  const changes: AutomationChanges = {
+    ...(JSON.stringify(schedule) !== JSON.stringify(revision.schedule) ? { schedule } : {}),
+    ...(agent && instructions.trim() !== revision.instructions ? { instructions: instructions.trim() } : {}),
+    ...(agent && (model.providerId !== revision.model.providerId || model.modelId !== revision.model.modelId) ? { model } : {}),
+  };
+  const changed = Object.keys(changes).length > 0;
+  return (
+    <Dialog.Root open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <Dialog.Portal>
+        <Dialog.Backdrop className="workbot fixed inset-0 z-50 bg-[var(--wb-ink)]/20" />
+        <Dialog.Popup
+          data-calendar-edit={item.automation.id}
+          className="workbot fixed left-1/2 top-1/2 z-50 flex max-h-[calc(100dvh-24px)] w-[calc(100vw-24px)] max-w-md -translate-x-1/2 -translate-y-1/2 flex-col rounded-xl bg-[var(--wb-surface)] text-[var(--wb-text)] shadow-[var(--wb-panel-shadow)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus)]"
+        >
+          <form className="flex min-h-0 flex-col" onSubmit={(event) => { event.preventDefault(); if (changed) onSave(changes); else onClose(); }}>
+            <div className="flex shrink-0 items-center justify-between px-4 pb-3 pt-4 sm:px-5 sm:pt-5">
+              <Dialog.Title render={<h2 />} className="text-[15px] font-semibold tracking-[-0.01em] text-[var(--wb-text)]">Edit automation</Dialog.Title>
+              <Dialog.Close aria-label="Close" className="grid size-7 place-items-center rounded-[7px] text-[var(--wb-muted)] hover:bg-[var(--wb-chip)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus)]"><X size={15} strokeWidth={1.75} /></Dialog.Close>
+            </div>
+            <div className="flex min-h-0 flex-col gap-4 overflow-y-auto px-4 pb-1 sm:px-5" data-calendar-form-body>
+              {agent ? (
+                <label className="flex flex-col gap-1.5">
+                  <FieldLabel>Instructions</FieldLabel>
+                  <textarea
+                    value={instructions}
+                    rows={4}
+                    maxLength={100_000}
+                    onChange={(event) => setInstructions(event.currentTarget.value)}
+                    className="min-h-24 resize-y rounded-lg bg-[var(--wb-surface)] px-2.5 py-2 text-[13px] leading-[19px] text-[var(--wb-text)] shadow-[inset_0_0_0_1px_var(--wb-ring)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus)]"
+                  />
+                </label>
+              ) : null}
+              <div className="flex flex-col gap-2">
+                <FieldLabel>Repeats</FieldLabel>
+                <ScheduleFields draft={schedule} setDraft={setSchedule} />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <FieldLabel>Where it runs</FieldLabel>
+                <RunsOnCard target={target} />
+              </div>
+              {agent ? (
+                <div className="flex flex-col gap-1.5">
+                  <FieldLabel>Model</FieldLabel>
+                  <ModelPicker value={model} options={models} loading={isLoading} onChange={setModel} />
+                </div>
+              ) : null}
+            </div>
+            <div className="flex shrink-0 gap-2 p-4 sm:p-5" data-calendar-form-actions>
+              <Dialog.Close className="h-8.5 flex-1 rounded-lg text-[13px] font-medium text-[var(--wb-text)] shadow-[0_0_0_1px_var(--wb-ring)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus)]">Cancel</Dialog.Close>
+              <button type="submit" disabled={busy || !changed || (agent && !instructions.trim())} className="h-8.5 flex-1 rounded-lg bg-[var(--wb-ink)] text-[13px] font-medium text-[var(--wb-on-ink)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus)] disabled:opacity-50">{busy ? "Saving…" : "Save changes"}</button>
+            </div>
+          </form>
+        </Dialog.Popup>
+      </Dialog.Portal>
+    </Dialog.Root>
   );
 }
 
@@ -410,6 +529,7 @@ function AutomationPanel({ item, block, zone, onToast }: { item: ListItem; block
   const runs = useAutomationRuns(automation.id);
   const action = useCalendarAction();
   const [editing, setEditing] = useState(false);
+  const { models: panelModels } = useAutomationModels({ includeCloudDefault: (revision.executionTarget ?? "desktop") === "cloud" });
   const blocked = automation.state === "needs_attention";
   const when = block?.run ? formatInstant(runPlacement(block.run), zone) : block ? formatInstant(block.at, zone) : automation.nextDueAt ? formatInstant(automation.nextDueAt, zone) : null;
   const run = (kind: "pause" | "resume" | "run", done: string) => action.mutate({ kind, automationId: automation.id }, {
@@ -417,7 +537,7 @@ function AutomationPanel({ item, block, zone, onToast }: { item: ListItem; block
     onError: (error) => onToast(error.message),
   });
   return (
-    <aside className="flex w-95 shrink-0 flex-col gap-4.5 border-l border-[#01162712] bg-white p-6" aria-label={automation.name} data-calendar-detail={automation.id}>
+    <aside className="flex w-full min-w-0 shrink-0 flex-col gap-4.5 border-t border-[var(--wb-hairline)] bg-[var(--wb-surface)] p-4 lg:w-95 lg:overflow-y-auto lg:border-l lg:border-t-0 lg:p-6" aria-label={automation.name} data-calendar-detail={automation.id}>
       <div className="flex flex-col gap-1">
         <span className="text-[12px] leading-4 text-[#687076]" data-calendar-next-run>
           {blocked ? "Not scheduled until fixed" : automation.state === "inactive" ? "Paused" : when ?? "No run scheduled"}
@@ -425,14 +545,20 @@ function AutomationPanel({ item, block, zone, onToast }: { item: ListItem; block
         <h2 className="text-[18px] font-semibold leading-5.5 tracking-[-0.015em] text-black">{automation.name}</h2>
       </div>
       {blocked && automation.needsAttentionReason ? (
-        <div className="flex items-start gap-2 rounded-lg bg-[#F4F6F7] px-3 py-2.5" data-calendar-blocked>
+        <div className="flex items-start gap-2 rounded-lg bg-[var(--wb-tray)] px-3 py-2.5" data-calendar-blocked>
           <span className="mt-0.5"><LockIcon size={13} /></span>
-          <span className="text-[13px] leading-4.5 text-[#11181C]">{automation.needsAttentionReason.message}</span>
+          <span data-calendar-recovery className="min-w-0 break-words text-[13px] leading-4.5 text-[var(--wb-text)]">{automation.needsAttentionReason.message}</span>
         </div>
       ) : null}
       <div className="flex flex-col border-t border-[#0116270F]">
         <Row label="Repeats">{describeSchedule(revision.schedule, "", "en-US")}</Row>
         <Row label="Runs on">{(revision.executionTarget ?? "desktop") === "cloud" ? "The cloud. Your laptop can be closed." : "Your desktop. Keep OpenWork open at that time."}</Row>
+        {revision.action?.kind === "saved_script" ? null : (
+          <>
+            <Row label="Model"><ModelSummary model={revision.model} options={panelModels} /></Row>
+            <Row label="Instructions"><span className="line-clamp-4 whitespace-pre-line" data-calendar-instructions>{revision.instructions}</span></Row>
+          </>
+        )}
       </div>
       <div className="flex min-h-0 flex-col">
         <h3 className="mb-1 text-[12px] font-semibold leading-4 text-black">Past runs</h3>
@@ -449,16 +575,16 @@ function AutomationPanel({ item, block, zone, onToast }: { item: ListItem; block
         ) : (
           <button type="button" disabled={action.isPending || automation.state !== "active"} onClick={() => run("pause", "Paused")} className="h-8.5 flex-1 rounded-lg text-[13px] font-medium text-black shadow-[0_0_0_1px_#0116271F] hover:bg-[#F4F6F7] disabled:opacity-50">Pause</button>
         )}
-        <button type="button" disabled={action.isPending} onClick={() => setEditing(true)} className="h-8.5 flex-1 rounded-lg text-[13px] font-medium text-black shadow-[0_0_0_1px_#0116271F] hover:bg-[#F4F6F7] disabled:opacity-60">Edit schedule</button>
+        <button type="button" disabled={action.isPending} onClick={() => setEditing(true)} className="h-8.5 flex-1 rounded-lg text-[13px] font-medium text-black shadow-[0_0_0_1px_#0116271F] hover:bg-[#F4F6F7] disabled:opacity-60">Edit</button>
         <button type="button" disabled={action.isPending || blocked} title={blocked ? "Fix what it needs first" : undefined} onClick={() => run("run", "Running now")} className="h-8.5 flex-1 rounded-lg bg-[#011627] text-[13px] font-medium text-[#E6EDF3] hover:opacity-90 disabled:opacity-50">Run now</button>
       </div>
       {editing ? (
-        <ScheduleDialog
-          schedule={revision.schedule}
+        <EditDialog
+          item={item}
           busy={action.isPending}
           onClose={() => setEditing(false)}
-          onSave={(schedule) => action.mutate({ kind: "schedule", automationId: automation.id, schedule }, {
-            onSuccess: () => { setEditing(false); onToast("Schedule saved"); },
+          onSave={(changes) => action.mutate({ kind: "edit", automationId: automation.id, changes }, {
+            onSuccess: () => { setEditing(false); onToast("Automation updated"); },
             onError: (error) => onToast(error.message),
           })}
         />
@@ -473,7 +599,7 @@ function MeetingPanel({ event, zone }: { event: CalendarEvent; zone: string }) {
     ? `${formatInstant(event.timing.start, zone)} – ${formatTime(event.timing.end, zone)}`
     : `${formatDate(event.timing.startDate, "en-US")} · All day`;
   return (
-    <aside className="flex w-95 shrink-0 flex-col gap-4.5 border-l border-[#01162712] bg-white p-6" aria-label={event.title} data-calendar-meeting-detail={event.key}>
+    <aside className="flex w-full min-w-0 shrink-0 flex-col gap-4.5 border-t border-[var(--wb-hairline)] bg-[var(--wb-surface)] p-4 lg:w-95 lg:overflow-y-auto lg:border-l lg:border-t-0 lg:p-6" aria-label={event.title} data-calendar-meeting-detail={event.key}>
       <div className="flex flex-col gap-1">
         <span className="text-[12px] leading-4 text-[#687076]">{when}</span>
         <h2 className="text-[18px] font-semibold leading-5.5 tracking-[-0.015em] text-black">{event.title}</h2>
@@ -494,10 +620,13 @@ function MeetingPanel({ event, zone }: { event: CalendarEvent; zone: string }) {
 
 /* ── Page ──────────────────────────────────────────────────────────────────────────────────────────────── */
 
-function Legend({ checked, onToggle, children, testId }: { checked: boolean; onToggle: () => void; children: ReactNode; testId: string }) {
+function Legend({ checked, onToggle, children, testId, title }: { checked: boolean; onToggle: () => void; children: ReactNode; testId: string; title?: string }) {
   return (
-    <button type="button" role="checkbox" aria-checked={checked} onClick={onToggle} data-calendar-layer={testId} className="flex items-center gap-1.5 rounded focus-visible:outline-none focus-visible:shadow-[var(--wb-focus)]">
-      <span className={`size-2.5 shrink-0 rounded-[3px] ${checked ? "bg-[#DCE6EF] shadow-[inset_0_0_0_1px_#0116271F]" : "shadow-[inset_0_0_0_1.2px_#9BA1A6]"}`} />
+    <button type="button" role="checkbox" aria-checked={checked} onClick={onToggle} data-calendar-layer={testId} title={title} className="flex shrink-0 items-center gap-1.5 rounded focus-visible:outline-none focus-visible:shadow-[var(--wb-focus)]">
+      {/* A real checkbox: the colour swatch alone read as broken, with on and off nearly the same. */}
+      <span aria-hidden className={`grid size-3.5 shrink-0 place-items-center rounded-[4px] transition-colors ${checked ? "bg-[#011627] text-white" : "bg-white shadow-[inset_0_0_0_1.25px_#9BA1A6]"}`}>
+        {checked ? <CheckMark size={10} strokeWidth={3} /> : null}
+      </span>
       <span className={`text-[12px] font-medium leading-4 ${checked ? "text-black" : "text-[#687076]"}`}>{children}</span>
     </button>
   );
@@ -518,7 +647,7 @@ function weekdaysOnly(days: LocalDate[], automations: AutomationCalendarItem[], 
   return busy ? days : days.filter((day) => weekdayOf(day) !== 0 && weekdayOf(day) !== 6);
 }
 
-export function WorkbotCalendar({ connectionsHref }: { connectionsHref: string | null }) {
+export function WorkbotCalendar({ connectionsHref, assistantName }: { connectionsHref: string | null; assistantName: string }) {
   const zone = timeZone();
   const sources = useCalendarSources();
   const [now, setNow] = useState(() => Date.now());
@@ -527,6 +656,7 @@ export function WorkbotCalendar({ connectionsHref }: { connectionsHref: string |
   const [layers, setLayers] = useState({ automations: true, meetings: true });
   const [selection, setSelection] = useState<Selection>(null);
   const [toast, setToast] = useState<string | null>(null);
+  const [creating, setCreating] = useState<CreateAnchor | null>(null);
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 60_000);
     return () => window.clearInterval(timer);
@@ -567,22 +697,35 @@ export function WorkbotCalendar({ connectionsHref }: { connectionsHref: string |
   const nowParts = zonedParts(now, zone);
 
   return (
-    <div className="flex min-h-0 flex-1" data-calendar-page>
-      <div className="flex min-w-0 flex-1 flex-col pl-5 pr-7 pt-6">
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 pl-2">
-          <div className="flex items-center gap-3">
-            <h2 className="text-[20px] font-semibold leading-6 tracking-[-0.015em] text-black" data-calendar-range-label>{label}</h2>
-            <div className="flex gap-0.5">
-              <button type="button" aria-label="Previous" onClick={() => setAnchor((current) => shiftAnchor(view, current, -1))} className="grid size-7 place-items-center rounded-[7px] text-[#687076] hover:bg-[#F1F3F5]"><ChevronLeft size={15} strokeWidth={1.75} /></button>
-              <button type="button" aria-label="Next" onClick={() => setAnchor((current) => shiftAnchor(view, current, 1))} className="grid size-7 place-items-center rounded-[7px] text-[#687076] hover:bg-[#F1F3F5]"><ChevronRight size={15} strokeWidth={1.75} /></button>
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto lg:flex-row lg:overflow-hidden" data-calendar-page>
+      <div className="flex h-[max(24rem,calc(100dvh-4rem))] min-w-0 shrink-0 flex-col px-3 pt-4 sm:px-5 lg:h-auto lg:min-h-0 lg:flex-1 lg:pr-7 lg:pt-6">
+        <div className="mb-3 flex shrink-0 flex-col gap-3 sm:pl-2 xl:flex-row xl:flex-wrap xl:items-center xl:justify-between" data-calendar-toolbar>
+          <div className="flex flex-wrap items-center justify-between gap-2 xl:justify-start">
+            <div className="flex min-w-0 items-center gap-2">
+              <h2 className="text-[18px] font-semibold leading-6 tracking-[-0.015em] text-[var(--wb-text)] sm:text-[20px]" data-calendar-range-label>{label}</h2>
+              <div className="flex shrink-0 gap-0.5">
+                <button type="button" aria-label="Previous" onClick={() => setAnchor((current) => shiftAnchor(view, current, -1))} className="grid size-7 place-items-center rounded-[7px] text-[#687076] hover:bg-[#F1F3F5]"><ChevronLeft size={15} strokeWidth={1.75} /></button>
+                <button type="button" aria-label="Next" onClick={() => setAnchor((current) => shiftAnchor(view, current, 1))} className="grid size-7 place-items-center rounded-[7px] text-[#687076] hover:bg-[#F1F3F5]"><ChevronRight size={15} strokeWidth={1.75} /></button>
+              </div>
             </div>
-            {compareDates(anchor, { year: nowParts.year, month: nowParts.month, day: nowParts.day }) !== 0 ? (
-              <button type="button" onClick={() => setAnchor(localDateOf(Date.now(), zone))} className="h-7 rounded-[7px] px-2.5 text-[12px] font-medium text-black shadow-[0_0_0_1px_#0116271A]">Today</button>
-            ) : null}
+            <div className="flex shrink-0 items-center gap-2">
+              <button
+                type="button"
+                data-calendar-new
+                onClick={(event) => {
+                  const box = event.currentTarget.getBoundingClientRect();
+                  setCreating({ slot: nextOpenSlot(Date.now(), zone), x: box.left, y: box.bottom + 8 });
+                }}
+                className="flex h-7 items-center gap-1.25 rounded-[7px] px-2.5 text-[12px] font-medium text-[var(--wb-text)] shadow-[0_0_0_1px_var(--wb-ring)] hover:bg-[var(--wb-chip)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus)]"
+              >
+                <Plus size={12} strokeWidth={2} aria-hidden />New automation
+              </button>
+              <button type="button" data-calendar-today disabled={compareDates(anchor, { year: nowParts.year, month: nowParts.month, day: nowParts.day }) === 0} onClick={() => setAnchor(localDateOf(Date.now(), zone))} className="h-7 rounded-[7px] px-2.5 text-[12px] font-medium text-[var(--wb-text)] shadow-[0_0_0_1px_var(--wb-ring)] focus-visible:outline-none focus-visible:shadow-[var(--wb-focus)] disabled:text-[var(--wb-muted)]">Today</button>
+            </div>
           </div>
-          <div className="flex flex-wrap items-center gap-4">
-            <Legend testId="automations" checked={layers.automations} onToggle={() => setLayers((current) => ({ ...current, automations: !current.automations }))}>Your automations</Legend>
-            <Legend testId="meetings" checked={layers.meetings} onToggle={() => setLayers((current) => ({ ...current, meetings: !current.meetings }))}>Your meetings, from {meetingSource}</Legend>
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <Legend testId="automations" checked={layers.automations} onToggle={() => setLayers((current) => ({ ...current, automations: !current.automations }))}>Automations</Legend>
+            <Legend testId="meetings" checked={layers.meetings} onToggle={() => setLayers((current) => ({ ...current, meetings: !current.meetings }))} title={`From ${meetingSource}`}>Meetings</Legend>
             {layers.meetings ? PROVIDERS.map((provider) => {
               const error = meetingQueries[provider].error;
               const text = error ? blockedLabel(error) : null;
@@ -597,7 +740,7 @@ export function WorkbotCalendar({ connectionsHref }: { connectionsHref: string |
                 </span>
               );
             }) : null}
-            <div className="flex rounded-lg bg-[#F1F3F5] p-0.5" role="radiogroup" aria-label="Calendar view">
+            <div className="ml-auto flex shrink-0 rounded-lg bg-[#F1F3F5] p-0.5" role="radiogroup" aria-label="Calendar view">
               {(["day", "week", "month"] as const).map((option) => (
                 <button key={option} type="button" role="radio" aria-checked={view === option} onClick={() => setView(option)} className={`flex h-6.5 items-center px-2.5 text-[12px] leading-4 ${view === option ? "rounded-md bg-white font-semibold text-black shadow-[0_1px_2px_#0116271A]" : "font-medium text-[#687076]"}`}>
                   {option === "day" ? "Day" : option === "week" ? "Week" : "Month"}
@@ -616,7 +759,7 @@ export function WorkbotCalendar({ connectionsHref }: { connectionsHref: string |
         ) : view === "month" ? (
           <MonthGrid range={range} zone={zone} now={now} anchorMonth={anchor.month} automations={items} meetings={meetings} list={list.data?.items ?? []} selection={selection} onSelect={setSelection} onOpenDay={(target) => { setAnchor(target); setView("day"); }} />
         ) : (
-          <TimeGrid range={range} days={days} zone={zone} now={now} automations={items} meetings={meetings} list={list.data?.items ?? []} selection={selection} onSelect={setSelection} />
+          <TimeGrid range={range} days={days} zone={zone} now={now} automations={items} meetings={meetings} list={list.data?.items ?? []} selection={selection} onSelect={setSelection} onCreateAt={setCreating} />
         )}
         {list.data && list.data.items.every((entry) => entry.automation.state === "archived") && layers.automations ? (
           <p className="py-4 pl-16 text-[13px] text-[#687076]" data-calendar-empty>No automations yet. Ask in Home to set up something that repeats.</p>
@@ -625,6 +768,20 @@ export function WorkbotCalendar({ connectionsHref }: { connectionsHref: string |
       {selectedItem ? <AutomationPanel key={selectedItem.automation.id} item={selectedItem} block={selectedBlock} zone={zone} onToast={setToast} />
         : selectedMeeting ? <MeetingPanel event={selectedMeeting} zone={zone} />
         : <aside className="hidden w-95 shrink-0 border-l border-[#01162712] bg-white p-6 text-[13px] text-[#687076] lg:block">Pick something on the calendar to see it here.</aside>}
+      {creating ? (
+        <CreateAutomationCard
+          key={creating.slot.at}
+          anchor={creating}
+          assistantName={assistantName}
+          canSchedule={workbotHost().canSchedule === true}
+          onClose={() => setCreating(null)}
+          onCreated={(automationId) => {
+            setCreating(null);
+            setSelection({ kind: "automation", automationId, itemKey: null });
+            setToast("Automation created");
+          }}
+        />
+      ) : null}
       {toast ? (
         <div role="status" className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-full bg-[#011627] px-4 py-2 text-[13px] font-medium text-[#E6EDF3] shadow-[var(--wb-panel-shadow)]">{toast}</div>
       ) : null}

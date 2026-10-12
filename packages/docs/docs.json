@@ -118,6 +118,20 @@
         ]
       },
       {
+        "tab": "Integrations",
+        "pages": [
+          "integrations/overview",
+          "integrations/mcp",
+          "integrations/client-plugins",
+          {
+            "group": "OpenCode — ready",
+            "pages": [
+              "model-context-protocol/opencode-plugin"
+            ]
+          }
+        ]
+      },
+      {
         "tab": "Slack",
         "pages": [
           {

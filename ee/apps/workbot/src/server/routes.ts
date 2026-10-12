@@ -2,6 +2,7 @@ import { createHeadlessRunnerClient } from "@openwork-ee/headless-protocol"
 import {
   createWorkbot,
   toWorkbotPageEvent,
+  workbotOwner,
   WORKBOT_CHAT_ID,
   WorkbotFilesUnavailableError,
   WorkbotUnavailableError,
@@ -73,16 +74,23 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
   const { config, den } = input
   const sent = new Map<string, number[]>()
 
+  /**
+   * The runner, told whose conversations these are: on celld that is the person's own cell (all their chats and
+   * shared memory together); the Node runner ignores it. It comes from Den's answer, never from the browser.
+   */
+  const runnerFor = (member: Member) => ({ ...config.runner, owner: workbotOwner(member.den.organization.id, member.den.memberId) })
+
   /** Workbot bound to this person: their runner conversation, and turn tokens Den mints for them. */
   const workbotFor = (member: Member) =>
     createWorkbot({
       client: createHeadlessRunnerClient({
-        config: config.runner,
+        config: runnerFor(member),
         fetch,
         mintToken: async ({ readOnly }) => ({ token: await den.runToken(member.accessToken, { readOnly }) }),
         maxTokenTtlMs: RUN_TOKEN_TTL_MS,
       }),
       canSchedule: async () => member.den.canSchedule,
+      model: async () => member.den.model,
     })
 
   const enabled = (c: Context<AppEnv>) => c.get("member").den.enabled
@@ -114,12 +122,16 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
   app.get("/v1/workbot/me", async (c) => {
     const { den: who } = c.get("member")
     return c.json({
+      userId: who.user.id,
+      organizationId: who.organization.id,
       name: who.user.name,
       email: who.user.email,
       organizationName: who.organization.name,
       enabled: who.enabled,
       calendar: who.enabled && who.calendar === true,
+      canSchedule: who.enabled && who.canSchedule,
       sideChats: who.enabled && who.sideChats,
+      calendarPolish: who.enabled && who.calendarPolish,
       denUrl: config.denWebUrl ?? (await den.webUrl().catch(() => null)),
     })
   })
@@ -139,7 +151,8 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
       const response = await fetch(`${config.calendarMockUrl}${path}${url.search}`, { headers: { accept: "application/json" }, signal: AbortSignal.timeout(20_000) })
       return new Response(JSON.stringify(await response.json().catch(() => null)), { status: response.status, headers: { "content-type": "application/json" } })
     }
-    const body = method === "PATCH" ? await c.req.json().catch(() => null) : method === "POST" ? {} : undefined
+    // Schedule edits and new Automations carry a body; Pause / Resume / Run now do not. Den checks both.
+    const body = method === "PATCH" || (method === "POST" && path === "/v1/cloud-automations") ? await c.req.json().catch(() => null) : method === "POST" ? {} : undefined
     const { status, payload } = await den.calendar(member.accessToken, { method, path: `${path}${url.search}`, body })
     return new Response(JSON.stringify(payload), { status, headers: { "content-type": "application/json" } })
   }

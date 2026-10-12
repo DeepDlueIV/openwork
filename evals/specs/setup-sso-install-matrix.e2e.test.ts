@@ -1,10 +1,10 @@
 import { afterAll, beforeAll, describe, expect } from "vitest";
-import { unmetNeeds } from "@openwork/env";
 import { z } from "zod";
 import { captureBrowserEvidence, spec } from "@openwork/testkit";
 import type { Step, TestNeeds } from "@openwork/testkit";
 import {
   bootSetupSsoInstallMatrix,
+  canBootSetupSsoInstallMatrix,
   clearSetupSsoFetchFault,
   captureSetupSsoDesktopHandoff,
   composeSetupSsoStep,
@@ -49,7 +49,7 @@ async function ensureMatrixManifest(): Promise<void> {
 // Image builds belong to setup, not the first journey's 180-second budget.
 // Leave missing prerequisites to testkit so they still produce explicit skips.
 beforeAll(async () => {
-  if (unmetNeeds(requirements, process.env).length > 0) return;
+  if (!canBootSetupSsoInstallMatrix(requirements)) return;
   await ensureMatrixManifest();
 }, 3_600_000);
 

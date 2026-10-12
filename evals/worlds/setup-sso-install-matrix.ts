@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { addInitScript, allocateFreePorts, browserScript, evaluate, navigate } from "@openwork/cdp";
 import { clickText, waitFor } from "@openwork/behaviors";
-import { resolvePlace } from "@openwork/env";
+import { resolvePlace, unmetNeeds, type TestNeeds } from "@openwork/env";
 import { chrome } from "@openwork/hosts";
 import { startMockIdpLab } from "@openwork/labs";
 
@@ -44,6 +44,10 @@ export const SETUP_SSO_PRODUCT_SOURCE_FILES = [
   "ee/apps/den-web/app/(den)/install/page.tsx",
   "ee/apps/den-web/app/(den)/setup/page.tsx",
 ];
+
+export function canBootSetupSsoInstallMatrix(requirements: TestNeeds): boolean {
+  return unmetNeeds(requirements, process.env).length === 0;
+}
 
 async function matrixPorts(): Promise<number[]> {
   const configured = process.env.OPENWORK_SETUP_SSO_PORTS?.trim();

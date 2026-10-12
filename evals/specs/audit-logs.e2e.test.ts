@@ -82,18 +82,20 @@ test("an owner reads, filters and pauses audit history in compact Den rows, and 
     };
   }
 
+  // Compact rows read "<actor> <action sentence>", then targets, outcome and time;
+  // the origin lives under Technical details and is asserted through the API.
   async function operationRow(operation: { id: string }) {
-    const row = await audit.dom(`tr:has(> td button[aria-controls="audit-operation-${operation.id}"]) > td`);
-    expect(row.elements).toHaveLength(7);
-    const [action = "", actor = "", origin = "", , result = ""] = row.elements.map((cell) => cell.text);
-    return { action, actor, origin, result, summary: `${action} · ${actor} · ${origin} · ${result}` };
+    const row = await audit.dom(`[aria-controls="audit-operation-${operation.id}"]`);
+    expect(row.elements).toHaveLength(1);
+    const summary = row.elements[0]?.text.replace(/\s+/g, " ").trim() ?? "";
+    return { summary };
   }
 
   async function seeGroupedOperation() {
     await historySettled();
     await owner.see(groupedRow, { timeoutMs: 30_000 });
     await owner.notSee({ testId: "audit-empty" });
-    expect((await audit.dom(`button[aria-controls="audit-operation-${operationId}"]`)).elements).toHaveLength(1);
+    expect((await audit.dom(`[aria-controls="audit-operation-${operationId}"]`)).elements).toHaveLength(1);
   }
 
   async function historySettled() {
@@ -476,7 +478,7 @@ test("an owner reads, filters and pauses audit history in compact Den rows, and 
     await owner.notSee(groupedRow);
     await owner.see({ label: "From (local time)" }, { value: "2000-01-01T01:00" });
     await owner.see({ label: "To (local time)" }, { value: "2000-01-02T01:00" });
-    const rows = await audit.dom('button[aria-controls^="audit-operation-"]');
+    const rows = await audit.dom('[aria-controls^="audit-operation-"]');
     expect(rows.elements).toHaveLength(0);
     const dateWidths = await dateControlsFit(world.viewport);
     evidence.recordAssertionEvidence("An excluding date range has no matching operations and keeps its complete date controls", `The applied local range 2000-01-01 01:00 to 2000-01-02 01:00 returns ${rows.elements.length} grouped rows and the filtered empty state. At ${world.viewport.width}px the native date controls are ${dateWidths}px wide, with Apply/Clear below the four fields, not sharing their width.`, rows.elements.length === 0);
@@ -493,7 +495,7 @@ test("an owner reads, filters and pauses audit history in compact Den rows, and 
     // Reapply its child action after verifying Clear resets every field.
     await filterProviderHistory();
     await seeGroupedOperation();
-    const rows = await audit.dom(`button[aria-controls="audit-operation-${operationId}"]`);
+    const rows = await audit.dom(`[aria-controls="audit-operation-${operationId}"]`);
     evidence.recordAssertionEvidence("Clearing filters restores access to the saved operation", `Both local dates and Search IDs reset to empty and event type resets to All; reselecting Provider credential updated restores ${rows.elements.length} row for ${operationId} despite growing read history.`, rows.elements.length === 1);
     await owner.screenshot();
   });
@@ -531,7 +533,7 @@ test("an owner reads, filters and pauses audit history in compact Den rows, and 
       await owner.notSee(groupedRow);
       await owner.see({ label: "From (local time)" }, { value: "2000-01-01T01:00" });
       await owner.see({ label: "To (local time)" }, { value: "2000-01-02T01:00" });
-      const excluded = await audit.dom('button[aria-controls^="audit-operation-"]');
+      const excluded = await audit.dom('[aria-controls^="audit-operation-"]');
       expect(excluded.elements).toHaveLength(0);
       await owner.notSee({ text: world.originalCredential });
       await owner.notSee({ text: world.replacementCredential });
@@ -544,7 +546,7 @@ test("an owner reads, filters and pauses audit history in compact Den rows, and 
       await owner.see({ role: "button", label: "Event type" }, { text: "All event types" });
       await filterProviderHistory();
       await seeGroupedOperation();
-      const restored = await audit.dom(`button[aria-controls="audit-operation-${operationId}"]`);
+      const restored = await audit.dom(`[aria-controls="audit-operation-${operationId}"]`);
       evidence.recordAssertionEvidence("Responsive filters preserve readable choices and actual results", `${viewport.width}×${viewport.height}: native dates ${dateWidths}px wide; trusted AM→PM→AM editing keeps date focus; Apply/Clear have their own row. The ${popup.width.toFixed(1)}px bounded menu shows three complete, distinct configuration labels in ${firstThree.map((label) => label.lines).join("/")} lines; End/Home reveal the final/first options. Applying the morning range excludes all ${excluded.elements.length} rows, Clear empties all fields, and reselecting the child action restores ${restored.elements.length} saved operation; neither synthetic key is displayed.`, excluded.elements.length === 0 && restored.elements.length === 1 && firstThree.every((label) => label.fullTextFits));
     });
   }
@@ -663,7 +665,7 @@ test("an owner reads, filters and pauses audit history in compact Den rows, and 
     expect(events.map((event) => event.action)).toEqual(["permission_set.create.requested", "permission_set.created", "permission_set.create.succeeded"]);
     expect(new Set(events.map((event) => event.requestId)).size).toBe(1);
     const row = await operationRow(operation);
-    expect(row).toMatchObject({ action: "Permission set create requested", actor: "Audit Owner", origin: "API" });
+    expect(row.summary.startsWith("Audit Owner ")).toBe(true);
     evidence.recordAssertionEvidence("One request, one operation, three events", `Operation ${operation.id} holds ${events.map((event) => event.action).join(" → ")} from one request; the row reads “${row.summary}”.`, events.length === 3);
     await owner.screenshot();
   });
@@ -722,7 +724,7 @@ test("an owner reads, filters and pauses audit history in compact Den rows, and 
     expect(attempt).toMatchObject({ category: "security", outcome: "denied", reasonCode: "request_denied", actor: { type: "user", id: world.teammateUserId }, http: { method: "POST", route: "/v1/permissions/sets", status: 403 } });
     expect(events.some((event) => event.action === "permission_set.created")).toBe(false);
     const row = await operationRow(operation);
-    expect(row).toMatchObject({ action: "Permission set create requested", actor: "Audit Teammate", origin: "API" });
+    expect(row.summary.startsWith("Audit Teammate ")).toBe(true);
     await owner.click({ role: "button", label: "View changes for Permission set create requested" });
     const timeline = await expandedTimeline(operation, events.length);
     const shown = timeline.events.find((event) => event.headline.startsWith("Permission set create attempted"));
@@ -744,7 +746,7 @@ test("an owner reads, filters and pauses audit history in compact Den rows, and 
     expect(operation.initiatingActor.memberId).toBeUndefined();
     expect(text).not.toContain(reason);
     const row = await operationRow(operation);
-    expect(row).toMatchObject({ actor: "Platform administrator", origin: "Platform admin" });
+    expect(row.summary.startsWith("Platform administrator ")).toBe(true);
     await owner.click({ role: "button", label: "View changes for Organization DPA update requested" });
     const timeline = await expandedTimeline(operation, events.length);
     expect(timeline.changes).toContain("DPA signed | None | Yes");

@@ -10,6 +10,7 @@ import { buildModelCatalog, resolveRetainedSelection, withoutBlockedSelection } 
 import { useModelChoice } from "@/react-app/domains/models/use-model-catalog";
 import { FAST_PRICING_WARNING, getModelBehaviorControls, getModelBehaviorSelection } from "@/app/lib/model-behavior";
 import { readDenSettings } from "@/app/lib/den";
+import { denDashboardUrl } from "@/app/lib/den-dashboard-links";
 import { usePlatform } from "@/react-app/kernel/platform";
 import { gatewayConnectCopy, gatewayConnectProviderKey, type GatewayConnectProvider } from "@/react-app/domains/connections/provider-auth/cloud-provider-config";
 import { useCheckDesktopRestriction } from "../../cloud/desktop-config-provider";
@@ -117,7 +118,7 @@ export function ModelPickerModal(props: ModelPickerModalProps) {
       {!restrictToCloud ? <Button variant="ghost" size="sm" className="self-start" onClick={props.onOpenSettings}>Connect more providers</Button> : null}
       <AutoAccessFooter available={autoVisible} syncing={autoVisible && props.openWorkModelsSyncing} />
       <div className="flex items-center justify-end gap-2">
-        {auth.isSignedIn ? <Button variant="ghost" size="sm" onClick={() => platform.openLink(new URL("/dashboard/model-connections", readDenSettings().baseUrl).toString())}>My Model Connections</Button> : null}
+        {auth.isSignedIn ? <Button variant="ghost" size="sm" onClick={() => platform.openLink(denDashboardUrl(readDenSettings().baseUrl, "modelConnections"))}>My Model Connections</Button> : null}
         <Button variant="ghost" size="sm" onClick={() => props.onClose()}>Done</Button>
       </div>
     </DialogContent>

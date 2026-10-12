@@ -129,6 +129,7 @@ function ActivatedAutomationRunnerBridge() {
             // them). Nothing to connect: wait for the next refresh quietly
             // instead of retrying every few seconds.
             if (!deploymentEnabled && error instanceof DenApiError && error.status === 404) {
+              if (!isCurrent()) return
               await disconnect()
               return
             }

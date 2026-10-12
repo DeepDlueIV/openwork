@@ -25,7 +25,15 @@ import {
  * Retired keys. Older clients and stored overrides may still send or hold them;
  * inputs accept and ignore them, and they are never stored again.
  */
-export const RETIRED_FEATURE_KEYS = ["gatewayDashboard", "workflows", "codemodeScripts", "remoteMcpApps", "appMcpServers", "cloud"] as const
+export const RETIRED_FEATURE_KEYS = [
+  "gatewayDashboard", "workflows", "codemodeScripts", "remoteMcpApps", "appMcpServers", "cloud",
+  // Generally available (2026-10): always on, the flag and its checks are gone.
+  "auditLogs", "auditLogsCompact", "litellm", "gatewayCloudSignIn", "opencodePlugin", "remoteSessionTargets",
+  "installLinks", "mcpConnections", "simplifiedOnboarding", "connectorReadiness", "driveResumableUploads",
+  "implicitCloudSkills", "platformAuditReads",
+  // Folded into another feature (2026-10): analyticsIntegrated → libraryUsage; the rest → workbot.
+  "analyticsIntegrated", "workbotCalendar", "workbotSideChats", "workbotDefaultModel",
+] as const
 
 export function isFeatureKey(value: string): value is FeatureKey {
   return Object.hasOwn(FEATURES, value)

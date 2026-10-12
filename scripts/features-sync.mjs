@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url"
 import {
   FEATURES,
   FEATURE_KEYS,
+  RETIRED_FEATURE_KEYS,
   featureAvailableOn,
   featureLockEnvName,
 } from "../packages/features/src/index.ts"
@@ -86,11 +87,19 @@ function renderSchema() {
           features: {
             type: "object",
             additionalProperties: false,
-            properties: Object.fromEntries(helmKeys.map((key) => [key, {
-              // --set turns "true" into a boolean, so accept both spellings.
-              enum: ["", "true", "false", true, false],
-              description: `${FEATURES[key].label}: ${FEATURES[key].description} Renders ${featureLockEnvName(key)}.`,
-            }])),
+            properties: Object.fromEntries([
+              ...helmKeys.map((key) => [key, {
+                // --set turns "true" into a boolean, so accept both spellings.
+                enum: ["", "true", "false", true, false],
+                description: `${FEATURES[key].label}: ${FEATURES[key].description} Renders ${featureLockEnvName(key)}.`,
+              }]),
+              // Retired keys stay accepted so an upgrade with an old values file
+              // still installs; den-api ignores their variables with a warning.
+              ...RETIRED_FEATURE_KEYS.map((key) => [key, {
+                enum: ["", "true", "false", true, false],
+                description: "Retired: no longer a feature switch. Ignored.",
+              }]),
+            ]),
           },
         },
       },

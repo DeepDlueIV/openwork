@@ -1,15 +1,18 @@
 import { and, asc, count, eq, inArray, or } from "@openwork-ee/den-db/drizzle"
 import { AgentPermissionPolicyTable, AgentPermissionSettingTable, TeamMemberTable, TeamTable } from "@openwork-ee/den-db/schema"
-import { createDenTypeId, type DenTypeId } from "@openwork-ee/utils/typeid"
+import { createDenTypeId, normalizeDenTypeId, type DenTypeId } from "@openwork-ee/utils/typeid"
 import {
   AGENT_PERMISSION_EVERYONE,
   agentPermissionDefinitions,
+  agentPermissionDenialMessage,
+  decideAgentPermission,
   normalizeAgentPermissionSetting,
   resolveAgentPermissionRules,
   type AgentPermissionRule,
   type AgentPermissionSettings,
 } from "@openwork/types/den/agent-permissions"
 import { db } from "./db.js"
+import { organizationFeatureEnabled } from "./features.js"
 
 type OrganizationId = DenTypeId<"organization">
 type TeamId = DenTypeId<"team">
@@ -256,4 +259,31 @@ export async function readAgentPermissionRulesForMember(input: {
       return policy ? [{ source: team.name, settings: settings.get(policy.id) ?? {} }] : []
     }),
   })
+}
+
+/** A member's agent permission rules while the organization has agent permissions on; none otherwise. */
+export async function memberAgentPermissionRules(organizationId: string, orgMemberId: string): Promise<AgentPermissionRule[]> {
+  const organization = normalizeDenTypeId("organization", organizationId)
+  if (!await organizationFeatureEnabled(organization, "agentPermissions")) return []
+  return readAgentPermissionRulesForMember({ organizationId: organization, orgMemberId: normalizeDenTypeId("member", orgMemberId) })
+}
+
+/**
+ * Why a member's rules block one of the organization's own skills or MCP
+ * connections, or null. The same skill and MCP server rules a member's desktop
+ * applies to local ones apply here, by any of the names given, as written and
+ * in lower case.
+ */
+export function organizationAgentPermissionDenial(
+  rules: readonly AgentPermissionRule[],
+  action: "skill" | "mcp",
+  names: readonly (string | null | undefined)[],
+): string | null {
+  if (rules.length === 0) return null
+  const resources = [...new Set(names.flatMap((name) => {
+    const value = name?.trim()
+    return value ? [value, value.toLowerCase()] : []
+  }))]
+  const decision = decideAgentPermission(rules, action, resources)
+  return decision.effect === "deny" && decision.rule ? agentPermissionDenialMessage(decision.rule, decision.resource) : null
 }

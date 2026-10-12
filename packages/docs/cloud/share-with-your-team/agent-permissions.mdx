@@ -1,7 +1,7 @@
 ---
 title: "Agent permissions"
-description: "Choose what agents can do on members' computers: run commands, edit files, open websites, and use local skills and MCP servers."
-keywords: ["agent permissions", "block commands", "allow commands", "allow list", "block list", "approved websites", "block websites", "local skills", "local MCP servers", "team permissions", "enterprise controls"]
+description: "Choose what agents can do on members' computers: run commands, edit files, open websites, and use skills and MCP servers, including your organization's own."
+keywords: ["agent permissions", "block commands", "allow commands", "allow list", "block list", "approved websites", "block websites", "skills", "MCP servers", "organization skills", "connections", "team permissions", "enterprise controls"]
 ---
 
 Agent permissions decide what the agent can do on a member's computer in the OpenWork desktop app. You set them for everyone in your organization, and override them for a team.
@@ -24,19 +24,19 @@ Agent permissions is an Enterprise feature that is rolling out. It sits under **
 | **Edit files** | **Allow**, **Ask first**, or **Block** | None |
 | **Open websites** | **Allow**, **Ask first**, or **Block** | Websites |
 | **Search the web** | Allowed or blocked | None |
-| **Use local skills** | Allowed or blocked | Skill names |
-| **Use local MCP servers** | Allowed or blocked | Server names |
+| **Use skills** | Allowed or blocked | Skill names |
+| **Use MCP servers** | Allowed or blocked | Server and connection names |
 
 - **Ask first** has the agent ask the member each time before it acts.
 - **Always allowed** lists exceptions while a permission is set to **Ask first** or **Block**. They run without asking.
 - **Always blocked** lists what is blocked in every case. A blocked pattern always wins over an allowed one.
-- Skills your organization shares and your organization's connections are never affected.
+- They cover skills and MCP servers on members' computers and your organization's own: skills in OpenWork Cloud and its connections. OpenWork Cloud applies them to your organization's skills and connections, so they also apply wherever members' agents reach them, such as Workbot.
 
 ### Patterns
 
 - **Commands**: `*` matches any text. `git *` matches every `git` command, including `git` on its own. `npm test` matches only that command.
 - **Websites**: `docs.example.com` matches that site, `*.example.com` its subdomains, and `example.com/docs` the pages under `/docs`. Start with `https://` to match only secure pages.
-- **Local skills and MCP servers**: their names, with `*` for any text, such as `team-*`.
+- **Skills and MCP servers**: their names, with `*` for any text, such as `team-*`. An organization skill matches by its title or its listed name, and a connection by its name; names also match in lower case.
 
 ## Everyone and teams
 
@@ -50,7 +50,7 @@ Agent permissions is an Enterprise feature that is rolling out. It sits under **
 2. Go to **Settings › Agent permissions**.
 3. Choose **Everyone**, or a team.
 4. Change a permission's choice, or add patterns to its lists. On a team, a changed permission overrides **Everyone**'s; click the reset icon next to it to use **Everyone**'s again. **Use Everyone's permissions** removes all of a team's overrides.
-5. To check what would happen, choose **Command**, **Website**, **Local skill**, or **Local MCP server** under **Try a request** and type one in. The check uses your unsaved changes.
+5. To check what would happen, choose **Command**, **Website**, **Skill**, or **MCP server** under **Try a request** and type one in. The check uses your unsaved changes.
 6. Click **Save changes**. To go back, click **Undo** in the confirmation.
 
 Members' apps apply changes the next time they refresh their organization's settings: when the app starts or wakes up, when the member signs in, and every hour.
@@ -64,7 +64,7 @@ In the built-in browser, a blocked website doesn't load and the browser shows th
 <Accordion title="Technical details">
 **Rules.** Den resolves each member's permissions into ordered OpenCode permission rules (`action`, `resource`, `effect`) and delivers them in `GET /v1/me/desktop-config` as `agentPermissions.rules`, each labeled with **Everyone** or the team's name. The last matching rule decides. A choice other than **Allow** becomes a `*` rule, its **Always allowed** patterns follow, and its **Always blocked** patterns come last. A permission left at **Allow** adds no rules, so a member's own settings apply.
 
-**Engines.** On OpenCode v2 the rules become the engine's own permission rules, with blocks written as Ask first, and OpenWork's agent permissions plugin decides every permission request after the engine: it blocks with the rule named, and a workspace's own config can't loosen it. If the plugin can't load, blocked actions ask the member instead. On OpenCode v1 the plugin re-applies the rules after every config file has merged, and checks website addresses before a fetch runs. Blocked local MCP servers are disabled from any config source and aren't registered by OpenWork; adding one in OpenWork is refused. Your organization's connections are recognized by the name and address OpenWork registered them with, so a workspace server that reuses one of their names is treated as local.
+**Engines.** On OpenCode v2 the rules become the engine's own permission rules, with blocks written as Ask first, and OpenWork's agent permissions plugin decides every permission request after the engine: it blocks with the rule named, and a workspace's own config can't loosen it. If the plugin can't load, blocked actions ask the member instead. On OpenCode v1 the plugin re-applies the rules after every config file has merged, and checks website addresses before a fetch runs. Blocked local MCP servers are disabled from any config source and aren't registered by OpenWork; adding one in OpenWork is refused. OpenWork's own connection to your organization stays on so members keep OpenWork Cloud; OpenWork Cloud then hides blocked organization skills, refuses to serve them, and refuses calls to blocked connections, naming the rule. Your organization's connections are recognized by the name and address OpenWork registered them with, so a workspace server that reuses one of their names is treated as local.
 
 **Websites.** Patterns match the address's host, its subdomains for `*.`, its port and scheme when the pattern names them, and its path as a prefix. The built-in browser applies them to every page and frame it opens, whoever opens them; the resources an allowed page loads are not checked.
 

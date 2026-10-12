@@ -7,7 +7,7 @@ import { z } from "zod";
  * engines, and to its built-in browser.
  *
  * A permission is one family of agent actions (commands, file edits,
- * websites, web search, local skills, local MCP servers) with
+ * websites, web search, skills, MCP servers) with
  *
  *   - a decision: Allow, Ask first or Block (a picklist), or on/off for the
  *     families that cannot ask (a checkbox);
@@ -26,7 +26,7 @@ import { z } from "zod";
 export const AGENT_PERMISSION_DECISIONS = ["allow", "ask", "deny"] as const;
 export type AgentPermissionDecision = (typeof AGENT_PERMISSION_DECISIONS)[number];
 
-/** OpenCode permission actions, plus `mcp` for local MCP servers, which OpenWork enforces itself. */
+/** OpenCode permission actions, plus `mcp` for MCP servers, which OpenWork enforces itself (Den for the organization's connections). */
 export const AGENT_PERMISSION_ACTIONS = ["shell", "edit", "webfetch", "websearch", "skill", "mcp"] as const;
 export type AgentPermissionAction = (typeof AGENT_PERMISSION_ACTIONS)[number];
 
@@ -38,7 +38,7 @@ export const agentPermissionSections: readonly { id: AgentPermissionSection; lab
   { id: "commands", label: "Commands" },
   { id: "files", label: "Files" },
   { id: "web", label: "Web" },
-  { id: "extensions", label: "Local extensions" },
+  { id: "extensions", label: "Skills and MCP servers" },
 ];
 
 type AgentPermissionDefinitionEntry = {
@@ -101,8 +101,8 @@ export const agentPermissionDefinitions = [
   {
     key: "localSkills",
     section: "extensions",
-    label: "Use local skills",
-    description: "Skills installed on the member's computer. Skills shared by the organization are not affected.",
+    label: "Use skills",
+    description: "Skills installed on the member's computer and the organization's skills in OpenWork Cloud.",
     action: "skill",
     control: "toggle",
     patterns: "name",
@@ -111,8 +111,8 @@ export const agentPermissionDefinitions = [
   {
     key: "localMcpServers",
     section: "extensions",
-    label: "Use local MCP servers",
-    description: "MCP servers added on the member's computer. Organization connections are not affected.",
+    label: "Use MCP servers",
+    description: "MCP servers added on the member's computer and the organization's connections.",
     action: "mcp",
     control: "toggle",
     patterns: "name",
@@ -162,7 +162,8 @@ type WebsitePattern =
   | { kind: "any" }
   | { kind: "site"; scheme: "http" | "https" | null; host: string; subdomains: boolean; port: string | null; path: string };
 
-const NAME_PATTERN = /^[A-Za-z0-9*?._-]+$/;
+// Names may have single spaces between words, like an organization connection called "Google Drive".
+const NAME_PATTERN = /^[A-Za-z0-9*?._-]+(?: [A-Za-z0-9*?._-]+)*$/;
 
 /** The pattern's scheme, null when it names none, or undefined when it is not a website's. */
 function websiteScheme(value: string | undefined): "http" | "https" | null | undefined {
@@ -236,7 +237,7 @@ export function normalizeAgentPermissionPattern(kind: AgentPermissionPatternKind
 export const agentPermissionPatternErrors: Record<AgentPermissionPatternKind, string> = {
   command: "Enter a command, using * for any text.",
   website: "Enter a site like docs.example.com, *.example.com or example.com/docs.",
-  name: "Use letters, numbers, dots, dashes, underscores and *.",
+  name: "Use letters, numbers, spaces, dots, dashes, underscores and *.",
 };
 
 /**
@@ -568,8 +569,8 @@ const BLOCKED_SUBJECT: Record<AgentPermissionAction, (resource: string) => strin
   edit: () => "editing files",
   webfetch: (resource) => resource === "*" ? "opening websites" : `opening ${resource}`,
   websearch: () => "searching the web",
-  skill: (resource) => resource === "*" ? "local skills" : `the local skill "${resource}"`,
-  mcp: (resource) => resource === "*" ? "local MCP servers" : `the local MCP server "${resource}"`,
+  skill: (resource) => resource === "*" ? "skills" : `the skill "${resource}"`,
+  mcp: (resource) => resource === "*" ? "MCP servers" : `the MCP server "${resource}"`,
 };
 
 /** The sentence a member or an agent sees when a rule blocks something: what, which rule, and who set it. */

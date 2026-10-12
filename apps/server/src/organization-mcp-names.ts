@@ -1,9 +1,10 @@
 // MCP servers OpenWork registers for the organization: its Cloud connection
 // and the connections an administrator exposed (see
 // connect-mcp-server-catalog.ts). Members cannot create these names
-// (validators.ts). Agent permissions for local MCP servers skip such a server
-// only while it is the one OpenWork registered, at the same address, so a
-// project config that reuses a name for another server gains nothing.
+// (validators.ts). The desktop leaves such a server running only while it is
+// the one OpenWork registered, at the same address, so a project config that
+// reuses a name for another server gains nothing; Den applies the member's MCP
+// server rules to each organization connection and skill behind it.
 const ORGANIZATION_MCP_NAMES = new Set(["openwork-cloud"]);
 const ORGANIZATION_MCP_PREFIXES = ["openwork-connect-", "openwork-direct-", "openwork-app-host-connect-"];
 

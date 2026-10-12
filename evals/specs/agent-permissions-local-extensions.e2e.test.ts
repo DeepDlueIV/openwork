@@ -57,7 +57,7 @@ test("a contractor's agent loads only the local skills the team allows, and the 
     // v1 offers the skill tool and blocks the call; v2 leaves the skill out of the catalog it offers.
     const kept = call === null
       ? (await world.mock.agentRequests({ promptMarker: prompt })).every((request) => request.toolName !== "skill")
-      : call.status === "error" && reason.includes(`Your organization's agent permissions block the local skill "${folderSkills.blocked.name}" (set for Contractors)`);
+      : call.status === "error" && reason.includes(`Your organization's agent permissions block the skill "${folderSkills.blocked.name}" (set for Contractors)`);
     evidence.recordAssertionEvidence("the notes-helper skill", call === null
       ? "not offered to the agent, and the agent loaded no skill"
       : `${call.status}; the agent was told: ${reason || "(nothing)"}`, kept);
@@ -71,9 +71,9 @@ test("a contractor's agent loads only the local skills the team allows, and the 
     });
     const message = JSON.stringify(added.body);
     evidence.recordAssertionEvidence("adding meeting-notes", `HTTP ${added.status} ${message}`,
-      added.status === 403 && message.includes('block the local skill \\"meeting-notes\\" (set for Contractors)'));
+      added.status === 403 && message.includes('block the skill \\"meeting-notes\\" (set for Contractors)'));
     expect(added.status).toBe(403);
-    expect(message).toContain('block the local skill \\"meeting-notes\\" (set for Contractors)');
+    expect(message).toContain('block the skill \\"meeting-notes\\" (set for Contractors)');
   });
 
   await step("before: the built-in browser opens the briefing page, which Contractors allow", async () => {

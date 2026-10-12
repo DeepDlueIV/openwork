@@ -622,8 +622,8 @@ function PatternList({ title, action, testId, kind, patterns, inherited, editabl
 const TRY_KINDS: readonly { action: AgentPermissionAction; label: string; placeholder: string }[] = [
   { action: "shell", label: "Command", placeholder: "git push origin main" },
   { action: "webfetch", label: "Website", placeholder: "https://docs.example.com/guide" },
-  { action: "skill", label: "Local skill", placeholder: "meeting-notes" },
-  { action: "mcp", label: "Local MCP server", placeholder: "issue-tracker" },
+  { action: "skill", label: "Skill", placeholder: "meeting-notes" },
+  { action: "mcp", label: "MCP server", placeholder: "issue-tracker" },
 ];
 
 function TryRequest({ everyone, team }: { everyone: AgentPermissionSettings; team: { name: string; settings: AgentPermissionSettings } | null }) {

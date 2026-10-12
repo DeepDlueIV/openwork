@@ -166,9 +166,9 @@ test("a contractor's agent asks before commands, runs the ones the team allows, 
     });
     const message = JSON.stringify(added.body);
     evidence.recordAssertionEvidence("local MCP servers", `notes-server: ${String(server)}; adding issue-tracker → HTTP ${added.status} ${message}`,
-      server === "disabled" && added.status === 403 && message.includes('block the local MCP server \\"issue-tracker\\" (set for Contractors)'));
+      server === "disabled" && added.status === 403 && message.includes('block the MCP server \\"issue-tracker\\" (set for Contractors)'));
     expect(server).toBe("disabled");
     expect(added.status).toBe(403);
-    expect(message).toContain('block the local MCP server \\"issue-tracker\\" (set for Contractors)');
+    expect(message).toContain('block the MCP server \\"issue-tracker\\" (set for Contractors)');
   });
 });

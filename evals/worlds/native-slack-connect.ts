@@ -81,7 +81,7 @@ export async function nativeSlackConnect(seed: Seed, { place }: { place: Place }
     method: "POST", body: JSON.stringify({ organizationId: otherOrganizationId }),
   });
   if (!active.response.ok) throw new Error("Could not select the other owner's organization");
-  slack.allowCallbackOrigin(den.ref.apiUrl);
+  slack.allowCallbackOrigin(den.ref.webUrl);
   const sessions = { first, second, other: otherOwner };
   const orgFor = (identity: keyof typeof sessions) => identity === "other" ? otherOrganizationId : organizationId;
   const memberRequest = async (identity: keyof typeof sessions, path: string, method = "GET", body?: unknown) => {
@@ -106,6 +106,28 @@ export async function nativeSlackConnect(seed: Seed, { place }: { place: Place }
   const adminWeb = await seed.web({ den, signedInAs: den.admin, startPath: "/admin", headless: true, viewport });
   const otherWeb = await seed.web({ den, signedInAs: otherOwner, startPath: "/admin", headless: true, viewport });
   const memberWeb = await seed.web({ den, signedInAs: first, startPath: "/dashboard/your-connections", headless: true, viewport });
+  const signedOutWeb = await seed.web({ den, startPath: "/login", headless: true, viewport });
+  const revokedWeb = await seed.web({ den, signedInAs: first, startPath: "/dashboard/your-connections", headless: true, viewport });
+  // Independent browser sign-in, not identity derived from the OAuth URL or
+  // desktop bearer. Reuse the gateway browser-OAuth world's real sign-in seam.
+  const signInBrowser = async (surface: Surface, session: DenSession) => {
+    const signedIn = await seed.api(session, "/api/auth/sign-in/email", {
+      method: "POST", body: JSON.stringify({ email: session.email, password: session.password }),
+    });
+    const cookie = signedIn.response.headers.getSetCookie().find(value => value.includes("session_token="))?.split(";")[0] ?? "";
+    const separator = cookie.indexOf("=");
+    if (!signedIn.response.ok || separator < 1) throw new Error("Could not arrange an independently signed-in Den browser");
+    const applied = object(await surface.client.send("Network.setCookie", {
+      name: cookie.slice(0, separator), value: cookie.slice(separator + 1), url: den.ref.webUrl,
+      path: "/", httpOnly: true, sameSite: "Lax",
+    }));
+    if (applied.success !== true) throw new Error("Could not install the server-issued browser session cookie");
+    return cookie;
+  };
+  const revocableCookie = await signInBrowser(revokedWeb, first);
+  await signInBrowser(adminWeb, den.admin);
+  await signInBrowser(otherWeb, otherOwner);
+  await signInBrowser(memberWeb, first);
   const makeApp = async (identity: "first" | "second") => {
     const directory = seed.tmpPath(`native-slack-${identity}`);
     await mkdir(directory, { recursive: true });
@@ -133,6 +155,7 @@ export async function nativeSlackConnect(seed: Seed, { place }: { place: Place }
     await app.client.send("Network.enable");
     await app.client.send("Network.setBlockedURLs", { urls: ["*://slack.com/*", "*://*.slack.com/*"] });
     await seed.signIn(app, sessions[identity], identity);
+    await signInBrowser(app, sessions[identity]);
     const workspace = await seed.workspace(app, workspacePath);
     // App-web has no Electron desktopApi bridge. Reuse the owned-runtime public
     // HTTP witness used by engine-parity; this token never enters prompts/evidence.
@@ -161,7 +184,7 @@ export async function nativeSlackConnect(seed: Seed, { place }: { place: Place }
   let rpcId = 0;
   const resources = setup.move();
   return {
-    app: memberOne.app, secondApp: memberTwo.app, adminWeb, otherWeb, memberWeb,
+    app: memberOne.app, secondApp: memberTwo.app, adminWeb, otherWeb, memberWeb, signedOutWeb, revokedWeb,
     slack, model, engine, engineVersion, first: sessions.first, second: sessions.second,
     organizationId, otherOrganizationId, organizationSlug: text(organization.slug), otherOrganizationSlug: text(otherOrganization.slug),
     adminUrl: `${den.ref.webUrl}/admin`, featuresUrl: `${den.ref.webUrl}/admin/features`, connectionsUrl: `${den.ref.webUrl}/dashboard/your-connections`,
@@ -218,6 +241,38 @@ export async function nativeSlackConnect(seed: Seed, { place }: { place: Place }
         await new Promise(resolve => setTimeout(resolve, 100));
       }
       throw new Error("Connect did not open an observable loopback Slack OAuth page; no real provider was contacted");
+    },
+    async callbackTransportBoundaries() {
+      const callback = `${den.ref.webUrl}/oauth/slack/callback`;
+      const method = await fetch(callback, { method: "POST", body: "", redirect: "manual", signal: AbortSignal.timeout(10_000) });
+      const duplicate = await fetch(`${callback}?state=one&state=two`, { redirect: "manual", signal: AbortSignal.timeout(10_000) });
+      const generic = await fetch(`${den.ref.webUrl}/api/browser/v1/me`, {
+        headers: { origin: slack.origin, "sec-fetch-site": "cross-site", authorization: `Bearer ${first.token}` },
+        redirect: "manual", signal: AbortSignal.timeout(10_000),
+      });
+      return { method: method.status, duplicate: duplicate.status, generic: generic.status, genericBody: await generic.text() };
+    },
+    async revokeAuthorizingBrowserSession() {
+      // Real sign-out deletes only this extra browser session. The member's
+      // desktop and other Den browser sessions remain independent and valid.
+      const response = await fetch(`${den.ref.apiUrl}/api/auth/sign-out`, {
+        method: "POST", headers: { cookie: revocableCookie, origin: den.ref.webUrl, "content-type": "application/json" },
+        body: "{}", signal: AbortSignal.timeout(10_000),
+      });
+      return response.status;
+    },
+    async replayUnsignedCallbackWithBearer() {
+      // Observe the test-owned browser's completed callback without putting its
+      // code/state into evidence, then test that a bearer cannot replace cookies.
+      const history = object(await signedOutWeb.client.send("Page.getNavigationHistory"));
+      if (!Array.isArray(history.entries) || typeof history.currentIndex !== "number") throw new Error("Missing callback navigation");
+      const current = object(history.entries[history.currentIndex]);
+      const callback = new URL(text(current.url));
+      if (callback.origin !== new URL(den.ref.webUrl).origin || callback.pathname !== "/oauth/slack/callback") throw new Error("Not the test-owned callback");
+      const response = await fetch(`${den.ref.apiUrl}/v1/oauth-providers/slack/connect/callback${callback.search}`, {
+        headers: { authorization: `Bearer ${first.token}` }, redirect: "manual", signal: AbortSignal.timeout(30_000),
+      });
+      return { status: response.status, text: await response.text() };
     },
     async startAuthorization(identity: keyof typeof sessions) {
       const started = await memberRequest(identity, "/v1/oauth-providers/slack/connect/start");

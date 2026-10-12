@@ -8869,7 +8869,7 @@ export class DenClient extends HeyApiClient {
   /**
    * OAuth callback for a provider
    *
-   * The provider redirects here with code+state after the member consents. Identity is carried entirely by the signed state token, not a session cookie, since the redirect may arrive in a fresh browser context. Serves a small static HTML page that deep-links back to OpenWork.
+   * Public OAuth callback transport for provider code+state. Signed state identifies the initiating organization and member. Slack returns through the configured Den web callback adapter and additionally requires a signed browser cookie backed by a live session for that exact active member's user before token exchange; bearer tokens, API keys and state alone cannot satisfy that check. Slack persistence rechecks the browser session and membership. Other native providers retain their existing signed-state flow. Serves a small static HTML page that deep-links back to OpenWork.
    */
   public getV1OauthProvidersByProviderIdConnectCallback<ThrowOnError extends boolean = false>(
     parameters: {

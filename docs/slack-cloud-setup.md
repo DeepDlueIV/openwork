@@ -5,7 +5,7 @@ Build and demo first; complete Slack Marketplace/RTS distribution approval befor
 ## Platform setup
 
 1. Deploy the branch and migrations through `0142_slack_cloud_installations.sql`, after the shared feature tables in `0129_organization_features.sql`. The deployment must be `DEN_DEPLOYMENT=cloud` and `DEN_ORG_MODE=multi_org`; self-hosted and single-org deployments do not expose the platform app.
-2. Configure one OpenWork-owned Slack app. Register the exact callback at the public **API** origin: `/v1/oauth-providers/slack/connect/callback`.
+2. Configure one OpenWork-owned Slack app. Register the exact callback at the configured **Den web** origin: `/oauth/slack/callback`. Its fixed adapter forwards the signed browser session cookie to the API callback, including when web and API use separate hosts. Add this web callback to the Slack app's allowed redirects before enabling the integration; old pending authorization attempts must restart.
 3. Configure the user scope contract below. Set platform credentials through deployment secrets, never the customer Connections settings.
 4. In the existing **Admin → Overview → Organizations**, find the intended OpenWork organization and enable **Features → Slack search**. This is the registered `nativeSlack` feature, default-off. The organization's **OpenWork Connect** feature must also allow use.
 5. Members select **Slack search — Provided by OpenWork**, then **Connect Slack**, from the connector catalog or Library. Dashboard Quick add exposes the same personal action when that dashboard variant is active. OAuth plus `auth.test` discovers and verifies the workspace and member automatically. An explicit new authorization replaces that member's one workspace slot; background refresh cannot change it.
@@ -15,7 +15,8 @@ Build and demo first; complete Slack Marketplace/RTS distribution approval befor
 | `DEN_DEPLOYMENT=cloud` | Existing feature-system product classification |
 | `DEN_ORG_MODE=multi_org` | Hosted multi-organization topology |
 | `DEN_SLACK_CLIENT_ID`, `DEN_SLACK_CLIENT_SECRET` | One platform app's confidential OAuth credentials, not availability switches |
-| `DEN_API_PUBLIC_URL` | Exact public API origin used for the OAuth callback |
+| `DEN_BASE_URL` | Canonical Den web origin for the Slack callback and browser sign-in |
+| `DEN_API_PUBLIC_URL` | Public API origin; Den web's fixed callback adapter uses its configured `DEN_API_BASE` upstream |
 | `DEN_SLACK_SIGNING_SECRET` | App-level signing secret for optional App Home events |
 
 The former `DEN_SLACK_ENABLED` setting no longer enables Slack. Remove it from deployment configuration and use Admin instead; existing accounts are retained but cannot be used while their organization is disabled. There is no Slack-specific flag store, `DEN_SLACK_ORGANIZATION_ID`, `DEN_SLACK_WORKSPACE_ID`, or `DEN_SLACK_BOT_TOKEN`. Leave `DEN_SLACK_API_BASE_URL` and the OAuth URL overrides unset for live Slack; they are development-only synthetic test seams.
@@ -51,6 +52,16 @@ Disabling native Slack blocks subsequent authorization, status, search, thread, 
 - A connected member can select **Manage account**. Limited access stays explicit. A blocked saved account remains available for disconnect, not reconnect.
 - **Use your own Slack app** stays collapsed until requested. It uses the existing custom preset and setup route; it does not migrate or rename existing connections. Library links select only connections the member can use, even when that member has management permission.
 - The `dashboardActivity` feature keeps its existing behavior. When it replaces Quick add, this change does not restore the old dashboard or remove the catalog and Library entry points.
+
+## Browser identity during account linking
+
+The authorizing browser must be signed into Den as the same OpenWork user who started Connect. A signed OAuth state identifies the pending request; it does not authenticate the person opening a forwarded link. Desktop bearer credentials, API keys, and cached user data cannot replace the signed browser session cookie.
+
+The callback checks the live session and exact active membership before exchanging a code. The credential transaction checks the same session again before saving, so signing out during exchange cannot save a late grant. A different browser session for the same user is allowed; a different user or signed-out browser is rejected. Existing stored accounts and token refresh do not depend on keeping that browser session signed in.
+
+If the browser is not signed into the correct OpenWork account, sign into Den in that browser and restart Connect. No provider grant is saved from the rejected attempt. There is no preflight identity broker yet; this check can occur after Slack consent. A session revoked during an in-flight exchange prevents local persistence, but this does not revoke any token already issued by Slack.
+
+The generic `/api/browser/v1` same-origin protections remain unchanged. Only the fixed `/oauth/slack/callback` GET accepts provider navigation; it forwards allowlisted session cookies to the fixed API endpoint, not bearer credentials or arbitrary destinations.
 
 ## User permissions
 

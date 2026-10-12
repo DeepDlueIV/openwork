@@ -87,6 +87,7 @@ export async function startNativeSlackFixture() {
   const tokens = new Map<string, Grant>();
   const pending = new Map<string, { state: string; redirectUri: string }>();
   const callbackOrigins = new Set<string>();
+  let tokenBarrier: { received: boolean; wait: Promise<void>; release: () => void } | null = null;
   const source = (channel: string, ts: string) => `https://synthetic.slack.com/archives/${channel}/p${ts.replace(".", "")}`;
   let origin = "";
   const server = createServer((request, response) => {
@@ -100,7 +101,7 @@ export async function startNativeSlackFixture() {
         const botScopes = list(url.searchParams.get("scope"));
         authorizations.push({ clientId, scopes, botScopes, statePresent: Boolean(state), redirectUri });
         if (!state || clientId !== slackFixtureClientId || !callbackOrigins.has(new URL(redirectUri).origin)
-          || !new URL(redirectUri).pathname.endsWith("/v1/oauth-providers/slack/connect/callback")
+          || new URL(redirectUri).pathname !== "/oauth/slack/callback"
           || !scopes.includes("search:read.public") || scopes.some(scope => !slackFixtureScopes.includes(scope)) || botScopes.length > 0) {
           json(response, { error: "invalid_synthetic_authorization" }, 400); return;
         }
@@ -136,6 +137,12 @@ export async function startNativeSlackFixture() {
         const grant = typeof params.code === "string" ? codes.get(params.code) : undefined;
         if (!validClient || !grant || params.redirect_uri !== grant.redirectUri) { json(response, { ok: false, error: "invalid_code" }); return; }
         codes.delete(String(params.code));
+        const held = tokenBarrier;
+        if (held) {
+          tokenBarrier = null;
+          held.received = true;
+          await held.wait;
+        }
         const token = `synthetic-user-${randomUUID()}`;
         tokens.set(token, grant);
         calls.push({ method: request.method ?? "GET", path: url.pathname, member: grant.member, workspace: grant.workspace,
@@ -201,7 +208,9 @@ export async function startNativeSlackFixture() {
   await new Promise<void>((resolve, reject) => { server.once("error", reject); server.listen(0, "127.0.0.1", resolve); });
   const address = server.address();
   if (!address || typeof address === "string") throw new Error("Synthetic Slack did not bind a port");
-  origin = `http://127.0.0.1:${address.port}`;
+  // A different site from Den's 127.0.0.1 origin: the provider redirect must
+  // exercise a real cross-site callback, not share Den's browser cookies.
+  origin = `http://localhost:${address.port}`;
   return {
     origin, apiUrl: `${origin}/api`, authorizeUrl: `${origin}/oauth/v2/authorize`, tokenUrl: `${origin}/api/oauth.v2.access`,
     conversations, otherConversations, otherWorkspace: slackFixtureOtherWorkspace, source,
@@ -209,6 +218,17 @@ export async function startNativeSlackFixture() {
       const url = new URL(value);
       if (url.hostname !== "127.0.0.1" || url.protocol !== "http:") throw new Error("Synthetic callback must be owned loopback HTTP");
       callbackOrigins.add(url.origin);
+    },
+    pauseNextTokenExchange() {
+      if (tokenBarrier) throw new Error("A synthetic token exchange is already paused");
+      let release = () => {};
+      const wait = new Promise<void>(resolve => { release = resolve; });
+      const held = { received: false, wait, release };
+      tokenBarrier = held;
+      return {
+        get received() { return held.received; },
+        release() { held.release(); if (tokenBarrier === held) tokenBarrier = null; },
+      };
     },
     authorizations: () => structuredClone(authorizations),
     calls: () => structuredClone(calls),

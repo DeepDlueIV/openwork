@@ -11,7 +11,7 @@ app-distribution, or live-activation proof.
 - Real: app-web, managed OpenWork server/engine, Den-web admin controls, Den
   authorization, shared feature resolution, native discovery, OAuth state/callback,
   credential storage, capability dispatch and scope enforcement.
-- Synthetic: a loopback Slack OAuth/Web API server and a deterministic model.
+- Synthetic: a loopback Slack OAuth/Web API server on `localhost` and a deterministic model. Den uses `127.0.0.1`, so provider consent crosses a real site boundary when it returns to the Den web callback.
   The model discovers real capability names, derives thread IDs from native
   results, and renders only content/links/limits present in tool results.
 - Fixtures: two Slack identities, four conversation categories, a private-message
@@ -47,7 +47,11 @@ Workspace/member identity is discovered through OAuth and `auth.test`, not env.
 organization A. A separate ordinary account creates and owns organization B;
 its owner role is witnessed over HTTP and its platform feature writes must fail.
 The admin, B's owner, and A's first member each have a signed-in Den-web profile;
-the two A members also have independent app-web/engine profiles.
+the two A members also have independent app-web/engine profiles. Browser sessions
+are issued through the real password sign-in endpoint and installed before the
+first action, separately from desktop bearer sessions. This matches the existing
+AI Gateway browser-OAuth world; it does not forge signatures or infer identity
+from a URL. Extra signed-out and revocable browser profiles exercise rejection.
 
 App-web uses the existing headless development proxy:
 `OPENWORK_DEV_HEADLESS_WEB_DEN_PROXY=1`, a logical web target, and
@@ -119,6 +123,24 @@ and `{ enabled: true }`. No `seed` calls occur after the first user action.
   native thread reads, MCP discovery, and (once discovered) retained execution.
   Native reads/retained execution must specifically report `policy_blocked`;
   a wrong-audience authentication failure is not accepted as rollout evidence.
+
+## Account-link binding proof
+
+Before the successful personal connection, the journey forwards the initiator's
+entire valid provider URL into another member's independently signed-in browser.
+That callback must fail before token exchange and leave the initiator disconnected.
+A signed-out browser is also rejected, including a direct replay with the initiator's
+valid bearer token but no browser cookie. Neither rejection makes a Slack API call.
+
+A final negative case holds a genuine mock token exchange, signs out its authorizing
+browser through the real auth endpoint, then releases the token response. The
+callback must not save a grant, and native search must still require a connection.
+Other sessions for the same member stay valid, allowing the positive journey to
+continue without reseeding identity or credentials after the first user action.
+
+The callback transport is the fixed Den web `/oauth/slack/callback` endpoint. The
+fixture verifies the redirect URI and uses a separate site from Den. It does not
+prove live Slack application configuration or production cookie-domain setup.
 
 ## Submission readiness
 

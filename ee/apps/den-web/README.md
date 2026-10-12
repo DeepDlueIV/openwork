@@ -54,7 +54,7 @@ Tailwind 4 requires Safari 16.4+, Chrome 111+, or Firefox 128+; see the
 
 ### Optional env vars
 
-- `DEN_API_BASE` (server-only): upstream API base used by server-side health/readiness and compatibility auth proxy routes. Required outside local dev wrappers.
+- `DEN_API_BASE` (server-only): upstream API base used by server-side health/readiness, compatibility auth proxy routes, and the fixed native Slack callback transport. Required outside local dev wrappers.
 - `DEN_API_PUBLIC_URL` (server/runtime): browser-reachable Den API origin handed to clients by `/api/runtime-config` and used as the `Location` of the legacy `/api/den/*` 307 redirect. Set it whenever `DEN_API_BASE` is a container-internal URL; when unset, the redirect falls back to `DEN_API_BASE`, then `api.<web host>`.
 - `DEN_AUTH_ORIGIN` (server-only): Origin header sent to Better Auth endpoints when the browser request does not include one. Required outside local dev wrappers.
 - `DEN_WEB_PUBLIC_ORIGIN` (server/runtime): public origin used for metadata.
@@ -69,6 +69,37 @@ Tailwind 4 requires Safari 16.4+, Chrome 111+, or Firefox 128+; see the
 - The SDK core is bundled with the app. Browser analytics requests always use `/ow`; ordered Next.js rewrites forward to the region selected by `NEXT_PUBLIC_POSTHOG_HOST`. Arbitrary upstream hosts and browser-side proxy bypass are unsupported. The `/ow` sanitizer strips outgoing Cookie, Authorization, and Referer headers and does not intercept auth routes or modify browser cookies.
 - SDK settings use localStorage persistence and route pageviews plus existing explicit events; autocapture, replay, surveys and automatic flags are disabled. The documented `before_send` hook removes query/fragment/userinfo from SDK URL properties and email/name from outbound event/person properties while preserving the public ingestion token. This is outbound filtering, not a guarantee that person properties never enter SDK memory or localStorage. Existing consent remains managed by the SDK; no forced opt-in or legacy-cookie cleanup is added.
 - `GET /api/health` returns a shallow app health payload for container probes.
+
+### Native Slack browser callback
+
+Register the exact Den **Web** redirect URI `<web-origin>/oauth/slack/callback`
+with Slack. This GET-only route transports the callback to the fixed
+`DEN_API_BASE` path `/v1/oauth-providers/slack/connect/callback`; it is not a
+catch-all proxy and never selects an API host from request headers or query args.
+Configure the existing `DEN_API_BASE` server variable and the canonical web
+origin (`DEN_BASE_URL`, or the existing `DEN_WEB_PUBLIC_ORIGIN` fallback).
+
+The browser must already have a Den session cookie applicable to the web origin
+and this path. A `SameSite=Lax` cookie can accompany Slack's top-level cross-site
+GET. An API-host-only cookie is not sent to the web host; this route does not
+manufacture a session when the browser is signed out. Den API owns signature/live
+session validation, matching the OAuth state's member, and sign-in/restart
+failure guidance.
+
+The canonical proxy's existing auth-cookie prefixes are retained: `openwork-den.`,
+`__Secure-openwork-den.`, `openwork-den-`, `better-auth.`,
+`__Secure-better-auth.`, and `better-auth-`. For this callback, only names ending
+in `.session_token` (plus legacy `better-auth-session_token`) pass; cached session
+or user data and unrelated cookies do not. Nonstandard cookie prefixes must
+already fit this allowlist. Authorization, API-key and internal-principal headers
+are discarded. Signed cookie values are passed unchanged for Den API to verify;
+Den Web neither verifies signatures nor turns URL data into an identity.
+
+Only `state` (8192 characters), `code` (4096), `error` and `error_description`
+(512 each) are forwarded. Duplicate or oversized known arguments are rejected;
+unknown query arguments are dropped. Responses are private/no-store, deny framing,
+send no referrer and grant no CORS access. The generic `/api/browser/v1` proxy's
+same-origin restrictions are unchanged.
 
 ### Observability
 

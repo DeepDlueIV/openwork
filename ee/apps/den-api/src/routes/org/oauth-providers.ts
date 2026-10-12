@@ -2,8 +2,11 @@ import { createHash } from "node:crypto"
 import type { Hono } from "hono"
 import { describeRoute } from "hono-openapi"
 import { z } from "zod"
+import { and, eq, gt, isNull } from "@openwork-ee/den-db/drizzle"
+import { AuthSessionTable, MemberTable } from "@openwork-ee/den-db/schema"
 import { normalizeDenTypeId, type DenTypeId } from "@openwork-ee/utils/typeid"
 import { attributeOAuthCallbackMember } from "../../audit/request-capture.js"
+import { db } from "../../db.js"
 import { env } from "../../env.js"
 import {
   jsonValidator,
@@ -46,6 +49,7 @@ import {
   getOrgOAuthClient,
   upsertConnectedAccount,
   upsertOrgOAuthClient,
+  type ConnectedAccountBrowserSession,
 } from "../../capability-sources/oauth-credentials.js"
 import { normalizeEntraTenantId, readProviderTenantId } from "../../capability-sources/oauth-tenant.js"
 import { getExternalMcpConnection, listUsableNativeProviderConnections } from "../../capability-sources/external-mcp-connections.js"
@@ -53,6 +57,7 @@ import { nativeProviderConnectionPolicyError, resolveDefaultNativeProviderCreden
 import { listTeamsForMember } from "../../orgs.js"
 import type { MemberTeamSummary } from "../../orgs.js"
 import { ensureFreshPrivilegedSession } from "../../privileged-session.js"
+import { readSignedSessionCookieToken } from "../../session.js"
 import { CONNECTIONS_READ_SESSION_MAX_AGE_MS, orgAccessFailureStatus } from "./shared.js"
 import type { OrgRouteVariables } from "./shared.js"
 
@@ -110,6 +115,7 @@ const nativeOAuthIdentitySchema = z.object({
   email: z.string().trim().email().max(320),
 })
 const NATIVE_OAUTH_USERINFO_TIMEOUT_MS = 5_000
+const SLACK_BROWSER_SIGN_IN_REQUIRED_MESSAGE = "Sign in to OpenWork in this browser with the account that started Connect, then start Connect again."
 
 function emailFromIdToken(idToken: string | undefined): string | null {
   const segments = idToken?.split(".")
@@ -169,6 +175,9 @@ async function resolveExternalAccountId(input: {
 }
 
 function callbackRedirectUri(request: Request, providerId: string) {
+  // Slack returns to the configured Den web host so its callback adapter can
+  // forward the authorizing browser's signed cookie even with a separate API host.
+  if (providerId === "slack") return new URL("/oauth/slack/callback", env.webUrl).toString()
   const origin = resolvePublicOrigin(request, env.apiPublicUrl)
   return `${origin}/v1/oauth-providers/${encodeURIComponent(providerId)}/connect/callback`
 }
@@ -594,10 +603,13 @@ export function registerOAuthProviderRoutes<T extends { Variables: OrgRouteVaria
       tags: ["Authentication"],
       security: [],
       summary: "OAuth callback for a provider",
-      description: "The provider redirects here with code+state after the member consents. Identity is carried entirely by the signed state token, not a session cookie, since the redirect may arrive in a fresh browser context. Serves a small static HTML page that deep-links back to OpenWork.",
+      description: "Public OAuth callback transport for provider code+state. Signed state identifies the initiating organization and member. Slack returns through the configured Den web callback adapter and additionally requires a signed browser cookie backed by a live session for that exact active member's user before token exchange; bearer tokens, API keys and state alone cannot satisfy that check. Slack persistence rechecks the browser session and membership. Other native providers retain their existing signed-state flow. Serves a small static HTML page that deep-links back to OpenWork.",
       responses: {
         200: htmlResponse("Connected — a static success page."),
-        400: jsonResponse("Missing or invalid code/state.", invalidRequestSchema),
+        400: {
+          description: "Invalid code/state, failed connection, or missing/mismatched Slack browser sign-in.",
+          content: { ...htmlResponse("Connection failed; sign in with the initiating account and restart when browser verification fails.").content, ...jsonResponse("Missing or invalid code/state.", invalidRequestSchema).content },
+        },
         403: jsonResponse("The provider is blocked by rollout or organization policy.", forbiddenSchema),
       },
     }),
@@ -610,6 +622,10 @@ export function registerOAuthProviderRoutes<T extends { Variables: OrgRouteVaria
         return c.json({ error: "unknown_oauth_provider", message: `"${providerId}" is not a known native OAuth provider.` }, 404)
       }
 
+      if (provider.providerId === "slack") {
+        c.header("Cache-Control", "no-store")
+        c.header("Referrer-Policy", "no-referrer")
+      }
       const url = new URL(c.req.url)
       const code = url.searchParams.get("code")
       const state = url.searchParams.get("state")
@@ -655,8 +671,35 @@ export function registerOAuthProviderRoutes<T extends { Variables: OrgRouteVaria
       ) {
         return c.json({ error: "invalid_request", message: "No pending connection for this state." }, 400)
       }
-      // Signed state + resolved member credential + pending verifier prove the
-      // organization and initiating member: attribute before the token exchange.
+      let browserSession: ConnectedAccountBrowserSession | null = null
+      if (provider.providerId === "slack") {
+        // The whole authorize URL is transferable. Only an independently signed-in
+        // browser can confirm who is linking Slack; never accept a bearer fallback
+        // or cached session, and do not depend on the browser's selected organization.
+        const cookieToken = await readSignedSessionCookieToken(c)
+        const [matchingSession] = cookieToken ? await db
+          .select({ id: AuthSessionTable.id, token: AuthSessionTable.token, userId: AuthSessionTable.userId })
+          .from(AuthSessionTable)
+          .innerJoin(MemberTable, eq(MemberTable.userId, AuthSessionTable.userId))
+          .where(and(
+            eq(AuthSessionTable.token, cookieToken),
+            gt(AuthSessionTable.expiresAt, new Date()),
+            eq(MemberTable.id, statePayload.orgMembershipId),
+            eq(MemberTable.organizationId, statePayload.organizationId),
+            isNull(MemberTable.removedAt),
+          ))
+          .limit(1) : []
+        browserSession = matchingSession ?? null
+        if (!browserSession) {
+          return c.html(connectCallbackPage({
+            ok: false,
+            name: provider.displayName,
+            message: SLACK_BROWSER_SIGN_IN_REQUIRED_MESSAGE,
+          }), 400)
+        }
+      }
+      // State and the pending verifier identify the initiating member. For Slack,
+      // the live browser session also proves that member is authorizing this link.
       const auditBlocked = await attributeOAuthCallbackMember(c, { organizationId: statePayload.organizationId, memberId: statePayload.orgMembershipId })
       if (auditBlocked) return auditBlocked
 
@@ -691,6 +734,7 @@ export function registerOAuthProviderRoutes<T extends { Variables: OrgRouteVaria
           providerId: credentialProviderId,
           expectedAccountId: pending.id,
           expectedPendingCodeVerifier: pending.pendingCodeVerifier,
+          ...(browserSession ? { browserSession } : {}),
           externalAccountId,
           accessToken: tokens.access_token,
           refreshToken: tokens.refresh_token ?? null,
@@ -705,7 +749,9 @@ export function registerOAuthProviderRoutes<T extends { Variables: OrgRouteVaria
           return c.html(connectCallbackPage({
             ok: false,
             name: provider.displayName,
-            message: "This OpenWork connection request is no longer active.",
+            message: provider.providerId === "slack"
+              ? SLACK_BROWSER_SIGN_IN_REQUIRED_MESSAGE
+              : "This OpenWork connection request is no longer active.",
           }), 400)
         }
         if (provider.providerId === "slack" && tokens.slackHomeGrant) {

@@ -290,6 +290,64 @@ test("a platform admin rolls Slack search out by organization while members keep
     await user.screenshot();
   });
 
+  await step("a forwarded Slack authorization link cannot connect another person's account", async () => {
+    const before = world.slack.calls().length;
+    // A legitimate initiating member hands their whole signed provider URL to
+    // another person's independently signed-in Den browser. State is not identity.
+    await otherOwner.navigate(await world.startAuthorization("first"));
+    await otherOwner.see({ text: "Synthetic Slack consent" });
+    await otherOwner.click({ role: "button", text: "Authorize member two" });
+    await otherOwner.see({ role: "heading", text: /^(Connection failed|You're connected)$/ }, { timeoutMs: 30_000 });
+    const account = await world.connection("first");
+    expect(account?.connectedForMe).toBe(false);
+    expect(world.slack.calls()).toHaveLength(before);
+    await otherOwner.see({ role: "heading", text: "Connection failed" });
+    evidence.recordAssertionEvidence("A signed state cannot transfer someone else's Slack authorization", "The callback rejects a different OpenWork browser user before token exchange. The initiating member stays disconnected and the provider receives zero API requests.", true);
+    await otherOwner.screenshot();
+    await otherOwner.navigate(world.connectionsUrl);
+  });
+
+  await step("a signed-out browser cannot finish Connect with only the link or a bearer token", async () => {
+    const unsigned = user.on(world.signedOutWeb);
+    const before = world.slack.calls().length;
+    await unsigned.navigate(await world.startAuthorization("first"));
+    await unsigned.see({ text: "Synthetic Slack consent" });
+    await unsigned.click({ role: "button", text: "Authorize member one" });
+    await unsigned.see({ role: "heading", text: "Connection failed" }, { timeoutMs: 30_000 });
+    await unsigned.see({ text: /Sign in to OpenWork in this browser/ });
+    const bearer = await world.replayUnsignedCallbackWithBearer();
+    expect(bearer.status).toBe(400);
+    expect(bearer.text).toContain("Sign in to OpenWork in this browser");
+    const transport = await world.callbackTransportBoundaries();
+    expect(transport).toMatchObject({ method: 405, duplicate: 400, generic: 403 });
+    expect(transport.genericBody).toContain("forbidden_origin");
+    expect((await world.connection("first"))?.connectedForMe).toBe(false);
+    expect(world.slack.calls()).toHaveLength(before);
+    evidence.recordAssertionEvidence("Browser authentication cannot be replaced by URL possession or bearer authority", "Both the signed-out browser and a direct callback with the initiator's valid bearer are rejected before exchange. No member grant is saved; provider API requests remain unchanged.", true);
+    await unsigned.screenshot();
+  });
+
+  await step("signing out during the token exchange prevents the account from being saved", async () => {
+    const browser = user.on(world.revokedWeb);
+    await browser.navigate(await world.startAuthorization("first"));
+    await browser.see({ text: "Synthetic Slack consent" });
+    const held = world.slack.pauseNextTokenExchange();
+    try {
+      await browser.click({ role: "button", text: "Authorize member one" });
+      await probe.eventually(() => held.received, { within: 10_000, label: "the authorized callback has entered token exchange", until: value => value });
+      expect(await world.revokeAuthorizingBrowserSession()).toBe(200);
+    } finally {
+      held.release();
+    }
+    await browser.see({ role: "heading", text: "Connection failed" }, { timeoutMs: 30_000 });
+    expect((await world.connection("first"))?.connectedForMe).toBe(false);
+    const before = world.slack.calls().length;
+    expect(await world.memberRequest("first", "/v1/capabilities/slack/search?query=Amber%20launch")).toMatchObject({ status: 409, body: { error: "needs_connection" } });
+    expect(world.slack.calls()).toHaveLength(before);
+    evidence.recordAssertionEvidence("A revoked browser session cannot complete a late account link", "The test held a real token exchange after browser verification, signed out that browser session, then released the response. The callback saved no usable grant; search still requires a connection and makes no provider request.", true);
+    await browser.screenshot();
+  });
+
   await step("after: the dashboard and catalogs offer the OpenWork app without custom setup", async () => {
     await admin.navigate(denUrl("/dashboard"));
     await admin.see({ testId: "quick-add-slack-search" });
@@ -325,8 +383,10 @@ test("a platform admin rolls Slack search out by organization while members keep
     });
     expect(JSON.stringify(connected)).toContain("TSYNTHETIC");
     expect(JSON.stringify(connected)).toContain("USYNTHFIRST");
-    const authorization = world.slack.authorizations()[0];
-    expect(authorization).toMatchObject({ statePresent: true, botScopes: [] });
+    const authorization = world.slack.authorizations().at(-1);
+    if (!authorization) throw new Error("Missing the member's Slack authorization request");
+    expect(authorization).toMatchObject({ statePresent: true, botScopes: [], redirectUri: denUrl("/oauth/slack/callback") });
+    expect(new URL(world.slack.origin).hostname).not.toBe(new URL(authorization.redirectUri).hostname);
     expect(authorization.scopes).toEqual(expect.arrayContaining(["search:read.public", "search:read.private", "search:read.im", "search:read.mpim"]));
     expect(authorization.scopes.some(scope => /write|files/.test(scope))).toBe(false);
     const identity = world.slack.calls().find(call => call.path === "/api/auth.test");

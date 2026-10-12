@@ -21941,7 +21941,7 @@ export type GetV1OauthProvidersByProviderIdConnectCallbackData = {
 
 export type GetV1OauthProvidersByProviderIdConnectCallbackErrors = {
   /**
-   * Missing or invalid code/state.
+   * Invalid code/state, failed connection, or missing/mismatched Slack browser sign-in.
    */
   400: InvalidRequestError;
   /**

@@ -120,6 +120,8 @@ jobs:
           pnpm --filter @openwork/sandbox-daytona test
           pnpm --filter @openwork/sandbox-freestyle typecheck
           pnpm --filter @openwork/sandbox-freestyle test
+          pnpm --filter @openwork/evidence-provider typecheck
+          pnpm --filter @openwork/evidence-provider test
       - name: Test shared Workbot world transports (no cloud resources)
         run: |
           pnpm --filter @openwork/sandbox-freestyle build

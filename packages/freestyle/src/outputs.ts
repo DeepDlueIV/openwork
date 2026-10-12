@@ -1,10 +1,6 @@
-export interface PreviewOutput {
-  value: string;
-  secret?: boolean;
-  group?: string;
-  note?: string;
-}
-export type PreviewOutputs = Record<string, PreviewOutput>;
+import type { PreviewOutput, PreviewOutputs } from "@openwork/evidence-provider/review";
+
+export type { PreviewOutput, PreviewOutputs };
 
 export function parsePreviewOutputs(input: unknown): PreviewOutputs {
   if (typeof input !== "object" || input === null || Array.isArray(input)) throw new Error("Invalid world outputs");

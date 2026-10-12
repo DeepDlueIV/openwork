@@ -9,10 +9,12 @@
     "./progress": "./src/progress.ts",
     "./outputs": "./src/outputs.ts",
     "./checkpoints": "./src/checkpoints.ts",
-    "./checkpoint-schema": "./src/checkpoint-schema.ts",
-    "./evidence-builder": "./src/evidence-builder.ts"
+    "./evidence-builder": "./src/evidence-builder.ts",
+    "./review-provider": "./src/review-provider.ts",
+    "./credentials": "./src/credentials.ts"
   },
   "dependencies": {
+    "@openwork/evidence-provider": "workspace:*",
     "freestyle": "0.2.13",
     "@openwork/sandbox": "workspace:*",
     "@openwork/sandbox-freestyle": "workspace:*"

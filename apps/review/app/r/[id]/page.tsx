@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { readReview } from "@openwork/review/storage";
 import { Report } from "../../../components/report";
+import { connectedCheckpointProviders, previewProviderStatus } from "../../../lib/provider-status";
 
 export const dynamic = "force-dynamic";
 
@@ -12,5 +13,6 @@ export default async function ReviewPage({
   const { id } = await params;
   const report = await readReview(id);
   if (!report) notFound();
-  return <Report id={id} report={report} connected={Boolean(process.env.FREESTYLE_API_KEY?.trim())} />;
+  const preview = previewProviderStatus();
+  return <Report id={id} report={report} connected={preview.connected} providerLabel={preview.label} checkpointProviders={connectedCheckpointProviders()} />;
 }

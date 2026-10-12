@@ -412,6 +412,9 @@ importers:
 
   apps/review:
     dependencies:
+      '@openwork/evidence-provider':
+        specifier: workspace:*
+        version: link:../../packages/evidence-provider
       '@openwork/freestyle':
         specifier: workspace:*
         version: link:../../packages/freestyle
@@ -1571,6 +1574,15 @@ importers:
         specifier: ^5.6.3
         version: 5.9.3
 
+  packages/evidence-provider:
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   packages/features:
     dependencies:
       zod:
@@ -1602,6 +1614,9 @@ importers:
 
   packages/freestyle:
     dependencies:
+      '@openwork/evidence-provider':
+        specifier: workspace:*
+        version: link:../evidence-provider
       '@openwork/sandbox':
         specifier: workspace:*
         version: link:../sandbox
@@ -1739,9 +1754,9 @@ importers:
 
   packages/review:
     dependencies:
-      '@openwork/freestyle':
+      '@openwork/evidence-provider':
         specifier: workspace:*
-        version: link:../freestyle
+        version: link:../evidence-provider
       '@vercel/blob':
         specifier: ^2.3.0
         version: 2.8.0

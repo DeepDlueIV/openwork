@@ -7,7 +7,7 @@ import { setTimeout as delay } from "node:timers/promises";
 import { allocateFreePort, setViewport, evaluate, browserScript } from "@openwork/cdp";
 import { chrome, localHost } from "@openwork/hosts";
 import { freestyleEvidenceWeb, attachEvidenceBrowser } from "@openwork/env";
-import type { EvidenceCheckpoint } from "../../packages/freestyle/src/checkpoint-schema.ts";
+import type { EvidenceCheckpoint } from "../../packages/evidence-provider/src/checkpoint.ts";
 import { uploadReview } from "@openwork/review/storage";
 import type { ReviewReport } from "@openwork/review";
 import { client } from "../../packages/freestyle/src/index.ts";

@@ -39,7 +39,7 @@ async function buildState(id: string, world: string): Promise<BuildPoll> {
   return { ready: "ready" in body && body.ready === true, building: "building" in body && body.building === true, ...progressOf(body) };
 }
 
-export function LaunchPreview({ id, connected }: { id: string; connected: boolean }) {
+export function LaunchPreview({ id, connected, providerLabel }: { id: string; connected: boolean; providerLabel: string }) {
   const [world, setWorld] = useState("app-web");
   const [reveal, setReveal] = useState(false);
   const [expired, setExpired] = useState(false);
@@ -139,10 +139,10 @@ export function LaunchPreview({ id, connected }: { id: string; connected: boolea
       </select></label>
       <div className="preview-launch-actions">
         {session && !expired && <a className="preview-open" href={session.url} target="_blank" rel="noreferrer">{session.desktop ? "Open desktop" : "Open sandbox"}</a>}
-        <button type="button" className={session && !expired ? "quiet" : "primary"} onClick={launch} disabled={!connected || busy} aria-busy={busy} aria-describedby="preview-state">{expired ? "Launch again" : session ? "Launch another" : "Launch in Freestyle"}</button>
+        <button type="button" className={session && !expired ? "quiet" : "primary"} onClick={launch} disabled={!connected || busy} aria-busy={busy} aria-describedby="preview-state">{expired ? "Launch again" : session ? "Launch another" : `Launch in ${providerLabel}`}</button>
       </div>
       {(!build || error) && <p id="preview-state" className={error ? "preview-error" : "preview-state"} role={error ? "alert" : "status"}>
-        {!connected ? "Freestyle is not connected. The review app owner can connect it."
+        {!connected ? `${providerLabel} is not connected. The review app owner can connect it.`
           : error ?? (busy ? "Your new sandbox is starting. This can take a few minutes."
             : expired ? "Expired. Launch again to create a fresh sandbox." : session ? `${session.world} · Expires ${new Date(session.expiresAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}` : "Fresh sandbox per launch · 2-hour lifetime")}
       </p>}

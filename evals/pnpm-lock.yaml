@@ -148,6 +148,9 @@ importers:
       '@openwork/cdp':
         specifier: workspace:*
         version: link:../cdp
+      '@openwork/evidence-provider':
+        specifier: link:../../../packages/evidence-provider
+        version: link:../../../packages/evidence-provider
       '@openwork/freestyle':
         specifier: link:../../../packages/freestyle
         version: link:../../../packages/freestyle
@@ -203,6 +206,9 @@ importers:
       '@openwork/env':
         specifier: workspace:*
         version: link:../env
+      '@openwork/evidence-provider':
+        specifier: link:../../../packages/evidence-provider
+        version: link:../../../packages/evidence-provider
       '@openwork/freestyle':
         specifier: link:../../../packages/freestyle
         version: link:../../../packages/freestyle

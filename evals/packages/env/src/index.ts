@@ -20,4 +20,5 @@ export * from "./inference.ts";
 export { requestBrowserTask } from "./browser-task.ts";
 export * from "./browser-fixture.ts";
 export * from "./freestyle-evidence.ts";
+export * from "./evidence-world.ts";
 export * from "./checkpoint-capability.ts";

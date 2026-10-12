@@ -42,7 +42,13 @@ export function Judgments({ items }: { items: ReviewEvidence["judgments"] }) {
   );
 }
 
-export function Report({ report, id, connected }: { report: ReviewReport; id: string; connected: boolean }) {
+export function Report({ report, id, connected, providerLabel, checkpointProviders }: {
+  report: ReviewReport; id: string; connected: boolean;
+  /** The provider new previews launch on, e.g. "Freestyle". */
+  providerLabel: string;
+  /** Providers whose saved checkpoints this server can open. */
+  checkpointProviders: readonly string[];
+}) {
   const [filter, setFilter] = useState("All");
   const [sandboxOpen, setSandboxOpen] = useState(false);
   const summary = summarizeReview(report);
@@ -106,7 +112,7 @@ export function Report({ report, id, connected }: { report: ReviewReport; id: st
         )}
       </div>
       <aside id="sandbox-panel" className="sandbox-sidebar" aria-label="Your sandbox" hidden={!sandboxOpen}>
-        <LaunchPreview id={id} connected={connected} />
+        <LaunchPreview id={id} connected={connected} providerLabel={providerLabel} />
       </aside>
       <div className="report-body">
         <div className="filter-bar" aria-label="Filter evidence">
@@ -214,7 +220,7 @@ export function Report({ report, id, connected }: { report: ReviewReport; id: st
           })}
         </div>
       </div>
-      <EvidenceViewer report={report} id={id} connected={connected} />
+      <EvidenceViewer report={report} id={id} checkpointProviders={checkpointProviders} />
       <footer>
         Recorded evidence. Discussion and approval stay on the pull request.
       </footer>

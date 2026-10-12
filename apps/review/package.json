@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@openwork/evidence-provider": "workspace:*",
     "@openwork/freestyle": "workspace:*",
     "@openwork/review": "workspace:*",
     "next": "16.3.8",

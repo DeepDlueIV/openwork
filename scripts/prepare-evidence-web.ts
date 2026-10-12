@@ -1,4 +1,12 @@
 import { ensureEvidenceSnapshot } from "../packages/freestyle/src/evidence-builder.ts";
+import { evidenceProviderFromEnv, EvidenceProviderNotReady } from "../packages/evidence-provider/src/provider.ts";
+
+// The provider comes from OPENWORK_EVIDENCE_PROVIDER (unset means Freestyle).
+const provider = evidenceProviderFromEnv();
+if (provider !== "freestyle") {
+  console.error(`::error::${new EvidenceProviderNotReady(provider, "CI evidence worlds").message}`);
+  process.exit(1);
+}
 
 // Builds (or finds) this commit's e2e/preview world in Freestyle.
 // OPENWORK_EVIDENCE_IMAGE_SHA pins the dev commit to start from; the dev warm-up

@@ -25,6 +25,19 @@ export type AgentPermissionPolicyRecord = {
   updatedAt: Date | null
 }
 
+/** One scope's stored policy, as read inside a save. */
+export type AgentPermissionPolicyState = {
+  policyId: PolicyId | null
+  settings: AgentPermissionSettings
+}
+
+type Transaction = Parameters<Parameters<typeof db["transaction"]>[0]>[0]
+
+export type AgentPermissionPolicyChange = (
+  tx: Transaction,
+  change: { before: AgentPermissionPolicyState; after: AgentPermissionPolicyState },
+) => Promise<unknown>
+
 export type AgentPermissionTeamPolicyRecord = AgentPermissionPolicyRecord & {
   teamId: TeamId
   teamName: string
@@ -133,6 +146,8 @@ export async function saveAgentPermissionPolicy(input: {
   teamId: TeamId | null
   settings: AgentPermissionSettings
   updatedByOrgMemberId: MemberId
+  /** Runs inside the save's transaction, after the write, with what was stored before and after (audit). */
+  onChange?: AgentPermissionPolicyChange
 }): Promise<{ settings: AgentPermissionSettings; updatedAt: Date | null }> {
   const scopeKey = input.teamId ?? EVERYONE_SCOPE
   const now = new Date()
@@ -147,12 +162,17 @@ export async function saveAgentPermissionPolicy(input: {
       eq(AgentPermissionPolicyTable.organizationId, input.organizationId),
       eq(AgentPermissionPolicyTable.scopeKey, scopeKey),
     )
-    const [existing] = await tx.select({ id: AgentPermissionPolicyTable.id }).from(AgentPermissionPolicyTable).where(scope).limit(1)
+    const [existing] = await tx.select({ id: AgentPermissionPolicyTable.id }).from(AgentPermissionPolicyTable).where(scope).limit(1).for("update")
+    const before: AgentPermissionPolicyState = {
+      policyId: existing?.id ?? null,
+      settings: existing ? (await readSettings(tx, [existing.id])).get(existing.id) ?? {} : {},
+    }
     if (existing) {
       await tx.delete(AgentPermissionSettingTable).where(eq(AgentPermissionSettingTable.policyId, existing.id))
     }
     if (entries.length === 0) {
       if (existing) await tx.delete(AgentPermissionPolicyTable).where(eq(AgentPermissionPolicyTable.id, existing.id))
+      await input.onChange?.(tx, { before, after: { policyId: null, settings } })
       return { settings, updatedAt: null }
     }
     const policyId = existing?.id ?? createDenTypeId("agentPermissionPolicy")
@@ -182,6 +202,7 @@ export async function saveAgentPermissionPolicy(input: {
       blockPatterns: setting.block ?? [],
       updatedAt: now,
     })))
+    await input.onChange?.(tx, { before, after: { policyId, settings } })
     return { settings, updatedAt: now }
   })
 }

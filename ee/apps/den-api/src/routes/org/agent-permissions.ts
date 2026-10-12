@@ -11,7 +11,11 @@ import {
   findOrganizationTeam,
   listAgentPermissionPolicies,
   saveAgentPermissionPolicy,
+  type AgentPermissionPolicyChange,
 } from "../../agent-permissions.js"
+import { agentPermissionPolicyChangedEvent, type AgentPermissionAuditScope } from "../../audit/domain/agent-permissions.js"
+import { appendDomainChanges } from "../../audit/domain/legacy.js"
+import { auditChangeCapture, type AuditChangeCapture } from "../../audit/request-capture.js"
 import { requireFeature } from "../../features.js"
 import { jsonValidator, orgMemberRoute, paramValidator, requireOrgPermission } from "../../middleware/index.js"
 import {
@@ -57,10 +61,15 @@ function serializeDate(value: Date | null) {
   return value ? value.toISOString() : null
 }
 
+/** Appends the scope's before → after change event inside the save's transaction. */
+function auditPolicyChange(capture: AuditChangeCapture | null, organizationId: string, scope: AgentPermissionAuditScope): AgentPermissionPolicyChange {
+  return (tx, { before, after }) => appendDomainChanges(tx, capture, [agentPermissionPolicyChangedEvent(organizationId, scope, before, after)])
+}
+
 async function savePolicy(
   c: ResourceActionContext,
   payload: ResourceOrganizationContext,
-  input: { teamId: DenTypeId<"team"> | null; settings: AgentPermissionSettings },
+  input: { teamId: DenTypeId<"team"> | null; settings: AgentPermissionSettings; capture: AuditChangeCapture | null },
 ) {
   const permission = await requirePermission(c, "agent_permissions.manage")
   if (!permission.ok) return c.json(permission.response, orgAccessFailureStatus(permission.response), permissionFailureHeaders(permission.response))
@@ -73,6 +82,7 @@ async function savePolicy(
     teamId: input.teamId,
     settings: input.settings,
     updatedByOrgMemberId: payload.currentMember.id,
+    onChange: auditPolicyChange(input.capture, payload.organization.id, team ? { kind: "team", teamId: team.id, teamName: team.name } : { kind: "everyone" }),
   })
   let saved: Awaited<ReturnType<typeof save>>
   try {
@@ -156,7 +166,7 @@ export function registerOrgAgentPermissionRoutes<T extends { Variables: OrgRoute
     async (c) => {
       const payload = c.get("organizationContext")
       if (!payload) return c.json({ error: "organization_not_found" }, 404)
-      return savePolicy(c, payload, { teamId: null, settings: c.req.valid("json").settings })
+      return savePolicy(c, payload, { teamId: null, settings: c.req.valid("json").settings, capture: auditChangeCapture(c) })
     },
   )
 
@@ -183,7 +193,7 @@ export function registerOrgAgentPermissionRoutes<T extends { Variables: OrgRoute
       const payload = c.get("organizationContext")
       if (!payload) return c.json({ error: "organization_not_found" }, 404)
       const teamId = normalizeDenTypeId("team", c.req.valid("param").teamId)
-      return savePolicy(c, payload, { teamId, settings: c.req.valid("json").settings })
+      return savePolicy(c, payload, { teamId, settings: c.req.valid("json").settings, capture: auditChangeCapture(c) })
     },
   )
 
@@ -216,6 +226,7 @@ export function registerOrgAgentPermissionRoutes<T extends { Variables: OrgRoute
         teamId: team.id,
         settings: {},
         updatedByOrgMemberId: payload.currentMember.id,
+        onChange: auditPolicyChange(auditChangeCapture(c), payload.organization.id, { kind: "team", teamId: team.id, teamName: team.name }),
       })
       return c.body(null, 204)
     },

@@ -299,9 +299,16 @@ async function getJwks() {
   }
 }
 
+// Better Auth keeps the signing keys under this key for five minutes and
+// refetches at once when a token names a key it has not seen, so a rotated key
+// verifies immediately. Without it the keys are read from the database on
+// every MCP request.
+const MCP_JWKS_CACHE_KEY = {}
+
 async function verifyJwtMcpToken(token: string) {
   const payload: unknown = await verifyJwsAccessToken(token, {
     jwksFetch: getJwks,
+    jwksCacheKey: MCP_JWKS_CACHE_KEY,
     verifyOptions: getMcpJwtVerifyOptions(),
   })
   return isRecord(payload) ? payload : null

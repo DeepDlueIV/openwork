@@ -104,7 +104,25 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
     const decision = websiteDecision(url);
     if (decision.effect === "allow") return;
     if (decision.effect === "ask" && page && await approveWebsite(url, decision.rule)) return;
-    throw Object.assign(new Error(decision.message), { code: "organization_policy_denied", websiteRule: true, waiting: decision.waiting === true });
+    throw Object.assign(new Error(decision.message), { code: "organization_policy_denied", websiteRule: true, waiting: decision.waiting === true, blocked: decision.effect === "deny" && decision.waiting !== true });
+  }
+  /**
+   * The page a tab shows instead of a site a website rule blocks, like a
+   * browser's own "blocked by your administrator" page: the same words for
+   * every rule, without naming the rule or who it is set for.
+   */
+  function blockedSitePage(url) {
+    return {
+      code: "blocked_by_organization",
+      message: "Your organization doesn't allow you to view this site.",
+      url,
+      errorCode: -22,
+      errorDescription: "ERR_BLOCKED_BY_ADMINISTRATOR",
+    };
+  }
+  /** Whether a tab shows an error page in place of its document. */
+  function showsErrorPage(tab) {
+    return tab.loadError?.code === "page_load_failed" || tab.loadError?.code === "blocked_by_organization";
   }
   /**
    * Website rules first, then the managed policy. A site under an "Ask first"
@@ -173,7 +191,8 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
         }, (error) => {
           if (error?.websiteRule && tab && details.resourceType === "mainFrame"
             && getBrowserTab(tab.tabId) === tab && !tab.view.webContents.isDestroyed()) {
-            tab.loadError = { code: "organization_policy_denied", message: error.message };
+            tab.loadError = error.blocked ? blockedSitePage(details.url) : { code: "organization_policy_denied", message: error.message };
+            if (error.blocked) tab.view.setVisible(false);
             if (error.waiting) tabsWaitingForWebsiteRules.set(tab, details.url);
             sendBrowserState();
             callback({ cancel: true });
@@ -181,7 +200,7 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
           }
           if (tab && getBrowserTab(tab.tabId) === tab && !tab.view.webContents.isDestroyed()
             && registry.ownerOf(tab.tabId) === owner && tab.documentGeneration === documentGeneration
-            && tab.loadError?.code !== "page_load_failed"
+            && !showsErrorPage(tab)
             && (error?.code === "policy_unavailable" || error?.code === "organization_policy_denied")) {
             tab.loadError = {
               code: error.code,
@@ -380,7 +399,7 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
 
   function browserTabToPanelTab(tabId, tab) {
     const webContents = tab.view.webContents;
-    const failed = tab.loadError?.code === "page_load_failed" ? tab.loadError : null;
+    const failed = showsErrorPage(tab) ? tab.loadError : null;
     const url = failed?.url ?? webContents.getURL();
     const title = failed ? "" : webContents.getTitle();
     const isLoading = webContents.isLoading();
@@ -720,7 +739,7 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
         signal?.removeEventListener("abort", canceled);
         if (approvals.get(tabId)?.id !== id) return;
         approvals.delete(tabId); tab.browserApproval = null;
-        if (!tab.view.webContents.isDestroyed()) tab.view.setVisible(tab.loadError?.code !== "page_load_failed");
+        if (!tab.view.webContents.isDestroyed()) tab.view.setVisible(!showsErrorPage(tab));
         sendBrowserState(); resolve(allowed && !signal?.aborted && getBrowserTab(tabId) === tab && registry.ownerOf(tabId) === owner && browserTabVisible(tabId));
       };
       const canceled = () => finish(false);
@@ -966,6 +985,14 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
       // The request policy already supplies the actionable reason for a
       // blocked load. Keep that reason instead of calling it a network error.
       if (errorDescription === "ERR_BLOCKED_BY_CLIENT" && tab.loadError && tab.loadError.code !== "page_load_failed") return;
+      // A tab opened straight onto a blocked site can fail before the request
+      // check finds it: show the same blocked page, not a connection error.
+      if (errorDescription === "ERR_BLOCKED_BY_CLIENT" && websiteDecision(validatedURL).effect === "deny" && websiteRules !== null) {
+        tab.loadError = blockedSitePage(validatedURL);
+        tab.view.setVisible(false);
+        sendBrowserState();
+        return;
+      }
       tab.loadError = {
         code: "page_load_failed",
         message: errorCode === -102
@@ -1263,7 +1290,7 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
     const tab = getBrowserTab();
     if (!tab) { detachIdleBrowserViews(); return; }
     exitBackgroundMode(tab);
-    tab.view.setVisible(!approvals.has(tab.tabId) && tab.loadError?.code !== "page_load_failed");
+    tab.view.setVisible(!approvals.has(tab.tabId) && !showsErrorPage(tab));
     detachIdleBrowserViews(tab.view);
     // Size before attaching so a restored view never flashes at stale bounds.
     tab.view.setBounds(lastBrowserBounds);
@@ -1687,7 +1714,7 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
       authorizeManualNavigation(event);
       const webContents = getActiveWebContents();
       const failure = getBrowserTab()?.loadError;
-      if (failure?.code === "page_load_failed") {
+      if (failure?.code === "page_load_failed" || failure?.code === "blocked_by_organization") {
         runDetachedTask("retry browser page", () => webContents?.loadURL(failure.url));
       } else {
         webContents?.reload();

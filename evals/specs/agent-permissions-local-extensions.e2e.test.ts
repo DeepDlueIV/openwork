@@ -88,11 +88,14 @@ test("a contractor's agent loads only the local skills the team allows, and the 
     await user.screenshot();
   });
 
-  await step("after: typing the private report's address shows the Contractors rule that blocks it, and the page is never requested", async () => {
+  await step("after: typing the private report's address shows the blocked-site page, and the page is never requested", async () => {
     await user.type({ placeholder: "Enter URL..." }, world.reportUrl, { replace: true });
     await user.press("Enter");
-    const message = `Your organization's agent permissions block opening ${world.reportUrl} (set for Contractors).`;
-    await user.see({ text: message }, { timeoutMs: 30_000 });
+    const message = "Your organization doesn't allow you to view this site.";
+    await user.see({ testId: "browser-blocked-site" }, { timeoutMs: 30_000 });
+    await user.see({ text: `${new URL(world.reportUrl).host} is blocked` });
+    await user.see({ text: message });
+    await user.see({ text: "ERR_BLOCKED_BY_ADMINISTRATOR" });
     const served = await world.servedPages();
     evidence.recordAssertionEvidence("the private report in the built-in browser", `shown: ${message}; pages served: ${served.join(", ")}`, !served.includes("/private-report"));
     expect(served).not.toContain("/private-report");

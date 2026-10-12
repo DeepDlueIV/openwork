@@ -115,6 +115,14 @@ export function buildNativeProviderEntry(
 
 export type NativeProviderPolicyError = { kind: "policy_blocked"; message: string }
 
+/**
+ * Connect is generally available: the per-organization `mcpConnections` opt-out
+ * was retired on purpose (product decision, 2026-10), so a stored `false`
+ * override no longer blocks native actions. Access is limited per connection
+ * (team grants) and by each member's own credentials, both enforced where the
+ * connection is resolved. Only a missing organization is refused here.
+ */
+
 export async function nativeProviderConnectionPolicyError(organizationId: DenTypeId<"organization">): Promise<NativeProviderPolicyError | null> {
   const [organization] = await db
     .select({ id: OrganizationTable.id })

@@ -6,7 +6,7 @@ import type { Hono } from "hono"
 import { describeRoute } from "hono-openapi"
 import { z } from "zod"
 import { db } from "../../db.js"
-import { organizationBuildsMcpApps } from "../../mcp-app-rollout.js"
+import { env } from "../../env.js"
 import { listAccessibleMcpApps } from "../../mcp-apps.js"
 import { orgMemberRoute, resolveMemberTeamsMiddleware } from "../../middleware/index.js"
 import { forbiddenSchema, jsonResponse, unauthorizedSchema } from "../../openapi.js"
@@ -55,12 +55,11 @@ export function registerOrgMcpAppCatalogRoutes<T extends { Variables: OrgRouteVa
     resolveMemberTeamsMiddleware,
     async (c) => {
       const payload = c.get("organizationContext")
-      if (!(await organizationBuildsMcpApps(payload.organization.id))) return c.json({ apps: [] })
+      if (!env.appMcpServersEnabled) return c.json({ apps: [] })
       const memberTeams: MemberTeamSummary[] = c.get("memberTeams") ?? []
       const apps = await listAccessibleMcpApps({
         organizationId: payload.organization.id,
         member: { orgMembershipId: payload.currentMember.id, teamIds: memberTeams.map((team) => team.id) },
-        enabled: true,
       })
       const pluginIds = [...new Set(apps.map((entry) => normalizeDenTypeId("plugin", entry.pluginId)))]
       const plugins = pluginIds.length === 0 ? [] : await db.select({ id: PluginTable.id, name: PluginTable.name })

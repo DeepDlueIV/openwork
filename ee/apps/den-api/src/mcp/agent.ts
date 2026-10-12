@@ -108,8 +108,6 @@ import {
 } from "./connection-action.js"
 import { needsGeneratedArtifactCatalog } from "./generated-artifact-catalog-request.js"
 import { AppBuilderError, mcpAppLaunchResult, registerAppBuilderTools, searchMcpApps } from "./app-builder-tools.js"
-import { appMcpServersEnabled } from "../mcp-app-rollout.js"
-import { connectAvailable } from "../connect-opt-out.js"
 import { resolveMcpAppTools } from "./app-tools.js"
 import { createMcpApp, isActiveMcpApp, listAccessibleMcpApps, loadMcpAppServerDefinition, McpAppError, readMcpApp, updateMcpApp, type McpAppEntry } from "../mcp-apps.js"
 import {
@@ -267,7 +265,6 @@ export async function readRemoteSkillSource(input: {
   skill: RemoteSkillDescriptor
   organizationId: string
   member: Awaited<ReturnType<typeof resolveMcpMemberIdentity>>
-  marketplaceEnabled?: boolean
   usageVia: CapabilityUsageVia
 }): Promise<RemoteSkillSource> {
   const builtinResult = executeBuiltinSkillCapability(input.skill.capability)
@@ -279,7 +276,6 @@ export async function readRemoteSkillSource(input: {
     member: input.member,
     pluginId: marketplace.pluginId,
     configObjectId: marketplace.configObjectId,
-    enabled: input.marketplaceEnabled,
     usageVia: input.usageVia,
   })
   if (!marketplaceResult.ok || marketplaceResult.result.kind !== "skill") return null
@@ -387,7 +383,6 @@ export function registerAgentSkillResources(input: {
   skills: RemoteSkillDescriptor[]
   organizationId: string
   member: Awaited<ReturnType<typeof resolveMcpMemberIdentity>>
-  marketplaceEnabled?: boolean
 }) {
   input.server.registerResource("agent-skills-index", AGENT_SKILL_INDEX_URI, {
     title: "Available Agent Skills",
@@ -410,7 +405,6 @@ export function registerAgentSkillResources(input: {
         skill,
         organizationId: input.organizationId,
         member: input.member,
-        marketplaceEnabled: input.marketplaceEnabled,
         usageVia: "skill_resource",
       })
       if (!source) {
@@ -492,10 +486,7 @@ export function registerAgentMcpRoutes<T extends { Variables: RequestIdVariables
     })
     const notificationScope = `${principal.organizationId}\0${principal.userId}`
     const organizationId = normalizeDenTypeId("organization", principal.organizationId)
-    const [organizationFeatures, connectIsAvailable] = await Promise.all([
-      getOrganizationFeatures(organizationId),
-      connectAvailable(organizationId),
-    ])
+    const organizationFeatures = await getOrganizationFeatures(organizationId)
     const connectMcpAppHostSupported = supportsConnectMcpAppHost(
       c.req.header(CONNECT_MCP_APP_HOST_CAPABILITY_HEADER),
     ) && principal.scopes.has(DEN_MCP_APP_HOST_SCOPE)
@@ -520,13 +511,11 @@ export function registerAgentMcpRoutes<T extends { Variables: RequestIdVariables
       redirectUriBase,
       generatedArtifactViewsEnabled: env.generatedArtifactViewsEnabled,
       organizationFeatures,
-      connectAvailable: connectIsAvailable,
       audit: auditPrincipal,
     })
-    const { externalMcpConnectionsEnabled } = capabilityContext
-    // Building your own Apps needs the deployment switch and Connect; MCP Apps
+    // Building your own Apps can be turned off for the deployment; MCP Apps
     // from connected MCP servers work either way.
-    const appServersEnabled = appMcpServersEnabled(connectIsAvailable)
+    const appServersEnabled = env.appMcpServersEnabled
     // Resolved once per request, and only by the methods that need it: the
     // skill resources at discovery time, and list_skills / get_skill on call.
     let remoteSkillsPromise: Promise<RemoteSkillDescriptor[]> | null = null
@@ -536,7 +525,6 @@ export function registerAgentMcpRoutes<T extends { Variables: RequestIdVariables
         ...(await listAccessibleMarketplaceSkillDescriptors({
           organizationId: principal.organizationId,
           member: memberIdentity,
-          enabled: externalMcpConnectionsEnabled,
         })),
       ].sort((a, b) => a.name.localeCompare(b.name) || a.capability.localeCompare(b.capability)))()
       return remoteSkillsPromise
@@ -567,7 +555,7 @@ export function registerAgentMcpRoutes<T extends { Variables: RequestIdVariables
     const artifactContext = libraryContext
     // Apps built here are each served as their own MCP server; Connect lists
     // them in its server index, finds them in search, and builds them.
-    const appAccess = { organizationId: principal.organizationId, member: memberIdentity, enabled: externalMcpConnectionsEnabled }
+    const appAccess = { organizationId: principal.organizationId, member: memberIdentity }
     let mcpAppsPromise: Promise<McpAppEntry[]> | null = null
     const loadMcpApps = () => mcpAppsPromise ??= listAccessibleMcpApps(appAccess).catch((error: unknown) => {
       console.error("mcp_app_listing_failed", { organizationId: principal.organizationId, error: error instanceof Error ? error.message : String(error) })
@@ -652,23 +640,17 @@ export function registerAgentMcpRoutes<T extends { Variables: RequestIdVariables
     if (method === "server/discover" || method === "initialize" || method === "resources/list" || method === "resources/read") {
       if (memberIdentity) {
         // Select before the per-member readiness probes so an ordinary client
-        // pays only for the connections it may actually see, and skip the
-        // lookup entirely when it can see none.
-        const indexReadable = connectMcpAppHostSupported || externalMcpConnectionsEnabled
-        const indexCandidates = indexReadable
-          ? selectConnectMcpServerIndexConnections({
-              appHostClient: connectMcpAppHostSupported,
-              memberFacingMcpConnectionsEnabled: externalMcpConnectionsEnabled,
-              connections: await listUsableExternalMcpConnections({
-                organizationId,
-                orgMembershipId: memberIdentity.orgMembershipId,
-                teamIds: memberIdentity.teamIds,
-              }),
-            })
-          : []
+        // pays only for the connections it may actually see.
+        const indexCandidates = selectConnectMcpServerIndexConnections({
+          appHostClient: connectMcpAppHostSupported,
+          connections: await listUsableExternalMcpConnections({
+            organizationId,
+            orgMembershipId: memberIdentity.orgMembershipId,
+            teamIds: memberIdentity.teamIds,
+          }),
+        })
         registerConnectMcpServerIndex({
           server,
-          enabled: indexReadable,
           // Only the App host opens Apps; every other reader gets the connection index unchanged.
           ...(appServersEnabled && connectMcpAppHostSupported ? { apps: await loadMcpApps() } : {}),
           connections: await readyExternalMcpConnectionsForMember(indexCandidates, memberIdentity.orgMembershipId),
@@ -680,7 +662,6 @@ export function registerAgentMcpRoutes<T extends { Variables: RequestIdVariables
         skills: await loadRemoteSkills(),
         organizationId: principal.organizationId,
         member: memberIdentity,
-        marketplaceEnabled: externalMcpConnectionsEnabled,
       })
       if (env.automations.runtimeEnabled) {
         // Owner-scoped: the index only ever carries this member's own
@@ -810,7 +791,6 @@ export function registerAgentMcpRoutes<T extends { Variables: RequestIdVariables
         skill,
         organizationId: principal.organizationId,
         member: memberIdentity,
-        marketplaceEnabled: externalMcpConnectionsEnabled,
         usageVia: "get_skill",
       }),
     })

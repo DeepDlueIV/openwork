@@ -14,7 +14,6 @@ import { z } from "zod"
 import { db } from "./db.js"
 import { env } from "./env.js"
 import { getOrganizationFeatures } from "./features.js"
-import { connectAvailable } from "./connect-opt-out.js"
 import { publicRoute } from "./middleware/index.js"
 import { registerAdminMcpRoutes } from "./mcp/admin.js"
 import { registerAgentMcpRoutes } from "./mcp/agent.js"
@@ -331,7 +330,6 @@ configureCloudWorkflowExecutor(async ({ organizationId, ownerMemberId, automatio
     redirectUriBase: env.apiPublicUrl ?? "http://127.0.0.1",
     generatedArtifactViewsEnabled: env.generatedArtifactViewsEnabled,
     organizationFeatures,
-    connectAvailable: await connectAvailable(normalizedOrganizationId),
   })
   const result = await executeMarketplaceCapability({
     organizationId,

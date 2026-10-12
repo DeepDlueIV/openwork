@@ -309,17 +309,14 @@ connection-status checks work with `mcp:read`. See
 [MCP token scopes](/cloud/run-in-the-cloud/cloud-mcp#reference).
 
 **Availability.** Connect is available in every organization, on Cloud and
-self-hosted; there is no switch to turn it on or off (see the retired switch
-below). Access still follows each
+self-hosted; there is no switch to turn on or off. Access still follows each
 member's grants and credentials. Missing credentials return `needs_connection`
 and HTTP `409`.
 
-**Retired organization switch.** Connect can no longer be turned off.
-Organizations whose administrator turned it off in an earlier release keep it
-off: `capabilities.mcpConnections` stays
-`false`, and member-facing connection calls, including native Google Workspace
-and Microsoft 365 actions, are refused as before (`policy_blocked` or HTTP
-`403`). To turn Connect back on for such an organization, contact support. To
-limit who can use a service, set the connection's access to specific teams, or
-remove the connection.
+**Retired organization switch.** Earlier releases let a platform administrator
+turn Connect off for one organization (`capabilities.mcpConnections`). That
+switch is retired on purpose: an organization that had it off now has Connect
+on, including native Google Workspace and Microsoft 365 actions. To limit who
+can use a service, set the connection's access to specific teams, or remove
+the connection.
 </Accordion>

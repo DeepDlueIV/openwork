@@ -136,7 +136,6 @@ export async function resolveMcpAppTools(ctx: CapabilityRegistryContext, declara
         readOnly: true,
       }
     } else if (parsed.kind === "externalMcp") {
-      if (!ctx.externalMcpConnectionsEnabled) throw unavailable(tool, "connection tools are not available in this organization.")
       const described = await describeExternalCapability({
         organizationId: ctx.organizationId,
         member: ctx.member,
@@ -216,7 +215,6 @@ export async function callMcpAppTool(
       member: ctx.member,
       pluginId: parsed.pluginId,
       configObjectId: parsed.configObjectId,
-      enabled: ctx.externalMcpConnectionsEnabled,
       redirectUriBase: ctx.redirectUriBase,
       liveRuntime: timeZone ? { timeZone } : {},
       auditWorkflowExecution: workflowExecutionAudit(ctx),

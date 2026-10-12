@@ -18,7 +18,6 @@ import { resolveUserOrganizations, setSessionActiveOrganization, type UserOrgSum
 import type { AuthContextVariables } from "../../session.js"
 import { calculateDesktopPolicyForOrgMember } from "../../desktop-policies.js"
 import { DenEmailSendError, sendEmail } from "../../utils/email/send-email.js"
-import { connectAvailable } from "../../connect-opt-out.js"
 
 const DOWNLOAD_LINK_RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000
 const DOWNLOAD_LINK_RATE_LIMIT_MAX = 5
@@ -384,7 +383,8 @@ export function registerMeRoutes<T extends { Variables: AuthContextVariables & P
         ...desktopPolicy,
         automationsEnabled: env.automations.enabled,
         dashboardEnabled: env.dashboardsEnabled,
-        connectEnabled: await connectAvailable(organization.id),
+        // Compatibility field for published desktops: Connect is always on.
+        connectEnabled: true,
         ...(Array.isArray(metadata.allowedDesktopVersions)
           ? { allowedDesktopVersions: metadata.allowedDesktopVersions }
           : {}),

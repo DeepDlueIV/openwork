@@ -7,33 +7,17 @@ const test = spec.world(connectorReadiness, { timeout: 600_000, resources: { sur
 
 test("an admin checks a connection and a teammate sees the recorded result without permission to check it", async ({ world, user: driver, agent, probe, step, evidence }) => {
   const user = driver.on(world.web);
-  await step("before: a connection with no saved check says Couldn't verify, not an unverified Ready", async () => {
+  await step("before: a connection saved through the API is checked on save and shows Ready with its time", async () => {
     await user.see({ testId: "admin-connectors" }, { text: /Team Notes/, timeoutMs: 120_000 });
-    await user.see({ text: "Couldn't verify" }, { timeoutMs: 60_000 });
-    await user.see({ role: "button", label: "Check again" });
-    expect((await world.saved())?.readiness).toBeNull();
-    evidence.recordAssertionEvidence("a saved connection is not evidence of readiness", "Couldn't verify · Not checked yet", true);
-    await user.screenshot();
-  });
-  await step("the connection state and Check again remain visible on a narrow screen", async () => {
-    await user.resizeViewport({ width: 320, height: 800, deviceScaleFactor: 1 });
-    await user.see({ text: "Couldn't verify" });
-    await user.see({ role: "button", label: "Check again" });
-    evidence.recordAssertionEvidence("readiness does not disappear with the wide status column", "320px viewport; Couldn't verify and Check again are visible", true);
-    await user.screenshot();
-    await user.resizeViewport({ width: 1280, height: 900, deviceScaleFactor: 1 });
-  });
-  await step("after: Check again records a successful check and its time", async () => {
-    const startedAt = new Date().toISOString();
-    await user.click({ role: "button", label: "Check again" });
     await user.see({ text: /^Ready$/ }, { timeoutMs: 60_000 });
+    await user.see({ text: /^Checked / });
     const saved = await world.saved();
     expect(saved?.readiness).toMatchObject({ status: "ready", reason: null });
     expect(isRecord(saved?.readiness) && typeof saved.readiness.checkedAt === "string").toBe(true);
-    const handshakes = await world.den.mocks.notes.handshakes({ sinceIso: startedAt, atLeast: 1, timeoutMs: 10_000 });
+    const handshakes = await world.den.mocks.notes.handshakes({ atLeast: 1, timeoutMs: 10_000 });
     expect(handshakes.length).toBeGreaterThan(0);
     expect(await world.den.mocks.notes.toolCalls()).toHaveLength(0);
-    evidence.recordAssertionEvidence("Ready comes from a stored successful probe, not a tool execution", `${handshakes.length} new MCP handshakes; no tool calls; ${JSON.stringify(saved?.readiness)}`, true);
+    evidence.recordAssertionEvidence("Ready comes from a stored successful probe, not a tool execution", `${handshakes.length} MCP handshakes; no tool calls; ${JSON.stringify(saved?.readiness)}`, true);
     await user.screenshot();
   });
   await step("a broken server says Couldn't verify instead of keeping Ready", async () => {
@@ -46,6 +30,14 @@ test("an admin checks a connection and a teammate sees the recorded result witho
     expect(saved?.readiness).toMatchObject({ status: "could_not_verify" });
     evidence.recordAssertionEvidence("the failed check is stored with a recovery reason", JSON.stringify(saved?.readiness), true);
     await user.screenshot();
+  });
+  await step("the connection state and Check again remain visible on a narrow screen", async () => {
+    await user.resizeViewport({ width: 320, height: 800, deviceScaleFactor: 1 });
+    await user.see({ text: "Couldn't verify" });
+    await user.see({ role: "button", label: "Check again" });
+    evidence.recordAssertionEvidence("readiness does not disappear with the wide status column", "320px viewport; Couldn't verify and Check again are visible", true);
+    await user.screenshot();
+    await user.resizeViewport({ width: 1280, height: 900, deviceScaleFactor: 1 });
   });
   await step("a teammate sees the failed check but cannot run it", async () => {
     const member = user.on(world.memberWeb);

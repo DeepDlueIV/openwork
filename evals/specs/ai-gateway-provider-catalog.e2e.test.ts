@@ -87,19 +87,21 @@ test("an owner can recover a provider catalog, find LiteLLM in it and open its s
     await owner.screenshot();
   });
 
-  await step("after: Retry can show an honestly empty catalog, then restore the providers", async () => {
+  await step("after: Retry after an empty catalog read still offers LiteLLM, then a reload restores the providers", async () => {
     await world.catalogFaults.empty("catalog");
     await owner.click({ testId: "gateway-provider-catalog-retry" });
-    await owner.see({ testId: "gateway-provider-catalog-empty" }, { text: /^No providers are available\. Retry the catalog\.\s*Retry$/, timeoutMs: 30_000 });
+    await owner.see({ testId: "gateway-provider-pick-litellm" }, { timeoutMs: 30_000 });
     await owner.notSee({ testId: "gateway-provider-catalog-loading" });
-    await owner.notSee({ testId: "gateway-provider-pick-litellm" });
-    expect((await page.dom(picks)).elements).toHaveLength(0);
+    await owner.notSee({ testId: "gateway-provider-catalog-empty" });
+    await owner.notSee({ testId: "gateway-provider-pick-anthropic" });
+    const shown = (await page.dom(picks)).elements;
+    expect(shown).toHaveLength(1);
     const empty = (await world.catalogFaults.requests()).filter((request) => request.kind === "catalog" && request.mode === "empty" && request.completed && request.status === 200);
-    evidence.recordAssertionEvidence("a successful empty read is not loading or failure", `${empty.length} HTTP 200 empty catalog response(s); 0 provider links; Retry stays available.`, empty.length > 0);
+    evidence.recordAssertionEvidence("an empty catalog read leaves only LiteLLM, which does not come from the catalog", `${empty.length} HTTP 200 empty catalog response(s); ${shown.length} provider link (LiteLLM); no loading or empty message.`, empty.length > 0 && shown.length === 1);
     expect(empty.length).toBeGreaterThan(0);
     await owner.screenshot();
     await world.catalogFaults.recover("catalog");
-    await owner.click({ role: "button", label: "Retry" });
+    await owner.reload();
     await owner.see({ testId: "gateway-provider-pick-anthropic" }, { timeoutMs: 30_000 });
     await owner.notSee({ testId: "gateway-provider-catalog-empty" });
   });

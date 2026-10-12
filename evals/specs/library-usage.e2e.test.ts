@@ -84,11 +84,12 @@ test("an owner sees which plugins, skills and connectors the team uses, which fa
     }, { within: 60_000, intervalMs: 1_000, label: "two successful calls are recorded with zero failures" });
     await owner.see({ testId: "library-usage-failed" });
     const neutral = (await page.dom('[data-testid="library-usage-failed"][data-state="neutral"]')).elements;
-    const neutralIcons = (await page.dom('[data-testid="library-usage-failed"] svg[class~="text-[var(--dls-text-secondary)]"]')).elements;
-    const attentionIcons = (await page.dom('[data-testid="library-usage-failed"] svg[class~="text-[var(--ow-danger)]"]')).elements;
+    // Analytics stat cards carry attention as data, not a colored icon.
+    const calm = (await page.dom('[data-testid="library-usage-failed"] [data-analytics-stat][data-attention="false"]')).elements;
+    const flagged = (await page.dom('[data-testid="library-usage-failed"] [data-attention="true"], [data-testid="library-usage-failed"] [class~="text-[var(--ow-danger)]"]')).elements;
     const card = (await page.dom('[data-testid="library-usage-failed"] > div > div')).elements.map((entry) => oneLine(entry.text)).join(" ");
-    const ok = neutral.length === 1 && neutralIcons.length === 1 && attentionIcons.length === 0 && card === "Failed 0 0% of uses";
-    evidence.recordAssertionEvidence("zero failures is a neutral measured state", `Team tracker has 2 real uses and 0 failures; card reads ${card}; ${neutral.length} neutral card, ${neutralIcons.length} muted icon and ${attentionIcons.length} attention icons`, ok);
+    const ok = neutral.length === 1 && calm.length === 1 && flagged.length === 0 && card === "Failed 0 0% of uses";
+    evidence.recordAssertionEvidence("zero failures is a neutral measured state", `Team tracker has 2 real uses and 0 failures; card reads ${card}; ${neutral.length} neutral card, ${calm.length} calm stat and ${flagged.length} attention markers`, ok);
     expect(ok).toBe(true);
     await owner.screenshot();
   });
@@ -162,8 +163,8 @@ test("an owner sees which plugins, skills and connectors the team uses, which fa
     const tracker = await rowText(world.connectors.tracker);
     const wiki = await rowText(world.connectors.wiki);
     const attention = (await page.dom('[data-testid="library-usage-failed"][data-state="attention"]')).elements;
-    const attentionIcons = (await page.dom('[data-testid="library-usage-failed"] svg[class~="text-[var(--ow-danger)]"]')).elements;
-    const neutralIcons = (await page.dom('[data-testid="library-usage-failed"] svg[class~="text-[var(--dls-text-secondary)]"]')).elements;
+    const flagged = (await page.dom('[data-testid="library-usage-failed"] [data-analytics-stat][data-attention="true"]')).elements;
+    const dangerValue = (await page.dom('[data-testid="library-usage-failed"] [data-analytics-stat] > div[class~="text-[var(--ow-danger)]"]')).elements;
     const card = (await page.dom('[data-testid="library-usage-failed"] > div > div')).elements.map((entry) => oneLine(entry.text)).join(" ");
     // Both fixtures are custom MCP names, not named services. A generic
     // tracker must not acquire a made-up Linear, Slack or other brand logo.
@@ -171,8 +172,8 @@ test("an owner sees which plugins, skills and connectors the team uses, which fa
     await owner.click({ role: "radio", label: "Failing" });
     const failing = (await page.dom('[data-testid="library-usage-row"]')).elements.map((entry) => oneLine(entry.text));
     const ok = wiki.includes("Not used") && failing.length === 1 && attention.length === 1
-      && attentionIcons.length === 1 && neutralIcons.length === 0 && card === "Failed 1 33% of uses" && inventedLogos.length === 0;
-    evidence.recordAssertionEvidence("only a real failed call gets the attention state", `Team tracker: ${tracker}; Old wiki: ${wiki}; Failing shows ${failing.length} row; card ${card}, ${attentionIcons.length} attention icon, ${neutralIcons.length} muted icons; ${inventedLogos.length} fabricated service logos`, ok);
+      && flagged.length === 1 && dangerValue.length === 1 && card === "Failed 1 33% of uses" && inventedLogos.length === 0;
+    evidence.recordAssertionEvidence("only a real failed call gets the attention state", `Team tracker: ${tracker}; Old wiki: ${wiki}; Failing shows ${failing.length} row; card ${card}, ${flagged.length} attention stat, ${dangerValue.length} danger value; ${inventedLogos.length} fabricated service logos`, ok);
     expect(ok).toBe(true);
     await owner.screenshot();
   });

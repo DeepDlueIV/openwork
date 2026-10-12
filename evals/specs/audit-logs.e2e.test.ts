@@ -247,6 +247,8 @@ test("an owner reads, filters and pauses audit history in compact Den rows, and 
     });
     expect(usage.policy?.captureStartedAt).toEqual(expect.any(String));
     expect(usage.retainedOperations).toBeGreaterThan(0);
+    // Compact rows keep the policy facts under Technical details.
+    await owner.click({ text: "Technical details" });
     await owner.see({ text: "6,000,000" });
     // Usage totals are not live: the panel says when the daily refresh last ran.
     await owner.see({ text: "Totals last refreshed" });
@@ -258,6 +260,7 @@ test("an owner reads, filters and pauses audit history in compact Den rows, and 
     await owner.click({ text: "Operation allowance" });
     evidence.recordAssertionEvidence("Default rollout records before any manual toggle", `The automatically initialized revision ${usage.policy?.revision} operator/keep_all policy is ON with a displayed 6,000,000-operation allowance, 300-second window and access capture; ${usage.retainedOperations} total operations already exist, with ${history.operations.length} matching provider credential changes.`, usage.captureAvailable && usage.captureOn && usage.captureEnabled && usage.policy?.allowance === 6_000_000 && history.operations.length === 0);
     await owner.screenshot();
+    await owner.click({ text: "Technical details" });
     await owner.click({ text: "Capture and storage" });
     await owner.click({ role: "heading", label: "Audit logs" });
   });
@@ -568,6 +571,7 @@ test("an owner reads, filters and pauses audit history in compact Den rows, and 
   await step("capture and storage reports the operator policy without purchase or deletion controls", async () => {
     await owner.click({ role: "button", label: "Hide changes for Provider configuration update committed" });
     await owner.click({ text: "Capture and storage" });
+    await owner.click({ text: "Technical details" });
     await owner.see({ text: "Instance operator" });
     await owner.see({ text: "Dry run only — no deletion" });
     const response = await probe.api(world.den.admin, "/v1/audit/usage");
@@ -608,6 +612,7 @@ test("an owner reads, filters and pauses audit history in compact Den rows, and 
     await owner.see({ text: "6,000,000" });
     evidence.recordAssertionEvidence("Off is separate from entitlement and retained history", `Entitlement remains ${off.entitlement.enabled}; the organization setting is ${off.captureOn}; ${history.events.length} saved events remain readable.`, off.entitlement.enabled && !off.captureOn && !off.captureEnabled && history.events.length > 0);
     await owner.screenshot();
+    await owner.click({ text: "Technical details" });
     await owner.click({ role: "switch", label: "Capture audit logs" });
     await owner.see({ text: "Recording" });
     await owner.notSee({ text: "New activity is not recorded. Retained history remains available." });

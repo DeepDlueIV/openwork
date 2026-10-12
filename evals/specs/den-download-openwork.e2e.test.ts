@@ -109,7 +109,8 @@ admin("an admin shares and opens a workspace download from the shared header", a
       expect(label.elements[0].rect.width > 0).toBe(width >= 640);
       const title = await probe.dom('header > div:first-child > span');
       expect(title.elements[0].rect.width).toBeGreaterThan(0);
-      await user.click({ testId: "den-command-palette-trigger", nth: width >= 1024 ? 0 : 1 });
+      // Only the trigger rendered at this width is targetable (hidden duplicates are skipped).
+      await user.click({ testId: "den-command-palette-trigger" });
       await user.see({ testId: "den-command-palette-input" });
       await user.press("Escape");
       await closes(probe, '[data-testid="den-command-palette"]', "Escape closes the command palette");

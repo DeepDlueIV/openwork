@@ -122,10 +122,13 @@ editorTest("Everyone's permissions reach every member, and a team's own choice r
     await owner.see({ role: "button", label: "Team" }, { timeoutMs: 30_000 });
     await owner.click({ role: "button", label: "Team" });
     await owner.click({ role: "option", label: "Contractors" });
+    await owner.see({ testId: "agent-permission-commands-source" }, { text: "From Everyone" });
+    await owner.click({ testId: "agent-permission-commands-block-add" });
     await owner.see({ testId: "agent-permission-commands-block" }, { text: /rm \*/ });
     await owner.see({ label: "rm *, set for Everyone" });
     await owner.click({ role: "button", label: "Run commands" });
     await owner.click({ role: "option", label: "Block" });
+    await owner.see({ testId: "agent-permission-commands-source" }, { text: "Overridden" });
     await owner.click({ testId: "agent-permission-commands-allow-add" });
     await owner.type({ testId: "agent-permission-commands-allow-input" }, "echo *");
     await owner.press("Enter");

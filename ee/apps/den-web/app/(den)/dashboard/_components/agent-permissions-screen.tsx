@@ -29,6 +29,7 @@ import { DenButton, buttonVariants } from "../../_components/ui/button";
 import { DenChip } from "../../_components/ui/chip";
 import { DenInput } from "../../_components/ui/input";
 import { DenNotice } from "../../_components/ui/notice";
+import { DenSegmented } from "../../_components/ui/segmented";
 import { DenSelect } from "../../_components/ui/select";
 import { DenSkeleton } from "../../_components/ui/skeleton";
 import { DenStickyActionBar } from "../../_components/ui/sticky-action-bar";
@@ -57,7 +58,6 @@ import { useDenToast } from "./den-toast";
 import { LinkButton } from "./item-list";
 import { PermissionAreaSection, PermissionsPage } from "./permissions-ui";
 
-const INHERIT = "inherit";
 const TITLE = "Agent permissions";
 
 function sameSettings(left: AgentPermissionSettings, right: AgentPermissionSettings): boolean {
@@ -514,21 +514,25 @@ function PermissionRow({ definition, team, setting, everyoneSetting, edited, edi
             <TooltipContent>{definition.description}</TooltipContent>
           </Tooltip>
           {edited ? <span className="size-1.5 rounded-full bg-sky-500" aria-label="Unsaved change" /> : null}
+          {/* A team's value comes from Everyone until the team changes it (inherited, then overridden). */}
+          {team ? (
+            overridden
+              ? <DenChip tone="info" data-testid={`agent-permission-${definition.key}-source`}>Overridden</DenChip>
+              : <DenChip data-testid={`agent-permission-${definition.key}-source`}>From Everyone</DenChip>
+          ) : null}
         </div>
         <div className="flex items-center gap-2">
-          {team && !overridden && definition.control === "toggle" ? <span className="text-[12px] text-gray-500">Same as Everyone</span> : null}
-          {overridden ? (
-            <Tooltip>
-              <TooltipTrigger
-                aria-label={`Use Everyone's setting for ${definition.label}`}
-                disabled={!editable}
-                onClick={() => setDecision(undefined)}
-                className="rounded p-1 text-gray-400 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline-2 focus-visible:outline-gray-900"
-              >
-                <RotateCcw className="size-3.5" aria-hidden="true" />
-              </TooltipTrigger>
-              <TooltipContent>Use Everyone's setting ({decisionText(inheritedDecision, definition)})</TooltipContent>
-            </Tooltip>
+          {overridden && editable ? (
+            <button
+              type="button"
+              aria-label={`Use Everyone's setting for ${definition.label}`}
+              title={`Everyone's: ${decisionText(inheritedDecision, definition)}`}
+              onClick={() => setDecision(undefined)}
+              className="inline-flex items-center gap-1 rounded px-1 text-[12px] text-gray-500 transition-colors hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-gray-900"
+            >
+              <RotateCcw className="size-3" aria-hidden="true" />
+              Use Everyone's
+            </button>
           ) : null}
           {definition.control === "toggle" ? (
             <label className={`flex items-center gap-2 text-[13px] ${editable ? "cursor-pointer" : "cursor-not-allowed opacity-60"}`}>
@@ -540,17 +544,16 @@ function PermissionRow({ definition, team, setting, everyoneSetting, edited, edi
                 disabled={!editable}
                 onChange={(event) => setDecision(event.target.checked ? "allow" : "deny")}
               />
-              <span className={team && !overridden ? "text-gray-500" : "text-gray-700"}>{effective === "allow" ? "Allowed" : "Blocked"}</span>
+              <span className="text-gray-700">{effective === "allow" ? "Allowed" : "Blocked"}</span>
             </label>
           ) : (
             <div className="w-[190px]">
               <DenSelect
                 aria-labelledby={labelId}
                 disabled={!editable}
-                value={team && !overridden ? INHERIT : effective}
-                onChange={(event) => setDecision(event.target.value === INHERIT ? undefined : agentPermissionDecisionsFor(definition).find((decision) => decision === event.target.value))}
+                value={effective}
+                onChange={(event) => setDecision(agentPermissionDecisionsFor(definition).find((decision) => decision === event.target.value))}
               >
-                {team ? <option value={INHERIT}>{`Everyone's (${decisionText(inheritedDecision, definition)})`}</option> : null}
                 {agentPermissionDecisionsFor(definition).map((decision) => (
                   <option key={decision} value={decision}>{agentPermissionDecisionLabels[decision]}</option>
                 ))}
@@ -562,14 +565,13 @@ function PermissionRow({ definition, team, setting, everyoneSetting, edited, edi
       {lists && definition.patternNoun ? (
         <PatternLists
           definitionKey={definition.key}
+          label={definition.label}
           kind={lists}
           noun={definition.patternNoun}
           setting={setting}
           inheritedAllow={inheritedAllow}
           inheritedBlock={inheritedBlock}
-          // Allowed patterns are exceptions to Ask first or Block, so they
-          // show once the permission restricts or when some are already set.
-          showAllow={restricted || (setting?.allow?.length ?? 0) > 0 || inheritedAllow.length > 0}
+          restricted={restricted}
           editable={editable}
           onChange={onChange}
         />
@@ -580,79 +582,75 @@ function PermissionRow({ definition, team, setting, everyoneSetting, edited, edi
 
 type PatternListKind = "allow" | "block";
 
-function PatternLists({ definitionKey, kind, noun, setting, inheritedAllow, inheritedBlock, showAllow, editable, onChange }: {
+function PatternLists({ definitionKey, label, kind, noun, setting, inheritedAllow, inheritedBlock, restricted, editable, onChange }: {
   definitionKey: AgentPermissionDefinition["key"];
+  label: string;
   kind: NonNullable<AgentPermissionDefinition["patterns"]>;
   noun: string;
   setting: AgentPermissionSetting | undefined;
   inheritedAllow: string[];
   inheritedBlock: string[];
-  showAllow: boolean;
+  /** The permission asks first or blocks, so allowed patterns are exceptions that matter. */
+  restricted: boolean;
   editable: boolean;
   onChange: (setting: AgentPermissionSetting | null) => void;
 }) {
-  const [adding, setAdding] = useState<PatternListKind | null>(null);
-  const lists = [
-    ...(showAllow ? [{ list: "allow" as const, title: "Always allowed", action: `Always allow a ${noun}`, patterns: setting?.allow ?? [], inherited: inheritedAllow }] : []),
-    { list: "block" as const, title: "Always blocked", action: `Always block a ${noun}`, patterns: setting?.block ?? [], inherited: inheritedBlock },
-  ];
-  const shown = lists.filter((entry) => entry.patterns.length > 0 || entry.inherited.length > 0 || adding === entry.list);
-  const collapsed = lists.filter((entry) => !shown.includes(entry));
-  if (shown.length === 0 && (!editable || collapsed.length === 0)) return null;
+  const [picked, setPicked] = useState<PatternListKind | null>(null);
+  const lists: Record<PatternListKind, { patterns: string[]; inherited: string[] }> = {
+    allow: { patterns: setting?.allow ?? [], inherited: inheritedAllow },
+    block: { patterns: setting?.block ?? [], inherited: inheritedBlock },
+  };
+  const count = (list: PatternListKind) => lists[list].patterns.length + lists[list].inherited.length;
+  // Allowed patterns only matter while the permission asks first or blocks.
+  const allowUseful = restricted || count("allow") > 0;
+  // Open on the exceptions that matter: allowed ones when restricted, blocked ones otherwise.
+  const preferred: PatternListKind = picked ?? (restricted ? "allow" : "block");
+  const active: PatternListKind = preferred === "allow" && !allowUseful ? "block" : preferred;
+  if (!editable && count("allow") + count("block") === 0) return null;
 
   return (
-    <div className="mt-1 flex flex-col gap-2 pb-1 sm:pl-4">
-      {shown.map((entry) => (
-        <PatternList
-          key={entry.list}
-          title={entry.title}
-          action={entry.action}
-          testId={`agent-permission-${definitionKey}-${entry.list}`}
-          kind={kind}
-          patterns={entry.patterns}
-          inherited={entry.inherited}
-          editable={editable}
-          adding={adding === entry.list}
-          onAdding={(open) => setAdding(open ? entry.list : null)}
-          onChange={(patterns) => onChange({ ...setting, [entry.list]: patterns })}
-        />
-      ))}
-      {editable && collapsed.length > 0 ? (
-        <div className="flex flex-wrap gap-x-4 gap-y-1">
-          {collapsed.map((entry) => (
-            <button
-              key={entry.list}
-              type="button"
-              data-testid={`agent-permission-${definitionKey}-${entry.list}-add`}
-              onClick={() => setAdding(entry.list)}
-              className="inline-flex items-center gap-1 rounded text-[12px] text-gray-500 transition-colors hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-gray-900"
-            >
-              <Plus className="size-3.5" aria-hidden="true" />
-              {entry.action}
-            </button>
-          ))}
-        </div>
-      ) : null}
+    <div className="mt-2 flex flex-col gap-2 pb-1 sm:pl-4" data-testid={`agent-permission-${definitionKey}-lists`}>
+      <DenSegmented<PatternListKind>
+        aria-label={`${label}: always allowed and always blocked`}
+        value={active}
+        onChange={setPicked}
+        optionTestId={(list) => `agent-permission-${definitionKey}-${list}-add`}
+        className="self-start"
+        options={[
+          { value: "allow", label: `Always allow · ${count("allow")}`, disabled: !allowUseful },
+          { value: "block", label: `Always block · ${count("block")}` },
+        ]}
+      />
+      <PatternList
+        key={active}
+        list={active}
+        noun={noun}
+        testId={`agent-permission-${definitionKey}-${active}`}
+        kind={kind}
+        patterns={lists[active].patterns}
+        inherited={lists[active].inherited}
+        editable={editable}
+        onChange={(patterns) => onChange({ ...setting, [active]: patterns })}
+      />
     </div>
   );
 }
 
-function PatternList({ title, action, testId, kind, patterns, inherited, editable, adding, onAdding, onChange }: {
-  title: string;
-  action: string;
+function PatternList({ list, noun, testId, kind, patterns, inherited, editable, onChange }: {
+  list: PatternListKind;
+  noun: string;
   testId: string;
   kind: NonNullable<AgentPermissionDefinition["patterns"]>;
   patterns: string[];
   inherited: string[];
   editable: boolean;
-  adding: boolean;
-  onAdding: (open: boolean) => void;
   onChange: (patterns: string[]) => void;
 }) {
-  const inputId = useId();
   const errorId = useId();
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const action = list === "allow" ? `Always allow a ${noun}` : `Always block a ${noun}`;
+  const title = list === "allow" ? "Always allowed" : "Always blocked";
 
   function add(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -670,80 +668,56 @@ function PatternList({ title, action, testId, kind, patterns, inherited, editabl
     onChange([...patterns, pattern]);
   }
 
-  function close() {
-    setDraft("");
-    setError(null);
-    onAdding(false);
-  }
-
   return (
-    <div className="flex flex-col gap-1.5 sm:flex-row sm:items-start sm:gap-3" data-testid={testId}>
-      <span className="w-28 shrink-0 pt-1 text-[12px] text-gray-500">{title}</span>
-      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
-        {inherited.length > 0 || patterns.length > 0 || (editable && !adding) ? (
-          <ul className="flex flex-wrap items-center gap-1.5" aria-label={title}>
-            {inherited.map((pattern) => (
-              <li key={`inherited-${pattern}`}>
-                <Tooltip>
-                  <TooltipTrigger className="inline-flex items-center gap-1 rounded-md bg-gray-100 px-2 py-0.5 font-mono text-[12px] text-gray-500" aria-label={`${pattern}, set for Everyone`}>
-                    <Lock className="size-3" aria-hidden="true" />
-                    {pattern}
-                  </TooltipTrigger>
-                  <TooltipContent>Set for Everyone</TooltipContent>
-                </Tooltip>
-              </li>
-            ))}
-            {patterns.map((pattern) => (
-              <li key={pattern} className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white py-px pl-2 pr-0.5 font-mono text-[12px] text-gray-800">
-                {pattern}
-                <button
-                  type="button"
-                  aria-label={`Remove ${pattern}`}
-                  disabled={!editable}
-                  onClick={() => onChange(patterns.filter((entry) => entry !== pattern))}
-                  className="rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  <X className="size-3" aria-hidden="true" />
-                </button>
-              </li>
-            ))}
-            {editable && !adding ? (
-              <li>
-                <button
-                  type="button"
-                  aria-label={action}
-                  data-testid={`${testId}-add`}
-                  onClick={() => onAdding(true)}
-                  className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[12px] text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 focus-visible:outline-2 focus-visible:outline-gray-900"
-                >
-                  <Plus className="size-3.5" aria-hidden="true" />
-                  Add
-                </button>
-              </li>
-            ) : null}
-          </ul>
-        ) : null}
-        {editable && adding ? (
-          <form onSubmit={add} className="flex items-center gap-2">
-            <DenInput
-              id={inputId}
-              autoFocus
-              aria-label={action}
-              data-testid={`${testId}-input`}
-              value={draft}
-              placeholder={agentPermissionPatternPlaceholders[kind]}
-              aria-invalid={error ? true : undefined}
-              aria-describedby={error ? errorId : undefined}
-              className="h-8 max-w-[320px] font-mono text-[12px]"
-              onChange={(event) => { setDraft(event.target.value); setError(null); }}
-              onKeyDown={(event) => { if (event.key === "Escape") close(); }}
-            />
-            <DenButton type="submit" variant="secondary" size="sm" disabled={!draft.trim()}>Add</DenButton>
-            <DenButton variant="ghost" size="sm" onClick={close}>Done</DenButton>
-          </form>
-        ) : null}
-        {error ? <p id={errorId} className="text-[12px] text-red-600">{error}</p> : null}
-      </div>
+    <div className="flex flex-col gap-2" data-testid={testId}>
+      {editable ? (
+        <form onSubmit={add} className="flex max-w-[420px] items-center gap-2">
+          <DenInput
+            aria-label={action}
+            data-testid={`${testId}-input`}
+            value={draft}
+            placeholder={agentPermissionPatternPlaceholders[kind]}
+            aria-invalid={error ? true : undefined}
+            aria-describedby={error ? errorId : undefined}
+            className="h-8 font-mono text-[12px]"
+            onChange={(event) => { setDraft(event.target.value); setError(null); }}
+            onKeyDown={(event) => { if (event.key === "Escape") { setDraft(""); setError(null); } }}
+          />
+          <DenButton type="submit" variant="secondary" size="sm" icon={Plus} disabled={!draft.trim()}>Add</DenButton>
+        </form>
+      ) : null}
+      {error ? <p id={errorId} className="text-[12px] text-red-600">{error}</p> : null}
+      {inherited.length > 0 || patterns.length > 0 ? (
+        <ul className="flex flex-wrap items-center gap-1.5" aria-label={title}>
+          {inherited.map((pattern) => (
+            <li key={`inherited-${pattern}`}>
+              <Tooltip>
+                <TooltipTrigger className="inline-flex items-center gap-1 rounded-md bg-gray-100 px-2 py-0.5 font-mono text-[12px] text-gray-500" aria-label={`${pattern}, set for Everyone`}>
+                  <Lock className="size-3" aria-hidden="true" />
+                  {pattern}
+                </TooltipTrigger>
+                <TooltipContent>Set for Everyone</TooltipContent>
+              </Tooltip>
+            </li>
+          ))}
+          {patterns.map((pattern) => (
+            <li key={pattern} className="inline-flex items-center gap-1 rounded-md border border-gray-200 bg-white py-px pl-2 pr-0.5 font-mono text-[12px] text-gray-800">
+              {pattern}
+              <button
+                type="button"
+                aria-label={`Remove ${pattern}`}
+                disabled={!editable}
+                onClick={() => onChange(patterns.filter((entry) => entry !== pattern))}
+                className="rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <X className="size-3" aria-hidden="true" />
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-[12px] text-gray-500">{list === "allow" ? `No ${noun}s are always allowed.` : `No ${noun}s are always blocked.`}</p>
+      )}
     </div>
   );
 }

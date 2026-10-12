@@ -85,7 +85,9 @@ export function ManagedSlackAccount({ connection, mode }: { connection: External
   const limited = connectorLimitedAccess(connection);
   const blocked = connection.policyBlocked || !action.available;
   const canSetUpCustom = orgContext ? getOrgAccessFlags(orgContext.currentMember.role, orgContext.currentMember.isOwner, orgContext.currentMember.permissions).canManageConnections : false;
-  const customConnections = useMcpConnections(canSetUpCustom ? "manageable" : "usable");
+  // Management permission does not grant personal use. A Library link must
+  // resolve from the usable inventory, even when the viewer is an admin.
+  const customConnections = useMcpConnections(mode === "admin" && canSetUpCustom ? "manageable" : "usable");
   const existingCustom = connectionForPresetUrl(customConnections.data ?? [], "https://mcp.slack.com/mcp");
   const customHref = existingCustom
     ? mode === "admin" ? getMcpConnectionRoute(orgSlug, existingCustom.id) : getLibraryConnectorRoute(orgSlug, existingCustom.id)

@@ -10,9 +10,10 @@ import type { Den } from "@openwork/testkit";
 // and removing a team's overrides appends agent_permission_policy.removed, inside
 // the save's transaction: the scope, every permission before and after, and per
 // changed permission its decision and the allowed and blocked patterns added or
-// removed. Saving the same settings again records nothing. Observed over HTTP
-// plus the disposable scratch database server() owns (openwork_eval_*). All
-// identities are synthetic example.test.
+// removed. Command patterns are recorded as withheld, never as text, since one
+// can hold a credential. Saving the same settings again records nothing.
+// Observed over HTTP plus the disposable scratch database server() owns
+// (openwork_eval_*). All identities are synthetic example.test.
 
 const attached = Boolean(process.env.OPENWORK_EVAL_DEN_API_URL?.trim());
 const daytona = process.env.OPENWORK_EVAL_DAYTONA?.trim() === "1";
@@ -115,7 +116,8 @@ test.skipIf(skipReason !== "")(title, { timeout: 300_000 }, async ({ evidence, p
     const saved = await denFetch(owner, path, { method: "PUT", headers, body: JSON.stringify({ settings }) });
     expect(saved.response.status, saved.text).toBe(200);
   };
-  const everyone = { commands: { decision: "ask", allow: ["echo *"], block: ["rm *"] }, websites: { block: ["example.org"] } };
+  const secretCommand = `curl --password=example-secret-${stamp} *`;
+  const everyone = { commands: { decision: "ask", allow: ["echo *"], block: ["rm *", secretCommand] }, websites: { block: ["example.org"] } };
   await put("/v1/agent-permissions/everyone", everyone);
   await put(`/v1/agent-permissions/teams/${teamId}`, { commands: { decision: "deny", allow: ["git status"] }, localMcpServers: { decision: "deny" } });
   // The same settings again: nothing changed, so nothing is recorded.
@@ -130,10 +132,10 @@ test.skipIf(skipReason !== "")(title, { timeout: 300_000 }, async ({ evidence, p
   expect(everyoneSaved.changes?.before).toMatchObject({ scope: "everyone", teamId: null, commands: null, websites: null });
   expect(everyoneSaved.changes?.after).toMatchObject({
     scope: "everyone",
-    commands: { decision: "ask", allow: ["echo *"], block: ["rm *"] },
+    commands: { decision: "ask", allow: ["[withheld]"], block: ["[withheld]", "[withheld]"] },
     websites: { decision: null, allow: [], block: ["example.org"] },
     permissionChanges: [
-      { key: "commands", label: "Run commands", decision: { before: "allow", after: "ask" }, allowAdded: ["echo *"], allowRemoved: [], blockAdded: ["rm *"], blockRemoved: [] },
+      { key: "commands", label: "Run commands", decision: { before: "allow", after: "ask" }, allowAdded: ["[withheld]"], allowRemoved: [], blockAdded: ["[withheld]", "[withheld]"], blockRemoved: [] },
       { key: "websites", label: "Open websites", decision: { before: "allow", after: "allow" }, allowAdded: [], allowRemoved: [], blockAdded: ["example.org"], blockRemoved: [] },
     ],
   });
@@ -142,6 +144,14 @@ test.skipIf(skipReason !== "")(title, { timeout: 300_000 }, async ({ evidence, p
     expect.objectContaining({ type: "agent_permission_policy", relationship: "target", label: "Everyone" }),
     expect.objectContaining({ type: "organization", id: orgId, relationship: "parent" }),
   ]));
+  const stored = JSON.stringify(everyoneSaved.raw);
+  expect(stored).not.toContain("example-secret");
+  expect(stored).not.toContain("echo *");
+  evidence.recordAssertionEvidence(
+    "Command patterns are recorded as withheld, never as text",
+    `commands=${JSON.stringify(everyoneSaved.changes?.after?.commands)}`,
+    !stored.includes("example-secret") && !stored.includes("echo *"),
+  );
   evidence.recordAssertionEvidence(
     "Saving Everyone's permissions records each changed permission's decision and patterns",
     `changedFields=${JSON.stringify(everyoneSaved.changes?.changedFields)}; permissionChanges=${JSON.stringify(everyoneSaved.changes?.after?.permissionChanges)}`,
@@ -151,16 +161,16 @@ test.skipIf(skipReason !== "")(title, { timeout: 300_000 }, async ({ evidence, p
   expect(teamSaved.changes?.after).toMatchObject({
     scope: "team", teamId,
     permissionChanges: [
-      { key: "commands", decision: { before: "inherit", after: "deny" }, allowAdded: ["git status"] },
+      { key: "commands", decision: { before: "inherit", after: "deny" }, allowAdded: ["[withheld]"] },
       { key: "localMcpServers", decision: { before: "inherit", after: "deny" } },
     ],
   });
   expect(teamSaved.resources).toEqual(expect.arrayContaining([expect.objectContaining({ type: "team", id: teamId, relationship: "target", label: teamName })]));
-  expect(teamRemoved.changes?.before).toMatchObject({ scope: "team", teamId, commands: { decision: "deny", allow: ["git status"] }, localMcpServers: { decision: "deny" } });
+  expect(teamRemoved.changes?.before).toMatchObject({ scope: "team", teamId, commands: { decision: "deny", allow: ["[withheld]"] }, localMcpServers: { decision: "deny" } });
   expect(teamRemoved.changes?.after).toMatchObject({
     commands: null, localMcpServers: null,
     permissionChanges: [
-      { key: "commands", decision: { before: "deny", after: "inherit" }, allowRemoved: ["git status"] },
+      { key: "commands", decision: { before: "deny", after: "inherit" }, allowRemoved: ["[withheld]"] },
       { key: "localMcpServers", decision: { before: "deny", after: "inherit" } },
     ],
   });

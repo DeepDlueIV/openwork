@@ -582,7 +582,8 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
   if (!configured.ok) throw new Error(`Chat model setup failed: ${configured.status}`);
   const workspacePath = seed.tmpPath("mcp-app-servers-chat");
   const denOrigin = new URL(den.ref.apiUrl);
-  const app = options.desktop ? await seed.desktop({ den, as: "admin", workspacePath, enterpriseActivated: true }) : await seed.appWeb({ name: `mcp-app-servers-chat-${engine}`, workspacePath, headless: true, engine,
+  // The creation journeys open a step's hover-only technical details; an owner on a computer has a mouse even when the runner's headless Chrome finds none.
+  const app = options.desktop ? await seed.desktop({ den, as: "admin", workspacePath, enterpriseActivated: true }) : await seed.appWeb({ name: `mcp-app-servers-chat-${engine}`, workspacePath, headless: true, mouse: options.lifecycle, engine,
     env: {
       OPENWORK_DEV_HEADLESS_WEB_DEN_PROXY: "1", OPENWORK_DEV_DEN_PROXY_TARGET: den.ref.webUrl,
       OPENWORK_DEV_HEADLESS_DEN_API_TARGET: den.ref.apiUrl,

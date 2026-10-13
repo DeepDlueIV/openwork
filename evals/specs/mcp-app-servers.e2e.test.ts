@@ -635,9 +635,8 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
       const sentence = `Created artifact “${guidedTitle}”`;
       await user.see({ text: sentence }, { timeoutMs: 120_000 });
       await user.see({ text: guidedReply }, { timeoutMs: 30_000 });
-      // The finished App opens beside the chat, which reflows the conversation; hover the step only once it has.
       frame = await world.appFrameShowing(guidedTitle, "Show unit price");
-      // The details toggle appears when the step is hovered.
+      // The details toggle shows only while a mouse hovers the step, so the web worlds report a mouse to headless Chrome.
       await user.hover({ text: sentence });
       await user.click({ role: "button", label: `Show technical details for ${sentence}` });
       const steps = (await probe.dom(`[data-app-builder-step][aria-label="${sentence}"]`)).elements;

@@ -16,7 +16,6 @@ export {
   CONNECT_LINK_VERSION,
 } from "@openwork/types/connect-link"
 export type {
-  ConnectLinkBrand,
   ConnectLinkClaims,
   ConnectLinkDenTarget,
   ConnectLinkOrg,
@@ -36,11 +35,6 @@ export const connectLinkClaimsSchema = z.object({
   v: z.literal(CONNECT_LINK_VERSION),
   org: z.object({
     name: z.string().trim().min(1).max(128),
-  }),
-  brand: z.object({
-    appName: z.string().trim().min(1).max(64),
-    logoUrl: z.string().trim().url().nullable(),
-    iconUrl: z.string().trim().url().nullable(),
   }),
   den: z.object({
     baseUrl: z.string().trim().url(),
@@ -67,8 +61,6 @@ export function findRefusedConnectLinkUrl(
   const candidates = [
     claims.den.baseUrl,
     claims.den.apiBaseUrl ?? null,
-    claims.brand.logoUrl,
-    claims.brand.iconUrl,
   ]
   for (const candidate of candidates) {
     if (!candidate) continue

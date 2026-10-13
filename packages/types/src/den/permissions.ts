@@ -69,13 +69,6 @@ export const PERMISSIONS = {
     defaultOn: OWNER_ONLY,
     sensitive: true,
   },
-  "branding.update": {
-    area: "organization",
-    label: "Change branding",
-    description: "Upload the organization logo and other brand assets.",
-    defaultOn: OWNER_ONLY,
-    sensitive: true,
-  },
   "web_origins.view": {
     area: "organization",
     label: "View approved web origins",

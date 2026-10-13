@@ -11,9 +11,6 @@ import { env } from "./env.js"
 
 export type DesktopConnectLinkInput = {
   organizationName: string
-  appName: string
-  logoUrl: string | null
-  iconUrl: string | null
   webUrl: string
   apiUrl: string
 }
@@ -36,11 +33,6 @@ export function mintDesktopConnectLink(input: DesktopConnectLinkInput) {
     jti: randomBytes(16).toString("base64url"),
     v: CONNECT_LINK_VERSION,
     org: { name: input.organizationName },
-    brand: {
-      appName: input.appName,
-      logoUrl: input.logoUrl,
-      iconUrl: input.iconUrl,
-    },
     den: {
       baseUrl: input.webUrl,
       apiBaseUrl: input.apiUrl,

@@ -17,7 +17,6 @@ import { AuthPanel } from "./auth-panel";
 import { JoinOrgSuccess } from "./join-org-success";
 import { OnboardingCard } from "./onboarding-card";
 import { OnboardingShell } from "./onboarding-shell";
-import type { OrganizationBrand } from "./organization-brand-identity";
 
 const primaryActionClassName = "den-button-primary min-h-12 w-full focus:outline-hidden focus:ring-4 focus:ring-slate-950/10";
 
@@ -25,7 +24,6 @@ type JoinedOrg = {
   id: string;
   name: string;
   slug: string;
-  brand: OrganizationBrand;
 };
 
 type AccountSummary = {
@@ -123,7 +121,6 @@ function getCardOrganization(preview: DenInvitationPreview | null) {
 
   return {
     name: preview.organization.name,
-    brand: preview.organization.branding,
   };
 }
 
@@ -194,7 +191,6 @@ function getJoinedOrgFromPayload(payload: unknown, preview: DenInvitationPreview
     id: organizationId,
     name: preview.organization.name,
     slug: organizationSlug,
-    brand: preview.organization.branding,
   };
 }
 
@@ -475,7 +471,6 @@ export function JoinOrgScreen({ invitationId }: { invitationId: string }) {
       <JoinOrgSuccess
         organizationId={joinedOrg.id}
         organizationName={joinedOrg.name}
-        brand={joinedOrg.brand}
         desktopAuthRequested={desktopAuthRequested}
         desktopAuthScheme={desktopAuthScheme}
         onContinueInBrowser={() => router.replace(joinedOrg.slug ? getOrgDashboardRoute(joinedOrg.slug) : "/dashboard")}

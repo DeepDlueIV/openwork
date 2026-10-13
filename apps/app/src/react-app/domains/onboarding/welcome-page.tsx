@@ -11,7 +11,6 @@ import {
 import { DitherBackdrop } from "@/components/dither-backdrop";
 import { Button } from "@/components/ui/button";
 import { ScrollArea, ScrollAreaViewport } from "@/components/ui/scroll-area";
-import { useShellConfig } from "../../shell/shell-config";
 
 type WelcomePageProps = {
   onGetStarted: () => void;
@@ -38,8 +37,6 @@ export function WelcomePage({
   onTeamSignIn,
   onJoinOrganization,
 }: WelcomePageProps) {
-  const { config: shellConfig } = useShellConfig();
-  const appName = shellConfig.appName;
   const { markRouteReady } = useBootState();
 
   // The boot splash overlay stays mounted (and swallows clicks) until the
@@ -74,7 +71,7 @@ export function WelcomePage({
                   aria-hidden="true"
                 />
                 <span className="text-[15px] font-semibold tracking-tight text-foreground">
-                  {appName}
+                  OpenWork
                 </span>
               </div>
 

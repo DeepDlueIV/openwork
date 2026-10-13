@@ -660,32 +660,6 @@ export type CurrentUserDesktopConfigResponse = {
     blockBrowserUploads?: boolean;
   };
   allowedDesktopVersions?: Array<string>;
-  brandAppName?: string;
-  brandLogoUrl?: string;
-  brandIconUrl?: string;
-  brandAccentColor?:
-    | "blue"
-    | "crimson"
-    | "cyan"
-    | "gold"
-    | "grass"
-    | "green"
-    | "indigo"
-    | "iris"
-    | "jade"
-    | "lime"
-    | "mint"
-    | "orange"
-    | "pink"
-    | "plum"
-    | "purple"
-    | "red"
-    | "ruby"
-    | "sky"
-    | "teal"
-    | "tomato"
-    | "violet"
-    | "yellow";
   automationsEnabled?: boolean;
   dashboardEnabled?: boolean;
   connectEnabled?: boolean;
@@ -965,11 +939,7 @@ export type InvitationPreviewResponse = {
     name: string;
     slug: string;
     allowedEmailDomains: Array<string> | null;
-    branding: {
-      appName: string;
-      logoUrl: string | null;
-      iconUrl: string | null;
-    };
+    logo: string | null;
   };
 };
 
@@ -1009,13 +979,7 @@ export type InvalidEmailDomainError = {
   invalidDomains: Array<string>;
 };
 
-export type InvalidBrandIconError = {
-  error: "invalid_brand_icon";
-  reason: string;
-  message: string;
-};
-
-export type UpdateOrganizationBadRequest = InvalidRequestError | InvalidEmailDomainError | InvalidBrandIconError;
+export type UpdateOrganizationBadRequest = InvalidRequestError | InvalidEmailDomainError;
 
 export type EnterprisePlanRequiredError = {
   error: "enterprise_plan_required";
@@ -1053,7 +1017,6 @@ export type OrganizationContextResponse = {
      */
     permissions: Array<
       | "organization.update"
-      | "branding.update"
       | "web_origins.view"
       | "web_origins.manage"
       | "install_links.update"
@@ -1262,42 +1225,6 @@ export type CreateOrganizationApiKeyResponse = {
 
 export type CreateOrganizationApiKeyRequest = {
   name: string;
-};
-
-export type ManagedBrandAssetUploadResponse = {
-  assets: {
-    logo?: {
-      kind: "logo" | "icon";
-      version: string;
-      extension: "png" | "jpg";
-      contentType: "image/png" | "image/jpeg";
-      url: string;
-      width: number;
-      height: number;
-      byteLength: number;
-      originalName: string;
-      uploadedAt: string;
-    };
-    icon?: {
-      kind: "logo" | "icon";
-      version: string;
-      extension: "png" | "jpg";
-      contentType: "image/png" | "image/jpeg";
-      url: string;
-      width: number;
-      height: number;
-      byteLength: number;
-      originalName: string;
-      uploadedAt: string;
-    };
-  };
-};
-
-export type InvalidManagedBrandAssetError = {
-  error: "invalid_brand_asset";
-  kind: "logo" | "icon" | null;
-  reason: string;
-  message: string;
 };
 
 export type WorkflowRunListResponse = {
@@ -1776,25 +1703,19 @@ export type CreateInstallLinkRequest = {
 };
 
 export type AuthenticatedInstallConfig = {
-  appName?: string;
   clientName: string;
   webUrl: string;
   apiUrl: string;
   requireSignin: boolean;
-  logoUrl: string | null;
-  iconUrl?: string | null;
   desktopVersion: string;
   distribution: "cloud" | "enterprise";
 };
 
 export type InstallExperienceConfig = {
-  appName?: string;
   clientName: string;
   webUrl: string;
   apiUrl: string;
   requireSignin: boolean;
-  logoUrl: string | null;
-  iconUrl?: string | null;
   connectUrl: string;
   connectExpiresAt: string;
   activationUrl: string;
@@ -1816,11 +1737,6 @@ export type ConnectLinkClaims = {
   v: 1;
   org: {
     name: string;
-  };
-  brand: {
-    appName: string;
-    logoUrl: string | null;
-    iconUrl: string | null;
   };
   den: {
     baseUrl: string;
@@ -5302,7 +5218,6 @@ export type WorkbotSession = {
   organization: {
     id: string;
     name: string;
-    brandAppName: string | null;
   };
   memberId: string;
   enabled: boolean;
@@ -8708,10 +8623,6 @@ export type PatchV1OrgData = {
     allowedEmailDomains?: Array<string> | null;
     allowedDesktopVersions?: Array<string> | null;
     requireSso?: boolean;
-    brandAppName?: string | null;
-    brandLogoUrl?: string | null;
-    brandIconUrl?: string | null;
-    brandAccentColor?: string | null;
   };
   path?: never;
   query?: never;
@@ -8720,7 +8631,7 @@ export type PatchV1OrgData = {
 
 export type PatchV1OrgErrors = {
   /**
-   * The organization update request body was invalid, contained malformed email domains, or contained an invalid brand icon URL.
+   * The organization update request body was invalid or contained malformed email domains.
    */
   400: UpdateOrganizationBadRequest;
   /**
@@ -10441,74 +10352,6 @@ export type GetAuditExportResponses = {
 };
 
 export type GetAuditExportResponse = GetAuditExportResponses[keyof GetAuditExportResponses];
-
-export type GetV1BrandAssetsByOrganizationIdByKindByVersionData = {
-  body?: never;
-  path: {
-    organizationId: string;
-    kind: string;
-    version: string;
-  };
-  query?: never;
-  url: "/v1/brand-assets/{organizationId}/{kind}/{version}";
-};
-
-export type GetV1BrandAssetsByOrganizationIdByKindByVersionErrors = {
-  /**
-   * The managed brand asset could not be found.
-   */
-  404: NotFoundError;
-};
-
-export type GetV1BrandAssetsByOrganizationIdByKindByVersionError =
-  GetV1BrandAssetsByOrganizationIdByKindByVersionErrors[keyof GetV1BrandAssetsByOrganizationIdByKindByVersionErrors];
-
-export type GetV1BrandAssetsByOrganizationIdByKindByVersionResponses = {
-  /**
-   * Immutable brand image bytes. The media type follows the `{version}` extension (`.png` -> `image/png`, `.jpg` -> `image/jpeg`); served with `Cache-Control: public, max-age=31536000, immutable` and an `ETag` equal to the content hash.
-   */
-  200: Blob | File;
-};
-
-export type GetV1BrandAssetsByOrganizationIdByKindByVersionResponse =
-  GetV1BrandAssetsByOrganizationIdByKindByVersionResponses[keyof GetV1BrandAssetsByOrganizationIdByKindByVersionResponses];
-
-export type PostV1OrgBrandAssetsData = {
-  body?: never;
-  path?: never;
-  query?: never;
-  url: "/v1/org/brand-assets";
-};
-
-export type PostV1OrgBrandAssetsErrors = {
-  /**
-   * A supplied brand asset was invalid.
-   */
-  400: InvalidManagedBrandAssetError;
-  /**
-   * The caller must be signed in.
-   */
-  401: UnauthorizedError;
-  /**
-   * The caller needs the Change branding permission and a recent sign-in.
-   */
-  403: ForbiddenError;
-  /**
-   * The upload exceeded the request size limit.
-   */
-  413: InvalidManagedBrandAssetError;
-};
-
-export type PostV1OrgBrandAssetsError = PostV1OrgBrandAssetsErrors[keyof PostV1OrgBrandAssetsErrors];
-
-export type PostV1OrgBrandAssetsResponses = {
-  /**
-   * Managed brand assets were saved.
-   */
-  200: ManagedBrandAssetUploadResponse;
-};
-
-export type PostV1OrgBrandAssetsResponse = PostV1OrgBrandAssetsResponses[keyof PostV1OrgBrandAssetsResponses];
 
 export type GetV1WorkflowRunsData = {
   body?: never;

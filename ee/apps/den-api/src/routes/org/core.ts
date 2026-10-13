@@ -10,7 +10,6 @@ import { z } from "zod"
 import { auth } from "../../auth.js"
 import { attributeAuditRequest, auditSessionUserAttribution } from "../../audit/request-capture.js"
 import { verifyBotProtection } from "../../bot-protection.js"
-import { validateBrandIconUrl } from "../../brand-icon-validation.js"
 import { cloudHostingAvailable } from "../../capability-sources/cloud-hosting.js"
 import { db } from "../../db.js"
 import { checkEntitlement, getOrganizationEntitlements, parseOrganizationPlan } from "../../entitlements.js"
@@ -51,11 +50,7 @@ const updateOrganizationSchema = z.object({
   allowedEmailDomains: z.array(z.string().trim().min(1).max(255)).max(100).nullable().optional(),
   allowedDesktopVersions: z.array(z.string().trim().min(1).max(32)).max(200).nullable().optional(),
   requireSso: z.boolean().optional(),
-  brandAppName: z.string().trim().min(1).max(64).nullable().optional(),
-  brandLogoUrl: z.string().url().max(2048).nullable().optional(),
-  brandIconUrl: z.string().url().max(2048).nullable().optional(),
-  brandAccentColor: z.string().trim().min(1).max(32).nullable().optional(),
-}).strict().refine((value) => value.name !== undefined || value.allowedEmailDomains !== undefined || value.allowedDesktopVersions !== undefined || value.requireSso !== undefined || value.brandAppName !== undefined || value.brandLogoUrl !== undefined || value.brandIconUrl !== undefined || value.brandAccentColor !== undefined, {
+}).strict().refine((value) => value.name !== undefined || value.allowedEmailDomains !== undefined || value.allowedDesktopVersions !== undefined || value.requireSso !== undefined, {
   message: "Provide at least one organization field to update.",
 })
 
@@ -146,11 +141,7 @@ const invitationPreviewResponseSchema = z.object({
     name: z.string(),
     slug: z.string(),
     allowedEmailDomains: z.array(z.string()).nullable(),
-    branding: z.object({
-      appName: z.string(),
-      logoUrl: z.string().url().nullable(),
-      iconUrl: z.string().url().nullable(),
-    }),
+    logo: z.string().nullable(),
   }),
 }).meta({ ref: "InvitationPreviewResponse" })
 
@@ -198,16 +189,9 @@ const invalidEmailDomainSchema = z.object({
   invalidDomains: z.array(z.string()),
 }).meta({ ref: "InvalidEmailDomainError" })
 
-const invalidBrandIconSchema = z.object({
-  error: z.literal("invalid_brand_icon"),
-  reason: z.string(),
-  message: z.string(),
-}).meta({ ref: "InvalidBrandIconError" })
-
 const updateOrganizationBadRequestSchema = z.union([
   invalidRequestSchema,
   invalidEmailDomainSchema,
-  invalidBrandIconSchema,
 ]).meta({ ref: "UpdateOrganizationBadRequest" })
 
 const accountEmailDomainNotAllowedSchema = z.object({
@@ -486,7 +470,7 @@ export function registerOrgCoreRoutes<T extends { Variables: OrgRouteVariables }
       description: "Updates organization fields. Requires the Edit organization settings permission. The slug is immutable to avoid breaking dashboard URLs.",
       responses: {
         200: jsonResponse("Organization updated successfully.", organizationResponseSchema),
-        400: jsonResponse("The organization update request body was invalid, contained malformed email domains, or contained an invalid brand icon URL.", updateOrganizationBadRequestSchema),
+        400: jsonResponse("The organization update request body was invalid or contained malformed email domains.", updateOrganizationBadRequestSchema),
         401: jsonResponse("The caller must be signed in to update an organization.", unauthorizedSchema),
         402: jsonResponse("Enabling enforced SSO or desktop version controls requires an Enterprise plan.", enterprisePlanRequiredSchema),
         403: jsonResponse("The caller does not have permission to update the requested organization fields.", forbiddenSchema),
@@ -521,35 +505,12 @@ export function registerOrgCoreRoutes<T extends { Variables: OrgRouteVariables }
         }
       }
 
-      const enablesBranding = (typeof input.brandAppName === "string") || (typeof input.brandLogoUrl === "string") || (typeof input.brandIconUrl === "string") || (typeof input.brandAccentColor === "string")
-      if (enablesBranding) {
-        const entitlement = checkEntitlement(payload.organization.metadata, "desktopPolicies")
-        if (!entitlement.ok) {
-          return c.json(entitlement.response, entitlement.status)
-        }
-      }
-
-      if (typeof input.brandIconUrl === "string") {
-        const brandIconCheck = await validateBrandIconUrl(input.brandIconUrl)
-        if (!brandIconCheck.ok) {
-          return c.json({
-            error: "invalid_brand_icon",
-            reason: brandIconCheck.reason,
-            message: brandIconCheck.message,
-          }, 400)
-        }
-      }
-
       const updated = await updateOrganizationSettings({
         organizationId: payload.organization.id,
         name: input.name,
         allowedEmailDomains: normalizedDomains.domains,
         allowedDesktopVersions: input.allowedDesktopVersions,
         requireSso: input.requireSso,
-        brandAppName: input.brandAppName,
-        brandLogoUrl: input.brandLogoUrl,
-        brandIconUrl: input.brandIconUrl,
-        brandAccentColor: input.brandAccentColor,
       })
 
       if (!updated) {

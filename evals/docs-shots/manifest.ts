@@ -66,8 +66,6 @@ const ALLOWLIST = new Set([
   "mcp-oauth-approval-page.png",
   "ollama-added-as-provider.png",
   "ollama-custom-provider.png",
-  "on-prem-branding/brand-assets-saved-in-den.png",
-  "on-prem-branding/windows-taskbar-and-alt-tab.png",
   "openwork-providers.png",
   "sharing-create-link-dialog.png",
   "sharing-skill-share-page.png",

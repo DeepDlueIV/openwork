@@ -112,11 +112,6 @@ export async function mintDesktopConnectGrant(
     jti: codeHash,
     v: CONNECT_LINK_VERSION,
     org: { name: input.organizationName },
-    brand: {
-      appName: input.appName,
-      logoUrl: input.logoUrl,
-      iconUrl: input.iconUrl,
-    },
     den: {
       baseUrl: input.webUrl,
       apiBaseUrl: input.apiUrl,

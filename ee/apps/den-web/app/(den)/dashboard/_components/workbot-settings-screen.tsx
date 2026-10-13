@@ -1,13 +1,10 @@
 "use client";
 
-import Link from "next/link";
 import { Lock } from "lucide-react";
 import { useEffect, useId, useState } from "react";
 import type { WorkbotSettings } from "@openwork/types/den/workbot-settings";
 import {
-  getBrandAppearanceRoute,
   getOrgAccessFlags,
-  parseOrganizationMetadata,
   permissionLockReason,
 } from "../../_lib/den-org";
 import { DenButton } from "../../_components/ui/button";
@@ -17,13 +14,6 @@ import { DenSelect } from "../../_components/ui/select";
 import { DenSkeleton } from "../../_components/ui/skeleton";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
 import { useSaveWorkbotModel, useWorkbotSettings } from "./workbot-settings-data";
-
-/** The name Workbot introduces itself with: the organization's brand name, unless it is unset or OpenWork. */
-function workbotName(metadata: string | null): string {
-  const brand = parseOrganizationMetadata(metadata)?.brandAppName;
-  const trimmed = typeof brand === "string" ? brand.trim() : "";
-  return trimmed && trimmed !== "OpenWork" ? trimmed.slice(0, 40) : "Workbot";
-}
 
 function modelName(settings: WorkbotSettings, id: string | null): string {
   if (!id) return defaultLabel(settings);
@@ -53,7 +43,7 @@ function SettingsRow({ label, labelId, children }: { label: string; labelId?: st
 }
 
 export function WorkbotSettingsScreen() {
-  const { orgContext, orgSlug } = useOrgDashboard();
+  const { orgContext } = useOrgDashboard();
   const orgId = orgContext?.organization.id ?? "";
   const access = getOrgAccessFlags(
     orgContext?.currentMember.role ?? "member",
@@ -73,7 +63,6 @@ export function WorkbotSettingsScreen() {
     setDraft(settings?.model ?? "");
   }, [settings?.model]);
 
-  const name = workbotName(orgContext?.organization.metadata ?? null);
   const savedModel = settings?.model ?? null;
   const draftModel = draft || null;
   const changed = draftModel !== savedModel;
@@ -169,15 +158,6 @@ export function WorkbotSettingsScreen() {
                     ) : null}
                   </>
                 )}
-              </SettingsRow>
-              <SettingsRow label="Name">
-                <span className="text-[13px] text-gray-900" data-testid="workbot-name">{name}</span>
-                <Link
-                  href={getBrandAppearanceRoute(orgSlug)}
-                  className="rounded text-[13px] text-gray-500 underline-offset-2 hover:text-gray-900 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-900"
-                >
-                  Change in Brand appearance
-                </Link>
               </SettingsRow>
             </div>
           )}

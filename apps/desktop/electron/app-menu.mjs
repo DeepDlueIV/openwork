@@ -13,7 +13,6 @@ const NATIVE_MENU_ZOOM_EVENT = "openwork:native-menu:zoom";
 
 export function createApplicationMenu({ appName, docsUrl, getWindow, closeBrowserTab }) {
   let applicationMenuVisible = process.platform === "darwin";
-  let currentAppName = appName;
 
   async function openSettingsFromNativeMenu() {
     const win = await getWindow();
@@ -59,7 +58,7 @@ export function createApplicationMenu({ appName, docsUrl, getWindow, closeBrowse
       ...(isMac
         ? [
             {
-              label: currentAppName,
+              label: appName,
               submenu: [
                 { role: "about" },
                 {
@@ -241,11 +240,5 @@ export function createApplicationMenu({ appName, docsUrl, getWindow, closeBrowse
     return applicationMenuVisible;
   }
 
-  function setAppName(nextAppName) {
-    currentAppName = typeof nextAppName === "string" && nextAppName.trim() ? nextAppName.trim() : appName;
-    install();
-    return currentAppName;
-  }
-
-  return { install, applyVisibility, setVisible, setAppName };
+  return { install, applyVisibility, setVisible };
 }

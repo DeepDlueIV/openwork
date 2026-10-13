@@ -63,7 +63,6 @@ function actorOf(member: Member): WorkbotActor {
   return {
     organizationId: den.organization.id,
     organizationName: den.organization.name,
-    organizationMetadata: den.organization.brandAppName ? { brandAppName: den.organization.brandAppName } : {},
     memberId: den.memberId,
     userId: den.user.id,
     firstName: firstName || null,

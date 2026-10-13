@@ -47,7 +47,7 @@ export type SignConnectLinkTokenInput = {
   claims: ConnectLinkClaims
   privateKeyPem: string
   kid: string
-  /** Permit non-https den/logo URLs (local development and evals only). */
+  /** Permit non-https Den URLs (local development and evals only). */
   allowInsecureUrls?: boolean
 }
 

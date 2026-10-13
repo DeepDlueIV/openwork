@@ -155,25 +155,20 @@ test("updates download outside Settings and offer a persistent, optional restart
   // error/install guard keeps the counters still. The switch is then turned
   // off so the second retry and the final install stay isolated from another
   // background check after a fresh policy arrives.
-  await world.setCustomBranding();
-  await probe.eventually(world.snapshot, {
-    within: 5_000, label: "custom logo is preserved instead of the default wordmark",
-    until: (value) => typeof value === "object" && value !== null && Reflect.get(value, "customLogoLoaded") === true,
-  });
-  expect(await world.snapshot()).toMatchObject({ sidebarName: null, customLogoLoaded: true });
+  expect(await world.snapshot()).toMatchObject({ sidebarName: "OpenWork" });
   for (const [index, message] of [
     "Update installer could not start.",
     "Update installer connection failed.",
   ].entries()) {
     await user.click("Restart to update");
-    await user.see({ text: "Restart Studio?" });
+    await user.see({ text: "Restart OpenWork?" });
     expect(await world.snapshot()).toMatchObject({ installAttempts: index, installs: 0 });
     await user.click("Restart & update");
     await user.click({ role: "button", label: /^Notifications/ });
     await user.see({ text: message });
     await user.press("Escape");
     await probe.eventually(async () => {
-      await user.notSee({ text: "Restart Studio?" }, { timeoutMs: 100 });
+      await user.notSee({ text: "Restart OpenWork?" }, { timeoutMs: 100 });
       return true;
     }, { within: 5_000, label: "the failed restart dismisses its dialog", until: Boolean });
     await user.notSee({ text: "Restart to update" });
@@ -202,7 +197,7 @@ test("updates download outside Settings and offer a persistent, optional restart
     expect(await world.snapshot()).toMatchObject({ installAttempts: index + 1, installs: 0 });
   }
   await user.click("Restart to update");
-  await user.see({ text: "Restart Studio?" });
+  await user.see({ text: "Restart OpenWork?" });
   expect(await world.snapshot()).toMatchObject({ installAttempts: 2, installs: 0 });
   await user.click("Restart & update");
   await probe.eventually(world.snapshot, {

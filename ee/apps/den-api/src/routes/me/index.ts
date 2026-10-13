@@ -388,18 +388,6 @@ export function registerMeRoutes<T extends { Variables: AuthContextVariables & P
         ...(Array.isArray(metadata.allowedDesktopVersions)
           ? { allowedDesktopVersions: metadata.allowedDesktopVersions }
           : {}),
-        ...(typeof metadata.brandAppName === "string"
-          ? { brandAppName: metadata.brandAppName }
-          : {}),
-        ...(typeof metadata.brandLogoUrl === "string"
-          ? { brandLogoUrl: metadata.brandLogoUrl }
-          : {}),
-        ...(typeof metadata.brandIconUrl === "string"
-          ? { brandIconUrl: metadata.brandIconUrl }
-          : {}),
-        ...(typeof metadata.brandAccentColor === "string"
-          ? { brandAccentColor: metadata.brandAccentColor }
-          : {}),
       })
     },
   )

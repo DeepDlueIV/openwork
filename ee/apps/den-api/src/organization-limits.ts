@@ -16,19 +16,6 @@ export type OrganizationLimits = {
   workers: number
 }
 
-export type ManagedBrandAssetMetadata = {
-  kind: "logo" | "icon"
-  version: string
-  extension: "png" | "jpg"
-  contentType: "image/png" | "image/jpeg"
-  url: string
-  width: number
-  height: number
-  byteLength: number
-  originalName: string
-  uploadedAt: string
-}
-
 type OrganizationId = typeof OrganizationTable.$inferSelect.id
 
 export type OrganizationMetadata = {
@@ -36,15 +23,18 @@ export type OrganizationMetadata = {
   seatsFreeAdditional?: number
   allowedDesktopVersions?: string[]
   requireSso?: boolean
-  brandAppName?: string
-  brandLogoUrl?: string
-  brandIconUrl?: string
-  brandLogoAsset?: ManagedBrandAssetMetadata
-  brandIconAsset?: ManagedBrandAssetMetadata
-  brandAccentColor?: string
 } & Record<string, unknown>
 
 type OrganizationMetadataInput = Record<string, unknown> | string | null | undefined
+
+// Retired white-label settings must not leak back to clients from older rows.
+function withoutRetiredSettings(metadata: Record<string, unknown>) {
+  const result = { ...metadata }
+  for (const key of ["brandAppName", "brandLogoUrl", "brandIconUrl", "brandLogoAsset", "brandIconAsset", "brandAccentColor"]) {
+    delete result[key]
+  }
+  return result
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -108,7 +98,7 @@ export function normalizeOrganizationMetadata(input: OrganizationMetadataInput):
   const workers = normalizePositiveInteger(rawLimits?.workers ?? rawLimits?.Workers, DEFAULT_ORGANIZATION_LIMITS.workers)
 
   const metadata: OrganizationMetadata = {
-    ...parsed,
+    ...withoutRetiredSettings(parsed),
     limits: {
       ...rawLimits,
       members,
@@ -126,6 +116,7 @@ export function normalizeOrganizationMetadata(input: OrganizationMetadataInput):
     : null
 
   const changed =
+    Object.keys(withoutRetiredSettings(parsed)).length !== Object.keys(parsed).length ||
     !isRecord(parsed.limits) ||
     Object.keys(parsed).length === 0 ||
     rawLimits?.members !== members ||
@@ -136,7 +127,7 @@ export function normalizeOrganizationMetadata(input: OrganizationMetadataInput):
 }
 
 export function serializeOrganizationMetadata(metadata: OrganizationMetadataInput) {
-  const parsed = readOrganizationMetadata(metadata)
+  const parsed = withoutRetiredSettings(readOrganizationMetadata(metadata))
   return Object.keys(parsed).length > 0 ? JSON.stringify(parsed) : null
 }
 

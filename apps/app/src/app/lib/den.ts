@@ -214,9 +214,6 @@ export type DenBootstrapConfig = DenBaseUrls & {
   source: DenBootstrapSource;
   requireSignin: boolean;
   requireActivation?: boolean;
-  brandAppName?: string | null;
-  brandLogoUrl?: string | null;
-  brandIconUrl?: string | null;
   claimLinks?: Array<{
     id: string;
     role: string;
@@ -920,9 +917,6 @@ function resolveDenBootstrapConfig(
     apiBaseUrl?: string | null;
     requireSignin?: boolean | null;
     requireActivation?: boolean | null;
-    brandAppName?: string | null;
-    brandLogoUrl?: string | null;
-    brandIconUrl?: string | null;
     fromFile?: boolean | null;
     source?: DenBootstrapSource | null;
     claimLinks?: DenBootstrapConfig["claimLinks"];
@@ -938,9 +932,6 @@ function resolveDenBootstrapConfig(
     ...(typeof input.requireActivation === "boolean"
       ? { requireActivation: input.requireActivation }
       : {}),
-    ...(input.brandAppName?.trim() ? { brandAppName: input.brandAppName.trim().slice(0, 64) } : {}),
-    ...(input.brandLogoUrl?.trim() ? { brandLogoUrl: input.brandLogoUrl.trim() } : {}),
-    ...(input.brandIconUrl?.trim() ? { brandIconUrl: input.brandIconUrl.trim() } : {}),
     ...(input.claimLinks ? { claimLinks: input.claimLinks } : {}),
     ...(input.handoff ? { handoff: input.handoff } : {}),
     ...(input.prepared ? { prepared: input.prepared } : {}),
@@ -1095,9 +1086,6 @@ function getPendingBootstrapConfig(next: DenSettings): DenBootstrapConfig | null
     apiBaseUrl: next.apiBaseUrl ?? previous.apiBaseUrl,
     requireSignin: previous.requireSignin,
     requireActivation: previous.requireActivation,
-    brandAppName: previous.brandAppName,
-    brandLogoUrl: previous.brandLogoUrl,
-    brandIconUrl: previous.brandIconUrl,
     source: previous.source,
     claimLinks: previous.claimLinks,
     handoff: previous.handoff,
@@ -1347,9 +1335,6 @@ export async function setDenBootstrapConfig(
       ...(typeof normalized.requireActivation === "boolean"
         ? { requireActivation: normalized.requireActivation }
         : {}),
-      ...(normalized.brandAppName ? { brandAppName: normalized.brandAppName } : {}),
-      ...(normalized.brandLogoUrl ? { brandLogoUrl: normalized.brandLogoUrl } : {}),
-      ...(normalized.brandIconUrl ? { brandIconUrl: normalized.brandIconUrl } : {}),
       ...(normalized.handoff ? { handoff: normalized.handoff } : {}),
       ...(normalized.prepared ? { prepared: normalized.prepared } : {}),
       ...(normalized.enterpriseActivation ? { enterpriseActivation: normalized.enterpriseActivation } : {}),
@@ -1664,9 +1649,6 @@ export function writeDenSettings(
         apiBaseUrl: pendingBootstrap.apiBaseUrl,
         requireSignin: currentBootstrap.requireSignin,
         requireActivation: currentBootstrap.requireActivation,
-        brandAppName: currentBootstrap.brandAppName,
-        brandLogoUrl: currentBootstrap.brandLogoUrl,
-        brandIconUrl: currentBootstrap.brandIconUrl,
       }).catch(() => undefined);
     }
   }

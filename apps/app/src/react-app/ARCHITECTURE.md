@@ -64,7 +64,7 @@ src/index.react.tsx                       React entry
         BootStateProvider
         └─ ServerProvider
            └─ DenAuthProvider
-              └─ ConnectLink / DesktopConfig / BrandTheme / RestrictionNotice
+              └─ ConnectLink / DesktopConfig / RestrictionNotice
                  └─ LocalProvider
                     └─ react-app/shell/app-root.tsx → routes
                        ├─ shell/session-route.tsx   → domains/session

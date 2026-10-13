@@ -6,7 +6,6 @@ import { registerOrgApiKeyRoutes } from "./api-keys.js"
 import { registerManagedDeploymentRoutes } from "./managed-deployments.js"
 import { registerOrgAuditRoutes } from "./audit.js"
 import { registerOrgBillingRoutes } from "./billing.js"
-import { registerOrgBrandAssetRoutes } from "./brand-assets.js"
 import { registerOrgWorkflowRunRoutes } from "./codemode-runs.js"
 import { registerOrgWorkflowRoutes } from "./codemode-scripts.js"
 import { LEGACY_ORG_PROXY_HEADER } from "../../middleware/user-organizations.js"
@@ -72,7 +71,6 @@ export function registerOrgRoutes<T extends { Variables: OrgRouteVariables & Req
   registerOrgApiKeyRoutes(app)
   registerOrgAuditRoutes(app)
   registerOrgBillingRoutes(app)
-  registerOrgBrandAssetRoutes(app)
   registerOrgWorkflowRunRoutes(app)
   registerOrgWorkflowRoutes(app)
   registerOrgMcpAppCatalogRoutes(app)

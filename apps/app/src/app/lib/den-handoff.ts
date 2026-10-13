@@ -92,9 +92,6 @@ function bootstrapRestorePayload(previous: DenBootstrapConfig) {
     ...(typeof previous.requireActivation === "boolean"
       ? { requireActivation: previous.requireActivation }
       : {}),
-    ...(previous.brandAppName ? { brandAppName: previous.brandAppName } : {}),
-    ...(previous.brandLogoUrl ? { brandLogoUrl: previous.brandLogoUrl } : {}),
-    ...(previous.brandIconUrl ? { brandIconUrl: previous.brandIconUrl } : {}),
     ...(previous.claimLinks ? { claimLinks: previous.claimLinks } : {}),
     ...(previous.handoff ? { handoff: previous.handoff } : {}),
     ...(previous.prepared ? { prepared: previous.prepared } : {}),
@@ -214,7 +211,7 @@ export async function exchangeHandoffAndSignIn(
       denOriginComparisonKey(previousBootstrap.baseUrl) !== destinationKey;
     const needsBootstrapCommit = bootstrapChangesOrigin || options.bootstrap !== undefined;
     if (needsBootstrapCommit) {
-      // Branding, claim links, and prepared-workspace state belong to the
+      // Claim links and prepared-workspace state belong to the
       // origin that wrote them; they carry through same-origin commits only.
       const carryOriginScopedFields = !bootstrapChangesOrigin;
       const clearHandoff = options.bootstrap?.clearHandoff === true || bootstrapChangesOrigin;
@@ -225,15 +222,6 @@ export async function exchangeHandoffAndSignIn(
           requireSignin: options.bootstrap?.requireSignin ?? previousBootstrap.requireSignin,
           ...(typeof previousBootstrap.requireActivation === "boolean"
             ? { requireActivation: previousBootstrap.requireActivation }
-            : {}),
-          ...(carryOriginScopedFields && previousBootstrap.brandAppName
-            ? { brandAppName: previousBootstrap.brandAppName }
-            : {}),
-          ...(carryOriginScopedFields && previousBootstrap.brandLogoUrl
-            ? { brandLogoUrl: previousBootstrap.brandLogoUrl }
-            : {}),
-          ...(carryOriginScopedFields && previousBootstrap.brandIconUrl
-            ? { brandIconUrl: previousBootstrap.brandIconUrl }
             : {}),
           ...(carryOriginScopedFields && previousBootstrap.claimLinks
             ? { claimLinks: previousBootstrap.claimLinks }

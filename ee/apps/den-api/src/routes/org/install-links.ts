@@ -147,16 +147,12 @@ function organizationMetadataInput(value: unknown): Record<string, unknown> | st
   return typeof value === "object" && !Array.isArray(value) ? { ...value } : null
 }
 
-function buildInstallConfig(input: { organization: { name: string; logo: string | null; metadata: unknown }; request: Request }) {
-  const metadata = normalizeOrganizationMetadata(organizationMetadataInput(input.organization.metadata)).metadata
+function buildInstallConfig(input: { organization: { name: string }; request: Request }) {
   return installConfigSchema.parse({
-    appName: typeof metadata.brandAppName === "string" ? metadata.brandAppName : "OpenWork",
     clientName: input.organization.name,
     webUrl: env.webUrl,
     apiUrl: resolvePublicOrigin(input.request, env.apiPublicUrl),
     requireSignin: true,
-    logoUrl: typeof metadata.brandLogoUrl === "string" ? metadata.brandLogoUrl : input.organization.logo ?? null,
-    iconUrl: typeof metadata.brandIconUrl === "string" ? metadata.brandIconUrl : null,
   })
 }
 
@@ -273,9 +269,6 @@ async function mintInstallHandoff(
   const connectInput = {
     installLinkId: input.installLinkId,
     organizationName: input.config.clientName,
-    appName: input.config.appName,
-    logoUrl: input.config.logoUrl,
-    iconUrl: input.config.iconUrl,
     webUrl: input.config.webUrl,
     apiUrl: input.config.apiUrl,
   }
@@ -442,7 +435,7 @@ export function registerOrgInstallLinkRoutes<T extends { Variables: OrgRouteVari
     describeRoute({
       tags: ["Users"],
       summary: "Get current user's install configuration",
-      description: "Returns desktop branding, distribution, and approved version for the signed-in member's active organization.",
+      description: "Returns desktop distribution and approved version for the signed-in member's active organization.",
       responses: {
         200: jsonResponse("Authenticated install configuration resolved successfully.", authenticatedInstallConfigSchema),
         401: jsonResponse("The caller must be signed in to load install configuration.", unauthorizedSchema),

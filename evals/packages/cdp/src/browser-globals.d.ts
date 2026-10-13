@@ -59,8 +59,8 @@ declare global {
       };
     };
     __openworkRecoveryControl: { snapshot(): Promise<unknown>; select(id: string): Promise<unknown> };
-    __openworkApplyDesktopConfig(config: { allowAlphaUpdates?: boolean; brandAppName?: string; brandLogoUrl?: string }): void;
-    __openworkSetDesktopConfigRefreshResult(config: { allowAlphaUpdates?: boolean; brandAppName?: string; brandLogoUrl?: string }): void;
+    __openworkApplyDesktopConfig(config: { allowAlphaUpdates?: boolean }): void;
+    __openworkSetDesktopConfigRefreshResult(config: { allowAlphaUpdates?: boolean }): void;
     __openworkReadDesktopVersionMetadataEval(): { minAppVersion: string; latestAppVersion: string; publishedDesktopVersions: string[] };
     __openworkUpdaterEvalBridge: {
       getChannel(): Promise<{ channel: string; currentVersion: string }>;

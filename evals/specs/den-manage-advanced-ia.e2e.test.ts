@@ -3,7 +3,7 @@ import { expect } from "vitest";
 import { adminDashboardWeb } from "../worlds/den-admin-navigation.ts";
 
 // The Den admin sidebar has two jobs: Work for everyone, and Manage plus Team
-// for admins. Collections and Brand appearance live in Settings › Advanced,
+// for admins. Collections lives in Settings › Advanced,
 // Desktop policies is its own Manage entry, and Plugins lists plugins without
 // GitHub sources while the legacy integrations URL still opens its old tab.
 const test = spec.world(adminDashboardWeb, { timeout: 420_000 });
@@ -52,11 +52,7 @@ test("the Den admin sidebar groups Manage and moves Advanced into Settings", asy
   evidence.recordAssertionEvidence("Settings › Advanced opens Collections at /dashboard/marketplaces", `path=${advancedPath}; selected=${JSON.stringify(collectionsTabs)}`, advancedOk);
   await user.screenshot();
 
-  await user.click({ role: "tab", label: "Brand appearance" });
-  await probe.eventually(() => world.location(), {
-    within: 30_000, label: "Brand appearance route", until: (path) => path === "/dashboard/brand-appearance",
-  });
-  await user.see({ testId: "brand-appearance-screen" }, { timeoutMs: 30_000 });
+  await user.notSee({ role: "tab", label: "Brand appearance" });
 
   await user.click({ role: "link", label: "Plugins" });
   const pluginsPath = await probe.eventually(() => world.location(), {

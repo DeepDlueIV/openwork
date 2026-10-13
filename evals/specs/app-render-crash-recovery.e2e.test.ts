@@ -26,7 +26,7 @@ test("a render throw shows a recovery screen with the error instead of a blank w
     await user.see({ role: "button", label: /technical details/i });
     // Progressive disclosure: the raw payload waits behind the toggle.
     await user.notSee({ text: MESSAGE });
-    await user.notSee({ text: /at BrandThemeControlActions/ });
+    await user.notSee({ text: /at AppRecoveryControlActions/ });
     await user.notSee({ role: "button", label: /copy details/i });
     await user.screenshot();
   });
@@ -39,7 +39,7 @@ test("a render throw shows a recovery screen with the error instead of a blank w
     expect(await probe.has("https://app.openworklabs.com/signin")).toBe(true);
     expect(await probe.has(SECRET)).toBe(false);
     // The stack names the throwing component, so the failure is reportable.
-    await user.see({ text: /at BrandThemeControlActions/ });
+    await user.see({ text: /at AppRecoveryControlActions/ });
     await user.see({ role: "button", label: /copy details/i });
     await user.see({ role: "button", label: /open logs folder/i });
     await user.screenshot();
@@ -56,7 +56,7 @@ test("a render throw shows a recovery screen with the error instead of a blank w
     const [header, message, stack] = clipboard.split("\n\n");
     expect(header).toMatch(/^OpenWork \S+ \(desktop, (public|enterprise)\)$/);
     expect(message).toBe(MESSAGE);
-    expect(stack).toMatch(/at BrandThemeControlActions/);
+    expect(stack).toMatch(/at AppRecoveryControlActions/);
     expect(clipboard).toContain("https://app.openworklabs.com/signin");
     expect(clipboard).not.toContain(SECRET);
   });

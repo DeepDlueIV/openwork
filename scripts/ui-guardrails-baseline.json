@@ -338,18 +338,6 @@
       "count": 3
     },
     {
-      "file": "ee/apps/den-web/app/(den)/dashboard/_components/brand-appearance-screen.tsx",
-      "rule": "faint-text",
-      "fingerprint": "faf2b08f95c14e03",
-      "count": 3
-    },
-    {
-      "file": "ee/apps/den-web/app/(den)/dashboard/_components/brand-appearance-screen.tsx",
-      "rule": "raw-control",
-      "fingerprint": "ec9bdfccaa71ba57",
-      "count": 1
-    },
-    {
       "file": "ee/apps/den-web/app/(den)/dashboard/_components/command-palette/den-command-palette.tsx",
       "rule": "faint-text",
       "fingerprint": "faf2b08f95c14e03",

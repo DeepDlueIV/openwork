@@ -53,8 +53,6 @@ function findRefusedClaimUrl(claims, allowInsecureLoopback) {
   const candidates = [
     claims.den.baseUrl,
     claims.den.apiBaseUrl ?? null,
-    claims.brand.logoUrl,
-    claims.brand.iconUrl,
   ];
   for (const candidate of candidates) {
     if (!candidate) continue;
@@ -95,22 +93,18 @@ function isHttpUrl(value) {
 function normalizeClaims(payload) {
   if (typeof payload !== "object" || payload === null) return null;
   const record = /** @type {Record<string, unknown>} */ (payload);
+  // Unknown legacy fields are ignored, never returned or persisted. In
+  // particular, old links cannot change the desktop's native identity.
   const org = record.org;
-  const brand = record.brand;
   const den = record.den;
   if (typeof org !== "object" || org === null) return null;
-  if (typeof brand !== "object" || brand === null) return null;
   if (typeof den !== "object" || den === null) return null;
   const orgRecord = /** @type {Record<string, unknown>} */ (org);
-  const brandRecord = /** @type {Record<string, unknown>} */ (brand);
   const denRecord = /** @type {Record<string, unknown>} */ (den);
 
   const iss = typeof record.iss === "string" ? record.iss.trim() : "";
   const jti = typeof record.jti === "string" ? record.jti.trim() : "";
   const orgName = typeof orgRecord.name === "string" ? orgRecord.name.trim() : "";
-  const brandAppName = typeof brandRecord.appName === "string" ? brandRecord.appName.trim() : "";
-  const brandLogoUrl = typeof brandRecord.logoUrl === "string" ? brandRecord.logoUrl.trim() : null;
-  const brandIconUrl = typeof brandRecord.iconUrl === "string" ? brandRecord.iconUrl.trim() : null;
   const denBaseUrl = typeof denRecord.baseUrl === "string" ? denRecord.baseUrl.trim() : "";
   const denApiBaseUrlRaw = denRecord.apiBaseUrl;
   const denApiBaseUrl = typeof denApiBaseUrlRaw === "string" ? denApiBaseUrlRaw.trim() : null;
@@ -122,9 +116,6 @@ function normalizeClaims(payload) {
   if (jti.length < 8) return null;
   if (record.v !== CONNECT_LINK_VERSION) return null;
   if (!orgName || orgName.length > 128) return null;
-  if (!brandAppName || brandAppName.length > 64) return null;
-  if (brandLogoUrl !== null && !isHttpUrl(brandLogoUrl)) return null;
-  if (brandIconUrl !== null && !isHttpUrl(brandIconUrl)) return null;
   if (!denBaseUrl || !isHttpUrl(denBaseUrl)) return null;
   if (denApiBaseUrl !== null && !isHttpUrl(denApiBaseUrl)) return null;
   if (typeof record.requireSignin !== "boolean") return null;
@@ -137,7 +128,6 @@ function normalizeClaims(payload) {
     jti,
     v: CONNECT_LINK_VERSION,
     org: { name: orgName },
-    brand: { appName: brandAppName, logoUrl: brandLogoUrl, iconUrl: brandIconUrl },
     den: { baseUrl: denBaseUrl, ...(denApiBaseUrl !== null ? { apiBaseUrl: denApiBaseUrl } : {}) },
     requireSignin: record.requireSignin,
   };
@@ -418,9 +408,6 @@ export function desktopBootstrapFromConnectClaims(claims) {
     baseUrl: claims.den.baseUrl,
     ...(claims.den.apiBaseUrl ? { apiBaseUrl: claims.den.apiBaseUrl } : {}),
     requireSignin: claims.requireSignin,
-    brandAppName: claims.brand.appName,
-    ...(claims.brand.logoUrl ? { brandLogoUrl: claims.brand.logoUrl } : {}),
-    ...(claims.brand.iconUrl ? { brandIconUrl: claims.brand.iconUrl } : {}),
   };
 }
 

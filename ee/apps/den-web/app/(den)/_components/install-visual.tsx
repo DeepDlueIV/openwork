@@ -4,18 +4,9 @@ import { ArrowRight } from "lucide-react";
 
 type InstallVisualOs = "macos" | "windows" | "linux";
 
-function AppBadge({ iconUrl, size = "size-14" }: { iconUrl: string | null; size?: string }) {
-  if (iconUrl) {
-    return (
-      // Organization icons may be served by private on-prem hosts that Next/Image cannot proxy.
-      // eslint-disable-next-line @next/next/no-img-element
-      <img src={iconUrl} alt="" className={`${size} rounded-[22%] object-contain shadow-[0_4px_12px_rgba(16,24,40,0.18)]`} />
-    );
-  }
+function AppBadge() {
   return (
-    <span className={`grid ${size} place-items-center rounded-[22%] bg-[#101828] shadow-[0_4px_12px_rgba(16,24,40,0.18)]`}>
-      <span className="size-1/3 rounded-md bg-white" />
-    </span>
+    <img src="/openwork-mark.svg" alt="" className="size-14 rounded-[22%] object-contain shadow-[0_4px_12px_rgba(16,24,40,0.18)]" />
   );
 }
 
@@ -32,7 +23,7 @@ function ApplicationsFolder() {
   );
 }
 
-function MacDragVisual({ appName, iconUrl }: { appName: string; iconUrl: string | null }) {
+function MacDragVisual() {
   return (
     <div className="w-full max-w-[26rem] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_10px_30px_-18px_rgba(16,24,40,0.3)]">
       <div className="relative flex h-7 items-center justify-center border-b border-slate-100 bg-[#f7f9fc]">
@@ -41,12 +32,12 @@ function MacDragVisual({ appName, iconUrl }: { appName: string; iconUrl: string 
           <span className="size-2.5 rounded-full bg-[#febc2e]" />
           <span className="size-2.5 rounded-full bg-[#28c840]" />
         </span>
-        <span className="text-[11px] font-medium text-[#3a3a3c]">{appName}</span>
+        <span className="text-[11px] font-medium text-[#3a3a3c]">OpenWork Enterprise</span>
       </div>
       <div className="flex items-center justify-center gap-6 bg-[linear-gradient(180deg,#fbfcfe,#f2f5f9)] px-6 py-7">
         <span className="grid justify-items-center gap-1.5">
-          <AppBadge iconUrl={iconUrl} />
-          <span className="max-w-[7.5rem] truncate text-[11px] font-medium text-[#344054]">{appName}</span>
+          <AppBadge />
+          <span className="max-w-[7.5rem] truncate text-[11px] font-medium text-[#344054]">OpenWork Enterprise</span>
         </span>
         <span className="grid justify-items-center gap-0.5 text-[#98a2b3]" aria-hidden="true">
           <ArrowRight className="size-6" strokeWidth={2.2} />
@@ -58,11 +49,11 @@ function MacDragVisual({ appName, iconUrl }: { appName: string; iconUrl: string 
   );
 }
 
-function WindowsRunAnywayVisual({ appName }: { appName: string }) {
+function WindowsRunAnywayVisual() {
   return (
     <div className="w-full max-w-[26rem] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_10px_30px_-18px_rgba(16,24,40,0.3)]">
       <div className="flex h-7 items-center justify-between border-b border-slate-100 bg-[#f7f9fc] px-3">
-        <span className="text-[11px] font-medium text-[#3a3a3c]">{appName} Setup</span>
+        <span className="text-[11px] font-medium text-[#3a3a3c]">OpenWork Enterprise Setup</span>
         <span className="flex items-center gap-2 text-[10px] text-[#6b7280]" aria-hidden="true">
           <span>—</span>
           <span>▢</span>
@@ -101,15 +92,7 @@ function LinuxTerminalVisual() {
 }
 
 /** Decorative picture of the install gesture for the detected OS. */
-export function InstallVisual({
-  os,
-  appName,
-  iconUrl,
-}: {
-  os: InstallVisualOs | null;
-  appName: string;
-  iconUrl: string | null;
-}) {
+export function InstallVisual({ os }: { os: InstallVisualOs | null }) {
   if (!os) {
     return null;
   }
@@ -117,9 +100,9 @@ export function InstallVisual({
   return (
     <div aria-hidden="true" data-testid="install-visual" data-visual-os={os}>
       {os === "macos" ? (
-        <MacDragVisual appName={appName} iconUrl={iconUrl} />
+        <MacDragVisual />
       ) : os === "windows" ? (
-        <WindowsRunAnywayVisual appName={appName} />
+        <WindowsRunAnywayVisual />
       ) : (
         <LinuxTerminalVisual />
       )}

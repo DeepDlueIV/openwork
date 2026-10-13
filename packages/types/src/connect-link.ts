@@ -15,13 +15,6 @@ export type ConnectLinkOrg = {
   name: string;
 };
 
-/** Maps one-for-one to desktop-bootstrap.json's managed branding fields. */
-export type ConnectLinkBrand = {
-  appName: string;
-  logoUrl: string | null;
-  iconUrl: string | null;
-};
-
 export type ConnectLinkDenTarget = {
   baseUrl: string;
   apiBaseUrl?: string | null;
@@ -35,7 +28,6 @@ export type ConnectLinkClaims = {
   jti: string;
   v: typeof CONNECT_LINK_VERSION;
   org: ConnectLinkOrg;
-  brand: ConnectLinkBrand;
   den: ConnectLinkDenTarget;
   requireSignin: boolean;
 };

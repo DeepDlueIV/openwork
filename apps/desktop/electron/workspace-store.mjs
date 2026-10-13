@@ -261,9 +261,6 @@ export function createWorkspaceStore({
     });
     const writtenAt = typeof input?.writtenAt === "string" ? input.writtenAt.trim() : "";
     const apiBaseUrl = typeof input?.apiBaseUrl === "string" ? input.apiBaseUrl.trim() : "";
-    const brandAppName = typeof input?.brandAppName === "string" ? input.brandAppName.trim().slice(0, 64) : "";
-    const brandLogoUrl = typeof input?.brandLogoUrl === "string" ? input.brandLogoUrl.trim() : "";
-    const brandIconUrl = typeof input?.brandIconUrl === "string" ? input.brandIconUrl.trim() : "";
     const enterpriseActivationInput = input?.enterpriseActivation;
     const enterpriseActivation = enterpriseActivationInput && typeof enterpriseActivationInput === "object"
       ? {
@@ -291,9 +288,6 @@ export function createWorkspaceStore({
       ...(typeof input?.requireActivation === "boolean"
         ? { requireActivation: input.requireActivation }
         : {}),
-      ...(brandAppName ? { brandAppName } : {}),
-      ...(brandLogoUrl ? { brandLogoUrl } : {}),
-      ...(brandIconUrl ? { brandIconUrl } : {}),
       ...(writtenAt ? { writtenAt } : {}),
       ...(claimLinks.length > 0 ? { claimLinks } : {}),
       ...(normalizedHandoff ? { handoff: normalizedHandoff } : {}),

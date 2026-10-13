@@ -341,46 +341,12 @@ export const restrictedDesktopPolicyValue = applyRestrictedDesktopPolicy(
   desktopPolicyDefaults,
 );
 
-// ---------------------------------------------------------------------------
-// Radix color families that can be used as a brand accent.
-// ---------------------------------------------------------------------------
-export const brandAccentColorValues = [
-  "blue",
-  "crimson",
-  "cyan",
-  "gold",
-  "grass",
-  "green",
-  "indigo",
-  "iris",
-  "jade",
-  "lime",
-  "mint",
-  "orange",
-  "pink",
-  "plum",
-  "purple",
-  "red",
-  "ruby",
-  "sky",
-  "teal",
-  "tomato",
-  "violet",
-  "yellow",
-] as const;
-
-export type BrandAccentColor = (typeof brandAccentColorValues)[number];
-
 export const desktopConfigSchema = desktopPolicyValueSchema
   .extend({
     execution: effectiveDesktopExecutionPolicySchema.optional(),
     allowedDesktopVersions: z
       .array(z.string().trim().min(1).max(32))
       .optional(),
-    brandAppName: z.string().trim().min(1).max(64).optional(),
-    brandLogoUrl: z.string().url().max(2048).optional(),
-    brandIconUrl: z.string().url().max(2048).optional(),
-    brandAccentColor: z.enum(brandAccentColorValues).optional(),
     automationsEnabled: z.boolean().optional(),
     dashboardEnabled: z.boolean().optional(),
     connectEnabled: z.boolean().optional(),
@@ -732,40 +698,12 @@ export function selectEffectiveOnboardingPromptConfig(input: {
   );
 }
 
-function normalizeBrandUrl(value: unknown): string | undefined {
-  if (typeof value !== "string") return undefined;
-  const trimmed = value.trim();
-  if (!trimmed) return undefined;
-  try {
-    new URL(trimmed);
-    return trimmed.slice(0, 2048);
-  } catch {
-    return undefined;
-  }
-}
-
-function normalizeBrandAppName(value: unknown): string | undefined {
-  if (typeof value !== "string") return undefined;
-  const trimmed = value.trim();
-  return trimmed ? trimmed.slice(0, 64) : undefined;
-}
-
-function normalizeBrandAccentColor(value: unknown): BrandAccentColor | undefined {
-  if (typeof value !== "string") return undefined;
-  const trimmed = value.trim().toLowerCase();
-  return brandAccentColorValues.find((color) => color === trimmed);
-}
-
 export function normalizeDesktopConfig(value: unknown): DesktopConfig {
   const policy = normalizeDesktopPolicyValue(value);
   const raw = isRecord(value) ? value : null;
   const allowedDesktopVersions = normalizeAllowedDesktopVersions(
     raw?.allowedDesktopVersions,
   );
-  const brandAppName = normalizeBrandAppName(raw?.brandAppName);
-  const brandLogoUrl = normalizeBrandUrl(raw?.brandLogoUrl);
-  const brandIconUrl = normalizeBrandUrl(raw?.brandIconUrl);
-  const brandAccentColor = normalizeBrandAccentColor(raw?.brandAccentColor);
   const automationsEnabled =
     typeof raw?.automationsEnabled === "boolean"
       ? raw.automationsEnabled
@@ -783,10 +721,6 @@ export function normalizeDesktopConfig(value: unknown): DesktopConfig {
     ...policy,
     ...(execution !== undefined ? { execution } : {}),
     ...(allowedDesktopVersions !== undefined ? { allowedDesktopVersions } : {}),
-    ...(brandAppName !== undefined ? { brandAppName } : {}),
-    ...(brandLogoUrl !== undefined ? { brandLogoUrl } : {}),
-    ...(brandIconUrl !== undefined ? { brandIconUrl } : {}),
-    ...(brandAccentColor !== undefined ? { brandAccentColor } : {}),
     ...(automationsEnabled !== undefined ? { automationsEnabled } : {}),
     ...(dashboardEnabled !== undefined ? { dashboardEnabled } : {}),
     ...(connectEnabled !== undefined ? { connectEnabled } : {}),

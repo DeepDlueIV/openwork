@@ -5,7 +5,6 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { getErrorMessage, requestJson } from "../_lib/den-flow";
 import { OnboardingShell } from "./onboarding-shell";
-import { OrganizationBrandIdentity, type OrganizationBrand } from "./organization-brand-identity";
 
 const CONNECT_CODE_PATTERN = /^[A-Za-z0-9_-]{24,128}$/;
 const RETURN_TO_OPENWORK_URL = "openwork://open";
@@ -13,7 +12,6 @@ const RETURN_TO_OPENWORK_URL = "openwork://open";
 type ActivationDetails = {
   status: "pending" | "connected";
   organizationName: string;
-  brand: OrganizationBrand;
   apiBaseUrl: string;
   expiresAt: string;
 };
@@ -30,21 +28,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function parseActivationDetails(value: unknown): ActivationDetails | null {
   if (!isRecord(value) || (value.status !== "pending" && value.status !== "connected")) return null;
-  if (!isRecord(value.claims) || !isRecord(value.claims.org) || !isRecord(value.claims.brand) || !isRecord(value.claims.den)) {
+  if (!isRecord(value.claims) || !isRecord(value.claims.org) || !isRecord(value.claims.den)) {
     return null;
   }
 
   const organizationName = value.claims.org.name;
-  const appName = value.claims.brand.appName;
-  const logoUrl = value.claims.brand.logoUrl;
-  const iconUrl = value.claims.brand.iconUrl;
   const apiBaseUrl = value.claims.den.apiBaseUrl;
   const expiresAt = value.expiresAt;
   if (
     typeof organizationName !== "string"
-    || typeof appName !== "string"
-    || (logoUrl !== null && typeof logoUrl !== "string")
-    || (iconUrl !== null && typeof iconUrl !== "string")
     || typeof apiBaseUrl !== "string"
     || typeof expiresAt !== "string"
   ) {
@@ -53,8 +45,6 @@ function parseActivationDetails(value: unknown): ActivationDetails | null {
 
   try {
     new URL(apiBaseUrl);
-    if (logoUrl) new URL(logoUrl);
-    if (iconUrl) new URL(iconUrl);
     if (Number.isNaN(Date.parse(expiresAt))) return null;
   } catch {
     return null;
@@ -63,7 +53,6 @@ function parseActivationDetails(value: unknown): ActivationDetails | null {
   return {
     status: value.status,
     organizationName,
-    brand: { appName, logoUrl, iconUrl },
     apiBaseUrl,
     expiresAt,
   };
@@ -182,14 +171,14 @@ export function ActivationScreen() {
         data-testid="activation-page"
       >
         <div className="grid justify-items-start gap-3">
-          <p className="den-eyebrow">{details.brand.appName} Desktop</p>
+          <p className="den-eyebrow">OpenWork Desktop</p>
           <h1 className="m-0 text-[2rem] font-semibold leading-[1.04] tracking-[-0.05em] text-slate-950 sm:text-[2.5rem]">
             {connected ? "Connected to " : "Connect this computer to "}
-            <OrganizationBrandIdentity organizationName={details.organizationName} brand={details.brand} />
+            {details.organizationName}
           </h1>
           <p className="den-copy">
             {connected
-              ? `${details.organizationName}'s setup and branding are ready in ${details.brand.appName}.`
+              ? `${details.organizationName}'s setup is ready in OpenWork.`
               : `OpenWork will show ${details.organizationName} and its server before anything changes.`}
           </p>
         </div>

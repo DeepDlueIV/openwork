@@ -11,16 +11,12 @@ import { buildBrowserInstallDownloadHref, type InstallPlatform, installerFileNam
 import { isMobileUserAgent } from "../_lib/platform";
 import { InstallVisual } from "./install-visual";
 import { OnboardingShell } from "./onboarding-shell";
-import { OrganizationBrandIdentity } from "./organization-brand-identity";
 
 type InstallConfig = {
-  appName: string;
   clientName: string;
   webUrl: string;
   apiUrl: string;
   requireSignin: boolean;
-  logoUrl: string | null;
-  iconUrl: string | null;
   desktopVersion: string;
   distribution: "cloud" | "enterprise";
 };
@@ -115,22 +111,13 @@ function parseInstallConfig(value: unknown): InstallConfig | null {
   }
 
   const clientName = typeof value.clientName === "string" ? value.clientName.trim() : "";
-  const appName = typeof value.appName === "string" && value.appName.trim() ? value.appName.trim() : "OpenWork";
   const webUrl = typeof value.webUrl === "string" ? value.webUrl.trim() : "";
   const apiUrl = typeof value.apiUrl === "string" ? value.apiUrl.trim() : "";
   const requireSignin = value.requireSignin;
-  const logoUrl = value.logoUrl;
-  const iconUrl = value.iconUrl ?? null;
   const desktopVersion = typeof value.desktopVersion === "string" ? value.desktopVersion.trim() : "";
   const distribution = value.distribution;
 
   if (!clientName || !isUrl(webUrl) || !isUrl(apiUrl) || typeof requireSignin !== "boolean") {
-    return null;
-  }
-  if (logoUrl !== null && (typeof logoUrl !== "string" || !isUrl(logoUrl))) {
-    return null;
-  }
-  if (iconUrl !== null && (typeof iconUrl !== "string" || !isUrl(iconUrl))) {
     return null;
   }
   if (
@@ -141,13 +128,10 @@ function parseInstallConfig(value: unknown): InstallConfig | null {
   }
 
   return {
-    appName,
     clientName,
     webUrl,
     apiUrl,
     requireSignin,
-    logoUrl,
-    iconUrl,
     desktopVersion,
     distribution,
   };
@@ -461,10 +445,7 @@ export function InstallScreen() {
         <div className="grid gap-2 rounded-[1.75rem] border border-slate-200/80 bg-white p-6 text-left sm:p-8 md:px-10 md:py-9" data-testid="install-card">
           <div className="grid justify-items-start gap-2 border-b border-slate-100 pb-6">
             <span className="text-[13px] font-medium text-slate-500">
-              <OrganizationBrandIdentity
-                organizationName={config.clientName}
-                brand={{ appName: config.appName, logoUrl: config.logoUrl, iconUrl: config.iconUrl }}
-              />
+              {config.clientName}
             </span>
             <h1 className="m-0 text-[1.5rem] font-semibold leading-tight tracking-[-0.03em] text-slate-950 sm:text-[1.7rem]">
               Set up OpenWork Enterprise
@@ -473,7 +454,7 @@ export function InstallScreen() {
 
         {isMobile ? (
           <div className="grid gap-3 border-t border-slate-200 pt-5" data-testid="install-mobile-note">
-            <p className="m-0 text-base font-medium text-[var(--dls-text-primary)]">{config.appName} runs on your computer.</p>
+            <p className="m-0 text-base font-medium text-[var(--dls-text-primary)]">OpenWork runs on your computer.</p>
             <p className="den-copy">Open this link on your Mac, Windows, or Linux machine. You can also copy it and send it to yourself.</p>
             <button type="button" className="den-button-secondary w-full sm:w-auto" onClick={() => void copyCurrentLink()}>
               {copied ? "Copied" : "Copy install link"}
@@ -535,8 +516,6 @@ export function InstallScreen() {
                   <div className="grid content-start gap-3">
                       <InstallVisual
                         os={installerOsFor(downloadPlatform, detected)}
-                        appName={config.appName}
-                        iconUrl={config.iconUrl}
                       />
 
                       <p className="m-0 max-w-xl text-sm leading-6 text-slate-600">{guidance.actions.join(" ")}</p>

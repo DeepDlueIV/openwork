@@ -158,9 +158,6 @@ export function JoinOrganizationDialog({
       // either direction — dropping this re-gates an enterprise app an admin
       // unlocked, and clears a gate an admin turned on for a public artifact.
       requireActivation: readDenBootstrapConfig().requireActivation,
-      brandAppName: config.appName,
-      ...(config.logoUrl ? { brandLogoUrl: config.logoUrl } : {}),
-      ...(config.iconUrl ? { brandIconUrl: config.iconUrl } : {}),
     });
     setStatus({ phase: "success", clientName: config.clientName, host });
     finishConnected();

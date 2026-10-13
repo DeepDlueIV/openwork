@@ -212,7 +212,7 @@ function permissionsNavChildren(orgSlug: string, access: DenOrgAccessFlags, enab
 
 // Alias order is ranking priority in the command palette.
 const PAGE_KEYWORDS: Record<string, string[]> = {
-  Advanced: ["marketplace", "collections", "branding", "brand appearance"],
+  Advanced: ["marketplace", "collections"],
   "AI Gateway": ["llm", "provider", "gateway", "inference", "usage"],
   Analytics: ["usage", "stats", "consumption", "workflow runs", "history", "langfuse"],
   "Audit logs": ["audit", "history", "operations", "changes", "security"],

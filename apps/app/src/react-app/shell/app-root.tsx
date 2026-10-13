@@ -319,35 +319,8 @@ function DenAuthControlActions() {
   return null;
 }
 
-/**
- * Control action for eval automation: inject brand theme (logo, icon, accent color)
- * via the dev-only desktop config bridge. Placed inside OpenworkControlProvider.
- */
-function BrandThemeControlActions() {
-  const applyAction = useMemo<OpenworkControlAction | null>(() => {
-    if (!import.meta.env.DEV) return null;
-    return {
-      id: "eval.brand_theme.apply",
-      label: "Apply brand theme override",
-      description: "Inject brand theme (logo, icon, accent color) via desktop config for eval testing.",
-      sideEffect: "mutation",
-      args: [
-        { name: "brandLogoUrl", type: "string", description: "Logo URL" },
-        { name: "brandIconUrl", type: "string", description: "Icon URL" },
-        { name: "brandAccentColor", type: "string", description: "Radix color family" },
-      ],
-      execute: (args) => {
-        const bridge = (window as unknown as Record<string, unknown>).__openworkApplyDesktopConfig;
-        if (typeof bridge !== "function") {
-          return { ok: false, error: "Desktop config bridge not available (dev mode only)." };
-        }
-        bridge(args);
-        return { applied: args };
-      },
-    };
-  }, []);
-  useControlAction(applyAction);
-
+/** Dev-only application recovery controls, mounted inside OpenworkControlProvider. */
+function AppRecoveryControlActions() {
   const relaunchAction = useMemo<OpenworkControlAction | null>(() => {
     if (!import.meta.env.DEV) return null;
     return {
@@ -443,7 +416,7 @@ export function AppRoot() {
           <ChatDeepLinkListener />
           <OpenworkContextPublisher />
           <DenAuthControlActions />
-          <BrandThemeControlActions />
+          <AppRecoveryControlActions />
           <EnterpriseActivationGate>
             <DenSigninGate>
               <OpenWorkWebAccessGate>

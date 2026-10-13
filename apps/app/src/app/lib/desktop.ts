@@ -12,8 +12,6 @@ export type {
   WorkspaceOpenworkConfig,
   AppBuildInfo,
   DesktopDistributionInfo,
-  BrandIconApplyResult,
-  BrandIconState,
   DesktopBootstrapConfig,
   EvalRelaunchResult,
   OpenworkDockerCleanupResult,
@@ -30,8 +28,6 @@ export type {
 } from "./desktop-types";
 
 import type {
-  BrandIconApplyResult,
-  BrandIconState,
   DesktopBootstrapConfig,
   DesktopDistributionInfo,
   DesktopCommandArgs,
@@ -122,10 +118,6 @@ declare global {
       migration?: {
         readSnapshot?: () => Promise<unknown>;
         ackSnapshot?: () => Promise<{ ok: boolean; moved: boolean }>;
-      };
-      brandIcon?: {
-        apply?: (url: string | null) => Promise<BrandIconApplyResult>;
-        getState?: () => Promise<BrandIconState>;
       };
       dev?: {
         evalRelaunch?: () => Promise<EvalRelaunchResult>;
@@ -528,22 +520,6 @@ export async function revealDesktopItemInDir(target: string): Promise<void> {
   if (typeof result === "string" && result.trim()) {
     throw new Error(result);
   }
-}
-
-export async function applyBrandAppName(appName: string | null): Promise<string> {
-  const result = await invokeElectronHelper("__applyBrandAppName", appName);
-  return result.appName;
-}
-
-export async function applyBrandIcon(url: string | null): Promise<BrandIconApplyResult> {
-  const apply = typeof window !== "undefined" ? window.__OPENWORK_ELECTRON__?.brandIcon?.apply : undefined;
-  if (!apply) return { ok: false, reason: "bridge-unavailable" };
-  return apply(url);
-}
-
-export async function getBrandIconState(): Promise<BrandIconState | null> {
-  const getState = typeof window !== "undefined" ? window.__OPENWORK_ELECTRON__?.brandIcon?.getState : undefined;
-  return getState ? getState() : null;
 }
 
 export async function evalRelaunchDesktopApp(): Promise<EvalRelaunchResult> {

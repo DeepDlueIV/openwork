@@ -58,7 +58,7 @@
     },
     {
       "name": "Organizations",
-      "description": "Organization creation, context, brand assets, and install links."
+      "description": "Organization creation, context and install links."
     },
     {
       "name": "Invitations",
@@ -3327,48 +3327,6 @@
               "maxLength": 32
             }
           },
-          "brandAppName": {
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 64
-          },
-          "brandLogoUrl": {
-            "type": "string",
-            "maxLength": 2048,
-            "format": "uri"
-          },
-          "brandIconUrl": {
-            "type": "string",
-            "maxLength": 2048,
-            "format": "uri"
-          },
-          "brandAccentColor": {
-            "type": "string",
-            "enum": [
-              "blue",
-              "crimson",
-              "cyan",
-              "gold",
-              "grass",
-              "green",
-              "indigo",
-              "iris",
-              "jade",
-              "lime",
-              "mint",
-              "orange",
-              "pink",
-              "plum",
-              "purple",
-              "red",
-              "ruby",
-              "sky",
-              "teal",
-              "tomato",
-              "violet",
-              "yellow"
-            ]
-          },
           "automationsEnabled": {
             "type": "boolean"
           },
@@ -4723,39 +4681,14 @@
                   }
                 ]
               },
-              "branding": {
-                "type": "object",
-                "properties": {
-                  "appName": {
+              "logo": {
+                "anyOf": [
+                  {
                     "type": "string"
                   },
-                  "logoUrl": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "format": "uri"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "iconUrl": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "format": "uri"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
+                  {
+                    "type": "null"
                   }
-                },
-                "required": [
-                  "appName",
-                  "logoUrl",
-                  "iconUrl"
                 ]
               }
             },
@@ -4764,7 +4697,7 @@
               "name",
               "slug",
               "allowedEmailDomains",
-              "branding"
+              "logo"
             ]
           }
         },
@@ -4901,26 +4834,6 @@
           "invalidDomains"
         ]
       },
-      "InvalidBrandIconError": {
-        "type": "object",
-        "properties": {
-          "error": {
-            "type": "string",
-            "const": "invalid_brand_icon"
-          },
-          "reason": {
-            "type": "string"
-          },
-          "message": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "error",
-          "reason",
-          "message"
-        ]
-      },
       "UpdateOrganizationBadRequest": {
         "anyOf": [
           {
@@ -4928,9 +4841,6 @@
           },
           {
             "$ref": "#/components/schemas/InvalidEmailDomainError"
-          },
-          {
-            "$ref": "#/components/schemas/InvalidBrandIconError"
           }
         ]
       },
@@ -5055,7 +4965,6 @@
                   "type": "string",
                   "enum": [
                     "organization.update",
-                    "branding.update",
                     "web_origins.view",
                     "web_origins.manage",
                     "install_links.update",
@@ -5749,192 +5658,6 @@
         },
         "required": [
           "name"
-        ]
-      },
-      "ManagedBrandAssetUploadResponse": {
-        "type": "object",
-        "properties": {
-          "assets": {
-            "type": "object",
-            "properties": {
-              "logo": {
-                "type": "object",
-                "properties": {
-                  "kind": {
-                    "type": "string",
-                    "enum": [
-                      "logo",
-                      "icon"
-                    ]
-                  },
-                  "version": {
-                    "type": "string",
-                    "pattern": "^[a-f0-9]{64}$"
-                  },
-                  "extension": {
-                    "type": "string",
-                    "enum": [
-                      "png",
-                      "jpg"
-                    ]
-                  },
-                  "contentType": {
-                    "type": "string",
-                    "enum": [
-                      "image/png",
-                      "image/jpeg"
-                    ]
-                  },
-                  "url": {
-                    "type": "string",
-                    "format": "uri"
-                  },
-                  "width": {
-                    "type": "integer",
-                    "exclusiveMinimum": 0,
-                    "maximum": 9007199254740991
-                  },
-                  "height": {
-                    "type": "integer",
-                    "exclusiveMinimum": 0,
-                    "maximum": 9007199254740991
-                  },
-                  "byteLength": {
-                    "type": "integer",
-                    "exclusiveMinimum": 0,
-                    "maximum": 9007199254740991
-                  },
-                  "originalName": {
-                    "type": "string"
-                  },
-                  "uploadedAt": {
-                    "type": "string",
-                    "format": "date-time",
-                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
-                  }
-                },
-                "required": [
-                  "kind",
-                  "version",
-                  "extension",
-                  "contentType",
-                  "url",
-                  "width",
-                  "height",
-                  "byteLength",
-                  "originalName",
-                  "uploadedAt"
-                ]
-              },
-              "icon": {
-                "type": "object",
-                "properties": {
-                  "kind": {
-                    "type": "string",
-                    "enum": [
-                      "logo",
-                      "icon"
-                    ]
-                  },
-                  "version": {
-                    "type": "string",
-                    "pattern": "^[a-f0-9]{64}$"
-                  },
-                  "extension": {
-                    "type": "string",
-                    "enum": [
-                      "png",
-                      "jpg"
-                    ]
-                  },
-                  "contentType": {
-                    "type": "string",
-                    "enum": [
-                      "image/png",
-                      "image/jpeg"
-                    ]
-                  },
-                  "url": {
-                    "type": "string",
-                    "format": "uri"
-                  },
-                  "width": {
-                    "type": "integer",
-                    "exclusiveMinimum": 0,
-                    "maximum": 9007199254740991
-                  },
-                  "height": {
-                    "type": "integer",
-                    "exclusiveMinimum": 0,
-                    "maximum": 9007199254740991
-                  },
-                  "byteLength": {
-                    "type": "integer",
-                    "exclusiveMinimum": 0,
-                    "maximum": 9007199254740991
-                  },
-                  "originalName": {
-                    "type": "string"
-                  },
-                  "uploadedAt": {
-                    "type": "string",
-                    "format": "date-time",
-                    "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
-                  }
-                },
-                "required": [
-                  "kind",
-                  "version",
-                  "extension",
-                  "contentType",
-                  "url",
-                  "width",
-                  "height",
-                  "byteLength",
-                  "originalName",
-                  "uploadedAt"
-                ]
-              }
-            }
-          }
-        },
-        "required": [
-          "assets"
-        ]
-      },
-      "InvalidManagedBrandAssetError": {
-        "type": "object",
-        "properties": {
-          "error": {
-            "type": "string",
-            "const": "invalid_brand_asset"
-          },
-          "kind": {
-            "anyOf": [
-              {
-                "type": "string",
-                "enum": [
-                  "logo",
-                  "icon"
-                ]
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "reason": {
-            "type": "string"
-          },
-          "message": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "error",
-          "kind",
-          "reason",
-          "message"
         ]
       },
       "WorkflowRunListResponse": {
@@ -8144,12 +7867,6 @@
       "AuthenticatedInstallConfig": {
         "type": "object",
         "properties": {
-          "appName": {
-            "default": "OpenWork",
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 64
-          },
           "clientName": {
             "type": "string",
             "minLength": 1
@@ -8164,29 +7881,6 @@
           },
           "requireSignin": {
             "type": "boolean"
-          },
-          "logoUrl": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uri"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "iconUrl": {
-            "default": null,
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uri"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "desktopVersion": {
             "type": "string",
@@ -8205,7 +7899,6 @@
           "webUrl",
           "apiUrl",
           "requireSignin",
-          "logoUrl",
           "desktopVersion",
           "distribution"
         ]
@@ -8213,12 +7906,6 @@
       "InstallExperienceConfig": {
         "type": "object",
         "properties": {
-          "appName": {
-            "default": "OpenWork",
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 64
-          },
           "clientName": {
             "type": "string",
             "minLength": 1
@@ -8233,29 +7920,6 @@
           },
           "requireSignin": {
             "type": "boolean"
-          },
-          "logoUrl": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uri"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "iconUrl": {
-            "default": null,
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uri"
-              },
-              {
-                "type": "null"
-              }
-            ]
           },
           "connectUrl": {
             "type": "string",
@@ -8292,7 +7956,6 @@
           "webUrl",
           "apiUrl",
           "requireSignin",
-          "logoUrl",
           "connectUrl",
           "connectExpiresAt",
           "activationUrl",
@@ -8355,43 +8018,6 @@
               "name"
             ]
           },
-          "brand": {
-            "type": "object",
-            "properties": {
-              "appName": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 64
-              },
-              "logoUrl": {
-                "anyOf": [
-                  {
-                    "type": "string",
-                    "format": "uri"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "iconUrl": {
-                "anyOf": [
-                  {
-                    "type": "string",
-                    "format": "uri"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              }
-            },
-            "required": [
-              "appName",
-              "logoUrl",
-              "iconUrl"
-            ]
-          },
           "den": {
             "type": "object",
             "properties": {
@@ -8427,7 +8053,6 @@
           "jti",
           "v",
           "org",
-          "brand",
           "den",
           "requireSignin"
         ]
@@ -22724,22 +22349,11 @@
               },
               "name": {
                 "type": "string"
-              },
-              "brandAppName": {
-                "anyOf": [
-                  {
-                    "type": "string"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
               }
             },
             "required": [
               "id",
-              "name",
-              "brandAppName"
+              "name"
             ]
           },
           "memberId": {
@@ -31300,7 +30914,7 @@
             }
           },
           "400": {
-            "description": "The organization update request body was invalid, contained malformed email domains, or contained an invalid brand icon URL.",
+            "description": "The organization update request body was invalid or contained malformed email domains.",
             "content": {
               "application/json": {
                 "schema": {
@@ -31396,54 +31010,6 @@
                   },
                   "requireSso": {
                     "type": "boolean"
-                  },
-                  "brandAppName": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 64
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "brandLogoUrl": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "maxLength": 2048,
-                        "format": "uri"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "brandIconUrl": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "maxLength": 2048,
-                        "format": "uri"
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
-                  },
-                  "brandAccentColor": {
-                    "anyOf": [
-                      {
-                        "type": "string",
-                        "minLength": 1,
-                        "maxLength": 32
-                      },
-                      {
-                        "type": "null"
-                      }
-                    ]
                   }
                 },
                 "additionalProperties": false
@@ -37124,142 +36690,6 @@
             }
           }
         }
-      }
-    },
-    "/v1/brand-assets/{organizationId}/{kind}/{version}": {
-      "get": {
-        "operationId": "getV1BrandAssetsByOrganizationIdByKindByVersion",
-        "tags": [
-          "Organizations"
-        ],
-        "security": [],
-        "summary": "Read an immutable organization brand asset",
-        "description": "Serves a capability-signed, content-addressed organization logo or app icon from this Den deployment.",
-        "responses": {
-          "200": {
-            "description": "Immutable brand image bytes. The media type follows the `{version}` extension (`.png` -> `image/png`, `.jpg` -> `image/jpeg`); served with `Cache-Control: public, max-age=31536000, immutable` and an `ETag` equal to the content hash.",
-            "content": {
-              "image/png": {
-                "schema": {
-                  "type": "string",
-                  "format": "binary"
-                }
-              },
-              "image/jpeg": {
-                "schema": {
-                  "type": "string",
-                  "format": "binary"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "The managed brand asset could not be found.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/NotFoundError"
-                }
-              }
-            }
-          }
-        },
-        "parameters": [
-          {
-            "schema": {
-              "type": "string"
-            },
-            "in": "path",
-            "name": "organizationId",
-            "required": true
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "in": "path",
-            "name": "kind",
-            "required": true
-          },
-          {
-            "schema": {
-              "type": "string"
-            },
-            "in": "path",
-            "name": "version",
-            "required": true
-          }
-        ]
-      }
-    },
-    "/v1/org/brand-assets": {
-      "post": {
-        "operationId": "postV1OrgBrandAssets",
-        "tags": [
-          "Organizations"
-        ],
-        "summary": "Upload organization brand assets",
-        "description": "Validates and stores owner-supplied wordmark and app icon files inside the Den deployment.",
-        "responses": {
-          "200": {
-            "description": "Managed brand assets were saved.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ManagedBrandAssetUploadResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "A supplied brand asset was invalid.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InvalidManagedBrandAssetError"
-                }
-              }
-            }
-          },
-          "401": {
-            "description": "The caller must be signed in.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/UnauthorizedError"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "The caller needs the Change branding permission and a recent sign-in.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ForbiddenError"
-                }
-              }
-            }
-          },
-          "413": {
-            "description": "The upload exceeded the request size limit.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InvalidManagedBrandAssetError"
-                }
-              }
-            }
-          }
-        },
-        "security": [
-          {
-            "denApiKey": []
-          },
-          {
-            "bearerAuth": []
-          }
-        ]
       }
     },
     "/v1/workflow-runs": {
@@ -50087,7 +49517,7 @@
           "Users"
         ],
         "summary": "Get current user's install configuration",
-        "description": "Returns desktop branding, distribution, and approved version for the signed-in member's active organization.",
+        "description": "Returns desktop distribution and approved version for the signed-in member's active organization.",
         "responses": {
           "200": {
             "description": "Authenticated install configuration resolved successfully.",

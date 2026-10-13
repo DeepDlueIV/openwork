@@ -52,7 +52,6 @@ import {
   DEFAULT_ORGANIZATION_LIMITS,
   normalizeOrganizationMetadata,
   serializeOrganizationMetadata,
-  type ManagedBrandAssetMetadata,
 } from "./organization-limits.js"
 import { ensureDefaultDesktopPolicyForOrganization } from "./desktop-policies.js"
 import {
@@ -170,11 +169,7 @@ export type InvitationPreview = {
     name: string
     slug: string
     allowedEmailDomains: AllowedEmailDomains
-    branding: {
-      appName: string
-      logoUrl: string | null
-      iconUrl: string | null
-    }
+    logo: string | null
   }
 }
 
@@ -402,10 +397,6 @@ function parseMetadataRecord(input: OrganizationMetadataInput): Record<string, u
   return isRecord(input) ? input : {}
 }
 
-function serializeMetadataRecord(metadata: Record<string, unknown>) {
-  return Object.keys(metadata).length > 0 ? JSON.stringify(metadata) : null
-}
-
 /**
  * Organization metadata as members see it. Feature overrides are platform
  * administration data (still mirrored into metadata.capabilities for one
@@ -418,7 +409,7 @@ export function serializeMemberFacingOrganizationMetadata(input: OrganizationMet
     return serializeOrganizationMetadata(input)
   }
   const { capabilities: _platformOnly, ...memberFacing } = metadata
-  return serializeMetadataRecord(memberFacing)
+  return serializeOrganizationMetadata(memberFacing)
 }
 
 export class OrganizationEmailDomainRestrictionError extends Error {
@@ -1023,8 +1014,6 @@ export async function getInvitationPreview(invitationIdRaw: string): Promise<Inv
     return null
   }
 
-  const organizationMetadata = normalizeOrganizationMetadata(row.organization.metadata).metadata
-
   return {
     invitation: {
       ...row.invitation,
@@ -1035,11 +1024,7 @@ export async function getInvitationPreview(invitationIdRaw: string): Promise<Inv
       name: row.organization.name,
       slug: row.organization.slug,
       allowedEmailDomains: normalizeStoredAllowedEmailDomains(row.organization.allowedEmailDomains),
-      branding: {
-        appName: typeof organizationMetadata.brandAppName === "string" ? organizationMetadata.brandAppName : "OpenWork",
-        logoUrl: typeof organizationMetadata.brandLogoUrl === "string" ? organizationMetadata.brandLogoUrl : row.organization.logo,
-        iconUrl: typeof organizationMetadata.brandIconUrl === "string" ? organizationMetadata.brandIconUrl : null,
-      },
+      logo: row.organization.logo,
     },
   }
 }
@@ -1280,12 +1265,6 @@ export async function updateOrganizationSettings(input: {
   allowedEmailDomains?: readonly string[] | null
   allowedDesktopVersions?: readonly string[] | null
   requireSso?: boolean
-  brandAppName?: string | null
-  brandLogoUrl?: string | null
-  brandIconUrl?: string | null
-  brandLogoAsset?: ManagedBrandAssetMetadata | null
-  brandIconAsset?: ManagedBrandAssetMetadata | null
-  brandAccentColor?: string | null
 }) {
   const nextName = typeof input.name === "string" ? input.name.trim() : null
   if (typeof input.name === "string" && !nextName) {
@@ -1300,7 +1279,7 @@ export async function updateOrganizationSettings(input: {
     if (input.allowedEmailDomains !== undefined) {
       updates.allowedEmailDomains = normalizeAllowedEmailDomains(input.allowedEmailDomains).domains
     }
-    if (input.allowedDesktopVersions !== undefined || input.requireSso !== undefined || input.brandAppName !== undefined || input.brandLogoUrl !== undefined || input.brandIconUrl !== undefined || input.brandLogoAsset !== undefined || input.brandIconAsset !== undefined || input.brandAccentColor !== undefined) {
+    if (input.allowedDesktopVersions !== undefined || input.requireSso !== undefined) {
       const rows = await tx
         .select({ metadata: OrganizationTable.metadata })
         .from(OrganizationTable)
@@ -1327,60 +1306,6 @@ export async function updateOrganizationSettings(input: {
 
       if (input.requireSso !== undefined) {
         nextMetadata.requireSso = input.requireSso
-      }
-
-      if (input.brandAppName !== undefined) {
-        if (input.brandAppName === null) {
-          delete nextMetadata.brandAppName
-        } else {
-          nextMetadata.brandAppName = input.brandAppName
-        }
-      }
-
-      if (input.brandLogoUrl !== undefined) {
-        if (input.brandLogoUrl === null) {
-          delete nextMetadata.brandLogoUrl
-        } else {
-          nextMetadata.brandLogoUrl = input.brandLogoUrl
-        }
-        if (input.brandLogoAsset === undefined) {
-          delete nextMetadata.brandLogoAsset
-        }
-      }
-
-      if (input.brandIconUrl !== undefined) {
-        if (input.brandIconUrl === null) {
-          delete nextMetadata.brandIconUrl
-        } else {
-          nextMetadata.brandIconUrl = input.brandIconUrl
-        }
-        if (input.brandIconAsset === undefined) {
-          delete nextMetadata.brandIconAsset
-        }
-      }
-
-      if (input.brandLogoAsset !== undefined) {
-        if (input.brandLogoAsset === null) {
-          delete nextMetadata.brandLogoAsset
-        } else {
-          nextMetadata.brandLogoAsset = input.brandLogoAsset
-        }
-      }
-
-      if (input.brandIconAsset !== undefined) {
-        if (input.brandIconAsset === null) {
-          delete nextMetadata.brandIconAsset
-        } else {
-          nextMetadata.brandIconAsset = input.brandIconAsset
-        }
-      }
-
-      if (input.brandAccentColor !== undefined) {
-        if (input.brandAccentColor === null) {
-          delete nextMetadata.brandAccentColor
-        } else {
-          nextMetadata.brandAccentColor = input.brandAccentColor
-        }
       }
 
       updates.metadata = normalizeOrganizationMetadata(nextMetadata).metadata

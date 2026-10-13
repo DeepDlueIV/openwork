@@ -50,14 +50,6 @@ function errorCopy(code: ConnectLinkVerifyErrorCode): string {
   }
 }
 
-function isHttpsUrl(value: string): boolean {
-  try {
-    return new URL(value).protocol === "https:";
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Confirmation step for a verified connect link. Nothing is written until the
  * user confirms here — the dialog shows exactly which organization and server
@@ -67,7 +59,6 @@ export function ConnectConfirmDialog({
   open,
   phase,
   claims,
-  transport,
   currentHost,
   error,
   onConfirm,
@@ -75,8 +66,6 @@ export function ConnectConfirmDialog({
 }: ConnectConfirmDialogProps) {
   const targetHost = claims ? formatControlPlaneHost(claims.den.baseUrl) : null;
   const switching = Boolean(currentHost && targetHost && currentHost !== targetHost);
-  const trustedBrandUrl = transport ? claims?.brand.iconUrl ?? claims?.brand.logoUrl : null;
-  const logoUrl = trustedBrandUrl && isHttpsUrl(trustedBrandUrl) ? trustedBrandUrl : null;
 
   return (
     <Dialog open={open} onOpenChange={(next) => { if (!next) onDismiss(); }}>
@@ -105,11 +94,8 @@ export function ConnectConfirmDialog({
           <>
             <DialogHeader>
               <div className="flex items-center gap-3">
-                {logoUrl ? (
-                  <img src={logoUrl} alt="" className="size-10 rounded-lg" />
-                ) : null}
                 <DialogTitle data-testid="connect-confirm-org">
-                  {t("connect.confirm_title", { appName: claims.brand.appName, org: claims.org.name })}
+                  {t("connect.confirm_title", { appName: "OpenWork", org: claims.org.name })}
                 </DialogTitle>
               </div>
               <DialogDescription data-testid="connect-confirm-host">

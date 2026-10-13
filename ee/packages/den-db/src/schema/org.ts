@@ -2,7 +2,7 @@ import { relations, sql } from "drizzle-orm"
 import { boolean, index, json, mysqlTable, text, timestamp, uniqueIndex, varchar } from "drizzle-orm/mysql-core"
 import type { DesktopAppRestrictions } from "@openwork/types/den/desktop-app-restrictions"
 import type { ConnectLinkClaims } from "@openwork/types/connect-link"
-import { denTypeIdColumn, mediumBlobColumn } from "../columns"
+import { denTypeIdColumn } from "../columns"
 
 export const DesktopHandoffGrantTable = mysqlTable(
   "desktop_handoff_grant",
@@ -55,27 +55,6 @@ export const OrganizationTable = mysqlTable(
       .default(sql`CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)`),
   },
   (table) => [uniqueIndex("organization_slug").on(table.slug), index("organization_created_at_id").on(table.createdAt, table.id)],
-)
-
-export const OrganizationBrandAssetTable = mysqlTable(
-  "organization_brand_asset",
-  {
-    id: varchar("id", { length: 64 }).notNull().primaryKey(),
-    organizationId: denTypeIdColumn("organization", "organization_id").notNull(),
-    kind: varchar("kind", { length: 16 }).notNull(),
-    version: varchar("version", { length: 64 }).notNull(),
-    extension: varchar("extension", { length: 3 }).notNull(),
-    bytes: mediumBlobColumn("bytes").notNull(),
-    createdAt: timestamp("created_at", { fsp: 3 }).notNull().defaultNow(),
-  },
-  (table) => [
-    uniqueIndex("organization_brand_asset_version").on(
-      table.organizationId,
-      table.kind,
-      table.version,
-      table.extension,
-    ),
-  ],
 )
 
 export const MemberTable = mysqlTable(

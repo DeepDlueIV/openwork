@@ -34,7 +34,7 @@ const describeWorkbotRoute = (options: WorkbotRouteOptions) => describeRoute(opt
 
 const sessionSchema = z.object({
   user: z.object({ id: z.string(), name: z.string().nullable(), email: z.string() }),
-  organization: z.object({ id: z.string(), name: z.string(), brandAppName: z.string().nullable() }),
+  organization: z.object({ id: z.string(), name: z.string() }),
   memberId: z.string(),
   /** A platform admin turned Workbot on for this organization. */
   enabled: z.boolean(),
@@ -67,21 +67,6 @@ type Resolved = {
   memberId: string
   /** MCP grant/client id of the Workbot token (never token material). */
   credentialId: string | null
-}
-
-function readBrandAppName(metadata: unknown): string | null {
-  const parsed = typeof metadata === "string" ? safeJson(metadata) : metadata
-  if (typeof parsed !== "object" || parsed === null || !("brandAppName" in parsed)) return null
-  const brand = parsed.brandAppName
-  return typeof brand === "string" && brand.trim() ? brand.trim() : null
-}
-
-function safeJson(text: string): unknown {
-  try {
-    return JSON.parse(text)
-  } catch {
-    return null
-  }
 }
 
 const workbotConnectionsSchema = z.object({
@@ -230,7 +215,7 @@ export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono
       }).catch(() => null)
       return c.json({
         user,
-        organization: { id: organization.id, name: organization.name, brandAppName: readBrandAppName(organization.metadata) },
+        organization: { id: organization.id, name: organization.name },
         memberId,
         enabled: features.workbot,
         canSchedule,

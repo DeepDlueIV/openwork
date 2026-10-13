@@ -77,11 +77,6 @@ export type DenInvitationPreview = {
     name: string;
     slug: string;
     allowedEmailDomains: string[] | null;
-    branding: {
-      appName: string;
-      logoUrl: string | null;
-      iconUrl: string | null;
-    };
   };
 };
 
@@ -143,8 +138,6 @@ export type DenOrgAccessFlags = {
   canViewSso: boolean;
   /** `sso.manage` */
   canManageSso: boolean;
-  /** `branding.update` */
-  canManageBranding: boolean;
   /** `web_origins.view` */
   canViewWebOrigins: boolean;
   /** `web_origins.manage` */
@@ -368,26 +361,7 @@ export type DenOrgCapabilities = {
 export type DenOrganizationMetadata = {
   allowedDesktopVersions?: string[];
   requireSso?: boolean;
-  brandAppName?: string;
-  brandLogoUrl?: string;
-  brandIconUrl?: string;
-  brandLogoAsset?: DenManagedBrandAsset;
-  brandIconAsset?: DenManagedBrandAsset;
-  brandAccentColor?: string;
 } & Record<string, unknown>;
-
-export type DenManagedBrandAsset = {
-  kind: "logo" | "icon";
-  version: string;
-  extension: "png" | "jpg";
-  contentType: "image/png" | "image/jpeg";
-  url: string;
-  width: number;
-  height: number;
-  byteLength: number;
-  originalName: string;
-  uploadedAt: string;
-};
 
 export const PENDING_ORG_INVITATION_STORAGE_KEY = "openwork:web:pending-org-invitation";
 export const PENDING_WORKSPACE_CLAIM_STORAGE_KEY = "openwork:web:pending-workspace-claim";
@@ -457,46 +431,6 @@ export function getAllowedDesktopVersionsFromMetadata(metadata: string | null): 
 export function getRequireSsoFromMetadata(metadata: string | null): boolean {
   const parsed = parseOrganizationMetadata(metadata);
   return parsed?.requireSso === true;
-}
-
-export function getManagedBrandAssetFromMetadata(
-  metadata: string | null,
-  kind: "logo" | "icon",
-): DenManagedBrandAsset | null {
-  const parsed = parseOrganizationMetadata(metadata);
-  const value = kind === "logo" ? parsed?.brandLogoAsset : parsed?.brandIconAsset;
-  if (!isRecord(value) || value.kind !== kind) {
-    return null;
-  }
-  if (
-    typeof value.version !== "string" ||
-    (value.extension !== "png" && value.extension !== "jpg") ||
-    (value.contentType !== "image/png" && value.contentType !== "image/jpeg") ||
-    typeof value.url !== "string" ||
-    typeof value.width !== "number" ||
-    typeof value.height !== "number" ||
-    typeof value.byteLength !== "number" ||
-    typeof value.originalName !== "string" ||
-    typeof value.uploadedAt !== "string"
-  ) {
-    return null;
-  }
-  return {
-    kind,
-    version: value.version,
-    extension: value.extension,
-    contentType: value.contentType,
-    url: value.url,
-    width: value.width,
-    height: value.height,
-    byteLength: value.byteLength,
-    originalName: value.originalName,
-    uploadedAt: value.uploadedAt,
-  };
-}
-
-export function getManagedBrandIconUrl(metadata: string | null): string | null {
-  return getManagedBrandAssetFromMetadata(metadata, "icon")?.url ?? null;
 }
 
 function parsePermissionKeys(value: unknown): PermissionKey[] | null {
@@ -594,7 +528,6 @@ export function getOrgAccessFlags(roleValue: string, isOwner: boolean, permissio
     canManageScim: can("scim.manage"),
     canViewSso: can("sso.view"),
     canManageSso: can("sso.manage"),
-    canManageBranding: can("branding.update"),
     canViewWebOrigins: can("web_origins.view"),
     canManageWebOrigins: can("web_origins.manage"),
     canViewDesktopPolicies: can("desktop_policies.view"),
@@ -835,10 +768,6 @@ export function getDeploymentsRoute(orgSlug?: string | null): string {
 
 export function getDiagnosticsRoute(orgSlug?: string | null): string {
   return `${getOrgDashboardRoute(orgSlug)}/diagnostics`;
-}
-
-export function getBrandAppearanceRoute(orgSlug?: string | null): string {
-  return `${getOrgDashboardRoute(orgSlug)}/brand-appearance`;
 }
 
 export function getApiKeysRoute(orgSlug?: string | null): string {
@@ -1269,7 +1198,6 @@ export function parseInvitationPreviewPayload(payload: unknown): DenInvitationPr
   const organizationId = asString(organization.id);
   const organizationName = asString(organization.name);
   const organizationSlug = asString(organization.slug);
-  const branding = isRecord(organization.branding) ? organization.branding : null;
 
   if (!invitationId || !invitationEmail || !invitationRole || !invitationStatus || !organizationId || !organizationName || !organizationSlug) {
     return null;
@@ -1289,11 +1217,6 @@ export function parseInvitationPreviewPayload(payload: unknown): DenInvitationPr
       name: organizationName,
       slug: organizationSlug,
       allowedEmailDomains: asStringArray(organization.allowedEmailDomains),
-      branding: {
-        appName: asString(branding?.appName) ?? "OpenWork",
-        logoUrl: asString(branding?.logoUrl),
-        iconUrl: asString(branding?.iconUrl),
-      },
     },
   };
 }

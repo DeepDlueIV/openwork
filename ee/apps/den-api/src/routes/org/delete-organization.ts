@@ -61,7 +61,6 @@ import {
   MarketplaceTable,
   MemberTable,
   OrgOAuthClientTable,
-  OrganizationBrandAssetTable,
   OrganizationDiagnosticCredentialTable,
   OrganizationRoleTable,
   OrganizationTable,
@@ -515,7 +514,6 @@ export function registerDeleteOrganizationRoutes<T extends { Variables: OrgRoute
           .where(eq(AuthSessionTable.activeOrganizationId, organizationId))
         await tx.update(AuthSessionTable).set({ activeOrganizationId: null }).where(eq(AuthSessionTable.activeOrganizationId, organizationId))
 
-        await tx.delete(OrganizationBrandAssetTable).where(eq(OrganizationBrandAssetTable.organizationId, organizationId))
         await tx.delete(WorkspaceClaimTable).where(eq(WorkspaceClaimTable.organizationId, organizationId))
         await tx.delete(WorkspaceBootstrapTable).where(eq(WorkspaceBootstrapTable.organizationId, organizationId))
         await tx.delete(InstallLinkTable).where(eq(InstallLinkTable.organizationId, organizationId))

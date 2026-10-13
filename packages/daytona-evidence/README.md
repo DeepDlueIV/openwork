@@ -20,6 +20,26 @@ viewer.
 - Needs `DAYTONA_API_KEY` for an organization with Linux VMs in
   `OPENWORK_DAYTONA_EVIDENCE_REGION` (default `us-west-3`).
 - Builds: `node scripts/prepare-evidence-web.ts` with the provider set.
+- Required snapshot saves retry only a definite `Snapshot quota exceeded` rejection,
+  for at most 17 attempts over 16 minutes (including provider call time). Jittered
+  waits give the 15-minute cleanup job and other jobs' teardown time to free
+  capacity; a call already in flight can finish after the retry deadline.
+  Diagnostics distinguish exhausted capacity from guest build/test failures.
+  The provider enforces the current key's account quota; no fixed quota of 100
+  is assumed and retries never delete dev/release snapshots to make room.
+- Optional checkpoint saves do not wait for quota recovery. Their rejected save
+  promise remains a checkpoint failure, not a successful save or test verdict.
 - Cleanup: `node scripts/cleanup-daytona-evidence.ts [--dry-run]`, every 15 minutes in CI.
-  Commit worlds go after two unused hours and only the newest 30 checkpoints are
-  kept, so CI stays under the organization's snapshot quota.
+  Candidates include commit worlds unused for two hours and checkpoints beyond
+  the newest 30 or older than 14 hours. The current base and newest warm image
+  and world (including the newest active fallback) are retained. Active
+  sandboxes, pending snapshots, and snapshots referenced by any sandbox are
+  protected. Builders/capture forks block snapshot reclamation entirely, even
+  when stopped (cold saves stop their builder before snapshotting). Cleanup never
+  deletes those builders/forks; their controller/provider TTL owns teardown.
+  Only owned terminal worlds/copies idle for two hours are deleted, after rechecking.
+  Invalid/incomplete inventory aborts cleanup before deletion.
+- This is backpressure, not an atomic quota reservation: concurrent producers
+  can still fill the account. There is no aggressive headroom eviction or
+  distributed lease in this change. A full account with no safe candidates
+  fails with a quota-specific diagnostic after the bounded wait.

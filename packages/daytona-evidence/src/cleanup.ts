@@ -1,54 +1,72 @@
-import { DaytonaApi } from "./api.ts";
+import { DaytonaApi, type Sandbox } from "./api.ts";
 import { DAYTONA_BASE_PREFIX, DAYTONA_BASE_SNAPSHOT, DAYTONA_IMAGE_PREFIX, DAYTONA_TEMPLATE_PREFIX } from "./builder.ts";
 import { CAPTURE_KIND, CHECKPOINT_PREFIX, COPY_KIND } from "./checkpoints.ts";
 import { EVIDENCE_KIND } from "./world.ts";
 
-/**
- * Daytona has no snapshot TTL, so this reclaims what evidence builds leave behind.
- * The organization's snapshot quota (100) is shared with releases and dev
- * builds, and CI makes dozens of these an hour, so they are kept briefly.
- * Only names and labels this package creates are touched.
- * - commit worlds: after two hours unused (CI uses them within minutes of a push);
- * - warm images: after a week, keeping the newest;
- * - superseded base images (an older recipe) and their plain parents: at once;
- * - checkpoints: after 14 hours (they can be opened for 12), and beyond the
- *   newest 30 at once;
- * - test worlds, builders, capture forks and reviewer copies: after two hours
- *   (they stop and delete themselves sooner).
- */
 const WORLD_MAX_IDLE_MS = 2 * 3600_000;
 const IMAGE_MAX_AGE_MS = 7 * 24 * 3600_000;
 const SANDBOX_MAX_AGE_MS = 2 * 3600_000;
 const CHECKPOINT_MAX_AGE_MS = 14 * 3600_000;
 const CHECKPOINT_MAX_COUNT = 30;
+const BUILDER_KIND = "openwork-daytona-builder-v1";
+const OWNED_KINDS = new Set([EVIDENCE_KIND, BUILDER_KIND, CAPTURE_KIND, COPY_KIND]);
+const TERMINAL_STATES = new Set(["stopped", "archived", "error", "build_failed"]);
 
 export interface CleanupResult { deletedSnapshots: string[]; deletedSandboxes: string[] }
+interface CleanupOptions { dryRun?: boolean; now?: number; protectedSnapshots?: readonly string[] }
 
-export async function cleanupDaytonaEvidence(api = new DaytonaApi(), { dryRun = false, now = Date.now() } = {}): Promise<CleanupResult> {
+/**
+ * Reclaim only evidence resources. Age is not proof a controller has finished:
+ * live builders/forks/worlds/copies are never deleted. Pending snapshots are
+ * never candidates. Full account inventory (not just owned sandboxes) protects
+ * snapshot references held by dev/release resources as well.
+ */
+export async function cleanupDaytonaEvidence(api = new DaytonaApi(), { dryRun = false, now = Date.now(), protectedSnapshots = [] }: CleanupOptions = {}): Promise<CleanupResult> {
   const result: CleanupResult = { deletedSnapshots: [], deletedSandboxes: [] };
-  const age = (createdAt?: string) => createdAt ? now - Date.parse(createdAt) : 0;
+  const age = (at?: string) => at ? now - Date.parse(at) : NaN;
   const snapshots = await api.listSnapshots();
-  const newestFirst = (a: { createdAt?: string }, b: { createdAt?: string }) => Date.parse(b.createdAt ?? "0") - Date.parse(a.createdAt ?? "0");
-  const images = snapshots.filter((snapshot) => snapshot.name.startsWith(DAYTONA_IMAGE_PREFIX)).sort(newestFirst);
-  const checkpoints = snapshots.filter((snapshot) => snapshot.name.startsWith(CHECKPOINT_PREFIX)).sort(newestFirst);
-  const expired = [
-    ...snapshots.filter((snapshot) => snapshot.name.startsWith(DAYTONA_TEMPLATE_PREFIX)
-      && age(snapshot.lastUsedAt ?? snapshot.createdAt) > WORLD_MAX_IDLE_MS),
-    ...checkpoints.filter((snapshot, index) => index >= CHECKPOINT_MAX_COUNT || age(snapshot.createdAt) > CHECKPOINT_MAX_AGE_MS),
-    ...images.slice(1).filter((snapshot) => age(snapshot.createdAt) > IMAGE_MAX_AGE_MS),
-    ...snapshots.filter((snapshot) => snapshot.name.startsWith(DAYTONA_BASE_PREFIX)
-      && snapshot.name !== DAYTONA_BASE_SNAPSHOT && snapshot.name !== `${DAYTONA_BASE_SNAPSHOT}-plain`),
-  ];
-  for (const snapshot of expired) {
-    if (!dryRun) await api.deleteSnapshot(snapshot.id);
+  const sandboxes = await api.listSandboxes();
+  const newestFirst = (a: { createdAt?: string }, b: { createdAt?: string }) => Date.parse(b.createdAt ?? "") - Date.parse(a.createdAt ?? "");
+  const images = snapshots.filter((s) => s.name.startsWith(DAYTONA_IMAGE_PREFIX)).sort(newestFirst);
+  const checkpoints = snapshots.filter((s) => s.name.startsWith(CHECKPOINT_PREFIX)).sort(newestFirst);
+  const worlds = snapshots.filter((s) => s.name.startsWith(DAYTONA_TEMPLATE_PREFIX)).sort(newestFirst);
+  const protectedNames = new Set([...protectedSnapshots, DAYTONA_BASE_SNAPSHOT, `${DAYTONA_BASE_SNAPSHOT}-plain`, images[0]?.name, worlds[0]?.name,
+    images.find((s) => s.state === "active")?.name, worlds.find((s) => s.state === "active")?.name]);
+  const inUse = (inventory: Sandbox[], id: string, name: string) => inventory.some((s) =>
+    s.snapshot === id || s.snapshot === name || s.labels.checkpoint === name
+    // A builder or capture can be saving a new snapshot absent from its source
+    // reference. Without a provider lease API, prefer retaining too much.
+    || [BUILDER_KIND, CAPTURE_KIND].includes(s.labels.kind));
+  const expired = (s: typeof snapshots[number]) =>
+    (s.name.startsWith(DAYTONA_TEMPLATE_PREFIX) && age(s.lastUsedAt ?? s.createdAt) > WORLD_MAX_IDLE_MS)
+    || (s.name.startsWith(CHECKPOINT_PREFIX) && (checkpoints.indexOf(s) >= CHECKPOINT_MAX_COUNT || age(s.createdAt) > CHECKPOINT_MAX_AGE_MS))
+    || (s.name.startsWith(DAYTONA_IMAGE_PREFIX) && age(s.createdAt) > IMAGE_MAX_AGE_MS)
+    || s.name.startsWith(DAYTONA_BASE_PREFIX);
+  for (const snapshot of snapshots) {
+    if (snapshot.state !== "active" || !Number.isFinite(age(snapshot.createdAt))
+      || protectedNames.has(snapshot.name) || !expired(snapshot) || inUse(sandboxes, snapshot.id, snapshot.name)) continue;
+    if (!dryRun) {
+      // Re-read before mutation: a scheduled job's inventory can age while it runs.
+      const current = await api.getSnapshot(snapshot.name);
+      if (!current || current.id !== snapshot.id || current.state !== "active"
+        || current.lastUsedAt !== snapshot.lastUsedAt || inUse(await api.listSandboxes(), snapshot.id, snapshot.name)) continue;
+      await api.deleteSnapshot(snapshot.id);
+    }
     result.deletedSnapshots.push(snapshot.name);
   }
-  for (const kind of [EVIDENCE_KIND, "openwork-daytona-builder-v1", CAPTURE_KIND, COPY_KIND]) {
-    for (const sandbox of await api.listSandboxes({ kind })) {
-      if (age(sandbox.createdAt) <= SANDBOX_MAX_AGE_MS) continue;
-      if (!dryRun) await api.deleteSandbox(sandbox.id);
-      result.deletedSandboxes.push(sandbox.name);
+  for (const sandbox of sandboxes) {
+    // Cold saves stop their builder before snapshotting. A stopped builder is
+    // not proof of abandonment; only its controller/provider TTL may remove it.
+    if ([BUILDER_KIND, CAPTURE_KIND].includes(sandbox.labels.kind)) continue;
+    if (!OWNED_KINDS.has(sandbox.labels.kind) || !TERMINAL_STATES.has(sandbox.state)
+      || !(age(sandbox.lastActivityAt ?? sandbox.createdAt) > SANDBOX_MAX_AGE_MS)) continue;
+    if (!dryRun) {
+      const current = await api.getSandbox(sandbox.id);
+      if (!current || current.labels.kind !== sandbox.labels.kind || !TERMINAL_STATES.has(current.state)
+        || !(age(current.lastActivityAt ?? current.createdAt) > SANDBOX_MAX_AGE_MS)) continue;
+      await api.deleteSandbox(sandbox.id);
     }
+    result.deletedSandboxes.push(sandbox.name);
   }
   return result;
 }

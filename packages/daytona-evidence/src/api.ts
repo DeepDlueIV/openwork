@@ -1,4 +1,5 @@
 import { setTimeout as delay } from "node:timers/promises";
+import { retrySnapshotQuota, type SnapshotRetryOptions } from "./quota-retry.ts";
 
 /**
  * Minimal Daytona REST client for evidence worlds. Hot (memory) snapshots are
@@ -35,6 +36,8 @@ export interface Sandbox {
   toolboxProxyUrl?: string;
   errorReason?: string | null;
   createdAt?: string;
+  snapshot?: string;
+  lastActivityAt?: string;
 }
 
 export interface Snapshot {
@@ -68,7 +71,8 @@ function labels(value: unknown): Record<string, string> {
 function asSandbox(value: unknown): Sandbox {
   if (!record(value) || typeof value.id !== "string" || typeof value.state !== "string") throw new Error("Invalid Daytona sandbox response");
   return { id: value.id, name: text(value.name) ?? value.id, state: value.state, labels: labels(value.labels),
-    toolboxProxyUrl: text(value.toolboxProxyUrl), errorReason: text(value.errorReason) ?? null, createdAt: text(value.createdAt) };
+    toolboxProxyUrl: text(value.toolboxProxyUrl), errorReason: text(value.errorReason) ?? null, createdAt: text(value.createdAt),
+    snapshot: text(value.snapshot), lastActivityAt: text(value.lastActivityAt) };
 }
 function asSnapshot(value: unknown): Snapshot {
   if (!record(value) || typeof value.id !== "string" || typeof value.name !== "string" || typeof value.state !== "string") throw new Error("Invalid Daytona snapshot response");
@@ -130,10 +134,39 @@ export class DaytonaApi {
     catch (error) { if (error instanceof DaytonaApiError && error.status === 404) return null; throw error; }
   }
 
-  async listSandboxes(match: Record<string, string>): Promise<Sandbox[]> {
-    const value = await this.call("GET", `/sandbox?labels=${encodeURIComponent(JSON.stringify(match))}`);
-    const items = Array.isArray(value) ? value : record(value) && Array.isArray(value.items) ? value.items : [];
-    return items.map(asSandbox);
+  async listSandboxes(match: Record<string, string> = {}): Promise<Sandbox[]> {
+    return (await this.listAll(`/sandbox?labels=${encodeURIComponent(JSON.stringify(match))}`)).map(asSandbox);
+  }
+
+  /** Cleanup must never make decisions from a partial or unrecognised listing. */
+  private async listAll(path: string): Promise<unknown[]> {
+    const items: unknown[] = [];
+    const seen = new Set<string>();
+    for (let page = 1; page <= 50; page++) {
+      const value = await this.call("GET", `${path}${path.includes("?") ? "&" : "?"}page=${page}&limit=100`);
+      const batch = Array.isArray(value) ? value : record(value) && Array.isArray(value.items) ? value.items : null;
+      if (!batch) throw new Error("Invalid Daytona paginated listing; refusing partial inventory");
+      for (const item of batch) {
+        if (!record(item) || typeof item.id !== "string" || seen.has(item.id)) throw new Error("Invalid or repeated Daytona listing page; refusing partial inventory");
+        seen.add(item.id);
+        items.push(item);
+      }
+      const reportedPage = record(value) ? value.page : undefined;
+      if (reportedPage !== undefined && reportedPage !== page) throw new Error("Unexpected Daytona page number; refusing partial inventory");
+      const total = record(value) ? value.total : undefined;
+      if (total !== undefined && (typeof total !== "number" || !Number.isInteger(total) || total < 0)) throw new Error("Invalid Daytona inventory count; refusing partial inventory");
+      const complete = () => {
+        if (total !== undefined && items.length !== total) throw new Error("Incomplete Daytona inventory; refusing partial inventory");
+        return items;
+      };
+      const totalPages = record(value) ? value.totalPages : undefined;
+      if (totalPages !== undefined) {
+        if (typeof totalPages !== "number" || !Number.isInteger(totalPages) || totalPages < 0 || totalPages > 50) throw new Error("Invalid Daytona page count; refusing partial inventory");
+        if (page >= totalPages) return complete();
+        if (!batch.length) throw new Error("Empty Daytona intermediate page; refusing partial inventory");
+      } else if (batch.length < 100) return complete();
+    }
+    throw new Error("Daytona listing exceeded 50 pages; refusing partial inventory");
   }
 
   async waitForSandbox(id: string, states: string[], timeoutMs = 5 * 60_000): Promise<Sandbox> {
@@ -158,13 +191,24 @@ export class DaytonaApi {
   }
 
   /** Saves a sandbox as a snapshot. With memory (hot), the sandbox must be running and new sandboxes resume its processes. */
-  async snapshotSandbox(id: string, name: string, includeMemory: boolean): Promise<void> {
-    await this.call("POST", `/sandbox/${encodeURIComponent(id)}/snapshot`, { name, includeMemory });
+  async snapshotSandbox(id: string, name: string, includeMemory: boolean, options?: SnapshotRetryOptions): Promise<void> {
+    const save = async () => { await this.call("POST", `/sandbox/${encodeURIComponent(id)}/snapshot`, { name, includeMemory }); };
+    // Checkpoints are optional: propagate their save failure without tying up a
+    // capture fork for a full cleanup interval. Required build layers can wait.
+    if (name.startsWith("ow-dy-checkpoint-v1-")) await save();
+    else await this.withSnapshotQuotaRetry(save, options);
   }
 
-  async createImageSnapshot(input: { name: string; image: string; cpu: number; memory: number; disk: number }): Promise<void> {
-    await this.call("POST", "/snapshots", { name: input.name, imageName: input.image, sandboxClass: "linux-vm",
-      regionId: this.config.region, cpu: input.cpu, memory: input.memory, disk: input.disk });
+  private async withSnapshotQuotaRetry(operation: () => Promise<void>, options?: SnapshotRetryOptions): Promise<void> {
+    await retrySnapshotQuota(operation, (error) => error instanceof DaytonaApiError
+      && [400, 403, 409, 429].includes(error.status) && /\bSnapshot quota exceeded\b/i.test(error.message), options);
+  }
+
+  async createImageSnapshot(input: { name: string; image: string; cpu: number; memory: number; disk: number }, options?: SnapshotRetryOptions): Promise<void> {
+    await this.withSnapshotQuotaRetry(async () => {
+      await this.call("POST", "/snapshots", { name: input.name, imageName: input.image, sandboxClass: "linux-vm",
+        regionId: this.config.region, cpu: input.cpu, memory: input.memory, disk: input.disk });
+    }, options);
   }
 
   async getSnapshot(name: string): Promise<Snapshot | null> {
@@ -184,14 +228,7 @@ export class DaytonaApi {
   }
 
   async listSnapshots(): Promise<Snapshot[]> {
-    const items: Snapshot[] = [];
-    for (let page = 1; page <= 50; page++) {
-      const value = await this.call("GET", `/snapshots?page=${page}&limit=100`);
-      const batch = record(value) && Array.isArray(value.items) ? value.items : Array.isArray(value) ? value : [];
-      items.push(...batch.map(asSnapshot));
-      if (batch.length < 100) break;
-    }
-    return items;
+    return (await this.listAll("/snapshots")).map(asSnapshot);
   }
 
   async deleteSnapshot(id: string): Promise<void> {

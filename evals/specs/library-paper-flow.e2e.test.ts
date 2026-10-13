@@ -43,7 +43,10 @@ test(title, async ({ evidence, world, user, probe, step }) => {
   };
   const backToLibrary = async (name: string) => {
     await user.click({ role: "button", label: "Library" });
-    await user.see({ role: "button", label: `More for ${name}` }, { timeoutMs: 60_000 });
+    // Connection rows can be labelled "<name> / <server>" and carry no row menu; wait for the row itself.
+    await probe.eventually(async () => (await probe.dom(`[data-library-row^="${name}"]`)).elements.length, {
+      within: 60_000, label: `${name} is listed in the Library`, until: (count) => count > 0,
+    });
   };
   // A row's button starts with its logo letter; read the name line beside the description instead.
   const rowNames = async (section: string) => texts(`[data-library-section="${section}"] [data-library-row] span:has(> [data-library-description]) > span:first-child`);
@@ -242,7 +245,7 @@ test(title, async ({ evidence, world, user, probe, step }) => {
     await backToLibrary("Slack");
     await closeToasts();
     // Rows no longer carry an audience caption; the Slack row's state is what remains to read.
-    const slackChip = await probe.eventually(() => status("Slack"), {
+    const slackChip = await probe.eventually(async () => (await texts(`[data-library-row^="Slack"] + [data-library-status]`)).join(""), {
       within: 30_000, label: "Slack's row asks the member to finish signing in",
       until: (chip) => chip === "Sign in",
     });

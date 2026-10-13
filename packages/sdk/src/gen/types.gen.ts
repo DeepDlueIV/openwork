@@ -171,7 +171,7 @@ export type AdminFeature = {
     | "workbot"
     | "automationCalendar"
     | "permissions"
-    | "teamRoles"
+    | "agentPermissions"
     | "engineV2Upgrade"
     | "remoteSessionEvents"
     | "backgroundShellTasks";
@@ -221,7 +221,7 @@ export type AdminOrganizationsPageResponse = {
       workbot: boolean;
       automationCalendar: boolean;
       permissions: boolean;
-      teamRoles: boolean;
+      agentPermissions: boolean;
       engineV2Upgrade: boolean;
       remoteSessionEvents: boolean;
       backgroundShellTasks: boolean;
@@ -308,7 +308,7 @@ export type AdminOrganizationsPageResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      teamRoles: {
+      agentPermissions: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -415,7 +415,7 @@ export type AdminOverviewResponse = {
       workbot: boolean;
       automationCalendar: boolean;
       permissions: boolean;
-      teamRoles: boolean;
+      agentPermissions: boolean;
       engineV2Upgrade: boolean;
       remoteSessionEvents: boolean;
       backgroundShellTasks: boolean;
@@ -502,7 +502,7 @@ export type AdminOverviewResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      teamRoles: {
+      agentPermissions: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -686,6 +686,15 @@ export type UpdateCurrentUserProfileResponse = {
   };
 };
 
+export type DenDesktopAgentPermissions = {
+  rules: Array<{
+    action: string;
+    resource: string;
+    effect: "allow" | "ask" | "deny";
+    source: string;
+  }>;
+};
+
 export type CurrentUserDesktopConfigResponse = {
   allowCustomProviders?: boolean;
   allowZenModel?: boolean;
@@ -733,6 +742,7 @@ export type CurrentUserDesktopConfigResponse = {
   connectEnabled?: boolean;
   onboardingPrompts?: Array<string>;
   onboardingPromptDescriptions?: Array<string>;
+  agentPermissions?: DenDesktopAgentPermissions;
 };
 
 export type AutomationRunnerTokenResponse = {
@@ -1107,6 +1117,8 @@ export type OrganizationContextResponse = {
       | "teams.manage_admin"
       | "permissions.view"
       | "permissions.manage"
+      | "agent_permissions.view"
+      | "agent_permissions.manage"
       | "sharing.manage_all"
       | "sharing.share_org_wide"
       | "sso.view"
@@ -1485,6 +1497,43 @@ export type DesktopPolicyListResponse = {
   desktopPolicies: Array<{
     [key: string]: unknown;
   }>;
+};
+
+export type AgentPermissionSetting = {
+  decision?: "allow" | "ask" | "deny";
+  allow?: Array<string>;
+  block?: Array<string>;
+};
+
+export type AgentPermissionSettings = {
+  commands?: AgentPermissionSetting;
+  fileEdits?: AgentPermissionSetting;
+  websites?: AgentPermissionSetting;
+  webSearch?: AgentPermissionSetting;
+  localSkills?: AgentPermissionSetting;
+  localMcpServers?: AgentPermissionSetting;
+};
+
+export type AgentPermissionPolicy = {
+  teamId: string | null;
+  name: string;
+  memberCount: number | null;
+  settings: AgentPermissionSettings;
+  updatedAt: string | null;
+};
+
+export type AgentPermissionPolicyList = {
+  everyone: AgentPermissionPolicy;
+  teams: Array<AgentPermissionPolicy>;
+  canEdit: boolean;
+};
+
+export type AgentPermissionPolicyResponse = {
+  policy: AgentPermissionPolicy;
+};
+
+export type AgentPermissionPolicyWrite = {
+  settings: AgentPermissionSettings;
 };
 
 export type InferenceAccessResponse = {
@@ -6109,7 +6158,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       workbot: boolean;
       automationCalendar: boolean;
       permissions: boolean;
-      teamRoles: boolean;
+      agentPermissions: boolean;
       engineV2Upgrade: boolean;
       remoteSessionEvents: boolean;
       backgroundShellTasks: boolean;
@@ -6196,7 +6245,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      teamRoles: {
+      agentPermissions: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6291,7 +6340,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       workbot: boolean;
       automationCalendar: boolean;
       permissions: boolean;
-      teamRoles: boolean;
+      agentPermissions: boolean;
       engineV2Upgrade: boolean;
       remoteSessionEvents: boolean;
       backgroundShellTasks: boolean;
@@ -6378,7 +6427,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      teamRoles: {
+      agentPermissions: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -12948,6 +12997,162 @@ export type PostV1DesktopPoliciesResponses = {
 };
 
 export type PostV1DesktopPoliciesResponse = PostV1DesktopPoliciesResponses[keyof PostV1DesktopPoliciesResponses];
+
+export type GetV1AgentPermissionsData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/agent-permissions";
+};
+
+export type GetV1AgentPermissionsErrors = {
+  /**
+   * The caller must be signed in.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller needs the agent_permissions.view permission.
+   */
+  403: ForbiddenError;
+  /**
+   * Agent permissions are not turned on for this organization.
+   */
+  404: NotFoundError;
+};
+
+export type GetV1AgentPermissionsError = GetV1AgentPermissionsErrors[keyof GetV1AgentPermissionsErrors];
+
+export type GetV1AgentPermissionsResponses = {
+  /**
+   * Agent permissions returned successfully.
+   */
+  200: AgentPermissionPolicyList;
+};
+
+export type GetV1AgentPermissionsResponse = GetV1AgentPermissionsResponses[keyof GetV1AgentPermissionsResponses];
+
+export type PutV1AgentPermissionsEveryoneData = {
+  body: AgentPermissionPolicyWrite;
+  path?: never;
+  query?: never;
+  url: "/v1/agent-permissions/everyone";
+};
+
+export type PutV1AgentPermissionsEveryoneErrors = {
+  /**
+   * A permission or pattern was not valid.
+   */
+  400: InvalidRequestError;
+  /**
+   * The caller must be signed in.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller needs the agent_permissions.manage permission and a recent sign-in.
+   */
+  403: ForbiddenError;
+  /**
+   * Agent permissions are not turned on for this organization.
+   */
+  404: NotFoundError;
+};
+
+export type PutV1AgentPermissionsEveryoneError =
+  PutV1AgentPermissionsEveryoneErrors[keyof PutV1AgentPermissionsEveryoneErrors];
+
+export type PutV1AgentPermissionsEveryoneResponses = {
+  /**
+   * Everyone's agent permissions saved.
+   */
+  200: AgentPermissionPolicyResponse;
+};
+
+export type PutV1AgentPermissionsEveryoneResponse =
+  PutV1AgentPermissionsEveryoneResponses[keyof PutV1AgentPermissionsEveryoneResponses];
+
+export type DeleteV1AgentPermissionsTeamsByTeamIdData = {
+  body?: never;
+  path: {
+    /**
+     * Den TypeID with 'tem_' prefix and a 26-character base32 suffix.
+     */
+    teamId: string;
+  };
+  query?: never;
+  url: "/v1/agent-permissions/teams/{teamId}";
+};
+
+export type DeleteV1AgentPermissionsTeamsByTeamIdErrors = {
+  /**
+   * The caller must be signed in.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller needs the agent_permissions.manage permission and a recent sign-in.
+   */
+  403: ForbiddenError;
+  /**
+   * The team was not found, or agent permissions are not turned on for this organization.
+   */
+  404: NotFoundError;
+};
+
+export type DeleteV1AgentPermissionsTeamsByTeamIdError =
+  DeleteV1AgentPermissionsTeamsByTeamIdErrors[keyof DeleteV1AgentPermissionsTeamsByTeamIdErrors];
+
+export type DeleteV1AgentPermissionsTeamsByTeamIdResponses = {
+  /**
+   * The team's overrides were removed.
+   */
+  204: void;
+};
+
+export type DeleteV1AgentPermissionsTeamsByTeamIdResponse =
+  DeleteV1AgentPermissionsTeamsByTeamIdResponses[keyof DeleteV1AgentPermissionsTeamsByTeamIdResponses];
+
+export type PutV1AgentPermissionsTeamsByTeamIdData = {
+  body: AgentPermissionPolicyWrite;
+  path: {
+    /**
+     * Den TypeID with 'tem_' prefix and a 26-character base32 suffix.
+     */
+    teamId: string;
+  };
+  query?: never;
+  url: "/v1/agent-permissions/teams/{teamId}";
+};
+
+export type PutV1AgentPermissionsTeamsByTeamIdErrors = {
+  /**
+   * A permission or pattern was not valid.
+   */
+  400: InvalidRequestError;
+  /**
+   * The caller must be signed in.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller needs the agent_permissions.manage permission and a recent sign-in.
+   */
+  403: ForbiddenError;
+  /**
+   * The team was not found, or agent permissions are not turned on for this organization.
+   */
+  404: NotFoundError;
+};
+
+export type PutV1AgentPermissionsTeamsByTeamIdError =
+  PutV1AgentPermissionsTeamsByTeamIdErrors[keyof PutV1AgentPermissionsTeamsByTeamIdErrors];
+
+export type PutV1AgentPermissionsTeamsByTeamIdResponses = {
+  /**
+   * The team's agent permissions saved.
+   */
+  200: AgentPermissionPolicyResponse;
+};
+
+export type PutV1AgentPermissionsTeamsByTeamIdResponse =
+  PutV1AgentPermissionsTeamsByTeamIdResponses[keyof PutV1AgentPermissionsTeamsByTeamIdResponses];
 
 export type GetV1DiagnosticsEgressData = {
   body?: never;

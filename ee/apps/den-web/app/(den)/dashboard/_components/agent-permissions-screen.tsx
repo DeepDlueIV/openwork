@@ -30,6 +30,7 @@ import { DenChip } from "../../_components/ui/chip";
 import { DenInput } from "../../_components/ui/input";
 import { DenNotice } from "../../_components/ui/notice";
 import { DenSegmented } from "../../_components/ui/segmented";
+import { DenSwitch } from "../../_components/ui/switch";
 import { DenSelect } from "../../_components/ui/select";
 import { DenSkeleton } from "../../_components/ui/skeleton";
 import { DenStickyActionBar } from "../../_components/ui/sticky-action-bar";
@@ -211,7 +212,7 @@ function PolicyRow({ policy, memberCount, href }: { policy: AgentPermissionPolic
         <span className="truncate text-[12px] text-gray-500">{appliesTo(policy, memberCount)}</span>
       </div>
       <span className="shrink-0 text-[12px] text-gray-700">{setSummary(policy)}</span>
-      <ChevronRight className="size-4 shrink-0 text-gray-300 transition-colors group-hover:text-gray-500" aria-hidden="true" strokeWidth={1.5} />
+      <ChevronRight className="size-4 shrink-0 text-gray-500 transition-colors group-hover:text-gray-700" aria-hidden="true" strokeWidth={1.5} />
     </Link>
   );
 }
@@ -444,6 +445,8 @@ function SettingsEditor({ scopeId, team, settings, base, everyone, editable, onC
   editable: boolean;
   onChange: (settings: AgentPermissionSettings) => void;
 }) {
+  // Blocking file edits blocks every command too (any command can change files).
+  const editsBlocked = (team === null ? settings.fileEdits?.decision : settings.fileEdits?.decision ?? everyone.fileEdits?.decision) === "deny";
   return (
     <div className="min-w-0" data-testid="agent-permissions-editor" data-scope={scopeId}>
       <div className="divide-y divide-gray-100 rounded-xl border border-gray-200 bg-white">
@@ -459,6 +462,7 @@ function SettingsEditor({ scopeId, team, settings, base, everyone, editable, onC
                 everyoneSetting={team === null ? settings[definition.key] : everyone[definition.key]}
                 edited={!sameSetting(definition, settings[definition.key], base[definition.key])}
                 editable={editable}
+                blockedByEdits={definition.action === "shell" && editsBlocked}
                 onChange={(setting) => onChange(withSetting(settings, definition.key, setting))}
               />
             ))}
@@ -475,7 +479,7 @@ function decisionText(decision: AgentPermissionDecision, definition: AgentPermis
   return agentPermissionDecisionLabels[decision];
 }
 
-function PermissionRow({ definition, team, setting, everyoneSetting, edited, editable, onChange }: {
+function PermissionRow({ definition, team, setting, everyoneSetting, edited, editable, blockedByEdits = false, onChange }: {
   definition: AgentPermissionDefinition;
   /** The team's name, or null when editing everyone's permissions. */
   team: string | null;
@@ -483,6 +487,8 @@ function PermissionRow({ definition, team, setting, everyoneSetting, edited, edi
   everyoneSetting: AgentPermissionSetting | undefined;
   edited: boolean;
   editable: boolean;
+  /** Commands while file edits are blocked: every command is blocked too. */
+  blockedByEdits?: boolean;
   onChange: (setting: AgentPermissionSetting | null) => void;
 }) {
   const labelId = useId();
@@ -507,7 +513,7 @@ function PermissionRow({ definition, team, setting, everyoneSetting, edited, edi
           <Tooltip>
             <TooltipTrigger
               aria-label={`About ${definition.label}`}
-              className="rounded text-gray-400 hover:text-gray-600 focus-visible:outline-2 focus-visible:outline-gray-900"
+              className="rounded text-gray-500 hover:text-gray-700 focus-visible:outline-2 focus-visible:outline-gray-900"
             >
               <CircleHelp className="size-3.5" aria-hidden="true" />
             </TooltipTrigger>
@@ -535,17 +541,16 @@ function PermissionRow({ definition, team, setting, everyoneSetting, edited, edi
             </button>
           ) : null}
           {definition.control === "toggle" ? (
-            <label className={`flex items-center gap-2 text-[13px] ${editable ? "cursor-pointer" : "cursor-not-allowed opacity-60"}`}>
-              <input
-                type="checkbox"
-                className="size-4 accent-gray-900"
-                aria-labelledby={labelId}
+            <div className="flex items-center gap-2 text-[13px]">
+              <span className="text-gray-700" aria-hidden="true">{effective === "allow" ? "Allowed" : "Blocked"}</span>
+              <DenSwitch
+                size="sm"
+                aria-label={definition.label}
                 checked={effective === "allow"}
                 disabled={!editable}
-                onChange={(event) => setDecision(event.target.checked ? "allow" : "deny")}
+                onChange={(checked) => setDecision(checked ? "allow" : "deny")}
               />
-              <span className="text-gray-700">{effective === "allow" ? "Allowed" : "Blocked"}</span>
-            </label>
+            </div>
           ) : (
             <div className="w-[190px]">
               <DenSelect
@@ -562,6 +567,12 @@ function PermissionRow({ definition, team, setting, everyoneSetting, edited, edi
           )}
         </div>
       </div>
+      {blockedByEdits ? (
+        <p className="mt-1 flex items-center gap-1.5 text-[12px] text-gray-600 sm:pl-4" data-testid={`agent-permission-${definition.key}-blocked-by-edits`}>
+          <Lock className="size-3.5 shrink-0" aria-hidden="true" />
+          Blocked while Edit files is blocked, because any command can change files.
+        </p>
+      ) : null}
       {lists && definition.patternNoun ? (
         <PatternLists
           definitionKey={definition.key}
@@ -708,7 +719,7 @@ function PatternList({ list, noun, testId, kind, patterns, inherited, editable, 
                 aria-label={`Remove ${pattern}`}
                 disabled={!editable}
                 onClick={() => onChange(patterns.filter((entry) => entry !== pattern))}
-                className="rounded p-0.5 text-gray-400 hover:bg-gray-100 hover:text-gray-700 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded p-0.5 text-gray-500 hover:bg-gray-100 hover:text-gray-800 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <X className="size-3" aria-hidden="true" />
               </button>

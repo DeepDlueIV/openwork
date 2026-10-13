@@ -108,7 +108,7 @@ editorTest("Everyone's permissions reach every member, and a team's own choice r
     await owner.click({ testId: "agent-permission-websites-allow-add" });
     await owner.type({ testId: "agent-permission-websites-allow-input" }, "docs.example.com");
     await owner.press("Enter");
-    await owner.click({ role: "checkbox", label: "Search the web" });
+    await owner.click({ role: "switch", label: "Search the web" });
     await owner.see({ testId: "agent-permission-webSearch" }, { text: /Blocked/ });
     await owner.see({ testId: "agent-permissions-save-bar" }, { text: /Unsaved changes for Everyone/ });
     await owner.click({ role: "button", label: "Save changes" });
@@ -214,7 +214,7 @@ editorTest("an owner undoes a save, then removes a team's agent permissions so i
   });
 
   await step("the owner turns web search off for Contractors, saves, and undoes it from the confirmation", async () => {
-    await owner.click({ role: "checkbox", label: "Search the web" });
+    await owner.click({ role: "switch", label: "Search the web" });
     await owner.click({ role: "button", label: "Save changes" });
     await owner.see({ text: "Agent permissions saved" }, { timeoutMs: 30_000 });
     const saved = await world.receivedRules("riley");
@@ -286,6 +286,36 @@ editorTest("the editor refuses a website it cannot match, and discarding keeps w
     const received = await world.receivedRules("morgan");
     evidence.recordAssertionEvidence("Morgan's rules", describeRules(received), received?.length === 0);
     expect(received).toEqual([]);
+    await owner.screenshot();
+  });
+});
+
+editorTest("blocking file edits blocks every command too, and the editor says why", async ({ world, user, probe, step, evidence }) => {
+  const owner = user.on(world.web);
+  const tryResult = async () => (await probe.dom('[data-testid="agent-permission-try-result"]')).elements.map((element) => element.text).join(" ").trim();
+
+  await step("before: commands and file edits are allowed for everyone, and echo would run", async () => {
+    await owner.see({ testId: "agent-permissions-row-everyone" }, { timeoutMs: 90_000 });
+    await owner.click({ testId: "agent-permissions-row-everyone" });
+    await owner.type({ testId: "agent-permission-try-input" }, "echo done");
+    await owner.see({ testId: "agent-permission-try-result" }, { text: /^Allowed/ });
+    await owner.notSee({ testId: "agent-permission-commands-blocked-by-edits" });
+    await owner.screenshot();
+  });
+
+  await step("after: with Edit files blocked, Run commands says it is blocked too and echo would be blocked", async () => {
+    await owner.click({ role: "button", label: "Edit files" });
+    await owner.click({ role: "option", label: "Block" });
+    await owner.see({ testId: "agent-permission-commands-blocked-by-edits" }, { text: "Blocked while Edit files is blocked, because any command can change files." });
+    await owner.see({ testId: "agent-permission-try-result" }, { text: /^Blocked/ });
+    const blocked = await tryResult();
+    await owner.click({ role: "button", label: "Save changes" });
+    await owner.see({ text: "Agent permissions saved" }, { timeoutMs: 30_000 });
+    const received = await world.receivedRules("morgan");
+    const expected = [rule("edit", "*", "deny", "Everyone"), rule("shell", "*", "deny", "Everyone")];
+    evidence.recordAssertionEvidence("Morgan's rules with file edits blocked", `${describeRules(received)}; trying echo done → ${blocked}`,
+      JSON.stringify(received) === JSON.stringify(expected) && blocked.startsWith("Blocked"));
+    expect(received).toEqual(expected);
     await owner.screenshot();
   });
 });

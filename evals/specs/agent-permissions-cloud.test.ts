@@ -19,7 +19,7 @@ const title = !mysqlOpen
   ? "agent permissions for organization skills and connections skipped — needs MySQL on 127.0.0.1:3306"
   : !redisOpen
     ? "agent permissions for organization skills and connections skipped — needs Redis on 127.0.0.1:6379"
-    : "a member's agent loses an organization skill and connection once Everyone blocks them, and is told the rule";
+    : "a member's agent loses an organization skill and connection once Everyone blocks them (the connection by its server's address), and is told the rule";
 
 const BLOCKED_SKILL = "share-plugin";
 let requestId = 0;
@@ -108,6 +108,8 @@ test.skipIf(!mysqlOpen || !redisOpen)(title, { timeout: 300_000 }, async ({ evid
   expect(created.response.status, created.text).toBeLessThan(300);
   const connectionId = text(record(isRecord(created.body) && isRecord(created.body.connection) ? created.body.connection : created.body, "connection").id, "connection id");
 
+  // Connections match by their server's address, which members cannot change, not by their name.
+  const connectionHost = new URL(den.mocks.connector.mcpUrl).hostname;
   const agentUrl = `${den.ref.apiUrl}/mcp/agent`;
   const directUrl = `${agentUrl}/connections/${encodeURIComponent(connectionId)}`;
   const token = await mintMcpToken(riley, orgId);
@@ -118,6 +120,7 @@ test.skipIf(!mysqlOpen || !redisOpen)(title, { timeout: 300_000 }, async ({ evid
   // Before: the skill is listed and served, and the connection is reachable.
   const listedBefore = listedSkillNames((await callTool("list_skills", {})).payload);
   const skillBefore = toolResultText((await callTool("get_skill", { name: BLOCKED_SKILL })).payload);
+  const executeSkillBefore = toolResultText((await callTool("execute_capability", { name: `skill:${BLOCKED_SKILL}`, arguments: {} })).payload);
   const directBefore = await initialize();
   const executeBefore = toolResultText((await callTool("execute_capability", { name: capability, arguments: {} })).payload);
   evidence.recordAssertionEvidence("before: Riley's agent can use the organization's skill and connection",
@@ -125,31 +128,34 @@ test.skipIf(!mysqlOpen || !redisOpen)(title, { timeout: 300_000 }, async ({ evid
     listedBefore.includes(BLOCKED_SKILL) && skillBefore.length > 200 && directBefore.status === 200 && !executeBefore.includes("agent permissions"));
   expect(listedBefore).toContain(BLOCKED_SKILL);
   expect(skillBefore.length).toBeGreaterThan(200);
+  expect(executeSkillBefore).not.toContain("agent permissions");
   expect(directBefore.status).toBe(200);
   expect(executeBefore).not.toContain("agent permissions");
 
   const saved = await denFetch(owner, "/v1/agent-permissions/everyone", {
-    method: "PUT", headers, body: JSON.stringify({ settings: { localSkills: { block: [BLOCKED_SKILL] }, localMcpServers: { block: [connectionName] } } }),
+    method: "PUT", headers, body: JSON.stringify({ settings: { localSkills: { block: [BLOCKED_SKILL] }, localMcpServers: { block: [connectionHost] } } }),
   });
   expect(saved.response.status, saved.text).toBe(200);
 
   // After: gone from the catalog, refused when asked for by name, and the connection refuses calls.
   const listedAfter = listedSkillNames((await callTool("list_skills", {})).payload);
   const skillAfter = toolResultText((await callTool("get_skill", { name: BLOCKED_SKILL })).payload);
+  const executeSkillAfter = toolResultText((await callTool("execute_capability", { name: `skill:${BLOCKED_SKILL}`, arguments: {} })).payload);
   const directAfter = await initialize();
   const directMessage = isRecord(directAfter.payload) ? String(directAfter.payload.message ?? "") : String(directAfter.payload);
   const executeAfter = toolResultText((await callTool("execute_capability", { name: capability, arguments: {} })).payload);
   const skillRule = `block the skill "${BLOCKED_SKILL}" ("${BLOCKED_SKILL}" is blocked for Everyone)`;
-  const connectionRule = `block the MCP server "${connectionName}" ("${connectionName}" is blocked for Everyone)`;
+  const connectionRule = `block the MCP server "${connectionHost}" ("${connectionHost}" is blocked for Everyone)`;
   evidence.recordAssertionEvidence("after: the blocked skill is hidden and refused, naming the rule",
-    `${BLOCKED_SKILL} listed: ${listedAfter.includes(BLOCKED_SKILL)}; get_skill → ${skillAfter.slice(0, 200)}`,
-    !listedAfter.includes(BLOCKED_SKILL) && skillAfter.includes(skillRule));
+    `${BLOCKED_SKILL} listed: ${listedAfter.includes(BLOCKED_SKILL)}; get_skill → ${skillAfter.slice(0, 200)}; execute_capability skill:${BLOCKED_SKILL} → ${executeSkillAfter.slice(0, 200)}`,
+    !listedAfter.includes(BLOCKED_SKILL) && skillAfter.includes(skillRule) && executeSkillAfter.includes(skillRule));
   evidence.recordAssertionEvidence("after: the blocked connection refuses Riley's agent through Connect and directly",
     `direct initialize → HTTP ${directAfter.status} ${directMessage.slice(0, 160)}; execute_capability → ${executeAfter.slice(0, 200)}`,
     directAfter.status === 403 && directMessage.includes(connectionRule) && executeAfter.includes(connectionRule));
   expect(listedAfter).not.toContain(BLOCKED_SKILL);
   expect(listedAfter.length).toBeGreaterThan(0);
   expect(skillAfter).toContain(skillRule);
+  expect(executeSkillAfter).toContain(skillRule);
   expect(directAfter.status).toBe(403);
   expect(directMessage).toContain(connectionRule);
   expect(executeAfter).toContain(connectionRule);

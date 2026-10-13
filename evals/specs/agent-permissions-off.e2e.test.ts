@@ -54,12 +54,15 @@ test("a member of an organization without agent permissions keeps their skills, 
     const mcp = await agent.desktopApi(`/workspace/${workspace}/mcp`, {
       method: "POST", body: { name: "issue-tracker", config: { type: "remote", url: "http://127.0.0.1:9/issues" } },
     });
-    const ok = server !== "disabled" && skill.status < 300 && mcp.status < 300;
+    // OpenCode v2 answers 503 mcp_tools_not_ready while a saved server's tools
+    // are not ready, as this unreachable one never is; only a refusal is a 403.
+    const mcpSaved = mcp.status < 300 || (mcp.status === 503 && JSON.stringify(mcp.body ?? "").includes("mcp_tools_not_ready"));
+    const ok = server !== "disabled" && skill.status < 300 && mcpSaved;
     evidence.recordAssertionEvidence("local skills and MCP servers",
       `notes-server: ${String(server)}; adding meeting-notes → HTTP ${skill.status}; adding issue-tracker → HTTP ${mcp.status}`, ok);
     expect(server).not.toBe("disabled");
     expect(skill.status).toBeLessThan(300);
-    expect(mcp.status).toBeLessThan(300);
+    expect(mcpSaved).toBe(true);
   });
 
   await step("the built-in browser opens any page without waiting for rules", async () => {

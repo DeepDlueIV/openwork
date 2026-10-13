@@ -155,7 +155,7 @@ export async function agentPermissionsAdminView(seed: Seed) {
     /** Each permission's picklist or checkbox (labelled by the permission's name) and whether it is disabled. */
     async permissionControls(): Promise<{ count: number; disabled: number }> {
       const value = await seed.evalIn(web, browserScript(() => {
-        const controls = [...document.querySelectorAll('[data-testid="agent-permissions-editor"] [aria-labelledby]')];
+        const controls = [...document.querySelectorAll('[data-testid="agent-permissions-editor"] [aria-labelledby], [data-testid="agent-permissions-editor"] [role="switch"]')];
         return {
           count: controls.length,
           disabled: controls.filter((control) => control.hasAttribute("disabled") || control.getAttribute("aria-disabled") === "true").length,
@@ -213,13 +213,14 @@ async function createSession(seed: Seed, app: Surface, title: string): Promise<{
 
 /**
  * What the Contractors team may do in the desktop journeys: commands ask first,
- * except echo, which always runs, and printf, which never does; no file edits;
+ * except echo, which always runs, and printf, which never does; file edits ask
+ * first (blocking them would block every command too);
  * only the briefing page on this computer; only the team's own local skills;
  * no local MCP servers.
  */
 export const contractorDesktopPermissions: AgentPermissionSettings = {
   commands: { decision: "ask", allow: ["echo *"], block: ["printf *"] },
-  fileEdits: { decision: "deny" },
+  fileEdits: { decision: "ask" },
   websites: { decision: "deny", allow: ["127.0.0.1/briefing"] },
   localSkills: { decision: "deny", allow: ["team-*"] },
   localMcpServers: { decision: "deny" },

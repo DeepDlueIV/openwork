@@ -25,7 +25,7 @@ Agent permissions is an Enterprise feature that is rolling out. It sits under **
 | **Open websites** | **Allow**, **Ask first**, or **Block** | Websites |
 | **Search the web** | Allowed or blocked | None |
 | **Use skills** | Allowed or blocked | Skill names |
-| **Use MCP servers** | Allowed or blocked | Server and connection names |
+| **Use MCP servers** | Allowed or blocked | Server names, and connection addresses |
 
 - **Ask first** has the agent ask the member each time before it acts.
 - **Always allowed** lists exceptions while a permission is set to **Ask first** or **Block**. They run without asking.
@@ -36,7 +36,7 @@ Agent permissions is an Enterprise feature that is rolling out. It sits under **
 
 - **Commands**: `*` matches any text. `git *` matches every `git` command, including `git` on its own. `npm test` matches only that command.
 - **Websites**: `docs.example.com` matches that site, `*.example.com` its subdomains, and `example.com/docs` the pages under `/docs`. Start with `https://` to match only secure pages.
-- **Skills and MCP servers**: their names, with `*` for any text, such as `team-*`. An organization skill matches by its title or its listed name, and a connection by its name; names also match in lower case.
+- **Skills and MCP servers**: their names, with `*` for any text, such as `team-*`. An organization skill matches by its title or its listed name. An organization connection matches by its server's address, such as `mcp.linear.app` or `*.linear.app`, not by its name, which members can change. Names also match in lower case.
 
 ## Everyone and teams
 

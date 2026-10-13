@@ -72,7 +72,7 @@ export const agentPermissionDefinitions = [
     key: "fileEdits",
     section: "files",
     label: "Edit files",
-    description: "Creating, changing and deleting files in the member's workspace.",
+    description: "Creating, changing and deleting files in the member's workspace. Blocking it also blocks running commands, since any command can change files.",
     action: "edit",
     control: "choice",
     patterns: null,
@@ -112,7 +112,7 @@ export const agentPermissionDefinitions = [
     key: "localMcpServers",
     section: "extensions",
     label: "Use MCP servers",
-    description: "MCP servers added on the member's computer and the organization's connections.",
+    description: "MCP servers added on the member's computer, by name, and the organization's connections, by their server's address such as mcp.linear.app.",
     action: "mcp",
     control: "toggle",
     patterns: "name",
@@ -505,7 +505,7 @@ export function resolveAgentPermissions(input: {
  * permission that allows adds no rules: the member's own settings apply.
  */
 export function agentPermissionRules(resolved: readonly ResolvedAgentPermission[]): AgentPermissionRule[] {
-  return resolved.flatMap(({ definition, decision, decisionSource, allow, block }) => {
+  const rules = resolved.flatMap(({ definition, decision, decisionSource, allow, block }) => {
     const action = definition.action;
     const restricted = decision !== "allow" && decisionSource !== null;
     return [
@@ -514,6 +514,18 @@ export function agentPermissionRules(resolved: readonly ResolvedAgentPermission[
       ...block.map(({ pattern, source }) => ({ action, resource: pattern, effect: "deny" as const, source })),
     ];
   });
+  // Any command can change files, so blocking file edits blocks commands too.
+  // Last, so no allowed command pattern reopens it.
+  const edits = resolved.find((entry) => entry.definition.action === "edit");
+  if (edits?.decision === "deny" && edits.decisionSource !== null) {
+    rules.push({ action: "shell", resource: "*", effect: "deny", source: edits.decisionSource });
+  }
+  return rules;
+}
+
+/** Whether these settings block file edits, which also blocks every command. */
+export function agentPermissionCommandsBlockedByEdits(rules: readonly AgentPermissionRule[]): boolean {
+  return rules.some((rule) => rule.action === "edit" && rule.resource === "*" && rule.effect === "deny");
 }
 
 export function resolveAgentPermissionRules(input: {

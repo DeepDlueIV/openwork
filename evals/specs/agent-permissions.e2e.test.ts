@@ -19,11 +19,11 @@ function describeRules(rules: Record<string, unknown>[]): string {
   return rules.map((rule) => `${String(rule.action)} ${String(rule.resource)} → ${String(rule.effect)} (${String(rule.source)})`).join("; ") || "none";
 }
 
-test("a contractor's agent asks before commands, runs the ones the team allows, and cannot run blocked commands, edit files, open blocked websites or use the folder's MCP server", async ({ world, user, agent, probe, step, evidence }) => {
+test("a contractor's agent asks before commands, runs the ones the team allows, and cannot run blocked commands, edit files without asking, open blocked websites or use the folder's MCP server", async ({ world, user, agent, probe, step, evidence }) => {
   // The member's approval prompt, on either engine.
   const approval = "Allow once";
   /** Sends a prompt the witness model answers by calling `steps`, approving one prompt first when asked to. */
-  const turn = async (label: string, steps: MockAgentToolStep[], options: { approve?: boolean } = {}) => {
+  const turn = async (label: string, steps: MockAgentToolStep[], options: { approve?: boolean; deny?: boolean } = {}) => {
     const prompt = `${label} ${randomUUID()}`;
     const reply = `${label} done. ${randomUUID()}`;
     await world.prepareTurn(prompt, reply, steps);
@@ -33,6 +33,13 @@ test("a contractor's agent asks before commands, runs the ones the team allows, 
       await user.see(approval, { timeoutMs: 120_000 });
       await user.screenshot();
       await user.click(approval);
+    }
+    if (options.deny) {
+      await user.see("Deny", { timeoutMs: 120_000 });
+      await user.screenshot();
+      await user.click("Deny");
+      // A denied call can end the turn before the agent replies (v1 stops there).
+      return prompt;
     }
     await user.see({ text: reply }, { timeoutMs: 120_000 });
     return prompt;
@@ -54,7 +61,7 @@ test("a contractor's agent asks before commands, runs the ones the team allows, 
     });
     const expected = [
       ["shell", "*", "ask"], ["shell", "echo *", "allow"], ["shell", "printf *", "deny"],
-      ["edit", "*", "deny"],
+      ["edit", "*", "ask"],
       ["webfetch", "*", "deny"], ["webfetch", "127.0.0.1/briefing", "allow"],
       ["skill", "*", "deny"], ["skill", "team-*", "allow"],
       ["mcp", "*", "deny"],
@@ -118,22 +125,16 @@ test("a contractor's agent asks before commands, runs the ones the team allows, 
     await user.screenshot();
   });
 
-  await step("the agent cannot write a file, because Contractors block file edits", async () => {
+  await step("the agent asks Riley before writing a file, because Contractors ask first for file edits, and nothing is written when Riley denies it", async () => {
     const draft = join(world.workspacePath, "draft.md");
-    // Where an engine stops offering file tools, the witness still calls one, as a misbehaving model would.
-    const prompt = await turn("Write a short draft in this folder.", [{
-      tool: "write", arguments: { filePath: draft, path: "draft.md", content: "A draft the agent should not save." }, allowUnadvertisedTool: true,
-    }]);
-    const offered = (await world.offeredTools(prompt)).filter((tool) => ["write", "edit", "patch", "apply_patch", "multiedit"].includes(tool));
-    const call = await world.toolCall("write", () => true);
+    await turn("Write a short draft in this folder.", [{
+      tool: "write", arguments: { filePath: draft, path: "draft.md", content: "A draft Riley did not approve." },
+    }], { deny: true });
+    const call = await settled("write", () => true);
     const wrote = await world.wrote("draft.md");
-    const told = reason(call);
-    const blocked = offered.length === 0 || (call?.status === "error" && told.includes("Your organization's agent permissions block editing files (set for Contractors)"));
-    evidence.recordAssertionEvidence("the agent's file write", offered.length === 0
-      ? `draft written: ${wrote}; the engine offered the agent no file-editing tool`
-      : `draft written: ${wrote}; ${call?.status ?? "none"}; the agent was told: ${told || "(nothing)"}`, !wrote && blocked);
+    evidence.recordAssertionEvidence("the agent's file write after Riley denied it", `draft written: ${wrote}; ${call?.status ?? "none"}`, !wrote && call?.status === "error");
     expect(wrote).toBe(false);
-    expect(blocked).toBe(true);
+    expect(call?.status).toBe("error");
     await user.screenshot();
   });
 

@@ -62,6 +62,31 @@ function selectedSkill(part: PromptPart): Record<string, unknown> | null {
   return id && /^(?:skill|plugin):/.test(id) ? null : selection;
 }
 
+type SkillResolution = { ids: string[] } | { missing: string } | { ambiguous: string; candidates: string[] };
+
+/**
+ * The engine keys a skill by its folder, the name OpenWork lists and inserts,
+ * while its display name comes from frontmatter and need not be unique (a
+ * renamed copy keeps it). Match the folder first; fall back to a display name
+ * only when exactly one skill carries it.
+ */
+function resolveSelectedSkills(selections: readonly Record<string, unknown>[], registry: readonly unknown[]): SkillResolution {
+  const ids: string[] = [];
+  for (const selection of selections) {
+    const id = readString(selection, "id");
+    const name = readString(selection, "name");
+    const wanted = id ?? name;
+    let matches = wanted ? registry.filter((skill) => readString(skill, "id") === wanted) : [];
+    if (!id && name && matches.length === 0) matches = registry.filter((skill) => readString(skill, "name") === name);
+    const label = name ?? id ?? "(unknown)";
+    if (matches.length > 1) return { ambiguous: label, candidates: matches.flatMap((skill) => readString(skill, "id") ?? []) };
+    const resolved = readString(matches[0], "id");
+    if (!resolved) return { missing: label };
+    if (!ids.includes(resolved)) ids.push(resolved);
+  }
+  return { ids };
+}
+
 function isPastedText(part: PromptPart): boolean {
   return isRecord(part.metadata) && part.metadata.openworkPastedText === true;
 }
@@ -2357,19 +2382,23 @@ export function createClientV2(
       if (selections.length) {
         // Resolve against the same workspace's live registry, never guess an ID
         // from prose or silently fall back to asking the model to load a skill.
-        const catalog = await request("GET", "/api/skill", undefined, options?.signal);
-        if (!catalog.response.ok) return failedResult(catalog);
-        for (const selection of selections) {
-          const id = readString(selection, "id");
-          const name = readString(selection, "name");
-          const matches = responseItems(catalog.payload).filter((skill) => id
-            ? readString(skill, "id") === id : Boolean(name) && readString(skill, "name") === name);
-          const resolvedID = matches.length === 1 ? readString(matches[0], "id") : undefined;
-          if (!resolvedID) {
-            return unsupportedResult(baseUrl, "skill.attachment", `Selected skill ${name ?? id ?? "(unknown)"} is unavailable or ambiguous in OpenCode v2. Nothing was sent.`);
-          }
-          if (!skills.some((skill) => skill.id === resolvedID)) skills.push({ id: resolvedID });
+        // A folder the engine has just opened, or a skill written a moment ago,
+        // can be missing from the first read, so look again briefly first.
+        let resolution: SkillResolution = { missing: "(unknown)" };
+        for (const delay of [0, 250, 750, 1_500]) {
+          if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+          const catalog = await request("GET", "/api/skill", undefined, options?.signal);
+          if (!catalog.response.ok) return failedResult(catalog);
+          resolution = resolveSelectedSkills(selections, responseItems(catalog.payload));
+          if (!("missing" in resolution)) break;
         }
+        if ("missing" in resolution) {
+          return unsupportedResult(baseUrl, "skill.attachment", `Selected skill ${resolution.missing} is not available in OpenCode v2. Nothing was sent.`);
+        }
+        if ("ambiguous" in resolution) {
+          return unsupportedResult(baseUrl, "skill.attachment", `Selected skill ${resolution.ambiguous} matches more than one skill in OpenCode v2 (${resolution.candidates.join(", ")}). Rename one, then send again. Nothing was sent.`);
+        }
+        skills.push(...resolution.ids.map((id) => ({ id })));
         // The pinned native prompt materializes attachments without running the
         // skill tool's permission check. Ask the engine (including its policy
         // hooks) rather than treating catalog membership as authorization.

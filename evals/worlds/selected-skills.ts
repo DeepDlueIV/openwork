@@ -57,6 +57,7 @@ export async function selectedSkillsWeb(seed: Seed) {
   const engine = resolveEvalEngine();
   const skillName = "selected-briefing";
   const skillBody = "When preparing a briefing, include the exact phrase AMBER_BODY_ONLY_7391. Keep the briefing concise.";
+  const copyBody = "When preparing a briefing, include the exact phrase COPY_BODY_ONLY_5120. Keep the briefing long.";
   const prompt = "Prepare a short briefing.";
   const reply = "The briefing is ready.";
   const workspacePath = seed.tmpPath("selected-skills");
@@ -110,6 +111,13 @@ export async function selectedSkillsWeb(seed: Seed) {
     return {
       app, workspace, session, engine, skillName, skillBody, prompt, reply, modelId,
       removeSkill: () => rm(skillDirectory, { recursive: true }),
+      copyBody,
+      /** A renamed copy of the skill folder keeps its frontmatter name, as copying a skill does. */
+      addRenamedCopy: async () => {
+        const directory = join(workspacePath, ".claude", "skills", `${skillName}-copy`);
+        await mkdir(directory, { recursive: true });
+        await writeFile(join(directory, "SKILL.md"), `---\nname: ${skillName}\ndescription: An older copy of the briefing skill.\n---\n${copyBody}\n`);
+      },
       /** Native-boundary requests the app made, in order: permission asks and prompt submissions. */
       nativeRequests: async () => {
         const entries = await seed.evalIn(app, () => window.__selectedSkillPrompts ?? []);

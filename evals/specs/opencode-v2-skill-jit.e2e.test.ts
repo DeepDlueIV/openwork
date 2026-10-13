@@ -206,7 +206,7 @@ selectedTest("SKILL-MISSING a selected skill removed from the native registry fa
     until: (result) => !JSON.stringify(result.body).includes(world.skillName),
   });
   await user.click("Run task");
-  await user.see({ text: /Selected skill .* is unavailable or ambiguous in OpenCode v2\. Nothing was sent\./ }, { timeoutMs: 30_000 });
+  await user.see({ text: /Selected skill .* is not available in OpenCode v2\. Nothing was sent\./ }, { timeoutMs: 30_000 });
   expect(await world.nativeRequests()).toEqual([]);
   expect(world.providerRequests()).toEqual([]);
   expect(await readTranscriptMessages(probe, "assistant")).toEqual([]);
@@ -216,6 +216,38 @@ selectedTest("SKILL-MISSING a selected skill removed from the native registry fa
   });
   evidence.recordAssertionEvidence("A removed selected skill fails visibly",
     "After the selected skill left the native registry, sending showed that nothing was sent, with no engine prompt, provider request or assistant message.", true);
+});
+
+selectedTest("SKILL-SAME-NAME a person picks a skill whose renamed copy shares its name and the chosen skill is sent", async ({ world, user, probe, evidence, step }) => {
+  expect(world.engine).toBe("v2");
+  const skillPath = `/workspace/${world.workspace.workspaceId}/opencode2/api/skill`;
+  await step("given: a renamed copy of the skill in another folder carries the same name", async () => {
+    await world.addRenamedCopy();
+    const shared = await probe.eventually(async () => {
+      const catalog = await world.readNative(skillPath);
+      const skills = record(catalog.body) && Array.isArray(catalog.body.data) ? catalog.body.data.filter(record) : [];
+      return skills.filter((entry) => entry.name === world.skillName).map((entry) => String(entry.id)).sort();
+    }, { within: 30_000, label: "the engine registers both folders under one name", until: (ids) => ids.length === 2 });
+    expect(shared).toEqual([world.skillName, `${world.skillName}-copy`]);
+    evidence.recordAssertionEvidence("Two skills share one name", `Engine skills named ${world.skillName}: ${shared.join(", ")}`, true);
+  });
+  await step("when: the person picks the skill in the composer and sends", async () => {
+    await openSkillMenu(user, world.skillName);
+    await user.type("composer", ` ${world.prompt}`);
+    await user.click("Run task");
+    await user.see({ text: world.reply }, { timeoutMs: 90_000 });
+    await user.screenshot();
+    evidence.recordAssertionEvidence("The message is sent", `The reply "${world.reply}" arrived with no error notice.`, true);
+  });
+  await step("after: only the chosen skill's instructions reached the model", async () => {
+    const prompts = (await world.nativeRequests()).filter((request) => request.kind === "prompt").map((request) => request.body);
+    expect(prompts).toEqual([{ text: expect.stringContaining(world.prompt), skills: [{ id: world.skillName }] }]);
+    const sent = JSON.stringify(world.providerRequests());
+    expect(sent).toContain(world.skillBody);
+    expect(sent).not.toContain(world.copyBody);
+    evidence.recordAssertionEvidence("The chosen skill is the one attached",
+      `Prompt attached ${JSON.stringify(record(prompts[0]) ? prompts[0].skills : null)}; the model saw the chosen skill's instructions and not the copy's.`, true);
+  });
 });
 
 // ---------------------------------------------------------------------------

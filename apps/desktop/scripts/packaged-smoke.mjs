@@ -1,5 +1,6 @@
 import { execFileSync, spawnSync } from "node:child_process";
 import { accessSync, appendFileSync, constants, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -61,7 +62,7 @@ function packageFlavor(name, config, directory) {
   { CSC_IDENTITY_AUTO_DISCOVERY: "false" });
 }
 
-async function bootPackagedDesktop(name, journey, binary, timeout, display) {
+async function bootPackagedDesktop(name, journey, binary, timeout, display, extraEnv = {}) {
   const phaseStarted = performance.now();
   const result = await runCommand("xvfb-run", ["-a", "--server-num", String(display), "pnpm", "evals:e2e", journey, "--local"], {
     cwd: repo, stdio: "inherit", timeout,
@@ -76,6 +77,7 @@ async function bootPackagedDesktop(name, journey, binary, timeout, display) {
       OPENWORK_EVAL_SURFACE_LOGS_DIR: join(output, "logs", name),
       ELECTRON_RUN_AS_NODE: "",
       NODE_PATH: "", NODE_OPTIONS: "",
+      ...extraEnv,
     },
   });
   const phase = { name, milliseconds: Math.round(performance.now() - phaseStarted), exitCode: result.status, timedOut: result.timedOut };
@@ -83,6 +85,16 @@ async function bootPackagedDesktop(name, journey, binary, timeout, display) {
   console.log(`[packaged-smoke] ${JSON.stringify(phase)}`);
   if (result.status !== 0 || result.timedOut) throw new Error(`${name} failed (${result.timedOut ? "timeout" : result.signal || result.status})`);
 }
+
+// An npm registry that accepts connections and never answers. On a new profile
+// the engine answers nothing until @opencode-ai/plugin is installed into each
+// of its config folders, so the app ships that install pre-resolved
+// (apps/server/src/engine-plugin-deps.ts); app-smoke boots against this
+// registry to prove it never waits on npm. Upper case: pnpm drops inherited
+// lower-case npm_config_* from the scripts it runs.
+const stalledRegistry = createServer(() => {});
+await new Promise((resolve) => stalledRegistry.listen(0, "127.0.0.1", resolve));
+const offlineNpm = { NPM_CONFIG_REGISTRY: `http://127.0.0.1:${stalledRegistry.address().port}/` };
 
 try {
   if (!process.argv.includes("--artifact-only")) {
@@ -107,14 +119,14 @@ try {
   15_000, { ELECTRON_RUN_AS_NODE: "1", NODE_PATH: "", NODE_OPTIONS: "" }, output);
   const checks = [];
   const matched = new Set();
-  const check = (name, journey, executable, timeout) => {
+  const check = (name, journey, executable, timeout, extraEnv) => {
     if (!selected(journey)) return;
     matched.add(journey);
     // Distinct starting displays avoid xvfb-run's concurrent auto-number race.
     const display = 100 + checks.length * 10;
-    checks.push(() => bootPackagedDesktop(name, journey, executable, timeout, display));
+    checks.push(() => bootPackagedDesktop(name, journey, executable, timeout, display, extraEnv));
   };
-  check("desktop-boot", "app-smoke", binary, 90_000);
+  check("desktop-boot", "app-smoke", binary, 90_000, offlineNpm);
   for (const { flavor, executable } of gatedFlavors) {
     const flavorBinary = join(flavorOutput(flavor), "linux-unpacked", executable);
     accessSync(flavorBinary, constants.X_OK);
@@ -149,6 +161,8 @@ try {
   );
   report.passed = true;
 } finally {
+  stalledRegistry.closeAllConnections();
+  stalledRegistry.close();
   report.totalMilliseconds = Math.round(performance.now() - started);
   // A journey that fails because the AI engine never answered otherwise reports
   // only a later browser timeout. Say so first, with the engine's own errors.

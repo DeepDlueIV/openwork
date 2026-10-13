@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { copyFileSync, cpSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { buildOpencodePluginDeps } from "../../server/scripts/build-opencode-plugin-deps.mjs";
 import { prepareServerConstants } from "./prepare-server-constants.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -73,8 +74,13 @@ run(pnpmCmd, ["--filter", "@openwork/app", "build"], repoRoot, {
 const serverDistDir = resolve(repoRoot, "apps", "server", "dist");
 prepareServerConstants(serverDistDir, resolve(repoRoot, "constants.json"));
 rmSync(packagedServerRoot, { recursive: true, force: true });
-cpSync(serverDistDir, resolve(packagedServerRoot, "dist"), { recursive: true });
+const pluginDepsArchive = /[\\/]opencode-plugin-deps-[^\\/]+\.tgz$/;
+cpSync(serverDistDir, resolve(packagedServerRoot, "dist"), { recursive: true, filter: (source) => !pluginDepsArchive.test(source) });
 copyFileSync(resolve(repoRoot, "apps", "server", "package.json"), resolve(packagedServerRoot, "package.json"));
+// The engine's first-run plugin install, pre-resolved for this engine version,
+// so a new profile or workspace never waits on the npm registry
+// (apps/server/src/engine-plugin-deps.ts).
+await buildOpencodePluginDeps(resolve(repoRoot, "apps", "server"), resolve(packagedServerRoot, "dist"));
 for (const fileName of readdirSync(electronRoot).filter((name) => name.endsWith(".mjs")).sort()) {
   run(nodeCmd, ["--check", resolve(electronRoot, fileName)], repoRoot);
 }

@@ -261,14 +261,36 @@ export type PluginDepsSeedResult =
   | { seeded: true; durationMs: number }
   | { seeded: false; reason: "no-archive" | "already-set-up" | "failed"; error?: string };
 
+/** Unpack without blocking: the desktop app runs this server in its main process. */
+function extractArchiveInBackground(archive: string, destination: string): Promise<void> {
+  const command = tarCommand();
+  const cwd = dirname(archive);
+  return new Promise((resolvePromise, reject) => {
+    const child = spawn(command, ["-xf", basename(archive), "-C", relative(cwd, destination) || "."], {
+      cwd,
+      stdio: ["ignore", "ignore", "pipe"],
+    });
+    let stderr = "";
+    child.stderr?.on("data", (chunk: Buffer) => {
+      stderr = `${stderr}${chunk.toString()}`.slice(-500);
+    });
+    child.once("error", reject);
+    child.once("close", (code) => {
+      if (code === 0) resolvePromise();
+      else reject(new Error(`${command} exited with ${code} while extracting ${basename(archive)}: ${stderr.trim()}`));
+    });
+  });
+}
+
 /**
- * OpenCode blocks the first folder load on `npm install @opencode-ai/plugin`
- * into its global config folder whenever plugins are configured, and OpenWork
- * always configures plugins: 10-15 s on Windows. The npm package ships that
- * exact install pre-resolved; on a fresh profile (no node_modules, manifest or
- * lockfile yet) unpack it so OpenCode finds the dependency already installed.
- * Any existing install state is left to OpenCode. Never throws: on failure
- * OpenCode installs as before.
+ * OpenCode blocks a folder's first load on `npm install @opencode-ai/plugin`
+ * into every config folder it reads for that folder whenever plugins are
+ * configured, and OpenWork always configures plugins: 10-15 s on Windows, and
+ * no answer at all while the npm registry is slow or unreachable. OpenWork
+ * builds ship that exact install pre-resolved; in a fresh config folder (no
+ * node_modules, manifest or lockfile yet) unpack it so OpenCode finds the
+ * dependency already installed. Any existing install state is left to
+ * OpenCode. Never throws: on failure OpenCode installs as before.
  */
 export async function seedOpencodePluginDeps(input: {
   archive: string;
@@ -285,7 +307,7 @@ export async function seedOpencodePluginDeps(input: {
   try {
     await mkdir(input.configDir, { recursive: true });
     staging = await mkdtemp(join(input.configDir, ".openwork-plugin-deps-"));
-    extractArchive(input.archive, basename(input.archive), staging);
+    await extractArchiveInBackground(input.archive, staging);
     // node_modules first: if this stops part-way, OpenCode sees an
     // incomplete lockfile and runs its own install, as it would have.
     for (const name of OPENCODE_INSTALL_STATE) {

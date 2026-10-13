@@ -33,6 +33,7 @@ import {
   syncAllWorkspacesRuntimeMcpToEngine,
 } from "./server.js";
 import { ensureLocalWorkspaceFiles } from "./workspace-init.js";
+import { seedEnginePluginDeps } from "./engine-plugin-deps.js";
 import { findManagedEngineWorkspace, resolveManagedEngineCwd, shouldStartManagedEngine } from "./workspaces.js";
 import { runtimeStorageDir } from "./runtime-db.js";
 import { keepOpenworkRuntimeConfigFileFresh, writeOpenworkRuntimeConfigFile } from "./openwork-runtime-config.js";
@@ -214,6 +215,20 @@ export async function startEmbeddedServer(options: EmbeddedServerOptions): Promi
       fallbackDir: join(runtimeStorageDir(config), "managed-opencode-workdir"),
     });
     await duringStartup(() => mkdir(cwd, { recursive: true }));
+    const pluginDeps = await seedEnginePluginDeps({
+      env: process.env,
+      workspacePaths: config.workspaces.map((workspace) => workspace.path),
+    });
+    if (pluginDeps.failures.length > 0) {
+      logger.log("warn", "Engine plugin dependencies were not prepared; the engine installs them from npm.", {
+        "engine.plugin_deps.error": pluginDeps.failures.join("; "),
+      });
+    } else if (pluginDeps.seeded > 0) {
+      logger.log("info", "Engine plugin dependencies prepared.", {
+        "engine.plugin_deps.folders": pluginDeps.seeded,
+        "engine.plugin_deps.duration_ms": pluginDeps.durationMs,
+      });
+    }
     const opencodeModelsUrl = await duringStartup(() => resolveOpencodeModelsUrl());
 
     const opencodeBin = options.opencodeBin || process.env.OPENWORK_OPENCODE_BIN;

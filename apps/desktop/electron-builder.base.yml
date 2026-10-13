@@ -6,6 +6,7 @@ files:
   - electron/**/*
   - server/**/*
   - "!server/dist/opencode-plugins/**"
+  - "!server/dist/opencode-plugin-deps-*.tgz"
   - package.json
   - from: .electron-runtime/node_modules
     to: node_modules
@@ -19,6 +20,11 @@ extraResources:
     filter:
       - "*.js"
       - "*.wasm"
+  # Extracted with tar, which cannot read inside app.asar.
+  - from: server/dist
+    to: server/dist
+    filter:
+      - "opencode-plugin-deps-*.tgz"
   - from: ../../packages/docs
     to: openwork-docs
     filter:

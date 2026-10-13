@@ -1,9 +1,10 @@
-// Pre-resolves the dependency OpenCode installs into its global config folder
+// Pre-resolves the dependency OpenCode installs into each of its config folders
 // the first time it loads a folder with plugins configured
 // (`npm install @opencode-ai/plugin@<engine version>`), and packs the result
-// as dist/opencode-plugin-deps-<version>.tgz. `openwork-server web` extracts
-// it on a fresh profile so the first folder load skips that install
-// (10-15 s on Windows, measured on a 2 vCPU Defender-enabled machine).
+// as dist/opencode-plugin-deps-<version>.tgz. `openwork-server web` and the
+// desktop app extract it on a fresh profile so the first folder load skips
+// that install (10-15 s on Windows, measured on a 2 vCPU Defender-enabled
+// machine, and no answer at all while the npm registry is slow).
 import { spawnSync } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -22,7 +23,7 @@ function run(command, args, cwd) {
   if (result.status !== 0) throw new Error(`${command} ${args.join(" ")} exited with ${result.status}`);
 }
 
-export async function buildOpencodePluginDeps(packageRoot) {
+export async function buildOpencodePluginDeps(packageRoot, outDir = resolve(packageRoot, "dist")) {
   const constants = JSON.parse(await readFile(resolve(packageRoot, "..", "..", "constants.json"), "utf8"));
   const version = String(constants.opencodeVersion).replace(/^v/, "");
   const staging = await mkdtemp(join(tmpdir(), "openwork-opencode-plugin-deps-"));
@@ -34,7 +35,6 @@ export async function buildOpencodePluginDeps(packageRoot) {
     );
     // OpenCode installs with scripts ignored; match it.
     run("npm", ["install", "--ignore-scripts", "--no-audit", "--no-fund", "--loglevel=error"], staging);
-    const outDir = resolve(packageRoot, "dist");
     await mkdir(outDir, { recursive: true });
     const archive = join(outDir, opencodePluginDepsArchiveName(version));
     await rm(archive, { force: true });

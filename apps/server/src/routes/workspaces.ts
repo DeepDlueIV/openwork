@@ -2,6 +2,7 @@ import { readFile, rename, rm, writeFile } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { recordAudit } from "../audit.js";
 import { ApiError } from "../errors.js";
+import { seedEnginePluginDeps } from "../engine-plugin-deps.js";
 import { inheritWorkspaceOpencodeConnection, resolveWorkspaceOpencodeConnection } from "../opencode-connection.js";
 import type { ServerConfig, WorkspaceInfo } from "../types.js";
 import { ensureDir, exists, shortId } from "../utils.js";
@@ -129,6 +130,8 @@ export function registerWorkspaceRoutes(options: RegisterWorkspaceRoutesOptions)
     const workspacePath = resolve(folderPath);
     await ensureDir(workspacePath);
     await ensureWorkspaceFiles(workspacePath, preset);
+    // Before the engine first loads this folder (see seedEnginePluginDeps).
+    await seedEnginePluginDeps({ env: process.env, workspacePaths: [workspacePath] });
 
     const workspaceId = workspaceIdForPath(workspacePath);
     // Seed the per-workspace openwork config in the runtime DB (replaces the

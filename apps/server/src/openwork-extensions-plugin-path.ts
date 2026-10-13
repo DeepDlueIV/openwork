@@ -14,6 +14,14 @@ function resourcesPathFromAppAsarPath(path: string): string | null {
   return match ? path.slice(0, match.index) : null;
 }
 
+/** The desktop app's resources folder when `here` is inside its app.asar, else null. */
+export function packagedResourcesPath(here: string): string | null {
+  const resourcesPath = resourcesPathFromAppAsarPath(here);
+  if (!resourcesPath) return null;
+  const electronResourcesPath = process.resourcesPath?.includes("app.asar") ? resourcesPath : process.resourcesPath?.trim();
+  return electronResourcesPath || resourcesPath;
+}
+
 export function openworkPluginPath(name: string, here?: string): string {
   const pluginDir = process.env.OPENWORK_EXTENSIONS_PLUGIN_DIR;
   if (pluginDir) {
@@ -21,10 +29,9 @@ export function openworkPluginPath(name: string, here?: string): string {
   }
 
   here = here ?? dirname(fileURLToPath(import.meta.url));
-  const resourcesPath = resourcesPathFromAppAsarPath(here);
+  const resourcesPath = packagedResourcesPath(here);
   if (resourcesPath) {
-    const electronResourcesPath = process.resourcesPath?.includes("app.asar") ? resourcesPath : process.resourcesPath?.trim();
-    return join(electronResourcesPath || resourcesPath, "opencode-plugins", `${name}.js`);
+    return join(resourcesPath, "opencode-plugins", `${name}.js`);
   }
 
   const extension = basename(here) === "dist" ? "js" : "ts";

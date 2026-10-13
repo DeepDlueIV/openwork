@@ -9,6 +9,13 @@ const variant = process.env.APP_VARIANT === "production" ? "production" : "devel
 const production = variant === "production"
 const id = production ? "com.openworklabs.workbot" : "com.openworklabs.workbot.dev"
 
+/** Development builds start from EXPO_PUBLIC_WORKBOT_URL: https, or plain http only on this computer (loopback). */
+function developmentWorkbotUrl(value = "http://localhost:3020") {
+  const url = new URL(value)
+  if (url.protocol === "https:" || (url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname))) return url.origin
+  throw new Error(`EXPO_PUBLIC_WORKBOT_URL must be an https address, or http on localhost: ${value}`)
+}
+
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: production ? "Workbot" : "Workbot Dev",
@@ -52,7 +59,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   extra: {
     variant,
     // Production always talks to Workbot's own address; development builds start from this one and can change it.
-    workbotUrl: production ? "https://chat.openworklabs.com" : (process.env.EXPO_PUBLIC_WORKBOT_URL ?? "http://localhost:3020"),
+    workbotUrl: production ? "https://chat.openworklabs.com" : developmentWorkbotUrl(process.env.EXPO_PUBLIC_WORKBOT_URL || undefined),
     redirectUri: `${id}:/auth/callback`,
   },
 })

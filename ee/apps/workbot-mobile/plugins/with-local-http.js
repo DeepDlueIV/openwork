@@ -1,5 +1,5 @@
-// Development builds only: Android may reach a Workbot on this computer over plain http (the emulator's
-// localhost through `adb reverse`, or 10.0.2.2). Production builds never include this.
+// Development builds only: Android may reach a Workbot on this computer over plain http (localhost through
+// `adb reverse`; the app refuses plain http to any other host). Production builds never include this.
 const { withAndroidManifest } = require("expo/config-plugins")
 
 module.exports = function withLocalHttp(config) {

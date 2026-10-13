@@ -351,8 +351,11 @@ test(title, async ({ evidence, world, user, probe, step }) => {
     expect(parts).toHaveLength(2);
   });
 
-  await step("after: three things added by you, each just for you, with Share… in the toast", async () => {
-    await user.see({ text: "Share…" });
+  await step("after: three things added by you, each just for you, with Share… one click away", async () => {
+    // The creation toast can expire while the Library reloads; the row menu offers the same Share….
+    await user.click({ role: "button", label: "More for Sales call prep" });
+    await user.see({ role: "menuitem", label: "Share…" });
+    await user.press("Escape");
     const mine = await rowNames("mine");
     // Rows no longer carry "Just me"; the section's "only you so far" says it for all three.
     const meta = await sectionMeta("mine");

@@ -141,8 +141,10 @@ export async function handoffWorld(seed: Seed) {
     } else {
       den = await seed.den();
     }
-    const organization = await denFetch(den.admin, "/v1/org");
-    if (!organization.response.ok) throw new Error("Could not read the fixture organization");
+    const organization = await denFetch(den.admin, "/v1/org", {
+      headers: { authorization: `Bearer ${den.admin.token}` },
+    });
+    if (!organization.response.ok) throw new Error(`Could not read the fixture organization: HTTP ${organization.response.status}`);
     const expectedOrganization = record(record(organization.body).organization);
     const organizationIdentity = {
       id: field(expectedOrganization, "id"), name: field(expectedOrganization, "name"),

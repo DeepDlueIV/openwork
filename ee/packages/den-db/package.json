@@ -95,7 +95,10 @@
       "default": "./dist/schema/system.js"
     },
     "./schema/telemetry": {
-      "types": "./src/schema/telemetry.ts",
+      "types": {
+        "openwork-build": "./dist/types/src/schema/telemetry.d.ts",
+        "default": "./src/schema/telemetry.ts"
+      },
       "development": "./src/schema/telemetry.ts",
       "default": "./dist/schema/telemetry.js"
     },
@@ -132,12 +135,18 @@
       "default": "./dist/gateway-usage-limits.js"
     },
     "./permission-states": {
-      "types": "./src/permission-states.ts",
+      "types": {
+        "openwork-build": "./dist/types/src/permission-states.d.ts",
+        "default": "./src/permission-states.ts"
+      },
       "development": "./src/permission-states.ts",
       "default": "./dist/permission-states.js"
     },
     "./permissions": {
-      "types": "./src/permissions.ts",
+      "types": {
+        "openwork-build": "./dist/types/src/permissions.d.ts",
+        "default": "./src/permissions.ts"
+      },
       "development": "./src/permissions.ts",
       "default": "./dist/permissions.js"
     },

@@ -362,7 +362,10 @@ jitTest("SKILL-CLOUD-DISCOVERY a member discovers Cloud skills without delaying 
     expect(calls).toContain("get_skill");
     expect(calls).not.toContain("list_skills");
     expect((await world.cloudNativeSkills()).some(skill => skill.content.includes(code))).toBe(false);
-    evidence.recordAssertionEvidence("A natural request finds the Cloud skill without naming it", `Native skill selection followed by live get_skill; no list_skills call and no body in the registry. ${turn.text}`, true);
+    // Registering Cloud skills must not cost OpenWork its own context and browser tools.
+    const context = (await world.cloudDiscoveryState()).plugins.find(plugin => plugin.id === "openwork.context");
+    expect(context?.state).toMatchObject({ status: "active" });
+    evidence.recordAssertionEvidence("A natural request finds the Cloud skill without naming it", `Native skill selection followed by live get_skill; no list_skills call and no body in the registry; OpenWork's context plugin is ${JSON.stringify(context?.state)}. ${turn.text}`, true);
   });
 
   await step("workspace skills still update while organization discovery is enabled", async () => {

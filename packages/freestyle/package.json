@@ -11,7 +11,10 @@
     "./checkpoints": "./src/checkpoints.ts",
     "./evidence-builder": "./src/evidence-builder.ts",
     "./review-provider": "./src/review-provider.ts",
-    "./credentials": "./src/credentials.ts"
+    "./credentials": "./src/credentials.ts",
+    "./cache": "./src/cache.ts",
+    "./build-recipes": "./src/build-recipes.ts",
+    "./assets": "./src/assets.ts"
   },
   "dependencies": {
     "@openwork/evidence-provider": "workspace:*",

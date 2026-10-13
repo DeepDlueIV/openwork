@@ -148,6 +148,9 @@ importers:
       '@openwork/cdp':
         specifier: workspace:*
         version: link:../cdp
+      '@openwork/daytona-evidence':
+        specifier: link:../../../packages/daytona-evidence
+        version: link:../../../packages/daytona-evidence
       '@openwork/evidence-provider':
         specifier: link:../../../packages/evidence-provider
         version: link:../../../packages/evidence-provider

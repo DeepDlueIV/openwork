@@ -1,4 +1,5 @@
-import { evidenceProviderFromEnv, EvidenceProviderNotReady, type EvidenceProviderId } from "@openwork/evidence-provider";
+import { evidenceProviderFromEnv, type EvidenceProviderId } from "@openwork/evidence-provider";
+import { daytonaEvidenceWeb } from "./daytona-evidence.ts";
 import { freestyleEvidenceWeb } from "./freestyle-evidence.ts";
 
 const CREDENTIALS: Record<EvidenceProviderId, string[]> = {
@@ -19,6 +20,6 @@ export function evidenceWorldCredentials(provider: EvidenceProviderId = evidence
 export async function evidenceWeb(sourceSha: string, provider: EvidenceProviderId = evidenceProviderFromEnv()) {
   switch (provider) {
     case "freestyle": return freestyleEvidenceWeb(sourceSha);
-    case "daytona": throw new EvidenceProviderNotReady(provider, "CI evidence worlds");
+    case "daytona": return daytonaEvidenceWeb(sourceSha);
   }
 }

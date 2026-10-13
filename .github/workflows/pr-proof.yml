@@ -97,12 +97,13 @@ jobs:
           restore-keys: ${{ runner.os }}-pnpm-core-
       - name: Install only the test tools
         run: |
-          pnpm --filter @openwork/freestyle... --filter @openwork/review... --filter @openwork/world... --filter @openwork/types... --filter @openwork/sdk... install --frozen-lockfile --ignore-scripts --prefer-offline
+          pnpm --filter @openwork/freestyle... --filter @openwork/daytona-evidence... --filter @openwork/review... --filter @openwork/world... --filter @openwork/types... --filter @openwork/sdk... install --frozen-lockfile --ignore-scripts --prefer-offline
           pnpm --dir evals install --frozen-lockfile --ignore-scripts --prefer-offline
-      - name: Prepare this commit's Freestyle world
+      - name: Prepare this commit's evidence world
         timeout-minutes: 35
         env:
           FREESTYLE_API_KEY: ${{ secrets.FREESTYLE_API_KEY }}
+          DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
           OPENWORK_EVIDENCE_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
           OPENWORK_PREVIEW_GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/prepare-evidence-web.ts
@@ -110,6 +111,7 @@ jobs:
         timeout-minutes: 15
         env:
           FREESTYLE_API_KEY: ${{ secrets.FREESTYLE_API_KEY }}
+          DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
           OPENWORK_EVIDENCE_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
           OPENWORK_PREVIEW_GITHUB_TOKEN: ${{ github.token }}
           PROOF_SPEC: ${{ matrix.spec }}
@@ -448,6 +450,7 @@ jobs:
         timeout-minutes: 35
         env:
           FREESTYLE_API_KEY: ${{ secrets.FREESTYLE_API_KEY }}
+          DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
           OPENWORK_EVIDENCE_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
           OPENWORK_PREVIEW_GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/prepare-evidence-web.ts
@@ -459,6 +462,7 @@ jobs:
         timeout-minutes: 20
         env:
           FREESTYLE_API_KEY: ${{ secrets.FREESTYLE_API_KEY }}
+          DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
           OPENWORK_EVIDENCE_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
           OPENWORK_PREVIEW_GITHUB_TOKEN: ${{ github.token }}
           PROOF_SPEC: ${{ matrix.spec }}

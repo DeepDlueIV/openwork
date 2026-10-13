@@ -664,6 +664,8 @@ export default {
   "engine_migration.migrate_anyway": "Migrate anyway",
   "engine_migration.migrated_summary_one": "Migrated 1 chat; {skipped} already in v2.",
   "engine_migration.migrated_summary_other": "Migrated {imported} chats; {skipped} already in v2.",
+  "engine_migration.not_copied_one": "1 chat couldn't be copied and stays in OpenCode v1.",
+  "engine_migration.not_copied_other": "{left} chats couldn't be copied and stay in OpenCode v1.",
   "engine_migration.not_now": "Not now",
   "engine_migration.progress_copied": "{done} of {total} chats copied",
   "engine_migration.progress_note": "OpenWork may be slow or unstable until this finishes. Your v1 chats aren't changed.",

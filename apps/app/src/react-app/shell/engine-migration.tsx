@@ -120,6 +120,10 @@ function refusedForRunningTasks(cause: unknown): number | null {
 
 const formatCount = (value: number) => new Intl.NumberFormat().format(value);
 
+/** Chats dealt with so far: copied, already in v2, or left in v1. */
+const handledCount = (migration: EngineV2MigrationStatus) =>
+  migration.imported + migration.skipped + (migration.notCopied?.length ?? 0);
+
 /** The settings-row state line, e.g. "Migrated 2 chats; 1 already in v2." */
 export function engineMigrationMessage(migration: EngineV2MigrationStatus | undefined): string | undefined {
   if (!migration) return undefined;
@@ -128,7 +132,7 @@ export function engineMigrationMessage(migration: EngineV2MigrationStatus | unde
       return t("engine_migration.settings_starting");
     }
     return t("engine_migration.settings_running", {
-      done: formatCount(migration.imported + migration.skipped),
+      done: formatCount(handledCount(migration)),
       total: formatCount(migration.total),
     });
   }
@@ -138,11 +142,13 @@ export function engineMigrationMessage(migration: EngineV2MigrationStatus | unde
 }
 
 function migratedSummary(migration: EngineV2MigrationStatus) {
-  return t("engine_migration.migrated_summary", {
+  const summary = t("engine_migration.migrated_summary", {
     count: migration.imported,
     imported: formatCount(migration.imported),
     skipped: formatCount(migration.skipped),
   });
+  const left = migration.notCopied?.length ?? 0;
+  return left ? `${summary} ${t("engine_migration.not_copied", { count: left, left: formatCount(left) })}` : summary;
 }
 
 function updateConsent(client: EngineMigrationClient, patch: Partial<Omit<ConsentState, "client">>) {
@@ -318,7 +324,7 @@ function useElapsed(startedAt: string | undefined, running: boolean) {
 
 function MigrationProgressBar(props: { migration: EngineV2MigrationStatus }) {
   const { migration } = props;
-  const done = migration.imported + migration.skipped;
+  const done = handledCount(migration);
   const copying = migration.phase === "copying" || (migration.phase === undefined && done > 0);
   const elapsed = useElapsed(migration.startedAt, migration.state === "running");
   const value = copying && migration.total > 0 ? Math.min(100, Math.round((done / migration.total) * 100)) : null;
@@ -426,6 +432,11 @@ function MigrationProgressDialog(props: { progress: ProgressState }) {
           </DialogDescription>
         </DialogHeader>
         {running ? <MigrationProgressBar migration={migration} /> : null}
+        {migration.state === "completed" && migration.notCopied?.length ? (
+          <ul data-testid="engine-migration-not-copied" className="grid max-h-32 list-disc gap-1 overflow-y-auto ps-5 text-xs text-muted-foreground">
+            {migration.notCopied.map((chat) => <li key={chat.id} className="truncate">{chat.title || chat.id}</li>)}
+          </ul>
+        ) : null}
         {migration.state === "error" && progress.runningTasks > 0
           ? <RunningTasksAlert count={progress.runningTasks} body={t("engine_migration.running_tasks_retry")} />
           : migration.state === "error" ? <p className="text-xs text-muted-foreground">{t("engine_migration.error_note")}</p> : null}
@@ -542,7 +553,7 @@ function MigrationFloatingRegion(props: PropsWithChildren) {
 
 function MigrationBanner(props: { progress: ProgressState }) {
   const { migration } = props.progress;
-  const done = migration.imported + migration.skipped;
+  const done = handledCount(migration);
   const count = migration.phase === "copying" && migration.total > 0
     ? t("engine_migration.progress_copied", { done: formatCount(done), total: formatCount(migration.total) })
     : null;
@@ -607,9 +618,10 @@ function useMigrationLifecycle(progress: ProgressState | null) {
     return () => { disposed = true; window.clearInterval(timer); };
   }, [client, state]);
   useEffect(() => {
-    // The upgrade flow switches on its own once every chat is copied.
+    // The upgrade flow switches on its own once every chat is copied. Chats left
+    // in v1 are shown first, with the usual choice to switch.
     const current = useEngineMigrationStore.getState().progress;
-    if (!current || state !== "completed" || !current.switchWhenDone) return;
+    if (!current || state !== "completed" || !current.switchWhenDone || current.migration.notCopied?.length) return;
     useEngineMigrationStore.setState({ progress: null });
     const switched = current.selected === "v2"
       ? Promise.resolve(true)
@@ -621,8 +633,9 @@ function useMigrationLifecycle(progress: ProgressState | null) {
   useEffect(() => {
     const current = useEngineMigrationStore.getState().progress;
     if (!current || view !== "banner") return;
-    if (state === "error") {
-      // A failure needs a decision (retry or leave it), so bring the dialog back.
+    if (state === "error" || (state === "completed" && current.migration.notCopied?.length)) {
+      // A failure needs a decision (retry or leave it), and chats left in v1
+      // should be seen before switching, so bring the dialog back.
       showEngineMigrationProgress();
     } else if (state === "completed") {
       useEngineMigrationStore.setState({ progress: null });

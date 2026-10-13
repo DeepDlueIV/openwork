@@ -68,6 +68,12 @@ export const V1_FIXTURE_CHATS: readonly V1FixtureChat[] = [
   },
 ];
 
+/** Fixture chats the history-copy gate makes impossible to copy (see heldHistoryCopy). */
+interface ChatsThatFail {
+  tooLarge: string;
+  crash: string;
+}
+
 function json(value: unknown): string {
   return JSON.stringify(value);
 }
@@ -275,13 +281,18 @@ export async function cloneWholeV1History(source: string, database: string): Pro
  * remain real; a renderer-only status delay would not prove this. The witness
  * also counts chat exports and imports and notes which process sent a held
  * import. No request headers, chat data or response bodies are retained.
+ *
+ * `failing` stands in for chats that cannot be copied: the export of
+ * `tooLarge` streams more bytes than any chat may have, and the migration
+ * process is killed while it exports `crash`, as running out of memory would.
  */
-async function heldHistoryCopy(database: string, attempts: number) {
+async function heldHistoryCopy(database: string, attempts: number, failing?: ChatsThatFail) {
   const token = randomBytes(24).toString("hex");
   let held: ServerResponse | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const state = {
     installed: false, arrived: 0, released: 0, failed: 0, expired: false, exports: 0, imports: 0,
+    tooLargeExports: 0, crashes: [] as { process: string; pid: number }[],
     mainPid: null as number | null, heldBy: null as { process: string; pid: number } | null,
   };
   const release = (outcome: "continue" | "fail") => {
@@ -304,6 +315,8 @@ async function heldHistoryCopy(database: string, attempts: number) {
     if (url.pathname === "/ready") { state.installed = true; state.mainPid = sender.pid; response.end("ready"); return; }
     if (url.pathname === "/seen/export") { state.exports++; response.end("ok"); return; }
     if (url.pathname === "/seen/import") { state.imports++; response.end("ok"); return; }
+    if (url.pathname === "/seen/too-large") { state.tooLargeExports++; response.end("ok"); return; }
+    if (url.pathname === "/seen/crash") { state.crashes.push(sender); response.end("ok"); return; }
     if (url.pathname !== "/copy") { response.writeHead(404).end(); return; }
     if (held) { response.writeHead(409).end("fail"); return; }
     state.arrived++;
@@ -336,8 +349,22 @@ if (process.versions.electron && (process.type === "browser" || migrationProcess
     const url = new URL(input instanceof Request ? input.url : String(input));
     const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
     const loopback = url.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname);
-    if (loopback && method === "GET" && /^\\/api\\/experimental\\/session\\/[^/]+\\/export$/.test(url.pathname)) {
+    const exportOf = loopback && method === "GET" ? /^\\/api\\/experimental\\/session\\/([^/]+)\\/export$/.exec(url.pathname)?.[1] : undefined;
+    if (exportOf) {
       await witness("/seen/export").then(response => response.text()).catch(() => undefined);
+      if (migrationProcess && exportOf === ${JSON.stringify(failing?.crash ?? null)}) {
+        await witness("/seen/crash").then(response => response.text()).catch(() => undefined);
+        process.kill(process.pid, "SIGKILL");
+      }
+      if (exportOf === ${JSON.stringify(failing?.tooLarge ?? null)}) {
+        await witness("/seen/too-large").then(response => response.text()).catch(() => undefined);
+        // 300 MiB of one reused 1 MiB chunk: over the copy limit without holding it in memory.
+        const chunk = new Uint8Array(1024 * 1024).fill(32);
+        let sent = 0;
+        return new Response(new ReadableStream({
+          pull(controller) { if (sent++ < 300) controller.enqueue(chunk); else controller.close(); },
+        }), { status: 200, headers: { "content-type": "application/json" } });
+      }
     }
     if (loopback && method === "POST" && url.pathname === "/api/experimental/session/import") {
       await witness("/seen/import").then(response => response.text()).catch(() => undefined);
@@ -373,13 +400,26 @@ if (process.versions.electron && (process.type === "browser" || migrationProcess
  * organization's `engineV2Upgrade` feature on, so it is offered the upgrade.
  */
 export async function engineV1HistoryUpgrade(seed: Seed, { place }: { place: Place }) {
+  return startV1HistoryDesktop(seed, place);
+}
+
+/**
+ * The same desktop and fixture history, where one chat is too large to copy
+ * and copying another kills the migration process. Nothing is held.
+ */
+export async function engineV1HistoryWithChatsThatFail(seed: Seed, { place }: { place: Place }) {
+  const failing = { tooLarge: V1_FIXTURE_CHATS[2]!.id, crash: V1_FIXTURE_CHATS[3]!.id };
+  return { ...await startV1HistoryDesktop(seed, place, failing), failing };
+}
+
+async function startV1HistoryDesktop(seed: Seed, place: Place, failing?: ChatsThatFail) {
   if (place.kind !== "local") throw new SkipError("the seeded v1 history is a file the local desktop opens directly");
   if (!await localMysqlIsRunning()) throw new SkipError("local MySQL for a disposable Den database");
   if (process.env.OPENWORK_EVAL_ELECTRON_BINARY?.trim()) {
     throw new SkipError("the real held-copy witness requires source-built Electron's main-process preload");
   }
   await using resources = new AsyncDisposableStack();
-  const source = process.env.OPENWORK_EVAL_V1_HISTORY_SOURCE?.trim() || null;
+  const source = failing ? null : process.env.OPENWORK_EVAL_V1_HISTORY_SOURCE?.trim() || null;
   const profileDir = seed.tmpPath("v1-history-profile");
   const workspaceDir = seed.tmpPath("v1-history-workspace");
   await mkdir(workspaceDir, { recursive: true });
@@ -399,7 +439,7 @@ export async function engineV1HistoryUpgrade(seed: Seed, { place }: { place: Pla
   const den = await seed.den({ org: { name: "Engine upgrade" } });
   await enableOrganizationCapabilities(seed, den.admin, { engineV2Upgrade: true });
   const opencode2 = process.env.OPENWORK_EVAL_OPENCODE2_BIN?.trim();
-  const copyGate = resources.use(await heldHistoryCopy(database, source === null ? 2 : 1));
+  const copyGate = resources.use(await heldHistoryCopy(database, failing ? 0 : source === null ? 2 : 1, failing));
   const nodeOptions = [process.env.NODE_OPTIONS?.trim(), `--require=${JSON.stringify(copyGate.preload)}`].filter(Boolean).join(" ");
   const app = await seed.desktop({
     den, as: "admin", name: "v1-history-upgrade", profileDir, workspacePath,

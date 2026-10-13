@@ -1,6 +1,6 @@
 import { expect } from "vitest";
 import { spec } from "@openwork/testkit";
-import { engineV1HistoryUpgrade } from "../worlds/engine-v1-history.ts";
+import { engineV1HistoryUpgrade, engineV1HistoryWithChatsThatFail } from "../worlds/engine-v1-history.ts";
 
 // OPENWORK_EVAL_V1_HISTORY_LIMIT=all (local only) migrates a whole real history, which can take hours.
 const whole = Boolean(process.env.OPENWORK_EVAL_V1_HISTORY_SOURCE?.trim()) && process.env.OPENWORK_EVAL_V1_HISTORY_LIMIT?.trim() === "all";
@@ -8,6 +8,13 @@ const MIGRATION_WITHIN_MS = whole ? 6 * 3_600_000 : 300_000;
 
 const test = spec.world(engineV1HistoryUpgrade, {
   timeout: whole ? 7 * 3_600_000 : 900_000,
+  resources: {
+    surfaces: ["desktop"], services: ["den"],
+    nativeReason: "The upgrade copies chats from the v1 database file the desktop's engine owns into its v2 sidecar, and only the desktop offers it.",
+  },
+});
+const testWithChatsThatFail = spec.world(engineV1HistoryWithChatsThatFail, {
+  timeout: 900_000,
   resources: {
     surfaces: ["desktop"], services: ["den"],
     nativeReason: "The upgrade copies chats from the v1 database file the desktop's engine owns into its v2 sidecar, and only the desktop offers it.",
@@ -30,6 +37,8 @@ function migrationOf(status: Record<string, unknown>) {
     skipped: typeof migration.skipped === "number" ? migration.skipped : -1,
     total: typeof migration.total === "number" ? migration.total : -1,
     backupPath: typeof migration.backupPath === "string" ? migration.backupPath : null,
+    notCopied: (Array.isArray(migration.notCopied) ? migration.notCopied : []).filter(isRecord)
+      .map(chat => ({ id: String(chat.id), reason: String(chat.reason) })),
   };
 }
 
@@ -461,5 +470,118 @@ test("a member chooses a chat upgrade: chats are copied with a backup and OpenWo
     expect(migration).toMatchObject({ imported: 0, skipped: world.expectedChats });
     expect({ exported, sent }).toEqual({ exported: 0, sent: 0 });
     expect(idsAfter).toEqual(idsBefore);
+  });
+});
+
+testWithChatsThatFail("a chat that cannot be copied stays in v1 and the other chats are still copied", async ({ world, user, probe, step, evidence }) => {
+  const workspaceId = world.workspace.workspaceId;
+  const status = async () => {
+    const response = await probe.desktopApi("/experimental/engine-v2-preview/status");
+    expect(response.status).toBe(200);
+    if (!isRecord(response.body)) throw new Error("Engine status missing");
+    return response.body;
+  };
+  const v2SessionIds = async () => {
+    const response = await probe.desktopApi(`/workspace/${workspaceId}/opencode2/api/session`);
+    expect(response.status).toBe(200);
+    const items = isRecord(response.body) ? response.body.data : response.body;
+    return (Array.isArray(items) ? items : []).filter(isRecord).map(item => String(item.id)).sort();
+  };
+  const titleOf = (id: string) => world.chats.find(chat => chat.id === id)!.title;
+  const tooLarge = { id: world.failing.tooLarge, title: titleOf(world.failing.tooLarge) };
+  const crashing = { id: world.failing.crash, title: titleOf(world.failing.crash) };
+  const copied = world.chats.map(chat => chat.id).filter(id => id !== tooLarge.id && id !== crashing.id).sort();
+
+  await step("before: the member starts the upgrade with one chat too large to copy and one that stops the copy", async () => {
+    await user.resizeViewport({ width: 1280, height: 800, deviceScaleFactor: 1 });
+    await probe.eventually(status, {
+      within: 60_000, label: "v1 engine with v1 history",
+      until: value => value.chatRouting !== true && value.v1HistoryAvailable === true,
+    });
+    await user.see({ testId: "engine-upgrade-notice" }, { timeoutMs: 60_000 });
+    await user.click({ role: "button", text: /^Upgrade$/ });
+    await user.see({ testId: "engine-migration-consent" });
+    await user.click({ role: "button", text: /^Upgrade$/ });
+    await probe.eventually(status, { within: 120_000, label: "migration started", until: value => migrationOf(value).state !== "idle" });
+    await user.screenshot();
+  });
+
+  await step("a chat that stops the copy ends the run and is named; the chat too large to copy did not stop it", async () => {
+    const stopped = await probe.eventually(status, {
+      within: 300_000, intervalMs: 1_000, label: "the migration process stopped on a chat",
+      until: value => migrationOf(value).state === "error",
+    });
+    await user.see({ testId: "engine-migration-progress" }, { timeoutMs: 10_000 });
+    await user.see({ text: "Migration didn't finish" });
+    await user.see({ text: `Chat migration stopped while copying "${crashing.title}"` });
+    await user.see({ role: "button", text: /^Try again$/ });
+    const migration = migrationOf(stopped);
+    const copy = world.readHeldCopy();
+    expect(copy.crashes).toHaveLength(1);
+    expect(copy.crashes[0]).toMatchObject({ process: "migration" });
+    expect(copy.crashes[0]!.pid).not.toBe(copy.mainPid);
+    expect(copy.tooLargeExports).toBe(1);
+    expect(migration).toMatchObject({ imported: copied.length, notCopied: [{ id: tooLarge.id, reason: "too_large" }] });
+    expect(stopped.chatRouting).not.toBe(true);
+    expect(world.readV1History()).toEqual(world.before);
+    evidence.recordAssertionEvidence(
+      "the copy goes past a chat that is too large and names the chat the migration process died on",
+      `migration process (not the desktop) killed while exporting "${crashing.title}"; "${tooLarge.title}" streamed over the size limit and was left in v1 (${migration.notCopied.map(chat => chat.reason).join(", ")}); ${migration.imported} chats copied before the stop; v1 still selected and unchanged`,
+      copy.crashes.length === 1 && migration.imported === copied.length && stopped.chatRouting !== true,
+    );
+    await user.screenshot();
+  });
+
+  await step("after: Try again copies the rest and lists the chats left in v1 before switching", async () => {
+    await user.click({ role: "button", text: /^Try again$/ });
+    const done = await probe.eventually(status, {
+      within: 300_000, intervalMs: 1_000, label: "the retry completed",
+      until: value => migrationOf(value).state === "completed",
+    });
+    await user.see({ text: "Chats migrated to OpenCode v2" }, { timeoutMs: 30_000 });
+    await user.see({ text: /2 chats couldn't be copied and stay in OpenCode v1\./ });
+    await user.see({ role: "button", text: "Switch to OpenCode v2" });
+    await user.see({ role: "button", text: "Not now" });
+    const listed = (await probe.dom('[data-testid="engine-migration-not-copied"] li')).elements.map(element => element.text);
+    const migration = migrationOf(done);
+    const copy = world.readHeldCopy();
+    expect(listed).toEqual([tooLarge.title, crashing.title]);
+    expect(migration).toMatchObject({
+      imported: 0, skipped: copied.length, total: world.expectedChats,
+      notCopied: [{ id: tooLarge.id, reason: "too_large" }, { id: crashing.id, reason: "stopped" }],
+    });
+    expect(copy.crashes).toHaveLength(1);
+    expect(copy.tooLargeExports).toBe(2);
+    expect(done.chatRouting).not.toBe(true);
+    evidence.recordAssertionEvidence(
+      "the retry finishes instead of stopping at the same chat, and says which chats stay in v1",
+      `completed: ${migration.skipped} already copied, ${migration.notCopied.length} left in v1 (${listed.join("; ")}); the chat that stopped the first run was not exported again (${copy.crashes.length} crash in total); OpenWork waits for the member's choice instead of switching`,
+      migration.state === "completed" && copy.crashes.length === 1 && done.chatRouting !== true,
+    );
+    await user.screenshot();
+  });
+
+  await step("after: switching opens the copied chats on v2 and the chats left in v1 are unchanged", async () => {
+    await user.click({ role: "button", text: "Switch to OpenCode v2" });
+    await probe.eventually(status, {
+      within: 60_000, label: "OpenWork switched to v2",
+      until: value => value.chatRouting === true && value.running === true,
+    });
+    const ids = await probe.eventually(v2SessionIds, {
+      within: 60_000, label: "copied chats listed by v2",
+      until: value => copied.every(id => value.includes(id)),
+    });
+    expect(ids).not.toContain(tooLarge.id);
+    expect(ids).not.toContain(crashing.id);
+    const first = world.chats[0]!;
+    await user.click({ testId: `sidebar-session-${first.id}` });
+    await user.see({ text: first.reply }, { timeoutMs: 60_000 });
+    expect(world.readV1History()).toEqual(world.before);
+    evidence.recordAssertionEvidence(
+      "the copied chats work on v2; the others are only in v1, which was not changed",
+      `v2 lists ${copied.filter(id => ids.includes(id)).length} of ${copied.length} copied chats and neither chat left behind; "${first.title}" shows its reply; v1 digest unchanged`,
+      copied.every(id => ids.includes(id)) && !ids.includes(tooLarge.id) && !ids.includes(crashing.id),
+    );
+    await user.screenshot();
   });
 });

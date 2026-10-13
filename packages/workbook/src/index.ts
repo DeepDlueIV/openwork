@@ -51,7 +51,10 @@ export {
   PPTX_MIME,
   XLSX_MIME,
   extractOfficeText,
+  officeDocumentBody,
   officeKindFromMimeOrFilename,
+  officeSlides,
   type OfficeKind,
+  type OfficeSlide,
   type OfficeTextOptions,
 } from "./office-text.js";

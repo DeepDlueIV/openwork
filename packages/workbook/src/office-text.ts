@@ -156,3 +156,20 @@ export async function extractOfficeText(kind: OfficeKind, bytes: Uint8Array, opt
   if (!combined) throw new Error("Office XML text entries contained no extractable text.");
   return combined;
 }
+
+export type OfficeSlide = { part: string; body: string };
+
+/** Splits `extractOfficeText` output for a .pptx into slides, in order. Each slide's text is marked with its part name; notes parts are left out. */
+export function officeSlides(text: string): OfficeSlide[] {
+  return text
+    .split(/^\[(ppt\/[^\]]+)\]\n/m)
+    .reduce<OfficeSlide[]>((slides, chunk, index, parts) => {
+      if (index % 2 === 1 && /ppt\/slides\/slide\d+\.xml/.test(chunk)) slides.push({ part: chunk, body: (parts[index + 1] ?? "").trim() });
+      return slides;
+    }, []);
+}
+
+/** `extractOfficeText` output without its `[part]` marker lines: just the text of a document. */
+export function officeDocumentBody(text: string): string {
+  return text.replace(/^\[[^\]]+\]\n/gm, "");
+}

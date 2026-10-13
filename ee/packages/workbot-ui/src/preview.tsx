@@ -1,6 +1,6 @@
 "use client";
 
-import { extractOfficeText, openXlsxWorkbook, sheetGridRows, type XlsxWorkbook } from "@openwork/workbook";
+import { extractOfficeText, officeDocumentBody, officeSlides, openXlsxWorkbook, sheetGridRows, type XlsxWorkbook } from "@openwork/workbook";
 import { Download, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { downloadWorkbotFile, useWorkbotChat, useWorkbotFileBytes, useWorkbotFileUrl, useWorkbotImageUrl, useWorkbotPreview, useWorkbotPreviewPage, type WorkbotAttachment, type WorkbotPreview } from "./data";
@@ -219,18 +219,8 @@ function PageImage({ fileId, page, version, ratio }: { fileId: string; page: num
   );
 }
 
-/** `extractOfficeText` marks each slide's text with its part name; notes parts are left out. */
-function slidesFrom(text: string) {
-  return text
-    .split(/^\[(ppt\/[^\]]+)\]\n/m)
-    .reduce<Array<{ part: string; body: string }>>((slides, chunk, index, parts) => {
-      if (index % 2 === 1 && /ppt\/slides\/slide\d+\.xml/.test(chunk)) slides.push({ part: chunk, body: (parts[index + 1] ?? "").trim() });
-      return slides;
-    }, []);
-}
-
 function SlidesOutline({ text }: { text: string }) {
-  const slides = useMemo(() => slidesFrom(text), [text]);
+  const slides = useMemo(() => officeSlides(text), [text]);
   if (slides.length === 0) return <DocumentText text={text} />;
   return (
     <ol className="flex flex-col gap-4 p-6">
@@ -255,7 +245,7 @@ function SlidesOutline({ text }: { text: string }) {
 }
 
 function DocumentText({ text }: { text: string }) {
-  const body = text.replace(/^\[[^\]]+\]\n/gm, "");
+  const body = officeDocumentBody(text);
   return (
     <div className="mx-auto max-w-[680px] whitespace-pre-wrap p-8 text-[14px] leading-6 text-[var(--wb-text)]">{body}</div>
   );

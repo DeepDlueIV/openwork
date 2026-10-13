@@ -17,6 +17,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { usePlatform } from "@/react-app/kernel/platform";
 import { type ArtifactPanelTab, usePanelTabStore } from "../panel/panel-tab-store";
 import { isCollectibleArtifactTarget, openTargetFromWorkspaceFile, type BinaryData, type Data, type OpenTarget, type TextData } from "./open-target";
+import { ArtifactOfficePreview, officeKindFromPath } from "./artifact-office-preview";
 import { HTMLPreview, ImagePreview, MarkdownPreview, PdfPreview, PlainText, PreviewError, PreviewLoading, PreviewUnavailable } from "./preview";
 
 const ArtifactTextEditor = lazy(() =>
@@ -430,6 +431,8 @@ function ArtifactPanelView({ sessionId, client, workspaceId, workspaceRoot, targ
           <ImagePreview src={binaryObjectUrl} alt={target.name} />
         ) : target.preview === "pdf" && data?.kind === "binary" && binaryObjectUrl ? (
           <PdfPreview url={binaryObjectUrl} title={target.name} />
+        ) : (target.preview === "slides" || target.preview === "document") && data?.kind === "binary" && officeKindFromPath(target.value) !== null ? (
+          <ArtifactOfficePreview path={target.value} data={data.data} />
         ) : data?.kind === "binary" && binaryObjectUrl && target.preview === "html" ? (
           <HTMLPreview type="binary" title={target.name} url={binaryObjectUrl} />
         ) : data?.kind === "text" ? (

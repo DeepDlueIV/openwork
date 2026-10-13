@@ -434,6 +434,8 @@ export async function mcpAppServers(seed: Seed, context: { place: Place }) {
     },
     inventoryCalls: (options: { sinceIso?: string; atLeast?: number } = {}) => den.mocks.inventory.toolCalls({ name: toolNames.connection, atLeast: 0, ...options }),
     reservations: (options: { sinceIso?: string; atLeast?: number } = {}) => den.mocks.inventory.toolCalls({ name: toolNames.reserve, atLeast: 0, ...options }),
+    /** MCP sessions Den opened to Inventory (one initialize each). */
+    inventorySessions: (sinceIso: string) => den.mocks.inventory.handshakes({ sinceIso }),
     /** Shares only the App's own Plugin, which carries the Workflows its tools run. */
     async share() {
       await grant(`/v1/plugins/${created.pluginId}/access`);

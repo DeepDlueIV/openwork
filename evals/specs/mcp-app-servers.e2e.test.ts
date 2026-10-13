@@ -150,6 +150,22 @@ test("an owner composes an App that is its own MCP server, and a teammate uses i
     evidence.recordAssertionEvidence("The App's button runs its Workflow as the owner", `Clicking Calculate total made one ${toolNames.workflow} call with { quantity: ${launchInput.quantity}, unitPrice: 7 }, and the Workflow returned 42. Every request from the reference host went to the App's own MCP URL, never to OpenWork Connect.`, true);
   });
 
+  await step("after: a follow-up Inventory lookup through the App opens one provider session instead of two", async () => {
+    const lookup = () => world.rpc("owner", "app", "tools/call", { name: toolNames.connection, arguments: { sku: launchInput.sku } });
+    // The first lookup may list Inventory's tools; the follow-up reuses that list.
+    expect((await lookup()).rpcError).toBeUndefined();
+    const followUpAt = new Date().toISOString();
+    const followUp = await lookup();
+    expect(followUp.rpcError).toBeUndefined();
+    expect(followUp.isError).not.toBe(true);
+    // Witness: the follow-up really reached Inventory.
+    expect((await world.inventoryCalls({ sinceIso: followUpAt, atLeast: 1 })).map(call => call.args)).toEqual([{ sku: launchInput.sku }]);
+    const sessions = await world.inventorySessions(followUpAt);
+    expect(sessions).toHaveLength(1);
+    await user.screenshot();
+    evidence.recordAssertionEvidence("A follow-up App tool call skips the provider's tool list", `The follow-up ${toolNames.connection} call made 1 Inventory lookup and opened ${sessions.length} MCP session to Inventory; before, each call opened 2 (one to list tools, one to call).`, sessions.length === 1);
+  });
+
   await step("the owner's OpenWork Connect lists the App for its App host, opens it by launch reference, and refuses tools an App may not bind", async () => {
     const index = await world.index("owner");
     // Listed for the App host to open, never exposed to the model as a server of its own.

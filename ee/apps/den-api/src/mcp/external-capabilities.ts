@@ -54,6 +54,8 @@ import {
   setExternalToolsSearchCache,
   type ExternalToolsSearchCacheKey,
 } from "./external-tools-search-cache.js"
+import { cachedExternalToolCatalog, forgetExternalToolCatalog, type ExternalToolCatalogKey } from "./external-tool-catalog-cache.js"
+import { fingerprintReadinessIdentity } from "../capability-sources/external-mcp-readiness-identity.js"
 
 /**
  * Merges org-level External MCP Connections (capability-sources/) into the
@@ -1150,6 +1152,8 @@ type PreparedExternalCapability = {
   ok: true
   connection: NonNullable<Awaited<ReturnType<typeof getExternalMcpConnection>>>
   member: { orgMembershipId: DenTypeId<"member"> } | undefined
+  /** The caller's membership and credential revision, without key or token material. */
+  catalogKey: ExternalToolCatalogKey
 }
 
 /**
@@ -1236,8 +1240,9 @@ async function prepareExternalCapability(input: {
   }
 
   let member: { orgMembershipId: DenTypeId<"member"> } | undefined
+  let account: Awaited<ReturnType<typeof getConnectedAccount>> = null
   if (connection.credentialMode === "per_member") {
-    const account = await getConnectedAccount({
+    account = await getConnectedAccount({
       organizationId: connection.organizationId,
       orgMembershipId: input.member.orgMembershipId,
       providerId: connection.id,
@@ -1263,7 +1268,18 @@ async function prepareExternalCapability(input: {
       connectionStatus: buildExternalConnectionStatus({ connection, state: "needs_connection", errorCode: "not_connected", message }),
     }
   }
-  return { ok: true, connection, member }
+  return {
+    ok: true,
+    connection,
+    member,
+    catalogKey: {
+      organizationId: connection.organizationId,
+      connectionId: connection.id,
+      updatedAt: connection.updatedAt,
+      orgMembershipId: input.member.orgMembershipId,
+      credentialIdentity: fingerprintReadinessIdentity(connection, account),
+    },
+  }
 }
 
 /**
@@ -1364,15 +1380,23 @@ export async function executeExternalCapability(input: {
 }): Promise<ExternalCapabilityExecuteResult> {
   const prepared = await prepareExternalCapability(input)
   if (!prepared.ok) return prepared
-  const { connection, member } = prepared
+  const { connection, member, catalogKey } = prepared
 
   let currentSchemaDigest: string | undefined
   let schemaGuidance: ExternalMcpSchemaGuidance | undefined
   const deadline = createExternalMcpLifecycleDeadline(EXTERNAL_MCP_TOOL_LIFECYCLE_TIMEOUT_MS)
   try {
     const redirectUri = redirectUriFor(input.redirectUriBase, connection.id)
-    const tools = await listExternalMcpTools(connection, redirectUri, member, undefined, deadline)
-    const tool = tools.find((candidate) => candidate.name === input.toolName)
+    const listTools = () => listExternalMcpTools(connection, redirectUri, member, undefined, deadline)
+    // The member's tool list is reused briefly, so a follow-up call opens one
+    // provider session instead of two. A tool missing from it is looked up live.
+    let tools = await cachedExternalToolCatalog(catalogKey, listTools)
+    let tool = tools.find((candidate) => candidate.name === input.toolName)
+    if (!tool) {
+      forgetExternalToolCatalog(catalogKey)
+      tools = await cachedExternalToolCatalog(catalogKey, listTools)
+      tool = tools.find((candidate) => candidate.name === input.toolName)
+    }
     if (!tool) {
       return {
         ok: false,
@@ -1488,6 +1512,8 @@ export async function executeExternalCapability(input: {
         : {}),
     }
   } catch (error) {
+    // Any failed list or call lists the tools again next time.
+    forgetExternalToolCatalog(catalogKey)
     const message = upstreamErrorMessage(error)
     const authErrorCode = externalMcpAuthErrorCode(error, message)
     if (error instanceof ExternalMcpDiagnosticError) {

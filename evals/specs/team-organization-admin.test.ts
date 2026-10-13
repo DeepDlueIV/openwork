@@ -107,6 +107,18 @@ test("team Admin grants are live, scoped, protected, and cleared across SCIM lif
   await patchTeam(managersTeam, { memberIds: [managerId] });
   await patchTeam(primary, { grantsOrganizationAdmin: true }, manager);
   evidence.recordAssertionEvidence("Removing a team grant takes effect on the next request", "The manager's bearer changed an Admin team twice, then received 403 immediately after its team membership was removed. Restoring membership restored access without signing in again.", true);
+  const togglePermissions = async (enabled: boolean) => {
+    const result = await denFetch(owner, `/v1/admin/organizations/${orgId}/capabilities`, {
+      method: "PUT", headers: { authorization: `Bearer ${owner.token}` },
+      body: JSON.stringify({ capabilities: { permissions: enabled } }),
+    });
+    expect(result.response.status, result.text).toBe(200);
+  };
+  await togglePermissions(false);
+  await patchTeam(primary, { grantsOrganizationAdmin: true }, manager, 403);
+  await togglePermissions(true);
+  await patchTeam(primary, { grantsOrganizationAdmin: true }, manager);
+  evidence.recordAssertionEvidence("Disabling Permissions immediately stops database-configured grants", "After the owner disabled Permissions, the same manager bearer received 403 for Manage Admin teams; re-enabling Permissions restored its team grant without signing in again.", true);
   const keyed = await request(owner, "/v1/teams/by-key/admin-boundary", "PUT", { name: "Keyed Admins", memberIds: [inheritedId], grantsOrganizationAdmin: true });
   expect(keyed.response.status, keyed.text).toBe(201);
   expect((await request(direct, "/v1/teams/by-key/admin-boundary", "PUT", { name: "Keyed Admins", memberIds: [controlId] })).response.status).toBe(403);

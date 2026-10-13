@@ -6,7 +6,9 @@ import {
   type FeatureDatabase,
 } from "@openwork-ee/den-db/organization-features"
 import { normalizeDenTypeId } from "@openwork-ee/utils/typeid"
-import { resolveFeatures, type FeatureKey, type FeatureMap } from "@openwork/features"
+import { and, eq, inArray } from "@openwork-ee/den-db/drizzle"
+import { FeatureRolloutTable, OrganizationFeatureTable, OrganizationTable } from "@openwork-ee/den-db/schema"
+import { resolveFeature, resolveFeatures, type FeatureKey, type FeatureMap } from "@openwork/features"
 import type { MiddlewareHandler } from "hono"
 import { cache } from "./cache.js"
 import { db } from "./db.js"
@@ -21,11 +23,13 @@ import type { OrganizationContextVariables } from "./middleware/organization-con
  * .opencode/skills/add-a-feature first). Never read organization metadata or
  * environment variables to decide whether a feature is on.
  *
- * Reads go through the shared Redis cache (cache.features). Writes go through
- * updateFeatureRollout / updateOrganizationFeatureOverrides below, which clear
- * that cache on every replica, so an /admin change (including the kill switch)
- * applies to the next request everywhere. Never call den-db's setFeatureRollout
- * or setOrganizationFeatureOverrides directly from den-api.
+ * Ordinary flags use the shared Redis cache (cache.features). The permissions
+ * flag is authority: read its rollout, kill switch and org override from the
+ * database on every resolution. Failed Redis invalidation or snapshot rollback
+ * must never keep database-configured permission grants active.
+ * Writes use updateFeatureRollout / updateOrganizationFeatureOverrides below,
+ * which invalidate the shared cache. Never call den-db's setFeatureRollout or
+ * setOrganizationFeatureOverrides directly from den-api.
  */
 
 export type { FeatureKey, FeatureMap }
@@ -37,8 +41,41 @@ type ReadOptions = {
   lock?: "share"
 }
 
+/** One indexed read for authorization state, independent of Redis availability. */
+async function readPermissionFeatures(organizationIds: readonly string[]): Promise<Map<string, boolean>> {
+  const ids = organizationIds.map((id) => normalizeDenTypeId("organization", id))
+  const rows = await db.select({
+    organizationId: OrganizationTable.id,
+    rolloutEnabled: FeatureRolloutTable.enabled,
+    killed: FeatureRolloutTable.killed,
+    overrideEnabled: OrganizationFeatureTable.enabled,
+  }).from(OrganizationTable)
+    .leftJoin(FeatureRolloutTable, eq(FeatureRolloutTable.feature_key, "permissions"))
+    .leftJoin(OrganizationFeatureTable, and(
+      eq(OrganizationFeatureTable.organization_id, OrganizationTable.id),
+      eq(OrganizationFeatureTable.feature_key, "permissions"),
+    ))
+    .where(inArray(OrganizationTable.id, ids))
+  return new Map(rows.map((row) => [row.organizationId, resolveFeature("permissions", {
+    ...env.features,
+    rollouts: row.rolloutEnabled === null ? {} : { permissions: { enabled: row.rolloutEnabled, killed: row.killed ?? false } },
+    overrides: row.overrideEnabled === null ? {} : { permissions: row.overrideEnabled },
+  }).enabled]))
+}
+
+async function readDeploymentPermissionsFeature(): Promise<boolean> {
+  const [row] = await db.select({ enabled: FeatureRolloutTable.enabled, killed: FeatureRolloutTable.killed })
+    .from(FeatureRolloutTable).where(eq(FeatureRolloutTable.feature_key, "permissions"))
+  return resolveFeature("permissions", {
+    ...env.features,
+    rollouts: row ? { permissions: row } : {},
+    overrides: {},
+  }).enabled
+}
+
 /**
- * Effective on/off for every feature, for one organization. Cached; pass the
+ * Effective on/off for every feature, for one organization. Permissions is
+ * database-authoritative; other flags are cached. Pass the
  * transaction (and `lock: "share"`) when the answer must be read from the
  * database and stay stable until commit.
  */
@@ -46,30 +83,46 @@ export async function getOrganizationFeatures(organizationId: string, options: R
   if (options.database || options.lock) {
     return readFeatures(options.database ?? db, organizationId, env.features, { lock: options.lock })
   }
-  const [rollouts, overrides] = await Promise.all([
+  const id = normalizeDenTypeId("organization", organizationId)
+  const [rollouts, overrides, permissions] = await Promise.all([
     cache.features.rollouts(),
-    cache.features.overrides(normalizeDenTypeId("organization", organizationId)),
+    cache.features.overrides(id),
+    readPermissionFeatures([id]),
   ])
-  return resolveFeatures({ ...env.features, rollouts, overrides })
+  return {
+    ...resolveFeatures({ ...env.features, rollouts, overrides }),
+    permissions: permissions.get(id) ?? resolveFeature("permissions", { ...env.features, rollouts: {}, overrides: {} }).enabled,
+  }
 }
 
 export async function organizationFeatureEnabled(organizationId: string, key: FeatureKey, options: ReadOptions = {}): Promise<boolean> {
-  return (await getOrganizationFeatures(organizationId, options))[key]
+  if (options.database || options.lock) return (await getOrganizationFeatures(organizationId, options))[key]
+  const id = normalizeDenTypeId("organization", organizationId)
+  if (key === "permissions") {
+    return (await readPermissionFeatures([id])).get(id) ?? resolveFeature("permissions", { ...env.features, rollouts: {}, overrides: {} }).enabled
+  }
+  const [rollouts, overrides] = await Promise.all([cache.features.rollouts(), cache.features.overrides(id)])
+  return resolveFeature(key, { ...env.features, rollouts, overrides }).enabled
 }
 
 /**
- * Effective features for several organizations: the cached rollouts and one
- * override read in total, keyed by the ids as given.
+ * Effective features for several organizations: cached ordinary rollouts,
+ * batched override and live permission-state reads, keyed by the ids as given.
  */
 export async function getFeaturesForOrganizations(organizationIds: readonly string[]): Promise<Map<string, FeatureMap>> {
   const result = new Map<string, FeatureMap>()
   if (organizationIds.length === 0) return result
-  const [rollouts, overrides] = await Promise.all([
+  const [rollouts, overrides, permissions] = await Promise.all([
     cache.features.rollouts(),
     readOrganizationFeatureOverridesForMany(db, [...organizationIds]),
+    readPermissionFeatures(organizationIds),
   ])
   for (const organizationId of organizationIds) {
-    result.set(organizationId, resolveFeatures({ ...env.features, rollouts, overrides: overrides.get(organizationId) ?? {} }))
+    const id = normalizeDenTypeId("organization", organizationId)
+    result.set(organizationId, {
+      ...resolveFeatures({ ...env.features, rollouts, overrides: overrides.get(organizationId) ?? {} }),
+      permissions: permissions.get(id) ?? resolveFeature("permissions", { ...env.features, rollouts: {}, overrides: {} }).enabled,
+    })
   }
   return result
 }
@@ -77,9 +130,10 @@ export async function getFeaturesForOrganizations(organizationIds: readonly stri
 /**
  * Deployment-wide on/off for a feature that no organization owns: the state
  * for everyone after the kill switch and operator locks, with no organization
- * override (the same answer as GET /v1/features). Cached.
+ * override. Ordinary flags are cached; permissions always reads the database.
  */
 export async function deploymentFeatureEnabled(key: FeatureKey): Promise<boolean> {
+  if (key === "permissions") return readDeploymentPermissionsFeature()
   return resolveFeatures({ ...env.features, rollouts: await cache.features.rollouts(), overrides: {} })[key]
 }
 

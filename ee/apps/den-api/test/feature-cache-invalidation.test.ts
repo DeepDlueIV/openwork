@@ -38,6 +38,7 @@ function stubReads(results: Array<unknown[] | Error>, events: string[] = []) {
     }
     const chain = {
       from: () => chain,
+      leftJoin: () => chain,
       where: () => chain,
       limit: (count: number) => {
         read.limit = count
@@ -206,11 +207,14 @@ for (const writer of ["rollout", "override"]) {
   })
 }
 
-test("ordinary organization feature reads use the cache boundary without database queries", async () => {
-  const rollouts = mock.method(cache.features, "rollouts", async () => ({ permissions: { enabled: false, killed: false } }))
-  const overrides = mock.method(cache.features, "overrides", async () => ({ permissions: true }))
-  mock.method(db, "select", () => { throw new Error("cached reads must not query the database") })
-  assert.equal((await getOrganizationFeatures(organizationId)).permissions, true)
+test("organization maps cache ordinary flags but permissions comes from one live indexed read", async () => {
+  const rollouts = mock.method(cache.features, "rollouts", async () => ({ permissions: { enabled: true, killed: false } }))
+  const overrides = mock.method(cache.features, "overrides", async () => ({ permissions: true, teamMembershipCache: true }))
+  const reads = stubReads([[{ organizationId, rolloutEnabled: false, killed: false, overrideEnabled: false }]])
+  const features = await getOrganizationFeatures(organizationId)
+  assert.equal(features.permissions, false)
+  assert.equal(features.teamMembershipCache, true)
+  assert.deepEqual(reads.map((read) => read.fields), [["organizationId", "rolloutEnabled", "killed", "overrideEnabled"]])
   assert.equal(rollouts.mock.callCount(), 1)
   assert.deepEqual(overrides.mock.calls[0].arguments, [organizationId])
 })

@@ -654,8 +654,10 @@ function logFeatureCacheError(stage: "get" | "set", child: CacheChild, id: strin
  * Feature flags are resolved on every org request. Every replica shares one
  * generation for all feature rows, bumped by den-api's feature writers
  * (features.ts updateFeatureRollout / updateOrganizationFeatureOverrides) after
- * the write, so an /admin change and the kill switch apply on every replica at
- * once. The TTL only bounds a failed bump and rows written outside den-api.
+ * the write. Successful bumps invalidate every replica immediately; the TTL
+ * bounds failed bumps and external writes for ordinary flags. Permission
+ * authorization MUST use features.ts, which overrides cached permissions with
+ * a live database read regardless of whether invalidation succeeded.
  */
 function getFeatureRollouts(): Promise<FeatureRollouts> {
   return readThroughGeneration({

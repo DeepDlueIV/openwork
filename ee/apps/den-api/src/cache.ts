@@ -8,7 +8,7 @@ import { createHash } from "node:crypto"
 import Redis from "ioredis"
 import { db } from "./db.js"
 import { env } from "./env.js"
-import { bumpGeneration, readThroughGeneration } from "./generation-cache.js"
+import { bumpGeneration, readManyThroughGeneration, readThroughGeneration, type GenerationCacheEntry } from "./generation-cache.js"
 import { roleIncludesOwner } from "./organization-member-guards.js"
 import { getDenSessionExpiresAt, getDenSessionRefreshCutoff } from "./session-lifetime.js"
 
@@ -30,6 +30,7 @@ type CacheRedisClient = {
   get(key: string): Promise<string | null>
   set(key: string, value: string, mode: "EX", ttl: number): Promise<unknown>
   del(...keys: string[]): Promise<unknown>
+  mget?(...keys: string[]): Promise<Array<string | null>>
   eval?(script: string, numberOfKeys: number, ...args: Array<string | number>): Promise<unknown>
   scan?(cursor: string, mode: "MATCH", pattern: string, countMode: "COUNT", count: number): Promise<[string, string[]]>
 }
@@ -659,14 +660,26 @@ function logFeatureCacheError(stage: "get" | "set", child: CacheChild, id: strin
  * authorization MUST use features.ts, which overrides cached permissions with
  * a live database read regardless of whether invalidation succeeded.
  */
+const featureRolloutsEntry: GenerationCacheEntry<FeatureRollouts> = {
+  entryKey: (generation) => cacheKey({ parent: "features", child: "rollouts", id: generation }),
+  parse: parseCachedFeatureRollouts,
+  load: () => readFeatureRollouts(db),
+}
+
+function featureOverridesEntry(organizationId: OrgId): GenerationCacheEntry<FeatureOverrides> {
+  return {
+    entryKey: (generation) => cacheKey({ parent: "features", child: "overrides", id: `${generation}:${organizationId}` }),
+    parse: parseCachedFeatureOverrides,
+    load: () => readOrganizationFeatureOverrides(db, organizationId),
+  }
+}
+
 function getFeatureRollouts(): Promise<FeatureRollouts> {
   return readThroughGeneration({
     redis: activeRedisClient,
     generationKey: FEATURES_GENERATION_KEY,
-    entryKey: (generation) => cacheKey({ parent: "features", child: "rollouts", id: generation }),
     ttlSeconds: DEFAULT_CACHE_TTL_SECONDS,
-    parse: parseCachedFeatureRollouts,
-    load: () => readFeatureRollouts(db),
+    ...featureRolloutsEntry,
     onError: (stage, error) => logFeatureCacheError(stage, "rollouts", "deployment", error),
   })
 }
@@ -675,12 +688,22 @@ function getOrganizationFeatureOverrides(organizationId: OrgId): Promise<Feature
   return readThroughGeneration({
     redis: activeRedisClient,
     generationKey: FEATURES_GENERATION_KEY,
-    entryKey: (generation) => cacheKey({ parent: "features", child: "overrides", id: `${generation}:${organizationId}` }),
     ttlSeconds: DEFAULT_CACHE_TTL_SECONDS,
-    parse: parseCachedFeatureOverrides,
-    load: () => readOrganizationFeatureOverrides(db, organizationId),
+    ...featureOverridesEntry(organizationId),
     onError: (stage, error) => logFeatureCacheError(stage, "overrides", organizationId, error),
   })
+}
+
+/** Rollouts and one organization's overrides together: one Redis round trip while the generation is unchanged. */
+async function getOrganizationFeatureState(organizationId: OrgId): Promise<{ rollouts: FeatureRollouts; overrides: FeatureOverrides }> {
+  const [rollouts, overrides] = await readManyThroughGeneration<[FeatureRollouts, FeatureOverrides]>({
+    redis: activeRedisClient,
+    generationKey: FEATURES_GENERATION_KEY,
+    entries: [featureRolloutsEntry, featureOverridesEntry(organizationId)],
+    ttlSeconds: DEFAULT_CACHE_TTL_SECONDS,
+    onError: (stage, error) => logFeatureCacheError(stage, "generation", organizationId, error),
+  })
+  return { rollouts, overrides }
 }
 
 async function invalidateFeatures() {
@@ -1026,6 +1049,7 @@ export const cache = {
   features: {
     rollouts: getFeatureRollouts,
     overrides: getOrganizationFeatureOverrides,
+    state: getOrganizationFeatureState,
     invalidate: invalidateFeatures,
   },
 }

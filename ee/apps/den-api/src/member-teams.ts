@@ -8,20 +8,26 @@ import { organizationFeatureEnabled } from "./features.js"
  * Cache the team join, never the revision or member-liveness check. Each hit is
  * bound to the revision committed with team changes, so even Redis rollback
  * cannot restore revoked access. Reads inside mutation transactions stay raw.
+ *
+ * Pass `teamMembershipCache` when the request already resolved its features
+ * (organization context, MCP request), so the flag is not read a second time.
  */
-export function listTeamsForMember(input: Parameters<typeof loadMemberTeams>[0]) {
+export function listTeamsForMember(input: Parameters<typeof loadMemberTeams>[0] & { teamMembershipCache?: boolean }) {
+  const { teamMembershipCache, ...member } = input
   return cache.org.memberTeams({
-    ...input,
-    enabled: () => organizationFeatureEnabled(input.organizationId, "teamMembershipCache"),
+    ...member,
+    enabled: teamMembershipCache === undefined
+      ? () => organizationFeatureEnabled(member.organizationId, "teamMembershipCache")
+      : async () => teamMembershipCache,
     revision: async () => {
       const [row] = await db.select({ revision: OrganizationTable.teamMembershipRevision })
         .from(MemberTable)
         .innerJoin(OrganizationTable, eq(OrganizationTable.id, MemberTable.organizationId))
-        .where(and(eq(MemberTable.id, input.memberId), eq(MemberTable.organizationId, input.organizationId), isNull(MemberTable.removedAt)))
+        .where(and(eq(MemberTable.id, member.memberId), eq(MemberTable.organizationId, member.organizationId), isNull(MemberTable.removedAt)))
         .limit(1)
       return row?.revision ?? null
     },
-    load: () => loadMemberTeams(input),
+    load: () => loadMemberTeams(member),
   })
 }
 

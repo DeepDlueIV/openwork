@@ -84,9 +84,8 @@ export async function getOrganizationFeatures(organizationId: string, options: R
     return readFeatures(options.database ?? db, organizationId, env.features, { lock: options.lock })
   }
   const id = normalizeDenTypeId("organization", organizationId)
-  const [rollouts, overrides, permissions] = await Promise.all([
-    cache.features.rollouts(),
-    cache.features.overrides(id),
+  const [{ rollouts, overrides }, permissions] = await Promise.all([
+    cache.features.state(id),
     readPermissionFeatures([id]),
   ])
   return {
@@ -101,7 +100,7 @@ export async function organizationFeatureEnabled(organizationId: string, key: Fe
   if (key === "permissions") {
     return (await readPermissionFeatures([id])).get(id) ?? resolveFeature("permissions", { ...env.features, rollouts: {}, overrides: {} }).enabled
   }
-  const [rollouts, overrides] = await Promise.all([cache.features.rollouts(), cache.features.overrides(id)])
+  const { rollouts, overrides } = await cache.features.state(id)
   return resolveFeature(key, { ...env.features, rollouts, overrides }).enabled
 }
 

@@ -52,8 +52,7 @@ function setup() {
     return chain
   })
   const restore = setCacheDependenciesForTest({ redis })
-  mock.method(cache.features, "rollouts", async () => ({}))
-  mock.method(cache.features, "overrides", async () => ({ teamMembershipCache: true }))
+  mock.method(cache.features, "state", async () => ({ rollouts: {}, overrides: { teamMembershipCache: true } }))
   return {
     input, team, values, restore, joins: () => joins, checks: () => checks,
     revoke: () => { teams = []; revision = "revoked" },
@@ -80,7 +79,7 @@ test("turning the rollout off bypasses already-populated cache entries", async (
   const h = setup()
   try {
     await listTeamsForMember(h.input)
-    mock.method(cache.features, "overrides", async () => ({ teamMembershipCache: false }))
+    mock.method(cache.features, "state", async () => ({ rollouts: {}, overrides: { teamMembershipCache: false } }))
     assert.deepEqual(await listTeamsForMember(h.input), [h.team])
     assert.deepEqual(await listTeamsForMember(h.input), [h.team])
     assert.equal(h.joins(), 3)

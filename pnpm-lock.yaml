@@ -1496,6 +1496,19 @@ importers:
         specifier: ^5.6.3
         version: 5.9.3
 
+  packages/daytona-evidence:
+    dependencies:
+      '@openwork/freestyle':
+        specifier: workspace:*
+        version: link:../freestyle
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   packages/email:
     dependencies:
       '@react-email/components':

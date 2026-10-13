@@ -1,10 +1,11 @@
-name: Freestyle cleanup
+name: Evidence world cleanup
 
 # Freestyle bills snapshot storage until deletion. This reclaims snapshots that
 # OpenWork CI and the review app created and no longer need: old naming
 # versions, previews nobody launched for a day, superseded cache layers and
 # expired checkpoints. Snapshots with other names (personal worlds) are never
 # touched. The job fails when too many remain, so a new leak is visible.
+# Daytona evidence snapshots and sandboxes are reclaimed the same way.
 on:
   schedule:
     - cron: "17 * * * *"
@@ -37,10 +38,16 @@ jobs:
       - uses: pnpm/action-setup@v4
         with:
           version: 11.4.0
-      - name: Install the Freestyle controller only
-        run: pnpm --filter @openwork/freestyle... install --frozen-lockfile --ignore-scripts
+      - name: Install the evidence controllers only
+        run: pnpm --filter @openwork/freestyle... --filter @openwork/daytona-evidence... install --frozen-lockfile --ignore-scripts
       - name: Delete snapshots OpenWork no longer needs
         env:
           FREESTYLE_API_KEY: ${{ secrets.FREESTYLE_API_KEY }}
           DRY_RUN: ${{ inputs.dry_run && '--dry-run' || '' }}
         run: node scripts/cleanup-freestyle.ts $DRY_RUN
+      - name: Delete Daytona evidence snapshots and sandboxes OpenWork no longer needs
+        if: always()
+        env:
+          DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
+          DRY_RUN: ${{ inputs.dry_run && '--dry-run' || '' }}
+        run: node scripts/cleanup-daytona-evidence.ts $DRY_RUN

@@ -1,6 +1,6 @@
 ---
 title: "Deploy on Azure"
-description: "Run OpenWork on Azure Kubernetes Service with Azure Database for MySQL."
+description: "Run OpenWork on Azure Kubernetes Service or Azure Container Apps with Azure Database for MySQL."
 ---
 
 The recommended Azure path is Helm on Azure Kubernetes Service with Azure Database for MySQL Flexible Server. Use the AKS application-routing add-on's managed NGINX Ingress controller for browser-facing HTTPS and host routing.
@@ -25,5 +25,17 @@ The OpenWork chart manages Deployments, Services, ConfigMaps, Secret references,
 7. Point both hostnames at the ingress address and confirm trusted HTTPS.
 
 For exact Azure CLI commands, values, TLS options, migration troubleshooting, verification, and cleanup, follow the [Azure AKS operator runbook](https://github.com/different-ai/openwork/blob/dev/docs/azure-aks-helm.md).
+
+## Azure Container Apps with Terraform (draft)
+
+If you would rather not run Kubernetes, a draft Terraform module deploys the same two services on Azure Container Apps: Den API and Den web as Container Apps with HTTPS ingress, Azure Database for MySQL Flexible Server in your delegated subnet (or your existing database), and secrets as Container Apps secrets, with optional Key Vault references. Database migrations run before Den API starts on each deploy. It can reuse your VNet subnets, an existing Container Apps environment, and an existing database.
+
+<Warning>
+  Draft, not yet applied on Azure. What was tested: `terraform validate`, the module's offline test suite (mocked Azure provider), and a `terraform plan` of the complete example against a real subscription. Not yet tested: a real deployment, HTTPS, migrations, the first administrator, sign-in, custom domains, and Key Vault references. Pin it to a commit, and open an issue or pull request for anything that fails in your environment.
+</Warning>
+
+You provide an existing resource group with `Contributor` access. The module creates no role assignments. A subscription owner must register the `Microsoft.App`, `Microsoft.DBforMySQL`, `Microsoft.Network`, and `Microsoft.OperationalInsights` resource providers first. No domain is needed to start: each app gets a default `azurecontainerapps.io` HTTPS hostname. You can add your own hostnames and certificate later. Email is optional for setup and sign-in, but member invites and password reset need SMTP or Resend.
+
+See the [module README](https://github.com/different-ai/openwork/tree/dev/infra/terraform/modules/openwork-azure-container-apps) for inputs, a complete example, and cost notes.
 
 Next: [Create the first administrator](/self-host/deploy-to-your-cloud/first-administrator).

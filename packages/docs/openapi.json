@@ -848,6 +848,7 @@
               "workbot",
               "automationCalendar",
               "permissions",
+              "teamRoles",
               "agentPermissions",
               "engineV2Upgrade",
               "remoteSessionEvents",
@@ -1050,6 +1051,9 @@
                     "permissions": {
                       "type": "boolean"
                     },
+                    "teamRoles": {
+                      "type": "boolean"
+                    },
                     "agentPermissions": {
                       "type": "boolean"
                     },
@@ -1078,6 +1082,7 @@
                     "workbot",
                     "automationCalendar",
                     "permissions",
+                    "teamRoles",
                     "agentPermissions",
                     "engineV2Upgrade",
                     "remoteSessionEvents",
@@ -1536,6 +1541,62 @@
                         "overrideApplies"
                       ]
                     },
+                    "teamRoles": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "agentPermissions": {
                       "type": "object",
                       "properties": {
@@ -1770,6 +1831,7 @@
                     "workbot",
                     "automationCalendar",
                     "permissions",
+                    "teamRoles",
                     "agentPermissions",
                     "engineV2Upgrade",
                     "remoteSessionEvents",
@@ -2171,6 +2233,9 @@
                     "permissions": {
                       "type": "boolean"
                     },
+                    "teamRoles": {
+                      "type": "boolean"
+                    },
                     "agentPermissions": {
                       "type": "boolean"
                     },
@@ -2199,6 +2264,7 @@
                     "workbot",
                     "automationCalendar",
                     "permissions",
+                    "teamRoles",
                     "agentPermissions",
                     "engineV2Upgrade",
                     "remoteSessionEvents",
@@ -2657,6 +2723,62 @@
                         "overrideApplies"
                       ]
                     },
+                    "teamRoles": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "agentPermissions": {
                       "type": "object",
                       "properties": {
@@ -2891,6 +3013,7 @@
                     "workbot",
                     "automationCalendar",
                     "permissions",
+                    "teamRoles",
                     "agentPermissions",
                     "engineV2Upgrade",
                     "remoteSessionEvents",
@@ -25251,6 +25374,9 @@
                         "permissions": {
                           "type": "boolean"
                         },
+                        "teamRoles": {
+                          "type": "boolean"
+                        },
                         "agentPermissions": {
                           "type": "boolean"
                         },
@@ -25279,6 +25405,7 @@
                         "workbot",
                         "automationCalendar",
                         "permissions",
+                        "teamRoles",
                         "agentPermissions",
                         "engineV2Upgrade",
                         "remoteSessionEvents",
@@ -25737,6 +25864,62 @@
                             "overrideApplies"
                           ]
                         },
+                        "teamRoles": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "agentPermissions": {
                           "type": "object",
                           "properties": {
@@ -25971,6 +26154,7 @@
                         "workbot",
                         "automationCalendar",
                         "permissions",
+                        "teamRoles",
                         "agentPermissions",
                         "engineV2Upgrade",
                         "remoteSessionEvents",
@@ -26117,6 +26301,9 @@
                         "permissions": {
                           "type": "boolean"
                         },
+                        "teamRoles": {
+                          "type": "boolean"
+                        },
                         "agentPermissions": {
                           "type": "boolean"
                         },
@@ -26145,6 +26332,7 @@
                         "workbot",
                         "automationCalendar",
                         "permissions",
+                        "teamRoles",
                         "agentPermissions",
                         "engineV2Upgrade",
                         "remoteSessionEvents",
@@ -26603,6 +26791,62 @@
                             "overrideApplies"
                           ]
                         },
+                        "teamRoles": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "agentPermissions": {
                           "type": "object",
                           "properties": {
@@ -26837,6 +27081,7 @@
                         "workbot",
                         "automationCalendar",
                         "permissions",
+                        "teamRoles",
                         "agentPermissions",
                         "engineV2Upgrade",
                         "remoteSessionEvents",

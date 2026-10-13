@@ -44,6 +44,7 @@ export function engineInstanceId(env: NodeJS.ProcessEnv = process.env): string |
   return key ? createHash("sha256").update(key).digest("hex").slice(0, 12) : undefined;
 }
 import { findManagedEngineWorkspace } from "./workspaces.js";
+import { globalSkillDirectories } from "./skills.js";
 import { localProviderDefinitions, readLocalProviderApiKeys } from "./opencode-v2-local-auth.js";
 
 const OPENCODE_V2_VERSION = constants.opencodeV2Version;
@@ -713,6 +714,7 @@ export function createEngineV2Preview(options: {
     await rm(join(rootDir, "cloud-skills"), { recursive: true, force: true });
     const opencodeModelsUrl = await resolveOpencodeModelsUrl();
     contextBridge = options.hostReadRequest ? await createV2ContextBridge(options.hostReadRequest) : undefined;
+    const globalSkills = globalSkillDirectories();
     const managed = await createManagedOpencodeV2Server({
       contextTools: contextBridge,
       bin: resolved.bin,
@@ -723,6 +725,10 @@ export function createEngineV2Preview(options: {
         const runtime = await readGlobalRuntimeOpencodeConfig(config);
         return executionRules(runtime.managedPolicy?.execution);
       },
+      // The engine reads ~/.claude/skills and ~/.agents/skills itself, but its
+      // config folder is OpenWork's own, so it never sees these two global
+      // folders the skill picker lists, and a picked skill there can't be sent.
+      skills: [globalSkills.openwork, globalSkills.agentLegacy],
     });
     sidecar = managed;
     if (!enabled || !allowRunning) {

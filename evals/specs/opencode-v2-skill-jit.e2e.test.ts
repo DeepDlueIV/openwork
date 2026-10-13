@@ -3,7 +3,7 @@ import { expect } from "vitest";
 import { liveOpenAiEnabled } from "@openwork/behaviors";
 import { browserScript, observeTranscript, readTranscriptMessages, spec, type Probe, type User } from "@openwork/testkit";
 import { skillLifecycle } from "../worlds/chat.ts";
-import { selectedSkillsWeb } from "../worlds/selected-skills.ts";
+import { selectedGlobalSkillsWeb, selectedSkillsWeb } from "../worlds/selected-skills.ts";
 import {
   cloudNativeSkillIdPrefix,
   skillJitWeb,
@@ -247,6 +247,34 @@ selectedTest("SKILL-SAME-NAME a person picks a skill whose renamed copy shares i
     expect(sent).not.toContain(world.copyBody);
     evidence.recordAssertionEvidence("The chosen skill is the one attached",
       `Prompt attached ${JSON.stringify(record(prompts[0]) ? prompts[0].skills : null)}; the model saw the chosen skill's instructions and not the copy's.`, true);
+  });
+});
+
+const selectedGlobalTest = spec.world(selectedGlobalSkillsWeb, {
+  timeout: 420_000, resources: { surfaces: ["appWeb"], services: ["mock"] },
+});
+
+selectedGlobalTest("SKILL-GLOBAL a person picks a skill from their global OpenCode skills folder and it is sent", async ({ world, user, evidence, step }) => {
+  expect(world.engine).toBe("v2");
+  await step("given: the skill lives only in the person's global OpenCode skills folder", async () => {
+    expect(world.skillDirectory.startsWith(world.workspacePath)).toBe(false);
+    await openSkillMenu(user, world.skillName);
+    await user.screenshot();
+    evidence.recordAssertionEvidence("The picker offers a global skill", `${world.skillName} is offered from a folder outside the workspace.`, true);
+  });
+  await step("when: the person sends a message with it", async () => {
+    await user.type("composer", ` ${world.prompt}`);
+    await user.click("Run task");
+    await user.see({ text: world.reply }, { timeoutMs: 90_000 });
+    await user.screenshot();
+    evidence.recordAssertionEvidence("The message is sent", `The reply "${world.reply}" arrived with no error notice.`, true);
+  });
+  await step("after: the global skill's instructions reached the model", async () => {
+    const prompts = (await world.nativeRequests()).filter((request) => request.kind === "prompt").map((request) => request.body);
+    expect(prompts).toEqual([{ text: expect.stringContaining(world.prompt), skills: [{ id: world.skillName }] }]);
+    expect(JSON.stringify(world.providerRequests())).toContain(world.skillBody);
+    evidence.recordAssertionEvidence("The global skill is attached",
+      `Prompt attached ${JSON.stringify(record(prompts[0]) ? prompts[0].skills : null)}; the model saw the skill's instructions.`, true);
   });
 });
 

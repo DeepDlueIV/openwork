@@ -53,6 +53,8 @@ export interface ManagedOpencodeV2ServerOptions {
   bootTimeoutMs?: number;
   contextTools?: { url: string; token: string; browser?: { url: string; token: string } };
   permissions?: () => Promise<EnginePermissionRule[]>;
+  /** Extra absolute skill directories registered before boot, so no later config write reloads the catalog. */
+  skills?: string[];
 }
 
 export interface OpencodeV2Health {
@@ -261,7 +263,7 @@ export async function createManagedOpencodeV2Server(
   const username = "opencode";
   let url = "";
   const providers = new Map<string, OpencodeV2ProviderSpec>();
-  let skills: string[] = [];
+  let skills: string[] = [...(options.skills ?? [])];
   let disabledProviderIds: string[] = [];
   let writes: Promise<void> = Promise.resolve();
   const opencodeModelsUrl = (options.env?.OPENCODE_MODELS_URL ?? process.env.OPENCODE_MODELS_URL)?.replace(/\/+$/, "");

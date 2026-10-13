@@ -16,7 +16,8 @@ function setEnvDefault(name: string, value: string) {
   if (!process.env[name]?.trim()) process.env[name] = value
 }
 
-// Importing the app never touches the database; these only satisfy env validation.
+// Importing the app initializes Better Auth's OAuth resource registry. These
+// defaults satisfy env validation; the database must also have its schema.
 setEnvDefault("OPENWORK_DEV_MODE", "1")
 setEnvDefault("DB_MODE", "mysql")
 setEnvDefault("DATABASE_URL", "mysql://root:password@127.0.0.1:3306/openwork_den")

@@ -68,7 +68,15 @@ export async function startDaytonaCheckpoint(input: { sandboxId: string; sourceS
   return { checkpoint, saved };
 }
 
-interface CopyAccess { sandboxId: string; token: string; expiresAt: string }
+interface CopyAccess {
+  sandboxId: string;
+  token: string;
+  expiresAt: string;
+  /** Every signed viewer origin issued for this copy; the gateway accepts browser requests only from these. */
+  allowedOrigins: string[];
+}
+/** Keeps the access file small; older links stop being accepted for browser requests. */
+const MAX_ISSUED_ORIGINS = 20;
 
 function parseAccess(text: string | null, sandboxId: string): CopyAccess | null {
   if (!text) return null;
@@ -77,14 +85,22 @@ function parseAccess(text: string | null, sandboxId: string): CopyAccess | null 
     if (typeof value !== "object" || value === null || !("sandboxId" in value) || value.sandboxId !== sandboxId
       || !("token" in value) || typeof value.token !== "string" || !/^[\w-]{43}$/.test(value.token)
       || !("expiresAt" in value) || typeof value.expiresAt !== "string" || !(Date.parse(value.expiresAt) > Date.now())) return null;
-    return { sandboxId, token: value.token, expiresAt: value.expiresAt };
+    const allowedOrigins = "allowedOrigins" in value && Array.isArray(value.allowedOrigins)
+      ? value.allowedOrigins.filter((origin): origin is string => typeof origin === "string") : [];
+    return { sandboxId, token: value.token, expiresAt: value.expiresAt, allowedOrigins };
   } catch { return null; }
 }
 
-/** The launch link for a copy: Daytona's signed host (no header needed), then the gateway sets its own cookie. */
+/**
+ * The launch link for a copy: a Daytona signed host (no header needed), then the
+ * gateway sets its own cookie. Each call signs a new host, recorded in the copy's
+ * access file so the gateway accepts browser requests from it.
+ */
 async function launchLink(api: DaytonaApi, sandbox: Sandbox, access: CopyAccess): Promise<{ url: string; expiresAt: string }> {
   const seconds = Math.max(60, Math.floor((Date.parse(access.expiresAt) - Date.now()) / 1000));
-  const origin = await api.signedPreviewUrl(sandbox.id, 8080, seconds);
+  const origin = new URL(await api.signedPreviewUrl(sandbox.id, 8080, seconds)).origin;
+  access.allowedOrigins = [...access.allowedOrigins.filter((entry) => entry !== origin), origin].slice(-MAX_ISSUED_ORIGINS);
+  await api.writeFile(sandbox, `${ROOT}/access.json`, JSON.stringify(access), 0o600);
   return { url: `${origin}/__openwork_launch?token=${access.token}`, expiresAt: access.expiresAt };
 }
 
@@ -127,8 +143,7 @@ export async function openDaytonaCheckpoint(value: unknown, reportId: string, re
       const restoredText = await api.readFile(sandbox, MANIFEST);
       if (!restoredText || !sameCheckpoint(parseEvidenceCheckpoint(JSON.parse(restoredText)), checkpoint)
         || (await api.readFile(sandbox, `${ROOT}/evidence-ready`))?.trim() !== "web-v1") throw new CheckpointUnavailable("Checkpoint does not match its screenshot");
-      const access: CopyAccess = { sandboxId: sandbox.id, token: randomBytes(32).toString("base64url"), expiresAt: new Date(Date.now() + COPY_MINUTES * 60_000).toISOString() };
-      await api.writeFile(sandbox, `${ROOT}/access.json`, JSON.stringify(access), 0o600);
+      const access: CopyAccess = { sandboxId: sandbox.id, token: randomBytes(32).toString("base64url"), expiresAt: new Date(Date.now() + COPY_MINUTES * 60_000).toISOString(), allowedOrigins: [] };
       return launchLink(api, sandbox, access);
     } catch (error) { await api.deleteSandbox(created.id).catch(() => undefined); throw error; }
   }

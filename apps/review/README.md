@@ -155,6 +155,18 @@ The hourly **Freestyle cleanup** workflow (`scripts/cleanup-freestyle.ts`) recla
 old naming versions, superseded cache layers and expired checkpoints, and fails when
 too many OpenWork snapshots remain. Run it with `--dry-run` to see the plan.
 
+### Checkpoints on Daytona
+
+When CI runs evidence worlds on Daytona (`OPENWORK_EVIDENCE_PROVIDER=daytona`),
+checkpoints are Daytona memory snapshots (`ow-dy-checkpoint-v1-*`). Each records
+`provider: "daytona"` and always opens on Daytona, whatever the default is. **Open
+from here** starts the reviewer's own VM from the snapshot and returns a signed
+Daytona host plus the in-VM gateway's one-hour access link. Set `DAYTONA_API_KEY`
+(an organization with Linux VMs in `us-west-3`) in the protected Vercel Preview
+environment; without it Daytona checkpoints show "Checkpoint access is not
+configured". **Launch in …** fresh previews stay on Freestyle for now. The hourly
+**Evidence world cleanup** reclaims Daytona checkpoints after 14 hours.
+
 Set `FREESTYLE_API_KEY` in the protected Vercel Preview environment. Every report
 offers **Launch in Freestyle**. The server reads the commit from the stored report;
 the browser cannot select another revision. On the first launch it checks out that

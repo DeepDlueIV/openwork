@@ -13,6 +13,7 @@ import sys
 import tarfile
 import tempfile
 import unittest
+import urllib.parse
 from unittest.mock import patch, Mock
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -381,19 +382,20 @@ class HealthCollectionTests(unittest.TestCase):
             "SERVICE_NAMES": json.dumps({"den_api": "ow-api", "den_web": "ow-web"}), "DATABASE_INSTANCE": "ow-mysql",
             "CERTIFICATE_NAME": "ow-tls", "OPENWORK_VERSION": "0.18.0", "EXPECTED_IMAGES": json.dumps({"den_api": "api@sha256:abc", "den_web": "web@sha256:def"})}
         def response(url):
-            if "run.googleapis.com" in url:
+            hostname = urllib.parse.urlparse(url).hostname
+            if hostname == "run.googleapis.com":
                 return {"generation": "2", "observedGeneration": "2" if services_ready else "1",
                         "terminalCondition": {"state": "CONDITION_SUCCEEDED"},
                         "latestCreatedRevision": "revision-2", "latestReadyRevision": "revision-2",
                         "trafficStatuses": [{"revision": "revision-2", "percent": 100}],
                         "template": {"containers": [{"image": "api@sha256:abc" if url.endswith("ow-api") else "web@sha256:def"}]}}
-            if "monitoring.googleapis.com" in url:
+            if hostname == "monitoring.googleapis.com":
                 return {"timeSeries": [{"points": [{"value": {"doubleValue": utilization}}]}]}
             if url.endswith("/backupRuns"):
                 return {"items": [{"status": "SUCCESSFUL", "endTime": (now - datetime.timedelta(hours=backup_age)).isoformat()}]}
-            if "sqladmin.googleapis.com" in url:
+            if hostname == "sqladmin.googleapis.com":
                 return {"state": "RUNNABLE", "settings": {"dataDiskSizeGb": "20", "backupConfiguration": {"enabled": backup_enabled}}}
-            if "compute.googleapis.com" in url:
+            if hostname == "compute.googleapis.com":
                 return {"managed": {"status": "ACTIVE"}, "expireTime": (now + datetime.timedelta(days=60)).isoformat()}
             raise AssertionError("unexpected API")
         with patch.dict(os.environ, environment, clear=True), patch.object(health, "api", side_effect=response), \

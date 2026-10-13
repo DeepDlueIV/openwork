@@ -219,7 +219,7 @@ class TrafficAttributionTests(unittest.TestCase):
         for percent, accepted in [(100, True), (0, False), (50, False)]:
             service = self.service()
             service["trafficStatuses"] = [{"percent": percent, "revision": "ow-api-00002"}, {"percent": 100 - percent, "revision": "ow-api-00001"}]
-            with self.subTest(percent=percent), patch.dict(os.environ, env, clear=True), patch.object(health, "api", side_effect=lambda url: service if "run.googleapis.com" in url else {}), patch.object(health, "http_check", side_effect=lambda identifier, *args: health.check(identifier, "ok")):
+            with self.subTest(percent=percent), patch.dict(os.environ, env, clear=True), patch.object(health, "api", side_effect=lambda url: service if urllib.parse.urlparse(url).hostname == "run.googleapis.com" else {}), patch.object(health, "http_check", side_effect=lambda identifier, *args: health.check(identifier, "ok")):
                 report = health.collect()
             self.assertEqual("version" in report, accepted)
             self.assertEqual(next(check["status"] for check in report["checks"] if check["id"] == "services_running"), "ok" if accepted else "failing")

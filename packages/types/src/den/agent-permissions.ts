@@ -278,25 +278,33 @@ function globMatches(pattern: string, value: string): boolean {
 }
 
 /**
- * Whether a website pattern covers a URL: the host (and its subdomains for
- * `*.host`), the port and scheme when the pattern names them, and the path
- * as a prefix. Only http and https URLs are websites; `*` covers every URL.
+ * A path as a server may route it: encoded letters, digits, `-._~` and
+ * separators (%2F, %5C) decoded, other encodings in upper case, dot segments
+ * resolved and repeated slashes collapsed, so `/priv%61te`, `/private%2Fsecret`
+ * or `/a/%2E%2E/private` compare as `/private/...`.
  */
-/**
- * A URL's path as a server may route it: encoded separators (%2F, %5C) and
- * dots (%2E) decoded, dot segments resolved and repeated slashes collapsed, so
- * `/private%2Fsecret` or `/a/%2E%2E/private` compare as `/private/...`.
- */
-function canonicalWebsitePath(target: URL): string {
-  // Collapse repeated slashes first: a path starting with `//` would resolve as another host.
-  const decoded = target.pathname.replace(/%2f|%5c/gi, "/").replace(/%2e/gi, ".").replace(/\/{2,}/g, "/");
+function canonicalWebsitePath(path: string): string {
+  const decoded = path
+    .replace(/%([0-9a-f]{2})/gi, (encoded, hex: string) => {
+      const char = String.fromCharCode(Number.parseInt(hex, 16));
+      if (char === "/" || char === "\\") return "/";
+      return /^[A-Za-z0-9._~-]$/.test(char) ? char : encoded.toUpperCase();
+    })
+    // Collapse repeated slashes first: a path starting with `//` would resolve as another host.
+    .replace(/\/{2,}/g, "/");
   try {
-    return new URL(decoded, target.origin).pathname;
+    return new URL(decoded, "http://host").pathname;
   } catch {
     return decoded;
   }
 }
 
+/**
+ * Whether a website pattern covers a URL: the host (and its subdomains for
+ * `*.host`), the port and scheme when the pattern names them, and the path
+ * as a prefix, both paths compared in canonical form. Only http and https URLs
+ * are websites; `*` covers every URL.
+ */
 export function websitePatternMatches(url: string, pattern: string): boolean {
   const website = parseWebsitePattern(pattern);
   if (!website) return false;
@@ -312,8 +320,10 @@ export function websitePatternMatches(url: string, pattern: string): boolean {
   const host = withoutTrailingDot(target.hostname.toLowerCase());
   if (website.subdomains ? !host.endsWith(`.${website.host}`) : host !== website.host) return false;
   if (website.port && (target.port || (target.protocol === "https:" ? "443" : "80")) !== website.port) return false;
-  const path = canonicalWebsitePath(target);
-  return !website.path || path === website.path || path.startsWith(`${website.path}/`);
+  if (!website.path) return true;
+  const prefix = canonicalWebsitePath(website.path).replace(/\/+$/, "");
+  const path = canonicalWebsitePath(target.pathname);
+  return !prefix || path === prefix || path.startsWith(`${prefix}/`);
 }
 
 /**

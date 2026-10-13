@@ -14,7 +14,7 @@ import {
 import { runDetachedTask } from "./process-resilience.mjs";
 import { openExternalUrl } from "./open-external.mjs";
 import { BrowserTaskError, createBrowserTaskHost } from "./browser-task.mjs";
-import { agentPermissionDenialMessage, decideAgentPermission } from "@openwork/types/den/agent-permissions-runtime";
+import { agentPermissionDenialMessage, decideAgentPermission, stricterAgentPermissionDecision } from "@openwork/types/den/agent-permissions-runtime";
 import { createWebMcpBroker } from "./webmcp-host.mjs";
 import { createWebMcpFramePolicy } from "./webmcp-policy.mjs";
 
@@ -52,6 +52,9 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
   // for this sign-in: no page opens meanwhile, and the pages kept closed reload
   // once they arrive.
   let websiteRules = [];
+  // The rules the open pages were last checked against: pages stay open while
+  // new rules load, and are checked against them once they arrive.
+  let checkedWebsiteRules = [];
   // Each tab kept closed while the rules load, with the address it was opening.
   const tabsWaitingForWebsiteRules = new Map();
   // Sites the member approved under an "Ask first" rule, until the rules change.
@@ -136,17 +139,38 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
     if (decision.effect === "deny") throw Object.assign(new Error(decision.message), { code: "organization_policy_denied" });
     await checkPolicy?.(input);
   }
+  /** Whether the current rules block or ask first for a page or frame address the earlier rules let open. */
+  function newlyRestricted(previousRules, url) {
+    if (!/^https?:/i.test(url)) return false;
+    const before = decideAgentPermission(previousRules, "webfetch", [url]).effect;
+    const after = decideAgentPermission(websiteRules, "webfetch", [url]).effect;
+    return after !== before && stricterAgentPermissionDecision(before, after) === after;
+  }
   function setWebsiteRules(rules) {
     if (JSON.stringify(rules) === JSON.stringify(websiteRules)) return;
     websiteRules = rules;
     approvedWebsites = new Set();
     if (rules === null) return;
+    const previousRules = checkedWebsiteRules;
+    checkedWebsiteRules = rules;
     const waiting = [...tabsWaitingForWebsiteRules];
     tabsWaitingForWebsiteRules.clear();
     for (const [tab, url] of waiting) {
       if (getBrowserTab(tab.tabId) !== tab || tab.view.webContents.isDestroyed()) continue;
       tab.loadError = null;
       runDetachedTask("open a page held for agent permissions", () => tab.view.webContents.loadURL(url));
+    }
+    // A page already open on a site, or with a frame of one, that the new
+    // rules block or ask first for loads again through the request check,
+    // which shows the blocked page or asks the member, and replaces the page.
+    for (const tab of browserTabs.values()) {
+      const contents = tab.view.webContents;
+      if (contents.isDestroyed() || waiting.some(([waitingTab]) => waitingTab === tab) || showsErrorPage(tab)) continue;
+      let urls;
+      try { urls = contents.mainFrame.framesInSubtree.map((frame) => frame.url); } catch { urls = [contents.getURL()]; }
+      if (!urls.some((url) => newlyRestricted(previousRules, url))) continue;
+      tab.websiteRecheck = true;
+      runDetachedTask("check an open page against new agent permissions", () => contents.loadURL(contents.getURL()));
     }
     sendBrowserState();
   }
@@ -896,8 +920,13 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
     });
     view.webContents.on("media-started-playing", () => { tab.mediaPlaying = true; });
     view.webContents.on("media-paused", () => { tab.mediaPlaying = false; });
-    view.webContents.on("will-prevent-unload", () => {
-      // Do not preventDefault: the page's beforeunload veto must win.
+    view.webContents.on("will-prevent-unload", (event) => {
+      // A page new agent permissions restrict cannot keep itself open.
+      if (tab.websiteRecheck) {
+        event.preventDefault();
+        return;
+      }
+      // Otherwise do not preventDefault: the page's beforeunload veto must win.
       if (!tab.suspending || browserTabs.get(tabId) !== tab) return;
       tab.suspending = false;
       suspendedTabs.delete(tabId);
@@ -977,10 +1006,12 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
       // retain its warning; old resource failures cannot affect the new document.
       tab.documentGeneration += 1;
       tab.loadError = null;
+      tab.websiteRecheck = false;
       if (registry.onScreenTabId() === tabId) attachActiveBrowserView();
       sendBrowserState();
     });
     view.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL, isMainFrame) => {
+      if (isMainFrame) tab.websiteRecheck = false;
       // Aborts (including downloads and superseded navigations) and iframe
       // failures do not replace the page with a connection error.
       if (!isMainFrame || errorCode === -3) return;

@@ -269,16 +269,21 @@ export async function cloneWholeV1History(source: string, database: string): Pro
 }
 
 /**
- * A source-built Electron-main fetch gate: only the first real v2 import of
- * each arranged attempt waits. The engines, snapshots, backups and all status
- * responses remain real; a renderer-only status delay would not prove this.
- * No request headers, chat data or response bodies are retained by the witness.
+ * A source-built Electron fetch gate in the desktop's main process and its
+ * chat-migration process: only the first real v2 import of each arranged
+ * attempt waits. The engines, snapshots, backups and all status responses
+ * remain real; a renderer-only status delay would not prove this. The witness
+ * also counts chat exports and imports and notes which process sent a held
+ * import. No request headers, chat data or response bodies are retained.
  */
 async function heldHistoryCopy(database: string, attempts: number) {
   const token = randomBytes(24).toString("hex");
   let held: ServerResponse | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const state = { installed: false, arrived: 0, released: 0, failed: 0, expired: false };
+  const state = {
+    installed: false, arrived: 0, released: 0, failed: 0, expired: false, exports: 0, imports: 0,
+    mainPid: null as number | null, heldBy: null as { process: string; pid: number } | null,
+  };
   const release = (outcome: "continue" | "fail") => {
     if (!held) throw new Error("No real history import is held");
     clearTimeout(timer);
@@ -294,12 +299,17 @@ async function heldHistoryCopy(database: string, attempts: number) {
       return;
     }
     response.setHeader("content-type", "text/plain");
-    if (request.url === "/ready") { state.installed = true; response.end("ready"); return; }
-    if (request.url !== "/copy") { response.writeHead(404).end(); return; }
+    const url = new URL(request.url ?? "/", "http://witness");
+    const sender = { process: url.searchParams.get("process") ?? "unknown", pid: Number(url.searchParams.get("pid")) };
+    if (url.pathname === "/ready") { state.installed = true; state.mainPid = sender.pid; response.end("ready"); return; }
+    if (url.pathname === "/seen/export") { state.exports++; response.end("ok"); return; }
+    if (url.pathname === "/seen/import") { state.imports++; response.end("ok"); return; }
+    if (url.pathname !== "/copy") { response.writeHead(404).end(); return; }
     if (held) { response.writeHead(409).end("fail"); return; }
     state.arrived++;
     if (state.arrived > attempts) { response.end("continue"); return; }
     held = response;
+    state.heldBy = sender;
     // The native import has a 30-second deadline. Expiry fails the witness,
     // rather than silently completing before the person's acts finish.
     timer = setTimeout(() => { state.expired = true; release("fail"); }, 25_000);
@@ -314,27 +324,34 @@ async function heldHistoryCopy(database: string, attempts: number) {
   // --require applies only to source-built Electron. The guard excludes the
   // pnpm/Vite processes and every child engine sharing this environment.
   await writeFile(preload, `
-if (process.versions.electron && process.type === "browser" && process.env.OPENCODE_DB === ${JSON.stringify(database)}) {
+const migrationProcess = String(process.argv[1] ?? "").endsWith("opencode-v2-migration-process.js");
+if (process.versions.electron && (process.type === "browser" || migrationProcess) && process.env.OPENCODE_DB === ${JSON.stringify(database)}) {
   const delegate = globalThis.fetch;
+  const sender = \`process=\${process.type === "browser" ? "main" : "migration"}&pid=\${process.pid}\`;
+  const witness = (path, signal) => delegate(${JSON.stringify(`http://127.0.0.1:${address.port}`)} + path + "?" + sender, {
+    headers: { authorization: ${JSON.stringify(`Bearer ${token}`)} }, signal,
+  });
   let heldAttempts = 0;
   globalThis.fetch = async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
     const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
-    if (method === "POST" && url.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname)
-        && url.pathname === "/api/session/import" && heldAttempts < ${attempts}) {
-      heldAttempts++;
-      const control = await delegate(${JSON.stringify(`http://127.0.0.1:${address.port}/copy`)}, {
-        headers: { authorization: ${JSON.stringify(`Bearer ${token}`)} }, signal: init?.signal,
-      });
-      if (!control.ok || await control.text() !== "continue") {
-        return new Response(JSON.stringify({ error: "Fixture-held copy interrupted" }), { status: 503, headers: { "content-type": "application/json" } });
+    const loopback = url.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname);
+    if (loopback && method === "GET" && /^\\/api\\/experimental\\/session\\/[^/]+\\/export$/.test(url.pathname)) {
+      await witness("/seen/export").then(response => response.text()).catch(() => undefined);
+    }
+    if (loopback && method === "POST" && url.pathname === "/api/experimental/session/import") {
+      await witness("/seen/import").then(response => response.text()).catch(() => undefined);
+      if (heldAttempts < ${attempts}) {
+        heldAttempts++;
+        const control = await witness("/copy", init?.signal);
+        if (!control.ok || await control.text() !== "continue") {
+          return new Response(JSON.stringify({ error: "Fixture-held copy interrupted" }), { status: 503, headers: { "content-type": "application/json" } });
+        }
       }
     }
     return delegate(input, init);
   };
-  void delegate(${JSON.stringify(`http://127.0.0.1:${address.port}/ready`)}, {
-    headers: { authorization: ${JSON.stringify(`Bearer ${token}`)} },
-  }).then(response => response.text()).catch(() => undefined);
+  if (process.type === "browser") void witness("/ready").then(response => response.text()).catch(() => undefined);
 }
 `, { mode: 0o600 });
   return {

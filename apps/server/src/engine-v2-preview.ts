@@ -1,6 +1,6 @@
 import { createV2ContextBridge } from "./opencode-v2-context-bridge.js";
 import { ApiError } from "./errors.js";
-import { migrateOpencodeV1History, opencodeV1DatabasePath, type EngineV2MigrationStatus } from "./opencode-v2-migration.js";
+import { opencodeV1DatabasePath, runOpencodeV1HistoryMigration, type EngineV2MigrationStatus } from "./opencode-v2-migration.js";
 import { executionRules } from "./managed-policy-rules.js";
 import { waitForEngineSkillChanges } from "./opencode-v2-skill-settle.js";
 import { MCP_READINESS_RPC_ID } from "./opencode-v2-mcp-readiness.js";
@@ -888,7 +888,7 @@ export function createEngineV2Preview(options: {
         await start();
         if (!sidecar) throw new Error("OpenCode v2 could not start. Retry migration.");
         const storageDir = join(runtimeStorageDir(config), "opencode-v2");
-        await migrateOpencodeV1History({ source, storageDir,
+        await runOpencodeV1HistoryMigration({ source, storageDir,
           bin: resolved.bin, target: sidecar,
           backup: { database: join(rootDir, "opencode.db"), directory: join(storageDir, "backups") },
           progress: (next) => { migration = { ...next, startedAt }; } });

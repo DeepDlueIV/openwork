@@ -239,6 +239,18 @@ test("a member chooses a chat upgrade: chats are copied with a backup and OpenWo
     await user.screenshot();
   });
 
+  await step("while it runs: chats are copied by a separate process, so running out of memory cannot quit OpenWork", async () => {
+    const copy = world.readHeldCopy();
+    expect(copy).toMatchObject({ held: true, heldBy: { process: "migration" } });
+    expect(copy.mainPid).toBeGreaterThan(0);
+    expect(copy.heldBy?.pid).not.toBe(copy.mainPid);
+    evidence.recordAssertionEvidence(
+      "the held import was sent by the migration process, not the desktop's main process",
+      `held import from the ${copy.heldBy?.process ?? "unknown"} process; desktop main and migration are different processes: ${String(copy.heldBy?.pid !== copy.mainPid)}`,
+      copy.heldBy?.process === "migration" && copy.heldBy.pid !== copy.mainPid,
+    );
+  });
+
   for (const viewport of viewports) {
     await step(`while it runs: progress clears the usable conversation header at ${viewport.width}×${viewport.height}`, async () => {
       const layout = await floatingLayout("engine-migration-banner", viewport);
@@ -413,6 +425,7 @@ test("a member chooses a chat upgrade: chats are copied with a backup and OpenWo
       return;
     }
     const idsBefore = idsBeforeManual;
+    const seenBefore = world.readHeldCopy();
     // The command palette is one of the two homes of "Migrate chats" (Advanced settings is the other).
     await user.press(process.platform === "darwin" ? "Meta+K" : "Control+K");
     await user.type({ role: "combobox" }, "Migrate chats");
@@ -437,12 +450,16 @@ test("a member chooses a chat upgrade: chats are copied with a backup and OpenWo
     expect(again.chatRouting).not.toBe(true);
     await user.screenshot();
     const idsAfter = world.fixture ? await v2SessionIds() : [];
+    const seen = world.readHeldCopy();
+    const exported = seen.exports - seenBefore.exports;
+    const sent = seen.imports - seenBefore.imports;
     evidence.recordAssertionEvidence(
-      "a rerun skips chats already on v2",
-      `imported ${migration.imported}, skipped ${migration.skipped} of ${migration.total}; v2 chats ${idsBefore.length} → ${idsAfter.length}; manual completed dialog keeps Switch to OpenCode v2 / Not now and v1 routing`,
-      migration.imported === 0 && migration.skipped === world.expectedChats && idsAfter.length === idsBefore.length,
+      "a rerun skips chats already on v2 without exporting or sending them again",
+      `imported ${migration.imported}, skipped ${migration.skipped} of ${migration.total}; ${exported} chats exported and ${sent} sent for import; v2 chats ${idsBefore.length} → ${idsAfter.length}; manual completed dialog keeps Switch to OpenCode v2 / Not now and v1 routing`,
+      migration.imported === 0 && migration.skipped === world.expectedChats && exported === 0 && sent === 0 && idsAfter.length === idsBefore.length,
     );
     expect(migration).toMatchObject({ imported: 0, skipped: world.expectedChats });
+    expect({ exported, sent }).toEqual({ exported: 0, sent: 0 });
     expect(idsAfter).toEqual(idsBefore);
   });
 });

@@ -1,8 +1,11 @@
+import { spawn } from "node:child_process";
 import { access, chmod, mkdir, mkdtemp, readdir, rm, stat, statfs } from "node:fs/promises";
 import { homedir } from "node:os";
-import { isAbsolute, join, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { importNodeSqlite } from "./runtime-db.js";
-import { createManagedOpencodeV2Server, type ManagedOpencodeV2Server } from "./managed-opencode-v2.js";
+import { createManagedOpencodeV2Server, type ManagedOpencodeV2Server, type OpencodeV2Connection } from "./managed-opencode-v2.js";
+import { nativeSession } from "./opencode-v2-session-home.js";
 
 export interface EngineV2MigrationStatus {
   state: "idle" | "running" | "completed" | "error";
@@ -151,18 +154,31 @@ export async function readMigrationSessions(database: string): Promise<Array<{ i
   } finally { db.close(); }
 }
 
-/** Let the pinned engine transform a private snapshot, then use its native import API. */
-export async function migrateOpencodeV1History(options: {
+/** What a history migration needs besides its target engine and progress reporting. */
+export interface MigrationRequest {
   source: string;
   storageDir: string;
   bin: string;
-  target: Pick<ManagedOpencodeV2Server, "fetchJson">;
   /** The live v2 chat database, copied into `directory` before any chat is imported. */
   backup?: { database: string; directory: string };
+}
+
+/** The private snapshot folder and converter a migration creates and removes again. */
+export interface MigrationScratch {
+  directory: string;
+  converterPid?: number;
+}
+
+/** Let the pinned engine transform a private snapshot, then use its native import API. */
+export async function migrateOpencodeV1History(options: MigrationRequest & {
+  target: Pick<ManagedOpencodeV2Server, "fetchJson">;
   progress: (status: EngineV2MigrationStatus) => void;
+  /** Lets a supervising process remove the scratch if this one dies before its own cleanup. */
+  scratch?: (scratch: MigrationScratch) => void;
 }): Promise<void> {
   await mkdir(options.storageDir, { recursive: true, mode: 0o700 });
   const root = await mkdtemp(join(options.storageDir, "migration-"));
+  options.scratch?.({ directory: root });
   let converter: ManagedOpencodeV2Server | undefined;
   const status: EngineV2MigrationStatus = { state: "running", phase: "starting", imported: 0, skipped: 0, total: 0 };
   try {
@@ -190,6 +206,7 @@ export async function migrateOpencodeV1History(options: {
         XDG_CONFIG_HOME: join(home, "config"), XDG_CACHE_HOME: join(home, "cache"),
         XDG_STATE_HOME: join(home, "state"), OPENCODE_DISABLE_MODELS_FETCH: "1",
       } });
+      options.scratch?.({ directory: root, converterPid: converter.childPid });
       // Conversion time grows with history size: 10 minutes, plus 3 per GB of snapshot.
       const deadline = Date.now() + conversionTimeoutMs(await fileSize(database));
       while (true) {
@@ -211,17 +228,24 @@ export async function migrateOpencodeV1History(options: {
         let advanced = false;
         for (const session of pending.values()) {
           if (session.parentId && pending.has(session.parentId)) continue;
-          const exported = await converter.fetchJson(`/api/experimental/session/${encodeURIComponent(session.id)}/export`, { directory: session.directory });
-          if (exported.status !== 200 || !isRecord(exported.json) || !isRecord(exported.json.data)) {
-            throw new Error("Could not export a converted chat. Retry migration; existing v2 chats will be skipped.");
+          // A chat an earlier run already copied is skipped before it is
+          // exported again; the import's own duplicate check stays the backstop.
+          const existing = await options.target.fetchJson(`/api/session/${encodeURIComponent(session.id)}`, { directory: session.directory, timeoutMs: 30_000 });
+          if (existing.status === 200 && nativeSession(existing.json)?.id === session.id) {
+            status.skipped++;
+          } else {
+            const exported = await converter.fetchJson(`/api/experimental/session/${encodeURIComponent(session.id)}/export`, { directory: session.directory });
+            if (exported.status !== 200 || !isRecord(exported.json) || !isRecord(exported.json.data)) {
+              throw new Error("Could not export a converted chat. Retry migration; existing v2 chats will be skipped.");
+            }
+            const result = await options.target.fetchJson("/api/experimental/session/import", {
+              method: "POST", directory: session.directory,
+              body: { ...exported.json.data, location: { directory: session.directory } }, timeoutMs: 30_000,
+            });
+            if (result.status === 409) status.skipped++;
+            else if (result.status === 200) status.imported++;
+            else throw new Error(`Could not import a chat (${result.status}). Retry migration; existing v2 chats will be skipped.`);
           }
-          const result = await options.target.fetchJson("/api/experimental/session/import", {
-            method: "POST", directory: session.directory,
-            body: { ...exported.json.data, location: { directory: session.directory } }, timeoutMs: 30_000,
-          });
-          if (result.status === 409) status.skipped++;
-          else if (result.status === 200) status.imported++;
-          else throw new Error(`Could not import a chat (${result.status}). Retry migration; existing v2 chats will be skipped.`);
           pending.delete(session.id);
           advanced = true;
           options.progress({ ...status });
@@ -235,4 +259,73 @@ export async function migrateOpencodeV1History(options: {
   } finally {
     try { await converter?.close(); } finally { await rm(root, { recursive: true, force: true }); }
   }
+}
+
+/** The first message the migration process receives. */
+export interface MigrationProcessRequest extends MigrationRequest {
+  target: OpencodeV2Connection;
+}
+
+/** What the migration process reports back. */
+export type MigrationProcessMessage =
+  | { type: "progress"; status: EngineV2MigrationStatus }
+  | { type: "scratch"; scratch: MigrationScratch };
+
+function isMigrationProcessMessage(value: unknown): value is MigrationProcessMessage {
+  return isRecord(value) && ((value.type === "progress" && isRecord(value.status))
+    || (value.type === "scratch" && isRecord(value.scratch) && typeof value.scratch.directory === "string"));
+}
+
+/**
+ * Electron runs the OpenWork server in its main process, where a migration
+ * that runs out of memory quits the whole app, and again on every retry.
+ * There the migration runs in its own Node process instead: a crash ends only
+ * that process and is reported as a failed migration, and the snapshot and
+ * converter it leaves behind are removed here.
+ */
+export async function runOpencodeV1HistoryMigration(options: MigrationRequest & {
+  target: Pick<ManagedOpencodeV2Server, "fetchJson" | "url" | "username" | "password">;
+  progress: (status: EngineV2MigrationStatus) => void;
+}): Promise<void> {
+  if (typeof process.versions.electron !== "string") return migrateOpencodeV1History(options);
+  const { target, progress, ...migration } = options;
+  let last: EngineV2MigrationStatus = { state: "running", phase: "starting", imported: 0, skipped: 0, total: 0 };
+  let scratch: MigrationScratch | undefined;
+  const child = spawn(process.execPath, [join(dirname(fileURLToPath(import.meta.url)), "opencode-v2-migration-process.js")], {
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+    stdio: ["ignore", "inherit", "inherit", "ipc"],
+    serialization: "json",
+    windowsHide: true,
+  });
+  child.on("message", (message) => {
+    if (!isMigrationProcessMessage(message)) return;
+    if (message.type === "scratch") {
+      scratch = message.scratch;
+      return;
+    }
+    last = message.status;
+    progress(message.status);
+  });
+  // A failed spawn can emit several errors (spawn, then the queued send); an
+  // unhandled one would throw in the very process this protects.
+  const ended = new Promise<{ code: number | null; reason: string }>((resolve) => {
+    child.on("error", (error) => resolve({ code: null, reason: error.message }));
+    child.once("close", (code, signal) => resolve({ code, reason: signal ?? `exit ${String(code)}` }));
+  });
+  child.send({
+    ...migration, target: { url: target.url, username: target.username, password: target.password },
+  } satisfies MigrationProcessRequest);
+  const { code, reason } = await ended;
+  if (code !== 0 && scratch) {
+    // The process died before its own cleanup ran.
+    if (scratch.converterPid) {
+      try { process.kill(scratch.converterPid); } catch { /* already gone */ }
+    }
+    await rm(scratch.directory, { recursive: true, force: true });
+  }
+  if (last.state === "completed" || last.state === "error") return;
+  progress({
+    ...last, state: "error", phase: undefined,
+    error: `Chat migration stopped unexpectedly (${reason}). Retry migration; existing v2 chats will be skipped.`,
+  });
 }

@@ -61,16 +61,27 @@ export interface OpencodeV2Health {
   pid: number;
 }
 
-export interface ManagedOpencodeV2Server {
+export interface OpencodeV2RequestInit {
+  method?: string;
+  body?: unknown;
+  directory?: string;
+  timeoutMs?: number;
+}
+
+/** Where a running OpenCode v2 server listens, with its generated Basic credentials. */
+export interface OpencodeV2Connection {
   url: string;
   username: string;
   password: string;
+}
+
+export interface ManagedOpencodeV2Server extends OpencodeV2Connection {
   childPid: number | undefined;
   readonly exitCode: number | null;
   readonly stdout: string;
   readonly stderr: string;
   health(): Promise<OpencodeV2Health>;
-  fetchJson(path: string, init?: { method?: string; body?: unknown; directory?: string; timeoutMs?: number }): Promise<{ status: number; json: unknown }>;
+  fetchJson(path: string, init?: OpencodeV2RequestInit): Promise<{ status: number; json: unknown }>;
   injectProvider(spec: OpencodeV2ProviderSpec): Promise<void>;
   /**
    * Replace the mirrored providers. `disabledProviderIds` hides those
@@ -89,6 +100,35 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** One JSON request to a running OpenCode v2 server, also usable from another process. */
+export async function fetchOpencodeV2Json(
+  connection: OpencodeV2Connection,
+  path: string,
+  init: OpencodeV2RequestInit = {},
+): Promise<{ status: number; json: unknown }> {
+  const separator = path.includes("?") ? "&" : "?";
+  const requestPath = init.directory === undefined
+    ? path
+    : `${path}${separator}location%5Bdirectory%5D=${encodeURIComponent(init.directory)}`;
+  const response = await loopbackFetch(`${connection.url}${requestPath}`, {
+    method: init.method,
+    headers: {
+      authorization: `Basic ${Buffer.from(`${connection.username}:${connection.password}`).toString("base64")}`,
+      "content-type": "application/json",
+    },
+    body: init.body === undefined ? undefined : JSON.stringify(init.body),
+    signal: init.timeoutMs === undefined ? undefined : AbortSignal.timeout(init.timeoutMs),
+  });
+  const text = await response.text();
+  let json: unknown = text;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    // Non-JSON engine responses remain observable as raw text.
+  }
+  return { status: response.status, json };
 }
 
 function diagnostics(exitCode: number | null, stdout: string, stderr: string): Error {
@@ -312,34 +352,9 @@ export async function createManagedOpencodeV2Server(
     spawnError = error;
   });
 
-  const authorization = `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`;
-
-  async function fetchJson(
-    path: string,
-    init: { method?: string; body?: unknown; directory?: string; timeoutMs?: number } = {},
-  ): Promise<{ status: number; json: unknown }> {
+  async function fetchJson(path: string, init: OpencodeV2RequestInit = {}): Promise<{ status: number; json: unknown }> {
     if (!url) throw new Error("OpenCode v2 has not announced its listener");
-    const separator = path.includes("?") ? "&" : "?";
-    const requestPath = init.directory === undefined
-      ? path
-      : `${path}${separator}location%5Bdirectory%5D=${encodeURIComponent(init.directory)}`;
-    const response = await loopbackFetch(`${url}${requestPath}`, {
-      method: init.method,
-      headers: {
-        authorization,
-        "content-type": "application/json",
-      },
-      body: init.body === undefined ? undefined : JSON.stringify(init.body),
-      signal: init.timeoutMs === undefined ? undefined : AbortSignal.timeout(init.timeoutMs),
-    });
-    const text = await response.text();
-    let json: unknown = text;
-    try {
-      json = JSON.parse(text);
-    } catch {
-      // Non-JSON engine responses remain observable as raw text.
-    }
-    return { status: response.status, json };
+    return fetchOpencodeV2Json({ url, username, password }, path, init);
   }
 
   async function health(): Promise<OpencodeV2Health> {

@@ -281,16 +281,19 @@ class ManagedDesktopPolicy {
   async assertAgentPermission(action: "skill" | "mcp", name: string): Promise<void> {
     if (!this.session) return;
     const generation = this.generation;
-    const policy = this.knownPolicy() ?? await this.current().catch((error: unknown) => {
-      if (error instanceof ApiError && error.code === "policy_identity_changed") throw error;
-      return null;
-    });
-    this.identityChanged(generation);
+    let policy = this.knownPolicy();
     if (!policy) {
+      // Only wait for Den where agent permissions were last in force on this
+      // computer: everyone else adds skills and MCP servers as before.
       const stored = agentPermissionRulesOf((await readGlobalRuntimeOpencodeConfig(this.config)).managedPolicy);
       this.identityChanged(generation);
       if (stored.length === 0) return;
-      throw new ApiError(403, "policy_unavailable", "Your organization's agent permissions could not be verified. Try again when connected.");
+      policy = await this.current().catch((error: unknown) => {
+        if (error instanceof ApiError && error.code === "policy_identity_changed") throw error;
+        return null;
+      });
+      this.identityChanged(generation);
+      if (!policy) throw new ApiError(403, "policy_unavailable", "Your organization's agent permissions could not be verified. Try again when connected.");
     }
     const denial = agentPermissionDenial(agentPermissionRulesOf(policy), action, [name]);
     if (denial) throw new ApiError(403, "organization_policy_denied", denial);

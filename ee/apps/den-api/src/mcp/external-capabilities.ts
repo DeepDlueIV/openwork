@@ -14,7 +14,7 @@ import {
   memberCanUseExternalMcpConnection,
   type ExternalMcpConnectionRow,
 } from "../capability-sources/external-mcp-connections.js"
-import { callExternalMcpTool, listExternalMcpTools } from "../capability-sources/external-mcp-client-runtime.js"
+import { callExternalMcpTool, callListedExternalMcpTool, listExternalMcpTools } from "../capability-sources/external-mcp-client-runtime.js"
 import {
   EXTERNAL_MCP_TOOL_LIFECYCLE_TIMEOUT_MS,
   createExternalMcpLifecycleDeadline,
@@ -1387,85 +1387,127 @@ export async function executeExternalCapability(input: {
   const deadline = createExternalMcpLifecycleDeadline(EXTERNAL_MCP_TOOL_LIFECYCLE_TIMEOUT_MS)
   try {
     const redirectUri = redirectUriFor(input.redirectUriBase, connection.id)
-    const listTools = () => listExternalMcpTools(connection, redirectUri, member, undefined, deadline)
-    // The member's tool list is reused briefly, so a follow-up call opens one
-    // provider session instead of two. A tool missing from it is looked up live.
-    let tools = await cachedExternalToolCatalog(catalogKey, listTools)
-    let tool = tools.find((candidate) => candidate.name === input.toolName)
-    if (!tool) {
-      forgetExternalToolCatalog(catalogKey)
-      tools = await cachedExternalToolCatalog(catalogKey, listTools)
-      tool = tools.find((candidate) => candidate.name === input.toolName)
-    }
-    if (!tool) {
-      return {
-        ok: false,
-        error: "unknown_capability",
-        capability: buildExternalCapabilityName(connection.id, input.toolName),
-        message: `No current tool named "${input.toolName}" exists on "${connection.name}". Call search_capabilities again.`,
-        sameArgumentsRetryable: false,
-        retry: { action: "search_capabilities", searchRequired: true },
+    type ExternalMcpTool = Awaited<ReturnType<typeof listExternalMcpTools>>[number]
+    type CheckedTool = { ok: true; tool: ExternalMcpTool; schemaWarnings: ExternalMcpSchemaWarning[] }
+    // Everything a call checks on the provider's tool list before reaching the tool.
+    const check = (tools: Awaited<ReturnType<typeof listExternalMcpTools>>): CheckedTool | ExternalCapabilityFailure => {
+      const tool = tools.find((candidate) => candidate.name === input.toolName)
+      if (!tool) {
+        return {
+          ok: false,
+          error: "unknown_capability",
+          capability: buildExternalCapabilityName(connection.id, input.toolName),
+          message: `No current tool named "${input.toolName}" exists on "${connection.name}". Call search_capabilities again.`,
+          sameArgumentsRetryable: false,
+          retry: { action: "search_capabilities", searchRequired: true },
+        }
       }
-    }
 
-    // Provider-controlled hints cannot prove a tool will not mutate through its credential.
-    const requiredScope = DEN_MCP_WRITE_SCOPE
-    if (!input.scopes.has(requiredScope)) {
-      return {
-        ok: false,
-        error: "insufficient_mcp_scope",
-        requiredScope,
-        message: `${input.toolName} requires the ${requiredScope} scope.`,
+      // Provider-controlled hints cannot prove a tool will not mutate through its credential.
+      const requiredScope = DEN_MCP_WRITE_SCOPE
+      if (!input.scopes.has(requiredScope)) {
+        return {
+          ok: false,
+          error: "insufficient_mcp_scope",
+          requiredScope,
+          message: `${input.toolName} requires the ${requiredScope} scope.`,
+        }
       }
-    }
 
-    if (input.requireReadOnly && !providerMarksReadOnly(tool.annotations)) {
-      return {
-        ok: false,
-        error: "policy_blocked",
-        reason: "provider_not_read_only",
-        capability: buildExternalCapabilityName(connection.id, input.toolName),
-        message: `${input.toolName} is no longer marked read-only by its provider, so OpenWork blocked the call.`,
-        sameArgumentsRetryable: false,
-        retry: { action: "search_capabilities", searchRequired: true },
+      if (input.requireReadOnly && !providerMarksReadOnly(tool.annotations)) {
+        return {
+          ok: false,
+          error: "policy_blocked",
+          reason: "provider_not_read_only",
+          capability: buildExternalCapabilityName(connection.id, input.toolName),
+          message: `${input.toolName} is no longer marked read-only by its provider, so OpenWork blocked the call.`,
+          sameArgumentsRetryable: false,
+          retry: { action: "search_capabilities", searchRequired: true },
+        }
       }
-    }
 
-    const schemaDigest = externalMcpToolSchemaDigest(tool.inputSchema)
-    currentSchemaDigest = schemaDigest
-    if (input.requireSchemaMatch && input.schemaDigest && input.schemaDigest !== schemaDigest) {
-      return {
-        ok: false,
-        error: "policy_blocked",
-        capability: buildExternalCapabilityName(connection.id, input.toolName),
-        message: `${input.toolName} now takes different inputs than when this App was published, so OpenWork blocked the call. An editor can update the App to use the tool's current inputs.`,
-        sameArgumentsRetryable: false,
-        retry: { action: "search_capabilities", searchRequired: true },
+      const schemaDigest = externalMcpToolSchemaDigest(tool.inputSchema)
+      currentSchemaDigest = schemaDigest
+      if (input.requireSchemaMatch && input.schemaDigest && input.schemaDigest !== schemaDigest) {
+        return {
+          ok: false,
+          error: "policy_blocked",
+          capability: buildExternalCapabilityName(connection.id, input.toolName),
+          message: `${input.toolName} now takes different inputs than when this App was published, so OpenWork blocked the call. An editor can update the App to use the tool's current inputs.`,
+          sameArgumentsRetryable: false,
+          retry: { action: "search_capabilities", searchRequired: true },
+        }
       }
-    }
-    const schemaWarnings: ExternalMcpSchemaWarning[] = []
-    if (input.schemaDigest && input.schemaDigest !== schemaDigest) {
-      schemaWarnings.push({
-        code: "capability_schema_changed",
-        message: "The provider advertised a different capability schema after discovery, but OpenWork still forwarded the call.",
-        searchedSchemaDigest: input.schemaDigest,
-        currentSchemaDigest: schemaDigest,
-        suggestedAction: "If the provider call failed, call search_capabilities again and retry with the latest argumentsSchema. Do not retry solely because of this warning when the provider call succeeded.",
-      })
+      const schemaWarnings: ExternalMcpSchemaWarning[] = []
+      if (input.schemaDigest && input.schemaDigest !== schemaDigest) {
+        schemaWarnings.push({
+          code: "capability_schema_changed",
+          message: "The provider advertised a different capability schema after discovery, but OpenWork still forwarded the call.",
+          searchedSchemaDigest: input.schemaDigest,
+          currentSchemaDigest: schemaDigest,
+          suggestedAction: "If the provider call failed, call search_capabilities again and retry with the latest argumentsSchema. Do not retry solely because of this warning when the provider call succeeded.",
+        })
+      }
+      return { ok: true, tool, schemaWarnings }
     }
 
     // MCP tool arguments are always an object at the protocol boundary. Start
     // the provider call before advisory validation so a provider with an
     // inaccurate or unsupported advertised schema still gets the request.
     const forwardedArguments = isRecord(input.args) ? input.args : {}
-    const providerCall = callExternalMcpTool({
-      connection,
-      redirectUri,
-      toolName: input.toolName,
-      args: forwardedArguments,
-      member,
-      lifecycleDeadline: deadline,
-    })
+    let checked: CheckedTool
+    let providerCall: ReturnType<typeof callExternalMcpTool>
+    if (input.requireReadOnly) {
+      // The read-only guarantee needs the provider's current label, so this
+      // call lists and calls in one provider session and refuses in between.
+      let refusal: ExternalCapabilityFailure | undefined
+      let passed!: (value: CheckedTool) => void
+      let failed!: (cause: unknown) => void
+      const checking = new Promise<CheckedTool>((resolve, reject) => { passed = resolve; failed = reject })
+      providerCall = callListedExternalMcpTool({
+        connection,
+        redirectUri,
+        toolName: input.toolName,
+        args: forwardedArguments,
+        member,
+        lifecycleDeadline: deadline,
+        beforeCall: (tools) => {
+          const result = check(tools)
+          if (!result.ok) {
+            refusal = result
+            throw new Error("OpenWork refused the call before it reached the provider.")
+          }
+          passed(result)
+        },
+      })
+      providerCall.catch(failed)
+      try {
+        checked = await checking
+      } catch (error) {
+        if (refusal) return refusal
+        throw error
+      }
+    } else {
+      // Other calls reuse the member's tool list briefly, so a follow-up call
+      // opens one provider session instead of two. A missing tool is listed live.
+      const listTools = () => listExternalMcpTools(connection, redirectUri, member, undefined, deadline)
+      let result = check(await cachedExternalToolCatalog(catalogKey, listTools))
+      if (!result.ok && result.error === "unknown_capability") {
+        forgetExternalToolCatalog(catalogKey)
+        result = check(await cachedExternalToolCatalog(catalogKey, listTools))
+      }
+      if (!result.ok) return result
+      checked = result
+      providerCall = callExternalMcpTool({
+        connection,
+        redirectUri,
+        toolName: input.toolName,
+        args: forwardedArguments,
+        member,
+        lifecycleDeadline: deadline,
+      })
+    }
+    const { tool, schemaWarnings } = checked
     // Library usage: one row per call, ok or error, never the arguments or result.
     if (input.member) {
       recordConnectorCall(providerCall, {

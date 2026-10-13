@@ -145,13 +145,12 @@ test.skipIf(skipReason !== "")(title, { timeout: 300_000 }, async ({ evidence, p
     expect.objectContaining({ type: "organization", id: orgId, relationship: "parent" }),
   ]));
   const stored = JSON.stringify(everyoneSaved.raw);
-  expect(stored).not.toContain("example-secret");
-  expect(stored).not.toContain("echo *");
-  expect(stored).not.toContain("example.org");
+  const leaked = ["example-secret", "echo *", "example.org"].filter((pattern) => stored.includes(pattern));
+  expect(leaked).toEqual([]);
   evidence.recordAssertionEvidence(
     "Patterns are recorded as withheld, never as text",
     `commands=${JSON.stringify(everyoneSaved.changes?.after?.commands)}; websites=${JSON.stringify(everyoneSaved.changes?.after?.websites)}`,
-    !stored.includes("example-secret") && !stored.includes("echo *") && !stored.includes("example.org"),
+    leaked.length === 0,
   );
   evidence.recordAssertionEvidence(
     "Saving Everyone's permissions records each changed permission's decision and patterns",

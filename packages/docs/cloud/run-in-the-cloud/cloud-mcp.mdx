@@ -129,7 +129,7 @@ OpenWork supports a [documented subset of the host protocol](/dashboards/build-a
 
 Ask the agent for an app, dashboard, or interactive view and it follows the built-in `build-an-app` skill: it finds the tools the App needs, calls `prepare_app` for a starter already wired to them, and publishes the App with `create_app`, passing React source, a text fallback, and those tools. No Workflow is required.
 
-`prepare_app` picks one of three starters from the tools: **lookup** when every tool only reads (loads on open and on its button), **action** when a tool changes data (one call per click, then shows the outcome), and **standalone** when there are no tools (calculators and planners). Each one applies the host's theme and handles loading, empty, failure, approval, and blocked states. Any MCP client can read them as resources at `openwork://apps/starters/lookup.json`, `action.json`, and `standalone.json`, and the skill as `skill://build-an-app/SKILL.md`.
+`prepare_app` picks one of three starters from the tools: **lookup** when every tool only reads (loads on its button), **action** when a tool changes data (one call per click, then shows the outcome), and **standalone** when there are no tools (calculators and planners). Each one applies the host's theme and handles loading, empty, failure, approval, and blocked states. Any MCP client can read them as resources at `openwork://apps/starters/lookup.json`, `action.json`, and `standalone.json`, and the skill as `skill://build-an-app/SKILL.md`.
 
 Each App is saved in a Plugin and served as its own standard MCP server at `/mcp/agent/connections/<appId>` on your OpenWork API. That server exposes only:
 

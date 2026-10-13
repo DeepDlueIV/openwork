@@ -74,8 +74,8 @@ export function appStarter(tools: McpAppToolBinding[]) {
   ].filter(Boolean).join("\n")
   const body = change ? ACTION_SOURCE : LOOKUP_SOURCE
   const describe = change
-    ? `Starter: action. ${change.name} runs once per click of its button, from inputs built from its schema${load ? `; ${load.name} loads on open and again after each success` : ""}. It covers approval, failure, and blocked states.`
-    : `Starter: lookup. ${load?.name} loads when the App opens and again on its button, with inputs built from its schema, and covers loading, empty, approval, failure, and blocked states.`
+    ? `Starter: action. ${change.name} runs once per click of its button, from inputs built from its schema${load ? `; ${load.name} runs from its own button` : ""}. It covers approval, failure, and blocked states.`
+    : `Starter: lookup. ${load?.name} runs when the person clicks its button or presses Enter, with inputs built from its schema and filled from the launch input, and covers loading, empty, approval, failure, and blocked states.`
   return {
     pattern,
     reactSource: [STARTER_HEADER, constants, SHARED_SOURCE, body].join("\n"),
@@ -474,12 +474,11 @@ export default function App({ app, input, hostContext }) {
   const load = useToolCall(app, LOAD.name);
   const [values, setValues] = React.useState(() => initialValues(LOAD.fields, input));
   const launch = JSON.stringify(input ?? {});
-  // A read, so it loads when the App opens and whenever it is opened with new input.
+  // The launch input only fills the inputs. The tool runs when the person
+  // clicks its button or presses Enter, never on its own when the App opens.
   React.useEffect(() => {
-    const next = initialValues(LOAD.fields, input);
-    setValues(next);
-    if (isReady(LOAD.fields, next)) load.call(argumentsFor(LOAD, next));
-  }, [launch, load.available]);
+    setValues(initialValues(LOAD.fields, input));
+  }, [launch]);
   const ready = isReady(LOAD.fields, values);
   const find = () => {
     if (ready) load.call(argumentsFor(LOAD, values));
@@ -487,12 +486,10 @@ export default function App({ app, input, hostContext }) {
   const rows = rowsOf(load.value);
   return (
     <main className="app" style={theme}>
-      {LOAD.fields.length > 0 ? (
-        <div className="controls">
-          <Fields fields={LOAD.fields} values={values} onChange={setValues} onEnter={find} />
-          <button type="button" className="primary" onClick={find} disabled={!ready || !load.available || load.status === "loading"}>{LOAD.label}</button>
-        </div>
-      ) : null}
+      <div className="controls">
+        <Fields fields={LOAD.fields} values={values} onChange={setValues} onEnter={find} />
+        <button type="button" className="primary" onClick={find} disabled={!ready || !load.available || load.status === "loading"}>{LOAD.label}</button>
+      </div>
       <ToolNotice call={load} retryLabel={LOAD.label} onRetry={find} />
       <section className="result" aria-live="polite" aria-busy={load.status === "loading"}>
         {load.value === undefined
@@ -502,7 +499,6 @@ export default function App({ app, input, hostContext }) {
       {load.updatedAt ? (
         <p className="meta">
           {rows ? (rows.length === 1 ? "1 result · " : rows.length + " results · ") : ""}Updated {timeOf(load.updatedAt)}
-          {LOAD.fields.length === 0 ? <> · <button type="button" className="link" onClick={find} disabled={load.status === "loading"}>{LOAD.label}</button></> : null}
         </p>
       ) : null}
     </main>
@@ -517,20 +513,17 @@ export default function App({ app, input, hostContext }) {
   const load = useToolCall(app, LOAD ? LOAD.name : "");
   const [values, setValues] = React.useState(() => initialValues(CHANGE.fields, input));
   const launch = JSON.stringify(input ?? {});
+  // The launch input only fills the inputs; each tool runs from its own button.
   React.useEffect(() => {
     setValues(initialValues(CHANGE.fields, input));
-    if (LOAD) load.call(argumentsFor(LOAD, {}));
-  }, [launch, load.available]);
+  }, [launch]);
   const reload = () => {
     if (LOAD) load.call(argumentsFor(LOAD, {}));
   };
   // One click makes one call; the host may ask the person to approve it first.
   const submit = async () => {
     if (!isReady(CHANGE.fields, values) || change.status === "loading") return;
-    if (await change.call(argumentsFor(CHANGE, values))) {
-      setValues(initialValues(CHANGE.fields, {}));
-      reload();
-    }
+    if (await change.call(argumentsFor(CHANGE, values))) setValues(initialValues(CHANGE.fields, {}));
   };
   return (
     <main className="app" style={theme}>
@@ -559,6 +552,10 @@ export default function App({ app, input, hostContext }) {
           {load.value === undefined
             ? load.status === "loading" ? <Skeleton /> : null
             : <ResultView value={load.value} emptyText="Nothing here yet." />}
+          <p className="meta">
+            <button type="button" className="link" onClick={reload} disabled={!load.available || load.status === "loading"}>{LOAD.label}</button>
+            {load.updatedAt ? " · Updated " + timeOf(load.updatedAt) : ""}
+          </p>
         </section>
       ) : null}
     </main>
@@ -661,7 +658,7 @@ const STARTER_SAMPLES: StarterSample[] = [
   {
     pattern: "lookup",
     title: "Lookup App starter",
-    useWhen: "Every bound tool only reads: a dashboard, list, status board, or search. Loads on open and on its button.",
+    useWhen: "Every bound tool only reads: a dashboard, list, status board, or search. Loads on its button.",
     tools: [{
       name: "find_orders",
       description: "Find orders by status and customer.",

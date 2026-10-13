@@ -31,7 +31,7 @@ An App is a small React view that OpenWork compiles and publishes as its own MCP
 
 ## Steps
 
-1. Find the data and actions it needs, unless it is self-contained: search_capabilities with 2-4 keyword variants, then pick exact matches that create_app can bind. Prefer tools that only read (readOnly: true), which the App can load as it opens. When the data must be combined or computed on every open, save a live Workflow first, as execute_capability_script describes.
+1. Find the data and actions it needs, unless it is self-contained: search_capabilities with 2-4 keyword variants, then pick exact matches that create_app can bind. Prefer tools that only read (readOnly: true). When the data must be combined or computed each time, save a live Workflow first, as execute_capability_script describes.
 2. Call prepare_app with a title that names the outcome ("Open Linear issues", not "Dashboard"), one sentence on what the person sees and does, and those exact tools. It verifies them and returns their input schemas and a starter already wired to them.
 3. Write the App from that starter. Keep its theme, state handling, and tool calls. Replace the general result view with the focal view, rename buttons to their outcome, and keep only the inputs the person needs.
 4. Call create_app with the preparationId, the same tools, the complete React and CSS, and a textFallback of one or two sentences on what the App shows. If it fails, fix exactly what the error names and call create_app again with the same preparationId. Never fall back to a local HTML file, save_artifact_view, or config-object writes.
@@ -43,8 +43,8 @@ To change an App, keep its purpose and tools unless the person asks otherwise, a
 
 prepare_app picks one from the tools you declare. Each is also a resource you can read before you start:
 
-- lookup (${appStarterResourceUri("lookup")}): every tool only reads. It loads on open and on its button. For dashboards, lists, status boards, and search.
-- action (${appStarterResourceUri("action")}): at least one tool changes data. Inputs, one primary button that makes one call, the outcome, and a read that refreshes after it.
+- lookup (${appStarterResourceUri("lookup")}): every tool only reads. It loads on its button, with inputs filled from the launch input. For dashboards, lists, status boards, and search.
+- action (${appStarterResourceUri("action")}): at least one tool changes data. Inputs, one primary button that makes one call, the outcome, and a read on its own button.
 - standalone (${appStarterResourceUri("standalone")}): no tools. Its logic runs on the inputs and the launch input. For calculators, converters, and planners.
 
 ## What a good App looks like

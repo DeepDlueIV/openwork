@@ -61,3 +61,19 @@ Hooks never commit, push, or change CI/Warden policy; CI remains authoritative.
   screenshots of new UI. The optional
   `.warden/skills/design-spec-review` skill can review these rules locally.
 
+## Verify changes headless
+
+Launching the desktop app on a developer's computer opens a window that takes
+focus. Check app UI in headless Chrome instead:
+
+* Specs: `seed.appWeb` (`write-a-spec`); `run-tests` explains which placement
+  tests your working tree.
+* By hand: `pnpm world up dev-app-web --detach -- --browser`, then drive the
+  printed `cdp` address (`drive-desktop-cdp`).
+* Use the desktop app (`seed.desktop`, `pnpm dev`, `preview-desktop`,
+  `live-desktop`) only when the user asks or the change needs the desktop
+  shell: titlebar and window controls, native menus and dialogs, `openwork://`
+  links and OAuth hand-off, the built-in browser pane, updater, quit and
+  relaunch, or packaged builds. Prefer `--daytona` for those so the window
+  opens in a sandbox; Daytona builds a pushed commit, not your working tree.
+

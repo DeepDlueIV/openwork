@@ -11,6 +11,7 @@ export const freestyleReviewProvider: ReviewPreviewProvider = {
   id: "freestyle",
   label: EVIDENCE_PROVIDER_LABELS.freestyle,
   configured: freestyleConfigured,
+  supportsPreviews: true,
   hasSnapshot: async (gitSha, world) => Boolean(await findSnapshot(gitSha, undefined, world)),
   buildSnapshot: (gitSha, world) => ensureSnapshot(gitSha, undefined, (message) => console.log(message), world, {
     // The builder VM is deleted after a failure; keep the end of its log. Guests

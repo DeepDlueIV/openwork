@@ -7,12 +7,16 @@
     ".": "./src/world.ts",
     "./api": "./src/api.ts",
     "./builder": "./src/builder.ts",
-    "./cleanup": "./src/cleanup.ts"
+    "./cleanup": "./src/cleanup.ts",
+    "./checkpoints": "./src/checkpoints.ts",
+    "./credentials": "./src/credentials.ts",
+    "./review-provider": "./src/review-provider.ts"
   },
   "engines": {
     "node": ">=24"
   },
   "dependencies": {
+    "@openwork/evidence-provider": "workspace:*",
     "@openwork/freestyle": "workspace:*"
   },
   "scripts": {

@@ -1,10 +1,10 @@
 import { spec } from "@openwork/testkit";
 import { expect } from "vitest";
-import { checkpointWorld } from "../worlds/web-checkpoint.ts";
+import { checkpointWorld, checkpointWorldCredentials } from "../worlds/web-checkpoint.ts";
 
 const test = spec.world(() => checkpointWorld(), {
   resources: { surfaces: ["appWeb"], services: ["den", "mock"] },
-  needs: { placement: "local", env: ["FREESTYLE_API_KEY"], optIn: ["OPENWORK_EVIDENCE_CHECKPOINTS"] },
+  needs: { placement: "local", env: checkpointWorldCredentials(), optIn: ["OPENWORK_EVIDENCE_CHECKPOINTS"] },
   timeout: 1_200_000,
 });
 

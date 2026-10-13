@@ -28,10 +28,13 @@ test("cleanup only removes expired evidence snapshots and sandboxes it owns", as
     { id: "6", name: DAYTONA_BASE_SNAPSHOT, state: "active", createdAt: hoursAgo(5000) },
     { id: "7", name: `${DAYTONA_BASE_SNAPSHOT}-plain`, state: "active", createdAt: hoursAgo(5000) },
     { id: "8", name: "ow-dy-base-ubuntu2404-v1", state: "active", createdAt: hoursAgo(1) },
+    { id: "9", name: `ow-dy-checkpoint-v1-${"a".repeat(32)}`, state: "active", createdAt: hoursAgo(15) },
+    { id: "10", name: `ow-dy-checkpoint-v1-${"b".repeat(32)}`, state: "active", createdAt: hoursAgo(11) },
   ];
   const sandboxes: Record<string, { id: string; name: string; state: string; labels: Record<string, string>; createdAt: string }[]> = {
     "openwork-daytona-evidence-v1": [{ id: "a", name: "world-old", state: "started", labels: {}, createdAt: hoursAgo(3) }, { id: "b", name: "world-new", state: "started", labels: {}, createdAt: hoursAgo(1) }],
     "openwork-daytona-builder-v1": [],
+    "openwork-daytona-checkpoint-copy-v1": [{ id: "c", name: "copy-old", state: "started", labels: {}, createdAt: hoursAgo(5) }],
   };
   const fake = { listSnapshots: async () => snapshots,
     listSandboxes: async (match: Record<string, string>) => sandboxes[match.kind] ?? [],
@@ -39,7 +42,7 @@ test("cleanup only removes expired evidence snapshots and sandboxes it owns", as
     deleteSandbox: async () => { throw new Error("dry run must not delete"); } };
   // A structural fake of the two list calls and two deletes cleanup uses.
   const result = await cleanupDaytonaEvidence(Object.assign(Object.create(DaytonaApi.prototype), fake), { dryRun: true, now });
-  assert.deepEqual(result, { deletedSnapshots: ["ow-dy-evidence-web-v1-old", "ow-dy-evidence-image-v1-older", "ow-dy-base-ubuntu2404-v1"], deletedSandboxes: ["world-old"] });
+  assert.deepEqual(result, { deletedSnapshots: ["ow-dy-evidence-web-v1-old", `ow-dy-checkpoint-v1-${"a".repeat(32)}`, "ow-dy-evidence-image-v1-older", "ow-dy-base-ubuntu2404-v1"], deletedSandboxes: ["world-old", "copy-old"] });
 });
 
 test("trailing slashes are trimmed in linear time", () => {

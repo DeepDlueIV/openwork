@@ -20,8 +20,16 @@ test("unknown fields are dropped", () => {
   assert.deepEqual(parseEvidenceCheckpoint({ ...valid, url: "https://example.test/?token=x" }), valid);
 });
 
-test("providers without checkpoint support are rejected", () => {
+test("a Daytona checkpoint parses with its own ID format", () => {
+  const daytona = { ...valid, provider: "daytona", id: `ow-dy-checkpoint-v1-${"d".repeat(32)}` };
+  assert.deepEqual(parseEvidenceCheckpoint(daytona), daytona);
+  // Each provider only accepts its own IDs.
   assert.throws(() => parseEvidenceCheckpoint({ ...valid, provider: "daytona" }), /Invalid checkpoint fields/);
+  assert.throws(() => parseEvidenceCheckpoint({ ...daytona, provider: "freestyle" }), /Invalid checkpoint fields/);
+});
+
+test("unknown providers are rejected", () => {
+  assert.throws(() => parseEvidenceCheckpoint({ ...valid, provider: "e2b" }), /Invalid checkpoint fields/);
   assert.throws(() => parseEvidenceCheckpoint({ ...valid, provider: undefined }), /Invalid checkpoint fields/);
 });
 

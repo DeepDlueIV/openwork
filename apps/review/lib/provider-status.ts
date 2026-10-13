@@ -1,4 +1,5 @@
 import { EVIDENCE_PROVIDER_LABELS, EVIDENCE_PROVIDERS, evidenceProviderFromEnv, type EvidenceProviderId } from "@openwork/evidence-provider";
+import { daytonaConfigured } from "@openwork/daytona-evidence/credentials";
 import { freestyleConfigured } from "@openwork/freestyle/credentials";
 
 /**
@@ -7,15 +8,16 @@ import { freestyleConfigured } from "@openwork/freestyle/credentials";
  */
 export const PROVIDER_CONFIGURED: Record<EvidenceProviderId, () => boolean> = {
   freestyle: freestyleConfigured,
-  // Daytona has no review support yet.
-  daytona: () => false,
+  daytona: daytonaConfigured,
 };
+/** Must agree with each provider's `supportsPreviews`. Daytona opens checkpoints only, for now. */
+const SUPPORTS_PREVIEWS: Record<EvidenceProviderId, boolean> = { freestyle: true, daytona: false };
 
 /** The provider for new previews. A misconfigured setting shows as "not connected" instead of breaking the report. */
 export function previewProviderStatus(): { label: string; connected: boolean } {
   try {
     const id = evidenceProviderFromEnv();
-    return { label: EVIDENCE_PROVIDER_LABELS[id], connected: PROVIDER_CONFIGURED[id]() };
+    return { label: EVIDENCE_PROVIDER_LABELS[id], connected: SUPPORTS_PREVIEWS[id] && PROVIDER_CONFIGURED[id]() };
   } catch (error) {
     console.error("Review preview provider is misconfigured", { error: error instanceof Error ? error.message : "UnknownError" });
     return { label: "The preview provider", connected: false };

@@ -197,6 +197,25 @@ export class DaytonaApi {
     catch (error) { if (!(error instanceof DaytonaApiError && error.status === 404)) throw error; }
   }
 
+  /** Copies a running VM sandbox, memory included, into a new independent sandbox. */
+  async forkSandbox(id: string, name: string): Promise<Sandbox> {
+    return asSandbox(await this.call("POST", `/sandbox/${encodeURIComponent(id)}/fork`, { name }));
+  }
+
+  async setLabels(id: string, value: Record<string, string>): Promise<void> {
+    await this.call("PUT", `/sandbox/${encodeURIComponent(id)}/labels`, { labels: value });
+  }
+
+  /**
+   * Browser-usable preview URL: the token is in the host name, so no header is
+   * needed. It stops working after `expiresInSeconds`.
+   */
+  async signedPreviewUrl(id: string, port: number, expiresInSeconds: number): Promise<string> {
+    const value = await this.call("GET", `/sandbox/${encodeURIComponent(id)}/ports/${port}/signed-preview-url?expiresInSeconds=${expiresInSeconds}`);
+    if (!record(value) || typeof value.url !== "string") throw new Error("Invalid Daytona signed preview URL response");
+    return trimTrailingSlashes(value.url);
+  }
+
   /** Private preview URL for a port; requests must send `x-daytona-preview-token: <token>`. */
   async previewUrl(id: string, port: number): Promise<{ url: string; token: string }> {
     const value = await this.call("GET", `/sandbox/${encodeURIComponent(id)}/ports/${port}/preview-url`);

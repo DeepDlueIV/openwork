@@ -40,7 +40,7 @@ export function launchHandlers(deps: LaunchDependencies) {
     // browser action so a third-party page cannot spend sandbox quota through that session.
     if (!sameOrigin(request)) return Response.json({ error: "Launch the sandbox from its review page." }, { status: 403, headers });
     const provider = providerOrNull(deps);
-    if (!provider?.configured()) return Response.json({ error: `${provider?.label ?? "The preview provider"} is not connected. The review app owner can configure it.` }, { status: 503, headers });
+    if (!provider?.configured() || !provider.supportsPreviews) return Response.json({ error: `${provider?.label ?? "The preview provider"} is not connected. The review app owner can configure it.` }, { status: 503, headers });
     const { id } = await params;
     const report = await deps.readReview(id);
     if (!report) return Response.json({ error: "Review not found." }, { status: 404, headers });
@@ -84,7 +84,7 @@ export function launchHandlers(deps: LaunchDependencies) {
   /** Read-only readiness for the page to poll while a first build runs. */
   async function GET(request: Request, { params }: Context): Promise<Response> {
     const provider = providerOrNull(deps);
-    if (!provider?.configured()) return Response.json({ error: `${provider?.label ?? "The preview provider"} is not connected.` }, { status: 503, headers });
+    if (!provider?.configured() || !provider.supportsPreviews) return Response.json({ error: `${provider?.label ?? "The preview provider"} is not connected.` }, { status: 503, headers });
     const { id } = await params;
     const report = await deps.readReview(id);
     if (!report) return Response.json({ error: "Review not found." }, { status: 404, headers });

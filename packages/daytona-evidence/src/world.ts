@@ -2,7 +2,9 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { DaytonaApi, type Sandbox } from "./api.ts";
 
-export const EVIDENCE_KIND = "openwork-daytona-evidence-v1";
+import { COPY_KIND, EVIDENCE_KIND } from "./kinds.ts";
+
+export { EVIDENCE_KIND };
 const ROOT = "/opt/openwork-preview";
 const ACCESS_FILE = `${ROOT}/access.json`;
 /** Access to a test world expires after this long. */
@@ -69,8 +71,9 @@ export async function deleteDaytonaEvidenceWorld(id: string, api = new DaytonaAp
   await api.deleteSandbox(id);
 }
 
+/** Controls the held demonstration stream in a test world or a reviewer's copy. */
 export async function evidenceControl(id: string, command: "continue" | "state", api = new DaytonaApi()): Promise<string> {
   const sandbox: Sandbox | null = await api.getSandbox(id);
-  if (!sandbox || sandbox.labels.kind !== EVIDENCE_KIND) throw new Error("Not a Daytona evidence world");
+  if (!sandbox || ![EVIDENCE_KIND, COPY_KIND].includes(sandbox.labels.kind ?? "")) throw new Error("Not a Daytona evidence world");
   return api.execChecked(sandbox, `node ${ROOT}/evidence-control.mjs ${command}`, 30);
 }

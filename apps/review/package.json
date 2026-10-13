@@ -9,6 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@openwork/daytona-evidence": "workspace:*",
     "@openwork/evidence-provider": "workspace:*",
     "@openwork/freestyle": "workspace:*",
     "@openwork/review": "workspace:*",

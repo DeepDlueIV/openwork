@@ -1,7 +1,7 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { Lock, LogIn, Plus } from "lucide-react";
+import { Lock, Plus } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useRef, useState } from "react";
 import { DenButton } from "../../_components/ui/button";
@@ -122,10 +122,10 @@ function LibraryItemRow({ item, mine, connection, signIn }: {
     <ManagedSlackAccountAction connection={connection} />
   ) : needsSignIn && item.type === "connection" ? (
     item.transport === "native" ? (
-      <DenButton variant="secondary" size="xs" icon={integrated ? LogIn : undefined} aria-label="Sign in" className={integrated ? "size-7 p-0" : undefined} href={`${getYourConnectionsRoute(orgSlug)}?connectionId=${encodeURIComponent(item.id)}`}>{integrated ? null : "Sign in"}</DenButton>
+      <DenButton variant="secondary" size="xs" aria-label="Sign in" href={`${getYourConnectionsRoute(orgSlug)}?connectionId=${encodeURIComponent(item.id)}`}>Sign in</DenButton>
     ) : (
-      <DenButton variant="secondary" size="xs" icon={integrated ? LogIn : undefined} aria-label={apiKeyStatus === "reconnect_required" ? "Replace key" : apiKeyStatus === "missing" ? "Add key" : "Sign in"} className={integrated ? "size-7 p-0" : undefined} loading={signIn.pendingId === item.id} onClick={() => void signIn.signIn(item)}>
-        {integrated ? null : apiKeyStatus === "reconnect_required" ? "Replace key" : apiKeyStatus === "missing" ? "Add key" : "Sign in"}
+      <DenButton variant="secondary" size="xs" aria-label={apiKeyStatus === "reconnect_required" ? "Replace key" : apiKeyStatus === "missing" ? "Add key" : "Sign in"} loading={signIn.pendingId === item.id} onClick={() => void signIn.signIn(item)}>
+        {apiKeyStatus === "reconnect_required" ? "Replace key" : apiKeyStatus === "missing" ? "Add key" : "Sign in"}
       </DenButton>
     )
   ) : (
@@ -142,7 +142,16 @@ function LibraryItemRow({ item, mine, connection, signIn }: {
 
   return (
     <div data-library-item={item.name} data-library-kind={item.type} title={policyMessage ?? libraryItemDescription(item)}>
-      {integrated ? <ItemRow compact wideAction={Boolean(managedSlack)} href={href} logo={<ItemLogo item={item} />} title={item.name} description={policyMessage ?? (managedSlack ? "Provided by OpenWork" : libraryItemDescription(item))} status={connection?.policyBlocked ? <DenBadge icon={Lock}>Blocked</DenBadge> : limitedAccess ? "Limited access" : libraryItemReady(item) ? "Ready" : item.type !== "plugin" && item.state === "needs_signin" ? "Sign in" : "Set up"} action={action} /> : <LibraryListRow
+      {integrated ? <ItemRow
+        compact
+        wideAction={Boolean(managedSlack) || needsSignIn}
+        href={href}
+        logo={<ItemLogo item={item} />}
+        title={item.name}
+        description={policyMessage ?? (managedSlack ? "Provided by OpenWork" : libraryItemDescription(item))}
+        status={connection?.policyBlocked ? <DenBadge icon={Lock}>Blocked</DenBadge> : limitedAccess ? "Limited access" : needsSignIn ? undefined : libraryItemReady(item) ? "Ready" : item.type !== "plugin" && item.state === "needs_signin" ? "Sign in" : "Set up"}
+        action={action}
+      /> : <LibraryListRow
         href={href}
         logo={<ItemLogo item={item} />}
         title={item.name}

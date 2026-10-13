@@ -206,5 +206,35 @@ export const denManageAsAdmin = (seed: Seed, ctx: { place: Place }) => denLibrar
 /** The same organization, with the admin signed in on Manage › Plugins. */
 export const denManagePluginsAsAdmin = (seed: Seed, ctx: { place: Place }) => denLibraryManage(seed, ctx, { asAdmin: true, adminStartPath: "/dashboard/plugins" });
 
+/** Existing connectors for a member. All providers and accounts are test data. */
+export async function denLibraryRowSignIn(seed: Seed, ctx: { place: Place }) {
+  const world = await denLibraryManage(seed, ctx, { integrated: true });
+  const access = { orgWide: false, memberIds: [world.memberIds.sam] };
+  const ready = await seed.orgConnection(world.den.admin, {
+    name: "Slack", url: world.custom.mcpUrl, authType: "none", credentialMode: "shared", access,
+  });
+  const oauth = await seed.orgConnection(world.den.admin, {
+    name: "Stripe", url: world.slack.mcpUrl, authType: "oauth", credentialMode: "per_member", access,
+  });
+  const keyed = await seed.orgConnection(world.den.admin, {
+    name: "Keyed Docs", url: world.keyed.mcpUrl, authType: "apikey", credentialMode: "per_member", access,
+  });
+  const native = await seed.api(world.den.admin, "/v1/mcp-connections", {
+    method: "POST",
+    body: JSON.stringify({
+      kind: "native_provider", nativeProviderKey: "google-workspace", name: "Google Workspace",
+      oauthClient: { clientId: "eng-743-test-client", clientSecret: "eng-743-test-secret", features: ["calendarRead"] },
+      access,
+    }),
+  });
+  if (!native.response.ok) throw new Error(`Could not create the native test connection: HTTP ${native.response.status}`);
+  const nativeId = stringField(native.body, "id");
+  if (!nativeId) throw new Error("The native test connection has no ID.");
+  const startPath = `/v1/mcp-connections/${oauth.id}/connect/start`;
+  await world.proxy.faults.status(startPath, 503, { times: 1, body: { error: "test_sign_in_unavailable" } });
+  await world.proxy.faults.latency(startPath, 4_000, { times: 1 });
+  return Object.assign(world, { connections: { ready, oauth, keyed, nativeId }, startPath });
+}
+
 /** Same permissions and empty inventory, with only the Library presentation rollout enabled. */
 export const denManageIntegratedPluginsAsAdmin = (seed: Seed, ctx: { place: Place }) => denLibraryManage(seed, ctx, { asAdmin: true, adminStartPath: "/dashboard/plugins", integrated: true });

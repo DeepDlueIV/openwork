@@ -897,7 +897,7 @@ export function McpAppSandboxView({ origin, app, resolveLiveActions, goesLiveInP
       stopHostContextSync?.()
       stopSandbox?.()
     }
-  }, [app, replacementInput, openworkServerClient, replacementResult, toolName, workspaceId, readOnly, origin, origin.sessionId, origin.engine, presentation, updateMode, connectionController, retryAttempt, resolveLiveActions, openKey])
+  }, [app, replacementInput, openworkServerClient, replacementResult, toolName, workspaceId, readOnly, origin, origin.sessionId, presentation, updateMode, connectionController, retryAttempt, resolveLiveActions, openKey])
 
   const reload = onRetry ?? (() => {
     setError(null)
@@ -959,7 +959,7 @@ function EmbeddedMcpAppFrame({ part, origin: surfaceOrigin }: { part: DynamicToo
   const context = useOptionalMessageList()
   const nextOrigin = surfaceOrigin ?? context?.mcpAppOrigin ?? null
   const { uiStateOwner, readOnly, getConnectionDecision, onMcpReconnect } = context ?? {}
-  const origin = useMemo(() => nextOrigin, [nextOrigin?.client, nextOrigin?.workspaceId, nextOrigin?.sessionId, nextOrigin?.engine, nextOrigin?.readOnly])
+  const origin = useMemo(() => nextOrigin, [nextOrigin?.client, nextOrigin?.workspaceId, nextOrigin?.sessionId, nextOrigin?.readOnly])
   const openworkServerClient = origin?.client
   const workspaceId = origin?.workspaceId
   const nextResult = preservedResult(part)
@@ -987,7 +987,7 @@ function EmbeddedMcpAppFrame({ part, origin: surfaceOrigin }: { part: DynamicToo
     && typeof launch.arguments.connectionId === "string" ? launch.arguments.connectionId : null
   const source = useMemo<{ connectionId: string | null; sessionId: string | null }>(
     () => ({ connectionId: null, sessionId: origin?.sessionId ?? null }),
-    [scope, origin?.client, origin?.workspaceId, origin?.sessionId, origin?.engine, part.toolCallId])
+    [scope, origin?.client, origin?.workspaceId, origin?.sessionId, part.toolCallId])
   source.connectionId ??= sourceConnectionId
   const initialConnectionId = source.connectionId
   const hostRef = useRef({ scope, blocked: readOnly === true, decision: getConnectionDecision?.(part.toolCallId) ?? null, onReconnect: onMcpReconnect })

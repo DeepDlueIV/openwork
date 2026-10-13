@@ -43,6 +43,7 @@ export interface Snapshot {
   state: string;
   errorReason?: string | null;
   createdAt?: string;
+  lastUsedAt?: string;
 }
 
 export class DaytonaApiError extends Error {
@@ -71,7 +72,8 @@ function asSandbox(value: unknown): Sandbox {
 }
 function asSnapshot(value: unknown): Snapshot {
   if (!record(value) || typeof value.id !== "string" || typeof value.name !== "string" || typeof value.state !== "string") throw new Error("Invalid Daytona snapshot response");
-  return { id: value.id, name: value.name, state: value.state, errorReason: text(value.errorReason) ?? null, createdAt: text(value.createdAt) };
+  return { id: value.id, name: value.name, state: value.state, errorReason: text(value.errorReason) ?? null,
+    createdAt: text(value.createdAt), lastUsedAt: text(value.lastUsedAt) };
 }
 
 /** Provider responses can echo request data; never put them in logs beyond this short, token-free summary. */

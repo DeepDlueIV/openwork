@@ -20,4 +20,6 @@ viewer.
 - Needs `DAYTONA_API_KEY` for an organization with Linux VMs in
   `OPENWORK_DAYTONA_EVIDENCE_REGION` (default `us-west-3`).
 - Builds: `node scripts/prepare-evidence-web.ts` with the provider set.
-- Cleanup: `node scripts/cleanup-daytona-evidence.ts [--dry-run]`, hourly in CI.
+- Cleanup: `node scripts/cleanup-daytona-evidence.ts [--dry-run]`, every 15 minutes in CI.
+  Commit worlds go after two unused hours and only the newest 30 checkpoints are
+  kept, so CI stays under the organization's snapshot quota.

@@ -32,6 +32,7 @@ import {
 import { getOrgOAuthClient, type ConnectedAccountRow } from "../../capability-sources/oauth-credentials.js"
 import { clientSelectedFeatures, getNativeOAuthProvider, providerScopesSatisfy, resolveProviderScopes } from "../../capability-sources/provider-registry.js"
 import { registerGoogleDriveUploadRoutes } from "./google-drive-uploads.js"
+import { isGoogleAuthorizationFailure, parseGoogleError } from "./google-workspace-actions.js"
 import { registerGmailManagementRoutes } from "./gmail-management.js"
 import { registerGoogleProductivityManagementRoutes } from "./google-productivity-management.js"
 import { listTeamsForMember } from "../../orgs.js"
@@ -445,29 +446,13 @@ function isRecordValue(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
-function googleAuthorizationReasons(text: string): Set<string> {
-  const reasons = new Set<string>()
+function googleErrorReasons(text: string): Set<string> {
   try {
-    const payload: unknown = JSON.parse(text)
-    if (!isRecordValue(payload) || !isRecordValue(payload.error)) return reasons
-    const errors = Array.isArray(payload.error.errors) ? payload.error.errors : []
-    const details = Array.isArray(payload.error.details) ? payload.error.details : []
-    for (const value of [...errors, ...details]) {
-      if (isRecordValue(value) && typeof value.reason === "string") reasons.add(value.reason)
-    }
+    return parseGoogleError(JSON.parse(text)).reasons
   } catch {
     // Non-JSON provider errors retain the ordinary upstream-error path.
+    return new Set()
   }
-  return reasons
-}
-
-function isGoogleAuthorizationFailure(status: number, text: string): boolean {
-  if (status === 401) return true
-  if (status !== 403) return false
-  const reasons = googleAuthorizationReasons(text)
-  return reasons.has("authError")
-    || reasons.has("insufficientPermissions")
-    || reasons.has("ACCESS_TOKEN_SCOPE_INSUFFICIENT")
 }
 
 async function googleDriveApiError(
@@ -490,7 +475,7 @@ async function googleDriveApiError(
       },
     }
   }
-  if (!isGoogleAuthorizationFailure(response.status, text)) return { status: 502, body: error }
+  if (!isGoogleAuthorizationFailure(response.status, googleErrorReasons(text))) return { status: 502, body: error }
   return {
     status: 409,
     body: {

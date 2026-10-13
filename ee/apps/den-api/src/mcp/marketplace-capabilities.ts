@@ -29,6 +29,7 @@ import {
 import { EXTERNAL_MCP_PRESETS } from "../capability-sources/external-mcp-presets.js"
 import { getConnectedAccount, getOrgOAuthClient } from "../capability-sources/oauth-credentials.js"
 import { db } from "../db.js"
+import { requestRead } from "../request-reads.js"
 import { env } from "../env.js"
 import { recordSkillUse } from "../capability-usage.js"
 import { resolvePluginArchGrantRole } from "../routes/org/plugin-system/access.js"
@@ -497,10 +498,14 @@ async function listGrantOnlyRows(organizationId: OrganizationId): Promise<Market
   return rows.map((row) => ({ ...row, marketplace: null }))
 }
 
+/** Read once per request (search, skills and Apps all list them); each caller gets its own array. */
 async function listActiveCapabilityRows(organizationId: OrganizationId): Promise<MarketplaceCapabilityRow[]> {
-  const marketplaceRows = await listActiveMarketplaceRows(organizationId)
-  const grantOnlyRows = await listGrantOnlyRows(organizationId)
-  return [...marketplaceRows, ...grantOnlyRows]
+  const rows = await requestRead(`active-capability-rows:${organizationId}`, async () => {
+    const marketplaceRows = await listActiveMarketplaceRows(organizationId)
+    const grantOnlyRows = await listGrantOnlyRows(organizationId)
+    return [...marketplaceRows, ...grantOnlyRows]
+  })
+  return [...rows]
 }
 
 async function listActiveMarketplaceRowsForCapability(input: {

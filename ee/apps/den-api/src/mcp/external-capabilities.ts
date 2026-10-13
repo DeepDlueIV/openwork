@@ -26,7 +26,7 @@ import {
   safeExternalMcpEndpointForLog,
   type ExternalMcpDiagnostic,
 } from "../capability-sources/external-mcp-diagnostics.js"
-import { getConnectedAccount } from "../capability-sources/oauth-credentials.js"
+import { getConnectedAccount, getConnectedAccountForListing } from "../capability-sources/oauth-credentials.js"
 import {
   evaluateToolPolicy,
   isToolDisabled,
@@ -117,6 +117,8 @@ export async function resolveMcpMemberIdentity(input: {
 export async function resolveMcpMember(input: {
   userId: string
   organizationId: string
+  /** The organization's teamMembershipCache flag, when the caller already resolved its features. */
+  teamMembershipCache?: boolean
 }): Promise<{ identity: McpMemberIdentity; teams: Awaited<ReturnType<typeof listTeamsForMember>> } | null> {
   const organizationId = normalizeDenTypeId("organization", input.organizationId)
   const member = await cache.org.membership({
@@ -124,7 +126,7 @@ export async function resolveMcpMember(input: {
     userId: normalizeDenTypeId("user", input.userId),
   })
   if (!member) return null
-  const teams = await listTeamsForMember({ organizationId, memberId: member.id })
+  const teams = await listTeamsForMember({ organizationId, memberId: member.id, teamMembershipCache: input.teamMembershipCache })
   return { identity: { orgMembershipId: member.id, teamIds: teams.map((team) => team.id) }, teams }
 }
 
@@ -741,7 +743,7 @@ async function probeExternalMcpConnection(input: {
     return matches
   }
   if (connection.credentialMode === "per_member") {
-    const account = await getConnectedAccount({
+    const account = await getConnectedAccountForListing({
       organizationId: connection.organizationId,
       orgMembershipId: input.member.orgMembershipId,
       providerId: connection.id,
@@ -1116,7 +1118,7 @@ export async function probeExternalConnectionStatus(input: {
     }
   }
   if (connection.credentialMode === "per_member") {
-    const account = await getConnectedAccount({
+    const account = await getConnectedAccountForListing({
       organizationId: connection.organizationId,
       orgMembershipId: input.member.orgMembershipId,
       providerId: connection.id,

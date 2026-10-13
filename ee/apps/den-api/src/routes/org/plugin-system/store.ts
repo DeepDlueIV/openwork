@@ -75,6 +75,7 @@ import {
 } from "./default-marketplaces.js"
 import { cache, type CachedOrgMember } from "../../../cache.js"
 import { db } from "../../../db.js"
+import { requestReadFor } from "../../../request-reads.js"
 import { keysetAfter, keysetPage, type KeysetCursor } from "../../../list-pagination.js"
 import { resolveOrganizationMemberAuthority } from "../../../organization-team-roles.js"
 import { resolveMemberPermissions, resolvePermissionsForMember } from "../../../permissions/resolve.js"
@@ -2250,7 +2251,12 @@ const mePluginAccessEdgeOrder: Record<MePluginAccessEdge["kind"], number> = {
   catalog: 5,
 }
 
-async function listMeEffectivePluginAccessWithComponentKinds(input: { context: PluginArchActorContext }) {
+/** Callers holding the same request context share one read (the library's loaders call it concurrently). */
+function listMeEffectivePluginAccessWithComponentKinds(input: { context: PluginArchActorContext }) {
+  return requestReadFor(input.context, "me-effective-plugin-access", () => loadMeEffectivePluginAccessWithComponentKinds(input))
+}
+
+async function loadMeEffectivePluginAccessWithComponentKinds(input: { context: PluginArchActorContext }) {
   const organizationId = input.context.organizationContext.organization.id
   await retireEmptyStarterPlugins(organizationId)
   const memberId = input.context.organizationContext.currentMember.id

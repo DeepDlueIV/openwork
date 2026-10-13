@@ -13,6 +13,7 @@ import { join } from "node:path";
 import constants from "../../../constants.json" with { type: "json" };
 import {
   createManagedOpencodeV2Server,
+  engineListsModel,
   installOpencodeV2Binary,
   type ManagedOpencodeV2Server,
   type OpencodeV2ProviderSpec,
@@ -305,34 +306,55 @@ export function mapRuntimeProvidersToV2Specs(
   return { specs, skippedProviderIds };
 }
 
-function catalogModelIds(payload: unknown, mirroredProviderIds: string[]): string[] {
-  const mirrored = new Set(mirroredProviderIds);
-  const ids = new Set<string>();
+async function waitForEngineV2Catalog(
+  active: Pick<ManagedOpencodeV2Server, "fetchJson">,
+  directory: string,
+  specs: readonly OpencodeV2ProviderSpec[],
+  timeoutMs = CATALOG_MIRROR_TIMEOUT_MS,
+): Promise<{ modelIds: string[]; lastError?: string }> {
+  const mirrored = new Set(specs.map((spec) => spec.id));
+  const expectedModels = specs.flatMap((spec) => spec.models
+    .filter((model) => engineListsModel(spec, model))
+    .map((model) => ({ providerID: spec.id, id: model.id, label: `${model.name} (${spec.name})` })));
+  const deadline = Date.now() + timeoutMs;
+  const readCatalog = async () => {
+    const catalog = await active.fetchJson("/api/model", {
+      directory, timeoutMs: Math.max(1, Math.min(5_000, deadline - Date.now())),
+    }).catch((error: unknown) => ({ status: 0, json: { message: errorMessage(error) } }));
+    const payload = isRecord(catalog.json) ? catalog.json.data : undefined;
+    const models = Array.isArray(payload) && payload.every(
+      (model): model is { providerID: string; id: string } =>
+        isRecord(model) && typeof model.providerID === "string" && typeof model.id === "string",
+    ) ? payload : undefined;
+    const missing = expectedModels.filter((expected) =>
+      !models?.some((model) => model.providerID === expected.providerID && model.id === expected.id));
+    const message = isRecord(catalog.json) && typeof catalog.json.message === "string" ? ` ${catalog.json.message}` : "";
+    return { models, missing, status: catalog.status, message,
+      ready: catalog.status === 200 && models !== undefined && missing.length === 0 };
+  };
 
-  function visit(value: unknown, withinMirroredProvider: boolean): void {
-    if (Array.isArray(value)) {
-      for (const entry of value) visit(entry, withinMirroredProvider);
-      return;
-    }
-    if (!isRecord(value)) return;
-
-    const providerId = typeof value.providerID === "string"
-      ? value.providerID
-      : typeof value.providerId === "string"
-        ? value.providerId
-        : undefined;
-    const withinProvider = withinMirroredProvider || (providerId !== undefined && mirrored.has(providerId));
-    if (withinProvider && typeof value.id === "string" && !mirrored.has(value.id)) ids.add(value.id);
-    if (withinProvider && isRecord(value.models)) {
-      for (const modelId of Object.keys(value.models)) ids.add(modelId);
-    }
-    for (const [key, child] of Object.entries(value)) {
-      visit(child, withinProvider || mirrored.has(key));
-    }
+  let catalog = await readCatalog();
+  while (!catalog.ready && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, Math.min(250, deadline - Date.now())));
+    if (Date.now() >= deadline) break;
+    catalog = await readCatalog();
   }
-
-  visit(payload, false);
-  return [...ids].sort((left, right) => left.localeCompare(right));
+  const modelIds = [...new Set(catalog.models?.flatMap((model) => mirrored.has(model.providerID) ? [model.id] : []) ?? [])]
+    .sort((left, right) => left.localeCompare(right));
+  if (catalog.ready) return { modelIds };
+  // Name models the way the model picker does: gateway ids are opaque.
+  const after = `after ${Math.round(timeoutMs / 1000)} seconds`;
+  if (catalog.status !== 200 || catalog.models === undefined) {
+    const response = catalog.status === 0 ? "no response" : `HTTP ${catalog.status}`;
+    const detail = catalog.message ? `:${catalog.message}` : "";
+    return { modelIds, lastError: `OpenCode v2's model list could not be read ${after} (${response}${detail}).` };
+  }
+  const labels = catalog.missing.map((model) => model.label);
+  const shown = labels.length > 3 ? `${labels.slice(0, 3).join(", ")} and ${labels.length - 3} more` : labels.join(", ");
+  return {
+    modelIds,
+    lastError: `OpenCode v2 has not listed ${labels.length} ${labels.length === 1 ? "model" : "models"} ${after}: ${shown}.`,
+  };
 }
 
 /** Translate only fields supported by the pinned v2 MCP API. */
@@ -426,6 +448,9 @@ export function createEngineV2Preview(options: {
   // catalog confirmation; readiness joins this, never the whole mirror.
   let providerPush: Promise<void> | undefined;
   let mirrorDirty = false;
+  // The last mirror's push failure. A model the catalog has not listed is
+  // reported in status but never fails a caller whose providers were pushed.
+  let mirrorError: string | undefined;
   const workspaceReadiness = new Map<string, Promise<void>>();
   let mirroredSpecs: OpencodeV2ProviderSpec[] = [];
   // One MCP reconciler per folder, keyed by directory.
@@ -625,25 +650,9 @@ export function createEngineV2Preview(options: {
     pushed();
     // Re-check folders already in use now, so their next prompt pays nothing.
     for (const directory of mcpLocations.keys()) void ensureWorkspaceReady(directory).catch(() => undefined);
-    const expectedModelIds = specs.flatMap((spec) => spec.models
-      .filter(model => (spec.whitelist === undefined || spec.whitelist.includes(model.id)) && !spec.blacklist?.includes(model.id))
-      .map((model) => model.id));
-    const deadline = Date.now() + CATALOG_MIRROR_TIMEOUT_MS;
-    let catalog = await active.fetchJson("/api/model", { directory: workspaceDir });
-    let nextCatalogModelIds = catalogModelIds(catalog.json, nextMirroredProviderIds);
-    while (expectedModelIds.some((modelId) => !nextCatalogModelIds.includes(modelId)) && Date.now() < deadline) {
-      await new Promise((resolve) => setTimeout(resolve, 250));
-      catalog = await active.fetchJson("/api/model", { directory: workspaceDir });
-      nextCatalogModelIds = catalogModelIds(catalog.json, nextMirroredProviderIds);
-    }
-    currentCatalogModelIds = nextCatalogModelIds;
-    const missingModelIds = expectedModelIds.filter((modelId) => !nextCatalogModelIds.includes(modelId));
-    const catalogMessage = isRecord(catalog.json) && typeof catalog.json.message === "string"
-      ? ` ${catalog.json.message}`
-      : "";
-    lastError = missingModelIds.length === 0
-      ? undefined
-      : `catalog missing [${missingModelIds.join(", ")}] after ${CATALOG_MIRROR_TIMEOUT_MS}ms: ${catalog.status}${catalogMessage}`;
+    const catalog = await waitForEngineV2Catalog(active, workspaceDir, specs);
+    currentCatalogModelIds = catalog.modelIds;
+    lastError = catalog.lastError;
   }
 
   function scheduleMirror(): void {
@@ -653,10 +662,11 @@ export function createEngineV2Preview(options: {
       try {
         while (mirrorDirty && allowRunning && sidecar) {
           mirrorDirty = false;
+          mirrorError = undefined;
           try {
             await mirrorProviders();
           } catch (error) {
-            lastError = errorMessage(error);
+            mirrorError = lastError = errorMessage(error);
           }
         }
       } finally {
@@ -671,7 +681,7 @@ export function createEngineV2Preview(options: {
     if (!running || !sidecar) throw new Error("OpenCode v2 is not running");
     scheduleMirror();
     await mirrorInFlight;
-    if (lastError) throw new Error(lastError);
+    if (mirrorError) throw new Error(mirrorError);
   }
 
   async function closeSidecar(): Promise<void> {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useQueryClient } from "@tanstack/react-query";
-import { LogIn, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useState } from "react";
 import { DenButton } from "../../_components/ui/button";
@@ -83,9 +83,11 @@ function LibraryItemRow({ item, mine, signIn }: {
   const apiKeyStatus = item.type === "connection" ? signIn.apiKeyStatus(item.id) : null;
   const action = needsSignIn && item.type === "connection" ? (
     item.transport === "native" ? (
-      <DenButton variant="secondary" size="xs" icon={LogIn} aria-label="Sign in" className="size-7 p-0" href={`${getYourConnectionsRoute(orgSlug)}?connectionId=${encodeURIComponent(item.id)}`} />
+      <DenButton variant="secondary" size="xs" aria-label="Sign in" href={`${getYourConnectionsRoute(orgSlug)}?connectionId=${encodeURIComponent(item.id)}`}>Sign in</DenButton>
     ) : (
-      <DenButton variant="secondary" size="xs" icon={LogIn} aria-label={apiKeyStatus === "reconnect_required" ? "Replace key" : apiKeyStatus === "missing" ? "Add key" : "Sign in"} className="size-7 p-0" loading={signIn.pendingId === item.id} onClick={() => void signIn.signIn(item)} />
+      <DenButton variant="secondary" size="xs" aria-label={apiKeyStatus === "reconnect_required" ? "Replace key" : apiKeyStatus === "missing" ? "Add key" : "Sign in"} loading={signIn.pendingId === item.id} onClick={() => void signIn.signIn(item)}>
+        {apiKeyStatus === "reconnect_required" ? "Replace key" : apiKeyStatus === "missing" ? "Add key" : "Sign in"}
+      </DenButton>
     )
   ) : (
     <ItemMenu
@@ -101,7 +103,16 @@ function LibraryItemRow({ item, mine, signIn }: {
 
   return (
     <div data-library-item={item.name} data-library-kind={item.type} title={libraryItemDescription(item)}>
-      <ItemRow compact href={href} logo={<ItemLogo item={item} />} title={item.name} description={libraryItemDescription(item)} status={libraryItemReady(item) ? "Ready" : item.type !== "plugin" && item.state === "needs_signin" ? "Sign in" : "Set up"} action={action} />
+      <ItemRow
+        compact
+        wideAction={needsSignIn}
+        href={href}
+        logo={<ItemLogo item={item} />}
+        title={item.name}
+        description={libraryItemDescription(item)}
+        status={needsSignIn ? undefined : libraryItemReady(item) ? "Ready" : item.type !== "plugin" && item.state === "needs_signin" ? "Sign in" : "Set up"}
+        action={action}
+      />
     </div>
   );
 }

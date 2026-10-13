@@ -31,7 +31,7 @@ export function memberPermissionsForOrganizationContext(
   const resolution = (async () => {
     const needsTeams = context.features.permissions && !context.currentMember.isOwner
     const teams = memberTeams ?? (needsTeams
-      ? await listTeamsForMember({ organizationId: context.organization.id, memberId: context.currentMember.id })
+      ? await listTeamsForMember({ organizationId: context.organization.id, memberId: context.currentMember.id, teamMembershipCache: context.features.teamMembershipCache })
       : [])
     return resolveMemberPermissionsFromContext(context, teams.map((team) => team.id))
   })()

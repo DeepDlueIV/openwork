@@ -10,7 +10,7 @@ import {
   resolveProviderScopes,
   type NativeOAuthProviderConfig,
 } from "./provider-registry.js"
-import { getConnectedAccount, getOrgOAuthClient } from "./oauth-credentials.js"
+import { getConnectedAccountForListing, getOrgOAuthClient } from "./oauth-credentials.js"
 import { readProviderTenantId } from "./oauth-tenant.js"
 import { listExternalMcpConnections, listUsableNativeProviderConnections } from "./external-mcp-connections.js"
 
@@ -155,7 +155,7 @@ export async function listNativeProviderUsableEntries(input: {
     if (!provider) continue
     const client = await getOrgOAuthClient(input.organizationId, connection.id)
     if (!client) continue
-    const account = await getConnectedAccount({
+    const account = await getConnectedAccountForListing({
       organizationId: input.organizationId,
       orgMembershipId: input.orgMembershipId,
       providerId: connection.id,
@@ -185,7 +185,7 @@ export async function listNativeProviderUsableEntries(input: {
   for (const provider of Object.values(NATIVE_OAUTH_PROVIDERS)) {
     const client = await getOrgOAuthClient(input.organizationId, provider.providerId)
     if (!client) continue
-    const account = await getConnectedAccount({
+    const account = await getConnectedAccountForListing({
       organizationId: input.organizationId,
       orgMembershipId: input.orgMembershipId,
       providerId: provider.providerId,

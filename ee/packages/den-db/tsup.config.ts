@@ -23,7 +23,7 @@ export default defineConfig({
     "permission-states": "src/permission-states.ts",
   },
   format: ["esm"],
-  dts: true,
+  dts: false,
   clean: true,
   target: "es2022",
   platform: "node",

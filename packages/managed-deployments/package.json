@@ -3,17 +3,30 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json"
+  },
   "exports": {
     "./schema": {
-      "types": "./src/schema.ts",
+      "types": {
+        "openwork-build": "./dist/types/src/schema.d.ts",
+        "default": "./src/schema.ts"
+      },
       "default": "./src/schema.ts"
     },
     "./lifecycle": {
-      "types": "./src/lifecycle.ts",
+      "types": {
+        "openwork-build": "./dist/types/src/lifecycle.d.ts",
+        "default": "./src/lifecycle.ts"
+      },
       "default": "./src/lifecycle.ts"
     },
     "./aws": {
-      "types": "./src/aws.ts",
+      "types": {
+        "openwork-build": "./dist/types/src/aws.d.ts",
+        "default": "./src/aws.ts"
+      },
       "default": "./src/aws.ts"
     }
   },

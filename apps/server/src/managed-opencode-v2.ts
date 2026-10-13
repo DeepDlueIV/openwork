@@ -98,6 +98,20 @@ function diagnostics(exitCode: number | null, stdout: string, stderr: string): E
   );
 }
 
+function passesModelFilters(provider: OpencodeV2ProviderSpec, model: OpencodeV2ModelSpec): boolean {
+  return (provider.whitelist === undefined || provider.whitelist.includes(model.id)) && !provider.blacklist?.includes(model.id);
+}
+
+/** A models.dev `deprecated` status is written as `disabled`, which the engine's catalog hides. */
+function isDeprecatedModel(model: OpencodeV2ModelSpec): boolean {
+  return model.config?.status === "deprecated";
+}
+
+/** Whether the engine's model catalog lists this model once the generated config loads. */
+export function engineListsModel(provider: OpencodeV2ProviderSpec, model: OpencodeV2ModelSpec): boolean {
+  return passesModelFilters(provider, model) && !isDeprecatedModel(model);
+}
+
 /** The whole generated engine config: every writer emits all current keys. */
 export function renderOpencodeV2Config(input: {
   providers: OpencodeV2ProviderSpec[];
@@ -120,7 +134,7 @@ export function renderOpencodeV2Config(input: {
     const providerPackage = provider.package?.replace(/^@opencode-ai\/ai\//, "@opencode/ai/") ?? "@opencode/ai/providers/openai-compatible";
     const models: Record<string, unknown> = {};
     for (const model of provider.models) {
-      if ((provider.whitelist !== undefined && !provider.whitelist.includes(model.id)) || provider.blacklist?.includes(model.id)) continue;
+      if (!passesModelFilters(provider, model)) continue;
       const config = model.config ?? {};
       const modalities = isRecord(config.modalities) ? config.modalities : {};
       models[model.id] = {
@@ -140,7 +154,7 @@ export function renderOpencodeV2Config(input: {
           variants: nativeModelVariants(config.variants, providerPackage),
         } : {}),
         ...(isRecord(config.headers) ? { headers: config.headers } : {}),
-        ...(config.status === "deprecated" ? { disabled: true } : {}),
+        ...(isDeprecatedModel(model) ? { disabled: true } : {}),
       };
     }
     providerConfig[provider.id] = {

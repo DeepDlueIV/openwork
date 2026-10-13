@@ -88,6 +88,28 @@ export function windowMetricsSelection() {
   }
 }
 
+/**
+ * Row shapes of the select* builders below. Their return types are declared
+ * as thenables of these rows so the published declarations stay portable:
+ * an inferred drizzle builder type names drizzle-orm, which this package does
+ * not depend on, and resolves to `any` for consumers.
+ */
+export type WindowMetricsRow = {
+  activeMembers: number
+  sessions: number
+  tasksCompleted: number
+  tasksFailed: number
+  avgTaskDurationMs: number | null
+}
+export type WeeklyActivityRow = { week: number; activeMembers: number; sessions: number; tasksCompleted: number; tasksFailed: number }
+export type WeeklyActiveMembersRow = { week: number; count: number }
+export type ModelDimensionUsageRow = {
+  type: (typeof TelemetrySessionDimensionTable.$inferSelect)["dimension_type"]
+  value: (typeof TelemetrySessionDimensionTable.$inferSelect)["dimension_value"]
+  label: string
+  sessions: number
+}
+
 /** Normalize a raw window-metrics row into plain numbers. */
 export function readWindowMetrics(row: {
   activeMembers: unknown
@@ -130,7 +152,7 @@ export async function queryWindowMetrics(db: Db, orgId: TelemetryOrgId, since: D
   return readWindowMetrics(rows[0])
 }
 
-export function selectWindowMetrics(db: Db, orgId: TelemetryOrgId, since: Date, filter: DimensionFilter | null) {
+export function selectWindowMetrics(db: Db, orgId: TelemetryOrgId, since: Date, filter: DimensionFilter | null): PromiseLike<WindowMetricsRow[]> {
   return db
     .select(windowMetricsSelection())
     .from(TelemetryEventTable, orgWindowScan(filter))
@@ -147,7 +169,7 @@ export function selectWindowMetrics(db: Db, orgId: TelemetryOrgId, since: Date, 
  * rows, so it starts from the events instead and runs the filter's lookup
  * against every event in the window — about 9x slower for one project.
  */
-export function selectWeeklyActivity(db: Db, orgId: TelemetryOrgId, start: Date, filter: DimensionFilter | null) {
+export function selectWeeklyActivity(db: Db, orgId: TelemetryOrgId, start: Date, filter: DimensionFilter | null): PromiseLike<WeeklyActivityRow[]> {
   const windowEvents = db
     .select({
       eventTimestamp: sql<Date>`${TelemetryEventTable.event_timestamp}`.as("window_event_timestamp"),
@@ -175,7 +197,7 @@ export function selectWeeklyActivity(db: Db, orgId: TelemetryOrgId, start: Date,
 }
 
 /** Per-week active members since `start` (see `weekIndexExpression`). */
-export function selectWeeklyActiveMembers(db: Db, orgId: TelemetryOrgId, start: Date) {
+export function selectWeeklyActiveMembers(db: Db, orgId: TelemetryOrgId, start: Date): PromiseLike<WeeklyActiveMembersRow[]> {
   const week = weekIndexExpression(start)
   return db
     .select({
@@ -194,7 +216,7 @@ export function selectWeeklyActiveMembers(db: Db, orgId: TelemetryOrgId, start: 
  * and then matched to their dimensions, so each session is joined once rather
  * than once per event.
  */
-export function selectModelDimensionUsage(db: Db, orgId: TelemetryOrgId, since: Date, filter: DimensionFilter | null) {
+export function selectModelDimensionUsage(db: Db, orgId: TelemetryOrgId, since: Date, filter: DimensionFilter | null): PromiseLike<ModelDimensionUsageRow[]> {
   // Aliases are unique across the join: drizzle renders a subquery's aliased
   // fields without the subquery name.
   const windowSessions = db

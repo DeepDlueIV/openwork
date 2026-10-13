@@ -32,6 +32,7 @@ import {
 } from "@openwork-ee/den-db/schema"
 import { createDenTypeId, normalizeDenTypeId, type DenTypeId } from "@openwork-ee/utils/typeid"
 import { db } from "../db.js"
+import { requestRead } from "../request-reads.js"
 import { env } from "../env.js"
 import { memberApiKeyUsable, usesMemberApiKey, validMemberApiKey } from "./member-api-key.js"
 import { declaredPluginMcpAuthType, existingPluginMcpAuthTypeCompatible, requiredPluginMcpAuthType } from "./external-mcp-auth-policy.js"
@@ -163,19 +164,23 @@ async function directlyUsableExternalMcpConnections(input: {
   orgMembershipId: OrgMembershipId
   teamIds: TeamId[]
 }) {
-  const rows = await db
-    .selectDistinct({ connection: ExternalMcpConnectionTable })
-    .from(ExternalMcpConnectionTable)
-    .innerJoin(
-      ExternalMcpConnectionAccessGrantTable,
-      eq(ExternalMcpConnectionAccessGrantTable.externalMcpConnectionId, ExternalMcpConnectionTable.id),
-    )
-    .where(and(
-      eq(ExternalMcpConnectionTable.organizationId, input.organizationId),
-      isNull(ExternalMcpConnectionAccessGrantTable.pluginMcpRequirementBindingId),
-      grantFilter(input),
-    ))
-  return rows.map((row) => row.connection)
+  // The native list, the external list and the visible list each start here; read once per request.
+  const key = `usable-external-mcp-connections:${input.organizationId}:${input.orgMembershipId}:${[...input.teamIds].sort().join(",")}`
+  return requestRead(key, async () => {
+    const rows = await db
+      .selectDistinct({ connection: ExternalMcpConnectionTable })
+      .from(ExternalMcpConnectionTable)
+      .innerJoin(
+        ExternalMcpConnectionAccessGrantTable,
+        eq(ExternalMcpConnectionAccessGrantTable.externalMcpConnectionId, ExternalMcpConnectionTable.id),
+      )
+      .where(and(
+        eq(ExternalMcpConnectionTable.organizationId, input.organizationId),
+        isNull(ExternalMcpConnectionAccessGrantTable.pluginMcpRequirementBindingId),
+        grantFilter(input),
+      ))
+    return rows.map((row) => row.connection)
+  })
 }
 
 function resourceGrantFilters(input: { orgMembershipId: OrgMembershipId; teamIds: TeamId[] }) {

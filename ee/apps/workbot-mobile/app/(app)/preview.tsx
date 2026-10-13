@@ -87,16 +87,20 @@ function Pages({ file, preview }: { file: WorkbotAttachment; preview: WorkbotPre
   )
 }
 
-/** PDFs show as pages when Workbot's computer rendered them; else iOS's own viewer, or another app on Android. */
+/**
+ * PDFs show as pages when Workbot's computer rendered them; else iOS's own viewer, or another app on Android. The
+ * viewer only opens a kept `.pdf`, which iOS reads by its extension, so a web page labeled as a PDF never runs there.
+ */
 function PdfPreview({ file }: { file: WorkbotAttachment }) {
   const preview = useWorkbotPreview(file.id, file.updatedAt)
-  const local = useLocalFile(file, preview.isSuccess && !preview.data && Platform.OS === "ios")
+  const viewable = Platform.OS === "ios" && extensionOf(file.name) === "pdf"
+  const local = useLocalFile(file, preview.isSuccess && !preview.data && viewable)
   if (preview.data) return <Pages file={file} preview={preview.data} />
   if (preview.isPending) return <Loading />
-  if (Platform.OS !== "ios") return <NoPreview file={file} reason="Open it in a PDF app to read it." />
+  if (!viewable) return <NoPreview file={file} reason="Open it in a PDF app to read it." />
   if (local.isError) return <NoPreview file={file} reason="This file couldn't load." />
   if (!local.data) return <Loading />
-  return <WebView source={{ uri: local.data }} originWhitelist={["file://*"]} allowingReadAccessToURL={local.data} style={styles.web} />
+  return <WebView source={{ uri: local.data }} originWhitelist={["file://*"]} allowingReadAccessToURL={local.data} javaScriptEnabled={false} style={styles.web} />
 }
 
 /** Slides and documents: the pages Workbot's computer rendered; without them, another app opens them. */
@@ -147,6 +151,18 @@ function Grid({ rows }: { rows: string[][] }) {
   )
 }
 
+/**
+ * What an HTML file may do on this phone: show itself, with images only inline. No scripts run, and this policy comes
+ * before any of the file's own markup, so nothing in it can reach the internet or a service on this phone's network.
+ */
+const HTML_POLICY = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; form-action 'none'; base-uri 'none'">`
+
+/** The file's markup behind the policy (after a leading doctype, so the page keeps its standards-mode layout). */
+function lockedHtml(text: string) {
+  const doctype = /^\s*<!doctype[^>]*>/i.exec(text)?.[0] ?? ""
+  return `${doctype}${HTML_POLICY}${text.slice(doctype.length)}`
+}
+
 /** Files read straight from their bytes: text, Markdown, CSV and HTML. */
 function BytesPreview({ file, kind }: { file: WorkbotAttachment; kind: "markdown" | "csv" | "html" | "text" }) {
   const bytes = useWorkbotFileBytes(file.id, file.updatedAt)
@@ -156,8 +172,8 @@ function BytesPreview({ file, kind }: { file: WorkbotAttachment; kind: "markdown
   if (kind === "markdown") return <ScrollView contentContainerStyle={styles.markdown}><WorkbotMarkdown text={text} /></ScrollView>
   if (kind === "csv") return <Grid rows={parseDelimited(text, extensionOf(file.name) === "tsv" ? "\t" : ",")} />
   if (kind === "html") {
-    // Untrusted HTML runs on its own: scripts, but no way back into the app, and no leaving the page.
-    return <WebView source={{ html: text }} originWhitelist={["about:*"]} onShouldStartLoadWithRequest={(request) => request.url.startsWith("about:")} javaScriptEnabled setSupportMultipleWindows={false} style={styles.web} />
+    // Untrusted HTML, shown but inert: no scripts, no requests, no way back into the app, and no leaving the page.
+    return <WebView source={{ html: lockedHtml(text) }} originWhitelist={["about:*"]} onShouldStartLoadWithRequest={(request) => request.url.startsWith("about:")} javaScriptEnabled={false} setSupportMultipleWindows={false} style={styles.web} />
   }
   return <ScrollView contentContainerStyle={styles.textPad}><Text selectable style={styles.code}>{text}</Text></ScrollView>
 }

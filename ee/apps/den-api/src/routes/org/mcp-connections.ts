@@ -26,6 +26,7 @@ import { normalizeDenTypeId, type DenTypeId } from "@openwork-ee/utils/typeid"
 import { attributeOAuthCallbackMember } from "../../audit/request-capture.js"
 import { cache, type CachedOrgMember } from "../../cache.js"
 import { db } from "../../db.js"
+import { requestReadFor } from "../../request-reads.js"
 import { env } from "../../env.js"
 import { memberSignInLink } from "../../agent-links.js"
 import { appLogger } from "../../observability/logger.js"
@@ -85,7 +86,7 @@ import { EXECUTE_CAPABILITY_TOOL_NAME, SEARCH_CAPABILITIES_TOOL_NAME } from "../
 import { listNativeProviderUsableEntries } from "../../capability-sources/native-provider-connections.js"
 import { getNativeOAuthProvider } from "../../capability-sources/provider-registry.js"
 import { connectCallbackPage } from "../../capability-sources/oauth-callback-page.js"
-import { getConnectedAccount, getOrgOAuthClient, upsertOrgOAuthClient } from "../../capability-sources/oauth-credentials.js"
+import { getConnectedAccount, getConnectedAccountForListing, getOrgOAuthClient, upsertOrgOAuthClient } from "../../capability-sources/oauth-credentials.js"
 import { assertPublicUrl, createGuardedFetch, createRealmSafeFetch } from "../../capability-sources/url-guard.js"
 import {
   externalMcpCallbackUrl,
@@ -1189,7 +1190,7 @@ async function toConnectionResponse(
   let fingerprint = readinessFingerprint(row)
   let callerExternalAccountId: string | null = null
   if (row.credentialMode === "per_member") {
-    const account = await getConnectedAccount({
+    const account = await getConnectedAccountForListing({
       organizationId: row.organizationId,
       orgMembershipId: options.callerOrgMembershipId,
       providerId: row.id,
@@ -1336,7 +1337,14 @@ export type MemberUsableConnectionFacts = {
   reconnectActionOwner?: string | null
 }
 
-export async function listMemberUsableConnectionFacts(input: {
+/** Callers holding the same request context share one read (the library's loaders call it concurrently). */
+export function listMemberUsableConnectionFacts(input: {
+  context: PluginArchActorContext
+}): Promise<MemberUsableConnectionFacts[]> {
+  return requestReadFor(input.context, "member-usable-connection-facts", () => loadMemberUsableConnectionFacts(input))
+}
+
+async function loadMemberUsableConnectionFacts(input: {
   context: PluginArchActorContext
 }): Promise<MemberUsableConnectionFacts[]> {
   const organization = input.context.organizationContext.organization

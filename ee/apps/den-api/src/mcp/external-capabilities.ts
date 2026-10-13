@@ -26,7 +26,7 @@ import {
   safeExternalMcpEndpointForLog,
   type ExternalMcpDiagnostic,
 } from "../capability-sources/external-mcp-diagnostics.js"
-import { getConnectedAccount } from "../capability-sources/oauth-credentials.js"
+import { getConnectedAccount, getConnectedAccountForListing } from "../capability-sources/oauth-credentials.js"
 import {
   evaluateToolPolicy,
   isToolDisabled,
@@ -741,7 +741,7 @@ async function probeExternalMcpConnection(input: {
     return matches
   }
   if (connection.credentialMode === "per_member") {
-    const account = await getConnectedAccount({
+    const account = await getConnectedAccountForListing({
       organizationId: connection.organizationId,
       orgMembershipId: input.member.orgMembershipId,
       providerId: connection.id,
@@ -1116,7 +1116,7 @@ export async function probeExternalConnectionStatus(input: {
     }
   }
   if (connection.credentialMode === "per_member") {
-    const account = await getConnectedAccount({
+    const account = await getConnectedAccountForListing({
       organizationId: connection.organizationId,
       orgMembershipId: input.member.orgMembershipId,
       providerId: connection.id,

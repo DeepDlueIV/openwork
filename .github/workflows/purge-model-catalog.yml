@@ -13,7 +13,6 @@ on:
       - ee/apps/gateway/src/models/**
       - ee/apps/gateway/scripts/build-models.mjs
       - .github/workflows/purge-model-catalog.yml
-  workflow_dispatch:
 
 permissions:
   contents: read
@@ -28,7 +27,9 @@ env:
 
 jobs:
   purge:
-    if: github.repository == 'different-ai/openwork'
+    # The purge token is only for dev's own workflow code: no manual runs, and
+    # never from another ref.
+    if: github.repository == 'different-ai/openwork' && github.ref == 'refs/heads/dev'
     runs-on: ubuntu-latest
     timeout-minutes: 45
 

@@ -3,6 +3,9 @@
 import Link from "next/link";
 import { ArrowLeft } from "lucide-react";
 import type { ReactNode } from "react";
+import { DenButton } from "../../../_components/ui/button";
+import { DenNotice } from "../../../_components/ui/notice";
+import { DenSkeleton } from "../../../_components/ui/skeleton";
 import { getMcpConnectionRoute, getPluginRoute, getPluginSkillRoute } from "../../../_lib/den-org";
 import { ItemRow, ItemRowsSkeleton, LinkButton } from "../../_components/item-list";
 import { LetterTile } from "../../_components/item-logo";
@@ -47,18 +50,41 @@ function DetailHeading({ backHref, backLabel, title, action, testId }: { backHre
   </div>;
 }
 
-function DetailLoading({ label }: { label: string }) {
+/** The rows of a list that is loading, in the same surface the list will fill. */
+function ListLoading({ label }: { label: string }) {
   return <div className={analyticsSurfaceClass}><ItemRowsSkeleton label={label} rows={3} /></div>;
+}
+
+/** Stat cards that are loading, in the grid the real cards will fill. */
+function StatsLoading({ cards }: { cards: number }) {
+  return <div className={`grid gap-3.5 sm:grid-cols-2 ${cards === 4 ? "lg:grid-cols-4" : cards === 3 ? "lg:grid-cols-3" : ""}`} aria-hidden="true">
+    {Array.from({ length: cards }, (_, card) => <div key={card} className={`${analyticsSurfaceClass} p-5`}><DenSkeleton className="h-3 w-24" /><DenSkeleton className="mt-4 h-7 w-16" /></div>)}
+  </div>;
+}
+
+/** The chart's frame with a placeholder where the bars will be, never loading prose. */
+function ChartLoading() {
+  return <div className={`${analyticsSurfaceClass} p-5`} role="status" aria-label="Loading uses per day" data-testid="library-usage-daily-loading">
+    <DenSkeleton className="h-3.5 w-24" /><DenSkeleton className="mt-2 h-3 w-20" />
+    <DenSkeleton className="mt-6 h-[168px] w-full" />
+    <div className="mt-3 flex justify-between"><DenSkeleton className="h-2.5 w-10" /><DenSkeleton className="h-2.5 w-10" /></div>
+  </div>;
+}
+
+/** Kept counts with a way to try again when a refresh fails; the last rows stay on screen. */
+function RefreshFailed({ onRetry }: { onRetry: () => void }) {
+  return <DenNotice tone="neutral" presentation="inline" message="Couldn't refresh. Showing the last counts." action={<DenButton variant="secondary" size="sm" onClick={onRetry}>Retry</DenButton>} />;
 }
 
 /** Uses per UTC day, with failures beside them where the kind can fail. */
 function DailyUses({ kind, days, scope }: { kind: LibraryUsageKind; days: LibraryUsageWindow; scope: { itemId: string } | { memberId: string } }) {
   const daily = useLibraryUsageBreakdown(kind, days, "day", scope);
   if (daily.isError && !daily.data) return <AnalyticsErrorState title="Couldn't load uses per day" onRetry={() => void daily.refetch()} retrying={daily.isFetching} />;
-  const points = daily.data ? dailyLibraryUsage(daily.data) : [];
+  if (!daily.data) return <ChartLoading />;
+  const points = dailyLibraryUsage(daily.data);
   const failed = kind !== "skills" && points.some((point) => point.failures > 0);
   return <div data-testid="library-usage-daily">
-    <TrendChart title="Uses per day" subtitle={`Last ${days} days`} intervalLabel="" isLoading={!daily.data}
+    <TrendChart title="Uses per day" subtitle={`Last ${days} days`} intervalLabel=""
       weeks={points.map((point) => ({ weekStart: point.date }))}
       series={[{ label: "Uses", values: points.map((point) => point.uses) }, ...(failed ? [{ label: "Failed", values: points.map((point) => point.failures) }] : [])]} />
   </div>;
@@ -121,8 +147,9 @@ export function ItemUsageDetail({ kind, days, item, now, usageHref }: {
       <div className={analyticsSurfaceClass}><AnalyticsEmptyState title={`Nobody used this ${copy.noun} in the last ${days} days`} /></div>
     ) : <>
       {people.isError && !people.data ? <AnalyticsErrorState title="Couldn't load who uses it" onRetry={() => void people.refetch()} retrying={people.isFetching} />
-        : !people.data ? <DetailLoading label="Loading who uses it" />
+        : !people.data ? <><ListLoading label="Loading who uses it" /><ChartLoading /></>
         : <>
+          {people.isError ? <RefreshFailed onRetry={() => void people.refetch()} /> : null}
           <div className={`${analyticsSurfaceClass} min-w-0 overflow-x-auto`} data-testid="library-usage-people">
             <div className={tracksFailures ? "min-w-[600px]" : "min-w-[520px]"}>
               <UsageColumns first="Person" tracksFailures={tracksFailures} />
@@ -165,8 +192,9 @@ export function PersonUsageDetail({ kind, days, memberId, report, now, usageHref
     <DetailHeading testId="library-usage-member-heading" backHref={usageHref({ member: null, item: null })} backLabel={`All ${copy.plural}`} title={person.name} />
 
     {items.isError && !items.data ? <AnalyticsErrorState title={`Couldn't load ${person.name}'s usage`} onRetry={() => void items.refetch()} retrying={items.isFetching} />
-      : !items.data ? <DetailLoading label={`Loading ${person.name}'s usage`} />
+      : !items.data ? <><StatsLoading cards={tracksFailures ? 3 : 2} /><ListLoading label={`Loading ${person.name}'s usage`} /><ChartLoading /></>
       : <>
+        {items.isError ? <RefreshFailed onRetry={() => void items.refetch()} /> : null}
         <div className={`grid gap-3.5 sm:grid-cols-2 ${tracksFailures ? "lg:grid-cols-3" : "lg:grid-cols-2"}`} data-testid="library-usage-member-summary">
           <StatCard title={`${copy.label} used`} value={`${rows.length} of ${report.items.length}`} />
           <StatCard title="Uses" value={uses.toLocaleString()} />

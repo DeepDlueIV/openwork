@@ -170,10 +170,14 @@ export async function libraryUsage(seed: Seed, { place }: { place: Place }) {
   const web = await seed.web({ den, signedInAs: den.admin, startPath: "/dashboard/analytics", headless: true, viewport });
   const memberWeb = await seed.web({ den, signedInAs: den.members.alice, startPath: "/dashboard", headless: true, viewport });
   const faults = await activityTransportFaults(web, new URL(den.ref.webUrl).origin, "/api/browser/v1/library-usage/");
+  // The drill-down breakdown reads (`/v1/library-usage?kind=…`); the report reads above use `/v1/library-usage/<kind>`.
+  const breakdownFaults = await activityTransportFaults(web, new URL(den.ref.webUrl).origin, "/api/browser/v1/library-usage?kind=");
   return {
     faults,
+    breakdownFaults,
     async [Symbol.asyncDispose]() {
       await faults[Symbol.asyncDispose]();
+      await breakdownFaults[Symbol.asyncDispose]();
       await stack.disposeAsync();
     },
     den, web, memberWeb, orgId, skills: capabilities, connectors, connectionIds, memberIds, loadSkill, callConnector, foldUsage, baseUrl: den.ref.webUrl,

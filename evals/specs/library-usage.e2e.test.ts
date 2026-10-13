@@ -331,6 +331,30 @@ test("an owner sees which plugins, skills and connectors the team uses, which fa
     await owner.screenshot();
   });
 
+  await step("a slow read of who uses it keeps the page's layout with skeletons, and an outage never shows an empty list", async () => {
+    await world.breakdownFaults.delay();
+    await owner.reload();
+    await owner.see({ testId: "library-usage-daily-loading" }, { timeoutMs: 8_000 });
+    await owner.see({ testId: "item-rows-skeleton" });
+    const stats = (await page.dom('[data-testid="library-usage-item-summary"] [data-analytics-stat]')).elements.length;
+    await owner.notSee({ text: "Loading activity…" });
+    await owner.screenshot();
+    await world.breakdownFaults.recover();
+    await owner.see({ testId: "library-usage-person" }, { timeoutMs: 30_000 });
+    const delayed = (await world.breakdownFaults.requests()).filter((request) => request.faulted && request.status === 200).length;
+    await world.breakdownFaults.fail();
+    await owner.reload();
+    await owner.see({ text: "Couldn't load who uses it" }, { timeoutMs: 30_000 });
+    const people = (await page.dom('[data-testid="library-usage-person"]')).elements.length;
+    await owner.screenshot();
+    await world.breakdownFaults.recover();
+    await owner.reload();
+    await owner.see({ testId: "library-usage-person" }, { timeoutMs: 30_000 });
+    const ok = delayed > 0 && stats === 4 && people === 0;
+    evidence.recordAssertionEvidence("drill-down loading and outage states", `${delayed} delayed breakdown reads showed list and chart skeletons under the 4 known totals; an outage showed "Couldn't load who uses it" with ${people} invented rows, then real people returned`, ok);
+    expect(ok).toBe(true);
+  });
+
   await step("from there the owner opens Alice and sees which plugins and skills she used", async () => {
     await owner.click({ role: "link", label: /Alice Teammate/ });
     await owner.see({ testId: "library-usage-member" }, { timeoutMs: 60_000 });

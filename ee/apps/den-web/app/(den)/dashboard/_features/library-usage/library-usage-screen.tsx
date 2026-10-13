@@ -57,11 +57,12 @@ function UsageRow({ kind, row, now, tracksFailures, usageHref }: { kind: Library
   </li>;
 }
 
-function UsageLoading() {
+/** Skeleton in the destination's layout: the same number of stat cards, then its list. */
+function UsageLoading({ cards = 4 }: { cards?: number }) {
   return (
     <>
-      <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4" aria-hidden="true">
-        {[0, 1, 2, 3].map((card) => <div key={card} className={`${analyticsSurfaceClass} p-5`}><DenSkeleton className="h-3 w-24" /><DenSkeleton className="mt-4 h-7 w-16" /><DenSkeleton className="mt-3 h-2.5 w-32" /></div>)}
+      <div className={`grid gap-3.5 sm:grid-cols-2 ${cards === 4 ? "lg:grid-cols-4" : cards === 3 ? "lg:grid-cols-3" : ""}`} aria-hidden="true">
+        {Array.from({ length: cards }, (_, card) => card).map((card) => <div key={card} className={`${analyticsSurfaceClass} p-5`}><DenSkeleton className="h-3 w-24" /><DenSkeleton className="mt-4 h-7 w-16" /><DenSkeleton className="mt-3 h-2.5 w-32" /></div>)}
       </div>
       <div className={analyticsSurfaceClass}><ItemRowsSkeleton label="Loading usage" rows={5} /></div>
     </>
@@ -140,7 +141,7 @@ export function LibraryUsageScreen() {
             <DenSegmented aria-label="Time range" value={String(days)} onChange={(value) => setParam("days", value)} options={libraryUsageWindows.map((window) => ({ value: String(window), label: `${window} days` }))} />
           </div>
 
-          {usage.isPending || (!report && usage.isFetching) ? <UsageLoading /> : usage.isError && !report ? (
+          {usage.isPending || (!report && usage.isFetching) ? <UsageLoading cards={focus && "memberId" in focus ? (kind === "skills" ? 2 : 3) : kind === "skills" ? 3 : 4} /> : usage.isError && !report ? (
             <AnalyticsErrorState title={`Couldn't load ${copy.plural} usage`} onRetry={() => void usage.refetch()} retrying={usage.isFetching} />
           ) : !report || !summary ? null : focus && "memberId" in focus ? (
             <PersonUsageDetail kind={kind} days={days} memberId={focus.memberId} report={report} now={now} usageHref={usageHref} />

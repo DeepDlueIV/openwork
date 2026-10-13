@@ -295,15 +295,18 @@ export function DesktopConfigProvider({ children }: DesktopConfigProviderProps) 
   }, [config.allowBuiltInExtensions]);
 
   // The built-in browser applies the member's website rules to every page it
-  // opens. While they are unknown for this sign-in it opens none, unless the
-  // organization's cached config shows it does not use agent permissions (Den
-  // omits the key when the feature is off): with no cached config, or another
-  // member's, the rules could block any site.
+  // opens. Signed out there are none. Signed in, only a fresh config from Den
+  // can say the organization has no agent permissions: until one arrives, and
+  // while Den is unreachable, the browser applies the member's last received
+  // rules, or opens nothing when it has none, even if a cached config lacks
+  // agent permissions (the organization may have turned them on since).
   const websiteRules = useMemo(() => {
-    if (known) return (config.agentPermissions?.rules ?? []).filter((rule) => rule.action === "webfetch");
-    const cached = readCachedDenDesktopConfig(getDenDesktopConfigCacheKey());
-    return cached && cached.agentPermissions === undefined ? [] : null;
-  }, [config.agentPermissions, known]);
+    if (!isSignedIn && denAuth.status !== "checking") return [];
+    const rules = config.agentPermissions?.rules;
+    if (freshConfigStatus === "ready" && known) return (rules ?? []).filter((rule) => rule.action === "webfetch");
+    if (known && rules) return rules.filter((rule) => rule.action === "webfetch");
+    return null;
+  }, [config.agentPermissions, denAuth.status, freshConfigStatus, isSignedIn, known]);
   useEffect(() => {
     void window.__OPENWORK_ELECTRON__?.browser?.setAgentPermissionRules?.(websiteRules);
   }, [websiteRules]);

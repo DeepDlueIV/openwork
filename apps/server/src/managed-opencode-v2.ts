@@ -289,7 +289,9 @@ export function renderOpencodeV2Config(input: {
       options: { rules: input.agentPermissionRules, organizationMcp: input.organizationMcp ?? {} },
     }] : []),
   ];
-  const permissions: EngineV2PermissionRule[] = [...(input.permissions ?? []), ...agentPermissionEngineV2Rules(input.agentPermissionRules ?? [])];
+  // The engine applies the last matching rule, so the managed execution
+  // denials come last: an agent permission exception never lifts them.
+  const permissions: EngineV2PermissionRule[] = [...agentPermissionEngineV2Rules(input.agentPermissionRules ?? []), ...(input.permissions ?? [])];
   return {
     $schema: "https://opencode.ai/config.json",
     providers: providerConfig,

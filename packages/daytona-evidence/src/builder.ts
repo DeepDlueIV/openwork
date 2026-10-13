@@ -1,4 +1,6 @@
+import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
+import { EVIDENCE_KIND } from "./kinds.ts";
 import { readAsset } from "@openwork/freestyle/assets";
 import { checkoutRecipe } from "@openwork/freestyle/build-recipes";
 import { dependencyFingerprint, digest, sourceTree, type ObserveBuild, type SourceEntry } from "@openwork/freestyle/cache";
@@ -96,13 +98,15 @@ touch ${root}.ready
  * builder VM and save it. The builder's unique name is the lock between
  * concurrent builds (a dev warm-up and several PRs).
  */
-export async function ensureLayer(api: DaytonaApi, input: {
+interface LayerInput {
   name: string; stage: string; parent: () => Promise<string>;
   prepare: (sandbox: Sandbox) => Promise<void>;
   /** Save memory too (running processes). Otherwise files only, from a stopped VM. */
   withMemory: boolean;
   observe: ObserveBuild; labels?: Record<string, string>;
-}): Promise<string> {
+}
+
+export async function ensureLayer(api: DaytonaApi, input: LayerInput): Promise<string> {
   const start = performance.now();
   const builderName = `ow-dy-build-${digest(input.name).slice(0, 24)}`;
   const deadline = Date.now() + 45 * 60_000;
@@ -213,7 +217,8 @@ systemctl start openwork-evidence-gateway openwork-evidence-cdp`;
  * world and apply the change when only hot-reloadable files changed, otherwise
  * build in full from the warm dev image.
  */
-export async function ensureEvidenceTemplate(sha: string, api = new DaytonaApi(), options: DaytonaBuildOptions = {}): Promise<DaytonaEvidenceTemplate> {
+async function buildEvidenceWorld<Result>(sha: string, api: DaytonaApi, options: DaytonaBuildOptions,
+  buildLayer: (input: LayerInput) => Promise<Result>): Promise<{ result: Result; runtimeFingerprint: string }> {
   if (!/^[a-f0-9]{40}$/.test(sha)) throw new Error("A full pushed source SHA is required");
   const devShaPromise = options.imageSha ? Promise.resolve(options.imageSha) : devHead(options.sourceFetch);
   const devEntriesPromise = devShaPromise.then((devSha) => devSha === sha ? null : sourceTree(devSha, options.sourceFetch));
@@ -225,7 +230,7 @@ export async function ensureEvidenceTemplate(sha: string, api = new DaytonaApi()
   const runtimeFingerprint = evidenceRuntimeFingerprint(entries);
   const state: { mode: "fast" | "full"; restart: string[] } = { mode: "full", restart: [] };
   let allowFast = true;
-  const build = () => ensureLayer(api, { name: templateName(runtimeFingerprint), stage: "daytona-world", observe, withMemory: true, labels: { sourceSha: sha },
+  const build = () => buildLayer({ name: templateName(runtimeFingerprint), stage: "daytona-world", observe, withMemory: true, labels: { sourceSha: sha },
     parent: async () => {
       const devSha = await devShaPromise;
       const devEntries = (await devEntriesPromise) ?? entries;
@@ -279,14 +284,61 @@ free -m
 `, options);
     },
   });
-  let name: string;
+  let result: Result;
   try {
-    name = await build();
+    result = await build();
   } catch (error) {
     if (state.mode !== "fast") throw error;
     observe({ stage: "fast path failed; building in full", durationMs: 0, reason: error instanceof Error ? error.message : String(error) });
     allowFast = false;
-    name = await build();
+    result = await build();
   }
-  return { name, runtimeFingerprint };
+  return { result, runtimeFingerprint };
+}
+
+/** Dev warm-up and reusable previews still save their running template under the layer lock. */
+export async function ensureEvidenceTemplate(sha: string, api = new DaytonaApi(), options: DaytonaBuildOptions = {}): Promise<DaytonaEvidenceTemplate> {
+  const built = await buildEvidenceWorld(sha, api, options, (input) => ensureLayer(api, input));
+  return { name: built.result, runtimeFingerprint: built.runtimeFingerprint };
+}
+
+export type DaytonaEvidenceLaunch = DaytonaEvidenceTemplate | { sandbox: Sandbox; runtimeFingerprint: string };
+
+/**
+ * PR-only world: reuse an active template if present, otherwise prepare a unique
+ * test-owned VM and hand it directly to the launcher. Never mutate a shared
+ * builder or save a disposable template. Base/image builds retain their locks.
+ */
+export async function prepareEvidenceWorld(sha: string, api = new DaytonaApi(), options: DaytonaBuildOptions = {}): Promise<DaytonaEvidenceLaunch> {
+  const built = await buildEvidenceWorld(sha, api, options, (input) => prepareWorldLayer(api, input, sha));
+  return { ...built.result, runtimeFingerprint: built.runtimeFingerprint };
+}
+
+export async function prepareWorldLayer(api: DaytonaApi, input: LayerInput, sourceSha: string): Promise<{ name: string } | { sandbox: Sandbox }> {
+  const start = performance.now();
+  const existing = await api.getSnapshot(input.name);
+  if (existing?.state === "active") {
+    input.observe({ stage: input.stage, durationMs: Math.round(performance.now() - start), cacheHit: true });
+    return { name: existing.name };
+  }
+  // A concurrent warm-up owns its builder and snapshot. Do not wait on, adopt,
+  // delete, or change either: this run gets an independent VM from its parent.
+  const parent = await input.parent();
+  const created = await api.createSandbox({ name: `ow-dy-evidence-${randomUUID().replaceAll("-", "")}`, snapshot: parent,
+    labels: { kind: EVIDENCE_KIND, sourceSha }, autoStopMinutes: 30, autoDeleteMinutes: 0 });
+  try {
+    const sandbox = await api.waitForSandbox(created.id, ["started"]);
+    const prepareStart = performance.now();
+    await input.prepare(sandbox);
+    input.observe({ stage: `${input.stage}-prepare`, durationMs: Math.round(performance.now() - prepareStart) });
+    // Match template preparation: do not carry build filesystem caches into
+    // the journey's later memory checkpoints.
+    await api.execChecked(sandbox, "sh -c 'sync && echo 3 > /proc/sys/vm/drop_caches'");
+    input.observe({ stage: input.stage, durationMs: Math.round(performance.now() - start), cacheHit: false,
+      reason: "ephemeral PR world; template save omitted" });
+    return { sandbox };
+  } catch (error) {
+    await api.deleteSandbox(created.id).catch(() => undefined);
+    throw error;
+  }
 }

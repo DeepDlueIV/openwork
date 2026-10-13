@@ -15,12 +15,21 @@ const SAVE_WAIT_MS = 10 * 60_000;
  */
 export async function daytonaEvidenceWeb(sourceSha: string) {
   // Loaded on demand so worlds that never pick Daytona do not load its client.
-  const { ensureEvidenceTemplate } = await import("@openwork/daytona-evidence/builder");
+  const { ensureEvidenceTemplate, prepareEvidenceWorld } = await import("@openwork/daytona-evidence/builder");
   const { DaytonaApi } = await import("@openwork/daytona-evidence/api");
   const { launchDaytonaEvidenceWorld, deleteDaytonaEvidenceWorld, evidenceControl } = await import("@openwork/daytona-evidence");
   const { startDaytonaCheckpoint } = await import("@openwork/daytona-evidence/checkpoints");
   const api = new DaytonaApi();
-  const template = await ensureEvidenceTemplate(sourceSha, api);
+  const prepare = process.env.OPENWORK_DAYTONA_EPHEMERAL_WORLD === "1" ? prepareEvidenceWorld : ensureEvidenceTemplate;
+  const template = await prepare(sourceSha, api, {
+    imageSha: process.env.OPENWORK_EVIDENCE_IMAGE_SHA || undefined,
+    observe: (event) => console.log(JSON.stringify(event)),
+    diagnostic: async (stage, log) => {
+      console.log(`::group::${stage} builder log (last 80 lines)`);
+      console.log(log.split("\n").slice(-80).join("\n"));
+      console.log("::endgroup::");
+    },
+  });
   const session = await launchDaytonaEvidenceWorld(template, sourceSha, api);
   try {
     await trackResource({ kind: "daytona-evidence", id: session.id, match: session.id, label: "evidence-web" });

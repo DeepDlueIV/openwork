@@ -73,6 +73,8 @@ jobs:
     env:
       # Sandbox provider for evidence worlds: a repository variable, Freestyle when unset.
       OPENWORK_EVIDENCE_PROVIDER: ${{ vars.OPENWORK_EVIDENCE_PROVIDER || 'freestyle' }}
+      # Disposable Core PR worlds skip template saves; dev warm-up is unchanged.
+      OPENWORK_DAYTONA_EPHEMERAL_WORLD: '1'
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.select.outputs.coreMatrix) }}

@@ -1,6 +1,7 @@
 import { randomBytes, randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { DaytonaApi, type Sandbox } from "./api.ts";
+import type { DaytonaEvidenceLaunch } from "./builder.ts";
 
 import { COPY_KIND, EVIDENCE_KIND } from "./kinds.ts";
 
@@ -28,13 +29,18 @@ export interface DaytonaEvidenceSession {
   expiresAt: string;
 }
 
-/** Starts a copy of a saved evidence world. Its processes resume where the template stopped. */
-export async function launchDaytonaEvidenceWorld(template: { name: string; runtimeFingerprint: string }, sourceSha: string, api = new DaytonaApi()): Promise<DaytonaEvidenceSession> {
+/** Starts an isolated template copy, or takes ownership of this run's freshly prepared VM. */
+export async function launchDaytonaEvidenceWorld(template: DaytonaEvidenceLaunch, sourceSha: string, api = new DaytonaApi()): Promise<DaytonaEvidenceSession> {
   if (!/^[a-f0-9]{40}$/.test(sourceSha) || !/^[a-f0-9]{40}$/.test(template.runtimeFingerprint)) throw new Error("Full source SHA and runtime fingerprint required");
-  const created = await api.createSandbox({ name: `ow-dy-evidence-${randomUUID().replaceAll("-", "")}`, snapshot: template.name,
+  if ("sandbox" in template && (template.sandbox.labels.kind !== EVIDENCE_KIND || template.sandbox.labels.sourceSha !== sourceSha)) {
+    throw new Error("Refusing to adopt an unrelated prepared world");
+  }
+  const created = "sandbox" in template ? template.sandbox : await api.createSandbox({ name: `ow-dy-evidence-${randomUUID().replaceAll("-", "")}`, snapshot: template.name,
     labels: { kind: EVIDENCE_KIND, sourceSha }, autoStopMinutes: IDLE_STOP_MINUTES, autoDeleteMinutes: 0 });
   try {
     const sandbox = await api.waitForSandbox(created.id, ["started"]);
+    if ("sandbox" in template && (sandbox.labels.kind !== EVIDENCE_KIND || sandbox.labels.sourceSha !== sourceSha
+      || (await api.readFile(sandbox, `${ROOT}/built-from-sha`))?.trim() !== sourceSha)) throw new Error("Prepared world source mismatch");
     // A template may serve several commits whose VM-side files are identical.
     if ((await api.readFile(sandbox, `${ROOT}/evidence-ready`))?.trim() !== "web-v1"
       || (await api.readFile(sandbox, `${ROOT}/runtime-fingerprint`))?.trim() !== template.runtimeFingerprint) throw new Error("Evidence world source mismatch");

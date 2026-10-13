@@ -17,6 +17,16 @@ snapshot was taken. The runner drives Chrome through Daytona's private URL for
 port 8081 (Daytona token + the in-VM gateway's access cookie). Port 8080 is the
 viewer.
 
+Core PR CI sets `OPENWORK_DAYTONA_EPHEMERAL_WORLD=1`: preparation warms only
+base/image dependencies, then the journey reuses an active commit template or
+builds a unique, private evidence VM and runs it directly. It does not save a
+new commit template or wait on another run's template save. The launcher checks
+its source SHA and runtime fingerprint before issuing access. Failed preparation
+and normal teardown delete that run's VM; idle auto-stop/auto-delete and existing
+owned-world cleanup cover abandoned runs. Reviewer checkpoints are unchanged.
+Dev warm-up and other callers still save reusable running templates with the
+existing layer locks. No fork-during-snapshot behavior is assumed.
+
 - Needs `DAYTONA_API_KEY` for an organization with Linux VMs in
   `OPENWORK_DAYTONA_EVIDENCE_REGION` (default `us-west-3`).
 - Builds: `node scripts/prepare-evidence-web.ts` with the provider set.

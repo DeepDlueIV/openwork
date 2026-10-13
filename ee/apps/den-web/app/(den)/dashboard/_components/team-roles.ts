@@ -31,9 +31,12 @@ export const TEAM_ROLE_LABELS: Record<TeamRole, string> = {
   custom: "Custom",
 };
 
+/** What the built-in Admin role is for, in one line. */
+export const ADMIN_ROLE_SUMMARY = "Invite people, manage teams, and run connections and models";
+
 export const TEAM_ROLE_DESCRIPTIONS: Record<TeamRole, string> = {
   member: "Nothing beyond what everyone can do",
-  admin: "Invite people, manage teams, and run connections and models, like every admin",
+  admin: `${ADMIN_ROLE_SUMMARY}, like every admin`,
   custom: "Choose exactly what people in this team can do",
 };
 

@@ -1,9 +1,9 @@
 "use client";
 
-import { LockKeyhole, Plus, ShieldCheck, Users } from "lucide-react";
+import { LockKeyhole, ShieldCheck, Users } from "lucide-react";
+import type { ReactNode } from "react";
 import { DenNotice } from "../../_components/ui/notice";
 import {
-  getNewRoleRoute,
   getOrgAccessFlags,
   getPermissionSetRoute,
   getTeamRoute,
@@ -11,18 +11,11 @@ import {
   permissionLockReason,
 } from "../../_lib/den-org";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
-import { ItemPanel, ItemRow, ItemRowsSkeleton, ItemSection, LinkButton } from "./item-list";
+import { IconTile } from "./access-rows";
+import { ItemPanel, ItemRow, ItemRowsSkeleton, ItemSection } from "./item-list";
 import { usePermissionSets } from "./permissions-data";
-import { TEAM_ROLE_DESCRIPTIONS } from "./team-roles";
+import { ADMIN_ROLE_SUMMARY } from "./team-roles";
 
-function RoleTile({ team = false }: { team?: boolean }) {
-  const Icon = team ? Users : ShieldCheck;
-  return (
-    <span aria-hidden className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gray-50 text-gray-500">
-      <Icon className="h-4 w-4" strokeWidth={1.8} />
-    </span>
-  );
-}
 
 function peopleLabel(count: number): string {
   return `${count} ${count === 1 ? "person" : "people"}`;
@@ -33,20 +26,25 @@ function peopleLabel(count: number): string {
  * role, read from what Den already stores: member roles, Admin teams, and team
  * permission sets. Creating a role makes a team and its permission set.
  */
-export function RolesTab() {
+export function RolesTab({ action }: { action?: ReactNode }) {
   const { orgContext, orgId, orgSlug } = useOrgDashboard();
   if (!orgContext) return null;
   const access = getOrgAccessFlags(orgContext.currentMember.role, orgContext.currentMember.isOwner, orgContext.currentMember.permissions);
   const permissionsFeature = orgFeatureEnabled(orgContext, "permissions");
-  return <RolesTabContent orgId={orgId} orgSlug={orgSlug} permissionsFeature={permissionsFeature} canViewSets={permissionsFeature && access.canViewPermissions} canCreate={permissionsFeature && access.canManageTeams && access.canManagePermissions} />;
+  return <RolesTabContent orgId={orgId} orgSlug={orgSlug} permissionsFeature={permissionsFeature} canViewSets={permissionsFeature && access.canViewPermissions} action={action} />;
 }
 
-function RolesTabContent({ orgId, orgSlug, permissionsFeature, canViewSets, canCreate }: {
+/** Whether the signed-in person can create a role (a team and its permission set). */
+export function canCreateRole(input: { permissionsFeature: boolean; canManageTeams: boolean; canManagePermissions: boolean }): boolean {
+  return input.permissionsFeature && input.canManageTeams && input.canManagePermissions;
+}
+
+function RolesTabContent({ orgId, orgSlug, permissionsFeature, canViewSets, action }: {
   orgId: string | null;
   orgSlug: string | null;
   permissionsFeature: boolean;
   canViewSets: boolean;
-  canCreate: boolean;
+  action?: ReactNode;
 }) {
   const { orgContext } = useOrgDashboard();
   const setsQuery = usePermissionSets(orgId, canViewSets);
@@ -61,17 +59,13 @@ function RolesTabContent({ orgId, orgSlug, permissionsFeature, canViewSets, canC
   const adminTeams = orgContext.teams.filter((team) => team.grantsOrganizationAdmin);
   const adminWho = [directAdmins > 0 ? peopleLabel(directAdmins) : null, ...adminTeams.map((team) => team.name)].filter(Boolean).join(", ") || "Nobody yet";
 
-  const createAction = canCreate
-    ? <LinkButton href={getNewRoleRoute(orgSlug)} size="sm" variant="primary" data-testid="roles-create"><Plus className="h-3.5 w-3.5" aria-hidden />Create role</LinkButton>
-    : null;
-
   return (
     <div className="flex flex-col gap-6" data-testid="roles-tab">
-      {createAction ? <div className="flex justify-end">{createAction}</div> : null}
+      {action ? <div className="flex justify-end">{action}</div> : null}
       <ItemSection title="Built-in roles" testId="roles-built-in">
         <ItemPanel>
           <ItemRow
-            logo={<RoleTile />}
+            logo={<IconTile icon={ShieldCheck} />}
             title="Member"
             description="What everyone can do"
             status="Everyone"
@@ -79,15 +73,15 @@ function RolesTabContent({ orgId, orgSlug, permissionsFeature, canViewSets, canC
             testId="role-row-member"
           />
           <ItemRow
-            logo={<RoleTile />}
+            logo={<IconTile icon={ShieldCheck} />}
             title="Admin"
-            description={TEAM_ROLE_DESCRIPTIONS.admin.replace(", like every admin", "")}
+            description={ADMIN_ROLE_SUMMARY}
             status={adminWho}
             href={adminSet ? getPermissionSetRoute(orgSlug, adminSet.id) : undefined}
             testId="role-row-admin"
           />
           <ItemRow
-            logo={<RoleTile />}
+            logo={<IconTile icon={ShieldCheck} />}
             title="Owner"
             description="Can do everything"
             status={owner ? (owner.user.name || owner.user.email) : undefined}
@@ -117,7 +111,7 @@ function RolesTabContent({ orgId, orgSlug, permissionsFeature, canViewSets, canC
               return (
                 <ItemRow
                   key={set.id}
-                  logo={<RoleTile team />}
+                  logo={<IconTile icon={Users} />}
                   title={team?.name ?? set.team?.name ?? set.name}
                   description={`${set.allowedCount} ${set.allowedCount === 1 ? "permission" : "permissions"}`}
                   status={peopleLabel(memberCount)}

@@ -8,11 +8,11 @@ import { DenButton } from "../../_components/ui/button";
 import { DenInput } from "../../_components/ui/input";
 import { DenNotice } from "../../_components/ui/notice";
 import { DenSegmented } from "../../_components/ui/segmented";
-import { DenSelect } from "../../_components/ui/select";
 import { DenStickyActionBar } from "../../_components/ui/sticky-action-bar";
 import { getMembersRoute, getTeamRoute, orgFeatureEnabled } from "../../_lib/den-org";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
 import { useDenToast } from "./den-toast";
+import { AccessRow, AddPicker, Avatar, RemoveButton } from "./access-rows";
 import { ItemPanel, LinkButton } from "./item-list";
 import { RolePermissionsNotSavedError, useCreateRole, type PermissionStatus } from "./permissions-data";
 import {
@@ -50,12 +50,17 @@ function RoleNewContent({ ready }: { ready: ReadyAccess }) {
   const [name, setName] = useState("");
   const [memberIds, setMemberIds] = useState<string[]>([]);
   const [start, setStart] = useState<RoleStart>("member");
-  const [allowed, setAllowed] = useState<ReadonlySet<PermissionKey>>(() => new Set(roleStartKeys("member", ready.held)));
+  // Switches the person changed by hand. Choosing another starting point keeps them.
+  const [overrides, setOverrides] = useState<ReadonlyMap<PermissionKey, PermissionStatus>>(new Map());
+  const base = new Set(roleStartKeys(start, ready.held));
+  const allowed = new Set(PERMISSION_KEYS.filter((key) => (overrides.get(key) ?? (base.has(key) ? "allow" : "deny")) === "allow"));
   const back = { href: `${getMembersRoute(ready.orgSlug)}?tab=roles`, label: "Roles" };
 
   const people = (orgContext?.members ?? []).filter((member) => member.userId !== null);
   const chosen = memberIds.flatMap((id) => people.find((member) => member.id === id) ?? []);
-  const addable = people.filter((member) => !memberIds.includes(member.id));
+  const addable = people
+    .filter((member) => !memberIds.includes(member.id))
+    .map((member) => ({ id: member.id, name: member.user.name || member.user.email, detail: member.user.email }));
   const trimmed = name.trim();
 
   const rows: PermissionEditorRow[] = PERMISSION_KEYS.map((key) => {
@@ -66,17 +71,11 @@ function RoleNewContent({ ready }: { ready: ReadyAccess }) {
   function chooseStart(next: RoleStart) {
     create.reset();
     setStart(next);
-    setAllowed(new Set(roleStartKeys(next, ready.held)));
   }
 
   function toggle(key: PermissionKey, next: PermissionStatus) {
     create.reset();
-    setAllowed((current) => {
-      const copy = new Set(current);
-      if (next === "allow") copy.add(key);
-      else copy.delete(key);
-      return copy;
-    });
+    setOverrides((current) => new Map(current).set(key, next));
   }
 
   async function submit() {
@@ -104,38 +103,23 @@ function RoleNewContent({ ready }: { ready: ReadyAccess }) {
       </label>
 
       <div className="flex flex-col gap-1.5">
-        <span id="role-new-people-label" className="text-[13px] font-medium text-gray-700">People</span>
+        <span className="text-[13px] font-medium text-gray-700">People</span>
         <ItemPanel>
-          {chosen.map((member) => (
-            <div key={member.id} className="flex items-center gap-3.5 px-5 py-3" data-testid="role-new-person">
-              <span className="min-w-0 flex-1">
-                <span className="block truncate text-[14px] font-medium leading-5 text-gray-900">{member.user.name || member.user.email}</span>
-                <span className="block truncate text-[13px] leading-[18px] text-gray-500">{member.user.email}</span>
-              </span>
-              <button
-                type="button"
-                onClick={() => setMemberIds((current) => current.filter((id) => id !== member.id))}
-                className="shrink-0 rounded-lg px-2 py-1 text-[12px] font-medium text-red-600 transition-colors hover:bg-red-50"
-                aria-label={`Remove ${member.user.name || member.user.email}`}
-              >
-                Remove
-              </button>
-            </div>
-          ))}
-          <div className="px-5 py-3">
-            <DenSelect
-              aria-labelledby="role-new-people-label"
-              value=""
-              disabled={addable.length === 0}
-              onChange={(event) => {
-                const id = event.target.value;
-                if (id) setMemberIds((current) => [...current, id]);
-              }}
-              data-testid="role-new-add-person"
-            >
-              <option value="">{addable.length === 0 ? "Everyone is added" : "Add person"}</option>
-              {addable.map((member) => <option key={member.id} value={member.id}>{member.user.name || member.user.email}</option>)}
-            </DenSelect>
+          {chosen.map((member) => {
+            const label = member.user.name || member.user.email;
+            return (
+              <AccessRow
+                key={member.id}
+                lead={<Avatar name={label} />}
+                title={label}
+                description={member.user.email}
+                trailing={<RemoveButton label={`Remove ${label}`} onClick={() => setMemberIds((current) => current.filter((id) => id !== member.id))} />}
+                testId="role-new-person"
+              />
+            );
+          })}
+          <div className="flex px-5 py-3">
+            <AddPicker kind="person" options={addable} onAdd={(ids) => setMemberIds((current) => [...current, ...ids])} />
           </div>
         </ItemPanel>
       </div>

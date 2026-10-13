@@ -27,6 +27,7 @@ import {
   getJoinOrgRoute,
   getOrgAccessFlags,
   getMembersRoute,
+  getNewRoleRoute,
   getTeamRoute,
   orgFeatureEnabled,
   splitRoleString,
@@ -47,7 +48,7 @@ import { DenSelect } from "../../_components/ui/select";
 import { createOrganizationInstallLink } from "../../_lib/install-link-data";
 import { OrgMemberIdentity } from "./org-member-identity";
 import { MemberEffectivePermissions, canViewMemberPermissions } from "./member-effective-permissions";
-import { RolesTab } from "./roles-tab";
+import { RolesTab, canCreateRole } from "./roles-tab";
 
 type MembersTab = "members" | "teams" | "roles";
 
@@ -613,7 +614,13 @@ export function ManageMembersScreen() {
         ]}
       />
 
-      {shownTab === "roles" ? <RolesTab /> : null}
+      {shownTab === "roles" ? (
+        <RolesTab
+          action={orgContext && canCreateRole({ permissionsFeature: orgFeatureEnabled(orgContext, "permissions"), canManageTeams: access.canManageTeams, canManagePermissions: access.canManagePermissions })
+            ? <DenButton icon={Plus} href={getNewRoleRoute(orgSlug)} data-testid="roles-create">Create role</DenButton>
+            : undefined}
+        />
+      ) : null}
 
       {shownTab === "members" ? inviteForm : null}
       {shownTab === "members" ? editMemberForm : null}

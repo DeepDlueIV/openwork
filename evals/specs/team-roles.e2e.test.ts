@@ -48,18 +48,20 @@ test("an owner gives the Sales team the Admin role from its team page, and only 
     await owner.screenshot();
   });
 
-  await step("the owner clicks Change role and picks Admin", async () => {
+  await step("the owner clicks Change role and picks Admin, right on the team page", async () => {
     await owner.click({ testId: "team-role-change" });
-    await owner.see({ testId: "team-role-dialog" }, { timeoutMs: 15_000 });
+    await owner.see({ testId: "team-role-choice" }, { timeoutMs: 15_000 });
     await owner.click({ testId: "team-role-option-admin" });
     await owner.see({ role: "button", label: "Change to Admin" });
-    evidence.recordAssertionEvidence("The dialog offers Member, Admin and Custom as one choice", "Admin selected; the action names the change", true);
+    await owner.notSee({ role: "dialog" });
+    evidence.recordAssertionEvidence("Member, Admin and Custom open in place under the current role, no dialog", "Admin selected; the action names the change", true);
     await owner.screenshot();
   });
 
   await step("after: Sales is Admin, and the page lists what Sales can now do", async () => {
     await owner.click({ testId: "team-role-save" });
     await owner.see({ testId: "team-role-name" }, { text: "Admin", timeoutMs: 30_000 });
+    await owner.see({ testId: "den-toast" }, { text: /Sales is now Admin/ });
     await owner.see({ testId: "team-role-also" }, { text: /Invite people/ });
     const team = await probe.api(world.owner, `/v1/teams/${encodeURIComponent(world.teams.sales)}`, { headers: world.scope });
     const flagged = isRecord(team.body) && isRecord(team.body.team) && team.body.team.grantsOrganizationAdmin === true;
@@ -97,8 +99,10 @@ test("an owner creates a Skill publishers role from Members › Roles, and only 
     await owner.click({ testId: "roles-create" });
     await owner.see({ testId: "role-new-name" }, { timeoutMs: 30_000 });
     await owner.type({ testId: "role-new-name" }, "Skill publishers");
-    await owner.click({ role: "button", label: "People" });
-    await owner.click({ role: "option", label: "Nora Newcomer" });
+    await owner.click({ role: "button", label: "Add person" });
+    await owner.see({ testId: "access-add-person-popover" }, { timeoutMs: 15_000 });
+    await owner.click({ role: "option", label: /Nora Newcomer/ });
+    await owner.click({ role: "button", label: "Add Nora Newcomer" });
     await owner.see({ testId: "role-new-person" }, { text: /Nora Newcomer/ });
     await owner.click({ role: "switch", label: /^Share with everyone$/ });
     evidence.recordAssertionEvidence("The form takes a name, people and permissions", "Nora added; Share with everyone on", true);

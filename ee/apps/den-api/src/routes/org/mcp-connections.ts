@@ -24,6 +24,7 @@ import {
 } from "@openwork-ee/den-db/schema"
 import { normalizeDenTypeId, type DenTypeId } from "@openwork-ee/utils/typeid"
 import { attributeOAuthCallbackMember } from "../../audit/request-capture.js"
+import { cache, type CachedOrgMember } from "../../cache.js"
 import { db } from "../../db.js"
 import { env } from "../../env.js"
 import { memberSignInLink } from "../../agent-links.js"
@@ -935,8 +936,13 @@ function tokenEndpointAuthMethod(value: unknown): "client_secret_basic" | "clien
   return value === "client_secret_basic" || value === "client_secret_post" ? value : undefined
 }
 
-function resolveCreatorName(context: PluginArchActorContext["organizationContext"], memberId: string): string | null {
-  const member = context.members.find((entry) => entry.id === memberId)
+/** The organization's members, for naming who created or edited something (Redis-cached). */
+function organizationMembers(context: PluginArchActorContext["organizationContext"]) {
+  return cache.org.members(context.organization.id)
+}
+
+function resolveCreatorName(members: readonly CachedOrgMember[], memberId: string): string | null {
+  const member = members.find((entry) => entry.id === memberId)
   return member?.user.name.trim() || member?.user.email || null
 }
 
@@ -944,8 +950,8 @@ function resolveCreatorName(context: PluginArchActorContext["organizationContext
  * Display names only — never an email fallback: this label reaches non-admin
  * members through the tools endpoint and agent policy_blocked errors.
  */
-function resolvePolicyEditorLabel(context: PluginArchActorContext["organizationContext"], memberId: string): string | null {
-  const member = context.members.find((entry) => entry.id === memberId)
+function resolvePolicyEditorLabel(members: readonly CachedOrgMember[], memberId: string): string | null {
+  const member = members.find((entry) => entry.id === memberId)
   return member?.user.name.trim() || null
 }
 
@@ -1341,11 +1347,14 @@ export async function listMemberUsableConnectionFacts(input: {
     orgMembershipId: member.id,
     teamIds,
   })
-  const provenance = await requiredByForConnections({ context: input.context, includeAllPluginNames: false, rows })
+  const [provenance, members] = await Promise.all([
+    requiredByForConnections({ context: input.context, includeAllPluginNames: false, rows }),
+    organizationMembers(input.context.organizationContext),
+  ])
   const connections = await Promise.all(rows.map((row) =>
     toConnectionResponse(row, {
       callerOrgMembershipId: member.id,
-      createdByName: resolveCreatorName(input.context.organizationContext, row.createdByOrgMembershipId),
+      createdByName: resolveCreatorName(members, row.createdByOrgMembershipId),
       // The member who added a connection manages who can use it.
       includeAccess: row.createdByOrgMembershipId === member.id,
       requiredBy: provenance.requiredBy.get(row.id) ?? [],
@@ -1803,7 +1812,7 @@ async function createExternalConnectionResponse(
   }
   const response = await toConnectionResponse(refreshed ?? created, {
     callerOrgMembershipId: payload.currentMember.id,
-    createdByName: resolveCreatorName(payload, (refreshed ?? created).createdByOrgMembershipId),
+    createdByName: resolveCreatorName(await organizationMembers(payload), (refreshed ?? created).createdByOrgMembershipId),
     includeAccess: true,
     requiredBy: [],
     identityManagedBy: [],
@@ -2047,7 +2056,7 @@ async function replaceExternalConnectionResponse(
   })
   const response = await toConnectionResponse(result.connection, {
     callerOrgMembershipId: payload.currentMember.id,
-    createdByName: resolveCreatorName(payload, result.connection.createdByOrgMembershipId),
+    createdByName: resolveCreatorName(await organizationMembers(payload), result.connection.createdByOrgMembershipId),
     includeAccess: true,
     requiredBy: provenance.requiredBy.get(result.connection.id) ?? [],
     identityManagedBy: provenance.identityManagedBy.get(result.connection.id) ?? [],
@@ -2386,11 +2395,14 @@ export function registerMcpConnectionRoutes<T extends { Variables: OrgRouteVaria
           connectionIds: allRows.map((row) => row.id),
         })
         const rows = allRows.filter((row) => !retiredIds.has(row.id))
-        const provenance = await requiredByForConnections({ context, includeAllPluginNames: true, rows })
+        const [provenance, members] = await Promise.all([
+          requiredByForConnections({ context, includeAllPluginNames: true, rows }),
+          organizationMembers(payload),
+        ])
         const connections = await Promise.all(rows.map((row) =>
           toConnectionResponse(row, {
             callerOrgMembershipId: payload.currentMember.id,
-            createdByName: resolveCreatorName(payload, row.createdByOrgMembershipId),
+            createdByName: resolveCreatorName(members, row.createdByOrgMembershipId),
             includeAccess: true,
             requiredBy: provenance.requiredBy.get(row.id) ?? [],
             identityManagedBy: provenance.identityManagedBy.get(row.id) ?? [],
@@ -2461,7 +2473,7 @@ export function registerMcpConnectionRoutes<T extends { Variables: OrgRouteVaria
       }
 
       const body = c.req.valid("json")
-      const updatedByName = resolvePolicyEditorLabel(payload, payload.currentMember.id)
+      const updatedByName = resolvePolicyEditorLabel(await organizationMembers(payload), payload.currentMember.id)
       const policy: ExternalMcpToolPolicy = {
         version: 1,
         allDisabled: body.allDisabled,
@@ -2884,7 +2896,7 @@ export function registerMcpConnectionRoutes<T extends { Variables: OrgRouteVaria
         })
         const response = await toConnectionResponse(created, {
           callerOrgMembershipId: payload.currentMember.id,
-          createdByName: resolveCreatorName(payload, created.createdByOrgMembershipId),
+          createdByName: resolveCreatorName(await organizationMembers(payload), created.createdByOrgMembershipId),
           includeAccess: true,
           requiredBy: [],
           identityManagedBy: [],
@@ -3127,7 +3139,7 @@ export function registerMcpConnectionRoutes<T extends { Variables: OrgRouteVaria
       })
       return c.json(await toConnectionResponse(connection, {
         callerOrgMembershipId: payload.currentMember.id,
-        createdByName: resolveCreatorName(payload, connection.createdByOrgMembershipId),
+        createdByName: resolveCreatorName(await organizationMembers(payload), connection.createdByOrgMembershipId),
         includeAccess: true,
         requiredBy: provenance.requiredBy.get(connection.id) ?? [],
         identityManagedBy: provenance.identityManagedBy.get(connection.id) ?? [],
@@ -3637,7 +3649,7 @@ export function registerMcpConnectionRoutes<T extends { Variables: OrgRouteVaria
       })
       return c.json(await toConnectionResponse(connection, {
         callerOrgMembershipId: payload.currentMember.id,
-        createdByName: resolveCreatorName(payload, connection.createdByOrgMembershipId),
+        createdByName: resolveCreatorName(await organizationMembers(payload), connection.createdByOrgMembershipId),
         includeAccess: true,
         requiredBy: provenance.requiredBy.get(connection.id) ?? [],
         identityManagedBy: provenance.identityManagedBy.get(connection.id) ?? [],

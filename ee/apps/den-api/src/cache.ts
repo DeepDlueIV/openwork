@@ -1,11 +1,14 @@
 import { peopleMemberCondition } from "./setup-agent-members.js"
 import { asc, and, eq, gt, isNull, lt, lte } from "@openwork-ee/den-db/drizzle"
-import { AuthSessionTable, AuthUserTable, InvitationTable, MemberTable, OAuthConsentTable, OrganizationTable } from "@openwork-ee/den-db/schema"
+import { readFeatureRollouts, readOrganizationFeatureOverrides } from "@openwork-ee/den-db/organization-features"
+import { AuthSessionTable, AuthUserTable, InvitationTable, MemberTable, OAuthConsentTable, OrganizationTable, TeamTable } from "@openwork-ee/den-db/schema"
+import { isFeatureKey, type FeatureOverrides, type FeatureRollouts } from "@openwork/features"
 import { normalizeDenTypeId, type DenTypeId, type DenTypeIdName } from "@openwork-ee/utils/typeid"
 import { createHash } from "node:crypto"
 import Redis from "ioredis"
 import { db } from "./db.js"
 import { env } from "./env.js"
+import { bumpGeneration, readThroughGeneration } from "./generation-cache.js"
 import { roleIncludesOwner } from "./organization-member-guards.js"
 import { getDenSessionExpiresAt, getDenSessionRefreshCutoff } from "./session-lifetime.js"
 
@@ -14,8 +17,8 @@ type MemberId = typeof MemberTable.$inferSelect.id
 type UserId = typeof AuthUserTable.$inferSelect.id
 type OAuthConsentId = typeof OAuthConsentTable.$inferSelect.id
 
-type CacheParent = "auth" | "org"
-type CacheChild = "grant" | "grant-revoked" | "member" | "member-revoked" | "members" | "session" | "session-id" | "session-revoked" | "session-id-revoked"
+type CacheParent = "auth" | "features" | "org"
+type CacheChild = "generation" | "grant" | "grant-revoked" | "member" | "member-revoked" | "members" | "member-teams" | "overrides" | "rollouts" | "session" | "session-id" | "session-revoked" | "session-id-revoked"
 
 type CacheKeyInput = {
   parent: CacheParent
@@ -80,6 +83,50 @@ export type CachedOrgMember = {
     name: string
     image: string | null
   }
+}
+
+type CachedMemberTeam = Pick<typeof TeamTable.$inferSelect, "id" | "name" | "organizationId" | "createdAt" | "updatedAt">
+
+function parseCachedMemberTeams(raw: string | null): CachedMemberTeam[] | null {
+  if (!raw) return null
+  let parsed: unknown
+  try { parsed = JSON.parse(raw) } catch { return null }
+  if (!Array.isArray(parsed)) return null
+  const teams: CachedMemberTeam[] = []
+  for (const value of parsed) {
+    if (!isRecord(value)) return null
+    const id = readDenId("team", value.id)
+    const organizationId = readDenId("organization", value.organizationId)
+    const name = readString(value.name)
+    const createdAt = readDate(value.createdAt)
+    const updatedAt = readDate(value.updatedAt)
+    if (!id || !organizationId || name === null || !createdAt || !updatedAt) return null
+    teams.push({ id, organizationId, name, createdAt, updatedAt })
+  }
+  return teams
+}
+
+async function getMemberTeams(input: {
+  organizationId: OrgId
+  memberId: MemberId
+  revision: () => Promise<string | null>
+  enabled: () => Promise<boolean>
+  load: () => Promise<CachedMemberTeam[]>
+}) {
+  if (!activeRedisClient || !await input.enabled()) return input.load()
+  // This indexed PRIMARY read is never cached. It checks both active membership
+  // and the DB-authoritative team revision before trusting any Redis entry.
+  // DB failure rejects, even if Redis has a previously valid authorization.
+  const revision = await input.revision()
+  if (revision === null) return []
+  return getOrSet({
+    parent: "org",
+    child: "member-teams",
+    id: `${input.organizationId}:${revision}:${input.memberId}`,
+    ttlSeconds: DEFAULT_CACHE_TTL_SECONDS,
+    parse: parseCachedMemberTeams,
+    load: input.load,
+  })
 }
 
 const DEFAULT_CACHE_TTL_SECONDS = 60
@@ -264,6 +311,51 @@ function parseCachedOrgMembership(raw: string | null): CachedOrgMembership | nul
   const role = readString(parsed.role)
   const isOwner = typeof parsed.isOwner === "boolean" ? parsed.isOwner : null
   return id && role && isOwner !== null ? { id, role, isOwner } : null
+}
+
+function parseJsonRecord(raw: string | null): Record<string, unknown> | null {
+  if (!raw) {
+    return null
+  }
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return null
+  }
+  return isRecord(parsed) && !Array.isArray(parsed) ? parsed : null
+}
+
+// Unknown keys (a feature removed from the registry since the write) are
+// dropped, as the database readers drop them; a malformed value rejects the entry.
+function parseCachedFeatureRollouts(raw: string | null): FeatureRollouts | null {
+  const parsed = parseJsonRecord(raw)
+  if (!parsed) {
+    return null
+  }
+  const rollouts: FeatureRollouts = {}
+  for (const [key, value] of Object.entries(parsed)) {
+    if (!isRecord(value) || typeof value.enabled !== "boolean" || typeof value.killed !== "boolean") {
+      return null
+    }
+    if (isFeatureKey(key)) rollouts[key] = { enabled: value.enabled, killed: value.killed }
+  }
+  return rollouts
+}
+
+function parseCachedFeatureOverrides(raw: string | null): FeatureOverrides | null {
+  const parsed = parseJsonRecord(raw)
+  if (!parsed) {
+    return null
+  }
+  const overrides: FeatureOverrides = {}
+  for (const [key, value] of Object.entries(parsed)) {
+    if (typeof value !== "boolean") {
+      return null
+    }
+    if (isFeatureKey(key)) overrides[key] = value
+  }
+  return overrides
 }
 
 function parseCachedActiveSessionId(raw: string | null) {
@@ -550,6 +642,57 @@ async function loadOrgMembership(input: { organizationId: OrgId; userId: UserId 
     .limit(1)
   const member = rows[0]
   return member ? { id: member.id, role: member.role, isOwner: roleIncludesOwner(member.role) } : null
+}
+
+const FEATURES_GENERATION_KEY = cacheKey({ parent: "features", child: "generation", id: "deployment" })
+
+function logFeatureCacheError(stage: "get" | "set", child: CacheChild, id: string, error: unknown) {
+  console.error(`openwork_cache_${stage}_failed`, { cacheParent: "features", cacheChild: child, id, error })
+}
+
+/**
+ * Feature flags are resolved on every org request. Every replica shares one
+ * generation for all feature rows, bumped by den-api's feature writers
+ * (features.ts updateFeatureRollout / updateOrganizationFeatureOverrides) after
+ * the write. Successful bumps invalidate every replica immediately; the TTL
+ * bounds failed bumps and external writes for ordinary flags. Permission
+ * authorization MUST use features.ts, which overrides cached permissions with
+ * a live database read regardless of whether invalidation succeeded.
+ */
+function getFeatureRollouts(): Promise<FeatureRollouts> {
+  return readThroughGeneration({
+    redis: activeRedisClient,
+    generationKey: FEATURES_GENERATION_KEY,
+    entryKey: (generation) => cacheKey({ parent: "features", child: "rollouts", id: generation }),
+    ttlSeconds: DEFAULT_CACHE_TTL_SECONDS,
+    parse: parseCachedFeatureRollouts,
+    load: () => readFeatureRollouts(db),
+    onError: (stage, error) => logFeatureCacheError(stage, "rollouts", "deployment", error),
+  })
+}
+
+function getOrganizationFeatureOverrides(organizationId: OrgId): Promise<FeatureOverrides> {
+  return readThroughGeneration({
+    redis: activeRedisClient,
+    generationKey: FEATURES_GENERATION_KEY,
+    entryKey: (generation) => cacheKey({ parent: "features", child: "overrides", id: `${generation}:${organizationId}` }),
+    ttlSeconds: DEFAULT_CACHE_TTL_SECONDS,
+    parse: parseCachedFeatureOverrides,
+    load: () => readOrganizationFeatureOverrides(db, organizationId),
+    onError: (stage, error) => logFeatureCacheError(stage, "overrides", organizationId, error),
+  })
+}
+
+async function invalidateFeatures() {
+  const redis = activeRedisClient
+  if (!redis) {
+    return
+  }
+  try {
+    await bumpGeneration(redis, FEATURES_GENERATION_KEY)
+  } catch (error) {
+    console.error("openwork_cache_delete_failed", { cacheParent: "features", cacheChild: "generation", error })
+  }
 }
 
 async function getAuthSessionResult(token: string): Promise<CacheResult<CachedAuthSession | null>> {
@@ -878,6 +1021,12 @@ export const cache = {
     deleteMembers: deleteOrgMembers,
     deleteMembership: deleteOrgMembership,
     revokeMembership: revokeOrgMembership,
+    memberTeams: getMemberTeams,
+  },
+  features: {
+    rollouts: getFeatureRollouts,
+    overrides: getOrganizationFeatureOverrides,
+    invalidate: invalidateFeatures,
   },
 }
 

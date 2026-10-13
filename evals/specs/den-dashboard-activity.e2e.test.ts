@@ -30,7 +30,7 @@ test("an owner sees real workspace additions, keeps them during an outage, and d
     return records(isRecord(response.body) ? response.body.connections : undefined);
   };
 
-  await step("before: a slow connection read shows loading, not an empty history", async () => {
+  await step("before: a slow Activity read shows loading, not an empty history", async () => {
     try {
       await admin.see({ testId: "workspace-switcher-trigger" }, { text: /Activity workspace|Activity archive/, timeoutMs: 60_000 });
     } catch (error) {
@@ -51,7 +51,7 @@ test("an owner sees real workspace additions, keeps them during an outage, and d
     const loadingRows = (await page.dom('[data-testid="dashboard-activity-loading"] > div')).elements;
     expect(loadingRows.map((row) => row.rect.height)).toEqual([52, 52, 52, 52, 52]);
     await admin.notSee({ text: "Nothing new" });
-    evidence.recordAssertionEvidence("loading is distinct from an empty history", "An 8-second delay on the real connection read leaves five 52px placeholders matching the populated rows; Nothing new is absent.", true);
+    evidence.recordAssertionEvidence("loading is distinct from an empty history", "An 8-second delay on the real Activity read leaves five 52px placeholders matching the populated rows; Nothing new is absent.", true);
     await admin.screenshot();
   });
 
@@ -65,7 +65,7 @@ test("an owner sees real workspace additions, keeps them during an outage, and d
     expect(delayed.length).toBeGreaterThan(0);
     expect(await connectionInventory()).toHaveLength(0);
     await world.faults.recover();
-    evidence.recordAssertionEvidence("a successful empty read says Nothing new", `${delayed.length} delayed connection reads really completed with HTTP 200; the workspace has zero connections and the old Quick add heading is gone.`, true);
+    evidence.recordAssertionEvidence("a successful empty read says Nothing new", `${delayed.length} delayed Activity reads really completed with HTTP 200; the workspace has zero connections and the old Quick add heading is gone.`, true);
     await admin.screenshot();
   });
 
@@ -143,10 +143,10 @@ test("an owner sees real workspace additions, keeps them during an outage, and d
     const before = await failedCount();
     await admin.click({ role: "button", label: "Retry" });
     expect(await rowTitles()).toEqual([connectionTitle]);
-    await eventually(async () => await failedCount() > before, { within: 15_000, label: "Retry to reach the unavailable connection service" });
+    await eventually(async () => await failedCount() > before, { within: 15_000, label: "Retry to reach the unavailable Activity service" });
     await admin.see({ text: /Couldn’t refresh\. Showing activity from .+\./ });
     expect(await rowTitles()).toEqual([connectionTitle]);
-    evidence.recordAssertionEvidence("Retry really retries without clearing the row", `Failed connection reads increased from ${before} to ${await failedCount()}; the previous activity row stayed visible before and after the request.`, true);
+    evidence.recordAssertionEvidence("Retry really retries without clearing the row", `Failed Activity reads increased from ${before} to ${await failedCount()}; the previous activity row stayed visible before and after the request.`, true);
     await admin.screenshot();
   });
 

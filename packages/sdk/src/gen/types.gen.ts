@@ -163,6 +163,7 @@ export type NotFoundError = {
 
 export type AdminFeature = {
   key:
+    | "teamMembershipCache"
     | "managedDeployments"
     | "slackAssistant"
     | "slackWorkbotReplies"
@@ -209,6 +210,7 @@ export type AdminUsersPageResponse = {
 export type AdminOrganizationsPageResponse = {
   organizations: Array<{
     capabilities: {
+      teamMembershipCache: boolean;
       managedDeployments: boolean;
       slackAssistant: boolean;
       slackWorkbotReplies: boolean;
@@ -228,6 +230,15 @@ export type AdminOrganizationsPageResponse = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates: {
+      teamMembershipCache: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       managedDeployments: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -363,6 +374,7 @@ export type AdminOverviewResponse = {
   }>;
   organizations: Array<{
     capabilities: {
+      teamMembershipCache: boolean;
       managedDeployments: boolean;
       slackAssistant: boolean;
       slackWorkbotReplies: boolean;
@@ -382,6 +394,15 @@ export type AdminOverviewResponse = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates: {
+      teamMembershipCache: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       managedDeployments: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -1100,6 +1121,47 @@ export type OrganizationContextResponse = {
     auditLogs: boolean;
   };
   [key: string]: unknown;
+};
+
+export type DashboardActivityTarget =
+  | {
+      type: "connection";
+      connectionId: string;
+    }
+  | {
+      type: "llm_provider";
+      llmProviderId: string;
+    }
+  | {
+      type: "gateway_provider";
+      inferenceProviderId: string;
+    }
+  | {
+      type: "marketplace";
+      marketplaceId: string;
+    }
+  | {
+      type: "skill";
+      pluginId: string;
+      skillId: string;
+    };
+
+export type DashboardActivityEntry = {
+  id: string;
+  kind: "connection" | "skill" | "plugin" | "provider";
+  title: string;
+  detail: string;
+  occurredAt: string;
+  target: DashboardActivityTarget;
+  logo?: {
+    name: string;
+    url?: string;
+    providerId?: string;
+  };
+};
+
+export type DashboardActivity = {
+  activity: Array<DashboardActivityEntry>;
 };
 
 export type DeleteOrganizationResponse = {
@@ -5946,6 +6008,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
    */
   200: {
     capabilities: {
+      teamMembershipCache: boolean;
       managedDeployments: boolean;
       slackAssistant: boolean;
       slackWorkbotReplies: boolean;
@@ -5965,6 +6028,15 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates: {
+      teamMembershipCache: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       managedDeployments: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -6088,6 +6160,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       id: string;
     };
     capabilities: {
+      teamMembershipCache: boolean;
       managedDeployments: boolean;
       slackAssistant: boolean;
       slackWorkbotReplies: boolean;
@@ -6107,6 +6180,15 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates: {
+      teamMembershipCache: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       managedDeployments: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -8680,6 +8762,35 @@ export type PostV1OrgsInvitationsAcceptResponses = {
 
 export type PostV1OrgsInvitationsAcceptResponse =
   PostV1OrgsInvitationsAcceptResponses[keyof PostV1OrgsInvitationsAcceptResponses];
+
+export type GetV1OrgActivityData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/org/activity";
+};
+
+export type GetV1OrgActivityErrors = {
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Only workspace owners and admins can read dashboard activity.
+   */
+  403: ForbiddenError;
+};
+
+export type GetV1OrgActivityError = GetV1OrgActivityErrors[keyof GetV1OrgActivityErrors];
+
+export type GetV1OrgActivityResponses = {
+  /**
+   * The newest dashboard activity.
+   */
+  200: DashboardActivity;
+};
+
+export type GetV1OrgActivityResponse = GetV1OrgActivityResponses[keyof GetV1OrgActivityResponses];
 
 export type GetV1ManagedDeploymentsConfigurationData = {
   body?: never;

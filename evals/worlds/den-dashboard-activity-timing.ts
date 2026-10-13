@@ -7,7 +7,7 @@ export function activityApiTimings(log: string) {
     if (typeof entry !== "object" || entry === null || !("http_route" in entry) || !("duration_ms" in entry)
       || !("http_method" in entry) || entry.http_method !== "GET" || !("http_status_code" in entry)
       || typeof entry.http_route !== "string" || typeof entry.duration_ms !== "number" || typeof entry.http_status_code !== "number"
-      || !/^\/v1\/(plugins|marketplaces|config-objects|mcp-connections|llm-providers|inference-providers)(\/|$)/.test(entry.http_route)) return [];
+      || !/^\/v1\/(org\/activity|plugins|marketplaces|config-objects|mcp-connections|llm-providers|inference-providers)(\/|$)/.test(entry.http_route)) return [];
     return [{ route: entry.http_route, durationMs: entry.duration_ms, status: entry.http_status_code }];
   });
 }
@@ -39,7 +39,11 @@ export async function activityTiming(web: Surface) {
       loadingStarts: performance.getEntriesByName("activity-loading").map((entry) => entry.startTime),
       loadingMs: loading === null || rows === null ? null : Math.round(rows - loading),
       rowsAtMs: rows === null ? null : Math.round(rows),
-      versionReads: requests.filter((entry) => entry.route.endsWith("/versions")).length,
+      activityReads: requests.filter((entry) => entry.route === "/api/browser/v1/org/activity").length,
+      // The old client-side Activity fan-out: per-plugin contents, per-marketplace
+      // attachments and per-skill version histories.
+      fanoutReads: requests.filter((entry) => entry.route.endsWith("/versions") || entry.route.endsWith("/resolved")
+        || (entry.route.includes("/marketplaces/") && entry.route.endsWith("/plugins"))).length,
       requests,
     };
   });

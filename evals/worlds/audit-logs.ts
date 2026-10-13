@@ -5,6 +5,8 @@ import { allocateFreePort, callFunctionOnSurface, evaluateOnSurface } from "@ope
 import { createAdmin, localMysqlIsRunning, localRedisIsRunning, queryDenDatabase, SkipError, type Den, type Place, type Seed } from "@openwork/env";
 import { defaultDaytonaExec, execInSandbox } from "@openwork/hosts";
 
+import { enableOrganizationCapabilities } from "./organization-capabilities.ts";
+
 const execFileAsync = promisify(execFile);
 const root = fileURLToPath(new URL("../../", import.meta.url));
 
@@ -126,7 +128,7 @@ export async function auditLogs(seed: Seed, { place }: { place: Place }) {
   const reviewers = await seed.api(den.admin, "/v1/teams", { method: "POST", body: JSON.stringify({ name: reviewersTeamName, memberIds: [] }) });
   if (reviewers.response.status !== 201) throw new Error(`Synthetic team setup failed: ${reviewers.response.status}`);
   const reviewersTeamId = identifier(record(record(reviewers.body).team).id);
-  await seedAuditDatabase(den, "INSERT INTO organization_feature (organization_id, feature_key, enabled, source) VALUES (?, 'permissions', TRUE, 'platform') ON DUPLICATE KEY UPDATE enabled = TRUE", [orgId]);
+  await enableOrganizationCapabilities(seed, den.admin, { permissions: true }, orgId);
   await seedAuditDatabase(den, "UPDATE audit_policy SET enabled = TRUE WHERE organization_id = ?", [orgId]);
   const viewport = { width: 1440, height: 1100 };
   const web = await seed.web({ den, signedInAs: den.admin, startPath: "/dashboard/audit-logs", headless: true, viewport });

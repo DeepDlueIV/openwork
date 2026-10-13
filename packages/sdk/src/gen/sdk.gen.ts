@@ -427,6 +427,8 @@ import type {
   GetV1OauthProvidersByProviderIdConnectStartResponses,
   GetV1OauthProvidersByProviderIdStatusErrors,
   GetV1OauthProvidersByProviderIdStatusResponses,
+  GetV1OrgActivityErrors,
+  GetV1OrgActivityResponses,
   GetV1OrgErrors,
   GetV1OrgResponses,
   GetV1OrgsInvitationsPreviewErrors,
@@ -3085,6 +3087,18 @@ export class DenClient extends HeyApiClient {
         ...options?.headers,
         ...params.headers,
       },
+    });
+  }
+
+  /**
+   * Get recent dashboard activity
+   *
+   * Returns the organization's five newest additions for the admin dashboard, newest first (ties by event id): connections and model providers by their stored creation time, plugins added to an active marketplace (excluding the built-in catalog) by the attachment's creation time, and published versions of active skills in active plugins. A snapshot of existing resources, not an audit log: removed or archived resources do not contribute. Each source follows the permission of its own admin list (View all connections, View all providers, View Gateway providers on a Gateway-enabled deployment, Manage everything shared or the caller's plugin and marketplace access). Workspace owners and admins only.
+   */
+  public getV1OrgActivity<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<GetV1OrgActivityResponses, GetV1OrgActivityErrors, ThrowOnError>({
+      url: "/v1/org/activity",
+      ...options,
     });
   }
 

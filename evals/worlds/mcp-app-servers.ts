@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import { chrome, defaultDaytonaExec, execInSandbox } from "@openwork/hosts";
 import { browserScript, connect, debuggerUrlFor, evaluate, listTargets, locate, type Surface } from "@openwork/cdp";
-import type { EvalEngine, Place, Seed } from "@openwork/env";
+import { queryDenDatabase, type EvalEngine, type Place, type Seed } from "@openwork/env";
 import type { MockMcpTool } from "@openwork/labs";
 import { reconcileDraftHost } from "../fixtures/cloud-draft-host.ts";
 import { configureProvider } from "./chat.ts";
@@ -516,6 +516,14 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
     access: { orgWide: true },
   });
   const organizationId = field(record((await seed.api(den.admin, "/v1/org")).body).organization, "id");
+  // Credential expiry writes only to this run's own loopback scratch database.
+  const cloudCredentialDatabase = () => {
+    const url = den.database?.url;
+    const database = url ? new URL(url) : null;
+    if (den.placement?.kind !== "local" || !database || !["127.0.0.1", "localhost", "[::1]"].includes(database.hostname)
+      || !database.pathname.startsWith("/openwork_eval_")) throw new Error("Cloud credential expiry needs the run's local scratch Den database");
+    return database.toString();
+  };
   if (options.ownSignIn) {
     // The owner signs in once, through the provider's real OAuth, before building with Inventory's tools.
     const started = record((await seed.api(den.admin, `/v1/mcp-connections/${connection.id}/connect/start`)).body);
@@ -661,6 +669,29 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
     async inventorySignedIn() {
       const listed = rows(record((await seed.api(den.admin, "/v1/mcp-connections?scope=usable")).body).connections);
       return listed.find(entry => entry.id === connection.id)?.connectedForMe === true;
+    },
+    /**
+     * The owner's first-party Cloud credentials in Den: the engine's MCP token and the private App
+     * host's token, minted together. `live` counts those not yet expired.
+     */
+    async cloudCredentials() {
+      const [counts] = rows(await queryDenDatabase(cloudCredentialDatabase(), `SELECT COUNT(*) AS total,
+        CAST(COALESCE(SUM(expires_at > '2001-01-01'), 0) AS SIGNED) AS live,
+        CAST(COALESCE(SUM(expires_at > '2001-01-01' AND scopes LIKE '%"mcp:app-host"%'), 0) AS SIGNED) AS liveAppHost
+        FROM oauthAccessToken WHERE client_id = 'openwork-desktop' AND reference_id = ?`, [organizationId]));
+      return { total: Number(counts?.total ?? 0), live: Number(counts?.live ?? 0), liveAppHost: Number(counts?.liveAppHost ?? 0) };
+    },
+    /**
+     * Expires the owner's Cloud credentials in Den, as time would: only the private App host's
+     * token, or every first-party token the owner holds for this organization.
+     */
+    async expireCloudCredentials(which: "app-host" | "all") {
+      await queryDenDatabase(cloudCredentialDatabase(), `UPDATE oauthAccessToken SET expires_at = '2000-01-01 00:00:00.000'
+        WHERE client_id = 'openwork-desktop' AND reference_id = ? AND expires_at > '2001-01-01'${which === "app-host" ? ` AND scopes LIKE '%"mcp:app-host"%'` : ""}`, [organizationId]);
+    },
+    /** The owner comes back to the OpenWork window, which runs the desktop's background Cloud check. */
+    async returnToWindow() {
+      await evaluate(app.client, () => { window.dispatchEvent(new Event("focus")); });
     },
     /**
      * Back to OpenWork after signing in. The provider's sign-in opens in a new tab in front of

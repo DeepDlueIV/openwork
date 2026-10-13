@@ -30,6 +30,7 @@ import {
   createOrganizationForUser,
   getInvitationPreview,
   getSingletonSsoStatus,
+  loadOrganizationDirectory,
   normalizeAllowedEmailDomains,
   OrganizationEmailDomainRestrictionError,
   serializeMemberFacingOrganizationMetadata,
@@ -679,16 +680,17 @@ export function registerOrgCoreRoutes<T extends { Variables: OrgRouteVariables }
 
       // Same per-request resolution the middleware made.
       const memberPermissions = await memberPermissionsForOrganizationContext(payload, c.get("memberTeams"))
-      // The organization context read the organization row and its features fresh for this request.
+      // Reuse the organization row and feature snapshot resolved for this request.
       const currentOrganization = payload.organization
       const features = payload.features
-      const owner = payload.members.find((member: typeof payload.members[number]) => member.isOwner) ?? null
       // Cloud is entitled by OpenWork Web access (paid subscription or the
       // platform-admin complimentary grant) on hosted deployments; there is no
       // separate per-organization Cloud rollout flag.
       const cloudEnabled = cloudHostingAvailable({ orgMode: env.orgMode, openworkWebEnabled: env.openworkWebEnabled })
         && (await getOpenWorkWebAccess(payload.organization.id)).hasAccess
-      const [ssoRows, scimRows] = await Promise.all([
+      // The directory is only loaded here, not with every org request's context.
+      const [directory, ssoRows, scimRows] = await Promise.all([
+        loadOrganizationDirectory(payload.organization.id),
         db
           .select({ id: SsoConnectionTable.id })
           .from(SsoConnectionTable)
@@ -700,9 +702,11 @@ export function registerOrgCoreRoutes<T extends { Variables: OrgRouteVariables }
           .where(eq(ScimProviderTable.organizationId, payload.organization.id))
           .limit(1),
       ])
+      const owner = directory.members.find((member) => member.isOwner) ?? null
 
       return c.json({
         ...payload,
+        ...directory,
         currentMember: {
           ...payload.currentMember,
           permissions: sortedPermissionKeys(memberPermissions.keys),

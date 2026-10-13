@@ -47,7 +47,7 @@ import {
 import { runPostOrganizationMemberChangeHooks } from "./organization-member-hooks.js"
 import { isScimDeprovisionedIdentity } from "./scim-deprovisioning.js"
 import { getScimManagedTeamIds } from "./scim-groups.js"
-import { effectiveOrganizationRole, listOrganizationAdminTeamGrants, withOrganizationMembershipUsageMutation, withOrganizationTeamMutation, type OrganizationAdminTeam } from "./organization-team-roles.js"
+import { effectiveOrganizationRole, listMemberAdminTeams, listOrganizationAdminTeamGrants, withOrganizationMembershipUsageMutation, withOrganizationTeamMutation, type OrganizationAdminTeam } from "./organization-team-roles.js"
 import {
   DEFAULT_ORGANIZATION_LIMITS,
   normalizeOrganizationMetadata,
@@ -206,7 +206,7 @@ export type OrganizationContext = {
     createdAt: Date
     updatedAt: Date
   }
-  /** Effective features of the organization, read fresh in the same request (see features.ts). */
+  /** Effective features of the organization, read with the request through the Redis flag cache (see features.ts). */
   features: FeatureMap
   currentMember: {
     id: MemberId
@@ -218,6 +218,14 @@ export type OrganizationContext = {
     joinedAt: Date | null
     isOwner: boolean
   }
+}
+
+/**
+ * The organization's people, invitations and teams. Not part of
+ * OrganizationContext: that is resolved on every org request, and almost no
+ * route needs these. Load with loadOrganizationDirectory where it is shown.
+ */
+export type OrganizationDirectory = {
   members: Array<{
     id: MemberId
     userId: UserId | null
@@ -1453,8 +1461,7 @@ export async function listUserOrgs(userId: UserId) {
   }
 
   return Promise.all(memberships.map(async (row) => {
-    const grants = await listOrganizationAdminTeamGrants(row.organization.id)
-    const adminTeams = grants.filter((grant) => grant.memberId === row.membershipId).map(({ id, name }) => ({ id, name }))
+    const adminTeams = await listMemberAdminTeams({ organizationId: row.organization.id, memberId: row.membershipId })
     return {
       id: row.organization.id,
       name: row.organization.name,
@@ -1527,8 +1534,9 @@ export async function getOrganizationContextForUser(input: {
     return null
   }
 
-  // Features are read fresh for this request alongside the membership, so
-  // per-request feature checks (audit capture) need no further query.
+  // Features are read (through the Redis flag cache) alongside the
+  // membership, so per-request feature checks (audit capture, requireFeature)
+  // need no further read.
   const [currentMemberRows, features] = await Promise.all([
     db
       .select()
@@ -1547,28 +1555,8 @@ export async function getOrganizationContextForUser(input: {
     return null
   }
 
-  const members = await cache.org.members(organization.id)
-
-  const invitations = await db
-    .select({
-      id: InvitationTable.id,
-      email: InvitationTable.email,
-      role: InvitationTable.role,
-      status: InvitationTable.status,
-      expiresAt: InvitationTable.expiresAt,
-      createdAt: InvitationTable.createdAt,
-      inviteToken: InvitationTable.inviteToken,
-    })
-    .from(InvitationTable)
-    .where(eq(InvitationTable.organizationId, organization.id))
-    .orderBy(asc(InvitationTable.createdAt))
-
-  const teams = await listOrganizationTeams(organization.id)
-  const adminGrants = await listOrganizationAdminTeamGrants(organization.id)
-  const adminTeamsFor = (memberId: MemberId) => adminGrants
-    .filter((grant) => grant.memberId === memberId)
-    .map(({ id, name }) => ({ id, name }))
-  const currentAdminTeams = adminTeamsFor(currentMember.id)
+  // Authority: read fresh, scoped to the caller (see listMemberAdminTeams).
+  const currentAdminTeams = await listMemberAdminTeams({ organizationId: organization.id, memberId: currentMember.id })
 
   return {
     organization: {
@@ -1592,42 +1580,70 @@ export async function getOrganizationContextForUser(input: {
       joinedAt: currentMember.joinedAt,
       isOwner: roleIncludesOwner(currentMember.role),
     },
+  } satisfies OrganizationContext
+}
+
+/** People, invitations and teams for the screens that show them (OrganizationDirectory). */
+export async function loadOrganizationDirectory(organizationId: OrgId): Promise<OrganizationDirectory> {
+  const [members, invitations, teams, adminGrants] = await Promise.all([
+    cache.org.members(organizationId),
+    db
+      .select({
+        id: InvitationTable.id,
+        email: InvitationTable.email,
+        role: InvitationTable.role,
+        status: InvitationTable.status,
+        expiresAt: InvitationTable.expiresAt,
+        createdAt: InvitationTable.createdAt,
+        inviteToken: InvitationTable.inviteToken,
+      })
+      .from(InvitationTable)
+      .where(eq(InvitationTable.organizationId, organizationId))
+      .orderBy(asc(InvitationTable.createdAt)),
+    listOrganizationTeams(organizationId),
+    listOrganizationAdminTeamGrants(organizationId),
+  ])
+
+  return {
     members: members.map((member) => {
-      const adminTeams = adminTeamsFor(member.id)
+      const adminTeams = adminGrants
+        .filter((grant) => grant.memberId === member.id)
+        .map(({ id, name }) => ({ id, name }))
       return { ...member, adminTeams, effectiveRole: effectiveOrganizationRole(member.role, adminTeams) }
     }),
     invitations,
     teams,
-  } satisfies OrganizationContext
+  }
 }
 
 async function listOrganizationTeams(organizationId: OrgId) {
-  const [teams, scimManagedTeamIds] = await Promise.all([
-    db
-      .select({
-        id: TeamTable.id,
-        name: TeamTable.name,
-        createdAt: TeamTable.createdAt,
-        updatedAt: TeamTable.updatedAt,
-        grantsOrganizationAdmin: TeamTable.grantsOrganizationAdmin,
-      })
-      .from(TeamTable)
-      .where(eq(TeamTable.organizationId, organizationId))
-      .orderBy(asc(TeamTable.createdAt)),
-    getScimManagedTeamIds(organizationId),
-  ])
+  const teams = await db
+    .select({
+      id: TeamTable.id,
+      name: TeamTable.name,
+      createdAt: TeamTable.createdAt,
+      updatedAt: TeamTable.updatedAt,
+      grantsOrganizationAdmin: TeamTable.grantsOrganizationAdmin,
+    })
+    .from(TeamTable)
+    .where(eq(TeamTable.organizationId, organizationId))
+    .orderBy(asc(TeamTable.createdAt))
 
+  // No teams, nothing for SCIM to manage: skip both lookups.
   if (teams.length === 0) {
     return []
   }
 
-  const memberships = await db
-    .select({
-      teamId: TeamMemberTable.teamId,
-      orgMembershipId: TeamMemberTable.orgMembershipId,
-    })
-    .from(TeamMemberTable)
-    .where(inArray(TeamMemberTable.teamId, teams.map((team) => team.id)))
+  const [memberships, scimManagedTeamIds] = await Promise.all([
+    db
+      .select({
+        teamId: TeamMemberTable.teamId,
+        orgMembershipId: TeamMemberTable.orgMembershipId,
+      })
+      .from(TeamMemberTable)
+      .where(inArray(TeamMemberTable.teamId, teams.map((team) => team.id))),
+    getScimManagedTeamIds(organizationId),
+  ])
 
   const memberIdsByTeamId = new Map<typeof TeamTable.$inferSelect.id, MemberId[]>()
   for (const membership of memberships) {
@@ -1646,23 +1662,7 @@ async function listOrganizationTeams(organizationId: OrgId) {
   }))
 }
 
-export async function listTeamsForMember(input: {
-  organizationId: OrgId
-  memberId: MemberRow["id"]
-}) {
-  return db
-    .select({
-      id: TeamTable.id,
-      name: TeamTable.name,
-      organizationId: TeamTable.organizationId,
-      createdAt: TeamTable.createdAt,
-      updatedAt: TeamTable.updatedAt,
-    })
-    .from(TeamMemberTable)
-    .innerJoin(TeamTable, eq(TeamMemberTable.teamId, TeamTable.id))
-    .where(and(eq(TeamTable.organizationId, input.organizationId), eq(TeamMemberTable.orgMembershipId, input.memberId)))
-    .orderBy(asc(TeamTable.createdAt))
-}
+export { listTeamsForMember } from "./member-teams.js"
 
 async function listActiveOrganizationMemberGuardRows(organizationId: OrgId) {
   return db

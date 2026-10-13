@@ -594,6 +594,10 @@ jobs:
             exit 1
           fi
           echo "OpenAPI snapshot and generated SDK match the route source."
+      # den:contract drops its own disposable database. Route introspection below
+      # uses DATABASE_URL instead, and importing Better Auth seeds oauthResource.
+      - name: Prepare the CI database for audit route introspection
+        run: pnpm --filter @openwork-ee/den-db exec node --import tsx ./node_modules/drizzle-kit/bin.cjs push --force
       # Every den-api route and better-auth endpoint must carry an audit
       # declaration (src/audit/routes) and src/audit/COVERAGE.md must be current.
       - name: Check audit route coverage

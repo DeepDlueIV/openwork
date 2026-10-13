@@ -8,7 +8,7 @@ const test = spec.world(denDashboardActivityLoading, {
   resources: { surfaces: ["web"], services: ["den", "mock"] },
 });
 
-test("an owner opens a populated workspace without reading every skill's history", async ({ world, user, probe, step, evidence }) => {
+test("an owner opens a populated workspace and Activity is one server read", async ({ world, user, probe, step, evidence }) => {
   const owner = user.on(world.web);
   const page = probe.on(world.web);
   const sample = await activityTiming(world.web);
@@ -21,11 +21,8 @@ test("an owner opens a populated workspace without reading every skill's history
       expect((await page.dom(`${rows}:nth-child(${index + 1}) a[href="${event.href}"]`)).elements).toHaveLength(1);
     }
   };
-  let bounded = false;
+  let singleRead = false;
   let warmRowsRetained = false;
-  let resolvedReads = 0;
-  let attachmentReads = 0;
-  const isAttachment = (route: string) => route.includes("/marketplaces/") && route.endsWith("/plugins");
 
   await step("the owner opens a workspace with twelve handbooks and ninety-six added skills", async () => {
     await owner.see({ testId: "workspace-switcher-trigger" }, { timeoutMs: 60_000 });
@@ -40,7 +37,7 @@ test("an owner opens a populated workspace without reading every skill's history
     await owner.screenshot();
   });
 
-  await step("after: a cold reload reads only histories that can reach the newest five", async () => {
+  await step("after: a cold reload loads Activity with one request and no per-plugin or per-skill reads", async () => {
     const previous = await sample();
     const logOffset = (await world.den.apiLog()).length;
     await owner.reload();
@@ -50,18 +47,16 @@ test("an owner opens a populated workspace without reading every skill's history
     await owner.notSee({ testId: "dashboard-activity-loading" });
     await verifyRows();
     const timing = { ...await sample(), serverRequests: activityApiTimings((await world.den.apiLog()).slice(logOffset)) };
-    const serverVersions = timing.serverRequests.filter((entry) => entry.route.endsWith("/versions"));
-    expect(serverVersions.length).toBeGreaterThan(0);
-    expect(serverVersions.every((entry) => entry.status === 200)).toBe(true);
-    expect(serverVersions).toHaveLength(timing.versionReads);
-    resolvedReads = timing.requests.filter((entry) => entry.route.endsWith("/resolved")).length;
-    attachmentReads = timing.requests.filter((entry) => isAttachment(entry.route)).length;
-    // Timestamp ties remain candidates. Allow two whole handbooks, never a
-    // scan of all 96 added histories. The deterministic unit loop owns latency
-    // assertions; these are real DOM durations, not universal network budgets.
-    bounded = timing.versionReads > 0 && timing.versionReads <= 16;
+    const serverActivity = timing.serverRequests.filter((entry) => entry.route === "/v1/org/activity");
+    const serverFanout = timing.serverRequests.filter((entry) => entry.route.endsWith("/versions") || entry.route.endsWith("/resolved"));
+    // Den answered the one read with the stored rows verified above; the 96
+    // skill histories and 12 handbooks are never read one by one.
+    singleRead = timing.activityReads === 1 && timing.fanoutReads === 0
+      && serverActivity.length === 1 && serverActivity.every((entry) => entry.status === 200) && serverFanout.length === 0;
     console.info("Activity cold load", JSON.stringify(timing));
-    evidence.recordAssertionEvidence("cold Activity avoids the full history scan", JSON.stringify(timing), bounded);
+    evidence.recordAssertionEvidence("cold Activity is a single server-computed read", JSON.stringify({
+      activityReads: timing.activityReads, fanoutReads: timing.fanoutReads, serverActivity, serverFanout: serverFanout.length, loadingMs: timing.loadingMs,
+    }), singleRead);
     await owner.screenshot();
     expect(timing.loadingMs).not.toBeNull();
   });
@@ -75,26 +70,21 @@ test("an owner opens a populated workspace without reading every skill's history
     await owner.click({ role: "button", label: new RegExp(`^${world.names.otherWorkspace}`) });
     await owner.see({ testId: "dashboard-activity-row" }, { timeoutMs: 30_000 });
     await verifyRows();
-    await eventually(async () => {
-      const refresh = (await sample()).requests.filter((entry) => entry.startMs >= before.observedAtMs);
-      return refresh.filter((entry) => entry.route.endsWith("/resolved")).length >= resolvedReads
-        && refresh.filter((entry) => isAttachment(entry.route)).length >= attachmentReads;
-    }, { within: 30_000, label: "the warm return to reread authorized contents" });
+    await eventually(async () => (await sample()).requests
+      .some((entry) => entry.startMs >= before.observedAtMs && entry.route === "/api/browser/v1/org/activity"),
+    { within: 30_000, label: "the warm return to reread Activity" });
     const after = await sample();
     expect(after.timeOrigin).toBe(before.timeOrigin);
     const requests = after.requests.filter((entry) => entry.startMs >= before.observedAtMs);
     const loadingStarts = after.loadingStarts.filter((time) => time >= before.observedAtMs);
     warmRowsRetained = loadingStarts.length === 0;
     await verifyRows();
-    // This observes continuity through the content reread, not network idle.
-    // Completed Resource Timing entries cannot prove no request is in flight;
-    // full-refresh version-cache reuse is asserted by the deterministic loader test.
     const timing = { loadingStarts, observedThroughMs: after.observedAtMs - before.observedAtMs, requests };
     console.info("Activity warm return", JSON.stringify(timing));
-    evidence.recordAssertionEvidence("cached rows stay visible during the warm content refresh", JSON.stringify(timing), warmRowsRetained);
+    evidence.recordAssertionEvidence("cached rows stay visible during the warm refresh", JSON.stringify(timing), warmRowsRetained);
     await owner.screenshot();
   });
   // Keep the warm control observable even in an intentionally red baseline.
-  expect(bounded).toBe(true);
+  expect(singleRead).toBe(true);
   expect(warmRowsRetained).toBe(true);
 });

@@ -245,7 +245,10 @@ jobs:
       # OpenWork Design rubric in evals/design-review/rubric.md. Notes land in
       # design-review.json beside each record, in this job's summary, and on
       # each screenshot in the review report. A finding never fails the job.
+      # Hard-cap only this advisory process tree at 120s; completed notes survive.
+      # Deferred screenshot assertions above are authoritative and uncapped here.
       - name: Review the design of every screenshot (advisory)
+        timeout-minutes: 3
         continue-on-error: true
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -256,7 +259,7 @@ jobs:
             echo 'The default branch does not have the design review yet.'
             exit 0
           fi
-          node evals/scripts/design-review-journeys.mjs
+          node evals/scripts/run-advisory-design-review.mjs
       - name: Replace the proof records with judged ones
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:

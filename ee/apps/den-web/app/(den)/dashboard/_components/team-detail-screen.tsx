@@ -13,6 +13,8 @@ import { TeamPermissionsPanel } from "./team-permissions-panel";
 import { OrgMemberIdentity } from "./org-member-identity";
 import { TeamAdminCheckbox } from "./team-admin-checkbox";
 import { TeamRolePanel } from "./team-role-panel";
+import { MemberTeamRoles } from "./member-team-roles";
+import { useCustomRoleTeams } from "./permissions-data";
 import {
   type TeamPluginAccessItem,
   useRevokeTeamPluginAccess,
@@ -60,13 +62,16 @@ function RoleBadge({ role }: { role: TeamPluginAccessItem["role"] }) {
 }
 
 export function TeamDetailScreen({ teamId }: { teamId: string }) {
-  const { orgContext, orgSlug } = useOrgDashboard();
+  const { orgContext, orgId, orgSlug } = useOrgDashboard();
+  const viewerAccess = orgContext
+    ? getOrgAccessFlags(orgContext.currentMember.role, orgContext.currentMember.isOwner, orgContext.currentMember.permissions)
+    : null;
   // Revoking a team's plugin grant needs manager access to the plugin (`sharing.manage_all`).
-  const canRevokeAccess = orgContext
-    ? getOrgAccessFlags(orgContext.currentMember.role, orgContext.currentMember.isOwner, orgContext.currentMember.permissions).canManageAllShared
-    : false;
+  const canRevokeAccess = viewerAccess?.canManageAllShared ?? false;
   // teamRoles: the team page opens on its one role (Member, Admin or Custom).
   const teamRoles = orgContext ? orgFeatureEnabled(orgContext, "teamRoles") : false;
+  // Members list each person's team roles the same way the Members page does.
+  const customRoles = useCustomRoleTeams(orgId, teamRoles && Boolean(orgContext && orgFeatureEnabled(orgContext, "permissions")) && (viewerAccess?.canViewPermissions ?? false));
   const [chosenTab, setActiveTab] = useState<TeamDetailTab | null>(null);
   const activeTab: TeamDetailTab = chosenTab && (teamRoles || chosenTab !== "role") ? chosenTab : teamRoles ? "role" : "access";
   const accessQuery = useTeamPluginAccess(teamId);
@@ -136,7 +141,9 @@ export function TeamDetailScreen({ teamId }: { teamId: string }) {
                 {teamMembers.map((member) => (
                   <div key={member.id} className="px-6 py-4">
                     <OrgMemberIdentity member={member} />
-                    {member.adminTeams.length > 0 ? (
+                    {teamRoles && orgContext ? (
+                      <MemberTeamRoles member={member} teams={orgContext.teams} customTeamIds={customRoles.teamIds} exceptTeamId={teamId} />
+                    ) : member.adminTeams.length > 0 ? (
                       <p className="mt-2 text-[12px] text-gray-500">Admin via {member.adminTeams.map((entry) => entry.name).join(", ")}</p>
                     ) : null}
                   </div>
@@ -148,7 +155,7 @@ export function TeamDetailScreen({ teamId }: { teamId: string }) {
 
         {activeTab === "access" ? (
           <div role="tabpanel" aria-label="Access">
-            <TeamPermissionsPanel teamId={teamId} />
+            <TeamPermissionsPanel teamId={teamId} heading={teamRoles ? "In the desktop app" : undefined} />
             <h2 className="mb-2 text-lg font-semibold text-gray-950">Plugins & connections</h2>
             <p className="mb-4 text-sm text-gray-500">Review what this team can use and where access comes from.</p>
             {accessQuery.isLoading ? (

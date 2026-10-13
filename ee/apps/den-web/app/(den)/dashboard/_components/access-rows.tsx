@@ -4,6 +4,7 @@ import { Popover } from "@base-ui/react/popover";
 import { Check, Plus, Search, type LucideIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { DenButton } from "../../_components/ui/button";
+import { ItemPanel } from "./item-list";
 
 /**
  * Rows and pickers shared by everything that lists people and teams with
@@ -65,6 +66,42 @@ export function RemoveButton({ label, onClick, disabled }: { label: string; onCl
     >
       Remove
     </button>
+  );
+}
+
+export type PersonChoice = { id: string; name: string; email: string };
+
+/**
+ * The people in a team or a role: one row each with Remove, then Add person.
+ * Used by Create role and by the team form, so both pick people the same way.
+ */
+export function PeopleField({ people, chosenIds, onChange, rowTestId }: {
+  /** Everyone who can be added, in display order. */
+  people: readonly PersonChoice[];
+  chosenIds: readonly string[];
+  onChange: (ids: string[]) => void;
+  rowTestId?: string;
+}) {
+  const chosen = chosenIds.flatMap((id) => people.find((person) => person.id === id) ?? []);
+  const addable = people
+    .filter((person) => !chosenIds.includes(person.id))
+    .map((person) => ({ id: person.id, name: person.name, detail: person.email }));
+  return (
+    <ItemPanel>
+      {chosen.map((person) => (
+        <AccessRow
+          key={person.id}
+          lead={<Avatar name={person.name} />}
+          title={person.name}
+          description={person.email}
+          trailing={<RemoveButton label={`Remove ${person.name}`} onClick={() => onChange(chosenIds.filter((id) => id !== person.id))} />}
+          testId={rowTestId}
+        />
+      ))}
+      <div className="flex px-5 py-3">
+        <AddPicker kind="person" options={addable} onAdd={(ids) => onChange([...chosenIds, ...ids])} />
+      </div>
+    </ItemPanel>
   );
 }
 

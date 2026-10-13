@@ -61,6 +61,12 @@ export const ROLE_START_LABELS: Record<RoleStart, string> = {
   everything: "Everything the owner can do",
 };
 
+export const ROLE_START_DESCRIPTIONS: Record<RoleStart, string> = {
+  member: TEAM_ROLE_DESCRIPTIONS.member,
+  admin: ADMIN_ROLE_SUMMARY,
+  everything: "Every permission you can give",
+};
+
 /** The permissions a new role starts with, limited to what the person creating it holds. */
 export function roleStartKeys(start: RoleStart, held: ReadonlySet<string>): PermissionKey[] {
   const keys = start === "everything" ? [...PERMISSION_KEYS] : permissionDefaultKeys(start);
@@ -93,6 +99,86 @@ export function teamRoleSteps(current: TeamRoleState, next: TeamRole, adminKeys:
   if (current.admin) steps.push({ kind: "set-admin", value: false });
   if (current.customSetId) steps.push({ kind: "remove-custom", setId: current.customSetId });
   return steps;
+}
+
+/**
+ * One vocabulary for every screen while teamRoles is on: a role is Owner,
+ * Admin, Member, or a custom role named after its team. Den's stored names
+ * ("Member permissions", "Engineering Permissions", "Admin team") never reach
+ * the screen.
+ */
+export type RoleSetLike = {
+  kind: "member_default" | "admin_default" | "team";
+  name: string;
+  team: { id: string; name: string | null } | null;
+};
+
+/** The role a permission set is: Member, Admin, or the team's name. */
+export function roleName(set: RoleSetLike): string {
+  if (set.kind === "member_default") return TEAM_ROLE_LABELS.member;
+  if (set.kind === "admin_default") return TEAM_ROLE_LABELS.admin;
+  return set.team?.name ?? set.name;
+}
+
+/** "Built-in role" or "Custom role", for captions next to a role's name. */
+export function roleKindLabel(set: Pick<RoleSetLike, "kind">): string {
+  return set.kind === "team" ? "Custom role" : "Built-in role";
+}
+
+/** Where a person's permission comes from, in role words. */
+export type PermissionSourceLike = {
+  kind: string;
+  label: string;
+  via?: string;
+  teamName?: string;
+  set?: string;
+};
+
+export function permissionSourceRoleLabel(source: PermissionSourceLike): string {
+  switch (source.kind) {
+    case "owner":
+      return "Owner";
+    case "member_default":
+      return TEAM_ROLE_LABELS.member;
+    case "admin_default":
+      return source.via === "team" && source.teamName ? `Admin via ${source.teamName}` : TEAM_ROLE_LABELS.admin;
+    case "team":
+      return source.teamName ?? source.label;
+    case "code_default":
+      return source.set === "admin" ? TEAM_ROLE_LABELS.admin : TEAM_ROLE_LABELS.member;
+    default:
+      return source.label;
+  }
+}
+
+/**
+ * The roles a person holds through their teams, in the order they read:
+ * Admin first ("Admin via Sales"), then each custom role by its team's name.
+ */
+export function teamRoleLabels(input: {
+  memberId: string;
+  /** The person's own role: the owner already has everything, and an admin needs no "Admin via". */
+  ownRole: "owner" | "admin" | "member";
+  teams: readonly { id: string; name: string; memberIds: readonly string[]; grantsOrganizationAdmin: boolean }[];
+  customTeamIds: ReadonlySet<string>;
+}): string[] {
+  if (input.ownRole === "owner") return [];
+  const mine = input.teams.filter((team) => team.memberIds.includes(input.memberId));
+  const adminTeams = input.ownRole === "admin" ? [] : mine.filter((team) => team.grantsOrganizationAdmin).map((team) => team.name);
+  const custom = mine.filter((team) => !team.grantsOrganizationAdmin && input.customTeamIds.has(team.id)).map((team) => team.name);
+  return [...(adminTeams.length > 0 ? [`Admin via ${adminTeams.join(", ")}`] : []), ...custom];
+}
+
+/** Invite and role pickers: a built-in role, or a custom role by its team. */
+export type RoleChoiceValue = "member" | "admin" | `team:${string}`;
+
+export function customRoleChoice(teamId: string): RoleChoiceValue {
+  return `team:${teamId}`;
+}
+
+export function parseRoleChoice(value: string): { role: "member" | "admin"; teamId: string | null } {
+  if (value.startsWith("team:")) return { role: "member", teamId: value.slice("team:".length) || null };
+  return { role: value === "admin" ? "admin" : "member", teamId: null };
 }
 
 export type TeamRoleAbilities = {

@@ -102,6 +102,10 @@ const sourceSchema = z.object({
   label: z.string(),
   setId: z.string().optional(),
   teamId: z.string().optional(),
+  // Read so teamRoles can name the source as a role ("Admin via Sales").
+  via: z.string().optional(),
+  teamName: z.string().optional(),
+  set: z.string().optional(),
 });
 
 const memberPermissionsSchema = z.object({
@@ -241,6 +245,19 @@ export function usePermissionSets(orgId: string | null, enabled = true) {
       signal,
     })).sets,
   });
+}
+
+/**
+ * Teams that carry a custom role (their own permission set), keyed by team.
+ * Empty until loaded, or when the viewer can't read permission sets.
+ */
+export function useCustomRoleTeams(orgId: string | null, enabled: boolean) {
+  const query = usePermissionSets(orgId, enabled);
+  const setByTeam = new Map<string, PermissionSetSummary>();
+  for (const set of query.data ?? []) {
+    if (set.kind === "team" && set.team) setByTeam.set(set.team.id, set);
+  }
+  return { setByTeam, teamIds: new Set(setByTeam.keys()), loading: enabled && query.isPending };
 }
 
 export function usePermissionSet(orgId: string | null, setId: string, enabled = true) {

@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { DenNotice } from "../../_components/ui/notice";
 import {
   getOrgAccessFlags,
+  getPermissionKeysRoute,
   getPermissionSetRoute,
   getTeamRoute,
   orgFeatureEnabled,
@@ -12,7 +13,7 @@ import {
 } from "../../_lib/den-org";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
 import { IconTile } from "./access-rows";
-import { ItemPanel, ItemRow, ItemRowsSkeleton, ItemSection } from "./item-list";
+import { ItemPanel, ItemRow, ItemRowsSkeleton, ItemSection, LinkButton } from "./item-list";
 import { usePermissionSets } from "./permissions-data";
 import { ADMIN_ROLE_SUMMARY } from "./team-roles";
 
@@ -59,9 +60,11 @@ function RolesTabContent({ orgId, orgSlug, permissionsFeature, canViewSets, acti
   const adminTeams = orgContext.teams.filter((team) => team.grantsOrganizationAdmin);
   const adminWho = [directAdmins > 0 ? peopleLabel(directAdmins) : null, ...adminTeams.map((team) => team.name)].filter(Boolean).join(", ") || "Nobody yet";
 
+  const byPermission = canViewSets ? <LinkButton href={getPermissionKeysRoute(orgSlug)} variant="secondary" data-testid="roles-by-permission">By permission</LinkButton> : null;
+
   return (
     <div className="flex flex-col gap-6" data-testid="roles-tab">
-      {action ? <div className="flex justify-end">{action}</div> : null}
+      {action || byPermission ? <div className="flex justify-end gap-2">{byPermission}{action}</div> : null}
       <ItemSection title="Built-in roles" testId="roles-built-in">
         <ItemPanel>
           <ItemRow

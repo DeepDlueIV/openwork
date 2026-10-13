@@ -425,7 +425,9 @@ export function OrgDashboardShell({ children }: { children: React.ReactNode }) {
     orgContext?.currentMember.permissions,
   );
 
-  const pageTitle = getDashboardPageTitle(pathname, activeOrg?.slug ?? null);
+  const basePageTitle = getDashboardPageTitle(pathname, activeOrg?.slug ?? null);
+  // teamRoles: the permission pages are role pages.
+  const pageTitle = basePageTitle === "Permissions" && orgFeatureEnabled(orgContext, "teamRoles") ? "Roles" : basePageTitle;
   const shouldShowProfilePrompt = Boolean(
     user &&
       !profilePromptDismissed &&
@@ -451,6 +453,7 @@ export function OrgDashboardShell({ children }: { children: React.ReactNode }) {
     orgMode: runtimeConfig.orgMode,
     runtimeConfigLoaded,
     permissionsEnabled: orgFeatureEnabled(orgContext, "permissions"),
+    teamRoles: orgFeatureEnabled(orgContext, "teamRoles"),
     managedDeployments: orgFeatureEnabled(orgContext, "managedDeployments"),
     workbotSettings: orgContext?.capabilities.workbot === true,
   });
@@ -835,7 +838,19 @@ export function OrgDashboardShell({ children }: { children: React.ReactNode }) {
               <Link href={onboardingRoute} className="font-medium text-gray-900 underline underline-offset-4">Back to setup</Link>
             </div>
           ) : null}
-          {children}
+          {/*
+            Every screen is a white page in the center: the screen's own
+            centered container (whatever width it chose) gets the white surface
+            and runs to the bottom of the window, on the gray app background.
+            content-start keeps grid pages from spreading their rows over the
+            extra height.
+          */}
+          <div
+            data-den-page
+            className="flex min-h-full flex-col [&>*]:w-full [&>*]:bg-white [&>*:last-child]:flex-1 [&>*:last-child]:content-start md:[&>*]:border-x md:[&>*]:border-gray-100"
+          >
+            {children}
+          </div>
         </main>
       </div>
 

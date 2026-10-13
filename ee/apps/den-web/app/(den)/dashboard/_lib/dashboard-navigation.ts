@@ -87,6 +87,8 @@ export type BuildDashboardNavSectionsInput = {
   libraryNeedsSignIn?: number;
   /** The organization has the `permissions` feature (orgFeatureEnabled). */
   permissionsEnabled?: boolean;
+  /** teamRoles: roles live in Members › Roles, so Settings › Permissions steps aside. */
+  teamRoles?: boolean;
   /** The managedDeployments feature is on for this organization. */
   managedDeployments?: boolean;
   /** Workbot is on: admins choose the organization's default model. */
@@ -100,6 +102,7 @@ export function buildDashboardNavSections({
   runtimeConfigLoaded,
   libraryNeedsSignIn = 0,
   permissionsEnabled = false,
+  teamRoles = false,
   managedDeployments = false,
   workbotSettings = false,
 }: BuildDashboardNavSectionsInput): DashboardNavSection[] {
@@ -158,7 +161,7 @@ export function buildDashboardNavSections({
           { href: getBillingRoute(orgSlug), label: "Billing" },
           { href: getApiKeysRoute(orgSlug), label: "API Keys" },
         ].filter((item) => canOpen(item.href)),
-        ...permissionsNavChildren(orgSlug, access, permissionsEnabled),
+        ...permissionsNavChildren(orgSlug, access, permissionsEnabled, teamRoles ? { membersOpen: canOpen(getMembersRoute(orgSlug)) } : null),
         ...(access.canViewSso ? [{ href: getSsoRoute(orgSlug), label: "SSO" }] : []),
         ...(access.canViewScim ? [{ href: getScimRoute(orgSlug), label: "SCIM" }] : []),
         ...(canOpen(getMarketplacesRoute(orgSlug))
@@ -196,9 +199,13 @@ export function buildDashboardNavSections({
  * Permissions appears for members who hold `permissions.view` while the feature
  * is on. While it is off, people who could manage it keep a locked entry that
  * says why (DESIGN.md P4); everyone else does not see it.
+ *
+ * With teamRoles, roles have one home, Members › Roles: the entry is dropped
+ * for people who can open Members, and named Roles for anyone who can't.
  */
-function permissionsNavChildren(orgSlug: string, access: DenOrgAccessFlags, enabled: boolean): DashboardNavChild[] {
+function permissionsNavChildren(orgSlug: string, access: DenOrgAccessFlags, enabled: boolean, teamRoles: { membersOpen: boolean } | null): DashboardNavChild[] {
   const href = getPermissionsRoute(orgSlug);
+  if (enabled && teamRoles) return access.canViewPermissions && !teamRoles.membersOpen ? [{ href, label: "Roles" }] : [];
   if (enabled) return access.canViewPermissions ? [{ href, label: "Permissions" }] : [];
   return access.canManagePermissions ? [{ href, label: "Permissions", badge: "Enterprise" }] : [];
 }

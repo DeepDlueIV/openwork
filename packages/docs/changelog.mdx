@@ -3,6 +3,19 @@ title: "Changelog"
 description: "OpenWork release notes: new features, improvements, and bug fixes."
 "og:description": "OpenWork release notes: new features, improvements, and bug fixes."
 ---
+<Update label="October 13th" tags={["🚀 New Features", "🐛 Bug Fixes", "🏗️ Refactoring"]}>
+
+  ## [v0.18.58](https://github.com/different-ai/openwork/compare/v0.18.57...v0.18.58): Run OpenWork Web on your own self-hosted deployment
+
+  - **Self-host OpenWork Web and team tools on AWS.** For self-hosters: run OpenWork Web with sandboxed browser workspaces, and deploy Slack, Workbot, and Automations that run without a desktop. AWS deployments can use existing networks and load balancers, and can connect to an existing cluster or runner fleet.
+  - **Connect OpenCode 2 to your organization.** If you use OpenWork from OpenCode: the `opencode-openwork` plugin brings in your organization's AI Gateway models, tools, and skills after sign-in, without the desktop app. You can also upgrade desktop chats to OpenCode 2 with a backup first; its conversations can use the built-in browser and discover connected tools reliably.
+  - **Admins get clearer controls and reporting.** Organization Analytics is back, with restored usage and workflow history where available. When enabled, admins can also report on skills, plugins, and connectors, set member, admin, and team permissions, and choose a default model for cloud agents; Audit Logs now cover more organization activity.
+  - **Chat and daily work recover more smoothly.** Pasted text and images stay at the cursor, reopened Apps load their data, migrated chats with a missing agent can answer again, and OpenWork keeps the Working status visible during quiet stretches. Ollama keeps multiple selected models and their thinking choices; Drive uploads respect your chosen Google account.
+  - **Calendar, Workbot, and connections do more.** When Calendar features are enabled, add or edit Automations alongside meetings; Workbot can recover stopped tasks. When enabled, admins can check when connections were last verified, and compatible MCP clients can subscribe to remote-session updates.
+  - **Some familiar pages and searches have changed.** Organization dashboards and admin-assigned dashboards in Desktop are gone, while personal dashboards remain. “Search sessions” now searches session titles and workspace names, not message text; for organizations with OpenWork Models, Auto is replaced in the model picker by GPT-6 Luna.
+
+</Update>
+
 <Update label="October 7th" tags={["🚀 New Features", "🐛 Bug Fixes", "🏗️ Refactoring"]}>
 
   ## [v0.18.57](https://github.com/different-ai/openwork/compare/v0.18.56...v0.18.57): Move your Claude Cowork setup to OpenWork with one prompt

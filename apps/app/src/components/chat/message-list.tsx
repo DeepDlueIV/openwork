@@ -38,6 +38,8 @@ import { useOpenTargets } from "@/lib/target-provider"
 import { openTargetFromUrl } from "@/react-app/domains/session/artifacts/open-target"
 import { presentOpencodeSessionError, sessionErrorPresentationFromUIMessage } from "@/react-app/domains/session/sync/session-error"
 import { TaskRecovery } from "./task-recovery"
+import { BackgroundTaskNotice, BackgroundTasksLabel, BackgroundTasksMessage, backgroundShellNoticeFromMessage } from "./background-tasks"
+import { sessionBackgroundShells, useBackgroundShellStore, type BackgroundShell } from "@/react-app/domains/session/status/background-shell-store"
 import { messageAutoAccessWall } from "@/app/lib/inference-access"
 import { AutoAccessNotice } from "@/react-app/domains/cloud/auto-access-ui"
 import { rejectedRecoveryFromMessage } from "@/react-app/domains/session/sync/rejected-turn"
@@ -1054,6 +1056,9 @@ const MessageComponent = React.memo(
       )
     }
 
+    const backgroundShellNotice = backgroundShellNoticeFromMessage(message)
+    if (backgroundShellNotice) return <BackgroundTaskNotice message={message} notice={backgroundShellNotice} />
+
     if (isEmptyMessage(message)) {
       return null
     }
@@ -1086,10 +1091,24 @@ function TranscriptAutoAccessNotice({ wall }: { wall: NonNullable<ReturnType<typ
 
 MessageComponent.displayName = "MessageComponent"
 
-const LoadingMessage = React.memo(({ elapsedSeconds, starting }: { elapsedSeconds: number; starting: boolean }) => (
+const NO_BACKGROUND_SHELLS: BackgroundShell[] = []
+
+const LoadingMessage = React.memo(({ elapsedSeconds, starting, backgroundShells = NO_BACKGROUND_SHELLS, backgroundStale = false }: {
+  elapsedSeconds: number
+  starting: boolean
+  /** Commands left running in the background share this line while the turn runs. */
+  backgroundShells?: BackgroundShell[]
+  backgroundStale?: boolean
+}) => (
     <Message className="mx-auto flex w-full max-w-3xl flex-col items-start gap-2 px-2 md:px-10">
       <div role={starting ? "status" : undefined} data-loading-message={starting ? "starting" : "working"} className="py-1 text-sm text-muted-foreground">
         <span className="ow-text-shimmer tabular-nums">{starting ? "Starting…" : `Working ${formatElapsedSeconds(elapsedSeconds)}`}</span>
+        {backgroundShells.length > 0 ? (
+          <>
+            <span aria-hidden="true"> · </span>
+            <BackgroundTasksLabel shells={backgroundShells} stale={backgroundStale} />
+          </>
+        ) : null}
       </div>
     </Message>
 ))
@@ -1683,8 +1702,22 @@ export function shouldShowRunReconnecting(status: ThreadStatus, syncDegraded: bo
   return status === "submitted" || status === "streaming" || status === "retrying"
 }
 
-export function MessageList({ messages, messageIdReplacements, status, activityStatus, retryStatus, syncHealth, viewport, sessionErrorHandled = false }: MessageListProps) {
+export function MessageList({ messages: transcript, messageIdReplacements, status, activityStatus, retryStatus, syncHealth, viewport, sessionErrorHandled = false }: MessageListProps) {
   const { workspaceId, sessionId, onStopSubagentSession } = useMessageList()
+  const backgroundTasksEnabled = useBackgroundShellStore((state) => state.enabled)
+  const runningShells = useBackgroundShellStore((state) => state.booksByWorkspaceId[workspaceId]?.running)
+  const backgroundShells = React.useMemo(
+    () => backgroundTasksEnabled ? sessionBackgroundShells(runningShells, sessionId) : [],
+    [backgroundTasksEnabled, runningShells, sessionId],
+  )
+  // With the feature off, completion rows cached earlier must not change the
+  // transcript's grouping either.
+  const messages = React.useMemo(
+    () => backgroundTasksEnabled || !transcript.some((message) => message.role === "system")
+      ? transcript
+      : transcript.filter((message) => !backgroundShellNoticeFromMessage(message)),
+    [backgroundTasksEnabled, transcript],
+  )
   const [stoppingBackground, setStoppingBackground] = React.useState(false)
   const workspace = useWorkspaceMaybe()
   const tasks = React.useMemo(() => activeDelegatedTasks(messages), [messages])
@@ -1840,8 +1873,13 @@ export function MessageList({ messages, messageIdReplacements, status, activityS
             </button>
           ) : null}
         </div>}
-        {showLoading && <LoadingMessage elapsedSeconds={runElapsedSeconds} starting={status === "submitted"} />}
+        {/* One rule for commands left running in the background: while the turn
+            runs, the count joins its Working line; otherwise it takes that
+            line's place on its own. One line either way, so the chat does not
+            move when the turn ends and the count stays. */}
+        {showLoading && <LoadingMessage elapsedSeconds={runElapsedSeconds} starting={status === "submitted"} backgroundShells={backgroundShells} backgroundStale={syncDegraded} />}
         {showReconnecting && <ReconnectingMessage lastConfirmedAt={syncHealth?.lastConfirmedAt ?? null} />}
+        {!showLoading && backgroundShells.length > 0 && <BackgroundTasksMessage shells={backgroundShells} stale={syncDegraded} />}
         {retryStatus ? <RetryMessage status={retryStatus} /> : null}
         {error && !hasSessionErrorMessage && !sessionErrorHandled ? <ErrorMessage error={error} /> : null}
       </ProgressiveMessageList>

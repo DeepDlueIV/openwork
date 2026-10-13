@@ -506,8 +506,9 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
   const measured = benchmark === true;
   const engine = options.engine ?? "v1";
   const toolStep = (tool: string, args: Record<string, unknown>) => engine === "v2" ? { tool: "execute", arguments: { code: `return await tools["openwork-cloud"].${tool}(${JSON.stringify(args)});` } } : { tool, arguments: args };
+  // Den's numeric App timings (never payloads) let the journey count requests to an App's own server.
   const den = await seed.den({
-    env: { DEN_GENERATED_ARTIFACT_VIEWS_ENABLED: "true", DEN_APP_MCP_SERVERS_ENABLED: "true", DEN_DASHBOARDS_ENABLED: "true", ...(measured ? { OPENWORK_MCP_APP_TIMINGS: "1" } : {}) },
+    env: { DEN_GENERATED_ARTIFACT_VIEWS_ENABLED: "true", DEN_APP_MCP_SERVERS_ENABLED: "true", DEN_DASHBOARDS_ENABLED: "true", OPENWORK_MCP_APP_TIMINGS: "1" },
     org: { name: `App servers chat ${Date.now()}` },
     mocks: { inventory: seed.mock({ allowUnauthenticatedMcp: true, tools: [inventoryTool, reserveTool] }) },
   });
@@ -628,6 +629,24 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
   }
   return {
     app, session, den, created, performanceApps, workspace, engine,
+    /** Den's log so far; pass its length to appServerRequests. */
+    denLog: () => den.apiLog(),
+    /** Requests Den's App servers handled since a denLog() snapshot, by MCP method, once at least `atLeast` tools/call requests finished. */
+    async appServerRequests(since: string, atLeast = 1) {
+      const methods = async () => (await den.apiLog()).slice(since.length).split("\n").flatMap(line => {
+        const marker = line.indexOf("MCP_APP_TIMING ");
+        if (marker < 0) return [];
+        const stage = record(JSON.parse(line.slice(marker + 15))).stage;
+        return typeof stage === "string" && stage.startsWith("den.app-server.") ? [stage.slice("den.app-server.".length)] : [];
+      });
+      const deadline = Date.now() + 30_000;
+      let seen = await methods();
+      while (seen.filter(method => method === "tools/call").length < atLeast && Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 250));
+        seen = await methods();
+      }
+      return seen;
+    },
     async prepareLifecycleTurn(prompt: string, kind: "edit" | "failure" | "interrupt" | "search" | "guided") {
       const catalog = rows(record((await seed.api(den.admin, "/v1/mcp-apps")).body).apps);
       const built = catalog.find(app => app.title === pricerTitle);

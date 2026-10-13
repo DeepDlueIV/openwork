@@ -635,6 +635,8 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
       const sentence = `Created artifact “${guidedTitle}”`;
       await user.see({ text: sentence }, { timeoutMs: 120_000 });
       await user.see({ text: guidedReply }, { timeoutMs: 30_000 });
+      // The finished App opens beside the chat, which reflows the conversation; hover the step only once it has.
+      frame = await world.appFrameShowing(guidedTitle, "Show unit price");
       // The details toggle appears when the step is hovered.
       await user.hover({ text: sentence });
       await user.click({ role: "button", label: `Show technical details for ${sentence}` });
@@ -642,10 +644,9 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
       expect(steps).toHaveLength(1);
       expect(steps[0]?.text).toContain("build-an-app");
       expect(steps[0]?.text).toContain("Inventory lookup unit price");
-      // The guide the agent read is OpenWork Cloud's built-in skill.
-      expect(JSON.stringify(await world.den.mocks.inventory.agentRequests({ promptMarker: prompt }))).toContain("# Build an App");
+      // The guide the agent read, shown in the step's details, is OpenWork Cloud's built-in skill.
+      expect(steps[0]?.text).toContain("# Build an App");
       // prepare_app's starter, published unchanged, asks for the tool's input and loads it on one click.
-      frame = await world.appFrameShowing(guidedTitle, "Show unit price");
       await user.on(frame).type({ role: "textbox", label: "Sku" }, launchInput.sku);
       await user.on(frame).click({ role: "button", label: "Show unit price" });
       await user.on(frame).see({ text: "Unit price" }, { timeoutMs: 60_000 });

@@ -75,6 +75,26 @@ function permissionChanges(scope: AgentPermissionAuditScope, before: AgentPermis
   })
 }
 
+/**
+ * Permissions whose patterns changed while their audit form did not: a
+ * withheld (credential-like) pattern replaced by another. Named as markers so
+ * the change is recorded without either value.
+ */
+function withheldPatternMarkers(before: AgentPermissionSettings, after: AgentPermissionSettings): string[] {
+  const raw = (setting: AgentPermissionSetting | undefined) => JSON.stringify({
+    allow: [...new Set(setting?.allow ?? [])].sort(),
+    block: [...new Set(setting?.block ?? [])].sort(),
+  })
+  return agentPermissionDefinitions.flatMap((definition) => {
+    const from = before[definition.key]
+    const to = after[definition.key]
+    const changed = raw(from) !== raw(to)
+    const sameInAudit = JSON.stringify(serializeSetting(from)?.allow ?? []) === JSON.stringify(serializeSetting(to)?.allow ?? [])
+      && JSON.stringify(serializeSetting(from)?.block ?? []) === JSON.stringify(serializeSetting(to)?.block ?? [])
+    return changed && sameInAudit ? [`${definition.key}WithheldPatterns`] : []
+  })
+}
+
 function resources(organizationId: string, scope: AgentPermissionAuditScope, policyId: string | null) {
   const label = scope.kind === "everyone" ? AGENT_PERMISSION_EVERYONE : scope.teamName
   return [
@@ -102,6 +122,7 @@ export function agentPermissionPolicyChangedEvent(
     resources: resources(organizationId, scope, before.policyId ?? after.policyId),
     before: serializePolicy(scope, before),
     after: serializePolicy(scope, after),
+    markers: withheldPatternMarkers(before.settings, after.settings),
     annotations: { permissionChanges: permissionChanges(scope, before.settings, after.settings) },
   })
 }

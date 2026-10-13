@@ -1101,6 +1101,19 @@ browserPanel = createBrowserPanel({
   remoteDebugPort,
   getWindow: () => mainWindow,
   onDeepLink: (urls) => queueDeepLinks(urls),
+  // The member's website rules, read from the local OpenWork server (which
+  // verifies them with Den), never taken from the app window.
+  readWebsiteRules: async () => {
+    const server = await runtimeManager.openworkServerInfo();
+    if (!server.baseUrl || !(server.clientToken ?? server.ownerToken)) throw new Error("OpenWork server unavailable");
+    // loopback-fetch: the policy service is the locally managed OpenWork server.
+    const response = await fetch(`${server.baseUrl}/managed-policy/website-rules`, {
+      headers: { Authorization: `Bearer ${server.clientToken ?? server.ownerToken}` }, signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) throw new Error("Website rules unavailable");
+    const payload = await response.json();
+    return Array.isArray(payload?.rules) ? payload.rules : [];
+  },
   checkPolicy: async (input) => {
     if (!DESKTOP_POLICY_ENFORCEMENT_ENABLED) return;
     let code = "policy_unavailable";

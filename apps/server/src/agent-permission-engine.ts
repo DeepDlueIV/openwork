@@ -109,7 +109,8 @@ export function agentPermissionEngineV2Decision(
 ): { effect: "allow" | "ask" | "deny"; message?: string } {
   const ourAction = v2Action(action);
   if (!ourAction) return { effect: engineEffect };
-  const ours = decideAgentPermission(rules, ourAction, ourAction === "shell" ? resources.flatMap(shellCommands) : resources);
+  const commands = ourAction === "shell" ? resources.flatMap(shellCommands) : resources;
+  const ours = decideAgentPermission(rules, ourAction, commands);
   if (ours.effect === "deny" && ours.rule) return { effect: "deny", message: agentPermissionDenialMessage(ours.rule, ours.resource) };
   if (ours.effect === "ask" && engineEffect === "allow") return { effect: "ask" };
   return { effect: engineEffect };
@@ -207,6 +208,10 @@ function interpreterPayloads(command: string): string[] {
 }
 
 /**
+ * Known limitation: a program named through a variable or expansion
+ * (`x=rm; $x -rf dir`) is checked as written, so a rule for the program it
+ * expands to does not match it.
+ *
  * The commands a shell command line runs, roughly as the engine's parser finds
  * them: the line, each part between separators, each command substitution and
  * each script handed to another shell, searched again in turn. A rough split
@@ -220,6 +225,12 @@ export function shellCommands(command: string): string[] {
     if (!line || found.has(line) || depth > 8) return;
     found.add(line);
     found.add(withoutAssignments(line));
+    // Quotes do not change what runs: `"rm" -rf x` runs rm.
+    const unquoted = shellWords(line).join(" ");
+    if (unquoted) {
+      found.add(unquoted);
+      found.add(withoutAssignments(unquoted));
+    }
     for (const payload of interpreterPayloads(line)) visit(payload, depth + 1);
     for (const inner of shellSubstitutions(line)) visit(inner, depth + 1);
     for (const part of line.split(/&&|\|\||[;|&\n]/)) visit(part, depth + 1);

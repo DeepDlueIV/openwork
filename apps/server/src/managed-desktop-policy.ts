@@ -298,6 +298,25 @@ class ManagedDesktopPolicy {
     const denial = agentPermissionDenial(agentPermissionRulesOf(policy), action, [name]);
     if (denial) throw new ApiError(403, "organization_policy_denied", denial);
   }
+  /**
+   * The member's website rules for the built-in browser, read by the desktop
+   * process itself rather than taken from the app window. Den is asked first
+   * (briefly); when it cannot answer, the policy verified for this sign-in, else
+   * the rules last stored on this computer, so an organization without agent
+   * permissions gets none, online or offline. Signed out there are none.
+   */
+  async websiteRules(): Promise<ReturnType<typeof agentPermissionRulesOf>> {
+    if (!this.session) return [];
+    const fresh = await Promise.race([
+      this.current().catch(() => null),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 5_000)),
+    ]);
+    const policy = fresh ?? this.knownPolicy();
+    const rules = policy
+      ? agentPermissionRulesOf(policy)
+      : agentPermissionRulesOf((await readGlobalRuntimeOpencodeConfig(this.config)).managedPolicy);
+    return rules.filter((rule) => rule.action === "webfetch");
+  }
   /** The policy to enforce now: verified for this sign-in, else the last one verified for it; never waits on Den. */
   private knownPolicy(): DesktopConfig | null {
     const session = this.session;

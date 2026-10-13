@@ -43,7 +43,7 @@ const BROWSER_SECURITY_PREFERENCES = Object.freeze({
   webviewTag: false,
 });
 
-export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, checkPolicy, showNativeContextMenu, closeNativeContextMenu }) {
+export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, checkPolicy, readWebsiteRules, showNativeContextMenu, closeNativeContextMenu }) {
   // The member's agent permission rules for websites, from their desktop
   // config. They apply to the pages and frames the built-in browser opens,
   // whoever opens them, as the engines apply them to the agent's web fetches.
@@ -110,6 +110,8 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
    * The page a tab shows instead of a site a website rule blocks, like a
    * browser's own "blocked by your administrator" page: the same words for
    * every rule, without naming the rule or who it is set for.
+   * @param {string} url
+   * @returns {{ code: "blocked_by_organization"; message: string; url: string; errorCode: number; errorDescription: string }}
    */
   function blockedSitePage(url) {
     return {
@@ -1782,12 +1784,30 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
       return ensureWebMcpFramePolicy().checkFrame(event.senderFrame);
     });
     ipcMain.handle("openwork:browser:setProxy", (_event, proxy) => setBrowserProxy(proxy));
-    // `rules` is null while the app has not verified the member's rules yet.
-    ipcMain.handle("openwork:browser:setAgentPermissionRules", (event, rules) => {
+    // The app says when the member's rules may have changed. It can only make
+    // the browser stricter itself (null keeps pages closed while it verifies
+    // them); the rules are read from the local OpenWork server, never taken
+    // from the window, so a script in the window cannot loosen them.
+    let websiteRulesRead = 0;
+    ipcMain.handle("openwork:browser:setAgentPermissionRules", async (event, rules) => {
       if (event.sender !== window()?.webContents || event.senderFrame !== window()?.webContents.mainFrame) return false;
-      setWebsiteRules(Array.isArray(rules) ? rules.filter((rule) => rule?.action === "webfetch"
-        && typeof rule.resource === "string" && ["allow", "ask", "deny"].includes(rule.effect) && typeof rule.source === "string") : null);
-      return true;
+      const read = ++websiteRulesRead;
+      // Rules the app reports keep pages closed until verified: that only makes it stricter.
+      if (rules === null || (Array.isArray(rules) && rules.length > 0)) setWebsiteRules(null);
+      if (rules === null) return true;
+      // The local server may still be starting: try for about half a minute.
+      for (let attempt = 0; attempt < 20 && read === websiteRulesRead; attempt++) {
+        try {
+          const verified = await readWebsiteRules?.();
+          if (read !== websiteRulesRead || !Array.isArray(verified)) return false;
+          setWebsiteRules(verified.filter((rule) => rule?.action === "webfetch"
+            && typeof rule.resource === "string" && ["allow", "ask", "deny"].includes(rule.effect) && typeof rule.source === "string"));
+          return true;
+        } catch {
+          await new Promise((resolve) => setTimeout(resolve, 1_500));
+        }
+      }
+      return false;
     });
     ipcMain.handle("openwork:browser:setControlEnabled", (event, enabled) => {
       if (event.sender !== window()?.webContents || event.senderFrame !== window()?.webContents.mainFrame) return false;

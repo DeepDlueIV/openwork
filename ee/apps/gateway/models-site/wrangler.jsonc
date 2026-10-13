@@ -1,0 +1,8 @@
+// The public model catalog at models.openworklabs.com: static assets only, no Worker code. Workers Builds runs
+// ../scripts/build-models.mjs from this directory and deploys models/. The custom domain is attached in the dashboard
+// and deliberately not listed here: with no routes, `wrangler deploy` leaves it alone.
+{
+  "name": "openwork-model-catalog",
+  "compatibility_date": "2026-09-20",
+  "assets": { "directory": "./models" }
+}

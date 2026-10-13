@@ -1,6 +1,5 @@
-# Cloudflare's edge reads Cloudflare-CDN-Cache-Control and does not forward it,
-# so clients keep the Pages default `Cache-Control: public, max-age=0,
-# must-revalidate`. The zone Cache Rule makes /api.json cacheable, and
-# .github/workflows/purge-model-catalog.yml purges it once a new catalog is live.
-/api.json
-  Cloudflare-CDN-Cache-Control: max-age=300, stale-while-revalidate=300, stale-if-error=86400
+# Workers Static Assets already sends `Cache-Control: public, max-age=0, must-revalidate` and an ETag, and caches
+# the files on Cloudflare's network. Pages also sent these two headers, so keep them for browser clients.
+/*
+  Access-Control-Allow-Origin: *
+  X-Content-Type-Options: nosniff

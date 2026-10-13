@@ -101,11 +101,28 @@ export function agentPermissionEngineV2Decision(
 ): { effect: "allow" | "ask" | "deny"; message?: string } {
   const ourAction = v2Action(action);
   if (!ourAction) return { effect: engineEffect };
-  const commands = ourAction === "shell" ? resources.flatMap(shellCommands) : resources;
+  const parsed = ourAction === "shell" ? resources.map(parseShellCommands) : [];
+  const commands = ourAction === "shell" ? parsed.flatMap((entry) => entry.commands) : resources;
   const ours = decideAgentPermission(rules, ourAction, commands);
   if (ours.effect === "deny" && ours.rule) return { effect: "deny", message: agentPermissionDenialMessage(ours.rule, ours.resource) };
+  // A line the parser cannot fully check is blocked where commands are, and
+  // asked about where any command rule restricts it.
+  if (parsed.some((entry) => entry.unchecked) && rules.some((rule) => rule.action === "shell" && rule.effect !== "allow")) {
+    const decision = commandsDecision(rules);
+    if (decision?.effect === "deny") return { effect: "deny", message: agentPermissionDenialMessage(decision, "*") };
+    return { effect: engineEffect === "deny" ? "deny" : "ask" };
+  }
   if (ours.effect === "ask" && engineEffect === "allow") return { effect: "ask" };
   return { effect: engineEffect };
+}
+
+/** The rule that sets the decision for every command, if any: the last command rule for `*`. */
+function commandsDecision(rules: readonly AgentPermissionRule[]): AgentPermissionRule | undefined {
+  for (let index = rules.length - 1; index >= 0; index--) {
+    const rule = rules[index];
+    if (rule?.action === "shell" && rule.resource === "*") return rule;
+  }
+  return undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -201,21 +218,46 @@ const COMMAND_WRAPPERS = new Set([
   "stdbuf", "setsid", "watch", "chrt", "taskset", "unbuffer", "caffeinate", "-exec", "-execdir", "-ok", "-okdir",
 ]);
 
-/** How many words after a wrapper, or after the first word of a line a shell reads, may start the command it runs. */
-const COMMAND_STARTS = 4;
+/** Most text one command line's parse reads; a line that needs more cannot be checked. */
+const SHELL_PARSE_BUDGET = 2_000_000;
+
+/** How deep scripts handed to other shells are searched; deeper ones cannot be checked. */
+const SHELL_PARSE_DEPTH = 8;
+
+/** Spends parse budget on this much text; false once the budget is gone. */
+type Spend = (characters: number) => boolean;
 
 function programName(word: string): string {
   return word.slice(word.lastIndexOf("/") + 1);
 }
 
-/** The line from each of the first few words from `from` on that is neither an option nor another wrapper. */
-function commandsFrom(words: readonly string[], from: number): string[] {
+/** The line from each word from `from` on that is neither an option nor another wrapper, while the budget lasts. */
+function commandsFrom(words: readonly string[], from: number, spend: Spend): string[] {
   const found: string[] = [];
-  for (let at = from; at < words.length && found.length < COMMAND_STARTS; at++) {
+  for (let at = from; at < words.length; at++) {
     const word = words[at]!;
-    if (!word.startsWith("-") && !COMMAND_WRAPPERS.has(programName(word))) found.push(words.slice(at).join(" "));
+    if (word.startsWith("-") || COMMAND_WRAPPERS.has(programName(word))) continue;
+    const command = words.slice(at).join(" ");
+    if (!spend(command.length)) break;
+    found.push(command);
   }
   return found;
+}
+
+/** A command with its program named by file name only: `/bin/rm -rf x` runs `rm -rf x`. */
+function byProgramName(command: string): string {
+  const space = command.search(/\s/);
+  return space === -1 ? programName(command) : `${programName(command.slice(0, space))}${command.slice(space)}`;
+}
+
+/**
+ * Whether the program a command runs is named through something only the
+ * shell resolves: a variable (`$x`, `${x}`), a substitution (`$(…)`, backticks)
+ * or a pattern (`/bin/r?`, `{rm,}`). `[` and `[[` are the test command.
+ */
+function namesProgramDynamically(command: string): boolean {
+  const program = /^\S*/.exec(command)?.[0] ?? "";
+  return program !== "[" && program !== "[[" && /[$`*?[{]/.test(program);
 }
 
 /**
@@ -228,7 +270,7 @@ function commandsFrom(words: readonly string[], from: number): string[] {
  * so none hides the script. Later ones on the same line are found when the
  * script or command they belong to is searched in turn.
  */
-function interpreterPayloads(command: string): string[] {
+function interpreterPayloads(command: string, spend: Spend): string[] {
   const words = shellWords(command);
   const found: string[] = [];
   const evalAt = words.findIndex((word) => programName(word) === "eval");
@@ -240,7 +282,7 @@ function interpreterPayloads(command: string): string[] {
     else if (option.startsWith("--command=")) found.push(option.slice("--command=".length));
   }
   if (command.split(/[\s|;&()<>]+/).some((token) => SHELL_INTERPRETERS.has(programName(token)))) {
-    found.push(...words.filter((word) => /\s/.test(word)), ...commandsFrom(words, 1));
+    found.push(...words.filter((word) => /\s/.test(word)), ...commandsFrom(words, 1, spend));
   }
   return found;
 }
@@ -248,47 +290,65 @@ function interpreterPayloads(command: string): string[] {
 /**
  * The command a wrapper runs after its own options and arguments
  * (`sudo -u x rm …`, `env A=1 rm …`, `timeout 5 rm …`, `xargs rm`,
- * `find . -exec rm {} ;`): each of the first few words after the wrapper that
- * is neither an option nor another wrapper may start it.
+ * `find . -exec rm {} ;`): each word after the wrapper that is neither an
+ * option nor another wrapper may start it.
  */
-function wrappedCommands(command: string): string[] {
+function wrappedCommands(command: string, spend: Spend): string[] {
   const words = shellWords(command);
   const at = words.findIndex((word) => COMMAND_WRAPPERS.has(programName(word)));
-  return at === -1 ? [] : commandsFrom(words, at + 1);
+  return at === -1 ? [] : commandsFrom(words, at + 1, spend);
 }
 
 /**
- * Known limitations: a program named through a variable or expansion
- * (`x=rm; $x -rf dir`) is checked as written, and so is a script that only
- * exists when the line runs (`curl … | sh`, `base64 -d … | sh`), so a rule
- * for the commands they become does not match them.
- *
  * The commands a shell command line runs, roughly as the engine's parser finds
  * them: the line, each part between separators (also without the keywords in
- * front, as in `then rm x`), each command substitution, each script handed to
- * another shell and each command a wrapper such as `sudo` runs, searched again
- * in turn. A rough split only adds candidates, so a pattern can block more
- * than the line runs, never less.
+ * front, as in `then rm x`, and with the program named by file name), each
+ * command substitution, each script handed to another shell and each command
+ * a wrapper such as `sudo` runs, searched again in turn. A rough split only
+ * adds candidates, so a pattern can block more than the line runs, never less.
+ *
+ * `unchecked` says the line runs something no pattern can be checked against:
+ * a program named through an expansion (`x=rm; $x -rf dir`), scripts nested
+ * deeper than are searched, or more text than one parse reads. A script that
+ * only exists when the line runs (`curl … | sh`) is checked as written.
  */
-export function shellCommands(command: string): string[] {
+export function parseShellCommands(command: string): { commands: string[]; unchecked: boolean } {
   const found = new Set<string>();
+  let unchecked = false;
+  let budget = SHELL_PARSE_BUDGET;
+  const spend: Spend = (characters) => {
+    budget -= characters;
+    if (budget < 0) unchecked = true;
+    return budget >= 0;
+  };
   const visit = (text: string, depth: number) => {
     const line = text.trim();
-    if (!line || found.has(line) || depth > 8) return;
-    // Keywords in front do not change what runs: `then rm x` runs rm.
+    if (!line || found.has(line)) return;
+    if (depth > SHELL_PARSE_DEPTH || !spend(line.length)) {
+      unchecked = true;
+      return;
+    }
+    // Keywords and assignments in front, and the program's folder, do not change what runs.
     const add = (candidate: string) => {
-      const stripped = withoutShellKeywords(candidate);
-      for (const entry of [candidate, withoutAssignments(candidate), stripped, withoutAssignments(stripped)]) found.add(entry);
+      const command = withoutShellKeywords(candidate);
+      const stripped = withoutAssignments(command);
+      for (const entry of [candidate, withoutAssignments(candidate), command, stripped, byProgramName(stripped)]) found.add(entry);
+      if (namesProgramDynamically(stripped)) unchecked = true;
     };
     add(line);
     // Quotes do not change what runs: `"rm" -rf x` runs rm.
     const unquoted = shellWords(line).join(" ");
     if (unquoted) add(unquoted);
-    for (const payload of interpreterPayloads(line)) visit(payload, depth + 1);
-    for (const wrapped of wrappedCommands(line)) visit(wrapped, depth + 1);
+    for (const payload of interpreterPayloads(line, spend)) visit(payload, depth + 1);
+    for (const wrapped of wrappedCommands(line, spend)) visit(wrapped, depth + 1);
     for (const inner of shellSubstitutions(line)) visit(inner, depth + 1);
     for (const part of line.split(/&&|\|\||[;|&\n]/)) visit(part, depth + 1);
   };
   visit(command, 0);
-  return [...found].filter(Boolean);
+  return { commands: [...found].filter(Boolean), unchecked };
+}
+
+/** The commands a shell command line runs (see parseShellCommands). */
+export function shellCommands(command: string): string[] {
+  return parseShellCommands(command).commands;
 }

@@ -23,7 +23,7 @@ inference.openworklabs.com
 Common misses:
 
 - GitHub release downloads redirect away from `github.com`. Allow `release-assets.githubusercontent.com`, which is the current verified GitHub release-asset host, and `objects.githubusercontent.com`, which is kept for older clients and rollback paths.
-- `registry.npmjs.org` is used when packaged desktop builds start `npx -y openwork-ui-mcp`. If it is blocked, the desktop can still open, but UI-control MCP is unavailable.
+- `registry.npmjs.org` is used when packaged desktop builds start `npx -y openwork-ui-mcp`, and by the bundled OpenCode engine, which installs `@opencode-ai/plugin` once into each OpenCode config folder, including every new workspace's `.opencode` folder. The engine answers nothing for that workspace until the install ends. If the registry is blocked, the desktop still opens, but each new workspace waits for the install to give up: about a second when the connection is refused or the host does not resolve, about 20 seconds when the registry never answers. UI-control MCP is unavailable, and local OpenCode plugins that import `@opencode-ai/plugin` do not load until an install succeeds. Point npm at an approved mirror with `registry=` in `.npmrc` to avoid both.
 - `models.openworklabs.com` is the default OpenCode model catalog. Set `OPENCODE_MODELS_URL` to an approved internal mirror if the public catalog is blocked.
 
 ## Desktop and local runtime destinations
@@ -38,7 +38,7 @@ Common misses:
 | `github.com` | Required in practice unless mirrored | Installer/updater release URLs and GitHub issue links. | Install/update downloads cannot start; GitHub links may not open. |
 | `release-assets.githubusercontent.com` | Required in practice unless mirrored | Current GitHub release-asset redirect target. | Downloads start from `github.com` and fail partway through. |
 | `objects.githubusercontent.com` | Required in practice for legacy/rollback | Legacy GitHub release-asset redirect target. | Older clients or rollback downloads can fail partway through. |
-| `registry.npmjs.org` | Required in practice unless npm is mirrored | `npx` package resolution for `openwork-ui-mcp` and development-only helper commands. | OpenWork UI-control MCP is unavailable. |
+| `registry.npmjs.org` | Required in practice unless npm is mirrored | `npx` package resolution for `openwork-ui-mcp` and development-only helper commands; the engine's one-time `@opencode-ai/plugin` install into each OpenCode config folder. | Each new workspace answers only after that install gives up (about 20 seconds when the registry never answers). OpenWork UI-control MCP is unavailable, and local plugins that import `@opencode-ai/plugin` do not load. |
 | `models.openworklabs.com` | Required in practice unless mirrored | Default OpenCode model catalog passed as `OPENCODE_MODELS_URL`. | Model selection can be stale, incomplete, or unavailable. |
 | `inference.openworklabs.com` | Required for Auto | The OpenWork Gateway that serves Auto, the free starting model, before and after sign-in. | Auto is unavailable; connected providers still work. |
 | `cdn.simpleicons.org` | Optional | Provider icons when no local icon exists. | Some icons are missing. |

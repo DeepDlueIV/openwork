@@ -282,11 +282,11 @@
     {
       "host": "registry.npmjs.org",
       "kind": "subprocess",
-      "components": ["desktop", "renderer"],
-      "purpose": "npx package resolution for openwork-ui-mcp and development-only MCP helper commands.",
+      "components": ["desktop", "renderer", "server"],
+      "purpose": "npx package resolution for openwork-ui-mcp and development-only MCP helper commands, and the managed OpenCode engine's one-time install of @opencode-ai/plugin into each OpenCode config folder, including every new workspace's .opencode folder.",
       "requirement": "required-in-practice",
-      "blockedEffect": "The OpenWork UI-control MCP is silently unavailable when npx cannot download openwork-ui-mcp.",
-      "override": "npm registry configuration used by npx"
+      "blockedEffect": "The engine answers nothing for a new workspace until its install gives up: about a second when the connection is refused or the host does not resolve, about 20 seconds when the registry never answers. The OpenWork UI-control MCP is silently unavailable, and local OpenCode plugins that import @opencode-ai/plugin do not load until an install succeeds.",
+      "override": "npm registry configuration (registry= in .npmrc) used by npx and the managed engine"
     },
     {
       "host": "schemas.agentskills.io",

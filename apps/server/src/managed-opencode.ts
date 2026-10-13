@@ -156,11 +156,25 @@ async function startManagedOpencodeServer(
   const password = randomSecret();
   const args = ["serve", "--hostname", hostname, "--port", String(port), "--cors", "*"];
   const command = options.bin?.trim() || "opencode";
-  // The engine's in-process npm installs use Arborist, which audits by default.
-  // That audit POST depends on npm's advisories endpoint, which has been observed
-  // to hang for the full five-minute registry timeout, so first-run must not wait.
-  // @npmcli/config reads npm_config_* settings from the environment.
-  const engineEnvDefaults = { npm_config_audit: "false" };
+  // The engine npm-installs @opencode-ai/plugin into each config directory,
+  // including every new workspace's .opencode, and answers no request for that
+  // directory until the install ends, because OpenWork always configures
+  // plugins. @npmcli/config reads npm_config_* settings from the environment.
+  // - Arborist audits by default, and that audit POST has been observed to hang
+  //   for the full five-minute registry timeout.
+  // - npm retries a failed request after 10 s and again after 60 s, and waits
+  //   up to five minutes for a registry that never answers. Offline, a first run
+  //   waited 70 s; with the registry dropped by a firewall, many minutes. The
+  //   10 s timeout ends a silent request, not a download that is still flowing.
+  // Shell commands the engine runs inherit these too. A value already in the
+  // server's own environment, in either letter case, wins.
+  const inheritedNames = new Set(Object.keys(process.env).map((name) => name.toLowerCase()));
+  const engineEnvDefaults = Object.fromEntries(Object.entries({
+    npm_config_audit: "false",
+    npm_config_fetch_retries: "1",
+    npm_config_fetch_retry_mintimeout: "1000",
+    npm_config_fetch_timeout: "10000",
+  }).filter(([name]) => !inheritedNames.has(name)));
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     ...engineEnvDefaults,

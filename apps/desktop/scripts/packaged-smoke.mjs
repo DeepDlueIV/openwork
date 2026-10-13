@@ -3,6 +3,7 @@ import { accessSync, appendFileSync, constants, existsSync, mkdirSync, writeFile
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { describeEngineFindings, diagnoseEngine } from "./engine-diagnosis.mjs";
 import { runCommand, runConcurrent } from "./packaged-smoke-runner.mjs";
 
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -149,8 +150,16 @@ try {
   report.passed = true;
 } finally {
   report.totalMilliseconds = Math.round(performance.now() - started);
+  // A journey that fails because the AI engine never answered otherwise reports
+  // only a later browser timeout. Say so first, with the engine's own errors.
+  const engine = report.passed ? "" : describeEngineFindings(diagnoseEngine(join(output, "logs")));
+  if (engine) {
+    report.engineNeverAnswered = true;
+    console.error(`\n[packaged-smoke] ${engine}\n`);
+    if (process.env.GITHUB_ACTIONS) console.log(`::error title=AI engine did not answer::${engine.split("\n")[0]}`);
+  }
   writeFileSync(join(output, "timing.json"), `${JSON.stringify(report, null, 2)}\n`);
   if (process.env.GITHUB_STEP_SUMMARY) {
-    appendFileSync(process.env.GITHUB_STEP_SUMMARY, `\n### Packaged desktop smoke\n\n${report.passed ? "Passed" : "Failed"}; ${Math.round(report.totalMilliseconds / 1000)} seconds after dependency setup${process.argv.includes("--server-built") ? " and server compilation" : ""}. Target: under 120 seconds on a warm runner.\n\n| Phase | Seconds |\n| --- | ---: |\n${report.phases.map(p => `| ${p.name} | ${(p.milliseconds / 1000).toFixed(1)} |`).join("\n")}\n`);
+    appendFileSync(process.env.GITHUB_STEP_SUMMARY, `\n### Packaged desktop smoke\n\n${report.passed ? "Passed" : "Failed"}; ${Math.round(report.totalMilliseconds / 1000)} seconds after dependency setup${process.argv.includes("--server-built") ? " and server compilation" : ""}. Target: under 120 seconds on a warm runner.\n\n${engine ? `**The app's AI engine (OpenCode) did not answer.**\n\n\`\`\`\n${engine}\n\`\`\`\n\n` : ""}| Phase | Seconds |\n| --- | ---: |\n${report.phases.map(p => `| ${p.name} | ${(p.milliseconds / 1000).toFixed(1)} |`).join("\n")}\n`);
   }
 }

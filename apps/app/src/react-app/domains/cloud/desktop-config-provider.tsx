@@ -114,6 +114,29 @@ function rememberCachedConfigMember(cacheKey: string, userId: string): void {
   }
 }
 
+// Whether the member's last fresh config had agent permissions in force. A
+// config without them is then not trusted to be current until Den confirms it.
+const AGENT_PERMISSIONS_IN_FORCE_PREFIX = "openwork.den.agentPermissionsInForce:";
+
+function agentPermissionsWereInForce(cacheKey: string, userId: string): boolean {
+  try {
+    return userId !== "" && window.localStorage.getItem(`${AGENT_PERMISSIONS_IN_FORCE_PREFIX}${cacheKey}:${userId}`) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function rememberAgentPermissionsInForce(cacheKey: string, userId: string, inForce: boolean): void {
+  if (!userId) return;
+  try {
+    const key = `${AGENT_PERMISSIONS_IN_FORCE_PREFIX}${cacheKey}:${userId}`;
+    if (inForce) window.localStorage.setItem(key, "1");
+    else window.localStorage.removeItem(key);
+  } catch {
+    // Without the record a config without agent permissions is trusted, as before.
+  }
+}
+
 export function resolveConnectStateToPush(config: DenDesktopConfig): boolean | null {
   return typeof config.connectEnabled === "boolean" ? config.connectEnabled : null;
 }
@@ -301,12 +324,18 @@ export function DesktopConfigProvider({ children }: DesktopConfigProviderProps) 
   // use them see no change. Only before any config for this member is known
   // (a first sign-in, another member's cache) does it wait, unless the
   // organization's cached config shows it does not use agent permissions.
+  // It also waits when the member had agent permissions and the config in
+  // hand has none, until a fresh config confirms they were removed.
+  const awaitingFreshAgentPermissions = freshConfigStatus !== "ready"
+    && !config.agentPermissions?.rules.length
+    && agentPermissionsWereInForce(getDenDesktopConfigCacheKey(), userId);
   const websiteRules = useMemo(() => {
     if (!isSignedIn && denAuth.status !== "checking") return [];
+    if (awaitingFreshAgentPermissions) return null;
     if (known) return (config.agentPermissions?.rules ?? []).filter((rule) => rule.action === "webfetch");
     const cached = readCachedDenDesktopConfig(getDenDesktopConfigCacheKey());
     return cached && cached.agentPermissions === undefined ? [] : null;
-  }, [config.agentPermissions, denAuth.status, isSignedIn, known]);
+  }, [awaitingFreshAgentPermissions, config.agentPermissions, denAuth.status, isSignedIn, known]);
   useEffect(() => {
     void window.__OPENWORK_ELECTRON__?.browser?.setAgentPermissionRules?.(websiteRules);
   }, [websiteRules]);
@@ -408,6 +437,7 @@ export function DesktopConfigProvider({ children }: DesktopConfigProviderProps) 
 
       writeCachedDenDesktopConfig(cacheKey, nextConfig);
       rememberCachedConfigMember(cacheKey, userId);
+      rememberAgentPermissionsInForce(cacheKey, userId, (nextConfig.agentPermissions?.rules.length ?? 0) > 0);
       applyDesktopConfigActions(nextConfig);
       setDesktopConfigState((current) => ({ ...current, freshConfigStatus: "ready", known: true }));
       void reconcileShellBranding(nextConfig).catch(() => undefined);

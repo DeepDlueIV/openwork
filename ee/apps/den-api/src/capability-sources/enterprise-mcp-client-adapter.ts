@@ -177,7 +177,10 @@ function translateEnterpriseMcpError(
   if (toolResult instanceof EnterpriseMcpToolResultError) {
     return providerToolDiagnosticError({
       tracker,
-      result: toolResult.providerSignal ? { structuredContent: toolResult.providerSignal } : undefined,
+      result: {
+        content: toolResult.providerText.map((text) => ({ type: "text", text })),
+        ...(toolResult.providerSignal ? { structuredContent: toolResult.providerSignal } : {}),
+      },
     })
   }
   const enterpriseError = chain.find((cause) => cause instanceof EnterpriseMcpClientError)

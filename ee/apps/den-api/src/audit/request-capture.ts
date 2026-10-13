@@ -9,6 +9,7 @@ import { matchedRoutes, routePath } from "hono/route"
 import type { DenApiKeySession } from "../api-keys.js"
 import { db } from "../db.js"
 import { env } from "../env.js"
+import { getAuditEntitlement } from "../entitlements.js"
 import { appLogger } from "../observability/logger.js"
 import { AUDIT_OUTCOME_LOST_OPERATIONAL_MARKER, PLATFORM_AUDIT_LOST_OPERATIONAL_MARKER } from "../operational-log-markers.js"
 import type { OrganizationContext } from "../orgs.js"
@@ -45,7 +46,8 @@ export type AuditRequestAttribution = Readonly<{
    */
   refusal?: Readonly<{ reasonCode: string }>
 }>
-type TenantAttribution = { organizationId: string; actor: AuditActor; principalKey: string; origin: AuditOrigin }
+/** `entitled` is known when this request already read the organization's plan; otherwise the policy read checks it. */
+type TenantAttribution = { organizationId: string; actor: AuditActor; principalKey: string; origin: AuditOrigin; entitled?: boolean }
 type ResolvedDeclaration = { declaration: AuditRouteDeclaration; params: Record<string, string> }
 type AuditRequestResource = AuditEventInput["resources"][number]
 type AuditRequestState = {
@@ -336,7 +338,7 @@ async function startTenantCapture(c: Context, state: AuditRequestState, resolved
   state.began = true
   state.tenant = tenant
   if (refusal) state.refusalReasonCode = refusal.reasonCode
-  if (!env.auditCaptureEnabled) return null
+  if (!env.auditCaptureEnabled || tenant.entitled === false) return null
   const auditClass = declaration.class
   try {
     const policy = await readEffectiveAuditPolicyWithRetry(tenant.organizationId)
@@ -402,7 +404,12 @@ function memberTenant(c: Context, state: AuditRequestState, membership: Verified
 
 function orgContextTenant(c: Context, state: AuditRequestState, organization: OrganizationContext): TenantAttribution {
   const member = organization.currentMember
-  return memberTenant(c, state, { organizationId: organization.organization.id, userId: member.userId, memberId: member.id })
+  const tenant = memberTenant(c, state, { organizationId: organization.organization.id, userId: member.userId, memberId: member.id })
+  // The organization row, plan included, was read fresh with the organization
+  // context in this request: an organization without the entitlement needs no
+  // policy transaction. Entitled ones still read the policy, and every append
+  // rechecks the entitlement.
+  return { ...tenant, entitled: getAuditEntitlement(organization.organization.metadata).enabled }
 }
 
 function pathTenantBase(c: Context, declaration: AuditRouteDeclaration, adminUserId: string): TenantAttribution | null {

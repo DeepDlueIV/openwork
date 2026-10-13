@@ -33,13 +33,14 @@ test("a member uses Apps inside Workbot's replies, and Workbot knows what they d
   };
   const apps = async () => (await probe.dom("[data-workbot-app]")).elements.length;
 
-  await step("given a member in their main chat, with Apps on for their workspace", async () => {
+  await step("before: a member is in their main chat, with Apps on for their workspace and no App open yet", async () => {
     await startChatting({ world, user, probe });
     expect(await apps()).toBe(0);
+    await user.screenshot();
     evidence.recordAssertionEvidence("The member's main chat has started", "Workbot's hello is on screen and no App is open yet.", true);
   });
 
-  await step("when they ask Workbot to check stock, the Inventory App opens in the reply with the result it opened with", async () => {
+  await step("after: when they ask Workbot to check stock, the Inventory App opens in the reply with the result it opened with", async () => {
     await send(user, world.stock);
     await user.see({ text: world.stockReply }, { timeoutMs: 60_000 });
     await user.see({ text: world.stockTitle }, { timeoutMs: 30_000 });
@@ -56,7 +57,7 @@ test("a member uses Apps inside Workbot's replies, and Workbot knows what they d
     );
   });
 
-  await step("when they click Reserve in the App, it reserves, and the App tells Workbot what it reserved", async () => {
+  await step("after: when they click Reserve in the App, it reserves, and the App tells Workbot what it reserved", async () => {
     if (!view) throw new Error("The Stock check App is not open");
     await view.click("Reserve 6");
     await view.sees("reservation", `Reserved ${world.reservation}`);
@@ -64,7 +65,7 @@ test("a member uses Apps inside Workbot's replies, and Workbot knows what they d
     evidence.recordAssertionEvidence("A click runs the App's change", `One click in the App reserved stock: it shows "Reserved ${world.reservation}".`, true);
   });
 
-  await step("when they click Ask Workbot about it, the App asks as them, and Workbot answers from what the App told it", async () => {
+  await step("after: when they click Ask Workbot about it, the App asks as them, and Workbot answers from what the App told it", async () => {
     if (!view) throw new Error("The Stock check App is not open");
     await view.click("Ask Workbot about it");
     await user.see({ text: world.ask }, { timeoutMs: 30_000 });
@@ -80,7 +81,7 @@ test("a member uses Apps inside Workbot's replies, and Workbot knows what they d
     await user.screenshot();
   });
 
-  await step("when they open the App built in OpenWork, its read-only price lookup runs as it opens", async () => {
+  await step("after: when they open the App built in OpenWork, its read-only price lookup runs as it opens", async () => {
     await send(user, world.price);
     await user.see({ text: world.priceReply }, { timeoutMs: 60_000 });
     await user.see({ text: world.priceTitle }, { timeoutMs: 30_000 });
@@ -91,7 +92,7 @@ test("a member uses Apps inside Workbot's replies, and Workbot knows what they d
     evidence.recordAssertionEvidence("An App built in OpenWork opens inside the reply", `The Price check App opened under "${world.priceReply}" and showed the unit price its read-only lookup returned, with no click.`, true);
   });
 
-  await step("after a reload, both Apps come back as they were, and the model isn't asked again", async () => {
+  await step("after: on reload, both Apps come back as they were, and the model isn't asked again", async () => {
     const requests = world.witness().requests;
     await view?.[Symbol.asyncDispose]();
     view = undefined;
@@ -106,7 +107,7 @@ test("a member uses Apps inside Workbot's replies, and Workbot knows what they d
     evidence.recordAssertionEvidence("Apps are kept with the conversation", `After a reload both Apps opened again with what they opened with, and the model got no new request (${requests} before and after).`, true);
   });
 
-  await step("after Apps are turned off for the workspace, the replies stay and the Apps are gone", async () => {
+  await step("after: once Apps are turned off for the workspace, the replies stay and the Apps are gone", async () => {
     await view?.[Symbol.asyncDispose]();
     view = undefined;
     await world.setApps(false);

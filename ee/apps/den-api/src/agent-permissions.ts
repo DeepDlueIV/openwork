@@ -252,11 +252,13 @@ export async function readAgentPermissionRulesForMember(input: {
   if (policies.length === 0) return []
   const settings = await readSettings(db, policies.map((policy) => policy.id))
   const everyone = policies.find((policy) => policy.scopeKey === EVERYONE_SCOPE)
+  // Every team counts, with or without its own record: a team without one has
+  // everyone's settings, so another team's record cannot undo them.
   return resolveAgentPermissionRules({
     everyone: everyone ? { source: AGENT_PERMISSION_EVERYONE, settings: settings.get(everyone.id) ?? {} } : null,
-    teams: teams.flatMap((team) => {
+    teams: teams.map((team) => {
       const policy = policies.find((entry) => entry.teamId === team.id)
-      return policy ? [{ source: team.name, settings: settings.get(policy.id) ?? {} }] : []
+      return { source: team.name, settings: policy ? settings.get(policy.id) ?? {} : {} }
     }),
   })
 }

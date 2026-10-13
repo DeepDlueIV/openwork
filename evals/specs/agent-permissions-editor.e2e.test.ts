@@ -170,6 +170,17 @@ twoTeamsTest("a member in two teams gets the strictest decision of the two, and 
     await owner.screenshot();
   });
 
+  await step("Everyone turns web search off and Contractors turns it on: Engineering has no agent permissions of its own, so Riley keeps Everyone's block", async () => {
+    await world.save({ webSearch: { decision: "deny" } });
+    await world.saveContractors({ commands: { decision: "deny", allow: ["echo *"] }, webSearch: { decision: "allow" } });
+    const received = await world.receivedRules("riley");
+    const searchRules = received?.filter((entry) => entry.action === "websearch") ?? null;
+    evidence.recordAssertionEvidence("Riley's web search rules", describeRules(searchRules), JSON.stringify(searchRules) === JSON.stringify([rule("websearch", "*", "deny", "Everyone")]));
+    expect(searchRules).toEqual([rule("websearch", "*", "deny", "Everyone")]);
+    await world.save({});
+    await world.saveContractors({ commands: { decision: "deny", allow: ["echo *"] } });
+  });
+
   await step("the owner creates Engineering's agent permissions: commands allowed, but git push always blocked", async () => {
     await owner.click({ testId: "new-team-agent-permissions" });
     await owner.see({ role: "button", label: "Team" }, { timeoutMs: 30_000 });

@@ -4,9 +4,12 @@ import { promisify } from "node:util";
 import { randomBytes } from "node:crypto";
 import { startMockIdpLab } from "@openwork/labs";
 import { chrome, localHost } from "@openwork/hosts";
-import { denFetch, evalIn, waitFor, clickButton } from "@openwork/behaviors";
-import { browserScript } from "@openwork/cdp";
-import type { Den } from "@openwork/env";
+import { denFetch, evalIn, waitFor, clickButton, readHandoffDeepLink, signInInBrowser } from "@openwork/behaviors";
+import { browserScript, attachSurface } from "@openwork/cdp";
+import type { Surface } from "@openwork/cdp";
+import type { Den, Seed } from "@openwork/env";
+import { releasedEnterpriseActivatedWorld } from "./released-enterprise-activated.ts";
+import { handoffOriginWitness } from "./handoff-origin-witness.ts";
 
 const run = promisify(execFile);
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -120,6 +123,64 @@ export async function splitOriginSso(den: Den) {
     return { issuer: idp.issuer, stop };
   } catch (error) {
     await stop().catch(() => undefined);
+    throw error;
+  }
+}
+
+/** Source regression by default; an explicitly supplied release binary selects
+ * the published characterization. Attached published Den is used when supplied. */
+export async function handoffWorld(seed: Seed) {
+  const cleanup = new AsyncDisposableStack();
+  try {
+    const source = process.env.SWITCHORG_SOURCE === "1" || !process.env.OPENWORK_EVAL_ELECTRON_BINARY;
+    const released = source ? null : await releasedEnterpriseActivatedWorld(seed);
+    let den: Den;
+    if (released) {
+      cleanup.defer(() => released[Symbol.asyncDispose]());
+      den = released.den;
+    } else {
+      den = await seed.den();
+    }
+    const organization = await denFetch(den.admin, "/v1/org");
+    if (!organization.response.ok) throw new Error("Could not read the fixture organization");
+    const expectedOrganization = record(record(organization.body).organization);
+    const organizationIdentity = {
+      id: field(expectedOrganization, "id"), name: field(expectedOrganization, "name"),
+    };
+    const sso = process.env.SWITCHORG_SSO === "1" ? await splitOriginSso(den) : null;
+    if (sso) cleanup.defer(() => sso.stop());
+    const foreign = await handoffOriginWitness();
+    cleanup.defer(() => foreign.stop());
+    const browsers = [
+      await seed.web({ den, headless: true }),
+      await seed.web({ den, headless: true }),
+    ];
+    const common = {
+      den, browsers, sso, foreign, source, organizationIdentity,
+      signInPassword: (browser: Surface, url: string) => signInInBrowser(browser, url, den.admin),
+      readHandoffLink: (browser: Surface) => readHandoffDeepLink(browser),
+      [Symbol.asyncDispose]: () => cleanup.disposeAsync(),
+    };
+    if (released) {
+      return { ...common,
+        launch: () => released.launch({ binary: released.binary,
+          profileDir: released.newProfileDir("split-origin"), seedBootstrap: true }),
+      };
+    }
+    const host = localHost();
+    const handle = await host.spawnElectron("split-origin-source", {
+      profile: "fresh", devCommand: "dev:electron",
+      bootstrap: { baseUrl: den.ref.webUrl, apiBaseUrl: den.ref.apiUrl, requireSignin: true },
+    });
+    cleanup.defer(() => host.disposeSurface(handle));
+    const app = await attachSurface(handle);
+    cleanup.defer(() => app.stop());
+    return { ...common,
+      launch: async () => ({ app, profileDir: handle.profileDir, buildInfo: async () => null,
+        rootText: () => evalIn(app, () => document.getElementById("root")?.innerText ?? "") }),
+    };
+  } catch (error) {
+    await cleanup.disposeAsync();
     throw error;
   }
 }

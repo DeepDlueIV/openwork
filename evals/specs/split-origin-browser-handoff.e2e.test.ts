@@ -1,55 +1,19 @@
 import { expect } from "vitest";
-import { spec, readDenClientState, evalIn, attachSurface } from "@openwork/testkit";
-import { browserScript } from "@openwork/cdp";
-import { localHost } from "@openwork/hosts";
+import { spec, readDenClientState, evalIn, browserScript, electronProfilePaths } from "@openwork/testkit";
 import { readFile } from "node:fs/promises";
-import { electronProfilePaths } from "@openwork/testkit";
-import type { Seed } from "@openwork/testkit";
-import { readHandoffDeepLink, signInInBrowser } from "@openwork/behaviors";
-import { releasedEnterpriseActivatedWorld } from "../worlds/released-enterprise-activated.ts";
-import { splitOriginSso } from "../worlds/split-origin-sso.ts";
-import { handoffOriginWitness } from "../worlds/handoff-origin-witness.ts";
+import { handoffWorld } from "../worlds/split-origin-sso.ts";
 
-// Real published Den and browser-issued grants. Only OS protocol delivery is
-// bridged to the renderer listener; auth.exchange-grant is deliberately unused.
-async function handoffWorld(seed: Seed) {
-  const cleanup = new AsyncDisposableStack();
-  try {
-    const released = await releasedEnterpriseActivatedWorld(seed);
-    cleanup.defer(() => released[Symbol.asyncDispose]());
-    const sso = process.env.SWITCHORG_SSO === "1" ? await splitOriginSso(released.den) : null;
-    if (sso) cleanup.defer(() => sso.stop());
-    const foreign = await handoffOriginWitness();
-    cleanup.defer(() => foreign.stop());
-    const dispose = () => cleanup.disposeAsync();
-    const browsers = [
-      await seed.web({ den: released.den, headless: true }),
-      await seed.web({ den: released.den, headless: true }),
-    ];
-    if (process.env.SWITCHORG_SOURCE === "1") {
-      const host = localHost();
-      const handle = await host.spawnElectron("split-origin-source", {
-        profile: "fresh", devCommand: "dev:electron",
-        bootstrap: { baseUrl: released.den.ref.webUrl, apiBaseUrl: released.den.ref.apiUrl, requireSignin: true },
-      });
-      cleanup.defer(() => host.disposeSurface(handle));
-      const app = await attachSurface(handle);
-      cleanup.defer(() => app.stop());
-      return { ...released, browsers, sso, foreign,
-        launch: async () => ({ app, profileDir: handle.profileDir, buildInfo: async () => null, rootText: () => evalIn(app, () => document.getElementById("root")?.innerText ?? "") }),
-        [Symbol.asyncDispose]: dispose,
-      };
-    }
-    return { ...released, browsers, sso, foreign, [Symbol.asyncDispose]: dispose };
-  } catch (error) {
-    await cleanup.disposeAsync();
-    throw error;
-  }
-}
+// Browser-issued grants, with only OS protocol delivery bridged to the real
+// renderer listener. No auth.exchange-grant shortcut is used.
+const needsPublishedLab = process.env.SWITCHORG_SINGLE_HOST === "1"
+  || process.env.SWITCHORG_CHARACTERIZE === "1"
+  || (Boolean(process.env.OPENWORK_EVAL_ELECTRON_BINARY) && process.env.SWITCHORG_SOURCE !== "1");
 
 const test = spec.world(handoffWorld, {
   timeout: 480_000,
-  needs: { env: ["OPENWORK_EVAL_ELECTRON_BINARY", "OPENWORK_EVAL_DEN_API_URL", "OPENWORK_EVAL_DEN_WEB_URL"] },
+  resources: { surfaces: ["desktop", "web"], services: ["den", "mock"],
+    nativeReason: "The native bootstrap and real renderer deep-link listener must retain enrollment and confirmation state." },
+  needs: needsPublishedLab ? { env: ["OPENWORK_EVAL_ELECTRON_BINARY", "OPENWORK_EVAL_DEN_API_URL", "OPENWORK_EVAL_DEN_WEB_URL"] } : {},
 });
 
 test(process.env.SWITCHORG_SINGLE_HOST === "1"
@@ -62,13 +26,13 @@ test(process.env.SWITCHORG_SINGLE_HOST === "1"
   } else {
     expect(new URL(world.den.ref.webUrl).origin).not.toBe(new URL(world.den.ref.apiUrl).origin);
   }
-  const launch = await world.launch({ binary: world.binary, profileDir: world.newProfileDir("split-origin"), seedBootstrap: true });
+  const launch = await world.launch();
   if (!launch.profileDir) throw new Error("Missing owned desktop profile");
   const bootstrapPath = electronProfilePaths(launch.profileDir).bootstrapPath;
   const bootstrapBefore = JSON.parse(await readFile(bootstrapPath, "utf8"));
   expect(bootstrapBefore).toMatchObject({ baseUrl: world.den.ref.webUrl, apiBaseUrl: world.den.ref.apiUrl });
   const build = await launch.buildInfo();
-  if (process.env.SWITCHORG_SOURCE !== "1") expect(build?.version).toBe(process.env.OPENWORK_EVAL_RELEASED_VERSION);
+  if (!world.source) expect(build?.version).toBe(process.env.OPENWORK_EVAL_RELEASED_VERSION);
   await probe.eventually(() => launch.rootText(), { within: 90_000, until: (text) => /Sign in to /.test(text), label: "configured sign-in surface" });
   await probe.eventually(() => evalIn(launch.app, () => !document.body.innerText.includes("Preparing workspace")), {
     within: 120_000, label: "boot overlay gone",
@@ -84,9 +48,9 @@ test(process.env.SWITCHORG_SINGLE_HOST === "1"
       expect(await evalIn(browser, () => location.origin)).toBe(world.sso.issuer);
       await user.on(browser).click({ role: "button", text: "Approve sign-in" });
     } else {
-      await signInInBrowser(browser, signInUrl, world.den.admin);
+      await world.signInPassword(browser, signInUrl);
     }
-    const deepLink = await readHandoffDeepLink(browser);
+    const deepLink = await world.readHandoffLink(browser);
     await evalIn(launch.app, () => {
       Reflect.set(window, "__splitOriginHandoffStatus", null);
       if (!Reflect.get(window, "__splitOriginHandoffListener")) {
@@ -131,7 +95,8 @@ test(process.env.SWITCHORG_SINGLE_HOST === "1"
     const signedIn = await probe.eventually(() => readDenClientState(launch.app), {
       within: 60_000, until: (state) => state.authTokenPresent, label: "handoff authenticated",
     });
-    expect(signedIn.activeOrgName).toBe("Split Origin Lab");
+    expect(signedIn.activeOrgName).toBe(world.organizationIdentity.name);
+    expect(signedIn.activeOrgId).toBe(world.organizationIdentity.id);
     expect(JSON.parse(await readFile(bootstrapPath, "utf8"))).toMatchObject({ baseUrl: world.den.ref.webUrl, apiBaseUrl: world.den.ref.apiUrl });
     evidence.recordAssertionEvidence(`Browser handoff ${attempt + 1} completed with the expected confirmation behavior`,
       `${world.sso ? "OIDC witness SSO" : "Password"} browser sign-in issued a real grant; the renderer ingress ${outcome.dialog ? "required confirmation (published characterization)" : "did not request a same-deployment switch"}; exchange succeeded, the expected organization is active, and the durable web/API pair is unchanged.`, true);

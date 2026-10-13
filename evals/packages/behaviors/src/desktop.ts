@@ -293,7 +293,20 @@ export async function go(app: Surface, hashPath: string, opts: { timeoutMs?: num
   // desktops on one host) makes those bursts routine, and a bare 20s evaluate
   // here was the single most common way a long journey died near its end.
   const timeoutMs = opts.timeoutMs ?? 60_000;
-  await waitFor(app, browserScript((inputHash) => { window.location.hash = inputHash; return true; }, [hash]), {
+  // The desktop routes by hash; the app in a browser routes by path, and its
+  // router follows history changes announced with popstate.
+  await waitFor(app, browserScript((inputHash) => {
+    if (window.__OPENWORK_ELECTRON__) {
+      window.location.hash = inputHash;
+      return true;
+    }
+    const path = inputHash.slice(1);
+    if (`${window.location.pathname}${window.location.search}` !== path) {
+      window.history.pushState(window.history.state, "", path);
+      window.dispatchEvent(new PopStateEvent("popstate", { state: window.history.state }));
+    }
+    return true;
+  }, [hash]), {
     timeoutMs,
     label: `navigate to ${hash}`,
   });

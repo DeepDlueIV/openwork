@@ -280,6 +280,10 @@ export async function appWeb(options: SeedAppWebOptions & { place: Place }): Pro
       if (browser.handle.kind !== "chrome") throw new Error("App-web requires a chrome handle.");
       browser.handle.meta = { ...browser.handle.meta, actualSourceSha: localSourceSha };
     }
+    // A person's app window has focus. Headless Chrome otherwise reports an
+    // unfocused page, and keyboard shortcuts pressed before any click are lost.
+    await browser.client.send("Emulation.setFocusEmulationEnabled", { enabled: true });
+    await browser.client.send("Page.bringToFront");
     // Observe entry-bundle failures before navigation. The static startup page
     // survives a broken module load, so a DOM timeout alone hides the cause.
     await addInitScript(browser.client, () => {

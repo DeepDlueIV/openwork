@@ -164,15 +164,24 @@ async function requestFromSurface(
     throw new Error(`Could not serialize engine session probe body for ${path}`);
   }
   const value = await evalIn(surface, browserScript(async (path, value, inputValue, inputValue2) => {
+    // Desktop: the bridge reports the embedded server. App in a browser:
+    // the app keeps the same address and token in localStorage.
     const info = await window.__OPENWORK_ELECTRON__?.invokeDesktop?.("openworkServerInfo");
-    if (!info?.running || !info.baseUrl) return { status: 0, body: { error: "local_server_unavailable" } };
-    const baseUrl = String(info.baseUrl);
+    let baseUrl = info?.running && info.baseUrl ? String(info.baseUrl) : "";
+    let token = baseUrl ? String(info?.ownerToken ?? info?.clientToken ?? "") : "";
+    if (!baseUrl) {
+      const override = (localStorage.getItem("openwork.server.urlOverride") ?? "").trim();
+      const port = (localStorage.getItem("openwork.server.port") ?? "").trim();
+      baseUrl = override || (port ? "http://127.0.0.1:" + port : "");
+      token = (localStorage.getItem("openwork.server.token") ?? "").trim();
+    }
+    if (!baseUrl) return { status: 0, body: { error: "local_server_unavailable" } };
     let end = baseUrl.length;
     while (end > 0 && baseUrl[end - 1] === "/") end -= 1;
     const response = await fetch(baseUrl.slice(0, end) + path, {
       method: value,
       headers: {
-        Authorization: "Bearer " + String(info.ownerToken ?? info.clientToken ?? ""),
+        Authorization: "Bearer " + token,
         "Content-Type": "application/json",
       },
       body: inputValue,

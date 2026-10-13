@@ -1038,11 +1038,21 @@ export class AgentChannel implements Agent {
       if (!path.startsWith("/") || path.startsWith("//") || /[\\\s]/.test(path)) throw new Error("A root-relative server path is required.");
       const value = await callFunctionOnSurface(surface, async (path, encodedInput) => {
         const input = JSON.parse(encodedInput);
+        // Desktop: the bridge reports the embedded server. App in a browser:
+        // the app keeps the same address and token in localStorage.
         const info = await window.__OPENWORK_ELECTRON__?.invokeDesktop?.("openworkServerInfo");
-        if (!info?.running || !info.baseUrl) return { status: 0, body: { error: "local_server_unavailable" } };
-        const response = await fetch(String(info.baseUrl).replace(/\/+$/, "") + path, {
+        let baseUrl = info?.running && info.baseUrl ? String(info.baseUrl) : "";
+        let token = baseUrl ? String(info?.ownerToken ?? info?.clientToken ?? "") : "";
+        if (!baseUrl) {
+          const override = (localStorage.getItem("openwork.server.urlOverride") ?? "").trim();
+          const port = (localStorage.getItem("openwork.server.port") ?? "").trim();
+          baseUrl = override || (port ? "http://127.0.0.1:" + port : "");
+          token = (localStorage.getItem("openwork.server.token") ?? "").trim();
+        }
+        if (!baseUrl) return { status: 0, body: { error: "local_server_unavailable" } };
+        const response = await fetch(baseUrl.replace(/\/+$/, "") + path, {
           method: input.method,
-          headers: { Authorization: "Bearer " + String(info.ownerToken ?? info.clientToken ?? ""), "Content-Type": "application/json" },
+          headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
           body: input.body === undefined ? undefined : JSON.stringify(input.body),
           redirect: "error", signal: AbortSignal.timeout(30_000),
         });
@@ -1218,7 +1228,11 @@ export class ProbeChannel implements Probe {
   hash(): Promise<string> {
     const surface = requireSurface(this.#surface);
     return this.#runtime.call("probe", "hash", "hash", surface, async () => {
-      const value = await evaluateOnSurface(surface, () => (window.location.hash));
+      // The desktop routes by hash. The app in a browser routes by path, so its
+      // route is reported in the same "#/workspace/..." form.
+      const value = await evaluateOnSurface(surface, () => (
+        window.location.hash || (window.__OPENWORK_ELECTRON__ || window.location.pathname === "/" ? "" : `#${window.location.pathname}`)
+      ));
       if (typeof value !== "string") throw new Error("window.location.hash was not a string.");
       return value;
     });
@@ -1258,11 +1272,21 @@ export class ProbeChannel implements Probe {
         throw new Error("probe.desktopApi requires a root-relative server path.");
       }
       const value = await callFunctionOnSurface(surface, async (path) => {
+        // Desktop: the bridge reports the embedded server. App in a browser:
+        // the app keeps the same address and token in localStorage.
         const info = await window.__OPENWORK_ELECTRON__?.invokeDesktop?.("openworkServerInfo");
-        if (!info?.running || !info.baseUrl) return { status: 0, body: { error: "local_server_unavailable" } };
-        const response = await fetch(String(info.baseUrl).replace(/\/+$/, "") + path, {
+        let baseUrl = info?.running && info.baseUrl ? String(info.baseUrl) : "";
+        let token = baseUrl ? String(info?.ownerToken ?? info?.clientToken ?? "") : "";
+        if (!baseUrl) {
+          const override = (localStorage.getItem("openwork.server.urlOverride") ?? "").trim();
+          const port = (localStorage.getItem("openwork.server.port") ?? "").trim();
+          baseUrl = override || (port ? "http://127.0.0.1:" + port : "");
+          token = (localStorage.getItem("openwork.server.token") ?? "").trim();
+        }
+        if (!baseUrl) return { status: 0, body: { error: "local_server_unavailable" } };
+        const response = await fetch(baseUrl.replace(/\/+$/, "") + path, {
           method: "GET",
-          headers: { Authorization: "Bearer " + String(info.ownerToken ?? info.clientToken ?? "") },
+          headers: { Authorization: "Bearer " + token },
           redirect: "error",
           signal: AbortSignal.timeout(15_000),
         });

@@ -2064,6 +2064,9 @@ export function createClientV2(
       "POST",
       `/api/session/${encodeURIComponent(parameters.sessionID)}/permission/${encodeURIComponent(parameters.requestID)}/reply`,
       {
+        // OpenCode v2 2.0.26 reads `decision` and refuses a body without it;
+        // earlier v2 builds read `reply`, and extra keys are ignored.
+        decision: parameters.reply ?? "once",
         reply: parameters.reply ?? "once",
         ...(parameters.message ? { message: parameters.message } : {}),
       },

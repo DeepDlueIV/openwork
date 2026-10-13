@@ -352,6 +352,11 @@ test("an owner sees which plugins, skills and connectors the team uses, which fa
   });
 
   await step("usage pages still lead to where each plugin and connector is managed", async () => {
+    // A first visit can compile the destination page, so allow the same time as other page loads.
+    const leftUsagePage = (label: string) => page.eventually(async () => {
+      if ((await page.dom('[data-testid="library-usage-item"]')).elements.length > 0) throw new Error(`${label} has not left the usage page yet.`);
+      return true;
+    }, { within: 60_000, intervalMs: 500, label: `${label} leaves the usage page` });
     await owner.click({ role: "link", label: new RegExp(draftReply.title) });
     await owner.see({ testId: "library-usage-item" }, { timeoutMs: 60_000 });
     await owner.navigate(`${world.baseUrl}/dashboard/analytics/library?view=plugins`);
@@ -359,9 +364,9 @@ test("an owner sees which plugins, skills and connectors the team uses, which fa
     await owner.click({ role: "link", label: /Support kit/ });
     await owner.see({ testId: "library-usage-item" }, { timeoutMs: 60_000 });
     await owner.click({ role: "link", label: "Open in Library" });
+    await leftUsagePage("Open in Library");
     // The Library header reads its logo letter before the name.
     await owner.see({ role: "heading", label: /Support kit$/ }, { timeoutMs: 60_000 });
-    await owner.notSee({ testId: "library-usage-item" });
     await owner.screenshot();
     await owner.navigate(`${world.baseUrl}/dashboard/analytics/library?view=connectors`);
     await owner.see({ testId: "library-usage-row" }, { timeoutMs: 60_000 });
@@ -373,8 +378,8 @@ test("an owner sees which plugins, skills and connectors the team uses, which fa
     const trackerFailures = (await page.dom('[data-testid="library-usage-person"] [data-item-failures]')).elements.map((entry) => entry.text);
     await owner.screenshot();
     await owner.click({ role: "link", label: "Open connector" });
+    await leftUsagePage("Open connector");
     await owner.see({ role: "heading", label: new RegExp(`${world.connectors.tracker}$`) }, { timeoutMs: 60_000 });
-    await owner.notSee({ testId: "library-usage-item" });
     evidence.recordAssertionEvidence("usage pages link to the management pages", `Support kit's usage opens its Library detail; Team tracker's usage (failures per person: ${trackerFailures.join(", ")}) opens its Connectors detail.`, true);
     await owner.screenshot();
   });

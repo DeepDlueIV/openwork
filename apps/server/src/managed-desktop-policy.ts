@@ -13,7 +13,8 @@ import { agentPermissionDenial, agentPermissionRulesOf } from "./agent-permissio
 const services = new WeakMap<ServerConfig, ManagedDesktopPolicy>();
 /** Org-managed providers: Den-imported (lpr_), Gateway (ipr_) and hosted OpenWork Models. */
 const MANAGED_PROVIDER = /^(?:lpr_|ipr_)|^openwork$/i;
-function sessionKey(session: CloudProviderDenSession) { return `${session.baseUrl}\n${session.orgId}`; }
+/** One member's sign-in: another member of the same organization has another token. */
+function sessionKey(session: CloudProviderDenSession) { return `${session.baseUrl}\n${session.orgId}\n${session.token}`; }
 // The first cold read previously had 10s; keep two reads under the 15s plugin budget and one read under the 10s session-install budget.
 const DEN_READ_DEADLINE_MS = 6_000;
 const DEN_READ_ATTEMPT_TIMEOUT_MS = 3_500;
@@ -85,11 +86,18 @@ class ManagedDesktopPolicy {
     // The desktop re-delivers the same identity on every launch, reload, and
     // resume. Only a different account may invalidate in-flight verifications.
     const current = this.session;
-    if (!current || current.baseUrl !== session.baseUrl || current.token !== session.token || current.orgId !== session.orgId) {
+    if (!current || sessionKey(current) !== sessionKey(session)) {
       this.generation++;
       this.installed = undefined;
     }
     this.session = session;
+    if (current && sessionKey(current) !== sessionKey(session)) {
+      // Another sign-in, even in the same organization, never keeps the
+      // previous one's policy: not while Den is unreachable, nor in the engine.
+      this.lastKnown = undefined;
+      const cleared = await clearManagedDesktopPolicy(this.config);
+      if (cleared.changed) this.onChange?.();
+    }
     // Installing an identity never waits on Den while only model access is enforced.
     if (DESKTOP_POLICY_ENFORCEMENT_ENABLED) await this.current();
     else void this.current().catch(() => undefined);

@@ -62,21 +62,29 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
   const websiteApprovals = new Map();
   // Most addresses a page requested since it opened, for checking it against new rules.
   const REMEMBERED_REQUESTS = 1_000;
+  // How long a frame or other request waits for new rules before it is kept closed.
+  const WEBSITE_RULES_WAIT_MS = 20_000;
+  // Resolves once new rules arrive; frames and requests made while they load wait for it.
+  let websiteRulesArrival = null;
+  function websiteRulesArrived() {
+    if (!websiteRulesArrival) {
+      /** @type {(value?: unknown) => void} */
+      let arrive = () => {};
+      const arrived = new Promise((resolve) => { arrive = resolve; });
+      websiteRulesArrival = { arrived, arrive };
+    }
+    return websiteRulesArrival.arrived;
+  }
   /** The address website rules judge: a WebSocket connects to its site over http or https. */
   function websiteAddress(url) {
     return String(url).replace(/^ws(s?):/i, "http$1:");
   }
-  /**
-   * What the rules decide for an address. While new rules load, pages and
-   * frames wait, and the requests of pages already open follow the rules they
-   * were last checked against.
-   */
-  function websiteDecision(url, { resource = false } = {}) {
-    const rules = websiteRules ?? (resource ? checkedWebsiteRules : null);
-    if (rules === null) {
+  /** What the rules decide for an address; while new rules load, nothing opens. */
+  function websiteDecision(url) {
+    if (websiteRules === null) {
       return { effect: "deny", waiting: true, message: "Your organization's agent permissions are still loading. This page opens once they have." };
     }
-    const decision = decideAgentPermission(rules, "webfetch", [websiteAddress(url)]);
+    const decision = decideAgentPermission(websiteRules, "webfetch", [websiteAddress(url)]);
     return decision.rule && decision.effect !== "allow"
       ? { effect: decision.effect, rule: decision.rule, message: agentPermissionDenialMessage(decision.rule, decision.resource) }
       : { effect: "allow" };
@@ -119,9 +127,16 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
    * Throws when the website rules keep a page, frame or other request closed.
    * A page under an "Ask first" rule opens once the member approves; frames
    * and other requests never ask, and pass only for a site already approved.
+   * While new rules load, a page is kept closed and reopened once they arrive,
+   * and a frame or other request waits for them.
    */
-  async function checkWebsiteRules(url, { page = false, resource = false } = {}) {
-    const decision = websiteDecision(url, { resource });
+  async function checkWebsiteRules(url, { page = false } = {}) {
+    if (websiteRules === null && !page) {
+      let timer;
+      await Promise.race([websiteRulesArrived(), new Promise((resolve) => { timer = setTimeout(resolve, WEBSITE_RULES_WAIT_MS); })]);
+      clearTimeout(timer);
+    }
+    const decision = websiteDecision(url);
     if (decision.effect === "allow") return;
     if (decision.effect === "ask" && (page ? await approveWebsite(url, decision.rule) : websiteApproved(url))) return;
     throw Object.assign(new Error(decision.message), { code: "organization_policy_denied", websiteRule: true, waiting: decision.waiting === true, blocked: decision.effect === "deny" && decision.waiting !== true });
@@ -202,6 +217,8 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
     if (JSON.stringify(rules) === JSON.stringify(websiteRules)) return;
     websiteRules = rules;
     if (rules === null) return;
+    websiteRulesArrival?.arrive();
+    websiteRulesArrival = null;
     const previousRules = checkedWebsiteRules;
     const previousApprovals = approvedWebsites;
     checkedWebsiteRules = rules;
@@ -260,7 +277,7 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
       Promise.resolve().then(async () => {
         // Every request follows the website rules; only a page may ask first.
         const page = details.resourceType === "mainFrame";
-        await checkWebsiteRules(details.url, { page, resource: !page && details.resourceType !== "subFrame" });
+        await checkWebsiteRules(details.url, { page });
         await checkPolicy?.(request);
         if (guard) {
           const validate = await guard(details.url);

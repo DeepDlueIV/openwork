@@ -39,28 +39,60 @@ type ReadOptions = {
   database?: FeatureDatabase
   /** Locks the override rows until the transaction commits; never cached. */
   lock?: "share"
+  /**
+   * The permissions flag this request already read live with the organization
+   * row (readOrganizationWithPermissions), so it is not read again. Ignored
+   * with `database` or `lock`, which read every flag fresh.
+   */
+  permissions?: boolean
+}
+
+type PermissionFeatureRow = { rolloutEnabled: boolean | null; killed: boolean | null; overrideEnabled: boolean | null }
+
+const permissionFeatureColumns = {
+  rolloutEnabled: FeatureRolloutTable.enabled,
+  killed: FeatureRolloutTable.killed,
+  overrideEnabled: OrganizationFeatureTable.enabled,
+}
+const permissionRolloutJoin = eq(FeatureRolloutTable.feature_key, "permissions")
+const permissionOverrideJoin = and(
+  eq(OrganizationFeatureTable.organization_id, OrganizationTable.id),
+  eq(OrganizationFeatureTable.feature_key, "permissions"),
+)
+
+function resolvePermissionFeature(row: PermissionFeatureRow): boolean {
+  return resolveFeature("permissions", {
+    ...env.features,
+    rollouts: row.rolloutEnabled === null ? {} : { permissions: { enabled: row.rolloutEnabled, killed: row.killed ?? false } },
+    overrides: row.overrideEnabled === null ? {} : { permissions: row.overrideEnabled },
+  }).enabled
 }
 
 /** One indexed read for authorization state, independent of Redis availability. */
 async function readPermissionFeatures(organizationIds: readonly string[]): Promise<Map<string, boolean>> {
   const ids = organizationIds.map((id) => normalizeDenTypeId("organization", id))
-  const rows = await db.select({
-    organizationId: OrganizationTable.id,
-    rolloutEnabled: FeatureRolloutTable.enabled,
-    killed: FeatureRolloutTable.killed,
-    overrideEnabled: OrganizationFeatureTable.enabled,
-  }).from(OrganizationTable)
-    .leftJoin(FeatureRolloutTable, eq(FeatureRolloutTable.feature_key, "permissions"))
-    .leftJoin(OrganizationFeatureTable, and(
-      eq(OrganizationFeatureTable.organization_id, OrganizationTable.id),
-      eq(OrganizationFeatureTable.feature_key, "permissions"),
-    ))
+  const rows = await db.select({ organizationId: OrganizationTable.id, ...permissionFeatureColumns })
+    .from(OrganizationTable)
+    .leftJoin(FeatureRolloutTable, permissionRolloutJoin)
+    .leftJoin(OrganizationFeatureTable, permissionOverrideJoin)
     .where(inArray(OrganizationTable.id, ids))
-  return new Map(rows.map((row) => [row.organizationId, resolveFeature("permissions", {
-    ...env.features,
-    rollouts: row.rolloutEnabled === null ? {} : { permissions: { enabled: row.rolloutEnabled, killed: row.killed ?? false } },
-    overrides: row.overrideEnabled === null ? {} : { permissions: row.overrideEnabled },
-  }).enabled]))
+  return new Map(rows.map((row) => [row.organizationId, resolvePermissionFeature(row)]))
+}
+
+/**
+ * The organization row and its live permissions flag in the same indexed read
+ * as readPermissionFeatures. The organization context passes the flag to
+ * getOrganizationFeatures, so authorization still comes from the database
+ * without a second query.
+ */
+export async function readOrganizationWithPermissions(organizationId: string) {
+  const [row] = await db.select({ organization: OrganizationTable, ...permissionFeatureColumns })
+    .from(OrganizationTable)
+    .leftJoin(FeatureRolloutTable, permissionRolloutJoin)
+    .leftJoin(OrganizationFeatureTable, permissionOverrideJoin)
+    .where(eq(OrganizationTable.id, normalizeDenTypeId("organization", organizationId)))
+    .limit(1)
+  return row ? { organization: row.organization, permissions: resolvePermissionFeature(row) } : null
 }
 
 async function readDeploymentPermissionsFeature(): Promise<boolean> {
@@ -86,11 +118,11 @@ export async function getOrganizationFeatures(organizationId: string, options: R
   const id = normalizeDenTypeId("organization", organizationId)
   const [{ rollouts, overrides }, permissions] = await Promise.all([
     cache.features.state(id),
-    readPermissionFeatures([id]),
+    options.permissions === undefined ? readPermissionFeatures([id]) : null,
   ])
   return {
     ...resolveFeatures({ ...env.features, rollouts, overrides }),
-    permissions: permissions.get(id) ?? resolveFeature("permissions", { ...env.features, rollouts: {}, overrides: {} }).enabled,
+    permissions: options.permissions ?? permissions?.get(id) ?? resolveFeature("permissions", { ...env.features, rollouts: {}, overrides: {} }).enabled,
   }
 }
 

@@ -36,7 +36,7 @@ import { revokeUpstreamCredentials, revokeInferenceCredentialsForMembers } from 
 import { ensureMemberGatewayKey } from "./gateway-keys.js"
 import { db } from "./db.js"
 import { env } from "./env.js"
-import { getOrganizationFeatures, type FeatureMap } from "./features.js"
+import { getOrganizationFeatures, readOrganizationWithPermissions, type FeatureMap } from "./features.js"
 import {
   getRoleValueAfterOwnershipTransfer,
   roleIncludesAdmin,
@@ -1524,16 +1524,12 @@ export async function getOrganizationContextForUser(input: {
   userId: UserId
   organizationId: OrgId
 }) {
-  const organizationRows = await db
-    .select()
-    .from(OrganizationTable)
-    .where(eq(OrganizationTable.id, input.organizationId))
-    .limit(1)
-
-  const organization = organizationRows[0]
-  if (!organization) {
+  // The live permissions flag comes back with the organization row.
+  const organizationRead = await readOrganizationWithPermissions(input.organizationId)
+  if (!organizationRead) {
     return null
   }
+  const { organization } = organizationRead
 
   // Features are read (through the Redis flag cache) alongside the
   // membership, so per-request feature checks (audit capture, requireFeature)
@@ -1544,7 +1540,7 @@ export async function getOrganizationContextForUser(input: {
       .from(MemberTable)
       .where(and(eq(MemberTable.organizationId, organization.id), eq(MemberTable.userId, input.userId), isNull(MemberTable.removedAt)))
       .limit(1),
-    getOrganizationFeatures(organization.id),
+    getOrganizationFeatures(organization.id, { permissions: organizationRead.permissions }),
   ])
 
   const currentMember = currentMemberRows[0]

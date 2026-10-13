@@ -2,9 +2,11 @@
 // and the connections an administrator exposed (see
 // connect-mcp-server-catalog.ts). Members cannot create these names
 // (validators.ts). The desktop leaves such a server running only while it is
-// the one OpenWork registered, at the same address, so a project config that
-// reuses a name for another server gains nothing; Den applies the member's MCP
-// server rules to each organization connection and skill behind it.
+// the one OpenWork registered, at the same address, as OpenWork's own records
+// say (registeredOrganizationMcpServers), so any other server under such a
+// name, from a project config or stored earlier, gains nothing; Den applies
+// the member's MCP server rules to each organization connection and skill
+// behind it.
 const ORGANIZATION_MCP_NAMES = new Set(["openwork-cloud"]);
 const ORGANIZATION_MCP_PREFIXES = ["openwork-connect-", "openwork-direct-", "openwork-app-host-connect-"];
 
@@ -19,17 +21,6 @@ export function isOrganizationMcpName(name: string): boolean {
 /** A remote MCP server's address; organization servers are always remote. */
 export function mcpServerUrl(server: unknown): string | null {
   return typeof server === "object" && server !== null && "url" in server && typeof server.url === "string" ? server.url : null;
-}
-
-/** The organization servers among MCP configs OpenWork registered itself, added to `into`. */
-export function organizationMcpServers(mcp: Record<string, unknown>, into: OrganizationMcpServers = {}): OrganizationMcpServers {
-  for (const [name, server] of Object.entries(mcp)) {
-    const url = mcpServerUrl(server);
-    if (url === null || !isOrganizationMcpName(name)) continue;
-    const urls = into[name] ?? [];
-    if (!urls.includes(url)) into[name] = [...urls, url];
-  }
-  return into;
 }
 
 export function parseOrganizationMcpServers(value: unknown): OrganizationMcpServers {

@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { readMcpResourceText, type McpFetch } from "./connect-mcp-transport.js";
 import { readActivatedEnterpriseDenOrigin } from "./enterprise-den-origin.js";
+import type { OrganizationMcpServers } from "./organization-mcp-names.js";
 import {
   readGlobalRuntimeMcpConfig,
   readRuntimeMcpConfig,
@@ -232,6 +233,30 @@ export function directConnectMcpRuntimeEntries(
       headers,
       oauth: false,
     }]));
+}
+
+/**
+ * The organization MCP servers OpenWork registered, by name and address: the
+ * account's `openwork-cloud` connection and the connections these workspaces'
+ * Connect catalogs expose directly. Read from OpenWork's own records, never
+ * from stored entries' names, so a member's server under a reserved name is
+ * not taken for one.
+ */
+export async function registeredOrganizationMcpServers(
+  config: ServerConfig,
+  workspaceIds: Iterable<string>,
+): Promise<OrganizationMcpServers> {
+  const cloudMcp = await readGlobalRuntimeMcpConfig(config, "openwork-cloud");
+  if (!cloudMcp || typeof cloudMcp.url !== "string") return {};
+  const servers: OrganizationMcpServers = { "openwork-cloud": [cloudMcp.url] };
+  for (const workspaceId of new Set(workspaceIds)) {
+    const catalog = await readOpenWorkConnectMcpAppHostCatalog(config, workspaceId);
+    for (const [name, entry] of Object.entries(directConnectMcpRuntimeEntries(cloudMcp, catalog))) {
+      const urls = servers[name] ?? [];
+      if (typeof entry.url === "string" && !urls.includes(entry.url)) servers[name] = [...urls, entry.url];
+    }
+  }
+  return servers;
 }
 
 export async function readOpenWorkConnectMcpAppHostCatalog(

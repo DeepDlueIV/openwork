@@ -12,7 +12,7 @@ import {
   type AgentPermissionDecision,
   type AgentPermissionRule,
 } from "@openwork/types/den/agent-permissions-runtime";
-import { isOrganizationMcpName, mcpServerUrl, type OrganizationMcpServers } from "./organization-mcp-names.js";
+import { mcpServerUrl, type OrganizationMcpServers } from "./organization-mcp-names.js";
 
 export type { AgentPermissionRule };
 
@@ -41,19 +41,11 @@ export function agentPermissionDenial(rules: readonly AgentPermissionRule[], act
 }
 
 /**
- * Why the rules block an MCP server from OpenWork's own runtime config, or
- * null. Organization names there are OpenWork's registrations (members cannot
- * create them): they stay on, and Den applies the rules to each connection.
- */
-export function agentPermissionMcpDenial(rules: readonly AgentPermissionRule[], name: string): string | null {
-  return isOrganizationMcpName(name) ? null : agentPermissionDenial(rules, "mcp", [name]);
-}
-
-/**
  * Why the rules block an MCP server an engine has from any config source, or
  * null. A server with an organization name stays on only when it is the one
- * OpenWork registered under that name, at the same address; Den applies the
- * rules to the organization's connections behind it.
+ * OpenWork registered under that name, at the same address
+ * (registeredOrganizationMcpServers); Den applies the rules to the
+ * organization's connections behind it.
  */
 export function agentPermissionEngineMcpDenial(
   rules: readonly AgentPermissionRule[],

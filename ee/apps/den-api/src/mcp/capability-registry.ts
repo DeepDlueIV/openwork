@@ -900,7 +900,6 @@ async function externalConnectionFailure(
   context: CapabilityRegistryContext,
   missing: readonly { capabilityName: string }[],
 ) {
-  if (!context.externalMcpConnectionsEnabled) return null
   for (const entry of missing) {
     const parsed = parseExternalCapabilityName(entry.capabilityName)
     if (!parsed) continue

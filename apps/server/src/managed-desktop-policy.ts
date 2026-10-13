@@ -282,26 +282,27 @@ class ManagedDesktopPolicy {
   /**
    * Refuses a member adding a local skill or MCP server their agent
    * permissions block. Only a policy verified for this sign-in counts: without
-   * one it waits for Den. When Den cannot verify it, it refuses only where
-   * agent permissions were last in force on this computer, so members of
-   * organizations that do not use them are never held up.
+   * one it waits for Den's answer. When Den cannot answer, it refuses where
+   * agent permissions were last in force on this computer; with nothing stored
+   * there is nothing to enforce, so members of organizations that do not use
+   * them are not held up offline.
    */
   async assertAgentPermission(action: "skill" | "mcp", name: string): Promise<void> {
     if (!this.session) return;
     const generation = this.generation;
     let policy = this.knownPolicy();
     if (!policy) {
-      // Only wait for Den where agent permissions were last in force on this
-      // computer: everyone else adds skills and MCP servers as before.
-      const stored = agentPermissionRulesOf((await readGlobalRuntimeOpencodeConfig(this.config)).managedPolicy);
-      this.identityChanged(generation);
-      if (stored.length === 0) return;
       policy = await this.current().catch((error: unknown) => {
         if (error instanceof ApiError && error.code === "policy_identity_changed") throw error;
         return null;
       });
       this.identityChanged(generation);
-      if (!policy) throw new ApiError(403, "policy_unavailable", "Your organization's agent permissions could not be verified. Try again when connected.");
+    }
+    if (!policy) {
+      const stored = agentPermissionRulesOf((await readGlobalRuntimeOpencodeConfig(this.config)).managedPolicy);
+      this.identityChanged(generation);
+      if (stored.length === 0) return;
+      throw new ApiError(403, "policy_unavailable", "Your organization's agent permissions could not be verified. Try again when connected.");
     }
     const denial = agentPermissionDenial(agentPermissionRulesOf(policy), action, [name]);
     if (denial) throw new ApiError(403, "organization_policy_denied", denial);

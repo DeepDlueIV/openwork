@@ -243,10 +243,10 @@ export function usePermissionSets(orgId: string | null, enabled = true) {
   });
 }
 
-export function usePermissionSet(orgId: string | null, setId: string) {
+export function usePermissionSet(orgId: string | null, setId: string, enabled = true) {
   return useQuery({
     queryKey: permissionsQueryKeys.set(orgId ?? "", setId),
-    enabled: Boolean(orgId),
+    enabled: enabled && Boolean(orgId) && Boolean(setId),
     retry: false,
     queryFn: async ({ signal }) => required(await permissionsRequest({
       orgId: orgId ?? "",
@@ -368,6 +368,124 @@ export function useCreateTeamPermissions(orgId: string) {
       queryClient.setQueryData(permissionsQueryKeys.set(orgId, set.id), set);
     },
     onSettled: () => queryClient.invalidateQueries({ queryKey: permissionsQueryKeys.all(orgId) }),
+  });
+}
+
+/** A new role was half made: its team exists, its permissions don't. */
+export class RolePermissionsNotSavedError extends Error {
+  readonly teamId: string;
+
+  constructor(message: string, teamId: string) {
+    super(message);
+    this.name = "RolePermissionsNotSavedError";
+    this.teamId = teamId;
+  }
+}
+
+/**
+ * Creates a role: a team with its people (POST /v1/teams), then that team's
+ * permission set (POST /v1/permissions/sets). Both are the existing calls the
+ * Teams and Permissions screens make; nothing new is stored.
+ */
+export function useCreateRole(orgId: string) {
+  const queryClient = useQueryClient();
+  const write = useReauthableWrite();
+  const { refreshOrgData } = useOrgDashboard();
+  return useMutation({
+    mutationKey: [...permissionsQueryKeys.sets(orgId), "create-role"],
+    retry: false,
+    mutationFn: async (input: { name: string; memberIds: string[]; permissions: PermissionChange[] }) => {
+      const teamId = await write("create-role-team", async () => {
+        const { response, payload } = await requestJson(
+          "/v1/teams",
+          {
+            method: "POST",
+            headers: { [ORG_SCOPE_HEADER]: orgId },
+            body: JSON.stringify({ name: input.name, memberIds: input.memberIds }),
+          },
+          15000,
+        );
+        if (!response.ok) {
+          const reauth = getReauthRequiredError(payload, response);
+          if (reauth) throw reauth;
+          throw new Error(getErrorMessage(payload, `Couldn't create the role (${response.status}).`));
+        }
+        const parsed = z.object({ team: z.object({ id: z.string() }) }).safeParse(payload);
+        if (!parsed.success) throw new Error("Couldn't create the role: unexpected response.");
+        return parsed.data.team.id;
+      });
+      try {
+        const set = await write("create-role-permissions", async () => required(await permissionsRequest({
+          orgId,
+          path: "/v1/permissions/sets",
+          method: "POST",
+          body: { teamId, permissions: input.permissions },
+          schema: z.object({ set: setDetailSchema }),
+          fallback: "Couldn't save the role's permissions",
+        })).set);
+        return { teamId, set };
+      } catch (cause) {
+        throw new RolePermissionsNotSavedError(cause instanceof Error ? cause.message : "Couldn't save the role's permissions.", teamId);
+      }
+    },
+    onSettled: async () => {
+      await queryClient.invalidateQueries({ queryKey: permissionsQueryKeys.all(orgId) });
+      await refreshOrgData();
+    },
+  });
+}
+
+export type TeamRoleWrite =
+  | { kind: "set-admin"; value: boolean }
+  | { kind: "create-custom"; keys: string[] }
+  | { kind: "remove-custom"; setId: string };
+
+/**
+ * Applies a team role change as the existing calls, in the given order:
+ * PATCH /v1/teams/:id (Admin team), POST /v1/permissions/sets and
+ * DELETE /v1/permissions/sets/:id. Returns the new set's id when one was made.
+ */
+export function useApplyTeamRole(orgId: string, teamId: string) {
+  const queryClient = useQueryClient();
+  const write = useReauthableWrite();
+  const { updateTeam, refreshOrgData } = useOrgDashboard();
+  return useMutation({
+    mutationKey: [...permissionsQueryKeys.sets(orgId), "team-role", teamId],
+    retry: false,
+    mutationFn: async (steps: TeamRoleWrite[]) => {
+      let createdSetId: string | null = null;
+      for (const step of steps) {
+        if (step.kind === "set-admin") {
+          await updateTeam(teamId, { grantsOrganizationAdmin: step.value });
+        } else if (step.kind === "create-custom") {
+          const set = await write("create-team-permissions", async () => required(await permissionsRequest({
+            orgId,
+            path: "/v1/permissions/sets",
+            method: "POST",
+            body: { teamId, permissions: step.keys.map((key) => ({ key, status: "allow" })) },
+            schema: z.object({ set: setDetailSchema }),
+            fallback: "Couldn't create team permissions",
+          })).set);
+          createdSetId = set.id;
+        } else {
+          await write("remove-team-permissions", async () => {
+            await permissionsRequest({
+              orgId,
+              path: `/v1/permissions/sets/${encodeURIComponent(step.setId)}`,
+              method: "DELETE",
+              schema: null,
+              fallback: "Couldn't remove team permissions",
+            });
+            return step.setId;
+          });
+        }
+      }
+      return createdSetId;
+    },
+    onSettled: async () => {
+      await queryClient.invalidateQueries({ queryKey: permissionsQueryKeys.all(orgId) });
+      await refreshOrgData();
+    },
   });
 }
 

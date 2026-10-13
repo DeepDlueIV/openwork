@@ -2,23 +2,24 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { ArrowLeft, ShieldCheck, Users } from "lucide-react";
+import { ArrowLeft, KeyRound, ShieldCheck, Users } from "lucide-react";
 import { DenBadge } from "../../_components/ui/badge";
 import { DenButton } from "../../_components/ui/button";
 import { DenNotice } from "../../_components/ui/notice";
 import { type TabItem, UnderlineTabs } from "../../_components/ui/tabs";
-import { getMarketplaceRoute, getMembersRoute, getOrgAccessFlags } from "../../_lib/den-org";
+import { getMarketplaceRoute, getMembersRoute, getOrgAccessFlags, orgFeatureEnabled } from "../../_lib/den-org";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
 import { TeamPermissionsPanel } from "./team-permissions-panel";
 import { OrgMemberIdentity } from "./org-member-identity";
 import { TeamAdminCheckbox } from "./team-admin-checkbox";
+import { TeamRolePanel } from "./team-role-panel";
 import {
   type TeamPluginAccessItem,
   useRevokeTeamPluginAccess,
   useTeamPluginAccess,
 } from "./team-access-data";
 
-type TeamDetailTab = "overview" | "access";
+type TeamDetailTab = "role" | "overview" | "access";
 
 function formatGrantedDate(value: string): string {
   const date = new Date(value);
@@ -64,7 +65,10 @@ export function TeamDetailScreen({ teamId }: { teamId: string }) {
   const canRevokeAccess = orgContext
     ? getOrgAccessFlags(orgContext.currentMember.role, orgContext.currentMember.isOwner, orgContext.currentMember.permissions).canManageAllShared
     : false;
-  const [activeTab, setActiveTab] = useState<TeamDetailTab>("access");
+  // teamRoles: the team page opens on its one role (Member, Admin or Custom).
+  const teamRoles = orgContext ? orgFeatureEnabled(orgContext, "teamRoles") : false;
+  const [chosenTab, setActiveTab] = useState<TeamDetailTab | null>(null);
+  const activeTab: TeamDetailTab = chosenTab && (teamRoles || chosenTab !== "role") ? chosenTab : teamRoles ? "role" : "access";
   const accessQuery = useTeamPluginAccess(teamId);
   const revokeAccess = useRevokeTeamPluginAccess();
   const team = orgContext?.teams.find((entry) => entry.id === teamId);
@@ -74,10 +78,16 @@ export function TeamDetailScreen({ teamId }: { teamId: string }) {
     return member ? [member] : [];
   });
   const memberCount = team?.memberIds.length ?? 0;
-  const tabs: readonly TabItem<TeamDetailTab>[] = [
-    { value: "overview", label: "Overview", icon: Users },
-    { value: "access", label: "Access", icon: ShieldCheck },
-  ];
+  const tabs: readonly TabItem<TeamDetailTab>[] = teamRoles
+    ? [
+      { value: "role", label: "Role", icon: ShieldCheck },
+      { value: "overview", label: "Members", icon: Users },
+      { value: "access", label: "Access", icon: KeyRound },
+    ]
+    : [
+      { value: "overview", label: "Overview", icon: Users },
+      { value: "access", label: "Access", icon: ShieldCheck },
+    ];
 
   return (
     <div className="mx-auto max-w-[860px] px-6 py-8 md:px-8">
@@ -99,7 +109,7 @@ export function TeamDetailScreen({ teamId }: { teamId: string }) {
           {memberCount} {memberCount === 1 ? "member" : "members"}
         </span>
       </header>
-      {team ? <TeamAdminCheckbox team={team} /> : null}
+      {team && !teamRoles ? <TeamAdminCheckbox team={team} /> : null}
 
       <UnderlineTabs
         className="mt-6"
@@ -109,6 +119,12 @@ export function TeamDetailScreen({ teamId }: { teamId: string }) {
       />
 
       <div className="mt-6">
+        {activeTab === "role" && team ? (
+          <div role="tabpanel" aria-label="Role">
+            <TeamRolePanel team={team} />
+          </div>
+        ) : null}
+
         {activeTab === "overview" ? (
           <div role="tabpanel" aria-label="Overview">
             {teamMembers.length === 0 ? (

@@ -102,6 +102,13 @@ export const FEATURES = defineFeatures({
     deployments: everywhere,
     default: false,
   },
+  teamRoles: {
+    label: "Team roles",
+    description: "Members › Teams shows each team's role (Member, Admin or Custom) with one Change role action, and Members gets a Roles tab to see and create roles.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
   engineV2Upgrade: {
     label: "Desktop: upgrade prompt to OpenCode v2",
     description: "Desktop members still on OpenCode v1 see a short notice offering to upgrade: their chats are copied to v2 with a backup, then OpenWork switches engines.",

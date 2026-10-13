@@ -28,6 +28,7 @@ import {
   getOrgAccessFlags,
   getMembersRoute,
   getTeamRoute,
+  orgFeatureEnabled,
   splitRoleString,
   type DenOrgMember,
   permissionLockReason,
@@ -46,8 +47,9 @@ import { DenSelect } from "../../_components/ui/select";
 import { createOrganizationInstallLink } from "../../_lib/install-link-data";
 import { OrgMemberIdentity } from "./org-member-identity";
 import { MemberEffectivePermissions, canViewMemberPermissions } from "./member-effective-permissions";
+import { RolesTab } from "./roles-tab";
 
-type MembersTab = "members" | "teams";
+type MembersTab = "members" | "teams" | "roles";
 
 function ActionButton({
   children,
@@ -154,7 +156,15 @@ export function ManageMembersScreen() {
   );
   const canStartSeatCheckout = access.canStartSeatCheckout;
 
-  const tabCounts: Record<MembersTab, number> = {
+  // teamRoles: Members gets a Roles tab (built-in roles and each team's custom role).
+  const teamRoles = orgContext ? orgFeatureEnabled(orgContext, "teamRoles") : false;
+  useEffect(() => {
+    // ?tab=roles or ?tab=teams opens that tab, e.g. coming back from Create role.
+    const tab = new URLSearchParams(window.location.search).get("tab");
+    if (tab === "roles" || tab === "teams") setActiveTab(tab);
+  }, []);
+  const shownTab: MembersTab = activeTab === "roles" && !teamRoles ? "members" : activeTab;
+  const tabCounts: Record<Exclude<MembersTab, "roles">, number> = {
     members: orgContext?.members.length ?? 0,
     teams: orgContext?.teams.length ?? 0,
   };
@@ -528,7 +538,7 @@ export function ManageMembersScreen() {
     ) : null;
 
   const toolbarAction = (() => {
-    if (activeTab === "members" && access.canInviteMembers) {
+    if (shownTab === "members" && access.canInviteMembers) {
       return {
         label: "Add member",
         onClick: () => {
@@ -594,19 +604,22 @@ export function ManageMembersScreen() {
 
       <UnderlineTabs
         className="mb-6"
-        activeTab={activeTab}
+        activeTab={shownTab}
         onChange={setActiveTab}
         tabs={[
           { value: "members", label: "Members", icon: User, count: tabCounts.members },
           { value: "teams", label: "Teams", icon: Users, count: tabCounts.teams },
+          ...(teamRoles ? [{ value: "roles" as const, label: "Roles", icon: ShieldCheck }] : []),
         ]}
       />
 
-      {activeTab === "members" ? inviteForm : null}
-      {activeTab === "members" ? editMemberForm : null}
+      {shownTab === "roles" ? <RolesTab /> : null}
+
+      {shownTab === "members" ? inviteForm : null}
+      {shownTab === "members" ? editMemberForm : null}
       {activeTab === "teams" ? teamForm : null}
 
-      {activeTab === "members" ? (
+      {shownTab === "members" ? (
         <div>
           <div className="mb-6 flex flex-wrap items-center justify-end gap-4" data-testid="members-toolbar">
             {toolbarAction ? (

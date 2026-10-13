@@ -170,6 +170,7 @@ export type AdminFeature = {
     | "workbot"
     | "automationCalendar"
     | "permissions"
+    | "teamRoles"
     | "engineV2Upgrade"
     | "remoteSessionEvents";
   label: string;
@@ -217,6 +218,7 @@ export type AdminOrganizationsPageResponse = {
       workbot: boolean;
       automationCalendar: boolean;
       permissions: boolean;
+      teamRoles: boolean;
       engineV2Upgrade: boolean;
       remoteSessionEvents: boolean;
       /**
@@ -285,6 +287,15 @@ export type AdminOrganizationsPageResponse = {
         overrideApplies: boolean;
       };
       permissions: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      teamRoles: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -381,6 +392,7 @@ export type AdminOverviewResponse = {
       workbot: boolean;
       automationCalendar: boolean;
       permissions: boolean;
+      teamRoles: boolean;
       engineV2Upgrade: boolean;
       remoteSessionEvents: boolean;
       /**
@@ -449,6 +461,15 @@ export type AdminOverviewResponse = {
         overrideApplies: boolean;
       };
       permissions: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      teamRoles: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6015,6 +6036,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       workbot: boolean;
       automationCalendar: boolean;
       permissions: boolean;
+      teamRoles: boolean;
       engineV2Upgrade: boolean;
       remoteSessionEvents: boolean;
       /**
@@ -6083,6 +6105,15 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       permissions: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      teamRoles: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6167,6 +6198,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       workbot: boolean;
       automationCalendar: boolean;
       permissions: boolean;
+      teamRoles: boolean;
       engineV2Upgrade: boolean;
       remoteSessionEvents: boolean;
       /**
@@ -6235,6 +6267,15 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       permissions: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      teamRoles: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;

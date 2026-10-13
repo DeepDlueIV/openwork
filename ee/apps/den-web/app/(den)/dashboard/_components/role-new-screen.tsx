@@ -1,0 +1,168 @@
+"use client";
+
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+import { PERMISSION_KEYS, type PermissionKey } from "@openwork/types/den/permissions";
+import { DenButton } from "../../_components/ui/button";
+import { DenInput } from "../../_components/ui/input";
+import { DenNotice } from "../../_components/ui/notice";
+import { DenSegmented } from "../../_components/ui/segmented";
+import { DenSelect } from "../../_components/ui/select";
+import { DenStickyActionBar } from "../../_components/ui/sticky-action-bar";
+import { getMembersRoute, getTeamRoute, orgFeatureEnabled } from "../../_lib/den-org";
+import { useOrgDashboard } from "../_providers/org-dashboard-provider";
+import { useDenToast } from "./den-toast";
+import { ItemPanel, LinkButton } from "./item-list";
+import { RolePermissionsNotSavedError, useCreateRole, type PermissionStatus } from "./permissions-data";
+import {
+  PermissionEditor,
+  PermissionsAccessState,
+  PermissionsPage,
+  usePermissionsAccess,
+  type PermissionEditorRow,
+  type PermissionsAccess,
+} from "./permissions-ui";
+import { ROLE_START_LABELS, roleStartKeys, type RoleStart } from "./team-roles";
+
+type ReadyAccess = Extract<PermissionsAccess, { state: "ready" }>;
+
+const START_OPTIONS: readonly RoleStart[] = ["member", "admin", "everything"];
+
+/** Members › Roles › Create role (teamRoles): a team with its people and its permission set. */
+export function RoleNewScreen() {
+  const permissions = usePermissionsAccess();
+  const { orgContext } = useOrgDashboard();
+  if (orgContext && !orgFeatureEnabled(orgContext, "teamRoles")) {
+    return <PermissionsPage title="Create role" testId="role-new"><DenNotice tone="neutral" message="Roles aren't turned on for this organization yet." /></PermissionsPage>;
+  }
+  if (permissions.state !== "ready") {
+    return <PermissionsPage title="Create role" testId="role-new"><PermissionsAccessState access={permissions} /></PermissionsPage>;
+  }
+  return <RoleNewContent ready={permissions} />;
+}
+
+function RoleNewContent({ ready }: { ready: ReadyAccess }) {
+  const router = useRouter();
+  const toast = useDenToast();
+  const { orgContext } = useOrgDashboard();
+  const create = useCreateRole(ready.orgId);
+  const [name, setName] = useState("");
+  const [memberIds, setMemberIds] = useState<string[]>([]);
+  const [start, setStart] = useState<RoleStart>("member");
+  const [allowed, setAllowed] = useState<ReadonlySet<PermissionKey>>(() => new Set(roleStartKeys("member", ready.held)));
+  const back = { href: `${getMembersRoute(ready.orgSlug)}?tab=roles`, label: "Roles" };
+
+  const people = (orgContext?.members ?? []).filter((member) => member.userId !== null);
+  const chosen = memberIds.flatMap((id) => people.find((member) => member.id === id) ?? []);
+  const addable = people.filter((member) => !memberIds.includes(member.id));
+  const trimmed = name.trim();
+
+  const rows: PermissionEditorRow[] = PERMISSION_KEYS.map((key) => {
+    const status: PermissionStatus = allowed.has(key) ? "allow" : "deny";
+    return { key, status, draft: status, lockedReason: ready.held.has(key) ? null : "You don't have this permission" };
+  });
+
+  function chooseStart(next: RoleStart) {
+    create.reset();
+    setStart(next);
+    setAllowed(new Set(roleStartKeys(next, ready.held)));
+  }
+
+  function toggle(key: PermissionKey, next: PermissionStatus) {
+    create.reset();
+    setAllowed((current) => {
+      const copy = new Set(current);
+      if (next === "allow") copy.add(key);
+      else copy.delete(key);
+      return copy;
+    });
+  }
+
+  async function submit() {
+    if (!trimmed) return;
+    try {
+      const created = await create.mutateAsync({
+        name: trimmed,
+        memberIds,
+        permissions: [...allowed].map((key) => ({ key, status: "allow" })),
+      });
+      toast({ title: `${trimmed} created` });
+      router.replace(getTeamRoute(ready.orgSlug, created.teamId));
+    } catch {
+      return;
+    }
+  }
+
+  const halfMade = create.error instanceof RolePermissionsNotSavedError ? create.error : null;
+
+  return (
+    <PermissionsPage title="Create role" back={back} testId="role-new">
+      <label className="flex max-w-sm flex-col gap-1.5">
+        <span className="text-[13px] font-medium text-gray-700">Name</span>
+        <DenInput value={name} onChange={(event) => { create.reset(); setName(event.target.value); }} placeholder="Skill publishers" maxLength={255} data-testid="role-new-name" />
+      </label>
+
+      <div className="flex flex-col gap-1.5">
+        <span id="role-new-people-label" className="text-[13px] font-medium text-gray-700">People</span>
+        <ItemPanel>
+          {chosen.map((member) => (
+            <div key={member.id} className="flex items-center gap-3.5 px-5 py-3" data-testid="role-new-person">
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[14px] font-medium leading-5 text-gray-900">{member.user.name || member.user.email}</span>
+                <span className="block truncate text-[13px] leading-[18px] text-gray-500">{member.user.email}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setMemberIds((current) => current.filter((id) => id !== member.id))}
+                className="shrink-0 rounded-lg px-2 py-1 text-[12px] font-medium text-red-600 transition-colors hover:bg-red-50"
+                aria-label={`Remove ${member.user.name || member.user.email}`}
+              >
+                Remove
+              </button>
+            </div>
+          ))}
+          <div className="px-5 py-3">
+            <DenSelect
+              aria-labelledby="role-new-people-label"
+              value=""
+              disabled={addable.length === 0}
+              onChange={(event) => {
+                const id = event.target.value;
+                if (id) setMemberIds((current) => [...current, id]);
+              }}
+              data-testid="role-new-add-person"
+            >
+              <option value="">{addable.length === 0 ? "Everyone is added" : "Add person"}</option>
+              {addable.map((member) => <option key={member.id} value={member.id}>{member.user.name || member.user.email}</option>)}
+            </DenSelect>
+          </div>
+        </ItemPanel>
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <span className="text-[13px] font-medium text-gray-700">Start from</span>
+        <DenSegmented
+          aria-label="Start from"
+          value={start}
+          onChange={chooseStart}
+          options={START_OPTIONS.map((option) => ({ value: option, label: ROLE_START_LABELS[option] }))}
+        />
+      </div>
+
+      {halfMade ? (
+        <DenNotice
+          tone="error"
+          message={<>The team was created but its permissions weren't saved: {halfMade.message} <Link className="font-medium underline underline-offset-2" href={getTeamRoute(ready.orgSlug, halfMade.teamId)}>Open the team</Link> to try again.</>}
+        />
+      ) : create.error ? <DenNotice tone="error" message={create.error.message} /> : null}
+
+      <PermissionEditor rows={rows} onToggle={toggle} />
+
+      <DenStickyActionBar testId="role-new-save-bar" summary={<span>{trimmed ? `${allowed.size} allowed for ${trimmed}` : "Name the role to save"}</span>}>
+        <LinkButton variant="secondary" href={back.href}>Cancel</LinkButton>
+        <DenButton disabled={!trimmed || halfMade !== null} loading={create.isPending} onClick={() => void submit()} data-testid="role-new-create">Create role</DenButton>
+      </DenStickyActionBar>
+    </PermissionsPage>
+  );
+}

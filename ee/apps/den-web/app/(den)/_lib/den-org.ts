@@ -697,6 +697,10 @@ export function getTeamRoute(orgSlug: string | null | undefined, teamId: string)
   return `${getMembersRoute(orgSlug)}/teams/${encodeURIComponent(teamId)}`;
 }
 
+export function getNewRoleRoute(orgSlug?: string | null): string {
+  return `${getMembersRoute(orgSlug)}/roles/new`;
+}
+
 export function getWorkflowRunsRoute(orgSlug?: string | null): string {
   return `${getAnalyticsRoute(orgSlug)}/workflow-runs`;
 }

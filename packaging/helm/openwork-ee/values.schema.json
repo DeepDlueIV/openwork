@@ -88,6 +88,16 @@
               ],
               "description": "Permissions: Organization admins choose what members, admins and each team can do, instead of the fixed Member and Admin defaults. Renders DEN_FEATURE_PERMISSIONS."
             },
+            "teamRoles": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Team roles: Members › Teams shows each team's role (Member, Admin or Custom) with one Change role action, and Members gets a Roles tab to see and create roles. Renders DEN_FEATURE_TEAM_ROLES."
+            },
             "engineV2Upgrade": {
               "enum": [
                 "",

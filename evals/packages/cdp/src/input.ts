@@ -547,7 +547,10 @@ export async function clickAt(
   // A person activates the window they click. Electron can leave an admin or
   // OAuth window foregrounded; synthetic input alone does not activate this
   // target, and subsequent insertText can otherwise be silently discarded.
-  await surface.client.send("Page.bringToFront");
+  // An isolated frame (an MCP App) has no window of its own to activate.
+  await surface.client.send("Page.bringToFront").catch((cause: unknown) => {
+    if (!String(cause).includes("only be executed on top-level targets")) throw cause;
+  });
   await surface.client.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: point.x, y: point.y, button: "none" });
   await surface.client.send("Input.dispatchMouseEvent", { type: "mousePressed", x: point.x, y: point.y, button, clickCount });
   await surface.client.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: point.x, y: point.y, button, clickCount });

@@ -22,6 +22,9 @@ export function inChat(path: string, chat: string | null) {
 /** A side chat's id, made by the client when the person starts one. */
 export const CHAT_ID = /^[a-z0-9]{16,40}$/
 
+/** A kept file's id: `fl_` and 32 hex characters, made by the runner. */
+export const FILE_ID = /^fl_[a-f0-9]{32}$/
+
 /** A new side chat's id (24 hex characters) from random bytes. */
 export function newChatId(random: (length: number) => Uint8Array) {
   return Array.from(random(12), (byte) => byte.toString(16).padStart(2, "0")).join("")

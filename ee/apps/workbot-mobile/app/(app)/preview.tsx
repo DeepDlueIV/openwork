@@ -1,9 +1,9 @@
-import { CHAT_ID, extensionOf, formatSize, GRID_MAX_ROWS, inChat, kindLabel, parseDelimited, previewKind, type WorkbotAttachment, type WorkbotPreview } from "@openwork-ee/workbot-client"
+import { CHAT_ID, extensionOf, FILE_ID, formatSize, GRID_MAX_ROWS, inChat, kindLabel, parseDelimited, previewKind, type WorkbotAttachment, type WorkbotPreview } from "@openwork-ee/workbot-client"
 import { useWorkbotChat, useWorkbotFileBytes, useWorkbotPreview, WorkbotChatProvider } from "@openwork-ee/workbot-client/hooks"
 import { useQuery } from "@tanstack/react-query"
 import { useAudioPlayer, useAudioPlayerStatus } from "expo-audio"
 import { Image } from "expo-image"
-import { router, useLocalSearchParams } from "expo-router"
+import { Redirect, router, useLocalSearchParams } from "expo-router"
 import { useVideoPlayer, VideoView } from "expo-video"
 import { Pause, Play, Share2, X } from "lucide-react-native"
 import { useEffect, useMemo, useState } from "react"
@@ -198,13 +198,17 @@ function PreviewScreen({ file }: { file: WorkbotAttachment }) {
   )
 }
 
-/** A file opened by the person: the file itself, never a list of its properties. */
+/**
+ * A file opened by the person: the file itself, never a list of its properties. Anything but a kept file's id (a link
+ * from elsewhere can open this screen) goes back to the chat before a single request is made with it.
+ */
 export default function Preview() {
   const params = useLocalSearchParams<{ id: string; name: string; mediaType: string; size: string; version: string; chat?: string }>()
+  if (typeof params.id !== "string" || !FILE_ID.test(params.id)) return <Redirect href="/" />
   const chat = typeof params.chat === "string" && CHAT_ID.test(params.chat) ? params.chat : null
   const version = Number(params.version)
   const file: WorkbotAttachment = {
-    id: String(params.id ?? ""),
+    id: params.id,
     name: String(params.name ?? "file"),
     mediaType: String(params.mediaType ?? "application/octet-stream"),
     size: Number(params.size) || 0,

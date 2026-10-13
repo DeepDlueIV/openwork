@@ -8,7 +8,8 @@ import { getDesktopReleaseMetadata } from "../desktop-releases.js"
 import { env } from "../env.js"
 import { parseOrganizationPlan, type PlanTier } from "../entitlements.js"
 import { normalizeOrganizationMetadata } from "../organization-limits.js"
-import { readFeatureRollouts, setFeatureRollout, setOrganizationFeatureOverrides } from "@openwork-ee/den-db/organization-features"
+import { readFeatureRollouts } from "@openwork-ee/den-db/organization-features"
+import { updateFeatureRollout, updateOrganizationFeatureOverrides } from "../features.js"
 import { FEATURE_KEYS, featureAvailableOn, featureDefinition, featureKeySchema, featureRollout, resolveFeature } from "@openwork/features"
 import { updateOrganizationMetadata } from "../organization-metadata.js"
 import { runPlatformAdminPlatformAction, runPlatformAdminServiceAction, type PlatformAdminAuditActor } from "../audit/mcp-service-audit.js"
@@ -525,7 +526,7 @@ export function registerAdminMcpTools(server: McpServer, admin: PlatformAdminAud
         if (!featureAvailableOn(capability, env.features.deployment)) {
           throw new Error(`${capability} is not part of this deployment.`)
         }
-        const overrides = await runPlatformAdminServiceAction("organization.capability.set", requireAdmin(), organization, () => setOrganizationFeatureOverrides(db, {
+        const overrides = await runPlatformAdminServiceAction("organization.capability.set", requireAdmin(), organization, () => updateOrganizationFeatureOverrides({
           organizationId,
           changes: { [capability]: enabled },
           source: "platform",
@@ -587,7 +588,7 @@ export function registerAdminMcpTools(server: McpServer, admin: PlatformAdminAud
         if (!featureAvailableOn(feature, env.features.deployment)) throw new Error(`${feature} is not part of this deployment.`)
         // Deployment-wide: no organization's data changes, so platform evidence only.
         const rollouts = await runPlatformAdminPlatformAction("feature.rollout.set", requireAdmin(), { type: "feature", id: feature }, () =>
-          setFeatureRollout(db, { key: feature, enabled, killed, defaultEnabled: featureDefinition(feature).default }))
+          updateFeatureRollout({ key: feature, enabled, killed, defaultEnabled: featureDefinition(feature).default }))
         return { ok: true, feature, ...featureRollout(feature, rollouts) }
       }),
   )

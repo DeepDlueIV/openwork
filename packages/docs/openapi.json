@@ -840,6 +840,7 @@
           "key": {
             "type": "string",
             "enum": [
+              "teamMembershipCache",
               "managedDeployments",
               "denFlatPageHeaders",
               "dashboardActivity",
@@ -1031,6 +1032,9 @@
                 "capabilities": {
                   "type": "object",
                   "properties": {
+                    "teamMembershipCache": {
+                      "type": "boolean"
+                    },
                     "managedDeployments": {
                       "type": "boolean"
                     },
@@ -1090,6 +1094,7 @@
                     }
                   },
                   "required": [
+                    "teamMembershipCache",
                     "managedDeployments",
                     "denFlatPageHeaders",
                     "dashboardActivity",
@@ -1113,6 +1118,62 @@
                 "featureStates": {
                   "type": "object",
                   "properties": {
+                    "teamMembershipCache": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "managedDeployments": {
                       "type": "object",
                       "properties": {
@@ -2067,6 +2128,7 @@
                     }
                   },
                   "required": [
+                    "teamMembershipCache",
                     "managedDeployments",
                     "denFlatPageHeaders",
                     "dashboardActivity",
@@ -2457,6 +2519,9 @@
                 "capabilities": {
                   "type": "object",
                   "properties": {
+                    "teamMembershipCache": {
+                      "type": "boolean"
+                    },
                     "managedDeployments": {
                       "type": "boolean"
                     },
@@ -2516,6 +2581,7 @@
                     }
                   },
                   "required": [
+                    "teamMembershipCache",
                     "managedDeployments",
                     "denFlatPageHeaders",
                     "dashboardActivity",
@@ -2539,6 +2605,62 @@
                 "featureStates": {
                   "type": "object",
                   "properties": {
+                    "teamMembershipCache": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "managedDeployments": {
                       "type": "object",
                       "properties": {
@@ -3493,6 +3615,7 @@
                     }
                   },
                   "required": [
+                    "teamMembershipCache",
                     "managedDeployments",
                     "denFlatPageHeaders",
                     "dashboardActivity",
@@ -6078,6 +6201,165 @@
           "entitlements"
         ],
         "additionalProperties": {}
+      },
+      "DashboardActivityTarget": {
+        "oneOf": [
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "connection"
+              },
+              "connectionId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "connectionId"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "llm_provider"
+              },
+              "llmProviderId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "llmProviderId"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "gateway_provider"
+              },
+              "inferenceProviderId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "inferenceProviderId"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "marketplace"
+              },
+              "marketplaceId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "marketplaceId"
+            ]
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "const": "skill"
+              },
+              "pluginId": {
+                "type": "string"
+              },
+              "skillId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "type",
+              "pluginId",
+              "skillId"
+            ]
+          }
+        ]
+      },
+      "DashboardActivityEntry": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "connection",
+              "skill",
+              "plugin",
+              "provider"
+            ]
+          },
+          "title": {
+            "type": "string"
+          },
+          "detail": {
+            "type": "string"
+          },
+          "occurredAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+          },
+          "target": {
+            "$ref": "#/components/schemas/DashboardActivityTarget"
+          },
+          "logo": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "url": {
+                "type": "string"
+              },
+              "providerId": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "name"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "title",
+          "detail",
+          "occurredAt",
+          "target"
+        ]
+      },
+      "DashboardActivity": {
+        "type": "object",
+        "properties": {
+          "activity": {
+            "maxItems": 5,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DashboardActivityEntry"
+            }
+          }
+        },
+        "required": [
+          "activity"
+        ]
       },
       "DeleteOrganizationResponse": {
         "type": "object",
@@ -25624,6 +25906,9 @@
                     "capabilities": {
                       "type": "object",
                       "properties": {
+                        "teamMembershipCache": {
+                          "type": "boolean"
+                        },
                         "managedDeployments": {
                           "type": "boolean"
                         },
@@ -25683,6 +25968,7 @@
                         }
                       },
                       "required": [
+                        "teamMembershipCache",
                         "managedDeployments",
                         "denFlatPageHeaders",
                         "dashboardActivity",
@@ -25706,6 +25992,62 @@
                     "featureStates": {
                       "type": "object",
                       "properties": {
+                        "teamMembershipCache": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "managedDeployments": {
                           "type": "object",
                           "properties": {
@@ -26660,6 +27002,7 @@
                         }
                       },
                       "required": [
+                        "teamMembershipCache",
                         "managedDeployments",
                         "denFlatPageHeaders",
                         "dashboardActivity",
@@ -26795,6 +27138,9 @@
                     "capabilities": {
                       "type": "object",
                       "properties": {
+                        "teamMembershipCache": {
+                          "type": "boolean"
+                        },
                         "managedDeployments": {
                           "type": "boolean"
                         },
@@ -26854,6 +27200,7 @@
                         }
                       },
                       "required": [
+                        "teamMembershipCache",
                         "managedDeployments",
                         "denFlatPageHeaders",
                         "dashboardActivity",
@@ -26877,6 +27224,62 @@
                     "featureStates": {
                       "type": "object",
                       "properties": {
+                        "teamMembershipCache": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "managedDeployments": {
                           "type": "object",
                           "properties": {
@@ -27831,6 +28234,7 @@
                         }
                       },
                       "required": [
+                        "teamMembershipCache",
                         "managedDeployments",
                         "denFlatPageHeaders",
                         "dashboardActivity",
@@ -33437,6 +33841,79 @@
             }
           }
         }
+      }
+    },
+    "/v1/org/activity": {
+      "get": {
+        "operationId": "getV1OrgActivity",
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "Get recent dashboard activity",
+        "description": "Returns the organization's five newest additions for the admin dashboard, newest first (ties by event id): connections and model providers by their stored creation time, plugins added to an active marketplace (excluding the built-in catalog) by the attachment's creation time, and published versions of active skills in active plugins. A snapshot of existing resources, not an audit log: removed or archived resources do not contribute. Each source follows the permission of its own admin list (View all connections, View all providers, View Gateway providers on a Gateway-enabled deployment, Manage everything shared or the caller's plugin and marketplace access). Workspace owners and admins only, with the dashboardActivity feature.",
+        "responses": {
+          "200": {
+            "description": "The newest dashboard activity.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DashboardActivity"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Only workspace owners and admins can read dashboard activity.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForbiddenError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The organization was not found, or dashboard activity is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "const": "feature_disabled"
+                    },
+                    "feature": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "feature"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "denApiKey": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/v1/managed-deployments/configuration": {

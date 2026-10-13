@@ -5,6 +5,7 @@ This folder owns organization-facing Den API routes.
 ## Files
 
 - `index.ts`: registers all org route groups
+- `activity.ts`: the admin dashboard Activity feed (`GET /v1/org/activity`), computed server-side
 - `core.ts`: org creation, invitation preview/accept, and org context
 - `invitations.ts`: invitation creation and cancellation
 - `members.ts`: member role updates and member removal

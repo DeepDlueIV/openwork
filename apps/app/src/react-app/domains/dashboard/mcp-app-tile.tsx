@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentProps } from "react";
 import { DashboardConnectionCard } from "./dashboard-connection-card";
-import { connectionCardPayloadFromChatToolResult } from "@/components/tools/error-attribution";
+import { appToolResultConnectionToolName, connectionCardFromMcpToolResult } from "@/components/tools/error-attribution";
 import type { ConnectionActionPayload } from "@openwork/types/connection-action-app";
 import { mcpAppResourceIdentity } from "@openwork/types/mcp-app";
 import { Play } from "lucide-react";
@@ -17,6 +17,7 @@ import { snapshotMcpAppArguments, type McpAppOrigin } from "@/components/chat/mc
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useWorkspace } from "@/react-app/shell/workspace-provider";
+import { onCloudCredentialRefreshed, readCloudCredentialRevision } from "@/react-app/domains/connections/cloud-credential-revision";
 import { DashboardTileShell, type DashboardTileActions } from "./dashboard-tile-shell";
 import { resolveDashboardMcpApp } from "./dashboard-mcp-app-resolution";
 import { scheduleDashboardLaunch } from "./dashboard-launch-scheduler";
@@ -62,7 +63,7 @@ type TileState =
   | { phase: "idle"; revokeAutoLaunch?: boolean }
   | { phase: "loading" }
   | ReadyTileState
-  | { phase: "connection"; connection: ConnectionActionPayload; output: unknown }
+  | { phase: "connection"; connection: ConnectionActionPayload; output: unknown; toolName: string }
   | { phase: "closed" }
   | { phase: "error"; message: string; preservePrevious?: boolean };
 
@@ -136,20 +137,9 @@ function appMatchesEntry(app: OpenworkMcpAppResource, entry: DashboardMcpAppEntr
   return app.serverName === entry.serverName && app.toolName === entry.toolName && app.resourceUri === entry.resourceUri;
 }
 
-function tileConnectionState(entry: DashboardMcpAppEntry, value: unknown, args: Record<string, unknown>): Extract<TileState, { phase: "connection" }> | null {
-  const outputs: unknown[] = [value];
-  if (isRecord(value)) {
-    outputs.push(value.structuredContent, value._meta);
-    if (Array.isArray(value.content)) outputs.push(...value.content.filter(isRecord).filter(item => item.type === "text").map(item => item.text));
-  }
-  const matches = new Map<string, Extract<TileState, { phase: "connection" }>>();
-  for (const output of outputs) {
-    const connection = connectionCardPayloadFromChatToolResult(entry.projectedToolName, output, args);
-    if (connection) matches.set(connection.connectionId, {
-      phase: "connection", connection, output,
-    });
-  }
-  return matches.size === 1 ? matches.values().next().value ?? null : null;
+function tileConnectionState(entry: DashboardMcpAppEntry, value: unknown, args: Record<string, unknown>, toolName = entry.projectedToolName): Extract<TileState, { phase: "connection" }> | null {
+  const match = connectionCardFromMcpToolResult(toolName, value, args);
+  return match ? { phase: "connection", ...match, toolName } : null;
 }
 
 function invalidatesTileDocument(cause: unknown) {
@@ -365,6 +355,7 @@ function McpAppTileContent({
     const userInitiated = userInitiatedNonceRef.current === nonce;
     const memberApproved = launchApprovedRef.current;
     const requiresApproval = entry.requiresApproval === true;
+    let canRetryCredentials = !manualLaunch && !requiresApproval && !memberApproved;
     const launchIsApproved = dashboardTileLaunchIsApproved(entry.organizationAutoLaunch === true, memberApproved);
     const isCurrent = () => lifetime.current.active && !attempt.controller.signal.aborted && launchRef.current === attempt && retiredNonceRef.current !== nonce;
     const assertActive = () => {
@@ -380,10 +371,12 @@ function McpAppTileContent({
       }
     };
     discardInvalidDocument();
+    let credentialRevision = readCloudCredentialRevision();
     const promise = scheduleDashboardLaunch<TileState>(async () => {
       await Promise.resolve();
       assertActive();
       attempt.admitted = true;
+      credentialRevision = readCloudCredentialRevision();
       discardInvalidDocument();
       if (attempt.candidates.length === 0) throw new Error("No connected workspace is available to launch this artifact.");
       const argumentsSnapshot = snapshotMcpAppArguments(launchArguments);
@@ -458,6 +451,7 @@ function McpAppTileContent({
           } catch (cause) {
             assertActive();
             if (!(cause instanceof OpenworkServerError) || cause.code !== "tool_requires_approval") throw cause;
+            canRetryCredentials = false;
             approvalWasRequired = true;
             if (!userInitiated || fallbackEndpoint) return { phase: "idle", revokeAutoLaunch: true };
             if (!endpointIsActive(endpoint)) throw new Error("This artifact launch has closed or changed. Run the tile again.");
@@ -560,8 +554,18 @@ function McpAppTileContent({
         releaseLaunches();
       }
       updateRefresh("failed");
+      if (cause instanceof OpenworkServerError && cause.code === "mcp_auth_required"
+        && (entry.connectionId || entry.serverName === "openwork-cloud") && canRetryCredentials) {
+        const candidates = attempt.endpoint ? [attempt.endpoint] : attempt.candidates;
+        const stopCredentialRetry = onCloudCredentialRefreshed(
+          candidates.map(endpoint => ({ serverBaseUrl: endpoint.client.baseUrl, workspaceId: endpoint.workspaceId })),
+          credentialRevision,
+          () => { if (isCurrent() && candidates.every(endpointIsActive)) requestRefresh(false); },
+        );
+        attempt.controller.signal.addEventListener("abort", stopCredentialRetry, { once: true });
+      }
     });
-  }, [cacheScopeKey, entry, launchArguments, argumentsSignature, manualLaunch, nonce, started, geometry.ref, clearDocument, releaseLaunch, releaseLaunches, updateState, updateRefresh]);
+  }, [cacheScopeKey, entry, launchArguments, argumentsSignature, manualLaunch, nonce, started, geometry.ref, clearDocument, releaseLaunch, releaseLaunches, updateState, updateRefresh, requestRefresh]);
 
   useEffect(() => {
     if (manualLaunch) return;
@@ -663,7 +667,7 @@ function McpAppTileContent({
           </div>
         ) : null}
         {state.phase === "connection" ? <DashboardConnectionCard key={JSON.stringify([cacheScopeKey, state.connection.connectionId, nonce])}
-          toolName={entry.projectedToolName} toolCallId={`${entry.id}:${nonce}`} output={state.output}
+          toolName={state.toolName} toolCallId={`${entry.id}:${nonce}`} output={state.output}
           onConnected={run} /> : null}
         {state.phase === "error" ? (
           <p className="pt-3 text-xs text-muted-foreground" role="status">{state.message}</p>
@@ -688,6 +692,16 @@ function McpAppTileContent({
                 unavailableNotice="This artifact view is unavailable."
                 presentation="dashboard"
                 onRetry={run}
+                onAppToolResult={(result) => {
+                  // A failed call the App makes itself gets the same connection card as a failed launch.
+                  if (!currentDocument(state.lifetime) || !isRecord(result) || result.isError !== true) return;
+                  const connection = tileConnectionState(entry, result, launchArguments,
+                    appToolResultConnectionToolName(state.app, entry.projectedToolName));
+                  if (!connection) return;
+                  clearDocument(connection);
+                  releaseLaunches();
+                  updateRefresh("idle");
+                }}
                 initialHeight={geometry.initialHeight ?? lastHeight.current}
                 onReady={() => { if (currentDocument(state.lifetime) && !state.lifetime.failed) setReadyDocument(state.lifetime); }}
                 onHeightChange={(height) => {

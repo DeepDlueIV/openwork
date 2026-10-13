@@ -1,3 +1,4 @@
+import { db } from "../db.js"
 import { env } from "../env.js"
 import { getDeploymentFeatureState, organizationFeatureEnabled } from "../features.js"
 
@@ -10,7 +11,8 @@ type SlackPolicyError = { kind: "policy_blocked"; message: string }
 
 /** Per-organization rollout, independent of each member's Slack consent. */
 export async function slackCloudPolicyError(organizationId: string): Promise<SlackPolicyError | null> {
-  if (env.orgMode === "multi_org" && await organizationFeatureEnabled(organizationId, "nativeSlack")) return null
+  // Authorization must see revocations even when Redis invalidation fails.
+  if (env.orgMode === "multi_org" && await organizationFeatureEnabled(organizationId, "nativeSlack", { database: db })) return null
   return {
     kind: "policy_blocked",
     message: "Slack search is unavailable for this organization. An OpenWork platform administrator controls availability in Admin.",

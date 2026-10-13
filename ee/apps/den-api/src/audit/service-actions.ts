@@ -108,7 +108,7 @@ export const auditServiceActionDeclarations = [
   },
   {
     action: "organization.capability.set", kind: "platform.admin.organization", class: "tenant_change", resource: { type: "organization", idFrom: "organizationId argument (verified to exist)" }, origin: "platform_admin",
-    tools: ["den_set_org_capability", "admin:den_set_org_capability"], callSites: ["src/mcp/admin-tools.ts:den_set_org_capability → setOrganizationFeatureOverrides"],
+    tools: ["den_set_org_capability", "admin:den_set_org_capability"], callSites: ["src/mcp/admin-tools.ts:den_set_org_capability → updateOrganizationFeatureOverrides"],
     notes: "Platform-admin MCP tool: sets or clears one organization feature override (organization_feature). Tenant is the verified argument organization; actor is the platform admin user. REST equivalent organization.capabilities.update. The deployment-wide den_set_feature_rollout tool changes no organization's data and is not a tenant service action (see the notes on PUT /v1/admin/features/:key).",
   },
 ] as const satisfies readonly AuditServiceActionDeclaration[]

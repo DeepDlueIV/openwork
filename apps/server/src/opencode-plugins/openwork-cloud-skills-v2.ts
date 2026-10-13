@@ -10,7 +10,7 @@ const catalogSchema = z.object({
   })),
 });
 
-type NativeSkill = { id: string; name: string; description: string; location: string; content: string };
+type NativeSkill = { id: string; name: string; description: string; path: string; content: string };
 export type CloudSkillContext = {
   options: { url: string; token: string };
   skill: {
@@ -38,8 +38,9 @@ export function discoverySkills(value: unknown): NativeSkill[] {
       name,
       description,
       // Not SKILL.md: the native skill tool must not scan a fake directory.
-      // The pinned v2 beta uses location (newer upstream versions use path).
-      location: `/openwork/remote-skills/${skill.name}.md`,
+      // The engine requires path and disables this whole plugin, OpenWork's
+      // context tools included, when a registered skill lacks it.
+      path: `/openwork/remote-skills/${skill.name}.md`,
       content: [
         "This is discovery metadata, NOT the skill's instructions or proof of access.",
         `Retrieve the current full skill through OpenWork Connect get_skill with ${JSON.stringify({ name: skill.capability })}.`,

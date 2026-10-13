@@ -20,6 +20,8 @@ interface MessageListContextValue {
   /** Verified principal/org, endpoint, workspace and session; absent means no retention. */
   uiStateOwner?: string | null
   getConnectionDecision?: (toolCallId: string) => ChatConnectionDecisionBinding | null
+  /** A Connect card's sign-in landed with no question waiting on it: carry the latest turn on. */
+  continueAfterConnection?: (toolCallId: string, connectionName: string) => void
   connectionQuestionToolCallId?: string | null
   showThinking: boolean
   highlightQuery?: string
@@ -63,6 +65,7 @@ interface MessageListProviderProps {
   sessionId: string
   uiStateOwner?: string | null
   getConnectionDecision?: (toolCallId: string) => ChatConnectionDecisionBinding | null
+  continueAfterConnection?: (toolCallId: string, connectionName: string) => void
   connectionQuestionToolCallId?: string | null
   showThinking: boolean
   highlightQuery?: string
@@ -103,6 +106,7 @@ export function MessageListProvider({
   sessionId,
   uiStateOwner,
   getConnectionDecision,
+  continueAfterConnection,
   connectionQuestionToolCallId,
   showThinking,
   highlightQuery,
@@ -193,6 +197,7 @@ export function MessageListProvider({
       sessionId,
       uiStateOwner,
       getConnectionDecision,
+      continueAfterConnection,
       connectionQuestionToolCallId,
       showThinking,
       highlightQuery,
@@ -220,6 +225,7 @@ export function MessageListProvider({
       sessionId,
       uiStateOwner,
       getConnectionDecision,
+      continueAfterConnection,
       connectionQuestionToolCallId,
       showThinking,
       highlightQuery,

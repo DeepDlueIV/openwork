@@ -155,6 +155,7 @@ import { MERMAID_LIMITS } from "@/components/markdown/mermaid";
 import {
   isChatMcpReconnectScopeCurrent,
   isCurrentChatConnectionDecision,
+  isLatestTurnToolCall,
   nativeChatConnectionDecision,
   composerQuestionForConnectionDecision,
   type ChatConnectionDecisionBinding,
@@ -3225,6 +3226,14 @@ export function SessionSurface(props: SessionSurfaceProps) {
     };
   }, [props.sessionId, sessionOwner, props.activeQuestion, props.respondQuestion, baseRenderedMessages, props.isControlTarget, props.draftScope, archived, archiveStateKnown, archiveHeld]);
   const composerQuestion = composerQuestionForConnectionDecision(props.activeQuestion, nativeConnectionRequest);
+  // A turn that ended on a Connect card picks up once its sign-in lands, as if the person said so.
+  const continueAfterConnectionRef = useRef({ status, messages: baseRenderedMessages, asking: Boolean(props.activeQuestion) });
+  continueAfterConnectionRef.current = { status, messages: baseRenderedMessages, asking: Boolean(props.activeQuestion) };
+  const continueAfterConnection = useCallback((toolCallId: string, connectionName: string) => {
+    const context = continueAfterConnectionRef.current;
+    if (context.status !== "ready" || context.asking || !isLatestTurnToolCall(context.messages, toolCallId)) return;
+    void handleResumeInterrupted(`${connectionName} is connected. Go ahead.`);
+  }, [handleResumeInterrupted]);
 
   const handleRevertToUserMessage = useCallback((messageId: string) => {
     if (archived || !archiveStateKnown || sessionWorkHeld(props.opencodeBaseUrl, props.sessionId)) return;
@@ -3490,6 +3499,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
                       onMcpReconnect={handleMcpReconnect}
                       onMcpReopenAuthorization={handleMcpReopenAuthorization}
                       getConnectionDecision={getConnectionDecision}
+                      continueAfterConnection={archived ? undefined : continueAfterConnection}
                       connectionQuestionToolCallId={nativeConnectionRequest?.questionToolCallId ?? null}
                     >
                       <MessageList

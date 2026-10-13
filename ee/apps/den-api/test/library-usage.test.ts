@@ -1,17 +1,13 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import { buildLibraryUsageRows, SKILL_USE_DEDUPE_WINDOW_MS, skillUseDedupeKey } from "../src/capability-usage-rows.js"
+import { buildLibraryUsageRows, libraryUsageWindow } from "../src/capability-usage-rows.js"
 
-const member = "om_01aaaaaaaaaaaaaaaaaaaaaaaa"
-const skill = "cob_01bbbbbbbbbbbbbbbbbbbbbbbb"
-
-test("repeated loads by one member inside the window share a dedupe key", () => {
-  const start = new Date(Math.floor(Date.parse("2026-10-08T12:00:00Z") / SKILL_USE_DEDUPE_WINDOW_MS) * SKILL_USE_DEDUPE_WINDOW_MS)
-  const later = new Date(start.getTime() + SKILL_USE_DEDUPE_WINDOW_MS - 1)
-  const nextWindow = new Date(start.getTime() + SKILL_USE_DEDUPE_WINDOW_MS)
-  assert.equal(skillUseDedupeKey({ orgMembershipId: member, configObjectId: skill, at: start }), skillUseDedupeKey({ orgMembershipId: member, configObjectId: skill, at: later }))
-  assert.notEqual(skillUseDedupeKey({ orgMembershipId: member, configObjectId: skill, at: start }), skillUseDedupeKey({ orgMembershipId: member, configObjectId: skill, at: nextWindow }))
-  assert.notEqual(skillUseDedupeKey({ orgMembershipId: member, configObjectId: skill, at: start }), skillUseDedupeKey({ orgMembershipId: "om_other", configObjectId: skill, at: start }))
+test("the window is the last N UTC calendar days, today included, matching the daily rollup buckets", () => {
+  const window = libraryUsageWindow(7, new Date("2026-10-13T06:30:00Z"))
+  assert.equal(window.from.toISOString(), "2026-10-07T00:00:00.000Z")
+  assert.equal(window.fromDate, "2026-10-07")
+  assert.equal(window.toDate, "2026-10-13")
+  assert.equal(libraryUsageWindow(1, new Date("2026-10-13T23:59:59Z")).fromDate, "2026-10-13")
 })
 
 test("unused items are listed with zeros and facts for removed items are ignored, most used first", () => {

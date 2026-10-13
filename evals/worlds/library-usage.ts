@@ -83,6 +83,15 @@ export async function libraryUsage(seed: Seed) {
     connectionIds[key] = field(created, "id");
   }
 
+  // Organization member ids, for reading the per-member usage breakdown.
+  const memberIds = {} as Record<"alice" | "blair", string>;
+  for (const person of ["alice", "blair"] as const) {
+    const session = den.members[person];
+    if (!session) throw new Error(`Missing ${person}.`);
+    const org = await seed.api(session, "/v1/org");
+    memberIds[person] = field(isRecord(org.body) ? org.body.currentMember : undefined, "id");
+  }
+
   const tokens = new Map<DenSession, string>();
   async function mcpToken(person: DenSession) {
     const known = tokens.get(person);
@@ -131,7 +140,7 @@ export async function libraryUsage(seed: Seed) {
   return {
     faults,
     async [Symbol.asyncDispose]() { await faults[Symbol.asyncDispose](); },
-    den, web, memberWeb, orgId, skills: capabilities, connectors, loadSkill, callConnector, baseUrl: den.ref.webUrl,
+    den, web, memberWeb, orgId, skills: capabilities, connectors, memberIds, loadSkill, callConnector, baseUrl: den.ref.webUrl,
     // Read-only layout witness: probe.dom reports document width and rectangles,
     // but not body scrollWidth or whether sideways scrolling stays in the table.
     usageLayout: () => evaluateOnSurface(web, () => {

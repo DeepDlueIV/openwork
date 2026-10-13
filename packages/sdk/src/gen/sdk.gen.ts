@@ -343,6 +343,8 @@ import type {
   GetV1InstallConfigResponses,
   GetV1IntegrationsSlackOauthCallbackErrors,
   GetV1LibraryUsageByKindResponses,
+  GetV1LibraryUsageErrors,
+  GetV1LibraryUsageResponses,
   GetV1LlmProviderCatalogByProviderIdErrors,
   GetV1LlmProviderCatalogByProviderIdResponses,
   GetV1LlmProviderCatalogErrors,
@@ -4921,9 +4923,47 @@ export class DenClient extends HeyApiClient {
   }
 
   /**
+   * Break down how the organization's skills, plugins or connectors are used
+   *
+   * Uses of one kind of item (`kind`: skills, plugins or connectors) over the last `days` UTC calendar days including today (7, 30 or 90; default 30), grouped by any of `item`, `member` and `day` (comma separated in `groupBy`; default `item`). `item` is the skill, plugin or connector id, `member` the organization member id and `day` the UTC date; dimensions not grouped by come back null. Filter to one member (`memberId`), the current members of one team (`teamId`), or one item (`itemId`). A team view counts its members' past uses by their current team. Every skill load and connector call counts once. Plugins count their skills' loads plus their Workflows' runs. `failures` counts failed connector calls and failed Workflow runs; it is null for skills. `people` counts distinct members in the row. `sources` splits uses by what started them (agent, workflow, automation, app, artifact); a missing key is zero. Only used items appear; ids are resolved to names by the caller. At most 10000 rows: a larger result answers 422 library_usage_too_many_rows without truncation. Members with the usage_analytics.view permission only (owners and admins by default).
+   */
+  public getV1LibraryUsage<ThrowOnError extends boolean = false>(
+    parameters: {
+      kind: "skills" | "plugins" | "connectors";
+      days?: "7" | "30" | "90";
+      groupBy?: string;
+      memberId?: string;
+      teamId?: string;
+      itemId?: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "kind" },
+            { in: "query", key: "days" },
+            { in: "query", key: "groupBy" },
+            { in: "query", key: "memberId" },
+            { in: "query", key: "teamId" },
+            { in: "query", key: "itemId" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).get<GetV1LibraryUsageResponses, GetV1LibraryUsageErrors, ThrowOnError>({
+      url: "/v1/library-usage",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
    * Read how the organization's skills, plugins or connectors are used
    *
-   * Lists every active skill (`kind=skills`), plugin (`plugins`) or connector (`connectors`) in the organization with how often it was used over the last `days` days (7, 30 or 90; default 30), by how many members, and when it was last used. Items nobody used come back with zeros. Skills count loads of their SKILL.md through the OpenWork MCP gateway; repeated loads by the same member within 15 minutes count once. Plugins count their skills' loads plus their Workflows' runs, and `failures` counts failed runs. Connectors count tool calls made through OpenWork, and `failures` counts calls that failed. `failures` is null for skills. Counts cover use since usage recording started; `trackingSince` is the first recorded use. Aggregates only. Members with the usage_analytics.view permission only (owners and admins by default).
+   * Lists every active skill (`kind=skills`), plugin (`plugins`) or connector (`connectors`) in the organization with how often it was used over the last `days` UTC calendar days including today (7, 30 or 90; default 30), by how many members, and when it was last used. Items nobody used come back with zeros. Skills count every load of their SKILL.md through the OpenWork MCP gateway. Plugins count their skills' loads plus their Workflows' runs, and `failures` counts failed runs. Connectors count tool calls made through OpenWork, and `failures` counts calls that failed. `failures` is null for skills. Uses started by the member's agent, saved Workflows, Automations, Apps and live artifacts all count; GET /v1/library-usage splits them by source, member and day. Counts cover use since usage recording started; `trackingSince` is the first recorded use (skill loads before daily rollups were introduced were counted at most once per member per 15 minutes). Aggregates only. Members with the usage_analytics.view permission only (owners and admins by default).
    */
   public getV1LibraryUsageByKind<ThrowOnError extends boolean = false>(
     parameters: {

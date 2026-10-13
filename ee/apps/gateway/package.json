@@ -8,6 +8,7 @@
     "dev:local": "OPENWORK_DEV_MODE=1 pnpm run models:build && OPENWORK_DEV_MODE=1 PORT=${GATEWAY_PORT-${INFERENCE_PORT:-8791}} tsx watch src/server.ts",
     "build": "pnpm run build:workspace-dependencies && pnpm run models:build && tsc -p tsconfig.build.json",
     "start": "node --import ./dist/instrumentation.js dist/server.js",
+    "test": "node --conditions=development --import tsx --test test/*.test.ts",
     "build:workspace-dependencies": "node ../../../scripts/build-workspace-dependencies.mjs @openwork-ee/gateway"
   },
   "dependencies": {

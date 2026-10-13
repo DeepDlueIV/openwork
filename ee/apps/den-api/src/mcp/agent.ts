@@ -9,7 +9,6 @@ import {
   type ToolAnnotations,
 } from "@modelcontextprotocol/server"
 import { eq } from "@openwork-ee/den-db/drizzle"
-import type { CapabilityUsageVia } from "@openwork-ee/den-db/schema"
 import { normalizeDenTypeId } from "@openwork-ee/utils/typeid"
 import { openworkCloudMcpConnectionActionSchema } from "@openwork/types/den/mcp-connection-action"
 import type { Hono } from "hono"
@@ -66,6 +65,7 @@ import {
   externalCapabilityErrorToolResult,
   externalCapabilitySuccessToolResult,
   searchCapabilityRegistry,
+  withUsageSource,
   workflowExecutionAuditStatus,
   type ExecuteCapabilityToolResult,
 } from "./capability-registry.js"
@@ -264,7 +264,6 @@ export async function readRemoteSkillSource(input: {
   skill: RemoteSkillDescriptor
   organizationId: string
   member: Awaited<ReturnType<typeof resolveMcpMemberIdentity>>
-  usageVia: CapabilityUsageVia
 }): Promise<RemoteSkillSource> {
   const builtinResult = executeBuiltinSkillCapability(input.skill.capability)
   if (builtinResult) return { content: builtinResult.content, provenance: builtinResult.provenance }
@@ -275,7 +274,8 @@ export async function readRemoteSkillSource(input: {
     member: input.member,
     pluginId: marketplace.pluginId,
     configObjectId: marketplace.configObjectId,
-    usageVia: input.usageVia,
+    // Served to the member's agent (skill:// resource or get_skill): one Library use.
+    usageSource: "agent",
   })
   if (!marketplaceResult.ok || marketplaceResult.result.kind !== "skill") return null
   const result = marketplaceResult.result
@@ -404,7 +404,6 @@ export function registerAgentSkillResources(input: {
         skill,
         organizationId: input.organizationId,
         member: input.member,
-        usageVia: "skill_resource",
       })
       if (!source) {
         throw new ProtocolError(ProtocolErrorCode.InvalidRequest, "Skill is no longer available")
@@ -513,6 +512,7 @@ export function registerAgentMcpRoutes<T extends { Variables: RequestIdVariables
       generatedArtifactViewsEnabled: env.generatedArtifactViewsEnabled,
       organizationFeatures,
       audit: auditPrincipal,
+      usageSource: "agent",
     })
     // Building your own Apps can be turned off for the deployment; MCP Apps
     // from connected MCP servers work either way.
@@ -783,7 +783,6 @@ export function registerAgentMcpRoutes<T extends { Variables: RequestIdVariables
         skill,
         organizationId: principal.organizationId,
         member: memberIdentity,
-        usageVia: "get_skill",
       }),
     })
 
@@ -964,7 +963,7 @@ export function registerAgentMcpRoutes<T extends { Variables: RequestIdVariables
           }
           const execution = await runMcpServiceAction("workflow.execute", auditPrincipal, serviceAuditResourceId(configObjectId), () => executeLiveArtifactWorkflow({
             context: artifactContext, configObjectId, expectedOutputSchemaDigest, timeZone,
-            buildTools: () => buildCapabilityToolTree(capabilityContext),
+            buildTools: () => buildCapabilityToolTree(withUsageSource(capabilityContext, "artifact")),
             describeUnavailable: (missing) => liveArtifactConnectionFailure(capabilityContext, missing),
           }), { result: workflowExecutionAuditStatus, error: serviceErrorStatus })
           if (!execution.ok) return execution

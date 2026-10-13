@@ -10,6 +10,8 @@ import {
   AuditPolicyTable,
   AuditStateTable,
   AuditUsageFactTable,
+  CapabilityUsageEventTable,
+  CapabilityUsageRollupTable,
   ConfigObjectAccessGrantTable,
   ConfigObjectTable,
   ConfigObjectVersionTable,
@@ -542,6 +544,8 @@ export function registerDeleteOrganizationRoutes<T extends { Variables: OrgRoute
         await tx.delete(WorkerTable).where(eq(WorkerTable.org_id, organizationId))
         await tx.delete(TelemetryEventTable).where(eq(TelemetryEventTable.org_id, organizationId))
         await tx.delete(TelemetrySessionDimensionTable).where(eq(TelemetrySessionDimensionTable.org_id, organizationId))
+        await tx.delete(CapabilityUsageEventTable).where(eq(CapabilityUsageEventTable.organization_id, organizationId))
+        await tx.delete(CapabilityUsageRollupTable).where(eq(CapabilityUsageRollupTable.organization_id, organizationId))
         await tx.delete(TeamTable).where(eq(TeamTable.organizationId, organizationId))
 
         await tx.delete(OrgSubscriptionTable).where(eq(OrgSubscriptionTable.organization_id, organizationId))

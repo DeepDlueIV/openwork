@@ -1,3 +1,4 @@
+import type { CapabilityUsageSource } from "@openwork-ee/den-db/schema"
 import { recordConnectorCall, toolCallFailed } from "../capability-usage.js"
 import { and, eq, isNull } from "@openwork-ee/den-db/drizzle"
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js"
@@ -1361,6 +1362,8 @@ export async function executeExternalCapability(input: {
   requireReadOnly?: boolean
   /** Fail closed when the live input schema no longer matches schemaDigest. */
   requireSchemaMatch?: boolean
+  /** What started this call, recorded with its Library usage event. */
+  usageSource: CapabilityUsageSource
 }): Promise<ExternalCapabilityExecuteResult> {
   const prepared = await prepareExternalCapability(input)
   if (!prepared.ok) return prepared
@@ -1448,8 +1451,7 @@ export async function executeExternalCapability(input: {
         organizationId: connection.organizationId,
         orgMembershipId: input.member.orgMembershipId,
         connectionId: connection.id,
-        toolName: input.toolName,
-        via: "gateway",
+        source: input.usageSource,
       }, toolCallFailed)
     }
 

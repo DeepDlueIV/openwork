@@ -6850,6 +6850,191 @@
           "message"
         ]
       },
+      "LibraryUsageSourceCounts": {
+        "type": "object",
+        "properties": {
+          "agent": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "workflow": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "automation": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "app": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "artifact": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        }
+      },
+      "LibraryUsageBreakdownRow": {
+        "type": "object",
+        "properties": {
+          "itemId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "memberId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "uses": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "people": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "failures": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "lastUsedAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "sources": {
+            "$ref": "#/components/schemas/LibraryUsageSourceCounts"
+          }
+        },
+        "required": [
+          "itemId",
+          "memberId",
+          "date",
+          "uses",
+          "people",
+          "failures",
+          "lastUsedAt",
+          "sources"
+        ]
+      },
+      "LibraryUsageBreakdown": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "skills",
+              "plugins",
+              "connectors"
+            ]
+          },
+          "days": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991
+          },
+          "from": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+          },
+          "to": {
+            "type": "string",
+            "format": "date",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))$"
+          },
+          "timezone": {
+            "type": "string",
+            "const": "UTC"
+          },
+          "groupBy": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "item",
+                "member",
+                "day"
+              ]
+            }
+          },
+          "trackingSince": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rows": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LibraryUsageBreakdownRow"
+            }
+          }
+        },
+        "required": [
+          "kind",
+          "days",
+          "from",
+          "to",
+          "timezone",
+          "groupBy",
+          "trackingSince",
+          "rows"
+        ]
+      },
       "LibraryUsageRow": {
         "type": "object",
         "properties": {
@@ -48033,6 +48218,163 @@
         ]
       }
     },
+    "/v1/library-usage": {
+      "get": {
+        "operationId": "getV1LibraryUsage",
+        "tags": [
+          "Plugins"
+        ],
+        "summary": "Break down how the organization's skills, plugins or connectors are used",
+        "description": "Uses of one kind of item (`kind`: skills, plugins or connectors) over the last `days` UTC calendar days including today (7, 30 or 90; default 30), grouped by any of `item`, `member` and `day` (comma separated in `groupBy`; default `item`). `item` is the skill, plugin or connector id, `member` the organization member id and `day` the UTC date; dimensions not grouped by come back null. Filter to one member (`memberId`), the current members of one team (`teamId`), or one item (`itemId`). A team view counts its members' past uses by their current team. Every skill load and connector call counts once. Plugins count their skills' loads plus their Workflows' runs. `failures` counts failed connector calls and failed Workflow runs; it is null for skills. `people` counts distinct members in the row. `sources` splits uses by what started them (agent, workflow, automation, app, artifact); a missing key is zero. Only used items appear; ids are resolved to names by the caller. At most 10000 rows: a larger result answers 422 library_usage_too_many_rows without truncation. Members with the usage_analytics.view permission only (owners and admins by default).",
+        "responses": {
+          "200": {
+            "description": "Library usage breakdown",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LibraryUsageBreakdown"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid query",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign-in required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "View usage analytics permission required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForbiddenError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The team is not in this organization",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Too many rows; narrow the window, grouping or filters",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "const": "library_usage_too_many_rows"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "query",
+            "name": "kind",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "skills",
+                "plugins",
+                "connectors"
+              ]
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "days",
+            "schema": {
+              "default": "30",
+              "type": "string",
+              "enum": [
+                "7",
+                "30",
+                "90"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "groupBy",
+            "schema": {
+              "default": "item",
+              "type": "string",
+              "maxLength": 32
+            }
+          },
+          {
+            "in": "query",
+            "name": "memberId",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          {
+            "in": "query",
+            "name": "teamId",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          },
+          {
+            "in": "query",
+            "name": "itemId",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            }
+          }
+        ],
+        "security": [
+          {
+            "denApiKey": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/v1/library-usage/{kind}": {
       "get": {
         "operationId": "getV1LibraryUsageByKind",
@@ -48040,7 +48382,7 @@
           "Plugins"
         ],
         "summary": "Read how the organization's skills, plugins or connectors are used",
-        "description": "Lists every active skill (`kind=skills`), plugin (`plugins`) or connector (`connectors`) in the organization with how often it was used over the last `days` days (7, 30 or 90; default 30), by how many members, and when it was last used. Items nobody used come back with zeros. Skills count loads of their SKILL.md through the OpenWork MCP gateway; repeated loads by the same member within 15 minutes count once. Plugins count their skills' loads plus their Workflows' runs, and `failures` counts failed runs. Connectors count tool calls made through OpenWork, and `failures` counts calls that failed. `failures` is null for skills. Counts cover use since usage recording started; `trackingSince` is the first recorded use. Aggregates only. Members with the usage_analytics.view permission only (owners and admins by default).",
+        "description": "Lists every active skill (`kind=skills`), plugin (`plugins`) or connector (`connectors`) in the organization with how often it was used over the last `days` UTC calendar days including today (7, 30 or 90; default 30), by how many members, and when it was last used. Items nobody used come back with zeros. Skills count every load of their SKILL.md through the OpenWork MCP gateway. Plugins count their skills' loads plus their Workflows' runs, and `failures` counts failed runs. Connectors count tool calls made through OpenWork, and `failures` counts calls that failed. `failures` is null for skills. Uses started by the member's agent, saved Workflows, Automations, Apps and live artifacts all count; GET /v1/library-usage splits them by source, member and day. Counts cover use since usage recording started; `trackingSince` is the first recorded use (skill loads before daily rollups were introduced were counted at most once per member per 15 minutes). Aggregates only. Members with the usage_analytics.view permission only (owners and admins by default).",
         "responses": {
           "200": {
             "description": "Library usage",

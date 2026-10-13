@@ -1,4 +1,5 @@
 import { expect } from "vitest";
+import { z } from "zod";
 import { spec } from "@openwork/testkit";
 import { libraryUsage } from "../worlds/library-usage.ts";
 import { isEmulatedClientWidth } from "../worlds/library.ts";
@@ -10,6 +11,10 @@ const test = spec.world(libraryUsage, {
 
 const row = (name: string) => `[data-testid="library-usage-row"][data-item="${name}"]`;
 const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
+const breakdownSchema = z.object({
+  timezone: z.string(),
+  rows: z.array(z.object({ itemId: z.string().nullable(), memberId: z.string().nullable(), uses: z.number(), people: z.number(), sources: z.record(z.string(), z.number()) })),
+});
 
 test("an owner sees which plugins, skills and connectors the team uses, which fail, and which nobody uses, while a teammate cannot see usage", async ({ world, user, probe, step, evidence }) => {
   const owner = user.on(world.web);
@@ -56,7 +61,7 @@ test("an owner sees which plugins, skills and connectors the team uses, which fa
   await step("when teammates' agents load skills and make two successful connector calls through OpenWork", async () => {
     const loads = [
       await world.loadSkill("alice", "draftReply", "get_skill"),
-      // The same teammate loading the same skill again a moment later is one use.
+      // The same teammate loading the same skill again a moment later is another use.
       await world.loadSkill("alice", "draftReply", "get_skill"),
       await world.loadSkill("blair", "draftReply", "execute_capability"),
       await world.loadSkill("blair", "summarizeTicket", "get_skill"),
@@ -117,15 +122,15 @@ test("an owner sees which plugins, skills and connectors the team uses, which fa
     expect(refused).toBe(true);
   });
 
-  await step("after: Support kit shows 3 uses by 2 people today and GitHub still reads Not used", async () => {
+  await step("after: Support kit shows 4 uses by 2 people today and GitHub still reads Not used", async () => {
     await openView("Plugins", "Support kit");
     await page.eventually(async () => {
       await owner.reload();
       await owner.see({ testId: "library-usage-row" }, { timeoutMs: 30_000 });
       const uses = (await page.dom(`${row("Support kit")} [data-item-uses]`)).elements.map((entry) => entry.text);
-      if (uses[0] !== "3") throw new Error(`Support kit shows ${uses.join() || "nothing"} uses so far.`);
+      if (uses[0] !== "4") throw new Error(`Support kit shows ${uses.join() || "nothing"} uses so far.`);
       return uses;
-    }, { within: 60_000, intervalMs: 2_000, label: "Support kit counts three uses" });
+    }, { within: 60_000, intervalMs: 2_000, label: "Support kit counts four uses" });
     const support = await rowText("Support kit");
     const sales = await rowText("GitHub");
     evidence.recordAssertionEvidence("plugins add up their skills' uses", `Support kit: ${support}; GitHub: ${sales}`, support.includes("Today") && sales.includes("Not used"));
@@ -135,7 +140,7 @@ test("an owner sees which plugins, skills and connectors the team uses, which fa
     await owner.screenshot();
   });
 
-  await step("the Skills view counts the repeated load once and the Not used filter leaves only the skill nobody used", async () => {
+  await step("the Skills view counts every load, including the repeated one, and the Not used filter leaves only the skill nobody used", async () => {
     await openView("Skills", draftReply.title);
     const draft = await rowText(draftReply.title);
     const draftUses = (await page.dom(`${row(draftReply.title)} [data-item-uses]`)).elements[0]?.text ?? "";
@@ -143,10 +148,25 @@ test("an owner sees which plugins, skills and connectors the team uses, which fa
     await owner.click({ role: "radio", label: "Not used" });
     await owner.see({ text: quoteBuilder.title });
     const visible = (await page.dom('[data-testid="library-usage-row"]')).elements.map((entry) => oneLine(entry.text));
-    evidence.recordAssertionEvidence("skill counts and the Not used filter", `${draftReply.title}: ${draftUses} uses (${draft}); ${summarizeTicket.title}: ${summary}; Not used shows ${visible.length} row: ${visible.join(", ")}`, visible.length === 1 && draftUses === "2");
-    expect(draftUses).toBe("2");
+    evidence.recordAssertionEvidence("skill counts and the Not used filter", `${draftReply.title}: ${draftUses} uses (${draft}); ${summarizeTicket.title}: ${summary}; Not used shows ${visible.length} row: ${visible.join(", ")}`, visible.length === 1 && draftUses === "3");
+    expect(draftUses).toBe("3");
     expect(visible).toHaveLength(1);
     await owner.screenshot();
+  });
+
+  await step("the usage breakdown shows who loaded each skill, how often, and that their agents started every load", async () => {
+    const draftId = draftReply.capability.split(":")[2] ?? "";
+    const { alice, blair } = world.memberIds;
+    const result = await probe.api(world.den.admin, `/v1/library-usage?kind=skills&groupBy=item,member&itemId=${encodeURIComponent(draftId)}`);
+    const body = breakdownSchema.parse(result.body);
+    const rows = body.rows;
+    const perMember = rows.map((entry) => `${entry.memberId === alice ? "Alice" : entry.memberId === blair ? "Blair" : entry.memberId}: ${entry.uses} (${Object.entries(entry.sources).map(([source, count]) => `${source} ${count}`).join(", ")})`);
+    const ok = result.response.status === 200 && body.timezone === "UTC" && rows.length === 2
+      && rows.every((entry) => entry.itemId === draftId && entry.people === 1 && entry.sources.agent === entry.uses)
+      && rows.find((entry) => entry.memberId === alice)?.uses === 2
+      && rows.find((entry) => entry.memberId === blair)?.uses === 1;
+    evidence.recordAssertionEvidence("one skill broken down by member and source", `HTTP ${result.response.status}; ${draftReply.title}: ${perMember.join("; ")}`, ok);
+    expect(ok).toBe(true);
   });
 
   await step("the Connectors view shows 1 of 3 calls failed on Team tracker and Old wiki was never used", async () => {
@@ -256,8 +276,8 @@ test("an owner sees which plugins, skills and connectors the team uses, which fa
     await world.faults.recover();
     await owner.click({ role: "button", label: "Try again" });
     await owner.see({ testId: "library-usage-row" }, { timeoutMs: 30_000 });
-    expect((await page.dom(`${row("Support kit")} [data-item-uses]`)).elements[0]?.text).toBe("3");
-    evidence.recordAssertionEvidence("retry restores real usage", "Support kit again shows its 3 recorded uses after the transport recovers.", true);
+    expect((await page.dom(`${row("Support kit")} [data-item-uses]`)).elements[0]?.text).toBe("4");
+    evidence.recordAssertionEvidence("retry restores real usage", "Support kit again shows its 4 recorded uses after the transport recovers.", true);
     await owner.screenshot();
   });
 
@@ -295,11 +315,14 @@ test("an owner sees which plugins, skills and connectors the team uses, which fa
     await teammate.notSee({ role: "heading", label: "Plugins & connectors" });
     const alice = world.den.members.alice;
     if (!alice) throw new Error("Missing teammate session.");
-    const denied = await Promise.all(["plugins", "skills", "connectors"].map((kind) => probe.api(alice, `/v1/library-usage/${kind}`)));
+    const denied = await Promise.all([
+      ...["plugins", "skills", "connectors"].map((kind) => probe.api(alice, `/v1/library-usage/${kind}`)),
+      probe.api(alice, "/v1/library-usage?kind=skills&groupBy=member"),
+    ]);
     const statuses = denied.map((result) => result.response.status);
     const headings = (await memberPage.dom("h1")).elements.map((entry) => entry.text);
     evidence.recordAssertionEvidence("usage is for owners and admins only", `teammate API reads: ${statuses.join(", ")}; teammate page headings: ${headings.join(", ") || "none"}`, statuses.every((status) => status === 403));
-    expect(statuses).toEqual([403, 403, 403]);
+    expect(statuses).toEqual([403, 403, 403, 403]);
     await teammate.screenshot();
   });
 });

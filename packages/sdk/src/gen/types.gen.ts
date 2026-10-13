@@ -1503,6 +1503,36 @@ export type InferenceProviderMissingError = {
   message: string;
 };
 
+export type LibraryUsageSourceCounts = {
+  agent?: number;
+  workflow?: number;
+  automation?: number;
+  app?: number;
+  artifact?: number;
+};
+
+export type LibraryUsageBreakdownRow = {
+  itemId: string | null;
+  memberId: string | null;
+  date: string | null;
+  uses: number;
+  people: number;
+  failures: number | null;
+  lastUsedAt: string | null;
+  sources: LibraryUsageSourceCounts;
+};
+
+export type LibraryUsageBreakdown = {
+  kind: "skills" | "plugins" | "connectors";
+  days: number;
+  from: string;
+  to: string;
+  timezone: "UTC";
+  groupBy: Array<"item" | "member" | "day">;
+  trackingSince: string | null;
+  rows: Array<LibraryUsageBreakdownRow>;
+};
+
 export type LibraryUsageRow = {
   id: string;
   name: string;
@@ -13231,6 +13261,57 @@ export type GetV1InferenceAnalyticsConsumptionResponses = {
 
 export type GetV1InferenceAnalyticsConsumptionResponse =
   GetV1InferenceAnalyticsConsumptionResponses[keyof GetV1InferenceAnalyticsConsumptionResponses];
+
+export type GetV1LibraryUsageData = {
+  body?: never;
+  path?: never;
+  query: {
+    kind: "skills" | "plugins" | "connectors";
+    days?: "7" | "30" | "90";
+    groupBy?: string;
+    memberId?: string;
+    teamId?: string;
+    itemId?: string;
+  };
+  url: "/v1/library-usage";
+};
+
+export type GetV1LibraryUsageErrors = {
+  /**
+   * Invalid query
+   */
+  400: InvalidRequestError;
+  /**
+   * Sign-in required
+   */
+  401: UnauthorizedError;
+  /**
+   * View usage analytics permission required
+   */
+  403: ForbiddenError;
+  /**
+   * The team is not in this organization
+   */
+  404: NotFoundError;
+  /**
+   * Too many rows; narrow the window, grouping or filters
+   */
+  422: {
+    error: "library_usage_too_many_rows";
+    message: string;
+  };
+};
+
+export type GetV1LibraryUsageError = GetV1LibraryUsageErrors[keyof GetV1LibraryUsageErrors];
+
+export type GetV1LibraryUsageResponses = {
+  /**
+   * Library usage breakdown
+   */
+  200: LibraryUsageBreakdown;
+};
+
+export type GetV1LibraryUsageResponse = GetV1LibraryUsageResponses[keyof GetV1LibraryUsageResponses];
 
 export type GetV1LibraryUsageByKindData = {
   body?: never;

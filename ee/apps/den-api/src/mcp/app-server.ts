@@ -268,6 +268,7 @@ async function handleMcpAppServerRequestUntimed(input: {
     generatedArtifactViewsEnabled: env.generatedArtifactViewsEnabled,
     organizationFeatures,
     audit: mcpAuditPrincipal({ organizationId, userId: principal.userId, memberId: member.orgMembershipId, credentialId: mcpPrincipalCredentialId(principal) }),
+    usageSource: "app",
   })
   const access = { organizationId, member, requestScope: {} }
   let definition: McpAppServerDefinition

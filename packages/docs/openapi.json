@@ -855,6 +855,7 @@
               "automationCalendar",
               "permissions",
               "engineV2Upgrade",
+              "workbotApps",
               "remoteSessionEvents"
             ]
           },
@@ -1075,6 +1076,9 @@
                     "engineV2Upgrade": {
                       "type": "boolean"
                     },
+                    "workbotApps": {
+                      "type": "boolean"
+                    },
                     "remoteSessionEvents": {
                       "type": "boolean"
                     },
@@ -1101,6 +1105,7 @@
                     "automationCalendar",
                     "permissions",
                     "engineV2Upgrade",
+                    "workbotApps",
                     "remoteSessionEvents",
                     "gatewayDashboard"
                   ]
@@ -1948,6 +1953,62 @@
                         "overrideApplies"
                       ]
                     },
+                    "workbotApps": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "remoteSessionEvents": {
                       "type": "object",
                       "properties": {
@@ -2021,6 +2082,7 @@
                     "automationCalendar",
                     "permissions",
                     "engineV2Upgrade",
+                    "workbotApps",
                     "remoteSessionEvents"
                   ],
                   "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
@@ -2440,6 +2502,9 @@
                     "engineV2Upgrade": {
                       "type": "boolean"
                     },
+                    "workbotApps": {
+                      "type": "boolean"
+                    },
                     "remoteSessionEvents": {
                       "type": "boolean"
                     },
@@ -2466,6 +2531,7 @@
                     "automationCalendar",
                     "permissions",
                     "engineV2Upgrade",
+                    "workbotApps",
                     "remoteSessionEvents",
                     "gatewayDashboard"
                   ]
@@ -3313,6 +3379,62 @@
                         "overrideApplies"
                       ]
                     },
+                    "workbotApps": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "remoteSessionEvents": {
                       "type": "object",
                       "properties": {
@@ -3386,6 +3508,7 @@
                     "automationCalendar",
                     "permissions",
                     "engineV2Upgrade",
+                    "workbotApps",
                     "remoteSessionEvents"
                   ],
                   "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
@@ -23432,6 +23555,9 @@
                 "type": "null"
               }
             ]
+          },
+          "apps": {
+            "type": "boolean"
           }
         },
         "required": [
@@ -25486,6 +25612,9 @@
                         "engineV2Upgrade": {
                           "type": "boolean"
                         },
+                        "workbotApps": {
+                          "type": "boolean"
+                        },
                         "remoteSessionEvents": {
                           "type": "boolean"
                         },
@@ -25512,6 +25641,7 @@
                         "automationCalendar",
                         "permissions",
                         "engineV2Upgrade",
+                        "workbotApps",
                         "remoteSessionEvents",
                         "gatewayDashboard"
                       ]
@@ -26359,6 +26489,62 @@
                             "overrideApplies"
                           ]
                         },
+                        "workbotApps": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "remoteSessionEvents": {
                           "type": "object",
                           "properties": {
@@ -26432,6 +26618,7 @@
                         "automationCalendar",
                         "permissions",
                         "engineV2Upgrade",
+                        "workbotApps",
                         "remoteSessionEvents"
                       ],
                       "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
@@ -26596,6 +26783,9 @@
                         "engineV2Upgrade": {
                           "type": "boolean"
                         },
+                        "workbotApps": {
+                          "type": "boolean"
+                        },
                         "remoteSessionEvents": {
                           "type": "boolean"
                         },
@@ -26622,6 +26812,7 @@
                         "automationCalendar",
                         "permissions",
                         "engineV2Upgrade",
+                        "workbotApps",
                         "remoteSessionEvents",
                         "gatewayDashboard"
                       ]
@@ -27469,6 +27660,62 @@
                             "overrideApplies"
                           ]
                         },
+                        "workbotApps": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "remoteSessionEvents": {
                           "type": "object",
                           "properties": {
@@ -27542,6 +27789,7 @@
                         "automationCalendar",
                         "permissions",
                         "engineV2Upgrade",
+                        "workbotApps",
                         "remoteSessionEvents"
                       ],
                       "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
@@ -91747,6 +91995,108 @@
                   },
                   "readOnly": {
                     "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "denApiKey": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/workbot/app-token": {
+      "post": {
+        "operationId": "createWorkbotAppToken",
+        "tags": [
+          "Workbot"
+        ],
+        "x-mcp": false,
+        "summary": "A short-lived token for the Apps open in Workbot",
+        "description": "For the Workbot app only. Mints the member-scoped MCP token Workbot's server uses to show the Apps in a person's chat: it reads an App's page from the connection that opened it and runs that App's tools as the person, for at most an hour. It stays on Workbot's server. Refused when Workbot's Apps are off for the workspace.",
+        "responses": {
+          "200": {
+            "description": "The token.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkbotRunToken"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The token is missing, expired or revoked, or the membership ended.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workbot's Apps are off or the sign-in grant cannot use Apps.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error"
+                  ]
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Too many tokens requested.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string",
+                      "const": "rate_limited"
+                    },
+                    "retryAfter": {
+                      "type": "number"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "retryAfter"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "ttlMs": {
+                    "type": "integer",
+                    "minimum": 60000,
+                    "maximum": 3600000
                   }
                 }
               }

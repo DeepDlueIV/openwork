@@ -344,6 +344,7 @@ OpenWork Cloud. Don't change it on a customer install.
 | `automationCalendar` | `DEN_FEATURE_AUTOMATION_CALENDAR` | default off | Members see a Calendar in the desktop app with their Automations next to meetings from their connected Google or Outlook calendar. |
 | `permissions` | `DEN_FEATURE_PERMISSIONS` | default off | Organization admins choose what members, admins and each team can do, instead of the fixed Member and Admin defaults. |
 | `engineV2Upgrade` | `DEN_FEATURE_ENGINE_V2_UPGRADE` | default off | Desktop members still on OpenCode v1 see a short notice offering to upgrade: their chats are copied to v2 with a backup, then OpenWork switches engines. |
+| `workbotApps` | `DEN_FEATURE_WORKBOT_APPS` | default off | Apps open inside Workbot's replies, so members use them right in the chat: Apps built in OpenWork and Apps from connected MCP servers. Needs Workbot. |
 | `remoteSessionEvents` | `DEN_FEATURE_REMOTE_SESSION_EVENTS` | default off | MCP clients can subscribe to changes in their remote session receipts and read the current state after reconnecting. |
 <!-- END GENERATED features -->
 

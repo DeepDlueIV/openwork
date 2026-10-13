@@ -168,6 +168,16 @@
               ],
               "description": "Desktop: upgrade prompt to OpenCode v2: Desktop members still on OpenCode v1 see a short notice offering to upgrade: their chats are copied to v2 with a backup, then OpenWork switches engines. Renders DEN_FEATURE_ENGINE_V2_UPGRADE."
             },
+            "workbotApps": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Workbot: Apps: Apps open inside Workbot's replies, so members use them right in the chat: Apps built in OpenWork and Apps from connected MCP servers. Needs Workbot. Renders DEN_FEATURE_WORKBOT_APPS."
+            },
             "remoteSessionEvents": {
               "enum": [
                 "",
@@ -257,16 +267,6 @@
                 false
               ],
               "description": "Retired: no longer a feature switch. Ignored."
-            },
-            "workbotApps": {
-              "enum": [
-                "",
-                "true",
-                "false",
-                true,
-                false
-              ],
-              "description": "Workbot: Apps: Apps open inside Workbot's replies, so members use them right in the chat: Apps built in OpenWork and Apps from connected MCP servers. Needs Workbot. Renders DEN_FEATURE_WORKBOT_APPS."
             },
             "litellm": {
               "enum": [

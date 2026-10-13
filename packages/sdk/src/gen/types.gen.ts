@@ -178,6 +178,7 @@ export type AdminFeature = {
     | "automationCalendar"
     | "permissions"
     | "engineV2Upgrade"
+    | "workbotApps"
     | "remoteSessionEvents";
   label: string;
   description: string;
@@ -232,6 +233,7 @@ export type AdminOrganizationsPageResponse = {
       automationCalendar: boolean;
       permissions: boolean;
       engineV2Upgrade: boolean;
+      workbotApps: boolean;
       remoteSessionEvents: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
@@ -371,6 +373,15 @@ export type AdminOrganizationsPageResponse = {
         overrideApplies: boolean;
       };
       engineV2Upgrade: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotApps: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -466,6 +477,7 @@ export type AdminOverviewResponse = {
       automationCalendar: boolean;
       permissions: boolean;
       engineV2Upgrade: boolean;
+      workbotApps: boolean;
       remoteSessionEvents: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
@@ -605,6 +617,15 @@ export type AdminOverviewResponse = {
         overrideApplies: boolean;
       };
       engineV2Upgrade: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotApps: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -5431,6 +5452,7 @@ export type WorkbotSession = {
   sideChats: boolean;
   calendarPolish?: boolean;
   model?: string | null;
+  apps?: boolean;
 };
 
 export type WorkbotRunToken = {
@@ -6195,6 +6217,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       automationCalendar: boolean;
       permissions: boolean;
       engineV2Upgrade: boolean;
+      workbotApps: boolean;
       remoteSessionEvents: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
@@ -6334,6 +6357,15 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       engineV2Upgrade: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotApps: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6417,6 +6449,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       automationCalendar: boolean;
       permissions: boolean;
       engineV2Upgrade: boolean;
+      workbotApps: boolean;
       remoteSessionEvents: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
@@ -6556,6 +6589,15 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       engineV2Upgrade: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotApps: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -30605,6 +30647,47 @@ export type CreateWorkbotRunTokenResponses = {
 };
 
 export type CreateWorkbotRunTokenResponse = CreateWorkbotRunTokenResponses[keyof CreateWorkbotRunTokenResponses];
+
+export type CreateWorkbotAppTokenData = {
+  body: {
+    ttlMs?: number;
+  };
+  path?: never;
+  query?: never;
+  url: "/v1/workbot/app-token";
+};
+
+export type CreateWorkbotAppTokenErrors = {
+  /**
+   * The token is missing, expired or revoked, or the membership ended.
+   */
+  401: UnauthorizedError;
+  /**
+   * Workbot's Apps are off or the sign-in grant cannot use Apps.
+   */
+  403: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * Too many tokens requested.
+   */
+  429: {
+    error: "rate_limited";
+    retryAfter: number;
+  };
+};
+
+export type CreateWorkbotAppTokenError = CreateWorkbotAppTokenErrors[keyof CreateWorkbotAppTokenErrors];
+
+export type CreateWorkbotAppTokenResponses = {
+  /**
+   * The token.
+   */
+  200: WorkbotRunToken;
+};
+
+export type CreateWorkbotAppTokenResponse = CreateWorkbotAppTokenResponses[keyof CreateWorkbotAppTokenResponses];
 
 export type GetV1AppVersionData = {
   body?: never;

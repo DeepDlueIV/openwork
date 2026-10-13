@@ -192,44 +192,83 @@ function shellWords(command: string): string[] {
   return words;
 }
 
-const SHELL_INTERPRETERS = new Set(["sh", "bash", "zsh", "dash", "ksh", "mksh", "ash", "fish"]);
+/** Programs that run their `-c` argument as a command line: shells, and `su` and `runuser` through one. */
+const SHELL_INTERPRETERS = new Set(["sh", "bash", "zsh", "dash", "ksh", "mksh", "ash", "fish", "su", "runuser"]);
 
-/**
- * The scripts a command hands to another shell (`bash -c '…'`,
- * `sudo -u x sh -lc '…'`, `eval '…'`), so a rule for the commands inside
- * applies to them too. Any word may start one, so a wrapper in front never
- * hides it.
- */
-function interpreterPayloads(command: string): string[] {
-  const words = shellWords(command);
+/** Programs, and `find` actions, that run the command following their own options and arguments. */
+const COMMAND_WRAPPERS = new Set([
+  "sudo", "doas", "env", "nohup", "nice", "ionice", "command", "builtin", "exec", "timeout", "xargs",
+  "stdbuf", "setsid", "watch", "chrt", "taskset", "unbuffer", "caffeinate", "-exec", "-execdir", "-ok", "-okdir",
+]);
+
+/** How many words after a wrapper, or after the first word of a line a shell reads, may start the command it runs. */
+const COMMAND_STARTS = 4;
+
+function programName(word: string): string {
+  return word.slice(word.lastIndexOf("/") + 1);
+}
+
+/** The line from each of the first few words from `from` on that is neither an option nor another wrapper. */
+function commandsFrom(words: readonly string[], from: number): string[] {
   const found: string[] = [];
-  words.forEach((word, index) => {
-    const program = word.slice(word.lastIndexOf("/") + 1);
-    if (program === "eval") {
-      found.push(words.slice(index + 1).join(" "));
-      return;
-    }
-    if (!SHELL_INTERPRETERS.has(program)) return;
-    for (let flag = index + 1; flag < words.length && /^-[A-Za-z]+$/.test(words[flag]!); flag++) {
-      if (words[flag]!.includes("c")) {
-        found.push(words[flag + 1] ?? "");
-        return;
-      }
-    }
-  });
+  for (let at = from; at < words.length && found.length < COMMAND_STARTS; at++) {
+    const word = words[at]!;
+    if (!word.startsWith("-") && !COMMAND_WRAPPERS.has(programName(word))) found.push(words.slice(at).join(" "));
+  }
   return found;
 }
 
 /**
- * Known limitation: a program named through a variable or expansion
- * (`x=rm; $x -rf dir`) is checked as written, so a rule for the program it
- * expands to does not match it.
+ * The scripts a command hands to another shell (`bash -c '…'`,
+ * `bash --noprofile -o pipefail -c '…'`, `sudo -u x sh -lc '…'`,
+ * `fish --command='…'`, `eval '…'`), and the text on a line whose shell may
+ * read its script from input or a file (`echo 'rm x' | sh`, `sh <<< 'rm x'`),
+ * so a rule for the commands inside applies to them too. Any word may start
+ * one, so a wrapper in front never hides it, and every option is looked at,
+ * so none hides the script. Later ones on the same line are found when the
+ * script or command they belong to is searched in turn.
+ */
+function interpreterPayloads(command: string): string[] {
+  const words = shellWords(command);
+  const found: string[] = [];
+  const evalAt = words.findIndex((word) => programName(word) === "eval");
+  if (evalAt !== -1) found.push(words.slice(evalAt + 1).join(" "));
+  const shellAt = words.findIndex((word) => SHELL_INTERPRETERS.has(programName(word)));
+  for (let at = shellAt === -1 ? words.length : shellAt + 1; at < words.length; at++) {
+    const option = words[at]!;
+    if (/^-[A-Za-z]*c[A-Za-z]*$/.test(option) || option === "--command") found.push(words[at + 1] ?? "");
+    else if (option.startsWith("--command=")) found.push(option.slice("--command=".length));
+  }
+  if (command.split(/[\s|;&()<>]+/).some((token) => SHELL_INTERPRETERS.has(programName(token)))) {
+    found.push(...words.filter((word) => /\s/.test(word)), ...commandsFrom(words, 1));
+  }
+  return found;
+}
+
+/**
+ * The command a wrapper runs after its own options and arguments
+ * (`sudo -u x rm …`, `env A=1 rm …`, `timeout 5 rm …`, `xargs rm`,
+ * `find . -exec rm {} ;`): each of the first few words after the wrapper that
+ * is neither an option nor another wrapper may start it.
+ */
+function wrappedCommands(command: string): string[] {
+  const words = shellWords(command);
+  const at = words.findIndex((word) => COMMAND_WRAPPERS.has(programName(word)));
+  return at === -1 ? [] : commandsFrom(words, at + 1);
+}
+
+/**
+ * Known limitations: a program named through a variable or expansion
+ * (`x=rm; $x -rf dir`) is checked as written, and so is a script that only
+ * exists when the line runs (`curl … | sh`, `base64 -d … | sh`), so a rule
+ * for the commands they become does not match them.
  *
  * The commands a shell command line runs, roughly as the engine's parser finds
  * them: the line, each part between separators (also without the keywords in
- * front, as in `then rm x`), each command substitution and each script handed
- * to another shell, searched again in turn. A rough split only adds
- * candidates, so a pattern can block more than the line runs, never less.
+ * front, as in `then rm x`), each command substitution, each script handed to
+ * another shell and each command a wrapper such as `sudo` runs, searched again
+ * in turn. A rough split only adds candidates, so a pattern can block more
+ * than the line runs, never less.
  */
 export function shellCommands(command: string): string[] {
   const found = new Set<string>();
@@ -246,6 +285,7 @@ export function shellCommands(command: string): string[] {
     const unquoted = shellWords(line).join(" ");
     if (unquoted) add(unquoted);
     for (const payload of interpreterPayloads(line)) visit(payload, depth + 1);
+    for (const wrapped of wrappedCommands(line)) visit(wrapped, depth + 1);
     for (const inner of shellSubstitutions(line)) visit(inner, depth + 1);
     for (const part of line.split(/&&|\|\||[;|&\n]/)) visit(part, depth + 1);
   };

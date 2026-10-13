@@ -18,6 +18,7 @@ import {
 } from "@openwork/behaviors";
 import {
   callFunctionOnSurface,
+  CdpPageError,
   addInitScript,
   callFunction, connect, debuggerUrlFor, listTargets,
   clickTarget,
@@ -555,6 +556,14 @@ function requireSurface(surface: Surface | null): Surface {
   return surface;
 }
 
+/** A request the page made itself failed (a stalled local server ends as "signal timed out"); say which one. */
+function namePageFailure(label: string): (error: unknown) => never {
+  return (error) => {
+    if (error instanceof CdpPageError) throw new Error(`${label} failed in the page: ${error.message}`, { cause: error });
+    throw error;
+  };
+}
+
 function sessionFromWebOptions(options: SeedWebOptions) {
   const identity = options.signedInAs;
   if (typeof identity === "object" && identity !== null) return identity;
@@ -1041,7 +1050,7 @@ export class AgentChannel implements Agent {
         let body = text;
         try { body = JSON.parse(text); } catch {}
         return { status: response.status, body };
-      }, [path, JSON.stringify(input)], { awaitPromise: true, timeoutMs: 35_000 });
+      }, [path, JSON.stringify(input)], { awaitPromise: true, timeoutMs: 35_000 }).catch(namePageFailure(`agent.desktopApi(${input.method} ${path})`));
       if (!isRecord(value) || typeof value.status !== "number") throw new Error("Invalid desktop API result");
       return { status: value.status, body: value.body };
     });
@@ -1261,7 +1270,7 @@ export class ProbeChannel implements Probe {
         let body = text;
         try { body = text ? JSON.parse(text) : null; } catch {}
         return { status: response.status, body };
-      }, [path], { awaitPromise: true, timeoutMs: 20_000 });
+      }, [path], { awaitPromise: true, timeoutMs: 20_000 }).catch(namePageFailure(`probe.desktopApi(GET ${path})`));
       if (!isRecord(value) || typeof value.status !== "number" || !("body" in value)) {
         throw new Error("Invalid desktop API probe response.");
       }

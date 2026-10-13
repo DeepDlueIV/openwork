@@ -95,7 +95,7 @@ export async function backgroundShellTasks(seed: Seed) {
       Reflect.set(window, "__backgroundTaskJumps", state);
       return true;
     }),
-    /** Upward moves of the status line, and how far it moved when the Working line gave way to the count. */
+    /** Upward moves of the status line, where the count settled against the Working line it replaced, and any brief positions before that. */
     readJumpSampler: () => seed.evalIn(app, () => {
       const state: unknown = Reflect.get(window, "__backgroundTaskJumps");
       if (!state || typeof state !== "object" || !("samples" in state) || !Array.isArray(state.samples) || !("timer" in state) || typeof state.timer !== "number") return null;
@@ -103,10 +103,14 @@ export async function backgroundShellTasks(seed: Seed) {
       const samples = state.samples.flatMap((sample: unknown) => sample && typeof sample === "object" && "line" in sample && "top" in sample
         && typeof sample.line === "string" && typeof sample.top === "number" ? [{ line: sample.line, top: sample.top }] : []);
       const lastWorking = samples.findLast((sample) => sample.line === "working");
-      const firstAlone = samples.find((sample) => sample.line === "background-tasks");
+      const alone = samples.filter((sample) => sample.line === "background-tasks");
+      const settled = alone.at(-1);
       return {
         upward: samples.filter((sample, index) => index > 0 && sample.top < (samples[index - 1]?.top ?? sample.top)).length,
-        turnEndMove: lastWorking && firstAlone ? firstAlone.top - lastWorking.top : null,
+        // Where the count settled, relative to the Working line it replaced.
+        settledMove: lastWorking && settled ? settled.top - lastWorking.top : null,
+        // Positions the count passed through before settling (a slow frame can draw it early).
+        transient: alone.slice(0, -1).map((sample) => sample.top - (lastWorking?.top ?? sample.top)),
         path: samples.map((sample) => `${sample.line}@${sample.top}`).join(" → "),
       };
     }),

@@ -1,5 +1,5 @@
 import { execFileSync, spawnSync } from "node:child_process";
-import { accessSync, appendFileSync, constants, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { accessSync, appendFileSync, constants, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -60,12 +60,36 @@ function packageFlavor(name, config, directory) {
   { CSC_IDENTITY_AUTO_DISCOVERY: "false" });
 }
 
-async function bootPackagedDesktop(name, journey, binary, timeout, display) {
+// A fresh profile's engine npm-installs @opencode-ai/plugin into each config
+// directory and loads no plugin until that finishes, so every workspace request
+// waits on the public registry. When this runner reaches the registry slowly,
+// app-smoke's server calls time out (seen as a CDP timeout). Warm one cache
+// here, outside the timed checks; prefer-offline still uses the registry for a
+// miss. Only app-smoke needs a ready engine, and the egress gate must keep
+// seeing live npm traffic, so no other check gets this cache.
+function warmEngineNpmCache(resources) {
+  const { opencode } = JSON.parse(readFileSync(join(resources, "sidecars/versions.json"), "utf8"));
+  const cache = join(output, "engine-npm-cache");
+  try {
+    run("engine-npm-cache", "npm", ["install", "--prefix", join(output, "engine-npm-warm"), "--cache", cache,
+      "--no-save", "--no-audit", "--no-fund", "--ignore-scripts", "--loglevel=warn",
+      `@opencode-ai/plugin@${opencode.version}`], 120_000, {}, output);
+  } catch (error) {
+    console.warn(`[packaged-smoke] engine npm cache not warmed (${error.message}); app-smoke installs from the registry.`);
+    return {};
+  }
+  // Upper case: `pnpm evals:e2e` drops inherited lower-case npm_config_* from
+  // its scripts, and npm reads both spellings.
+  return { NPM_CONFIG_CACHE: cache, NPM_CONFIG_PREFER_OFFLINE: "true" };
+}
+
+async function bootPackagedDesktop(name, journey, binary, timeout, display, extraEnv = {}) {
   const phaseStarted = performance.now();
   const result = await runCommand("xvfb-run", ["-a", "--server-num", String(display), "pnpm", "evals:e2e", journey, "--local"], {
     cwd: repo, stdio: "inherit", timeout,
     env: {
       ...process.env,
+      ...extraEnv,
       OPENWORK_EVAL_ELECTRON_BINARY: binary,
       OPENWORK_EVAL_ELECTRON_RESOURCES_PREPARED: "1",
       OPENWORK_EVAL_ENGINE: "v1",
@@ -106,14 +130,14 @@ try {
   15_000, { ELECTRON_RUN_AS_NODE: "1", NODE_PATH: "", NODE_OPTIONS: "" }, output);
   const checks = [];
   const matched = new Set();
-  const check = (name, journey, executable, timeout) => {
+  const check = (name, journey, executable, timeout, env = {}) => {
     if (!selected(journey)) return;
     matched.add(journey);
     // Distinct starting displays avoid xvfb-run's concurrent auto-number race.
     const display = 100 + checks.length * 10;
-    checks.push(() => bootPackagedDesktop(name, journey, executable, timeout, display));
+    checks.push(() => bootPackagedDesktop(name, journey, executable, timeout, display, env));
   };
-  check("desktop-boot", "app-smoke", binary, 90_000);
+  check("desktop-boot", "app-smoke", binary, 90_000, selected("app-smoke") ? warmEngineNpmCache(resources) : {});
   for (const { flavor, executable } of gatedFlavors) {
     const flavorBinary = join(flavorOutput(flavor), "linux-unpacked", executable);
     accessSync(flavorBinary, constants.X_OK);

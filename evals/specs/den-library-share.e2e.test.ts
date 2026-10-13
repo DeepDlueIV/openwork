@@ -11,7 +11,7 @@ const names = (items: { name: string }[]) => items.map((item) => item.name);
 
 test("a member: I want Maya and the Support team to use Slack so they can search messages without asking me", async ({ world, user, probe, step, evidence }) => {
   const library = `${world.den.ref.webUrl}/dashboard/library`;
-  const customSlackName = "Slack (custom app)";
+  const customSlackName = "Slack";
 
   await step("1. I open My Library: it keeps its shape while it loads, then it is empty and the sidebar only shows my own work", async () => {
     await user.see({ testId: "library-empty" }, { timeoutMs: 120_000 });
@@ -52,7 +52,7 @@ test("a member: I want Maya and the Support team to use Slack so they can search
     await user.screenshot();
   });
 
-  await step("4. I choose the separate custom Slack app and add it", async () => {
+  await step("4. organization app setup stays locked while I add my personal connector by address", async () => {
     await user.click({ role: "button", label: "Continue" });
     await user.see({ role: "heading", label: "Add a connector" }, { timeoutMs: 60_000 });
     await user.see({ role: "button", label: "Add another MCP" });
@@ -68,7 +68,16 @@ test("a member: I want Maya and the Support team to use Slack so they can search
     expect((await probe.dom('[data-testid="slack-custom-app-disclosure"][open]')).elements).toHaveLength(0);
     await user.click({ testId: "slack-custom-app-disclosure" });
     expect((await probe.dom('[data-testid="slack-custom-app-disclosure"][open]')).elements).toHaveLength(1);
-    await user.click({ role: "link", label: `Set up your app ${customSlackName}` });
+    await user.see({ testId: "slack-custom-app-disclosure" }, { text: /Organization admin required/ });
+    await user.notSee({ role: "link", label: "Set up your app Slack (custom app)" });
+    await user.screenshot();
+    // This fixture advertises dynamic OAuth registration. A personal MCP
+    // connection is separate from configuring the organization's Slack app.
+    await user.click({ role: "button", label: "Add another MCP" });
+    await user.see({ testId: "connector-picker-custom" });
+    await user.type({ label: "Address" }, world.slack.mcpUrl);
+    await user.type({ label: "Name" }, customSlackName, { replace: true });
+    await user.click({ role: "button", label: "Continue" });
     await user.see({ role: "heading", label: `Connect ${customSlackName}` }, { timeoutMs: 60_000 });
     await user.see({ role: "button", label: `Sign in with ${customSlackName}` }, { timeoutMs: 60_000 });
     await user.see({ testId: "step-footer-note" }, { text: "Step 3 of 4" });
@@ -106,7 +115,7 @@ test("a member: I want Maya and the Support team to use Slack so they can search
   await step("after: Maya and everyone in Support find Slack in My Library, and Kai, who is outside Support, does not", async () => {
     const reach = 1 + world.teamSize("Support");
     await user.click({ role: "button", label: `Share with ${reach} people` });
-    await user.see({ testId: "den-toast" }, { text: `${customSlackName} is shared`, timeoutMs: 60_000 });
+    await user.see({ testId: "den-toast" }, { text: /Slack is shared/, timeoutMs: 60_000 });
     await user.see({ testId: "den-toast" }, { text: new RegExp(`${reach} people can use it now\\.`) });
     await user.see({ testId: "library-section-mine" }, { text: /Slack/, timeoutMs: 60_000 });
     await user.see({ text: "Shared with Maya and Support" });

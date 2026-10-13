@@ -113,6 +113,20 @@ button.onclick=async()=>{button.disabled=true;try{await fetch('/__evidence/conti
   await new Promise(() => {});
 } catch (error) {
   console.error(error);
+  // The builder VM is removed after failure. Preserve bounded diagnostics from
+  // only this synthetic world's runtime logs, before disposal removes them.
+  const message = error instanceof Error ? error.message : String(error);
+  const logPaths = [...new Set(message.match(/\/workspace\/tmp\/worlds\/runtime\/[a-zA-Z0-9_-]+\/(?:web|server)\.log/g) ?? [])];
+  for (const path of logPaths) {
+    const tail = (await readFile(path, "utf8").catch(() => ""))
+      .split("\n").filter((line) => line.trim()).slice(-20)
+      .map((line) => line
+        .replace(/(?:https?|mysql|rediss?):\/\/\S+/gi, "[url]")
+        .replace(/\bBearer\s+\S+/gi, "Bearer [redacted]")
+        .replace(/((?:authorization|cookie|token|password|secret|api[_-]?key)["'\s]*[:=][\s"']*)\S+/gi, "$1[redacted]")
+        .slice(0, 400)).join("\n");
+    console.error(`Startup log ${path}:\n${tail || "(empty or unavailable)"}`);
+  }
   await writeFile(`${root}/failed-world`, "failed");
   await stack.disposeAsync(); process.exit(1);
 }

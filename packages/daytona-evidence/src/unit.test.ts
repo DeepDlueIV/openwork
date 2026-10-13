@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { DaytonaApi, daytonaConfig, DEFAULT_EVIDENCE_REGION } from "./api.ts";
+import { DaytonaApi, daytonaConfig, DEFAULT_EVIDENCE_REGION, trimTrailingSlashes } from "./api.ts";
 import { DAYTONA_BASE_SNAPSHOT } from "./builder.ts";
 import { cleanupDaytonaEvidence } from "./cleanup.ts";
 
@@ -40,4 +40,9 @@ test("cleanup only removes expired evidence snapshots and sandboxes it owns", as
   // A structural fake of the two list calls and two deletes cleanup uses.
   const result = await cleanupDaytonaEvidence(Object.assign(Object.create(DaytonaApi.prototype), fake), { dryRun: true, now });
   assert.deepEqual(result, { deletedSnapshots: ["ow-dy-evidence-web-v1-old", "ow-dy-evidence-image-v1-older", "ow-dy-base-ubuntu2404-v1"], deletedSandboxes: ["world-old"] });
+});
+
+test("trailing slashes are trimmed in linear time", () => {
+  assert.equal(trimTrailingSlashes("https://x.test/api///"), "https://x.test/api");
+  assert.equal(trimTrailingSlashes("/".repeat(100_000)), "");
 });

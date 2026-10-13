@@ -13,10 +13,17 @@ export interface DaytonaConfig {
 
 export const DEFAULT_EVIDENCE_REGION = "us-west-3";
 
+/** Drops trailing slashes without a regular expression (linear on any input). */
+export function trimTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value[end - 1] === "/") end--;
+  return value.slice(0, end);
+}
+
 export function daytonaConfig(env: Readonly<Record<string, string | undefined>> = process.env): DaytonaConfig {
   const apiKey = env.DAYTONA_API_KEY?.trim();
   if (!apiKey) throw new Error("DAYTONA_API_KEY is not set. The process that creates Daytona evidence worlds needs it.");
-  const apiUrl = (env.DAYTONA_API_URL?.trim() || "https://app.daytona.io/api").replace(/\/+$/, "");
+  const apiUrl = trimTrailingSlashes(env.DAYTONA_API_URL?.trim() || "https://app.daytona.io/api");
   return { apiUrl, apiKey, region: env.OPENWORK_DAYTONA_EVIDENCE_REGION?.trim() || DEFAULT_EVIDENCE_REGION };
 }
 
@@ -194,11 +201,11 @@ export class DaytonaApi {
   async previewUrl(id: string, port: number): Promise<{ url: string; token: string }> {
     const value = await this.call("GET", `/sandbox/${encodeURIComponent(id)}/ports/${port}/preview-url`);
     if (!record(value) || typeof value.url !== "string" || typeof value.token !== "string") throw new Error("Invalid Daytona preview URL response");
-    return { url: value.url.replace(/\/+$/, ""), token: value.token };
+    return { url: trimTrailingSlashes(value.url), token: value.token };
   }
 
   private toolbox(sandbox: Sandbox): string {
-    return sandbox.toolboxProxyUrl ? `${sandbox.toolboxProxyUrl.replace(/\/+$/, "")}/${sandbox.id}` : `${this.config.apiUrl}/toolbox/${sandbox.id}/toolbox`;
+    return sandbox.toolboxProxyUrl ? `${trimTrailingSlashes(sandbox.toolboxProxyUrl)}/${sandbox.id}` : `${this.config.apiUrl}/toolbox/${sandbox.id}/toolbox`;
   }
 
   /** Runs a short command as the sandbox user (root on our images). Long work runs as a systemd unit instead. */

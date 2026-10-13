@@ -121,7 +121,8 @@ export function appRead(part: DynamicToolUIPart | undefined): { appId: string; t
  *
  * While the turn is `live`, reading the build-an-app guide or an App starts
  * the step early, because writing the App's source can take a minute before
- * any builder call appears. It ends with the turn if no builder call follows.
+ * any builder call appears. Like the lookups, it ends at other work or with
+ * the turn if no builder call follows.
  */
 export function appCreationRuns(messages: UIMessage[], live = false): AppCreationRun[] {
   const runs: AppCreationRun[] = [];
@@ -134,17 +135,13 @@ export function appCreationRuns(messages: UIMessage[], live = false): AppCreatio
     }
   }
   let leadIn: DynamicToolUIPart[] = [];
-  // The latest guide or App read with no App step after it yet.
-  let intent: DynamicToolUIPart | undefined;
   const join = (run: AppCreationRun) => {
     if (leadIn.length > 0) run.discoveries = [...(run.discoveries ?? []), ...leadIn];
     leadIn = [];
-    intent = undefined;
   };
   for (const part of parts.values()) {
     if (isAppLeadInPart(part)) {
       leadIn.push(part);
-      if (isAppGuidePart(part) || isAppReadPart(part)) intent = part;
     } else if (isAppPreparationPart(part)) {
       const run: AppCreationRun = { id: leadIn[0]?.toolCallId ?? part.toolCallId, preparation: part, builds: [] };
       join(run);
@@ -190,11 +187,12 @@ export function appCreationRuns(messages: UIMessage[], live = false): AppCreatio
       leadIn = [];
     }
   }
+  const intent = live ? leadIn.findLast((part) => isAppGuidePart(part) || isAppReadPart(part)) : undefined;
   // Keyed like the run the builder call will open, so the step stays in place.
-  if (live && intent) {
+  if (intent) {
     runs.push({
-      id: leadIn[0]?.toolCallId ?? intent.toolCallId,
-      ...(leadIn.length > 0 ? { discoveries: leadIn } : {}),
+      id: leadIn[0]!.toolCallId,
+      discoveries: leadIn,
       builds: [],
       intent: { kind: isAppReadPart(intent) ? "edit" : "create", part: intent },
     });
@@ -240,7 +238,7 @@ export function appCreationProgress(run: AppCreationRun, active: boolean) {
     field(build?.input, "title") ??
     preparation?.title ??
     field(run.preparation?.input, "title") ??
-    [run.intent?.part, ...(run.discoveries ?? [])].map(appRead).find(read => read?.title)?.title;
+    run.discoveries?.map(appRead).find(read => read?.title)?.title;
   const detail = field(run.preparation?.input, "description");
   // Completion without a verified launch is not success (e.g. catalog capacity).
   const unavailable = Boolean(

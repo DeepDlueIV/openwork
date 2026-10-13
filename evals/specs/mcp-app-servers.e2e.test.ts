@@ -586,10 +586,8 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
       await user.screenshot();
     });
     let appId = "";
-    await step("after: an edit shows its step and reopens the App as Updating while the agent is still writing", async () => {
-      await closeFrame();
-      await user.click({ role: "button", label: "Close panel" });
-      expect((await probe.dom("[data-built-app-preview]")).elements).toHaveLength(0);
+    await step("after: an edit shows its step and marks the open App Updating while the agent is still writing", async () => {
+      expect((await probe.dom("[data-built-app-preview]")).elements).toHaveLength(1);
       const prompt = "Update this App to revision two.";
       appId = await world.prepareLifecycleTurn(prompt, "edit");
       // The model reads the App, then is held before update_app, as while it writes a long change.
@@ -597,10 +595,10 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
       await agent.send(prompt);
       await user.see({ text: `Updating artifact “${pricerTitle}”` }, { timeoutMs: 120_000 });
       expect(await probe.eventually(async () => (await probe.dom('[data-app-builder-step][data-app-creation-stage="writing"] .ow-text-shimmer')).elements, { within: 30_000, intervalMs: 200, label: "the edit step is live before update_app", until: elements => elements.length === 1 && elements[0].rect.height > 0 })).toHaveLength(1);
-      expect(await probe.eventually(async () => (await probe.dom(`[data-built-app-preview="${appId}"] [aria-busy="true"]`)).elements, { within: 30_000, intervalMs: 200, label: "the App being changed reopens marked Updating", until: elements => elements.length === 1 })).toHaveLength(1);
-      // Witness: update_app has not run yet, so the reopened App still shows revision one.
+      expect(await probe.eventually(async () => (await probe.dom(`[data-built-app-preview="${appId}"] [aria-busy="true"]`)).elements, { within: 30_000, intervalMs: 200, label: "the open App being changed is marked Updating", until: elements => elements.length === 1 })).toHaveLength(1);
+      // Witness: update_app has not run yet, so the open App still shows revision one.
       await revision("revision one");
-      evidence.recordAssertionEvidence("An edit is visible before its update_app call", `${name}: after read_app, with the model held before update_app, the step reads Updating artifact “${pricerTitle}” and the closed App reopens beside the composer marked Updating, still on revision one.`, true);
+      evidence.recordAssertionEvidence("An edit is visible before its update_app call", `${name}: after read_app, with the model held before update_app, the step reads Updating artifact “${pricerTitle}” and the open App beside the composer is marked Updating, still on revision one.`, true);
       await user.screenshot();
       await world.holdCreation(false);
     });

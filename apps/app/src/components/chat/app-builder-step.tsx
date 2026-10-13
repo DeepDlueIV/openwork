@@ -35,7 +35,7 @@ export function AppBuilderStep({
 }) {
   const context = useOptionalMessageList();
   const resolveLifecycle = useCurrentToolLifecycleResolver();
-  const latest = run.builds.at(-1) ?? run.preparation ?? run.discoveries?.at(-1) ?? run.intent?.part;
+  const latest = run.builds.at(-1) ?? run.preparation ?? run.discoveries?.at(-1);
   const lifecycle = latest
     ? resolveLifecycle(latest.toolCallId, isToolPartInFlight(latest))
     : null;
@@ -47,8 +47,7 @@ export function AppBuilderStep({
       lifecycle !== "waiting",
   );
   const parts = [...(run.executions ?? []), ...(run.attempts ?? []), ...(run.discoveries ?? []), ...(run.preparation ? [run.preparation] : []), ...run.builds];
-  // A step started by reading the guide or the App times from that read.
-  const starts = [...(run.intent ? [run.intent.part] : []), ...parts].flatMap((part) =>
+  const starts = parts.flatMap((part) =>
     typeof part.callProviderMetadata?.openwork?.toolStartedAt === "number"
       ? [part.callProviderMetadata.openwork.toolStartedAt]
       : [],

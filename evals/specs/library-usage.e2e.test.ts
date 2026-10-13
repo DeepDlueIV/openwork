@@ -359,7 +359,8 @@ test("an owner sees which plugins, skills and connectors the team uses, which fa
     await owner.click({ role: "link", label: /Support kit/ });
     await owner.see({ testId: "library-usage-item" }, { timeoutMs: 60_000 });
     await owner.click({ role: "link", label: "Open in Library" });
-    await owner.see({ role: "heading", label: "Support kit" }, { timeoutMs: 60_000 });
+    // The Library header reads its logo letter before the name.
+    await owner.see({ role: "heading", label: /Support kit$/ }, { timeoutMs: 60_000 });
     await owner.notSee({ testId: "library-usage-item" });
     await owner.screenshot();
     await owner.navigate(`${world.baseUrl}/dashboard/analytics/library?view=connectors`);
@@ -372,7 +373,7 @@ test("an owner sees which plugins, skills and connectors the team uses, which fa
     const trackerFailures = (await page.dom('[data-testid="library-usage-person"] [data-item-failures]')).elements.map((entry) => entry.text);
     await owner.screenshot();
     await owner.click({ role: "link", label: "Open connector" });
-    await owner.see({ role: "heading", label: world.connectors.tracker }, { timeoutMs: 60_000 });
+    await owner.see({ role: "heading", label: new RegExp(`${world.connectors.tracker}$`) }, { timeoutMs: 60_000 });
     await owner.notSee({ testId: "library-usage-item" });
     evidence.recordAssertionEvidence("usage pages link to the management pages", `Support kit's usage opens its Library detail; Team tracker's usage (failures per person: ${trackerFailures.join(", ")}) opens its Connectors detail.`, true);
     await owner.screenshot();

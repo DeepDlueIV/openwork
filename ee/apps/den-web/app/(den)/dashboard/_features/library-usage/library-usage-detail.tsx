@@ -120,11 +120,9 @@ export function ItemUsageDetail({ kind, days, item, now, usageHref }: {
     {item.uses === 0 ? (
       <div className={analyticsSurfaceClass}><AnalyticsEmptyState title={`Nobody used this ${copy.noun} in the last ${days} days`} /></div>
     ) : <>
-      <DailyUses kind={kind} days={days} scope={{ itemId: item.id }} />
       {people.isError && !people.data ? <AnalyticsErrorState title="Couldn't load who uses it" onRetry={() => void people.refetch()} retrying={people.isFetching} />
         : !people.data ? <DetailLoading label="Loading who uses it" />
         : <>
-          <StartedBy rows={people.data.rows} />
           <div className={`${analyticsSurfaceClass} min-w-0 overflow-x-auto`} data-testid="library-usage-people">
             <div className={tracksFailures ? "min-w-[600px]" : "min-w-[520px]"}>
               <UsageColumns first="Person" tracksFailures={tracksFailures} />
@@ -142,6 +140,8 @@ export function ItemUsageDetail({ kind, days, item, now, usageHref }: {
               </ul>
             </div>
           </div>
+          <DailyUses kind={kind} days={days} scope={{ itemId: item.id }} />
+          <StartedBy rows={people.data.rows} />
         </>}
     </>}
   </section>;
@@ -175,8 +175,6 @@ export function PersonUsageDetail({ kind, days, memberId, report, now, usageHref
         {rows.length === 0 ? (
           <div className={analyticsSurfaceClass}><AnalyticsEmptyState title={`${person.name} used no ${copy.plural} in the last ${days} days`} /></div>
         ) : <>
-          <DailyUses kind={kind} days={days} scope={{ memberId }} />
-          <StartedBy rows={rows} />
           <div className={`${analyticsSurfaceClass} min-w-0 overflow-x-auto`} data-testid="library-usage-member-items">
             <div className={tracksFailures ? "min-w-[600px]" : "min-w-[520px]"}>
               <UsageColumns first={copy.label.replace(/s$/, "")} tracksFailures={tracksFailures} />
@@ -195,6 +193,8 @@ export function PersonUsageDetail({ kind, days, memberId, report, now, usageHref
               </ul>
             </div>
           </div>
+          <DailyUses kind={kind} days={days} scope={{ memberId }} />
+          <StartedBy rows={rows} />
         </>}
       </>}
   </section>;

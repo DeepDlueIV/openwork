@@ -269,6 +269,24 @@ export async function memberAgentPermissionRules(organizationId: string, orgMemb
 }
 
 /**
+ * Why a member's MCP server rules block one of the organization's connections,
+ * or null. Connections match by the address of their server (its host, such
+ * as mcp.linear.app), which members cannot change, not by their name, which
+ * they can.
+ */
+export function organizationConnectionAgentPermissionDenial(rules: readonly AgentPermissionRule[], url: string): string | null {
+  if (rules.length === 0) return null
+  let host: string
+  try {
+    host = new URL(url).hostname
+  } catch {
+    // An address Den cannot read matches only a rule for every server.
+    host = ""
+  }
+  return organizationAgentPermissionDenial(rules, "mcp", host ? [host] : ["*"])
+}
+
+/**
  * Why a member's rules block one of the organization's own skills or MCP
  * connections, or null. The same skill and MCP server rules a member's desktop
  * applies to local ones apply here, by any of the names given, as written and

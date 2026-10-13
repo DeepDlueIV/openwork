@@ -1,6 +1,6 @@
 import { expect } from "vitest";
 import { spec, type SpecBodyContext } from "@openwork/testkit";
-import { appSource, appTitle, buildPrompt, buildReply, chatPrompt, chatReply, launchInput, mcpAppServers, mcpAppServersChat, mcpAppServersChatOwnSignIn, mcpAppCreationV1, mcpAppCreationV2, mcpAppCreationDesktop, payload, pricerTitle, record, reopenPrompt, reopenReply, reservationId, rows, signInPrompt, signInReply, toolNames } from "../worlds/mcp-app-servers.ts";
+import { appSource, appTitle, buildPrompt, buildReply, chatPrompt, chatReply, guidedReply, guidedTitle, launchInput, mcpAppServers, mcpAppServersChat, mcpAppServersChatOwnSignIn, mcpAppCreationV1, mcpAppCreationV2, mcpAppCreationDesktop, payload, pricerTitle, record, reopenPrompt, reopenReply, reservationId, rows, signInPrompt, signInReply, toolNames } from "../worlds/mcp-app-servers.ts";
 
 const test = spec.world(mcpAppServers, {
   resources: { surfaces: ["web"], services: ["den", "mock"] },
@@ -626,6 +626,31 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
       await user.notSee({ text: /Preparing artifact/ });
       evidence.recordAssertionEvidence("Searching without building is not an artifact", `${name}: the person asked about creating an App, the model only called search_capabilities and replied. Once the turn ended, no Preparing artifact step remained.`, true);
       await user.screenshot();
+    });
+    await step("after: a dashboard request is one artifact step holding the agent's guide, search and build, and the unchanged starter works", async () => {
+      // No "app" in the request: the step comes from what the agent does, not from its wording.
+      const prompt = "Make me a dashboard of Inventory unit prices.";
+      await world.prepareLifecycleTurn(prompt, "guided");
+      await agent.send(prompt);
+      const sentence = `Created artifact “${guidedTitle}”`;
+      await user.see({ text: sentence }, { timeoutMs: 120_000 });
+      await user.see({ text: guidedReply }, { timeoutMs: 30_000 });
+      await user.click({ role: "button", label: `Show technical details for ${sentence}` });
+      const steps = (await probe.dom(`[data-app-builder-step][aria-label="${sentence}"]`)).elements;
+      expect(steps).toHaveLength(1);
+      expect(steps[0]?.text).toContain("build-an-app");
+      expect(steps[0]?.text).toContain("Inventory lookup unit price");
+      // The guide the agent read is OpenWork Cloud's built-in skill.
+      expect(JSON.stringify(await world.den.mocks.inventory.agentRequests({ promptMarker: prompt }))).toContain("# Build an App");
+      // prepare_app's starter, published unchanged, asks for the tool's input and loads it on one click.
+      frame = await world.appFrameShowing(guidedTitle, "Show unit price");
+      await user.on(frame).type({ role: "textbox", label: "Sku" }, launchInput.sku);
+      await user.on(frame).click({ role: "button", label: "Show unit price" });
+      await user.on(frame).see({ text: "Unit price" }, { timeoutMs: 60_000 });
+      evidence.recordAssertionEvidence("The agent's own calls make one artifact step, and the starter works as published", `${name}: a dashboard request without the word app read build-an-app, searched, prepared and built from prepare_app's starter. The guide and search sit inside the one Created artifact step, and the published starter loads the Inventory price on one click.`, true);
+      await user.screenshot();
+      await closeFrame();
+      await user.click({ role: "button", label: "Close panel" });
     });
     await step("after: stopping creation pauses its step without opening an App", async () => {
       const prompt = "Create an App and hold while writing so I can stop it.";

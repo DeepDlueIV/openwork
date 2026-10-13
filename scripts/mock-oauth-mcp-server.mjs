@@ -259,7 +259,7 @@ function validateAgentWorkloads(value) {
       if (!step.arguments || typeof step.arguments !== "object" || Array.isArray(step.arguments)) {
         throw new Error(`agent workload ${promptMarker} tool ${step.tool} needs object arguments`);
       }
-      if (step.argumentsFrom !== undefined && !["computer-mention", "skill-catalog", "capability-search", "skill-list", "app-preparation", "app-read"].includes(step.argumentsFrom)) {
+      if (step.argumentsFrom !== undefined && !["computer-mention", "skill-catalog", "capability-search", "skill-list", "app-preparation", "app-starter", "app-read"].includes(step.argumentsFrom)) {
         throw new Error(`agent workload ${promptMarker} has an unknown argument source`);
       }
       if (step.allowUnadvertisedTool !== undefined && typeof step.allowUnadvertisedTool !== "boolean") {
@@ -529,6 +529,20 @@ function appPreparationStepArguments(messages, argumentsValue) {
   return { ...argumentsValue, ...prepared };
 }
 
+// Builds from the unchanged starter prepare_app actually returned, so the
+// starter itself is what compiles and opens. Code Mode spreads it in place of
+// a fixture marker.
+function appStarterStepArguments(messages, argumentsValue) {
+  let payload = JSON.parse(lastToolText(messages));
+  if (Array.isArray(payload.content)) payload = JSON.parse(agentContentText(payload));
+  const prepared = payload.starter ? payload : payload.structuredContent;
+  if (typeof prepared?.preparationId !== "string" || typeof prepared?.starter?.reactSource !== "string") throw new Error("prepare_app did not return a starter");
+  const starter = { preparationId: prepared.preparationId, reactSource: prepared.starter.reactSource, cssSource: prepared.starter.cssSource };
+  // A replacer function, since source text can hold "$" patterns String#replace would expand.
+  if (typeof argumentsValue.code === "string") return { ...argumentsValue, code: argumentsValue.code.replace('"__APP_STARTER__"', () => JSON.stringify(starter)) };
+  return { ...argumentsValue, ...starter };
+}
+
 // Optimistic updates must carry the revision the model actually read.
 function appReadStepArguments(messages, argumentsValue) {
   let payload = JSON.parse(lastToolText(messages));
@@ -699,6 +713,7 @@ async function handleAgentCompletion(req, res, entry) {
     : step.argumentsFrom === "capability-search" ? { ...step.arguments, ...capabilitySearchArguments(scopedMessages) }
     : step.argumentsFrom === "skill-list" ? { ...step.arguments, ...skillListArguments(scopedMessages) }
     : step.argumentsFrom === "app-preparation" ? appPreparationStepArguments(scopedMessages, step.arguments)
+    : step.argumentsFrom === "app-starter" ? appStarterStepArguments(scopedMessages, step.arguments)
     : step.argumentsFrom === "app-read" ? appReadStepArguments(scopedMessages, step.arguments) : step.arguments;
   if (step.argumentsFrom === "skill-catalog" && toolArguments === null) {
     entry.agentCompletion = { ...baseRequest, kind: "final", promptMarker: workload.promptMarker, toolName: null, arguments: {} };

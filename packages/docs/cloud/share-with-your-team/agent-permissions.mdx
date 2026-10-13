@@ -42,7 +42,7 @@ Agent permissions is an Enterprise feature that is rolling out, and applies to m
 
 - **Everyone**'s permissions apply to every member.
 - A team's choice for a permission replaces **Everyone**'s for the team's members. A team's lists add to **Everyone**'s.
-- When someone is in several teams that set the same permission, the strictest choice applies: **Block**, then **Ask first**, then **Allow**.
+- When someone is in several teams, the strictest choice among their teams applies: **Block**, then **Ask first**, then **Allow**. A team without its own choice counts with **Everyone**'s. An **Always allowed** pattern is an exception only when every one of their teams that doesn't allow the permission lists it, so one team's list never undoes another team's stricter choice.
 
 ## Set agent permissions
 
@@ -63,15 +63,15 @@ When something is blocked, the agent is told what was blocked, by which pattern,
 In the built-in browser, a blocked website doesn't load and the browser shows the same reason. A website set to **Ask first** opens once the member approves it, and stays approved until the permissions change. Until the app has the member's permissions, for example right after signing in on a new computer, the built-in browser opens no pages.
 
 <Accordion title="Technical details">
-**Known limitation.** Command rules match the command as it is written. A command whose program name comes from a shell variable or expansion, such as `x=rm; $x -rf build`, is not matched by a rule for the program it expands to; it follows the rule for every command instead (for example **Ask first**).
+**Known limitation.** Command rules match the command as it is written. A command whose program name comes from a shell variable, substitution or pattern, such as `x=rm; $x -rf build`, can't be matched to a rule, so wherever any command rule restricts commands it is blocked when commands are blocked and asked about otherwise. A script that only exists when the command runs, such as `curl … | sh`, is checked as written.
 
 **Rules.** Den resolves each member's permissions into ordered OpenCode permission rules (`action`, `resource`, `effect`) and delivers them in `GET /v1/me/desktop-config` as `agentPermissions.rules`, each labeled with **Everyone** or the team's name. The last matching rule decides. A choice other than **Allow** becomes a `*` rule, its **Always allowed** patterns follow, and its **Always blocked** patterns come last. A permission left at **Allow** adds no rules, so a member's own settings apply.
 
 **Engines.** On OpenCode v2 the rules become the engine's own permission rules, with blocks written as Ask first, and OpenWork's agent permissions plugin decides every permission request after the engine: it blocks with the rule named, and a workspace's own config can't loosen it. If the plugin can't load, blocked actions ask the member instead. OpenCode v1 does not apply agent permissions to what the agent does: members whose app still runs v1 need the new engine for them to take effect. On either engine, the built-in browser follows the website rules and adding a blocked local skill or MCP server in OpenWork is refused. Blocked local MCP servers are disabled from any config source and aren't registered by OpenWork; adding one in OpenWork is refused. OpenWork's own connection to your organization stays on so members keep OpenWork Cloud; OpenWork Cloud then hides blocked organization skills, refuses to serve them, and refuses calls to blocked connections, naming the rule. Your organization's connections are recognized by the name and address OpenWork registered them with, so a workspace server that reuses one of their names is treated as local.
 
-**Websites.** Patterns match the address's host, its subdomains for `*.`, its port and scheme when the pattern names them, and its path as a prefix. The built-in browser applies them to every page and frame it opens, whoever opens them; the resources an allowed page loads are not checked.
+**Websites.** Patterns match the address's host, its subdomains for `*.`, its port and scheme when the pattern names them (`https://example.com:443` matches only port 443), and its path as a prefix. The built-in browser applies them to every page, frame and request it makes, whoever makes it, including the scripts and other resources an allowed page loads; only a page can ask first.
 
-**Offline.** The desktop app keeps the last rules it received for the signed-in member and applies them while Den is unreachable. Signing out removes them. Adding a local skill or MCP server in OpenWork waits until the member's permissions are verified, and is refused when they can't be.
+**Offline.** The desktop app keeps the last rules it received for the signed-in member and applies them while Den is unreachable. Signing out, or another member signing in, removes them. Adding a local skill or MCP server in OpenWork waits until the member's permissions are verified, and is refused when they can't be while agent permissions were in force on the computer.
 
 **API.** `GET /v1/agent-permissions` lists everyone's and each team's settings. `PUT /v1/agent-permissions/everyone` and `PUT /v1/agent-permissions/teams/{teamId}` replace them; `DELETE /v1/agent-permissions/teams/{teamId}` removes a team's overrides.
 </Accordion>

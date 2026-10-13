@@ -635,6 +635,8 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
       const sentence = `Created artifact “${guidedTitle}”`;
       await user.see({ text: sentence }, { timeoutMs: 120_000 });
       await user.see({ text: guidedReply }, { timeoutMs: 30_000 });
+      // The details toggle appears when the step is hovered.
+      await user.hover({ text: sentence });
       await user.click({ role: "button", label: `Show technical details for ${sentence}` });
       const steps = (await probe.dom(`[data-app-builder-step][aria-label="${sentence}"]`)).elements;
       expect(steps).toHaveLength(1);

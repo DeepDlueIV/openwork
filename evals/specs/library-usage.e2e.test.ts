@@ -227,6 +227,8 @@ test("an owner sees which plugins, skills and connectors the team uses, which fa
     expect(supportUses).toBe("4");
     expect(support).toContain("Today");
     await owner.screenshot();
+    // The next steps compare connectors, where this journey was before the fold.
+    await openView("Connectors", world.connectors.tracker);
   });
 
   await step("after: at phone width the owner's comparison table scrolls sideways without widening the page", async () => {

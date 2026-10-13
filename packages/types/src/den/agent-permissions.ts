@@ -486,9 +486,12 @@ export type ResolvedAgentPermission = {
 };
 
 /**
- * A member's effective permissions. A team's decision replaces everyone's;
- * when several of a member's teams set one, the strictest applies. Lists add
- * up: everyone's patterns, then each team's.
+ * A member's effective permissions. Each of the member's teams has its own
+ * decision, else everyone's, and everyone's allowed patterns plus its own; a
+ * member in no team has everyone's. The strictest decision of the member's
+ * teams applies, and an allowed pattern is an exception to it only when every
+ * team that restricts the permission allows it, so no team's list undoes
+ * another team's decision. Blocked patterns add up: everyone's, then each team's.
  */
 export function resolveAgentPermissions(input: {
   everyone: AgentPermissionPolicySettings | null;
@@ -496,35 +499,35 @@ export function resolveAgentPermissions(input: {
 }): ResolvedAgentPermission[] {
   const policies = [...(input.everyone ? [input.everyone] : []), ...input.teams];
   return agentPermissionDefinitions.map((definition) => {
-    let decision: AgentPermissionDecision | null = null;
-    let decisionSource: string | null = null;
-    for (const team of input.teams) {
-      const teamDecision = team.settings[definition.key]?.decision;
-      if (!teamDecision) continue;
-      if (decision === null || stricterAgentPermissionDecision(decision, teamDecision) !== decision) {
-        decision = teamDecision;
-        decisionSource = team.source;
-      }
+    const listed = (policy: AgentPermissionPolicySettings | null, list: "allow" | "block") =>
+      (policy?.settings[definition.key]?.[list] ?? []).map((pattern) => ({ pattern, source: policy!.source }));
+    const scopes = (input.teams.length > 0 ? input.teams : [null]).map((team) => {
+      const teamDecision = team?.settings[definition.key]?.decision;
+      const everyoneDecision = input.everyone?.settings[definition.key]?.decision;
+      return {
+        decision: teamDecision ?? everyoneDecision ?? AGENT_PERMISSION_DEFAULT_DECISION,
+        decisionSource: teamDecision ? team!.source : everyoneDecision ? input.everyone!.source : null,
+        allow: [...listed(input.everyone, "allow"), ...listed(team, "allow")],
+      };
+    });
+    let strictest = scopes[0]!;
+    for (const scope of scopes) {
+      if (stricterAgentPermissionDecision(strictest.decision, scope.decision) !== strictest.decision) strictest = scope;
     }
-    if (decision === null && input.everyone?.settings[definition.key]?.decision) {
-      decision = input.everyone.settings[definition.key]?.decision ?? null;
-      decisionSource = input.everyone.source;
-    }
-    const collect = (list: "allow" | "block") => {
-      const seen = new Set<string>();
-      return policies.flatMap((policy) => (policy.settings[definition.key]?.[list] ?? []).flatMap((pattern) => {
-        if (seen.has(pattern)) return [];
-        seen.add(pattern);
-        return [{ pattern, source: policy.source }];
-      }));
-    };
-    return {
-      definition,
-      decision: decision ?? AGENT_PERMISSION_DEFAULT_DECISION,
-      decisionSource,
-      allow: collect("allow"),
-      block: collect("block"),
-    };
+    const restricting = scopes.filter((scope) => scope.decision !== "allow");
+    const seen = new Set<string>();
+    const allow = strictest.allow.filter(({ pattern }) => {
+      if (seen.has(pattern)) return false;
+      seen.add(pattern);
+      return restricting.every((scope) => scope.allow.some((entry) => entry.pattern === pattern));
+    });
+    const blocked = new Set<string>();
+    const block = policies.flatMap((policy) => listed(policy, "block")).filter(({ pattern }) => {
+      if (blocked.has(pattern)) return false;
+      blocked.add(pattern);
+      return true;
+    });
+    return { definition, decision: strictest.decision, decisionSource: strictest.decisionSource, allow, block };
   });
 }
 

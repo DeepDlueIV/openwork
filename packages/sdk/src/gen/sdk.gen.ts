@@ -3137,52 +3137,64 @@ export class DenClient extends HeyApiClient {
    */
   public postV1ManagedDeployments<ThrowOnError extends boolean = false>(
     parameters: {
-      name: string;
-      domainName: string;
-      ownerEmail: string;
-      size?: "small";
-      provider: "aws";
-      target: {
-        accountId: string;
-        region:
-          | "us-east-1"
-          | "us-east-2"
-          | "us-west-2"
-          | "eu-west-1"
-          | "eu-central-1"
-          | "ap-southeast-1"
-          | "ap-southeast-2";
-        route53ZoneId: string;
-        network?:
-          | {
-              mode: "dedicated";
-            }
-          | {
-              mode: "existing";
-              vpcId: string;
-              serviceSubnetIds: Array<string>;
-              loadBalancerSubnetIds: Array<string>;
-              ecsClusterArn?: string;
+      body:
+        | {
+            name: string;
+            domainName: string;
+            ownerEmail: string;
+            size?: "small";
+            provider: "aws";
+            target: {
+              accountId: string;
+              region:
+                | "us-east-1"
+                | "us-east-2"
+                | "us-west-2"
+                | "eu-west-1"
+                | "eu-central-1"
+                | "ap-southeast-1"
+                | "ap-southeast-2";
+              route53ZoneId: string;
+              network?:
+                | {
+                    mode: "dedicated";
+                  }
+                | {
+                    mode: "existing";
+                    vpcId: string;
+                    serviceSubnetIds: Array<string>;
+                    loadBalancerSubnetIds: Array<string>;
+                    ecsClusterArn?: string;
+                  };
             };
-      };
+          }
+        | {
+            name: string;
+            domainName: string;
+            ownerEmail: string;
+            size?: "small";
+            provider: "gcp";
+            target: {
+              projectId: string;
+              projectNumber: string;
+              region:
+                | "us-central1"
+                | "us-east1"
+                | "us-east4"
+                | "us-west1"
+                | "us-west2"
+                | "europe-west1"
+                | "europe-west2"
+                | "europe-west3"
+                | "asia-southeast1"
+                | "australia-southeast1";
+              dnsZoneName: string;
+            };
+          };
     },
     options?: Options<never, ThrowOnError>,
   ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "body", key: "name" },
-            { in: "body", key: "domainName" },
-            { in: "body", key: "ownerEmail" },
-            { in: "body", key: "size" },
-            { in: "body", key: "provider" },
-            { in: "body", key: "target" },
-          ],
-        },
-      ],
-    );
+    const params = buildClientParams([parameters], [{ args: [{ key: "body", map: "body" }] }]);
     return (options?.client ?? this.client).post<
       PostV1ManagedDeploymentsResponses,
       PostV1ManagedDeploymentsErrors,
@@ -3225,7 +3237,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Prepare an install, retry or approved update
    *
-   * Creates or reuses an installer run pinned to the published release and returns a console approval link (install) or an account-checked cloud shell command (retry, update).
+   * Creates or reuses an installer run pinned to the published release. AWS installs return a console approval link; AWS retry/update and all GCP runs return a target-checked cloud shell command.
    */
   public postV1ManagedDeploymentsByDeploymentIdLaunch<ThrowOnError extends boolean = false>(
     parameters: {
@@ -3270,12 +3282,19 @@ export class DenClient extends HeyApiClient {
     parameters: {
       deploymentId: string;
       runId: string;
-      headers: {
-        authorization: string;
-        "x-amz-date": string;
-        "x-amz-security-token": string;
-        "x-openwork-proof": string;
-      };
+      body:
+        | {
+            headers: {
+              authorization: string;
+              "x-amz-date": string;
+              "x-amz-security-token": string;
+              "x-openwork-proof": string;
+            };
+          }
+        | {
+            provider: "gcp";
+            idToken: string;
+          };
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -3286,7 +3305,7 @@ export class DenClient extends HeyApiClient {
           args: [
             { in: "path", key: "deploymentId" },
             { in: "path", key: "runId" },
-            { in: "body", key: "headers" },
+            { key: "body", map: "body" },
           ],
         },
       ],

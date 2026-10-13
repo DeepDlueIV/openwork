@@ -10,11 +10,14 @@ import { fileURLToPath } from "node:url";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const [provider, version, outputArgument] = process.argv.slice(2);
-if (provider !== "aws") throw new Error("Usage: build-release.mjs aws <published-version> [output-directory]");
+if (!["aws", "gcp"].includes(provider)) throw new Error("Usage: build-release.mjs <aws|gcp> <published-version> [output-directory]");
 if (!version || !/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(version)) throw new Error("Supply an exact published OpenWork image version.");
 const output = resolve(outputArgument ?? resolve(root, "dist/managed-deployments", provider, version));
 mkdirSync(output, { recursive: true });
-execFileSync(process.execPath, [resolve(root, "infra/managed-deployments/aws/bootstrap/template.mjs"), resolve(output, "cloudformation.json")], { stdio: "inherit" });
+const templateName = provider === "aws" ? "cloudformation.json" : "tutorial.md";
+if (provider === "aws") {
+  execFileSync(process.execPath, [resolve(root, "infra/managed-deployments/aws/bootstrap/template.mjs"), resolve(output, templateName)], { stdio: "inherit" });
+}
 
 // Only regular files inside the repository. Symlinks are refused outright so a
 // link can never pull an operator's local files into a public release.
@@ -39,12 +42,24 @@ function files(directory, accept) {
 // Explicit allowlist: never package state, variable files, plans or credentials.
 const terraform = (name) => name.endsWith(".tf") || name === ".terraform.lock.hcl";
 const included = [
-  "infra/managed-deployments/aws/runner/runner.py",
-  "infra/managed-deployments/aws/health/health_agent.py",
   ...files("infra/managed-deployments/contract", terraform),
-  ...files("infra/managed-deployments/aws/terraform", terraform),
-  ...files("infra/terraform/modules/openwork-aws-ecs", (name) => name.endsWith(".tf")).filter((path) => !path.includes("/examples/") && !path.includes("/tests/")),
+  ...(provider === "aws" ? [
+    "infra/managed-deployments/aws/runner/runner.py",
+    "infra/managed-deployments/aws/health/health_agent.py",
+    ...files("infra/managed-deployments/aws/terraform", terraform),
+    ...files("infra/terraform/modules/openwork-aws-ecs", (name) => name.endsWith(".tf")).filter((path) => !path.includes("/examples/") && !path.includes("/tests/")),
+  ] : [
+    "infra/managed-deployments/gcp/runner/install.py",
+    "infra/managed-deployments/gcp/runner/runner.py",
+    "infra/managed-deployments/gcp/health/health_agent.py",
+    ...files("infra/managed-deployments/gcp/terraform", terraform),
+  ]),
 ];
+assertRegularInsideRoot(`infra/managed-deployments/${provider}/terraform/.terraform.lock.hcl`);
+if (provider === "gcp") {
+  assertRegularInsideRoot("infra/managed-deployments/gcp/bootstrap/tutorial.md");
+  copyFileSync(resolve(root, "infra/managed-deployments/gcp/bootstrap/tutorial.md"), resolve(output, templateName));
+}
 const stage = mkdtempSync(resolve(tmpdir(), "openwork-managed-release-"));
 try {
   const checksums = {};
@@ -56,9 +71,9 @@ try {
     checksums[relative(stage, destination)] = createHash("sha256").update(readFileSync(destination)).digest("hex");
   }
   writeFileSync(resolve(stage, "release.json"), JSON.stringify({ provider, version, protocolVersion: 1, files: checksums }, null, 2) + "\n");
-  execFileSync("tar", ["-czf", resolve(output, "bundle.tar.gz"), "-C", stage, "infra", "release.json"]);
+  execFileSync("tar", ["-czf", resolve(output, "bundle.tar.gz"), "-C", stage, "infra", "release.json"], { env: { ...process.env, COPYFILE_DISABLE: "1" } });
   const digest = (name) => createHash("sha256").update(readFileSync(resolve(output, name))).digest("hex");
-  writeFileSync(resolve(output, "manifest.json"), JSON.stringify({ provider, version, protocolVersion: 1, bundleSha256: digest("bundle.tar.gz"), templateSha256: digest("cloudformation.json") }, null, 2) + "\n");
+  writeFileSync(resolve(output, "manifest.json"), JSON.stringify({ provider, version, protocolVersion: 1, bundleSha256: digest("bundle.tar.gz"), templateSha256: digest(templateName) }, null, 2) + "\n");
   console.log(`Built ${provider} installer ${version}: ${output}`);
 } finally {
   rmSync(stage, { recursive: true, force: true });

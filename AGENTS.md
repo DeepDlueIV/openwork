@@ -22,6 +22,15 @@ The app consumes OpenWork server surfaces (self-hosted or hosted) rather than
 inventing parallel behavior. Anything OpenCode can do is available in OpenWork,
 even before a dedicated UI exists.
 
+Customer-cloud managed installation architecture lives in
+`infra/managed-deployments/README.md` and `docs/managed-deployments.md`. AWS
+uses CloudFormation/CodeBuild; GCP uses customer-approved Cloud Shell and
+impersonated Terraform behind `managedDeploymentsGcp` (cloud only, off).
+Installer publication/configuration is an operator action, not CLI sign-in or a
+feature rollout. Never fake readiness; local tests do not prove a live install.
+Killing a rollout blocks launches without deleting customer resources or
+interrupting authenticated enrollment/health reports.
+
 ## Confidentiality (hard rule — this repo is public)
 
 Never let a branch name, commit, PR text, comment, fixture, or evidence identify

@@ -49,7 +49,9 @@ test("an existing network is validated against the account and region", () => {
   assert.equal(managedDeploymentInputSchema.safeParse(input).success, true)
   // Records created before the network choice read as dedicated.
   const { network: _omitted, ...legacy } = target
-  assert.deepEqual(managedDeploymentInputSchema.parse({ ...input, target: legacy }).target.network, { mode: "dedicated" })
+  const parsed = managedDeploymentInputSchema.parse({ ...input, target: legacy })
+  assert.equal(parsed.provider, "aws")
+  if (parsed.provider === "aws") assert.deepEqual(parsed.target.network, { mode: "dedicated" })
   for (const network of [
     { ...existingNetwork, ecsClusterArn: "arn:aws:ecs:us-west-2:123456789012:cluster/platform" },
     { ...existingNetwork, ecsClusterArn: "arn:aws:ecs:us-east-1:999999999999:cluster/platform" },

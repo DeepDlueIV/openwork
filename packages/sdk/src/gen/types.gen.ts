@@ -164,6 +164,7 @@ export type NotFoundError = {
 export type AdminFeature = {
   key:
     | "teamMembershipCache"
+    | "managedDeploymentsGcp"
     | "managedDeployments"
     | "slackAssistant"
     | "slackWorkbotReplies"
@@ -212,6 +213,7 @@ export type AdminOrganizationsPageResponse = {
   organizations: Array<{
     capabilities: {
       teamMembershipCache: boolean;
+      managedDeploymentsGcp: boolean;
       managedDeployments: boolean;
       slackAssistant: boolean;
       slackWorkbotReplies: boolean;
@@ -233,6 +235,15 @@ export type AdminOrganizationsPageResponse = {
      */
     featureStates: {
       teamMembershipCache: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      managedDeploymentsGcp: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -386,6 +397,7 @@ export type AdminOverviewResponse = {
   organizations: Array<{
     capabilities: {
       teamMembershipCache: boolean;
+      managedDeploymentsGcp: boolean;
       managedDeployments: boolean;
       slackAssistant: boolean;
       slackWorkbotReplies: boolean;
@@ -407,6 +419,15 @@ export type AdminOverviewResponse = {
      */
     featureStates: {
       teamMembershipCache: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      managedDeploymentsGcp: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6030,6 +6051,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
   200: {
     capabilities: {
       teamMembershipCache: boolean;
+      managedDeploymentsGcp: boolean;
       managedDeployments: boolean;
       slackAssistant: boolean;
       slackWorkbotReplies: boolean;
@@ -6051,6 +6073,15 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
      */
     featureStates: {
       teamMembershipCache: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      managedDeploymentsGcp: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6192,6 +6223,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
     };
     capabilities: {
       teamMembershipCache: boolean;
+      managedDeploymentsGcp: boolean;
       managedDeployments: boolean;
       slackAssistant: boolean;
       slackWorkbotReplies: boolean;
@@ -6213,6 +6245,15 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
      */
     featureStates: {
       teamMembershipCache: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      managedDeploymentsGcp: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -8897,6 +8938,8 @@ export type GetV1ManagedDeploymentsConfigurationResponses = {
       provider: "aws" | "azure" | "gcp";
       available: boolean;
       version: string | null;
+      reason?: "ready" | "not_configured" | "invalid_configuration" | "not_supported" | "feature_disabled";
+      missingFields?: Array<string>;
     }>;
     updateMode: "approval";
   };
@@ -8964,144 +9007,265 @@ export type GetV1ManagedDeploymentsResponses = {
    * List the organization's managed deployments
    */
   200: {
-    deployments: Array<{
-      id: string;
-      name: string;
-      provider: "aws" | "azure" | "gcp";
-      target: {
-        accountId: string;
-        region:
-          | "us-east-1"
-          | "us-east-2"
-          | "us-west-2"
-          | "eu-west-1"
-          | "eu-central-1"
-          | "ap-southeast-1"
-          | "ap-southeast-2";
-        route53ZoneId: string;
-        network?:
-          | {
-              mode: "dedicated";
-            }
-          | {
-              mode: "existing";
-              vpcId: string;
-              serviceSubnetIds: Array<string>;
-              loadBalancerSubnetIds: Array<string>;
-              ecsClusterArn?: string;
-            };
-      };
-      domainName: string;
-      ownerEmail: string;
-      size: "small";
-      updateMode: "approval";
-      createdAt: string;
-      webUrl: string;
-      consoleUrl: string;
-      installedVersion: string | null;
-      availableVersion: string | null;
-      updateAvailable: boolean;
-      health: {
-        state: "operational" | "degraded" | "down" | "not_reporting" | "awaiting_report";
-        reportedAt: string | null;
-        version: string | null;
-        checks: Array<{
-          id:
-            | "api_health"
-            | "database_ready"
-            | "web_available"
-            | "services_running"
-            | "load_balancer_targets"
-            | "database_instance"
-            | "database_storage"
-            | "database_backups"
-            | "certificate";
-          status: "ok" | "warning" | "failing" | "unknown";
-          value?: number;
-          total?: number;
-          code?:
-            | "http_error"
-            | "unreachable"
-            | "slow"
-            | "not_running"
-            | "unhealthy"
-            | "unavailable"
-            | "permission_denied"
-            | "low_storage"
-            | "stale_backup"
-            | "backups_disabled"
-            | "not_issued"
-            | "expiring"
-            | "expired";
-        }>;
-      };
-      run: {
-        id: string;
-        kind: "install" | "update" | "retry";
-        version: string;
-        state: "awaiting_approval" | "provisioning" | "ready" | "failed";
-        createdAt: string;
-        lastSeenAt: string | null;
-        expiresAt: string;
-        expired: boolean;
-        events: Array<{
-          sequence: number;
-          step:
-            | "runner_connected"
-            | "release_verified"
-            | "account_verified"
-            | "infrastructure_applied"
-            | "services_ready"
-            | "health_verified";
-          outcome: "succeeded" | "failed";
-          errorCode?:
-            | "release_verification_failed"
-            | "network_check_failed"
-            | "infrastructure_failed"
-            | "certificate_failed"
-            | "service_unhealthy"
-            | "health_check_failed"
-            | "runner_failed";
-          receivedAt: string;
-        }>;
-      } | null;
-    }>;
+    deployments: Array<
+      | {
+          id: string;
+          name: string;
+          domainName: string;
+          ownerEmail: string;
+          size: "small";
+          updateMode: "approval";
+          createdAt: string;
+          webUrl: string;
+          consoleUrl: string;
+          installedVersion: string | null;
+          availableVersion: string | null;
+          updateAvailable: boolean;
+          health: {
+            state: "operational" | "degraded" | "down" | "not_reporting" | "awaiting_report";
+            reportedAt: string | null;
+            version: string | null;
+            checks: Array<{
+              id:
+                | "api_health"
+                | "database_ready"
+                | "web_available"
+                | "services_running"
+                | "load_balancer_targets"
+                | "database_instance"
+                | "database_storage"
+                | "database_backups"
+                | "certificate";
+              status: "ok" | "warning" | "failing" | "unknown";
+              value?: number;
+              total?: number;
+              code?:
+                | "http_error"
+                | "unreachable"
+                | "slow"
+                | "not_running"
+                | "unhealthy"
+                | "unavailable"
+                | "permission_denied"
+                | "low_storage"
+                | "stale_backup"
+                | "backups_disabled"
+                | "not_issued"
+                | "expiring"
+                | "expired";
+            }>;
+          };
+          run: {
+            id: string;
+            kind: "install" | "update" | "retry";
+            version: string;
+            state: "awaiting_approval" | "provisioning" | "ready" | "failed";
+            createdAt: string;
+            lastSeenAt: string | null;
+            expiresAt: string;
+            expired: boolean;
+            events: Array<{
+              sequence: number;
+              step:
+                | "runner_connected"
+                | "release_verified"
+                | "account_verified"
+                | "infrastructure_applied"
+                | "services_ready"
+                | "health_verified";
+              outcome: "succeeded" | "failed";
+              errorCode?:
+                | "release_verification_failed"
+                | "network_check_failed"
+                | "infrastructure_failed"
+                | "certificate_failed"
+                | "service_unhealthy"
+                | "health_check_failed"
+                | "runner_failed";
+              receivedAt: string;
+            }>;
+          } | null;
+          provider: "aws";
+          target: {
+            accountId: string;
+            region:
+              | "us-east-1"
+              | "us-east-2"
+              | "us-west-2"
+              | "eu-west-1"
+              | "eu-central-1"
+              | "ap-southeast-1"
+              | "ap-southeast-2";
+            route53ZoneId: string;
+            network?:
+              | {
+                  mode: "dedicated";
+                }
+              | {
+                  mode: "existing";
+                  vpcId: string;
+                  serviceSubnetIds: Array<string>;
+                  loadBalancerSubnetIds: Array<string>;
+                  ecsClusterArn?: string;
+                };
+          };
+        }
+      | {
+          id: string;
+          name: string;
+          domainName: string;
+          ownerEmail: string;
+          size: "small";
+          updateMode: "approval";
+          createdAt: string;
+          webUrl: string;
+          consoleUrl: string;
+          installedVersion: string | null;
+          availableVersion: string | null;
+          updateAvailable: boolean;
+          health: {
+            state: "operational" | "degraded" | "down" | "not_reporting" | "awaiting_report";
+            reportedAt: string | null;
+            version: string | null;
+            checks: Array<{
+              id:
+                | "api_health"
+                | "database_ready"
+                | "web_available"
+                | "services_running"
+                | "load_balancer_targets"
+                | "database_instance"
+                | "database_storage"
+                | "database_backups"
+                | "certificate";
+              status: "ok" | "warning" | "failing" | "unknown";
+              value?: number;
+              total?: number;
+              code?:
+                | "http_error"
+                | "unreachable"
+                | "slow"
+                | "not_running"
+                | "unhealthy"
+                | "unavailable"
+                | "permission_denied"
+                | "low_storage"
+                | "stale_backup"
+                | "backups_disabled"
+                | "not_issued"
+                | "expiring"
+                | "expired";
+            }>;
+          };
+          run: {
+            id: string;
+            kind: "install" | "update" | "retry";
+            version: string;
+            state: "awaiting_approval" | "provisioning" | "ready" | "failed";
+            createdAt: string;
+            lastSeenAt: string | null;
+            expiresAt: string;
+            expired: boolean;
+            events: Array<{
+              sequence: number;
+              step:
+                | "runner_connected"
+                | "release_verified"
+                | "account_verified"
+                | "infrastructure_applied"
+                | "services_ready"
+                | "health_verified";
+              outcome: "succeeded" | "failed";
+              errorCode?:
+                | "release_verification_failed"
+                | "network_check_failed"
+                | "infrastructure_failed"
+                | "certificate_failed"
+                | "service_unhealthy"
+                | "health_check_failed"
+                | "runner_failed";
+              receivedAt: string;
+            }>;
+          } | null;
+          provider: "gcp";
+          target: {
+            projectId: string;
+            projectNumber: string;
+            region:
+              | "us-central1"
+              | "us-east1"
+              | "us-east4"
+              | "us-west1"
+              | "us-west2"
+              | "europe-west1"
+              | "europe-west2"
+              | "europe-west3"
+              | "asia-southeast1"
+              | "australia-southeast1";
+            dnsZoneName: string;
+          };
+        }
+    >;
   };
 };
 
 export type GetV1ManagedDeploymentsResponse = GetV1ManagedDeploymentsResponses[keyof GetV1ManagedDeploymentsResponses];
 
 export type PostV1ManagedDeploymentsData = {
-  body: {
-    name: string;
-    domainName: string;
-    ownerEmail: string;
-    size?: "small";
-    provider: "aws";
-    target: {
-      accountId: string;
-      region:
-        | "us-east-1"
-        | "us-east-2"
-        | "us-west-2"
-        | "eu-west-1"
-        | "eu-central-1"
-        | "ap-southeast-1"
-        | "ap-southeast-2";
-      route53ZoneId: string;
-      network?:
-        | {
-            mode: "dedicated";
-          }
-        | {
-            mode: "existing";
-            vpcId: string;
-            serviceSubnetIds: Array<string>;
-            loadBalancerSubnetIds: Array<string>;
-            ecsClusterArn?: string;
-          };
-    };
-  };
+  body:
+    | {
+        name: string;
+        domainName: string;
+        ownerEmail: string;
+        size?: "small";
+        provider: "aws";
+        target: {
+          accountId: string;
+          region:
+            | "us-east-1"
+            | "us-east-2"
+            | "us-west-2"
+            | "eu-west-1"
+            | "eu-central-1"
+            | "ap-southeast-1"
+            | "ap-southeast-2";
+          route53ZoneId: string;
+          network?:
+            | {
+                mode: "dedicated";
+              }
+            | {
+                mode: "existing";
+                vpcId: string;
+                serviceSubnetIds: Array<string>;
+                loadBalancerSubnetIds: Array<string>;
+                ecsClusterArn?: string;
+              };
+        };
+      }
+    | {
+        name: string;
+        domainName: string;
+        ownerEmail: string;
+        size?: "small";
+        provider: "gcp";
+        target: {
+          projectId: string;
+          projectNumber: string;
+          region:
+            | "us-central1"
+            | "us-east1"
+            | "us-east4"
+            | "us-west1"
+            | "us-west2"
+            | "europe-west1"
+            | "europe-west2"
+            | "europe-west3"
+            | "asia-southeast1"
+            | "australia-southeast1";
+          dnsZoneName: string;
+        };
+      };
   path?: never;
   query?: never;
   url: "/v1/managed-deployments";
@@ -9158,108 +9322,204 @@ export type PostV1ManagedDeploymentsResponses = {
   /**
    * Create a managed deployment
    */
-  200: {
-    id: string;
-    name: string;
-    provider: "aws" | "azure" | "gcp";
-    target: {
-      accountId: string;
-      region:
-        | "us-east-1"
-        | "us-east-2"
-        | "us-west-2"
-        | "eu-west-1"
-        | "eu-central-1"
-        | "ap-southeast-1"
-        | "ap-southeast-2";
-      route53ZoneId: string;
-      network?:
-        | {
-            mode: "dedicated";
-          }
-        | {
-            mode: "existing";
-            vpcId: string;
-            serviceSubnetIds: Array<string>;
-            loadBalancerSubnetIds: Array<string>;
-            ecsClusterArn?: string;
-          };
-    };
-    domainName: string;
-    ownerEmail: string;
-    size: "small";
-    updateMode: "approval";
-    createdAt: string;
-    webUrl: string;
-    consoleUrl: string;
-    installedVersion: string | null;
-    availableVersion: string | null;
-    updateAvailable: boolean;
-    health: {
-      state: "operational" | "degraded" | "down" | "not_reporting" | "awaiting_report";
-      reportedAt: string | null;
-      version: string | null;
-      checks: Array<{
-        id:
-          | "api_health"
-          | "database_ready"
-          | "web_available"
-          | "services_running"
-          | "load_balancer_targets"
-          | "database_instance"
-          | "database_storage"
-          | "database_backups"
-          | "certificate";
-        status: "ok" | "warning" | "failing" | "unknown";
-        value?: number;
-        total?: number;
-        code?:
-          | "http_error"
-          | "unreachable"
-          | "slow"
-          | "not_running"
-          | "unhealthy"
-          | "unavailable"
-          | "permission_denied"
-          | "low_storage"
-          | "stale_backup"
-          | "backups_disabled"
-          | "not_issued"
-          | "expiring"
-          | "expired";
-      }>;
-    };
-    run: {
-      id: string;
-      kind: "install" | "update" | "retry";
-      version: string;
-      state: "awaiting_approval" | "provisioning" | "ready" | "failed";
-      createdAt: string;
-      lastSeenAt: string | null;
-      expiresAt: string;
-      expired: boolean;
-      events: Array<{
-        sequence: number;
-        step:
-          | "runner_connected"
-          | "release_verified"
-          | "account_verified"
-          | "infrastructure_applied"
-          | "services_ready"
-          | "health_verified";
-        outcome: "succeeded" | "failed";
-        errorCode?:
-          | "release_verification_failed"
-          | "network_check_failed"
-          | "infrastructure_failed"
-          | "certificate_failed"
-          | "service_unhealthy"
-          | "health_check_failed"
-          | "runner_failed";
-        receivedAt: string;
-      }>;
-    } | null;
-  };
+  200:
+    | {
+        id: string;
+        name: string;
+        domainName: string;
+        ownerEmail: string;
+        size: "small";
+        updateMode: "approval";
+        createdAt: string;
+        webUrl: string;
+        consoleUrl: string;
+        installedVersion: string | null;
+        availableVersion: string | null;
+        updateAvailable: boolean;
+        health: {
+          state: "operational" | "degraded" | "down" | "not_reporting" | "awaiting_report";
+          reportedAt: string | null;
+          version: string | null;
+          checks: Array<{
+            id:
+              | "api_health"
+              | "database_ready"
+              | "web_available"
+              | "services_running"
+              | "load_balancer_targets"
+              | "database_instance"
+              | "database_storage"
+              | "database_backups"
+              | "certificate";
+            status: "ok" | "warning" | "failing" | "unknown";
+            value?: number;
+            total?: number;
+            code?:
+              | "http_error"
+              | "unreachable"
+              | "slow"
+              | "not_running"
+              | "unhealthy"
+              | "unavailable"
+              | "permission_denied"
+              | "low_storage"
+              | "stale_backup"
+              | "backups_disabled"
+              | "not_issued"
+              | "expiring"
+              | "expired";
+          }>;
+        };
+        run: {
+          id: string;
+          kind: "install" | "update" | "retry";
+          version: string;
+          state: "awaiting_approval" | "provisioning" | "ready" | "failed";
+          createdAt: string;
+          lastSeenAt: string | null;
+          expiresAt: string;
+          expired: boolean;
+          events: Array<{
+            sequence: number;
+            step:
+              | "runner_connected"
+              | "release_verified"
+              | "account_verified"
+              | "infrastructure_applied"
+              | "services_ready"
+              | "health_verified";
+            outcome: "succeeded" | "failed";
+            errorCode?:
+              | "release_verification_failed"
+              | "network_check_failed"
+              | "infrastructure_failed"
+              | "certificate_failed"
+              | "service_unhealthy"
+              | "health_check_failed"
+              | "runner_failed";
+            receivedAt: string;
+          }>;
+        } | null;
+        provider: "aws";
+        target: {
+          accountId: string;
+          region:
+            | "us-east-1"
+            | "us-east-2"
+            | "us-west-2"
+            | "eu-west-1"
+            | "eu-central-1"
+            | "ap-southeast-1"
+            | "ap-southeast-2";
+          route53ZoneId: string;
+          network?:
+            | {
+                mode: "dedicated";
+              }
+            | {
+                mode: "existing";
+                vpcId: string;
+                serviceSubnetIds: Array<string>;
+                loadBalancerSubnetIds: Array<string>;
+                ecsClusterArn?: string;
+              };
+        };
+      }
+    | {
+        id: string;
+        name: string;
+        domainName: string;
+        ownerEmail: string;
+        size: "small";
+        updateMode: "approval";
+        createdAt: string;
+        webUrl: string;
+        consoleUrl: string;
+        installedVersion: string | null;
+        availableVersion: string | null;
+        updateAvailable: boolean;
+        health: {
+          state: "operational" | "degraded" | "down" | "not_reporting" | "awaiting_report";
+          reportedAt: string | null;
+          version: string | null;
+          checks: Array<{
+            id:
+              | "api_health"
+              | "database_ready"
+              | "web_available"
+              | "services_running"
+              | "load_balancer_targets"
+              | "database_instance"
+              | "database_storage"
+              | "database_backups"
+              | "certificate";
+            status: "ok" | "warning" | "failing" | "unknown";
+            value?: number;
+            total?: number;
+            code?:
+              | "http_error"
+              | "unreachable"
+              | "slow"
+              | "not_running"
+              | "unhealthy"
+              | "unavailable"
+              | "permission_denied"
+              | "low_storage"
+              | "stale_backup"
+              | "backups_disabled"
+              | "not_issued"
+              | "expiring"
+              | "expired";
+          }>;
+        };
+        run: {
+          id: string;
+          kind: "install" | "update" | "retry";
+          version: string;
+          state: "awaiting_approval" | "provisioning" | "ready" | "failed";
+          createdAt: string;
+          lastSeenAt: string | null;
+          expiresAt: string;
+          expired: boolean;
+          events: Array<{
+            sequence: number;
+            step:
+              | "runner_connected"
+              | "release_verified"
+              | "account_verified"
+              | "infrastructure_applied"
+              | "services_ready"
+              | "health_verified";
+            outcome: "succeeded" | "failed";
+            errorCode?:
+              | "release_verification_failed"
+              | "network_check_failed"
+              | "infrastructure_failed"
+              | "certificate_failed"
+              | "service_unhealthy"
+              | "health_check_failed"
+              | "runner_failed";
+            receivedAt: string;
+          }>;
+        } | null;
+        provider: "gcp";
+        target: {
+          projectId: string;
+          projectNumber: string;
+          region:
+            | "us-central1"
+            | "us-east1"
+            | "us-east4"
+            | "us-west1"
+            | "us-west2"
+            | "europe-west1"
+            | "europe-west2"
+            | "europe-west3"
+            | "asia-southeast1"
+            | "australia-southeast1";
+          dnsZoneName: string;
+        };
+      };
 };
 
 export type PostV1ManagedDeploymentsResponse =
@@ -9398,108 +9658,204 @@ export type PostV1ManagedDeploymentsByDeploymentIdLaunchResponses = {
    * Prepare an install, retry or approved update
    */
   200: {
-    deployment: {
-      id: string;
-      name: string;
-      provider: "aws" | "azure" | "gcp";
-      target: {
-        accountId: string;
-        region:
-          | "us-east-1"
-          | "us-east-2"
-          | "us-west-2"
-          | "eu-west-1"
-          | "eu-central-1"
-          | "ap-southeast-1"
-          | "ap-southeast-2";
-        route53ZoneId: string;
-        network?:
-          | {
-              mode: "dedicated";
-            }
-          | {
-              mode: "existing";
-              vpcId: string;
-              serviceSubnetIds: Array<string>;
-              loadBalancerSubnetIds: Array<string>;
-              ecsClusterArn?: string;
-            };
-      };
-      domainName: string;
-      ownerEmail: string;
-      size: "small";
-      updateMode: "approval";
-      createdAt: string;
-      webUrl: string;
-      consoleUrl: string;
-      installedVersion: string | null;
-      availableVersion: string | null;
-      updateAvailable: boolean;
-      health: {
-        state: "operational" | "degraded" | "down" | "not_reporting" | "awaiting_report";
-        reportedAt: string | null;
-        version: string | null;
-        checks: Array<{
-          id:
-            | "api_health"
-            | "database_ready"
-            | "web_available"
-            | "services_running"
-            | "load_balancer_targets"
-            | "database_instance"
-            | "database_storage"
-            | "database_backups"
-            | "certificate";
-          status: "ok" | "warning" | "failing" | "unknown";
-          value?: number;
-          total?: number;
-          code?:
-            | "http_error"
-            | "unreachable"
-            | "slow"
-            | "not_running"
-            | "unhealthy"
-            | "unavailable"
-            | "permission_denied"
-            | "low_storage"
-            | "stale_backup"
-            | "backups_disabled"
-            | "not_issued"
-            | "expiring"
-            | "expired";
-        }>;
-      };
-      run: {
-        id: string;
-        kind: "install" | "update" | "retry";
-        version: string;
-        state: "awaiting_approval" | "provisioning" | "ready" | "failed";
-        createdAt: string;
-        lastSeenAt: string | null;
-        expiresAt: string;
-        expired: boolean;
-        events: Array<{
-          sequence: number;
-          step:
-            | "runner_connected"
-            | "release_verified"
-            | "account_verified"
-            | "infrastructure_applied"
-            | "services_ready"
-            | "health_verified";
-          outcome: "succeeded" | "failed";
-          errorCode?:
-            | "release_verification_failed"
-            | "network_check_failed"
-            | "infrastructure_failed"
-            | "certificate_failed"
-            | "service_unhealthy"
-            | "health_check_failed"
-            | "runner_failed";
-          receivedAt: string;
-        }>;
-      } | null;
-    };
+    deployment:
+      | {
+          id: string;
+          name: string;
+          domainName: string;
+          ownerEmail: string;
+          size: "small";
+          updateMode: "approval";
+          createdAt: string;
+          webUrl: string;
+          consoleUrl: string;
+          installedVersion: string | null;
+          availableVersion: string | null;
+          updateAvailable: boolean;
+          health: {
+            state: "operational" | "degraded" | "down" | "not_reporting" | "awaiting_report";
+            reportedAt: string | null;
+            version: string | null;
+            checks: Array<{
+              id:
+                | "api_health"
+                | "database_ready"
+                | "web_available"
+                | "services_running"
+                | "load_balancer_targets"
+                | "database_instance"
+                | "database_storage"
+                | "database_backups"
+                | "certificate";
+              status: "ok" | "warning" | "failing" | "unknown";
+              value?: number;
+              total?: number;
+              code?:
+                | "http_error"
+                | "unreachable"
+                | "slow"
+                | "not_running"
+                | "unhealthy"
+                | "unavailable"
+                | "permission_denied"
+                | "low_storage"
+                | "stale_backup"
+                | "backups_disabled"
+                | "not_issued"
+                | "expiring"
+                | "expired";
+            }>;
+          };
+          run: {
+            id: string;
+            kind: "install" | "update" | "retry";
+            version: string;
+            state: "awaiting_approval" | "provisioning" | "ready" | "failed";
+            createdAt: string;
+            lastSeenAt: string | null;
+            expiresAt: string;
+            expired: boolean;
+            events: Array<{
+              sequence: number;
+              step:
+                | "runner_connected"
+                | "release_verified"
+                | "account_verified"
+                | "infrastructure_applied"
+                | "services_ready"
+                | "health_verified";
+              outcome: "succeeded" | "failed";
+              errorCode?:
+                | "release_verification_failed"
+                | "network_check_failed"
+                | "infrastructure_failed"
+                | "certificate_failed"
+                | "service_unhealthy"
+                | "health_check_failed"
+                | "runner_failed";
+              receivedAt: string;
+            }>;
+          } | null;
+          provider: "aws";
+          target: {
+            accountId: string;
+            region:
+              | "us-east-1"
+              | "us-east-2"
+              | "us-west-2"
+              | "eu-west-1"
+              | "eu-central-1"
+              | "ap-southeast-1"
+              | "ap-southeast-2";
+            route53ZoneId: string;
+            network?:
+              | {
+                  mode: "dedicated";
+                }
+              | {
+                  mode: "existing";
+                  vpcId: string;
+                  serviceSubnetIds: Array<string>;
+                  loadBalancerSubnetIds: Array<string>;
+                  ecsClusterArn?: string;
+                };
+          };
+        }
+      | {
+          id: string;
+          name: string;
+          domainName: string;
+          ownerEmail: string;
+          size: "small";
+          updateMode: "approval";
+          createdAt: string;
+          webUrl: string;
+          consoleUrl: string;
+          installedVersion: string | null;
+          availableVersion: string | null;
+          updateAvailable: boolean;
+          health: {
+            state: "operational" | "degraded" | "down" | "not_reporting" | "awaiting_report";
+            reportedAt: string | null;
+            version: string | null;
+            checks: Array<{
+              id:
+                | "api_health"
+                | "database_ready"
+                | "web_available"
+                | "services_running"
+                | "load_balancer_targets"
+                | "database_instance"
+                | "database_storage"
+                | "database_backups"
+                | "certificate";
+              status: "ok" | "warning" | "failing" | "unknown";
+              value?: number;
+              total?: number;
+              code?:
+                | "http_error"
+                | "unreachable"
+                | "slow"
+                | "not_running"
+                | "unhealthy"
+                | "unavailable"
+                | "permission_denied"
+                | "low_storage"
+                | "stale_backup"
+                | "backups_disabled"
+                | "not_issued"
+                | "expiring"
+                | "expired";
+            }>;
+          };
+          run: {
+            id: string;
+            kind: "install" | "update" | "retry";
+            version: string;
+            state: "awaiting_approval" | "provisioning" | "ready" | "failed";
+            createdAt: string;
+            lastSeenAt: string | null;
+            expiresAt: string;
+            expired: boolean;
+            events: Array<{
+              sequence: number;
+              step:
+                | "runner_connected"
+                | "release_verified"
+                | "account_verified"
+                | "infrastructure_applied"
+                | "services_ready"
+                | "health_verified";
+              outcome: "succeeded" | "failed";
+              errorCode?:
+                | "release_verification_failed"
+                | "network_check_failed"
+                | "infrastructure_failed"
+                | "certificate_failed"
+                | "service_unhealthy"
+                | "health_check_failed"
+                | "runner_failed";
+              receivedAt: string;
+            }>;
+          } | null;
+          provider: "gcp";
+          target: {
+            projectId: string;
+            projectNumber: string;
+            region:
+              | "us-central1"
+              | "us-east1"
+              | "us-east4"
+              | "us-west1"
+              | "us-west2"
+              | "europe-west1"
+              | "europe-west2"
+              | "europe-west3"
+              | "asia-southeast1"
+              | "australia-southeast1";
+            dnsZoneName: string;
+          };
+        };
     kind: "install" | "update" | "retry";
     approvalUrl: string | null;
     command: string | null;
@@ -9511,14 +9867,19 @@ export type PostV1ManagedDeploymentsByDeploymentIdLaunchResponse =
   PostV1ManagedDeploymentsByDeploymentIdLaunchResponses[keyof PostV1ManagedDeploymentsByDeploymentIdLaunchResponses];
 
 export type PostV1ManagedDeploymentsByDeploymentIdRunsByRunIdEnrollData = {
-  body: {
-    headers: {
-      authorization: string;
-      "x-amz-date": string;
-      "x-amz-security-token": string;
-      "x-openwork-proof": string;
-    };
-  };
+  body:
+    | {
+        headers: {
+          authorization: string;
+          "x-amz-date": string;
+          "x-amz-security-token": string;
+          "x-openwork-proof": string;
+        };
+      }
+    | {
+        provider: "gcp";
+        idToken: string;
+      };
   path: {
     deploymentId: string;
     runId: string;

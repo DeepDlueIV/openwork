@@ -28,6 +28,16 @@
               ],
               "description": "Team membership cache: Reduce repeated team lookups while keeping access changes immediate. Enable only after every API instance runs revision-aware team writes. Renders DEN_FEATURE_TEAM_MEMBERSHIP_CACHE."
             },
+            "managedDeploymentsGcp": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "GCP managed deployments: Organization admins approve OpenWork installations in their own Google Cloud project and track health and updates. Renders DEN_FEATURE_MANAGED_DEPLOYMENTS_GCP."
+            },
             "managedDeployments": {
               "enum": [
                 "",

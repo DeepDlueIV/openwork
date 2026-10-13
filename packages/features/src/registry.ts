@@ -60,6 +60,13 @@ export const FEATURES = defineFeatures({
     deployments: everywhere,
     default: false,
   },
+  managedDeploymentsGcp: {
+    label: "GCP managed deployments",
+    description: "Organization admins approve OpenWork installations in their own Google Cloud project and track health and updates.",
+    since: "2026-10",
+    deployments: ["cloud"],
+    default: false,
+  },
   managedDeployments: {
     label: "Managed deployments",
     description: "Organization admins install OpenWork in their own cloud account (AWS first) and see its health and updates in OpenWork.",

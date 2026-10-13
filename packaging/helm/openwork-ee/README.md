@@ -363,6 +363,7 @@ OpenWork Cloud. Don't change it on a customer install.
 | `config.features.*` | Environment variable | Default | What it does |
 | --- | --- | --- | --- |
 | `teamMembershipCache` | `DEN_FEATURE_TEAM_MEMBERSHIP_CACHE` | default off | Reduce repeated team lookups while keeping access changes immediate. Enable only after every API instance runs revision-aware team writes. |
+| `managedDeploymentsGcp` | `DEN_FEATURE_MANAGED_DEPLOYMENTS_GCP` | default off (cloud only) | Organization admins approve OpenWork installations in their own Google Cloud project and track health and updates. |
 | `managedDeployments` | `DEN_FEATURE_MANAGED_DEPLOYMENTS` | default off (cloud only) | Organization admins install OpenWork in their own cloud account (AWS first) and see its health and updates in OpenWork. |
 | `slackAssistant` | `DEN_FEATURE_SLACK_ASSISTANT` | default off | Answers Slack mentions and DMs for the organization after the Slack connector is set up. |
 | `slackWorkbotReplies` | `DEN_FEATURE_SLACK_WORKBOT_REPLIES` | default off | OpenWork in Slack writes its reply as it works, reacts to messages with an emoji, and takes bigger jobs into the background, posting the result in the thread when done. |

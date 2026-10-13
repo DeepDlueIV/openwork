@@ -19,7 +19,7 @@ import {
   hasFencedCodeBlock,
   renderHighlightedMarkdownHtml,
   renderMarkdownHtml,
-  setCodeCopyButtonState,
+  setCopyButtonState,
   setCodeWrapButtonState,
   syncMarkdownImagePreviews,
   type MarkdownBlockHtml,
@@ -118,9 +118,9 @@ function MarkdownBlockInner({
   );
   const [highlightedHtml, setHighlightedHtml] = useState<{ text: string; html: string; resolveReference: typeof resolveReference } | null>(null);
 
-  const handleCodeBlockCopy = useCallback(async (button: HTMLButtonElement, code: string) => {
+  const handleCopy = useCallback(async (button: HTMLButtonElement, text: string) => {
     try {
-      await navigator.clipboard.writeText(code);
+      await navigator.clipboard.writeText(text);
     } catch {
       return;
     }
@@ -130,10 +130,10 @@ function MarkdownBlockInner({
       window.clearTimeout(previousTimer);
     }
 
-    setCodeCopyButtonState(button, true);
+    setCopyButtonState(button, true);
 
     const resetTimer = window.setTimeout(() => {
-      setCodeCopyButtonState(button, false);
+      setCopyButtonState(button, false);
       codeCopyResetTimers.current.delete(button);
     }, CODE_COPY_RESET_DELAY_MS);
     codeCopyResetTimers.current.set(button, resetTimer);
@@ -316,7 +316,15 @@ function MarkdownBlockInner({
 
         const codeBlock = copyButton.closest("[data-openwork-code-block]");
         const code = codeBlock?.querySelector("code");
-        void handleCodeBlockCopy(copyButton, code?.textContent ?? "");
+        void handleCopy(copyButton, code?.textContent ?? "");
+        return;
+      }
+
+      const quoteCopyButton = event.target.closest("[data-openwork-quote-copy]");
+      if (quoteCopyButton instanceof HTMLButtonElement) {
+        event.preventDefault();
+        event.stopPropagation();
+        void handleCopy(quoteCopyButton, quoteCopyButton.dataset.openworkQuoteCopy ?? "");
         return;
       }
 
@@ -429,7 +437,7 @@ function MarkdownBlockInner({
       root.removeEventListener("contextmenu", handleContextMenu);
       root.removeEventListener("keydown", handleKeyDown);
     };
-  }, [handleCodeBlockCopy, onOpenTarget, openArtifactPath, openTargets, workspaceRoot, rendered, references, resolveReference, sessionReferences]);
+  }, [handleCopy, onOpenTarget, openArtifactPath, openTargets, workspaceRoot, rendered, references, resolveReference, sessionReferences]);
 
   if (isEmpty) {
     return null;

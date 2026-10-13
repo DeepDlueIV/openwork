@@ -152,6 +152,27 @@ function withoutAssignments(command: string): string {
   return words.slice(first).join(" ");
 }
 
+/** Reserved words and grouping a command can follow: `then rm x`, `do rm x`, `! rm x` and `{ rm x` run `rm x`. */
+const SHELL_KEYWORDS = new Set(["!", "{", "}", "if", "then", "elif", "else", "fi", "while", "until", "do", "done", "time"]);
+
+/**
+ * The command without the shell keywords, subshell parentheses and case
+ * pattern in front of it, and without a closing parenthesis after it:
+ * `if true; then rm x; fi`, `(rm x)` and `case $a in b) rm x;; esac` run `rm x`.
+ */
+function withoutShellKeywords(command: string): string {
+  let rest = command.trim();
+  for (let previous = ""; previous !== rest;) {
+    previous = rest;
+    rest = rest.replace(/^\(+\s*/, "").replace(/^case\s+\S+\s+in\s+/, "").replace(/^[^\s()]*\)\s*/, "");
+    const word = /^\S+/.exec(rest)?.[0];
+    if (word && SHELL_KEYWORDS.has(word)) rest = rest.slice(word.length).trimStart();
+  }
+  let end = rest.length;
+  while (rest[end - 1] === ")") end--;
+  return rest.slice(0, end).trimEnd();
+}
+
 /** The words of a command, with quotes and backslash escapes removed. */
 function shellWords(command: string): string[] {
   const words: string[] = [];
@@ -213,24 +234,25 @@ function interpreterPayloads(command: string): string[] {
  * expands to does not match it.
  *
  * The commands a shell command line runs, roughly as the engine's parser finds
- * them: the line, each part between separators, each command substitution and
- * each script handed to another shell, searched again in turn. A rough split
- * only adds candidates, so a pattern can block more than the line runs, never
- * less.
+ * them: the line, each part between separators (also without the keywords in
+ * front, as in `then rm x`), each command substitution and each script handed
+ * to another shell, searched again in turn. A rough split only adds
+ * candidates, so a pattern can block more than the line runs, never less.
  */
 export function shellCommands(command: string): string[] {
   const found = new Set<string>();
   const visit = (text: string, depth: number) => {
     const line = text.trim();
     if (!line || found.has(line) || depth > 8) return;
-    found.add(line);
-    found.add(withoutAssignments(line));
+    // Keywords in front do not change what runs: `then rm x` runs rm.
+    const add = (candidate: string) => {
+      const stripped = withoutShellKeywords(candidate);
+      for (const entry of [candidate, withoutAssignments(candidate), stripped, withoutAssignments(stripped)]) found.add(entry);
+    };
+    add(line);
     // Quotes do not change what runs: `"rm" -rf x` runs rm.
     const unquoted = shellWords(line).join(" ");
-    if (unquoted) {
-      found.add(unquoted);
-      found.add(withoutAssignments(unquoted));
-    }
+    if (unquoted) add(unquoted);
     for (const payload of interpreterPayloads(line)) visit(payload, depth + 1);
     for (const inner of shellSubstitutions(line)) visit(inner, depth + 1);
     for (const part of line.split(/&&|\|\||[;|&\n]/)) visit(part, depth + 1);

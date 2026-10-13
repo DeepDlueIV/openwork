@@ -4,7 +4,6 @@ import { managedDesktopPolicy } from "./managed-desktop-policy.js";
 import { createTaskRecovery, setTaskRecovery } from "./task-recovery.js";
 import { managedPolicyActionSchema } from "./managed-policy-rules.js";
 import { beginOpencodeStop, opencodeSessionIsStopping } from "./opencode-stop-fence.js";
-import { agentPermissionMcpDenial, agentPermissionRulesOf } from "./agent-permission-engine.js";
 import { readFile, realpath, writeFile, rm, stat } from "node:fs/promises";
 import { homedir, hostname } from "node:os";
 import { dirname, join, relative, resolve, sep } from "node:path";
@@ -5362,12 +5361,9 @@ async function runRuntimeMcpSyncToOpencodeEngine(
   }
 
   const runtimeConfig = await readEffectiveRuntimeOpencodeConfig(config, workspace.id);
-  const agentPermissionRules = agentPermissionRulesOf(runtimeConfig.managedPolicy);
   const entries = Object.entries(runtimeMcpMap(runtimeConfig)).filter(
     ([name]) => !name.startsWith(CONNECT_MCP_SERVER_NAME_PREFIX)
-      && (!onlyNames || onlyNames.includes(name))
-      // Local servers the member's agent permissions block are not registered.
-      && !agentPermissionMcpDenial(agentPermissionRules, name),
+      && (!onlyNames || onlyNames.includes(name)),
   );
   if (entries.length === 0) {
     if (!onlyNames) {

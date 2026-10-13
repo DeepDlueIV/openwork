@@ -181,7 +181,7 @@ export function AgentPermissionsScreen() {
                 <PermissionAreaSection label="Defaults" testId="agent-permissions-defaults">
                   <PolicyRow policy={data.everyone} memberCount={access.memberCount} href={getAgentPermissionsScopeRoute(access.orgSlug, EVERYONE_SCOPE)} />
                 </PermissionAreaSection>
-                <p className="text-[12px] text-gray-500">Everyone's agent permissions apply to every member, unless their team has its own.</p>
+                <p className="text-[12px] text-gray-500">Everyone's agent permissions apply to every member, unless their team has its own. Agents follow them in desktop apps on OpenCode v2.</p>
               </div>
               <PermissionAreaSection label="Team agent permissions" meta={newButton} testId="agent-permissions-teams">
                 {teams.length === 0 ? (

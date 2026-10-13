@@ -1,8 +1,8 @@
-// Agent permissions (packages/types/src/den/agent-permissions.ts) as each
-// OpenCode engine applies them. Den delivers a member's permissions as ordered
-// rules; this module maps them onto the engines' own permission config and
-// says which tool calls, local skills and local MCP servers they block. It has
-// no engine SDK or server dependency so the engine plugins can bundle it.
+// Agent permissions (packages/types/src/den/agent-permissions.ts) as OpenCode
+// v2 applies them; OpenCode v1 does not enforce them. Den delivers a member's
+// permissions as ordered rules; this module maps them onto v2's own permission
+// rules and says which tool calls, local skills and local MCP servers they
+// block. It has no engine SDK or server dependency so the v2 plugin can bundle it.
 import {
   agentPermissionDenialMessage,
   agentPermissionRuleSchema,
@@ -116,115 +116,8 @@ export function agentPermissionEngineV2Decision(
 }
 
 // ---------------------------------------------------------------------------
-// OpenCode v1: permission maps applied after every config document merged
+// Shell commands: the commands a command line runs, for command rules
 // ---------------------------------------------------------------------------
-
-const V1_PERMISSION_KEYS: readonly (readonly [AgentPermissionAction, string])[] = [
-  ["shell", "bash"],
-  ["edit", "edit"],
-  ["webfetch", "webfetch"],
-  ["websearch", "websearch"],
-  ["skill", "skill"],
-];
-
-/** v1 accepts only one decision for these, not patterns. */
-const V1_SCALAR_ACTIONS: readonly AgentPermissionAction[] = ["webfetch", "websearch"];
-
-type V1Permission = Record<string, AgentPermissionDecision | [pattern: string, effect: AgentPermissionDecision][]>;
-
-/** The rules for one action in order, keeping only the last rule for a repeated pattern so the winner stays last. */
-function orderedPatterns(rules: readonly AgentPermissionRule[], action: AgentPermissionAction): [string, AgentPermissionDecision][] {
-  const seen = new Set<string>();
-  const entries: [string, AgentPermissionDecision][] = [];
-  for (let index = rules.length - 1; index >= 0; index--) {
-    const rule = rules[index];
-    if (!rule || rule.action !== action || seen.has(rule.resource)) continue;
-    seen.add(rule.resource);
-    entries.unshift([rule.resource, rule.effect]);
-  }
-  return entries;
-}
-
-/**
- * The v1 permission config for the rules. Commands, file edits and local
- * skills keep their patterns. Websites and web search take one decision: the
- * `*` rule when nothing else needs a pattern; otherwise the plugin checks
- * each URL before the fetch runs.
- */
-export function agentPermissionEngineV1Permission(rules: readonly AgentPermissionRule[], { scalarFallbackOnly = false } = {}): V1Permission {
-  const permission: V1Permission = {};
-  for (const [action, key] of V1_PERMISSION_KEYS) {
-    const entries = orderedPatterns(rules, action);
-    if (entries.length === 0) continue;
-    if (V1_SCALAR_ACTIONS.includes(action)) {
-      const all = entries.find(([pattern]) => pattern === "*")?.[1];
-      const patterned = entries.some(([pattern, effect]) => pattern !== "*" && effect !== "deny");
-      if (all === "deny" && !patterned) permission[key] = "deny";
-      else if (all === "ask") permission[key] = "ask";
-      continue;
-    }
-    // The engine config file is written with sorted keys, so only restrictive
-    // entries go there: allowed exceptions are applied in order by the plugin.
-    permission[key] = scalarFallbackOnly ? entries.filter(([, effect]) => effect !== "allow") : entries;
-  }
-  return permission;
-}
-
-function mergeV1Permission(existing: unknown, permission: V1Permission): Record<string, unknown> {
-  const merged: Record<string, unknown> = isRecord(existing) ? { ...existing } : {};
-  for (const [key, value] of Object.entries(permission)) {
-    if (typeof value === "string") {
-      merged[key] = value;
-      continue;
-    }
-    const current = merged[key];
-    const map: Record<string, unknown> = typeof current === "string" ? { "*": current } : isRecord(current) ? { ...current } : {};
-    // Re-append the organization's patterns after everything else: the last
-    // matching pattern decides, so no earlier entry can loosen them.
-    for (const [pattern] of value) delete map[pattern];
-    for (const [pattern, effect] of value) map[pattern] = effect;
-    merged[key] = map;
-  }
-  return merged;
-}
-
-/**
- * Applies the rules to a merged v1 config in place: the organization's
- * patterns go last in the global and every agent's permissions, and blocked
- * local MCP servers are disabled, whichever config document added them.
- */
-export function applyAgentPermissionsToV1Config(
-  config: Record<string, unknown>,
-  rules: readonly AgentPermissionRule[],
-  organizationMcp: OrganizationMcpServers,
-): void {
-  if (rules.length === 0) return;
-  const permission = agentPermissionEngineV1Permission(rules);
-  config.permission = mergeV1Permission(config.permission, permission);
-  if (isRecord(config.agent)) {
-    for (const agent of Object.values(config.agent)) {
-      if (isRecord(agent) && isRecord(agent.permission)) agent.permission = mergeV1Permission(agent.permission, permission);
-    }
-  }
-  if (isRecord(config.mcp)) {
-    for (const [name, server] of Object.entries(config.mcp)) {
-      if (isRecord(server) && agentPermissionEngineMcpDenial(rules, name, server, organizationMcp)) server.enabled = false;
-    }
-  }
-}
-
-/** The restrictive part of the rules for the engine config file, where key order is not kept. */
-export function agentPermissionV1FallbackPermission(rules: readonly AgentPermissionRule[]): V1Permission {
-  return agentPermissionEngineV1Permission(rules, { scalarFallbackOnly: true });
-}
-
-export function mergeAgentPermissionsIntoV1Permission(existing: unknown, rules: readonly AgentPermissionRule[], { fallbackOnly = false } = {}): Record<string, unknown> {
-  // Members without agent permissions keep exactly the permission config they had.
-  if (rules.length === 0) return isRecord(existing) ? existing : {};
-  return mergeV1Permission(existing, fallbackOnly ? agentPermissionV1FallbackPermission(rules) : agentPermissionEngineV1Permission(rules));
-}
-
-const V1_EDIT_TOOLS = new Set(["edit", "write", "patch", "multiedit", "apply_patch"]);
 
 /** The text inside each `$(…)`, `<(…)`, `>(…)` and backtick substitution of a command line. */
 function shellSubstitutions(line: string): string[] {
@@ -333,16 +226,4 @@ export function shellCommands(command: string): string[] {
   };
   visit(command, 0);
   return [...found].filter(Boolean);
-}
-
-/** Why the rules block a v1 tool call, or null. Checked before the tool runs, ahead of the engine's own permission check. */
-export function agentPermissionV1ToolDenial(rules: readonly AgentPermissionRule[], tool: string, args: unknown): string | null {
-  if (rules.length === 0) return null;
-  const input = isRecord(args) ? args : {};
-  if (tool === "bash" && typeof input.command === "string") return agentPermissionDenial(rules, "shell", shellCommands(input.command));
-  if (tool === "webfetch" && typeof input.url === "string") return agentPermissionDenial(rules, "webfetch", [input.url]);
-  if (tool === "websearch") return agentPermissionDenial(rules, "websearch", ["*"]);
-  if (tool === "skill" && typeof input.name === "string") return agentPermissionDenial(rules, "skill", [input.name]);
-  if (V1_EDIT_TOOLS.has(tool)) return agentPermissionDenial(rules, "edit", ["*"]);
-  return null;
 }

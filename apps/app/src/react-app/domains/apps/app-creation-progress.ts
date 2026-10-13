@@ -59,12 +59,37 @@ export function appStepUnrecorded(part: DynamicToolUIPart | undefined): boolean 
   return field(field(result, "structuredContent"), "unrecorded") === true;
 }
 
+const BUILD_AN_APP_SKILL = /(?:^|[/:])build-an-app$/;
+
+/** Reading the build-an-app guide, directly or as the only work of a Code Mode script. */
+function isAppGuideCall(tool: string, input: unknown): boolean {
+  if (!/(?:^|[_.])(?:get_skill|skill)$/.test(tool)) return false;
+  const name = field(input, "name") ?? field(input, "capability");
+  return typeof name === "string" && BUILD_AN_APP_SKILL.test(name);
+}
+
 /**
- * Correlate by the server-issued preparation id, keeping separate Apps and retries separate.
- * Discovery alone only counts as App creation while the turn is live: once it
- * ends without prepare_app, those searches were never building an App.
+ * Calls that lead into an App step: finding capabilities, reading the
+ * build-an-app guide, or reading an App to edit. They join the step the agent
+ * opens next; on their own they stay ordinary steps.
  */
-export function appCreationRuns(messages: UIMessage[], creationRequested = false, live = false): AppCreationRun[] {
+function isAppLeadInPart(part: DynamicToolUIPart): boolean {
+  if (/(?:^|_)(?:search_capabilities|read_app)$/.test(part.toolName)) return true;
+  if (isAppGuideCall(part.toolName, part.input)) return true;
+  const calls = field(part.callProviderMetadata?.openwork?.codeMode, "calls");
+  return Array.isArray(calls) && calls.length > 0 && calls.every((call) => {
+    const tool = field(call, "tool");
+    return typeof tool === "string" && isAppGuideCall(tool, field(call, "input"));
+  });
+}
+
+/**
+ * App steps start only where the agent itself starts one: prepare_app, or a
+ * create_app or update_app without a preparation. The lookups just before it
+ * in the same turn join that step. Builds correlate by the server-issued
+ * preparation id, keeping separate Apps and retries separate.
+ */
+export function appCreationRuns(messages: UIMessage[]): AppCreationRun[] {
   const runs: AppCreationRun[] = [];
   const byPreparation = new Map<string, AppCreationRun>();
   const parts = new Map<string, DynamicToolUIPart>();
@@ -74,19 +99,18 @@ export function appCreationRuns(messages: UIMessage[], creationRequested = false
       if (part.type === "dynamic-tool") parts.set(part.toolCallId, part);
     }
   }
-  let discovery: AppCreationRun | undefined;
+  let leadIn: DynamicToolUIPart[] = [];
+  const join = (run: AppCreationRun) => {
+    if (leadIn.length > 0) run.discoveries = [...(run.discoveries ?? []), ...leadIn];
+    leadIn = [];
+  };
   for (const part of parts.values()) {
-    if (creationRequested && /(?:^|_)search_capabilities$/.test(part.toolName)) {
-      if (!discovery) {
-        discovery = { id: part.toolCallId, discoveries: [], builds: [] };
-        runs.push(discovery);
-      }
-      discovery.discoveries?.push(part);
+    if (isAppLeadInPart(part)) {
+      leadIn.push(part);
     } else if (isAppPreparationPart(part)) {
-      const run: AppCreationRun = discovery ?? { id: part.toolCallId, builds: [] };
-      run.preparation = part;
-      if (!discovery) runs.push(run);
-      discovery = undefined;
+      const run: AppCreationRun = { id: leadIn[0]?.toolCallId ?? part.toolCallId, preparation: part, builds: [] };
+      join(run);
+      runs.push(run);
       const preparation = appPreparation(part);
       if (preparation) byPreparation.set(preparation.preparationId, run);
     } else if (isAppBuilderPart(part)) {
@@ -115,8 +139,17 @@ export function appCreationRuns(messages: UIMessage[], creationRequested = false
         if (latest?.preparation && !appPreparation(latest.preparation) && appStepUnrecorded(latest.preparation)
           && !latest.builds.some((build) => builtAppSummary(build) || appStepUnrecorded(build))) run = latest;
       }
-      if (run) run.builds.push(part);
-      else runs.push({ id: part.toolCallId, builds: [part] });
+      if (run) {
+        run.builds.push(part);
+        join(run);
+      } else {
+        const started: AppCreationRun = { id: leadIn[0]?.toolCallId ?? part.toolCallId, builds: [part] };
+        join(started);
+        runs.push(started);
+      }
+    } else if (!part.callProviderMetadata?.openwork?.codeMode) {
+      // Other work in between: the lookups before it were for something else.
+      leadIn = [];
     }
   }
   // A preparation Den rejected, followed by another preparation, is the same
@@ -129,7 +162,6 @@ export function appCreationRuns(messages: UIMessage[], creationRequested = false
     next.attempts = [...(run.discoveries ?? []), run.preparation, ...(run.attempts ?? []), ...(next.attempts ?? [])];
     runs.splice(index, 1);
   }
-  if (!live && discovery && !discovery.preparation) runs.splice(runs.indexOf(discovery), 1);
   for (const run of runs) {
     const calls = [...(run.discoveries ?? []), ...(run.preparation ? [run.preparation] : []), ...(run.attempts ?? []), ...run.builds];
     run.executions = [...parts.values()].filter(part => part.callProviderMetadata?.openwork?.codeMode && calls.some(call => call.toolCallId.startsWith(`${part.toolCallId}:app:`)));

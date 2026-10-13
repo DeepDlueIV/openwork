@@ -107,6 +107,16 @@ drop the `openwork/mcpApp` and `openwork/serverTools` hints, which name tools on
 `/mcp/agent`. Plugin access is rechecked on every request; unavailable Apps
 return a JSON-RPC error.
 
+Agents learn App building from one owner per rule. Server instructions only
+route App requests to the built-in `build-an-app` skill
+(`skill://build-an-app/SKILL.md`, listed while App servers are on), which owns
+the order of calls and the quality bar. `prepare_app` returns a starter wired
+to the verified tools: `lookup` when every tool reads, `action` when one
+changes data, `standalone` with none; the same three are resources at
+`openwork://apps/starters/<pattern>.json`. `create_app`'s description owns the
+source and tool-call rules the compiler and host enforce. Add a rule to its
+owner instead of repeating it elsewhere.
+
 `create_app` and `update_app` add each bound Workflow to the App's Plugin and
 route its tool through that Plugin, so sharing the Plugin shares the Workflows;
 adding one requires Workflow manager access. `update_app` keeps omitted

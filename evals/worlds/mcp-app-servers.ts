@@ -492,6 +492,8 @@ export const reopenReply = "Here it is again, below.";
 export const pricerTitle = "Quick order pricer";
 export const buildPrompt = "Build me an App that looks up a product's unit price in Inventory and multiplies it by the quantity.";
 export const buildReply = "The Quick order pricer is ready in this conversation.";
+export const guidedTitle = "Inventory price board";
+export const guidedReply = "The Inventory price board is ready.";
 export const signInPrompt = "I need the Order calculator once more for 6 of WIDGET-7.";
 export const signInReply = "Here is the Order calculator.";
 
@@ -625,18 +627,26 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
   }
   return {
     app, session, den, created, performanceApps, workspace, engine,
-    async prepareLifecycleTurn(prompt: string, kind: "edit" | "failure" | "interrupt" | "search") {
+    async prepareLifecycleTurn(prompt: string, kind: "edit" | "failure" | "interrupt" | "search" | "guided") {
       const catalog = rows(record((await seed.api(den.admin, "/v1/mcp-apps")).body).apps);
       const built = catalog.find(app => app.title === pricerTitle);
       if (!built) throw new Error("Created App is missing from the accessible catalog");
+      const lookup = tools.filter(tool => tool.name === toolNames.connection);
       const steps = kind === "search"
         ? [toolStep("search_capabilities", { query: "Inventory lookup unit price", type: "mcp", limit: 2 })]
+        : kind === "guided"
+        // The agent reads the guide, finds the tool, prepares, and publishes prepare_app's starter unchanged.
+        ? [toolStep("get_skill", { name: "build-an-app" }), toolStep("search_capabilities", { query: "Inventory lookup unit price", type: "mcp", limit: 2 }),
+          toolStep("prepare_app", { title: guidedTitle, description: "Look up a product's unit price in Inventory.", tools: lookup }),
+          { ...(engine === "v2"
+            ? { tool: "execute", arguments: { code: `return await tools["openwork-cloud"].create_app({ ...${JSON.stringify({ title: guidedTitle, tools: lookup, textFallback: "Looks up a product's unit price in Inventory." })}, ..."__APP_STARTER__" });` } }
+            : toolStep("create_app", { title: guidedTitle, tools: lookup, textFallback: "Looks up a product's unit price in Inventory." })), argumentsFrom: "app-starter" }]
         : kind === "edit"
         ? [toolStep("read_app", { appId: field(built, "connectionId") }), { ...toolStep("update_app", { ...appSource("revision two", { title: pricerTitle, sampleOrder: true }), appId: field(built, "connectionId"), ...(engine === "v2" ? { expectedRevisionId: "__APP_REVISION_ID__" } : {}) }), argumentsFrom: "app-read" }]
         : kind === "failure"
           ? [toolStep("create_app", { title: "Broken App", reactSource: "export default function App( {", tools, textFallback: "The App is unavailable." })]
           : [toolStep("prepare_app", { title: "Interrupted App", tools }), { ...toolStep("create_app", { ...appSource("interrupted", { title: "Interrupted App", sampleOrder: true }), tools, ...(engine === "v2" ? { preparationId: "__APP_PREPARATION_ID__" } : {}) }), argumentsFrom: "app-preparation", holdUntilReleased: true }];
-      const response = await fetch(`${den.mocks.inventory.url}/admin/agent-workloads`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ workloads: [{ promptMarker: prompt, finalReply: kind === "edit" ? "The App has been updated." : kind === "search" ? "Inventory can look up unit prices." : "The App could not be created.", latestUserTurn: true, steps }] }) });
+      const response = await fetch(`${den.mocks.inventory.url}/admin/agent-workloads`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ workloads: [{ promptMarker: prompt, finalReply: kind === "edit" ? "The App has been updated." : kind === "search" ? "Inventory can look up unit prices." : kind === "guided" ? guidedReply : "The App could not be created.", latestUserTurn: true, steps }] }) });
       if (!response.ok) throw new Error("Could not prepare the lifecycle turn");
       return field(built, "connectionId");
     },

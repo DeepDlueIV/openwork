@@ -13,7 +13,7 @@ const row = (name: string) => `[data-testid="library-usage-row"][data-item="${na
 const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
 const breakdownSchema = z.object({
   timezone: z.string(),
-  rows: z.array(z.object({ itemId: z.string().nullable(), memberId: z.string().nullable(), uses: z.number(), people: z.number(), sources: z.record(z.string(), z.number()) })),
+  rows: z.array(z.object({ itemId: z.string().nullable(), memberId: z.string().nullable(), uses: z.number(), people: z.number(), failures: z.number().nullable(), sources: z.record(z.string(), z.number()) })),
 });
 
 test("an owner sees which plugins, skills and connectors the team uses, which fail, and which nobody uses, while a teammate cannot see usage", async ({ world, user, probe, step, evidence }) => {
@@ -195,6 +195,37 @@ test("an owner sees which plugins, skills and connectors the team uses, which fa
       && flagged.length === 1 && dangerValue.length === 1 && card === "Failed 1 33% of uses" && inventedLogos.length === 0;
     evidence.recordAssertionEvidence("only a real failed call gets the attention state", `Team tracker: ${tracker}; Old wiki: ${wiki}; Failing shows ${failing.length} row; card ${card}, ${flagged.length} attention stat, ${dangerValue.length} danger value; ${inventedLogos.length} fabricated service logos`, ok);
     expect(ok).toBe(true);
+    await owner.screenshot();
+  });
+
+  await step("when the gateway's nightly rollup folds today's uses into daily rows, the breakdown and the Plugins view count exactly the same", async () => {
+    const draftId = draftReply.capability.split(":")[2] ?? "";
+    const trackerId = world.connectionIds.tracker;
+    const read = async (path: string) => breakdownSchema.parse((await probe.api(world.den.admin, path)).body).rows;
+    const skillsBefore = await read(`/v1/library-usage?kind=skills&groupBy=item,member&itemId=${encodeURIComponent(draftId)}`);
+    const trackerBefore = await read(`/v1/library-usage?kind=connectors&groupBy=item&itemId=${encodeURIComponent(trackerId)}`);
+    const folded = await world.foldUsage();
+    // 4 skill loads and 3 connector calls were recorded today; the job moves every one into a daily row.
+    const foldedAll = folded.status === 200 && folded.dayBuckets >= 1 && folded.rowsDeleted === 7;
+    evidence.recordAssertionEvidence("the real rollup job consumed today's raw uses", `POST /internal/rollups/run as of ${folded.now}: HTTP ${folded.status}; ${folded.dayBuckets} day folded; ${folded.rowsDeleted} raw rows moved into daily rollups`, foldedAll);
+    expect(foldedAll).toBe(true);
+    const skillsAfter = await read(`/v1/library-usage?kind=skills&groupBy=item,member&itemId=${encodeURIComponent(draftId)}`);
+    const trackerAfter = await read(`/v1/library-usage?kind=connectors&groupBy=item&itemId=${encodeURIComponent(trackerId)}`);
+    const sortByMember = (rows: typeof skillsBefore) => [...rows].sort((a, b) => (a.memberId ?? "").localeCompare(b.memberId ?? "")).map((entry) => ({ memberId: entry.memberId, uses: entry.uses, sources: entry.sources }));
+    const tracker = (rows: typeof trackerBefore) => rows.map((entry) => ({ uses: entry.uses, people: entry.people, failures: entry.failures, sources: entry.sources }));
+    const sameSkills = JSON.stringify(sortByMember(skillsAfter)) === JSON.stringify(sortByMember(skillsBefore));
+    const sameTracker = JSON.stringify(tracker(trackerAfter)) === JSON.stringify(tracker(trackerBefore)) && trackerAfter[0]?.uses === 3 && trackerAfter[0]?.failures === 1;
+    evidence.recordAssertionEvidence("daily rollups answer exactly what the raw uses did", `${draftReply.title} per member before ${JSON.stringify(sortByMember(skillsBefore))}, after ${JSON.stringify(sortByMember(skillsAfter))}; ${world.connectors.tracker} before ${JSON.stringify(tracker(trackerBefore))}, after ${JSON.stringify(tracker(trackerAfter))}`, sameSkills && sameTracker);
+    expect(sameSkills).toBe(true);
+    expect(sameTracker).toBe(true);
+    await openView("Plugins", "Support kit");
+    await owner.reload();
+    await owner.see({ testId: "library-usage-row" }, { timeoutMs: 30_000 });
+    const support = await rowText("Support kit");
+    const supportUses = (await page.dom(`${row("Support kit")} [data-item-uses]`)).elements[0]?.text;
+    evidence.recordAssertionEvidence("the Plugins view reads the daily rollups", `Support kit after the fold: ${support}`, supportUses === "4" && support.includes("Today"));
+    expect(supportUses).toBe("4");
+    expect(support).toContain("Today");
     await owner.screenshot();
   });
 

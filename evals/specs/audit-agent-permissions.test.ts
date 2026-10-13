@@ -10,10 +10,10 @@ import type { Den } from "@openwork/testkit";
 // and removing a team's overrides appends agent_permission_policy.removed, inside
 // the save's transaction: the scope, every permission before and after, and per
 // changed permission its decision and the allowed and blocked patterns added or
-// removed. Command patterns are recorded as withheld, never as text, since one
-// can hold a credential. Saving the same settings again records nothing.
-// Observed over HTTP plus the disposable scratch database server() owns
-// (openwork_eval_*). All identities are synthetic example.test.
+// removed. Patterns are recorded as withheld, never as text, since one can hold
+// a credential or name a private site. Saving the same settings again records
+// nothing. Observed over HTTP plus the disposable scratch database server()
+// owns (openwork_eval_*). All identities are synthetic example.test.
 
 const attached = Boolean(process.env.OPENWORK_EVAL_DEN_API_URL?.trim());
 const daytona = process.env.OPENWORK_EVAL_DAYTONA?.trim() === "1";
@@ -133,10 +133,10 @@ test.skipIf(skipReason !== "")(title, { timeout: 300_000 }, async ({ evidence, p
   expect(everyoneSaved.changes?.after).toMatchObject({
     scope: "everyone",
     commands: { decision: "ask", allow: ["[withheld]"], block: ["[withheld]", "[withheld]"] },
-    websites: { decision: null, allow: [], block: ["example.org"] },
+    websites: { decision: null, allow: [], block: ["[withheld]"] },
     permissionChanges: [
       { key: "commands", label: "Run commands", decision: { before: "allow", after: "ask" }, allowAdded: ["[withheld]"], allowRemoved: [], blockAdded: ["[withheld]", "[withheld]"], blockRemoved: [] },
-      { key: "websites", label: "Open websites", decision: { before: "allow", after: "allow" }, allowAdded: [], allowRemoved: [], blockAdded: ["example.org"], blockRemoved: [] },
+      { key: "websites", label: "Open websites", decision: { before: "allow", after: "allow" }, allowAdded: [], allowRemoved: [], blockAdded: ["[withheld]"], blockRemoved: [] },
     ],
   });
   expect(everyoneSaved.changes?.changedFields).toEqual(["commands", "websites"]);
@@ -147,10 +147,11 @@ test.skipIf(skipReason !== "")(title, { timeout: 300_000 }, async ({ evidence, p
   const stored = JSON.stringify(everyoneSaved.raw);
   expect(stored).not.toContain("example-secret");
   expect(stored).not.toContain("echo *");
+  expect(stored).not.toContain("example.org");
   evidence.recordAssertionEvidence(
-    "Command patterns are recorded as withheld, never as text",
-    `commands=${JSON.stringify(everyoneSaved.changes?.after?.commands)}`,
-    !stored.includes("example-secret") && !stored.includes("echo *"),
+    "Patterns are recorded as withheld, never as text",
+    `commands=${JSON.stringify(everyoneSaved.changes?.after?.commands)}; websites=${JSON.stringify(everyoneSaved.changes?.after?.websites)}`,
+    !stored.includes("example-secret") && !stored.includes("echo *") && !stored.includes("example.org"),
   );
   evidence.recordAssertionEvidence(
     "Saving Everyone's permissions records each changed permission's decision and patterns",

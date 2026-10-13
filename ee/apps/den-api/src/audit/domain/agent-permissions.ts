@@ -1,23 +1,22 @@
 import {
   AGENT_PERMISSION_EVERYONE,
   agentPermissionDefinitions,
-  type AgentPermissionDefinition,
   type AgentPermissionSetting,
   type AgentPermissionSettings,
 } from "@openwork/types/den/agent-permissions"
 import type { AuditChangeEventInput } from "../request-capture.js"
-import { AUDIT_TEXT_WITHHELD, auditChangeEvent, auditText, organizationParent, relatedResource, targetResource, type AuditSnapshot } from "./snapshot.js"
+import { AUDIT_TEXT_WITHHELD, auditChangeEvent, organizationParent, relatedResource, targetResource, type AuditSnapshot } from "./snapshot.js"
 
 // agent_permission_policy.updated / agent_permission_policy.removed. Each
 // permission is its own snapshot field, so changedFields names the permissions
 // that changed; a permission left unset is null (Allow for Everyone, inherits
 // Everyone's for a team). `permissionChanges` annotates each changed permission
 // with its before → after decision and the patterns added to or removed from
-// its allowed and blocked lists. Command patterns are free text that can hold a
-// credential (`curl --password=… *`), and people who can read the audit log
-// need not be able to see agent permissions, so each command pattern is
-// recorded as withheld: the log says how many were added or removed, never
-// their text.
+// its allowed and blocked lists. People who can read the audit log need not be
+// able to see agent permissions, and a pattern can hold a credential
+// (`curl --password=… *`) or name a private site, skill or server, so every
+// pattern is recorded as withheld: the log says how many were added or
+// removed, never their text.
 
 export type AgentPermissionAuditScope =
   | { kind: "everyone" }
@@ -29,15 +28,14 @@ export type AgentPermissionAuditState = {
   settings: AgentPermissionSettings
 }
 
-function patternList(definition: AgentPermissionDefinition, patterns: readonly string[] | undefined): string[] {
-  const unique = [...new Set(patterns ?? [])]
-  if (definition.patterns === "command") return unique.map(() => AUDIT_TEXT_WITHHELD)
-  return [...new Set(unique.map((pattern) => auditText(pattern, 500)).filter((pattern): pattern is string => pattern !== null))].sort()
+/** A list's patterns as the audit records them: one withheld marker each. */
+function patternList(patterns: readonly string[] | undefined): string[] {
+  return [...new Set(patterns ?? [])].map(() => AUDIT_TEXT_WITHHELD)
 }
 
-function serializeSetting(definition: AgentPermissionDefinition, setting: AgentPermissionSetting | undefined): AuditSnapshot | null {
+function serializeSetting(setting: AgentPermissionSetting | undefined): AuditSnapshot | null {
   if (!setting) return null
-  return { decision: setting.decision ?? null, allow: patternList(definition, setting.allow), block: patternList(definition, setting.block) }
+  return { decision: setting.decision ?? null, allow: patternList(setting.allow), block: patternList(setting.block) }
 }
 
 function serializePolicy(scope: AgentPermissionAuditScope, state: AgentPermissionAuditState): AuditSnapshot {
@@ -45,7 +43,7 @@ function serializePolicy(scope: AgentPermissionAuditScope, state: AgentPermissio
     scope: scope.kind,
     teamId: scope.kind === "team" ? scope.teamId : null,
   }
-  for (const definition of agentPermissionDefinitions) snapshot[definition.key] = serializeSetting(definition, state.settings[definition.key])
+  for (const definition of agentPermissionDefinitions) snapshot[definition.key] = serializeSetting(state.settings[definition.key])
   return snapshot
 }
 
@@ -55,8 +53,8 @@ function decisionLabel(scope: AgentPermissionAuditScope, setting: AgentPermissio
 }
 
 /** The stored patterns in `after` that `before` lacks, in audit form. */
-function added(definition: AgentPermissionDefinition, before: readonly string[] | undefined, after: readonly string[] | undefined): string[] {
-  return patternList(definition, (after ?? []).filter((pattern) => !(before ?? []).includes(pattern)))
+function added(before: readonly string[] | undefined, after: readonly string[] | undefined): string[] {
+  return patternList((after ?? []).filter((pattern) => !(before ?? []).includes(pattern)))
 }
 
 function permissionChanges(scope: AgentPermissionAuditScope, before: AgentPermissionSettings, after: AgentPermissionSettings): AuditSnapshot[] {
@@ -68,10 +66,10 @@ function permissionChanges(scope: AgentPermissionAuditScope, before: AgentPermis
       key: definition.key,
       label: definition.label,
       decision,
-      allowAdded: added(definition, from?.allow, to?.allow),
-      allowRemoved: added(definition, to?.allow, from?.allow),
-      blockAdded: added(definition, from?.block, to?.block),
-      blockRemoved: added(definition, to?.block, from?.block),
+      allowAdded: added(from?.allow, to?.allow),
+      allowRemoved: added(to?.allow, from?.allow),
+      blockAdded: added(from?.block, to?.block),
+      blockRemoved: added(to?.block, from?.block),
     }
     const changed = decision.before !== decision.after
       || change.allowAdded.length + change.allowRemoved.length + change.blockAdded.length + change.blockRemoved.length > 0
@@ -81,8 +79,8 @@ function permissionChanges(scope: AgentPermissionAuditScope, before: AgentPermis
 
 /**
  * Permissions whose patterns changed while their audit form did not: a
- * withheld (command or credential-like) pattern replaced by another. Named as
- * markers so the change is recorded without either value.
+ * pattern replaced by another. Named as markers so the change is recorded
+ * without either value.
  */
 function withheldPatternMarkers(before: AgentPermissionSettings, after: AgentPermissionSettings): string[] {
   const raw = (setting: AgentPermissionSetting | undefined) => JSON.stringify({
@@ -93,8 +91,8 @@ function withheldPatternMarkers(before: AgentPermissionSettings, after: AgentPer
     const from = before[definition.key]
     const to = after[definition.key]
     const changed = raw(from) !== raw(to)
-    const sameInAudit = JSON.stringify(serializeSetting(definition, from)?.allow ?? []) === JSON.stringify(serializeSetting(definition, to)?.allow ?? [])
-      && JSON.stringify(serializeSetting(definition, from)?.block ?? []) === JSON.stringify(serializeSetting(definition, to)?.block ?? [])
+    const sameInAudit = JSON.stringify(serializeSetting(from)?.allow ?? []) === JSON.stringify(serializeSetting(to)?.allow ?? [])
+      && JSON.stringify(serializeSetting(from)?.block ?? []) === JSON.stringify(serializeSetting(to)?.block ?? [])
     return changed && sameInAudit ? [`${definition.key}WithheldPatterns`] : []
   })
 }

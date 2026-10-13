@@ -310,8 +310,9 @@ async function waitForEngineV2Catalog(
   active: Pick<ManagedOpencodeV2Server, "fetchJson">,
   directory: string,
   specs: readonly OpencodeV2ProviderSpec[],
+  superseded: () => boolean,
   timeoutMs = CATALOG_MIRROR_TIMEOUT_MS,
-): Promise<{ modelIds: string[]; lastError?: string }> {
+): Promise<{ modelIds: string[]; lastError?: string } | undefined> {
   const mirrored = new Set(specs.map((spec) => spec.id));
   const expectedModels = specs.flatMap((spec) => spec.models
     .filter((model) => engineListsModel(spec, model))
@@ -335,6 +336,8 @@ async function waitForEngineV2Catalog(
 
   let catalog = await readCatalog();
   while (!catalog.ready && Date.now() < deadline) {
+    // A newer provider change is waiting, or the engine is stopping.
+    if (superseded()) return undefined;
     await new Promise((resolve) => setTimeout(resolve, Math.min(250, deadline - Date.now())));
     if (Date.now() >= deadline) break;
     catalog = await readCatalog();
@@ -444,13 +447,13 @@ export function createEngineV2Preview(options: {
   let unsubscribe: (() => void) | undefined;
   let startPromise: Promise<void> | undefined;
   let mirrorInFlight: Promise<void> | undefined;
-  // Settles once a mirror has pushed providers to the engine, before its
-  // catalog confirmation; readiness joins this, never the whole mirror.
-  let providerPush: Promise<void> | undefined;
+  // Settles once the latest provider change reaches the engine, before its
+  // catalog confirmation, with the push's error if it failed. Readiness and
+  // refreshes join this, never the whole mirror.
+  let providerPush: Promise<string | undefined> | undefined;
+  // A change no mirror pass has picked up yet, and how to settle its push.
+  let queuedPush: { push: Promise<string | undefined>; settle: (error?: string) => void } | undefined;
   let mirrorDirty = false;
-  // The last mirror's push failure. A model the catalog has not listed is
-  // reported in status but never fails a caller whose providers were pushed.
-  let mirrorError: string | undefined;
   const workspaceReadiness = new Map<string, Promise<void>>();
   let mirroredSpecs: OpencodeV2ProviderSpec[] = [];
   // One MCP reconciler per folder, keyed by directory.
@@ -614,17 +617,17 @@ export function createEngineV2Preview(options: {
     };
   }
 
-  async function mirrorProviders(): Promise<void> {
-    const active = sidecar;
-    if (!active) return;
-    let pushed = () => {};
-    const push = new Promise<void>((resolve) => { pushed = resolve; });
-    providerPush = push;
+  async function mirrorProviders(pass: typeof queuedPush): Promise<void> {
+    const settle = pass?.settle ?? (() => {});
     try {
-      await pushAndConfirmProviders(active, pushed);
+      const active = sidecar;
+      if (active) await pushAndConfirmProviders(active, () => settle());
+    } catch (error) {
+      lastError = errorMessage(error);
+      settle(lastError);
     } finally {
-      pushed();
-      if (providerPush === push) providerPush = undefined;
+      settle();
+      if (pass && providerPush === pass.push) providerPush = undefined;
     }
   }
 
@@ -650,38 +653,55 @@ export function createEngineV2Preview(options: {
     pushed();
     // Re-check folders already in use now, so their next prompt pays nothing.
     for (const directory of mcpLocations.keys()) void ensureWorkspaceReady(directory).catch(() => undefined);
-    const catalog = await waitForEngineV2Catalog(active, workspaceDir, specs);
+    const catalog = await waitForEngineV2Catalog(active, workspaceDir, specs, () => mirrorDirty || !allowRunning);
+    // Superseded: the next pass pushes the newer change and confirms its catalog.
+    if (!catalog) return;
     currentCatalogModelIds = catalog.modelIds;
     lastError = catalog.lastError;
   }
 
-  function scheduleMirror(): void {
+  /** Queue a provider mirror; resolves once this change is pushed, with the push's error if any. */
+  function scheduleMirror(): Promise<string | undefined> {
     mirrorDirty = true;
-    if (mirrorInFlight) return;
+    if (!queuedPush) {
+      let settle: (error?: string) => void = () => {};
+      const push = new Promise<string | undefined>((resolve) => { settle = resolve; });
+      queuedPush = { push, settle };
+      providerPush = push;
+    }
+    const { push } = queuedPush;
+    if (mirrorInFlight) return push;
     mirrorInFlight = (async () => {
       try {
         while (mirrorDirty && allowRunning && sidecar) {
           mirrorDirty = false;
-          mirrorError = undefined;
-          try {
-            await mirrorProviders();
-          } catch (error) {
-            mirrorError = lastError = errorMessage(error);
-          }
+          const pass = queuedPush;
+          queuedPush = undefined;
+          await mirrorProviders(pass);
         }
       } finally {
         mirrorInFlight = undefined;
-        if (mirrorDirty && allowRunning && sidecar) scheduleMirror();
+        if (mirrorDirty && allowRunning && sidecar) {
+          void scheduleMirror();
+        } else if (queuedPush) {
+          // Stopped before this change was pushed: release anyone joining it.
+          if (providerPush === queuedPush.push) providerPush = undefined;
+          queuedPush.settle();
+          queuedPush = undefined;
+        }
       }
     })();
     void mirrorInFlight;
+    return push;
   }
 
   async function refreshProviders(): Promise<void> {
     if (!running || !sidecar) throw new Error("OpenCode v2 is not running");
-    scheduleMirror();
-    await mirrorInFlight;
-    if (mirrorError) throw new Error(mirrorError);
+    // Like a prompt, wait only until this change reaches the engine. The
+    // engine's catalog confirmation continues in the background as status.
+    const outcome: { error?: string } = {};
+    await joinBounded(scheduleMirror().then((error) => { outcome.error = error; }), waits.providerPushJoinMs);
+    if (outcome.error) throw new Error(outcome.error);
   }
 
   async function closeSidecar(): Promise<void> {

@@ -310,6 +310,54 @@ test.skipIf(!enabled)(title, async ({ evidence, place }) => {
       true,
     );
 
+    // The engine rejects a fractional context limit and drops that provider,
+    // so its model is never listed and the catalog check runs out of time.
+    const unlistedResponse = await serverFetchJson(app, `/workspace/${workspaceId}/config`, {
+      method: "PATCH",
+      body: {
+        opencode: {
+          provider: {
+            "openwork-unlisted-e2e": {
+              npm: "@ai-sdk/openai-compatible",
+              name: "Unlisted E2E",
+              options: { baseURL: "http://127.0.0.1:65531/v1", apiKey: "unlisted-key-e2e" },
+              models: { "unlisted-model-e2e": { name: "Unlisted Model E2E", limit: { context: 1000.5, output: 1000 } } },
+            },
+          },
+        },
+      },
+    });
+    expect(unlistedResponse.status).toBe(200);
+    // Saving a provider key joins the v2 refresh only until the change reaches
+    // the engine; it must not wait out the catalog check.
+    const saveStartedAt = Date.now();
+    const saveResponse = await serverFetchJson(app, `/workspace/${workspaceId}/opencode/auth/openwork-witness-e2e`, {
+      method: "PUT",
+      body: { type: "api", key: "witness-key-rotated-e2e" },
+      timeoutMs: 90_000,
+    });
+    const saveLatencyMs = Date.now() - saveStartedAt;
+    expect(saveResponse.status).toBe(200);
+    expect(saveLatencyMs).toBeLessThan(10_000);
+    const unlistedStatus = await untilStatus(
+      app,
+      (status) => status.lastError?.includes("Unlisted Model E2E (Unlisted E2E)") === true,
+      90_000,
+      "the unlisted model to be reported by name",
+    );
+    expect(unlistedStatus.lastError).not.toContain("unlisted-model-e2e");
+    expect(unlistedStatus.catalogModelIds).toContain("witness-model-e2e");
+    await waitFor(app, () => Array.from(document.querySelectorAll('#advanced-experimental-engine [role="alert"]'))
+      .some((alert) => alert.textContent?.includes("Unlisted Model E2E (Unlisted E2E)") === true), {
+      timeoutMs: 30_000,
+      label: "Advanced Settings naming the unlisted model",
+    });
+    evidence.recordAssertionEvidence(
+      "F3 a model the engine never lists does not hold provider saves",
+      `Saving a provider key returned 200 after ${saveLatencyMs}ms while the catalog check was still waiting; the status and Advanced Settings then named the missing model as "Unlisted Model E2E (Unlisted E2E)" instead of its id, and the other providers' models stayed listed.`,
+      true,
+    );
+
     await clickEngineOption(app, "v1");
     const disabledStatus = await untilStatus(
       app,

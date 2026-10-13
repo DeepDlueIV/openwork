@@ -13,6 +13,7 @@ import { join } from "node:path";
 import constants from "../../../constants.json" with { type: "json" };
 import {
   createManagedOpencodeV2Server,
+  engineListsModel,
   installOpencodeV2Binary,
   type ManagedOpencodeV2Server,
   type OpencodeV2ProviderSpec,
@@ -313,8 +314,8 @@ async function waitForEngineV2Catalog(
 ): Promise<{ modelIds: string[]; lastError?: string }> {
   const mirrored = new Set(specs.map((spec) => spec.id));
   const expectedModels = specs.flatMap((spec) => spec.models
-    .filter((model) => (spec.whitelist === undefined || spec.whitelist.includes(model.id)) && !spec.blacklist?.includes(model.id))
-    .map((model) => ({ providerID: spec.id, id: model.id })));
+    .filter((model) => engineListsModel(spec, model))
+    .map((model) => ({ providerID: spec.id, id: model.id, label: `${model.name} (${spec.name})` })));
   const deadline = Date.now() + timeoutMs;
   const readCatalog = async () => {
     const catalog = await active.fetchJson("/api/model", {
@@ -340,11 +341,19 @@ async function waitForEngineV2Catalog(
   }
   const modelIds = [...new Set(catalog.models?.flatMap((model) => mirrored.has(model.providerID) ? [model.id] : []) ?? [])]
     .sort((left, right) => left.localeCompare(right));
+  if (catalog.ready) return { modelIds };
+  // Name models the way the model picker does: gateway ids are opaque.
+  const after = `after ${Math.round(timeoutMs / 1000)} seconds`;
+  if (catalog.status !== 200 || catalog.models === undefined) {
+    const response = catalog.status === 0 ? "no response" : `HTTP ${catalog.status}`;
+    const detail = catalog.message ? `:${catalog.message}` : "";
+    return { modelIds, lastError: `OpenCode v2's model list could not be read ${after} (${response}${detail}).` };
+  }
+  const labels = catalog.missing.map((model) => model.label);
+  const shown = labels.length > 3 ? `${labels.slice(0, 3).join(", ")} and ${labels.length - 3} more` : labels.join(", ");
   return {
     modelIds,
-    ...(catalog.ready ? {} : {
-      lastError: `catalog did not become ready (missing [${catalog.missing.map((model) => `${model.providerID}/${model.id}`).join(", ")}]) after ${timeoutMs}ms: ${catalog.status}${catalog.message}`,
-    }),
+    lastError: `OpenCode v2 has not listed ${labels.length} ${labels.length === 1 ? "model" : "models"} ${after}: ${shown}.`,
   };
 }
 
@@ -439,6 +448,9 @@ export function createEngineV2Preview(options: {
   // catalog confirmation; readiness joins this, never the whole mirror.
   let providerPush: Promise<void> | undefined;
   let mirrorDirty = false;
+  // The last mirror's push failure. A model the catalog has not listed is
+  // reported in status but never fails a caller whose providers were pushed.
+  let mirrorError: string | undefined;
   const workspaceReadiness = new Map<string, Promise<void>>();
   let mirroredSpecs: OpencodeV2ProviderSpec[] = [];
   // One MCP reconciler per folder, keyed by directory.
@@ -650,10 +662,11 @@ export function createEngineV2Preview(options: {
       try {
         while (mirrorDirty && allowRunning && sidecar) {
           mirrorDirty = false;
+          mirrorError = undefined;
           try {
             await mirrorProviders();
           } catch (error) {
-            lastError = errorMessage(error);
+            mirrorError = lastError = errorMessage(error);
           }
         }
       } finally {
@@ -668,7 +681,7 @@ export function createEngineV2Preview(options: {
     if (!running || !sidecar) throw new Error("OpenCode v2 is not running");
     scheduleMirror();
     await mirrorInFlight;
-    if (lastError) throw new Error(lastError);
+    if (mirrorError) throw new Error(mirrorError);
   }
 
   async function closeSidecar(): Promise<void> {

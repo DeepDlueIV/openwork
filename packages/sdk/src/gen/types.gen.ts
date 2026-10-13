@@ -1272,6 +1272,47 @@ export type OrganizationContextResponse = {
   [key: string]: unknown;
 };
 
+export type DashboardActivityTarget =
+  | {
+      type: "connection";
+      connectionId: string;
+    }
+  | {
+      type: "llm_provider";
+      llmProviderId: string;
+    }
+  | {
+      type: "gateway_provider";
+      inferenceProviderId: string;
+    }
+  | {
+      type: "marketplace";
+      marketplaceId: string;
+    }
+  | {
+      type: "skill";
+      pluginId: string;
+      skillId: string;
+    };
+
+export type DashboardActivityEntry = {
+  id: string;
+  kind: "connection" | "skill" | "plugin" | "provider";
+  title: string;
+  detail: string;
+  occurredAt: string;
+  target: DashboardActivityTarget;
+  logo?: {
+    name: string;
+    url?: string;
+    providerId?: string;
+  };
+};
+
+export type DashboardActivity = {
+  activity: Array<DashboardActivityEntry>;
+};
+
 export type DeleteOrganizationResponse = {
   ok: true;
   organization: {
@@ -9074,6 +9115,42 @@ export type PostV1OrgsInvitationsAcceptResponses = {
 
 export type PostV1OrgsInvitationsAcceptResponse =
   PostV1OrgsInvitationsAcceptResponses[keyof PostV1OrgsInvitationsAcceptResponses];
+
+export type GetV1OrgActivityData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/org/activity";
+};
+
+export type GetV1OrgActivityErrors = {
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Only workspace owners and admins can read dashboard activity.
+   */
+  403: ForbiddenError;
+  /**
+   * The organization was not found, or dashboard activity is off.
+   */
+  404: {
+    error: "feature_disabled";
+    feature: string;
+  };
+};
+
+export type GetV1OrgActivityError = GetV1OrgActivityErrors[keyof GetV1OrgActivityErrors];
+
+export type GetV1OrgActivityResponses = {
+  /**
+   * The newest dashboard activity.
+   */
+  200: DashboardActivity;
+};
+
+export type GetV1OrgActivityResponse = GetV1OrgActivityResponses[keyof GetV1OrgActivityResponses];
 
 export type GetV1ManagedDeploymentsConfigurationData = {
   body?: never;

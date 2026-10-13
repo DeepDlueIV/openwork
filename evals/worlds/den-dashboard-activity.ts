@@ -199,7 +199,7 @@ async function activityWorkspace(seed: Seed, populated: boolean) {
     performanceEvents.sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt) || a.id.localeCompare(b.id));
   }
 
-  const activityPath = "/api/browser/v1/mcp-connections?scope=manageable";
+  const activityPath = "/api/browser/v1/org/activity";
   const viewport = { width: 1440, height: 900 };
   async function signedInBrowser(person: DenSession, startPath: string) {
     const browser = await seed.web({ den, startPath: "/", headless: true, viewport });

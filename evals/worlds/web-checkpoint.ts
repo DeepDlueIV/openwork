@@ -9,6 +9,7 @@ import { chrome, localHost } from "@openwork/hosts";
 import { attachEvidenceBrowser, evidenceWeb, evidenceWorldCredentials, evidenceWorldProvider, openedDaytonaCopy } from "@openwork/env";
 import type { EvidenceCheckpoint } from "../../packages/evidence-provider/src/checkpoint.ts";
 import { uploadReview } from "@openwork/review/storage";
+import { prepareReviewBuild } from "./review-build.ts";
 import type { ReviewReport } from "@openwork/review";
 import { client } from "../../packages/freestyle/src/index.ts";
 import { deleteEvidenceVm, FORK_KIND, readEvidenceSession, continueEvidenceStream } from "../../packages/freestyle/src/checkpoints.ts";
@@ -25,6 +26,7 @@ export const checkpointWorldCredentials = () => evidenceWorldCredentials();
  */
 export async function checkpointWorld() {
   if (process.env.OPENWORK_EVIDENCE_CHECKPOINTS !== "1") throw new Error("Opt in with OPENWORK_EVIDENCE_CHECKPOINTS=1");
+  prepareReviewBuild();
   const sourceSha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
   if (process.env.OPENWORK_EVIDENCE_SOURCE_SHA && process.env.OPENWORK_EVIDENCE_SOURCE_SHA !== sourceSha) throw new Error("Evidence source must equal the runner checkout");
   const resources = new AsyncDisposableStack();

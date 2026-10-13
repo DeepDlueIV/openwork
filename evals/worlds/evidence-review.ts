@@ -11,6 +11,7 @@ import type { TestRunRecord } from "@openwork/test-artifacts";
 import { setViewport } from "@openwork/cdp";
 import type { Place, Seed } from "@openwork/env";
 import { chrome, localHost } from "@openwork/hosts";
+import { prepareReviewBuild } from "./review-build.ts";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 
@@ -20,6 +21,7 @@ export async function reviewWorld(
   sandboxFixture = false,
   checkpointFixture = false,
 ) {
+  prepareReviewBuild();
   const directory = await mkdtemp(join(tmpdir(), "openwork-review-world-"));
   const storage = join(directory, "reports");
   await mkdir(storage);

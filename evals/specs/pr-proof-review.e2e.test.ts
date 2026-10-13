@@ -1,3 +1,6 @@
+import { execFile } from "node:child_process";
+import { promisify } from "node:util";
+import { fileURLToPath } from "node:url";
 import { expect } from "vitest";
 import { test } from "@openwork/testkit";
 import { reviewWorld } from "../worlds/evidence-review.ts";
@@ -6,6 +9,14 @@ import { reviewWorld } from "../worlds/evidence-review.ts";
 // review app over HTTP with isolated synthetic records. Hosted Blob upload and
 // Vercel sign-in remain separate trusted-boundary checks.
 test("a selected PR proof is readable without presenting unrelated smoke evidence", async ({ evidence }) => {
+  const contract = fileURLToPath(new URL("../../.github/scripts/pr-proof-review-build.test.mjs", import.meta.url));
+  const result = await promisify(execFile)(process.execPath, ["--test", contract], { timeout: 30_000 });
+  expect(result.stdout).toMatch(/(?:fail 0|# fail 0)/);
+  evidence.recordAssertionEvidence(
+    "Review preparation happens only when a proof needs its production app",
+    "The build contract verifies no build for unused review worlds, one fresh checkout build per worker when requested, failed builds prevent serving, and only the secret-free normal proof lane opts in. The production HTTP fixture below then opens the real review app.",
+    true,
+  );
   await using world = await reviewWorld();
   console.log("placement: local (isolated production review app; synthetic records)");
   const response = await fetch(`${world.baseUrl}/r/${world.passed}`, {

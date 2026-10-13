@@ -148,18 +148,20 @@ jobs:
       - uses: ./.github/actions/setup-browser
         with:
           oauth-handoff: "true"
-      - name: Build local Den dependencies and the review app
+      - name: Build local Den dependencies
         shell: bash
         run: |
           pnpm --filter @openwork/types build
           pnpm --filter @openwork-ee/den-db build
           pnpm --filter @openwork/email build
-          pnpm --filter @openwork/review-app build
           pnpm dev:den:mysql
       - name: Run the selected changed spec on the PR head
         timeout-minutes: 20
         env:
           PROOF_SPEC: ${{ matrix.spec }}
+          # Review worlds build production output on first use; other worlds
+          # need no review app. No shared build output or credentials involved.
+          OPENWORK_EVAL_BUILD_REVIEW_APP: "1"
           # CI runners cannot use Chromium's SUID sandbox (the pnpm-store helper
           # is not root-owned). The testkit's container mode launches Electron
           # with --no-sandbox, as it already does on Daytona.

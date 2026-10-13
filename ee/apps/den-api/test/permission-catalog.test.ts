@@ -57,8 +57,6 @@ const ADMIN_SCOPE_KEYS = [
   "connections.manage",
   "connections.view",
   "connectors.manage",
-  "dashboards.manage",
-  "dashboards.view",
   "deployments.view",
   "desktop_policies.view",
   "egress_diagnostics.view",

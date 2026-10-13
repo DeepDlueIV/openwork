@@ -33,7 +33,6 @@ export const PERMISSION_AREAS = {
   gateway: { label: "AI Gateway" },
   connections: { label: "Connections" },
   library: { label: "Plugins and marketplaces" },
-  dashboards: { label: "Dashboards" },
 } as const satisfies Record<string, { label: string }>
 
 export type PermissionAreaKey = keyof typeof PERMISSION_AREAS
@@ -434,20 +433,6 @@ export const PERMISSIONS = {
     area: "library",
     label: "Manage sync sources",
     description: "Connect GitHub accounts and repositories and apply what they discover.",
-    defaultOn: ADMIN,
-  },
-
-  // Dashboards
-  "dashboards.view": {
-    area: "dashboards",
-    label: "View all dashboards",
-    description: "See every dashboard and who it is shared with.",
-    defaultOn: ADMIN,
-  },
-  "dashboards.manage": {
-    area: "dashboards",
-    label: "Manage dashboards",
-    description: "Create, change, delete and share dashboards.",
     defaultOn: ADMIN,
   },
 } as const satisfies Record<string, PermissionDefinition>

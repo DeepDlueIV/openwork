@@ -3,7 +3,7 @@ import { evaluateOnSurface } from "@openwork/cdp";
 import type { Seed } from "@openwork/env";
 import type { MockMcpTool } from "@openwork/labs";
 import { activityTransportFaults } from "./den-dashboard-activity-faults.ts";
-import { enableOrganizationCapabilities } from "./dashboards.ts";
+import { seededOrganizationId } from "./organization-capabilities.ts";
 import { isRecord, records } from "./den-dashboard-activity.ts";
 
 function field(value: unknown, key: string): string {
@@ -41,7 +41,8 @@ export async function libraryUsage(seed: Seed) {
     },
     mocks: { tracker: seed.mock({ allowUnauthenticatedMcp: true, tools: trackerTools }) },
   });
-  const orgId = await enableOrganizationCapabilities(seed, den.admin, { libraryUsage: true, denFlatPageHeaders: true });
+  const orgId = await seededOrganizationId(seed, den.admin);
+  if (!orgId) throw new Error("Library usage arrangement: the seeded organization is missing");
   const api = async (path: string, init: RequestInit = {}) => {
     const result = await seed.api(den.admin, path, init);
     if (!result.response.ok) throw new Error(`Library usage arrangement ${path}: HTTP ${result.response.status}: ${result.text.slice(0, 300)}`);

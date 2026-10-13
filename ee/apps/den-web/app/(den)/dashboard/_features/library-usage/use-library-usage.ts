@@ -2,17 +2,16 @@
 
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import { getErrorMessage, requestJson } from "../../../_lib/den-flow";
-import { getOrgAccessFlags, orgFeatureEnabled } from "../../../_lib/den-org";
+import { getOrgAccessFlags } from "../../../_lib/den-org";
 import { ORG_SCOPE_HEADER } from "../../../_lib/org-scope";
 import { useOrgDashboard } from "../../_providers/org-dashboard-provider";
 import { libraryUsagePath, libraryUsageReportSchema, type LibraryUsageKind, type LibraryUsageWindow } from "./library-usage-data";
 
-/** True when the signed-in member can view usage analytics in an organization with Library usage on. */
+/** True when the signed-in member can view usage analytics. */
 export function useLibraryUsageAvailable() {
   const { orgContext } = useOrgDashboard();
   const member = orgContext?.currentMember;
-  const canView = member ? getOrgAccessFlags(member.role, member.isOwner, member.permissions).canViewUsageAnalytics : false;
-  return canView && orgFeatureEnabled(orgContext, "libraryUsage");
+  return member ? getOrgAccessFlags(member.role, member.isOwner, member.permissions).canViewUsageAnalytics : false;
 }
 
 export function useLibraryUsage(kind: LibraryUsageKind, days: LibraryUsageWindow) {

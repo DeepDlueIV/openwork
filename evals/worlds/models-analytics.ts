@@ -121,8 +121,6 @@ async function createModelsWorld(seed: Seed, analyticsUpgrade: boolean, usageSet
       const scoped = { "x-openwork-org-id": other.orgId };
       const enabled = await seed.api(other.admin, "/v1/inference", { method: "PATCH", headers: scoped, body: JSON.stringify({ enabled: true }) });
       if (!enabled.response.ok) throw new Error("Second subscriber setup failed");
-      const rollout = await seed.api(den.admin, `/v1/admin/organizations/${other.orgId}/capabilities`, { method: "PUT", body: JSON.stringify({ capabilities: { modelsAnalytics: true } }) });
-      if (!rollout.response.ok) throw new Error("Second subscriber rollout failed");
       const analytics = await seed.api(other.admin, "/v1/inference/analytics/settings", { method: "PATCH", headers: scoped, body: JSON.stringify({ enabled: true, consentVersion: 1 }) });
       if (!analytics.response.ok) throw new Error("Second subscriber analytics setup failed");
       return other;
@@ -160,10 +158,6 @@ async function createModelsWorld(seed: Seed, analyticsUpgrade: boolean, usageSet
       await seed.workspace(app, workspacePath, { create: true });
       const session = await seed.session(app, { title: "Existing Models conversation" });
       return { app, session, analyticsTransport, upgradeDenApi };
-    },
-    async rollout(enabled: boolean) {
-      const result = await seed.api(den.admin, `/v1/admin/organizations/${orgId}/capabilities`, { method: "PUT", body: JSON.stringify({ capabilities: { modelsAnalytics: enabled } }) });
-      if (!result.response.ok) throw new Error(`Rollout fixture failed: ${result.response.status}`);
     },
     async subscription(active: boolean) { await arrange(active ? "restore" : "cancel"); },
     async complete(input: { sessionId: string; taskId: string; model?: string; prompt?: string; stream?: boolean }) {

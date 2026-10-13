@@ -42,7 +42,6 @@ export function AdvancedPageTemplate({ tab, children }: { tab: AdvancedTab; chil
     <DashboardPageTemplate
       title="Advanced"
       description={ADVANCED_DESCRIPTIONS[tab]}
-      colors={["#F1F5F9", "#0F172A", "#475569", "#CBD5E1"]}
     >
       <div data-testid="advanced-tabs" className="mb-6">
         <UnderlineTabs

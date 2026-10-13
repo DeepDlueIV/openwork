@@ -75,21 +75,7 @@ test("a Workbot member sees their Automations next to Google and Outlook meeting
     await user.screenshot();
   });
 
-  await step("before: meeting sources take title space and the cloud default does not name the organization's choice", async () => {
-    const meetings = (await probe.dom("[data-calendar-meeting]")).elements;
-    expect(meetings.some((meeting) => meeting.text.includes("Google Calendar"))).toBe(true);
-    expect(await count("[data-calendar-provider-logo]")).toBe(0);
-    await user.click({ role: "button", label: /^Weekly launch update, / });
-    await user.see({ text: /Cloud default/ });
-    await user.screenshot();
-    evidence.recordAssertionEvidence("The off switch preserves existing meeting and model presentation", "Meeting blocks show provider subtitles, no provider logos, and the model remains Cloud default.", true);
-  });
-  await step("after: meeting logos leave room for titles and the default is clearly the organization's choice", async () => {
-    await world.setCalendarPolish(true);
-    await probe.eventually(() => world.polishEnabled(), { within: 45_000, label: "Den's Calendar polish switch reaches Workbot" });
-    await user.reload();
-    await user.see({ role: "button", label: /^Launch standup, Google Calendar/ });
-    await user.see({ role: "button", label: /^Partner pipeline review, Outlook Calendar/ });
+  await step("meeting logos leave room for titles and the default is clearly the organization's choice", async () => {
     const meetings = (await probe.dom("[data-calendar-meeting]")).elements;
     const logos = await count("[data-calendar-meeting] [data-calendar-provider-logo]");
     expect(logos).toBe(meetings.length);
@@ -100,7 +86,7 @@ test("a Workbot member sees their Automations next to Google and Outlook meeting
     evidence.recordAssertionEvidence("Provider identity stays accessible without repeating it in meeting text", `${logos} meeting logos; both provider names remain in the buttons' accessible names; Organization default is distinct from Auto.`, true);
   });
 
-  await step("after: a known organization default names the actual resolved model in the open chooser", async () => {
+  await step("a known organization default names the actual resolved model in the open chooser", async () => {
     const resolvedName = await world.resolvedDefaultModelName();
     await user.reload();
     await user.see({ role: "button", label: /^Weekly launch update, / });

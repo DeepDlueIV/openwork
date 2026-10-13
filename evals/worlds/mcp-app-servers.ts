@@ -10,7 +10,6 @@ import type { EvalEngine, Place, Seed } from "@openwork/env";
 import type { MockMcpTool } from "@openwork/labs";
 import { reconcileDraftHost } from "../fixtures/cloud-draft-host.ts";
 import { configureProvider } from "./chat.ts";
-import { enableOrganizationCapabilities } from "./dashboards.ts";
 
 export const appTitle = "Order calculator";
 export const procedureTitle = "Quantity times unit price";
@@ -361,11 +360,9 @@ export async function mcpAppServers(seed: Seed, context: { place: Place }) {
   }
   const call = (persona: Persona, name: string, args: Record<string, unknown>) => rpc(persona, "connect", "tools/call", { name, arguments: args });
   // Building your own Apps is on for every organization, so Connect offers the
-  // App builder before any platform admin changes a capability. Org dashboards
-  // stay default-off per organization.
+  // App builder before any platform admin changes a capability.
   const builderToolsByDefault = rows((await rpc("owner", "connect", "tools/list", {})).tools)
     .map(tool => field(tool, "name")).filter(name => ["create_app", "update_app", "read_app"].includes(name));
-  await enableOrganizationCapabilities(seed, den.admin, { orgManagedDashboards: true }, organizationId);
   const membership = rows(org.members).find(entry => field(entry.user, "email") === member.email);
   if (!membership) throw new Error("Synthetic member grant target missing");
   const memberId = field(membership, "id");
@@ -376,11 +373,6 @@ export async function mcpAppServers(seed: Seed, context: { place: Place }) {
 
   const { procedure, capabilities, tools, created } = await composeOrderCalculator(seed, den.admin, connection.id, (name, args) => call("owner", name, args));
   appServerPath = created.serverPath;
-  // An empty organization dashboard, for the owner to add the App to.
-  const dashboardName = `Pricing board ${Date.now()}`;
-  const dashboard = await seed.api(den.admin, "/v1/dashboards", { method: "POST", body: JSON.stringify({ name: dashboardName, elements: [] }) });
-  if (dashboard.response.status !== 201) throw new Error(`Creating the dashboard failed: ${dashboard.response.status}`);
-  const dashboardId = field(record(dashboard.body).item, "id");
 
   const built = await buildStandardMcpAppHost();
   let origin = "";
@@ -430,31 +422,15 @@ export async function mcpAppServers(seed: Seed, context: { place: Place }) {
   const pluginWeb = await seed.web({ den, signedInAs: member, startPath: "/dashboard/library", headless: true, viewport: { width: 1280, height: 900 } });
   const url = (persona: Persona) => `${origin}/${persona}/?tool=${encodeURIComponent(created.toolName)}`;
   const retained = resources.move();
-  const elementsOf = (body: unknown) => rows(record(body).elements ?? []);
   return {
-    app, pluginWeb, dashboardId, dashboardName, den, organizationId, created, capabilities, tools, url, requests, rpc, call,
+    app, pluginWeb, den, organizationId, created, capabilities, tools, url, requests, rpc, call,
     /** The App builder tools Connect offered a new organization before any /admin change. */
     builderToolsByDefault,
-    /** Saves the App as the dashboard's tile, from the App catalog the admin reads. */
-    async addAppTile() {
-      const catalog = await seed.api(den.admin, "/v1/mcp-apps");
-      const app = rows(record(catalog.body).apps).find(item => item.connectionId === created.appId);
-      if (!app) throw new Error(`The App catalog did not list ${created.appId}: ${catalog.response.status}`);
-      const { serverName, connectionId, toolName, projectedToolName, resourceUri, title } = app;
-      const saved = await seed.api(den.admin, `/v1/dashboards/${dashboardId}`, { method: "PATCH", body: JSON.stringify({ elements: [{ serverName, connectionId, toolName, projectedToolName, resourceUri, title }] }) });
-      if (!saved.response.ok) throw new Error(`Saving the App's tile failed: ${saved.response.status}`);
-    },
-    /** The dashboard's tiles as its admin sees them. */
-    async dashboardElements() {
-      const read = await seed.api(den.admin, `/v1/dashboards/${dashboardId}`);
-      return elementsOf(record(read.body).item);
-    },
-    /** Grants the dashboard to the teammate and returns their tiles as their desktop reads them. */
-    async teammateDashboardElements() {
-      const granted = await seed.api(den.admin, `/v1/dashboards/${dashboardId}/access`, { method: "POST", body: JSON.stringify({ orgMembershipId: memberId, role: "viewer" }) });
-      if (granted.response.status !== 201) throw new Error(`Granting the dashboard failed: ${granted.response.status}`);
-      const mine = rows(record((await seed.api(member, "/v1/me/dashboards")).body).items);
-      return elementsOf(mine.find(item => item.id === dashboardId) ?? {});
+    /** This person's `GET /v1/mcp-apps` entries for the App, as their desktop reads them. */
+    async catalogEntries(persona: "owner" | "member") {
+      const catalog = await seed.api(persona === "owner" ? den.admin : member, "/v1/mcp-apps");
+      if (!catalog.response.ok) throw new Error(`Reading the App catalog failed: ${catalog.response.status}`);
+      return rows(record(catalog.body).apps).filter(item => item.connectionId === created.appId);
     },
     inventoryCalls: (options: { sinceIso?: string; atLeast?: number } = {}) => den.mocks.inventory.toolCalls({ name: toolNames.connection, atLeast: 0, ...options }),
     reservations: (options: { sinceIso?: string; atLeast?: number } = {}) => den.mocks.inventory.toolCalls({ name: toolNames.reserve, atLeast: 0, ...options }),

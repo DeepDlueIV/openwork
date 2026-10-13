@@ -3,7 +3,6 @@ import { and, eq, inArray, isNull } from "@openwork-ee/den-db/drizzle"
 import {
   ConfigObjectAccessGrantTable,
   ConnectorInstanceAccessGrantTable,
-  DashboardAccessGrantTable,
   DesktopPolicyMemberTable,
   ExternalMcpConnectionAccessGrantTable,
   InvitationTable,
@@ -470,14 +469,6 @@ async function deleteTeam(c: ResourceActionContext, payload: ResourceOrganizatio
       .update(ConnectorInstanceAccessGrantTable)
       .set({ removedAt })
       .where(and(eq(ConnectorInstanceAccessGrantTable.teamId, team.id), isNull(ConnectorInstanceAccessGrantTable.removedAt)))
-    await tx
-      .update(DashboardAccessGrantTable)
-      .set({ removedAt })
-      .where(and(
-        eq(DashboardAccessGrantTable.organizationId, payload.organization.id),
-        eq(DashboardAccessGrantTable.teamId, team.id),
-        isNull(DashboardAccessGrantTable.removedAt),
-      ))
 
     await archiveTeamPermissionSets(tx, {
       organizationId: payload.organization.id,

@@ -9,7 +9,6 @@ import { FilterInput, ItemPanel, ItemRow, ItemRowsSkeleton, LinkButton } from ".
 import { ConnectorLogo } from "./item-logo";
 import type { ExternalMcpPreset } from "./mcp-connections-data";
 import { classifySmartAddInput, pastedMcpAddress } from "./mcp-connection-smart-add";
-import { useLibraryIntegrated } from "./use-library-integrated";
 
 /** Catalog copy is written for admins; members get the first plain clause. */
 export function shortDescription(text: string): string {
@@ -125,7 +124,6 @@ export function ConnectorPicker({ entries, loading, addHref, customHref, mode, c
   onCustomNameChange: (name: string | null) => void;
 }) {
   const router = useRouter();
-  const integrated = useLibraryIntegrated();
   const [query, setQuery] = useState("");
   const admin = mode === "admin";
   const needle = query.trim().toLowerCase();
@@ -140,25 +138,23 @@ export function ConnectorPicker({ entries, loading, addHref, customHref, mode, c
 
   return (
     <div className="flex flex-col gap-3">
-      <div className={integrated ? "flex flex-wrap items-center gap-2" : "flex items-center gap-2"}>
+      <div className="flex flex-wrap items-center gap-2">
         <FilterInput
           value={query}
           onChange={setQuery}
-          size={integrated ? "sm" : "md"}
-          className={integrated ? "w-[200px] max-w-full" : "flex-1"}
-          placeholder={admin && !integrated ? "Filter by name, or paste an MCP URL" : "Filter by name"}
+          size="sm"
+          className="w-[200px] max-w-full"
+          placeholder="Filter by name"
           onEnter={pasted ? addPasted : undefined}
         />
-        {!admin || integrated ? (
-          <DenButton variant="secondary" size="sm" icon={Plus} className={integrated ? undefined : "h-9"} onClick={() => onCustomNameChange("")}>
-            Add another MCP
-          </DenButton>
-        ) : null}
+        <DenButton variant="secondary" size="sm" icon={Plus} onClick={() => onCustomNameChange("")}>
+          Add another MCP
+        </DenButton>
       </div>
       {customName !== null ? (
         <AddMcpForm
           key={customName}
-          title={admin && !integrated ? "Add any MCP" : "Add another MCP"}
+          title="Add another MCP"
           initialName={customName}
           onCancel={() => onCustomNameChange(null)}
           onContinue={(input) => router.push(customHref(input))}
@@ -198,7 +194,7 @@ export function ConnectorPicker({ entries, loading, addHref, customHref, mode, c
             <DenButton size="md" icon={Plus} className="mt-3.5" data-testid="connector-picker-no-match-add" onClick={() => urlInput
               ? router.push(customHref({ name: "", url: needle.startsWith("http") ? query.trim() : `https://${query.trim()}` }))
               : onCustomNameChange(query.trim())}>
-              {urlInput ? "Add this MCP" : admin && !integrated ? "Add any MCP" : "Add another MCP"}
+              {urlInput ? "Add this MCP" : "Add another MCP"}
             </DenButton>
           </div>
         ) : null}

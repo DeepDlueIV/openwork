@@ -470,17 +470,6 @@ export function listAccessibleMcpApps(input: McpAppAccessInput): Promise<McpAppE
   return timeMcpApp("den.accessible-apps", () => listAccessibleMcpAppsUntimed(input))
 }
 
-/**
- * The current revision of each active authored App among these ids, by App id.
- * Access is not checked: callers use it only to keep a stored reference to an
- * App pointing at the revision the App's own server now serves.
- */
-export async function currentMcpAppRevisionIds(input: { organizationId: string; appIds: string[] }): Promise<Map<string, string>> {
-  const ids = [...new Set(input.appIds)].flatMap((id) => mcpAppIdSchema.safeParse(id).success ? [appId(id)] : [])
-  const apps = await latestAuthoredApps(normalizeDenTypeId("organization", input.organizationId), ids)
-  return new Map(apps.map((app) => [app.id, app.revisionId]))
-}
-
 /** A cheap check before access-checked App work: is this config object an active App? */
 export async function isActiveMcpApp(input: { organizationId: string; appId: string }): Promise<boolean> {
   const id = mcpAppIdSchema.safeParse(input.appId)

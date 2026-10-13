@@ -7,7 +7,6 @@ import {
   ConfigObjectAccessGrantTable,
   ConnectedAccountTable,
   ConnectorInstanceAccessGrantTable,
-  DashboardAccessGrantTable,
   DesktopPolicyMemberTable,
   ExternalMcpConnectionAccessGrantTable,
   InvitationTable,
@@ -2148,15 +2147,6 @@ export async function removeOrganizationMember(input: {
         eq(ConnectorInstanceAccessGrantTable.organizationId, input.organizationId),
         eq(ConnectorInstanceAccessGrantTable.orgMembershipId, member.id),
         isNull(ConnectorInstanceAccessGrantTable.removedAt),
-      ))
-
-    await tx
-      .update(DashboardAccessGrantTable)
-      .set({ removedAt })
-      .where(and(
-        eq(DashboardAccessGrantTable.organizationId, input.organizationId),
-        eq(DashboardAccessGrantTable.orgMembershipId, member.id),
-        isNull(DashboardAccessGrantTable.removedAt),
       ))
 
     await tx

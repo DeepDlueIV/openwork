@@ -137,17 +137,10 @@ function MeetingBlock({ event, selected, compact, onSelect }: { event: CalendarE
       data-calendar-provider={event.provider}
       className={`flex h-full w-full flex-col gap-0.5 overflow-hidden rounded-md bg-white px-2 text-left focus-visible:outline-none focus-visible:shadow-[var(--wb-focus)] ${compact ? "justify-center" : "py-1.5"} ${selected ? "shadow-[inset_0_0_0_1.5px_#011627]" : "shadow-[inset_0_0_0_1px_#D7DBDF]"}`}
     >
-      {workbotHost().calendarPolish === true ? (
-        <span className="flex min-w-0 items-start gap-1.5 text-[11px] font-semibold leading-3.5 text-[var(--wb-text)]">
-          <span aria-hidden="true" data-calendar-provider-logo={event.provider}><AppMark name={event.provider === "google" ? "Google Calendar" : "Microsoft 365"} size={12} /></span>
-          <span className={compact ? "min-w-0 flex-1 truncate" : "min-w-0 flex-1 line-clamp-2 break-words"}>{event.title}</span>
-        </span>
-      ) : (
-        <>
-          <span className="truncate text-[11px] font-semibold leading-3.5 text-[#687076]">{event.title}</span>
-          {compact ? null : <span className="truncate text-[11px] leading-3.5 text-[#687076]">{source}</span>}
-        </>
-      )}
+      <span className="flex min-w-0 items-start gap-1.5 text-[11px] font-semibold leading-3.5 text-[var(--wb-text)]">
+        <span aria-hidden="true" data-calendar-provider-logo={event.provider}><AppMark name={event.provider === "google" ? "Google Calendar" : "Microsoft 365"} size={12} /></span>
+        <span className={compact ? "min-w-0 flex-1 truncate" : "min-w-0 flex-1 line-clamp-2 break-words"}>{event.title}</span>
+      </span>
     </button>
   );
 }

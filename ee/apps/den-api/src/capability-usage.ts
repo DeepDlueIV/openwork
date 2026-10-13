@@ -19,7 +19,6 @@ import {
   type UsageFact,
 } from "./capability-usage-rows.js"
 import { db } from "./db.js"
-import { organizationFeatureEnabled } from "./features.js"
 
 export type { LibraryUsageKind, LibraryUsageReport, LibraryUsageRow } from "./capability-usage-rows.js"
 
@@ -39,14 +38,13 @@ export type SkillUse = {
 /**
  * Records one skill load for the organization's Library usage view. Never
  * throws and never delays the caller: usage is best effort, the skill is
- * served either way. Does nothing while `libraryUsage` is off.
+ * served either way.
  */
 export function recordSkillUse(use: SkillUse): void {
   void writeSkillUse(use).catch((error: unknown) => warn("record-skill", error))
 }
 
 async function writeSkillUse(use: SkillUse): Promise<void> {
-  if (!(await organizationFeatureEnabled(use.organizationId, "libraryUsage"))) return
   const at = use.at ?? new Date()
   await db.insert(CapabilityUsageEventTable).values({
     id: createDenTypeId("capabilityUsageEvent"),
@@ -90,7 +88,6 @@ export function recordConnectorCall<T>(call: Promise<T>, use: Omit<ConnectorUse,
 }
 
 async function writeConnectorUse(use: ConnectorUse): Promise<void> {
-  if (!(await organizationFeatureEnabled(use.organizationId, "libraryUsage"))) return
   const id = createDenTypeId("capabilityUsageEvent")
   await db.insert(CapabilityUsageEventTable).values({
     id,

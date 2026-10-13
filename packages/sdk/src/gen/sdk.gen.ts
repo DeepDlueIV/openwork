@@ -34,7 +34,6 @@ import type {
   CreatePermissionSetBody,
   CreateWorkbotRunTokenErrors,
   CreateWorkbotRunTokenResponses,
-  DashboardElement,
   DeactivateAutomationErrors,
   DeactivateAutomationResponses,
   DeleteApiAuthScimV2GroupsByGroupIdErrors,
@@ -59,10 +58,6 @@ import type {
   DeleteV1ConnectorInstancesByConnectorInstanceIdAccessByGrantIdResponses,
   DeleteV1ConnectorMappingsByConnectorMappingIdErrors,
   DeleteV1ConnectorMappingsByConnectorMappingIdResponses,
-  DeleteV1DashboardsByDashboardIdAccessByGrantIdErrors,
-  DeleteV1DashboardsByDashboardIdAccessByGrantIdResponses,
-  DeleteV1DashboardsByDashboardIdErrors,
-  DeleteV1DashboardsByDashboardIdResponses,
   DeleteV1DesktopPoliciesByDesktopPolicyIdErrors,
   DeleteV1DesktopPoliciesByDesktopPolicyIdResponses,
   DeleteV1DesktopPoliciesByKeyByExternalKeyResponses,
@@ -280,12 +275,6 @@ import type {
   GetV1ConnectorTargetsByConnectorTargetIdMappingsErrors,
   GetV1ConnectorTargetsByConnectorTargetIdMappingsResponses,
   GetV1ConnectorTargetsByConnectorTargetIdResponses,
-  GetV1DashboardsByDashboardIdAccessErrors,
-  GetV1DashboardsByDashboardIdAccessResponses,
-  GetV1DashboardsByDashboardIdErrors,
-  GetV1DashboardsByDashboardIdResponses,
-  GetV1DashboardsErrors,
-  GetV1DashboardsResponses,
   GetV1DesktopPoliciesByDesktopPolicyIdErrors,
   GetV1DesktopPoliciesByDesktopPolicyIdResponses,
   GetV1DesktopPoliciesByKeyByExternalKeyErrors,
@@ -410,8 +399,6 @@ import type {
   GetV1McpConnectionsPresetsErrors,
   GetV1McpConnectionsPresetsResponses,
   GetV1McpConnectionsResponses,
-  GetV1MeDashboardsErrors,
-  GetV1MeDashboardsResponses,
   GetV1MeDesktopConfigErrors,
   GetV1MeDesktopConfigResponses,
   GetV1MeErrors,
@@ -570,8 +557,6 @@ import type {
   PatchV1ConnectorMappingsByConnectorMappingIdResponses,
   PatchV1ConnectorTargetsByConnectorTargetIdErrors,
   PatchV1ConnectorTargetsByConnectorTargetIdResponses,
-  PatchV1DashboardsByDashboardIdErrors,
-  PatchV1DashboardsByDashboardIdResponses,
   PatchV1DesktopPoliciesByDesktopPolicyIdErrors,
   PatchV1DesktopPoliciesByDesktopPolicyIdResponses,
   PatchV1GatewayUsageLimitPoliciesByPolicyIdErrors,
@@ -706,10 +691,6 @@ import type {
   PostV1ConnectorTargetsByConnectorTargetIdMappingsResponses,
   PostV1ConnectorTargetsByConnectorTargetIdResyncErrors,
   PostV1ConnectorTargetsByConnectorTargetIdResyncResponses,
-  PostV1DashboardsByDashboardIdAccessErrors,
-  PostV1DashboardsByDashboardIdAccessResponses,
-  PostV1DashboardsErrors,
-  PostV1DashboardsResponses,
   PostV1DesktopPoliciesErrors,
   PostV1DesktopPoliciesResponses,
   PostV1DiagnosticsEgressErrors,
@@ -4323,257 +4304,9 @@ export class DenClient extends HeyApiClient {
   }
 
   /**
-   * List dashboards
+   * List Apps built in OpenWork
    *
-   * Lists every dashboard in the organization, ordered by name, with its ordered MCP App elements. Workspace owners and admins only; members read the dashboards granted to them through GET /v1/me/dashboards.
-   */
-  public getV1Dashboards<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
-    return (options?.client ?? this.client).get<GetV1DashboardsResponses, GetV1DashboardsErrors, ThrowOnError>({
-      url: "/v1/dashboards",
-      ...options,
-    });
-  }
-
-  /**
-   * Create dashboard
-   *
-   * Creates an organization-owned dashboard: a named, ordered list of up to 50 MCP App elements, each pointing at a ui:// resource served by a connected MCP server or by an App built in OpenWork (from GET /v1/mcp-apps). An App's element always points at the App's current revision. Nobody sees the dashboard until access is granted through POST /v1/dashboards/{dashboardId}/access.
-   */
-  public postV1Dashboards<ThrowOnError extends boolean = false>(
-    parameters: {
-      name: string;
-      elements?: Array<DashboardElement>;
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "body", key: "name" },
-            { in: "body", key: "elements" },
-          ],
-        },
-      ],
-    );
-    return (options?.client ?? this.client).post<PostV1DashboardsResponses, PostV1DashboardsErrors, ThrowOnError>({
-      url: "/v1/dashboards",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    });
-  }
-
-  /**
-   * Delete dashboard
-   *
-   * Soft-deletes the dashboard so it disappears from admin lists and from every member's granted dashboards. Its access grants are kept but stop applying; there is no restore.
-   */
-  public deleteV1DashboardsByDashboardId<ThrowOnError extends boolean = false>(
-    parameters: {
-      dashboardId: string;
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "dashboardId" }] }]);
-    return (options?.client ?? this.client).delete<
-      DeleteV1DashboardsByDashboardIdResponses,
-      DeleteV1DashboardsByDashboardIdErrors,
-      ThrowOnError
-    >({
-      url: "/v1/dashboards/{dashboardId}",
-      ...options,
-      ...params,
-    });
-  }
-
-  /**
-   * Get dashboard
-   *
-   * Returns one dashboard with its ordered MCP App elements. Deleted dashboards answer 404.
-   */
-  public getV1DashboardsByDashboardId<ThrowOnError extends boolean = false>(
-    parameters: {
-      dashboardId: string;
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "dashboardId" }] }]);
-    return (options?.client ?? this.client).get<
-      GetV1DashboardsByDashboardIdResponses,
-      GetV1DashboardsByDashboardIdErrors,
-      ThrowOnError
-    >({
-      url: "/v1/dashboards/{dashboardId}",
-      ...options,
-      ...params,
-    });
-  }
-
-  /**
-   * Update dashboard
-   *
-   * Partially updates a dashboard. Send name, elements, or both; when elements is present it replaces the whole ordered element list.
-   */
-  public patchV1DashboardsByDashboardId<ThrowOnError extends boolean = false>(
-    parameters: {
-      dashboardId: string;
-      name?: string;
-      elements?: Array<DashboardElement>;
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "dashboardId" },
-            { in: "body", key: "name" },
-            { in: "body", key: "elements" },
-          ],
-        },
-      ],
-    );
-    return (options?.client ?? this.client).patch<
-      PatchV1DashboardsByDashboardIdResponses,
-      PatchV1DashboardsByDashboardIdErrors,
-      ThrowOnError
-    >({
-      url: "/v1/dashboards/{dashboardId}",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    });
-  }
-
-  /**
-   * List dashboard access grants
-   *
-   * Lists every access grant on the dashboard, oldest first, including revoked grants (removedAt set). Each grant targets exactly one member, one team, or the whole organization.
-   */
-  public getV1DashboardsByDashboardIdAccess<ThrowOnError extends boolean = false>(
-    parameters: {
-      dashboardId: string;
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "dashboardId" }] }]);
-    return (options?.client ?? this.client).get<
-      GetV1DashboardsByDashboardIdAccessResponses,
-      GetV1DashboardsByDashboardIdAccessErrors,
-      ThrowOnError
-    >({
-      url: "/v1/dashboards/{dashboardId}/access",
-      ...options,
-      ...params,
-    });
-  }
-
-  /**
-   * Grant dashboard access
-   *
-   * Assigns a dashboard to one member, one team, or the whole organization — the same subject model connector assignment grants use. Regranting a revoked subject reactivates the existing grant.
-   */
-  public postV1DashboardsByDashboardIdAccess<ThrowOnError extends boolean = false>(
-    parameters: {
-      dashboardId: string;
-      orgMembershipId?: string;
-      teamId?: string;
-      orgWide?: boolean;
-      role: "viewer" | "editor" | "manager";
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "dashboardId" },
-            { in: "body", key: "orgMembershipId" },
-            { in: "body", key: "teamId" },
-            { in: "body", key: "orgWide" },
-            { in: "body", key: "role" },
-          ],
-        },
-      ],
-    );
-    return (options?.client ?? this.client).post<
-      PostV1DashboardsByDashboardIdAccessResponses,
-      PostV1DashboardsByDashboardIdAccessErrors,
-      ThrowOnError
-    >({
-      url: "/v1/dashboards/{dashboardId}/access",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    });
-  }
-
-  /**
-   * Revoke dashboard access
-   *
-   * Revokes one access grant by setting removedAt; the grant row is kept so regranting the same subject reactivates it. Revoking an already revoked grant answers 204 again.
-   */
-  public deleteV1DashboardsByDashboardIdAccessByGrantId<ThrowOnError extends boolean = false>(
-    parameters: {
-      dashboardId: string;
-      grantId: string;
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "dashboardId" },
-            { in: "path", key: "grantId" },
-          ],
-        },
-      ],
-    );
-    return (options?.client ?? this.client).delete<
-      DeleteV1DashboardsByDashboardIdAccessByGrantIdResponses,
-      DeleteV1DashboardsByDashboardIdAccessByGrantIdErrors,
-      ThrowOnError
-    >({
-      url: "/v1/dashboards/{dashboardId}/access/{grantId}",
-      ...options,
-      ...params,
-    });
-  }
-
-  /**
-   * List dashboards granted to the current member
-   *
-   * Returns the dashboards the signed-in member can see: granted directly, through one of their teams, or org-wide, deduplicated and ordered by name. The desktop MCP Apps dashboard renders these as read-only tiles.
-   */
-  public getV1MeDashboards<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
-    return (options?.client ?? this.client).get<GetV1MeDashboardsResponses, GetV1MeDashboardsErrors, ThrowOnError>({
-      url: "/v1/me/dashboards",
-      ...options,
-    });
-  }
-
-  /**
-   * List Apps built in OpenWork for dashboards
-   *
-   * Lists the Apps built in OpenWork that the calling member can use, in the element shape organization Dashboards store. Each element opens the App through its own MCP server with open_app, and Dashboards keep it on the App's current revision. Members see a tile only when the App's Plugin is shared with them. Empty when Apps built in OpenWork are turned off. Only Apps the member can access are listed.
+   * Lists the Apps built in OpenWork that the calling member can use, in the same element shape connection MCP Apps use, so the desktop can show them on a personal Dashboard. Each element opens the App through its own MCP server with open_app. Members see an App only when its Plugin is shared with them. Empty when Apps built in OpenWork are turned off.
    */
   public getV1McpApps<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
     return (options?.client ?? this.client).get<GetV1McpAppsResponses, GetV1McpAppsErrors, ThrowOnError>({
@@ -5176,7 +4909,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Read how the organization's skills, plugins or connectors are used
    *
-   * Lists every active skill (`kind=skills`), plugin (`plugins`) or connector (`connectors`) in the organization with how often it was used over the last `days` days (7, 30 or 90; default 30), by how many members, and when it was last used. Items nobody used come back with zeros. Skills count loads of their SKILL.md through the OpenWork MCP gateway; repeated loads by the same member within 15 minutes count once. Plugins count their skills' loads plus their Workflows' runs, and `failures` counts failed runs. Connectors count tool calls made through OpenWork, and `failures` counts calls that failed. `failures` is null for skills. Counts cover use since the libraryUsage feature was turned on; `trackingSince` is the first recorded use. Aggregates only. Members with the usage_analytics.view permission only (owners and admins by default).
+   * Lists every active skill (`kind=skills`), plugin (`plugins`) or connector (`connectors`) in the organization with how often it was used over the last `days` days (7, 30 or 90; default 30), by how many members, and when it was last used. Items nobody used come back with zeros. Skills count loads of their SKILL.md through the OpenWork MCP gateway; repeated loads by the same member within 15 minutes count once. Plugins count their skills' loads plus their Workflows' runs, and `failures` counts failed runs. Connectors count tool calls made through OpenWork, and `failures` counts calls that failed. `failures` is null for skills. Counts cover use since usage recording started; `trackingSince` is the first recorded use. Aggregates only. Members with the usage_analytics.view permission only (owners and admins by default).
    */
   public getV1LibraryUsageByKind<ThrowOnError extends boolean = false>(
     parameters: {
@@ -11203,7 +10936,7 @@ export class DenClient extends HeyApiClient {
   /**
    * List MCP Apps exposed by an External MCP Connection
    *
-   * Enumerates the connection's app-visible MCP App launch tools in the exact reference shape desktop dashboard tiles use, so organization Dashboards can add them as elements. Admin-only.
+   * Enumerates the connection's app-visible MCP App launch tools in the exact reference shape desktop dashboard tiles use. Admin-only.
    */
   public getV1McpConnectionsByConnectionIdMcpApps<ThrowOnError extends boolean = false>(
     parameters: {

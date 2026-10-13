@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import type { DenSession } from "@openwork/behaviors";
 import { faultProxy, localMysqlIsRunning, SkipError, type Place, type Seed } from "@openwork/env";
-import { enableOrganizationCapabilities } from "./dashboards.ts";
+import { enableOrganizationCapabilities } from "./organization-capabilities.ts";
 import { isRecord, records, stringField } from "./library.ts";
 
 const models = [

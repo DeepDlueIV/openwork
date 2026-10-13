@@ -370,7 +370,6 @@ test("create, preview, save and reopen an app without changing already-open resu
     await user.click("Artifact options for Team briefing");
   });
 
-  const companyBefore = (await probe.api(world.den.admin, `/v1/dashboards/${world.dashboardId}`)).body;
   await step("remove a personal card and add the saved app again", async () => {
     await world.open("/dashboard");
     await revealPersonalTileControls();
@@ -389,13 +388,9 @@ test("create, preview, save and reopen an app without changing already-open resu
     await revealPersonalTileControls();
     await user.see("Artifact options for Team briefing", { timeoutMs: 30_000 });
     await probe.eventually(() => world.previewText(), { within: 30_000, label: "saved app rendered on dashboard", until: (text) => text.includes("Weekly overview") && text.includes("Launch briefing") });
-    // The granted company dashboard stays in Den but no longer renders on Desktop.
-    await user.notSee({ text: "From your company" });
-    await user.notSee({ text: "Project updates" });
-    expect((await probe.api(world.den.admin, `/v1/dashboards/${world.dashboardId}`)).body).toEqual(companyBefore);
     await user.screenshot();
   });
-  evidence.recordAssertionEvidence("Removing and adding an existing app changes dashboard placement without deleting the app", "Remove kept the saved revision and company dashboard; Other saved artifacts added the personal card again and it survived reload, while the granted company dashboard did not render.", true);
+  evidence.recordAssertionEvidence("Removing and adding an existing app changes dashboard placement without deleting the app", "Remove kept the saved revision; Other saved artifacts added the personal card again and it survived reload.", true);
 
   await step("a saved snapshot reserves its measured tile size while reloading", async () => {
     const saved = await readApp();
@@ -459,7 +454,6 @@ test("create, preview, save and reopen an app without changing already-open resu
         && new URL(request.path, "http://fixture.invalid").pathname.endsWith(detailPath) && request.faulted && request.status === 200),
       JSON.stringify(reloadRequests.filter((request) => new URL(request.path, "http://fixture.invalid").pathname.endsWith(detailPath)))).toHaveLength(1);
       expect((await readApp()).revision).toMatchObject({ id: revisionId });
-      expect((await probe.api(world.den.admin, `/v1/dashboards/${world.dashboardId}`)).body).toEqual(companyBefore);
       evidence.recordAssertionEvidence("Saved snapshot loading preserves measured dashboard geometry", JSON.stringify({ before, loading: tile.rect, restored,
         scope: "same app revision, workspace and width", coverage: "snapshot reload only; no live refresh or guest-state continuity claim" }), true);
     } finally {
@@ -652,12 +646,11 @@ test("create, preview, save and reopen an app without changing already-open resu
       method: "POST", body: JSON.stringify({ email: world.den.admin.email }),
     });
     expect(reshare.response.status).toBe(403);
-    expect((await probe.api(world.den.admin, `/v1/dashboards/${world.dashboardId}`)).body).toEqual(companyBefore);
     expect((await readApp()).onDashboard).toBe(true);
     await user.screenshot();
     await user.click("Done");
   });
-  evidence.recordAssertionEvidence("Dashboard Share grants a teammate view access and adds the selected app to their dashboard", "Cancel and an unknown email left the app private. Sharing made one saved app visible on the recipient dashboard without manager access; repeat sharing did not duplicate it, the unchecked app and its separate workflow remained private, viewers could not reshare, and company dashboards stayed unchanged.", true);
+  evidence.recordAssertionEvidence("Dashboard Share grants a teammate view access and adds the selected app to their dashboard", "Cancel and an unknown email left the app private. Sharing made one saved app visible on the recipient dashboard without manager access; repeat sharing did not duplicate it, the unchecked app and its separate workflow remained private and viewers could not reshare.", true);
   evidence.recordAssertionEvidence("Sharing includes the workflow, saved results, and sibling apps without adding every sibling to the dashboard", "The recipient could read the workflow and the latest saved result in both the selected app and its previously inaccessible companion. Both appeared in the accessible app list, but only the selected app was on their dashboard; the separate private workflow stayed inaccessible.", true);
 
   await step("share with another teammate without duplicating placement or exposing private artifacts", async () => {
@@ -687,11 +680,10 @@ test("create, preview, save and reopen an app without changing already-open resu
     expect(listed.filter((item) => record(item).onDashboard).map((item) => field(record(item).view, "id"))).toEqual([appId]);
     expect((await probe.api(recipient, `/v1/apps/${privateAppId}`)).response.status).toBe(403);
     expect((await probe.api(recipient, `/v1/workflows/${privateWorkflowId}`)).response.status).toBe(403);
-    expect((await probe.api(world.den.admin, `/v1/dashboards/${world.dashboardId}`)).body).toEqual(companyBefore);
     await user.screenshot();
     await user.click("Done");
   });
-  evidence.recordAssertionEvidence("Sharing stays scoped and repeated shares do not duplicate placement", "The second recipient initially received 403 for the app and workflow. Explicit sharing granted view-only access and exactly one personal dashboard placement. Sharing again kept one placement, while the unchecked private app and its separate workflow remained inaccessible and the company dashboard stayed unchanged.", true);
+  evidence.recordAssertionEvidence("Sharing stays scoped and repeated shares do not duplicate placement", "The second recipient initially received 403 for the app and workflow. Explicit sharing granted view-only access and exactly one personal dashboard placement. Sharing again kept one placement, while the unchecked private app and its separate workflow remained inaccessible.", true);
 
   const cleanupCompanion = await seed.api(world.den.admin, `/v1/artifact-views/${companionAppId}/retire`, { method: "POST" });
   expect(cleanupCompanion.response.status, cleanupCompanion.text).toBe(200);
@@ -759,12 +751,11 @@ test("create, preview, save and reopen an app without changing already-open resu
     expect((await readApp(originalPath))).toMatchObject({ onDashboard: false, view: { status: "retired", activeRevisionId: null }, payload: { data: { topic: "Launch briefing" } } });
     expect((await readWorkflow()).currentVersion).toEqual(beforeDelete.currentVersion);
     expect((await probe.api(world.den.admin, `/v1/workflows/${world.configObjectId}/snapshots`)).body).toEqual(beforeDeleteSnapshots);
-    expect((await probe.api(world.den.admin, `/v1/dashboards/${world.dashboardId}`)).body).toEqual(companyBefore);
     const readd = await seed.api(world.den.admin, `/v1/apps/${appId}/dashboard`, { method: "POST", body: JSON.stringify({ added: true }) });
     expect(readd.response.status).toBe(404);
     await user.screenshot();
   });
-  evidence.recordAssertionEvidence("Admins can delete their own apps from the dashboard after a clear confirmation", "Delete is available in the open app and dashboard. Cancel preserves it; confirming removes it across reloads while retaining the workflow, historical results, and unrelated company dashboard.", true);
+  evidence.recordAssertionEvidence("Admins can delete their own apps from the dashboard after a clear confirmation", "Delete is available in the open app and dashboard. Cancel preserves it; confirming removes it across reloads while retaining the workflow and historical results.", true);
 
   await step("Dashboard Add opens a creation conversation", async () => {
     await world.open("/dashboard");

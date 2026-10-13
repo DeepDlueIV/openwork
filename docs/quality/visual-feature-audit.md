@@ -62,10 +62,9 @@ absence. Neither observation workaround weakens the actual UI claim.
 
 ## Rollout and deliberate retained behavior
 
-- `denFlatPageHeaders` is newly declared **off**, on cloud and self-hosted,
-  before its implementation. It changes only presentation; turning it off
-  restores the existing header without changing objects, permissions,
-  navigation, or running work. No production rollout is changed by this audit.
+- Compact page headers are now the only header presentation (the former
+  `denFlatPageHeaders` flag is retired). They change only presentation, not
+  objects, permissions, navigation, or running work.
 - Compact audit rows are now the only audit presentation (the former
   `auditLogsCompact` flag is retired). Recording, retained evidence, filters,
   redaction and permission checks are unchanged.
@@ -77,9 +76,8 @@ absence. Neither observation workaround weakens the actual UI claim.
 - A connector is not called `Ready` merely because it requires no sign-in:
   readiness needs an actual verified, retained health observation.
 - Stop is an intentional terminal outcome, not an error inviting an automatic
-  restart. Earlier work and the conversation remain available. With
-  `calendarPolish`, Run again explicitly creates a new task; the stopped task
-  stays stopped.
+  restart. Earlier work and the conversation remain available. Run again
+  explicitly creates a new task; the stopped task stays stopped.
 - Synthetic fixture names are not outside identities. Technical audit data
   stays available behind explicit disclosures and requested change details.
 - Native-scroll edge clipping after a person's deliberate scroll is distinct

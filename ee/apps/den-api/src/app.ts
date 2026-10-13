@@ -431,7 +431,6 @@ const openApiOptions: Parameters<typeof generateSpecs>[1] = {
       { name: "Plugins", description: "Plugin packages, access grants, and imports." },
       { name: "Marketplaces", description: "Marketplaces that distribute plugins to members and teams." },
       { name: "Resources", description: "Aggregated snapshot of the resources and marketplace capabilities available to the caller." },
-      { name: "Dashboards", description: "Shared dashboards and their access grants." },
       { name: "Capability Sources", description: "Native provider capabilities (Google Workspace, Microsoft 365) and external MCP connections executed as the calling member." },
       { name: "Direct uploads", description: "Multipart uploads that stream workspace files straight to a provider." },
       { name: "Connectors", description: "Connector accounts and instances (GitHub and other sources) and their sync state." },

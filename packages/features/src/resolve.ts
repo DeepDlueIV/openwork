@@ -37,6 +37,8 @@ export const RETIRED_FEATURE_KEYS = [
   // wherever Workbot or the desktop Calendar is.
   "denFlatPageHeaders", "dashboardActivity", "libraryIntegrated", "libraryUsage", "modelsAnalytics",
   "headlessAutomations", "calendarPolish",
+  // Removed (2026-10): organization Dashboards
+  "orgManagedDashboards",
 ] as const
 
 export function isFeatureKey(value: string): value is FeatureKey {

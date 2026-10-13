@@ -446,7 +446,6 @@ export function OrgDashboardShell({ children }: { children: React.ReactNode }) {
       installLinks: false,
       mcpConnections: false,
       openworkWeb: false,
-      orgManagedDashboards: false,
       workflows: false,
     },
     orgMode: runtimeConfig.orgMode,

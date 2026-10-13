@@ -519,7 +519,6 @@ export function OrgSettingsScreen() {
           ) : null}
         </span>
       )}
-      colors={["#D9F99D", "#0F172A", "#0F766E", "#FDE68A"]}
     >
       {orgContext && !orgContext.entitlements.orgControls ? (
         <EnterprisePlanNotice feature="Enforced SSO and desktop version control" />

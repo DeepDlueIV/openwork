@@ -310,8 +310,8 @@ you can also lock a feature for the whole install under `config.features`:
 ```yaml
 config:
   features:
-    orgManagedDashboards: "true"   # on for everyone on this install
-    installLinks: "false"          # off for everyone on this install
+    permissions: "true"            # on for everyone on this install
+    automationCalendar: "false"    # off for everyone on this install
 ```
 
 - `""` (the default) follows `/admin`, which starts from the default listed
@@ -330,17 +330,9 @@ OpenWork Cloud. Don't change it on a customer install.
 | `config.features.*` | Environment variable | Default | What it does |
 | --- | --- | --- | --- |
 | `managedDeployments` | `DEN_FEATURE_MANAGED_DEPLOYMENTS` | default off (cloud only) | Organization admins install OpenWork in their own cloud account (AWS first) and see its health and updates in OpenWork. |
-| `denFlatPageHeaders` | `DEN_FEATURE_DEN_FLAT_PAGE_HEADERS` | default off | Members see compact, readable page headings in Den instead of decorative gradient banners. |
-| `dashboardActivity` | `DEN_FEATURE_DASHBOARD_ACTIVITY` | default off | Organization admins see recent additions and skill updates on their dashboard instead of Quick add. |
-| `libraryIntegrated` | `DEN_FEATURE_LIBRARY_INTEGRATED` | default off | Members see Library lists, details and add flows that match the rest of Den and the desktop app. |
-| `libraryUsage` | `DEN_FEATURE_LIBRARY_USAGE` | default off | Organization admins see Analytics in the same style as Library and Connectors, including how often each skill, plugin and connector is used, by how many people, which calls fail, and what nobody uses, so they can decide what to keep. |
-| `modelsAnalytics` | `DEN_FEATURE_MODELS_ANALYTICS` | default off | Organization admins can opt in to task analytics for OpenWork Models. |
-| `orgManagedDashboards` | `DEN_FEATURE_ORG_MANAGED_DASHBOARDS` | default off | Organization admins publish dashboards to members in Den and the desktop app. |
 | `slackAssistant` | `DEN_FEATURE_SLACK_ASSISTANT` | default off | Answers Slack mentions and DMs for the organization after the Slack connector is set up. |
 | `slackWorkbotReplies` | `DEN_FEATURE_SLACK_WORKBOT_REPLIES` | default off | OpenWork in Slack writes its reply as it works, reacts to messages with an emoji, and takes bigger jobs into the background, posting the result in the thread when done. |
-| `headlessAutomations` | `DEN_FEATURE_HEADLESS_AUTOMATIONS` | default off | Runs the organization's cloud Automations on the shared headless runner. Needs the deployment's headless runner and a plan that includes it. |
-| `workbot` | `DEN_FEATURE_WORKBOT` | default off | Members can use Workbot, with side chats and a Calendar tab of its scheduled work, and organization admins choose the default model Workbot, the Slack assistant and cloud Automations answer with. Needs the deployment's Workbot app. |
-| `calendarPolish` | `DEN_FEATURE_CALENDAR_POLISH` | default off | Members recognize their organization's default model and meeting providers, and can run stopped Workbot tasks again. |
+| `workbot` | `DEN_FEATURE_WORKBOT` | default off | Members can use Workbot, with side chats, a Calendar tab of its scheduled work and the option to run stopped tasks again, and organization admins choose the default model Workbot, the Slack assistant and cloud Automations answer with. Needs the deployment's Workbot app. |
 | `automationCalendar` | `DEN_FEATURE_AUTOMATION_CALENDAR` | default off | Members see a Calendar in the desktop app with their Automations next to meetings from their connected Google or Outlook calendar. |
 | `permissions` | `DEN_FEATURE_PERMISSIONS` | default off | Organization admins choose what members, admins and each team can do, instead of the fixed Member and Admin defaults. |
 | `engineV2Upgrade` | `DEN_FEATURE_ENGINE_V2_UPGRADE` | default off | Desktop members still on OpenCode v1 see a short notice offering to upgrade: their chats are copied to v2 with a backup, then OpenWork switches engines. |
@@ -403,7 +395,7 @@ immediately by setting both values to false.
 
 ### Dashboards rollout
 
-The organization-managed Dashboard is unavailable by default. Enable it for a
+The personal desktop Dashboard is unavailable by default. Enable it for a
 self-hosted or customer-managed deployment with:
 
 ```yaml

@@ -176,11 +176,10 @@ test("an owner composes an App that is its own MCP server, and a teammate uses i
     evidence.recordAssertionEvidence("OpenWork can open the App, and its tools stay scoped to it", "The App host's Connect server index lists the App at its MCP URL without exposing it to the model directly, and executing its search match returns an openwork/mcpApp launch reference to open_app on that server. create_app refuses a tool that is not a real capability and an OpenWork action that changes data (postPluginsAccess), publishing nothing.", true);
   });
 
-  await step("the App's catalog entry saves a dashboard tile that opens the App through its own server", async () => {
-    await world.addAppTile();
-    // The tile opens the App through its own server, which the desktop finds by App id.
-    expect(await world.dashboardElements()).toEqual([appTile(world.created.resourceUri)]);
-    evidence.recordAssertionEvidence("The App's dashboard tile opens the App itself", `Den's App catalog lists ${appTitle}, and saving that entry as a tile stores one that opens the App's own server, which the desktop finds by App id: connectionId ${world.created.appId}, open_app, and the App's current revision.`, true);
+  await step("the App catalog lists an entry that opens the App through its own server", async () => {
+    // The entry opens the App through its own server, which the desktop finds by App id.
+    expect(await world.catalogEntries("owner")).toEqual([expect.objectContaining(appTile(world.created.resourceUri))]);
+    evidence.recordAssertionEvidence("The App's catalog entry opens the App itself", `Den's App catalog (GET /v1/mcp-apps) lists ${appTitle} as an entry that opens the App's own server, which the desktop finds by App id: connectionId ${world.created.appId}, open_app, and the App's current revision.`, true);
   });
 
   await step("Workflow-bound views from before are read-only beside App servers", async () => {
@@ -243,10 +242,10 @@ test("an owner composes an App that is its own MCP server, and a teammate uses i
     evidence.recordAssertionEvidence("Revisions stay behind the same MCP URL and tools", "update_app without tools published a new revision on the same App server with the same five tools. Opening the App again shows revision two with its reads loaded, and the original revision stays readable to the owner.", true);
   });
 
-  await step("after the update, the dashboard tile opens the App's new revision for the owner and the teammate", async () => {
-    expect(await world.dashboardElements()).toEqual([appTile(updatedResourceUri)]);
-    expect(await world.teammateDashboardElements()).toEqual([appTile(updatedResourceUri)]);
-    evidence.recordAssertionEvidence("A dashboard tile keeps opening the App after update_app", `The saved tile named revision one, and update_app published revision two. Den now serves the tile with the current revision, both to the admin and in the teammate's GET /v1/me/dashboards, which their desktop reads, so the tile keeps opening the App.`, true);
+  await step("after the update, the App catalog opens the App's new revision for the owner and the teammate", async () => {
+    expect(await world.catalogEntries("owner")).toEqual([expect.objectContaining(appTile(updatedResourceUri))]);
+    expect(await world.catalogEntries("member")).toEqual([expect.objectContaining(appTile(updatedResourceUri))]);
+    evidence.recordAssertionEvidence("The App catalog keeps opening the App after update_app", `update_app published revision two, and Den's App catalog (GET /v1/mcp-apps), which the desktop reads, now names the current revision both for the owner and for the teammate the Plugin was shared with.`, true);
   });
 
   await step("a teammate without access still cannot use either revision", async () => {

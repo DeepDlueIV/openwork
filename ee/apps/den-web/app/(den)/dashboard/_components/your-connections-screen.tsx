@@ -98,7 +98,6 @@ export function YourConnectionsScreen() {
       icon={Plug}
       title="Your Connections"
       description="Tools your organization has made available to you. Connect your own account where needed; workspace admins can test tools directly, and your AI coworker uses them with your permissions."
-      colors={["#DBEAFE", "#1E3A8A", "#2563EB", "#93C5FD"]}
     >
       {error ? (
         <div className="mb-6 rounded-[24px] border border-red-200 bg-red-50 px-5 py-4 text-[14px] text-red-700">

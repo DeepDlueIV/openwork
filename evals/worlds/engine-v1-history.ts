@@ -8,7 +8,7 @@ import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { localMysqlIsRunning, SkipError, type Place, type Seed } from "@openwork/env";
-import { enableOrganizationCapabilities } from "./dashboards.ts";
+import { enableOrganizationCapabilities } from "./organization-capabilities.ts";
 
 /**
  * An OpenCode v1 chat history, isolated in its own database file, that the

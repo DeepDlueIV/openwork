@@ -357,7 +357,6 @@ export default function WebPage() {
       icon={Globe}
       title="OpenWork Web"
       description="Use OpenWork in your browser with an organization subscription."
-      colors={["#EFF6FF", "#0F172A", "#2563EB", "#BAE6FD"]}
     >
       <div data-testid="openwork-web-access" data-access-state={accessState} data-access-source={billing?.accessSource ?? "none"}>
         {accessState === "error" ? (

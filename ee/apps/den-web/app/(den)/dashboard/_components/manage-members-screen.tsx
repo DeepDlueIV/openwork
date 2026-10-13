@@ -554,7 +554,6 @@ export function ManageMembersScreen() {
       icon={Users}
       title="Members"
       description="Invite teammates, adjust roles, and keep access clean."
-      colors={["#F3EEFF", "#4A1D96", "#7C3AED", "#C4B5FD"]}
     >
       <OrgLimitDialog
         open={Boolean(limitDialogError)}

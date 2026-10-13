@@ -1,11 +1,11 @@
 import { expect } from "vitest";
 import { spec } from "@openwork/testkit";
 import { isRecord, records } from "../worlds/library.ts";
-import { denManagePluginsAsAdmin, denManageIntegratedPluginsAsAdmin } from "../worlds/den-library-manage.ts";
+import { denManagePluginsAsAdmin } from "../worlds/den-library-manage.ts";
 
 // Admins build a plugin once in Manage and choose which teams get it.
 const test = spec.world(denManagePluginsAsAdmin, { timeout: 600_000, resources: { surfaces: ["web"], services: ["den", "mock"] } });
-const integratedTest = spec.world(denManageIntegratedPluginsAsAdmin, { timeout: 600_000, resources: { surfaces: ["web"], services: ["den", "mock"] } });
+const integratedTest = spec.world(denManagePluginsAsAdmin, { timeout: 600_000, resources: { surfaces: ["web"], services: ["den", "mock"] } });
 
 const names = (items: { name: string }[]) => items.map((item) => item.name);
 
@@ -15,22 +15,10 @@ test("an admin: I want to give the Sales team a plugin so they all get the same 
 
   await step("1. I open Plugins in Manage: there are none yet", async () => {
     await user.see({ testId: "plugins-empty" }, { timeoutMs: 120_000 });
-    await user.see({ text: "Skills, commands and connectors bundled for a job. You choose which teams get each one." });
-    await user.see({ text: "Members can still make plugins for themselves in My Library." });
+    await user.see({ text: "Create a plugin to share skills with your team." });
+    await user.see({ text: "Only you can use it until you choose who gets access." });
     await user.notSee({ text: "GitHub" });
     await user.screenshot();
-  });
-
-  await step("before: an empty My Library keeps its original invitation and add picker", async () => {
-    if (!world.memberWeb) throw new Error("The empty member Library was not arranged.");
-    const member = user.on(world.memberWeb);
-    await member.see({ testId: "library-empty" }, { timeoutMs: 60_000 });
-    await member.screenshot();
-    await member.click({ role: "button", label: "Add to your Library" });
-    await member.see({ testId: "library-add-dialog" });
-    await member.screenshot();
-    await member.click({ role: "button", label: "Cancel" });
-    evidence.recordAssertionEvidence("the off Library keeps the original empty and add states", "Nothing in your Library yet and Add to your Library remain unchanged while the rollout is off", true);
   });
 
   await step("2. I create a plugin with the skill every sales call needs", async () => {
@@ -77,26 +65,27 @@ test("an admin: I want to give the Sales team a plugin so they all get the same 
     await user.click({ role: "link", label: "Plugins" });
     await user.see({ testId: "admin-plugins" }, { timeoutMs: 60_000 });
     await user.see({ testId: "admin-plugins" }, { text: /Sales call prep/ });
-    const status = await probe.eventually(async () => (await probe.dom('[data-plugin-row="Sales call prep"] [data-item-status]')).elements[0]?.text ?? "", {
-      within: 30_000, label: "who has the plugin", until: (text) => text === "Sales",
+    // The row says Shared; its data-plugin-access attribute keeps who exactly has it.
+    const shared = await probe.eventually(async () => (await probe.dom('[data-plugin-row="Sales call prep"][data-plugin-access="Sales"]')).elements.length, {
+      within: 30_000, label: "who has the plugin", until: (count) => count === 1,
     });
-    expect(status).toBe("Sales");
+    expect(shared).toBe(1);
+    await user.see({ testId: "admin-plugins" }, { text: /Shared/ });
     const listCalls = (await world.proxy.requestLog()).slice(logStart).map((entry) => entry.path)
       .filter((path) => path.startsWith("/v1/plugins?") || /^\/v1\/plugins\/[^/?]+\/access/.test(path));
     expect(listCalls, "the directory fetches a bounded page with access").toContain("/v1/plugins?status=active&limit=50&includeAccess=true&includeTotal=true&includeFacets=true");
     expect(listCalls.some((path) => /\/access/.test(path))).toBe(false);
     evidence.recordAssertionEvidence(
       "Plugins loads a bounded page with access",
-      `The Sales call prep row reads "${status}"; directory requests Den received: ${listCalls.join(", ")}`,
+      `The Sales call prep row reads Shared and is shared with Sales; directory requests Den received: ${listCalls.join(", ")}`,
       true,
     );
     await user.screenshot();
   });
 
   await step("after: I find the plugin by name and by Sales access", async () => {
-    await user.type({ placeholder: "Search plugins by name" }, "Sales call");
+    await user.type({ placeholder: "Filter by name" }, "Sales call");
     await user.see({ testId: "admin-plugins" }, { text: /Sales call prep/ });
-    await user.see({ testId: "plugin-directory-columns" }, { text: /Name[\s\S]*Shared with[\s\S]*Owner[\s\S]*Updated/ });
     await user.click({ role: "button", label: "Team" });
     await user.see({ text: "Plugins available to a team" });
     await user.screenshot();
@@ -131,7 +120,7 @@ test("an admin: I want to give the Sales team a plugin so they all get the same 
     await user.click({ role: "button", label: /Owner: Omar Diaz/ });
     await user.click({ role: "button", label: "Riley Admin" });
     await user.see({ testId: "admin-plugins" }, { text: /Sales call prep/ });
-    await user.see({ testId: "plugin-directory-total" }, { text: "1" });
+    expect((await probe.dom("[data-plugin-row]")).elements).toHaveLength(1);
     await user.reload();
     await user.see({ role: "button", label: /Owner: Riley Admin/ });
     await user.see({ role: "button", label: /Team: Sales/ });
@@ -165,17 +154,6 @@ test("an admin: I want to give the Sales team a plugin so they all get the same 
     await user.screenshot();
   });
 
-  await step("before: My Library keeps its separate Kind and sharing lanes and its original add picker", async () => {
-    await user.navigate(`${world.den.ref.webUrl}/dashboard/library`);
-    await user.see({ testId: "library-screen" }, { timeoutMs: 60_000 });
-    await user.see({ text: "Sales call prep" });
-    expect((await probe.dom("[data-library-integrated-row]")).elements).toHaveLength(0);
-    await user.screenshot();
-    await user.click({ role: "button", label: "Add to your Library" });
-    await user.see({ testId: "library-add-dialog" });
-    await user.screenshot();
-    evidence.recordAssertionEvidence("the off Library retains its original rows and picker", "Sales call prep is present; no integrated row; Add to your Library opens the original picker", true);
-  });
 });
 
 integratedTest("an owner uses an integrated Library without changing who can manage its plugins", async ({ world, user, probe, step, evidence }) => {
@@ -190,9 +168,7 @@ integratedTest("an owner uses an integrated Library without changing who can man
     await user.see({ text: "Only you can use it until you choose who gets access." });
     expect((await probe.dom('a[href$="/plugins/new"]')).elements.filter((item) => item.text.includes("Create a plugin"))).toHaveLength(1);
     expect((await probe.dom('[data-testid="plugin-directory-total"], [data-testid="plugin-directory-columns"]')).elements).toHaveLength(0);
-    const context = await probe.api(world.den.admin, "/v1/org");
-    expect(isRecord(context.body) && isRecord(context.body.features) && context.body.features.libraryIntegrated).toBe(true);
-    evidence.recordAssertionEvidence("only the presentation rollout is enabled", "libraryIntegrated=true; empty collection has one Create a plugin action and no directory count or column labels", true);
+    evidence.recordAssertionEvidence("the empty collection has one create action", "Empty collection has one Create a plugin action and no directory count or column labels", true);
     await user.screenshot();
   });
 
@@ -321,29 +297,7 @@ integratedTest("an owner uses an integrated Library without changing who can man
     const context = await probe.api(world.den.members.omar, "/v1/org");
     expect(isRecord(context.body) && isRecord(context.body.currentMember) && context.body.currentMember.role).toBe("member");
     expect((await memberProbe.dom('[data-testid="whats-inside"]')).elements[0]?.text).toContain("Prep a sales call");
-    evidence.recordAssertionEvidence("the rollout grants no new manage permission", `Sales member sees the skill and a manager/admin lock; no manage menu or Add team; access read HTTP ${manageable.response.status}`, true);
+    evidence.recordAssertionEvidence("the Library grants no new manage permission", `Sales member sees the skill and a manager/admin lock; no manage menu or Add team; access read HTTP ${manageable.response.status}`, true);
     await member.screenshot();
-  });
-
-  await step("before again: turning the rollout off restores the old list and detail without losing the plugin or its Sales grant", async () => {
-    await user.navigate(`${base}/admin`);
-    await user.see({ role: "button", label: /^Organizations/ }, { timeoutMs: 60_000 });
-    await user.click({ role: "button", label: /^Organizations/ });
-    await user.type({ placeholder: "Org name, slug, or id" }, world.organizationSlug);
-    await user.click({ testId: "admin-capability-libraryIntegrated" });
-    await probe.eventually(async () => {
-      const context = await probe.api(world.den.admin, "/v1/org");
-      return isRecord(context.body) && isRecord(context.body.features) && context.body.features.libraryIntegrated;
-    }, { within: 30_000, label: "the Library rollout is off", until: (enabled) => enabled === false });
-    await user.navigate(`${base}/dashboard/plugins`);
-    await user.see({ testId: "plugin-directory-columns" }, { timeoutMs: 60_000 });
-    await user.see({ text: "Sales call prep" });
-    expect((await probe.dom("[data-library-integrated-row]")).elements).toHaveLength(0);
-    await user.screenshot();
-    await user.click({ role: "link", label: /Sales call prep/ });
-    await user.see({ testId: "access-team" }, { text: /Sales/ });
-    expect((await probe.dom("[data-library-integrated-header]")).elements).toHaveLength(0);
-    evidence.recordAssertionEvidence("the kill-safe fallback retains the same object and grants", "libraryIntegrated=false; original directory columns and detail header restored; Sales still has access", true);
-    await user.screenshot();
   });
 });

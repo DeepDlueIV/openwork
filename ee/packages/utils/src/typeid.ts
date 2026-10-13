@@ -102,8 +102,6 @@ export const idTypesMapNameToPrefix = {
 
 
   tempFile: "tmpf",
-  dashboard: "dsb",
-  dashboardAccessGrant: "dsg",
   inferenceProvider: "ipr",
   inferenceProviderModel: "ipm",
   inferenceProviderCredential: "ipc",

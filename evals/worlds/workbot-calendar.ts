@@ -76,18 +76,8 @@ export async function workbotCalendar(_seed: Seed, { place }: { place: Place }, 
       const split = entry.indexOf("=");
       return { name: entry.slice(0, split), value: entry.slice(split + 1), url: world.workbotUrl, httpOnly: true, sameSite: "Lax" };
     }) });
-    const setFeature = async (key: "calendarPolish", value: boolean) => {
-      const updated = await denFetch(world.den.admin, `/v1/admin/organizations/${world.orgId}/capabilities`, { method: "PUT", headers: admin, body: JSON.stringify({ capabilities: { [key]: value } }) });
-      if (!updated.response.ok) throw new Error(`Could not set ${key}: HTTP ${updated.response.status}`);
-    };
     return {
       app, url: world.workbotUrl,
-      setCalendarPolish: (enabled: boolean) => setFeature("calendarPolish", enabled),
-      polishEnabled: async () => {
-        const response = await login.call("/v1/workbot/me");
-        const payload: unknown = await response.json();
-        return isRecord(payload) && payload.calendarPolish === true;
-      },
       async resolvedDefaultModelName() {
         const settings = await denFetch(world.den.admin, "/v1/org/workbot-settings", { headers: providerHeaders });
         if (!settings.response.ok || !isRecord(settings.body) || !Array.isArray(settings.body.models)) throw new Error("The fixture default model could not be resolved");

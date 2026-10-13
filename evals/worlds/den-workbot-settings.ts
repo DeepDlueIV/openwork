@@ -2,7 +2,7 @@ import { randomBytes } from "node:crypto";
 import { createServer } from "node:http";
 import { localMysqlIsRunning, SkipError, type Place, type Seed } from "@openwork/env";
 import { preScrollCenterHitTest } from "../helpers/ui-witnesses.ts";
-import { enableOrganizationCapabilities } from "./dashboards.ts";
+import { enableOrganizationCapabilities } from "./organization-capabilities.ts";
 import { isRecord, records } from "./library.ts";
 
 const MODELS = [

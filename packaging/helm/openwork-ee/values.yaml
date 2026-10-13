@@ -26,22 +26,14 @@ config:
   #   "false" off for everyone; /admin shows "Set by deployment config"
   # The /admin kill switch still turns a feature off, even when locked on.
   features:
-    managedDeployments: ""   # default off (cloud only) · Organization admins install OpenWork in their own cloud account (AWS first) and see its health and updates in OpenWork.
-    denFlatPageHeaders: ""   # default off · Members see compact, readable page headings in Den instead of decorative gradient banners.
-    dashboardActivity: ""    # default off · Organization admins see recent additions and skill updates on their dashboard instead of Quick add.
-    libraryIntegrated: ""    # default off · Members see Library lists, details and add flows that match the rest of Den and the desktop app.
-    libraryUsage: ""         # default off · Organization admins see Analytics in the same style as Library and Connectors, including how often each skill, plugin and connector is used, by how many people, which calls fail, and what nobody uses, so they can decide what to keep.
-    modelsAnalytics: ""      # default off · Organization admins can opt in to task analytics for OpenWork Models.
-    orgManagedDashboards: "" # default off · Organization admins publish dashboards to members in Den and the desktop app.
-    slackAssistant: ""       # default off · Answers Slack mentions and DMs for the organization after the Slack connector is set up.
-    slackWorkbotReplies: ""  # default off · OpenWork in Slack writes its reply as it works, reacts to messages with an emoji, and takes bigger jobs into the background, posting the result in the thread when done.
-    headlessAutomations: ""  # default off · Runs the organization's cloud Automations on the shared headless runner. Needs the deployment's headless runner and a plan that includes it.
-    workbot: ""              # default off · Members can use Workbot, with side chats and a Calendar tab of its scheduled work, and organization admins choose the default model Workbot, the Slack assistant and cloud Automations answer with. Needs the deployment's Workbot app.
-    calendarPolish: ""       # default off · Members recognize their organization's default model and meeting providers, and can run stopped Workbot tasks again.
-    automationCalendar: ""   # default off · Members see a Calendar in the desktop app with their Automations next to meetings from their connected Google or Outlook calendar.
-    permissions: ""          # default off · Organization admins choose what members, admins and each team can do, instead of the fixed Member and Admin defaults.
-    engineV2Upgrade: ""      # default off · Desktop members still on OpenCode v1 see a short notice offering to upgrade: their chats are copied to v2 with a backup, then OpenWork switches engines.
-    remoteSessionEvents: ""  # default off · MCP clients can subscribe to changes in their remote session receipts and read the current state after reconnecting.
+    managedDeployments: ""  # default off (cloud only) · Organization admins install OpenWork in their own cloud account (AWS first) and see its health and updates in OpenWork.
+    slackAssistant: ""      # default off · Answers Slack mentions and DMs for the organization after the Slack connector is set up.
+    slackWorkbotReplies: "" # default off · OpenWork in Slack writes its reply as it works, reacts to messages with an emoji, and takes bigger jobs into the background, posting the result in the thread when done.
+    workbot: ""             # default off · Members can use Workbot, with side chats, a Calendar tab of its scheduled work and the option to run stopped tasks again, and organization admins choose the default model Workbot, the Slack assistant and cloud Automations answer with. Needs the deployment's Workbot app.
+    automationCalendar: ""  # default off · Members see a Calendar in the desktop app with their Automations next to meetings from their connected Google or Outlook calendar.
+    permissions: ""         # default off · Organization admins choose what members, admins and each team can do, instead of the fixed Member and Admin defaults.
+    engineV2Upgrade: ""     # default off · Desktop members still on OpenCode v1 see a short notice offering to upgrade: their chats are copied to v2 with a backup, then OpenWork switches engines.
+    remoteSessionEvents: "" # default off · MCP clients can subscribe to changes in their remote session receipts and read the current state after reconnecting.
   # END GENERATED features
   tenancy:
     mode: single_org

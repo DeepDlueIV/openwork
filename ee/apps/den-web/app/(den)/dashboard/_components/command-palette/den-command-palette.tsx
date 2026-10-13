@@ -38,7 +38,6 @@ const EMPTY_CAPABILITIES: DenOrgCapabilities = {
   installLinks: false,
   mcpConnections: false,
   openworkWeb: false,
-  orgManagedDashboards: false,
   workflows: false,
 };
 

@@ -206,10 +206,6 @@ export type DenOrgAccessFlags = {
   canManageAllShared: boolean;
   /** `sharing.share_org_wide` */
   canShareWithEveryone: boolean;
-  /** `dashboards.view` */
-  canViewDashboards: boolean;
-  /** `dashboards.manage` */
-  canManageDashboards: boolean;
   /** Owner only. */
   canTransferOwnership: boolean;
   /** Owner only. */
@@ -356,7 +352,6 @@ export type DenOrgEntitlements = {
 export type DenOrgCapabilities = {
   /** Effective organization rollout and deployment visibility, separate from capture entitlement. */
   auditLogs: boolean;
-  orgManagedDashboards: boolean;
   installLinks: boolean;
   mcpConnections: boolean;
   /** Apps built in OpenWork are served as their own MCP servers; absent (off) on older servers. */
@@ -632,8 +627,6 @@ export function getOrgAccessFlags(roleValue: string, isOwner: boolean, permissio
     canManageSyncSources: can("connectors.manage"),
     canManageAllShared: can("sharing.manage_all"),
     canShareWithEveryone: can("sharing.share_org_wide"),
-    canViewDashboards: can("dashboards.view"),
-    canManageDashboards: can("dashboards.manage"),
     canTransferOwnership: resolvedIsOwner,
     canDeleteOrganization: resolvedIsOwner,
     canStartSeatCheckout: can("billing.manage"),
@@ -1227,12 +1220,11 @@ export function orgFeatureEnabled(orgContext: Pick<DenOrgContext, "features"> | 
 
 function parseOrgCapabilities(value: unknown): DenOrgCapabilities {
   if (!isRecord(value)) {
-    return { auditLogs: false, orgManagedDashboards: false, installLinks: false, mcpConnections: false, appMcpServers: false, workflows: true, openworkWeb: false, cloud: false, workbot: false };
+    return { auditLogs: false, installLinks: false, mcpConnections: false, appMcpServers: false, workflows: true, openworkWeb: false, cloud: false, workbot: false };
   }
 
   return {
     auditLogs: value.auditLogs === true,
-    orgManagedDashboards: value.orgManagedDashboards === true,
     installLinks: value.installLinks === true,
     mcpConnections: value.mcpConnections === true,
     appMcpServers: value.appMcpServers === true,

@@ -44,8 +44,8 @@ test("a member: I want Maya and the Support team to use Slack so they can search
     await user.screenshot();
   });
 
-  await step("3. I choose Add to your Library and pick Connector", async () => {
-    await user.click({ role: "button", label: "Add to your Library" });
+  await step("3. I choose Add to library and pick Connector", async () => {
+    await user.click({ role: "button", label: "Add to library" });
     await user.see({ testId: "library-add-dialog" }, { text: /Connect the tools your AI works in/ });
     await user.click({ testId: "library-add-connector" });
     await user.screenshot();
@@ -115,10 +115,10 @@ test("a member: I want Maya and the Support team to use Slack so they can search
 });
 
 withSlack("a member: I want Sales to use my plugin so every sales call starts with the same prep", async ({ world, user, probe, step, evidence }) => {
-  await step("1. I choose Add to your Library and pick Plugin", async () => {
+  await step("1. I choose Add to library and pick Plugin", async () => {
     await user.navigate(`${world.den.ref.webUrl}/dashboard/library`);
     await user.see({ testId: "library-section-mine" }, { timeoutMs: 60_000 });
-    await user.click({ role: "button", label: "Add to your Library" });
+    await user.click({ role: "button", label: "Add to library" });
     await user.click({ testId: "library-add-plugin" });
     await user.click({ role: "button", label: "Continue" });
     await user.see({ testId: "plugin-create-form" }, { timeoutMs: 60_000 });

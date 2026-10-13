@@ -1,7 +1,7 @@
 import { createOrg, type Seed } from "@openwork/env";
 import type { DenSession } from "@openwork/behaviors";
 import { callFunctionOnSurface } from "@openwork/cdp";
-import { enableOrganizationCapabilities } from "./dashboards.ts";
+import { enableOrganizationCapabilities } from "./organization-capabilities.ts";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

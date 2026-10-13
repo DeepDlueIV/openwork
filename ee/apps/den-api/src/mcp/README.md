@@ -120,13 +120,10 @@ fits beside every usable connection as `kind: mcp_app`, and executing it returns
 an `openwork/mcpApp` launch reference to the App's own server; an App past the
 limit keeps its MCP URL but gets no launch.
 
-Organization Dashboards can hold Apps too. `GET /v1/mcp-apps` lists the Apps
-the calling admin can use in the dashboard element shape (`connectionId` is the
-App id, `toolName` is `open_app`), which Den web's Add app picker offers as
-"Apps built in OpenWork". Every dashboard read, including the desktop's
-`GET /v1/me/dashboards`, serves such an element with the App's current
-revision, so `update_app` never strands an assigned tile; a member still needs
-the App's Plugin to open it.
+`GET /v1/mcp-apps` lists the Apps the calling member can use in the dashboard
+element shape (`connectionId` is the App id, `toolName` is `open_app`), which
+the desktop offers on the personal Dashboard; a member still needs the App's
+Plugin to open it.
 
 Where `create_app` is available, Workflow-bound views are read-only:
 `save_artifact_view` (create or edit), `activate_artifact_view_revision`, and

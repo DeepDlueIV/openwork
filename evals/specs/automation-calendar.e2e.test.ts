@@ -57,20 +57,7 @@ test("an owner sees their Automations next to Google and Outlook meetings, pause
     await alex.screenshot();
   });
 
-  await step("before: desktop Calendar repeats provider names and exposes the default model's routing ID", async () => {
-    const meetings = (await look.dom("[data-calendar-meeting]")).elements;
-    expect(meetings.some((meeting) => meeting.text.includes("Google Calendar"))).toBe(true);
-    expect(await blocks("[data-calendar-provider-logo]")).toBe(0);
-    await alex.click({ role: "button", label: /^Weekly launch update, / });
-    await alex.see({ text: /openwork-cloud\/default/ });
-    await alex.screenshot();
-    evidence.recordAssertionEvidence("The off switch preserves the existing desktop meeting presentation", "Provider names remain beside meeting titles; the model shows openwork-cloud/default, with no compact provider logos.", true);
-  });
-  await step("after: desktop Calendar shows provider marks and an Organization default instead of its routing ID", async () => {
-    await world.setCalendarPolish(true);
-    await alex.reload();
-    await alex.see("composer", { editable: true });
-    await alex.click({ role: "button", label: "Calendar" });
+  await step("desktop Calendar shows provider marks and an Organization default instead of its routing ID", async () => {
     await alex.see({ role: "button", label: /^Launch standup, Google Calendar/ }, { timeoutMs: 60_000 });
     await alex.see({ role: "button", label: /^Partner pipeline review, Outlook/ });
     const meetings = (await look.dom("[data-calendar-meeting]")).elements;

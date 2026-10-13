@@ -60,13 +60,6 @@ export const FEATURES = defineFeatures({
     deployments: ["cloud"],
     default: false,
   },
-  orgManagedDashboards: {
-    label: "Dashboards",
-    description: "Organization admins publish dashboards to members in Den and the desktop app.",
-    since: "2026-10",
-    deployments: everywhere,
-    default: false,
-  },
   slackAssistant: {
     label: "Slack Assistant",
     description: "Answers Slack mentions and DMs for the organization after the Slack connector is set up.",

@@ -24,12 +24,19 @@ const BUILDER_KIND = "openwork-daytona-builder-v1";
 const VM_SIZE = { cpu: 4, memory: 8, disk: 10 };
 const ROOT = "/opt/openwork-preview";
 
+const NODE_VERSION = "v24.21.0";
+/** From https://nodejs.org/dist/v24.21.0/SHASUMS256.txt (node-v24.21.0-linux-x64.tar.xz). */
+const NODE_SHA256 = "fd8e59d5a511510f6a298afb548f18c7d2b1be404d8b4a27d94fbe49f56cb2d6";
+
 /** Node 24, Bun and git on plain Ubuntu; Freestyle's base image ships them. */
 const BASE_RECIPE = `export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y --no-install-recommends ca-certificates curl gnupg git
-curl -fsSL https://deb.nodesource.com/setup_24.x | bash -
-apt-get install -y --no-install-recommends nodejs
+apt-get install -y --no-install-recommends ca-certificates curl gnupg git xz-utils
+# Pinned Node release, verified against a checksum in this file before it runs as root.
+curl -fsSL -o /tmp/node.tar.xz https://nodejs.org/dist/${NODE_VERSION}/node-${NODE_VERSION}-linux-x64.tar.xz
+echo "${NODE_SHA256}  /tmp/node.tar.xz" | sha256sum -c -
+tar -xJf /tmp/node.tar.xz -C /usr/local --strip-components=1 --no-same-owner
+rm /tmp/node.tar.xz
 node -e 'if (Number(process.versions.node.split(".")[0]) < 24) throw new Error("Node 24 or newer is required")'
 # openwork-server's build bundles its plugins with Bun.
 npm install --global bun@1.3.14

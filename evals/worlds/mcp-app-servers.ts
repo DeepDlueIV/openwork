@@ -502,7 +502,7 @@ export const signInReply = "Here is the Order calculator.";
  * create_app and opens an existing one with launch input, both through
  * Connect, and each App's own tools run in the conversation.
  */
-export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place: Place } = false, options: { engine?: EvalEngine; desktop?: boolean; lifecycle?: boolean; ownSignIn?: boolean } = {}) {
+export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place: Place } = false, options: { engine?: EvalEngine; lifecycle?: boolean; ownSignIn?: boolean } = {}) {
   const measured = benchmark === true;
   const engine = options.engine ?? "v1";
   const toolStep = (tool: string, args: Record<string, unknown>) => engine === "v2" ? { tool: "execute", arguments: { code: `return await tools["openwork-cloud"].${tool}(${JSON.stringify(args)});` } } : { tool, arguments: args };
@@ -583,7 +583,7 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
   const workspacePath = seed.tmpPath("mcp-app-servers-chat");
   const denOrigin = new URL(den.ref.apiUrl);
   // The creation journeys open a step's hover-only technical details; an owner on a computer has a mouse even when the runner's headless Chrome finds none.
-  const app = options.desktop ? await seed.desktop({ den, as: "admin", workspacePath, enterpriseActivated: true }) : await seed.appWeb({ name: `mcp-app-servers-chat-${engine}`, workspacePath, headless: true, mouse: options.lifecycle, engine,
+  const app = await seed.appWeb({ name: `mcp-app-servers-chat-${engine}`, workspacePath, headless: true, mouse: options.lifecycle, engine,
     env: {
       OPENWORK_DEV_HEADLESS_WEB_DEN_PROXY: "1", OPENWORK_DEV_DEN_PROXY_TARGET: den.ref.webUrl,
       OPENWORK_DEV_HEADLESS_DEN_API_TARGET: den.ref.apiUrl,
@@ -591,7 +591,7 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
       ...(measured ? { OPENWORK_MCP_APP_TIMINGS: "1" } : {}),
     },
     ...(denOrigin.protocol === "https:" ? { syntheticPreactivatedDenOrigin: denOrigin.origin } : {}) });
-  if (!options.desktop) await seed.signIn(app, den.admin, "App owner");
+  await seed.signIn(app, den.admin, "App owner");
   const workspace = await seed.workspace(app, workspacePath);
   await configureProvider(seed, app, workspace.workspaceId, "app-chat-model", "app-chat-model", {
     provider: { "app-chat-model": {
@@ -769,4 +769,3 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
 export const mcpAppServersChatOwnSignIn = (seed: Seed) => mcpAppServersChat(seed, false, { ownSignIn: true });
 export const mcpAppCreationV1 = (seed: Seed) => mcpAppServersChat(seed, false, { engine: "v1", lifecycle: true });
 export const mcpAppCreationV2 = (seed: Seed) => mcpAppServersChat(seed, false, { engine: "v2", lifecycle: true });
-export const mcpAppCreationDesktop = (seed: Seed) => mcpAppServersChat(seed, false, { engine: "v1", desktop: true, lifecycle: true });

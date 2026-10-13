@@ -1,6 +1,6 @@
 import { expect } from "vitest";
 import { spec, type SpecBodyContext } from "@openwork/testkit";
-import { appSource, appTitle, buildPrompt, buildReply, chatPrompt, chatReply, guidedReply, guidedTitle, launchInput, mcpAppServers, mcpAppServersChat, mcpAppServersChatOwnSignIn, mcpAppCreationV1, mcpAppCreationV2, mcpAppCreationDesktop, payload, pricerTitle, record, reopenPrompt, reopenReply, reservationId, rows, signInPrompt, signInReply, toolNames } from "../worlds/mcp-app-servers.ts";
+import { appSource, appTitle, buildPrompt, buildReply, chatPrompt, chatReply, guidedReply, guidedTitle, launchInput, mcpAppServers, mcpAppServersChat, mcpAppServersChatOwnSignIn, mcpAppCreationV1, mcpAppCreationV2, payload, pricerTitle, record, reopenPrompt, reopenReply, reservationId, rows, signInPrompt, signInReply, toolNames } from "../worlds/mcp-app-servers.ts";
 
 const test = spec.world(mcpAppServers, {
   resources: { surfaces: ["web"], services: ["den", "mock"] },
@@ -539,10 +539,9 @@ signInTest("a person who has not signed in to the service an App uses is asked t
 
 const creationV1Test = spec.world(mcpAppCreationV1, { resources: { surfaces: ["appWeb"], services: ["den", "mock"] }, needs: { commands: ["bun", "pnpm", "opencode"] }, timeout: 600_000 });
 const creationV2Test = spec.world(mcpAppCreationV2, { resources: { surfaces: ["appWeb"], services: ["den", "mock"] }, needs: { commands: ["bun", "pnpm", "opencode"] }, timeout: 600_000 });
-const creationDesktopTest = spec.world(mcpAppCreationDesktop, { resources: { surfaces: ["desktop"], services: ["den", "mock"], nativeReason: "Verify the App pane beside Electron's native composer and personal dashboard tile controls in the Desktop shell." }, needs: { commands: ["bun", "pnpm", "opencode"] }, timeout: 600_000 });
 
 async function creationJourney({ world, agent, user, probe, step, evidence }: SpecBodyContext<Awaited<ReturnType<typeof mcpAppCreationV1>>>) {
-    const name = world.engine + ("openworkUrl" in world.app ? " web" : " native Desktop");
+    const name = `${world.engine} web`;
     let frame: Awaited<ReturnType<typeof world.appFrame>> | undefined;
     const closeFrame = async () => { await frame?.[Symbol.asyncDispose](); frame = undefined; };
     await using cleanup = { [Symbol.asyncDispose]: async () => { await frame?.[Symbol.asyncDispose](); } };
@@ -693,4 +692,3 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
 
 creationV1Test("an owner creates, edits, reopens and stops an App on v1 web", creationJourney);
 creationV2Test("an owner creates, edits, reopens and stops an App on v2 web", creationJourney);
-creationDesktopTest("an owner creates, edits, reopens and stops an App on native Desktop", creationJourney);

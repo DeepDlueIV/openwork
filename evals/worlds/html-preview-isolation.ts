@@ -45,7 +45,8 @@ const untrustedHtml = `<!doctype html>
 
 /** Desktop app with an open artifact panel and an untrusted HTML file in the workspace. */
 export async function htmlPreviewIsolationWorld(seed: Seed) {
-  const base = await workspaceWorld(seed);
+  // The desktop bridge the preview must not reach exists only in Electron.
+  const base = await workspaceWorld(seed, { surface: "electron" });
   const [session] = await seed.sessions(base.app, ["HTML preview isolation"]);
   if (!session) throw new Error("Could not seed the HTML preview session.");
   await go(base.app, `/workspace/${base.workspace.workspaceId}/session/${session.sessionId}`);

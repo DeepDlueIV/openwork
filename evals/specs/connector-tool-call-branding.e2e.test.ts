@@ -2,7 +2,10 @@ import { expect } from "vitest";
 import { spec } from "@openwork/testkit";
 import { connectorBranding, isRecord } from "../worlds/library.ts";
 
-const test = spec.world(connectorBranding, { timeout: 420_000 });
+const test = spec.world(connectorBranding, {
+  timeout: 420_000,
+  resources: { surfaces: ["appWeb"], services: ["den", "mock"] },
+});
 
 test("connector-backed tool calls show first-class branding and human-readable labels", async ({ world, user, probe, step, evidence }) => {
   const sinceIso = new Date().toISOString();

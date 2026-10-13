@@ -17,6 +17,8 @@ const REQUEST_ID = "req_01JZK4W9N7X2Q8M3V5T6B1C0DE";
 const DEBUG_PANEL_TITLE = /react session debug/i;
 
 const detailsToggle = { testId: "session-error-details-toggle" };
+// Technical details is revealed on hover (or focus) of its card, as a person
+// with a mouse finds it; point at the card's text before reaching for it.
 const detailsPanel = { testId: "session-error-details" };
 const statusLine = { text: /Status: 429/ };
 const requestId = { text: new RegExp(REQUEST_ID) };
@@ -45,6 +47,7 @@ test("session error cards expose provider diagnostics only in Developer mode", a
 
   await step("enabling Developer mode reaches the session surface without a reload", async () => {
     await toggleDeveloperMode("on");
+    await user.hover({ text: new RegExp(CARD_TEXT) });
     await user.see(detailsToggle);
     await user.see({ text: new RegExp(CARD_TEXT) });
     await user.see({ text: DEBUG_PANEL_TITLE });
@@ -59,7 +62,7 @@ test("session error cards expose provider diagnostics only in Developer mode", a
     for (const line of DIAGNOSTIC_LINES) await user.see({ text: new RegExp(line.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")) });
     // The request id sits inside the raw response-body block, so match it within that block's text.
     await user.see(requestId);
-    await user.see({ role: "button", label: /copy details/i });
+    await user.see({ role: "button", label: /^copy$/i });
   });
 
   await step("disabling Developer mode removes diagnostics while the error card remains", async () => {
@@ -85,10 +88,11 @@ test("session error cards expose provider diagnostics only in Developer mode", a
       await user.notSee({ text: "Not enough disk space" });
       if (kind === "database-error") await user.notSee({ text: STORAGE_TITLE });
       await toggleDeveloperMode("on");
+      await user.hover({ text: title });
       await user.click(detailsToggle);
       await user.see({ text: /effect\/sql\/SqlError/ });
       await user.see({ text: /at runLoop/ });
-      await user.see({ role: "button", label: /copy details/i });
+      await user.see({ role: "button", label: /^copy$/i });
       await toggleDeveloperMode("off");
       await user.see({ text: title });
       await user.notSee(detailsPanel);
@@ -101,6 +105,7 @@ test("session error cards expose provider diagnostics only in Developer mode", a
       await user.see({ text: title });
       await user.notSee({ text: /at runLoop/ });
       await toggleDeveloperMode("on");
+      await user.hover({ text: title });
       await user.click(detailsToggle);
       await user.see({ text: /effect\/sql\/SqlError/ });
       await user.see({ text: /at runLoop/ });
@@ -120,6 +125,7 @@ providerTest("a model server failure retries clearly and leaves one completed an
     await user.see({ text: "The model couldn’t respond. Retrying…" });
     await user.notSee({ text: "Internal server error" });
     await user.notSee({ testId: "admission-outcome-unknown" });
+    await user.hover({ text: "The model couldn’t respond. Retrying…" });
     await user.click(detailsToggle);
     await user.see({ text: /attempt [12]/ });
   });

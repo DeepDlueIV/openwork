@@ -2,7 +2,7 @@ import { expect } from "vitest";
 import { spec } from "@openwork/testkit";
 import { emptySession } from "../worlds/desktop.ts";
 
-const test = spec.world(emptySession);
+const test = spec.world(emptySession, { resources: { surfaces: ["appWeb"], services: [] } });
 
 test("reloading a session with a persisted composer draft keeps the renderer stable", async ({ user, probe, step }) => {
   const draft = "Keep this persisted draft through reload";

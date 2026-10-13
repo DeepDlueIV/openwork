@@ -95,10 +95,18 @@ async function titleState(app: Surface, title: string): Promise<TitleState> {
 describe.sequential("sidebar expansion and title continuity", () => {
 let selectedMode: SidebarMode = "overflow";
 // Register one fixture: repeated extensions accumulate worlds in Vitest 3.
+// "Show more" runs on the app in headless Chrome; the title-overflow case stays
+// on the desktop because it also checks the macOS titlebar inset.
 const test = spec.world(async seed => {
   const mode = selectedMode;
   if (mode === "overflow") return { mode, ...await sidebarOverflow(seed) };
   return { mode, ...await sidebarExpansion(seed, mode) };
+}, {
+  resources: {
+    surfaces: ["desktop", "appWeb"],
+    services: [],
+    nativeReason: "Collapsing the sidebar must line the pane up with the macOS window controls in the desktop titlebar.",
+  },
 });
 
 describe("title overflow", () => {

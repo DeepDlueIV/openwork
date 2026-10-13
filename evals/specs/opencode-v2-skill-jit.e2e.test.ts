@@ -12,6 +12,7 @@ import {
 
 const test = spec.world(skillLifecycle, {
   timeout: 900_000,
+  resources: { surfaces: ["appWeb"], services: ["den", "mock"] },
   needs: liveOpenAiEnabled() ? { env: ["OPENAI_API_KEY"], daytona: true } : {},
 });
 

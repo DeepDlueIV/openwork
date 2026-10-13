@@ -68,18 +68,29 @@ export const V1_FIXTURE_CHATS: readonly V1FixtureChat[] = [
   },
 ];
 
-/** Fixture chats the history-copy gate makes impossible to copy (see heldHistoryCopy). */
+/**
+ * Fixture chats that cannot be copied as they are: `large` holds more tool
+ * output than any chat may be copied whole, and the history-copy gate kills
+ * the migration process whenever it exports `crash` (see heldHistoryCopy).
+ */
 interface ChatsThatFail {
-  tooLarge: string;
+  large: string;
   crash: string;
 }
+
+/** Tool outputs in the large chat: 30 of ~10.5 MiB, ~315 MiB in all. */
+const LARGE_CHAT_OUTPUTS = 30;
+const LARGE_CHAT_OUTPUT = "A long build log line that the upgrade can leave out.\n".repeat(200_000);
 
 function json(value: unknown): string {
   return JSON.stringify(value);
 }
 
-/** Write the fixture history for `directory` (the workspace the chats belong to). Overwrites `database`. */
-export async function writeV1FixtureHistory(database: string, directory: string): Promise<{ chats: number }> {
+/**
+ * Write the fixture history for `directory` (the workspace the chats belong to). Overwrites `database`.
+ * `largeChat` also gets LARGE_CHAT_OUTPUTS big tool outputs.
+ */
+export async function writeV1FixtureHistory(database: string, directory: string, largeChat?: string): Promise<{ chats: number }> {
   await mkdir(dirname(database), { recursive: true });
   for (const suffix of ["", "-wal", "-shm"]) await rm(`${database}${suffix}`, { force: true });
   const db = new DatabaseSync(database);
@@ -122,6 +133,17 @@ export async function writeV1FixtureHistory(database: string, directory: string)
             metadata: {}, title: chat.readFile, time: { start: start + 2_000, end: start + 3_000 },
           },
         }));
+      }
+      if (chat.id === largeChat) {
+        for (let n = 1; n <= LARGE_CHAT_OUTPUTS; n++) {
+          part.run(fixtureId("prt", ++partN), assistantId, chat.id, start + 2_000, start + 3_000, json({
+            type: "tool", tool: "bash", callID: `call_fixture_log_${n}`,
+            state: {
+              status: "completed", input: { command: `cat build-${n}.log`, description: "Read a build log" },
+              output: LARGE_CHAT_OUTPUT, metadata: {}, title: `build-${n}.log`, time: { start: start + 2_000, end: start + 3_000 },
+            },
+          }));
+        }
       }
       part.run(fixtureId("prt", ++partN), assistantId, chat.id, start + 4_000, end, json({
         type: "text", text: chat.reply, time: { start: start + 4_000, end },
@@ -242,6 +264,25 @@ export function readMigrationCoverage(v1Database: string, v2Database: string): {
   }
 }
 
+/** A chat as v2 stored it: its parent, its messages, and how many of them contain each phrase. */
+export function readV2Chat(v2Database: string, sessionId: string, phrases: string[]) {
+  const db = new DatabaseSync(v2Database, { readOnly: true });
+  try {
+    const session = db.prepare("SELECT parent_id FROM session_v2 WHERE id = ?").get(sessionId);
+    const count = (sql: string, ...params: string[]) => {
+      const value = Reflect.get(db.prepare(sql).get(...params) ?? {}, "n");
+      return typeof value === "number" ? value : 0;
+    };
+    return {
+      parentId: session ? stringColumn(session, "parent_id") || null : undefined,
+      messages: count("SELECT count(*) AS n FROM session_message WHERE session_id = ?", sessionId),
+      containing: phrases.map(phrase => count("SELECT count(*) AS n FROM session_message WHERE session_id = ? AND instr(data, ?) > 0", sessionId, phrase)),
+    };
+  } finally {
+    db.close();
+  }
+}
+
 /** The desktop's live v2 chat database inside an Electron profile. */
 async function findV2Database(profileDir: string): Promise<string> {
   const entries = await readdir(profileDir, { recursive: true });
@@ -282,9 +323,8 @@ export async function cloneWholeV1History(source: string, database: string): Pro
  * also counts chat exports and imports and notes which process sent a held
  * import. No request headers, chat data or response bodies are retained.
  *
- * `failing` stands in for chats that cannot be copied: the export of
- * `tooLarge` streams more bytes than any chat may have, and the migration
- * process is killed while it exports `crash`, as running out of memory would.
+ * With `failing`, the migration process is killed whenever it exports
+ * `failing.crash`, as running out of memory would.
  */
 async function heldHistoryCopy(database: string, attempts: number, failing?: ChatsThatFail) {
   const token = randomBytes(24).toString("hex");
@@ -292,7 +332,7 @@ async function heldHistoryCopy(database: string, attempts: number, failing?: Cha
   let timer: ReturnType<typeof setTimeout> | undefined;
   const state = {
     installed: false, arrived: 0, released: 0, failed: 0, expired: false, exports: 0, imports: 0,
-    tooLargeExports: 0, crashes: [] as { process: string; pid: number }[],
+    crashes: [] as { process: string; pid: number }[],
     mainPid: null as number | null, heldBy: null as { process: string; pid: number } | null,
   };
   const release = (outcome: "continue" | "fail") => {
@@ -315,7 +355,6 @@ async function heldHistoryCopy(database: string, attempts: number, failing?: Cha
     if (url.pathname === "/ready") { state.installed = true; state.mainPid = sender.pid; response.end("ready"); return; }
     if (url.pathname === "/seen/export") { state.exports++; response.end("ok"); return; }
     if (url.pathname === "/seen/import") { state.imports++; response.end("ok"); return; }
-    if (url.pathname === "/seen/too-large") { state.tooLargeExports++; response.end("ok"); return; }
     if (url.pathname === "/seen/crash") { state.crashes.push(sender); response.end("ok"); return; }
     if (url.pathname !== "/copy") { response.writeHead(404).end(); return; }
     if (held) { response.writeHead(409).end("fail"); return; }
@@ -356,15 +395,6 @@ if (process.versions.electron && (process.type === "browser" || migrationProcess
         await witness("/seen/crash").then(response => response.text()).catch(() => undefined);
         process.kill(process.pid, "SIGKILL");
       }
-      if (exportOf === ${JSON.stringify(failing?.tooLarge ?? null)}) {
-        await witness("/seen/too-large").then(response => response.text()).catch(() => undefined);
-        // 300 MiB of one reused 1 MiB chunk: over the copy limit without holding it in memory.
-        const chunk = new Uint8Array(1024 * 1024).fill(32);
-        let sent = 0;
-        return new Response(new ReadableStream({
-          pull(controller) { if (sent++ < 300) controller.enqueue(chunk); else controller.close(); },
-        }), { status: 200, headers: { "content-type": "application/json" } });
-      }
     }
     if (loopback && method === "POST" && url.pathname === "/api/experimental/session/import") {
       await witness("/seen/import").then(response => response.text()).catch(() => undefined);
@@ -404,11 +434,11 @@ export async function engineV1HistoryUpgrade(seed: Seed, { place }: { place: Pla
 }
 
 /**
- * The same desktop and fixture history, where one chat is too large to copy
- * and copying another kills the migration process. Nothing is held.
+ * The same desktop and fixture history, where the sub-chat is too large to
+ * copy whole and copying another chat kills the migration process. Nothing is held.
  */
 export async function engineV1HistoryWithChatsThatFail(seed: Seed, { place }: { place: Place }) {
-  const failing = { tooLarge: V1_FIXTURE_CHATS[2]!.id, crash: V1_FIXTURE_CHATS[3]!.id };
+  const failing = { large: V1_FIXTURE_CHATS[1]!.id, crash: V1_FIXTURE_CHATS[3]!.id };
   return { ...await startV1HistoryDesktop(seed, place, failing), failing };
 }
 
@@ -430,7 +460,7 @@ async function startV1HistoryDesktop(seed: Seed, place: Place, failing?: ChatsTh
   const limit = process.env.OPENWORK_EVAL_V1_HISTORY_LIMIT?.trim();
   const whole = source !== null && limit === "all";
   const seeded = !source
-    ? await writeV1FixtureHistory(database, workspacePath)
+    ? await writeV1FixtureHistory(database, workspacePath, failing?.large)
     : whole
       ? await cloneWholeV1History(source, database)
       : await copyRecentV1History(source, database, Number(limit) || 40);
@@ -475,6 +505,7 @@ async function startV1HistoryDesktop(seed: Seed, place: Place, failing?: ChatsTh
     chats: source === null ? V1_FIXTURE_CHATS : [],
     readV1History: () => readV1HistoryDigest(database),
     readCoverage: async () => readMigrationCoverage(database, await findV2Database(profileDir)),
+    readV2Chat: async (sessionId: string, phrases: string[]) => readV2Chat(await findV2Database(profileDir), sessionId, phrases),
     async [Symbol.asyncDispose]() { await lifetime.disposeAsync(); },
   };
 }

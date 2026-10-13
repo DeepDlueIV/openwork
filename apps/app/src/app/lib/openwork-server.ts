@@ -92,9 +92,11 @@ export interface EngineV2MigrationStatus {
   backupPath?: string;
   /** Chats left in v1 because they could not be copied; older servers omit it. */
   notCopied?: Array<{ id: string; title: string }>;
+  /** Chats copied without their largest outputs and attachments; older servers omit it. */
+  trimmed?: Array<{ id: string; title: string }>;
 }
 
-function parseNotCopied(value: unknown): Array<{ id: string; title: string }> {
+function parseChats(value: unknown): Array<{ id: string; title: string }> {
   if (!Array.isArray(value)) return [];
   return value.flatMap((chat: unknown) =>
     chat && typeof chat === "object" && "id" in chat && typeof chat.id === "string"
@@ -115,7 +117,8 @@ function parseEngineV2Migration(value: unknown): EngineV2MigrationStatus | undef
     ...(phase ? { phase } : {}),
     ...("startedAt" in value && typeof value.startedAt === "string" ? { startedAt: value.startedAt } : {}),
     ...("backupPath" in value && typeof value.backupPath === "string" ? { backupPath: value.backupPath } : {}),
-    ...("notCopied" in value ? { notCopied: parseNotCopied(value.notCopied) } : {}),
+    ...("notCopied" in value ? { notCopied: parseChats(value.notCopied) } : {}),
+    ...("trimmed" in value ? { trimmed: parseChats(value.trimmed) } : {}),
     error: "error" in value && typeof value.error === "string" ? value.error : undefined };
 }
 

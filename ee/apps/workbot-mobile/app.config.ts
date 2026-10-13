@@ -8,6 +8,13 @@ import type { ConfigContext, ExpoConfig } from "expo/config"
 const variant = process.env.APP_VARIANT === "production" ? "production" : "development"
 const production = variant === "production"
 const id = production ? "com.openworklabs.workbot" : "com.openworklabs.workbot.dev"
+const WORKBOT_HOST = "chat.openworklabs.com"
+/**
+ * Where Workbot sends the production app back after signing in: a page on Workbot that iOS and Android open only in
+ * this app, verified against Workbot's /.well-known files, so no other app can take the code. Development builds come
+ * back to their own scheme, which only a Workbot on this computer accepts.
+ */
+const AUTH_CALLBACK_PATH = "/auth/app/callback"
 
 /** Development builds start from EXPO_PUBLIC_WORKBOT_URL: https, or plain http only on this computer (loopback). */
 function developmentWorkbotUrl(value = "http://localhost:3020") {
@@ -21,7 +28,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   name: production ? "Workbot" : "Workbot Dev",
   slug: "workbot",
   version: "0.1.0",
-  // The app's own address: Workbot sends people back here after they sign in with OpenWork.
+  // The app's own address for links into it (and the development build's sign-in return).
   scheme: id,
   orientation: "portrait",
   userInterfaceStyle: "light",
@@ -30,6 +37,8 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   ios: {
     bundleIdentifier: id,
     supportsTablet: false,
+    // The sign-in browser hands an https return address back to the app from iOS 17.4.
+    ...(production ? { deploymentTarget: "17.4", associatedDomains: [`applinks:${WORKBOT_HOST}`, `webcredentials:${WORKBOT_HOST}`] } : {}),
     config: { usesNonExemptEncryption: false },
     infoPlist: {
       NSCameraUsageDescription: "Take a photo to send to Workbot.",
@@ -44,6 +53,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     adaptiveIcon: { foregroundImage: "./assets/adaptive-icon.png", backgroundColor: "#fbfcfd" },
     permissions: ["android.permission.CAMERA"],
     blockedPermissions: ["android.permission.RECORD_AUDIO"],
+    ...(production
+      ? { intentFilters: [{ action: "VIEW", autoVerify: true, data: [{ scheme: "https", host: WORKBOT_HOST, path: AUTH_CALLBACK_PATH }], category: ["BROWSABLE", "DEFAULT"] }] }
+      : {}),
   },
   plugins: [
     "expo-router",
@@ -59,7 +71,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   extra: {
     variant,
     // Production always talks to Workbot's own address; development builds start from this one and can change it.
-    workbotUrl: production ? "https://chat.openworklabs.com" : developmentWorkbotUrl(process.env.EXPO_PUBLIC_WORKBOT_URL || undefined),
-    redirectUri: `${id}:/auth/callback`,
+    workbotUrl: production ? `https://${WORKBOT_HOST}` : developmentWorkbotUrl(process.env.EXPO_PUBLIC_WORKBOT_URL || undefined),
+    redirectUri: production ? `https://${WORKBOT_HOST}${AUTH_CALLBACK_PATH}` : `${id}:/auth/callback`,
   },
 })

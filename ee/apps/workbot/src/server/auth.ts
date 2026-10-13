@@ -2,7 +2,7 @@ import { createHash } from "node:crypto"
 import type { Context, Hono, MiddlewareHandler } from "hono"
 import { deleteCookie, getCookie, setCookie } from "hono/cookie"
 import { z } from "zod"
-import type { Config } from "./config.js"
+import { WORKBOT_APP_CALLBACK_PATH, WORKBOT_APP_ID, type Config } from "./config.js"
 import { DenSignedOutError, type Den, type DenSession } from "./den.js"
 import { createSealer, MAX_COOKIE_VALUE, randomToken, sessionSchema, type Tokens } from "./sealed.js"
 
@@ -29,7 +29,11 @@ const LOGIN_PURPOSE = "workbot-login-v1"
 const APP_SESSION_PURPOSE = "workbot-app-session-v1"
 const APP_LOGIN_PURPOSE = "workbot-app-login-v1"
 
-/** The phone app starts a sign-in with its PKCE challenge (S256), its own state and its return address. */
+/**
+ * The phone app starts a sign-in with its PKCE challenge (S256), its own state and its return address. Anyone can
+ * start one with a challenge of their own, so the code must only ever reach the Workbot app: its return address is a
+ * page on Workbot that iOS and Android open only in the verified app (see config.ts).
+ */
 const appLoginQuerySchema = z.object({
   code_challenge: z.string().regex(/^[A-Za-z0-9_-]{43,128}$/),
   code_challenge_method: z.literal("S256"),
@@ -99,7 +103,7 @@ function withHeaders(c: Context, headers: Record<string, string>) {
 /** What sign-in needs from Den. */
 export type DenAuth = Pick<Den, "authorizeUrl" | "exchangeCode" | "session" | "refresh" | "revoke">
 
-export function createAuth(input: { config: Pick<Config, "publicUrl" | "secureCookies" | "sessionSecret" | "appRedirectUris">; den: DenAuth; now?: () => number }) {
+export function createAuth(input: { config: Pick<Config, "publicUrl" | "secureCookies" | "sessionSecret" | "appRedirectUris" | "appLinks">; den: DenAuth; now?: () => number }) {
   const { config, den } = input
   const now = input.now ?? Date.now
   const sealer = createSealer(config.sessionSecret)
@@ -281,6 +285,31 @@ export function createAuth(input: { config: Pick<Config, "publicUrl" | "secureCo
         console.error("[workbot] sign-in unavailable", { error: error instanceof Error ? error.message : "unknown" })
         return c.html(page("Workbot can't reach OpenWork", "Signing in isn't working right now. Try again in a minute.", null), 503)
       }
+    })
+
+    /**
+     * The phone app's return address when it opens in a browser instead of the app (the app isn't installed, or the
+     * phone hasn't verified it yet): the code stays on this page, which loads nothing else.
+     */
+    app.get(WORKBOT_APP_CALLBACK_PATH, (c) => {
+      c.header("Cache-Control", "no-store")
+      return c.html(page("Open the Workbot app", "Signing in finishes in the Workbot app. Open it there and sign in again.", null))
+    })
+
+    /** What iOS and Android check before they open the return address in the Workbot app, and only in it. */
+    app.get("/.well-known/apple-app-site-association", (c) => {
+      if (!config.appLinks.iosTeamId) return c.json({ error: "not_found" }, 404)
+      const appId = `${config.appLinks.iosTeamId}.${WORKBOT_APP_ID}`
+      return c.json({ applinks: { details: [{ appIDs: [appId], components: [{ "/": WORKBOT_APP_CALLBACK_PATH }] }] }, webcredentials: { apps: [appId] } })
+    })
+    app.get("/.well-known/assetlinks.json", (c) => {
+      if (config.appLinks.androidCertSha256.length === 0) return c.json({ error: "not_found" }, 404)
+      return c.json([
+        {
+          relation: ["delegate_permission/common.handle_all_urls"],
+          target: { namespace: "android_app", package_name: WORKBOT_APP_ID, sha256_cert_fingerprints: config.appLinks.androidCertSha256 },
+        },
+      ])
     })
 
     app.get("/auth/callback", async (c) => {

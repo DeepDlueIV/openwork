@@ -2,12 +2,19 @@ import assert from "node:assert/strict"
 import { test } from "node:test"
 import { Hono } from "hono"
 import { createAuth, type AppEnv, type DenAuth } from "../src/server/auth.js"
+import { loadConfig } from "../src/server/config.js"
 import { DenSignedOutError, type DenSession } from "../src/server/den.js"
 import type { Tokens } from "../src/server/sealed.js"
 
 const SECRET = "test-secret-test-secret-test-secret-0001"
-const APP_REDIRECT = "com.openworklabs.workbot:/auth/callback"
-const config = { publicUrl: "https://workbot.test", secureCookies: true, sessionSecret: SECRET, appRedirectUris: [APP_REDIRECT] }
+const APP_REDIRECT = "https://workbot.test/auth/app/callback"
+const config = loadConfig({
+  WORKBOT_PUBLIC_URL: "https://workbot.test",
+  WORKBOT_DEN_API_URL: "https://den.test",
+  WORKBOT_RUNNER_URL: "http://runner",
+  WORKBOT_RUNNER_TOKEN: "runner-token-runner-token-runner-0001",
+  WORKBOT_SESSION_SECRET: SECRET,
+})
 const who: DenSession = {
   user: { id: "user_test", name: "Test Person", email: "person@example.test" },
   organization: { id: "org_test", name: "Test Org", brandAppName: null },
@@ -175,7 +182,7 @@ async function signInApp(app: Hono<AppEnv>) {
   assert.equal(callback.status, 302)
   assert.equal(callback.headers.getSetCookie().length, 0)
   const back = new URL(callback.headers.get("location") ?? "")
-  assert.equal(`${back.protocol}${back.pathname}`, APP_REDIRECT)
+  assert.equal(`${back.origin}${back.pathname}`, APP_REDIRECT)
   assert.equal(back.searchParams.get("code"), "den-code")
   assert.equal(back.searchParams.get("state"), appState)
   const token = await app.request("/auth/app/token", {
@@ -209,6 +216,8 @@ test("phone sign-in refuses other return addresses, plain challenges and stale o
     app.request(`/auth/app/login?${new URLSearchParams({ code_challenge: "c".repeat(43), code_challenge_method: "S256", state: "app-state-0123456789", redirect_uri: APP_REDIRECT, ...params })}`)
   assert.equal((await start({ redirect_uri: "https://evil.test/callback" })).status, 400)
   assert.equal((await start({ redirect_uri: "com.evil.app:/auth/callback" })).status, 400)
+  // A scheme any app can claim never gets the code from a Workbot that isn't on this machine.
+  assert.equal((await start({ redirect_uri: "com.openworklabs.workbot:/auth/callback" })).status, 400)
   assert.equal((await start({ code_challenge_method: "plain" })).status, 400)
   assert.equal((await start({ state: "short" })).status, 400)
   const token = (body: unknown) => app.request("/auth/app/token", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })

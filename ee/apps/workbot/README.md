@@ -36,9 +36,13 @@ The [Workbot app](../workbot-mobile) for iPhone and Android signs in through Wor
 and the phone never holds Den tokens:
 
 1. The app opens `/auth/app/login` in the system's sign-in browser with its own PKCE challenge, its state and its
-   return address (one of `WORKBOT_APP_REDIRECT_URIS`).
+   return address.
 2. Workbot sends the person to Den with that challenge. Den returns to Workbot's `/auth/callback`, which hands the
-   code to the app's address.
+   code to the app's return address: `/auth/app/callback` on Workbot itself, which iOS and Android open only in the
+   Workbot app they verified against `/.well-known/apple-app-site-association` and `/.well-known/assetlinks.json`.
+   Anyone can start a sign-in with a challenge of their own, so the code never goes to an address another app could
+   claim. The development build's `com.openworklabs.workbot.dev:/auth/callback` is accepted only by a Workbot on
+   localhost.
 3. The app trades the code and its verifier at `POST /auth/app/token` for a Workbot session, encrypted with
    `WORKBOT_SESSION_SECRET` like the cookie, and sends it as `Authorization: Bearer`. When the Den tokens inside are refreshed, the response
    carries the new session in `Workbot-Session`; `POST /auth/app/refresh` renews it before it expires, and
@@ -56,7 +60,8 @@ refused with `workbot_mobile_not_enabled`.
 | `WORKBOT_DEN_WEB_URL` | sign-in origin | Den's web app, for the link back and app logos |
 | `WORKBOT_RUNNER_URL`, `WORKBOT_RUNNER_TOKEN` | required | The headless runner and its service token (`HEADLESS_API_TOKEN`) |
 | `WORKBOT_SESSION_SECRET` | required | ≥ 32 characters; encrypts the sign-in cookies. Changing it signs everyone out |
-| `WORKBOT_APP_REDIRECT_URIS` | `com.openworklabs.workbot:/auth/callback` | The phone app's return addresses, comma-separated. A loopback `WORKBOT_PUBLIC_URL` also allows the development build's `com.openworklabs.workbot.dev:/auth/callback` |
+| `WORKBOT_IOS_TEAM_ID` | unset | The Workbot app's Apple team ID, served in `apple-app-site-association` so iOS returns sign-in to the app. Unset: the iPhone app can't finish signing in |
+| `WORKBOT_ANDROID_CERT_SHA256` | unset | SHA-256 fingerprints of the Android app's signing certificates, comma-separated, served in `assetlinks.json`. Unset: the Android app can't finish signing in |
 | `PORT` / `WORKBOT_PORT` | `3020` | |
 
 On Den, set `DEN_WORKBOT_URL` (den-api) to the same address as `WORKBOT_PUBLIC_URL`; den-web's `/workbot` redirects

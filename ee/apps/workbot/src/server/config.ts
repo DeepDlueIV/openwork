@@ -38,28 +38,39 @@ const schema = z.object({
   WORKBOT_CALENDAR_MOCK_URL: origin(false).optional(),
   /** Serve the page from Vite with hot reload instead of the built files. */
   WORKBOT_DEV: z.enum(["0", "1"]).default("0"),
+  /** The Workbot app's Apple team ID: iOS then trusts it with its sign-in return address (apple-app-site-association). */
+  WORKBOT_IOS_TEAM_ID: z.string().regex(/^[A-Z0-9]{10}$/, "must be a 10-character Apple team ID").optional(),
   /**
-   * Where the phone app may be sent back after signing in, exact and comma-separated. Unset: the Workbot app's own
-   * address, plus its development build's when Workbot runs on this machine.
+   * SHA-256 fingerprints of the Workbot Android app's signing certificates, comma-separated: Android then trusts it
+   * with its sign-in return address (assetlinks.json).
    */
-  WORKBOT_APP_REDIRECT_URIS: z.string().optional(),
+  WORKBOT_ANDROID_CERT_SHA256: z.string().optional(),
 })
 
-/** The Workbot phone app's sign-in return address, and its development build's. */
-export const WORKBOT_APP_REDIRECT_URI = "com.openworklabs.workbot:/auth/callback"
+/** The Workbot phone app (its production build). */
+export const WORKBOT_APP_ID = "com.openworklabs.workbot"
+/**
+ * Where the phone app comes back after signing in: a page on Workbot itself that iOS and Android open only in the
+ * Workbot app they verified (/.well-known); any other app can't receive it, and a browser just shows the page.
+ */
+export const WORKBOT_APP_CALLBACK_PATH = "/auth/app/callback"
+/**
+ * The development build's return address: a private-use scheme, which another app could also claim, so it's only
+ * accepted by a Workbot on this machine.
+ */
 export const WORKBOT_DEV_APP_REDIRECT_URI = "com.openworklabs.workbot.dev:/auth/callback"
 
-/** A private-use, reverse-domain scheme (RFC 8252 §7.1) and a path, nothing else: never a web address. */
-const APP_REDIRECT_URI = /^[a-z][a-z0-9-]*(\.[a-z0-9-]+)+:\/[A-Za-z0-9/_-]*$/
+function appRedirectUris(publicUrl: string): string[] {
+  const own = `${publicUrl}${WORKBOT_APP_CALLBACK_PATH}`
+  return LOOPBACK_HOSTS.has(new URL(publicUrl).hostname) ? [own, WORKBOT_DEV_APP_REDIRECT_URI] : [own]
+}
 
-function appRedirectUris(value: string | undefined, publicUrl: string): string[] {
-  if (value === undefined) {
-    const local = LOOPBACK_HOSTS.has(new URL(publicUrl).hostname)
-    return local ? [WORKBOT_APP_REDIRECT_URI, WORKBOT_DEV_APP_REDIRECT_URI] : [WORKBOT_APP_REDIRECT_URI]
-  }
-  const list = value.split(",").map((entry) => entry.trim()).filter(Boolean)
-  const invalid = list.filter((entry) => !APP_REDIRECT_URI.test(entry))
-  if (invalid.length > 0) throw new Error(`Invalid Workbot configuration:\nWORKBOT_APP_REDIRECT_URIS: not an app address: ${invalid.join(", ")}`)
+const CERT_SHA256 = /^([0-9A-F]{2}:){31}[0-9A-F]{2}$/
+
+function certFingerprints(value: string | undefined): string[] {
+  const list = (value ?? "").split(",").map((entry) => entry.trim().toUpperCase()).filter(Boolean)
+  const invalid = list.filter((entry) => !CERT_SHA256.test(entry))
+  if (invalid.length > 0) throw new Error(`Invalid Workbot configuration:\nWORKBOT_ANDROID_CERT_SHA256: not a SHA-256 certificate fingerprint: ${invalid.join(", ")}`)
   return list
 }
 
@@ -77,6 +88,8 @@ export type Config = {
   secureCookies: boolean
   /** Where the phone app may be sent back after signing in (exact matches). */
   appRedirectUris: string[]
+  /** What verifies the Workbot app as the owner of its return address; nothing is served for what's unset. */
+  appLinks: { iosTeamId: string | null; androidCertSha256: string[] }
 }
 
 export function loadConfig(env: Record<string, string | undefined> = process.env): Config {
@@ -96,6 +109,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     dev: value.WORKBOT_DEV === "1",
     calendarMockUrl: value.WORKBOT_CALENDAR_MOCK_URL ?? null,
     secureCookies: value.WORKBOT_PUBLIC_URL.startsWith("https:"),
-    appRedirectUris: appRedirectUris(value.WORKBOT_APP_REDIRECT_URIS, value.WORKBOT_PUBLIC_URL),
+    appRedirectUris: appRedirectUris(value.WORKBOT_PUBLIC_URL),
+    appLinks: { iosTeamId: value.WORKBOT_IOS_TEAM_ID ?? null, androidCertSha256: certFingerprints(value.WORKBOT_ANDROID_CERT_SHA256) },
   }
 }

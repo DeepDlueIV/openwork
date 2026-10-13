@@ -36,5 +36,9 @@ MySQL and Redis, Node 24).
 
 ## Builds
 
-`APP_VARIANT=production` builds `com.openworklabs.workbot` for `https://chat.openworklabs.com`. Any other build is the
-development app `com.openworklabs.workbot.dev` ("Workbot Dev"), which can sign in to any Workbot.
+`APP_VARIANT=production` builds `com.openworklabs.workbot` for `https://chat.openworklabs.com` (iOS 17.4 or later). It
+comes back from signing in through `https://chat.openworklabs.com/auth/app/callback`, which iOS and Android open only
+in this app once Workbot serves its team ID and signing certificates (`WORKBOT_IOS_TEAM_ID`,
+`WORKBOT_ANDROID_CERT_SHA256`). Any other build is the development app `com.openworklabs.workbot.dev` ("Workbot Dev"),
+which signs in to a Workbot on this computer: plain http only reaches localhost, and only a local Workbot accepts its
+sign-in return.

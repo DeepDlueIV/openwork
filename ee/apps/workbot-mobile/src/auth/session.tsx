@@ -177,7 +177,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   const signIn = useCallback(async () => {
     const pending = await newSignIn()
     const start = `${server}/auth/app/login?${new URLSearchParams({ code_challenge: pending.challenge, code_challenge_method: "S256", state: pending.state, redirect_uri: build.redirectUri })}`
-    const result = await WebBrowser.openAuthSessionAsync(start, build.redirectUri, { preferEphemeralSession: false })
+    // An https return address (production) comes back through the verified app link, never a scheme others can claim.
+    const result = await WebBrowser.openAuthSessionAsync(start, build.redirectUri, { preferEphemeralSession: false, preferUniversalLinks: build.redirectUri.startsWith("https:") })
     if (result.type !== "success") return
     const returned = queryOf(result.url)
     if (returned.get("state") !== pending.state) {

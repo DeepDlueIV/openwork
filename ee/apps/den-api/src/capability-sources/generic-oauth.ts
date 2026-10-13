@@ -599,6 +599,11 @@ async function refreshTokens(input: {
   })
 }
 
+function isRevokedGrant(error: unknown): boolean {
+  return error instanceof OAuthTokenExchangeError
+    && (error.code === "oauth_invalid_grant" || error.code === "oauth_reauthentication_required")
+}
+
 /**
  * Returns a valid, unexpired access token for the calling member's
  * connected account, refreshing it (and persisting the refresh) if needed.
@@ -643,7 +648,27 @@ export async function getValidAccessToken(input: {
     return { error: "client_not_configured" }
   }
 
-  const refreshed = await refreshTokens({ provider: input.provider, client, refreshToken: account.refreshToken })
+  let refreshed: TokenResponse
+  try {
+    refreshed = await refreshTokens({ provider: input.provider, client, refreshToken: account.refreshToken })
+  } catch (error) {
+    if (!isRevokedGrant(error)) throw error
+    // The provider no longer honors this grant (revoked access, password
+    // change, expired consent). Clear it so later requests ask the member to
+    // connect again instead of retrying a dead refresh token.
+    await refreshConnectedAccountForActiveMember({
+      organizationId: input.organizationId,
+      orgMembershipId: input.orgMembershipId,
+      providerId: input.credentialProviderId,
+      expectedAccountId: account.id,
+      expectedAccessToken: account.accessToken,
+      expectedRefreshToken: account.refreshToken,
+      accessToken: null,
+      refreshToken: null,
+      expiresAt: null,
+    })
+    return { error: "not_connected" }
+  }
   const slackIdentity = input.provider.providerId === "slack"
     ? await validateSlackTokenIdentity(refreshed, account.externalAccountId ?? "")
     : undefined

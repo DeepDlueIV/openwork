@@ -80,8 +80,8 @@ export function requireFeature(key: FeatureKey): MiddlewareHandler<{ Variables: 
   return async (c, next) => {
     const payload = c.get("organizationContext")
     if (!payload) return c.json({ error: "organization_not_found" }, 404)
-    const enabled = await organizationFeatureEnabled(payload.organization.id, key)
-    if (!enabled) return c.json({ error: "feature_disabled", feature: key }, 404)
+    // The organization context read its features fresh for this request.
+    if (!payload.features[key]) return c.json({ error: "feature_disabled", feature: key }, 404)
     await next()
   }
 }

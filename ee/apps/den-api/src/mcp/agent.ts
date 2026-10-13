@@ -38,14 +38,14 @@ import {
   SEARCH_CAPABILITIES_TOOL_NAME,
   type CapabilityMatch,
 } from "./search.js"
-import { resolveMcpMemberIdentity } from "./external-capabilities.js"
+import { resolveMcpMember, resolveMcpMemberIdentity } from "./external-capabilities.js"
 import { executeMarketplaceCapability, listAccessibleMarketplaceSkillDescriptors, parseMarketplaceCapabilityName, type RemoteSkillDescriptor } from "./marketplace-capabilities.js"
 import { resolvePublicOrigin } from "../capability-sources/generic-oauth.js"
 import { automationService } from "../automations/service.js"
 import { AGENT_AUTOMATION_INDEX_LIMIT, registerAgentAutomationResources } from "./automation-index.js"
 import { env } from "../env.js"
 import { getOrganizationFeatures } from "../features.js"
-import { getOrganizationContextForUser, listTeamsForMember } from "../orgs.js"
+import { getOrganizationContextForUser } from "../orgs.js"
 import { executeLiveArtifactWorkflow, getWorkflowDetail, getWorkflowSnapshot } from "../workflows.js"
 import { artifactFreshness } from "../workflow-artifacts.js"
 import { PluginArchAuthorizationError, requirePluginArchCapability } from "../routes/org/plugin-system/access.js"
@@ -480,10 +480,11 @@ export function registerAgentMcpRoutes<T extends { Variables: RequestIdVariables
     // External MCP connections are scoped to the calling MEMBER (grants +
     // per-member credentials), not just the org — resolve who this token's
     // user is within the org once per request.
-    const memberIdentity = await resolveMcpMemberIdentity({
+    const member = await resolveMcpMember({
       userId: principal.userId,
       organizationId: principal.organizationId,
     })
+    const memberIdentity = member?.identity ?? null
     const notificationScope = `${principal.organizationId}\0${principal.userId}`
     const organizationId = normalizeDenTypeId("organization", principal.organizationId)
     const organizationFeatures = await getOrganizationFeatures(organizationId)
@@ -529,30 +530,17 @@ export function registerAgentMcpRoutes<T extends { Variables: RequestIdVariables
       ].sort((a, b) => a.name.localeCompare(b.name) || a.capability.localeCompare(b.capability)))()
       return remoteSkillsPromise
     }
-    let libraryContext: PluginArchActorContext | null = null
-    const appCatalogMethod = method === "server/discover"
-      || method === "initialize"
-      || method === "tools/list"
-      || method === "tools/call"
-      || method === "resources/list"
-      || method === "resources/read"
-    if (memberIdentity && appCatalogMethod) {
+    // Only the skill, App builder, Workflow artifact and artifact view tools act
+    // through the organization context, so it loads on first use, once per request.
+    let libraryContextPromise: Promise<PluginArchActorContext | null> | null = null
+    const loadLibraryContext = (): Promise<PluginArchActorContext | null> => libraryContextPromise ??= (async () => {
+      if (!member) return null
       const organizationContext = await getOrganizationContextForUser({
         userId: normalizeDenTypeId("user", principal.userId),
         organizationId,
       })
-      if (organizationContext) {
-        libraryContext = {
-          organizationContext,
-          memberTeams: await listTeamsForMember({
-            organizationId,
-            memberId: memberIdentity.orgMembershipId,
-          }),
-          session: null,
-        }
-      }
-    }
-    const artifactContext = libraryContext
+      return organizationContext ? { organizationContext, memberTeams: member.teams, session: null } : null
+    })()
     // Apps built here are each served as their own MCP server; Connect lists
     // them in its server index, finds them in search, and builds them.
     const appAccess = { organizationId: principal.organizationId, member: memberIdentity }
@@ -586,9 +574,10 @@ export function registerAgentMcpRoutes<T extends { Variables: RequestIdVariables
     if (remoteSessionEventsEnabled) registerRemoteSessionReceiptResources({ server, ...receiptStores, ...receiptScope })
     registerAgentConnectionActionApp(server, { organizationId: principal.organizationId, member: memberIdentity })
     if (appServersEnabled) {
-      const appActor = (): PluginArchActorContext => {
-        if (!libraryContext) throw new AppBuilderError("mcp_membership_revoked", "The OpenWork Cloud membership for this connection is unavailable.")
-        return libraryContext
+      const appActor = async (): Promise<PluginArchActorContext> => {
+        const context = await loadLibraryContext()
+        if (!context) throw new AppBuilderError("mcp_membership_revoked", "The OpenWork Cloud membership for this connection is unavailable.")
+        return context
       }
       const appAuditPrincipal = () => {
         if (!auditPrincipal) throw new AppBuilderError("mcp_membership_revoked", "The OpenWork Cloud membership for this connection is unavailable.")
@@ -614,20 +603,20 @@ export function registerAgentMcpRoutes<T extends { Variables: RequestIdVariables
         publicOrigin: redirectUriBase,
         service: {
           prepare: (request) => appOperation(async () => {
-            appActor()
+            await appActor()
             const tools = await resolveTools(request.tools ?? [])
-            appActor()
+            await appActor()
             return appAuthoringStarter(request, tools)
           }),
-          create: (request) => appOperation(() => {
-            const context = appActor()
+          create: (request) => appOperation(async () => {
+            const context = await appActor()
             return runMcpServiceAction("mcp_app.create", appAuditPrincipal(), null, () => createMcpApp({ ...request, context, resolveTools }))
           }),
-          update: (request) => appOperation(() => {
-            const context = appActor()
+          update: (request) => appOperation(async () => {
+            const context = await appActor()
             return runMcpServiceAction("mcp_app.update", appAuditPrincipal(), serviceAuditResourceId(request.appId), () => updateMcpApp({ ...request, context, resolveTools }))
           }),
-          read: (request) => appOperation(() => readMcpApp({ ...request, context: appActor() })),
+          read: (request) => appOperation(async () => readMcpApp({ ...request, context: await appActor() })),
         },
         canOpen: async (appId) => (await loadOpenableApps()).some((app) => app.appId === appId),
         notifyCatalogChanged: () => {
@@ -637,7 +626,9 @@ export function registerAgentMcpRoutes<T extends { Variables: RequestIdVariables
         },
       })
     }
-    if (method === "server/discover" || method === "initialize" || method === "resources/list" || method === "resources/read") {
+    // initialize and server/discover advertise static capabilities only, so the
+    // connection, App, skill and Automation resources load just for resource reads.
+    if (method === "resources/list" || method === "resources/read") {
       if (memberIdentity) {
         // Select before the per-member readiness probes so an ordinary client
         // pays only for the connections it may actually see.
@@ -805,7 +796,7 @@ export function registerAgentMcpRoutes<T extends { Variables: RequestIdVariables
             message: `Creating a skill requires the ${DEN_MCP_WRITE_SCOPE} scope.`,
           }
         }
-        const skillContext = libraryContext
+        const skillContext = await loadLibraryContext()
         if (!skillContext || !auditPrincipal) {
           return {
             ok: false,
@@ -869,7 +860,7 @@ export function registerAgentMcpRoutes<T extends { Variables: RequestIdVariables
             message: `Updating a skill requires the ${DEN_MCP_WRITE_SCOPE} scope.`,
           }
         }
-        const skillContext = libraryContext
+        const skillContext = await loadLibraryContext()
         if (!skillContext || !auditPrincipal) {
           return {
             ok: false,
@@ -957,6 +948,7 @@ export function registerAgentMcpRoutes<T extends { Variables: RequestIdVariables
       dataMode?: "live" | "snapshot"
       timeZone?: string
     }) => {
+      const artifactContext = await loadLibraryContext()
       if (!artifactContext || !auditPrincipal) {
         return {
           ok: false as const,
@@ -1067,7 +1059,8 @@ export function registerAgentMcpRoutes<T extends { Variables: RequestIdVariables
       server,
       load: loadWorkflowArtifact,
       selectApp: async ({ configObjectId, receiptId }) => {
-        if (!artifactContext || !env.generatedArtifactViewsEnabled) return null
+        const artifactContext = env.generatedArtifactViewsEnabled ? await loadLibraryContext() : null
+        if (!artifactContext) return null
         const views = await listArtifactViews({ context: artifactContext, activeOnly: true, savedOnly: true })
         const snapshot = await getWorkflowSnapshot({ context: artifactContext, configObjectId, receiptId })
         if (!snapshot) return null
@@ -1085,6 +1078,11 @@ export function registerAgentMcpRoutes<T extends { Variables: RequestIdVariables
     // This server deploys independently from Desktop. Do not advertise or
     // serve bridge-dependent generated views until the compatible Desktop
     // MCP Apps host has been released and the operator enables the rollout.
+    const listsOrCallsGeneratedViews = method === "tools/list" || method === "tools/call"
+      || method === "resources/list" || method === "resources/read"
+    const artifactContext = env.generatedArtifactViewsEnabled && auditPrincipal && listsOrCallsGeneratedViews
+      ? await loadLibraryContext()
+      : null
     if (artifactContext && auditPrincipal && env.generatedArtifactViewsEnabled) {
       const artifactAuditPrincipal = auditPrincipal
       const loadGeneratedResource = async ({ artifactViewId, revisionId }: { artifactViewId: string; revisionId: string }) => {

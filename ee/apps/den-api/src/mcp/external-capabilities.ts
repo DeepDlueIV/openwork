@@ -110,6 +110,14 @@ export async function resolveMcpMemberIdentity(input: {
   userId: string
   organizationId: string
 }): Promise<McpMemberIdentity | null> {
+  return (await resolveMcpMember(input))?.identity ?? null
+}
+
+/** The member identity plus the team rows it was built from, for callers that also need the teams. */
+export async function resolveMcpMember(input: {
+  userId: string
+  organizationId: string
+}): Promise<{ identity: McpMemberIdentity; teams: Awaited<ReturnType<typeof listTeamsForMember>> } | null> {
   const organizationId = normalizeDenTypeId("organization", input.organizationId)
   const member = await cache.org.membership({
     organizationId,
@@ -117,7 +125,7 @@ export async function resolveMcpMemberIdentity(input: {
   })
   if (!member) return null
   const teams = await listTeamsForMember({ organizationId, memberId: member.id })
-  return { orgMembershipId: member.id, teamIds: teams.map((team) => team.id) }
+  return { identity: { orgMembershipId: member.id, teamIds: teams.map((team) => team.id) }, teams }
 }
 
 function hasSharedCredential(connection: ExternalMcpConnectionRow): boolean {

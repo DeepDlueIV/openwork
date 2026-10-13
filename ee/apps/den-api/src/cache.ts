@@ -15,7 +15,7 @@ type UserId = typeof AuthUserTable.$inferSelect.id
 type OAuthConsentId = typeof OAuthConsentTable.$inferSelect.id
 
 type CacheParent = "auth" | "org"
-type CacheChild = "grant" | "grant-revoked" | "member" | "members" | "session" | "session-id" | "session-revoked" | "session-id-revoked"
+type CacheChild = "grant" | "grant-revoked" | "member" | "member-revoked" | "members" | "session" | "session-id" | "session-revoked" | "session-id-revoked"
 
 type CacheKeyInput = {
   parent: CacheParent
@@ -679,14 +679,16 @@ async function deleteAuthSession(token: string) {
 
 async function revokeAuthSession(token: string) {
   const revokedKeyInput = { parent: "auth", child: "session-revoked", id: token } as const
+  // Revocation tombstones stop a concurrent cache-miss loader from repopulating
+  // a deleted session without adding a live DB check to cache hits. Write the
+  // tombstone and delete the entry independently, as revokeAuthGrant does:
+  // Redis can refuse writes (out of memory) while it still accepts deletes.
   try {
-    // Revocation tombstones stop a concurrent cache-miss loader from repopulating
-    // a deleted session without adding a live DB check to cache hits.
     await activeRedisClient?.set(cacheKey(revokedKeyInput), "1", "EX", AUTH_SESSION_MAX_TTL_SECONDS)
-    await deleteAuthSession(token)
   } catch (error) {
     console.error("openwork_cache_delete_failed", { ...cacheLogDetails(revokedKeyInput), error })
   }
+  await deleteAuthSession(token)
 }
 
 async function deleteAuthSessionId(sessionId: DenTypeId<"session">) {
@@ -702,10 +704,10 @@ async function revokeAuthSessionId(sessionId: DenTypeId<"session">) {
   const revokedKeyInput = { parent: "auth", child: "session-id-revoked", id: sessionId } as const
   try {
     await activeRedisClient?.set(cacheKey(revokedKeyInput), "1", "EX", AUTH_SESSION_MAX_TTL_SECONDS)
-    await deleteAuthSessionId(sessionId)
   } catch (error) {
     console.error("openwork_cache_delete_failed", { ...cacheLogDetails(revokedKeyInput), error })
   }
+  await deleteAuthSessionId(sessionId)
 }
 
 async function revokeAuthGrant(grantId: OAuthConsentId) {
@@ -771,15 +773,54 @@ async function deleteOrgMembership(input: { organizationId: OrgId; userId: UserI
   }
 }
 
+async function revokeOrgMembership(input: { organizationId: OrgId; userId: UserId }) {
+  const id = `${input.organizationId}:${input.userId}`
+  const keyInput = { parent: "org", child: "member", id } as const
+  const revokedKeyInput = { parent: "org", child: "member-revoked", id } as const
+  // A membership can come back (re-invite), so the tombstone never denies: it
+  // only stops a loader that read the old row from caching it again, for as long
+  // as that entry could live. Reads in that window go to the database.
+  try {
+    await activeRedisClient?.set(cacheKey(revokedKeyInput), "1", "EX", ORG_CACHE_TTL_SECONDS)
+  } catch (error) {
+    console.error("openwork_cache_delete_failed", { ...cacheLogDetails(revokedKeyInput), error })
+  }
+  await deleteOrgMembership(input)
+}
+
 async function getOrgMembership(input: { organizationId: OrgId; userId: UserId }) {
-  return getOrSet({
-    parent: "org",
-    child: "member",
-    id: `${input.organizationId}:${input.userId}`,
-    ttlSeconds: ORG_CACHE_TTL_SECONDS,
-    parse: parseCachedOrgMembership,
-    load: () => activeOrgMembershipLoader(input),
-  })
+  const id = `${input.organizationId}:${input.userId}`
+  const keyInput = { parent: "org", child: "member", id } as const
+  const key = cacheKey(keyInput)
+  const redis = activeRedisClient
+  if (redis) {
+    try {
+      const cached = parseCachedOrgMembership(await redis.get(key))
+      if (cached) {
+        return cached
+      }
+    } catch (error) {
+      console.error("openwork_cache_get_failed", { ...cacheLogDetails(keyInput), error })
+    }
+  }
+
+  const loaded = await activeOrgMembershipLoader(input)
+  if (!loaded || !redis) {
+    return loaded
+  }
+
+  try {
+    await setUnlessRevoked({
+      redis,
+      key,
+      revokedKey: cacheKey({ parent: "org", child: "member-revoked", id }),
+      value: JSON.stringify(loaded),
+      ttlSeconds: ORG_CACHE_TTL_SECONDS,
+    })
+  } catch (error) {
+    console.error("openwork_cache_set_failed", { ...cacheLogDetails(keyInput), error })
+  }
+  return loaded
 }
 
 async function deleteAuthSessionsForUser(userId: UserId) {
@@ -805,7 +846,8 @@ async function deleteAuthSessionsForUser(userId: UserId) {
  * source rows instead calls the dedicated invalidators below: user sign-out and
  * session mutation clear auth session keys; consent deletion writes grant
  * tombstones; org deletion, member removal, member addition, role transfer, and
- * role edits clear org member/membership keys.
+ * role edits clear org member/membership keys, and every membership credential
+ * revocation also writes a membership tombstone.
  */
 export const cache = {
   auth: {
@@ -835,6 +877,31 @@ export const cache = {
     deleteMemberList: deleteOrgMemberList,
     deleteMembers: deleteOrgMembers,
     deleteMembership: deleteOrgMembership,
+    revokeMembership: revokeOrgMembership,
   },
+}
+
+export function setCacheDependenciesForTest(input: {
+  redis?: CacheRedisClient | null
+  authSessionLoader?: (token: string, now: Date) => Promise<CachedAuthSession | null>
+  orgMembershipLoader?: (input: { organizationId: OrgId; userId: UserId }) => Promise<CachedOrgMembership | null>
+}) {
+  const previousRedis = activeRedisClient
+  const previousAuthSessionLoader = activeAuthSessionLoader
+  const previousOrgMembershipLoader = activeOrgMembershipLoader
+  if ("redis" in input) {
+    activeRedisClient = input.redis ?? null
+  }
+  if (input.authSessionLoader) {
+    activeAuthSessionLoader = input.authSessionLoader
+  }
+  if (input.orgMembershipLoader) {
+    activeOrgMembershipLoader = input.orgMembershipLoader
+  }
+  return () => {
+    activeRedisClient = previousRedis
+    activeAuthSessionLoader = previousAuthSessionLoader
+    activeOrgMembershipLoader = previousOrgMembershipLoader
+  }
 }
 

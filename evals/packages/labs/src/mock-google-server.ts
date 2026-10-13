@@ -12,6 +12,8 @@ interface MockGoogleServerOptions {
   autoApprove: boolean;
   baseUrl?: string;
   threads?: Record<string, MockGoogleThread[]>;
+  /** Access-token lifetime returned by /token; below Den's 60 s safety window forces a refresh on every call. */
+  accessTokenTtlSeconds?: number;
 }
 
 export interface MockGoogleThread {
@@ -103,6 +105,7 @@ interface SigningKeys {
 interface MockGoogleState {
   accounts: Account[];
   autoApprove: boolean;
+  accessTokenTtlSeconds: number;
   baseUrl: string;
   requests: RequestEntry[];
   pending: Map<string, PendingAuthorization>;
@@ -410,7 +413,7 @@ async function token(state: MockGoogleState, request: IncomingMessage, response:
     access_token: issued.accessToken,
     refresh_token: issued.refreshToken,
     token_type: "Bearer",
-    expires_in: 3600,
+    expires_in: state.accessTokenTtlSeconds,
     scope: credential.scope,
     id_token: issued.idToken,
   });
@@ -698,6 +701,14 @@ async function handleRequest(state: MockGoogleState, request: IncomingMessage, r
     sendJson(response, 200, { requests: state.requests });
     return;
   }
+  if (requestMethod === "POST" && url.pathname === "/__mock-google/revoke") {
+    // Models a member removing the app's access: every grant for the account stops working.
+    const email = (url.searchParams.get("email") ?? "").toLowerCase();
+    for (const [value, credential] of state.refreshTokens) if (credential.account.email === email) state.refreshTokens.delete(value);
+    for (const [value, account] of state.accessTokens) if (account.email === email) state.accessTokens.delete(value);
+    sendJson(response, 200, { ok: true });
+    return;
+  }
   if (requestMethod === "GET" && url.pathname === "/__mock-google/actions") {
     sendJson(response, 200, state.actions.snapshot(url.searchParams.get("email") ?? ""));
     return;
@@ -811,6 +822,7 @@ export async function startMockGoogleServer(options: MockGoogleServerOptions): P
   const state: MockGoogleState = {
     accounts: normalizeAccounts(options.accounts),
     autoApprove: options.autoApprove,
+    accessTokenTtlSeconds: options.accessTokenTtlSeconds ?? 3600,
     baseUrl: options.baseUrl ?? "http://127.0.0.1",
     requests: [],
     pending: new Map(),

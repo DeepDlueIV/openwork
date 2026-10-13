@@ -84,8 +84,12 @@ test("the Library lists MCP servers written by hand into opencode.json, whicheve
 
   await step("opening the string-command server shows its command line", async () => {
     await user.click({ text: "docs-helper" });
-    await user.see({ text: "Local · this workspace" });
+    await user.see({ text: "Local (runs on this device)" });
+    // The page keeps where the server came from under its first Technical
+    // details; the server card's own Technical details holds the command.
     await user.click({ text: "Technical details" });
+    await user.see({ text: "Local · this workspace" });
+    await user.click({ text: "Technical details", nth: 1 });
     await user.see({ text: "python3 -m http.server 8321" });
     await user.notSee({ text: "python3,-m" });
     await user.screenshot();

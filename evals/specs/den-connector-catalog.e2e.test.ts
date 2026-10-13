@@ -138,7 +138,14 @@ test("an admin sees the whole catalog, sets up Microsoft 365 on its own page, an
   await step("a member connects without making the admin personally connected", async () => {
     await member.see({ text: "Catalog Notes" }, { timeoutMs: 90_000 });
     await member.click({ testId: `connect-my-mcp-account-${world.connection.id}` });
-    await member.see({ testId: `disconnect-my-mcp-account-${world.connection.id}` }, { timeoutMs: 120_000 });
+    // Once signed in, the readiness row stops asking; disconnecting lives on the connector's own page.
+    const signInButton = `[data-testid="connect-my-mcp-account-${world.connection.id}"]`;
+    await probe.eventually(async () => {
+      const usable = await probe.api(world.den.members.member, "/v1/mcp-connections?scope=usable");
+      const connected = isRecord(usable.body) && records(usable.body.connections).some((entry) => entry.id === world.connection.id && entry.connectedForMe === true);
+      return connected && (await probe.on(world.memberWeb).dom(signInButton)).elements.length === 0;
+    }, { within: 120_000, label: "Catalog Notes stops asking the member to sign in", until: (done) => done });
+    await member.see({ text: "Catalog Notes" });
     const memberState = await probe.api(world.den.members.member, "/v1/mcp-connections?scope=usable");
     if (!isRecord(memberState.body)) throw new Error("Den returned no member connections.");
     expect(records(memberState.body.connections).find((entry) => entry.id === world.connection.id)).toMatchObject({ connectedForMe: true });

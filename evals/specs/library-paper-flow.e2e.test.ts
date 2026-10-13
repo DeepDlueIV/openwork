@@ -45,7 +45,8 @@ test(title, async ({ evidence, world, user, probe, step }) => {
     await user.click({ role: "button", label: "Library" });
     await user.see({ role: "button", label: `More for ${name}` }, { timeoutMs: 60_000 });
   };
-  const rowNames = async (section: string) => (await probe.dom(`[data-library-section="${section}"] [data-library-row]`)).elements.map((element) => element.text);
+  // A row's button starts with its logo letter; read the name line beside the description instead.
+  const rowNames = async (section: string) => texts(`[data-library-section="${section}"] [data-library-row] span:has(> [data-library-description]) > span:first-child`);
 
   // Lane 1 · Browse
   await step("before: signed out, the Library shows what is on this computer and what signing in unlocks", async () => {

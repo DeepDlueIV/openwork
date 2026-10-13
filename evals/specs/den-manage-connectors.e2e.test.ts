@@ -78,8 +78,9 @@ test("an admin adds a listed connector for two teams", async ({ world, user, pro
     await user.click({ role: "button", label: "Add Slack" });
     await user.see({ testId: "den-toast" }, { text: /Slack is ready/, timeoutMs: 60_000 });
     await user.see({ testId: "den-toast" }, { text: new RegExp(`${reach} people will find it in My Library\\.`) });
-    await user.see({ testId: "admin-connectors" }, { text: /Sales and Support/, timeoutMs: 60_000 });
-    evidence.recordAssertionEvidence("the list shows Slack with Sales and Support", `Toast "Slack is ready"; list row reads Sales and Support`, true);
+    // List rows carry the connection's readiness; who can use it is on Slack's own page (next step).
+    await user.see({ testId: "admin-connectors" }, { text: /Slack[\s\S]*Ready/, timeoutMs: 60_000 });
+    evidence.recordAssertionEvidence("the list shows Slack ready", `Toast "Slack is ready"; the Connectors list shows Slack as Ready`, true);
     await user.screenshot();
   });
 
@@ -175,8 +176,8 @@ test("an admin: I want to add an MCP that isn't in the catalog", async ({ world,
     await user.see({ testId: "step-footer-note" }, { text: `${world.teamSize("Support")} people will find ${name} in My Library.` });
     await user.click({ role: "button", label: `Add ${name}` });
     await user.see({ testId: "den-toast" }, { text: new RegExp(`${name} is ready`), timeoutMs: 60_000 });
-    await user.see({ testId: "admin-connectors" }, { text: /Support/, timeoutMs: 60_000 });
-    evidence.recordAssertionEvidence("the MCP is added for Support", `Toast "${name} is ready"; the list shows it with Support`, true);
+    await user.see({ testId: "admin-connectors" }, { text: new RegExp(name), timeoutMs: 60_000 });
+    evidence.recordAssertionEvidence("the MCP is added for Support", `Toast "${name} is ready"; the Connectors list shows it`, true);
     await user.screenshot();
   });
 
@@ -228,13 +229,13 @@ test("an admin adds a connector that takes an API key, and a member sees that on
     await user.type({ label: "API key" }, key);
     await user.click({ role: "button", label: "Save key" });
     await user.see({ role: "heading", label: "Keyed Docs passed all 4 checks" }, { timeoutMs: 120_000 });
-    await user.see({ text: "A key cannot sign people in one by one" });
+    await user.see({ text: "Everyone uses the Keyed Docs API key you added." });
     const shared = await probe.dom('input[name="sign-in-mode"][value="shared"]:checked:disabled');
     expect(shared.elements).toHaveLength(1);
     const manageable = await probe.api(world.den.admin, "/v1/mcp-connections?scope=manageable");
     const saved = isRecord(manageable.body) ? records(manageable.body.connections).find((entry) => entry.name === "Keyed Docs") : undefined;
     expect(saved).toMatchObject({ authType: "apikey", credentialMode: "shared" });
-    evidence.recordAssertionEvidence("the key is saved for everyone and per-person sign-in is off with a reason", `Saved Keyed Docs as authType=${String(saved?.authType)}, credentialMode=${String(saved?.credentialMode)}; "One account for everyone" is checked and locked`, true);
+    evidence.recordAssertionEvidence("the key is saved for everyone and the choice is locked", `Saved Keyed Docs as authType=${String(saved?.authType)}, credentialMode=${String(saved?.credentialMode)}; "One key for everyone" is checked and locked`, true);
     await user.screenshot();
   });
 

@@ -205,7 +205,8 @@ test("an owner composes an App that is its own MCP server, and a teammate uses i
     const pluginUser = user.on(world.pluginWeb);
     await pluginUser.navigate(`${world.den.ref.webUrl}/dashboard/library/plugins/${world.created.pluginId}`);
     await pluginUser.see({ testId: "plugin-page" }, { timeoutMs: 120_000 });
-    await pluginUser.see({ role: "heading", label: appTitle });
+    // The integrated plugin header reads its logo letter before the name.
+    await pluginUser.see({ role: "heading", label: new RegExp(`${appTitle}$`) });
     await pluginUser.see({ testId: "whats-inside" }, { text: new RegExp(appTitle) });
     await pluginUser.see({ testId: "app-mcp-servers" }, { text: new RegExp(`Use in another app\\s+${appTitle} MCP URL`) });
     await pluginUser.screenshot();

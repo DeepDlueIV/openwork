@@ -224,7 +224,7 @@ function YourConnectionRow({
     <div data-connector-row={connection.name} ref={rowRef}>
       <ItemRow href={getLibraryConnectorRoute(orgSlug, connection.id)} logo={<IntegrationIcon name={connection.name} serviceUrl={connection.url} />} title={connection.name}
         description={checkConnection.error ? "Could not check this connection. Try again." : !canManageConnections && state === "Couldn't verify" ? `${connectorReadinessNote(connection)} An admin can check again.` : connectorReadinessNote(connection)} status={state} statusOnNarrow wideAction wrapDescription={state === "Couldn't verify"}
-        action={state === "Sign in" ? <DenButton size="xs" variant="secondary" onClick={onConnect}>Sign in</DenButton>
+        action={state === "Sign in" ? <DenButton size="xs" variant="secondary" onClick={onConnect} data-testid={`connect-my-mcp-account-${connection.id}`}>Sign in</DenButton>
           : state === "Set up" ? <DenButton size="xs" variant="secondary" disabled={!canManageConnections} title={!canManageConnections ? "An admin can finish setup." : undefined} href={canManageConnections ? getMcpConnectionRoute(orgSlug, connection.id) : undefined}>Set up</DenButton>
           : <DenButton size="xs" variant="secondary" disabled={!canManageConnections || checkConnection.isPending} title={!canManageConnections ? "An admin can check this connection." : undefined} onClick={() => checkConnection.mutate(connection.id)}>Check again</DenButton>}
       />

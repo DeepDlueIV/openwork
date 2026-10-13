@@ -319,11 +319,12 @@ class ManagedDesktopPolicy {
   /**
    * The member's website rules for the built-in browser, read by the desktop
    * process itself rather than taken from the app window. Den is asked first
-   * (briefly); when it cannot answer, the policy verified for this sign-in, else
-   * the rules last stored on this computer, so an organization without agent
-   * permissions gets none, online or offline. With nothing stored but agent
-   * permissions in force for an earlier sign-in, they can't be verified, and the
-   * browser keeps pages closed. Signed out there are none.
+   * (briefly); when it cannot answer, the policy verified for this sign-in.
+   * Without one, the rules stored on this computer may be another sign-in's,
+   * so like adding a skill or MCP server, pages stay closed wherever agent
+   * permissions were in force (stored, or for an earlier sign-in since
+   * OpenWork started); an organization without them gets none, online or
+   * offline. Signed out there are none.
    */
   async websiteRules(): Promise<ReturnType<typeof agentPermissionRulesOf>> {
     if (!this.session) return [];
@@ -332,13 +333,12 @@ class ManagedDesktopPolicy {
       new Promise<null>((resolve) => setTimeout(() => resolve(null), 5_000)),
     ]);
     const policy = fresh ?? this.knownPolicy();
-    const rules = policy
-      ? agentPermissionRulesOf(policy)
-      : agentPermissionRulesOf((await readGlobalRuntimeOpencodeConfig(this.config)).managedPolicy);
-    if (!policy && rules.length === 0 && this.agentPermissionsInForce) {
+    if (!policy) {
+      const stored = agentPermissionRulesOf((await readGlobalRuntimeOpencodeConfig(this.config)).managedPolicy);
+      if (stored.length === 0 && !this.agentPermissionsInForce) return [];
       throw new ApiError(403, "policy_unavailable", "Your organization's agent permissions could not be verified. Try again when connected.");
     }
-    return rules.filter((rule) => rule.action === "webfetch");
+    return agentPermissionRulesOf(policy).filter((rule) => rule.action === "webfetch");
   }
   /** The policy to enforce now: verified for this sign-in, else the last one verified for it; never waits on Den. */
   private knownPolicy(): DesktopConfig | null {

@@ -71,7 +71,7 @@ In the built-in browser, a blocked website doesn't load and the browser shows th
 
 **Websites.** Patterns match the address's host, its subdomains for `*.`, its port and scheme when the pattern names them (`https://example.com:443` matches only port 443), and its path as a prefix. The built-in browser applies them to every page, frame and request it makes, whoever makes it, including the scripts and other resources an allowed page loads; only a page can ask first.
 
-**Offline.** The desktop app keeps the last rules it received for the signed-in member and applies them while Den is unreachable. Signing out, or another member signing in, removes them. Adding a local skill or MCP server in OpenWork waits until the member's permissions are verified, and is refused when they can't be while agent permissions were in force on the computer.
+**Offline.** The desktop app keeps the last rules it received for the signed-in member and applies them while Den is unreachable. Signing out, or another member signing in, removes them. Adding a local skill or MCP server in OpenWork waits until the member's permissions are verified, and is refused when they can't be while agent permissions were in force on the computer. The built-in browser does the same: after the app restarts while Den is unreachable, it opens no pages until the member's permissions are verified again.
 
 **API.** `GET /v1/agent-permissions` lists everyone's and each team's settings. `PUT /v1/agent-permissions/everyone` and `PUT /v1/agent-permissions/teams/{teamId}` replace them; `DELETE /v1/agent-permissions/teams/{teamId}` removes a team's overrides.
 </Accordion>

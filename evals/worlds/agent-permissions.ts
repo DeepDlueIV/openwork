@@ -7,7 +7,7 @@ import type { MockAgentToolStep } from "@openwork/labs";
 import { access, mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { configureProvider } from "./chat.ts";
-import { enableOrganizationCapabilities } from "./dashboards.ts";
+import { enableOrganizationCapabilities } from "./organization-capabilities.ts";
 import { isRecord, records } from "./library.ts";
 
 /** One permission's setting as Den's Agent permissions page saves it. */

@@ -460,6 +460,10 @@ type LaunchSession = {
   idle?: ReturnType<typeof setTimeout>;
 };
 const launchSessions = new Map<string, LaunchSession>();
+const LAUNCH_SESSION_REFUSALS = new Set([
+  "tool_requires_approval", "tool_denied", "tool_not_found", "tool_not_visible",
+  "tool_resource_mismatch", "mcp_app_refresh_denied", "result_too_large", "inactive_session",
+]);
 
 function closeLaunchSession(key: string): void {
   const session = launchSessions.get(key);
@@ -497,9 +501,9 @@ async function withLaunchSession<T>(
   try {
     return await run(await current.client);
   } catch (error) {
-    // A transport, protocol or stale-launch failure reconnects next time;
-    // a refusal OpenWork made on purpose keeps the session.
-    if (!(error instanceof McpAppHostError) || error.code === "stale_launch_context") closeLaunchSession(key);
+    // Only a refusal OpenWork made on purpose keeps the session; any other
+    // failure, including a wrapped call or resource-read failure, reconnects.
+    if (!(error instanceof McpAppHostError) || !LAUNCH_SESSION_REFUSALS.has(error.code)) closeLaunchSession(key);
     throw remoteAccessError(error) ?? error;
   } finally {
     current.inFlight -= 1;

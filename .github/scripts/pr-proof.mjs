@@ -106,3 +106,31 @@ export function proofArtifact(spec, attempt) {
   if (!Number.isSafeInteger(attempt) || attempt < 1) throw new Error("Invalid proof attempt.");
   return `pr-proof-${attempt}-${proofKey(spec)}`;
 }
+
+const PROOF_ARTIFACT = /^pr-proof-([1-9]\d{0,3})-([a-f0-9]{64})$/;
+
+/**
+ * The proof artifact to publish for each selected spec: its newest attempt, up to
+ * `attempt`. "Re-run failed jobs" keeps the passing jobs' records from the earlier
+ * attempt (every attempt of a run tests the same commit), so one report can mix
+ * attempts. Returns a map of artifact name to spec, or the reason to publish nothing.
+ */
+export function proofArtifactsForAttempt(artifacts, specs, attempt) {
+  if (!Number.isSafeInteger(attempt) || attempt < 1) throw new Error("Invalid proof attempt.");
+  const specByKey = new Map(specs.map(spec => [proofKey(spec), spec]));
+  const names = new Map();
+  const newest = new Map();
+  for (const artifact of artifacts) {
+    const name = artifact?.name;
+    if (typeof name !== "string" || !name.startsWith("pr-proof-")) continue;
+    const match = PROOF_ARTIFACT.exec(name);
+    const spec = match ? specByKey.get(match[2]) : undefined;
+    const from = match ? Number(match[1]) : 0;
+    if (!spec || from > attempt) return { reason: "unexpected proof artifact is present" };
+    names.set(name, (names.get(name) ?? 0) + 1);
+    if ((newest.get(spec)?.from ?? 0) < from) newest.set(spec, { from, name });
+  }
+  if (newest.size !== specByKey.size || [...newest.values()].some(({ name }) => names.get(name) !== 1))
+    return { reason: "required proof artifact is missing or duplicated" };
+  return { expected: new Map([...newest].map(([spec, { name }]) => [name, spec])) };
+}

@@ -8,7 +8,7 @@ import { DenButton } from "../../../_components/ui/button";
 import { DenNotice } from "../../../_components/ui/notice";
 import { DenSegmented } from "../../../_components/ui/segmented";
 import { DenSkeleton } from "../../../_components/ui/skeleton";
-import { getAddConnectorRoute, getMcpConnectionRoute, getNewPluginRoute, getPluginRoute, getPluginSkillRoute } from "../../../_lib/den-org";
+import { getAddConnectorRoute, getNewPluginRoute } from "../../../_lib/den-org";
 import { FilterInput, ItemRow, ItemRowsSkeleton } from "../../_components/item-list";
 import { brandHintFor, LetterTile } from "../../_components/item-logo";
 import { useOrgDashboard } from "../../_providers/org-dashboard-provider";
@@ -22,6 +22,7 @@ import {
   libraryUsageCopy,
   libraryUsageKinds,
   libraryUsageWindows,
+  parseLibraryUsageFocus,
   parseLibraryUsageKind,
   parseLibraryUsageWindow,
   summarizeLibraryUsage,
@@ -29,17 +30,12 @@ import {
   type LibraryUsageKind,
   type LibraryUsageRow,
 } from "./library-usage-data";
+import { ItemUsageDetail, PersonUsageDetail, type UsageHref } from "./library-usage-detail";
 import { useLibraryUsage, useLibraryUsageAvailable } from "./use-library-usage";
 
-function itemHref(kind: LibraryUsageKind, row: LibraryUsageRow, orgSlug: string | null | undefined) {
-  if (kind === "skills") return row.pluginId ? getPluginSkillRoute(orgSlug, row.pluginId, row.id) : null;
-  if (kind === "plugins") return getPluginRoute(orgSlug, row.id);
-  return getMcpConnectionRoute(orgSlug, row.id);
-}
-
-function UsageRow({ kind, row, now, tracksFailures }: { kind: LibraryUsageKind; row: LibraryUsageRow; now: number; tracksFailures: boolean }) {
-  const { activeOrg } = useOrgDashboard();
-  const href = itemHref(kind, row, activeOrg?.slug);
+/** A row opens the item's usage: who uses it and how often; that page links to where it is managed. */
+function UsageRow({ kind, row, now, tracksFailures, usageHref }: { kind: LibraryUsageKind; row: LibraryUsageRow; now: number; tracksFailures: boolean; usageHref: UsageHref }) {
+  const href = usageHref({ item: row.id, member: null });
   const lastUsed = lastUsedLabel(row.lastUsedAt, now);
   const failed = failureLabel(row);
   // Usage has no provider ID or service URL: resolve only exact known names,
@@ -50,7 +46,7 @@ function UsageRow({ kind, row, now, tracksFailures }: { kind: LibraryUsageKind; 
     : <LetterTile name={row.name} />;
   return <li data-testid="library-usage-row" data-item={row.name} data-analytics-row>
     <div className={tracksFailures ? "max-w-[732px]" : "max-w-[644px]"}>
-      <ItemRow logo={logo} title={row.name} description={row.detail} href={href ?? undefined}
+      <ItemRow logo={logo} title={row.name} description={row.detail} href={href}
         comparison={<span className={`grid shrink-0 gap-4 text-[13px] tabular-nums ${tracksFailures ? "grid-cols-[56px_56px_72px_104px]" : "grid-cols-[56px_56px_104px]"}`}>
           <span data-item-uses className="text-[var(--dls-text-primary)]">{row.uses.toLocaleString()}</span>
           <span>{row.people.toLocaleString()}</span>
@@ -92,6 +88,7 @@ export function LibraryUsageScreen() {
   const available = useLibraryUsageAvailable();
   const kind = parseLibraryUsageKind(searchParams.get("view"));
   const days = parseLibraryUsageWindow(searchParams.get("days"));
+  const focus = parseLibraryUsageFocus(searchParams);
   const [filter, setFilter] = useState<LibraryUsageFilter>("all");
   const [name, setName] = useState("");
   const usage = useLibraryUsage(kind, days);
@@ -101,9 +98,22 @@ export function LibraryUsageScreen() {
   function setParam(key: "view" | "days", value: string) {
     const params = new URLSearchParams(searchParams.toString());
     params.set(key, value);
+    // An item belongs to one kind; switching kinds goes back to its list.
+    if (key === "view") params.delete("item");
     router.replace(`?${params.toString()}`, { scroll: false });
     if (key === "view") { setFilter("all"); setName(""); }
   }
+
+  /** Drill-down links keep the kind and range, so Back returns to the same list. */
+  const usageHref: UsageHref = (change) => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("view", kind);
+    for (const [key, value] of Object.entries(change)) {
+      if (value === null) params.delete(key);
+      else params.set(key, value);
+    }
+    return `?${params.toString()}`;
+  };
 
   const report = usage.data?.kind === kind ? usage.data : undefined;
   const summary = report ? summarizeLibraryUsage(report.items) : null;
@@ -112,6 +122,7 @@ export function LibraryUsageScreen() {
   const rows = report ? filterLibraryUsage(report.items, filter, name) : [];
   const since = report ? countingSinceLabel(report, now) : null;
   const nothingRecorded = report ? !report.trackingSince && report.items.every((row) => row.uses === 0) : false;
+  const focusedItem = report && focus && "itemId" in focus ? report.items.find((row) => row.id === focus.itemId) ?? null : null;
 
   return (
     <div className={`${analyticsPageClass} min-w-0`} data-testid="library-usage">
@@ -125,13 +136,20 @@ export function LibraryUsageScreen() {
       ) : (
         <>
           <div className="flex flex-wrap items-center justify-between gap-2" data-testid="library-usage-toolbar">
-            <DenSegmented aria-label="What to show" value={kind} onChange={(value) => setParam("view", value)} options={libraryUsageKinds.map((option) => ({ value: option, label: libraryUsageCopy[option].label }))} />
+            {focus && "itemId" in focus ? <span /> : <DenSegmented aria-label="What to show" value={kind} onChange={(value) => setParam("view", value)} options={libraryUsageKinds.map((option) => ({ value: option, label: libraryUsageCopy[option].label }))} />}
             <DenSegmented aria-label="Time range" value={String(days)} onChange={(value) => setParam("days", value)} options={libraryUsageWindows.map((window) => ({ value: String(window), label: `${window} days` }))} />
           </div>
 
           {usage.isPending || (!report && usage.isFetching) ? <UsageLoading /> : usage.isError && !report ? (
             <AnalyticsErrorState title={`Couldn't load ${copy.plural} usage`} onRetry={() => void usage.refetch()} retrying={usage.isFetching} />
-          ) : !report || !summary ? null : summary.total === 0 ? <KindEmpty kind={kind} /> : (
+          ) : !report || !summary ? null : focus && "memberId" in focus ? (
+            <PersonUsageDetail kind={kind} days={days} memberId={focus.memberId} report={report} now={now} usageHref={usageHref} />
+          ) : focus && "itemId" in focus ? (focusedItem
+            ? <ItemUsageDetail kind={kind} days={days} item={focusedItem} now={now} usageHref={usageHref} />
+            : <div className={analyticsSurfaceClass} data-testid="library-usage-item-missing">
+              <AnalyticsEmptyState title={`This ${copy.noun} is no longer in your library`} action={<DenButton variant="secondary" href={usageHref({ item: null })}>{`All ${copy.plural}`}</DenButton>} />
+            </div>
+          ) : summary.total === 0 ? <KindEmpty kind={kind} /> : (
             <>
               {usage.isError ? <DenNotice tone="neutral" presentation="inline" message="Couldn't refresh. Showing the last counts." action={<DenButton variant="secondary" size="sm" onClick={() => void usage.refetch()}>Retry</DenButton>} /> : null}
 
@@ -163,7 +181,7 @@ export function LibraryUsageScreen() {
                   </div>
                   {rows.length === 0
                     ? <p className="border-t border-[#e3e7ee] px-5 py-6 text-[13px] text-[#637291]">{filter === "unused" && !name.trim() ? `Every ${copy.noun} was used in this period.` : filter === "failing" && !name.trim() ? "Nothing failed in this period." : `No ${copy.plural} match. Try another name.`}</p>
-                    : <ul className="divide-y divide-[#e3e7ee] border-t border-[#e3e7ee]">{rows.map((row) => <UsageRow key={row.id} kind={kind} row={row} now={now} tracksFailures={tracksFailures} />)}</ul>}
+                    : <ul className="divide-y divide-[#e3e7ee] border-t border-[#e3e7ee]">{rows.map((row) => <UsageRow key={row.id} kind={kind} row={row} now={now} tracksFailures={tracksFailures} usageHref={usageHref} />)}</ul>}
                 </div>
               </div>
             </>

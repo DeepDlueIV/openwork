@@ -314,19 +314,67 @@ test("an owner sees which plugins, skills and connectors the team uses, which fa
     await owner.screenshot();
   });
 
-  await step("the owner opens the same plugin and connector details from usage", async () => {
+  await step("the owner opens Support kit's usage and sees who uses it, how often, and what started it", async () => {
     await owner.click({ role: "link", label: /Support kit/ });
+    await owner.see({ testId: "library-usage-item" }, { timeoutMs: 60_000 });
+    await owner.see({ testId: "library-usage-person" }, { timeoutMs: 60_000 });
+    const heading = oneLine((await page.dom('[data-testid="library-usage-item-heading"] h2')).elements[0]?.text ?? "");
+    const people = (await page.dom('[data-testid="library-usage-person"]')).elements.map((entry) => oneLine(entry.text));
+    const aliceUses = (await page.dom('[data-testid="library-usage-person"][data-person="Alice Teammate"] [data-item-uses]')).elements[0]?.text;
+    const blairUses = (await page.dom('[data-testid="library-usage-person"][data-person="Blair Teammate"] [data-item-uses]')).elements[0]?.text;
+    const sources = (await page.dom('[data-testid="library-usage-sources"] li')).elements.map((entry) => oneLine(entry.text));
+    const agentUses = oneLine((await page.dom('[data-testid="library-usage-sources"] li[data-source="agent"] span:last-child')).elements[0]?.text ?? "");
+    const daily = (await page.dom('[data-testid="library-usage-daily"] figure')).elements.length;
+    const ok = heading === "Support kit" && people.length === 2 && aliceUses === "2" && blairUses === "2" && sources.length === 1 && agentUses === "4" && daily === 1;
+    evidence.recordAssertionEvidence("one plugin's people, days and sources", `${heading}: ${people.join("; ")}; started by ${sources.join(", ")}; ${daily} uses-per-day chart`, ok);
+    expect(ok).toBe(true);
+    await owner.screenshot();
+  });
+
+  await step("from there the owner opens Alice and sees which plugins and skills she used", async () => {
+    await owner.click({ role: "link", label: /Alice Teammate/ });
+    await owner.see({ testId: "library-usage-member" }, { timeoutMs: 60_000 });
+    await owner.see({ testId: "library-usage-member-item" }, { timeoutMs: 60_000 });
+    const plugins = (await page.dom('[data-testid="library-usage-member-item"]')).elements.map((entry) => oneLine(entry.text));
+    const supportUses = (await page.dom('[data-testid="library-usage-member-item"][data-item="Support kit"] [data-item-uses]')).elements[0]?.text;
+    await owner.screenshot();
+    await owner.click({ role: "radio", label: "Skills" });
+    await page.eventually(async () => {
+      if ((await page.dom(`[data-testid="library-usage-member-item"][data-item="${draftReply.title}"]`)).elements.length === 0) throw new Error("Alice's skills have not loaded yet.");
+      return true;
+    }, { within: 30_000, intervalMs: 500, label: "Alice's skills" });
+    const skillRows = (await page.dom('[data-testid="library-usage-member-item"]')).elements.map((entry) => oneLine(entry.text));
+    const draftUses = (await page.dom(`[data-testid="library-usage-member-item"][data-item="${draftReply.title}"] [data-item-uses]`)).elements[0]?.text;
+    const ok = plugins.length === 1 && supportUses === "2" && skillRows.length === 1 && draftUses === "2";
+    evidence.recordAssertionEvidence("one person's plugins and skills", `Alice's plugins: ${plugins.join("; ")}; her skills: ${skillRows.join("; ")}`, ok);
+    expect(ok).toBe(true);
+    await owner.screenshot();
+  });
+
+  await step("usage pages still lead to where each plugin and connector is managed", async () => {
+    await owner.click({ role: "link", label: new RegExp(draftReply.title) });
+    await owner.see({ testId: "library-usage-item" }, { timeoutMs: 60_000 });
+    await owner.navigate(`${world.baseUrl}/dashboard/analytics/library?view=plugins`);
+    await owner.see({ testId: "library-usage-row" }, { timeoutMs: 60_000 });
+    await owner.click({ role: "link", label: /Support kit/ });
+    await owner.see({ testId: "library-usage-item" }, { timeoutMs: 60_000 });
+    await owner.click({ role: "link", label: "Open in Library" });
     await owner.see({ role: "heading", label: "Support kit" }, { timeoutMs: 60_000 });
+    await owner.notSee({ testId: "library-usage-item" });
     await owner.screenshot();
     await owner.navigate(`${world.baseUrl}/dashboard/analytics/library?view=connectors`);
     await owner.see({ testId: "library-usage-row" }, { timeoutMs: 60_000 });
     const marks = (await page.dom(`${row("GitHub")} img`)).elements;
     expect(marks).toHaveLength(1);
     expect((await page.dom(`${row(world.connectors.tracker)} img`)).elements).toHaveLength(0);
-    await owner.screenshot();
     await owner.click({ role: "link", label: /Team tracker/ });
+    await owner.see({ testId: "library-usage-item" }, { timeoutMs: 60_000 });
+    const trackerFailures = (await page.dom('[data-testid="library-usage-person"] [data-item-failures]')).elements.map((entry) => entry.text);
+    await owner.screenshot();
+    await owner.click({ role: "link", label: "Open connector" });
     await owner.see({ role: "heading", label: world.connectors.tracker }, { timeoutMs: 60_000 });
-    evidence.recordAssertionEvidence("usage and management have one detail destination", "Support kit opens its Library detail; Team tracker opens its existing Connectors detail, with no new analytics-only destination.", true);
+    await owner.notSee({ testId: "library-usage-item" });
+    evidence.recordAssertionEvidence("usage pages link to the management pages", `Support kit's usage opens its Library detail; Team tracker's usage (failures per person: ${trackerFailures.join(", ")}) opens its Connectors detail.`, true);
     await owner.screenshot();
   });
 

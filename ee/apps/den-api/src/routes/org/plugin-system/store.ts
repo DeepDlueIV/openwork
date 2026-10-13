@@ -6711,7 +6711,6 @@ async function buildConnectorAutomationContext(input: { connectorInstance: Conne
         adminTeams: member.adminTeams,
         userId: member.userId,
       },
-      invitations: [],
       members: [],
       organization: {
         allowedEmailDomains: organization.allowedEmailDomains ?? null,
@@ -6724,7 +6723,6 @@ async function buildConnectorAutomationContext(input: { connectorInstance: Conne
         updatedAt: organization.updatedAt,
       },
       features,
-      teams: [],
     },
   } satisfies PluginArchActorContext
 }

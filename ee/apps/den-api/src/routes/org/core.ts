@@ -29,6 +29,7 @@ import {
   acceptInvitationForUser,
   createOrganizationForUser,
   getInvitationPreview,
+  getOrganizationInvitationsAndTeams,
   getSingletonSsoStatus,
   normalizeAllowedEmailDomains,
   OrganizationEmailDomainRestrictionError,
@@ -688,7 +689,7 @@ export function registerOrgCoreRoutes<T extends { Variables: OrgRouteVariables }
       // separate per-organization Cloud rollout flag.
       const cloudEnabled = cloudHostingAvailable({ orgMode: env.orgMode, openworkWebEnabled: env.openworkWebEnabled })
         && (await getOpenWorkWebAccess(payload.organization.id)).hasAccess
-      const [ssoRows, scimRows] = await Promise.all([
+      const [ssoRows, scimRows, invitationsAndTeams] = await Promise.all([
         db
           .select({ id: SsoConnectionTable.id })
           .from(SsoConnectionTable)
@@ -699,10 +700,12 @@ export function registerOrgCoreRoutes<T extends { Variables: OrgRouteVariables }
           .from(ScimProviderTable)
           .where(eq(ScimProviderTable.organizationId, payload.organization.id))
           .limit(1),
+        getOrganizationInvitationsAndTeams(payload.organization.id),
       ])
 
       return c.json({
         ...payload,
+        ...invitationsAndTeams,
         currentMember: {
           ...payload.currentMember,
           permissions: sortedPermissionKeys(memberPermissions.keys),

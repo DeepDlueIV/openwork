@@ -236,6 +236,10 @@ export type OrganizationContext = {
       image: string | null
     }
   }>
+}
+
+/** Every invitation and team of an organization; only GET /v1/org returns them. */
+export type OrganizationInvitationsAndTeams = {
   invitations: Array<{
     id: string
     email: string
@@ -1549,22 +1553,6 @@ export async function getOrganizationContextForUser(input: {
   }
 
   const members = await cache.org.members(organization.id)
-
-  const invitations = await db
-    .select({
-      id: InvitationTable.id,
-      email: InvitationTable.email,
-      role: InvitationTable.role,
-      status: InvitationTable.status,
-      expiresAt: InvitationTable.expiresAt,
-      createdAt: InvitationTable.createdAt,
-      inviteToken: InvitationTable.inviteToken,
-    })
-    .from(InvitationTable)
-    .where(eq(InvitationTable.organizationId, organization.id))
-    .orderBy(asc(InvitationTable.createdAt))
-
-  const teams = await listOrganizationTeams(organization.id)
   const adminGrants = await listOrganizationAdminTeamGrants(organization.id)
   const adminTeamsFor = (memberId: MemberId) => adminGrants
     .filter((grant) => grant.memberId === memberId)
@@ -1597,9 +1585,32 @@ export async function getOrganizationContextForUser(input: {
       const adminTeams = adminTeamsFor(member.id)
       return { ...member, adminTeams, effectiveRole: effectiveOrganizationRole(member.role, adminTeams) }
     }),
-    invitations,
-    teams,
   } satisfies OrganizationContext
+}
+
+/**
+ * Every invitation and team of an organization, read fresh. Not part of the
+ * per-request organization context: only GET /v1/org returns them, and both
+ * grow with the organization.
+ */
+export async function getOrganizationInvitationsAndTeams(organizationId: OrgId): Promise<OrganizationInvitationsAndTeams> {
+  const [invitations, teams] = await Promise.all([
+    db
+      .select({
+        id: InvitationTable.id,
+        email: InvitationTable.email,
+        role: InvitationTable.role,
+        status: InvitationTable.status,
+        expiresAt: InvitationTable.expiresAt,
+        createdAt: InvitationTable.createdAt,
+        inviteToken: InvitationTable.inviteToken,
+      })
+      .from(InvitationTable)
+      .where(eq(InvitationTable.organizationId, organizationId))
+      .orderBy(asc(InvitationTable.createdAt)),
+    listOrganizationTeams(organizationId),
+  ])
+  return { invitations, teams }
 }
 
 async function listOrganizationTeams(organizationId: OrgId) {

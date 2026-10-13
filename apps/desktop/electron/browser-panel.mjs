@@ -45,8 +45,8 @@ const BROWSER_SECURITY_PREFERENCES = Object.freeze({
 
 export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, checkPolicy, readWebsiteRules, showNativeContextMenu, closeNativeContextMenu }) {
   // The member's agent permission rules for websites, from their desktop
-  // config. They apply to the pages and frames the built-in browser opens,
-  // whoever opens them, as the engines apply them to the agent's web fetches.
+  // config. They apply to every page, frame and request the built-in browser
+  // makes, whoever opens it, as the engines apply them to the agent's web fetches.
   // Empty, so every page opens, unless the app reports that the member's
   // organization uses agent permissions; null while those are not yet verified
   // for this sign-in: no page opens meanwhile, and the pages kept closed reload
@@ -60,14 +60,30 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
   // Sites the member approved under an "Ask first" rule, until the rules change.
   let approvedWebsites = new Set();
   const websiteApprovals = new Map();
-  function websiteDecision(url) {
-    if (websiteRules === null) {
+  // Most addresses a page requested since it opened, for checking it against new rules.
+  const REMEMBERED_REQUESTS = 1_000;
+  /** The address website rules judge: a WebSocket connects to its site over http or https. */
+  function websiteAddress(url) {
+    return String(url).replace(/^ws(s?):/i, "http$1:");
+  }
+  /**
+   * What the rules decide for an address. While new rules load, pages and
+   * frames wait, and the requests of pages already open follow the rules they
+   * were last checked against.
+   */
+  function websiteDecision(url, { resource = false } = {}) {
+    const rules = websiteRules ?? (resource ? checkedWebsiteRules : null);
+    if (rules === null) {
       return { effect: "deny", waiting: true, message: "Your organization's agent permissions are still loading. This page opens once they have." };
     }
-    const decision = decideAgentPermission(websiteRules, "webfetch", [url]);
+    const decision = decideAgentPermission(rules, "webfetch", [websiteAddress(url)]);
     return decision.rule && decision.effect !== "allow"
       ? { effect: decision.effect, rule: decision.rule, message: agentPermissionDenialMessage(decision.rule, decision.resource) }
       : { effect: "allow" };
+  }
+  /** Whether the member approved the site of an address under an "Ask first" rule. */
+  function websiteApproved(url) {
+    try { return approvedWebsites.has(new URL(websiteAddress(url)).origin); } catch { return false; }
   }
   /** Asks the member before a page opens under an "Ask first" rule; anything but an approval keeps it closed. */
   function approveWebsite(url, rule) {
@@ -100,13 +116,14 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
     return approval;
   }
   /**
-   * Throws when the website rules keep a page or frame closed. A page under an
-   * "Ask first" rule opens once the member approves; a frame never asks.
+   * Throws when the website rules keep a page, frame or other request closed.
+   * A page under an "Ask first" rule opens once the member approves; frames
+   * and other requests never ask, and pass only for a site already approved.
    */
-  async function checkWebsiteRules(url, { page }) {
-    const decision = websiteDecision(url);
+  async function checkWebsiteRules(url, { page = false, resource = false } = {}) {
+    const decision = websiteDecision(url, { resource });
     if (decision.effect === "allow") return;
-    if (decision.effect === "ask" && page && await approveWebsite(url, decision.rule)) return;
+    if (decision.effect === "ask" && (page ? await approveWebsite(url, decision.rule) : websiteApproved(url))) return;
     throw Object.assign(new Error(decision.message), { code: "organization_policy_denied", websiteRule: true, waiting: decision.waiting === true, blocked: decision.effect === "deny" && decision.waiting !== true });
   }
   /**
@@ -139,20 +156,58 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
     if (decision.effect === "deny") throw Object.assign(new Error(decision.message), { code: "organization_policy_denied" });
     await checkPolicy?.(input);
   }
-  /** Whether the current rules block or ask first for a page or frame address the earlier rules let open. */
-  function newlyRestricted(previousRules, url) {
-    if (!/^https?:/i.test(url)) return false;
-    const before = decideAgentPermission(previousRules, "webfetch", [url]).effect;
-    const after = decideAgentPermission(websiteRules, "webfetch", [url]).effect;
+  /** What rules decide for an address, with a site the member approved under "Ask first" allowed. */
+  function approvedEffect(rules, approvals, address) {
+    const effect = decideAgentPermission(rules, "webfetch", [address]).effect;
+    if (effect !== "ask") return effect;
+    try { return approvals.has(new URL(address).origin) ? "allow" : effect; } catch { return effect; }
+  }
+  /** Whether the current rules and approvals block or ask first for an address the earlier ones let open. */
+  function newlyRestricted(previousRules, previousApprovals, url) {
+    const address = websiteAddress(url);
+    if (!/^https?:/i.test(address)) return false;
+    const before = approvedEffect(previousRules, previousApprovals, address);
+    const after = approvedEffect(websiteRules, approvedWebsites, address);
     return after !== before && stricterAgentPermissionDecision(before, after) === after;
+  }
+  /** Remembers what a page requested, so new website rules can tell whether they restrict it. */
+  function rememberRequest(tab, url) {
+    if (tab.requests.size >= REMEMBERED_REQUESTS) {
+      tab.requestsOverflowed = true;
+      return;
+    }
+    try {
+      const { origin, pathname } = new URL(url);
+      tab.requests.add(`${origin}${pathname}`);
+    } catch { /* not an address */ }
+  }
+  /**
+   * Replaces a page on a site the new rules restrict with a blank page at
+   * once, so it is not usable even while the member is asked. A blocked site
+   * shows the blocked page; a site that asks first loads again through the
+   * request check, which asks.
+   */
+  function closeRestrictedPage(tab, url) {
+    const contents = tab.view.webContents;
+    const blocked = websiteDecision(url).effect === "deny";
+    tab.closingRestrictedPage = true;
+    tab.loadError = blocked ? blockedSitePage(url) : null;
+    if (blocked) tab.view.setVisible(false);
+    runDetachedTask("close a page agent permissions restrict", async () => {
+      await contents.loadURL("about:blank");
+      if (!blocked && getBrowserTab(tab.tabId) === tab && !contents.isDestroyed()) await contents.loadURL(url);
+    });
   }
   function setWebsiteRules(rules) {
     if (JSON.stringify(rules) === JSON.stringify(websiteRules)) return;
     websiteRules = rules;
-    approvedWebsites = new Set();
     if (rules === null) return;
     const previousRules = checkedWebsiteRules;
+    const previousApprovals = approvedWebsites;
     checkedWebsiteRules = rules;
+    // Sites approved under "Ask first" stay approved until the rules change;
+    // pages open on them are then asked about again.
+    if (JSON.stringify(rules) !== JSON.stringify(previousRules)) approvedWebsites = new Set();
     const waiting = [...tabsWaitingForWebsiteRules];
     tabsWaitingForWebsiteRules.clear();
     for (const [tab, url] of waiting) {
@@ -160,17 +215,22 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
       tab.loadError = null;
       runDetachedTask("open a page held for agent permissions", () => tab.view.webContents.loadURL(url));
     }
-    // A page already open on a site, or with a frame of one, that the new
-    // rules block or ask first for loads again through the request check,
-    // which shows the blocked page or asks the member, and replaces the page.
+    // A page already open on a site the new rules block or ask first for is
+    // closed at once. A page that has a frame of such a site, or requested
+    // anything from one, loads again, so the request check keeps those out.
     for (const tab of browserTabs.values()) {
       const contents = tab.view.webContents;
       if (contents.isDestroyed() || waiting.some(([waitingTab]) => waitingTab === tab) || showsErrorPage(tab)) continue;
-      let urls;
-      try { urls = contents.mainFrame.framesInSubtree.map((frame) => frame.url); } catch { urls = [contents.getURL()]; }
-      if (!urls.some((url) => newlyRestricted(previousRules, url))) continue;
+      const url = contents.getURL();
+      if (newlyRestricted(previousRules, previousApprovals, url)) {
+        closeRestrictedPage(tab, url);
+        continue;
+      }
+      let frames;
+      try { frames = contents.mainFrame.framesInSubtree.map((frame) => frame.url); } catch { frames = []; }
+      if (!tab.requestsOverflowed && ![...frames, ...tab.requests].some((address) => newlyRestricted(previousRules, previousApprovals, address))) continue;
       tab.websiteRecheck = true;
-      runDetachedTask("check an open page against new agent permissions", () => contents.loadURL(contents.getURL()));
+      runDetachedTask("check an open page against new agent permissions", () => contents.loadURL(url));
     }
     sendBrowserState();
   }
@@ -196,11 +256,11 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
       const documentGeneration = tab?.documentGeneration;
       const guard = details.resourceType === "mainFrame" ? taskHost.navigationGuard(tab?.tabId) : null;
       const request = { url: details.url, method: details.method, hasUpload: Boolean(details.uploadData?.length) };
+      if (tab && details.resourceType !== "mainFrame") rememberRequest(tab, details.url);
       Promise.resolve().then(async () => {
-        // Pages and frames follow the website rules; the resources an allowed page loads do not.
-        if (details.resourceType === "mainFrame" || details.resourceType === "subFrame") {
-          await checkWebsiteRules(details.url, { page: details.resourceType === "mainFrame" });
-        }
+        // Every request follows the website rules; only a page may ask first.
+        const page = details.resourceType === "mainFrame";
+        await checkWebsiteRules(details.url, { page, resource: !page && details.resourceType !== "subFrame" });
         await checkPolicy?.(request);
         if (guard) {
           const validate = await guard(details.url);
@@ -220,6 +280,9 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
             tab.loadError = error.blocked ? blockedSitePage(details.url) : { code: "organization_policy_denied", message: error.message };
             if (error.blocked) tab.view.setVisible(false);
             if (error.waiting) tabsWaitingForWebsiteRules.set(tab, details.url);
+            // A navigation that cut short the blank page replacing a restricted
+            // one must not leave that page in place.
+            if (tab.closingRestrictedPage) runDetachedTask("close a page agent permissions restrict", () => tab.view.webContents.loadURL("about:blank"));
             sendBrowserState();
             callback({ cancel: true });
             return;
@@ -905,6 +968,12 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
       documentGeneration: 0,
       /** @type {import("@openwork/browser-tabs").BrowserPanelTab["loadError"]} */
       loadError: null,
+      /** What the page requested since it opened (origin and path), for checking it against new website rules. */
+      requests: new Set(),
+      requestsOverflowed: false,
+      // Set while a page reloads, or is replaced by a blank one, because new website rules restrict it.
+      websiteRecheck: false,
+      closingRestrictedPage: false,
       webMcpToolCount: 0,
       webMcpTools: [],
       webMcpActivity: [],
@@ -922,7 +991,7 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
     view.webContents.on("media-paused", () => { tab.mediaPlaying = false; });
     view.webContents.on("will-prevent-unload", (event) => {
       // A page new agent permissions restrict cannot keep itself open.
-      if (tab.websiteRecheck) {
+      if (tab.websiteRecheck || tab.closingRestrictedPage) {
         event.preventDefault();
         return;
       }
@@ -1001,12 +1070,21 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
       }
       sendToRenderer("openwork:browser:panel-opened", { ownerSessionId: registry.ownerOf(tabId) });
     });
-    view.webContents.on("did-navigate", () => {
+    view.webContents.on("did-navigate", (_event, url) => {
       // Only a main-frame commit replaces the document. Aborts and downloads
       // retain its warning; old resource failures cannot affect the new document.
       tab.documentGeneration += 1;
-      tab.loadError = null;
+      tab.requests = new Set();
+      tab.requestsOverflowed = false;
       tab.websiteRecheck = false;
+      // The blank page that replaced a restricted one keeps the blocked page in front.
+      if (tab.closingRestrictedPage && url === "about:blank") {
+        tab.closingRestrictedPage = false;
+        sendBrowserState();
+        return;
+      }
+      tab.closingRestrictedPage = false;
+      tab.loadError = null;
       if (registry.onScreenTabId() === tabId) attachActiveBrowserView();
       sendBrowserState();
     });

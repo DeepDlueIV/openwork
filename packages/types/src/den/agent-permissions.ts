@@ -206,13 +206,13 @@ function parseWebsitePattern(input: string): WebsitePattern | null {
   const portNumber = /:(\d{1,5})$/.exec(hostAndPort)?.[1];
   const explicitPort = portNumber === undefined ? null : String(Number(portNumber));
   if (explicitPort !== null && Number(explicitPort) > 65535) return null;
-  const defaultPort = scheme === "https" ? "443" : scheme === "http" ? "80" : null;
+  // A port the pattern names, even its scheme's default, limits it to that port.
   return {
     kind: "site",
     scheme,
     host: withoutTrailingDot(parsed.hostname),
     subdomains,
-    port: explicitPort === defaultPort ? null : explicitPort,
+    port: explicitPort,
     path,
   };
 }
@@ -341,10 +341,14 @@ export function websitePatternEngineResources(pattern: string, effect: AgentPerm
   // A pattern without a port matches every port: its allow resources cover
   // addresses that name one, while its deny resources leave them to the plugin.
   const ports = website.port ? [`:${website.port}`] : effect === "deny" ? [""] : ["", ":*"];
-  return (website.scheme ? [website.scheme] : ["https", "http"]).flatMap((scheme) => ports.flatMap((port) => {
-    const site = `${scheme}://${host}${port}${website.path}`;
-    return effect === "deny" ? [site, `${site}/*`] : [`${site}*`];
-  }));
+  return (website.scheme ? [website.scheme] : ["https", "http"]).flatMap((scheme) => {
+    // An address leaves out its scheme's default port, so allowing it covers addresses without one.
+    const defaultPort = website.port === (scheme === "https" ? "443" : "80");
+    return (effect !== "deny" && defaultPort ? [...ports, ""] : ports).flatMap((port) => {
+      const site = `${scheme}://${host}${port}${website.path}`;
+      return effect === "deny" ? [site, `${site}/*`] : [`${site}*`];
+    });
+  });
 }
 
 // ---------------------------------------------------------------------------

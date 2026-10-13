@@ -24,7 +24,7 @@ import {
   type LibraryUsageKind,
   type LibraryUsageReport,
   type LibraryUsageSourceCounts,
-  type UsageFact,
+  type ItemUsageTotals,
 } from "./capability-usage-rows.js"
 import { db } from "./db.js"
 
@@ -131,6 +131,8 @@ export type LibraryUsageQuery = {
   memberIds?: readonly string[]
   itemId?: string
   now?: Date
+  /** Most rows to return before failing with LibraryUsageTooManyRowsError; null for none (one row per live item). */
+  maxRows?: number | null
 }
 
 export type LibraryUsageBreakdownRow = {
@@ -240,7 +242,7 @@ export async function readLibraryUsageBreakdown(query: LibraryUsageQuery): Promi
   const byMember = query.groupBy.includes("member")
   const byDay = query.groupBy.includes("day")
   const groups = [byItem ? sources.itemId : null, byMember ? sources.memberId : null, byDay ? sources.usageDate : null].filter((column) => column !== null)
-  const rows = await db.with(sources).select({
+  const grouped = db.with(sources).select({
     itemId: byItem ? sql<string | null>`${sources.itemId}` : sql<string | null>`null`,
     memberId: byMember ? sql<string | null>`${sources.memberId}` : sql<string | null>`null`,
     usageDate: byDay ? sql<string | null>`${sources.usageDate}` : sql<string | null>`null`,
@@ -252,8 +254,10 @@ export async function readLibraryUsageBreakdown(query: LibraryUsageQuery): Promi
   }).from(sources)
     .groupBy(...groups)
     .orderBy(...(byDay ? [sources.usageDate] : []), desc(sql`sum(${sources.uses})`))
-    .limit(LIBRARY_USAGE_MAX_ROWS + 1)
-  if (rows.length > LIBRARY_USAGE_MAX_ROWS) throw new LibraryUsageTooManyRowsError()
+    .$dynamic()
+  const maxRows = query.maxRows === undefined ? LIBRARY_USAGE_MAX_ROWS : query.maxRows
+  const rows = await (maxRows === null ? grouped : grouped.limit(maxRows + 1))
+  if (maxRows !== null && rows.length > maxRows) throw new LibraryUsageTooManyRowsError()
   return rows.map((row) => ({
     itemId: row.itemId,
     memberId: row.memberId,
@@ -358,18 +362,20 @@ async function libraryItems(organizationId: DenTypeId<"organization">, kind: Lib
 
 /** Every live skill, plugin or connector with its usage over the window; unused items come back with zeros. */
 export async function readLibraryUsage(organizationId: DenTypeId<"organization">, kind: LibraryUsageKind, days: number, now = new Date()): Promise<LibraryUsageReport> {
+  // One row per item (people counted distinct across sources by the database), so
+  // the report never grows with members x items; it is bounded by the live library.
   const [breakdown, trackingSince] = await Promise.all([
-    readLibraryUsageBreakdown({ organizationId, kind, days, groupBy: ["item", "member"], now }),
+    readLibraryUsageBreakdown({ organizationId, kind, days, groupBy: ["item"], now, maxRows: null }),
     libraryUsageTrackingSince(organizationId),
   ])
-  const facts: UsageFact[] = breakdown.flatMap((row) => row.itemId
-    ? [{ itemId: row.itemId, memberId: row.memberId, uses: row.uses, failures: row.failures, lastUsedAt: row.lastUsedAt }]
+  const totals: ItemUsageTotals[] = breakdown.flatMap((row) => row.itemId
+    ? [{ itemId: row.itemId, uses: row.uses, people: row.people, failures: row.failures, lastUsedAt: row.lastUsedAt }]
     : [])
-  const items = await libraryItems(organizationId, kind, new Set(facts.map((fact) => fact.itemId)))
+  const items = await libraryItems(organizationId, kind, new Set(totals.map((entry) => entry.itemId)))
   return {
     kind,
     days,
     trackingSince: trackingSince ? trackingSince.toISOString() : null,
-    items: buildLibraryUsageRows(items, facts),
+    items: buildLibraryUsageRows(items, totals),
   }
 }

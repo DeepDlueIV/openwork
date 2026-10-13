@@ -48,34 +48,26 @@ export type LibraryUsageReport = {
 
 export type LibraryItem = { id: string; name: string; detail: string | null; pluginId: string | null; tracksFailures: boolean }
 
-/** One member's use of one item in the window, from any source. */
-export type UsageFact = { itemId: string; memberId: string | null; uses: number; failures: number; lastUsedAt: Date | null }
+/** One item's totals in the window across every source; people are distinct members, counted by the database. */
+export type ItemUsageTotals = { itemId: string; uses: number; people: number; failures: number; lastUsedAt: Date | null }
 
 /**
  * Joins every live item with its usage. Unused items come back with zeros, so
- * "nobody uses this" is a row, not an absence. Facts for items that no longer
- * exist are ignored. People are distinct members across all sources. Most used first.
+ * "nobody uses this" is a row, not an absence. Totals for items that no longer
+ * exist are ignored. Most used first.
  */
-export function buildLibraryUsageRows(items: readonly LibraryItem[], facts: readonly UsageFact[]): LibraryUsageRow[] {
-  const totals = new Map<string, { uses: number; failures: number; members: Set<string>; lastUsedAt: Date | null }>()
-  for (const fact of facts) {
-    const entry = totals.get(fact.itemId) ?? { uses: 0, failures: 0, members: new Set<string>(), lastUsedAt: null }
-    entry.uses += fact.uses
-    entry.failures += fact.failures
-    if (fact.memberId && fact.uses > 0) entry.members.add(fact.memberId)
-    if (fact.lastUsedAt && (!entry.lastUsedAt || fact.lastUsedAt > entry.lastUsedAt)) entry.lastUsedAt = fact.lastUsedAt
-    totals.set(fact.itemId, entry)
-  }
+export function buildLibraryUsageRows(items: readonly LibraryItem[], totals: readonly ItemUsageTotals[]): LibraryUsageRow[] {
+  const byItem = new Map(totals.map((entry) => [entry.itemId, entry]))
   return items
     .map((item) => {
-      const used = totals.get(item.id)
+      const used = byItem.get(item.id)
       return {
         id: item.id,
         name: item.name,
         detail: item.detail,
         pluginId: item.pluginId,
         uses: used?.uses ?? 0,
-        people: used?.members.size ?? 0,
+        people: used?.people ?? 0,
         failures: item.tracksFailures ? used?.failures ?? 0 : null,
         lastUsedAt: used?.lastUsedAt ? used.lastUsedAt.toISOString() : null,
       }

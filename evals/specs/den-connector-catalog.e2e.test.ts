@@ -32,17 +32,17 @@ test("an admin sees the whole catalog, sets up Microsoft 365 on its own page, an
     await admin.screenshot();
   });
 
-  await step("filtering narrows the list, and a name nobody offers leads to Add any MCP", async () => {
-    await admin.type({ placeholder: "Filter by name, or paste an MCP URL" }, "granola");
+  await step("filtering narrows the list, and a name nobody offers leads to Add another MCP", async () => {
+    await admin.type({ placeholder: "Filter by name" }, "granola");
     await eventually(async () => (await catalogRows()).length === 1, { within: 10_000, label: "one Granola row" });
     await admin.see({ role: "link", label: "Add Granola" });
-    await admin.type({ placeholder: "Filter by name, or paste an MCP URL" }, "catalog-no-match", { replace: true });
+    await admin.type({ placeholder: "Filter by name" }, "catalog-no-match", { replace: true });
     await admin.see({ testId: "connector-picker-no-match" }, { text: /No app called/ });
-    await admin.see({ testId: "connector-picker-no-match-add" }, { text: "Add any MCP" });
-    await admin.type({ placeholder: "Filter by name, or paste an MCP URL" }, "", { replace: true });
+    await admin.see({ testId: "connector-picker-no-match-add" }, { text: "Add another MCP" });
+    await admin.type({ placeholder: "Filter by name" }, "", { replace: true });
     const unchanged = (await probe.api(world.den.admin, "/v1/mcp-connections?scope=manageable")).body;
     expect(unchanged).toEqual(before.body);
-    evidence.recordAssertionEvidence("filtering never changes connections", `"granola" leaves one row; "catalog-no-match" offers Add any MCP; connections unchanged`, true);
+    evidence.recordAssertionEvidence("filtering never changes connections", `"granola" leaves one row; "catalog-no-match" offers Add another MCP; connections unchanged`, true);
   });
 
   await step("Microsoft 365 is set up on its own page, and its connector page survives a reload", async () => {

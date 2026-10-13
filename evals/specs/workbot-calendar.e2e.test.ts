@@ -352,12 +352,12 @@ shortListTest("a Workbot member chooses from a short model list with Home, End, 
     expect((await probe.dom('[role="option"][data-highlighted]')).elements[0]?.text).toBe(last.name);
     await user.press("Home");
     const atHome = (await probe.dom('[role="option"][data-highlighted]')).elements[0]?.text ?? "";
-    expect(atHome).toContain("Cloud default");
+    expect(atHome).toContain("Organization default");
     await user.press("b");
     const typedLast = (await probe.dom('[role="option"][data-highlighted]')).elements[0]?.text ?? "";
     expect(typedLast).toBe(last.name);
     await user.screenshot();
-    evidence.recordAssertionEvidence("the short list uses one coherent keyboard selection path", `End "${atEnd}"; Up "${aboveEnd}"; Home "${atHome}"; type b "${typedLast}"`, atEnd === last.name && aboveEnd === first.name && /Cloud default/.test(atHome) && typedLast === last.name);
+    evidence.recordAssertionEvidence("the short list uses one coherent keyboard selection path", `End "${atEnd}"; Up "${aboveEnd}"; Home "${atHome}"; type b "${typedLast}"`, atEnd === last.name && aboveEnd === first.name && /Organization default/.test(atHome) && typedLast === last.name);
     await user.press("Enter");
     await expectModelListClosed(user, probe, world.modelListPaintState);
     expect(await modelHasFocus(probe)).toBe(true);

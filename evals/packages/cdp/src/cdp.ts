@@ -359,10 +359,24 @@ export async function navigate(client: CdpClient, url: string): Promise<void> {
   await client.send("Page.navigate", { url });
 }
 
+/**
+ * Activates a page target the way a person focuses its window. Out-of-process
+ * iframes (an MCP App's frame) are separate targets that Chrome refuses to
+ * foreground; their top-level page already is, so that refusal is not an error.
+ */
+export async function bringTargetToFront(client: CdpClient): Promise<void> {
+  try {
+    await client.send("Page.bringToFront");
+  } catch (error) {
+    if (error instanceof Error && /top-level targets/.test(error.message)) return;
+    throw error;
+  }
+}
+
 export async function captureScreenshot(client: CdpClient): Promise<Buffer> {
   // OAuth can foreground another tab. Activate this explicit target so its
   // compositor can produce the requested frame instead of stalling in the background.
-  await client.send("Page.bringToFront");
+  await bringTargetToFront(client);
   const payload = await client.send("Page.captureScreenshot", { format: "png" });
   if (!isRecord(payload) || typeof payload.data !== "string") {
     throw new Error("Page.captureScreenshot did not return base64 PNG data.");

@@ -1,6 +1,6 @@
 import { callFunctionOnSurface, evaluateOnSurface } from "./surface.ts";
 import type { Surface } from "./surface.ts";
-import type { CdpClient } from "./cdp.ts";
+import { bringTargetToFront, type CdpClient } from "./cdp.ts";
 
 export type TargetRole = "button" | "link" | "textbox" | "checkbox" | "switch" | "menuitem" | "tab" | "option" | "separator" | "combobox" | "listbox" | "alert" | "heading" | "progressbar" | "radio";
 export type TargetMatcher = string | RegExp;
@@ -547,7 +547,7 @@ export async function clickAt(
   // A person activates the window they click. Electron can leave an admin or
   // OAuth window foregrounded; synthetic input alone does not activate this
   // target, and subsequent insertText can otherwise be silently discarded.
-  await surface.client.send("Page.bringToFront");
+  await bringTargetToFront(surface.client);
   await surface.client.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: point.x, y: point.y, button: "none" });
   await surface.client.send("Input.dispatchMouseEvent", { type: "mousePressed", x: point.x, y: point.y, button, clickCount });
   await surface.client.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: point.x, y: point.y, button, clickCount });

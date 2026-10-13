@@ -37,7 +37,7 @@ test("an admin: I want to give the Sales team a plugin so they all get the same 
   await step("3. I create it: only I have it so far", async () => {
     await user.click({ role: "button", label: "Create plugin" });
     await user.see({ testId: "plugin-page" }, { timeoutMs: 60_000 });
-    await user.see({ role: "heading", label: "Sales call prep" });
+    await user.see({ role: "heading", label: /Sales call prep$/ });
     await user.see({ text: "Off. Only you have it so far." });
     await user.see({ testId: "whats-inside" }, { text: /Prep a sales call/ });
     await user.notSee({ role: "link", label: "Share" });
@@ -91,8 +91,8 @@ test("an admin: I want to give the Sales team a plugin so they all get the same 
     await user.screenshot();
     await user.click({ role: "button", label: "Sales" });
     await user.see({ role: "button", label: /Team: Sales/ });
-    await user.see({ text: "1 plugin" });
     await user.see({ testId: "admin-plugins" }, { text: /Sales call prep/ });
+    expect((await probe.dom("[data-plugin-row]")).elements).toHaveLength(1);
     directoryUrl = new URL(await world.location(), world.den.ref.webUrl).toString();
     await user.screenshot();
   });
@@ -100,7 +100,7 @@ test("an admin: I want to give the Sales team a plugin so they all get the same 
   await step("the matching plugin still opens its details", async () => {
     await user.click({ role: "link", label: /Sales call prep/ });
     await user.see({ testId: "plugin-page" }, { timeoutMs: 60_000 });
-    await user.see({ role: "heading", label: "Sales call prep" });
+    await user.see({ role: "heading", label: /Sales call prep$/ });
     await user.screenshot();
     await user.navigate(directoryUrl);
     await user.see({ testId: "admin-plugins" });

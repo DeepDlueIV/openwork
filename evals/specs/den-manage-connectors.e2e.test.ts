@@ -116,21 +116,21 @@ test("an admin: I want to add an MCP that isn't in the catalog", async ({ world,
   const host = new URL(address).host;
   const name = "Team Notes";
 
-  await step("before: the add page lists known connectors with Google Workspace and Microsoft 365, and a quiet Add any MCP", async () => {
+  await step("before: the add page lists known connectors with Google Workspace and Microsoft 365, and a quiet Add another MCP", async () => {
     await user.navigate(`${world.den.ref.webUrl}${addPath}`);
     await user.see({ role: "heading", label: "Add a connector" }, { timeoutMs: 60_000 });
     await user.see({ role: "link", label: "Add HubSpot" }, { timeoutMs: 60_000 });
     await user.see({ role: "link", label: "Add Google Workspace" });
     await user.see({ role: "link", label: "Add Microsoft 365" });
-    await user.see({ testId: "add-any-mcp" }, { text: "Add any MCP" });
+    await user.see({ role: "button", label: "Add another MCP" });
     await user.notSee({ text: /Advanced setup/ });
-    await user.see({ placeholder: "Filter by name, or paste an MCP URL" });
-    evidence.recordAssertionEvidence("the catalog offers the native suites and Add any MCP without an advanced editor", "Rows: HubSpot, Google Workspace, Microsoft 365; header action \"Add any MCP\"; no \"Advanced setup\" link", true);
+    await user.see({ placeholder: "Filter by name" });
+    evidence.recordAssertionEvidence("the catalog offers the native suites and Add another MCP without an advanced editor", "Rows: HubSpot, Google Workspace, Microsoft 365; action \"Add another MCP\" beside the filter; no \"Advanced setup\" link", true);
     await user.screenshot();
   });
 
   await step("when I paste an address into the filter, it shows up as an MCP server to add", async () => {
-    await user.type({ placeholder: "Filter by name, or paste an MCP URL" }, address);
+    await user.type({ placeholder: "Filter by name" }, address);
     await user.see({ testId: "connector-picker-url-row" }, { text: new RegExp(host.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")) });
     await user.see({ testId: "connector-picker-url-row" }, { text: /MCP server/ });
     await user.see({ testId: "connector-picker-url-add" }, { text: "Add MCP" });
@@ -138,11 +138,11 @@ test("an admin: I want to add an MCP that isn't in the catalog", async ({ world,
     await user.notSee({ testId: "connector-picker-no-match" });
     evidence.recordAssertionEvidence("a pasted address becomes the top row with Add MCP", `Filter "${address}" shows "${host} · MCP server" with Add MCP, and "No catalog connectors match this address."`, true);
     await user.screenshot();
-    await user.type({ placeholder: "Filter by name, or paste an MCP URL" }, "", { replace: true });
+    await user.type({ placeholder: "Filter by name" }, "", { replace: true });
   });
 
-  await step("Add any MCP opens the address form on the same page", async () => {
-    await user.click({ testId: "add-any-mcp" });
+  await step("Add another MCP opens the address form on the same page", async () => {
+    await user.click({ role: "button", label: "Add another MCP" });
     await user.see({ testId: "connector-picker-custom" }, { timeoutMs: 30_000 });
     await user.notSee({ testId: "add-mcp-connection-dialog" });
     const location = await world.location();

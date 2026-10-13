@@ -256,7 +256,7 @@ setupTest("a member's Google Calendar setup shows the provider logo and an hones
   await step("the member can reach that same unsigned-in Google account through the existing Library route", async () => {
     await alex.click({ role: "button", label: "Library" });
     await alex.see({ text: "Google Workspace" }, { timeoutMs: 60_000 });
-    const status = await look.eventually(async () => (await look.dom('[data-library-row="Google Workspace"] [data-library-status]')).elements[0]?.text ?? "", { within: 30_000, label: "Google's member sign-in state is on screen", until: (text) => text === "Sign in" });
+    const status = await look.eventually(async () => (await look.dom('[data-library-row="Google Workspace"] + [data-library-status]')).elements[0]?.text ?? "", { within: 30_000, label: "Google's member sign-in state is on screen", until: (text) => text === "Sign in" });
     const route = await look.hash();
     const ok = route.includes("/extensions") && status === "Sign in";
     evidence.recordAssertionEvidence("the connection direction leads to a real member connection surface", `Library route "${route}"; Google Workspace state "${status}"`, ok);

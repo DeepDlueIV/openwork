@@ -72,7 +72,7 @@ test("an owner sees real workspace additions, keeps them during an outage, and d
   const connection = await step("the owner adds a credential-free connector through the setup page", async () => {
     await admin.click({ role: "link", label: "Add a connector" });
     await admin.see({ role: "heading", label: "Add a connector" }, { timeoutMs: 60_000 });
-    await admin.type({ placeholder: "Filter by name, or paste an MCP URL" }, world.names.connection);
+    await admin.type({ placeholder: "Filter by name" }, world.names.connection);
     await admin.click({ testId: "connector-picker-no-match-add" });
     await admin.type({ label: "Address" }, world.connector.mcpUrl);
     await admin.see({ label: "Name" }, { value: world.names.connection });

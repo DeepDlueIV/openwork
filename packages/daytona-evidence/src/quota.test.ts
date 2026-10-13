@@ -3,6 +3,7 @@ import { test } from "node:test";
 import { DaytonaApi, DaytonaApiError, type Sandbox, type Snapshot } from "./api.ts";
 import { cleanupDaytonaEvidence } from "./cleanup.ts";
 import { retrySnapshotQuota } from "./quota-retry.ts";
+import { digest } from "@openwork/freestyle/cache";
 
 const config = { apiKey: "mock", apiUrl: "https://mock.test/api", region: "mock" };
 const quiet = () => {};
@@ -129,6 +130,15 @@ test("builders and capture forks block reclamation even when old or stopped for 
     await cleanupDaytonaEvidence(api, { now });
     assert.deepEqual(api.deleted, []);
   }
+});
+
+test("a labelled inflight builder protects source and target without blocking unrelated quota reclamation", async () => {
+  const api = new Inventory();
+  const target = "ow-dy-evidence-web-v1-target";
+  api.snapshots = ["source", "target", "expired"].map((id) => ({ id, name: `ow-dy-evidence-web-v1-${id}`, state: "active", createdAt: old }));
+  api.sandboxes = [{ id: "builder", name: "builder", state: "stopped", snapshot: "source", labels: { kind: "openwork-daytona-builder-v1", layer: digest(target).slice(0, 24) }, createdAt: old }];
+  await cleanupDaytonaEvidence(api, { now });
+  assert.deepEqual(api.deleted, ["expired"]);
 });
 
 test("cleanup rechecks newly used snapshots and newly active sandboxes before deleting", async () => {

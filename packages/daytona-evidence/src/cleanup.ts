@@ -1,3 +1,4 @@
+import { digest } from "@openwork/freestyle/cache";
 import { DaytonaApi, type Sandbox } from "./api.ts";
 import { DAYTONA_BASE_PREFIX, DAYTONA_BASE_SNAPSHOT, DAYTONA_IMAGE_PREFIX, DAYTONA_TEMPLATE_PREFIX } from "./builder.ts";
 import { CAPTURE_KIND, CHECKPOINT_PREFIX, COPY_KIND } from "./checkpoints.ts";
@@ -34,9 +35,11 @@ export async function cleanupDaytonaEvidence(api = new DaytonaApi(), { dryRun = 
     images.find((s) => s.state === "active")?.name, worlds.find((s) => s.state === "active")?.name]);
   const inUse = (inventory: Sandbox[], id: string, name: string) => inventory.some((s) =>
     s.snapshot === id || s.snapshot === name || s.labels.checkpoint === name
-    // A builder or capture can be saving a new snapshot absent from its source
-    // reference. Without a provider lease API, prefer retaining too much.
-    || [BUILDER_KIND, CAPTURE_KIND].includes(s.labels.kind));
+    // Protect the target as well as the parent. Known targets let cleanup free
+    // unrelated expired evidence while a quota-rejected builder waits. Unknown
+    // targets fail closed, including the interval before a fork is labelled.
+    || (s.labels.kind === BUILDER_KIND && (!s.labels.layer || s.labels.layer === digest(name).slice(0, 24)))
+    || (s.labels.kind === CAPTURE_KIND && (!s.labels.checkpoint || s.labels.checkpoint === name)));
   const expired = (s: typeof snapshots[number]) =>
     (s.name.startsWith(DAYTONA_TEMPLATE_PREFIX) && age(s.lastUsedAt ?? s.createdAt) > WORLD_MAX_IDLE_MS)
     || (s.name.startsWith(CHECKPOINT_PREFIX) && (checkpoints.indexOf(s) >= CHECKPOINT_MAX_COUNT || age(s.createdAt) > CHECKPOINT_MAX_AGE_MS))

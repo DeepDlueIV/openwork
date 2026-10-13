@@ -34,9 +34,10 @@ viewer.
   the newest 30 or older than 14 hours. The current base and newest warm image
   and world (including the newest active fallback) are retained. Active
   sandboxes, pending snapshots, and snapshots referenced by any sandbox are
-  protected. Builders/capture forks block snapshot reclamation entirely, even
-  when stopped (cold saves stop their builder before snapshotting). Cleanup never
-  deletes those builders/forks; their controller/provider TTL owns teardown.
+  protected. Builders/capture forks protect both parent and labelled target, even
+  when stopped (cold saves stop their builder before snapshotting). An unknown
+  target blocks snapshot reclamation entirely. Cleanup never deletes those
+  builders/forks; their controller/provider TTL owns teardown.
   Only owned terminal worlds/copies idle for two hours are deleted, after rechecking.
   Invalid/incomplete inventory aborts cleanup before deletion.
 - This is backpressure, not an atomic quota reservation: concurrent producers

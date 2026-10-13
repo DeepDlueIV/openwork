@@ -450,14 +450,12 @@ async function withRemoteClient<T>(
 }
 
 // One connected client per live launch, so an open App's follow-up calls skip
-// the connect handshake and, briefly, the tool list. Every per-call check of
-// callMcpAppTool still runs against that list.
+// the connect handshake. Tools are still listed on every call, because their
+// visibility and approval annotations authorize it.
 const LAUNCH_SESSION_IDLE_MS = 60_000;
-const LAUNCH_TOOLS_TTL_MS = 30_000;
 const MAX_LAUNCH_SESSIONS = 32;
 type LaunchSession = {
   client: Promise<Client>;
-  tools?: { listedAt: number; list: Promise<Tool[]> };
   inFlight: number;
   idle?: ReturnType<typeof setTimeout>;
 };
@@ -478,7 +476,7 @@ function closeLaunchSessions(launchId: string): void {
 async function withLaunchSession<T>(
   key: string,
   config: Record<string, unknown>,
-  run: (client: Client, tools: (fresh?: boolean) => Promise<Tool[]>) => Promise<T>,
+  run: (client: Client) => Promise<T>,
 ): Promise<T> {
   let session = launchSessions.get(key);
   if (!session) {
@@ -496,16 +494,8 @@ async function withLaunchSession<T>(
   if (current.idle) clearTimeout(current.idle);
   current.idle = undefined;
   current.inFlight += 1;
-  const tools = (fresh = false) => {
-    if (fresh || !current.tools || Date.now() - current.tools.listedAt > LAUNCH_TOOLS_TTL_MS) {
-      const list = current.client.then(listTools);
-      current.tools = { listedAt: Date.now(), list };
-      list.catch(() => { if (current.tools?.list === list) current.tools = undefined; });
-    }
-    return current.tools.list;
-  };
   try {
-    return await run(await current.client, tools);
+    return await run(await current.client);
   } catch (error) {
     // A transport, protocol or stale-launch failure reconnects next time;
     // a refusal OpenWork made on purpose keeps the session.
@@ -1122,12 +1112,8 @@ export async function callMcpAppTool(input: {
     return item.config;
   };
   const config = await currentConfig();
-  return await withLaunchSession(`${launchId}\n${launch.fingerprint}`, config, async (client, launchTools) => {
-    let tools = await launchTools();
-    // A reused list that lacks either tool is listed again before refusing.
-    if (!tools.some((candidate) => candidate.name === launch.toolName) || !tools.some((candidate) => candidate.name === input.name)) {
-      tools = await launchTools(true);
-    }
+  return await withLaunchSession(`${launchId}\n${launch.fingerprint}`, config, async (client) => {
+    const tools = await listTools(client);
     const original = tools.find((candidate) => candidate.name === launch.toolName);
     if (!original || !toolVisibility(original, "app") || toolUiResourceUri(original) !== launch.resourceUri) throw staleLaunch();
     if (expectedResourceDigest !== undefined

@@ -410,7 +410,7 @@ chatTest("an owner follows App creation progress and opens the finished App besi
     evidence.recordAssertionEvidence("Each trusted click runs its one tool", `Clicking Calculate total ran the ${toolNames.workflow} Workflow from the conversation, and ${appTitle} shows 42, with no extra approval prompt.`, true);
   });
 
-  await step("after: a second click on Calculate total sends one request to the App's server instead of four", async () => {
+  await step("after: a second click on Calculate total sends two requests to the App's server instead of four", async () => {
     if (!calculator) throw new Error(`${appTitle} is not open`);
     const log = await world.denLog();
     await calculator.click({ role: "button", label: "Calculate total" });
@@ -418,9 +418,10 @@ chatTest("an owner follows App creation progress and opens the finished App besi
     // Witness: the click reached the App's server and ran its tool.
     const requests = await world.appServerRequests(log);
     expect(requests.filter(method => method === "tools/call")).toHaveLength(1);
-    expect(requests).toEqual(["tools/call"]);
+    // The connection is reused; the tools are listed again because their annotations authorize the call.
+    expect([...requests].sort()).toEqual(["tools/call", "tools/list"]);
     await user.screenshot();
-    evidence.recordAssertionEvidence("A follow-up App call reuses the open App's connection", `The second Calculate total click made ${requests.length} request to ${appTitle}'s own MCP server (${requests.join(", ")}) and showed 42; before, every App tool call made 4 (initialize, its notification, tools/list, tools/call).`, requests.length === 1);
+    evidence.recordAssertionEvidence("A follow-up App call reuses the open App's connection", `The second Calculate total click made ${requests.length} requests to ${appTitle}'s own MCP server (${requests.join(", ")}) and showed 42; before, every App tool call made 4 (initialize, its notification, tools/list, tools/call).`, requests.length === 2);
   });
 
   await step("asked for the calculator again, the chat keeps one live copy and the earlier card points to it", async () => {

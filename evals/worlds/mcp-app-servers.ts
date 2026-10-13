@@ -638,12 +638,12 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
         : kind === "guided"
         // The agent reads the guide, finds the tool, prepares, and publishes prepare_app's starter unchanged.
         ? [toolStep("get_skill", { name: "build-an-app" }), toolStep("search_capabilities", { query: "Inventory lookup unit price", type: "mcp", limit: 2 }),
-          toolStep("prepare_app", { title: guidedTitle, description: "Look up a product's unit price in Inventory.", tools: lookup }),
+          { ...toolStep("prepare_app", { title: guidedTitle, description: "Look up a product's unit price in Inventory.", tools: lookup }), holdUntilReleased: true },
           { ...(engine === "v2"
             ? { tool: "execute", arguments: { code: `return await tools["openwork-cloud"].create_app({ ...${JSON.stringify({ title: guidedTitle, tools: lookup, textFallback: "Looks up a product's unit price in Inventory." })}, ..."__APP_STARTER__" });` } }
             : toolStep("create_app", { title: guidedTitle, tools: lookup, textFallback: "Looks up a product's unit price in Inventory." })), argumentsFrom: "app-starter" }]
         : kind === "edit"
-        ? [toolStep("read_app", { appId: field(built, "connectionId") }), { ...toolStep("update_app", { ...appSource("revision two", { title: pricerTitle, sampleOrder: true }), appId: field(built, "connectionId"), ...(engine === "v2" ? { expectedRevisionId: "__APP_REVISION_ID__" } : {}) }), argumentsFrom: "app-read" }]
+        ? [toolStep("read_app", { appId: field(built, "connectionId") }), { ...toolStep("update_app", { ...appSource("revision two", { title: pricerTitle, sampleOrder: true }), appId: field(built, "connectionId"), ...(engine === "v2" ? { expectedRevisionId: "__APP_REVISION_ID__" } : {}) }), argumentsFrom: "app-read", holdUntilReleased: true }]
         : kind === "failure"
           ? [toolStep("create_app", { title: "Broken App", reactSource: "export default function App( {", tools, textFallback: "The App is unavailable." })]
           : [toolStep("prepare_app", { title: "Interrupted App", tools }), { ...toolStep("create_app", { ...appSource("interrupted", { title: "Interrupted App", sampleOrder: true }), tools, ...(engine === "v2" ? { preparationId: "__APP_PREPARATION_ID__" } : {}) }), argumentsFrom: "app-preparation", holdUntilReleased: true }];
@@ -651,7 +651,7 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
       if (!response.ok) throw new Error("Could not prepare the lifecycle turn");
       return field(built, "connectionId");
     },
-    /** Hold the model after preparation so the person can inspect real writing progress. */
+    /** Hold the model before a held step (preparation, build or edit) so the person can inspect real writing progress. */
     async holdCreation(held: boolean) {
       const response = await fetch(`${den.mocks.inventory.url}/admin/agent-hold`, {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ held }),

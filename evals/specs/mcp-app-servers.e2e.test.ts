@@ -585,10 +585,26 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
       evidence.recordAssertionEvidence("Verified launch opens a usable App beside the composer", `${name}: one preview loads revision one; the rendered pane begins at ${pane.left}, beside the composer ending at ${composer.right}.`, true);
       await user.screenshot();
     });
-    await step("after: editing refreshes the same tab and closing it permits reopening from the creation step", async () => {
+    let appId = "";
+    await step("after: an edit shows its step and reopens the App as Updating while the agent is still writing", async () => {
+      await closeFrame();
+      await user.click({ role: "button", label: "Close panel" });
+      expect((await probe.dom("[data-built-app-preview]")).elements).toHaveLength(0);
       const prompt = "Update this App to revision two.";
-      const appId = await world.prepareLifecycleTurn(prompt, "edit");
+      appId = await world.prepareLifecycleTurn(prompt, "edit");
+      // The model reads the App, then is held before update_app, as while it writes a long change.
+      await world.holdCreation(true);
       await agent.send(prompt);
+      await user.see({ text: `Updating artifact “${pricerTitle}”` }, { timeoutMs: 120_000 });
+      expect(await probe.eventually(async () => (await probe.dom('[data-app-builder-step][data-app-creation-stage="writing"] .ow-text-shimmer')).elements, { within: 30_000, intervalMs: 200, label: "the edit step is live before update_app", until: elements => elements.length === 1 && elements[0].rect.height > 0 })).toHaveLength(1);
+      expect(await probe.eventually(async () => (await probe.dom(`[data-built-app-preview="${appId}"] [aria-busy="true"]`)).elements, { within: 30_000, intervalMs: 200, label: "the App being changed reopens marked Updating", until: elements => elements.length === 1 })).toHaveLength(1);
+      // Witness: update_app has not run yet, so the reopened App still shows revision one.
+      await revision("revision one");
+      evidence.recordAssertionEvidence("An edit is visible before its update_app call", `${name}: after read_app, with the model held before update_app, the step reads Updating artifact “${pricerTitle}” and the closed App reopens beside the composer marked Updating, still on revision one.`, true);
+      await user.screenshot();
+      await world.holdCreation(false);
+    });
+    await step("after: editing refreshes the same tab and closing it permits reopening from the creation step", async () => {
       await user.see({ text: "The App has been updated." }, { timeoutMs: 120_000 });
       expect((await probe.dom(`[data-built-app-preview="${appId}"]`)).elements).toHaveLength(1);
       expect((await probe.dom('[data-built-app-preview]')).elements).toHaveLength(1);
@@ -631,7 +647,12 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
       // No "app" in the request: the step comes from what the agent does, not from its wording.
       const prompt = "Make me a dashboard of Inventory unit prices.";
       await world.prepareLifecycleTurn(prompt, "guided");
+      // Held before prepare_app: reading the guide already starts the step while the agent writes.
+      await world.holdCreation(true);
       await agent.send(prompt);
+      expect(await probe.eventually(async () => (await probe.dom('[data-app-builder-step][data-app-creation-stage="needs"] .ow-text-shimmer')).elements, { within: 120_000, intervalMs: 200, label: "the guide starts the artifact step before prepare_app", until: elements => elements.length === 1 && elements[0].rect.height > 0 })).toHaveLength(1);
+      await user.see({ text: "Preparing artifact" });
+      await world.holdCreation(false);
       const sentence = `Created artifact “${guidedTitle}”`;
       await user.see({ text: sentence }, { timeoutMs: 120_000 });
       await user.see({ text: guidedReply }, { timeoutMs: 30_000 });
@@ -649,7 +670,7 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
       await user.on(frame).type({ role: "textbox", label: "Sku" }, launchInput.sku);
       await user.on(frame).click({ role: "button", label: "Show unit price" });
       await user.on(frame).see({ text: "Unit price" }, { timeoutMs: 60_000 });
-      evidence.recordAssertionEvidence("The agent's own calls make one artifact step, and the starter works as published", `${name}: a dashboard request without the word app read build-an-app, searched, prepared and built from prepare_app's starter. The guide and search sit inside the one Created artifact step, and the published starter loads the Inventory price on one click.`, true);
+      evidence.recordAssertionEvidence("The agent's own calls make one artifact step, and the starter works as published", `${name}: a dashboard request without the word app read build-an-app, searched, prepared and built from prepare_app's starter. While the model was held before prepare_app, the step already read Preparing artifact. The guide and search sit inside the one Created artifact step, and the published starter loads the Inventory price on one click.`, true);
       await user.screenshot();
       await closeFrame();
       await user.click({ role: "button", label: "Close panel" });

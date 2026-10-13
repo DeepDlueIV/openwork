@@ -5,6 +5,7 @@ import { useMessageList } from "@/components/chat/message-list-provider";
 import { Button } from "@/components/ui/button";
 import { usePanelTabStore } from "../session/panel/panel-tab-store";
 import { useUiStateStore } from "@/react-app/shell/ui-state-store";
+import { appCreationRuns, appRead } from "./app-creation-progress";
 import {
   builtAppSummary,
   isAppBuilderPart,
@@ -54,7 +55,17 @@ export function BuiltAppChatPreview({ part, compact = false }: { part: DynamicTo
   );
 }
 
-/** History is a baseline; only a new successful builder result opens the pane. */
+/**
+ * Builds and edits that already opened the pane in this window, so switching
+ * sessions and back never reopens one the person closed.
+ */
+const autoOpened = new Set<string>();
+
+/**
+ * History is a baseline. A new successful builder result opens the pane, as
+ * does one from the turn still running when the chat mounts, and an App the
+ * agent starts changing opens marked Updating.
+ */
 export function BuiltAppPreviewSync({
   messages,
   active,
@@ -70,11 +81,20 @@ export function BuiltAppPreviewSync({
   const latestParts = useMemo(() => latestBuiltAppParts(messages), [messages]);
   useEffect(() => {
     const updating = new Set<string>();
-    const latestTurn = messages.slice(Math.max(0, messages.findLastIndex(message => message.role === "user")));
-    if (active) for (const message of latestTurn) for (const part of message.parts) {
-      if (part.type !== "dynamic-tool" || !/(?:^|_)update_app$/.test(part.toolName) || (part.state !== "input-streaming" && part.state !== "input-available")) continue;
-      const appId = part.input && typeof part.input === "object" ? Reflect.get(part.input, "appId") : null;
-      if (typeof appId === "string") updating.add(appId);
+    const turnStart = Math.max(0, messages.findLastIndex(message => message.role === "user"));
+    const turnId = messages[turnStart]?.id ?? "";
+    const latestTurn = messages.slice(turnStart);
+    if (active) {
+      for (const message of latestTurn) for (const part of message.parts) {
+        if (part.type !== "dynamic-tool" || !/(?:^|_)update_app$/.test(part.toolName) || (part.state !== "input-streaming" && part.state !== "input-available")) continue;
+        const appId = part.input && typeof part.input === "object" ? Reflect.get(part.input, "appId") : null;
+        if (typeof appId === "string") updating.add(appId);
+      }
+      // The agent read an App and is writing its change before update_app exists.
+      for (const run of appCreationRuns(latestTurn, true)) {
+        const read = run.intent?.kind === "edit" ? appRead(run.intent.part) : null;
+        if (read) updating.add(read.appId);
+      }
     }
     const state = usePanelTabStore.getState();
     const session = state.sessions[sessionId];
@@ -91,6 +111,9 @@ export function BuiltAppPreviewSync({
         )
           pending.current.add(part.toolCallId);
       }
+    // Nothing counts as seen until it can open: a build that lands before the
+    // App host is known still opens once it is.
+    if (!mcpAppOrigin) return;
     const parts = latestBuiltAppParts(messages);
     const previous = seen.current;
     const current = new Set(
@@ -99,7 +122,7 @@ export function BuiltAppPreviewSync({
       ),
     );
     seen.current = new Set([...(previous ?? []), ...current]);
-    if (!mcpAppOrigin) return;
+    const turnCalls = new Set(latestTurn.flatMap(message => message.parts.flatMap(part => part.type === "dynamic-tool" ? [part.toolCallId] : [])));
     for (const part of parts) {
       const app = builtAppSummary(part);
       if (!app) continue;
@@ -107,12 +130,18 @@ export function BuiltAppPreviewSync({
       const tab = usePanelTabStore
         .getState()
         .sessions[sessionId]?.tabs.find((tab) => tab.id === id);
+      const buildKey = `${sessionId}:${part.toolCallId}:${app.revisionId}`;
+      const editKey = `${sessionId}:edit:${turnId}:${app.appId}`;
       const fresh =
-        (active || pending.current.has(part.toolCallId)) &&
-        previous !== null &&
-        !previous.has(`${part.toolCallId}:${app.revisionId}`);
+        !autoOpened.has(buildKey) &&
+        (((active || pending.current.has(part.toolCallId)) &&
+          previous !== null &&
+          !previous.has(`${part.toolCallId}:${app.revisionId}`)) ||
+          (active && turnCalls.has(part.toolCallId)));
+      // Once per turn, so closing it while the agent works stays respected.
+      const editing = !readOnly && !fresh && updating.has(app.appId) && !autoOpened.has(editKey);
       pending.current.delete(part.toolCallId);
-      if (tab || (fresh && !readOnly)) {
+      if (tab || ((fresh || editing) && !readOnly)) {
         // Updating the same tab keeps the panel in place; closing it stays respected.
         const activeTabId =
           usePanelTabStore.getState().sessions[sessionId]?.activeTabId ?? null;
@@ -127,10 +156,12 @@ export function BuiltAppPreviewSync({
             part,
             origin: mcpAppOrigin,
           });
-        if (!fresh)
+        if (!fresh && !editing)
           usePanelTabStore.getState().selectTab(sessionId, activeTabId);
-        if (fresh && !readOnly)
+        if ((fresh || editing) && !readOnly) {
+          autoOpened.add(fresh ? buildKey : editKey);
           useUiStateStore.getState().setSidePanelState(sessionId, "panel");
+        }
       }
     }
   }, [messages, mcpAppOrigin, readOnly, sessionId, active]);

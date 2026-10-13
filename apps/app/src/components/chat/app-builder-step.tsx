@@ -35,7 +35,7 @@ export function AppBuilderStep({
 }) {
   const context = useOptionalMessageList();
   const resolveLifecycle = useCurrentToolLifecycleResolver();
-  const latest = run.builds.at(-1) ?? run.preparation ?? run.discoveries?.at(-1);
+  const latest = run.builds.at(-1) ?? run.preparation ?? run.discoveries?.at(-1) ?? run.intent?.part;
   const lifecycle = latest
     ? resolveLifecycle(latest.toolCallId, isToolPartInFlight(latest))
     : null;
@@ -47,7 +47,8 @@ export function AppBuilderStep({
       lifecycle !== "waiting",
   );
   const parts = [...(run.executions ?? []), ...(run.attempts ?? []), ...(run.discoveries ?? []), ...(run.preparation ? [run.preparation] : []), ...run.builds];
-  const starts = parts.flatMap((part) =>
+  // A step started by reading the guide or the App times from that read.
+  const starts = [...(run.intent ? [run.intent.part] : []), ...parts].flatMap((part) =>
     typeof part.callProviderMetadata?.openwork?.toolStartedAt === "number"
       ? [part.callProviderMetadata.openwork.toolStartedAt]
       : [],
@@ -80,20 +81,21 @@ export function AppBuilderStep({
         )
       : null;
   const editing =
-    progress.build && /(?:^|_)update_app$/.test(progress.build.toolName);
+    run.intent?.kind === "edit" ||
+    (progress.build && /(?:^|_)update_app$/.test(progress.build.toolName));
   // One plain rail row, like every other step: what is happening to which
   // app, a short state, Open when there is something to open, and the raw
   // calls behind the details icon.
-  const title = `“${progress.title}”`;
+  const title = progress.title ? ` “${progress.title}”` : "";
   const sentence = progress.app || progress.builtUnrecorded
-    ? `${editing ? "Updated" : "Created"} artifact ${title}`
+    ? `${editing ? "Updated" : "Created"} artifact${title}`
     : progress.failed
-      ? `Couldn’t ${editing ? "update" : "create"} artifact ${title}`
+      ? `Couldn’t ${editing ? "update" : "create"} artifact${title}`
       : progress.stage === "checking"
-        ? `Checking artifact ${title}`
+        ? `Checking artifact${title}`
         : progress.stage === "writing"
-          ? `${editing ? "Updating" : "Writing"} artifact ${title}`
-          : `Preparing artifact ${title}`;
+          ? `${editing ? "Updating" : "Writing"} artifact${title}`
+          : `Preparing artifact${title}`;
   const state = progress.failed
     ? latestProblem
     : progress.builtUnrecorded

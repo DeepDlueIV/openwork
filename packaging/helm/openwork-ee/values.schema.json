@@ -18,6 +18,16 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "teamMembershipCache": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Team membership cache: Reduce repeated team lookups while keeping access changes immediate. Enable only after every API instance runs revision-aware team writes. Renders DEN_FEATURE_TEAM_MEMBERSHIP_CACHE."
+            },
             "managedDeployments": {
               "enum": [
                 "",

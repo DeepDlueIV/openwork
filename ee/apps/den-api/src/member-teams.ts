@@ -1,8 +1,31 @@
 import { and, asc, eq, isNull } from "@openwork-ee/den-db/drizzle"
-import { MemberTable, TeamMemberTable, TeamTable } from "@openwork-ee/den-db/schema"
+import { MemberTable, OrganizationTable, TeamMemberTable, TeamTable } from "@openwork-ee/den-db/schema"
 import { db } from "./db.js"
+import { cache } from "./cache.js"
+import { organizationFeatureEnabled } from "./features.js"
 
-export async function listTeamsForMember(input: {
+/**
+ * Cache the team join, never the revision or member-liveness check. Each hit is
+ * bound to the revision committed with team changes, so even Redis rollback
+ * cannot restore revoked access. Reads inside mutation transactions stay raw.
+ */
+export function listTeamsForMember(input: Parameters<typeof loadMemberTeams>[0]) {
+  return cache.org.memberTeams({
+    ...input,
+    enabled: () => organizationFeatureEnabled(input.organizationId, "teamMembershipCache"),
+    revision: async () => {
+      const [row] = await db.select({ revision: OrganizationTable.teamMembershipRevision })
+        .from(MemberTable)
+        .innerJoin(OrganizationTable, eq(OrganizationTable.id, MemberTable.organizationId))
+        .where(and(eq(MemberTable.id, input.memberId), eq(MemberTable.organizationId, input.organizationId), isNull(MemberTable.removedAt)))
+        .limit(1)
+      return row?.revision ?? null
+    },
+    load: () => loadMemberTeams(input),
+  })
+}
+
+async function loadMemberTeams(input: {
   organizationId: typeof TeamTable.$inferSelect.organizationId
   memberId: typeof MemberTable.$inferSelect.id
 }) {

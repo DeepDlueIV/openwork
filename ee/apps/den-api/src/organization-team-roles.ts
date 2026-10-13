@@ -2,6 +2,7 @@ import { and, eq, isNull, or } from "@openwork-ee/den-db/drizzle"
 import { listAuthoritativeTeamMemberships } from "@openwork-ee/den-db/permissions"
 import { InvitationTable, MemberTable, OrganizationTable, TeamMemberTable, TeamTable } from "@openwork-ee/den-db/schema"
 import { db } from "./db.js"
+import { randomUUID } from "node:crypto"
 import { withGatewayUsageEntitlementMutation } from "@openwork-ee/den-db/gateway-usage-limits"
 import { organizationRoleValueSatisfies } from "./organization-role-hierarchy.js"
 import { pruneUnreachableMemberApiKeys } from "./capability-sources/external-mcp-connections.js"
@@ -19,7 +20,12 @@ export function withOrganizationTeamMutation<T>(
   return db.transaction(async (tx) => {
     await tx.select({ id: OrganizationTable.id }).from(OrganizationTable)
       .where(eq(OrganizationTable.id, organizationId)).for("update")
-    return mutation(tx)
+    const result = await mutation(tx)
+    // Version and source rows commit together. Redis failure, eviction or
+    // snapshot rollback cannot resurrect entries keyed by the old revision.
+    await tx.update(OrganizationTable).set({ teamMembershipRevision: randomUUID() })
+      .where(eq(OrganizationTable.id, organizationId))
+    return result
   })
 }
 

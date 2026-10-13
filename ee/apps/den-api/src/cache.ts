@@ -1,7 +1,7 @@
 import { peopleMemberCondition } from "./setup-agent-members.js"
 import { asc, and, eq, gt, isNull, lt, lte } from "@openwork-ee/den-db/drizzle"
 import { readFeatureRollouts, readOrganizationFeatureOverrides } from "@openwork-ee/den-db/organization-features"
-import { AuthSessionTable, AuthUserTable, InvitationTable, MemberTable, OAuthConsentTable, OrganizationTable } from "@openwork-ee/den-db/schema"
+import { AuthSessionTable, AuthUserTable, InvitationTable, MemberTable, OAuthConsentTable, OrganizationTable, TeamTable } from "@openwork-ee/den-db/schema"
 import { isFeatureKey, type FeatureOverrides, type FeatureRollouts } from "@openwork/features"
 import { normalizeDenTypeId, type DenTypeId, type DenTypeIdName } from "@openwork-ee/utils/typeid"
 import { createHash } from "node:crypto"
@@ -18,7 +18,7 @@ type UserId = typeof AuthUserTable.$inferSelect.id
 type OAuthConsentId = typeof OAuthConsentTable.$inferSelect.id
 
 type CacheParent = "auth" | "features" | "org"
-type CacheChild = "generation" | "grant" | "grant-revoked" | "member" | "member-revoked" | "members" | "overrides" | "rollouts" | "session" | "session-id" | "session-revoked" | "session-id-revoked"
+type CacheChild = "generation" | "grant" | "grant-revoked" | "member" | "member-revoked" | "members" | "member-teams" | "overrides" | "rollouts" | "session" | "session-id" | "session-revoked" | "session-id-revoked"
 
 type CacheKeyInput = {
   parent: CacheParent
@@ -83,6 +83,50 @@ export type CachedOrgMember = {
     name: string
     image: string | null
   }
+}
+
+type CachedMemberTeam = Pick<typeof TeamTable.$inferSelect, "id" | "name" | "organizationId" | "createdAt" | "updatedAt">
+
+function parseCachedMemberTeams(raw: string | null): CachedMemberTeam[] | null {
+  if (!raw) return null
+  let parsed: unknown
+  try { parsed = JSON.parse(raw) } catch { return null }
+  if (!Array.isArray(parsed)) return null
+  const teams: CachedMemberTeam[] = []
+  for (const value of parsed) {
+    if (!isRecord(value)) return null
+    const id = readDenId("team", value.id)
+    const organizationId = readDenId("organization", value.organizationId)
+    const name = readString(value.name)
+    const createdAt = readDate(value.createdAt)
+    const updatedAt = readDate(value.updatedAt)
+    if (!id || !organizationId || name === null || !createdAt || !updatedAt) return null
+    teams.push({ id, organizationId, name, createdAt, updatedAt })
+  }
+  return teams
+}
+
+async function getMemberTeams(input: {
+  organizationId: OrgId
+  memberId: MemberId
+  revision: () => Promise<string | null>
+  enabled: () => Promise<boolean>
+  load: () => Promise<CachedMemberTeam[]>
+}) {
+  if (!activeRedisClient || !await input.enabled()) return input.load()
+  // This indexed PRIMARY read is never cached. It checks both active membership
+  // and the DB-authoritative team revision before trusting any Redis entry.
+  // DB failure rejects, even if Redis has a previously valid authorization.
+  const revision = await input.revision()
+  if (revision === null) return []
+  return getOrSet({
+    parent: "org",
+    child: "member-teams",
+    id: `${input.organizationId}:${revision}:${input.memberId}`,
+    ttlSeconds: DEFAULT_CACHE_TTL_SECONDS,
+    parse: parseCachedMemberTeams,
+    load: input.load,
+  })
 }
 
 const DEFAULT_CACHE_TTL_SECONDS = 60
@@ -975,6 +1019,7 @@ export const cache = {
     deleteMembers: deleteOrgMembers,
     deleteMembership: deleteOrgMembership,
     revokeMembership: revokeOrgMembership,
+    memberTeams: getMemberTeams,
   },
   features: {
     rollouts: getFeatureRollouts,

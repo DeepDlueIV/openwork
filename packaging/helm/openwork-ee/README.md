@@ -329,6 +329,7 @@ OpenWork Cloud. Don't change it on a customer install.
 <!-- BEGIN GENERATED features (pnpm features:sync) -->
 | `config.features.*` | Environment variable | Default | What it does |
 | --- | --- | --- | --- |
+| `teamMembershipCache` | `DEN_FEATURE_TEAM_MEMBERSHIP_CACHE` | default off | Reduce repeated team lookups while keeping access changes immediate. Enable only after every API instance runs revision-aware team writes. |
 | `managedDeployments` | `DEN_FEATURE_MANAGED_DEPLOYMENTS` | default off (cloud only) | Organization admins install OpenWork in their own cloud account (AWS first) and see its health and updates in OpenWork. |
 | `denFlatPageHeaders` | `DEN_FEATURE_DEN_FLAT_PAGE_HEADERS` | default off | Members see compact, readable page headings in Den instead of decorative gradient banners. |
 | `dashboardActivity` | `DEN_FEATURE_DASHBOARD_ACTIVITY` | default off | Organization admins see recent additions and skill updates on their dashboard instead of Quick add. |

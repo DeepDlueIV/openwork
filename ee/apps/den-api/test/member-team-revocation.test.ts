@@ -89,21 +89,13 @@ function assertQueries(reads: Array<{ sql: string; params: unknown[] }>, count: 
 
 afterEach(() => mock.restoreAll())
 
-test("listTeamsForMember directly returns a database query and cached team APIs are absent", async () => {
-  assert.ok(declaration.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword))
-  assert.ok(declaration.body)
-  assert.equal(declaration.body.statements.length, 1)
-  const statement = declaration.body.statements[0]
-  assert.ok(ts.isReturnStatement(statement) && statement.expression)
-  assert.match(statement.expression.getText(source), /^db\s*\.select\(/)
-  assert.doesNotMatch(functionSource, /\bcache\b|redis|generation|memo/i)
-  const cacheSource = await readFile(new URL("../src/cache.ts", import.meta.url), "utf8")
-  assert.doesNotMatch(cacheSource, /CachedMemberTeam|parseCachedMemberTeams|loadMemberTeams|getMemberTeams|memberTeamsGenerationKey|invalidateMemberTeams|member-teams|TeamMemberTable|TeamTable/)
-  assert.equal("memberTeams" in cache.org, false)
-  assert.equal("invalidateMemberTeams" in cache.org, false)
+test("listTeamsForMember uses the dedicated revocation-safe cache boundary", () => {
+  assert.match(functionSource, /cache\.org\.memberTeams/)
+  assert.match(functionSource, /OrganizationTable\.teamMembershipRevision/)
+  assert.match(functionSource, /isNull\(MemberTable\.removedAt\)/)
 })
 
-test("repeated reads query the database every time and revoked team memberships disappear without invalidation", async () => {
+test("without Redis, repeated reads query the database and revoked memberships disappear without invalidation", async () => {
   const { reads, boundary } = stubReads([[team], [team], [], []])
   const assertNoCacheReads = forbidCacheReads()
   const invalidation = mock.method(cache.features, "invalidate", async () => { throw new Error("feature invalidation unavailable") })

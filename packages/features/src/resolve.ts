@@ -33,6 +33,10 @@ export const RETIRED_FEATURE_KEYS = [
   "implicitCloudSkills", "platformAuditReads",
   // Folded into another feature (2026-10): analyticsIntegrated → libraryUsage; the rest → workbot.
   "analyticsIntegrated", "workbotCalendar", "workbotSideChats", "workbotDefaultModel",
+  // Generally available (2026-10, second pass). calendarPolish is always on
+  // wherever Workbot or the desktop Calendar is.
+  "denFlatPageHeaders", "dashboardActivity", "libraryIntegrated", "libraryUsage", "modelsAnalytics",
+  "headlessAutomations", "calendarPolish",
 ] as const
 
 export function isFeatureKey(value: string): value is FeatureKey {

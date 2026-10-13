@@ -67,11 +67,18 @@ test("an admin checks a connection and a teammate sees the recorded result witho
     await agent.on(world.app).run("route.extensions.skills");
     await appUser.click({ role: "button", label: "All" });
     await appUser.see({ text: "Team Notes" }, { timeoutMs: 90_000 });
-    const states = await probe.on(world.app).eventually(async () => (await probe.on(world.app).dom('[data-library-row="Team Notes"] [data-library-state]')).elements, {
-      within: 60_000, label: "Library's recorded check", until: (rows) => rows.some((row) => row.text.includes("Ready") && row.text.includes("Checked")),
+    const appProbe = probe.on(world.app);
+    // The row's state sits beside its button; the recorded check time is the row's description.
+    const read = async () => ({
+      status: (await appProbe.dom('[data-library-row="Team Notes"] + [data-library-status]')).elements[0]?.text.trim() ?? "",
+      note: (await appProbe.dom('[data-library-row="Team Notes"] [data-library-description]')).elements[0]?.text.trim() ?? "",
     });
-    expect(states.some((row) => row.text.includes("Ready") && row.text.includes("Checked"))).toBe(true);
-    evidence.recordAssertionEvidence("Library does not infer readiness from authentication", states.map((row) => row.text).join("; "), true);
+    const state = await appProbe.eventually(read, {
+      within: 60_000, label: "Library's recorded check", until: (row) => row.status === "Ready" && row.note.startsWith("Checked "),
+    });
+    expect(state.status).toBe("Ready");
+    expect(state.note).toMatch(/^Checked /);
+    evidence.recordAssertionEvidence("Library does not infer readiness from authentication", `status "${state.status}"; note "${state.note}"`, true);
     await appUser.screenshot();
   });
   await step("finishing setup records a server check without another manual action", async () => {

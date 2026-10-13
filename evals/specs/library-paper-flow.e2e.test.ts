@@ -22,7 +22,8 @@ test(title, async ({ evidence, world, user, probe, step }) => {
   const signedOutUser = user.on(world.signedOut);
   const signedOutProbe = probe.on(world.signedOut);
   const texts = async (selector: string, on = probe) => (await on.dom(selector)).elements.map((element) => element.text.trim());
-  const caption = async (name: string) => (await texts(`[data-library-row="${name}"] [data-library-caption]`))[0] ?? "";
+  // A row's state sits beside its button, not inside it.
+  const status = async (name: string, on = probe) => (await texts(`[data-library-row="${name}"] + [data-library-status]`, on)).join("");
   const sectionMeta = async (section: string) => (await texts(`[data-library-section-meta="${section}"]`))[0] ?? "";
   // Library pages fade in over 300ms; capture them once they have landed.
   const shot = async () => {
@@ -67,17 +68,16 @@ test(title, async ({ evidence, world, user, probe, step }) => {
 
   await step("signed in, one list groups things by where they come from, and connectors that need you say Sign in", async () => {
     await user.see({ role: "button", label: "Add to library" }, { timeoutMs: 90_000 });
-    await probe.eventually(async () => (await texts('[data-library-row="Linear"] [data-library-status]')).join(""), {
+    await probe.eventually(async () => status("Linear"), {
       within: 60_000, label: "Linear's row arrives from the organization", until: (chip) => chip === "Sign in",
     });
     const filters = await texts('[aria-label="Library filters"] button[aria-pressed]:not([aria-label])');
     // "Needs sign-in" (#5568) carries its count, e.g. "Needs sign-in2".
     expect(filters.map((label) => label.replace(/\d+$/, ""))).toEqual(["All", "Connectors", "Skills", "Plugins", "Needs sign-in"]);
     await user.notSee({ role: "tab", label: /Ready to use/ });
-    const chip = async (name: string) => (await texts(`[data-library-row="${name}"] [data-library-status]`)).join("");
-    const google = await chip("Google Workspace");
-    const linear = await chip("Linear");
-    const wikiReady = (await probe.dom('[data-library-row="Team wiki"] [data-library-ready]')).elements.length === 1;
+    const google = await status("Google Workspace");
+    const linear = await status("Linear");
+    const wikiReady = (await status("Team wiki")) === "Ready";
     const openwork = await sectionMeta("openwork");
     await shot();
     evidence.recordAssertionEvidence(
@@ -174,14 +174,19 @@ test(title, async ({ evidence, world, user, probe, step }) => {
     await closeToasts();
     const content = (await probe.dom('[aria-label="Library filters"]')).elements[0]?.rect;
     const offset = page && content ? Math.abs((page.left + page.right) / 2 - (content.left + content.right) / 2) : Number.POSITIVE_INFINITY;
-    const captionText = await caption("Customer briefing");
+    // Rows no longer carry an audience caption; Added by you's section count says it is only yours.
+    const meta = await probe.eventually(() => sectionMeta("mine"), {
+      within: 30_000, label: "Added by you counts the new skill", until: (value) => value === "1 · only you so far",
+    });
+    const mine = await rowNames("mine");
     evidence.recordAssertionEvidence(
       "Creating a skill lands on the skill's page, centered in the Library with Share and Chat, then lists it under Added by you, just for the creator",
-      `detail heading "${detail.find((value) => value === "Customer briefing") ?? ""}"; Share and Chat buttons shown; page center is ${offset.toFixed(0)}px off the Library's center; row caption "${captionText}"`,
-      captionText === "Just me" && offset <= 8,
+      `detail heading "${detail.find((value) => value === "Customer briefing") ?? ""}"; Share and Chat buttons shown; page center is ${offset.toFixed(0)}px off the Library's center; Added by you "${meta}" lists ${mine.length} row(s)`,
+      meta === "1 · only you so far" && offset <= 8,
     );
     expect(offset).toBeLessThanOrEqual(8);
-    expect(captionText).toBe("Just me");
+    expect(mine.some((name) => name.startsWith("Customer briefing"))).toBe(true);
+    expect(meta).toBe("1 · only you so far");
   });
 
   await step("Connector opens a catalog of services, and Linear shows as already added", async () => {
@@ -235,20 +240,19 @@ test(title, async ({ evidence, world, user, probe, step }) => {
     );
     await backToLibrary("Slack");
     await closeToasts();
-    const slackCaption = await caption("Slack");
-    const slackChip = await probe.eventually(async () => (await texts('[data-library-row="Slack"] [data-library-status]')).join(""), {
+    // Rows no longer carry an audience caption; the Slack row's state is what remains to read.
+    const slackChip = await probe.eventually(() => status("Slack"), {
       within: 30_000, label: "Slack's row asks the member to finish signing in",
       until: (chip) => chip === "Sign in",
     });
     await shot();
     evidence.recordAssertionEvidence(
       "Sign in happens on the service's own page, not inside OpenWork",
-      `opened ${url.origin}${url.pathname} (the Slack fixture's authorize page, client_id=${url.searchParams.get("client_id") ? "set" : "missing"}); Slack row caption "${slackCaption}", chip "${slackChip}"`,
+      `opened ${url.origin}${url.pathname} (the Slack fixture's authorize page, client_id=${url.searchParams.get("client_id") ? "set" : "missing"}); Slack row state "${slackChip}"`,
       url.origin === world.slackOrigin && url.pathname.endsWith("/authorize") && slackChip === "Sign in",
     );
     expect(url.origin).toBe(world.slackOrigin);
     expect(url.pathname).toMatch(/\/authorize$/);
-    expect(slackCaption).toBe("Just me");
     expect(slackChip).toBe("Sign in");
     await closeToasts();
   });
@@ -346,17 +350,16 @@ test(title, async ({ evidence, world, user, probe, step }) => {
   await step("after: three things added by you, each just for you, with Share… in the toast", async () => {
     await user.see({ text: "Share…" });
     const mine = await rowNames("mine");
-    const captions = await Promise.all(["Customer briefing", "Slack", "Sales call prep"].map(caption));
+    // Rows no longer carry "Just me"; the section's "only you so far" says it for all three.
     const meta = await sectionMeta("mine");
     await shot();
     evidence.recordAssertionEvidence(
       "Everything new starts just for its creator",
-      `Added by you "${meta}": ${["Customer briefing", "Slack", "Sales call prep"].map((name, index) => `${name} → ${captions[index]}`).join("; ")}`,
-      meta === "3 · only you so far" && captions.every((value) => value === "Just me"),
+      `Added by you "${meta}": ${mine.map((name) => name.split("\n")[0]).join(" / ")}`,
+      meta === "3 · only you so far" && mine.length === 3,
     );
     expect(mine).toHaveLength(3);
     expect(meta).toBe("3 · only you so far");
-    expect(captions).toEqual(["Just me", "Just me", "Just me"]);
     await closeToasts();
   });
 
@@ -440,19 +443,19 @@ test(title, async ({ evidence, world, user, probe, step }) => {
     );
   });
 
-  await step("after sharing: the row says Shared with Support, and the toast says how many people have it", async () => {
+  await step("after sharing: Added by you says Shared with Support, and the toast says how many people have it", async () => {
     await user.click({ role: "button", label: "Share with Support" });
     await user.see({ text: "Customer briefing shared with Support" }, { timeoutMs: 60_000 });
     await user.notSee({ testId: "library-share-page" });
     await user.see({ text: `${world.supportSize} people have it in their Library now` });
-    const captionText = await probe.eventually(() => caption("Customer briefing"), {
-      within: 30_000, label: "the shared row caption", until: (value) => value === "Shared with Support",
+    // Rows no longer carry an audience caption; Added by you's section line names the team.
+    const meta = await probe.eventually(() => sectionMeta("mine"), {
+      within: 30_000, label: "Added by you names Support", until: (value) => value === "1 shared with Support",
     });
-    const meta = await sectionMeta("mine");
     await shot();
     evidence.recordAssertionEvidence(
       "The Library says who has it now",
-      `row caption "${captionText}"; Added by you "${meta}"; toast "Customer briefing shared with Support · ${world.supportSize} people have it in their Library now · Undo"`,
+      `Added by you "${meta}"; toast "Customer briefing shared with Support · ${world.supportSize} people have it in their Library now · Undo"`,
       meta === "1 shared with Support",
     );
     expect(meta).toBe("1 shared with Support");
@@ -463,11 +466,12 @@ test(title, async ({ evidence, world, user, probe, step }) => {
     const alex = user.on(world.alexApp);
     const alexProbe = probe.on(world.alexApp);
     await alex.see({ role: "button", label: "Refresh" }, { timeoutMs: 90_000 });
-    const alexCaption = await alexProbe.eventually(async () => {
-      const current = (await texts('[data-library-row="Customer briefing"] [data-library-caption]', alexProbe))[0] ?? "";
-      if (!current.includes("Support")) await alex.click({ role: "button", label: "Refresh" });
+    // Rows no longer say who shared them; the row arriving is on screen, and the API below proves it came through Support.
+    const alexRows = await alexProbe.eventually(async () => {
+      const current = (await alexProbe.dom('[data-library-row="Customer briefing"]')).elements.length;
+      if (current === 0) await alex.click({ role: "button", label: "Refresh" });
       return current;
-    }, { within: 60_000, label: "Customer briefing arrives in Alex's Library through Support", until: (value) => value.includes("Support") });
+    }, { within: 60_000, label: "Customer briefing arrives in Alex's Library", until: (count) => count > 0 });
     await new Promise((resolve) => setTimeout(resolve, 400));
     await alex.screenshot();
     const library = await probe.api(world.alex, "/v1/me/library", { headers: { "x-openwork-org-id": world.organizationId } });
@@ -478,12 +482,12 @@ test(title, async ({ evidence, world, user, probe, step }) => {
     const viaSupport = edges.some((edge: unknown) => JSON.stringify(edge).includes("\"Support\""));
     evidence.recordAssertionEvidence(
       "A member of Support gets it without doing anything",
-      `Alex's Library (HTTP ${library.response.status}) lists Customer briefing: ${item ? "yes" : "no"}; reached through the Support team: ${viaSupport}; row caption on Alex's desktop "${alexCaption}"`,
-      Boolean(item) && viaSupport && alexCaption.includes("Support"),
+      `Alex's Library (HTTP ${library.response.status}) lists Customer briefing: ${item ? "yes" : "no"}; reached through the Support team: ${viaSupport}; Customer briefing rows on Alex's desktop: ${alexRows}`,
+      Boolean(item) && viaSupport && alexRows > 0,
     );
     expect(item).toBeTruthy();
     expect(viaSupport).toBe(true);
-    expect(alexCaption).toContain("Support");
+    expect(alexRows).toBeGreaterThan(0);
   });
 
   // Lane 5 · Edit
@@ -506,18 +510,16 @@ test(title, async ({ evidence, world, user, probe, step }) => {
     );
   });
 
-  await step("Save for everyone: the row says Changed just now and Support has it", async () => {
+  await step("Save for everyone: the toast says Support gets the new version", async () => {
     await user.click({ role: "button", label: "Save for everyone" });
     await user.see({ text: "Customer briefing saved" }, { timeoutMs: 30_000 });
     await user.see({ text: "Support gets the new version in their next task" });
-    const captionText = await probe.eventually(() => caption("Customer briefing"), {
-      within: 30_000, label: "the edited row caption", until: (value) => value === "Changed just now · Support has it",
-    });
+    // Rows no longer carry "Changed just now · Support has it"; the toast above is where that is said.
     await shot();
     evidence.recordAssertionEvidence(
       "The Library says the change reached the team",
-      `row caption "${captionText}"; toast "Customer briefing saved · Support gets the new version in their next task · Undo"`,
-      captionText === "Changed just now · Support has it",
+      `toast "Customer briefing saved · Support gets the new version in their next task · Undo"`,
+      true,
     );
     await closeToasts();
   });

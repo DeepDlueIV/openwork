@@ -49,8 +49,8 @@ test("the Library lists MCP servers written by hand into opencode.json, whicheve
     const servers = ["ready-helper", "docs-helper", "files-helper", "remote-helper"];
     const ready = await probe.eventually(
       async () => {
-        const rows = (await probe.dom('[data-library-section="mac"] [data-library-row]:has([data-library-ready])')).elements;
-        return servers.filter((name) => rows.some((row) => row.text.startsWith(name)));
+        const states = await Promise.all(servers.map(async (name) => (await probe.dom(`[data-library-section="mac"] [data-library-row="${name}"] + [data-library-status]`)).elements[0]?.text.trim() ?? ""));
+        return servers.filter((_, index) => states[index] === "Ready");
       },
       { within: 60_000, label: "the connected mock reads as ready", until: (names) => names.includes("ready-helper") },
     );
@@ -65,7 +65,7 @@ test("the Library lists MCP servers written by hand into opencode.json, whicheve
     await user.screenshot();
     evidence.recordAssertionEvidence(
       "Library readiness follows a real MCP connection",
-      `The fixture wrote ready-helper into opencode.json before opening the workspace, without an MCP registration API call. It completed MCP initialize and the workspace engine reported connected. On this computer lists all four servers; ready: ${ready.join(", ")}; the three disabled entries carry no ready mark. Advanced offers Add workspace MCP and no "From GitHub" plugin import.`,
+      `The fixture wrote ready-helper into opencode.json before opening the workspace, without an MCP registration API call. It completed MCP initialize and the workspace engine reported connected. On this computer lists all four servers; ready: ${ready.join(", ")}; the three disabled entries do not read Ready. Advanced offers Add workspace MCP and no "From GitHub" plugin import.`,
       ready.includes("ready-helper"),
     );
   });

@@ -158,8 +158,41 @@ Set service enablement as well (`gateway.enabled` or legacy `inference.enabled`)
 Retention's reference is authoritative for **both** `GATEWAY_ADMIN_TOKEN` and
 `INFERENCE_ADMIN_TOKEN` on the Gateway and CronJob, even if the shared Secret
 contains different tokens. It enables admin access without requiring
-`gateway.admin.enabled`. Do not set token env overrides. The retained CronJob
-name, schedule and internal Service target do not change automatically.
+`gateway.admin.enabled`. Do not set token env overrides. Moving from legacy
+`inference.*` to canonical `gateway.*` values does not rename the CronJob or
+change its internal Service target.
+
+The CronJob runs hourly, like the hosted deployment. Each run calls the Gateway's
+`POST /internal/rollups/run`, folds closed request-log hours older than two days
+into hourly usage rollups, and deletes the raw rows it folded in the same
+transaction. Hourly rollups older than 90 days fold into daily rollups the same
+way. The usage dashboard reads raw rows and rollups together, so totals are
+correct whether or not a run has happened yet.
+
+| Setting | Default | Notes |
+| --- | --- | --- |
+| `schedule` | `5 * * * *` | Five minutes past every hour. Older charts defaulted to nightly `0 3 * * *`; an install that set `schedule` explicitly keeps its value. |
+| `timeZone` | `Etc/UTC` | |
+| `maxBucketsPerRun` | `48` | Hours (and days) handled per run. Gateway accepts 1 to 1000. |
+| `maxSourceRowsPerBucket` | `5000` | Rows consumed per hour per run, in one transaction. Gateway accepts 1 to 5000. |
+
+One run consumes at most `maxBucketsPerRun x maxSourceRowsPerBucket` rows
+(240,000 by default). An hour with more rows than `maxSourceRowsPerBucket` is
+finished over the following runs, so hourly runs keep up with up to about
+240,000 requests per hour. The previous defaults (nightly, 1,000 rows) kept up
+with only about 48,000 requests per day. The job logs a summary such as
+`{"hourBuckets":1,"dayBuckets":0,"rawRowsDeleted":1253,...}`. `hourBuckets`
+staying above 1 for several runs means the job is catching up; raise
+`maxSourceRowsPerBucket` toward 5000 before running it more often.
+
+Non-Helm deployments need their own hourly caller with the same body:
+
+```sh
+curl -fsS -X POST -H "Authorization: Bearer $GATEWAY_ADMIN_TOKEN" \
+  -H "content-type: application/json" \
+  -d '{"maxBucketsPerRun":48,"maxSourceRowsPerBucket":5000}' \
+  http://<gateway>:8791/internal/rollups/run
+```
 
 Render-only verification: `bash packaging/helm/openwork-ee/tests/gateway.sh`.
 This does not deploy resources, run migrations, or invoke the retention endpoint.

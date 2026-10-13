@@ -332,10 +332,16 @@ inference:
   enabled: false
   # Opt-in after applying the accounting migration. This is product retention,
   # not a member Automation. Non-Helm deployments must supply their own caller.
+  # Hourly, like the hosted deployment: each run folds closed request-log hours
+  # into usage rollups and deletes the folded rows. One run handles up to
+  # maxBucketsPerRun hours x maxSourceRowsPerBucket rows (Gateway limits:
+  # 1-1000 and 1-5000); a larger hour finishes over the next runs.
   retention:
     enabled: false
-    schedule: "0 3 * * *"
+    schedule: "5 * * * *"
     timeZone: "Etc/UTC"
+    maxBucketsPerRun: 48
+    maxSourceRowsPerBucket: 5000
     adminTokenSecret: ""
     adminTokenKey: "INFERENCE_ADMIN_TOKEN"
   replicaCount: 1

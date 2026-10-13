@@ -94,6 +94,9 @@ export const DAY_MS = 24 * HOUR_MS
 const DEFAULT_RAW_RETENTION_MS = 2 * DAY_MS
 const DEFAULT_HOURLY_RETENTION_MS = 90 * DAY_MS
 const DEFAULT_MAX_BUCKETS_PER_RUN = 48
+// Matches the hosted hourly caller. A bucket larger than this is finished over
+// several runs; the sustained ceiling is buckets x rows per run.
+const DEFAULT_MAX_SOURCE_ROWS_PER_BUCKET = 5000
 
 export function floorToHour(date: Date) {
   return new Date(Math.floor(date.getTime() / HOUR_MS) * HOUR_MS)
@@ -331,7 +334,7 @@ export async function runRollups(input: RunRollupsInput = {}): Promise<RollupRun
   const rawRetentionMs = input.rawRetentionMs ?? DEFAULT_RAW_RETENTION_MS
   const hourlyRetentionMs = input.hourlyRetentionMs ?? DEFAULT_HOURLY_RETENTION_MS
   const maxBucketsPerRun = input.maxBucketsPerRun ?? DEFAULT_MAX_BUCKETS_PER_RUN
-  const maxSourceRowsPerBucket = input.maxSourceRowsPerBucket ?? 1000
+  const maxSourceRowsPerBucket = input.maxSourceRowsPerBucket ?? DEFAULT_MAX_SOURCE_ROWS_PER_BUCKET
   if (!Number.isInteger(maxBucketsPerRun) || maxBucketsPerRun < 1 || maxBucketsPerRun > 1000
     || !Number.isInteger(maxSourceRowsPerBucket) || maxSourceRowsPerBucket < 1 || maxSourceRowsPerBucket > 5000
     || !Number.isFinite(now.getTime()) || !Number.isFinite(rawRetentionMs) || rawRetentionMs < 0

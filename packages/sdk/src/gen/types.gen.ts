@@ -172,7 +172,8 @@ export type AdminFeature = {
     | "permissions"
     | "teamRoles"
     | "engineV2Upgrade"
-    | "remoteSessionEvents";
+    | "remoteSessionEvents"
+    | "remoteSessionAnswers";
   label: string;
   description: string;
   since: string;
@@ -221,6 +222,7 @@ export type AdminOrganizationsPageResponse = {
       teamRoles: boolean;
       engineV2Upgrade: boolean;
       remoteSessionEvents: boolean;
+      remoteSessionAnswers: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -314,6 +316,15 @@ export type AdminOrganizationsPageResponse = {
         overrideApplies: boolean;
       };
       remoteSessionEvents: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      remoteSessionAnswers: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -395,6 +406,7 @@ export type AdminOverviewResponse = {
       teamRoles: boolean;
       engineV2Upgrade: boolean;
       remoteSessionEvents: boolean;
+      remoteSessionAnswers: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -488,6 +500,15 @@ export type AdminOverviewResponse = {
         overrideApplies: boolean;
       };
       remoteSessionEvents: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      remoteSessionAnswers: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6039,6 +6060,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       teamRoles: boolean;
       engineV2Upgrade: boolean;
       remoteSessionEvents: boolean;
+      remoteSessionAnswers: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -6132,6 +6154,15 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       remoteSessionEvents: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      remoteSessionAnswers: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6201,6 +6232,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       teamRoles: boolean;
       engineV2Upgrade: boolean;
       remoteSessionEvents: boolean;
+      remoteSessionAnswers: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -6294,6 +6326,15 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       remoteSessionEvents: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      remoteSessionAnswers: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -7930,6 +7971,7 @@ export type MintAutomationRunnerTokenData = {
       | "remote_session_control_v1"
       | "remote_session_only_v1"
       | "remote_session_recovery_v1"
+      | "remote_session_answer_v1"
     >;
     appVersion: string;
     platform: "darwin" | "win32" | "linux";

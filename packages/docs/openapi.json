@@ -845,7 +845,8 @@
               "permissions",
               "teamRoles",
               "engineV2Upgrade",
-              "remoteSessionEvents"
+              "remoteSessionEvents",
+              "remoteSessionAnswers"
             ]
           },
           "label": {
@@ -1050,6 +1051,9 @@
                     "remoteSessionEvents": {
                       "type": "boolean"
                     },
+                    "remoteSessionAnswers": {
+                      "type": "boolean"
+                    },
                     "gatewayDashboard": {
                       "type": "boolean",
                       "const": true,
@@ -1068,6 +1072,7 @@
                     "teamRoles",
                     "engineV2Upgrade",
                     "remoteSessionEvents",
+                    "remoteSessionAnswers",
                     "gatewayDashboard"
                   ]
                 },
@@ -1633,6 +1638,62 @@
                         "override",
                         "overrideApplies"
                       ]
+                    },
+                    "remoteSessionAnswers": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
                     }
                   },
                   "required": [
@@ -1645,7 +1706,8 @@
                     "permissions",
                     "teamRoles",
                     "engineV2Upgrade",
-                    "remoteSessionEvents"
+                    "remoteSessionEvents",
+                    "remoteSessionAnswers"
                   ],
                   "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
                 }
@@ -2049,6 +2111,9 @@
                     "remoteSessionEvents": {
                       "type": "boolean"
                     },
+                    "remoteSessionAnswers": {
+                      "type": "boolean"
+                    },
                     "gatewayDashboard": {
                       "type": "boolean",
                       "const": true,
@@ -2067,6 +2132,7 @@
                     "teamRoles",
                     "engineV2Upgrade",
                     "remoteSessionEvents",
+                    "remoteSessionAnswers",
                     "gatewayDashboard"
                   ]
                 },
@@ -2632,6 +2698,62 @@
                         "override",
                         "overrideApplies"
                       ]
+                    },
+                    "remoteSessionAnswers": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
                     }
                   },
                   "required": [
@@ -2644,7 +2766,8 @@
                     "permissions",
                     "teamRoles",
                     "engineV2Upgrade",
-                    "remoteSessionEvents"
+                    "remoteSessionEvents",
+                    "remoteSessionAnswers"
                   ],
                   "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
                 }
@@ -24620,6 +24743,9 @@
                         "remoteSessionEvents": {
                           "type": "boolean"
                         },
+                        "remoteSessionAnswers": {
+                          "type": "boolean"
+                        },
                         "gatewayDashboard": {
                           "type": "boolean",
                           "const": true,
@@ -24638,6 +24764,7 @@
                         "teamRoles",
                         "engineV2Upgrade",
                         "remoteSessionEvents",
+                        "remoteSessionAnswers",
                         "gatewayDashboard"
                       ]
                     },
@@ -25203,6 +25330,62 @@
                             "override",
                             "overrideApplies"
                           ]
+                        },
+                        "remoteSessionAnswers": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
                         }
                       },
                       "required": [
@@ -25215,7 +25398,8 @@
                         "permissions",
                         "teamRoles",
                         "engineV2Upgrade",
-                        "remoteSessionEvents"
+                        "remoteSessionEvents",
+                        "remoteSessionAnswers"
                       ],
                       "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
                     }
@@ -25364,6 +25548,9 @@
                         "remoteSessionEvents": {
                           "type": "boolean"
                         },
+                        "remoteSessionAnswers": {
+                          "type": "boolean"
+                        },
                         "gatewayDashboard": {
                           "type": "boolean",
                           "const": true,
@@ -25382,6 +25569,7 @@
                         "teamRoles",
                         "engineV2Upgrade",
                         "remoteSessionEvents",
+                        "remoteSessionAnswers",
                         "gatewayDashboard"
                       ]
                     },
@@ -25947,6 +26135,62 @@
                             "override",
                             "overrideApplies"
                           ]
+                        },
+                        "remoteSessionAnswers": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
                         }
                       },
                       "required": [
@@ -25959,7 +26203,8 @@
                         "permissions",
                         "teamRoles",
                         "engineV2Upgrade",
-                        "remoteSessionEvents"
+                        "remoteSessionEvents",
+                        "remoteSessionAnswers"
                       ],
                       "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
                     }
@@ -29183,7 +29428,8 @@
                         "remote_session_v1",
                         "remote_session_control_v1",
                         "remote_session_only_v1",
-                        "remote_session_recovery_v1"
+                        "remote_session_recovery_v1",
+                        "remote_session_answer_v1"
                       ]
                     }
                   },

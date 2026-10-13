@@ -170,32 +170,186 @@ function messageText(message) {
     .join("\n\n")
 }
 
-/**
- * Reads the pending permission or question for a session through the same
- * engine proxy routes the desktop UI and task recovery already use.
- * Returns undefined when the probe could not be read.
- */
-export async function readRemoteSessionWaitingFor(local, workspaceId, sessionId, engine, fetchImpl, signal) {
+/** Bounds mirror REMOTE_SESSION_QUESTION_LIMITS in @openwork/types. */
+const QUESTION_LIMITS = Object.freeze({
+  id: 240, questions: 20, header: 240, question: 4_000, options: 50, label: 240, description: 1_000,
+})
+
+function pendingRequestPaths(workspaceId, sessionId, engine) {
   const workspace = `/workspace/${encodeURIComponent(workspaceId)}`
   const session = encodeURIComponent(sessionId)
-  const [permissionPath, questionPath] = engine === "v2"
-    ? [`${workspace}/opencode2/api/session/${session}/permission`, `${workspace}/opencode2/api/session/${session}/form`]
-    : [`${workspace}/opencode/permission`, `${workspace}/opencode/question`]
-  const list = async (requestPath) => {
-    const payload = await requestJson(fetchImpl, local.baseUrl, local.token, requestPath, { signal })
-    const rows = isRecord(payload) && "data" in payload ? payload.data : payload
-    if (!Array.isArray(rows)) throw new Error("Invalid pending request list")
-    return rows.filter((row) => isRecord(row) && (engine === "v2" || row.sessionID === sessionId))
+  return engine === "v2"
+    ? { permission: `${workspace}/opencode2/api/session/${session}/permission`, question: `${workspace}/opencode2/api/session/${session}/form` }
+    : { permission: `${workspace}/opencode/permission`, question: `${workspace}/opencode/question` }
+}
+
+async function listPendingRows(local, requestPath, sessionId, engine, fetchImpl, signal) {
+  const payload = await requestJson(fetchImpl, local.baseUrl, local.token, requestPath, { signal })
+  const rows = isRecord(payload) && "data" in payload ? payload.data : payload
+  if (!Array.isArray(rows)) throw new Error("Invalid pending request list")
+  return rows.filter((row) => isRecord(row) && (engine === "v2" || row.sessionID === sessionId))
+}
+
+function text(value, limit) {
+  return typeof value === "string" ? value.slice(0, limit) : ""
+}
+
+/**
+ * One native question in the shape remote callers see. V1 lists questions
+ * directly; V2 asks through a form whose fields carry option values that
+ * differ from their labels, so `fields` keeps what a reply needs.
+ */
+function nativeQuestion(row, engine) {
+  if (!isRecord(row) || typeof row.id !== "string" || !row.id || row.id.length > QUESTION_LIMITS.id) return null
+  if (engine === "v2") {
+    if (!isRecord(row.metadata) || row.metadata.kind !== "question" || !Array.isArray(row.fields) || !row.fields.length) return null
+    const fields = []
+    for (const field of row.fields) {
+      if (!isRecord(field) || typeof field.key !== "string" || (field.type !== "string" && field.type !== "multiselect")) return null
+      const options = (Array.isArray(field.options) ? field.options : []).flatMap((option) =>
+        isRecord(option) && typeof option.label === "string" && typeof option.value === "string"
+          ? [{ label: option.label, value: option.value, description: typeof option.description === "string" ? option.description : "" }]
+          : [])
+      fields.push({
+        key: field.key, options, multiple: field.type === "multiselect", custom: field.custom !== false,
+        header: text(field.title, QUESTION_LIMITS.header),
+        question: text(typeof field.description === "string" ? field.description : field.title, QUESTION_LIMITS.question),
+      })
+    }
+    return { id: row.id, fields }
   }
+  if (!Array.isArray(row.questions) || !row.questions.length) return null
+  return {
+    id: row.id,
+    fields: row.questions.filter(isRecord).map((question) => ({
+      key: null,
+      options: (Array.isArray(question.options) ? question.options : []).filter(isRecord).map((option) => ({
+        label: text(option.label, QUESTION_LIMITS.label), value: null, description: text(option.description, QUESTION_LIMITS.description),
+      })),
+      multiple: question.multiple === true,
+      custom: question.custom !== false,
+      header: text(question.header, QUESTION_LIMITS.header),
+      question: text(question.question, QUESTION_LIMITS.question),
+    })),
+  }
+}
+
+/** The bounded question remote callers read and answer. */
+function remotePendingQuestion(question) {
+  if (!question?.fields.length) return null
+  return {
+    id: question.id,
+    questions: question.fields.slice(0, QUESTION_LIMITS.questions).map((field) => ({
+      header: field.header,
+      question: field.question,
+      options: field.options.slice(0, QUESTION_LIMITS.options).map((option) => ({
+        label: text(option.label, QUESTION_LIMITS.label), description: text(option.description, QUESTION_LIMITS.description),
+      })),
+      multiple: field.multiple,
+      custom: field.custom,
+    })),
+  }
+}
+
+/**
+ * Reads what a session waits on, through the same engine proxy routes the
+ * desktop UI and task recovery already use: a pending permission, or a
+ * question with its text and options. Returns undefined when the probe could
+ * not be read.
+ */
+export async function readRemoteSessionPending(local, workspaceId, sessionId, engine, fetchImpl, signal) {
+  const paths = pendingRequestPaths(workspaceId, sessionId, engine)
   try {
-    const [permissions, questions] = await Promise.all([list(permissionPath), list(questionPath)])
-    if (permissions.length) return "permission"
-    if (questions.length) return "question"
-    return null
+    const [permissions, questions] = await Promise.all([
+      listPendingRows(local, paths.permission, sessionId, engine, fetchImpl, signal),
+      listPendingRows(local, paths.question, sessionId, engine, fetchImpl, signal),
+    ])
+    if (permissions.length) return { waitingFor: "permission", question: null }
+    if (questions.length) {
+      return { waitingFor: "question", question: remotePendingQuestion(questions.map((row) => nativeQuestion(row, engine)).find(Boolean)) }
+    }
+    return { waitingFor: null, question: null }
   } catch (error) {
     if (signal.aborted) throw error
     return undefined
   }
+}
+
+/** Reads only whether a session waits on a permission or a question; undefined when unreadable. */
+export async function readRemoteSessionWaitingFor(local, workspaceId, sessionId, engine, fetchImpl, signal) {
+  return (await readRemoteSessionPending(local, workspaceId, sessionId, engine, fetchImpl, signal))?.waitingFor
+}
+
+function invalidAnswer(message) {
+  const error = new Error(message)
+  Object.defineProperty(error, "code", { value: "invalid_answer" })
+  return error
+}
+
+/**
+ * The reply a native question accepts, checked against the question as the
+ * person saw it: one list per question, at most one choice unless several
+ * are allowed, and only listed options unless a typed answer is accepted.
+ */
+function nativeAnswer(question, answers) {
+  if (answers.length !== question.fields.length) {
+    throw invalidAnswer(`This question has ${question.fields.length} part(s); send exactly one answer list per part, in order.`)
+  }
+  return question.fields.map((field, index) => {
+    const chosen = answers[index]
+    if (!field.multiple && chosen.length > 1) throw invalidAnswer(`Part ${index + 1} accepts one choice.`)
+    if (!field.custom) {
+      const unknown = chosen.find((choice) => !field.options.some((option) => option.label === choice))
+      if (unknown !== undefined) throw invalidAnswer(`Part ${index + 1} accepts only its listed options; "${unknown.slice(0, 120)}" is not one of them.`)
+    }
+    return chosen
+  })
+}
+
+/**
+ * Answers (or with null answers, dismisses) one pending question with the
+ * person's reply, relayed by the remote caller. Never answers any other
+ * question; one that is no longer pending reports not_pending.
+ */
+export async function answerRemoteSessionQuestion(local, workspaceId, sessionId, engine, input, fetchImpl, signal) {
+  const paths = pendingRequestPaths(workspaceId, sessionId, engine)
+  const notPending = { answered: false, reason: "not_pending" }
+  const settle = async (requestPath, method, body) => {
+    try {
+      await requestJson(fetchImpl, local.baseUrl, local.token, requestPath, { method, signal, ...(body === undefined ? {} : { body }) })
+      return { answered: true, reason: null }
+    } catch (error) {
+      // Answered on that computer between our read and this reply.
+      if (error?.status === 404) return notPending
+      throw error
+    }
+  }
+  if (engine === "v2") {
+    const formPath = `${paths.question}/${encodeURIComponent(input.questionId)}`
+    let row
+    try {
+      const payload = await requestJson(fetchImpl, local.baseUrl, local.token, formPath, { signal })
+      row = isRecord(payload) && "data" in payload ? payload.data : payload
+    } catch (error) {
+      if (error?.status === 404) return notPending
+      throw error
+    }
+    const question = nativeQuestion(row, "v2")
+    if (!question || row.sessionID !== sessionId) return notPending
+    if (input.answers === null) return settle(formPath, "DELETE")
+    const chosen = nativeAnswer(question, input.answers)
+    const answer = Object.fromEntries(question.fields.map((field, index) => {
+      const values = chosen[index].map((label) => field.options.find((option) => option.label === label)?.value ?? label)
+      return [field.key, field.multiple ? values : values[0] ?? ""]
+    }))
+    return settle(`${formPath}/reply`, "POST", { answer })
+  }
+  const rows = await listPendingRows(local, paths.question, sessionId, engine, fetchImpl, signal)
+  const question = nativeQuestion(rows.find((row) => row.id === input.questionId), "v1")
+  if (!question) return notPending
+  const questionPath = `${paths.question}/${encodeURIComponent(input.questionId)}`
+  if (input.answers === null) return settle(`${questionPath}/reject`, "POST")
+  return settle(`${questionPath}/reply`, "POST", { answers: nativeAnswer(question, input.answers) })
 }
 
 /** Turns one local snapshot into the session report Den stores. */
@@ -355,8 +509,8 @@ export function remoteSessionTurnVisible(snapshot, turn) {
 
 /**
  * Den asks the runner that delivered a remote session to read, follow up on,
- * or stop it. Each request is short and bounded so it never needs the runner
- * slot an Automation run holds.
+ * stop it, or answer the question it waits on. Each request is short and
+ * bounded so it never needs the runner slot an Automation run holds.
  */
 export const REMOTE_SESSION_REQUEST_TIMEOUT_MS = 15_000
 export const REMOTE_SESSION_REQUEST_POLL = Object.freeze({
@@ -448,7 +602,7 @@ function invalidCursorError(cursor) {
  * pages backward before it. Pages hold at most `limit` messages and stop early
  * to stay within Den's result size.
  */
-export function remoteSessionTranscriptPage(snapshot, input, waitingFor) {
+export function remoteSessionTranscriptPage(snapshot, input, waitingFor, pendingQuestion = null) {
   const messages = (Array.isArray(snapshot?.messages) ? snapshot.messages : [])
     .filter((message) => message?.role === "user" || message?.role === "assistant")
   const cursorIndex = input.cursor ? messages.findIndex((message) => message.id === input.cursor) : -1
@@ -469,10 +623,12 @@ export function remoteSessionTranscriptPage(snapshot, input, waitingFor) {
   if (!forward) page.reverse()
   const observation = remoteSessionObservation(snapshot, waitingFor)
   const status = observation.status === "silent" ? "idle" : observation.status
+  const waiting = status === "waiting" ? observation.waitingFor ?? null : null
   return {
     title: typeof snapshot?.title === "string" ? snapshot.title.slice(0, 240) : null,
     status,
-    waitingFor: status === "waiting" ? observation.waitingFor ?? null : null,
+    waitingFor: waiting,
+    pendingQuestion: waiting === "question" ? pendingQuestion ?? null : null,
     lastError: observation.error ?? null,
     messageCount: messages.length,
     from: forward ? "start" : "end",
@@ -504,10 +660,19 @@ export async function executeRemoteSessionRequest(assignment, options) {
   if (assignment.action === "read") {
     const snapshot = await client.getThreadSnapshot(assignment.sessionId, { signal: options.signal })
     const running = snapshot?.status?.type === "busy" || snapshot?.status?.type === "retry"
-    const waitingFor = running
-      ? await readRemoteSessionWaitingFor(local, assignment.workspaceId, assignment.sessionId, assignment.engine ?? undefined, fetchImpl, options.signal)
+    const pending = running
+      ? await readRemoteSessionPending(local, assignment.workspaceId, assignment.sessionId, assignment.engine ?? undefined, fetchImpl, options.signal)
       : null
-    return { action: "read", result: remoteSessionTranscriptPage(snapshot, assignment.input, waitingFor ?? null) }
+    return {
+      action: "read",
+      result: remoteSessionTranscriptPage(snapshot, assignment.input, pending?.waitingFor ?? null, pending?.question ?? null),
+    }
+  }
+  if (assignment.action === "answer") {
+    const result = await answerRemoteSessionQuestion(
+      local, assignment.workspaceId, assignment.sessionId, assignment.engine ?? undefined, assignment.input, fetchImpl, options.signal,
+    )
+    return { action: "answer", result }
   }
   if (assignment.action === "send") {
     const model = modelInputFromAssignment(assignment.input.model)
@@ -550,7 +715,7 @@ export function classifyRemoteSessionRequestError(error, timedOut) {
   if (error?.status === 404) {
     return { code: "unknown_session", message: "The local session is no longer available." }
   }
-  if (["invalid_cursor", "runtime_unavailable", "unsupported_request"].includes(error?.code)) {
+  if (["invalid_cursor", "invalid_answer", "runtime_unavailable", "unsupported_request"].includes(error?.code)) {
     return { code: error.code, message: serializedError(error).slice(0, REMOTE_SESSION_MESSAGE_LIMIT) }
   }
   return {
@@ -1571,7 +1736,8 @@ export function createDesktopAutomationRunner(options) {
       if (journal.commands.some((command) => command.command.commandId === assignment.commandId)) {
         await runner.execute(assignment, state.controller.signal)
         const entry = sessionRunners.get(state.recoveryKey)
-        if (entry && assignment.action === "send") entry.watching = true
+        // An answered question resumes the session just like a follow-up does.
+        if (entry && (assignment.action === "send" || assignment.action === "answer")) entry.watching = true
         return
       }
       // Sessions delivered by a released desktop predate the durable journal.

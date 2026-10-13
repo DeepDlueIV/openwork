@@ -32,6 +32,8 @@ export type Complete =
 export interface ReadInput { from: "start" | "end"; cursor: string | null; limit: number }
 export interface SendInput { prompt: string; messageId: string | null; model: Model | null }
 export interface StopInput { messageId: string | null }
+/** The person's answer, relayed by the remote caller: one list per question, or null to dismiss it. */
+export interface AnswerInput { questionId: string; answers: string[][] | null }
 interface RequestBase {
   requestId: string
   kind: "remote_session_request"
@@ -45,7 +47,18 @@ export type Request = RequestBase & (
   | { action: "read"; input: ReadInput }
   | { action: "send"; input: SendInput }
   | { action: "stop"; input: StopInput }
+  | { action: "answer"; input: AnswerInput }
 )
+export interface PendingQuestion {
+  id: string
+  questions: Array<{
+    header: string
+    question: string
+    options: Array<{ label: string; description: string }>
+    multiple: boolean
+    custom: boolean
+  }>
+}
 export interface TranscriptToolCall {
   id: string; name: string; status: string | null
   input: string | null; output: string | null; error: string | null; truncated: boolean
@@ -58,6 +71,8 @@ export interface ReadResult {
   title: string | null
   status: Status
   waitingFor: WaitingFor | null
+  /** The question the session waits on, when the adapter can read it. */
+  pendingQuestion?: PendingQuestion | null
   lastError: SessionError | null
   messageCount: number
   from: "start" | "end"
@@ -68,10 +83,13 @@ export interface ReadResult {
 }
 export interface SendResult { messageId: string | null; alreadyPresent: boolean }
 export interface StopResult { stopped: boolean; reason: "different_turn" | null }
+/** not_pending: already answered (here or on that computer) or gone; nothing was changed. */
+export interface AnswerResult { answered: boolean; reason: "not_pending" | null }
 export type RequestOutcome =
   | { action: "read"; result: ReadResult }
   | { action: "send"; result: SendResult }
   | { action: "stop"; result: StopResult }
+  | { action: "answer"; result: AnswerResult }
 export type RequestComplete =
   | { status: "done"; outcome: RequestOutcome }
   | { status: "failed"; error: SessionError }
@@ -98,6 +116,13 @@ export interface HarnessAdapter {
   /** Must compare input.messageId to the native current turn before aborting it. */
   stop(receipt: Receipt, input: StopInput, signal: AbortSignal): Promise<StopResult>
   observe(receipt: Receipt, signal: AbortSignal): Promise<Progress>
+  /**
+   * Optional: only harnesses with a native question reply API implement it,
+   * and only their runners register remote_session_answer_v1. Replies to the
+   * named pending question only; a question that is no longer pending is
+   * { answered: false, reason: "not_pending" }, never a different question.
+   */
+  answer?(receipt: Receipt, input: AnswerInput, signal: AbortSignal): Promise<AnswerResult>
 }
 export interface Transport {
   complete(commandId: string, body: Complete, signal: AbortSignal): Promise<void>

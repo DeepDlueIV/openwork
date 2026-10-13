@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto"
-import { parseProgress, parseReadResult, SessionRunnerError } from "@openwork/remote-sessions"
+import { parseAnswerResult, parseProgress, parseReadResult, SessionRunnerError } from "@openwork/remote-sessions"
 import {
+  answerRemoteSessionQuestion,
   classifyRemoteSessionCommandError,
   classifyRemoteSessionRequestError,
   createWorkspaceSessionClient,
-  readRemoteSessionWaitingFor,
+  readRemoteSessionPending,
   remoteSessionObservation,
   remoteSessionTranscriptPage,
   remoteSessionTurnVisible,
@@ -39,7 +40,8 @@ function definitiveFailure(error, creating) {
 /**
  * Native desktop APIs only. The shared remote-session runner owns all
  * durability, prompt IDs, outboxes and admission. It never runs a scheduled
- * Automation or answers a permission/question on the person's behalf.
+ * Automation, never approves a permission, and never decides a question: it
+ * only relays the answer a person gave through the remote caller.
  * @returns {import("@openwork/remote-sessions").HarnessAdapter}
  */
 export function createDesktopSessionAdapter(options) {
@@ -89,12 +91,13 @@ export function createDesktopSessionAdapter(options) {
       return await read(selected === "v2" ? "v1" : "v2")
     }
   }
-  const waitingFor = async (native, receipt, signal) => {
+  const pending = async (native, receipt, signal) => {
     const running = native.snapshot?.status?.type === "busy" || native.snapshot?.status?.type === "retry"
     return running
-      ? await readRemoteSessionWaitingFor(native.local, receipt.workspaceId, receipt.sessionId, native.engine, fetchImpl, signal)
+      ? await readRemoteSessionPending(native.local, receipt.workspaceId, receipt.sessionId, native.engine, fetchImpl, signal)
       : null
   }
+  const waitingFor = async (native, receipt, signal) => (await pending(native, receipt, signal))?.waitingFor
   return {
     // Engine selection is dynamic per command. Do not claim V2's native create
     // deduplication for a runner that can also receive V1 workspace commands.
@@ -179,14 +182,29 @@ export function createDesktopSessionAdapter(options) {
       const operationSignal = bounded(signal)
       try {
         const native = await snapshotFor(receipt, operationSignal)
+        const waiting = await pending(native, receipt, operationSignal)
         return parseReadResult({
-          ...remoteSessionTranscriptPage(native.snapshot, input, await waitingFor(native, receipt, operationSignal)),
+          ...remoteSessionTranscriptPage(native.snapshot, input, waiting?.waitingFor, waiting?.question ?? null),
           historyScope: "full",
         })
       } catch (error) {
         if (error?.code === "invalid_cursor") {
           throw new SessionRunnerError("invalid_cursor", error.message)
         }
+        throw definitiveFailure(error, false)
+      }
+    },
+    async answer(receipt, input, signal) {
+      const operationSignal = bounded(signal)
+      try {
+        // Resolve the owning engine the same way reads do; replies go only to
+        // the named question in this session.
+        const native = await snapshotFor(receipt, operationSignal, 1)
+        return parseAnswerResult(await answerRemoteSessionQuestion(
+          native.local, receipt.workspaceId, receipt.sessionId, native.engine, input, fetchImpl, operationSignal,
+        ))
+      } catch (error) {
+        if (error?.code === "invalid_answer") throw new SessionRunnerError("invalid_answer", error.message)
         throw definitiveFailure(error, false)
       }
     },

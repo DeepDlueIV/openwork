@@ -75,6 +75,8 @@ test("an opted-in OpenCode member offloads an empty native session, recovers a l
     const computer = computers[0];
     computerId = string(computer.computerId);
     expect(computer).toMatchObject({ kind: "registered", label: "OpenCode proof computer", online: true, appVersion: "2.0.26" });
+    // The 2.0.26 plugin host has no question reply API, so this client never lists answer.
+    expect(computer.capabilities).toEqual(["create", "read", "send", "stop"]);
     const workspaces = records(computer.workspaces);
     expect(workspaces).toHaveLength(1);
     workspaceId = string(workspaces[0].workspaceId);

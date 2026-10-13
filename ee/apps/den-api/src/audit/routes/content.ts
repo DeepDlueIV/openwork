@@ -49,7 +49,7 @@ function alias(method: AuditRouteMethod, path: string, action: string, notes: st
 
 const MCP_NATIVE = "Also reached by agents as a native capability through mcp/invoke.ts app.fetch (origin mcp)."
 const DESKTOP_RUN_OUTCOME = "automation_run.completed (one per run, job operation jobRunId = run id) via src/automations/audit.ts:recordAutomationRunCompleted from every terminal transition: cloud executor (AutomationService.executeCloudRun/executeCloudAgentRun), desktop runner callback POST /v1/automation-runs/:id/complete (completeDesktopRunner), skips, cancel and lease/claim expiry; scheduled starts add automation_run.started (see src/audit/job-outcomes.ts)"
-const REMOTE_SESSION_JOB = "Outcome callback of the remote-session job started by MCP remote-session:create|send|stop (service-layer tenant_job, no HTTP route); read back by remote-session:read."
+const REMOTE_SESSION_JOB = "Outcome callback of the remote-session job started by MCP remote-session:create|send|stop|answer (service-layer tenant_job, no HTTP route); read back by remote-session:read."
 
 export const contentAuditRoutes: readonly AuditRouteDeclaration[] = [
   alias("ALL", "/v1/codemode-scripts", "workflow.alias.proxy", "One-release alias re-dispatched through app.fetch to /v1/workflows; the destination records."),

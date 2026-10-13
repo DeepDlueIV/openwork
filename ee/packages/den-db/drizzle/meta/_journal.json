@@ -995,6 +995,13 @@
       "when": 1791850844830,
       "tag": "0142_secret_bruce_banner",
       "breakpoints": true
+    },
+    {
+      "idx": 143,
+      "version": "5",
+      "when": 1791928315289,
+      "tag": "0143_remote_session_answer",
+      "breakpoints": true
     }
   ]
 }

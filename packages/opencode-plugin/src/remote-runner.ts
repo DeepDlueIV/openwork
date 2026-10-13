@@ -14,6 +14,12 @@ export { hasNativeSessionHost } from "./native-opencode.ts"
 import type { NativePluginContext } from "./opencode.ts"
 import { acquireRunnerOwnership, type RunnerOwnership } from "./runner-ownership.ts"
 
+/**
+ * Not remote_session_answer_v1: the OpenCode 2.0.26 plugin host has no
+ * question (form) reply API, so this client cannot answer a pending question
+ * and remote-session:targets lists it without "answer". Register it only
+ * once the native adapter implements HarnessAdapter.answer.
+ */
 const CAPABILITIES = ["remote_session_v1", "remote_session_control_v1", "remote_session_only_v1", "remote_session_recovery_v1"]
 const RENEW_MS = 30 * 60_000
 const INVENTORY_MS = 60_000

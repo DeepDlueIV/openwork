@@ -354,8 +354,9 @@ export function registerSessionRunnerRoutes<T extends { Variables: Partial<Organ
     "/v1/remote-session-requests/pending",
     runnerRoute({
       summary: "List remote-session requests for this runner",
-      description: "A read-only poll for read, send, and stop requests addressed to this runner. "
-        + "Runners without the remote_session_control_v1 capability always get an empty list.",
+      description: "A read-only poll for read, send, stop, and answer requests addressed to this runner. "
+        + "Runners without the remote_session_control_v1 capability always get an empty list; "
+        + "answer requests are only created for runners that registered remote_session_answer_v1.",
       responses: { 200: jsonResponse("Pending requests.", remoteSessionRequestPendingResponseSchema) },
     }),
     async (c) => {

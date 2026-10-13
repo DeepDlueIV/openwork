@@ -7,6 +7,10 @@ import type { RemoteSessionRequestStore } from "../remote-sessions/requests.js"
 export const REMOTE_SESSION_RECEIPT_ROOT = "openwork://remote-sessions"
 export const REMOTE_SESSION_RECEIPT_INSTRUCTIONS = "Remote session receipts are private, uncached resources. With protocol 2026-07-28, subscribe using subscriptions/listen params.notifications.resourceSubscriptions with exact statusResourceUri values. Wait for notifications/subscriptions/acknowledged, then immediately resources/read each URI (also after reconnecting). notifications/resources/updated only invalidates that URI: read it again for current state. There is no replay, event payload, runner dispatch, or Tasks API. Poll remote-session:read when subscriptions are unavailable."
 
+/** Server instructions added while remoteSessionAnswers is on; they replace "answer it on that computer" for questions. */
+export const REMOTE_SESSION_ANSWER_INSTRUCTIONS =
+  "When a remote session waits on a question (session.waitingFor is question), do not send the person to that computer first: call remote-session:read with its sessionId, show the person pendingQuestion (each question and its options) and ask them, using your own question tool when you have one. Then call remote-session:answer with questionId and answers, one list per question in order, holding the option labels they chose or their typed text when custom is true. Never choose an answer for them, never guess, and pass dismiss true only when they decline to answer. Each remote-session:targets computer lists capabilities; when a computer lacks answer, the answer returns unsupported_by_target, or the session waits on a permission, tell the person to respond in OpenWork on that computer. After answering, poll remote-session:read with the commandId as usual; not_pending means it was already answered, so read again instead of answering twice."
+
 export type RemoteSessionReceiptScope = { organizationId: string; createdByUserId: string }
 export type RemoteSessionReceiptStores = {
   commandStore: Pick<RemoteSessionCommandStore, "get">

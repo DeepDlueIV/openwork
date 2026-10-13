@@ -102,6 +102,12 @@ export const auditServiceActionDeclarations = [
     notes: MCP_PRINCIPAL,
   },
   {
+    action: "remote_session.answer", kind: "remote_session.execution", class: "tenant_job", resource: { type: "remote_session", idFrom: "sessionId argument" }, origin: "mcp",
+    tools: ["execute_capability remote-session:answer"], callSites: ["src/mcp/capability-registry.ts:remoteSessionSource.execute → executeRemoteSessionCapability"],
+    jobOutcome: "Desktop and registered clients that registered remote_session_answer_v1: runner callbacks POST /v1/remote-session-requests/:id/{claim,complete} (declared routes). Cloud: not supported, rejected before any request.",
+    notes: `Relays the person's answer to the question a session waits on; behind the remoteSessionAnswers feature. ${MCP_PRINCIPAL}`,
+  },
+  {
     action: "organization.plan.set", kind: "platform.admin.organization", class: "tenant_change", resource: { type: "organization", idFrom: "organizationId argument (verified to exist)" }, origin: "platform_admin",
     tools: ["den_update_org_plan", "admin:den_update_org_plan"], callSites: ["src/mcp/admin-tools.ts:den_update_org_plan → updateOrganizationMetadata"],
     notes: "Platform-admin MCP tool (/mcp/admin or /mcp/agent admin capability). Tenant is the verified argument organization; actor is the platform admin user without a member id. REST equivalent organization.plan.update.",

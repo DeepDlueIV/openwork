@@ -229,6 +229,13 @@ export const REMOTE_SESSION_CONTROL_RUNNER_CAPABILITY = "remote_session_control_
 export const REMOTE_SESSION_ONLY_RUNNER_CAPABILITY = "remote_session_only_v1"
 /** Sticky, same-owner recovery backed by a local effects journal. */
 export const REMOTE_SESSION_RECOVERY_RUNNER_CAPABILITY = "remote_session_recovery_v1"
+/**
+ * The runner can answer a question its session is waiting on, with the
+ * person's answer relayed by the remote caller. Only runners whose native
+ * harness exposes a question reply API register it; Den never routes an
+ * answer request to a runner without it.
+ */
+export const REMOTE_SESSION_ANSWER_RUNNER_CAPABILITY = "remote_session_answer_v1"
 export const AUTOMATION_MODEL_ATTENTION_CAPABILITY_HEADER = "x-openwork-automation-model-attention" as const
 export const automationDesktopRunnerCapabilitySchema = z.enum([
   AUTOMATION_MODEL_ATTENTION_CAPABILITY,
@@ -236,9 +243,30 @@ export const automationDesktopRunnerCapabilitySchema = z.enum([
   REMOTE_SESSION_CONTROL_RUNNER_CAPABILITY,
   REMOTE_SESSION_ONLY_RUNNER_CAPABILITY,
   REMOTE_SESSION_RECOVERY_RUNNER_CAPABILITY,
+  REMOTE_SESSION_ANSWER_RUNNER_CAPABILITY,
 ])
+// Every real set fits: model_attention_v1 (Automations) and remote_session_only_v1
+// (session-only runners) never appear together.
 export const AUTOMATION_DESKTOP_RUNNER_CAPABILITY_LIMIT = 5
 export type AutomationDesktopRunnerCapability = z.infer<typeof automationDesktopRunnerCapabilitySchema>
+
+/**
+ * What a remote-session caller can do with sessions on one target (an
+ * OpenWork desktop, an opted-in OpenCode client, or OpenWork Cloud). Clients
+ * differ: each target lists only the actions its runner registered.
+ */
+export const remoteSessionTargetCapabilitySchema = z.enum(["create", "read", "send", "stop", "answer"])
+export type RemoteSessionTargetCapability = z.infer<typeof remoteSessionTargetCapabilitySchema>
+
+/** Maps the capabilities a runner registered to the actions remote callers can use on it. */
+export function remoteSessionTargetCapabilities(runnerCapabilities: readonly string[]): RemoteSessionTargetCapability[] {
+  if (!runnerCapabilities.includes(REMOTE_SESSION_DESKTOP_RUNNER_CAPABILITY)) return []
+  const actions: RemoteSessionTargetCapability[] = ["create"]
+  if (!runnerCapabilities.includes(REMOTE_SESSION_CONTROL_RUNNER_CAPABILITY)) return actions
+  actions.push("read", "send", "stop")
+  if (runnerCapabilities.includes(REMOTE_SESSION_ANSWER_RUNNER_CAPABILITY)) actions.push("answer")
+  return actions
+}
 
 export const automationDesktopRunnerRegistrationSchema = z.object({
   runnerId: idSchema.min(8),
@@ -455,15 +483,26 @@ export const remoteSessionCommandSessionReportResponseSchema = z.object({ ok: z.
 
 /**
  * Den -> desktop request/response channel for a delivered remote session:
- * read its transcript, send a follow-up, or stop it. Only the runner that
- * delivered the session receives the request.
+ * read its transcript, send a follow-up, stop it, or answer the question it
+ * waits on. Only the runner that delivered the session receives the request.
  */
 export const REMOTE_SESSION_REQUEST_RESULT_MAX_BYTES = 256 * 1024
 export const REMOTE_SESSION_TRANSCRIPT_TEXT_MAX_LENGTH = 20_000
 export const REMOTE_SESSION_TOOL_SUMMARY_MAX_LENGTH = 2_000
 export const REMOTE_SESSION_TRANSCRIPT_PAGE_MAX = 100
-export const remoteSessionRequestActionSchema = z.enum(["read", "send", "stop"])
+export const remoteSessionRequestActionSchema = z.enum(["read", "send", "stop", "answer"])
 export type RemoteSessionRequestAction = z.infer<typeof remoteSessionRequestActionSchema>
+/** Bounds for a pending question and its answer; generous for real prompts, small enough for one request row. */
+export const REMOTE_SESSION_QUESTION_LIMITS = {
+  id: 240,
+  questions: 20,
+  header: 240,
+  question: 4_000,
+  options: 50,
+  label: 240,
+  description: 1_000,
+  answer: 4_000,
+} as const
 const remoteSessionMessageIdSchema = z.string().regex(/^msg_[a-zA-Z0-9]+$/).max(160)
 export const remoteSessionReadInputSchema = z.object({
   from: z.enum(["start", "end"]),
@@ -478,10 +517,23 @@ export const remoteSessionSendInputSchema = z.object({
 export const remoteSessionStopInputSchema = z.object({
   messageId: z.string().trim().min(1).max(160).nullable(),
 })
+/**
+ * Answers the question a session is waiting on. `answers` holds one list of
+ * selected option labels (or typed text) per question, in order; null
+ * dismisses the question without answering it.
+ */
+export const remoteSessionAnswerInputSchema = z.object({
+  questionId: z.string().trim().min(1).max(REMOTE_SESSION_QUESTION_LIMITS.id),
+  answers: z.array(
+    z.array(z.string().max(REMOTE_SESSION_QUESTION_LIMITS.answer)).max(REMOTE_SESSION_QUESTION_LIMITS.options),
+  ).min(1).max(REMOTE_SESSION_QUESTION_LIMITS.questions).nullable(),
+})
+export type RemoteSessionAnswerInput = z.infer<typeof remoteSessionAnswerInputSchema>
 export const remoteSessionRequestInputSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("read"), input: remoteSessionReadInputSchema }),
   z.object({ action: z.literal("send"), input: remoteSessionSendInputSchema }),
   z.object({ action: z.literal("stop"), input: remoteSessionStopInputSchema }),
+  z.object({ action: z.literal("answer"), input: remoteSessionAnswerInputSchema }),
 ])
 export type RemoteSessionRequestInput = z.infer<typeof remoteSessionRequestInputSchema>
 const remoteSessionRequestAssignmentBase = {
@@ -498,6 +550,7 @@ export const remoteSessionRequestAssignmentSchema = z.discriminatedUnion("action
   z.object({ ...remoteSessionRequestAssignmentBase, action: z.literal("read"), input: remoteSessionReadInputSchema }),
   z.object({ ...remoteSessionRequestAssignmentBase, action: z.literal("send"), input: remoteSessionSendInputSchema }),
   z.object({ ...remoteSessionRequestAssignmentBase, action: z.literal("stop"), input: remoteSessionStopInputSchema }),
+  z.object({ ...remoteSessionRequestAssignmentBase, action: z.literal("answer"), input: remoteSessionAnswerInputSchema }),
 ])
 export type RemoteSessionRequestAssignment = z.infer<typeof remoteSessionRequestAssignmentSchema>
 export const remoteSessionRequestClaimResponseSchema = z.object({
@@ -523,12 +576,32 @@ export const remoteSessionTranscriptMessageSchema = z.object({
   error: remoteSessionCommandErrorSchema.nullable(),
 })
 export type RemoteSessionTranscriptMessage = z.infer<typeof remoteSessionTranscriptMessageSchema>
+/** The question a session is waiting on, as the person would see it. */
+export const remoteSessionPendingQuestionSchema = z.object({
+  /** Pass back as questionId to remote-session:answer. */
+  id: z.string().min(1).max(REMOTE_SESSION_QUESTION_LIMITS.id),
+  questions: z.array(z.object({
+    header: z.string().max(REMOTE_SESSION_QUESTION_LIMITS.header),
+    question: z.string().max(REMOTE_SESSION_QUESTION_LIMITS.question),
+    options: z.array(z.object({
+      label: z.string().max(REMOTE_SESSION_QUESTION_LIMITS.label),
+      description: z.string().max(REMOTE_SESSION_QUESTION_LIMITS.description),
+    })).max(REMOTE_SESSION_QUESTION_LIMITS.options),
+    /** More than one option may be chosen. */
+    multiple: z.boolean(),
+    /** A typed answer is accepted instead of an option. */
+    custom: z.boolean(),
+  })).min(1).max(REMOTE_SESSION_QUESTION_LIMITS.questions),
+})
+export type RemoteSessionPendingQuestion = z.infer<typeof remoteSessionPendingQuestionSchema>
 export const remoteSessionReadResultSchema = z.object({
   /** Whether the engine returned full history or only its current context. */
   historyScope: z.enum(["full", "context"]).optional(),
   title: z.string().max(240).nullable(),
   status: remoteSessionStatusSchema,
   waitingFor: remoteSessionWaitingForSchema.nullable(),
+  /** Present when the session waits on a question and the runner could read it. */
+  pendingQuestion: remoteSessionPendingQuestionSchema.nullable().optional(),
   lastError: remoteSessionCommandErrorSchema.nullable(),
   messageCount: z.number().int().min(0),
   from: z.enum(["start", "end"]),
@@ -545,10 +618,16 @@ export const remoteSessionStopResultSchema = z.object({
   stopped: z.boolean(),
   reason: z.enum(["different_turn"]).nullable(),
 })
+/** `not_pending`: the question was already answered (here or on that computer) or no longer exists. */
+export const remoteSessionAnswerResultSchema = z.object({
+  answered: z.boolean(),
+  reason: z.enum(["not_pending"]).nullable(),
+})
 export const remoteSessionRequestResultSchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("read"), result: remoteSessionReadResultSchema }),
   z.object({ action: z.literal("send"), result: remoteSessionSendResultSchema }),
   z.object({ action: z.literal("stop"), result: remoteSessionStopResultSchema }),
+  z.object({ action: z.literal("answer"), result: remoteSessionAnswerResultSchema }),
 ])
 export type RemoteSessionRequestResult = z.infer<typeof remoteSessionRequestResultSchema>
 export const remoteSessionRequestCompleteRequestSchema = z.discriminatedUnion("status", [

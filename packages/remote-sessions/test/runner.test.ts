@@ -746,3 +746,52 @@ test("at-most-once failure before a creation receipt never creates again or reac
   assert.equal(f.calls.create, 1); assert.equal(f.calls.send.length, 0)
   const result = f.calls.complete[0]; assert.ok(result?.status === "failed"); assert.equal(result.error.code, "ambiguous_creation")
 })
+
+function answerRequest(answers: string[][] | null = [["Local only"]], requestId = "request_03-a"): Request {
+  return { ...followup(), requestId, action: "answer", input: { questionId: "question_1", answers } }
+}
+
+test("answers relay the person's choice to the named question and replay as not_pending", async () => {
+  const f = fixture(); await f.runner().accept(assignment(), signal())
+  const pending = new Set(["question_1"])
+  const answered: Array<{ questionId: string; answers: string[][] | null }> = []
+  const adapter: HarnessAdapter = {
+    ...f.adapter,
+    async answer(_receipt, input) {
+      if (!pending.delete(input.questionId)) return { answered: false, reason: "not_pending" }
+      answered.push(structuredClone(input))
+      return { answered: true, reason: null }
+    },
+  }
+  const runner = createSessionRunner({ adapter, store: f.store, transport: f.transport, now: () => 100, operationTimeoutMs: 100 })
+  assert.deepEqual(await runner.execute(answerRequest(), signal()), { status: "done", outcome: { action: "answer", result: { answered: true, reason: null } } })
+  assert.deepEqual(answered, [{ questionId: "question_1", answers: [["Local only"]] }])
+  // A different request for the same question, after it was answered, never reaches another question.
+  assert.deepEqual(await runner.execute(answerRequest([["Other"]], "request_04-a"), signal()),
+    { status: "done", outcome: { action: "answer", result: { answered: false, reason: "not_pending" } } })
+  assert.equal(answered.length, 1)
+  // The same request is inert after its outcome was journaled.
+  await runner.execute(answerRequest(), signal())
+  assert.equal(answered.length, 1)
+  assert.equal(f.store.data.requests.find(r => r.request.requestId === "request_03-a")?.messageId, null)
+  assert.deepEqual(parseJournal(JSON.parse(JSON.stringify(f.store.data))), f.store.data)
+})
+
+test("a client without a question API fails answers definitively instead of guessing", async () => {
+  const f = fixture(); await f.runner().accept(assignment(), signal())
+  const result = await f.runner().execute(answerRequest(null), signal())
+  assert.ok(result.status === "failed"); assert.equal(result.error.code, "unsupported_request")
+  assert.equal(f.calls.request.at(-1)?.status, "failed")
+})
+
+test("answer input and pending question parsing reject malformed or empty payloads", async () => {
+  const { parseRequest, parseReadResult } = await import("../src/index.ts")
+  assert.throws(() => parseRequest({ ...answerRequest(), input: { questionId: "q", answers: [] } }), { code: "invalid_data" })
+  assert.throws(() => parseRequest({ ...answerRequest(), input: { questionId: "q", answers: [["a"]], extra: true } }), { code: "invalid_data" })
+  assert.deepEqual(parseRequest(answerRequest(null)).input, { questionId: "question_1", answers: null })
+  const page = { title: null, status: "waiting", waitingFor: "question", lastError: null, messageCount: 0, from: "end", messages: [], nextCursor: null }
+  const question = { id: "question_1", questions: [{ header: "Scope", question: "Which path?", options: [{ label: "Local only", description: "No cloud" }], multiple: false, custom: true }] }
+  assert.deepEqual(parseReadResult({ ...page, pendingQuestion: question }).pendingQuestion, question)
+  assert.equal(parseReadResult(page).pendingQuestion, undefined)
+  assert.throws(() => parseReadResult({ ...page, pendingQuestion: { ...question, questions: [] } }), { code: "invalid_data" })
+})

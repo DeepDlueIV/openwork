@@ -8,10 +8,14 @@ import { desktopRunnerConnected } from "@openwork/automations"
 import {
   REMOTE_SESSION_CONTROL_RUNNER_CAPABILITY,
   REMOTE_SESSION_DESKTOP_RUNNER_CAPABILITY,
+  REMOTE_SESSION_QUESTION_LIMITS,
+  REMOTE_SESSION_RECOVERY_RUNNER_CAPABILITY,
   REMOTE_SESSION_TRANSCRIPT_PAGE_MAX,
   type RemoteSessionRequestInput,
+  type RemoteSessionTargetCapability,
   desktopRunnerInventorySchema,
   type DesktopRunnerInventory,
+  remoteSessionTargetCapabilities,
 } from "@openwork/types/automations"
 import { db } from "../db.js"
 import { env } from "../env.js"
@@ -52,7 +56,7 @@ import { scoreText, tokenize, type CapabilityMatch } from "./search.js"
  */
 
 export const REMOTE_SESSION_CAPABILITY_PREFIX = "remote-session:"
-export const REMOTE_SESSION_ACTIONS = ["create", "send", "read", "stop", "list", "targets"] as const
+export const REMOTE_SESSION_ACTIONS = ["create", "send", "read", "stop", "answer", "list", "targets"] as const
 export type RemoteSessionAction = (typeof REMOTE_SESSION_ACTIONS)[number]
 
 export function remoteSessionCapabilityName(action: RemoteSessionAction): string {
@@ -112,6 +116,24 @@ const sendBodySchema = z.object({
   model: modelSchema.optional(),
 })
 
+const answerBodySchema = z.object({
+  sessionId: z.string().trim().min(1),
+  workspaceId: desktopWorkspaceSchema,
+  questionId: z.string().trim().min(1).max(REMOTE_SESSION_QUESTION_LIMITS.id),
+  answers: z.array(
+    z.array(z.string().max(REMOTE_SESSION_QUESTION_LIMITS.answer)).max(REMOTE_SESSION_QUESTION_LIMITS.options),
+  ).min(1).max(REMOTE_SESSION_QUESTION_LIMITS.questions).optional(),
+  dismiss: z.boolean().optional(),
+}).superRefine((body, context) => {
+  if ((body.answers !== undefined) === (body.dismiss === true)) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["answers"],
+      message: "Pass answers (one list per question, in order), or dismiss: true to close the question without answering.",
+    })
+  }
+})
+
 const readBodySchema = z.object({
   messageId: z.string().optional(),
   sessionId: z.string().trim().min(1).optional(),
@@ -143,6 +165,7 @@ const BODY_SCHEMAS: Record<RemoteSessionAction, z.ZodTypeAny> = {
   send: sendBodySchema,
   read: readBodySchema,
   stop: stopBodySchema,
+  answer: answerBodySchema,
   list: listBodySchema,
   targets: targetsBodySchema,
 }
@@ -168,7 +191,7 @@ const REMOTE_SESSION_DEFINITIONS: RemoteSessionDefinition[] = [
   {
     action: "targets",
     summary:
-      "List your remote session targets: connected OpenWork desktops and opted-in OpenCode clients, with computerId, label, online, workspaces, and models; also reports Cloud availability. Call this before choosing a computer, workspace or model. Use target registered with a computerId to offload to a client without requiring OpenWork Web. Pass includeModels true to list models.",
+      "List your remote session targets: connected OpenWork desktops and opted-in OpenCode clients, with computerId, label, online, workspaces, models, and capabilities (the remote-session actions that client supports: create, read, send, stop, answer; clients differ); also reports Cloud availability and capabilities. Call this before choosing a computer, workspace or model. Use target registered with a computerId to offload to a client without requiring OpenWork Web. Pass includeModels true to list models.",
     searchExtraTokens:
       "remote session targets list computers desktops machines laptops devices workspaces projects folders models providers where which choose pick select available online cloud",
     argumentsSchema: {
@@ -251,6 +274,28 @@ const REMOTE_SESSION_DEFINITIONS: RemoteSessionDefinition[] = [
     },
   },
   {
+    action: "answer",
+    summary:
+      "Answer the question a desktop or registered remote session is waiting on, with the person's own answer. First read the session with its sessionId: pendingQuestion holds the question id, each question, and its options. Ask the person, then pass questionId and answers: one list per question, in order, holding the chosen option labels (or their typed text when custom is true). Never choose for them; pass dismiss true only when they decline to answer. Works only on computers whose remote-session:targets capabilities include answer; permissions are never approved remotely. Returns answered, or reason not_pending when it was already answered or is gone.",
+    searchExtraTokens:
+      "remote session answer reply respond question questions choose option choice pending waiting blocked unblock dismiss form ask person",
+    argumentsSchema: {
+      type: "object",
+      properties: {
+        sessionId: { type: "string", description: "Session id from remote-session:create (via read with its commandId) or remote-session:list." },
+        workspaceId: { type: "string", description: "The session's workspaceId, when one session id could exist in several workspaces." },
+        questionId: { type: "string", description: "pendingQuestion.id from remote-session:read with the sessionId." },
+        answers: {
+          type: "array",
+          description: "One list per question in pendingQuestion.questions, in order: the option labels the person chose, or their typed text when custom is true.",
+          items: { type: "array", items: { type: "string" } },
+        },
+        dismiss: { type: "boolean", description: "Close the question without answering, only when the person declines to answer." },
+      },
+      required: ["sessionId", "questionId"],
+    },
+  },
+  {
     action: "list",
     summary:
       "List the sessions you started on your desktop with remote-session:create target \"desktop\", newest first, with title, sessionId, workspaceId, status, and updatedAt. Use a sessionId with remote-session:read, send, or stop.",
@@ -267,14 +312,33 @@ const REMOTE_SESSION_DEFINITIONS: RemoteSessionDefinition[] = [
   },
 ]
 
+/** With answers on, a waiting question is relayed to the person instead of sending them to that computer. */
+const READ_SUMMARY_WITH_ANSWERS =
+  "Read a remote session's recent transcript and status from your OpenWork Web instance, or the status of a desktop command, including which computer (computerId) took it. For a desktop command, poll with commandId until state is failed or expired, or session.status is idle (session.finalText holds the answer) or error (session.lastError). When session.status is waiting for a question, read again with the sessionId: pendingQuestion holds the question and its options; ask the person and pass their answer to remote-session:answer, if that computer's capabilities include answer. Otherwise (or when waiting for a permission) tell the person to respond in OpenWork on that computer. With the sessionId of a desktop session, returns a transcript page (full message text, tool calls, status, pendingQuestion) read from the desktop; page with from and cursor/nextCursor. If the desktop has not answered within about 20 seconds the result is state \"pending\" with a requestId: call remote-session:read with that requestId later to collect it."
+
+export type RemoteSessionCapabilityOptions = {
+  /** The organization has remoteSessionAnswers on. */
+  answers: boolean
+}
+
+function remoteSessionDefinitions(options: RemoteSessionCapabilityOptions): RemoteSessionDefinition[] {
+  if (!options.answers) return REMOTE_SESSION_DEFINITIONS.filter((definition) => definition.action !== "answer")
+  return REMOTE_SESSION_DEFINITIONS.map((definition) =>
+    definition.action === "read" ? { ...definition, summary: READ_SUMMARY_WITH_ANSWERS } : definition)
+}
+
 export type RemoteSessionCapabilityMatch = CapabilityMatch & { kind: "remote_session" }
 
-export function searchRemoteSessionCapabilities(query: string, limit = 5): RemoteSessionCapabilityMatch[] {
+export function searchRemoteSessionCapabilities(
+  query: string,
+  limit = 5,
+  options: RemoteSessionCapabilityOptions = { answers: false },
+): RemoteSessionCapabilityMatch[] {
   const queryTokens = tokenize(query)
   if (queryTokens.length === 0) return []
 
   const matches: RemoteSessionCapabilityMatch[] = []
-  for (const definition of REMOTE_SESSION_DEFINITIONS) {
+  for (const definition of remoteSessionDefinitions(options)) {
     const name = remoteSessionCapabilityName(definition.action)
     const score = scoreText(
       tokenize(`remote session ${definition.action}`),
@@ -332,11 +396,38 @@ export type RemoteSessionDesktopRecord = {
   inventory: DesktopRunnerInventory | null
   /** Negotiated durable offload protocol; not an Automation eligibility signal. */
   registered?: boolean
+  /**
+   * What the client's runner registered. Absent in records from before
+   * capabilities were listed: a registered client then had read/send/stop.
+   */
+  runnerCapabilities?: readonly string[]
 }
 
 export type RemoteSessionDesktopTargets = {
   ownerMemberId: string | null
   computers: RemoteSessionDesktopRecord[]
+}
+
+export type RemoteSessionRunnerState = {
+  connected: boolean
+  controlCapable: boolean
+  registered?: boolean
+  /** The runner can answer the question its session waits on (remote_session_answer_v1). */
+  answerCapable?: boolean
+  /** Remote-session actions this runner supports, for error messages. */
+  capabilities?: readonly RemoteSessionTargetCapability[]
+}
+
+/** Remote-session actions a Cloud session supports. Cloud does not answer questions remotely yet. */
+const CLOUD_TARGET_CAPABILITIES: RemoteSessionTargetCapability[] = ["create", "read", "send", "stop"]
+
+/** What a caller can do on one computer; answer is listed only while the organization has answers on. */
+export function desktopTargetCapabilities(computer: RemoteSessionDesktopRecord, answers: boolean): RemoteSessionTargetCapability[] {
+  const runnerCapabilities = computer.runnerCapabilities ?? (computer.registered
+    ? [REMOTE_SESSION_DESKTOP_RUNNER_CAPABILITY, REMOTE_SESSION_CONTROL_RUNNER_CAPABILITY, REMOTE_SESSION_RECOVERY_RUNNER_CAPABILITY]
+    : [REMOTE_SESSION_DESKTOP_RUNNER_CAPABILITY])
+  const capabilities = remoteSessionTargetCapabilities(runnerCapabilities)
+  return answers ? capabilities : capabilities.filter((capability) => capability !== "answer")
 }
 
 export type RemoteSessionExecuteDeps = {
@@ -354,7 +445,7 @@ export type RemoteSessionExecuteDeps = {
     organizationId: string
     ownerMemberId: string
     runnerId: string
-  }) => Promise<{ connected: boolean; controlCapable: boolean; registered?: boolean }>
+  }) => Promise<RemoteSessionRunnerState>
   /** How long a desktop request is awaited before returning its requestId. */
   requestWait?: { timeoutMs: number; pollMs: number }
   /**
@@ -578,7 +669,8 @@ async function defaultDesktopTargets(scope: {
       const inventory = row.inventory ? desktopRunnerInventorySchema.safeParse(row.inventory) : null
       return {
         computerId: row.id,
-        registered: row.capabilities.includes("remote_session_recovery_v1"),
+        registered: row.capabilities.includes(REMOTE_SESSION_RECOVERY_RUNNER_CAPABILITY),
+        runnerCapabilities: row.capabilities,
         platform: row.platform,
         appVersion: row.appVersion,
         lastSeenAt: row.lastSeenAt.getTime(),
@@ -606,13 +698,16 @@ async function defaultDesktopRunner(scope: {
   organizationId: string
   ownerMemberId: string
   runnerId: string
-}): Promise<{ connected: boolean; controlCapable: boolean; registered?: boolean }> {
+}): Promise<RemoteSessionRunnerState> {
   const runner = await automationRepository.desktopRunnerById(scope)
   if (!runner) return { connected: false, controlCapable: false }
+  const capabilities = remoteSessionTargetCapabilities(runner.capabilities)
   return {
     connected: desktopRunnerConnected({ lastSeenAt: runner.lastSeenAt, now: Date.now() }),
     controlCapable: runner.capabilities.includes(REMOTE_SESSION_CONTROL_RUNNER_CAPABILITY),
-    registered: runner.capabilities.includes("remote_session_recovery_v1"),
+    registered: runner.capabilities.includes(REMOTE_SESSION_RECOVERY_RUNNER_CAPABILITY),
+    answerCapable: capabilities.includes("answer"),
+    capabilities,
   }
 }
 
@@ -643,7 +738,7 @@ function desktopOnline(computer: RemoteSessionDesktopRecord, now: number): boole
 
 function targetsPayload(
   targets: RemoteSessionDesktopTargets,
-  options: { includeModels: boolean; cloudAvailable: boolean; now: number },
+  options: { includeModels: boolean; cloudAvailable: boolean; answers: boolean; now: number },
 ): Record<string, unknown> {
   return {
     computers: targets.computers.map((computer) => ({
@@ -654,6 +749,8 @@ function targetsPayload(
       appVersion: computer.inventory?.computer.appVersion ?? computer.appVersion,
       online: desktopOnline(computer, options.now),
       lastSeenAt: computer.lastSeenAt,
+      // Clients differ: only these remote-session actions work on this computer.
+      capabilities: desktopTargetCapabilities(computer, options.answers),
       // Null means this desktop has not reported its workspaces (an older
       // app version); it can still take untargeted remote sessions.
       workspaces: computer.inventory
@@ -667,7 +764,7 @@ function targetsPayload(
         }))
         : null,
     })),
-    cloud: { available: options.cloudAvailable },
+    cloud: { available: options.cloudAvailable, capabilities: options.cloudAvailable ? CLOUD_TARGET_CAPABILITIES : [] },
   }
 }
 
@@ -785,7 +882,7 @@ function modelInput(model: z.infer<typeof modelSchema> | undefined): HeadlessThr
   }
 }
 
-function desktopRequestResult(request: RemoteSessionRequest): RemoteSessionToolResult {
+function desktopRequestResult(request: RemoteSessionRequest, options: RemoteSessionCapabilityOptions): RemoteSessionToolResult {
   const identity = {
     target: "desktop",
     requestId: request.id,
@@ -816,12 +913,26 @@ function desktopRequestResult(request: RemoteSessionRequest): RemoteSessionToolR
       action: request.action,
       error: error.code,
       message: error.message,
-      retryable: !["unknown_session", "unknown_receipt", "invalid_cursor", "cursor_unavailable", "message_conflict", "session_conflict", "ambiguous_creation", "ambiguous_send"].includes(error.code),
+      retryable: !["unknown_session", "unknown_receipt", "invalid_cursor", "cursor_unavailable", "message_conflict", "session_conflict", "ambiguous_creation", "ambiguous_send", "invalid_answer", "unsupported_request"].includes(error.code),
     })
   }
   const outcome = request.outcome
   if (outcome.action === "read") {
-    return jsonResult({ ...identity, state: "done", ...outcome.result })
+    // The question is part of answering it: with answers off, reads look as they always did.
+    const { pendingQuestion, ...page } = outcome.result
+    return jsonResult({ ...identity, state: "done", ...page, ...(options.answers && pendingQuestion ? { pendingQuestion } : {}) })
+  }
+  if (outcome.action === "answer") {
+    return jsonResult({
+      ...identity,
+      commandId: request.commandId,
+      state: "done",
+      answered: outcome.result.answered,
+      reason: outcome.result.reason,
+      note: outcome.result.answered
+        ? "The answer was delivered and the session continues. Poll remote-session:read with commandId until session.status settles."
+        : "That question is no longer waiting: it was already answered (possibly on that computer) or is gone. Read the session again before answering anything else.",
+    })
   }
   if (outcome.action === "send") {
     return jsonResult({
@@ -862,7 +973,11 @@ async function findDesktopSession(
   })
 }
 
-function desktopRequestInput(action: "read" | "send" | "stop", body: unknown): RemoteSessionRequestInput {
+function desktopRequestInput(action: "read" | "send" | "stop" | "answer", body: unknown): RemoteSessionRequestInput {
+  if (action === "answer") {
+    const answer = answerBodySchema.parse(body)
+    return { action: "answer", input: { questionId: answer.questionId, answers: answer.dismiss === true ? null : answer.answers ?? null } }
+  }
   if (action === "read") {
     const read = readBodySchema.parse(body)
     return {
@@ -893,14 +1008,27 @@ async function executeDesktopSessionAction(
   session: RemoteSessionDesktopSession,
   deps: RemoteSessionExecuteDeps,
 ): Promise<RemoteSessionToolResult> {
-  if (input.action !== "read" && input.action !== "send" && input.action !== "stop") {
+  if (input.action !== "read" && input.action !== "send" && input.action !== "stop" && input.action !== "answer") {
     throw new Error("remote_session_desktop_action_invariant")
   }
+  const options = { answers: input.answersEnabled === true }
   const runner = await deps.desktopRunner({
     organizationId: input.organizationId,
     ownerMemberId: session.ownerMemberId,
     runnerId: session.runnerId,
   })
+  if (input.action === "answer" && !runner.answerCapable) {
+    // Clients differ: never route an answer to a runner that cannot reply to a question.
+    return errorResult({
+      target: "desktop",
+      sessionId: session.sessionId,
+      commandId: session.commandId,
+      error: "unsupported_by_target",
+      message: "The client that runs this session cannot answer questions remotely (an OpenCode client, or an OpenWork desktop that needs an update). Tell the person to answer it in OpenWork on that computer.",
+      capabilities: (runner.capabilities ?? []).filter((capability) => options.answers || capability !== "answer"),
+      retryable: false,
+    })
+  }
   if (!runner.controlCapable) {
     return errorResult({
       target: "desktop",
@@ -947,7 +1075,7 @@ async function executeDesktopSessionAction(
     if (!next) break
     current = next
   }
-  return desktopRequestResult(current)
+  return desktopRequestResult(current, options)
 }
 
 export type RemoteSessionExecuteInput = {
@@ -958,6 +1086,8 @@ export type RemoteSessionExecuteInput = {
   body: unknown
   /** Set when the call is made with a headless-run token Den minted (for example for a Slack run). */
   headlessRunTokenId?: string | null
+  /** The organization has remoteSessionAnswers on: questions are shown and can be answered remotely. */
+  answersEnabled?: boolean
 }
 
 /** The desktop took the command but its local OpenWork server or engine did not answer. */
@@ -1030,7 +1160,14 @@ async function executeRemoteSession(
   input: RemoteSessionExecuteInput,
   deps: RemoteSessionExecuteDeps,
 ): Promise<RemoteSessionToolResult> {
-  if ((input.action === "create" || input.action === "send" || input.action === "stop") && !input.hasWriteScope) {
+  if (input.action === "answer" && input.answersEnabled !== true) {
+    return errorResult({
+      error: "remote_session_answers_unavailable",
+      message: "Answering a remote session's question is not turned on for this organization. Tell the person to answer it in OpenWork on that computer.",
+      retryable: false,
+    })
+  }
+  if ((input.action === "create" || input.action === "send" || input.action === "stop" || input.action === "answer") && !input.hasWriteScope) {
     return errorResult({
       error: "insufficient_mcp_scope",
       message: `remote-session:${input.action} requires the mcp:write scope.`,
@@ -1082,7 +1219,7 @@ async function executeRemoteSession(
         createdByUserId: input.userId,
       })
       if (!request) return errorResult({ error: "unknown_request", retryable: false })
-      return desktopRequestResult(request)
+      return desktopRequestResult(request, { answers: input.answersEnabled === true })
     }
     if (body.commandId) {
       const command = await deps.commandStore.get({
@@ -1109,6 +1246,9 @@ async function executeRemoteSession(
         error: command.error,
         expiresAt: command.expiresAt,
         session: command.session,
+        ...(input.answersEnabled === true && command.sessionId && command.session?.status === "waiting" && command.session.waitingFor === "question"
+          ? { note: "The session is waiting on a question. Call remote-session:read with this sessionId to see pendingQuestion, ask the person, then pass their answer to remote-session:answer." }
+          : {}),
         ...(command.status === "failed" && command.error?.code === DESKTOP_RUNTIME_UNREACHABLE_CODE ? desktopRuntimeUnreachableFields : {}),
       })
     }
@@ -1117,7 +1257,7 @@ async function executeRemoteSession(
   // Registered clients are an OpenWork offload surface, not an entitlement to
   // a Cloud worker. Keep Cloud and legacy desktop access rules unchanged.
   const registeredCreate = input.action === "create" && createBodySchema.parse(parsedBody.data).target === "registered"
-  if (input.action === "read" || input.action === "send" || input.action === "stop") {
+  if (input.action === "read" || input.action === "send" || input.action === "stop" || input.action === "answer") {
     const session = await findDesktopSession(input, parsedBody.data, deps)
     if (session) {
       const runner = await deps.desktopRunner({ organizationId: input.organizationId, ownerMemberId: session.ownerMemberId, runnerId: session.runnerId })
@@ -1133,6 +1273,7 @@ async function executeRemoteSession(
     return jsonResult(targetsPayload(targets, {
       includeModels: body.includeModels === true,
       cloudAvailable: webAccess.hasAccess && (deps.cloudAvailable ?? cloudRemoteSessionsAvailable)(),
+      answers: input.answersEnabled === true,
       now: Date.now(),
     }))
   }
@@ -1144,9 +1285,18 @@ async function executeRemoteSession(
     })
   }
 
-  if (input.action === "read" || input.action === "send" || input.action === "stop") {
+  if (input.action === "read" || input.action === "send" || input.action === "stop" || input.action === "answer") {
     const desktopSession = await findDesktopSession(input, parsedBody.data, deps)
     if (desktopSession) return executeDesktopSessionAction(input, parsedBody.data, desktopSession, deps)
+  }
+  if (input.action === "answer") {
+    return errorResult({
+      target: "cloud",
+      error: "unsupported_by_target",
+      message: "Questions in OpenWork Cloud sessions cannot be answered remotely yet. Tell the person to answer it in OpenWork Web.",
+      capabilities: CLOUD_TARGET_CAPABILITIES,
+      retryable: false,
+    })
   }
 
   if (input.action === "create") {

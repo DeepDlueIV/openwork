@@ -123,6 +123,13 @@ export const FEATURES = defineFeatures({
     deployments: everywhere,
     default: false,
   },
+  remoteSessionAnswers: {
+    label: "Remote session answers",
+    description: "When a remote session stops to ask a question, the agent that started it shows the question and relays the person's answer, instead of sending them to that computer.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
 })
 
 export type FeatureKey = keyof typeof FEATURES

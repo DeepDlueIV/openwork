@@ -54,6 +54,8 @@ function nativeFixture() {
   let interrupts = 0
   let active = false
   let pendingPermission = false
+  let pendingForm = null
+  const replies = []
   let routing = "v2"
   let autoReply = false
   let loseCreateResponse = false
@@ -98,13 +100,25 @@ function nativeFixture() {
     }
     if (path === `/session/${sessionId}/interrupt`) { interrupts += 1; active = false; return response({ data: { interrupted: true } }) }
     if (path === `/session/${sessionId}/permission`) return response({ data: pendingPermission ? [{ id: "permission_fixture" }] : [] })
-    if (path === `/session/${sessionId}/form`) return response({ data: [] })
+    if (path === `/session/${sessionId}/form`) return response({ data: pendingForm ? [pendingForm] : [] })
+    if (pendingForm && path === `/session/${sessionId}/form/${pendingForm.id}` && method === "GET") return response({ data: pendingForm })
+    if (pendingForm && path === `/session/${sessionId}/form/${pendingForm.id}/reply` && method === "POST") {
+      replies.push(body)
+      pendingForm = null
+      return response({ data: true })
+    }
+    if (pendingForm && path === `/session/${sessionId}/form/${pendingForm.id}` && method === "DELETE") {
+      replies.push(null)
+      pendingForm = null
+      return response({ data: true })
+    }
     return response({ message: "unexpected native path" }, 404)
   }
   return {
-    calls, messages, fetchImpl, getLocalRuntime: async () => ({ baseUrl: "http://localhost:8787", token: localToken }),
+    calls, messages, fetchImpl, replies, getLocalRuntime: async () => ({ baseUrl: "http://localhost:8787", token: localToken }),
     get created() { return created }, get sessionId() { return sessionId }, get interrupts() { return interrupts },
     set pendingPermission(value) { pendingPermission = value }, set routing(value) { routing = value },
+    set pendingForm(value) { pendingForm = value },
     set active(value) { active = value }, set autoReply(value) { autoReply = value },
     set loseCreateResponse(value) { loseCreateResponse = value }, set localToken(value) { localToken = value },
   }
@@ -476,4 +490,111 @@ test("scheduled Automation execution stays independent with a recovery-capable t
   assert.equal(native.calls.find((call) => call.path.endsWith("/prompt")).body.id, undefined)
   const disk = JSON.parse(await readFile(join(root, desktopSessionRunnerPartition(denBaseUrl, account), "journal.json"), "utf8").catch(() => "{\"commands\":[],\"requests\":[]}"))
   assert.deepEqual(disk.commands, [])
+})
+
+const questionForm = (id = "que_fixture", sessionID = "session_fixture") => ({
+  id, sessionID, metadata: { kind: "question", tool: { messageID: "msg_tool", id: "call_tool" } },
+  fields: [
+    { key: "scope", type: "string", title: "Scope", description: "Which path should I take?", custom: false,
+      options: [{ label: "Local only", value: "local", description: "No cloud resources" }, { label: "Deploy", value: "deploy", description: "Uses GCP" }] },
+    { key: "extras", type: "multiselect", title: "Extras", description: "Anything else?",
+      options: [{ label: "Docs", value: "docs", description: "" }, { label: "Tests", value: "tests", description: "" }] },
+  ],
+})
+
+test("a waiting question is read with its options and answered only with the person's relayed choice", async () => {
+  const native = nativeFixture()
+  const adapter = createDesktopSessionAdapter(native)
+  const signal = new AbortController().signal
+  const receipt = await adapter.create(command(), signal)
+  await adapter.send(receipt, { prompt: "first turn", messageId: "msg_firstturn", model: null }, signal)
+  native.active = true
+  native.pendingForm = questionForm()
+  const page = await adapter.read(receipt, { from: "end", cursor: null, limit: 5 }, signal)
+  assert.equal(page.status, "waiting")
+  assert.equal(page.waitingFor, "question")
+  assert.deepEqual(page.pendingQuestion, {
+    id: "que_fixture",
+    questions: [
+      { header: "Scope", question: "Which path should I take?", multiple: false, custom: false,
+        options: [{ label: "Local only", description: "No cloud resources" }, { label: "Deploy", description: "Uses GCP" }] },
+      { header: "Extras", question: "Anything else?", multiple: true, custom: true,
+        options: [{ label: "Docs", description: "" }, { label: "Tests", description: "" }] },
+    ],
+  })
+  // Observation alone never replies to anything.
+  await adapter.observe(receipt, signal)
+  assert.equal(native.replies.length, 0)
+  // The answer must match the question as the person saw it.
+  await assert.rejects(adapter.answer(receipt, { questionId: "que_fixture", answers: [["Local only"]] }, signal), { code: "invalid_answer" })
+  await assert.rejects(adapter.answer(receipt, { questionId: "que_fixture", answers: [["Something else"], []] }, signal), { code: "invalid_answer" })
+  assert.equal(native.replies.length, 0)
+  assert.deepEqual(await adapter.answer(receipt, { questionId: "que_fixture", answers: [["Local only"], ["Docs", "Tests"]] }, signal),
+    { answered: true, reason: null })
+  // Option labels become the native values; a single choice is a single value.
+  assert.deepEqual(native.replies, [{ answer: { scope: "local", extras: ["docs", "tests"] } }])
+  assert.deepEqual(await adapter.answer(receipt, { questionId: "que_fixture", answers: [["Deploy"], []] }, signal),
+    { answered: false, reason: "not_pending" })
+  assert.equal(native.replies.length, 1)
+  native.pendingForm = questionForm("que_second")
+  assert.deepEqual(await adapter.answer(receipt, { questionId: "que_second", answers: null }, signal), { answered: true, reason: null })
+  assert.deepEqual(native.replies.at(-1), null)
+})
+
+test("modern request routing relays an answer and reports the resumed session", async (t) => {
+  const root = await privateDirectory(t)
+  const native = nativeFixture()
+  const den = runnerFixture(native)
+  const runner = desktopRunner(native, den, root)
+  t.after(() => runner.stop())
+  configure(runner, [...recoveryCapabilities, "remote_session_answer_v1"])
+  await eventually(() => den.calls.some((call) => call.path.endsWith("/complete")))
+  native.active = true
+  native.pendingForm = questionForm("que_fixture", native.sessionId)
+  await eventually(() => den.calls.some((call) => call.path.endsWith("/session") && call.body?.waitingFor === "question"))
+  const receipt = { sessionId: native.sessionId, workspaceId: "workspace_fixture" }
+  den.queuedRequest = request(receipt, "answer", { questionId: "que_fixture", answers: [["Deploy"], ["Docs"]] }, "request_answer")
+  await eventually(() => den.calls.some((call) => call.path === "/v1/remote-session-requests/request_answer/complete"))
+  const complete = den.calls.find((call) => call.path === "/v1/remote-session-requests/request_answer/complete")
+  assert.deepEqual(complete.body, { status: "done", outcome: { action: "answer", result: { answered: true, reason: null } } })
+  assert.deepEqual(native.replies, [{ answer: { scope: "deploy", extras: ["docs"] } }])
+  await eventually(() => den.calls.some((call) => call.path.endsWith("/session") && call.body?.status === "running" && call.body?.waitingFor === null))
+})
+
+test("V1 questions are listed per session and answered or rejected through the V1 question routes", async () => {
+  const { answerRemoteSessionQuestion, readRemoteSessionPending } = await import("../electron/automation-runner.mjs")
+  const calls = []
+  let pending = [
+    { id: "que_other", sessionID: "session_other", questions: [{ header: "Other", question: "Not this session", options: [] }] },
+    { id: "que_v1", sessionID: "session_fixture", questions: [{ header: "Scope", question: "Which path?", options: [{ label: "Local only", description: "" }] }] },
+  ]
+  const fetchImpl = async (input, init = {}) => {
+    const url = new URL(String(input))
+    calls.push({ path: url.pathname, method: init.method ?? "GET", body: init.body ? JSON.parse(init.body) : null })
+    const respond = (value, status = 200) => new Response(JSON.stringify(value), { status })
+    if (url.pathname === "/workspace/workspace_fixture/opencode/permission") return respond([])
+    if (url.pathname === "/workspace/workspace_fixture/opencode/question") return respond(pending)
+    const match = /^\/workspace\/workspace_fixture\/opencode\/question\/([^/]+)\/(reply|reject)$/.exec(url.pathname)
+    if (match && init.method === "POST" && pending.some((row) => row.id === match[1])) {
+      pending = pending.filter((row) => row.id !== match[1])
+      return respond(true)
+    }
+    return respond({ message: "not found" }, 404)
+  }
+  const local = { baseUrl: "http://localhost:8787", token: "local" }
+  const signal = new AbortController().signal
+  const waiting = await readRemoteSessionPending(local, "workspace_fixture", "session_fixture", "v1", fetchImpl, signal)
+  assert.equal(waiting.waitingFor, "question")
+  assert.equal(waiting.question.id, "que_v1")
+  assert.deepEqual(waiting.question.questions[0], { header: "Scope", question: "Which path?", options: [{ label: "Local only", description: "" }], multiple: false, custom: true })
+  // Another session's question is never answered from here.
+  assert.deepEqual(await answerRemoteSessionQuestion(local, "workspace_fixture", "session_fixture", "v1", { questionId: "que_other", answers: [["x"]] }, fetchImpl, signal),
+    { answered: false, reason: "not_pending" })
+  assert.deepEqual(await answerRemoteSessionQuestion(local, "workspace_fixture", "session_fixture", "v1", { questionId: "que_v1", answers: [["Local only"]] }, fetchImpl, signal),
+    { answered: true, reason: null })
+  assert.deepEqual(calls.find((call) => call.method === "POST"), { path: "/workspace/workspace_fixture/opencode/question/que_v1/reply", method: "POST", body: { answers: [["Local only"]] } })
+  pending = [{ id: "que_reject", sessionID: "session_fixture", questions: [{ header: "Again", question: "Skip?", options: [] }] }]
+  assert.deepEqual(await answerRemoteSessionQuestion(local, "workspace_fixture", "session_fixture", "v1", { questionId: "que_reject", answers: null }, fetchImpl, signal),
+    { answered: true, reason: null })
+  assert.equal(calls.at(-1).path, "/workspace/workspace_fixture/opencode/question/que_reject/reject")
 })

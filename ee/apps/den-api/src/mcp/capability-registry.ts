@@ -128,6 +128,8 @@ export type CapabilityRegistryContext = {
   redirectUriBase: string
   generatedArtifactViewsEnabled: boolean
   remoteSessionEventsEnabled: boolean
+  /** remoteSessionAnswers: a waiting question can be read and answered remotely. */
+  remoteSessionAnswersEnabled: boolean
   resolvePlatformAdmin: () => Promise<boolean>
   resolveNamespaceContext: () => Promise<CodemodeConnectionNamespaceContext>
   /** Set only by MCP transports: direct service mutations are audited for this caller (src/audit/service-actions.ts). */
@@ -144,7 +146,7 @@ export type CapabilityRegistryContextInput = {
   redirectUriBase: string
   generatedArtifactViewsEnabled: boolean
   /** Effective features of the organization (see features.ts). */
-  organizationFeatures: Partial<Pick<FeatureMap, "remoteSessionEvents">>
+  organizationFeatures: Partial<Pick<FeatureMap, "remoteSessionEvents" | "remoteSessionAnswers">>
   /** MCP transports pass the verified caller; route and Automation contexts omit it (their route records the request). */
   audit?: McpAuditPrincipal | null
 }
@@ -173,6 +175,7 @@ export function createCapabilityRegistryContext(input: CapabilityRegistryContext
     redirectUriBase: input.redirectUriBase,
     generatedArtifactViewsEnabled: input.generatedArtifactViewsEnabled,
     remoteSessionEventsEnabled: input.organizationFeatures.remoteSessionEvents === true,
+    remoteSessionAnswersEnabled: input.organizationFeatures.remoteSessionAnswers === true,
     resolvePlatformAdmin,
     resolveNamespaceContext,
     audit: input.audit ?? null,
@@ -198,7 +201,7 @@ export function workflowExecutionAudit(ctx: Pick<CapabilityRegistryContext, "aud
 }
 
 const remoteSessionAuditActions: Partial<Record<RemoteSessionAction, AuditServiceActionName>> = {
-  create: "remote_session.create", send: "remote_session.send", stop: "remote_session.stop",
+  create: "remote_session.create", send: "remote_session.send", stop: "remote_session.stop", answer: "remote_session.answer",
 }
 
 function remoteSessionResourceId(body: unknown): string | null {
@@ -715,7 +718,7 @@ const remoteSessionSource: CapabilitySource = {
   },
   search: async (ctx, query, limit) => {
     if (!ctx.sourceFilter.api || !ctx.member) return []
-    return searchRemoteSessionCapabilities(query, limit)
+    return searchRemoteSessionCapabilities(query, limit, { answers: ctx.remoteSessionAnswersEnabled })
   },
   // Deliberately absent from the confined-script tool tree in v1: remote
   // sessions are long-lived side effects that agents should drive through
@@ -739,6 +742,7 @@ const remoteSessionSource: CapabilitySource = {
       hasWriteScope: ctx.principal.scopes.has(DEN_MCP_WRITE_SCOPE),
       body: input.body,
       headlessRunTokenId: headlessRunTokenId(ctx.principal.payload),
+      answersEnabled: ctx.remoteSessionAnswersEnabled,
     }), ctx.remoteSessionEventsEnabled)
     const auditAction = remoteSessionAuditActions[parsed.action]
     if (!auditAction || !ctx.audit) return run()

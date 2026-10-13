@@ -53,7 +53,8 @@ export const RemoteSessionCommandTable = mysqlTable(
 
 /**
  * A short-lived request from Den to the desktop runner that delivered a
- * remote session: read its transcript, send a follow-up, or stop it. The
+ * remote session: read its transcript, send a follow-up, stop it, or answer
+ * the question it waits on (only runners that registered answers). The
  * runner claims it, runs it against its local session, and stores the
  * bounded result here for the MCP caller to collect.
  */
@@ -70,7 +71,7 @@ export const RemoteSessionRequestTable = mysqlTable(
     session_id: varchar("session_id", { length: 240 }).notNull(),
     // The engine the session runs on, as last reported for the command.
     session_engine: mysqlEnum("session_engine", ["v1", "v2"]),
-    action: mysqlEnum("action", ["read", "send", "stop"]).notNull(),
+    action: mysqlEnum("action", ["read", "send", "stop", "answer"]).notNull(),
     input: json("input").$type<Record<string, unknown>>().notNull(),
     status: mysqlEnum("status", ["pending", "claimed", "done", "failed", "expired"]).notNull(),
     // Bounded to 256 KB by the runner completion schema.

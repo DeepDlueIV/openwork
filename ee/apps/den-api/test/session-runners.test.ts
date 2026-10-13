@@ -108,6 +108,10 @@ test("new runner capabilities are bounded to five and released registration rema
   assert.deepEqual(automationDesktopRunnerRegistrationSchema.parse(registration).capabilities, [])
   assert.equal(automationDesktopRunnerRegistrationSchema.safeParse({ ...registration, capabilities: modernCapabilities }).success, true)
   assert.equal(automationDesktopRunnerRegistrationSchema.safeParse({ ...registration, capabilities: [...modernCapabilities, "model_attention_v1", "remote_session_v1"] }).success, false)
+  // Both real desktop sets with answers fit the bound.
+  assert.equal(automationDesktopRunnerRegistrationSchema.safeParse({ ...registration, capabilities: [...modernCapabilities, "remote_session_answer_v1"] }).success, true)
+  assert.equal(automationDesktopRunnerRegistrationSchema.safeParse({ ...registration,
+    capabilities: ["model_attention_v1", "remote_session_v1", "remote_session_control_v1", "remote_session_recovery_v1", "remote_session_answer_v1"] }).success, true)
 })
 
 test("both token endpoint suffixes bind to the same direct or proxied audience", () => {

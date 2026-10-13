@@ -2387,6 +2387,7 @@ export class DenClient extends HeyApiClient {
         | "remote_session_control_v1"
         | "remote_session_only_v1"
         | "remote_session_recovery_v1"
+        | "remote_session_answer_v1"
       >;
       appVersion: string;
       platform: "darwin" | "win32" | "linux";

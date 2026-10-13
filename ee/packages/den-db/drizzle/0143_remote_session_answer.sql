@@ -1,0 +1,1 @@
+ALTER TABLE `remote_session_request` MODIFY COLUMN `action` enum('read','send','stop','answer') NOT NULL;

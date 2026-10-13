@@ -1,5 +1,5 @@
 import type {
-  Command, Complete, Engine, Inventory, Journal, Model, Progress, ReadResult, Receipt,
+  AnswerInput, AnswerResult, Command, Complete, Engine, Inventory, Journal, Model, PendingQuestion, Progress, ReadResult, Receipt,
   Request, RequestComplete, SessionError, Status, TranscriptMessage, TranscriptToolCall, Turn,
 } from "./types.ts"
 import { MAX_COMMAND_ENTRIES, MAX_REQUEST_ENTRIES, REQUEST_RESULT_MAX_BYTES, SessionRunnerError } from "./types.ts"
@@ -124,9 +124,40 @@ export function parseRequest(value: unknown): Request {
     return { ...base, action: "send", input: { prompt: rawText(input.prompt, 100_000),
       messageId: nullable(input.messageId, messageId), model: nullable(input.model, model) } }
   }
+  if (v.action === "answer") return { ...base, action: "answer", input: parseAnswerInput(input) }
   if (v.action !== "stop") return invalid()
   keys(input, ["messageId"])
   return { ...base, action: "stop", input: { messageId: nullable(input.messageId, value => text(value, 160)) } }
+}
+/** Mirrors remoteSessionAnswerInputSchema and REMOTE_SESSION_QUESTION_LIMITS in @openwork/types. */
+export function parseAnswerInput(value: unknown): AnswerInput {
+  const v = object(value); keys(v, ["questionId", "answers"])
+  const answers = nullable(v.answers, list => array(list, 20, answer => array(answer, 50, choice => rawText(choice, 4_000, 0))))
+  if (answers !== null && answers.length === 0) return invalid()
+  return { questionId: text(v.questionId, 240), answers }
+}
+export function parsePendingQuestion(value: unknown): PendingQuestion {
+  const v = object(value); keys(v, ["id", "questions"])
+  const questions = array(v.questions, 20, item => {
+    const q = object(item); keys(q, ["header", "question", "options", "multiple", "custom"])
+    return {
+      header: text(q.header, 240, 0), question: text(q.question, 4_000, 0),
+      options: array(q.options, 50, option => {
+        const o = object(option); keys(o, ["label", "description"])
+        return { label: text(o.label, 240, 0), description: text(o.description, 1_000, 0) }
+      }),
+      multiple: boolean(q.multiple), custom: boolean(q.custom),
+    }
+  })
+  if (questions.length === 0) return invalid()
+  return { id: text(v.id, 240), questions }
+}
+export function parseAnswerResult(value: unknown): AnswerResult {
+  const v = object(value); keys(v, ["answered", "reason"])
+  if (v.reason !== null && v.reason !== "not_pending") return invalid()
+  const answered = boolean(v.answered)
+  if (answered === (v.reason === "not_pending")) return invalid()
+  return { answered, reason: v.reason }
 }
 function toolCall(value: unknown): TranscriptToolCall {
   const v = object(value); keys(v, ["id", "name", "status", "input", "output", "error", "truncated"])
@@ -145,9 +176,10 @@ function message(value: unknown): TranscriptMessage {
 }
 export function parseReadResult(value: unknown): ReadResult {
   const v = object(value)
-  keys(v, ["title", "status", "waitingFor", "lastError", "messageCount", "from", "messages", "nextCursor", "historyScope"])
+  keys(v, ["title", "status", "waitingFor", "pendingQuestion", "lastError", "messageCount", "from", "messages", "nextCursor", "historyScope"])
   if (v.historyScope !== undefined && v.historyScope !== "context" && v.historyScope !== "full") return invalid()
   return { title: nullable(v.title, value => text(value, 240, 0)), status: status(v.status), waitingFor: waiting(v.waitingFor),
+    ...(v.pendingQuestion === undefined ? {} : { pendingQuestion: nullable(v.pendingQuestion, parsePendingQuestion) }),
     lastError: nullable(v.lastError, parseError), messageCount: integer(v.messageCount), from: direction(v.from),
     messages: array(v.messages, 100, message), nextCursor: nullable(v.nextCursor, value => text(value, 160, 0)),
     ...(v.historyScope === undefined ? {} : { historyScope: v.historyScope }) }
@@ -174,6 +206,7 @@ export function parseRequestComplete(value: unknown): RequestComplete {
   if (outcome.action === "read") return { status: "done", outcome: { action: "read", result: parseReadResult(outcome.result) } }
   if (outcome.action === "send") return { status: "done", outcome: { action: "send", result: parseSendResult(outcome.result) } }
   if (outcome.action === "stop") return { status: "done", outcome: { action: "stop", result: parseStopResult(outcome.result) } }
+  if (outcome.action === "answer") return { status: "done", outcome: { action: "answer", result: parseAnswerResult(outcome.result) } }
   return invalid()
 }
 export function parseInventory(value: unknown): Inventory {
@@ -263,7 +296,7 @@ export function parseJournal(value: unknown): Journal {
       const acknowledged = boolean(e.completionAcknowledged)
       if (acknowledged && !completion) return invalid()
       if (completion?.status === "done" && completion.outcome.action !== request.action) return invalid()
-      if (request.action === "read" && id !== null) return invalid()
+      if ((request.action === "read" || request.action === "answer") && id !== null) return invalid()
       if (request.action === "send" && id !== (request.input.messageId ?? stableMessageId(request.requestId))) return invalid()
       if (request.action === "stop" && request.input.messageId !== null && id !== request.input.messageId) return invalid()
       return { request, sendReplay, messageId: id, turn, completion, completionAcknowledged: acknowledged }

@@ -2,6 +2,7 @@
 import { useEffect } from "react"
 import {
   AUTOMATION_MODEL_ATTENTION_CAPABILITY,
+  REMOTE_SESSION_ANSWER_RUNNER_CAPABILITY,
   REMOTE_SESSION_CONTROL_RUNNER_CAPABILITY,
   REMOTE_SESSION_DESKTOP_RUNNER_CAPABILITY,
   REMOTE_SESSION_RECOVERY_RUNNER_CAPABILITY,
@@ -95,7 +96,17 @@ function ActivatedAutomationRunnerBridge() {
               REMOTE_SESSION_CONTROL_RUNNER_CAPABILITY,
               REMOTE_SESSION_RECOVERY_RUNNER_CAPABILITY,
             ]
+            const sessionOnlyCapabilities: AutomationDesktopRunnerCapability[] = [
+              REMOTE_SESSION_DESKTOP_RUNNER_CAPABILITY,
+              REMOTE_SESSION_CONTROL_RUNNER_CAPABILITY,
+              REMOTE_SESSION_RECOVERY_RUNNER_CAPABILITY,
+              REMOTE_SESSION_ONLY_RUNNER_CAPABILITY,
+            ]
+            // Each list first offers answers: this desktop can reply to the
+            // question a remote session waits on. A Den from before answers
+            // rejects that set with a 400 and the next set is tried.
             const capabilitySets: AutomationDesktopRunnerCapability[][] = deploymentEnabled ? [
+              [...recoveryCapabilities, REMOTE_SESSION_ANSWER_RUNNER_CAPABILITY],
               recoveryCapabilities,
               [
                 AUTOMATION_MODEL_ATTENTION_CAPABILITY,
@@ -104,12 +115,10 @@ function ActivatedAutomationRunnerBridge() {
               ],
               [AUTOMATION_MODEL_ATTENTION_CAPABILITY, REMOTE_SESSION_DESKTOP_RUNNER_CAPABILITY],
               [AUTOMATION_MODEL_ATTENTION_CAPABILITY],
-            ] : [[
-              REMOTE_SESSION_DESKTOP_RUNNER_CAPABILITY,
-              REMOTE_SESSION_CONTROL_RUNNER_CAPABILITY,
-              REMOTE_SESSION_RECOVERY_RUNNER_CAPABILITY,
-              REMOTE_SESSION_ONLY_RUNNER_CAPABILITY,
-            ]]
+            ] : [
+              [...sessionOnlyCapabilities, REMOTE_SESSION_ANSWER_RUNNER_CAPABILITY],
+              sessionOnlyCapabilities,
+            ]
             for (const [index, capabilities] of capabilitySets.entries()) {
               try {
                 return await mintToken(organizationId, registration(capabilities))

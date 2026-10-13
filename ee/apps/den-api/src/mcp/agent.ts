@@ -27,7 +27,7 @@ import { getCatalog, protectedResourceMetadata, protectedResourceMetadataRoute }
 import { preflightMcpJsonRpcRequest } from "./json-rpc-preflight.js"
 import { createScopedAgentMcpHttpHandlers } from "./agent-http.js"
 import { createRemoteSessionReceiptSubscriptions } from "./remote-session-receipt-watch.js"
-import { readRemoteSessionReceipt, registerRemoteSessionReceiptResources, REMOTE_SESSION_RECEIPT_INSTRUCTIONS } from "./remote-session-resources.js"
+import { readRemoteSessionReceipt, registerRemoteSessionReceiptResources, REMOTE_SESSION_ANSWER_INSTRUCTIONS, REMOTE_SESSION_RECEIPT_INSTRUCTIONS } from "./remote-session-resources.js"
 import { databaseRemoteSessionCommandStore } from "../remote-sessions/commands.js"
 import { databaseRemoteSessionRequestStore } from "../remote-sessions/requests.js"
 import { rejectStandaloneSseResponse } from "./standalone-sse.js"
@@ -362,7 +362,7 @@ export async function executeCapabilityWithBudget<T extends ExecuteCapabilityToo
   }
 }
 
-export function createAgentMcpServer(options: { appServers?: boolean; remoteSessionEvents?: boolean } = {}): McpServer {
+export function createAgentMcpServer(options: { appServers?: boolean; remoteSessionEvents?: boolean; remoteSessionAnswers?: boolean } = {}): McpServer {
   return new McpServer({
     name: "openwork-den-api-agent",
     version: "1.0.0",
@@ -373,6 +373,7 @@ export function createAgentMcpServer(options: { appServers?: boolean; remoteSess
       resources: { listChanged: true, ...(options.remoteSessionEvents ? { subscribe: true } : {}) },
     },
     instructions: [options.appServers === false ? LEGACY_AGENT_MCP_INSTRUCTIONS : AGENT_MCP_INSTRUCTIONS,
+      ...(options.remoteSessionAnswers ? [REMOTE_SESSION_ANSWER_INSTRUCTIONS] : []),
       ...(options.remoteSessionEvents ? [REMOTE_SESSION_RECEIPT_INSTRUCTIONS] : [])].join("\n"),
   })
 }
@@ -570,7 +571,11 @@ export function registerAgentMcpRoutes<T extends { Variables: RequestIdVariables
     const receiptScope = { organizationId, createdByUserId: normalizeDenTypeId("user", principal.userId) }
     const receiptStores = { commandStore: databaseRemoteSessionCommandStore, requestStore: databaseRemoteSessionRequestStore }
     const remoteSessionEventsEnabled = Boolean(memberIdentity && organizationFeatures.remoteSessionEvents)
-    const server = createAgentMcpServer({ appServers: appServersEnabled, remoteSessionEvents: remoteSessionEventsEnabled })
+    const server = createAgentMcpServer({
+      appServers: appServersEnabled,
+      remoteSessionEvents: remoteSessionEventsEnabled,
+      remoteSessionAnswers: Boolean(memberIdentity && organizationFeatures.remoteSessionAnswers),
+    })
     if (remoteSessionEventsEnabled) registerRemoteSessionReceiptResources({ server, ...receiptStores, ...receiptScope })
     registerAgentConnectionActionApp(server, { organizationId: principal.organizationId, member: memberIdentity })
     if (appServersEnabled) {

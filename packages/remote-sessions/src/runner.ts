@@ -3,7 +3,7 @@ import type {
   Receipt, RequestEntry, SessionError, SessionRunner, Transport,
 } from "./types.ts"
 import { DEFAULT_OPERATION_TIMEOUT_MS, MAX_COMMAND_ENTRIES, MAX_REQUEST_ENTRIES, SessionRunnerError } from "./types.ts"
-import { integer, parseCommand, parseError, parseJournal, parseProgress, parseReadResult, parseReceipt,
+import { integer, parseAnswerResult, parseCommand, parseError, parseJournal, parseProgress, parseReadResult, parseReceipt,
   parseRequest, parseRequestComplete, parseSendResult, parseStopResult, stableMessageId, sessionIdForCommand } from "./protocol.ts"
 import { bounded, throwIfAborted } from "./timeout.ts"
 
@@ -255,6 +255,14 @@ export function createSessionRunner(options: SessionRunnerOptions): SessionRunne
           if (result.messageId !== null && result.messageId !== e.messageId) throw new SessionRunnerError("invalid_data", "The adapter returned a different stable message ID.")
           completion = { status: "done", outcome: { action: "send", result } }
           applyTurn = true
+        } else if (e.request.action === "answer") {
+          // Replies only to the named question, so a replay after a crash finds it no longer
+          // pending and reports not_pending instead of answering anything else.
+          const answer = adapter.answer
+          if (!answer) throw new SessionRunnerError("unsupported_request", "This client cannot answer questions remotely. Answer it on that computer.")
+          const input = e.request.input
+          const result = parseAnswerResult(await local(signal, s => answer.call(adapter, structuredClone(c.receipt!), structuredClone(input), s)))
+          completion = { status: "done", outcome: { action: "answer", result } }
         } else if (e.request.input.messageId === null && e.messageId !== null && c.lastMessageId !== e.messageId) {
           completion = { status: "done", outcome: { action: "stop", result: { stopped: false, reason: "different_turn" } } }
         } else if (e.messageId === null) {

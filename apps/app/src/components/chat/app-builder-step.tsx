@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Check, Circle, X } from "lucide-react";
 import { resolveExtensionIconSrc } from "@/react-app/design-system/extension-icon-src";
 import { formatToolCallDuration } from "@/lib/tool-call-duration";
 import { isToolPartInFlight } from "@/lib/tool-activity";
@@ -6,8 +7,12 @@ import { useOptionalMessageList } from "./message-list-provider";
 import { useCurrentToolLifecycleResolver } from "./current-tool-lifecycle-context";
 import {
   appCreationProgress,
+  appRead,
+  appSourceLines,
+  isAppGuidePart,
   type AppCreationRun,
 } from "@/react-app/domains/apps/app-creation-progress";
+import { appBuilderResultFailed } from "@/react-app/domains/apps/built-mcp-app-model";
 import { BuiltAppChatPreview } from "@/react-app/domains/apps/built-app-chat-preview";
 import { DetailsToggle, TechnicalDetailsPanel } from "./capability-call-line";
 import type { DynamicToolUIPart } from "ai";
@@ -24,6 +29,58 @@ export function appBuildProblem(part: DynamicToolUIPart): string | null {
     .replace(/^Generated MCP Apps cannot /i, "Can’t ")
     .replace(/\.$/, "")
     .slice(0, 120) || null;
+}
+
+type ChecklistItem = { key: string; label: string; state: "done" | "active" | "failed" };
+
+/**
+ * What the agent has done for this App so far, read from its own calls: the
+ * guide, searches, the tools prepare_app checked, the source it is writing,
+ * each problem it fixed, and the build.
+ */
+function appCreationChecklist(
+  run: AppCreationRun,
+  progress: ReturnType<typeof appCreationProgress>,
+  fixedProblems: string[],
+  latestProblem: string | null,
+): ChecklistItem[] {
+  const items: ChecklistItem[] = [];
+  const discoveries = run.discoveries ?? [];
+  if (discoveries.some(isAppGuidePart)) items.push({ key: "guide", label: "Read the build guide", state: "done" });
+  const searches = discoveries.filter((part) => /(?:^|_)search_capabilities$/.test(part.toolName));
+  if (searches.length > 0) {
+    const query = Reflect.get(Object(searches.at(-1)?.input), "query");
+    items.push({
+      key: "search",
+      label: searches.length === 1 && typeof query === "string" && query ? `Searched your connections for “${query}”` : `Searched your connections ${searches.length} times`,
+      state: searches.some(isToolPartInFlight) ? "active" : "done",
+    });
+  }
+  const read = discoveries.map(appRead).find(Boolean);
+  if (read) items.push({ key: "read", label: read.title ? `Read “${read.title}”` : "Read the App", state: "done" });
+  if (progress.preparation) {
+    const count = progress.preparation.tools.length;
+    items.push({ key: "prepare", label: count === 0 ? "Planned an App without tools" : `Checked ${count} ${count === 1 ? "tool" : "tools"}`, state: "done" });
+  } else if ((run.preparation && isToolPartInFlight(run.preparation)) || run.script?.kind === "prepare") {
+    items.push({ key: "prepare", label: "Checking its tools", state: "active" });
+  } else if (run.preparation && appBuilderResultFailed(run.preparation)) {
+    items.push({ key: "prepare", label: "Couldn’t check its tools", state: "failed" });
+  }
+  const build = progress.build;
+  const writtenBy = build ?? (run.script && run.script.kind !== "prepare" ? run.script.part : undefined);
+  const lines = appSourceLines(writtenBy);
+  const size = lines ? ` · ${lines} lines` : "";
+  const writing = progress.running && progress.stage === "writing" && (!build || build.state === "input-streaming");
+  if (writing) items.push({ key: "write", label: `Writing the view${size}`, state: "active" });
+  else if (build && build.state !== "input-streaming") items.push({ key: "write", label: `Wrote the view${size}`, state: "done" });
+  fixedProblems.forEach((problem, index) => items.push({ key: `fixed-${index}`, label: `Fixed: ${problem}`, state: "done" }));
+  if (build && !writing && build.state !== "input-streaming") {
+    if (progress.app || progress.builtUnrecorded) items.push({ key: "build", label: "Compiled and published", state: "done" });
+    else if (progress.failed) items.push({ key: "build", label: latestProblem ? `Couldn’t build: ${latestProblem}` : "Couldn’t build it", state: "failed" });
+    else if (progress.unavailable) items.push({ key: "build", label: "Built, but the preview is unavailable", state: "failed" });
+    else items.push({ key: "build", label: "Compiling and checking", state: progress.running ? "active" : "done" });
+  }
+  return items;
 }
 
 export function AppBuilderStep({
@@ -81,7 +138,12 @@ export function AppBuilderStep({
       : null;
   const editing =
     run.intent?.kind === "edit" ||
+    run.script?.kind === "update" ||
     (progress.build && /(?:^|_)update_app$/.test(progress.build.toolName));
+  // Shown while the agent works or after it failed; a ready App folds it away.
+  const checklist = progress.running || progress.failed
+    ? appCreationChecklist(run, progress, fixedProblems, latestProblem)
+    : [];
   // One plain rail row, like every other step: what is happening to which
   // app, a short state, Open when there is something to open, and the raw
   // calls behind the details icon.
@@ -122,6 +184,20 @@ export function AppBuilderStep({
         {progress.app && progress.build ? <BuiltAppChatPreview part={progress.build} compact /> : null}
         <DetailsToggle open={detailsOpen} onToggle={() => setDetailsOpen(!detailsOpen)} label={sentence} alwaysVisible={progress.failed} />
       </div>
+      {checklist.length > 0 ? (
+        <ol className="ml-6 mt-1 flex flex-col gap-0.5 text-xs text-muted-foreground" aria-label={`Progress of ${sentence}`} data-app-builder-checklist>
+          {checklist.map((item) => (
+            <li key={item.key} className="flex min-w-0 items-center gap-1.5" data-checklist-state={item.state}>
+              {item.state === "done"
+                ? <Check className="size-3 shrink-0" aria-hidden="true" />
+                : item.state === "failed"
+                  ? <X className="size-3 shrink-0 text-destructive" aria-hidden="true" />
+                  : <Circle className="size-3 shrink-0 animate-pulse motion-reduce:animate-none" aria-hidden="true" />}
+              <span className={`min-w-0 truncate ${item.state === "active" ? "ow-text-shimmer motion-reduce:animate-none" : ""}`}>{item.label}</span>
+            </li>
+          ))}
+        </ol>
+      ) : null}
       {detailsOpen ? (
         <div className="mt-1 flex flex-col gap-2">
           {fixedProblems.map((problem, index) => (

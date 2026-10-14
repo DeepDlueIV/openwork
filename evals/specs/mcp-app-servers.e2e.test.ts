@@ -614,7 +614,12 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
       expect((await probe.dom("[data-built-app-preview]")).elements).toHaveLength(0);
       const calls = (await world.den.mocks.inventory.agentRequests({ promptMarker: buildPrompt })).filter(request => request.kind === "tool");
       expect(calls.length).toBeGreaterThanOrEqual(2);
-      evidence.recordAssertionEvidence("Discovery and preparation are real calls before any preview", `${name}: the model requested discovery and preparation before the held build. The actual preparation result completes that stage, writing is active, and the preview remains absent.`, true);
+      // The step lists what the agent did: the tools prepare_app checked, and the source it is still writing.
+      const done = (await probe.dom('[data-app-builder-checklist] [data-checklist-state="done"]')).elements.map(element => element.text.trim());
+      const active = (await probe.dom('[data-app-builder-checklist] [data-checklist-state="active"]')).elements.map(element => element.text.trim());
+      expect(done.some(text => /^Checked \d+ tools?$/.test(text))).toBe(true);
+      expect(active).toEqual([expect.stringMatching(/^Writing the view/)]);
+      evidence.recordAssertionEvidence("Discovery and preparation are real calls before any preview", `${name}: the model requested discovery and preparation before the held build. The actual preparation result completes that stage, writing is active, and the preview remains absent. The step's checklist reads ${[...done, ...active].map(text => `"${text}"`).join(", ")}.`, true);
       await user.screenshot();
       await world.holdCreation(false);
     });
@@ -709,6 +714,8 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
       await agent.send(prompt);
       expect(await probe.eventually(async () => (await probe.dom('[data-app-builder-step][data-app-creation-stage="needs"] .ow-text-shimmer')).elements, { within: 120_000, intervalMs: 200, label: "the guide starts the artifact step before prepare_app", until: elements => elements.length === 1 && elements[0].rect.height > 0 })).toHaveLength(1);
       await user.see({ text: "Preparing artifact" });
+      const guidedDone = (await probe.dom('[data-app-builder-checklist] [data-checklist-state="done"]')).elements.map(element => element.text.trim());
+      expect(guidedDone).toEqual(expect.arrayContaining(["Read the build guide", "Searched your connections for “Inventory lookup unit price”"]));
       await world.holdCreation(false);
       const sentence = `Created artifact “${guidedTitle}”`;
       await user.see({ text: sentence }, { timeoutMs: 120_000 });
@@ -727,7 +734,7 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
       await user.on(frame).type({ role: "textbox", label: "Sku" }, launchInput.sku);
       await user.on(frame).click({ role: "button", label: "Show unit price" });
       await user.on(frame).see({ text: "Unit price" }, { timeoutMs: 60_000 });
-      evidence.recordAssertionEvidence("The agent's own calls make one artifact step, and the starter works as published", `${name}: a dashboard request without the word app read build-an-app, searched, prepared and built from prepare_app's starter. While the model was held before prepare_app, the step already read Preparing artifact. The guide and search sit inside the one Created artifact step, and the published starter loads the Inventory price on one click.`, true);
+      evidence.recordAssertionEvidence("The agent's own calls make one artifact step, and the starter works as published", `${name}: a dashboard request without the word app read build-an-app, searched, prepared and built from prepare_app's starter. While the model was held before prepare_app, the step already read Preparing artifact and listed "Read the build guide" and the search as done. The guide and search sit inside the one Created artifact step, and the published starter loads the Inventory price on one click.`, true);
       await user.screenshot();
       await closeFrame();
       await user.click({ role: "button", label: "Close panel" });

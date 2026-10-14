@@ -19,13 +19,17 @@ and the [`openwork-aws-ecs`](../openwork-aws-ecs) module set, so the chart's
 README and `ee/apps/den-api/.env.example` document every setting you can add
 through `extra_environment`.
 
-> **Status: draft, not yet applied on Azure.** `terraform validate` and the
-> mocked `terraform test` suite pass with Terraform 1.16 and OpenTofu 1.11 on
-> azurerm 5.0 and 5.9, and `terraform plan` of `examples/complete` succeeds
-> against a real subscription. It has not been applied end to end yet: HTTPS,
-> migrations, `/setup` and sign-in on Azure are untested, as are custom
-> domains, Key Vault references, private registries and existing
-> environments. Pin it to a commit and expect inputs to change.
+> **Status: draft.** Applied end to end in an Azure test subscription with
+> `examples/complete` (release 0.18.58, East US, private MySQL 8.4, a
+> resource-group-scoped Contributor role and no role assignments): HTTPS on
+> both default hostnames, migrations, the one-time `/setup` administrator
+> flow, sign-in in the browser and from OpenWork Desktop
+> (`evals/specs/attached-den-desktop-signin.e2e.test.ts`), then a clean
+> `terraform destroy`. `terraform validate` and the mocked `terraform test`
+> suite pass with Terraform 1.16 and OpenTofu 1.11 on azurerm 5.0 and 5.9.
+> Not yet exercised: custom domains, Key Vault references, private
+> registries, existing environments or databases, public-access MySQL,
+> several den-api replicas, email delivery, upgrades across releases.
 
 The AWS module's optional pieces (OpenWork Web, the headless runner, Workbot,
 Slack, Redis) are not in this module yet.
@@ -49,7 +53,11 @@ Slack, Redis) are not in this module yet.
   - a subnet for MySQL (`database_network.subnet_id`), delegated to
     `Microsoft.DBforMySQL/flexibleServers`, with nothing else in it.
 
-  Without them, Azure manages the app network and MySQL uses public access
+  The environment also gets an Azure-owned resource group named
+  `ME_<environment>_<resource group>_<region>`; Azure creates and deletes it,
+  and it needs no extra rights from you.
+
+  Without these subnets, Azure manages the app network and MySQL uses public access
   limited to Azure services. That is fine for a disposable test, not for
   production. Private access cannot be added to an existing server later.
 - The apps pull images from `ghcr.io` and call model providers, so they need
@@ -137,6 +145,11 @@ creates a VNet with both subnets and serves the default hostnames.
 - **Migrations** run in each den-api replica before the app starts, like the
   Helm chart's pre-upgrade Job. They are idempotent but not locked, so keep
   `den_api.replicas = 1` until you need more.
+- **Apply returns before the apps are healthy.** Azure accepts a new revision
+  in seconds and starts it afterwards (about two minutes on a first deploy,
+  including migrations). Check `https://<api host>/ready` and
+  `https://<web host>/api/ready`, or the revision's running state in the
+  portal, before you open `/setup`.
 - **MySQL TLS** defaults to `sslaccept=accept` (encrypted, certificate not
   verified), the same as the AWS module and the AKS runbook. Set
   `database.tls_query = "sslaccept=strict"` to verify the certificate.

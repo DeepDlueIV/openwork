@@ -139,8 +139,6 @@ export function registerAgentSkillCatalogTools(input: {
   listSkills: () => Promise<RemoteSkillDescriptor[]>
   /** The authorized SKILL.md source for one listed skill. */
   readSkill: (skill: RemoteSkillDescriptor) => Promise<RemoteSkillSource>
-  /** Why the member's agent permissions block a skill by this name, so an unlisted one is explained. */
-  blockedReason?: (name: string) => Promise<string | null>
 }) {
   input.server.registerTool(
     LIST_SKILLS_TOOL_NAME,
@@ -198,14 +196,9 @@ export function registerAgentSkillCatalogTools(input: {
       }
       const skill = findRemoteSkill(skills, name) ?? plainMatches[0]
       if (!skill) {
-        const blocked = await input.blockedReason?.(name)
-        if (blocked) return skillErrorResult("skill_unavailable", name, blocked)
         return skillErrorResult("unknown_skill", name, `No skill named "${name}" is available to you. Call list_skills for the exact name or capability.`)
       }
       const source = await input.readSkill(skill)
-      if (source && "blocked" in source && source.blocked.status === "blocked") {
-        return skillErrorResult("skill_unavailable", name, source.blocked.message)
-      }
       if (source && "blocked" in source) {
         return skillErrorResult("skill_needs_setup", name, source.blocked.message, { status: source.blocked.status, action: source.blocked.action })
       }

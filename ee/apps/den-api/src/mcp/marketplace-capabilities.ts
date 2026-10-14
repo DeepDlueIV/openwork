@@ -1,5 +1,4 @@
 import { and, desc, eq, inArray, isNull, notExists } from "@openwork-ee/den-db/drizzle"
-import { memberAgentPermissionRules, organizationAgentPermissionDenial } from "../agent-permissions.js"
 import {
   ConfigObjectAccessGrantTable,
   ConfigObjectTable,
@@ -85,16 +84,6 @@ export function standardSkillName(title: string, stableId: string): string {
   const bounded = base.slice(0, Math.max(1, 64 - suffix.length - 1)).replace(/-+$/g, "")
   const name = `${bounded || "skill"}-${suffix}`
   return AGENT_SKILL_NAME_PATTERN.test(name) ? name : `skill-${suffix}`
-}
-
-/**
- * The names an organization skill goes by, for agent permission patterns: its
- * title, the name the skill catalog lists it under, and that name without the
- * catalog's unique suffix.
- */
-function marketplaceSkillNames(row: { plugin: { id: string }; configObject: { id: string; title: string } }): string[] {
-  const name = standardSkillName(row.configObject.title, `${row.plugin.id.slice(-4)}${row.configObject.id.slice(-4)}`)
-  return [row.configObject.title, name, name.slice(0, name.lastIndexOf("-"))]
 }
 
 type OrganizationId = DenTypeId<"organization">
@@ -756,13 +745,10 @@ export async function listAccessibleMarketplaceSkillDescriptors(input: {
     rows: (await listActiveCapabilityRows(organizationId))
       .filter((row) => row.configObject.objectType === "skill"),
   })
-  // Skills the member's agent permissions block are not offered at all.
-  const agentRules = await memberAgentPermissionRules(organizationId, input.member.orgMembershipId)
   const descriptors = new Map<string, RemoteSkillDescriptor>()
   for (const row of rows) {
     const capability = buildMarketplaceCapabilityName(row.plugin.id, row.configObject.id)
     if (descriptors.has(capability)) continue
-    if (organizationAgentPermissionDenial(agentRules, "skill", marketplaceSkillNames(row))) continue
     const uniqueSuffix = `${row.plugin.id.slice(-4)}${row.configObject.id.slice(-4)}`
     const name = standardSkillName(row.configObject.title, uniqueSuffix)
     descriptors.set(capability, {
@@ -1791,14 +1777,6 @@ export async function executeMarketplaceCapability(input: {
     || row.configObject.objectType === "custom"
     || row.configObject.objectType === "agent"
   ) {
-    if (row.configObject.objectType === "skill") {
-      const blocked = organizationAgentPermissionDenial(
-        await memberAgentPermissionRules(organizationId, input.member.orgMembershipId),
-        "skill",
-        marketplaceSkillNames(row),
-      )
-      if (blocked) return { ok: false, error: "forbidden", message: blocked }
-    }
     if (input.usageSource && row.configObject.objectType === "skill") {
       recordSkillUse({
         organizationId,

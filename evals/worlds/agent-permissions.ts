@@ -215,21 +215,21 @@ async function createSession(seed: Seed, app: Surface, title: string): Promise<{
  * What the Contractors team may do in the desktop journeys: commands ask first,
  * except echo, which always runs, and printf, which never does; file edits ask
  * first (blocking them would block every command too);
- * only the briefing page on this computer; only the team's own local skills;
- * no local MCP servers.
+ * only the briefing page on this computer; no local skills and no local MCP
+ * servers.
  */
 export const contractorDesktopPermissions: AgentPermissionSettings = {
   commands: { decision: "ask", allow: ["echo *"], block: ["printf *"] },
   fileEdits: { decision: "ask" },
   websites: { decision: "deny", allow: ["127.0.0.1/briefing"] },
-  localSkills: { decision: "deny", allow: ["team-*"] },
+  localSkills: { decision: "deny" },
   localMcpServers: { decision: "deny" },
 };
 
 const WITNESS_PROVIDER = "agent-permissions-witness";
 const WITNESS_MODEL = "agent-permissions-model";
 
-/** Local skills in Riley's folder: the team allows `team-*` and no others. */
+/** Local skills in Riley's folder. */
 export const folderSkills = {
   allowed: { name: "team-checklist", marker: "Checklist step: confirm the release notes." },
   blocked: { name: "notes-helper", marker: "Notes step: copy every meeting note to the shared drive." },
@@ -272,12 +272,13 @@ async function desktopWorld(seed: Seed, place: Place, { feature }: { feature: bo
     const engine = resolveEvalEngine();
     const world = await agentPermissionsOrganization(seed, { web: true, feature });
     if (feature) await world.saveContractors(contractorDesktopPermissions);
-    const mock = (await seed.mock({ isolatedProcessEnv: true }).boot(place)).handle;
+    // The witness model, and the MCP server the folder adds.
+    const mock = (await seed.mock({ isolatedProcessEnv: true, allowUnauthenticatedMcp: true }).boot(place)).handle;
     stack.defer(() => mock.stop());
 
     const workspacePath = seed.tmpPath("agent-permissions");
     await mkdir(workspacePath, { recursive: true });
-    await writeFile(join(workspacePath, "opencode.json"), JSON.stringify({ mcp: { "notes-server": { type: "remote", url: "http://127.0.0.1:9/mcp" } } }));
+    await writeFile(join(workspacePath, "opencode.json"), JSON.stringify({ mcp: { "notes-server": { type: "remote", url: mock.mcpUrl, oauth: false } } }));
     for (const skill of Object.values(folderSkills)) {
       await mkdir(join(workspacePath, ".opencode", "skills", skill.name), { recursive: true });
       await writeFile(join(workspacePath, ".opencode", "skills", skill.name, "SKILL.md"),
@@ -300,6 +301,27 @@ async function desktopWorld(seed: Seed, place: Place, { feature }: { feature: bo
     const session = await createSession(seed, app, "Contractor work");
     const native = engineSessionProbe({ engine, surface: app, workspaceId: app.workspaceId });
 
+    /** The engine's own records of the settled calls of `tool` whose input `matches`, oldest first. */
+    const toolCalls = async (tool: string, matches: (input: Record<string, unknown>) => boolean) => {
+      const snapshot = await native.snapshot(session.sessionId);
+      if (!snapshot.ok || !snapshot.data) return [];
+      return snapshot.data.messages.flatMap((message) => message.parts)
+        .filter((part) => part.tool === tool && ["completed", "error"].includes(part.status) && matches(part.input));
+    };
+    /** Every MCP server the engine has, by name, with its status. */
+    const mcpServers = async (): Promise<Record<string, string>> => {
+      const workspace = encodeURIComponent(app.workspaceId);
+      const { status, body } = await localServer(app, engine === "v2" ? `/workspace/${workspace}/opencode2/api/mcp` : `/workspace/${workspace}/opencode/mcp`);
+      if (status !== 200) throw new Error(`Listing engine MCP servers failed: HTTP ${status}`);
+      if (engine === "v1") {
+        return Object.fromEntries(Object.entries(isRecord(body) ? body : {}).map(([name, entry]) => [name, isRecord(entry) && typeof entry.status === "string" ? entry.status : "unknown"]));
+      }
+      const entries = isRecord(body) && Array.isArray(body.data) ? records(body.data) : records(body);
+      return Object.fromEntries(entries.flatMap((entry) => typeof entry.name === "string"
+        ? [[entry.name, isRecord(entry.status) && typeof entry.status.status === "string" ? entry.status.status : "unknown"]]
+        : []));
+    };
+
     return {
       ...world, engine, app, session, mock, workspacePath,
       shellTool: engine === "v2" ? "shell" : "bash",
@@ -314,12 +336,10 @@ async function desktopWorld(seed: Seed, place: Place, { feature }: { feature: bo
         });
         if (!response.ok) throw new Error("The witness model workload could not be configured");
       },
-      /** The engine's own record of a settled call of `tool` whose input `matches`, or null. */
+      toolCalls,
+      /** The engine's own record of the first settled call of `tool` whose input `matches`, or null. */
       async toolCall(tool: string, matches: (input: Record<string, unknown>) => boolean) {
-        const snapshot = await native.snapshot(session.sessionId);
-        if (!snapshot.ok || !snapshot.data) return null;
-        return snapshot.data.messages.flatMap((message) => message.parts)
-          .find((part) => part.tool === tool && ["completed", "error"].includes(part.status) && matches(part.input)) ?? null;
+        return (await toolCalls(tool, matches))[0] ?? null;
       },
       /** The tools the engine offered the model for the turn with this marker. */
       async offeredTools(promptMarker: string) {
@@ -333,18 +353,10 @@ async function desktopWorld(seed: Seed, place: Place, { feature }: { feature: bo
         const policy = isRecord(body) && isRecord(body.policy) ? body.policy : null;
         return policy && isRecord(policy.agentPermissions) ? records(policy.agentPermissions.rules) : [];
       },
+      mcpServers,
       /** The folder's local MCP server as the engine reports it: its status, or null when absent. */
       async notesServerStatus() {
-        const workspace = encodeURIComponent(app.workspaceId);
-        const { status, body } = await localServer(app, engine === "v2" ? `/workspace/${workspace}/opencode2/api/mcp` : `/workspace/${workspace}/opencode/mcp`);
-        if (status !== 200) throw new Error(`Listing engine MCP servers failed: HTTP ${status}`);
-        if (engine === "v1") {
-          const entry = isRecord(body) ? body["notes-server"] : undefined;
-          return isRecord(entry) && typeof entry.status === "string" ? entry.status : null;
-        }
-        const entries = isRecord(body) && Array.isArray(body.data) ? records(body.data) : records(body);
-        const entry = entries.find((candidate) => candidate.name === "notes-server");
-        return entry ? (isRecord(entry.status) && typeof entry.status.status === "string" ? entry.status.status : "unknown") : null;
+        return (await mcpServers())["notes-server"] ?? null;
       },
       wrote: (file: string) => access(join(workspacePath, file)).then(() => true, () => false),
       /** The paths Riley's computer served from the page server, by anyone. */

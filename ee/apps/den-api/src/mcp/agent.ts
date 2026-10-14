@@ -1,5 +1,4 @@
 import { appAuthoringStarter, registerAppStarterResources } from "./app-authoring-starter.js"
-import { memberAgentPermissionRules, organizationAgentPermissionDenial } from "../agent-permissions.js"
 import { startMcpAppTiming } from "@openwork/types/mcp-app-timing"
 import {
   McpServer,
@@ -260,17 +259,6 @@ export function buildAgentSkillIndex(skills: RemoteSkillDescriptor[]) {
   }
 }
 
-/** OpenWork's built-in Cloud skills, without the ones the member's agent permissions block. */
-async function allowedBuiltinSkillDescriptors(
-  organizationId: string,
-  member: Awaited<ReturnType<typeof resolveMcpMemberIdentity>>,
-): Promise<RemoteSkillDescriptor[]> {
-  const skills = listBuiltinSkillDescriptors()
-  if (!member) return skills
-  const rules = await memberAgentPermissionRules(organizationId, member.orgMembershipId)
-  return skills.filter((skill) => !organizationAgentPermissionDenial(rules, "skill", [skill.name, skill.title]))
-}
-
 /** The authorized SKILL.md source behind one listed descriptor, shared by the skill:// resources and get_skill. */
 export async function readRemoteSkillSource(input: {
   skill: RemoteSkillDescriptor
@@ -278,13 +266,7 @@ export async function readRemoteSkillSource(input: {
   member: Awaited<ReturnType<typeof resolveMcpMemberIdentity>>
 }): Promise<RemoteSkillSource> {
   const builtinResult = executeBuiltinSkillCapability(input.skill.capability)
-  if (builtinResult) {
-    const blocked = input.member
-      ? organizationAgentPermissionDenial(await memberAgentPermissionRules(input.organizationId, input.member.orgMembershipId), "skill", [input.skill.name, input.skill.title])
-      : null
-    if (blocked) return { blocked: { status: "blocked", message: blocked, action: null } }
-    return { content: builtinResult.content, provenance: builtinResult.provenance }
-  }
+  if (builtinResult) return { content: builtinResult.content, provenance: builtinResult.provenance }
   const marketplace = parseMarketplaceCapabilityName(input.skill.capability)
   if (!marketplace) return null
   const marketplaceResult = await executeMarketplaceCapability({
@@ -295,10 +277,6 @@ export async function readRemoteSkillSource(input: {
     // Served to the member's agent (skill:// resource or get_skill): one Library use.
     usageSource: "agent",
   })
-  // The member's agent permissions block this skill: say which rule.
-  if (!marketplaceResult.ok && marketplaceResult.error === "forbidden") {
-    return { blocked: { status: "blocked", message: marketplaceResult.message, action: null } }
-  }
   if (!marketplaceResult.ok || marketplaceResult.result.kind !== "skill") return null
   const result = marketplaceResult.result
   if (typeof result.content !== "string") {
@@ -544,7 +522,7 @@ export function registerAgentMcpRoutes<T extends { Variables: RequestIdVariables
     let remoteSkillsPromise: Promise<RemoteSkillDescriptor[]> | null = null
     const loadRemoteSkills = (): Promise<RemoteSkillDescriptor[]> => {
       remoteSkillsPromise ??= (async () => [
-        ...await allowedBuiltinSkillDescriptors(principal.organizationId, memberIdentity),
+        ...listBuiltinSkillDescriptors(),
         ...(await listAccessibleMarketplaceSkillDescriptors({
           organizationId: principal.organizationId,
           member: memberIdentity,
@@ -806,9 +784,6 @@ export function registerAgentMcpRoutes<T extends { Variables: RequestIdVariables
         organizationId: principal.organizationId,
         member: memberIdentity,
       }),
-      blockedReason: async (name) => memberIdentity
-        ? organizationAgentPermissionDenial(await memberAgentPermissionRules(principal.organizationId, memberIdentity.orgMembershipId), "skill", [name])
-        : null,
     })
 
     registerAgentSkillTools({

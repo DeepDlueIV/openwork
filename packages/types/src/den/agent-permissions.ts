@@ -7,11 +7,17 @@ import { z } from "zod";
  * engines, and to its built-in browser.
  *
  * A permission is one family of agent actions (commands, file edits,
- * websites, web search, skills, MCP servers) with
+ * websites, web search, local skills, local MCP servers) with
  *
  *   - a decision: Allow, Ask first or Block (a picklist), or on/off for the
- *     families that cannot ask (a checkbox);
- *   - optional "Always allowed" and "Always blocked" lists of patterns.
+ *     families that cannot ask (a switch);
+ *   - for commands and websites, optional "Always allowed" and "Always
+ *     blocked" lists of patterns.
+ *
+ * Local skills and local MCP servers are whole switches for what is on the
+ * member's computer; the organization's own skills and connections in
+ * OpenWork Cloud, and the servers OpenWork registers for them, are not
+ * covered.
  *
  * A member's permissions resolve to OpenCode permission rules
  * `{ action, resource, effect }`, checked in order with the last matching
@@ -26,11 +32,11 @@ import { z } from "zod";
 export const AGENT_PERMISSION_DECISIONS = ["allow", "ask", "deny"] as const;
 export type AgentPermissionDecision = (typeof AGENT_PERMISSION_DECISIONS)[number];
 
-/** OpenCode permission actions, plus `mcp` for MCP servers, which OpenWork enforces itself (Den for the organization's connections). */
+/** OpenCode permission actions, plus `mcp` for local MCP servers, which OpenWork enforces itself. */
 export const AGENT_PERMISSION_ACTIONS = ["shell", "edit", "webfetch", "websearch", "skill", "mcp"] as const;
 export type AgentPermissionAction = (typeof AGENT_PERMISSION_ACTIONS)[number];
 
-export type AgentPermissionPatternKind = "command" | "website" | "name";
+export type AgentPermissionPatternKind = "command" | "website";
 
 export type AgentPermissionSection = "commands" | "files" | "web" | "extensions";
 
@@ -101,22 +107,22 @@ export const agentPermissionDefinitions = [
   {
     key: "localSkills",
     section: "extensions",
-    label: "Use skills",
-    description: "Skills installed on the member's computer and the organization's skills in OpenWork Cloud.",
+    label: "Use local skills",
+    description: "Skills installed on the member's computer. The organization's skills in OpenWork Cloud are not affected.",
     action: "skill",
     control: "toggle",
-    patterns: "name",
-    patternNoun: "skill",
+    patterns: null,
+    patternNoun: null,
   },
   {
     key: "localMcpServers",
     section: "extensions",
-    label: "Use MCP servers",
-    description: "MCP servers added on the member's computer, by name, and the organization's connections, by their server's address such as mcp.linear.app.",
+    label: "Use local MCP servers",
+    description: "MCP servers added on the member's computer. The organization's connections in OpenWork Cloud are not affected.",
     action: "mcp",
     control: "toggle",
-    patterns: "name",
-    patternNoun: "server",
+    patterns: null,
+    patternNoun: null,
   },
 ] as const satisfies readonly AgentPermissionDefinitionEntry[];
 
@@ -146,12 +152,11 @@ export function agentPermissionDecisionsFor(definition: Pick<AgentPermissionDefi
 export const AGENT_PERMISSION_DEFAULT_DECISION: AgentPermissionDecision = "allow";
 
 export const AGENT_PERMISSION_LIST_MAX = 100;
-const PATTERN_MAX_LENGTH: Record<AgentPermissionPatternKind, number> = { command: 300, website: 300, name: 128 };
+const PATTERN_MAX_LENGTH: Record<AgentPermissionPatternKind, number> = { command: 300, website: 300 };
 
 export const agentPermissionPatternPlaceholders: Record<AgentPermissionPatternKind, string> = {
   command: "npm test *",
   website: "docs.example.com",
-  name: "team-*",
 };
 
 // ---------------------------------------------------------------------------
@@ -161,9 +166,6 @@ export const agentPermissionPatternPlaceholders: Record<AgentPermissionPatternKi
 type WebsitePattern =
   | { kind: "any" }
   | { kind: "site"; scheme: "http" | "https" | null; host: string; subdomains: boolean; port: string | null; path: string };
-
-// Names may have single spaces between words, like an organization connection called "Google Drive".
-const NAME_PATTERN = /^[A-Za-z0-9*?._-]+(?: [A-Za-z0-9*?._-]+)*$/;
 
 /** The pattern's scheme, null when it names none, or undefined when it is not a website's. */
 function websiteScheme(value: string | undefined): "http" | "https" | null | undefined {
@@ -230,14 +232,12 @@ export function normalizeAgentPermissionPattern(kind: AgentPermissionPatternKind
     const website = parseWebsitePattern(value);
     return website ? formatWebsitePattern(website) : null;
   }
-  if (kind === "name") return NAME_PATTERN.test(value) ? value : null;
   return value;
 }
 
 export const agentPermissionPatternErrors: Record<AgentPermissionPatternKind, string> = {
   command: "Enter a command, using * for any text.",
   website: "Enter a site like docs.example.com, *.example.com or example.com/docs.",
-  name: "Use letters, numbers, spaces, dots, dashes, underscores and *.",
 };
 
 /**
@@ -420,11 +420,17 @@ function normalizePatternList(kind: AgentPermissionPatternKind | null, value: un
   return [...new Set(patterns)].slice(0, AGENT_PERMISSION_LIST_MAX);
 }
 
-/** One permission's setting in stored form, or null when it sets nothing. */
+/**
+ * One permission's setting in stored form, or null when it sets nothing.
+ * Settings saved before a permission lost its lists or its Ask first read
+ * safely: lists it no longer has are dropped, and a switch saved as Ask first
+ * blocks.
+ */
 export function normalizeAgentPermissionSetting(definition: AgentPermissionDefinition, value: unknown): AgentPermissionSetting | null {
   if (!isRecord(value)) return null;
-  const decision = isAgentPermissionDecision(value.decision) && agentPermissionDecisionsFor(definition).includes(value.decision)
-    ? value.decision
+  const stored = definition.control === "toggle" && value.decision === "ask" ? "deny" : value.decision;
+  const decision = isAgentPermissionDecision(stored) && agentPermissionDecisionsFor(definition).includes(stored)
+    ? stored
     : undefined;
   const allow = normalizePatternList(definition.patterns, value.allow);
   const block = normalizePatternList(definition.patterns, value.block);
@@ -614,8 +620,8 @@ const BLOCKED_SUBJECT: Record<AgentPermissionAction, (resource: string) => strin
   edit: () => "editing files",
   webfetch: (resource) => resource === "*" ? "opening websites" : `opening ${resource}`,
   websearch: () => "searching the web",
-  skill: (resource) => resource === "*" ? "skills" : `the skill "${resource}"`,
-  mcp: (resource) => resource === "*" ? "MCP servers" : `the MCP server "${resource}"`,
+  skill: (resource) => resource === "*" ? "local skills" : `the local skill "${resource}"`,
+  mcp: (resource) => resource === "*" ? "local MCP servers" : `the local MCP server "${resource}"`,
 };
 
 /** The sentence a member or an agent sees when a rule blocks something: what, which rule, and who set it. */

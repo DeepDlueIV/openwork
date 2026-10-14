@@ -331,6 +331,84 @@ editorTest("blocking file edits blocks every command too, and the editor says wh
   });
 });
 
+editorTest("local skills and local MCP servers are Allowed or Blocked switches, and a team can override Everyone's and go back", async ({ world, user, probe, step, evidence }) => {
+  const owner = user.on(world.web);
+  /** Each row's text, how many switches and picklists it has, and whether it has pattern lists. */
+  const row = async (key: string) => {
+    const [text, switches, picklists, lists] = await Promise.all([
+      probe.dom(`[data-testid="agent-permission-${key}"]`),
+      probe.dom(`[data-testid="agent-permission-${key}"] [role="switch"]`),
+      probe.dom(`[data-testid="agent-permission-${key}"] [aria-labelledby]`),
+      probe.dom(`[data-testid="agent-permission-${key}-lists"]`),
+    ]);
+    return { text: text.elements.map((element) => element.text).join(" "), switches: switches.elements.length, picklists: picklists.elements.length, lists: lists.elements.length };
+  };
+
+  await step("before: Everyone's local skills and local MCP servers are allowed, each one switch with no lists and no Ask first", async () => {
+    await owner.see({ testId: "agent-permissions-row-everyone" }, { timeoutMs: 90_000 });
+    await owner.click({ testId: "agent-permissions-row-everyone" });
+    await owner.see({ testId: "agent-permission-localSkills" }, { text: /Use local skills/ });
+    await owner.see({ testId: "agent-permission-localMcpServers" }, { text: /Use local MCP servers/ });
+    const [skills, servers] = [await row("localSkills"), await row("localMcpServers")];
+    evidence.recordAssertionEvidence("the two rows", `skills: ${JSON.stringify(skills)}; MCP servers: ${JSON.stringify(servers)}`,
+      [skills, servers].every((entry) => entry.switches === 1 && entry.picklists === 0 && entry.lists === 0 && /Allowed/.test(entry.text) && !/Always|Ask first/.test(entry.text)));
+    for (const entry of [skills, servers]) {
+      expect(entry).toMatchObject({ switches: 1, picklists: 0, lists: 0 });
+      expect(entry.text).toContain("Allowed");
+      expect(entry.text).not.toMatch(/Always|Ask first/);
+    }
+    await owner.screenshot();
+  });
+
+  await step("the owner blocks local skills and local MCP servers for everyone, and members receive one rule for each", async () => {
+    await owner.click({ role: "switch", label: "Use local skills" });
+    await owner.click({ role: "switch", label: "Use local MCP servers" });
+    await owner.see({ testId: "agent-permission-localSkills" }, { text: /Blocked/ });
+    await owner.see({ testId: "agent-permission-localMcpServers" }, { text: /Blocked/ });
+    await owner.notSee({ testId: "agent-permission-localSkills-lists" });
+    await owner.click({ role: "button", label: "Save changes" });
+    await owner.see({ text: "Agent permissions saved" }, { timeoutMs: 30_000 });
+    const received = await world.receivedRules("morgan");
+    const expected = [rule("skill", "*", "deny", "Everyone"), rule("mcp", "*", "deny", "Everyone")];
+    evidence.recordAssertionEvidence("Morgan's rules", describeRules(received), JSON.stringify(received) === JSON.stringify(expected));
+    expect(received).toEqual(expected);
+    await owner.screenshot();
+  });
+
+  await step("Contractors turn local MCP servers back on: the row shows Overridden and Riley's MCP servers are allowed", async () => {
+    await owner.click({ role: "link", label: "Agent permissions" });
+    await owner.click({ testId: "new-team-agent-permissions" });
+    await owner.see({ role: "button", label: "Team" }, { timeoutMs: 30_000 });
+    await owner.click({ role: "button", label: "Team" });
+    await owner.click({ role: "option", label: "Contractors" });
+    await owner.see({ testId: "agent-permission-localMcpServers-source" }, { text: "From Everyone" });
+    await owner.see({ testId: "agent-permission-localMcpServers" }, { text: /Blocked/ });
+    await owner.click({ role: "switch", label: "Use local MCP servers" });
+    await owner.see({ testId: "agent-permission-localMcpServers-source" }, { text: "Overridden" });
+    await owner.see({ testId: "agent-permission-localMcpServers" }, { text: /Allowed/ });
+    await owner.click({ role: "button", label: "Create team agent permissions" });
+    await owner.see({ text: "Created agent permissions for Contractors" }, { timeoutMs: 30_000 });
+    const received = await world.receivedRules("riley");
+    // A team's Allow adds no rule: Everyone's block on local MCP servers no longer applies to Riley.
+    const expected = [rule("skill", "*", "deny", "Everyone")];
+    evidence.recordAssertionEvidence("Riley's rules (Contractors)", describeRules(received), JSON.stringify(received) === JSON.stringify(expected));
+    expect(received).toEqual(expected);
+    await owner.screenshot();
+  });
+
+  await step("after: the reset shows Everyone's Blocked again, and discarding keeps the team's override", async () => {
+    await owner.click({ role: "button", label: "Use Everyone's setting for Use local MCP servers" });
+    await owner.see({ testId: "agent-permission-localMcpServers-source" }, { text: "From Everyone" });
+    await owner.see({ testId: "agent-permission-localMcpServers" }, { text: /Blocked/ });
+    await owner.screenshot();
+    await owner.click({ role: "button", label: "Discard" });
+    await owner.see({ testId: "agent-permission-localMcpServers-source" }, { text: "Overridden" });
+    const received = await world.receivedRules("riley");
+    evidence.recordAssertionEvidence("Riley's rules after discarding", describeRules(received), JSON.stringify(received) === JSON.stringify([rule("skill", "*", "deny", "Everyone")]));
+    expect(received).toEqual([rule("skill", "*", "deny", "Everyone")]);
+  });
+});
+
 adminViewTest("an admin who is not an owner can read the permissions but not change them, and a member cannot open them", async ({ world, user, step, evidence }) => {
   const admin = user.on(world.web);
 

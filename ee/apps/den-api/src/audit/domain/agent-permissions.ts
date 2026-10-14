@@ -1,6 +1,7 @@
 import {
   AGENT_PERMISSION_EVERYONE,
   agentPermissionDefinitions,
+  type AgentPermissionDefinition,
   type AgentPermissionSetting,
   type AgentPermissionSettings,
 } from "@openwork/types/den/agent-permissions"
@@ -11,8 +12,9 @@ import { AUDIT_TEXT_WITHHELD, auditChangeEvent, organizationParent, relatedResou
 // permission is its own snapshot field, so changedFields names the permissions
 // that changed; a permission left unset is null (Allow for Everyone, inherits
 // Everyone's for a team). `permissionChanges` annotates each changed permission
-// with its before → after decision and the patterns added to or removed from
-// its allowed and blocked lists. People who can read the audit log need not be
+// with its before → after decision and, for permissions with lists (commands
+// and websites), the patterns added to or removed from its allowed and
+// blocked lists. People who can read the audit log need not be
 // able to see agent permissions, and a pattern can hold a credential
 // (`curl --password=… *`) or name a private site, skill or server, so every
 // pattern is recorded as withheld: the log says how many were added or
@@ -33,8 +35,9 @@ function patternList(patterns: readonly string[] | undefined): string[] {
   return [...new Set(patterns ?? [])].map(() => AUDIT_TEXT_WITHHELD)
 }
 
-function serializeSetting(setting: AgentPermissionSetting | undefined): AuditSnapshot | null {
+function serializeSetting(definition: AgentPermissionDefinition, setting: AgentPermissionSetting | undefined): AuditSnapshot | null {
   if (!setting) return null
+  if (!definition.patterns) return { decision: setting.decision ?? null }
   return { decision: setting.decision ?? null, allow: patternList(setting.allow), block: patternList(setting.block) }
 }
 
@@ -43,7 +46,7 @@ function serializePolicy(scope: AgentPermissionAuditScope, state: AgentPermissio
     scope: scope.kind,
     teamId: scope.kind === "team" ? scope.teamId : null,
   }
-  for (const definition of agentPermissionDefinitions) snapshot[definition.key] = serializeSetting(state.settings[definition.key])
+  for (const definition of agentPermissionDefinitions) snapshot[definition.key] = serializeSetting(definition, state.settings[definition.key])
   return snapshot
 }
 
@@ -58,10 +61,11 @@ function added(before: readonly string[] | undefined, after: readonly string[] |
 }
 
 function permissionChanges(scope: AgentPermissionAuditScope, before: AgentPermissionSettings, after: AgentPermissionSettings): AuditSnapshot[] {
-  return agentPermissionDefinitions.flatMap((definition) => {
+  return agentPermissionDefinitions.flatMap((definition): AuditSnapshot[] => {
     const from = before[definition.key]
     const to = after[definition.key]
     const decision = { before: decisionLabel(scope, from), after: decisionLabel(scope, to) }
+    if (!definition.patterns) return decision.before !== decision.after ? [{ key: definition.key, label: definition.label, decision }] : []
     const change = {
       key: definition.key,
       label: definition.label,
@@ -91,8 +95,8 @@ function withheldPatternMarkers(before: AgentPermissionSettings, after: AgentPer
     const from = before[definition.key]
     const to = after[definition.key]
     const changed = raw(from) !== raw(to)
-    const sameInAudit = JSON.stringify(serializeSetting(from)?.allow ?? []) === JSON.stringify(serializeSetting(to)?.allow ?? [])
-      && JSON.stringify(serializeSetting(from)?.block ?? []) === JSON.stringify(serializeSetting(to)?.block ?? [])
+    const sameInAudit = JSON.stringify(serializeSetting(definition, from)?.allow ?? []) === JSON.stringify(serializeSetting(definition, to)?.allow ?? [])
+      && JSON.stringify(serializeSetting(definition, from)?.block ?? []) === JSON.stringify(serializeSetting(definition, to)?.block ?? [])
     return changed && sameInAudit ? [`${definition.key}WithheldPatterns`] : []
   })
 }

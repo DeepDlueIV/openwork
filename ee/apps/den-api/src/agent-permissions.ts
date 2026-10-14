@@ -1,18 +1,15 @@
 import { and, asc, count, eq, inArray, or } from "@openwork-ee/den-db/drizzle"
 import { AgentPermissionPolicyTable, AgentPermissionSettingTable, TeamMemberTable, TeamTable } from "@openwork-ee/den-db/schema"
-import { createDenTypeId, normalizeDenTypeId, type DenTypeId } from "@openwork-ee/utils/typeid"
+import { createDenTypeId, type DenTypeId } from "@openwork-ee/utils/typeid"
 import {
   AGENT_PERMISSION_EVERYONE,
   agentPermissionDefinitions,
-  agentPermissionDenialMessage,
-  decideAgentPermission,
   normalizeAgentPermissionSetting,
   resolveAgentPermissionRules,
   type AgentPermissionRule,
   type AgentPermissionSettings,
 } from "@openwork/types/den/agent-permissions"
 import { db } from "./db.js"
-import { organizationFeatureEnabled } from "./features.js"
 
 type OrganizationId = DenTypeId<"organization">
 type TeamId = DenTypeId<"team">
@@ -261,50 +258,4 @@ export async function readAgentPermissionRulesForMember(input: {
       return { source: team.name, settings: policy ? settings.get(policy.id) ?? {} : {} }
     }),
   })
-}
-
-/** A member's agent permission rules while the organization has agent permissions on; none otherwise. */
-export async function memberAgentPermissionRules(organizationId: string, orgMemberId: string): Promise<AgentPermissionRule[]> {
-  const organization = normalizeDenTypeId("organization", organizationId)
-  if (!await organizationFeatureEnabled(organization, "agentPermissions")) return []
-  return readAgentPermissionRulesForMember({ organizationId: organization, orgMemberId: normalizeDenTypeId("member", orgMemberId) })
-}
-
-/**
- * Why a member's MCP server rules block one of the organization's connections,
- * or null. Connections match by the address of their server (its host, such
- * as mcp.linear.app), which members cannot change, not by their name, which
- * they can.
- */
-export function organizationConnectionAgentPermissionDenial(rules: readonly AgentPermissionRule[], url: string): string | null {
-  if (rules.length === 0) return null
-  let host: string
-  try {
-    // `mcp.example.com.` is the same server as `mcp.example.com`.
-    host = new URL(url).hostname.replace(/\.+$/, "")
-  } catch {
-    // An address Den cannot read matches only a rule for every server.
-    host = ""
-  }
-  return organizationAgentPermissionDenial(rules, "mcp", host ? [host] : ["*"])
-}
-
-/**
- * Why a member's rules block one of the organization's own skills or MCP
- * connections, or null. The same skill and MCP server rules a member's desktop
- * applies to local ones apply here, by any of the names given, as written and
- * in lower case.
- */
-export function organizationAgentPermissionDenial(
-  rules: readonly AgentPermissionRule[],
-  action: "skill" | "mcp",
-  names: readonly (string | null | undefined)[],
-): string | null {
-  if (rules.length === 0) return null
-  const resources = [...new Set(names.flatMap((name) => {
-    const value = name?.trim()
-    return value ? [value, value.toLowerCase()] : []
-  }))]
-  const decision = decideAgentPermission(rules, action, resources)
-  return decision.effect === "deny" && decision.rule ? agentPermissionDenialMessage(decision.rule, decision.resource) : null
 }

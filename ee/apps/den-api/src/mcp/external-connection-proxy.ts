@@ -1,5 +1,4 @@
 import { recordConnectorCall, toolCallFailed } from "../capability-usage.js"
-import { memberAgentPermissionRules, organizationConnectionAgentPermissionDenial } from "../agent-permissions.js"
 import { EXTENSION_ID, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server"
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js"
 import {
@@ -486,11 +485,6 @@ export function registerExternalConnectionProxyRoutes<T extends { Variables: Req
       teamIds: member.teamIds,
     })
     if (!connection || !allowed) return c.json({ error: "connection_not_available" }, 403)
-    const agentPermissionBlock = organizationConnectionAgentPermissionDenial(
-      await memberAgentPermissionRules(organizationId, member.orgMembershipId),
-      connection.url,
-    )
-    if (agentPermissionBlock) return c.json({ error: "connection_not_available", message: agentPermissionBlock }, 403)
     if (usesMemberApiKey(connection)
       && !await externalMcpConnectionReadyForMember(connection, member.orgMembershipId)) {
       return c.json({ error: "connection_not_available", message: "Connect your personal API key in Your Connections." }, 403)

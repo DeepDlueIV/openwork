@@ -1,6 +1,5 @@
 import type { CapabilityUsageSource } from "@openwork-ee/den-db/schema"
 import { recordConnectorCall, toolCallFailed } from "../capability-usage.js"
-import { memberAgentPermissionRules, organizationConnectionAgentPermissionDenial } from "../agent-permissions.js"
 import { and, eq, isNull } from "@openwork-ee/den-db/drizzle"
 import { UnauthorizedError } from "@modelcontextprotocol/sdk/client/auth.js"
 import { StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js"
@@ -1385,19 +1384,6 @@ export async function executeExternalCapability(input: {
   const prepared = await prepareExternalCapability(input)
   if (!prepared.ok) return prepared
   const { connection, member, catalogKey } = prepared
-  // The member's agent permissions for MCP servers cover the organization's connections too.
-  const agentPermissionBlock = input.member
-    ? organizationConnectionAgentPermissionDenial(await memberAgentPermissionRules(input.organizationId, input.member.orgMembershipId), connection.url)
-    : null
-  if (agentPermissionBlock) {
-    return {
-      ok: false,
-      error: "policy_blocked",
-      capability: buildExternalCapabilityName(connection.id, input.toolName),
-      message: agentPermissionBlock,
-      sameArgumentsRetryable: false,
-    }
-  }
 
   let currentSchemaDigest: string | undefined
   let schemaGuidance: ExternalMcpSchemaGuidance | undefined

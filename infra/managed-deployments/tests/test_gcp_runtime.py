@@ -95,6 +95,91 @@ class RuntimeIsolationTests(unittest.TestCase):
                 self.assertEqual(call.kwargs["env"]["TF_CLI_CONFIG_FILE"], str(root / "terraform.rc"))
 
 
+class ImagePinTests(unittest.TestCase):
+    def inventory(self):
+        return {"provider": "gcp", "version": ENV["VERSION"], "protocolVersion": 1,
+                "images": {kind: repository + "@sha256:" + character * 64 for (kind, repository), character in
+                           zip(install.IMAGE_REPOSITORIES.items(), "abc")}}
+
+    def mirror(self, manifest, destination_mismatch=False, bad_local=False):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            if manifest is not None:
+                (root / "release.json").write_text(json.dumps(manifest))
+            calls = []
+            def execute(command, **kwargs):
+                calls.append(command)
+                if command[0] == "docker":
+                    self.assertNotIn("DOCKER_HOST", kwargs["env"])
+                    self.assertEqual(kwargs["env"]["DOCKER_CONFIG"], str(root / "docker-config"))
+                if command[:3] == ["docker", "image", "inspect"]:
+                    return Mock(stdout=json.dumps([{"Id": "sha256:" + "d" * 64,
+                        "Os": "linux", "Architecture": "arm64" if bad_local else "amd64",
+                        "RepoDigests": [command[-1]]}]))
+                return Mock(stdout="private-token")
+            def cloud(*arguments):
+                if arguments[:4] == ("artifacts", "docker", "images", "describe"):
+                    kind = arguments[-1].rsplit("/", 1)[1].split(":", 1)[0]
+                    digest = "sha256:" + "e" * 64 if destination_mismatch else manifest["images"][kind].split("@")[1]
+                    return {"image_summary": {"digest": digest}}
+                return [{"name": "repositories/" + install.name(ENV["DEPLOYMENT_ID"])}]
+            inherited = {**ENV, "DEN_API_IMAGE": "evil.test/api:latest", "HEALTH_IMAGE": "evil.test/python:latest",
+                         "DOCKER_HOST": "tcp://evil.test:2375"}
+            with patch.dict(os.environ, inherited, clear=True), patch.object(runner, "__file__", str(root / "infra/managed-deployments/gcp/runner/runner.py")), \
+                    patch.object(Path, "cwd", return_value=root), patch.object(runner, "gcloud", side_effect=cloud) as remote, \
+                    patch.object(subprocess, "run", side_effect=execute):
+                if manifest is None or manifest.get("images") is None:
+                    with self.assertRaises((ValueError, FileNotFoundError)):
+                        runner.mirror_images()
+                    remote.assert_not_called()
+                    self.assertEqual(calls, [])
+                elif destination_mismatch or bad_local:
+                    with self.assertRaises(ValueError):
+                        runner.mirror_images()
+                    if bad_local:
+                        self.assertFalse(any(command[:2] in (["docker", "tag"], ["docker", "push"]) for command in calls))
+                else:
+                    result = runner.mirror_images()
+                    self.assertEqual(set(result), set(install.IMAGE_REPOSITORIES))
+                    pulls = [command[-1] for command in calls if command[:2] == ["docker", "pull"]]
+                    self.assertEqual(pulls, list(manifest["images"].values()))
+                    for kind, ref in result.items():
+                        self.assertEqual(ref.split("@")[1], manifest["images"][kind].split("@")[1])
+                    self.assertTrue(all(command[2] == "sha256:" + "d" * 64 for command in calls if command[:2] == ["docker", "tag"]))
+
+    def test_reads_release_inventory_and_ignores_source_env_overrides(self):
+        self.mirror(self.inventory())
+
+    def test_missing_release_or_pins_rejected_before_cloud(self):
+        self.mirror(None)
+        self.mirror({"provider": "gcp", "version": ENV["VERSION"], "protocolVersion": 1})
+
+    def test_destination_digest_must_match_source_manifest(self):
+        self.mirror(self.inventory(), destination_mismatch=True)
+
+    def test_wrong_local_platform_rejected_before_tag_push(self):
+        self.mirror(self.inventory(), bad_local=True)
+
+    def test_mutable_wrong_repo_or_wrong_version_inventory_rejected(self):
+        variants = []
+        for pin in ["ghcr.io/different-ai/openwork-den-api:0.18.0", "evil.test/api@sha256:" + "a" * 64]:
+            inventory = self.inventory()
+            inventory["images"]["den_api"] = pin
+            variants.append(inventory)
+        wrong_version = self.inventory()
+        wrong_version["version"] = "0.19.0"
+        variants.append(wrong_version)
+        with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, ENV, clear=True), \
+                patch.object(runner, "__file__", str(Path(directory) / "infra/managed-deployments/gcp/runner/runner.py")), \
+                patch.object(runner, "gcloud") as remote, patch.object(subprocess, "run") as execute:
+            for inventory in variants:
+                (Path(directory) / "release.json").write_text(json.dumps(inventory))
+                with self.assertRaises(ValueError):
+                    runner.mirror_images()
+            remote.assert_not_called()
+            execute.assert_not_called()
+
+
 class OrchestrationMutexTests(unittest.TestCase):
     def test_atomic_contention_does_not_release_another_owner(self):
         live = None

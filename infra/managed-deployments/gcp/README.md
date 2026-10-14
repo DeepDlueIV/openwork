@@ -14,11 +14,39 @@ Package `runner/install.py`, `runner/runner.py`, `health/health_agent.py`,
 `terraform/**/*.tf`, `terraform/.terraform.lock.hcl`, and the existing
 `../contract/*.tf` in the checksummed release bundle, preserving repository paths.
 `release.json` must contain `provider: "gcp"`, `version`, `protocolVersion: 1`,
-and a `files` map of path to SHA-256. Publish `tutorial.md`, the bundle and
+a `files` map of path to SHA-256, and an `images` inventory with exactly
+`den_api`, `den_web`, and `health`. Every image is a Linux/amd64 manifest pinned as
+`ALLOWLISTED_REPOSITORY@sha256:64_LOWERCASE_HEX_DIGITS`. The only repositories are
+`ghcr.io/different-ai/openwork-den-api`, `ghcr.io/different-ai/openwork-den-web`,
+and `docker.io/library/python`, respectively. Image pins are protected by the
+same bundle SHA-256 as the executable inventory. Missing pins, tags, other
+repositories, and invalid digests are rejected before bootstrap. Publish `tutorial.md`, the bundle and
 manifest as immutable GCS object generations. The control plane supplies the
 pinned bundle hash. The launch command verifies that hash before safely
 extracting and executing `infra/managed-deployments/gcp/runner/install.py`;
 it **must not** pipe an unverified download to a shell.
+
+### Operator image pinning (before publication)
+
+Build with `node infra/managed-deployments/tools/build-release.mjs gcp VERSION OUTPUT_DIRECTORY`.
+The operator needs Docker CLI with `docker manifest inspect --verbose` support,
+registry network access, and registry credentials if the published OpenWork
+images require them (`docker login ghcr.io`). No Docker daemon or customer-cloud
+credentials are needed to resolve manifests. The builder resolves the exact
+published OpenWork version tags to a unique Linux/amd64 manifest, then verifies
+each digest exists by reading that immutable reference again. It selects health
+from the already approved hardcoded Python index digest, never a Python tag.
+Schema-v2 and OCI manifests are supported; attestations and other platforms
+cannot become the selected image. Resolution failures stop the build, with no
+fallback to mutable tags.
+
+An operator may supply `--image-pins APPROVED_JSON_FILE` after the output
+directory to select approved Linux/amd64 OpenWork manifest digests explicitly.
+The file must contain exactly `den_api` and `den_web` with the same repository
+allowlist. **This does not skip registry verification**: each supplied immutable
+manifest must exist and be Linux/amd64. Health always comes from the hardcoded
+approved digest. Never publish artifacts made with mocked registry metadata;
+offline tests use a separate mocked Docker executable and synthetic pins.
 
 Installer input is `--config-base64 <base64 JSON>` using the `GcpLaunch` shape in
 `packages/managed-deployments/src/gcp.ts`: `deploymentId`, `runId`, `challenge`,
@@ -84,8 +112,14 @@ Cloud SQL MySQL 8 with backups and deletion protection; Secret Manager;
 Cloud Run API/Web services and an explicit migration job; a global HTTPS load
 balancer with managed certificate and Cloud DNS records; a five-minute Cloud
 Run health job authenticated with a Google metadata ID token. The health image
-is copied by digest into the customer's Artifact Registry alongside the exact
-versioned OpenWork images. The API migration job runs **before** new service
+is copied by digest into the customer's Artifact Registry alongside the
+release-pinned OpenWork images. The runner reads source references only from the
+verified bundle's `release.json`, never runtime environment overrides or version
+tags. After each pinned pull it verifies the local Linux/amd64 image and repository
+digest, tags the inspected immutable local image ID, and pushes it. The resulting
+Artifact Registry manifest digest must equal the release's source digest before
+it can become a Terraform/Cloud Run input; mismatch fails closed, with no tag
+fallback. The API migration job runs **before** new service
 revisions are applied. Plans reject deletion/replacement of data-bearing
 resources, and Terraform lifecycle guards protect the database and secrets.
 
@@ -126,10 +160,13 @@ and a real immutable release are rollout gates. Serverless NEG target health
 is inapplicable and omitted (the actual HTTPS routes are checked instead).
 Disk metrics and backups report `unknown/unavailable` while Google has no
 measurements or successful backup yet, not fabricated successful checks.
-Installed image tags are resolved to
-immutable customer-registry digests during each approved run, not verified
-against release-signed image digests. Do not enable the feature until
-those gates pass.
+Source image digests are pinned by the operator before publication and protected
+by the control-plane-approved bundle checksum. Destination digests are verified
+against those release pins, not merely resolved from a runtime version tag.
+Registry metadata checks and local tests do not prove customer-registry mirroring
+or a live installation. Do not enable the feature until the live validation
+gates pass.
 
-Run offline checks: `python3 -m unittest discover -s infra/managed-deployments/tests -p '*gcp*'`.
+Run offline checks: `python3 -m unittest discover -s infra/managed-deployments/tests -p '*gcp*'`
+and `node --test infra/managed-deployments/tests/build-release.test.mjs`.
 Terraform: `terraform init -backend=false -lockfile=readonly`, `terraform validate`.

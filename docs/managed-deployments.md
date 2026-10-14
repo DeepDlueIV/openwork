@@ -127,6 +127,10 @@ profile; do not use a shared production project. See
 
 1. Build a local reviewed installer for an exact published image version:
    `node infra/managed-deployments/tools/build-release.mjs gcp <version> <dir>`.
+   Docker registry inspection resolves and verifies unique Linux/amd64 manifest
+   digests at operator build time. The checksummed bundle records fixed image
+   repositories and digests; customer runs reject missing pins and never pull
+   source version tags. The builder needs registry access, not a Docker daemon.
 2. After explicit publication approval, publish into an existing dedicated,
    versioned, publicly readable release bucket:
    `node infra/managed-deployments/tools/publish-gcp-release.mjs <dir> <bucket> <release-project-id> <release-project-number>`.

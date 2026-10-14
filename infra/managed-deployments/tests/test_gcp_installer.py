@@ -34,6 +34,11 @@ ENV = {"PROJECT_ID": "test-project", "PROJECT_NUMBER": "123456789012", "REGION":
        "RUNNER_SERVICE_ACCOUNT": "ow-123456781234-runner@test-project.iam.gserviceaccount.com"}
 
 
+PINS = {"den_api": install.IMAGE_REPOSITORIES["den_api"] + "@sha256:" + "a" * 64,
+        "den_web": install.IMAGE_REPOSITORIES["den_web"] + "@sha256:" + "b" * 64,
+        "health": install.IMAGE_REPOSITORIES["health"] + "@sha256:" + "c" * 64}
+
+
 def args():
     return argparse.Namespace(**{key.lower(): value for key, value in ENV.items() if key not in ("STATE_BUCKET", "RUNNER_SERVICE_ACCOUNT")},
                               bundle_url="https://storage.googleapis.com/releases/gcp/0.18.0/bundle.tar.gz?generation=123",
@@ -43,7 +48,7 @@ def args():
 def bundle(extra=None, manifest_change=None):
     files = {"infra/managed-deployments/gcp/" + path: b"# fixture\n" for path in
              ["runner/install.py", "runner/runner.py", "health/health_agent.py", "terraform/main.tf", "terraform/.terraform.lock.hcl"]}
-    manifest = {"provider": "gcp", "version": "0.18.0", "protocolVersion": 1,
+    manifest = {"provider": "gcp", "version": "0.18.0", "protocolVersion": 1, "images": dict(PINS),
                 "files": {name: hashlib.sha256(data).hexdigest() for name, data in files.items()}}
     if manifest_change:
         manifest_change(manifest)
@@ -144,6 +149,20 @@ class BootstrapTests(unittest.TestCase):
             with self.subTest(change=change), tempfile.TemporaryDirectory() as directory:
                 data = bundle(manifest_change=change)
                 with self.assertRaises(ValueError):
+                    install.extract_verified(data, hashlib.sha256(data).hexdigest(), Path(directory), "0.18.0")
+
+    def test_image_pins_required_and_allowlisted_before_bootstrap(self):
+        changes = [lambda m: m.pop("images"), lambda m: m.update(images=None),
+                   lambda m: m.update(images=[]), lambda m: m["images"].pop("health"),
+                   lambda m: m["images"].update(extra=PINS["den_api"])]
+        for value in ["ghcr.io/different-ai/openwork-den-api:0.18.0", "ghcr.io/different-ai/openwork-den-api:latest",
+                      "evil.test/api@sha256:" + "a" * 64, PINS["den_web"], PINS["den_api"].upper(),
+                      PINS["den_api"] + "\n", PINS["den_api"][:-1], None]:
+            changes.append(lambda m, value=value: m["images"].update(den_api=value))
+        for change in changes:
+            with self.subTest(change=change), tempfile.TemporaryDirectory() as directory:
+                data = bundle(manifest_change=change)
+                with self.assertRaisesRegex(ValueError, "image"):
                     install.extract_verified(data, hashlib.sha256(data).hexdigest(), Path(directory), "0.18.0")
 
     def test_expansion_limit(self):
@@ -450,7 +469,24 @@ class HealthCollectionTests(unittest.TestCase):
 class ReleaseTests(unittest.TestCase):
     def test_release_build_verified_inventory_and_template(self):
         with tempfile.TemporaryDirectory() as directory:
-            subprocess.run(["node", str(ROOT / "infra/managed-deployments/tools/build-release.mjs"), "gcp", "0.18.0", directory], check=True, capture_output=True)
+            # Separate mocked Docker executable: the real builder still performs
+            # registry verification, including when explicit approved pins are used.
+            path = Path(directory)
+            bin_path = path / "bin"
+            bin_path.mkdir()
+            docker = bin_path / "docker"
+            docker.write_text("#!" + sys.executable + "\n" + '''import json, sys
+ref = sys.argv[-1]
+digest = "sha256:" + ("a" if "openwork-den-api" in ref else "b" if "openwork-den-web" in ref else "c") * 64
+print(json.dumps({"Descriptor": {"digest": digest, "platform": {"os": "linux", "architecture": "amd64"}},
+                  "SchemaV2Manifest": {"config": {"digest": "sha256:" + "d" * 64}}}))
+''')
+            docker.chmod(0o700)
+            pins = path / "approved-pins.json"
+            pins.write_text(json.dumps({kind: PINS[kind] for kind in ("den_api", "den_web")}))
+            subprocess.run(["node", str(ROOT / "infra/managed-deployments/tools/build-release.mjs"), "gcp", "0.18.0", directory,
+                            "--image-pins", str(pins)], env={**os.environ, "PATH": str(bin_path) + os.pathsep + os.environ["PATH"]},
+                           check=True, capture_output=True)
             path = Path(directory)
             manifest = json.loads((path / "manifest.json").read_text())
             data = (path / "bundle.tar.gz").read_bytes()
@@ -460,6 +496,7 @@ class ReleaseTests(unittest.TestCase):
             extracted = path / "verified"
             extracted.mkdir()
             install.extract_verified(data, manifest["bundleSha256"], extracted, "0.18.0")
+            self.assertEqual(json.loads((extracted / "release.json").read_text())["images"], PINS)
             for file in extracted.rglob("*"):
                 self.assertFalse(file.name.endswith((".tfstate", ".tfvars", ".tfplan")))
                 self.assertNotIn(".terraform/", str(file.relative_to(extracted)))

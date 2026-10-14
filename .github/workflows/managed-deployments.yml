@@ -47,7 +47,7 @@ jobs:
           node infra/managed-deployments/aws/bootstrap/template.mjs /tmp/cloudformation.json
           diff -u infra/managed-deployments/aws/bootstrap/cloudformation.json /tmp/cloudformation.json
           python3 -m unittest discover -s infra/managed-deployments/tests -v
-          node --test infra/managed-deployments/tests/test_publish_*_release.mjs
+          node --test infra/managed-deployments/tests/test_publish_*_release.mjs infra/managed-deployments/tests/build-release.test.mjs
 
   installer:
     if: github.event_name == 'workflow_dispatch'

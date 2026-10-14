@@ -5,16 +5,16 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import re
 import time
 import urllib.error
 import urllib.parse
 import zipfile
 
-from install import cloud, name, request, verify_target
+from install import cloud, name, request, release_images, verify_target
 
 TERRAFORM_VERSION = "1.16.5"
 TERRAFORM_SHA256 = "2bc2fcfff033265c9e02ca0351f01794eb122f62a9b2a49a3294b9e49eaab5e4"
-HEALTH_IMAGE = "python:3.13-slim-bookworm@sha256:a1165e272e578941b84abc79e4ab38a0305cd12803a5c4247979ac7655f4d641"
 PROTECTED_TYPES = {"google_sql_database_instance", "google_sql_database", "google_sql_user",
                    "google_secret_manager_secret", "google_secret_manager_secret_version",
                    "google_storage_bucket", "google_kms_crypto_key", "google_compute_network", "random_password"}
@@ -82,7 +82,15 @@ def terraform_binary(root):
     return str(binary)
 
 
+def load_release_images():
+    # This file is inside the bundle whose SHA-256 install.py checked before
+    # bootstrap. Runtime environment variables can never select source images.
+    manifest = json.loads((Path(__file__).resolve().parents[4] / "release.json").read_text())
+    return release_images(manifest, os.environ["VERSION"])
+
+
 def mirror_images():
+    pinned = load_release_images()  # reject missing/invalid pins before cloud writes
     project, region = os.environ["PROJECT_ID"], os.environ["REGION"]
     repository = name(os.environ["DEPLOYMENT_ID"])
     existing = gcloud("artifacts", "repositories", "list", "--location=" + region)
@@ -93,23 +101,28 @@ def mirror_images():
     # Credentials live only in the run's private temporary directory.
     docker_config = Path.cwd() / "docker-config"
     docker_config.mkdir(mode=0o700)
-    environment = {**os.environ, "DOCKER_CONFIG": str(docker_config)}
+    environment = {key: value for key, value in os.environ.items() if not key.startswith("DOCKER_")}
+    environment["DOCKER_CONFIG"] = str(docker_config)
     registry = region + "-docker.pkg.dev"
     subprocess.run(["docker", "login", "-u", "oauth2accesstoken", "--password-stdin", registry],
                    input=token, text=True, env=environment, check=True, stdout=subprocess.DEVNULL)
     images = {}
-    for kind, source in [("den_api", "ghcr.io/different-ai/openwork-den-api:" + os.environ["VERSION"]),
-                         ("den_web", "ghcr.io/different-ai/openwork-den-web:" + os.environ["VERSION"]),
-                         ("health", HEALTH_IMAGE)]:
+    for kind, source in pinned.items():
         destination = f"{registry}/{project}/{repository}/{kind}:" + os.environ["VERSION"]
         subprocess.run(["docker", "pull", "--platform=linux/amd64", source], env=environment, check=True)
-        subprocess.run(["docker", "tag", source, destination], env=environment, check=True)
+        local = json.loads(subprocess.run(["docker", "image", "inspect", source], env=environment,
+                           check=True, capture_output=True, text=True).stdout)
+        if (not isinstance(local, list) or len(local) != 1 or local[0].get("Os") != "linux"
+                or local[0].get("Architecture") != "amd64" or source not in local[0].get("RepoDigests", [])
+                or not re.fullmatch(r"sha256:[a-f0-9]{64}", local[0].get("Id", ""))):
+            raise ValueError("pulled image does not match release pin/platform")
+        # Tag the inspected immutable local config ID, not any mutable source tag.
+        subprocess.run(["docker", "tag", local[0]["Id"], destination], env=environment, check=True)
         subprocess.run(["docker", "push", destination], env=environment, check=True)
-        # Cloud Run receives an immutable digest, not a mutable tag.
         image = gcloud("artifacts", "docker", "images", "describe", destination)
-        digest = image["image_summary"]["digest"]
-        if not digest.startswith("sha256:") or len(digest) != 71:
-            raise ValueError("image digest unavailable")
+        digest = image.get("image_summary", {}).get("digest")
+        if digest != source.split("@", 1)[1]:
+            raise ValueError("mirrored image digest differs from release pin")
         images[kind] = destination.split(":" , 1)[0] + "@" + digest
     return images
 

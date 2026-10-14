@@ -16,6 +16,23 @@ import uuid
 
 MAX_BUNDLE = 32 * 1024 * 1024
 MAX_EXTRACTED = 64 * 1024 * 1024
+IMAGE_REPOSITORIES = {"den_api": "ghcr.io/different-ai/openwork-den-api",
+                      "den_web": "ghcr.io/different-ai/openwork-den-web",
+                      "health": "docker.io/library/python"}
+
+
+def release_images(manifest, version):
+    if (not isinstance(manifest, dict) or manifest.get("provider") != "gcp"
+            or manifest.get("version") != version or manifest.get("protocolVersion") != 1):
+        raise ValueError("wrong release manifest")
+    images = manifest.get("images")
+    if not isinstance(images, dict) or set(images) != set(IMAGE_REPOSITORIES):
+        raise ValueError("release image inventory mismatch")
+    for kind, repository in IMAGE_REPOSITORIES.items():
+        if not isinstance(images[kind], str) or not re.fullmatch(re.escape(repository) + r"@sha256:[a-f0-9]{64}", images[kind]):
+            raise ValueError("invalid release image pin: " + kind)
+    return dict(images)
+
 APIS = ["iam.googleapis.com", "iamcredentials.googleapis.com", "serviceusage.googleapis.com",
         "storage.googleapis.com", "run.googleapis.com", "sqladmin.googleapis.com",
         "secretmanager.googleapis.com", "artifactregistry.googleapis.com", "compute.googleapis.com",
@@ -143,8 +160,7 @@ def extract_verified(data, digest, destination, version):
                     target.write_bytes(source.read())
                 target.chmod(0o600)
     manifest = json.loads((destination / "release.json").read_text())
-    if manifest.get("provider") != "gcp" or manifest.get("version") != version or manifest.get("protocolVersion") != 1:
-        raise ValueError("wrong release manifest")
+    release_images(manifest, version)
     files = manifest.get("files")
     actual = {m.name for m in members if m.isfile() and m.name != "release.json"}
     if not isinstance(files, dict) or set(files) != actual:
@@ -155,7 +171,7 @@ def extract_verified(data, digest, destination, version):
             raise ValueError("unexpected executable in bundle")
         if hashlib.sha256((destination / file).read_bytes()).hexdigest() != expected:
             raise ValueError("release file checksum mismatch")
-    for required in ["runner/runner.py", "health/health_agent.py", "terraform/main.tf", "terraform/.terraform.lock.hcl"]:
+    for required in ["runner/install.py", "runner/runner.py", "health/health_agent.py", "terraform/main.tf", "terraform/.terraform.lock.hcl"]:
         if "infra/managed-deployments/gcp/" + required not in files:
             raise ValueError("incomplete release bundle")
 

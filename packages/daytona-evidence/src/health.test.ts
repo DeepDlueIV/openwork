@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { DaytonaApi, type Sandbox } from "./api.ts";
 import { EVIDENCE_KIND } from "./kinds.ts";
+import { runScript } from "./builder.ts";
 import { failureLayer, localEvidenceReady, parseGuestHealth, requireLocalEvidenceReady, safeExternalResponse } from "./health.ts";
 import { launchDaytonaEvidenceWorld, waitForCdp, type DaytonaEvidenceSession } from "./world.ts";
 
@@ -110,6 +111,18 @@ for (const failing of ["inspect", "hanging-inspect", "report", "hanging-report",
     assert.deepEqual(deleted, ["owned"]);
   });
 }
+
+test("builder diagnostics classify bounded private tails without printing their contents", async () => {
+  const api = fakeApi({ exec: async (_vm, command) => ({ exitCode: 0, output: command.startsWith("if test") ? "failed" : "fixture-secret https://signed.example/?token=fixture-secret ERR_PNPM_OUTDATED_LOCKFILE ECONNREFUSED" }) });
+  let reported = false;
+  await assert.rejects(runScript(api, sandbox, "evidence-world", "exit 1", { diagnostic: async (_stage, summary) => {
+    reported = true;
+    assert.ok(!summary.includes("fixture-secret")); assert.ok(!summary.includes("signed.example"));
+    assert.deepEqual(JSON.parse(summary).events, ["dependency", "startup"]);
+  } }), /Daytona evidence-world failed/);
+  assert.equal(reported, true);
+  await assert.rejects(runScript(api, sandbox, "evidence-world", "exit 1", { diagnostic: async () => { throw new Error("sink failed"); } }), /Daytona evidence-world failed/);
+});
 
 test("unrelated or changed ownership is neither inspected nor deleted", async () => {
   const api = fakeApi({ waitForSandbox: async () => ({ ...sandbox, labels: { kind: "unrelated" } }),

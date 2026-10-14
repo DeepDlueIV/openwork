@@ -82,16 +82,26 @@ touch ${root}.ready
     const state = (await api.exec(sandbox, `if test -f ${root}.failed; then echo failed; elif test -f ${root}.ready; then echo ready; else echo building; fi`)).output.trim();
     if (state === "ready") return;
     if (state === "failed") {
-      if (options.diagnostic) {
-        const runtime = stage.startsWith("evidence-world") ? (await api.exec(sandbox, "journalctl -u openwork-evidence --no-pager -n 100")).output : "";
-        await options.diagnostic(stage, `${await api.readFile(sandbox, `${root}.log`) ?? ""}${runtime}`);
-      }
+      await reportBuildFailure(api, sandbox, stage, options);
       throw new Error(`Daytona ${stage} failed. Private builder log: ${root}.log`);
     }
     await delay(3_000);
   }
-  if (options.diagnostic) await options.diagnostic(stage, await api.readFile(sandbox, `${root}.log`) ?? "");
+  await reportBuildFailure(api, sandbox, stage, options);
   throw new Error(`Daytona ${stage} exceeded ${Math.round(deadlineMs / 60_000)} minutes`);
+}
+
+async function reportBuildFailure(api: DaytonaApi, sandbox: Sandbox, stage: string, options: DaytonaBuildOptions) {
+  const diagnostic = options.diagnostic;
+  if (!diagnostic) return;
+  await boundedDiagnostic(async () => {
+    const tail = (await api.exec(sandbox, `tail -c 16384 ${ROOT}/${stage}.log`, 5)).output;
+    const patterns = { dependency: /ERR_PNPM|Cannot find (?:package|module)|MODULE_NOT_FOUND/, typecheck: /error TS[0-9]+:/,
+      disk: /No space left on device/, memory: /out of memory|Killed|oom[-_ ]kill/i, startup: /did not become ready|did not answer|EADDRINUSE|ECONNREFUSED/ };
+    const events = Object.entries(patterns).filter(([, pattern]) => pattern.test(tail)).map(([name]) => name);
+    const health = stage.startsWith("evidence-world") ? await inspectGuest(api, sandbox).catch(() => undefined) : undefined;
+    await diagnostic(stage, JSON.stringify({ stage, events, health: health ?? "unavailable", privateLog: `${ROOT}/${stage}.log` }));
+  });
 }
 
 /**

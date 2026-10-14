@@ -44,10 +44,20 @@ const units = ["openwork-evidence", "openwork-evidence-cdp", "openwork-evidence-
 });
 const environment = command("systemctl", ["show", "openwork-evidence-cdp", "--property=Environment"]);
 const upstreamPort = Number(environment.match(/(?:^|\s)OPENWORK_PREVIEW_UPSTREAM_PORT=([0-9]+)/)?.[1] ?? 0);
+const selectedPorts = [chromePort, upstreamPort, 8080, 8081];
 const listeners = command("ss", ["-H", "-ltn"]).split("\n").flatMap((line) => {
   const value = Number(line.trim().split(/\s+/)[3]?.match(/:([0-9]+)$/)?.[1]);
-  return [chromePort, upstreamPort, 8080, 8081].includes(value) && value > 0 ? [value] : [];
+  return selectedPorts.includes(value) && value > 0 ? [value] : [];
 });
+// Minimal Ubuntu images need not include iproute2/ss. procfs still tells us
+// which selected ports are listening without exposing processes or addresses.
+for (const path of ["/proc/net/tcp", "/proc/net/tcp6"]) {
+  for (const line of (await read(path)).split("\n").slice(1)) {
+    const columns = line.trim().split(/\s+/);
+    const value = Number.parseInt(columns[1]?.split(":")[1] ?? "", 16);
+    if (columns[3] === "0A" && selectedPorts.includes(value) && value > 0) listeners.push(value);
+  }
+}
 // Journals/logs can contain credentials. Reduce bounded tails to known event
 // categories instead of attempting to redact arbitrary private prose.
 const eventPatterns = { refused: /ECONNREFUSED|Connection refused/i, addressInUse: /EADDRINUSE|Address already in use/i,

@@ -16,6 +16,14 @@ export const PREVIEW_TOOLS_PREFIX = "ow-dy-review-tools-v1-";
 const ROOT = "/opt/openwork-preview";
 const LIFETIME_SECONDS = 2 * 3600;
 const BUILDER_KIND = "openwork-daytona-builder-v1";
+const RUNTIME_ISOLATION = `User=openwork-preview
+Group=openwork-preview
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectSystem=strict
+PrivateTmp=yes
+ReadWritePaths=/workspace ${ROOT}/state /home/openwork-preview`;
+const BUILD_ISOLATION = "setpriv --reuid=openwork-preview --regid=openwork-preview --init-groups --no-new-privs --bounding-set=-all";
 
 function validate(sha: string, world: PreviewWorld) {
   if (!/^[a-f0-9]{40}$/.test(sha)) throw new Error("A full pushed source SHA is required");
@@ -53,7 +61,7 @@ export async function previewDescriptor(sha: string, world: PreviewWorld) {
   const tools = toolsRecipe(world);
   const dependencies = dependencyRecipe(world);
   const compile = compiledRecipe(world).replaceAll("/opt/openwork-preview/compiled", "/opt/openwork-preview/state/compiled");
-  const controllerHash = digest(JSON.stringify({ version: 2, base: DAYTONA_BASE_SNAPSHOT, scripts, tools, dependencies, compile }));
+  const controllerHash = digest(JSON.stringify({ version: 2, base: DAYTONA_BASE_SNAPSHOT, scripts, tools, dependencies, compile, runtimeIsolation: RUNTIME_ISOLATION, buildIsolation: BUILD_ISOLATION }));
   return { name: `${PREVIEW_SNAPSHOT_PREFIX}${digest(`${sha}\n${world}\n${controllerHash}`)}`,
     toolsName: `${PREVIEW_TOOLS_PREFIX}${digest(DAYTONA_BASE_SNAPSHOT + tools)}`, controllerHash, scripts, tools, dependencies, compile };
 }
@@ -84,7 +92,7 @@ export async function buildDaytonaPreview(sha: string, world: PreviewWorld, api 
       for (const [name, source] of Object.entries(descriptor.scripts)) {
         await api.writeFile(sandbox, `${ROOT}/${name}.mjs`, source);
       }
-      await api.writeFile(sandbox, "/etc/systemd/system/openwork-review-runtime.service", `[Unit]\nDescription=OpenWork fresh web preview\n[Service]\nType=oneshot\nRemainAfterExit=yes\nUser=openwork-preview\nGroup=openwork-preview\nNoNewPrivileges=yes\nCapabilityBoundingSet=\nProtectSystem=strict\nPrivateTmp=yes\nReadWritePaths=/workspace ${ROOT}/state /home/openwork-preview\nWorkingDirectory=/workspace\nEnvironment=PATH=${ROOT}/tools/node_modules/.bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\nEnvironment=OPENWORK_DAYTONA_PREVIEW_HOST_SUFFIX=${suffix}\nExecStart=/usr/bin/env node ${ROOT}/runtime.mjs\n`);
+      await api.writeFile(sandbox, "/etc/systemd/system/openwork-review-runtime.service", `[Unit]\nDescription=OpenWork fresh web preview\n[Service]\nType=oneshot\nRemainAfterExit=yes\n${RUNTIME_ISOLATION}\nWorkingDirectory=/workspace\nEnvironment=PATH=${ROOT}/tools/node_modules/.bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\nEnvironment=OPENWORK_DAYTONA_PREVIEW_HOST_SUFFIX=${suffix}\nExecStart=/usr/bin/env node ${ROOT}/runtime.mjs\n`);
       await api.writeFile(sandbox, "/etc/systemd/system/openwork-review-gateway.service", `[Unit]\nDescription=Private OpenWork review gateway\n[Service]\nExecStart=/usr/bin/env node ${ROOT}/gateway.mjs\nRestart=on-failure\n`);
       // The checkout, dependency tools and build all execute report code. None may
       // run as root, even before access is assigned: they could plant a token thief
@@ -92,7 +100,7 @@ export async function buildDaytonaPreview(sha: string, world: PreviewWorld, api 
       await api.writeFile(sandbox, `${ROOT}/review-app.sh`, `#!/bin/bash\nset -euo pipefail\nexport HOME=/home/openwork-preview\nexport pnpm_config_verify_deps_before_run=false\n${checkoutRecipe(sha)}\n${descriptor.dependencies}\n${descriptor.compile}\n`);
       await runScript(api, sandbox, "review-world", `useradd --create-home --shell /usr/sbin/nologin openwork-preview
 install -d -o openwork-preview -g openwork-preview /workspace ${ROOT}/state
-setpriv --reuid=openwork-preview --regid=openwork-preview --init-groups --no-new-privs --bounding-set=-all /bin/bash ${ROOT}/review-app.sh
+${BUILD_ISOLATION} /bin/bash ${ROOT}/review-app.sh
 systemctl daemon-reload
 systemctl start openwork-review-runtime
 node ${ROOT}/health.mjs

@@ -378,7 +378,6 @@ OpenWork Cloud. Don't change it on a customer install.
 | `backgroundShellTasks` | `DEN_FEATURE_BACKGROUND_SHELL_TASKS` | default off | The desktop chat shows how many commands the agent left running in the background, and adds a short row when each one finishes. |
 | `orgDefaultModel` | `DEN_FEATURE_ORG_DEFAULT_MODEL` | default off | Organization admins choose the model new desktop chats start with, for everyone or per team. Applies to the OpenCode v2 engine only; members can still change the model in each chat. |
 | `gatewayProviderUsageLimits` | `DEN_FEATURE_GATEWAY_PROVIDER_USAGE_LIMITS` | default off | Admins can attach a spend limit to one AI provider. Spend on that provider counts toward its own limit instead of the default limit, and members see which provider ran out. |
-| `stableInstallLinks` | `DEN_FEATURE_STABLE_INSTALL_LINKS` | default off | Download and Copy install link share the normal install page address instead of a one-off link. Teammates sign in to download; links shared earlier keep working. |
 <!-- END GENERATED features -->
 
 The table and the `config.features` block are generated: run `pnpm features:sync`
@@ -1271,48 +1270,20 @@ installerArtifacts:
 Use either `installerArtifacts.existingClaim` or `installerArtifacts.hostPath`,
 not both.
 
-### Guided desktop setup
+### Desktop downloads
 
-The organization download page hands the normal OpenWork app its Den
-configuration in an explicit second step. The default is a short-lived,
-single-use HTTPS exchange and needs no key configuration:
-
-```yaml
-config:
-  public:
-    connectLinkMode: exchange
-```
-
-Den validates the install token and then either:
+The install page (`/install`) asks people to sign in, then downloads the
+standard OpenWork app approved for their organization. Den either:
 
 - streams the standard installer already mounted at
   `installerArtifacts.mountPath`; or
 - redirects the browser directly to the exact configured GitHub release asset.
 
-Den does not download, cache, wrap, or ZIP GitHub artifacts. The organization
-setup stays in the **Open OpenWork** deep-link step after installation.
-
-For an optional signed handoff, explicitly select signed mode and configure a
-dedicated Ed25519 key whose public key is already trusted by the desktop build:
-
-```yaml
-config:
-  public:
-    connectLinkMode: signed
-    connectLinkKeyId: "owc-2026-07"
-
-secret:
-  values:
-    connectLinkPrivateKey: |-
-      -----BEGIN PRIVATE KEY-----
-      ...
-      -----END PRIVATE KEY-----
-```
-
-For an existing Secret, put the private key under the key named by
-`secret.keys.connectLinkPrivateKey` (default `DEN_CONNECT_LINK_PRIVATE_KEY`).
-`scripts/generate-connect-link-keypair.mjs` can generate a pair, but a standard
-desktop build will reject it until the matching public key ships in that build.
+Den does not download, cache, wrap, or ZIP GitHub artifacts. After installing,
+people sign in to the desktop app with the same account. Older
+`/install?token=…` links still open the install page; the token is ignored.
+The former `connectLinkMode`, `connectLinkKeyId` and `connectLinkPrivateKey`
+values are no longer used and can be removed.
 
 For a semi-air-gapped deployment, mount these normal release filenames (where
 `<version>` is `installerReleaseTag` without its leading `v`):

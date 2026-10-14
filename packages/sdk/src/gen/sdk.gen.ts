@@ -347,8 +347,6 @@ import type {
   GetV1InferenceProvidersUsageErrors,
   GetV1InferenceProvidersUsageResponses,
   GetV1InferenceResponses,
-  GetV1InstallByPlatformErrors,
-  GetV1InstallByPlatformResponses,
   GetV1InstallConfigErrors,
   GetV1InstallConfigResponses,
   GetV1IntegrationsSlackOauthCallbackErrors,
@@ -769,12 +767,6 @@ import type {
   PostV1InferenceProvidersOauthBrowserLitellmKeyErrors,
   PostV1InferenceProvidersOauthBrowserLitellmKeyResponses,
   PostV1InferenceProvidersResponses,
-  PostV1InstallConnectExchangeErrors,
-  PostV1InstallConnectExchangeResponses,
-  PostV1InstallConnectPreviewErrors,
-  PostV1InstallConnectPreviewResponses,
-  PostV1InstallConnectStatusErrors,
-  PostV1InstallConnectStatusResponses,
   PostV1IntegrationsSlackByConnectionIdCommandsErrors,
   PostV1IntegrationsSlackByConnectionIdCommandsResponses,
   PostV1IntegrationsSlackByConnectionIdEventsErrors,
@@ -5554,9 +5546,9 @@ export class DenClient extends HeyApiClient {
   }
 
   /**
-   * Create organization install link (download desktop app, install OpenWork)
+   * Get organization install page (download desktop app, install OpenWork)
    *
-   * Download the desktop app and install OpenWork pointed at this organization. Returns installPageUrl, a shareable page that downloads OpenWork for this organization, and connectUrl, a short-lived link that opens an already-installed desktop app signed in to this organization. Any member can mint one. Older active links remain valid unless an owner or admin explicitly requests rotation. When the organization uses plain install links, returns only installPageUrl, the normal install page where people sign in, and creates no link.
+   * Download the desktop app and install OpenWork for this organization. Returns installPageUrl, the normal install page: people sign in there and download the desktop app approved for their organization. Creates nothing and carries no token, so the address can be shared freely.
    */
   public postV1OrgsByOrganizationIdInstallLinks<ThrowOnError extends boolean = false>(
     parameters: {
@@ -5629,136 +5621,30 @@ export class DenClient extends HeyApiClient {
   }
 
   /**
-   * Resolve install-link configuration
+   * Get public install configuration
    *
-   * Returns organization setup details and a fresh desktop connection handoff for a valid install link token.
+   * Returns this deployment's public desktop setup: server addresses, sign-in requirement, branding of a single-org deployment, and the desktop version. Older desktop builds call it with the token from a pasted install link; the token is ignored.
    */
-  public getV1InstallConfig<ThrowOnError extends boolean = false>(
-    parameters: {
-      token: string;
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "token" }] }]);
+  public getV1InstallConfig<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
     return (options?.client ?? this.client).get<GetV1InstallConfigResponses, GetV1InstallConfigErrors, ThrowOnError>({
       url: "/v1/install-config",
       ...options,
-      ...params,
     });
   }
 
   /**
-   * Inspect desktop connection status
+   * Open the install page
    *
-   * Reports whether a short-lived organization connection code is still pending or has been accepted by a desktop.
-   */
-  public postV1InstallConnectStatus<ThrowOnError extends boolean = false>(
-    parameters: {
-      code: string;
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams([parameters], [{ args: [{ in: "body", key: "code" }] }]);
-    return (options?.client ?? this.client).post<
-      PostV1InstallConnectStatusResponses,
-      PostV1InstallConnectStatusErrors,
-      ThrowOnError
-    >({
-      url: "/v1/install-connect/status",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    });
-  }
-
-  /**
-   * Preview desktop connection
-   *
-   * Resolves a short-lived organization connection code without consuming it.
-   */
-  public postV1InstallConnectPreview<ThrowOnError extends boolean = false>(
-    parameters: {
-      code: string;
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams([parameters], [{ args: [{ in: "body", key: "code" }] }]);
-    return (options?.client ?? this.client).post<
-      PostV1InstallConnectPreviewResponses,
-      PostV1InstallConnectPreviewErrors,
-      ThrowOnError
-    >({
-      url: "/v1/install-connect/preview",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    });
-  }
-
-  /**
-   * Accept desktop connection
-   *
-   * Consumes a short-lived organization connection code exactly once.
-   */
-  public postV1InstallConnectExchange<ThrowOnError extends boolean = false>(
-    parameters: {
-      code: string;
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams([parameters], [{ args: [{ in: "body", key: "code" }] }]);
-    return (options?.client ?? this.client).post<
-      PostV1InstallConnectExchangeResponses,
-      PostV1InstallConnectExchangeErrors,
-      ThrowOnError
-    >({
-      url: "/v1/install-connect/exchange",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    });
-  }
-
-  /**
-   * Download managed OpenWork desktop
-   *
-   * Redirects hosted Cloud deployments to the sign-in-required Cloud app and private single-org deployments to the activation-required Enterprise app.
+   * Older install pages linked downloads here with a token. Redirects to the normal install page, where people sign in and download the desktop app approved for their organization.
    */
   public getV1InstallByPlatform<ThrowOnError extends boolean = false>(
     parameters: {
       platform: string;
-      token: string;
     },
     options?: Options<never, ThrowOnError>,
   ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "platform" },
-            { in: "query", key: "token" },
-          ],
-        },
-      ],
-    );
-    return (options?.client ?? this.client).get<
-      GetV1InstallByPlatformResponses,
-      GetV1InstallByPlatformErrors,
-      ThrowOnError
-    >({
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "platform" }] }]);
+    return (options?.client ?? this.client).get<unknown, unknown, ThrowOnError>({
       url: "/v1/install/{platform}",
       ...options,
       ...params,

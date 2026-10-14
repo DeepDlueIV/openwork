@@ -99,20 +99,21 @@ test("a brand-new person signs up through their agent, names a workspace inline,
     evidence.recordAssertionEvidence("postMcpConnections returns a sign-in link a terminal agent can hand over", signInLink.replace(/org_[a-z0-9]+/i, "org_…"), true);
   });
 
-  await step("the agent gets an install page and a desktop connect link for the workspace in one call", async () => {
+  await step("the agent gets the workspace's plain install page in one call", async () => {
     const found = await world.callTool("search_capabilities", { query: "download desktop app install OpenWork", limit: 20 });
     const installLinks = matchNames(found.json).find((name) => /InstallLinks$/i.test(name));
     expect(installLinks, `matches: ${matchNames(found.json).join(", ")}`).toBeTruthy();
-    const minted = await world.callTool("execute_capability", { name: installLinks, path: { organizationId }, body: {} });
-    const body = isRecord(minted.json) ? minted.json : {};
+    const resolved = await world.callTool("execute_capability", { name: installLinks, path: { organizationId }, body: {} });
+    const body = isRecord(resolved.json) ? resolved.json : {};
     installPageUrl = typeof body.installPageUrl === "string" ? body.installPageUrl : "";
-    const connectUrl = typeof body.connectUrl === "string" ? body.connectUrl : "";
-    expect(new URL(installPageUrl).pathname).toBe("/install");
-    expect(connectUrl).toMatch(/^openwork:\/\/connect\?/);
+    const page = new URL(installPageUrl);
+    expect(page.pathname).toBe("/install");
+    expect(page.search).toBe("");
+    expect(Object.keys(body).sort()).toEqual(["installPageUrl"]);
     await person.navigate(installPageUrl);
     await person.see({ text: "Download OpenWork" }, { timeoutMs: 60_000 });
     await person.screenshot();
-    evidence.recordAssertionEvidence("postOrgsInstallLinks returns installPageUrl + connectUrl", `installPageUrl ${new URL(installPageUrl).pathname}…; connectUrl ${connectUrl.slice(0, 26)}…`, true);
+    evidence.recordAssertionEvidence("postOrgsInstallLinks returns only the plain install page", `installPageUrl ${page.pathname}; no token or connect link`, true);
   });
 
   await step("a connection link that was removed says so plainly, and a broken link asks for a new one", async () => {

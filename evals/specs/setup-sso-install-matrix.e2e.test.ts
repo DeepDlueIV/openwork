@@ -188,14 +188,15 @@ const enforcementCases = [
   { label: "enforcement ON + password disabled", slug: "on", requireSso: true },
   { label: "enforcement OFF + password disabled", slug: "off", requireSso: false },
 ];
-const routes = ["/", "/install", "token", "/setup"];
+// The UI-copied install link is the plain /install page, so it shares that column.
+const routes = ["/", "/install", "/setup"];
 
 describe.sequential("setup SSO full API and Web matrix", () => {
   if (columnId !== "pending") for (const enforcement of enforcementCases) for (const route of routes) {
     test(`${columnId}: ${route} (${enforcement.label})${positiveControl ? " positive control" : ""}`, { timeout: 180_000 }, async ({ place, user, step, evidence }) => {
       const column = await matrixColumn();
       await arrangeEnforcement(column, enforcement.requireSso);
-      const original = new URL(route === "token" ? column.control.installPath : route, column.webUrl);
+      const original = new URL(route, column.webUrl);
       const response = await documentResponse(original.toString());
       expect(response.status).toBe(200);
       expect(response.headers.get("location")).toBeNull();
@@ -207,20 +208,7 @@ describe.sequential("setup SSO full API and Web matrix", () => {
       let offered = false;
       let authenticated = false;
       try {
-        if (route === "token") {
-          await person.see({ role: "heading", label: "Set up OpenWork Enterprise" }, { timeoutMs: 90_000 });
-          const finalUrl = await readSetupSsoBrowserUrl(browser);
-          // Compare without printing a bearer URL on assertion failure.
-          expect(finalUrl === original.toString(), "The issued install token and URL must remain unchanged").toBe(true);
-          expect(navigation.entries.some((entry) => new URL(entry.url).origin === column.idpOrigin)).toBe(false);
-          expect(navigation.entries.every((entry) => {
-            const target = new URL(entry.url);
-            return target.origin === column.webUrl && target.pathname === "/install";
-          }), "Public token links must not navigate through generic sign-in or SSO").toBe(true);
-          await person.notSee({ role: "button", label: "Approve sign-in" });
-          await shot("Open the UI-copied public install link", "The page shows Set up OpenWork Enterprise and desktop download options.");
-          await shot("Verify the token link works without authentication", "The page shows Set up OpenWork Enterprise and desktop download options.");
-        } else if (route === "/") {
+        if (route === "/") {
           await person.see({ role: "button", label: "Continue with SSO" }, { timeoutMs: 90_000 });
           offered = true;
           await shot("Open home while signed out", "The sign-in page offers Continue with SSO.");
@@ -286,7 +274,7 @@ describe.sequential("setup SSO full API and Web matrix", () => {
         expect(navigation.entries.some((entry) => entry.kind === "document-response" && entry.status === 200)).toBe(true);
         evidence.recordAssertionEvidence(
           `${columnId} ${route}: document, navigation, SSO and return behavior`,
-          JSON.stringify({ documentStatus: response.status, documentLocation: null, finalUrl: sanitizedSetupSsoUrl(await readSetupSsoBrowserUrl(browser)), ssoOffered: offered, authenticated, tokenUnchanged: route === "token" ? true : null, originalRoute: route === "token" ? "/install?token=<redacted>" : route, ssoCallbacks: navigation.ssoCallbacks, navigation: navigation.entries, apiImage: column.apiImage, apiImageId: column.apiImageId, webImage: column.webImage, webImageId: column.webImageId, apiVersion: column.apiVersion, mockOidc: true, freshBrowser: true }),
+          JSON.stringify({ documentStatus: response.status, documentLocation: null, finalUrl: sanitizedSetupSsoUrl(await readSetupSsoBrowserUrl(browser)), ssoOffered: offered, authenticated, originalRoute: route, ssoCallbacks: navigation.ssoCallbacks, navigation: navigation.entries, apiImage: column.apiImage, apiImageId: column.apiImageId, webImage: column.webImage, webImageId: column.webImageId, apiVersion: column.apiVersion, mockOidc: true, freshBrowser: true }),
           true,
         );
       } catch (error) {

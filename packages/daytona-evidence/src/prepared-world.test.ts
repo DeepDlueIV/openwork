@@ -95,6 +95,19 @@ test("a prepared source marker mismatch deletes the owned world", async () => {
   assert.deepEqual(deleted, [sandbox.id]);
 });
 
+test("Core launch diagnostics emit only fixed status fields, never provider output or credentials", async () => {
+  const messages: string[] = [];
+  const warn = console.warn;
+  console.warn = message => { messages.push(String(message)); };
+  const api = fakeApi({ waitForSandbox: async () => sandbox, readFile: async () => "wrong-sha",
+    exec: async () => ({ exitCode: 0, output: JSON.stringify({ browser: 200, gateway: 502, token: "must-not-be-logged" }) }),
+    deleteSandbox: async () => {} });
+  try {
+    await assert.rejects(launchDaytonaEvidenceWorld({ sandbox, runtimeFingerprint: fingerprint }, sha, api, "123-1-core"), /Prepared world source mismatch/);
+    assert.deepEqual(messages, [JSON.stringify({ stage: "core-browser-health", browser: 200, gateway: 502 })]);
+  } finally { console.warn = warn; }
+});
+
 test("a prepared world uses the normal private access handshake without allocating a second VM", async () => {
   const writes: string[] = [];
   const api = fakeApi({ waitForSandbox: async () => sandbox,

@@ -19,6 +19,15 @@ test("mandatory Core verdict and optional preview finalizer retain attempt-bound
   assert.match(preview, /overwrite: true/);
 });
 
+test("optional finalization verifies a real restore and reports missing previews without changing assertions", () => {
+  const finalizer = read("../evals/scripts/finalize-core-preview.ts");
+  assert.ok(finalizer.indexOf("await finalizePreviewHandoffs") < finalizer.indexOf("await verifyCorePreviewRestore"));
+  assert.ok(finalizer.indexOf("await verifyCorePreviewRestore") < finalizer.indexOf("annotateCorePreview(record"));
+  assert.match(finalizer, /record.outcome === "passed" && !record.artifacts.some/);
+  assert.match(finalizer, /if \(failure\) throw failure/);
+  assert.doesNotMatch(finalizer, /setOutcome|record\.(?:outcome|summary)\s*=(?!=)/);
+});
+
 test("canceled or failed finalizer has default-branch workflow-run and hourly recovery", () => {
   const recovery = read("workflows/core-preview-recovery.yml");
   assert.match(recovery, /workflows: \[PR change proof\]/);

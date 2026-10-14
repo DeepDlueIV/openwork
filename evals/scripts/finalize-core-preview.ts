@@ -32,6 +32,9 @@ if (!cleanupOnly) {
     const record = await readTestRunFile(path);
     if (!record) throw new Error("Invalid Core preview record");
     annotateCorePreview(record, sourceSha, previews);
+    if (record.outcome === "passed" && !record.artifacts.some(artifact => artifact.checkpoint?.provider === "daytona")) {
+      failure ??= new Error("Core assertions passed, but its optional final preview was not captured, saved and restored");
+    }
     // Assertion outcome, summaries, trace and CLI verdict are never changed.
     await writeFile(path, `${JSON.stringify(record, null, 2)}\n`);
   }

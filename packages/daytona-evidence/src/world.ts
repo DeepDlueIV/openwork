@@ -54,7 +54,35 @@ export async function launchDaytonaEvidenceWorld(template: DaytonaEvidenceLaunch
       viewer: { url: viewer.url, previewToken: viewer.token }, cdp: { url: cdp.url, previewToken: cdp.token } };
     await waitForCdp(session);
     return session;
-  } catch (error) { await api.deleteSandbox(created.id).catch(() => undefined); throw error; }
+  } catch (error) {
+    if (previewOwner) await diagnoseCoreBrowser(api, created).catch(() => console.warn("Core browser diagnostics unavailable; launch still fails."));
+    await api.deleteSandbox(created.id).catch(() => undefined);
+    throw error;
+  }
+}
+
+/** Only fixed service states and HTTP status codes: no logs, URLs or credentials. */
+async function diagnoseCoreBrowser(api: DaytonaApi, sandbox: Sandbox): Promise<void> {
+  const code = `const { readFile } = await import('node:fs/promises');
+const services = JSON.parse(await readFile('/opt/openwork-preview/services.json', 'utf8'));
+const cdp = new URL(services.cdp);
+if (cdp.protocol !== 'http:' || cdp.hostname !== '127.0.0.1') throw new Error('Invalid local CDP');
+const access = JSON.parse(await readFile('/opt/openwork-preview/access.json', 'utf8'));
+const results = {};
+for (const [name, url, headers] of [
+  ['browser', new URL('/json/version', cdp), {}],
+  ['gateway', 'http://127.0.0.1:8081/json/version', { cookie: '__Host-openwork-preview=' + access.token }],
+]) {
+  try { results[name] = (await fetch(url, { headers, signal: AbortSignal.timeout(3000) })).status; }
+  catch { results[name] = 'unreachable'; }
+}
+console.log(JSON.stringify(results));`;
+  const probe = await api.exec(sandbox, `node --input-type=module -e ${JSON.stringify(code)}`, 15);
+  const health: unknown = JSON.parse(probe.output);
+  if (typeof health !== "object" || health === null || !("browser" in health) || !("gateway" in health)) throw new Error("Invalid browser health probe");
+  const status = (value: unknown) => value === "unreachable" || (typeof value === "number" && value >= 100 && value <= 599);
+  if (!status(health.browser) || !status(health.gateway)) throw new Error("Invalid browser health status");
+  console.warn(JSON.stringify({ stage: "core-browser-health", browser: health.browser, gateway: health.gateway }));
 }
 
 /** The resumed browser answers through both access checks. */

@@ -224,12 +224,12 @@ importers:
       dompurify:
         specifier: ^3.4.16
         version: 3.4.16
-      emojilib:
-        specifier: ^4.0.3
-        version: 4.0.3
       fuzzysort:
         specifier: ^3.1.0
         version: 3.1.0
+      gemoji:
+        specifier: ^8.1.0
+        version: 8.1.0
       jsonc-parser:
         specifier: ^3.2.1
         version: 3.3.1
@@ -7136,9 +7136,6 @@ packages:
   emoji-regex@8.0.0:
     resolution: {integrity: sha512-MSjYzcWNOA0ewAHpz0MxpYFvwg6yjy1NG3xteoqz644VCo/RPgnr1/GGt+ic3iJTzQ8Eu3TdM14SawnVUmGE6A==}
 
-  emojilib@4.0.3:
-    resolution: {integrity: sha512-KbWiYre9aRSaPbHrHZIz9zmoM+21LAsK1VFJtnTh1VCtWE/rNMDviGhQTmselFl95dhqtGlY22iH0leG5BuW0g==}
-
   encodeurl@2.0.0:
     resolution: {integrity: sha512-Q0n9HRi4m6JuGIV1eFlmvJB7ZEVxu93IrMyiMsGC0lrMJMWzRgx6WGquyfQgZVb31vhGgXnfmPNNXmxnOkRBrg==}
     engines: {node: '>= 0.8'}
@@ -7604,6 +7601,9 @@ packages:
 
   fuzzysort@3.1.0:
     resolution: {integrity: sha512-sR9BNCjBg6LNgwvxlBd0sBABvQitkLzoVY9MYYROQVX/FvfJ4Mai9LsGhDgd8qYdds0bY77VzYd5iuB+v5rwQQ==}
+
+  gemoji@8.1.0:
+    resolution: {integrity: sha512-HA4Gx59dw2+tn+UAa7XEV4ufUKI4fH1KgcbenVA9YKSj1QJTT0xh5Mwv5HMFNN3l2OtUe3ZIfuRwSyZS5pLIWw==}
 
   generate-function@2.3.1:
     resolution: {integrity: sha512-eeB5GfMNeevm/GRYq20ShmsaGcmI81kIX2K9XQx5miC8KdHaC6Jm0qQ8ZNeGOi7wYB8OsdxKs+Y2oVuTFuVwKQ==}
@@ -16497,8 +16497,6 @@ snapshots:
 
   emoji-regex@8.0.0: {}
 
-  emojilib@4.0.3: {}
-
   encodeurl@2.0.0: {}
 
   end-of-stream@1.4.5:
@@ -17146,6 +17144,8 @@ snapshots:
   functions-have-names@1.2.3: {}
 
   fuzzysort@3.1.0: {}
+
+  gemoji@8.1.0: {}
 
   generate-function@2.3.1:
     dependencies:

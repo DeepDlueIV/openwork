@@ -1,5 +1,5 @@
 import DOMPurify from "dompurify";
-import emojiKeywords from "emojilib";
+import { gemoji } from "gemoji";
 import { Marked, Renderer, TextRenderer, type MarkedExtension, type Token, type Tokens } from "marked";
 import { markedEmoji } from "marked-emoji";
 import {
@@ -128,21 +128,9 @@ function codeLanguageClass(lang: string | undefined) {
   return normalized ? ` class="language-${escapeAttribute(normalized)}"` : "";
 }
 
-function createEmojiAliases() {
-  const aliases: Record<string, string> = {};
-
-  for (const [emoji, names] of Object.entries(emojiKeywords)) {
-    for (const name of names) {
-      if (!aliases[name]) {
-        aliases[name] = emoji;
-      }
-    }
-  }
-
-  return aliases;
-}
-
-const emojiAliases = createEmojiAliases();
+// GitHub's shortcode list (":tada:", ":fire:", ":+1:"): one emoji per name, and no
+// plain words or bare numbers, so text like ":home:" or "14:18:07" stays as written.
+const emojiAliases = Object.fromEntries(gemoji.flatMap(({ emoji, names }) => names.map((name) => [name, emoji])));
 
 const COPY_LABELS = {
   code: { copy: "Copy code block", copied: "Code block copied" },

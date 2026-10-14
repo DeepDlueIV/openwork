@@ -57,11 +57,11 @@ test("standard service configuration and cloud fallback choose the authority, no
   const urls: string[] = [];
   const fetch: typeof globalThis.fetch = async (input) => { urls.push(String(input)); return Response.json(payload(true), { headers: { "cache-control": "private, no-store" } }); };
   try {
-    process.env.DEN_API_BASE = "http://127.0.0.1:8790";
+    process.env.DEN_API_BASE = "https://den.local.example.test";
     assert.deepEqual(await reviewerDaytonaAuthorization({ fetch }), { enabled: true });
     delete process.env.DEN_API_BASE;
     assert.deepEqual(await reviewerDaytonaAuthorization({ fetch }), { enabled: true });
-    assert.deepEqual(urls, ["http://127.0.0.1:8790/v1/features", "https://api.openworklabs.com/v1/features"]);
+    assert.deepEqual(urls, ["https://den.local.example.test/v1/features", "https://api.openworklabs.com/v1/features"]);
   } finally {
     if (previous === undefined) delete process.env.DEN_API_BASE;
     else process.env.DEN_API_BASE = previous;
@@ -70,7 +70,7 @@ test("standard service configuration and cloud fallback choose the authority, no
 
 test("invalid or credential-bearing service configuration is never fetched", async () => {
   let requests = 0;
-  for (const baseUrl of ["not a url", "file:///secret", "https://user:secret@den.example.test", "https://den.example.test/?token=secret", "https://den.example.test/#secret"]) {
+  for (const baseUrl of ["not a url", "http://127.0.0.1:8790", "http://den.example.test", "file:///secret", "https://user:secret@den.example.test", "https://den.example.test/?token=secret", "https://den.example.test/#secret"]) {
     assert.equal((await reviewerDaytonaAuthorization({ baseUrl, fetch: async () => { requests++; return Response.json(payload(true), { headers: { "cache-control": "private, no-store" } }); } })).enabled, false);
   }
   assert.equal(requests, 0);

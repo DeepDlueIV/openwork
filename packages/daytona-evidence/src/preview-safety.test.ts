@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { DaytonaApi } from "./api.ts";
-import { buildDaytonaPreview, daytonaFreshPreviewMethods, launchDaytonaPreview, previewDescriptor } from "./previews.ts";
+import { buildDaytonaPreview, daytonaFreshPreviewMethods, DaytonaPreviewLaunchError, launchDaytonaPreview, previewDescriptor } from "./previews.ts";
 
 const sha = "a".repeat(40);
 const reportId = "b".repeat(32);
@@ -32,6 +32,7 @@ test("unfetchable source never allocates a builder", async () => {
 test("changed ownership during restore is never inspected, assigned access or deleted", async () => {
   const descriptor = await previewDescriptor(sha, "app-web");
   const writes: string[] = [];
+  const sandboxId = "11111111-1111-4111-8111-111111111111";
   const api = new DaytonaApi({ apiKey: "host-key", apiUrl: "https://provider.test/api", region: "r" }, async (input, init) => {
     const url = new URL(String(input));
     if (url.pathname.includes("/snapshots/")) return Response.json({ id: "snapshot", name: descriptor.name, state: "active" });
@@ -39,9 +40,9 @@ test("changed ownership during restore is never inspected, assigned access or de
       assert.equal(typeof init.body, "string");
       if (typeof init.body !== "string") throw new Error("Missing create payload");
       const body = JSON.parse(init.body);
-      return Response.json({ id: "created", public: false, state: "starting", labels: body.labels });
+      return Response.json({ id: sandboxId, public: false, state: "starting", labels: body.labels });
     }
-    if (url.pathname === "/api/sandbox/created" && init?.method === "GET") return Response.json({ id: "created", state: "started", labels: { kind: "unrelated" } });
+    if (url.pathname === `/api/sandbox/${sandboxId}` && init?.method === "GET") return Response.json({ id: sandboxId, state: "started", labels: { kind: "unrelated" } });
     writes.push(`${init?.method} ${url.pathname}`);
     throw new Error("Must not touch an unrelated resource");
   });
@@ -50,6 +51,7 @@ test("changed ownership during restore is never inspected, assigned access or de
   catch (error) { failure = error; }
   assert.ok(failure instanceof Error);
   assert.deepEqual(writes, []);
-  assert.deepEqual(daytonaFreshPreviewMethods(() => api).launchFailureDetails(failure), { stage: "restore", vmId: "created" });
+  assert.deepEqual(daytonaFreshPreviewMethods(() => api).launchFailureDetails(failure), { stage: "restore", vmId: sandboxId });
   assert.deepEqual(daytonaFreshPreviewMethods(() => api).launchFailureDetails(new Error("private host-key")), {});
+  assert.deepEqual(daytonaFreshPreviewMethods(() => api).launchFailureDetails(new DaytonaPreviewLaunchError("restore", "private-host-key")), { stage: "restore" });
 });

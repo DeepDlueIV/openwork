@@ -96,7 +96,9 @@ the evidence region/API settings described above.
 
 Fresh snapshot names (`ow-dy-review-v1-*`) include the full report SHA, world and
 controller/recipe digest in their immutable key. Tools alone are shared by recipe.
-A launch verifies restored HEAD, the exact source marker and controller digest,
+Checkout, installation/rebuilds and compilation run as the unprivileged `openwork-preview` user with a clean environment and no-new-privileges. Runtime uses the same user with a constrained systemd filesystem. Only trusted controller/gateway files remain root-owned; the app cannot read `access.json` or replace the controller. A root-owned socket is reserved before report code executes and remains held across gateway restarts, preventing port squatting. Launch verifies both the gateway's root PID/listener ownership and the app user's inability to read the gateway credential. Security generation 2 changes the immutable descriptor: old root-runtime snapshots are never reused.
+
+A launch verifies restored HEAD as the app user, the exact source marker and controller digest,
 then checks the guest engine plus real app HTML and the same-origin backend
 through a signed private host and gateway-cookie handshake. Each launch creates
 its own VM, access token and deadline; it never reuses a report's live VM. The

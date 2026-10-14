@@ -38,7 +38,8 @@ async function buildState(id: string, world: string, provider?: string): Promise
   if (response.status === 503) throw new Error("launch-unavailable");
   if (!response.ok) throw new Error("launch-status-failed");
   const body: unknown = await response.json();
-  if (typeof body !== "object" || body === null) return { ready: false, building: true, steps: [] };
+  if (typeof body !== "object" || body === null || !("ready" in body) || typeof body.ready !== "boolean"
+    || !("building" in body) || typeof body.building !== "boolean") throw new Error("launch-status-failed");
   return { ready: "ready" in body && body.ready === true, building: "building" in body && body.building === true, ...progressOf(body) };
 }
 
@@ -118,6 +119,7 @@ export function LaunchPreview({ id, connected, providerLabel, providers }: { id:
       setSession({ url: desktop ? outputs.desktopUrl.value : data.url, expiresAt: data.expiresAt, outputs, desktop, world, providerLabel: label });
       setReveal(false); setExpired(false);
     } catch (failure) {
+      if (!buildOutcome) setBuild(null);
       setError(failure instanceof Error && failure.message === "launch-unavailable" ? `${label} launches are unavailable. Reload to check access, or ask the review app owner to check configuration and rollout.`
         : buildOutcome === "still-building" ? "This commit's sandbox is still building. Try again in a few minutes."
         : buildOutcome === "failed" ? "This commit's sandbox could not be built. Try again; if it fails again, ask the review app owner to check the review app logs."

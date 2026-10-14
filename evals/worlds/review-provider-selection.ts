@@ -1,4 +1,9 @@
 import { createServer } from "node:http";
+import { createServer as createSecureServer } from "node:https";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { spawnSync } from "node:child_process";
 import { chrome, localHost } from "@openwork/hosts";
 import { setViewport } from "@openwork/cdp";
 import type { Place, Seed } from "@openwork/env";
@@ -12,7 +17,15 @@ async function providerWorld(_seed: Seed, { place }: { place: Place }, credentia
     let enabled = true;
     let unavailable = false;
     const providerCalls: string[] = [];
-    const authority = createServer((request, response) => {
+    // Fresh, disposable test CA: only the owned review child trusts it. TLS verification stays on.
+    const tls = await mkdtemp(join(tmpdir(), "openwork-review-authority-"));
+    resources.defer(() => rm(tls, { recursive: true, force: true }));
+    const certPath = join(tls, "certificate.pem");
+    const keyPath = join(tls, "key.pem");
+    const certificate = spawnSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", keyPath,
+      "-out", certPath, "-subj", "/CN=127.0.0.1", "-addext", "subjectAltName=IP:127.0.0.1", "-days", "1"], { stdio: "ignore" });
+    if (certificate.status !== 0) throw new Error("Could not prepare the local HTTPS feature authority fixture");
+    const authority = createSecureServer({ key: await readFile(keyPath), cert: await readFile(certPath) }, (request, response) => {
       response.setHeader("cache-control", "private, no-store");
       response.setHeader("content-type", "application/json");
       if (request.url === "/v1/features") {
@@ -27,24 +40,33 @@ async function providerWorld(_seed: Seed, { place }: { place: Place }, credentia
     resources.defer(() => new Promise<void>((resolve) => { authority.closeAllConnections(); authority.close(() => resolve()); }));
     const address = authority.address();
     if (!address || typeof address === "string") throw new Error("Missing authority fixture port");
-    const authorityUrl = `http://127.0.0.1:${address.port}`;
+    const authorityUrl = `https://127.0.0.1:${address.port}`;
     const review = resources.use(await reviewWorld("preview", false, false, {
       FREESTYLE_API_KEY: credentials === "both" ? "synthetic-freestyle-fixture" : "",
       DAYTONA_API_KEY: credentials === "neither" ? "" : "synthetic-daytona-fixture",
-      OPENWORK_EVIDENCE_PROVIDER: "freestyle", DEN_API_BASE: authorityUrl, DAYTONA_API_URL: authorityUrl,
+      OPENWORK_EVIDENCE_PROVIDER: "freestyle", DEN_API_BASE: authorityUrl, DAYTONA_API_URL: authorityUrl, NODE_EXTRA_CA_CERTS: certPath,
     }));
-    let mode: "success" | "failure" | "real" = "success";
+    let mode: "success" | "failure" | "building" | "real" = "success";
+    const polls: string[] = [];
     const requests: { world?: string; provider?: string }[] = [];
     const proxy = createServer(async (request, response) => {
       try {
+        if (request.method === "GET" && request.url?.includes("/launch?")) {
+          polls.push(new URL(request.url, review.baseUrl).searchParams.get("provider") ?? "missing");
+          if (mode === "building") {
+            response.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
+            response.end(JSON.stringify({ ready: false, building: true, progress: { steps: [] } }));
+            return;
+          }
+        }
         if (request.method === "POST" && request.url?.endsWith("/launch") && mode !== "real") {
           let raw = ""; for await (const chunk of request) raw += chunk.toString();
           const body: { world?: string; provider?: string } = JSON.parse(raw);
           requests.push(body);
           const provider = body.provider ?? "freestyle";
           const url = provider === "daytona" ? "https://8080-synthetic.daytonaproxy01.net/__openwork_launch?token=fixture" : `https://ow-${"a".repeat(32)}.preview.openwork.software/__openwork_launch?token=fixture`;
-          response.writeHead(mode === "success" ? 201 : 502, { "content-type": "application/json", "cache-control": "no-store" });
-          response.end(JSON.stringify(mode === "success" ? { provider, world: body.world, gitSha: review.report.gitSha, id: "synthetic-preview", url, expiresAt: new Date(Date.now() + 120_000).toISOString(), outputs: { webUrl: { value: url, group: "Services", secret: true } } } : { error: "Synthetic provider failure" }));
+          response.writeHead(mode === "success" ? 201 : mode === "building" ? 202 : 502, { "content-type": "application/json", "cache-control": "no-store" });
+          response.end(JSON.stringify(mode === "success" ? { provider, world: body.world, gitSha: review.report.gitSha, id: "synthetic-preview", url, expiresAt: new Date(Date.now() + 120_000).toISOString(), outputs: { webUrl: { value: url, group: "Services", secret: true } } } : mode === "building" ? { state: "building", provider } : { error: "Synthetic provider failure" }));
           return;
         }
         const init: RequestInit = { method: request.method, signal: AbortSignal.timeout(15_000) };
@@ -66,7 +88,7 @@ async function providerWorld(_seed: Seed, { place }: { place: Place }, credentia
     const app = resources.use(await chrome({ name: "review-provider-selection", host, startUrl: "about:blank", headless: true }));
     await setViewport(app, { width: 1440, height: 1000, deviceScaleFactor: 1 });
     return {
-      app, baseUrl: `http://127.0.0.1:${proxyAddress.port}`, passed: review.passed, requests, providerCalls,
+      app, baseUrl: `http://127.0.0.1:${proxyAddress.port}`, passed: review.passed, requests, providerCalls, polls,
       enable(value: boolean) { enabled = value; }, unavailable(value: boolean) { unavailable = value; },
       respond(value: typeof mode) { mode = value; },
       async [Symbol.asyncDispose]() { await resources.disposeAsync(); },

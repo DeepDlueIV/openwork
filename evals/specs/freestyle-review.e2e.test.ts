@@ -85,14 +85,14 @@ test("a reviewer can choose a signed-out desktop without mistaking it for an ACM
 
   await step("the reviewer can still choose either ACME full-stack preview", async () => {
     await user.click(picker);
-    await user.press("Home");
-    await user.press("ArrowDown");
-    await user.press("ArrowDown");
-    await user.press("Enter");
+    await user.press("Escape");
+    await user.press("a");
+    await user.press("Tab");
     await user.see(picker, { value: "acme-web" });
     await user.click(picker);
-    await user.press("End");
-    await user.press("Enter");
+    await user.press("Escape");
+    await user.press("a");
+    await user.press("Tab");
     await user.see(picker, { value: "acme-desktop" });
     await user.see({ text: disconnectedMessage });
     expect((await probe.dom(".preview-launch a, .preview-launch section[aria-label='Your connection details']")).elements).toHaveLength(0);
@@ -117,7 +117,7 @@ test("a reviewer can choose a signed-out desktop without mistaking it for an ACM
       });
       expect(disconnected.status).toBe(503);
       expect(disconnected.headers.get("cache-control")).toContain("no-store");
-      expect(await disconnected.json()).toEqual({ error: "Freestyle is not connected. The review app owner can configure it." });
+      expect(await disconnected.json()).toEqual({ error: "Freestyle is not connected. The review app owner can connect it." });
       const crossSite = await fetch(endpoint, {
         method: "POST",
         headers: { origin: "https://unrelated.example", "content-type": "application/json" },

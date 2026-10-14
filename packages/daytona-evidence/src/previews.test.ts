@@ -3,7 +3,10 @@ import { test } from "node:test";
 import { DaytonaApi, type Sandbox, type Snapshot } from "./api.ts";
 import { DAYTONA_BASE_SNAPSHOT } from "./builder.ts";
 import { cleanupDaytonaEvidence } from "./cleanup.ts";
-import { DAYTONA_PREVIEW_WORLDS, PREVIEW_KIND, buildDaytonaPreview, daytonaPreviewProgress, hasDaytonaPreview, launchDaytonaPreview, previewDescriptor, previewOrigin } from "./previews.ts";
+import { compiledRecipe } from "@openwork/freestyle/build-recipes";
+import { digest } from "@openwork/freestyle/cache";
+import { readAsset } from "@openwork/freestyle/assets";
+import { DAYTONA_PREVIEW_WORLDS, PREVIEW_KIND, buildDaytonaPreview, daytonaPreviewProgress, hasDaytonaPreview, launchDaytonaPreview, previewDescriptor, previewOrigin, daytonaFreshPreviewMethods } from "./previews.ts";
 
 const sha = "a".repeat(40);
 const reportId = "b".repeat(32);
@@ -115,11 +118,13 @@ test("build reuses private base/layer machinery and saves a hot exact-source wor
   await buildDaytonaPreview(sha, "app-web", fixture.api, { sourceFetch: async () => Response.json({ tree: [], truncated: false }) });
   assert.equal(await hasDaytonaPreview(sha, "app-web", fixture.api), true);
   const script = [...fixture.files.entries()].find(([path]) => path.endsWith("/review-world.sh"))?.[1] ?? "";
-  assert.ok(script.includes(`git fetch --depth=1 origin ${sha}`));
-  assert.ok(script.includes(`test "$(git rev-parse HEAD)" = "${sha}"`));
+  const appBuild = [...fixture.files.entries()].find(([path]) => path.endsWith("/review-app-build.sh"))?.[1] ?? "";
+  assert.ok(appBuild.includes(`git fetch --depth=1 origin ${sha}`));
+  assert.ok(appBuild.includes(`test "$(git rev-parse HEAD)" = "${sha}"`));
   assert.ok(script.includes("node /opt/openwork-preview/health.mjs"));
-  assert.ok(script.includes("pnpm install --frozen-lockfile --ignore-scripts --ignore-pnpmfile"));
+  assert.ok(appBuild.includes("pnpm install --frozen-lockfile --ignore-scripts --ignore-pnpmfile"));
   assert.equal(script.includes("host-only-key"), false);
+  assert.equal(appBuild.includes("host-only-key"), false);
   const saves = fixture.requests.filter((entry) => entry.path.endsWith("/snapshot"));
   assert.deepEqual(saves.map((entry) => entry.body), [
     { name: fixture.descriptor.toolsName, includeMemory: false }, { name: fixture.descriptor.name, includeMemory: true },
@@ -128,6 +133,97 @@ test("build reuses private base/layer machinery and saves a hot exact-source wor
   const before = fixture.requests.filter((entry) => entry.method === "POST" && entry.path === "/sandbox").length;
   await buildDaytonaPreview(sha, "app-web", fixture.api);
   assert.equal(fixture.requests.filter((entry) => entry.method === "POST" && entry.path === "/sandbox").length, before);
+});
+
+test("report checkout, install and compile run only behind the unprivileged no-new-privileges boundary", async () => {
+  const fixture = await witness();
+  await buildDaytonaPreview(sha, "app-web", fixture.api, { sourceFetch: async () => Response.json({ tree: [], truncated: false }) });
+  const file = (name: string) => [...fixture.files.entries()].find(([path]) => path.endsWith(name))?.[1] ?? "";
+  const controller = file("/review-world.sh");
+  const appBuild = file("/review-app-build.sh");
+  const boundary = "runuser -u openwork-preview -- setpriv --no-new-privs env -i HOME=/home/openwork-preview USER=openwork-preview LOGNAME=openwork-preview PATH=/opt/openwork-preview/tools/node_modules/.bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /bin/bash -c '/bin/bash /opt/openwork-preview/review-app-build.sh'";
+  assert.ok(controller.includes(boundary));
+  assert.ok(controller.indexOf("install -o root -g root -m 0600 /dev/null /opt/openwork-preview/access.json") < controller.indexOf(boundary));
+  const socketStart = controller.indexOf("systemctl start openwork-review-gateway.socket");
+  const gatewayStart = controller.indexOf("systemctl start openwork-review-gateway.service");
+  const ownershipCheck = controller.indexOf("node /opt/openwork-preview/gateway-owner.mjs");
+  assert.ok(socketStart > 0 && socketStart < gatewayStart && gatewayStart < ownershipCheck && ownershipCheck < controller.indexOf(boundary), "root listener and gateway ownership must be established before any report code");
+  assert.equal(/git (?:init|fetch|checkout)|pnpm |node --input-type/.test(controller), false, "root controller cannot directly run report code");
+  assert.ok(appBuild.includes("git fetch --depth=1 origin"));
+  assert.ok(appBuild.includes("pnpm --filter @openwork/types build"));
+  assert.ok(appBuild.includes("pnpm --config.ignore-pnpmfile=true rebuild"));
+  assert.equal(appBuild.includes("/opt/openwork-preview/compiled-"), false);
+  assert.equal(appBuild.includes("/opt/openwork-preview/compiled.tar"), false);
+  assert.ok(appBuild.includes("writeFileSync('/home/openwork-preview/build/compiled-files'"));
+  assert.ok(appBuild.includes("tar --null -T /home/openwork-preview/build/compiled-files -cf /home/openwork-preview/build/compiled.tar"));
+  assert.ok(controller.includes("install -d -o root -g root -m 0755 /opt/openwork-preview"));
+  assert.ok(controller.includes("install -d -o openwork-preview -g openwork-preview -m 0700 /home/openwork-preview /home/openwork-preview/build /workspace /opt/openwork-preview/state"));
+  for (const name of ["services.json", "outputs.json"]) assert.ok(controller.includes(`install -o openwork-preview -g openwork-preview -m 0600 /dev/null /opt/openwork-preview/${name}`));
+  assert.equal(/chown\s+-R|chmod\s+(?:-R\s+)?(?:777|0777)|install -d -o openwork-preview[^\n]*\/opt\/openwork-preview(?:\s|$)/.test(controller), false, "controller parent must never be writable by report code");
+  for (const name of ["gateway", "origins", "health", "gateway-owner"]) assert.ok(fixture.commands.includes(`chmod 600 '/opt/openwork-preview/${name}.mjs'`));
+  assert.ok(fixture.commands.includes("chmod 644 '/opt/openwork-preview/runtime.mjs'"));
+  assert.ok(fixture.commands.includes("chmod 644 '/opt/openwork-preview/review-app-build.sh'"));
+});
+
+test("runtime is an unprivileged confined service with only exact app-owned output paths", async () => {
+  const fixture = await witness();
+  await buildDaytonaPreview(sha, "app-web", fixture.api, { sourceFetch: async () => Response.json({ tree: [], truncated: false }) });
+  const unit = [...fixture.files.entries()].find(([path]) => path.endsWith("/openwork-review-runtime.service"))?.[1] ?? "";
+  for (const directive of ["User=openwork-preview", "Group=openwork-preview", "NoNewPrivileges=yes", "CapabilityBoundingSet=", "RestrictSUIDSGID=yes", "ProtectSystem=strict", "ProtectHome=read-only", "PrivateTmp=yes", "UMask=0077", "InaccessiblePaths=/opt/openwork-preview/access.json /root"]) assert.ok(unit.split("\n").includes(directive), directive);
+  assert.equal(unit.split("\n").find((line) => line.startsWith("ReadWritePaths=")), "ReadWritePaths=/workspace /home/openwork-preview /opt/openwork-preview/state /opt/openwork-preview/services.json /opt/openwork-preview/outputs.json");
+  ready(fixture);
+  await launchDaytonaPreview({ gitSha: sha, reportId, world: "app-web" }, fixture.api, fixture.probe);
+  const git = fixture.commands.find((command) => command.includes("git rev-parse HEAD"));
+  assert.ok(git?.startsWith("runuser -u openwork-preview -- setpriv --no-new-privs env -i HOME=/home/openwork-preview "));
+});
+
+test("the root socket cannot be squatted across gateway restarts and launch verifies kernel ownership", async () => {
+  const fixture = await witness();
+  await buildDaytonaPreview(sha, "app-web", fixture.api, { sourceFetch: async () => Response.json({ tree: [], truncated: false }) });
+  const file = (name: string) => [...fixture.files.entries()].find(([path]) => path.endsWith(name))?.[1] ?? "";
+  const socket = file("/openwork-review-gateway.socket");
+  assert.ok(socket.includes("ListenStream=8080\nBindIPv6Only=both"));
+  assert.ok(file("/openwork-review-gateway.service").includes("User=root\nGroup=root\nNoNewPrivileges=yes\nSockets=openwork-review-gateway.socket"));
+  const gateway = file("/gateway.mjs");
+  assert.ok(gateway.includes("server.listen({ fd: 3 })"));
+  assert.ok(gateway.includes("Number(process.env.LISTEN_PID) !== process.pid"));
+  const owner = file("/gateway-owner.mjs");
+  assert.ok(owner.includes('^Uid:\\s+0\\s+0\\s+0\\s+0$'));
+  assert.ok(owner.includes('fields[7] !== "0" || !sockets.has("socket:[" + fields[9] + "]")'));
+  assert.ok(owner.includes('fields[1]?.split(":").at(-1) !== "1F90" || fields[3] !== "0A"'));
+  assert.ok(owner.includes('command.includes("/opt/openwork-preview/gateway.mjs")'));
+  ready(fixture);
+  await launchDaytonaPreview({ gitSha: sha, reportId, world: "app-web" }, fixture.api, fixture.probe);
+  const checks = fixture.commands.filter((command) => command.includes("systemctl is-active --quiet openwork-review-gateway.socket openwork-review-gateway.service"));
+  assert.equal(checks.length, 2, "check ownership both before issuing credentials and immediately before the handshake");
+  assert.ok(fixture.commands.some((command) => command.startsWith("runuser -u openwork-preview -- setpriv --no-new-privs") && command.includes('test "$(id -u)" -ne 0 && test ! -r /opt/openwork-preview/access.json')));
+});
+
+test("production review factory rejects unsafe credential authorities without any HTTP request", async (context) => {
+  const previousUrl = process.env.DAYTONA_API_URL;
+  const previousKey = process.env.DAYTONA_API_KEY;
+  let calls = 0;
+  context.mock.method(globalThis, "fetch", async () => { calls++; throw new Error("No credential may leave the server"); });
+  process.env.DAYTONA_API_KEY = "host-only-key";
+  try {
+    for (const authority of ["http://localhost:1234/api", "https://user:password@example.test/api", "https://example.test/api?key=secret", "https://example.test/api#fragment"]) {
+      process.env.DAYTONA_API_URL = authority;
+      assert.throws(() => daytonaFreshPreviewMethods().hasSnapshot(sha, "app-web"), /requires HTTPS/);
+    }
+    assert.equal(calls, 0);
+  } finally {
+    if (previousUrl === undefined) delete process.env.DAYTONA_API_URL; else process.env.DAYTONA_API_URL = previousUrl;
+    if (previousKey === undefined) delete process.env.DAYTONA_API_KEY; else process.env.DAYTONA_API_KEY = previousKey;
+  }
+});
+
+test("the security generation cannot reuse a root-executing v1 world snapshot", async () => {
+  const descriptor = await previewDescriptor(sha, "app-web");
+  const oldScripts = { runtime: descriptor.scripts.runtime, gateway: await readAsset("gateway.mjs"), origins: descriptor.scripts.origins, health: descriptor.scripts.health };
+  const oldHash = digest(JSON.stringify({ version: 1, base: DAYTONA_BASE_SNAPSHOT, scripts: oldScripts, tools: descriptor.tools, dependencies: descriptor.dependencies, compile: compiledRecipe("app-web") }));
+  assert.notEqual(descriptor.controllerHash, oldHash);
+  const oldName = `ow-dy-review-v1-${digest(`${sha}\napp-web\n${oldHash}`)}`;
+  assert.notEqual(descriptor.name, oldName);
 });
 
 test("a failed world build releases its owned builder and never publishes a ready snapshot", async () => {
@@ -162,10 +258,11 @@ test("each launch gets a private fresh VM, exact-source witness, deadline and si
   assert.equal(fixture.deleted.length, 0);
 });
 
-for (const mode of ["source", "deadline", "health", "external"]) test(`a ${mode} failure deletes only the newly owned preview and exposes no credential`, async () => {
+for (const mode of ["source", "deadline", "gateway-owner", "health", "external"]) test(`a ${mode} failure deletes only the newly owned preview and exposes no credential`, async () => {
   const fixture = await witness(); ready(fixture);
   if (mode === "source") fixture.mismatch();
   if (mode === "deadline") fixture.fail("openwork-review-expiry");
+  if (mode === "gateway-owner") fixture.fail("gateway-owner.mjs");
   if (mode === "health") fixture.fail("health.mjs");
   await assert.rejects(launchDaytonaPreview({ gitSha: sha, reportId, world: "app-web" }, fixture.api, mode === "external" ? async () => new Response("not ready", { status: 502 }) : fixture.probe), (error: Error) => !error.message.includes("host-only-key") && /could not be reached/.test(error.message));
   assert.deepEqual(fixture.deleted, ["sandbox-1"]);

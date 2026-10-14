@@ -38,6 +38,20 @@ both("a reviewer chooses Daytona without losing their existing preview when new 
     evidence.recordAssertionEvidence("A stale enabled page cannot bypass the current kill switch", "The real production POST re-read the local no-store feature authority and returned unavailable before any provider API call; the previously issued link was preserved.", true);
     await user.screenshot();
   });
+  await step("a kill during preparation stops provider-pinned polling without leaving a false running state", async () => {
+    world.enable(true); world.respond("building");
+    await user.click({ role: "button", text: "Launch another" });
+    await user.see({ text: /^Building OpenWork web for this commit/ });
+    await probe.eventually(() => world.polls.length, { within: 5000, label: "Daytona build poll observed", until: (count) => count > 0 });
+    world.enable(false); world.respond("real");
+    await user.see({ text: "Daytona launches are unavailable. Reload to check access, or ask the review app owner to check configuration and rollout." });
+    expect(world.polls.every((provider) => provider === "daytona")).toBe(true);
+    expect((await probe.dom('section[aria-label="Sandbox build progress"]')).elements).toHaveLength(0);
+    await user.see({ role: "link", text: "Open sandbox" });
+    expect(world.providerCalls).toHaveLength(0);
+    evidence.recordAssertionEvidence("Killed preparation does not poll another provider or keep a misleading build spinner", "Every observed readiness request named Daytona; the real route rejected the next poll after the kill. Progress disappeared, existing access remained, and no provider VM call occurred.", true);
+    await user.screenshot();
+  });
 });
 
 daytona("a reviewer with only Daytona configured sees truthful launch, failure and unavailable states", async ({ world, user, probe, step, evidence }) => {

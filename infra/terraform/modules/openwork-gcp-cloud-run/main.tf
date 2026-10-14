@@ -25,8 +25,9 @@ locals {
   den_api_image = var.den_api_image != "" ? var.den_api_image : "${local.mirror_path}/openwork-den-api${local.den_api_ref}"
   den_web_image = var.den_web_image != "" ? var.den_web_image : "${local.mirror_path}/openwork-den-web${local.den_web_ref}"
 
-  # Unpinned published images need an explicit opt-in.
-  images_pinned = var.allow_mutable_image_tags || ((var.den_api_image != "" || var.image_digests.den_api != "") && (var.den_web_image != "" || var.image_digests.den_web != ""))
+  # Every image, published or custom, must be pinned by digest unless the
+  # operator explicitly accepts mutable tags.
+  images_pinned = var.allow_mutable_image_tags || alltrue([for i in [local.den_api_image, local.den_web_image] : can(regex("@sha256:[a-f0-9]{64}$", i))])
 
   bool = { true = "true", false = "false" }
 

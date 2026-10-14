@@ -119,8 +119,9 @@ the load balancer without a domain of your own (`sslip_domain = true`).
 - **Images are pinned by digest.** Cloud Run runs the release's images by
   digest, so moving a tag upstream cannot change what runs with your
   secrets. Set `image_digests` for `openwork_version` and update both with
-  every upgrade. `den_api_image` / `den_web_image` (your own mirror) or
-  `allow_mutable_image_tags = true` lift the requirement. To read a digest
+  every upgrade. Your own `den_api_image` / `den_web_image` must also end in
+  `@sha256:<digest>`. Only `allow_mutable_image_tags = true` lifts the
+  requirement. To read a digest
   (`docker buildx imagetools inspect <image>:<version>` also shows it):
 
   ```bash

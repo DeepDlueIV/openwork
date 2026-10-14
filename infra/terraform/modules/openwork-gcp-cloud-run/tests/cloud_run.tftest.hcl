@@ -159,8 +159,8 @@ run "custom_images_skip_mirror" {
   command = apply
 
   variables {
-    den_api_image = "us-docker.pkg.dev/acme/openwork/openwork-den-api:1"
-    den_web_image = "us-docker.pkg.dev/acme/openwork/openwork-den-web:1"
+    den_api_image = "us-docker.pkg.dev/acme/openwork/openwork-den-api@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    den_web_image = "us-docker.pkg.dev/acme/openwork/openwork-den-web@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
   }
 
   assert {
@@ -305,4 +305,15 @@ run "invalid_digest_is_rejected" {
   }
 
   expect_failures = [var.image_digests]
+}
+
+run "custom_image_tags_are_refused" {
+  command = plan
+
+  variables {
+    den_api_image = "us-docker.pkg.dev/acme/openwork/openwork-den-api:1"
+    den_web_image = "us-docker.pkg.dev/acme/openwork/openwork-den-web:1"
+  }
+
+  expect_failures = [google_cloud_run_v2_job.migrate]
 }

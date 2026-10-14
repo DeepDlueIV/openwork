@@ -8,7 +8,7 @@ variable "project_id" {
 }
 
 variable "openwork_version" {
-  description = "Published OpenWork release, for example \"0.18.58\". Used as the tag for both images unless den_api_image / den_web_image are set. Needs 0.18.57 or later (Cloud SQL socket support in DATABASE_URL)."
+  description = "Published OpenWork release, for example \"0.18.58\". Selects the release; the images themselves are pinned with image_digests. Needs 0.18.57 or later (Cloud SQL socket support in DATABASE_URL)."
   type        = string
 }
 
@@ -56,14 +56,14 @@ variable "create_image_mirror" {
 }
 
 variable "den_api_image" {
-  description = "Full den-api image reference in Artifact Registry (or another registry Cloud Run can pull from). Empty uses the ghcr.io mirror: <region>-docker.pkg.dev/<project>/<name>-ghcr/different-ai/openwork-den-api:<openwork_version>."
+  description = "Full den-api image reference in Artifact Registry (or another registry Cloud Run can pull from), pinned as <image>@sha256:<digest>. Empty uses the ghcr.io mirror: <region>-docker.pkg.dev/<project>/<name>-ghcr/different-ai/openwork-den-api@<image_digests.den_api>."
   type        = string
   default     = ""
   nullable    = false
 }
 
 variable "image_digests" {
-  description = "Digests (sha256:...) of the published den-api and den-web images for openwork_version, so Cloud Run runs exactly that build even if a tag is moved upstream. Required unless you set den_api_image / den_web_image or allow_mutable_image_tags. The README shows how to read them."
+  description = "Digests (sha256:...) of the published den-api and den-web images for openwork_version, so Cloud Run runs exactly that build even if a tag is moved upstream. Required unless allow_mutable_image_tags is set. The README shows how to read them."
   type = object({
     den_api = optional(string, "")
     den_web = optional(string, "")
@@ -78,13 +78,13 @@ variable "image_digests" {
 }
 
 variable "allow_mutable_image_tags" {
-  description = "Run the published images by tag (openwork_version) without image_digests. Not recommended: whoever can move the tag upstream decides what code runs with this deployment's secrets."
+  description = "Allow images referenced by tag: the published images without image_digests, or a den_api_image / den_web_image without @sha256:. Not recommended: whoever can move the tag upstream decides what code runs with this deployment's secrets."
   type        = bool
   default     = false
 }
 
 variable "den_web_image" {
-  description = "Full den-web image reference. Empty uses the ghcr.io mirror, like den_api_image."
+  description = "Full den-web image reference, pinned as <image>@sha256:<digest>. Empty uses the ghcr.io mirror, like den_api_image."
   type        = string
   default     = ""
   nullable    = false

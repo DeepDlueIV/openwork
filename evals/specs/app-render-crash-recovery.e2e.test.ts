@@ -12,11 +12,12 @@ const THROWN = `Local context is missing (eval render throw) after https://app.o
 const MESSAGE = "Local context is missing (eval render throw) after https://app.openworklabs.com/signin";
 const heading = { text: /OpenWork hit an unexpected error/ };
 
-test("a render throw shows a recovery screen with the error instead of a blank window", async ({ world, user, agent, probe, step }) => {
+test("a render throw shows a recovery screen with the error instead of a blank window", async ({ world, user, agent, probe, step, evidence }) => {
   await step("the app is healthy and shows no recovery screen", async () => {
     await user.see("composer", { editable: true, timeoutMs: 120_000 });
     expect((await probe.text()).trim().length).toBeGreaterThan(40);
     await user.notSee(heading);
+    evidence.recordAssertionEvidence("The app starts ready for a task", "The composer is editable, the app has content, and the recovery heading is absent", true);
   });
 
   await step("a throw during render lands on the recovery screen, not an empty window", async () => {
@@ -28,6 +29,7 @@ test("a render throw shows a recovery screen with the error instead of a blank w
     await user.notSee({ text: MESSAGE });
     await user.notSee({ text: /at AppRecoveryControlActions/ });
     await user.notSee({ role: "button", label: /copy details/i });
+    evidence.recordAssertionEvidence("A render error produces a usable recovery screen", "Reload and Technical details are visible; raw error details and Copy details remain hidden", true);
     await user.screenshot();
   });
 
@@ -42,6 +44,7 @@ test("a render throw shows a recovery screen with the error instead of a blank w
     await user.see({ text: /at AppRecoveryControlActions/ });
     await user.see({ role: "button", label: /copy details/i });
     await user.see({ role: "button", label: /open logs folder/i });
+    evidence.recordAssertionEvidence("Technical details retain the stack without exposing the URL grant", "The sign-in URL path and AppRecoveryControlActions stack frame are visible; the synthetic grant is absent", true);
     await user.screenshot();
   });
 
@@ -59,6 +62,7 @@ test("a render throw shows a recovery screen with the error instead of a blank w
     expect(stack).toMatch(/at AppRecoveryControlActions/);
     expect(clipboard).toContain("https://app.openworklabs.com/signin");
     expect(clipboard).not.toContain(SECRET);
+    evidence.recordAssertionEvidence("The copied report is diagnostic and redacted", "Clipboard contains the OpenWork version/flavor header, original error and recovery stack, but no grant query value", true);
   });
 
   await step("reload brings the app back", async () => {
@@ -72,5 +76,6 @@ test("a render throw shows a recovery screen with the error instead of a blank w
     await user.see("composer", { editable: true, timeoutMs: 120_000 });
     expect(await probe.hash()).toBe(route);
     await user.notSee(heading);
+    evidence.recordAssertionEvidence("Reload restores the task without losing its route", `The composer is editable again at ${route}; the recovery heading is absent`, true);
   });
 });

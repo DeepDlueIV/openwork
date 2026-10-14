@@ -1,5 +1,7 @@
 import { denFetch, signIn, type DenSession } from "@openwork/behaviors";
-import { defaultReuseAdmin, localMysqlIsRunning, localRedisIsRunning, needs, personDefaults, queryDenDatabase, SkipError, type Seed } from "@openwork/env";
+import { enableOrganizationCapabilities } from "./organization-capabilities.ts";
+import { allocateFreePorts } from "@openwork/cdp";
+import { defaultReuseAdmin, faultProxy, localMysqlIsRunning, localRedisIsRunning, needs, personDefaults, queryDenDatabase, SkipError, type Place, type Seed } from "@openwork/env";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -113,11 +115,26 @@ export async function orgInviteLink(seed: Seed) {
   };
 }
 
-export async function orgInvite(seed: Seed, { place }: { place: { kind: "local" | "daytona" } }) {
+/**
+ * Locally, den-web reaches den-api through a fault proxy pinned before boot,
+ * so a browser stays on Den's real origin while a test fails one API call.
+ * Serving den-web itself from the proxy's port leaves the join page loading.
+ */
+async function pinnedLocalFaultProxy(place: Place) {
+  if (place.kind !== "local") return null;
+  const [apiPort, webPort] = await allocateFreePorts(2);
+  const apiUrl = `http://127.0.0.1:${apiPort}`;
+  const proxy = await faultProxy({ apiUrl, webUrl: apiUrl }, { place });
+  return { proxy, ports: { api: apiPort, web: webPort } };
+}
+
+export async function orgInvite(seed: Seed, { place }: { place: Place }) {
   const runId = `${Date.now().toString(36)}${process.pid.toString(36)}`;
   const identity = (key: string) => personDefaults(key, undefined, runId);
+  const pinned = await pinnedLocalFaultProxy(place);
   const den = await seed.den({
     ...(place.kind === "daytona" ? { provision: false } : { seedProfile: "demo-org" }),
+    ...(pinned ? { ports: pinned.ports, webApiBase: pinned.proxy.ref.webUrl } : {}),
     env: {
       DEN_ORG_MODE: "multi_org", DEN_REQUIRE_EMAIL_VERIFICATION: "true",
       DEN_SINGLE_ORG_ALLOW_PUBLIC_SIGNUP: "true", OPENWORK_DEV_MODE: "1",
@@ -130,6 +147,8 @@ export async function orgInvite(seed: Seed, { place }: { place: { kind: "local" 
   const createdOrganization = await seed.api(owner, "/v1/org", { method: "POST", body: JSON.stringify({ name: `Invite workspace ${runId}` }) });
   if (!createdOrganization.response.ok) throw new Error(`Organization: HTTP ${createdOrganization.response.status}`);
   const organization = record(record(createdOrganization.body).organization);
+  // Signing up from this workspace's invite links verifies the invited email (OPE-82).
+  await enableOrganizationCapabilities(seed, owner, { inviteLinkVerifiesEmail: true }, text(organization.id));
   const createdOther = await seed.api(owner, "/v1/org", { method: "POST", body: JSON.stringify({ name: `Other workspace ${runId}` }) });
   if (!createdOther.response.ok) throw new Error(`Second organization: HTTP ${createdOther.response.status}`);
   const otherOrg = record(record(createdOther.body).organization);
@@ -138,10 +157,22 @@ export async function orgInvite(seed: Seed, { place }: { place: { kind: "local" 
   });
   if (!selected.response.ok) throw new Error(`Select organization: HTTP ${selected.response.status}`);
   const other = owner;
+  // The same account in its own session, for a browser that signs out: signing
+  // out revokes that session, and the witnesses keep using the owner's.
+  const otherBrowser = await signIn(den.ref, defaultReuseAdmin());
   const web = await seed.web({ den, startPath: "/", headless: true });
   return {
-    den, web, owner, other, organization, otherOrg, identity, witnesses,
+    den, web, owner, other, otherBrowser, organization, otherOrg, identity, witnesses,
     fresh: (startPath = "/", signedInAs?: DenSession) => seed.web({ den, startPath, signedInAs, headless: true }),
+    /** A browser at startPath whose Den API calls go through a fault proxy the test controls. */
+    async faultableWeb(startPath: string) {
+      if (pinned) return { proxy: pinned.proxy, surface: await seed.web({ den, startPath, headless: true }) };
+      const proxy = await seed.faultProxy(den);
+      return { proxy, surface: await seed.web({ den: { ...den, ref: proxy.ref }, startPath, headless: true }) };
+    },
+    async [Symbol.asyncDispose]() {
+      await pinned?.proxy[Symbol.asyncDispose]();
+    },
     // A sign-up that stopped at the emailed code: the account and password
     // exist, the email is unverified, and Den created no session.
     async unverifiedAccount(person: { email: string; name: string; password: string }) {

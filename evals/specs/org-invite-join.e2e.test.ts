@@ -87,15 +87,18 @@ test("OPE-82: cloud invitations retain identity and organization through authent
     await ownerActor.see({ text: "Pending" });
     await user.navigate(invite.link);
     await user.see({ text: person.email }, { timeoutMs: 90_000 });
-    await user.see({ role: "button", label: "Sign up with Google" });
-    await user.type({ role: "textbox", label: "Name" }, person.name);
-    await user.type({ role: "textbox", label: "Password" }, person.password);
+    await user.type({ role: "textbox", label: /^name$/i }, person.name);
+    await user.type({ role: "textbox", label: /^password$/i }, person.password);
     await user.click({ role: "button", label: "Create account" });
+    await user.notSee({ role: "textbox", label: /^verification code$/i });
+    await user.see({ role: "button", label: `Join ${text(world.organization.name)}` }, { timeoutMs: 30_000 });
+    await user.click({ role: "button", label: `Join ${text(world.organization.name)}` });
     await joined(person.email);
-    await user.notSee({ role: "textbox", label: "Verification code" });
     await user.notSee({ role: "button", label: "Resend code" });
     expect(await witnesses.emails("verification", person.email)).toEqual(verificationBefore);
-    await ownerActor.see({ text: person.email });
+    // The member list does not refresh on its own; the owner reloads it.
+    await ownerActor.reload();
+    await ownerActor.see({ text: person.email }, { timeoutMs: 30_000 });
     await ownerActor.notSee({ text: "Pending" }, { timeoutMs: 30_000 });
     await user.reload();
     await joined(person.email);
@@ -107,9 +110,9 @@ test("OPE-82: cloud invitations retain identity and organization through authent
     const person = identity("switch-invitee");
     const invite = await witnesses.invite(person.email, orgId, "admin");
     const wrongAccountMembershipIds = membersFor(await witnesses.org(orgId), world.other.email).map((member) => member.id);
-    const surface = await world.fresh(invite.link, world.other);
+    const surface = await world.fresh(invite.link, world.otherBrowser);
     const actor = user.on(surface);
-    await actor.see({ text: "Switch accounts to continue." }, { timeoutMs: 90_000 });
+    await actor.see({ text: /Switch accounts to continue\./ }, { timeoutMs: 90_000 });
     await actor.notSee({ role: "button", label: `Join ${text(world.organization.name)}` });
     const denied = await seed.api(world.other, "/v1/orgs/invitations/accept", { method: "POST", body: JSON.stringify({ id: invite.token }) });
     expect(denied.response.ok).toBe(false);
@@ -118,12 +121,14 @@ test("OPE-82: cloud invitations retain identity and organization through authent
     expect(membersFor(await witnesses.org(orgId), world.other.email).map((member) => member.id)).toEqual(wrongAccountMembershipIds);
     await actor.click({ role: "button", label: "Use a different account" });
     await actor.see({ text: person.email });
-    await actor.type({ role: "textbox", label: "Name" }, person.name);
+    await actor.type({ role: "textbox", label: /^name$/i }, person.name);
     const verificationBefore = await witnesses.emails("verification", person.email);
-    await actor.type({ role: "textbox", label: "Password" }, person.password);
+    await actor.type({ role: "textbox", label: /^password$/i }, person.password);
     await actor.click({ role: "button", label: "Create account" });
+    await actor.notSee({ role: "textbox", label: /^verification code$/i });
+    await actor.see({ role: "button", label: `Join ${text(world.organization.name)}` }, { timeoutMs: 30_000 });
+    await actor.click({ role: "button", label: `Join ${text(world.organization.name)}` });
     await joined(person.email, "admin");
-    await actor.notSee({ role: "textbox", label: "Verification code" });
     expect(await witnesses.emails("verification", person.email)).toEqual(verificationBefore);
     expect(membersFor(await witnesses.org(orgId), world.other.email).map((member) => member.id)).toEqual(wrongAccountMembershipIds);
   });
@@ -133,7 +138,7 @@ test("OPE-82: cloud invitations retain identity and organization through authent
       const person = identity(`${state}-invitee`);
       const invite = await witnesses.invite(person.email, orgId);
       if (state === "canceled") {
-        const canceled = await witnesses.api(`/v1/invitations/${invite.id}`, { method: "DELETE", headers: { "x-openwork-org-id": orgId } });
+        const canceled = await witnesses.api(`/v1/invitations/${invite.id}/cancel`, { method: "POST", headers: { "x-openwork-org-id": orgId }, body: JSON.stringify({}) });
         expect(canceled.response.ok, canceled.text).toBe(true);
       }
       if (state === "blocked") {
@@ -145,8 +150,8 @@ test("OPE-82: cloud invitations retain identity and organization through authent
         const surface = await world.fresh(invite.link);
         const actor = user.on(surface);
         await actor.see({ text: state === "blocked" ? "This invite needs a different email domain." : "This invite was canceled." }, { timeoutMs: 90_000 });
-        await actor.notSee({ role: "textbox", label: "Password" });
-        await actor.notSee({ role: "textbox", label: "Verification code" });
+        await actor.notSee({ role: "textbox", label: /^password$/i });
+        await actor.notSee({ role: "textbox", label: /^verification code$/i });
         await actor.notSee({ role: "button", label: `Join ${text(world.organization.name)}` });
         const org = await witnesses.org(orgId);
         expect(membersFor(org, person.email)).toHaveLength(0);
@@ -165,18 +170,17 @@ test("OPE-82: cloud invitations retain identity and organization through authent
   await step("a generic sign-up 403 is an error, not an email-verification challenge", async () => {
     const person = identity("forbidden-invitee");
     const invite = await witnesses.invite(person.email, orgId);
-    const proxy = await seed.faultProxy(world.den);
+    const { proxy, surface } = await world.faultableWeb(new URL(invite.link).pathname + new URL(invite.link).search);
     await proxy.faults.status("/api/auth/sign-up/email", 403, { times: 1, body: { code: "ACCESS_DENIED", message: "Account registration is blocked by policy." } });
-    const surface = await seed.web({ den: { ...world.den, ref: proxy.ref }, startPath: new URL(invite.link).pathname + new URL(invite.link).search, headless: true });
     const actor = user.on(surface);
     const before = await witnesses.emails("verification", person.email);
-    await actor.see({ role: "textbox", label: "Name" }, { timeoutMs: 90_000 });
-    await actor.type({ role: "textbox", label: "Name" }, person.name);
-    await actor.type({ role: "textbox", label: "Password" }, person.password);
+    await actor.see({ role: "textbox", label: /^name$/i }, { timeoutMs: 90_000 });
+    await actor.type({ role: "textbox", label: /^name$/i }, person.name);
+    await actor.type({ role: "textbox", label: /^password$/i }, person.password);
     await actor.click({ role: "button", label: "Create account" });
     await probe.eventually(() => proxy.requestLog(), { within: 15_000, label: "the submitted form received the generic 403", until: (requests) => requests.some((request) => request.faulted && request.status === 403) });
     await actor.see({ text: "Account registration is blocked by policy." });
-    await actor.notSee({ role: "textbox", label: "Verification code" });
+    await actor.notSee({ role: "textbox", label: /^verification code$/i });
     await actor.notSee({ role: "button", label: "Resend code" });
     expect(await witnesses.emails("verification", person.email)).toEqual(before);
     await pending(person.email);

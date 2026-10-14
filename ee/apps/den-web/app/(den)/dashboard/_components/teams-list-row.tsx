@@ -103,7 +103,7 @@ export function TeamsListOpenLink({ href, name }: { href: string; name: string }
 /** A team the viewer can't change: a lock with the reason and who can (DESIGN.md P4). */
 export function TeamsListLocked({ reason }: { reason: string }) {
   return (
-    <span role="img" aria-label={reason} title={reason} className="flex h-7 w-7 items-center justify-center text-gray-400">
+    <span role="img" aria-label={reason} title={reason} className="flex h-7 w-7 items-center justify-center text-gray-500">
       <Lock className="h-4 w-4" aria-hidden />
     </span>
   );

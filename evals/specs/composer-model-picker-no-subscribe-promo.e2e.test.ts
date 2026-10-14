@@ -1,12 +1,63 @@
 import { spec } from "@openwork/testkit";
 import { expect } from "vitest";
 import { modelPicker, modelPickerEffortWeb } from "../worlds/chat.ts";
+import { readOpenWorkMarkContrast, setSidebarBrandTheme } from "../worlds/sidebar-brand.ts";
 
 const test = spec.world(modelPicker, {
   timeout: 420_000, resources: { surfaces: ["appWeb"], services: ["den", "mock"] },
 });
 
 const searchPlaceholder = "Search models…";
+
+test("MODEL-BRAND a member can identify OpenWork models in dark and light pickers and the command palette", async ({ world, user, probe, step, evidence, place }) => {
+  const draft = "Keep this draft while changing appearance.";
+  const marks = () => readOpenWorkMarkContrast(world.app);
+  const checkMarks = async (previousInk?: string) => {
+    // Popovers scale during their entrance; inspect the settled native size.
+    const visible = await probe.eventually(marks, {
+      within: 5_000, label: "OpenWork marks settle at their normal size",
+      until: (marks) => marks.length >= 4 && marks.every(mark => mark.width === 16 && mark.height === 16 && mark.fill !== previousInk && mark.contrast >= 3),
+    });
+    const readable = visible.length >= 4 && visible.every(mark => mark.contrast >= 3 && mark.width === 16 && mark.height === 16 && mark.pathsFollowInk && mark.fill === mark.color);
+    evidence.recordAssertionEvidence("OpenWork marks remain readable without changing their geometry", JSON.stringify(visible), readable);
+    expect(visible.length).toBeGreaterThanOrEqual(4);
+    expect(readable).toBe(true);
+    await user.see("composer", { text: draft });
+    await user.screenshot();
+    return visible[0]?.fill;
+  };
+  await user.type("composer", draft);
+  let darkInk: string | undefined;
+  let lightInk: string | undefined;
+  await step("after: four OpenWork models have visible marks in the dark picker", async () => {
+    await setSidebarBrandTheme(world.app, true);
+    await user.click({ role: "button", label: "Change model" });
+    await user.see({ text: "GPT-6 Luna" });
+    darkInk = await checkMarks();
+  });
+  await step("the same marks stay dark and retain their size in the light picker", async () => {
+    await setSidebarBrandTheme(world.app, false);
+    await user.see({ text: "GPT-6 Luna" });
+    lightInk = await checkMarks(darkInk);
+    expect(lightInk).not.toBe(darkInk);
+  });
+  await step("the dark command palette uses the same readable marks and preserves the draft", async () => {
+    await user.press("Escape");
+    await setSidebarBrandTheme(world.app, true);
+    await user.press(place.kind === "local" && process.platform === "darwin" ? "Meta+K" : "Control+K");
+    await user.see({ placeholder: "Search actions and settings…" });
+    await user.type({ placeholder: "Search actions and settings…" }, "Models");
+    await user.click({ role: "option", label: /^Models/ });
+    await user.see({ placeholder: searchPlaceholder });
+    await checkMarks(lightInk);
+  });
+  await step("the light command palette retains the marks without sending the draft", async () => {
+    await setSidebarBrandTheme(world.app, false);
+    await user.see({ placeholder: searchPlaceholder });
+    await checkMarks(darkInk);
+    expect(await world.requests()).toEqual([]);
+  });
+});
 
 test("a signed-in member keeps Auto and BYOK accessible while organizing pins without losing a draft", async ({ world, user, probe, step, evidence }) => {
   expect(world.auto.modelID).toBe("openai/gpt-6-luna");

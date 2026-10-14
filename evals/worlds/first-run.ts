@@ -510,7 +510,11 @@ export async function artifactCodeBrowserWorld(seed: Seed) {
       write("src/openwork-artifact-proof.ts", "export const artifactEditor = true;\n"),
       write("config/openwork-artifact-settings.json", "{\"artifactEditor\":true}\n"),
       write("docs/table-interactions.md", tableMarkdown),
-      write("docs/release-notes.pdf", linkedPdfContent),
+      fetch("http://127.0.0.1:" + port + "/workspace/" + encodeURIComponent(workspaceId) + "/files/raw", {
+        method: "POST",
+        headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
+        body: JSON.stringify({ path: "docs/release-notes.pdf", dataBase64: btoa(linkedPdfContent), baseUpdatedAt: null }),
+      }),
     ]);
     return responses.every((response) => response.ok);
   }, [base.workspace.workspaceId, tableMarkdown, linkedPdf(pdfLinkUrl)]), { awaitPromise: true });

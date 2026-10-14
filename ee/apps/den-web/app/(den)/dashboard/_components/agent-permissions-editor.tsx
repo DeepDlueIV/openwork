@@ -99,8 +99,9 @@ export type AgentPermissionsAccess =
 
 export function useAgentPermissionsAccess(): AgentPermissionsAccess {
   const { orgId, orgSlug, orgContext, orgBusy, orgError } = useOrgDashboard();
-  if (orgError && !orgBusy) return { state: "error" };
-  if (orgBusy || !orgContext || !orgId) return { state: "checking" };
+  // A background refresh keeps the organization on screen, so an unsaved draft
+  // stays in place instead of being replaced by a loading state (DESIGN.md P11).
+  if (!orgContext || !orgId || orgContext.organization.id !== orgId) return orgError && !orgBusy ? { state: "error" } : { state: "checking" };
   if (!orgFeatureEnabled(orgContext, "agentPermissions")) return { state: "feature_off" };
   const access = getOrgAccessFlags(orgContext.currentMember.role, orgContext.currentMember.isOwner, orgContext.currentMember.permissions);
   if (!access.canViewAgentPermissions) return { state: "no_access" };
@@ -609,9 +610,8 @@ function PatternLine({ list, label, noun, testId, kind, patterns, inherited, edi
       setError(`${pattern} is already on this list.`);
       return;
     }
-    setError(null);
-    setDraft("");
     onChange([...patterns, pattern]);
+    close();
   }
 
   return (
@@ -657,7 +657,7 @@ function PatternLine({ list, label, noun, testId, kind, patterns, inherited, edi
                 placeholder={agentPermissionPatternPlaceholders[kind]}
                 aria-invalid={error ? true : undefined}
                 aria-describedby={error ? errorId : undefined}
-                className="h-7 w-[220px] font-mono text-[12px]"
+                className="!h-6 !w-[220px] !rounded-md !px-2 font-mono !text-[12px]"
                 onChange={(event) => { setDraft(event.target.value); setError(null); }}
                 onKeyDown={(event) => { if (event.key === "Escape") close(); }}
                 onBlur={() => { if (!draft.trim()) close(); }}

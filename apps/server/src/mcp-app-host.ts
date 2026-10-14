@@ -60,7 +60,7 @@ export type McpAppToolResult = CallToolResult & { hostAction?: ConnectionActionI
 
 /** Result _meta key the host trusts to decide whether a result may be kept. */
 export const MCP_APP_READ_ONLY_RESULT_META = "openwork/readOnly";
-/** Result _meta key naming the verified server a result came from, so a kept result never crosses servers. */
+/** Result _meta key naming the verified server and credential revision a result came from, so a kept result never crosses either. */
 export const MCP_APP_PROVIDER_IDENTITY_META = "openwork/providerIdentity";
 
 export async function supportsHostConnectionActions(serverName: string, config: Record<string, unknown>, toolName: string, resourceUri: string): Promise<boolean> {
@@ -1180,8 +1180,10 @@ export async function callMcpAppTool(input: {
     }
     await currentConfig();
     assertLive();
-    // The configured server this launch verified, without its credentials.
-    const providerIdentity = createHash("sha256").update(JSON.stringify([input.serverName, remoteUrl(config)?.href ?? null])).digest("hex");
+    // The configured server and credential revision this launch verified: the
+    // launch fingerprint already hashes its configuration, auth headers and
+    // private credential revision, so any credential change gives a new identity.
+    const providerIdentity = createHash("sha256").update(JSON.stringify([input.serverName, remoteUrl(config)?.href ?? null, launch.fingerprint])).digest("hex");
     // For a cached read: the call would be allowed now without approval, so
     // the host may show the result it kept from this same server. Nothing reaches the tool.
     if (input.checkOnly) {

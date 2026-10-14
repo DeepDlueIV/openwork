@@ -59,18 +59,21 @@ variable "den_api_image" {
   description = "Full den-api image reference in Artifact Registry (or another registry Cloud Run can pull from). Empty uses the ghcr.io mirror: <region>-docker.pkg.dev/<project>/<name>-ghcr/different-ai/openwork-den-api:<openwork_version>."
   type        = string
   default     = ""
+  nullable    = false
 }
 
 variable "den_web_image" {
   description = "Full den-web image reference. Empty uses the ghcr.io mirror, like den_api_image."
   type        = string
   default     = ""
+  nullable    = false
 }
 
 variable "service_account_email" {
   description = "Existing service account for the Cloud Run services and migration job. Empty creates <name>-den-run. The module grants it roles/cloudsql.client on the project and read access to each secret it uses."
   type        = string
   default     = ""
+  nullable    = false
 }
 
 variable "grant_iam_roles" {
@@ -93,6 +96,7 @@ variable "domain_name" {
   description = "Public hostname for Den web, for example openwork.example.com. Empty uses the services' default https://<service>-<project number>.<region>.run.app URLs, which are HTTPS already. When set, the module creates a global external HTTPS load balancer for domain_name and api_domain_name."
   type        = string
   default     = ""
+  nullable    = false
 
   validation {
     condition     = var.domain_name == "" || can(regex("^[a-z0-9-]+([.][a-z0-9-]+)+$", var.domain_name))
@@ -104,6 +108,7 @@ variable "api_domain_name" {
   description = "Public hostname for Den API when domain_name is set. Empty uses api.<domain_name>."
   type        = string
   default     = ""
+  nullable    = false
 }
 
 variable "ssl_certificate_ids" {
@@ -116,6 +121,7 @@ variable "load_balancer_ip_address" {
   description = "Existing global static external IPv4 address (the address itself, for example 34.120.0.1) for the load balancer. Empty reserves one (<name>-den-lb)."
   type        = string
   default     = ""
+  nullable    = false
 }
 
 variable "restrict_ingress_to_load_balancer" {
@@ -138,12 +144,14 @@ variable "network" {
   description = "Existing VPC network (name or self link) for Direct VPC egress from the services and migration job. Empty sends egress straight to the internet. Required for a Cloud SQL instance with only a private IP."
   type        = string
   default     = ""
+  nullable    = false
 }
 
 variable "subnetwork" {
   description = "Subnetwork in region for Direct VPC egress. Required with network."
   type        = string
   default     = ""
+  nullable    = false
 }
 
 variable "vpc_egress" {
@@ -267,6 +275,7 @@ variable "cloud_sql_connection_name" {
   description = "PROJECT:REGION:INSTANCE of an existing Cloud SQL instance to mount at /cloudsql in every container, for a database_url that uses ?socket=. Used only when create_database = false."
   type        = string
   default     = ""
+  nullable    = false
 }
 
 variable "database" {

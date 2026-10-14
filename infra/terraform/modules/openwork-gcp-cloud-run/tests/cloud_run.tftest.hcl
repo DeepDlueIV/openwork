@@ -254,3 +254,20 @@ run "iam_granted_elsewhere" {
     error_message = "Secrets are still created in Secret Manager."
   }
 }
+
+run "null_optional_inputs_mean_unset" {
+  command = apply
+
+  # A root module often passes one(resource[*].id), which is null when the
+  # resource is not created; that must behave like "not set".
+  variables {
+    network                  = null
+    subnetwork               = null
+    load_balancer_ip_address = null
+  }
+
+  assert {
+    condition     = length(google_cloud_run_v2_job.migrate.template[0].template[0].vpc_access) == 0 && length(google_cloud_run_v2_service.api.template[0].vpc_access) == 0
+    error_message = "A null network must not add Direct VPC egress."
+  }
+}

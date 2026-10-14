@@ -14,7 +14,12 @@ terraform {
 }
 
 provider "azurerm" {
-  features {}
+  features {
+    # Disposable stack: skip the workspace's 14-day soft delete on destroy.
+    log_analytics_workspace {
+      permanently_delete_on_destroy = true
+    }
+  }
   subscription_id = var.subscription_id
   # Leave resource provider registration to the subscription owner: it needs
   # subscription-level rights (Microsoft.App, Microsoft.DBforMySQL,

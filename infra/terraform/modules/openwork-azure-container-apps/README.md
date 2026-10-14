@@ -23,9 +23,8 @@ through `extra_environment`.
 > `examples/complete` (release 0.18.58, East US, private MySQL 8.4, a
 > resource-group-scoped Contributor role and no role assignments): HTTPS on
 > both default hostnames, migrations, the one-time `/setup` administrator
-> flow, sign-in in the browser and from OpenWork Desktop
-> (`evals/specs/attached-den-desktop-signin.e2e.test.ts`), then a clean
-> `terraform destroy`. `terraform validate` and the mocked `terraform test`
+> flow, sign-in in the browser and from an isolated OpenWork Desktop
+> profile, then `terraform destroy`. `terraform validate` and the mocked `terraform test`
 > suite pass with Terraform 1.16 and OpenTofu 1.11 on azurerm 5.0 and 5.9.
 > Not yet exercised: custom domains, Key Vault references, private
 > registries, existing environments or databases, public-access MySQL,

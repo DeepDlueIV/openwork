@@ -103,6 +103,12 @@ export interface ServerConfig {
   /** Desktop-owned managed engines only; never enabled by remote clients. */
   resumeInterruptedTasks?: boolean;
   anonymousInference?: { desktop: DesktopFreeHost };
+  /**
+   * Set by OpenWork Desktop only when this is a brand-new install (no earlier
+   * OpenWork state on disk). The server then starts on this engine unless an
+   * engine choice is already saved or OpenCode v1 history exists.
+   */
+  freshInstallEngine?: "v2";
 }
 
 export interface Capabilities {

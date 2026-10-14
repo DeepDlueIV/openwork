@@ -511,6 +511,10 @@ export function electronSurfaceEnv(
   // Give local eval Electron surfaces isolated app data, config, and identity so
   // they cannot affect the user's real desktop app.
   return {
+    // Always explicit: a blank eval profile looks like a new install, which
+    // would otherwise start on OpenCode v2 instead of the selected engine. A
+    // selected `--env OPENWORK_ENGINE_V2_PREVIEW` below still wins.
+    OPENWORK_ENGINE_V2_PREVIEW: resolveEvalEngineValue(process.env.OPENWORK_EVAL_ENGINE) === "v2" ? "1" : "0",
     // Explicit `pnpm world up --env KEY` app settings come first so the
     // isolation keys below always win over a selected value.
     ...selectedAppEnv(),
@@ -528,7 +532,6 @@ export function electronSurfaceEnv(
     OPENWORK_DESKTOP_DISABLE_WORKSPACE_RECOVERY: "1",
     OPENWORK_DEV_MODE: "1",
     OPENWORK_ENV_STORE: paths.envStorePath,
-    ...(resolveEvalEngineValue(process.env.OPENWORK_EVAL_ENGINE) === "v2" ? { OPENWORK_ENGINE_V2_PREVIEW: "1" } : {}),
     OPENCODE_CONFIG_DIR: paths.opencodeConfigDir,
     VITE_DISABLE_OPENWORK_MODELS: "1",
     OPENWORK_ELECTRON_APP_IDENTIFIER: options.appIdentifier,

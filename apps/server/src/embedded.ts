@@ -52,6 +52,8 @@ export type EmbeddedServerOptions = CliArgs & {
   localManagedMcpVaultKey?: LocalManagedMcpVaultKeyProvider;
   resumeInterruptedTasks?: boolean;
   anonymousInference?: ServerConfig["anonymousInference"];
+  /** Desktop marks a brand-new install so it starts on OpenCode v2. */
+  freshInstallEngine?: ServerConfig["freshInstallEngine"];
 };
 
 export type EmbeddedServerHandle = {
@@ -75,6 +77,7 @@ export async function startEmbeddedServer(options: EmbeddedServerOptions): Promi
   const config = await resolveServerConfig(options);
   config.localManagedMcpVaultKey = options.localManagedMcpVaultKey;
   config.anonymousInference = options.anonymousInference;
+  config.freshInstallEngine = options.freshInstallEngine;
   config.resumeInterruptedTasks = options.resumeInterruptedTasks === true && options.manageOpencode === true && !config.opencodeBaseUrl;
   const logger = createServerLogger(config);
 

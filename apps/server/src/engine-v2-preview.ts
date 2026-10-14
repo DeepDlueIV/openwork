@@ -8,7 +8,7 @@ import { waitForEngineSkillChanges } from "./opencode-v2-skill-settle.js";
 import { MCP_READINESS_RPC_ID } from "./opencode-v2-mcp-readiness.js";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
@@ -173,11 +173,11 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function statePath(config: ServerConfig): string {
+function statePath(config: Pick<ServerConfig, "configPath">): string {
   return join(runtimeStorageDir(config), PREVIEW_STATE_FILE);
 }
 
-export function readEngineV2PreviewState(config: ServerConfig): EngineV2PreviewState {
+export function readEngineV2PreviewState(config: Pick<ServerConfig, "configPath">): EngineV2PreviewState {
   try {
     const parsed: unknown = JSON.parse(readFileSync(statePath(config), "utf8"));
     if (
@@ -195,6 +195,55 @@ export function readEngineV2PreviewState(config: ServerConfig): EngineV2PreviewS
     };
   } catch {
     return { enabled: false, chatRouting: false };
+  }
+}
+
+/**
+ * The engine a brand-new install starts on. Only OpenWork Desktop asks for
+ * it, and only when it found no earlier OpenWork state. Updated installs, a
+ * saved engine choice, OpenCode v1 history, or an explicit
+ * OPENWORK_ENGINE_V2_PREVIEW all keep today's behavior.
+ */
+export function freshInstallEngineState(input: {
+  requested: ServerConfig["freshInstallEngine"];
+  env: NodeJS.ProcessEnv;
+  stateFileExists: boolean;
+  v1HistoryExists: boolean;
+}): EngineV2PreviewState | undefined {
+  if (input.requested !== "v2") return undefined;
+  if (input.env.OPENWORK_ENGINE_V2_PREVIEW?.trim()) return undefined;
+  if (input.stateFileExists || input.v1HistoryExists) return undefined;
+  return { enabled: true, chatRouting: true };
+}
+
+function v1HistoryExists(env: NodeJS.ProcessEnv): boolean {
+  try {
+    return existsSync(opencodeV1DatabasePath(env));
+  } catch {
+    // An unusable OPENCODE_DB is not a fresh profile we can reason about; keep v1.
+    return true;
+  }
+}
+
+/**
+ * Save the fresh-install engine choice once, before the first read, so later
+ * starts (which no longer look fresh) keep it and a switch back to v1 sticks.
+ */
+export function seedFreshInstallEngineState(config: Pick<ServerConfig, "configPath" | "freshInstallEngine">, env: NodeJS.ProcessEnv = process.env): boolean {
+  const state = freshInstallEngineState({
+    requested: config.freshInstallEngine,
+    env,
+    stateFileExists: existsSync(statePath(config)),
+    v1HistoryExists: v1HistoryExists(env),
+  });
+  if (!state) return false;
+  try {
+    mkdirSync(runtimeStorageDir(config), { recursive: true });
+    writeFileSync(statePath(config), `${JSON.stringify(state, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
+    return true;
+  } catch {
+    // Another start wrote it first, or the folder is read-only: keep what is on disk.
+    return false;
   }
 }
 
@@ -442,6 +491,7 @@ export function createEngineV2Preview(options: {
   const waits = { ...ENGINE_V2_UPKEEP_WAITS, ...options.waits };
   const rootDir = join(runtimeStorageDir(config), "opencode-v2", "state");
   const workspaceDir = join(rootDir, "workspace");
+  seedFreshInstallEngineState(config);
   const initialState = resolveInitialEngineV2PreviewState(process.env, readEngineV2PreviewState(config));
   // A migration OpenWork closed mid-copy resumes at start; report it from the
   // first status read, since the server answers before it starts the engine.

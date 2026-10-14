@@ -107,6 +107,10 @@ jobs:
         run: |
           node --test apps/desktop/test/engine-diagnosis.test.mjs
           pnpm --dir evals exec vitest run --config vitest.config.ts --project pr packages/hosts/src/local-surface-log.test.ts
+      - name: Test the OpenCode engine new installs start on
+        run: |
+          node --test apps/desktop/test/fresh-install-engine.test.mjs
+          pnpm --filter openwork-server test:fresh-install-engine
       - name: Run core unit tests
         run: pnpm --dir evals run test:core
       - name: Test native MCP readiness and Stop ownership

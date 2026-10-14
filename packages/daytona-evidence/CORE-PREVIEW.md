@@ -24,9 +24,15 @@ this lifecycle:
    ten-minute budget, deletes the fork and polls until it is gone, then deletes
    and confirms deletion of the source. DELETE acknowledgement alone is not
    release (see Daytona's SDK `Sandbox.delete` documentation). An already
-   accepted snapshot request is polled, never blindly repeated.
-6. Only verified ready snapshots annotate matching screenshot hashes/IDs. Failed
-   saves retain images and verdicts. The job is visibly red on provider failure;
+   accepted snapshot request is polled, never blindly repeated. A pre-POST
+   control-plane marker prevents replay after controller interruption. Crashing
+   between the marker and POST sacrifices only the optional preview, then cleans
+   up after a bounded wait. Daytona documents that client timeouts do not cancel
+   server operations ([SDK configuration](https://www.daytona.io/docs/en/typescript-sdk/daytona/#daytonaconfig)).
+6. Reopen one private reviewer copy after confirmed source teardown and assert
+   Core's final model reply is still on screen; release that copy. Only snapshots
+   passing readiness and this live restore check annotate matching image hashes/IDs.
+   Failed saves/restores retain images and verdicts. The job is visibly red on provider failure;
    it is not the mandatory Core check. Original attempt-bound artifact names and
    CLI records are retained for Evidence review's existing native run binding.
 

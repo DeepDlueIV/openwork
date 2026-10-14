@@ -8,6 +8,11 @@ import { openDaytonaCheckpoint } from "./checkpoints.ts";
 import { EVIDENCE_KIND } from "./kinds.ts";
 
 const owner = { owner: "123-1-core", sourceSha: "a".repeat(40) };
+function object(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); }
+function labelMap(value: unknown): Record<string, string> {
+  assert.ok(object(value));
+  return Object.fromEntries(Object.entries(value).filter((entry): entry is [string, string] => typeof entry[1] === "string"));
+}
 class Provider extends DaytonaApi {
   sandboxes = new Map<string, Sandbox>([["source", { id: "source", name: "source", state: "started", labels: { kind: EVIDENCE_KIND, sourceSha: owner.sourceSha } }]]);
   files = new Map<string, Map<string, string>>([["source", new Map([["/opt/openwork-preview/evidence-ready", "web-v1"], ["chat", "final reply"]])]]);
@@ -114,6 +119,14 @@ test("delete acknowledgement is not fork release; poll through destroying before
   await api.waitForSandboxDeleted("fork", 10); assert.equal(reads, 2);
 });
 
+test("a crashed finalizer's request marker forbids replay even before snapshot visibility", async () => {
+  const api = new Provider(); const capture = await captured(api);
+  const source = await api.getSandbox("source"); assert.ok(source);
+  source.labels.previewSaveRequested = capture.checkpoint.id; api.failWait = true;
+  await assert.rejects(finalizePreviewHandoffs(owner, api, { timeoutMs: 1 }), /Optional preview/);
+  assert.equal(api.requested, 0); assert.deepEqual(api.deleted, ["fork", "source"]);
+});
+
 test("accepted snapshot resumes without duplicate request", async () => {
   const api = new Provider(); const capture = await captured(api);
   await api.snapshotSandbox("fork", capture.checkpoint.id);
@@ -167,11 +180,13 @@ test("a separate finalizer process owns save and teardown after the producer exi
         }
         value = { exitCode: 0, result: "" };
       } else if (parts[0] === "sandbox") {
-        if (parts.length === 1) value = await api.listSandboxes(JSON.parse(url.searchParams.get("labels") ?? "{}"));
+        const payload: unknown = body ? JSON.parse(body) : {};
+        assert.ok(object(payload));
+        if (parts.length === 1) value = await api.listSandboxes(labelMap(JSON.parse(url.searchParams.get("labels") ?? "{}")));
         else if (req.method === "DELETE") { await api.deleteSandbox(parts[1]); value = null; }
-        else if (parts[2] === "labels") { await api.setLabels(parts[1], JSON.parse(body).labels); value = null; }
-        else if (parts[2] === "fork") value = await api.forkSandbox(parts[1], JSON.parse(body).name);
-        else if (parts[2] === "snapshot") { await api.snapshotSandbox(parts[1], JSON.parse(body).name); value = null; }
+        else if (parts[2] === "labels") { await api.setLabels(parts[1], labelMap(payload.labels)); value = null; }
+        else if (parts[2] === "fork") { assert.ok(typeof payload.name === "string"); value = await api.forkSandbox(parts[1], payload.name); }
+        else if (parts[2] === "snapshot") { assert.ok(typeof payload.name === "string"); await api.snapshotSandbox(parts[1], payload.name); value = null; }
         else value = await api.getSandbox(parts[1]);
       } else if (parts[0] === "snapshots") {
         value = await api.getSnapshot(parts[1]);

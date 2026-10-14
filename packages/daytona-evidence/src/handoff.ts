@@ -105,7 +105,11 @@ export async function finalizePreviewHandoffs(input: PreviewOwner, api = new Day
       {
         if (!options.cleanupOnly) {
           const existing = await api.getSnapshot(receipt.checkpoint.id);
-          if (!existing && fork) {
+          if (!existing && fork && source.labels.previewSaveRequested !== receipt.checkpoint.id) {
+            // At-most-once controller submission, even across a finalizer crash.
+            // A crash between this marker and POST loses only the optional
+            // preview: recovery times out and cleans it, never invents readiness.
+            await api.setLabels(source.id, { ...source.labels, previewSaveRequested: receipt.checkpoint.id });
             try { await api.snapshotSandboxOnce(fork.id, receipt.checkpoint.id, true); }
             catch (error) {
               // A lost response may still have created a durable save. Reconcile

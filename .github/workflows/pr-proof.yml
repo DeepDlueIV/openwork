@@ -171,8 +171,8 @@ jobs:
           version: 11.4.0
       - name: Install finalizer tools
         run: |
-          pnpm --filter @openwork/daytona-evidence... install --frozen-lockfile --ignore-scripts --prefer-offline
-          pnpm --dir evals --filter @openwork/test-artifacts... install --frozen-lockfile --ignore-scripts --prefer-offline
+          pnpm --filter @openwork/daytona-evidence... --filter @openwork/review... --filter @openwork/world... --filter @openwork/types... --filter @openwork/sdk... install --frozen-lockfile --ignore-scripts --prefer-offline
+          pnpm --dir evals --filter @openwork/test-artifacts... --filter @openwork/env... install --frozen-lockfile --ignore-scripts --prefer-offline
       - name: Restore immutable Core verdict and screenshots
         id: records
         continue-on-error: true

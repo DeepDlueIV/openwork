@@ -1,5 +1,5 @@
 import type { FinalizedPreview } from "../../packages/daytona-evidence/src/handoff.ts";
-import type { TestRunRecord } from "@openwork/test-artifacts";
+import type { TestRunRecord } from "../packages/test-artifacts/src/schema.ts";
 
 /** Preview readiness never changes the mandatory test verdict. */
 export function annotateCorePreview(record: TestRunRecord, sourceSha: string, previews: readonly FinalizedPreview[]): void {

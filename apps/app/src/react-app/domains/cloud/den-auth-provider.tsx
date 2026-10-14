@@ -14,11 +14,9 @@ import {
   clearDenSession,
   createDenClient,
   ensureDenActiveOrganization,
-  denOriginComparisonKey,
   isDenSessionRevokedError,
   readDenBootstrapConfig,
   readDenSettings,
-  resolveDenBaseUrls,
   setDenBootstrapConfig,
   type DenBootstrapConfig,
   type DenOrgSummary,
@@ -36,6 +34,7 @@ import {
   deepLinkBridgeEvent,
   drainPendingDeepLinks,
 } from "../../../app/lib/deep-link-bridge";
+import { resolveDenServerSwitch } from "../../../app/lib/den-server-switch";
 import { parseDenAuthDeepLink } from "../../../app/lib/openwork-links";
 import {
   AlertDialog,
@@ -156,14 +155,6 @@ type PendingServerSwitch = {
   newHost: string;
 };
 
-function hostLabel(value: string): string {
-  try {
-    return new URL(value).host;
-  } catch {
-    return value.replace(/^https?:\/\//, "").replace(/\/+$/, "");
-  }
-}
-
 function readDeepLinkEventUrls(detail: unknown): string[] {
   if (!detail || typeof detail !== "object" || !("urls" in detail)) return [];
   const urlsValue = detail.urls;
@@ -183,18 +174,23 @@ function pendingServerSwitchForDeepLink(input: {
   // control plane and activate the app in a single unattended step.
   if (bootstrap.source !== "file" && !input.isEnterpriseActivation) return null;
 
-  const currentApiBaseUrl = resolveDenBaseUrls(bootstrap).apiBaseUrl;
-  const newApiBaseUrl = resolveDenBaseUrls(input.denBaseUrl).apiBaseUrl;
-  const currentOrigin = denOriginComparisonKey(currentApiBaseUrl);
-  const newOrigin = denOriginComparisonKey(newApiBaseUrl);
-  if (!currentOrigin || !newOrigin || currentOrigin === newOrigin) return null;
+  // Compare the organization server's own address (the web base URL), not the
+  // API origin each side happens to resolve. The installed bootstrap keeps the
+  // API origin the server published in its runtime config, while a sign-in link
+  // only carries the web address plus an `/api/den` proxy suffix, so comparing
+  // API origins reported a "different server" on every sign-in to the very
+  // same server.
+  const serverSwitch = resolveDenServerSwitch({
+    currentBaseUrl: bootstrap.baseUrl,
+    linkBaseUrl: input.denBaseUrl,
+  });
+  if (!serverSwitch) return null;
 
   return {
     grant: input.grant,
     denBaseUrl: input.denBaseUrl,
     isEnterpriseActivation: input.isEnterpriseActivation,
-    currentHost: hostLabel(currentApiBaseUrl),
-    newHost: hostLabel(newApiBaseUrl),
+    ...serverSwitch,
   };
 }
 

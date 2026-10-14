@@ -23,6 +23,11 @@ test("Google catalog excludes unsupported heuristic efforts without overriding e
 
 const engineTest = spec.world(geminiTitleThinking, { needs: { placement: "local" }, timeout: 180_000 });
 engineTest("a member gets a Google conversation name without changing ordinary chat effort", async ({ world, step, evidence }) => {
+  await step("another local process cannot use the member's inference relay", async () => {
+    expect(await world.untrustedRequest()).toBe(401);
+    expect(world.requests).toEqual([]);
+    evidence.recordAssertionEvidence("untrusted relay request denied", "The source-known fixture-only credential gets HTTP 401 before any inference request is recorded; a per-run random credential is required.", true);
+  });
   if (!world.baseline) await step("the member can choose only catalog-supported efforts, including for a Gateway alias", async () => {
     const inventory = await world.engine("/provider");
     if (!record(inventory) || !Array.isArray(inventory.all)) throw new Error("Missing provider inventory");

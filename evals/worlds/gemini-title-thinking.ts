@@ -1,4 +1,5 @@
 import { execFile, spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
@@ -19,16 +20,16 @@ const catalog = { family: "gemini-flash", reasoning: true, tool_call: true,
   reasoning_options: [{ type: "effort", values: ["low", "medium", "high"] }] };
 export const messages = ["Thinking level MINIMAL is not supported for this model", "Thinking level is unsupported: THINKING_LEVEL_MINIMAL"];
 
-function cloudProvider(baseURL: string): Parameters<typeof buildCloudProviderConfig>[0] {
+function cloudProvider(baseURL: string, apiKey: string): Parameters<typeof buildCloudProviderConfig>[0] {
   return { id: "lpr_google_witness", providerId: "google", source: "custom", name: "Google witness",
-    providerConfig: { npm: "@ai-sdk/google", options: { baseURL, apiKey: "fixture-only" } },
+    providerConfig: { npm: "@ai-sdk/google", options: { baseURL, apiKey } },
     hasApiKey: true, apiKey: "fixture-only", apiKeys: null, createdAt: null, updatedAt: null,
     models: [{ id: modelID, name: modelID, config: catalog, createdAt: null }] };
 }
 
 /** Pure-function controls, kept out of the journey's product imports. */
 export function catalogCases() {
-  const provider = cloudProvider("http://127.0.0.1");
+  const provider = cloudProvider("http://127.0.0.1", "fixture-only");
   const imported = { cloudProviderId: provider.id, name: provider.name, providerId: provider.id,
     sourceProviderId: provider.providerId, source: provider.source, updatedAt: null,
     modelIds: [modelID], importedAt: 1, modelConfigVersion: CLOUD_MODEL_CONFIG_VERSION - 1 };
@@ -61,10 +62,18 @@ export async function geminiTitleThinking(_seed: Seed) {
     .catch(() => { throw new Error("LIVE NotRun: Application Default Credentials unavailable"); });
   const requests: { title: boolean; level: unknown; status: number; model: string; wording?: string }[] = [];
   const errors: string[] = [];
+  const runKey = randomBytes(32).toString("hex");
+  let liveCalls = 0;
   let wording = messages[0];
   const witness = createServer((request, response) => {
     void (async () => {
       if (request.method === "GET") { response.writeHead(200, { "content-type": "application/json" }).end("{}"); return; }
+      // Check the unguessable per-run fixture credential before parsing or ADC.
+      // It is not a Google credential and is never recorded in evidence.
+      if (request.headers["x-goog-api-key"] !== runKey) {
+        response.writeHead(401, { "content-type": "application/json" }).end("{}");
+        return;
+      }
       const chunks: Buffer[] = [];
       for await (const chunk of request) chunks.push(Buffer.from(chunk));
       const raw = Buffer.concat(chunks).toString("utf8");
@@ -74,10 +83,11 @@ export async function geminiTitleThinking(_seed: Seed) {
       const level = record(body.generationConfig) && record(body.generationConfig.thinkingConfig)
         ? body.generationConfig.thinkingConfig.thinkingLevel : undefined;
       const streaming = request.url === `/models/${modelID}:streamGenerateContent?alt=sse`;
-      if ((!streaming && request.url !== `/models/${modelID}:generateContent`)
-        || request.headers["x-goog-api-key"] !== "fixture-only") throw new Error("Provider identity changed");
+      if (!streaming && request.url !== `/models/${modelID}:generateContent`) throw new Error("Provider identity changed");
       const requestedModel = modelID;
       if (live) {
+        if (liveCalls >= 2) { response.writeHead(429, { "content-type": "application/json" }).end("{}"); return; }
+        liveCalls += 1;
         // ADC token exists only in process memory, never config, args or evidence.
         const { stdout } = await exec("gcloud", ["auth", "application-default", "print-access-token"], { timeout: 30_000 });
         if (!project) throw new Error("Missing selected Vertex project");
@@ -117,12 +127,12 @@ export async function geminiTitleThinking(_seed: Seed) {
   const directory = join(root, "workspace");
   await Promise.all([home, directory].map(path => mkdir(path, { recursive: true })));
   const config = join(root, "opencode.json");
-  const provider = buildCloudProviderConfig(cloudProvider(`http://127.0.0.1:${address.port}`));
+  const provider = buildCloudProviderConfig(cloudProvider(`http://127.0.0.1:${address.port}`, runKey));
   // Mirrors cloud-provider-sync: family retained; reasoning_options dropped.
   if (baseline) for (const model of Object.values(provider.models ?? {})) delete model.variants;
-  const aliasProvider = buildCloudProviderConfig({ ...cloudProvider(`http://127.0.0.1:${address.port}`),
+  const aliasProvider = buildCloudProviderConfig({ ...cloudProvider(`http://127.0.0.1:${address.port}`, runKey),
     models: [{ id: "gwm_synthetic", name: "Gateway witness", config: catalog, createdAt: null }] });
-  await writeFile(config, JSON.stringify({ provider: { lpr_google_witness: provider, ipr_synthetic: aliasProvider } }));
+  await writeFile(config, JSON.stringify({ provider: { lpr_google_witness: provider, ipr_synthetic: aliasProvider } }), { mode: 0o600 });
   // Explicit local isolation requested: no desktop, small_model, inherited
   // config, credentials or running engine database enters this child.
   const child = spawn("/usr/bin/env", ["-i", `PATH=${process.env.PATH}`, `HOME=${home}`, `XDG_CONFIG_HOME=${home}/config`,
@@ -155,6 +165,13 @@ export async function geminiTitleThinking(_seed: Seed) {
       if (reply.status !== 200) throw new Error(`Isolated engine returned ${reply.status}`);
       return reply.json();
     };
-    return { engine, requests, errors, baseline, live, version, setWording: (message: string) => { wording = message; }, [Symbol.asyncDispose]: dispose };
+    const untrustedRequest = async () => {
+      const response = await fetch(`http://127.0.0.1:${address.port}/models/${modelID}:generateContent`, {
+        method: "POST", headers: { "x-goog-api-key": "fixture-only", "content-type": "application/json" },
+        body: "{}", signal: AbortSignal.timeout(3_000),
+      });
+      return response.status;
+    };
+    return { engine, untrustedRequest, requests, errors, baseline, live, version, setWording: (message: string) => { wording = message; }, [Symbol.asyncDispose]: dispose };
   } catch (error) { await dispose(); throw error; }
 }

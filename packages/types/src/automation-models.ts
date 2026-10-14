@@ -1,5 +1,5 @@
-import { AUTOMATION_CLOUD_DEFAULT_MODEL, AUTOMATION_FREE_MODEL, automationModelAllowedByProvider } from "./automations"
-import { INFERENCE_MODEL_ALIASES } from "./den/inference"
+import { AUTOMATION_CLOUD_DEFAULT_MODEL, AUTOMATION_FREE_MODEL, automationModelAllowedByProvider } from "@openwork/types/automations"
+import { INFERENCE_MODEL_ALIASES } from "@openwork/types/den/inference"
 
 /**
  * The models an Automation can use, from Den's usable-provider list

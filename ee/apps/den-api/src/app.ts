@@ -53,6 +53,7 @@ import { registerWebhookRoutes } from "./routes/webhooks/index.js"
 import { registerWorkerRoutes } from "./routes/workers/index.js"
 import type { AuthContextVariables } from "./session.js"
 import { sessionMiddleware } from "./session.js"
+import { inventoryRevisionMiddleware } from "./middleware/inventory-revision.js"
 import { preclaimScopeMiddleware } from "./middleware/preclaim-scope.js"
 import { auditRequestMiddleware } from "./audit/request-capture.js"
 import { isOperationalErrorPath, normalizeOperationalErrorResponse, operationalErrorResponse } from "./operational-errors.js"
@@ -130,6 +131,7 @@ app.use("*", async (c, next) => {
   c.res = await normalizeOperationalErrorResponse(c.req.path, c.res, c.get("requestId"))
 })
 app.use("*", createRequestAccessLogMiddleware())
+app.use("*", inventoryRevisionMiddleware)
 registerAppErrorHandler(app, (error, c, requestId) => {
   if (!isOperationalErrorPath(c.req.path)) {
     return undefined

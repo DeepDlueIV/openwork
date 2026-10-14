@@ -18,6 +18,7 @@ import { registerOrgMcpAppCatalogRoutes } from "./mcp-app-catalog.js"
 import { registerDeleteOrganizationRoutes } from "./delete-organization.js"
 import { registerOrgDesktopPolicyRoutes } from "./desktop-policies.js"
 import { registerOrgEgressDiagnosticRoutes } from "./egress-diagnostics.js"
+import { registerOrgInventoryRevisionRoutes } from "./inventory-revision.js"
 import { registerOrgInvitationRoutes } from "./invitations.js"
 import { registerGoogleWorkspaceRoutes } from "./google-workspace.js"
 import { registerOrgInstallLinkRoutes } from "./install-links.js"
@@ -69,6 +70,7 @@ function extractLegacyOrgProxyTarget(pathname: string) {
 export function registerOrgRoutes<T extends { Variables: OrgRouteVariables & RequestIdVariables }>(app: Hono<T>) {
   registerOrgCoreRoutes(app)
   registerOrgActivityRoutes(app)
+  registerOrgInventoryRevisionRoutes(app)
   registerManagedDeploymentRoutes(app)
   registerDeleteOrganizationRoutes(app)
   registerOrgApiKeyRoutes(app)

@@ -265,11 +265,15 @@ export async function listAssignedConnectCapabilities(input: {
   const marketplaceIds = input.requireComplete
     ? [...assignedMarketplaceIds]
     : marketplaces.map((marketplace) => marketplace.id);
-  const resolvedMarketplaces = await Promise.all(
+  const resolvedMarketplaces = (await Promise.all(
     marketplaceIds.map((marketplaceId) =>
       input.client.getOrgMarketplaceResolved(input.organizationId, marketplaceId)
     ),
-  );
+  ))
+    // Both paths return the same inventory, so a complete pass can also serve
+    // the Connect views: active marketplaces only, in name order.
+    .filter((resolved) => resolved.marketplace.status === "active")
+    .sort((left, right) => left.marketplace.name.localeCompare(right.marketplace.name));
 
   const plugins = new Map<string, MarketplacePlugin>();
   for (const resolved of resolvedMarketplaces) {

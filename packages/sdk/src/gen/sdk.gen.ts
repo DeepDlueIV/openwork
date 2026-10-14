@@ -442,6 +442,8 @@ import type {
   GetV1OrgDefaultModelOptionsResponses,
   GetV1OrgDefaultModelResponses,
   GetV1OrgErrors,
+  GetV1OrgInventoryRevisionErrors,
+  GetV1OrgInventoryRevisionResponses,
   GetV1OrgResponses,
   GetV1OrgsInvitationsPreviewErrors,
   GetV1OrgsInvitationsPreviewResponses,
@@ -3128,6 +3130,19 @@ export class DenClient extends HeyApiClient {
       url: "/v1/org/activity",
       ...options,
     });
+  }
+
+  /**
+   * Get the member inventory revision
+   *
+   * Returns an opaque revision that changes whenever what organization members can use may have changed: after any write to providers, plugins, marketplaces, connections, teams, members or their access, after a feature flag change, and on every deploy. Clients compare it with the revision they last loaded and skip reloading their inventory when it is unchanged. A null revision means it cannot be determined, so the client reloads. It describes the organization, not the caller, and reveals nothing else.
+   */
+  public getV1OrgInventoryRevision<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      GetV1OrgInventoryRevisionResponses,
+      GetV1OrgInventoryRevisionErrors,
+      ThrowOnError
+    >({ url: "/v1/org/inventory-revision", ...options });
   }
 
   /**

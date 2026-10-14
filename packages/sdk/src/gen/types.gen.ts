@@ -1310,6 +1310,10 @@ export type DashboardActivity = {
   activity: Array<DashboardActivityEntry>;
 };
 
+export type InventoryRevision = {
+  revision: string | null;
+};
+
 export type DeleteOrganizationResponse = {
   ok: true;
   organization: {
@@ -9239,6 +9243,32 @@ export type GetV1OrgActivityResponses = {
 };
 
 export type GetV1OrgActivityResponse = GetV1OrgActivityResponses[keyof GetV1OrgActivityResponses];
+
+export type GetV1OrgInventoryRevisionData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/org/inventory-revision";
+};
+
+export type GetV1OrgInventoryRevisionErrors = {
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+};
+
+export type GetV1OrgInventoryRevisionError = GetV1OrgInventoryRevisionErrors[keyof GetV1OrgInventoryRevisionErrors];
+
+export type GetV1OrgInventoryRevisionResponses = {
+  /**
+   * The current inventory revision.
+   */
+  200: InventoryRevision;
+};
+
+export type GetV1OrgInventoryRevisionResponse =
+  GetV1OrgInventoryRevisionResponses[keyof GetV1OrgInventoryRevisionResponses];
 
 export type GetV1ManagedDeploymentsConfigurationData = {
   body?: never;

@@ -6075,6 +6075,24 @@
           "activity"
         ]
       },
+      "InventoryRevision": {
+        "type": "object",
+        "properties": {
+          "revision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "revision"
+        ]
+      },
       "DeleteOrganizationResponse": {
         "type": "object",
         "properties": {
@@ -33603,6 +33621,46 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ForbiddenError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "denApiKey": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/org/inventory-revision": {
+      "get": {
+        "operationId": "getV1OrgInventoryRevision",
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "Get the member inventory revision",
+        "description": "Returns an opaque revision that changes whenever what organization members can use may have changed: after any write to providers, plugins, marketplaces, connections, teams, members or their access, after a feature flag change, and on every deploy. Clients compare it with the revision they last loaded and skip reloading their inventory when it is unchanged. A null revision means it cannot be determined, so the client reloads. It describes the organization, not the caller, and reveals nothing else.",
+        "responses": {
+          "200": {
+            "description": "The current inventory revision.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InventoryRevision"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
                 }
               }
             }

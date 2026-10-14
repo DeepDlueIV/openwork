@@ -3573,6 +3573,21 @@ export function createDenClient(options: {
       return plugins;
     },
 
+    /** Changes whenever what members can use may have changed; null when this Den cannot tell. */
+    async getInventoryRevision(orgId: string): Promise<string | null> {
+      try {
+        const payload = await requestJson<unknown>(
+          baseUrls,
+          "/v1/org/inventory-revision",
+          { method: "GET", token, organizationId: orgId },
+        );
+        return isRecord(payload) && typeof payload.revision === "string" ? payload.revision : null;
+      } catch (error) {
+        if (error instanceof DenApiError && [404, 405, 501].includes(error.status)) return null;
+        throw error;
+      }
+    },
+
     async getOrgMarketplaceResolved(orgId: string, marketplaceId: string): Promise<DenOrgMarketplaceResolved> {
       const payload = await requestJson<unknown>(
         baseUrls,

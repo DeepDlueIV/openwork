@@ -636,7 +636,7 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
     async setColorScheme(theme: "light" | "dark") {
       await app.client.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: theme }] });
       for (let attempt = 0; attempt < 50; attempt++) {
-        if (await evaluate(app.client, () => document.documentElement.classList.contains("dark")) === (theme === "dark")) return;
+        if (await evaluate(app.client, () => document.documentElement.dataset.theme === "dark" || document.documentElement.classList.contains("dark")) === (theme === "dark")) return;
         await delay(100);
       }
       throw new Error(`OpenWork did not switch to ${theme}`);

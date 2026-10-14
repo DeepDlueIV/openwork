@@ -450,7 +450,8 @@ export function McpAppSandboxView({ origin, app, resolveLiveActions, toolName, i
     // The theme, colors and space the App has now. Sent again whenever they
     // change, so an open App follows a light/dark switch and a resized pane.
     const currentHostContext = () => ({
-      theme: document.documentElement.classList.contains("dark") ? "dark" as const : "light" as const,
+      // OpenWork marks dark mode with data-theme; the stylesheet also accepts a dark class.
+      theme: document.documentElement.dataset.theme === "dark" || document.documentElement.classList.contains("dark") ? "dark" as const : "light" as const,
       displayMode: "inline" as const,
       availableDisplayModes: ["inline" as const],
       styles: { variables: hostStyleVariables() },

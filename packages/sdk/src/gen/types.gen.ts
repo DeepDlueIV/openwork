@@ -186,7 +186,6 @@ export type AdminFeature = {
     | "backgroundShellTasks"
     | "orgDefaultModel"
     | "gatewayProviderUsageLimits"
-    | "stableInstallLinks"
     | "teamAccessRows"
     | "teamPageTabs"
     | "inviteLinkVerifiesEmail";
@@ -251,7 +250,6 @@ export type AdminOrganizationsPageResponse = {
       backgroundShellTasks: boolean;
       orgDefaultModel: boolean;
       gatewayProviderUsageLimits: boolean;
-      stableInstallLinks: boolean;
       teamAccessRows: boolean;
       teamPageTabs: boolean;
       inviteLinkVerifiesEmail: boolean;
@@ -465,15 +463,6 @@ export type AdminOrganizationsPageResponse = {
         overrideApplies: boolean;
       };
       gatewayProviderUsageLimits: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      stableInstallLinks: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -595,7 +584,6 @@ export type AdminOverviewResponse = {
       backgroundShellTasks: boolean;
       orgDefaultModel: boolean;
       gatewayProviderUsageLimits: boolean;
-      stableInstallLinks: boolean;
       teamAccessRows: boolean;
       teamPageTabs: boolean;
       inviteLinkVerifiesEmail: boolean;
@@ -809,15 +797,6 @@ export type AdminOverviewResponse = {
         overrideApplies: boolean;
       };
       gatewayProviderUsageLimits: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      stableInstallLinks: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -1431,7 +1410,6 @@ export type OrganizationContextResponse = {
       | "branding.update"
       | "web_origins.view"
       | "web_origins.manage"
-      | "install_links.update"
       | "invitations.manage"
       | "members.update"
       | "members.delete"
@@ -2187,21 +2165,15 @@ export type InvitationLinkResponse = {
 
 export type CreateInstallLinkResponse = {
   /**
-   * Absent when the organization shares the normal install page instead of one-off links.
-   */
-  token?: string;
-  /**
-   * Share this page: it downloads the OpenWork desktop app for this organization. People who open the normal install page sign in first.
+   * Share this page: people sign in and download the OpenWork desktop app for their organization.
    */
   installPageUrl: string;
-  /**
-   * Open on a computer that already has OpenWork installed to point the desktop app at this organization. Short-lived; mint a new link when it expires. Absent with the normal install page: the desktop app signs in instead.
-   */
-  connectUrl?: string;
-  connectExpiresAt?: string;
 };
 
 export type CreateInstallLinkRequest = {
+  /**
+   * Ignored. Install pages carry no token, so there is nothing to rotate.
+   */
   rotate?: boolean;
 };
 
@@ -2215,62 +2187,6 @@ export type AuthenticatedInstallConfig = {
   iconUrl?: string | null;
   desktopVersion: string;
   distribution: "cloud" | "enterprise";
-};
-
-export type InstallExperienceConfig = {
-  appName?: string;
-  clientName: string;
-  webUrl: string;
-  apiUrl: string;
-  requireSignin: boolean;
-  logoUrl: string | null;
-  iconUrl?: string | null;
-  connectUrl: string;
-  connectExpiresAt: string;
-  activationUrl: string;
-  activationExpiresAt: string;
-  desktopVersion: string;
-  distribution: "cloud" | "enterprise";
-};
-
-export type InstallLinkNotFoundError = {
-  error: "install_link_not_found";
-};
-
-export type ConnectLinkClaims = {
-  iss: string;
-  aud: "openwork-desktop-connect";
-  iat: number;
-  exp: number;
-  jti: string;
-  v: 1;
-  org: {
-    name: string;
-  };
-  brand: {
-    appName: string;
-    logoUrl: string | null;
-    iconUrl: string | null;
-  };
-  den: {
-    baseUrl: string;
-    apiBaseUrl?: string | null;
-  };
-  requireSignin: boolean;
-};
-
-export type DesktopConnectGrantStatusResponse = {
-  status: "pending" | "connected";
-  claims: ConnectLinkClaims;
-  expiresAt: string;
-};
-
-export type DesktopConnectGrantFailure = {
-  error: "connect_grant_invalid" | "connect_grant_expired" | "connect_grant_replayed";
-};
-
-export type DesktopConnectGrantResponse = {
-  claims: ConnectLinkClaims;
 };
 
 export type LlmProviderResponse = {
@@ -6670,7 +6586,6 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       backgroundShellTasks: boolean;
       orgDefaultModel: boolean;
       gatewayProviderUsageLimits: boolean;
-      stableInstallLinks: boolean;
       teamAccessRows: boolean;
       teamPageTabs: boolean;
       inviteLinkVerifiesEmail: boolean;
@@ -6884,15 +6799,6 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       gatewayProviderUsageLimits: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      stableInstallLinks: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -7002,7 +6908,6 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       backgroundShellTasks: boolean;
       orgDefaultModel: boolean;
       gatewayProviderUsageLimits: boolean;
-      stableInstallLinks: boolean;
       teamAccessRows: boolean;
       teamPageTabs: boolean;
       inviteLinkVerifiesEmail: boolean;
@@ -7216,15 +7121,6 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       gatewayProviderUsageLimits: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      stableInstallLinks: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -15754,21 +15650,13 @@ export type PostV1OrgsByOrganizationIdInstallLinksErrors = {
    */
   400: InvalidRequestError;
   /**
-   * The caller must be signed in to create install links.
+   * The caller must be signed in to get the install page.
    */
   401: UnauthorizedError;
-  /**
-   * Rotating existing links needs the Rotate install links permission.
-   */
-  403: ForbiddenError;
   /**
    * The organization could not be found.
    */
   404: NotFoundError;
-  /**
-   * The member has created too many install links.
-   */
-  429: RateLimitedError;
 };
 
 export type PostV1OrgsByOrganizationIdInstallLinksError =
@@ -15776,7 +15664,7 @@ export type PostV1OrgsByOrganizationIdInstallLinksError =
 
 export type PostV1OrgsByOrganizationIdInstallLinksResponses = {
   /**
-   * Install link created successfully.
+   * Install page resolved successfully.
    */
   200: CreateInstallLinkResponse;
 };
@@ -15856,23 +15744,13 @@ export type GetV1MeInstallByPlatformResponse =
 export type GetV1InstallConfigData = {
   body?: never;
   path?: never;
-  query: {
-    token: string;
-  };
+  query?: never;
   url: "/v1/install-config";
 };
 
 export type GetV1InstallConfigErrors = {
   /**
-   * The install-link token was invalid.
-   */
-  400: InvalidRequestError;
-  /**
-   * The install link was missing, expired, or revoked.
-   */
-  404: InstallLinkNotFoundError;
-  /**
-   * Too many install-link attempts.
+   * Too many install configuration requests.
    */
   429: RateLimitedError;
 };
@@ -15883,177 +15761,19 @@ export type GetV1InstallConfigResponses = {
   /**
    * Install configuration resolved successfully.
    */
-  200: InstallExperienceConfig;
+  200: AuthenticatedInstallConfig;
 };
 
 export type GetV1InstallConfigResponse = GetV1InstallConfigResponses[keyof GetV1InstallConfigResponses];
-
-export type PostV1InstallConnectStatusData = {
-  body: {
-    code: string;
-  };
-  path?: never;
-  query?: never;
-  url: "/v1/install-connect/status";
-};
-
-export type PostV1InstallConnectStatusErrors = {
-  /**
-   * The connection code body was invalid.
-   */
-  400: InvalidRequestError;
-  /**
-   * The connection code was not found.
-   */
-  404: DesktopConnectGrantFailure;
-  /**
-   * The connection code expired.
-   */
-  410: DesktopConnectGrantFailure;
-  /**
-   * Too many connection attempts.
-   */
-  429: RateLimitedError;
-};
-
-export type PostV1InstallConnectStatusError = PostV1InstallConnectStatusErrors[keyof PostV1InstallConnectStatusErrors];
-
-export type PostV1InstallConnectStatusResponses = {
-  /**
-   * Desktop connection status resolved successfully.
-   */
-  200: DesktopConnectGrantStatusResponse;
-};
-
-export type PostV1InstallConnectStatusResponse =
-  PostV1InstallConnectStatusResponses[keyof PostV1InstallConnectStatusResponses];
-
-export type PostV1InstallConnectPreviewData = {
-  body: {
-    code: string;
-  };
-  path?: never;
-  query?: never;
-  url: "/v1/install-connect/preview";
-};
-
-export type PostV1InstallConnectPreviewErrors = {
-  /**
-   * The connection code body was invalid.
-   */
-  400: InvalidRequestError;
-  /**
-   * The connection code was not found.
-   */
-  404: DesktopConnectGrantFailure;
-  /**
-   * The connection code was already consumed.
-   */
-  409: DesktopConnectGrantFailure;
-  /**
-   * The connection code expired.
-   */
-  410: DesktopConnectGrantFailure;
-  /**
-   * Too many connection attempts.
-   */
-  429: RateLimitedError;
-};
-
-export type PostV1InstallConnectPreviewError =
-  PostV1InstallConnectPreviewErrors[keyof PostV1InstallConnectPreviewErrors];
-
-export type PostV1InstallConnectPreviewResponses = {
-  /**
-   * Desktop connection resolved successfully.
-   */
-  200: DesktopConnectGrantResponse;
-};
-
-export type PostV1InstallConnectPreviewResponse =
-  PostV1InstallConnectPreviewResponses[keyof PostV1InstallConnectPreviewResponses];
-
-export type PostV1InstallConnectExchangeData = {
-  body: {
-    code: string;
-  };
-  path?: never;
-  query?: never;
-  url: "/v1/install-connect/exchange";
-};
-
-export type PostV1InstallConnectExchangeErrors = {
-  /**
-   * The connection code body was invalid.
-   */
-  400: InvalidRequestError;
-  /**
-   * The connection code was not found.
-   */
-  404: DesktopConnectGrantFailure;
-  /**
-   * The connection code was already consumed.
-   */
-  409: DesktopConnectGrantFailure;
-  /**
-   * The connection code expired.
-   */
-  410: DesktopConnectGrantFailure;
-  /**
-   * Too many connection attempts.
-   */
-  429: RateLimitedError;
-};
-
-export type PostV1InstallConnectExchangeError =
-  PostV1InstallConnectExchangeErrors[keyof PostV1InstallConnectExchangeErrors];
-
-export type PostV1InstallConnectExchangeResponses = {
-  /**
-   * Desktop connection resolved successfully.
-   */
-  200: DesktopConnectGrantResponse;
-};
-
-export type PostV1InstallConnectExchangeResponse =
-  PostV1InstallConnectExchangeResponses[keyof PostV1InstallConnectExchangeResponses];
 
 export type GetV1InstallByPlatformData = {
   body?: never;
   path: {
     platform: string;
   };
-  query: {
-    token: string;
-  };
+  query?: never;
   url: "/v1/install/{platform}";
 };
-
-export type GetV1InstallByPlatformErrors = {
-  /**
-   * The install-link token or platform was invalid.
-   */
-  400: InvalidRequestError;
-  /**
-   * The install link was missing, expired, or revoked.
-   */
-  404: InstallLinkNotFoundError;
-  /**
-   * Too many installer download attempts.
-   */
-  429: RateLimitedError;
-};
-
-export type GetV1InstallByPlatformError = GetV1InstallByPlatformErrors[keyof GetV1InstallByPlatformErrors];
-
-export type GetV1InstallByPlatformResponses = {
-  /**
-   * Mounted desktop artifact returned successfully.
-   */
-  200: string;
-};
-
-export type GetV1InstallByPlatformResponse = GetV1InstallByPlatformResponses[keyof GetV1InstallByPlatformResponses];
 
 export type DeleteV1LlmProvidersByKeyByExternalKeyData = {
   body?: never;

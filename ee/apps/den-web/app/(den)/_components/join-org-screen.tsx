@@ -473,7 +473,6 @@ export function JoinOrgScreen({ invitationId }: { invitationId: string }) {
   if (joinedOrg) {
     return (
       <JoinOrgSuccess
-        organizationId={joinedOrg.id}
         organizationName={joinedOrg.name}
         brand={joinedOrg.brand}
         desktopAuthRequested={desktopAuthRequested}

@@ -13,7 +13,6 @@ type GuardInput = Parameters<typeof resolveMemberAuthGuardDecision>[0];
 
 const signedOutInstall: GuardInput = {
   route: "/install",
-  hasInstallToken: false,
   setupStatus: "complete",
   authCheckStatus: "ready",
   signedIn: false,
@@ -74,12 +73,6 @@ test("first-administrator bootstrap stays public without waiting for member auth
   }
 });
 
-test("token installs stay public but a token does not bypass completed setup authentication", () => {
-  for (const authCheckStatus of ["checking", "ready", "error"] satisfies GuardInput["authCheckStatus"][]) {
-    assert.equal(resolveMemberAuthGuardDecision({ ...signedOutInstall, hasInstallToken: true, authCheckStatus }), "render");
-  }
-  assert.equal(resolveMemberAuthGuardDecision({ ...signedOutInstall, route: "/setup", hasInstallToken: true }), "sso");
-});
 
 test("return targets reject external URLs, unknown pages, fragments and token-bearing queries", () => {
   for (const target of unsafeReturnTargets) {

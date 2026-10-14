@@ -68,7 +68,6 @@ const ADMIN_SCOPE_KEYS = [
   "gateway_usage.view",
   "inference.manage",
   "inference.view",
-  "install_links.update",
   "invitations.manage",
   "llm_provider_credentials.manage",
   "llm_providers.delete",

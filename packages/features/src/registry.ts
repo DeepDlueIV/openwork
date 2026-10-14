@@ -214,13 +214,6 @@ export const FEATURES = defineFeatures({
     deployments: everywhere,
     default: false,
   },
-  stableInstallLinks: {
-    label: "Plain install links",
-    description: "Download and Copy install link share the normal install page address instead of a one-off link. Teammates sign in to download; links shared earlier keep working.",
-    since: "2026-10",
-    deployments: everywhere,
-    default: false,
-  },
   teamAccessRows: {
     label: "Team access rows",
     description: "Team plugin access shows compact rows with clear access sources and a confirmation before revoking a team grant.",

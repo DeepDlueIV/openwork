@@ -181,7 +181,7 @@ export const orgAuditRoutes: readonly AuditRouteDeclaration[] = [
   member("GET", "/v1/me/plugin-access", "tenant_read", "plugin_access.effective.list", "library.access", "plugin", null),
   member("GET", "/v1/me/install-config", "tenant_read", "install_config.read", "install.distribution", "organization", null),
   member("GET", "/v1/me/install/:platform", "tenant_access", "install_artifact.download", "install.distribution", "install_artifact", "platform"),
-  member("POST", "/v1/orgs/:organizationId/install-links", "tenant_change", "install_link.create", "install.distribution", "install_link", null, { notes: "Path organizationId only seeds context; attribute to organizationContext. Returns the install token; rotate revokes older links." }),
+  member("POST", "/v1/orgs/:organizationId/install-links", "tenant_change", "install_link.create", "install.distribution", "install_link", null, { notes: "Path organizationId only seeds context; attribute to organizationContext. Returns the normal install page address; creates nothing." }),
 
   // Platform admin acting on one org (actor = admin user, origin platform_admin)
   admin("GET", "/v1/admin/organizations/:organizationId/capabilities", "tenant_read", "organization.capabilities.read"),
@@ -214,13 +214,6 @@ export const orgAuditRoutes: readonly AuditRouteDeclaration[] = [
   handler("POST", "/v1/managed-deployments/:deploymentId/runs/:runId/enroll", "tenant_signal", "managed_deployment.run.enroll", "managed_deployment.runtime", "managed_deployment_run", "runId", "Org proof: AWS-verified signed STS identity of the deployment's runner role and run challenge -> ManagedDeployment.org_id (actor service managed-deployment:<id>)."),
   handler("POST", "/v1/managed-deployments/:deploymentId/runs/:runId/events", "tenant_signal", "managed_deployment.run.event", "managed_deployment.runtime", "managed_deployment_run", "runId", "Org proof: run-scoped token hash for :runId -> ManagedDeployment.org_id (actor service managed-deployment:<id>)."),
   handler("POST", "/v1/managed-deployments/:deploymentId/heartbeat", "tenant_signal", "managed_deployment.health.report", "managed_deployment.runtime", "managed_deployment", "deploymentId", "Org proof: AWS-verified signed STS identity of the deployment's health role, bound to the body hash -> ManagedDeployment.org_id (actor service managed-deployment:<id>). Every 5 minutes per deployment."),
-
-  // Install links and connect grants
-  handler("GET", "/v1/install-config", "tenant_access", "install_link.resolve", "install.distribution", "install_link", null, "Org proof: install-link token (query) -> InstallLink.organizationId; actor service install_link:<installLinkId>; attributed before the connect handoff grant is minted."),
-  handler("GET", "/v1/install/:platform", "tenant_access", "install_link.artifact.download", "install.distribution", "install_artifact", "platform", "Org proof: install-link token -> InstallLink.organizationId; actor service install_link:<installLinkId>."),
-  handler("POST", "/v1/install-connect/preview", "tenant_access", "connect_grant.preview", "install.distribution", "connect_grant", null, "Org proof: connect grant code (body) -> grant's install link -> organization (previewDesktopConnectGrant, no consumption); actor service install_link:<installLinkId> (never the code or its hash)."),
-  handler("POST", "/v1/install-connect/exchange", "tenant_access", "connect_grant.exchange", "install.distribution", "connect_grant", null, "Org proof: the grant is resolved without consuming it, attributed (actor service install_link:<installLinkId>), then the one-time exchange runs and returns connection claims."),
-  handler("POST", "/v1/install-connect/status", "tenant_access", "connect_grant.status.read", "install.distribution", "connect_grant", null, "Org proof: connect grant code (body) -> grant's install link -> organization; actor service install_link:<installLinkId>. Polling; returns claims."),
 
   // Workspace bootstrap claims (provisional org)
   handler("GET", "/v1/bootstrap/workspace/:bootstrapId/claim", "tenant_read", "workspace_claim.read", "workspace.bootstrap", "workspace_bootstrap", "bootstrapId", "Org proof: preclaim assertion (Bearer JWT, readPreclaimAssertion) bound to :bootstrapId -> provisional org; actor = the setup agent user + setup member."),

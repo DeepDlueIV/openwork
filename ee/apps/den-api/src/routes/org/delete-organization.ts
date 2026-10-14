@@ -428,6 +428,8 @@ export function registerDeleteOrganizationRoutes<T extends { Variables: OrgRoute
           }
         }
 
+        // Install links are no longer issued; erase rows created before that
+        // until a later migration drops both tables.
         const installLinkIds = (await tx
           .select({ id: InstallLinkTable.id })
           .from(InstallLinkTable)

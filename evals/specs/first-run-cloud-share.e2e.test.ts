@@ -50,7 +50,7 @@ test("first run signs in through the browser, then shares a skill with a colleag
   await step("Already-installed Cloud users return through the same instance's auth route", async () => {
     // Control installation metadata only. Session hydration, navigation and grant
     // generation use the real Den, including its existing browser session.
-    await using configWitness = await addInitScript(world.web.client, browserScript((webUrl, apiUrl) => {
+    await using configWitness = await addInitScript(world.web.client, browserScript((_webUrl, apiUrl) => {
       const originalFetch = window.fetch.bind(window);
       window.fetch = async (input, init) => {
         const request = new Request(input, init);
@@ -62,19 +62,15 @@ test("first run signs in through the browser, then shares a skill with a colleag
           appName: "OpenWork", clientName: "Install Journey", requireSignin: true,
           logoUrl: null, iconUrl: null, desktopVersion: "0.18.0", distribution: "cloud",
           // A session-backed local/preview install must not jump to a configured hosted default.
-          webUrl: url.searchParams.has("token") ? `${webUrl}/ignored-config-path` : "https://app.openworklabs.com",
+          webUrl: "https://app.openworklabs.com",
           apiUrl,
         });
       };
     }, [world.den.ref.webUrl, world.den.ref.apiUrl]));
     const origin = new URL(world.den.ref.webUrl).origin;
     const authUrl = `${origin}/?mode=sign-in&desktopAuth=1&desktopScheme=openwork`;
-    const installSource = new URL(origin);
-    // Local Den trusts both aliases. A token-backed install on the other alias
-    // must return to the configured instance, not the install page's origin.
-    if (installSource.hostname === "127.0.0.1") installSource.hostname = "localhost";
     const grants = new Set<string>();
-    for (const installUrl of [`${origin}/install`, `${installSource.origin}/install?token=synthetic-install-token&step=3`]) {
+    for (const installUrl of [`${origin}/install`]) {
       await webUser.navigate(installUrl);
       await webUser.see({ role: "link", text: "I already installed OpenWork" }, { timeoutMs: 90_000 });
       expect(await webProbe.eval(() => document.querySelector('a[href="openwork://open"]') === null)).toBe(true);
@@ -105,7 +101,7 @@ test("first run signs in through the browser, then shares a skill with a colleag
       expect(grants.has(grant)).toBe(false);
       grants.add(grant);
     }
-    evidence.recordAssertionEvidence("Cloud install reuses browser authentication on the correct instance", "Both session-backed and token-backed install links performed full-page navigation to the desktop sign-in route, retained the signed-in identity and produced distinct real den-auth grants with the destination's /api/den URL and no install token. Session-backed navigation ignored the hosted config default; token-backed navigation used the config's root.", true);
+    evidence.recordAssertionEvidence("Cloud install reuses browser authentication on the correct instance", "The install page performed full-page navigation to the desktop sign-in route, retained the signed-in identity and produced a real den-auth grant with the destination's /api/den URL and no install token. Navigation ignored the hosted config default.", true);
   });
 
   await step("The browser-issued grant returns to the app", async () => {

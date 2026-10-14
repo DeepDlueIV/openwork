@@ -47,7 +47,7 @@ import { DenInput } from "../../_components/ui/input";
 import { DenNotice } from "../../_components/ui/notice";
 import { DenSelect } from "../../_components/ui/select";
 import { DenSkeleton } from "../../_components/ui/skeleton";
-import { createOrganizationInstallLink } from "../../_lib/install-link-data";
+import { installPageUrl } from "../../_lib/install-download";
 import { OrgMemberIdentity } from "./org-member-identity";
 import { MemberEffectivePermissions, canViewMemberPermissions } from "./member-effective-permissions";
 import { RolesTab, canCreateRole } from "./roles-tab";
@@ -175,7 +175,6 @@ export function ManageMembersScreen() {
   const [teamMemberDraft, setTeamMemberDraft] = useState<string[]>([]);
   const [limitDialogError, setLimitDialogError] = useState<OrgLimitError | null>(null);
   const [seatBillingDialogError, setSeatBillingDialogError] = useState<OrgPaymentRequiredError | null>(null);
-  const [installLinkBusy, setInstallLinkBusy] = useState(false);
   const [installLinkCopied, setInstallLinkCopied] = useState(false);
   const [installLinkShareUrl, setInstallLinkShareUrl] = useState<string | null>(null);
   const [installLinkShareCopied, setInstallLinkShareCopied] = useState(false);
@@ -335,42 +334,18 @@ export function ManageMembersScreen() {
   }
 
   async function handleCopyInstallLink() {
-    if (!activeOrg) {
-      return;
-    }
-
-    let mintedInstallPageUrl: string | null = null;
+    const url = installPageUrl();
     setPageError(null);
-    setInstallLinkCopied(false);
     setInstallLinkShareUrl(null);
     setInstallLinkShareCopied(false);
-    setInstallLinkBusy(true);
+    // Some browsers deny programmatic clipboard access entirely; fall back to
+    // showing the address for a manual copy instead of a raw browser error.
     try {
-      await runReauthableAction("copy-install-link", async () => {
-        mintedInstallPageUrl = await createOrganizationInstallLink(activeOrg.id);
-      });
-
-      if (!mintedInstallPageUrl) {
-        throw new Error("The install link response was incomplete.");
-      }
-
-      // The clipboard write is best-effort presentation, kept outside the
-      // queued action: after a step-up verification the retry runs without
-      // transient user activation, and some browsers deniy programmatic
-      // clipboard access entirely. The mint already succeeded either way, so
-      // failure falls back to showing the link for a manual copy instead of
-      // surfacing a raw browser error.
-      try {
-        await navigator.clipboard.writeText(mintedInstallPageUrl);
-        setInstallLinkCopied(true);
-        window.setTimeout(() => setInstallLinkCopied(false), 1800);
-      } catch {
-        setInstallLinkShareUrl(mintedInstallPageUrl);
-      }
-    } catch (error) {
-      setPageError(error instanceof Error ? error.message : "Could not copy install link.");
-    } finally {
-      setInstallLinkBusy(false);
+      await navigator.clipboard.writeText(url);
+      setInstallLinkCopied(true);
+      window.setTimeout(() => setInstallLinkCopied(false), 1800);
+    } catch {
+      setInstallLinkShareUrl(url);
     }
   }
 
@@ -793,7 +768,6 @@ export function ManageMembersScreen() {
                     variant="secondary"
                     icon={LinkIcon}
                     onClick={() => void handleCopyInstallLink()}
-                    loading={installLinkBusy || mutationBusy === "copy-install-link"}
                   >
                     {installLinkCopied ? "Copied" : "Copy install link"}
                   </DenButton>

@@ -217,10 +217,10 @@ function RolePicker({ team, state, customSets, abilities, disabled, newRoleHref 
         className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left transition-colors disabled:cursor-not-allowed ${selected ? "bg-gray-100" : "hover:bg-gray-50"}`}
       >
         <span className="min-w-0 flex-1">
-          <span className={`block truncate text-[13px] font-medium ${reason ? "text-gray-400" : "text-gray-900"}`}>{option.title}</span>
+          <span className={`block truncate text-[13px] font-medium ${reason ? "text-gray-600" : "text-gray-900"}`}>{option.title}</span>
           <span className="block truncate text-[12px] text-gray-500">{reason ?? option.description}</span>
         </span>
-        {selected ? <Check className="h-4 w-4 shrink-0 text-gray-900" aria-hidden /> : reason ? <LockKeyhole className="h-3.5 w-3.5 shrink-0 text-gray-400" aria-hidden /> : null}
+        {selected ? <Check className="h-4 w-4 shrink-0 text-gray-900" aria-hidden /> : reason ? <LockKeyhole className="h-3.5 w-3.5 shrink-0 text-gray-500" aria-hidden /> : null}
       </button>
     );
   };

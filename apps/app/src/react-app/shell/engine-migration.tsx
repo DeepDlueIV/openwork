@@ -436,7 +436,7 @@ function MigrationProgressDialog(props: { progress: ProgressState }) {
                 : t("engine_migration.error_title")}
           </DialogTitle>
           <DialogDescription>
-            {running ? t("engine_migration.progress_note")
+            {running ? `${migration.resumed ? `${t("engine_migration.resumed_note")} ` : ""}${t("engine_migration.progress_note")}`
               : migration.state === "completed" ? migratedSummary(migration)
                 : migration.error}
           </DialogDescription>
@@ -659,27 +659,40 @@ function useMigrationLifecycle(progress: ProgressState | null) {
   }, [state, view]);
 }
 
-/** A renderer reload mid-migration (or another window starting one) is picked up once. */
+/** Status reads at startup keep trying this long: the local server may still be starting. */
+const DISCOVERY_ATTEMPTS = 30;
+const DISCOVERY_RETRY_MS = 2_000;
+
+/**
+ * A renderer reload mid-migration, a copy resumed after OpenWork restarted (or
+ * another window starting one) is picked up once the first status read lands.
+ */
 function useRunningMigrationDiscovery(enabled: boolean) {
   useEffect(() => {
     if (!enabled || !isDesktopRuntime()) return;
     let cancelled = false;
-    void (async () => {
+    let timer: number | undefined;
+    const attempt = async (remaining: number) => {
       try {
         const connection = await resolveOpenworkConnection();
-        if (cancelled || !connection.normalizedBaseUrl || !connection.resolvedToken) return;
-        const client = createOpenworkServerClient({
-          baseUrl: connection.normalizedBaseUrl,
-          token: connection.resolvedToken,
-          hostToken: connection.resolvedHostToken,
-        });
-        const status = await client.getEngineV2PreviewStatus();
-        if (!cancelled) observeEngineMigration(client, status);
+        if (cancelled) return;
+        if (connection.normalizedBaseUrl && connection.resolvedToken) {
+          const client = createOpenworkServerClient({
+            baseUrl: connection.normalizedBaseUrl,
+            token: connection.resolvedToken,
+            hostToken: connection.resolvedHostToken,
+          });
+          const status = await client.getEngineV2PreviewStatus();
+          if (!cancelled) observeEngineMigration(client, status);
+          return;
+        }
       } catch {
         // Engine controls report connection problems where they are used.
       }
-    })();
-    return () => { cancelled = true; };
+      if (!cancelled && remaining > 1) timer = window.setTimeout(() => void attempt(remaining - 1), DISCOVERY_RETRY_MS);
+    };
+    void attempt(DISCOVERY_ATTEMPTS);
+    return () => { cancelled = true; window.clearTimeout(timer); };
   }, [enabled]);
 }
 

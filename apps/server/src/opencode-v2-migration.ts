@@ -30,6 +30,8 @@ export interface EngineV2MigrationStatus {
   notCopied?: ChatNotCopied[];
   /** Chats copied without their largest outputs and attachments; the full versions stay in v1. */
   trimmed?: Array<{ id: string; title: string }>;
+  /** This run picks up a migration that OpenWork closed before it finished. */
+  resumed?: boolean;
 }
 
 export interface ChatNotCopied {
@@ -202,6 +204,21 @@ export async function hasV1ChatsSince(database: string, since: number): Promise<
       : new (await importNodeSqlite()).DatabaseSync(database, { readOnly: true });
     try {
       return isRecord(db.prepare("SELECT 1 AS found FROM session WHERE time_created >= ? LIMIT 1").get(since));
+    } finally { db.close(); }
+  } catch {
+    return false;
+  }
+}
+
+/** Whether v1 has the chat `id`. A missing or unreadable database has none. */
+export async function hasV1Chat(database: string, id: string): Promise<boolean> {
+  try {
+    await access(database);
+    const db = typeof process.versions.bun === "string"
+      ? new (await import("bun:sqlite")).Database(database, { readonly: true })
+      : new (await importNodeSqlite()).DatabaseSync(database, { readOnly: true });
+    try {
+      return isRecord(db.prepare("SELECT 1 AS found FROM session WHERE id = ?").get(id));
     } finally { db.close(); }
   } catch {
     return false;

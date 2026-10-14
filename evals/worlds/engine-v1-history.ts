@@ -3,12 +3,15 @@ import { execFile } from "node:child_process";
 import { access, mkdir, readdir, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { createServer, type ServerResponse } from "node:http";
 import { promisify } from "node:util";
-import { captureBrowserFilm } from "@openwork/cdp";
+import { browserScript, captureBrowserFilm, type Surface } from "@openwork/cdp";
+import { evalIn } from "@openwork/behaviors";
+import { desktop as launchDesktop, type DesktopHandle } from "@openwork/hosts";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { localMysqlIsRunning, SkipError, type Place, type Seed } from "@openwork/env";
 import { enableOrganizationCapabilities } from "./organization-capabilities.ts";
+import { pidIsAlive, portIsOpen, waitUntil } from "./thread-restart.ts";
 
 /**
  * An OpenCode v1 chat history, isolated in its own database file, that the
@@ -216,6 +219,25 @@ export async function copyRecentV1History(source: string, database: string, limi
  * their stored data, hashed. Equal before and after a migration means v1
  * history was not changed by it.
  */
+/**
+ * A v1 chat created after the fixture history was copied: v2 has never seen it.
+ * Only its session row is written; that is what makes it a v1 chat.
+ */
+export function addLateV1Chat(database: string, directory: string): { id: string; title: string } {
+  const chat = { id: fixtureId("ses", 99), title: "A chat started after the upgrade" };
+  const db = new DatabaseSync(database);
+  try {
+    const now = Date.now();
+    db.prepare(`INSERT INTO session
+      (id, project_id, parent_id, slug, directory, title, version, agent, model, time_created, time_updated)
+      VALUES (?, 'global', NULL, 'fixture-late-chat', ?, ?, '1.18.30', 'build', ?, ?, ?)`)
+      .run(chat.id, directory, chat.title, json({ id: MODEL.modelID, providerID: MODEL.providerID, variant: "default" }), now, now);
+  } finally {
+    db.close();
+  }
+  return chat;
+}
+
 export function readV1HistoryDigest(database: string): { sessions: number; messages: number; parts: number; sha256: string } {
   const db = new DatabaseSync(database, { readOnly: true });
   try {
@@ -471,15 +493,20 @@ async function startV1HistoryDesktop(seed: Seed, place: Place, failing?: ChatsTh
   const opencode2 = process.env.OPENWORK_EVAL_OPENCODE2_BIN?.trim();
   const copyGate = resources.use(await heldHistoryCopy(database, failing ? 0 : source === null ? 2 : 1, failing));
   const nodeOptions = [process.env.NODE_OPTIONS?.trim(), `--require=${JSON.stringify(copyGate.preload)}`].filter(Boolean).join(" ");
-  const app = await seed.desktop({
-    den, as: "admin", name: "v1-history-upgrade", profileDir, workspacePath,
-    env: {
-      // One file for the in-process server, the migration and the v1 engine.
-      OPENCODE_DB: database,
-      NODE_OPTIONS: nodeOptions,
-      ...(opencode2 ? { OPENWORK_OPENCODE2_BIN: opencode2 } : {}),
-    },
-  });
+  const desktopEnv: Record<string, string> = {
+    // One file for the in-process server, the migration and the v1 engine.
+    OPENCODE_DB: database,
+    NODE_OPTIONS: nodeOptions,
+    ...(opencode2 ? { OPENWORK_OPENCODE2_BIN: opencode2 } : {}),
+  };
+  const launched = await seed.desktop({ den, as: "admin", name: "v1-history-upgrade", profileDir, workspacePath, env: desktopEnv });
+  let app: Surface = launched;
+  let stopApp = () => launched.stop();
+  const vitePort = app.handle.meta?.vitePort;
+  // The renderer origin owns the sign-in and preferences; a relaunch must load the same one.
+  const rendererOrigin = String(await evalIn(app, () => window.location.origin));
+  let relaunched: DesktopHandle | null = null;
+  resources.defer(async () => { await relaunched?.stop().catch(() => undefined); });
   const workspace = await seed.workspace(app, workspacePath);
   const witnessDeadline = Date.now() + 5_000;
   while (!copyGate.read().installed && Date.now() < witnessDeadline) {
@@ -492,7 +519,40 @@ async function startV1HistoryDesktop(seed: Seed, place: Place, failing?: ChatsTh
   resources.defer(async () => { await film?.stop(); });
   const lifetime = resources.move();
   return {
-    app, den, workspace, workspacePath, database,
+    get app(): Surface { return app; },
+    den, workspace, workspacePath, database,
+    /**
+     * Force quit the whole desktop (SIGKILL to its process group: renderer,
+     * embedded server, engines and a running migration die at once), then
+     * relaunch it on the same profile, renderer origin and v1 history.
+     */
+    async restart(): Promise<Surface> {
+      const pid = app.handle.pid;
+      if (pid === undefined || !vitePort) throw new Error("The desktop surface did not expose its process id and renderer port.");
+      try { process.kill(-pid, "SIGKILL"); } catch { process.kill(pid, "SIGKILL"); }
+      await waitUntil("the desktop process group to exit", async () => !pidIsAlive(pid), 60_000);
+      // An import held when the app died died with it; clear the witness so the relaunch's copy can be held.
+      if (copyGate.read().held) copyGate.release("fail");
+      await waitUntil(`renderer port ${vitePort} to be released`, async () => !(await portIsOpen(Number(vitePort))), 60_000);
+      await stopApp().catch(() => undefined);
+      relaunched = await launchDesktop({
+        name: "v1-history-upgrade-relaunch", profileDir,
+        bootstrap: { baseUrl: den.ref.webUrl, requireSignin: false },
+        env: { ...desktopEnv, PORT: String(vitePort), OPENWORK_ELECTRON_START_URL: rendererOrigin },
+        prepareSharedResources: false,
+      });
+      app = relaunched;
+      stopApp = () => relaunched?.stop() ?? Promise.resolve();
+      return relaunched;
+    },
+    /** Add a v1 chat that no migration has copied. */
+    addLateV1Chat: () => addLateV1Chat(database, workspacePath),
+    /** Open a chat by its route, as a remembered last chat or a link would; the sidebar lists only the selected engine's chats. */
+    openChat: async (sessionId: string) => {
+      await evalIn(app, browserScript((workspaceId, sessionId) => {
+        window.location.hash = `#/workspace/${workspaceId}/session/${sessionId}`;
+      }, [workspace.workspaceId, sessionId]));
+    },
     readHeldCopy: copyGate.read,
     releaseHeldCopy: copyGate.release,
     /** True for the committed fixture; false when a local copy of real history was seeded. */

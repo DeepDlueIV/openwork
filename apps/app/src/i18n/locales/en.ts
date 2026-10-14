@@ -672,6 +672,7 @@ export default {
   "engine_migration.progress_title": "Migrating chats to OpenCode v2",
   "engine_migration.progress_total_one": "1 chat to copy",
   "engine_migration.progress_total_other": "{total} chats to copy",
+  "engine_migration.resumed_note": "OpenWork closed before your chats finished copying, so it picked up where it left off.",
   "engine_migration.running_tasks_migrate": "Chats copied mid-task can end up incomplete in v2. Wait for them to finish, or migrate anyway.",
   "engine_migration.running_tasks_one": "1 task is still running",
   "engine_migration.running_tasks_other": "{count} tasks are still running",

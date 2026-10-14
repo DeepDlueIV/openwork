@@ -94,6 +94,8 @@ export interface EngineV2MigrationStatus {
   notCopied?: Array<{ id: string; title: string }>;
   /** Chats copied without their largest outputs and attachments; older servers omit it. */
   trimmed?: Array<{ id: string; title: string }>;
+  /** This run picks up a migration OpenWork closed before it finished. */
+  resumed?: boolean;
 }
 
 function parseChats(value: unknown): Array<{ id: string; title: string }> {
@@ -119,6 +121,7 @@ function parseEngineV2Migration(value: unknown): EngineV2MigrationStatus | undef
     ...("backupPath" in value && typeof value.backupPath === "string" ? { backupPath: value.backupPath } : {}),
     ...("notCopied" in value ? { notCopied: parseChats(value.notCopied) } : {}),
     ...("trimmed" in value ? { trimmed: parseChats(value.trimmed) } : {}),
+    ...("resumed" in value && value.resumed === true ? { resumed: true } : {}),
     error: "error" in value && typeof value.error === "string" ? value.error : undefined };
 }
 

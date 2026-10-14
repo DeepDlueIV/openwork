@@ -970,6 +970,11 @@ function hiddenMessageCount(snapshot: OpenworkSessionHistory, revertMessageId: s
   return index < 0 ? snapshot.messages.length : snapshot.messages.length - index;
 }
 
+/** The server's reason when v2 cannot open a v1 chat that has not been copied yet. */
+function uncopiedChatReason(error: unknown): string | undefined {
+  return error instanceof Error && "code" in error && error.code === "engine_chat_not_copied" ? error.message : undefined;
+}
+
 export function SessionSurface(props: SessionSurfaceProps) {
   const local = useLocal();
   const { config: shellConfig } = useShellConfig();
@@ -3384,6 +3389,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
       className="flex h-full min-h-0 flex-col"
     >
       <SessionHistoryStatus key={sessionOwner} complete={hasFullHistory && !openingHistory.openingError} pending={pendingSessionLoad}
+         failedReason={uncopiedChatReason(openingHistory.openingError) ?? uncopiedChatReason(snapshotQuery.error)}
          loading={openingHistory.openingLoading || snapshotQuery.isFetching && openingHistory.partial || openingHistory.pages.loading}
          failed={Boolean(openingHistory.openingError) || snapshotQuery.isError && !snapshotQuery.isFetching || openingHistory.pages.failed}
          onRetry={() => openingHistory.openingError ? openingHistory.retryOpening()

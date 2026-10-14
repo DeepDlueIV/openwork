@@ -1007,6 +1007,7 @@ export async function startServer(
             workspace,
             proxyPath: mount.restPath,
             connection,
+            describeUncopiedChat: (sessionId) => engineV2Preview.describeUncopiedChat(sessionId),
             // A turn uses the connections that are ready; MCP upkeep runs in
             // the background and the engine adds tools as connections finish.
             prepareExecution: async (directory) => {
@@ -1368,6 +1369,8 @@ export async function proxyOpencodeV2Request(input: {
   prepareExecution?: (directory: string) => Promise<void>;
   /** Restart one connection that is not healthy (v1's `POST /mcp/:name/connect`). */
   reconnectMcp?: (directory: string, name: string) => Promise<void>;
+  /** Why v2 has no such chat when it is a v1 chat not copied yet. */
+  describeUncopiedChat?: (sessionId: string) => Promise<string | null>;
   recoverySignal?: AbortSignal;
 }): Promise<Response> {
   const method = input.request.method.toUpperCase();
@@ -1442,7 +1445,11 @@ export async function proxyOpencodeV2Request(input: {
   // Authorization follows the persistent home, not the agent's mutable CWD.
   // The actual native location still controls execution and tool discovery.
   if (sessionId?.startsWith("ses_")) {
-    const session = await readNative(`/api/session/${encodeURIComponent(sessionId)}`);
+    const session = await readNative(`/api/session/${encodeURIComponent(sessionId)}`).catch(async (error: unknown) => {
+      // A v1 chat v2 has not copied yet: say so instead of a bare "could not be read".
+      const reason = error instanceof ApiError && error.status === 404 ? await input.describeUncopiedChat?.(sessionId) : null;
+      throw reason ? new ApiError(404, "engine_chat_not_copied", reason) : error;
+    });
     if (await homes.resolve(session) !== expectedHome) {
       throw new ApiError(404, "session_not_found", "Session not found");
     }

@@ -40,7 +40,7 @@ const providerId = "thread-restart-mock";
 const modelId = "thread-restart-model";
 export const restartedThreadModelName = "Thread restart model";
 
-async function portIsOpen(port: number): Promise<boolean> {
+export async function portIsOpen(port: number): Promise<boolean> {
   return new Promise((resolvePort) => {
     const socket = connect({ host: "127.0.0.1", port });
     const done = (open: boolean) => { socket.destroy(); resolvePort(open); };
@@ -50,7 +50,7 @@ async function portIsOpen(port: number): Promise<boolean> {
   });
 }
 
-async function waitUntil(label: string, predicate: () => Promise<boolean>, timeoutMs: number): Promise<void> {
+export async function waitUntil(label: string, predicate: () => Promise<boolean>, timeoutMs: number): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     if (await predicate()) return;
@@ -59,7 +59,7 @@ async function waitUntil(label: string, predicate: () => Promise<boolean>, timeo
   throw new Error(`Timed out after ${timeoutMs}ms waiting for ${label}`);
 }
 
-function pidIsAlive(pid: number): boolean {
+export function pidIsAlive(pid: number): boolean {
   try { process.kill(pid, 0); return true; } catch { return false; }
 }
 

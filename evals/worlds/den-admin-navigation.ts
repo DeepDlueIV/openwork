@@ -5,7 +5,16 @@ function strings(value: unknown): string[] {
 }
 
 export async function adminDashboardWeb(seed: Seed) {
+  return dashboardWeb(seed, "cloud");
+}
+
+export async function selfHostedAdminDashboardWeb(seed: Seed) {
+  return dashboardWeb(seed, "self_hosted");
+}
+
+async function dashboardWeb(seed: Seed, deployment: "cloud" | "self_hosted") {
   const den = await seed.den({
+    env: { DEN_DEPLOYMENT: deployment },
     org: { name: `Admin navigation ${Date.now()}`, admin: { name: "Navigation Admin" } },
   });
   const web = await seed.web({

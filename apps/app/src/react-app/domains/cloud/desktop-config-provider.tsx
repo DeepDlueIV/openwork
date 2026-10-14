@@ -25,15 +25,19 @@ import {
   getDenDesktopConfigCacheKey,
   normalizeDenDesktopConfig,
   readCachedDenDesktopConfig,
+  readDenBootstrapConfig,
   readDenSettings,
+  setDenBootstrapConfig,
   writeCachedDenDesktopConfig,
   type DenDesktopConfig,
 } from "../../../app/lib/den";
+import { applyBrandAppName, applyBrandIcon, getBrandIconState } from "../../../app/lib/desktop";
 import { createOpenworkServerClient } from "../../../app/lib/openwork-server";
 import {
   denSessionUpdatedEvent,
   denSettingsChangedEvent,
 } from "../../../app/lib/den-session-events";
+import { isDesktopRuntime } from "../../../app/lib/runtime-env";
 import { resolveOpenworkConnection } from "../../shell/openwork-connection";
 import {
   createConnectPolicyReconciler,
@@ -42,6 +46,11 @@ import {
   type ConnectPolicyTarget,
 } from "./connect-policy-reconciler";
 import { useDenAuth } from "./den-auth-provider";
+import {
+  bootstrapBrandingFromDesktopConfig,
+  bootstrapBrandingNeedsSync,
+  brandIconReconcileAction,
+} from "./workspace-branding-restart";
 
 export type DesktopConfigStore = {
   config: DenDesktopConfig;
@@ -72,6 +81,11 @@ const DESKTOP_CONFIG_REFRESH_MS = 60 * 60 * 1000;
 const DESKTOP_CONFIG_ITEMS = [
   ...desktopPolicyKeys,
   "allowedDesktopVersions",
+  "whiteLabelEnabled",
+  "brandAppName",
+  "brandLogoUrl",
+  "brandIconUrl",
+  "brandAccentColor",
   "automationsEnabled",
   "dashboardEnabled",
   "connectEnabled",
@@ -147,6 +161,47 @@ type DesktopConfigProviderProps = {
   children: ReactNode;
 };
 
+// Rewrites desktop-bootstrap.json branding to match `normalizedConfig` so a
+// cleared wordmark/icon cannot resurrect from the install/connect snapshot on
+// the next relaunch. No-op when the bootstrap already matches.
+async function syncBootstrapBranding(normalizedConfig: DenDesktopConfig): Promise<void> {
+  if (!isDesktopRuntime()) return;
+  const bootstrap = readDenBootstrapConfig();
+  if (!bootstrapBrandingNeedsSync(bootstrap, normalizedConfig)) return;
+  await setDenBootstrapConfig(
+    {
+      ...bootstrap,
+      whiteLabelEnabled: normalizedConfig.whiteLabelEnabled === true,
+      // A rollout rollback must not erase the stored source settings.
+      ...(normalizedConfig.whiteLabelEnabled === true
+        ? bootstrapBrandingFromDesktopConfig(normalizedConfig) : {}),
+    },
+    { dispatchSettingsChanged: false },
+  );
+}
+
+// Level-based safety net behind the edge-triggered config diff: the shell
+// (Electron main) restores its cached/bootstrap brand icon on every launch,
+// so when a clear's edge is missed (stale localStorage cache, failed IPC,
+// org/base-URL switch changing the cache key), nothing would ever tell the
+// shell to reset and the branded icon would persist forever. After every
+// fresh config fetch, compare the shell's applied state to the config and
+// re-assert the expected icon plus the bootstrap branding snapshot.
+async function reconcileShellBranding(latestConfig: DenDesktopConfig): Promise<void> {
+  if (!isDesktopRuntime()) return;
+  const normalizedConfig = desktopCapabilityConfig(normalizeDenDesktopConfig(latestConfig));
+  await syncBootstrapBranding(normalizedConfig);
+  const appName = normalizedConfig.whiteLabelEnabled === true ? normalizedConfig.brandAppName ?? null : null;
+  document.title = appName ?? "OpenWork";
+  await applyBrandAppName(appName);
+  const action = brandIconReconcileAction(normalizedConfig, await getBrandIconState());
+  if (!action) return;
+  const result = await applyBrandIcon(action.apply);
+  if (!result.ok) {
+    console.warn(`[brand-icon] Desktop icon reconcile was not applied: ${result.reason ?? "unknown failure"}`);
+  }
+}
+
 type DesktopConfigState = {
   config: DenDesktopConfig;
   loading: boolean;
@@ -160,7 +215,7 @@ type DesktopConfigState = {
  * Fetches the org-scoped desktop policy config
  * (`packages/types/den/desktop-policies.ts` shape) and caches it in
  * localStorage. The runtime projection omits desktop restrictions while
- * enforcement is suspended; Cloud entitlements and the
+ * enforcement is suspended; Cloud entitlements, branding and the
  * organization's allowed desktop versions stay intact.
  * Re-fetches on Den session / settings events and on a one-hour interval.
  */
@@ -204,6 +259,29 @@ export function DesktopConfigProvider({ children }: DesktopConfigProviderProps) 
 
     if (actions.length === 0) return false;
 
+    const brandIconAction = actions.find((action) => action.item === "brandIconUrl");
+    if (brandIconAction) {
+      void applyBrandIcon(
+        typeof brandIconAction.nextValue === "string" ? brandIconAction.nextValue : null,
+      ).then((result) => {
+        if (!result.ok) {
+          console.warn(`[brand-icon] Desktop icon was not applied: ${result.reason ?? "unknown failure"}`);
+        }
+      }).catch((error: unknown) => {
+        console.warn("[brand-icon] Desktop icon apply request failed", error);
+      });
+    }
+
+    const brandAppNameAction = actions.find((action) => action.item === "brandAppName");
+    if (brandAppNameAction) {
+      const appName = typeof brandAppNameAction.nextValue === "string" ? brandAppNameAction.nextValue : null;
+      document.title = appName ?? "OpenWork";
+      void applyBrandAppName(appName).catch(() => null);
+    }
+
+    // Only a fresh server response may update the durable bootstrap flag.
+    // Cache/default projections may reset appearance but never erase settings.
+
     currentDesktopConfigRef.current = normalizedConfig;
     setDesktopConfigState((current) => ({
       ...current,
@@ -217,6 +295,7 @@ export function DesktopConfigProvider({ children }: DesktopConfigProviderProps) 
       const nextConfig = desktopCapabilityConfig(devRefreshDesktopConfigRef.current);
       applyDesktopConfigActions(nextConfig);
       setDesktopConfigState((current) => ({ ...current, freshConfigStatus: "ready" }));
+      void reconcileShellBranding(nextConfig).catch(() => undefined);
       return nextConfig;
     }
 
@@ -256,6 +335,7 @@ export function DesktopConfigProvider({ children }: DesktopConfigProviderProps) 
       writeCachedDenDesktopConfig(cacheKey, nextConfig);
       applyDesktopConfigActions(nextConfig);
       setDesktopConfigState((current) => ({ ...current, freshConfigStatus: "ready" }));
+      void reconcileShellBranding(nextConfig).catch(() => undefined);
       return nextConfig;
     } catch (error) {
       if (currentRun !== refreshRunRef.current) {
@@ -294,8 +374,8 @@ export function DesktopConfigProvider({ children }: DesktopConfigProviderProps) 
     [desktopConfigHandler],
   );
   const refreshFresh = useCallback(
-    // Callers (updater checks, install re-check, recovery picker) need the
-    // organization's current allowed desktop versions, so
+    // Callers (updater checks and install re-check, recovery picker, onboarding
+    // branding) need the organization's current allowed desktop versions, so
     // always fetch. When Den is unreachable or older and the fetch fails, fall
     // back to the last known config instead of failing the update flow. Return
     // the same capability projection the provider state uses so suspended

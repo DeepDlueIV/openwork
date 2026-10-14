@@ -201,6 +201,8 @@ import type {
   GetV1AuthLoginOptionsResponses,
   GetV1BootstrapWorkspaceByBootstrapIdClaimErrors,
   GetV1BootstrapWorkspaceByBootstrapIdClaimResponses,
+  GetV1BrandAssetsByOrganizationIdByKindByVersionErrors,
+  GetV1BrandAssetsByOrganizationIdByKindByVersionResponses,
   GetV1CapabilitiesGoogleWorkspaceCalendarEventsErrors,
   GetV1CapabilitiesGoogleWorkspaceCalendarEventsResponses,
   GetV1CapabilitiesGoogleWorkspaceDriveFileByFileIdErrors,
@@ -822,6 +824,8 @@ import type {
   PostV1OauthProvidersByProviderIdClientResponses,
   PostV1OauthProvidersByProviderIdDisconnectErrors,
   PostV1OauthProvidersByProviderIdDisconnectResponses,
+  PostV1OrgBrandAssetsErrors,
+  PostV1OrgBrandAssetsResponses,
   PostV1OrgsByOrganizationIdInstallLinksErrors,
   PostV1OrgsByOrganizationIdInstallLinksResponses,
   PostV1OrgsInvitationsAcceptErrors,
@@ -3001,6 +3005,10 @@ export class DenClient extends HeyApiClient {
       allowedEmailDomains?: Array<string> | null;
       allowedDesktopVersions?: Array<string> | null;
       requireSso?: boolean;
+      brandAppName?: string | null;
+      brandLogoUrl?: string | null;
+      brandIconUrl?: string | null;
+      brandAccentColor?: string | null;
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -3013,6 +3021,10 @@ export class DenClient extends HeyApiClient {
             { in: "body", key: "allowedEmailDomains" },
             { in: "body", key: "allowedDesktopVersions" },
             { in: "body", key: "requireSso" },
+            { in: "body", key: "brandAppName" },
+            { in: "body", key: "brandLogoUrl" },
+            { in: "body", key: "brandIconUrl" },
+            { in: "body", key: "brandAccentColor" },
           ],
         },
       ],
@@ -3610,6 +3622,55 @@ export class DenClient extends HeyApiClient {
       ...options,
       ...params,
     });
+  }
+
+  /**
+   * Read an immutable organization brand asset
+   *
+   * Serves a capability-signed, content-addressed organization logo or app icon from this Den deployment.
+   */
+  public getV1BrandAssetsByOrganizationIdByKindByVersion<ThrowOnError extends boolean = false>(
+    parameters: {
+      organizationId: string;
+      kind: string;
+      version: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "organizationId" },
+            { in: "path", key: "kind" },
+            { in: "path", key: "version" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).get<
+      GetV1BrandAssetsByOrganizationIdByKindByVersionResponses,
+      GetV1BrandAssetsByOrganizationIdByKindByVersionErrors,
+      ThrowOnError
+    >({
+      url: "/v1/brand-assets/{organizationId}/{kind}/{version}",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
+   * Upload organization brand assets
+   *
+   * Validates and stores owner-supplied wordmark and app icon files inside the Den deployment.
+   */
+  public postV1OrgBrandAssets<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).post<
+      PostV1OrgBrandAssetsResponses,
+      PostV1OrgBrandAssetsErrors,
+      ThrowOnError
+    >({ url: "/v1/org/brand-assets", ...options });
   }
 
   /**
@@ -5367,7 +5428,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Get current user's install configuration
    *
-   * Returns desktop distribution and approved version for the signed-in member's active organization.
+   * Returns desktop branding, distribution, and approved version for the signed-in member's active organization.
    */
   public getV1MeInstallConfig<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
     return (options?.client ?? this.client).get<

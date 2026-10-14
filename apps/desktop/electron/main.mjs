@@ -27,7 +27,10 @@ import { registerUpdaterIpc, resolveAppVersion } from "./updater.mjs";
 import { createUiControlServer } from "./ui-control-server.mjs";
 import { createApplicationMenu } from "./app-menu.mjs";
 import { createNativeContextMenus } from "./context-menu.mjs";
-import { cleanupLegacyDesktopIdentity } from "./legacy-desktop-identity.mjs";
+import { applyBrandAppName } from "./brand-app-name.mjs";
+import { applyWindowsTaskbarIcon, windowsBrandAppUserModelId, windowsBrandShortcutDetails, windowsBrandShortcutFileName, windowsInstalledShortcutFileName, windowsInstalledExecutablePath, writeWindowsBrandShortcut, windowsIconFromNativeImage } from "./brand-icon-windows.mjs";
+import { resetMacDockIcon } from "./brand-icon-darwin.mjs";
+import { cleanupLegacyDesktopIdentity, isOwnedLegacyShortcut } from "./legacy-desktop-identity.mjs";
 import { createBrowserPanel } from "./browser-panel.mjs";
 import { createWorkspaceStore } from "./workspace-store.mjs";
 import {
@@ -420,6 +423,10 @@ function releaseSpellcheckerAfterActivation() {
   session.defaultSession.setSpellCheckerLanguages(languages);
 }
 
+let currentDisplayAppName = APP_NAME;
+const BRAND_ICON_MAX_BYTES = 2 * 1024 * 1024;
+const BRAND_ICON_FETCH_TIMEOUT_MS = 10_000;
+const BRAND_ICON_FETCH_USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 const APP_ICON_PATH = resolveAppIconPath();
 const APP_ICON_IMAGE = APP_ICON_PATH ? nativeImage.createFromPath(APP_ICON_PATH) : null;
 function scheduleBlankSlateProfileCleanup() {
@@ -443,6 +450,503 @@ function scheduleBlankSlateProfileCleanup() {
     console.warn("[blank-slate] failed to schedule temporary profile cleanup", error);
   }
 }
+let brandIconApplySequence = 0;
+let brandIconFetchController = null;
+let nativeBrandQueue = Promise.resolve();
+let brandIconRuntimeState = { applied: false, sourceUrl: null, reason: null };
+
+function whiteLabelActive(config = workspaceStore.readDesktopBootstrapConfigSync()) {
+  return !BLANK_SLATE_LAUNCH.enabled && config.whiteLabelEnabled === true
+    && !desktopActivationRequired(DESKTOP_DISTRIBUTION, config);
+}
+
+function cancelNativeBrandApply() {
+  ++brandIconApplySequence;
+  brandIconFetchController?.abort();
+}
+
+/** @template T @param {() => Promise<T>} operation @returns {Promise<T>} */
+function queueNativeBrandApply(operation) {
+  const pending = nativeBrandQueue.then(operation);
+  nativeBrandQueue = pending.then(() => undefined, () => undefined);
+  return pending;
+}
+
+/** @returns {{ ok: true, appName: string }} */
+function setNativeBrandAppName(value) {
+  currentDisplayAppName = applyBrandAppName(whiteLabelActive() ? value : null, {
+    fallbackName: APP_NAME, platform: process.platform,
+    updateElectronAppName: process.platform === "darwin", runtimeProcess: process,
+    app, applicationMenu, window: mainWindow,
+  });
+  return { ok: true, appName: currentDisplayAppName };
+}
+
+async function reconcileNativeBrand(config) {
+  const sequence = brandIconApplySequence;
+  return queueNativeBrandApply(async () => {
+    if (sequence !== brandIconApplySequence) return { ok: false, reason: "stale" };
+    setNativeBrandAppName(whiteLabelActive(config) ? config.brandAppName : null);
+    return applyBrandIconUrl(whiteLabelActive(config) ? config.brandIconUrl ?? null : null);
+  });
+}
+
+function brandIconCachePath() {
+  return path.join(app.getPath("userData"), "brand-icon.png");
+}
+
+function brandIconSidecarPath() {
+  return path.join(app.getPath("userData"), "brand-icon.json");
+}
+
+function brandIconWindowsPath() {
+  return path.join(app.getPath("userData"), "brand-icon.ico");
+}
+
+function defaultAppWindowsIconPath() {
+  return path.join(app.getPath("userData"), "openwork-stock.ico");
+}
+
+let cachedWindowsProgramsPath = null;
+function windowsProgramsPath() {
+  if (cachedWindowsProgramsPath) return cachedWindowsProgramsPath;
+  const userProfile = app.getPath("userData").split(/[\\/]AppData[\\/]/i)[0];
+  cachedWindowsProgramsPath = path.join(userProfile, "AppData", "Roaming", "Microsoft", "Windows", "Start Menu", "Programs");
+  return cachedWindowsProgramsPath;
+}
+
+function windowsBrandShortcutPath() {
+  return path.join(windowsProgramsPath(), windowsBrandShortcutFileName(currentDisplayAppName));
+}
+
+function windowsInstalledShortcutPath() {
+  return path.join(windowsProgramsPath(), windowsInstalledShortcutFileName(APP_NAME));
+}
+
+function windowsBrandShortcutMarkerPath() {
+  return path.join(app.getPath("userData"), "windows-brand-shortcut.txt");
+}
+
+function windowsExecutablePath() {
+  return windowsInstalledExecutablePath({
+    packaged: app.isPackaged,
+    execPath: app.getPath("exe"),
+    resourcesPath: process.resourcesPath,
+    shortcutPath: windowsBrandShortcutPath(),
+  });
+}
+
+async function readWindowsBrandShortcutMarker() {
+  return (await readFile(windowsBrandShortcutMarkerPath(), "utf8").catch(() => "")).trim();
+}
+
+function repairWindowsShortcutTarget(shortcutPath, details) {
+  const payload = Buffer.from(JSON.stringify({ shortcutPath, ...details }), "utf8").toString("base64");
+  const script = [
+    `$value = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${payload}')) | ConvertFrom-Json`,
+    "$shell = New-Object -ComObject WScript.Shell",
+    "$link = $shell.CreateShortcut($value.shortcutPath)",
+    "$link.TargetPath = $value.target",
+    "$link.WorkingDirectory = $value.cwd",
+    "$link.Description = $value.description",
+    "$link.IconLocation = \"$($value.icon),$($value.iconIndex)\"",
+    "$link.Save()",
+  ].join("\n");
+  execFileSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script], {
+    windowsHide: true,
+  });
+}
+
+async function registerWindowsBrandShortcut(appId, appIconPath) {
+  if (process.platform !== "win32") return null;
+  const shortcutPath = windowsBrandShortcutPath();
+  const shortcutTempPath = `${shortcutPath}.${process.pid}.tmp.lnk`;
+  await mkdir(path.dirname(shortcutPath), { recursive: true });
+  // A custom name or stale marker can collide with another application's
+  // shortcut. Never replace anything without proving both ID and executable.
+  if (existsSync(shortcutPath)
+    && !isOwnedLegacyShortcut(shell, shortcutPath, APP_IDENTIFIER, windowsExecutablePath())) {
+    throw new Error("Existing shortcut is not owned by OpenWork.");
+  }
+  await rm(shortcutTempPath, { force: true });
+  const details = windowsBrandShortcutDetails({
+    target: windowsExecutablePath(),
+    appId,
+    appIconPath,
+    appName: currentDisplayAppName,
+  });
+  const written = writeWindowsBrandShortcut(shell, shortcutTempPath, details, false);
+  if (!written) throw new Error(`Windows rejected the organization shortcut: ${shortcutPath}`);
+  await rename(shortcutTempPath, shortcutPath);
+  if (shell.readShortcutLink(shortcutPath).target !== details.target) {
+    repairWindowsShortcutTarget(shortcutPath, details);
+  }
+  const previousShortcutPath = await readWindowsBrandShortcutMarker();
+  if (previousShortcutPath && previousShortcutPath !== shortcutPath
+    && path.dirname(previousShortcutPath).toLowerCase() === windowsProgramsPath().toLowerCase()
+    && path.extname(previousShortcutPath).toLowerCase() === ".lnk"
+    && isOwnedLegacyShortcut(shell, previousShortcutPath, APP_IDENTIFIER, windowsExecutablePath())) {
+    await rm(previousShortcutPath, { force: true });
+  }
+  if (windowsInstalledShortcutPath() !== shortcutPath
+    && isOwnedLegacyShortcut(shell, windowsInstalledShortcutPath(), APP_IDENTIFIER, windowsExecutablePath())) {
+    await rm(windowsInstalledShortcutPath(), { force: true });
+  }
+  await writeFile(windowsBrandShortcutMarkerPath(), shortcutPath, "utf8");
+  return shortcutPath;
+}
+
+async function removeWindowsBrandShortcut() {
+  if (process.platform !== "win32") return;
+  await cleanupLegacyNativeIdentity();
+}
+
+function resolveBrandIconImage() {
+  try {
+    const cachePath = brandIconCachePath();
+    if (!existsSync(cachePath)) return null;
+    const image = nativeImage.createFromPath(cachePath);
+    return image && !image.isEmpty() ? image : null;
+  } catch {
+    return null;
+  }
+}
+
+function brandIconFailure(reason, error) {
+  const detail = error instanceof Error ? error.message : String(error ?? "");
+  console.warn(`[brand-icon] ${reason}${detail ? `: ${detail}` : ""}`);
+  return { ok: false, reason };
+}
+
+function recordBrandIconResult(result, sourceUrl) {
+  if (result.ok) {
+    brandIconRuntimeState = {
+      applied: typeof sourceUrl === "string",
+      sourceUrl: typeof sourceUrl === "string" ? sourceUrl : null,
+      reason: null,
+    };
+  } else {
+    brandIconRuntimeState = { ...brandIconRuntimeState, reason: result.reason ?? "apply-failed" };
+  }
+  return result;
+}
+
+async function applyAppIconImage(image, { taskbarIconPath = null, taskbarAppId = APP_IDENTIFIER, expectedSequence = null } = {}) {
+  if (!image || image.isEmpty()) return brandIconFailure("invalid-image");
+  try {
+    if (process.platform === "darwin") {
+      if (!app.dock) return brandIconFailure("dock-unavailable");
+      app.dock.setIcon(image);
+      return { ok: true };
+    }
+
+    if (process.platform === "win32") {
+      if (!taskbarIconPath || !existsSync(taskbarIconPath)) {
+        return brandIconFailure("taskbar-icon-missing");
+      }
+      if (!mainWindow) return { ok: true };
+      await applyWindowsTaskbarIcon(mainWindow, {
+        image,
+        appId: taskbarAppId,
+        appIconPath: taskbarIconPath,
+        relaunchCommand: windowsExecutablePath(),
+        relaunchDisplayName: currentDisplayAppName,
+        isCurrent: () => expectedSequence === null || expectedSequence === brandIconApplySequence,
+      });
+      if (expectedSequence !== null && expectedSequence !== brandIconApplySequence) return { ok: false, reason: "stale" };
+    } else {
+      if (!mainWindow) return brandIconFailure("window-unavailable");
+      mainWindow.setIcon(image);
+    }
+    return { ok: true };
+  } catch (error) {
+    return brandIconFailure("os-apply-failed", error);
+  }
+}
+
+async function applyDefaultAppIconImage(expectedSequence = null) {
+  let image = APP_ICON_IMAGE;
+  let taskbarIconPath = null;
+  if (process.platform === "darwin") {
+    // Packaged macOS builds have no loose default icon file (APP_ICON_IMAGE
+    // is null), so reset the dock via dock.setIcon(null) to restore the
+    // bundle icon instead of silently leaving the branded icon in place.
+    if (expectedSequence !== null && expectedSequence !== brandIconApplySequence) {
+      return { ok: false, reason: "stale" };
+    }
+    try {
+      const result = resetMacDockIcon(app.dock, image);
+      return result.ok ? result : brandIconFailure(result.reason);
+    } catch (error) {
+      return brandIconFailure("os-apply-failed", error);
+    }
+  }
+  if (process.platform === "win32") {
+    try {
+      await removeWindowsBrandShortcut();
+    } catch (error) {
+      // An unrelated shortcut must remain untouched, but it must not prevent
+      // the running application's identity from returning to stock.
+      brandIconFailure("shortcut-remove-failed", error);
+    }
+    app.setAppUserModelId(APP_IDENTIFIER);
+    if (image && !image.isEmpty()) {
+      try {
+        taskbarIconPath = defaultAppWindowsIconPath();
+        await writeWindowsIconFile(image, taskbarIconPath);
+      } catch (error) {
+        return brandIconFailure("stock-icon-unavailable", error);
+      }
+    } else {
+      try {
+        const executableIcon = await app.getFileIcon(process.execPath, { size: "large" });
+        if (executableIcon && !executableIcon.isEmpty()) image = executableIcon;
+        taskbarIconPath = process.execPath;
+      } catch (error) {
+        return brandIconFailure("stock-icon-unavailable", error);
+      }
+    }
+  }
+  if (!image || image.isEmpty()) {
+    // Linux: the packaged window/launcher icon is managed by the desktop
+    // integration, so a missing loose icon is a safe no-op.
+    return process.platform === "win32" ? brandIconFailure("stock-icon-unavailable") : { ok: true };
+  }
+  if (process.platform === "win32" && taskbarIconPath) {
+    try {
+      await registerWindowsBrandShortcut(APP_IDENTIFIER, taskbarIconPath);
+    } catch (error) {
+      brandIconFailure("shortcut-write-failed", error);
+    }
+  }
+  if (expectedSequence !== null && expectedSequence !== brandIconApplySequence) {
+    return { ok: false, reason: "stale" };
+  }
+  return applyAppIconImage(image, {
+    taskbarIconPath,
+    taskbarAppId: APP_IDENTIFIER,
+    expectedSequence,
+  });
+}
+
+
+async function readBrandIconSidecar() {
+  try {
+    const parsed = JSON.parse(await readFile(brandIconSidecarPath(), "utf8"));
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function readBrandIconSidecarSourceUrlSync() {
+  try {
+    const parsed = JSON.parse(readFileSync(brandIconSidecarPath(), "utf8"));
+    return parsed && typeof parsed === "object" && typeof parsed.sourceUrl === "string"
+      ? parsed.sourceUrl
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeBrandIconSourceUrl(value) {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  try {
+    const parsed = new URL(trimmed);
+    return parsed.protocol === "http:" || parsed.protocol === "https:" ? trimmed : null;
+  } catch {
+    return null;
+  }
+}
+
+async function fetchBrandIconBuffer(sourceUrl) {
+  if (!whiteLabelActive()) return { ok: false, reason: "disabled" };
+  const controller = new AbortController();
+  brandIconFetchController = controller;
+  const timeout = setTimeout(() => controller.abort(), BRAND_ICON_FETCH_TIMEOUT_MS);
+  try {
+    const response = await electronNet.fetch(sourceUrl, {
+      signal: controller.signal,
+      credentials: "omit",
+      cache: "no-store",
+      headers: {
+        "user-agent": BRAND_ICON_FETCH_USER_AGENT,
+        accept: "image/*,*/*",
+      },
+    });
+    if (!response.ok) return { ok: false, reason: "http-status" };
+
+    const contentLength = Number(response.headers.get("content-length") ?? "0");
+    if (Number.isFinite(contentLength) && contentLength > BRAND_ICON_MAX_BYTES) {
+      return { ok: false, reason: "too-large" };
+    }
+
+    const buffer = Buffer.from(await response.arrayBuffer());
+    if (buffer.byteLength > BRAND_ICON_MAX_BYTES) {
+      return { ok: false, reason: "too-large" };
+    }
+    return { ok: true, buffer };
+  } catch (error) {
+    return { ok: false, reason: error?.name === "AbortError" ? "timeout" : "fetch-failed" };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function brandIconImageRejectionReason(image) {
+  if (!image || image.isEmpty()) return "invalid-image";
+  const size = image.getSize();
+  if (size.width < 64 || size.height < 64) return "too-small";
+  const aspectRatio = size.width / size.height;
+  if (aspectRatio < 1 / 1.5 || aspectRatio > 1.5) return "invalid-aspect";
+  return null;
+}
+
+async function writeBrandIconCache(image, sourceUrl) {
+  const cachePath = brandIconCachePath();
+  const sidecarPath = brandIconSidecarPath();
+  const windowsPath = brandIconWindowsPath();
+  const suffix = `${process.pid}-${Date.now()}`;
+  const cacheTempPath = `${cachePath}.${suffix}.tmp`;
+  const sidecarTempPath = `${sidecarPath}.${suffix}.tmp`;
+  const windowsTempPath = `${windowsPath}.${suffix}.tmp`;
+  const windowsIcon = process.platform === "win32" ? windowsIconFromNativeImage(image) : null;
+  try {
+    await mkdir(path.dirname(cachePath), { recursive: true });
+    await writeFile(cacheTempPath, image.toPNG());
+    if (windowsIcon) await writeFile(windowsTempPath, windowsIcon);
+    await writeFile(sidecarTempPath, JSON.stringify({
+      sourceUrl,
+      appliedAt: new Date().toISOString(),
+      appVersion: app.getVersion(),
+    }, null, 2), "utf8");
+    await rename(cacheTempPath, cachePath);
+    if (windowsIcon) await rename(windowsTempPath, windowsPath);
+    await rename(sidecarTempPath, sidecarPath);
+  } catch (error) {
+    await Promise.all([
+      rm(cacheTempPath, { force: true }),
+      rm(sidecarTempPath, { force: true }),
+      rm(windowsTempPath, { force: true }),
+    ]).catch(() => undefined);
+    throw error;
+  }
+}
+
+async function writeWindowsIconFile(image, destination) {
+  const tempPath = `${destination}.${process.pid}-${Date.now()}.tmp`;
+  try {
+    await mkdir(path.dirname(destination), { recursive: true });
+    await writeFile(tempPath, windowsIconFromNativeImage(image));
+    await rename(tempPath, destination);
+  } catch (error) {
+    await rm(tempPath, { force: true }).catch(() => undefined);
+    throw error;
+  }
+}
+
+async function ensureWindowsBrandIcon(image) {
+  if (process.platform !== "win32") return null;
+  const windowsPath = brandIconWindowsPath();
+  if (!existsSync(windowsPath)) await writeWindowsIconFile(image, windowsPath);
+  return windowsPath;
+}
+
+async function registerWindowsDisplayShortcut() {
+  if (process.platform !== "win32") return;
+  const sidecar = await readBrandIconSidecar();
+  const sourceUrl = typeof sidecar?.sourceUrl === "string" ? sidecar.sourceUrl : null;
+  const config = workspaceStore.readDesktopBootstrapConfigSync();
+  const brandedImage = whiteLabelActive(config) && config.brandIconUrl?.trim() === sourceUrl ? resolveBrandIconImage() : null;
+  if (brandedImage && sourceUrl) {
+    const iconPath = await ensureWindowsBrandIcon(brandedImage);
+    await registerWindowsBrandShortcut(windowsBrandAppUserModelId(APP_IDENTIFIER, sourceUrl), iconPath);
+    return;
+  }
+  const stockImage = APP_ICON_IMAGE ?? await app.getFileIcon(windowsExecutablePath(), { size: "large" });
+  const iconPath = defaultAppWindowsIconPath();
+  await writeWindowsIconFile(stockImage, iconPath);
+  await registerWindowsBrandShortcut(APP_IDENTIFIER, iconPath);
+}
+
+async function applyCachedBrandIcon(image, sourceUrl, expectedSequence = null) {
+  if (!whiteLabelActive() || (expectedSequence !== null && expectedSequence !== brandIconApplySequence)) {
+    return { ok: false, reason: "stale" };
+  }
+  let taskbarIconPath = null;
+  let taskbarAppId = APP_IDENTIFIER;
+  try {
+    taskbarIconPath = await ensureWindowsBrandIcon(image);
+    if (process.platform === "win32") {
+      taskbarAppId = windowsBrandAppUserModelId(APP_IDENTIFIER, sourceUrl);
+      await registerWindowsBrandShortcut(taskbarAppId, taskbarIconPath);
+      app.setAppUserModelId(taskbarAppId);
+    }
+  } catch (error) {
+    if (expectedSequence !== null && expectedSequence !== brandIconApplySequence) {
+      return { ok: false, reason: "stale" };
+    }
+    return recordBrandIconResult(brandIconFailure("write-failed", error), sourceUrl);
+  }
+  if (expectedSequence !== null && expectedSequence !== brandIconApplySequence) {
+    return { ok: false, reason: "stale" };
+  }
+  return recordBrandIconResult(await applyAppIconImage(image, {
+    taskbarIconPath,
+    taskbarAppId,
+    expectedSequence,
+  }), sourceUrl);
+}
+
+async function applyBrandIconUrl(value) {
+  const sequence = ++brandIconApplySequence;
+  if (!whiteLabelActive() || value === null) {
+    // Disabling (or clearing effective identity) must never erase source
+    // images. A later explicit enable or scoped rollback may reuse them.
+    const result = await applyDefaultAppIconImage(sequence);
+    if (result.reason === "stale") return result;
+    return recordBrandIconResult(result, null);
+  }
+
+  const sourceUrl = normalizeBrandIconSourceUrl(value);
+  if (!sourceUrl) return recordBrandIconResult(brandIconFailure("invalid-url"), null);
+
+  const sidecar = await readBrandIconSidecar();
+  if (sequence !== brandIconApplySequence || !whiteLabelActive()) return { ok: false, reason: "stale" };
+  const cachedImage = resolveBrandIconImage();
+  if (sidecar?.sourceUrl === sourceUrl && cachedImage) {
+    return applyCachedBrandIcon(cachedImage, sourceUrl, sequence);
+  }
+
+  const fetched = await fetchBrandIconBuffer(sourceUrl);
+  if (sequence !== brandIconApplySequence) return { ok: false, reason: "stale" };
+  if (!fetched.ok) return recordBrandIconResult(brandIconFailure(fetched.reason), sourceUrl);
+
+  const image = nativeImage.createFromBuffer(fetched.buffer);
+  const rejectionReason = brandIconImageRejectionReason(image);
+  if (rejectionReason) return recordBrandIconResult(brandIconFailure(rejectionReason), sourceUrl);
+
+  try {
+    await writeBrandIconCache(image, sourceUrl);
+  } catch (error) {
+    if (sequence !== brandIconApplySequence) return { ok: false, reason: "stale" };
+    return recordBrandIconResult(brandIconFailure("write-failed", error), sourceUrl);
+  }
+  if (sequence !== brandIconApplySequence || !whiteLabelActive()) {
+    // Leave source bytes intact; stale work must not delete a newer cache.
+    return { ok: false, reason: "stale" };
+  }
+  return applyCachedBrandIcon(image, sourceUrl, sequence);
+}
+
+async function getBrandIconState() {
+  return { ...brandIconRuntimeState };
+}
+
+
 async function cleanupLegacyNativeIdentity() {
   await cleanupLegacyDesktopIdentity({
     userDataPath: app.getPath("userData"),
@@ -481,7 +985,9 @@ function showDesktopNotification(input) {
   }
 
   const body = String(Reflect.get(record, "body") ?? "").trim();
-  const icon = APP_ICON_IMAGE;
+  const config = workspaceStore.readDesktopBootstrapConfigSync();
+  const icon = whiteLabelActive(config) && readBrandIconSidecarSourceUrlSync() === config.brandIconUrl?.trim()
+    ? resolveBrandIconImage() ?? APP_ICON_IMAGE : APP_ICON_IMAGE;
   const options = {
     title,
     ...(body ? { body } : {}),
@@ -699,6 +1205,8 @@ async function acceptConnectLink(rawUrl) {
 }
 
 async function persistConnectLinkClaims(claims) {
+  cancelNativeBrandApply();
+  await nativeBrandQueue;
   const previous = workspaceStore.readDesktopBootstrapConfigSync();
   const config = await workspaceStore.setDesktopBootstrapConfig({
     ...desktopBootstrapFromConnectClaims(claims),
@@ -709,6 +1217,7 @@ async function persistConnectLinkClaims(claims) {
         }
       : null,
   });
+  await reconcileNativeBrand(config);
   if (
     desktopActivationRequired(DESKTOP_DISTRIBUTION, previous)
     && !desktopActivationRequired(DESKTOP_DISTRIBUTION, config)
@@ -1370,9 +1879,14 @@ const desktopCommandHandlers = {
       return workspaceStore.debugDesktopBootstrapConfig();
   },
   "clearDesktopBootstrapConfig": async (event, ...args) => {
-      return workspaceStore.clearDesktopBootstrapConfig();
+      cancelNativeBrandApply();
+      await nativeBrandQueue;
+      await workspaceStore.clearDesktopBootstrapConfig();
+      await reconcileNativeBrand(workspaceStore.readDesktopBootstrapConfigSync());
   },
   "setDesktopBootstrapConfig": async (event, ...args) => {
+      cancelNativeBrandApply();
+      await nativeBrandQueue;
       const previous = workspaceStore.readDesktopBootstrapConfigSync();
       // A locked installation must never be able to unlock itself by writing
       // policy through the bridge. The activation requirement is cleared only
@@ -1384,6 +1898,7 @@ const desktopCommandHandlers = {
         ? { ...requested, requireActivation: true }
         : requested;
       const next = await workspaceStore.setDesktopBootstrapConfig(guarded);
+      await reconcileNativeBrand(next);
       if (
         desktopActivationRequired(DESKTOP_DISTRIBUTION, previous)
         && !desktopActivationRequired(DESKTOP_DISTRIBUTION, next)
@@ -1766,6 +2281,23 @@ const desktopCommandHandlers = {
       window.webContents.send("openwork:browser:bounds-invalidated");
       return true;
   },
+  "__applyBrandAppName": async (event, ...args) => {
+      const sequence = brandIconApplySequence;
+      return queueNativeBrandApply(async () => {
+        if (sequence !== brandIconApplySequence) return { ok: true, appName: currentDisplayAppName };
+        const result = setNativeBrandAppName(args[0]);
+        if (process.platform === "win32" && whiteLabelActive()) await registerWindowsDisplayShortcut();
+        return result;
+      });
+  },
+  "__applyBrandIcon": async (event, ...args) => {
+      cancelNativeBrandApply();
+      const sequence = brandIconApplySequence;
+      return queueNativeBrandApply(() => sequence !== brandIconApplySequence
+        ? Promise.resolve({ ok: false, reason: "stale" })
+        : applyBrandIconUrl(args[0] === null ? null : String(args[0] ?? "")));
+  },
+  "__getBrandIconState": async (event, ...args) => getBrandIconState(),
   "__setNativeTheme": async (event, ...args) => {
       return applyNativeTheme(String(args[0]));
   },
@@ -1897,12 +2429,15 @@ async function createMainWindow() {
     });
   }
 
-  const windowIconImage = APP_ICON_IMAGE;
+  const bootConfig = workspaceStore.readDesktopBootstrapConfigSync();
+  const cachedBrandImage = whiteLabelActive(bootConfig)
+    && readBrandIconSidecarSourceUrlSync() === bootConfig.brandIconUrl?.trim() ? resolveBrandIconImage() : null;
+  const windowIconImage = cachedBrandImage ?? APP_ICON_IMAGE;
 
   mainWindow = new BrowserWindow({
     width: 1180,
     height: 820,
-    title: APP_NAME,
+    title: currentDisplayAppName,
     show: false,
     ...(process.platform === "win32" ? { skipTaskbar: true } : {}),
     ...windowAppearanceOptions,
@@ -1921,6 +2456,9 @@ async function createMainWindow() {
     },
   });
   applicationMenu.applyVisibility(mainWindow);
+  if (cachedBrandImage && bootConfig.brandIconUrl) {
+    await queueNativeBrandApply(() => applyBrandIconUrl(bootConfig.brandIconUrl));
+  }
   browserPanel.registerWindowShortcuts(mainWindow);
 
   // Native fullscreen is independent of the DOM Fullscreen API. The preload
@@ -1940,12 +2478,12 @@ async function createMainWindow() {
 
   mainWindow.on("page-title-updated", (event) => {
     event.preventDefault();
-    mainWindow?.setTitle(APP_NAME);
+    mainWindow?.setTitle(currentDisplayAppName);
   });
-  mainWindow.setTitle(APP_NAME);
+  mainWindow.setTitle(currentDisplayAppName);
 
   mainWindow.once("ready-to-show", () => {
-    mainWindow?.setTitle(APP_NAME);
+    mainWindow?.setTitle(currentDisplayAppName);
     if (process.platform === "win32") mainWindow?.setSkipTaskbar(false);
     mainWindow?.show();
     flushPendingDeepLinks();
@@ -2187,9 +2725,12 @@ or use: pnpm dev:worktree`);
       console.warn("[nuke] pending cleanup failed", error);
     });
     const bootstrapConfig = await workspaceStore.getDesktopBootstrapConfig();
-    await cleanupLegacyNativeIdentity().catch((error) => {
-      console.warn("[desktop-identity] legacy cleanup failed", error);
-    });
+    if (!whiteLabelActive(bootstrapConfig)) {
+      await cleanupLegacyNativeIdentity().catch((error) => {
+        console.warn("[desktop-identity] legacy cleanup failed", error);
+      });
+    }
+    await reconcileNativeBrand(bootstrapConfig);
     applicationMenu.install();
     if (!desktopActivationRequired(DESKTOP_DISTRIBUTION, bootstrapConfig)) {
       await runtimeManager.prepareFreshRuntime().catch(() => undefined);

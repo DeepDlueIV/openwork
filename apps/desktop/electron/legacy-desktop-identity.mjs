@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 
-function isOwnedLegacyShortcut(shell, shortcutPath, appIdentifier, executablePath) {
+export function isOwnedLegacyShortcut(shell, shortcutPath, appIdentifier, executablePath) {
   try {
     const details = shell.readShortcutLink(shortcutPath);
     const appId = details.appUserModelId;

@@ -1502,7 +1502,14 @@ export async function backgroundUpdateWorld(seed: Seed) {
         updateInTitlebar: Boolean(document.querySelector<HTMLElement>('header [data-update-button]')),
         updateInSidebar: Boolean(document.querySelector<HTMLElement>('[data-sidebar="footer"] [data-update-button]')),
         sidebarName: document.querySelector<HTMLElement>('[data-sidebar-brand]')?.textContent?.trim() ?? null,
+        customLogoLoaded: Boolean(document.querySelector<HTMLImageElement>('[data-testid="brand-logo"] img')?.naturalWidth),
       };
+    }),
+    setCustomBranding: () => evalIn(app, () => {
+      const logo = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="120" height="32"><rect width="120" height="32" rx="5" fill="#25262b"/><text x="12" y="22" font-family="sans-serif" font-size="18" fill="white">Studio</text></svg>');
+      const config = { whiteLabelEnabled: true, brandAppName: "Studio", brandLogoUrl: logo };
+      window.__openworkApplyDesktopConfig(config);
+      window.__openworkSetDesktopConfigRefreshResult(config);
     }),
     tickUpdateInterval: () => evalIn(app, () => {
       const state = window.__backgroundUpdateWitness;

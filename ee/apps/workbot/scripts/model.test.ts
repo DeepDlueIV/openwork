@@ -91,6 +91,14 @@ test("Workbot keeps its product name and ordinary organization identity", async 
   assert.equal(thread.organizationName, actor.organizationName)
 })
 
+test("an enabled white-label organization keeps its Workbot name", async () => {
+  const runner = fakeRunner()
+  const brandedActor = { ...actor, whiteLabelEnabled: true, organizationMetadata: { brandAppName: "Example assistant" } }
+  const thread = await readWorkbotThread(brandedActor, {}, { client: runner.client, canSchedule: async () => false })
+  assert.equal(thread.name, "Example assistant")
+  assert.equal(thread.organizationName, actor.organizationName)
+})
+
 test("without a default model, turns leave the model to the runner", async () => {
   for (const model of [undefined, async () => null, async (): Promise<string | null> => { throw new Error("den_unreachable") }]) {
     const runner = fakeRunner()

@@ -1,6 +1,6 @@
 // Content slice: plugins, config objects, marketplaces, Workflows, artifact views,
 // automations, automation runners, remote-session runner callbacks,
-// Workbot, resources and the deprecated memory / skill-hub stubs.
+// Workbot, resources, brand assets and the deprecated memory / skill-hub stubs.
 
 import { HIGH_VOLUME_EXCLUSIONS, type AuditRouteAttribution, type AuditRouteClass, type AuditRouteDeclaration, type AuditRouteMethod } from "./types.js"
 
@@ -172,7 +172,7 @@ export const contentAuditRoutes: readonly AuditRouteDeclaration[] = [
   member("POST", "/v1/marketplaces/:marketplaceId/access", "tenant_change", "marketplace.access_grant.create", "marketplace.configuration", "marketplace", "marketplaceId", { notes: MCP_NATIVE }),
   member("DELETE", "/v1/marketplaces/:marketplaceId/access/:grantId", "tenant_change", "marketplace.access_grant.revoke", "marketplace.configuration", "marketplace_access_grant", "grantId", { notes: MCP_NATIVE }),
 
-  // Resources, Workbot
+  // Resources, Workbot, brand assets
   member("GET", "/v1/resources", "tenant_read", "resource_snapshot.read", "resource.discovery", "resource_snapshot", null, { notes: "Desktop polling endpoint; ids and timestamps only." }),
   member("GET", "/v1/resources/marketplace-capabilities", "tenant_read", "marketplace_capability.list", "resource.discovery", "marketplace_capability", null),
   route("GET", "/v1/workbot/session", "tenant_read", "workbot.session.read", "workbot.execution", "workbot_session", null, "handler", { notes: "Handler verifies the MCP OAuth token (verifyMcpRequest) and active membership, then attributes the token's org and user." }),
@@ -181,6 +181,7 @@ export const contentAuditRoutes: readonly AuditRouteDeclaration[] = [
   route("POST", "/v1/workbot/calendar/*", "proxy", "workbot.calendar.action", "workbot.execution", "automation", null, "handler", { notes: "Handler verifies the MCP OAuth token (write scope), membership and the workbot feature, then re-dispatches POST /v1/automations/:id/{activate|deactivate|run} or POST /v1/cloud-automations (create, body forwarded) through app.fetch as the member; the destination route records." }),
   route("PATCH", "/v1/workbot/calendar/*", "proxy", "workbot.calendar.schedule", "workbot.execution", "automation", null, "handler", { notes: "Handler verifies the MCP OAuth token (write scope), membership and the workbot feature, accepts a body limited to `name`, `schedule`, `instructions` and `model` (never where it runs), then re-dispatches PATCH /v1/automations/:id through app.fetch as the member; the destination route records." }),
   route("POST", "/v1/workbot/run-token", "tenant_access", "workbot.run_token.issue", "workbot.execution", "oauth_access_token", null, "handler", { notes: "Handler verifies the MCP OAuth token, membership and workbot capability, then mints a ≤1h headless-run MCP token (credential issuance; plaintext returned once, never snapshot). mintHeadlessRunMcpToken is also called by the headless automation executor without an HTTP route." }),
+  route("GET", "/v1/brand-assets/:organizationId/:kind/:version", "tenant_read", "brand_asset.download", "organization.branding", "brand_asset", "version", "handler", { notes: "Public capability URL: the HMAC signature binds organizationId, kind, version and extension, so the handler attributes the path organization only after verifyBrandAssetSignature; actor is the anonymous signed-URL holder. Public, immutable, CDN-cached logo (login pages, emails): read category, not access. Invalid signatures 404 before attribution (platform)." }),
 
   // Deprecated stubs (no tenant, no state)
   { ...stub("GET", "/v1/memory", "memory.list", "deprecated.memory", "memory", null, "Removed feature stub (authenticatedRoute); no data access."), readOnly: true },

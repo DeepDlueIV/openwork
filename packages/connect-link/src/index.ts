@@ -27,15 +27,6 @@ export type {
   ConnectLinkVerifySuccess,
 } from "@openwork/types/connect-link"
 
-// Compatibility output for older desktops. Legacy values are deliberately
-// ignored, including their URLs: only Den targets are used by this transport.
-const stockBrand = { appName: "OpenWork", logoUrl: null, iconUrl: null } satisfies ConnectLinkClaims["brand"]
-const compatibilityBrandSchema = z.preprocess(() => ({ ...stockBrand }), z.object({
-  appName: z.literal("OpenWork"),
-  logoUrl: z.null(),
-  iconUrl: z.null(),
-}))
-
 export const connectLinkClaimsSchema = z.object({
   iss: z.string().trim().url(),
   aud: z.literal(CONNECT_LINK_AUDIENCE),
@@ -46,14 +37,18 @@ export const connectLinkClaimsSchema = z.object({
   org: z.object({
     name: z.string().trim().min(1).max(128),
   }),
+  brand: z.object({
+    appName: z.string().trim().min(1).max(64),
+    logoUrl: z.string().trim().url().nullable(),
+    iconUrl: z.string().trim().url().nullable(),
+  }).default({ appName: "OpenWork", logoUrl: null, iconUrl: null }),
   den: z.object({
     baseUrl: z.string().trim().url(),
     apiBaseUrl: z.string().trim().url().nullish(),
   }),
-  /** @deprecated Wire compatibility only; never organization configuration. */
-  brand: compatibilityBrandSchema,
+  whiteLabelEnabled: z.boolean().default(false),
   requireSignin: z.boolean(),
-}).meta({ ref: "ConnectLinkClaims" }) satisfies z.ZodType<ConnectLinkClaims>
+}).meta({ ref: "ConnectLinkClaims" }) satisfies z.ZodType<ConnectLinkClaims, unknown>
 
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"])
 
@@ -73,6 +68,8 @@ export function findRefusedConnectLinkUrl(
   const candidates = [
     claims.den.baseUrl,
     claims.den.apiBaseUrl ?? null,
+    claims.brand.logoUrl,
+    claims.brand.iconUrl,
   ]
   for (const candidate of candidates) {
     if (!candidate) continue

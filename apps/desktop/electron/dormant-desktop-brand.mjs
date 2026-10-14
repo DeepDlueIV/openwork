@@ -1,5 +1,6 @@
-// Rollback-only bootstrap data. Never use these values for UI/native identity,
-// asset fetching, or connection policy. Keep the original bytes of each value.
+// Retained source settings, including while whiteLabel is disabled. Extraction
+// never implies enablement: native/UI consumers require the explicit resolved
+// whiteLabelEnabled flag. Keep the original bytes of each value.
 export function dormantDesktopBrandSettings(input) {
   return Object.fromEntries(
     ["brandAppName", "brandLogoUrl", "brandIconUrl"]

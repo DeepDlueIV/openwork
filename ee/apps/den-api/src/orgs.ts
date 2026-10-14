@@ -1,3 +1,4 @@
+import { projectBrandMetadata } from "./white-label.js"
 import { peopleMemberCondition } from "./setup-agent-members.js"
 import { and, asc, count, eq, gt, inArray, isNotNull, isNull, or, sql } from "@openwork-ee/den-db/drizzle"
 import { listAuthoritativeTeamMemberships } from "@openwork-ee/den-db/permissions"
@@ -35,7 +36,7 @@ import { revokeUpstreamCredentials, revokeInferenceCredentialsForMembers } from 
 import { ensureMemberGatewayKey } from "./gateway-keys.js"
 import { db } from "./db.js"
 import { env } from "./env.js"
-import { getOrganizationFeatures, readOrganizationWithPermissions, type FeatureMap } from "./features.js"
+import { getOrganizationFeatures, organizationFeatureEnabled, readOrganizationWithPermissions, type FeatureMap } from "./features.js"
 import {
   getRoleValueAfterOwnershipTransfer,
   roleIncludesAdmin,
@@ -52,7 +53,7 @@ import {
   DEFAULT_ORGANIZATION_LIMITS,
   normalizeOrganizationMetadata,
   serializeOrganizationMetadata,
-  withoutRetiredSettings,
+  type ManagedBrandAssetMetadata,
 } from "./organization-limits.js"
 import { ensureDefaultDesktopPolicyForOrganization } from "./desktop-policies.js"
 import {
@@ -170,7 +171,12 @@ export type InvitationPreview = {
     name: string
     slug: string
     allowedEmailDomains: AllowedEmailDomains
-    logo: string | null
+    whiteLabelEnabled: boolean
+    branding: {
+      appName: string
+      logoUrl: string | null
+      iconUrl: string | null
+    }
   }
 }
 
@@ -398,17 +404,20 @@ function parseMetadataRecord(input: OrganizationMetadataInput): Record<string, u
   return isRecord(input) ? input : {}
 }
 
+function serializeMetadataRecord(metadata: Record<string, unknown>) {
+  return Object.keys(metadata).length > 0 ? JSON.stringify(metadata) : null
+}
+
 /**
  * Organization metadata as members see it. Feature overrides are platform
  * administration data (still mirrored into metadata.capabilities for one
  * release, for rollback) and are never sent; clients read the effective
- * `features` from GET /v1/org instead. Dormant branding and asset references
- * likewise stay in storage for rollback, never in this member-facing projection.
+ * `features` from GET /v1/org instead.
  */
-export function serializeMemberFacingOrganizationMetadata(input: OrganizationMetadataInput) {
-  const metadata = withoutRetiredSettings(parseMetadataRecord(input))
+export function serializeMemberFacingOrganizationMetadata(input: OrganizationMetadataInput, whiteLabelEnabled = false) {
+  const metadata = projectBrandMetadata(parseMetadataRecord(input), whiteLabelEnabled)
   const { capabilities: _platformOnly, ...memberFacing } = metadata
-  return serializeOrganizationMetadata(memberFacing)
+  return serializeMetadataRecord(memberFacing)
 }
 
 export class OrganizationEmailDomainRestrictionError extends Error {
@@ -1013,6 +1022,9 @@ export async function getInvitationPreview(invitationIdRaw: string): Promise<Inv
     return null
   }
 
+  const whiteLabelEnabled = await organizationFeatureEnabled(row.organization.id, "whiteLabel")
+  const organizationMetadata: Record<string, unknown> = whiteLabelEnabled ? normalizeOrganizationMetadata(row.organization.metadata).metadata : {}
+
   return {
     invitation: {
       ...row.invitation,
@@ -1023,7 +1035,12 @@ export async function getInvitationPreview(invitationIdRaw: string): Promise<Inv
       name: row.organization.name,
       slug: row.organization.slug,
       allowedEmailDomains: normalizeStoredAllowedEmailDomains(row.organization.allowedEmailDomains),
-      logo: row.organization.logo,
+      whiteLabelEnabled,
+      branding: {
+        appName: typeof organizationMetadata.brandAppName === "string" ? organizationMetadata.brandAppName : "OpenWork",
+        logoUrl: typeof organizationMetadata.brandLogoUrl === "string" ? organizationMetadata.brandLogoUrl : whiteLabelEnabled ? row.organization.logo : null,
+        iconUrl: typeof organizationMetadata.brandIconUrl === "string" ? organizationMetadata.brandIconUrl : null,
+      },
     },
   }
 }
@@ -1264,6 +1281,12 @@ export async function updateOrganizationSettings(input: {
   allowedEmailDomains?: readonly string[] | null
   allowedDesktopVersions?: readonly string[] | null
   requireSso?: boolean
+  brandAppName?: string | null
+  brandLogoUrl?: string | null
+  brandIconUrl?: string | null
+  brandLogoAsset?: ManagedBrandAssetMetadata | null
+  brandIconAsset?: ManagedBrandAssetMetadata | null
+  brandAccentColor?: string | null
 }) {
   const nextName = typeof input.name === "string" ? input.name.trim() : null
   if (typeof input.name === "string" && !nextName) {
@@ -1278,7 +1301,7 @@ export async function updateOrganizationSettings(input: {
     if (input.allowedEmailDomains !== undefined) {
       updates.allowedEmailDomains = normalizeAllowedEmailDomains(input.allowedEmailDomains).domains
     }
-    if (input.allowedDesktopVersions !== undefined || input.requireSso !== undefined) {
+    if (input.allowedDesktopVersions !== undefined || input.requireSso !== undefined || input.brandAppName !== undefined || input.brandLogoUrl !== undefined || input.brandIconUrl !== undefined || input.brandLogoAsset !== undefined || input.brandIconAsset !== undefined || input.brandAccentColor !== undefined) {
       const rows = await tx
         .select({ metadata: OrganizationTable.metadata })
         .from(OrganizationTable)
@@ -1305,6 +1328,60 @@ export async function updateOrganizationSettings(input: {
 
       if (input.requireSso !== undefined) {
         nextMetadata.requireSso = input.requireSso
+      }
+
+      if (input.brandAppName !== undefined) {
+        if (input.brandAppName === null) {
+          delete nextMetadata.brandAppName
+        } else {
+          nextMetadata.brandAppName = input.brandAppName
+        }
+      }
+
+      if (input.brandLogoUrl !== undefined) {
+        if (input.brandLogoUrl === null) {
+          delete nextMetadata.brandLogoUrl
+        } else {
+          nextMetadata.brandLogoUrl = input.brandLogoUrl
+        }
+        if (input.brandLogoAsset === undefined) {
+          delete nextMetadata.brandLogoAsset
+        }
+      }
+
+      if (input.brandIconUrl !== undefined) {
+        if (input.brandIconUrl === null) {
+          delete nextMetadata.brandIconUrl
+        } else {
+          nextMetadata.brandIconUrl = input.brandIconUrl
+        }
+        if (input.brandIconAsset === undefined) {
+          delete nextMetadata.brandIconAsset
+        }
+      }
+
+      if (input.brandLogoAsset !== undefined) {
+        if (input.brandLogoAsset === null) {
+          delete nextMetadata.brandLogoAsset
+        } else {
+          nextMetadata.brandLogoAsset = input.brandLogoAsset
+        }
+      }
+
+      if (input.brandIconAsset !== undefined) {
+        if (input.brandIconAsset === null) {
+          delete nextMetadata.brandIconAsset
+        } else {
+          nextMetadata.brandIconAsset = input.brandIconAsset
+        }
+      }
+
+      if (input.brandAccentColor !== undefined) {
+        if (input.brandAccentColor === null) {
+          delete nextMetadata.brandAccentColor
+        } else {
+          nextMetadata.brandAccentColor = input.brandAccentColor
+        }
       }
 
       updates.metadata = normalizeOrganizationMetadata(nextMetadata).metadata
@@ -1386,13 +1463,14 @@ export async function listUserOrgs(userId: UserId) {
 
   return Promise.all(memberships.map(async (row) => {
     const adminTeams = await listMemberAdminTeams({ organizationId: row.organization.id, memberId: row.membershipId })
+    const whiteLabelEnabled = await organizationFeatureEnabled(row.organization.id, "whiteLabel")
     return {
       id: row.organization.id,
       name: row.organization.name,
       slug: row.organization.slug,
-      logo: row.organization.logo,
+      logo: whiteLabelEnabled ? row.organization.logo : null,
       allowedEmailDomains: normalizeStoredAllowedEmailDomains(row.organization.allowedEmailDomains),
-      metadata: serializeMemberFacingOrganizationMetadata(row.organization.metadata),
+      metadata: serializeMemberFacingOrganizationMetadata(row.organization.metadata, whiteLabelEnabled),
       role: effectiveOrganizationRole(row.role, adminTeams),
       directRole: row.role,
       adminTeams,

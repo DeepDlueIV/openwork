@@ -156,8 +156,8 @@ export function createWorkspaceStore({
   defaultRequireSignin,
   forceRequireSignin,
 }) {
-  // Opaque, process-local rollback receipts. Renderer-supplied branding strings
-  // are never trusted; a transaction may only restore data the shell read.
+  // Opaque, process-local rollback receipts. A transaction restore uses only
+  // data the shell read, independent of caller-supplied enabled config updates.
   const rollbackSnapshots = new Map();
   let bootstrapWriteQueue = Promise.resolve();
 
@@ -314,6 +314,7 @@ export function createWorkspaceStore({
       baseUrl,
       ...(apiBaseUrl ? { apiBaseUrl } : {}),
       ...dormantDesktopBrandSettings(input),
+      ...(typeof input?.whiteLabelEnabled === "boolean" ? { whiteLabelEnabled: input.whiteLabelEnabled } : {}),
       requireSignin: forceRequireSignin || input?.requireSignin === true,
       // Only an explicit policy is carried. The artifact default is never
       // materialized here: desktop-bootstrap.json is shared by both flavors
@@ -550,14 +551,28 @@ export function createWorkspaceStore({
     // compatibility payload (whose app name is always OpenWork). Preserve the
     // originals in a scoped archive rather than erasing another org's settings.
     const clearDormant = brandAppName === null && brandLogoUrl === null && brandIconUrl === null;
-    const switching = !sameDesktopDenOrigin(previous, activeConfig) || clearDormant || Boolean(restore);
+    const previousOrgs = knownBootstrapOrganizationIds(previous);
+    const nextOrgs = knownBootstrapOrganizationIds(activeConfig);
+    const changedOrg = previousOrgs.size && nextOrgs.size
+      && new Set([...previousOrgs, ...nextOrgs]).size !== 1;
+    const changedTarget = !sameDesktopDenOrigin(previous, activeConfig) || Boolean(changedOrg);
+    const switching = changedTarget || clearDormant || Boolean(restore);
     const dormant = restore
       ? dormantDesktopBrandSettings(restore.config)
       : clearDormant ? { brandAppName: null, brandLogoUrl: null, brandIconUrl: null }
-        : switching ? {} : dormantDesktopBrandSettings(previous);
-    // Validate before moving any source files. Restore receipts affect only
-    // dormant data: activation/security fields still use the guarded input.
-    const normalized = normalizeDesktopBootstrapConfig({ ...activeConfig, ...dormant });
+        : activeConfig.whiteLabelEnabled === true
+          ? { ...(!changedTarget ? dormantDesktopBrandSettings(previous) : {}), ...dormantDesktopBrandSettings(config) }
+          : switching ? {} : dormantDesktopBrandSettings(previous);
+    // Receipts restore source settings only, never feature or activation policy.
+    // Ordinary same-target writes retain the last explicit backend decision for
+    // offline restart; new targets and legacy files never infer an enablement.
+    const flag = typeof activeConfig.whiteLabelEnabled === "boolean"
+      ? activeConfig.whiteLabelEnabled
+      : !changedTarget && typeof previous.whiteLabelEnabled === "boolean" ? previous.whiteLabelEnabled : undefined;
+    const normalized = normalizeDesktopBootstrapConfig({
+      ...activeConfig, ...dormant,
+      ...(typeof flag === "boolean" ? { whiteLabelEnabled: flag } : {}),
+    });
     const archivePath = switching
       ? await archiveDesktopBrandForTargetSwitch({ userDataPath: app.getPath("userData"), previous })
       : null;

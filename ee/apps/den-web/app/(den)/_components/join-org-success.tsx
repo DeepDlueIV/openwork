@@ -21,6 +21,8 @@ import { isMobileUserAgent } from "../_lib/platform";
 import { useDesktopHandoffStatus } from "../_lib/use-desktop-handoff-status";
 import { OnboardingCard } from "./onboarding-card";
 import { OnboardingShell } from "./onboarding-shell";
+import { OrganizationBrandIdentity, type OrganizationBrand } from "./organization-brand-identity";
+import { parseOrganizationBrand } from "../_lib/organization-brand";
 
 const OPENWORK_DOWNLOAD_URL = "https://openworklabs.com/download";
 
@@ -82,6 +84,7 @@ function ReturnToOpenWorkStatus({
 type JoinOrgSuccessProps = {
   organizationId: string;
   organizationName: string;
+  brand: OrganizationBrand;
   desktopAuthRequested: boolean;
   desktopAuthScheme: string;
   onContinueInBrowser: () => void;
@@ -90,10 +93,12 @@ type JoinOrgSuccessProps = {
 export function JoinOrgSuccess({
   organizationId,
   organizationName,
+  brand: suppliedBrand,
   desktopAuthRequested,
   desktopAuthScheme,
   onContinueInBrowser,
 }: JoinOrgSuccessProps) {
+  const brand = parseOrganizationBrand(suppliedBrand, suppliedBrand.whiteLabelEnabled);
   const [isMobile, setIsMobile] = useState<boolean | null>(null);
   const [detected, setDetected] = useState<DetectedPlatform | null>(null);
   const [platformReady, setPlatformReady] = useState(false);
@@ -230,11 +235,16 @@ export function JoinOrgSuccess({
   return (
     <OnboardingShell state="joined" width="wide" background="surface">
       <section data-testid="join-org-success">
-        <OnboardingCard organization={{ name: organizationName }}>
+        <OnboardingCard organization={{ name: organizationName, brand }}>
           <div className="grid gap-3">
             <h1 className="m-0 grid max-w-full gap-1 text-[30px] font-semibold leading-[38px] tracking-[-0.03em] text-slate-950 sm:text-[38px] sm:leading-[46px]">
               <span>You&apos;re in, welcome to</span>
-              <span>{organizationName}&apos;s OpenWork</span>
+              {/* No horizontal gap: the possessive must hug the org identity
+                  ("Acme Robotics's OpenWork", not "Acme Robotics 's"). */}
+              <span className="flex min-w-0 flex-wrap items-center gap-y-1">
+                <OrganizationBrandIdentity organizationName={organizationName} brand={brand} />
+                <span className="whitespace-nowrap">&apos;s {brand.appName}</span>
+              </span>
             </h1>
             <p className="m-0 max-w-2xl text-[15px] leading-[23px] text-slate-600">
               {desktopAuthRequested

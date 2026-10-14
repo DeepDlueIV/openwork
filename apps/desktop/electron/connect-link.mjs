@@ -53,6 +53,7 @@ function findRefusedClaimUrl(claims, allowInsecureLoopback) {
   const candidates = [
     claims.den.baseUrl,
     claims.den.apiBaseUrl ?? null,
+    ...(claims.whiteLabelEnabled === true ? [claims.brand.logoUrl, claims.brand.iconUrl] : []),
   ];
   for (const candidate of candidates) {
     if (!candidate) continue;
@@ -119,6 +120,19 @@ function normalizeClaims(payload) {
   if (!denBaseUrl || !isHttpUrl(denBaseUrl)) return null;
   if (denApiBaseUrl !== null && !isHttpUrl(denApiBaseUrl)) return null;
   if (typeof record.requireSignin !== "boolean") return null;
+  if (record.whiteLabelEnabled !== undefined && typeof record.whiteLabelEnabled !== "boolean") return null;
+  const whiteLabelEnabled = record.whiteLabelEnabled === true;
+  let brand = { appName: "OpenWork", logoUrl: null, iconUrl: null };
+  if (whiteLabelEnabled) {
+    if (!record.brand || typeof record.brand !== "object") return null;
+    const input = /** @type {Record<string, unknown>} */ (record.brand);
+    const appName = typeof input.appName === "string" ? input.appName.trim() : "";
+    if (!appName || appName.length > 64) return null;
+    for (const key of ["logoUrl", "iconUrl"]) {
+      if (input[key] !== null && (typeof input[key] !== "string" || !isHttpUrl(input[key]))) return null;
+    }
+    brand = { appName, logoUrl: input.logoUrl, iconUrl: input.iconUrl };
+  }
 
   return {
     iss,
@@ -128,9 +142,9 @@ function normalizeClaims(payload) {
     jti,
     v: CONNECT_LINK_VERSION,
     org: { name: orgName },
-    // Older desktops require this wire field. Never inspect incoming custom
-    // values: the current desktop always uses its packaged stock identity.
-    brand: { appName: "OpenWork", logoUrl: null, iconUrl: null },
+    // Legacy links still verify, but cannot activate custom identity.
+    brand,
+    whiteLabelEnabled,
     den: { baseUrl: denBaseUrl, ...(denApiBaseUrl !== null ? { apiBaseUrl: denApiBaseUrl } : {}) },
     requireSignin: record.requireSignin,
   };
@@ -411,6 +425,12 @@ export function desktopBootstrapFromConnectClaims(claims) {
     baseUrl: claims.den.baseUrl,
     ...(claims.den.apiBaseUrl ? { apiBaseUrl: claims.den.apiBaseUrl } : {}),
     requireSignin: claims.requireSignin,
+    whiteLabelEnabled: claims.whiteLabelEnabled === true,
+    ...(claims.whiteLabelEnabled === true ? {
+      brandAppName: claims.brand.appName,
+      brandLogoUrl: claims.brand.logoUrl,
+      brandIconUrl: claims.brand.iconUrl,
+    } : {}),
   };
 }
 

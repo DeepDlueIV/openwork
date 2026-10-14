@@ -44,10 +44,10 @@ function base64UrlDecode(value: string): string | null {
 }
 
 export type SignConnectLinkTokenInput = {
-  claims: Omit<ConnectLinkClaims, "brand"> & { brand?: ConnectLinkClaims["brand"] }
+  claims: Omit<ConnectLinkClaims, "brand" | "whiteLabelEnabled"> & { brand?: ConnectLinkClaims["brand"]; whiteLabelEnabled?: boolean }
   privateKeyPem: string
   kid: string
-  /** Permit non-https Den URLs (local development and evals only). */
+  /** Permit non-https den/logo URLs (local development and evals only). */
   allowInsecureUrls?: boolean
 }
 

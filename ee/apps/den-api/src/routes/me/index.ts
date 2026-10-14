@@ -373,6 +373,7 @@ export function registerMeRoutes<T extends { Variables: AuthContextVariables & P
     async (c) => {
       const organization = c.get("organizationContext").organization
       const currentMember = c.get("organizationContext").currentMember
+      const whiteLabelEnabled = c.get("organizationContext").features.whiteLabel
       const metadata = normalizeOrganizationMetadata(organization.metadata).metadata
       const desktopPolicy = await calculateDesktopPolicyForOrgMember({
         organizationId: organization.id,
@@ -381,12 +382,19 @@ export function registerMeRoutes<T extends { Variables: AuthContextVariables & P
 
       return c.json({
         ...desktopPolicy,
+        whiteLabelEnabled,
+        brandAppName: whiteLabelEnabled ? metadata.brandAppName ?? "OpenWork" : "OpenWork",
+        brandLogoUrl: whiteLabelEnabled ? metadata.brandLogoUrl ?? organization.logo ?? null : null,
+        brandIconUrl: whiteLabelEnabled ? metadata.brandIconUrl ?? null : null,
         automationsEnabled: env.automations.enabled,
         dashboardEnabled: env.dashboardsEnabled,
         // Compatibility field for published desktops: Connect is always on.
         connectEnabled: true,
         ...(Array.isArray(metadata.allowedDesktopVersions)
           ? { allowedDesktopVersions: metadata.allowedDesktopVersions }
+          : {}),
+        ...(whiteLabelEnabled && typeof metadata.brandAccentColor === "string"
+          ? { brandAccentColor: metadata.brandAccentColor }
           : {}),
       })
     },

@@ -48,6 +48,7 @@ import {
 } from "../../../../app/utils";
 import { t } from "../../../../i18n";
 import { resolveExtensionIconSrc } from "../../../design-system/extension-icon-src";
+import { useBrandAppName, useBrandLogoUrl } from "../../cloud/brand-theme";
 import { canCreateWorkspaces } from "../../../../app/lib/workspace-creation-policy";
 
 import {
@@ -735,6 +736,8 @@ export function AppSidebar(props: AppSidebarProps) {
     sessionNumberShortcutByTarget,
   };
 
+  const brandLogoUrl = useBrandLogoUrl();
+  const brandAppName = useBrandAppName();
   const pinnedIds = useSessionManagementStore((state) => state.pinnedIds);
   const pinnedSessions = React.useMemo(
     () => buildGlobalPinnedSessions(props.workspaceSessionGroups, pinnedIds),
@@ -753,10 +756,23 @@ export function AppSidebar(props: AppSidebarProps) {
       >
         <SidebarTitlebar history={props.conversationHistory} />
         <div className="flex shrink-0 items-center pr-2 titlebar-drag">
+        {brandLogoUrl ? (
+          <div
+            data-testid="brand-logo"
+            className="flex h-14 min-w-0 flex-1 items-center px-3 pb-3 pt-2 mac:pt-0"
+          >
+            <img
+              src={brandLogoUrl}
+              alt="Organization logo"
+              className="max-h-9 w-auto max-w-[min(140px,100%)] object-contain object-left"
+            />
+          </div>
+        ) : (
           <div data-sidebar-brand className="flex h-11 min-w-0 flex-1 items-center gap-1.5 pl-4 pr-1">
             <img src={resolveExtensionIconSrc("/openwork-sidebar-mark.svg")} alt="" className="size-5 shrink-0 object-contain dark:invert" />
-            <span className="truncate text-[15px] font-medium tracking-[-0.4px]" title="OpenWork">OpenWork</span>
+            <span className="truncate text-[15px] font-medium tracking-[-0.4px]" title={brandAppName}>{brandAppName}</span>
           </div>
+        )}
         {open || isMobile ? <SidebarActions onOpenSessionSearch={props.onOpenSessionSearch} /> : null}
         </div>
         <SidebarHeader className="mb-0 mt-2">

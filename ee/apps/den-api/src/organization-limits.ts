@@ -16,6 +16,19 @@ export type OrganizationLimits = {
   workers: number
 }
 
+export type ManagedBrandAssetMetadata = {
+  kind: "logo" | "icon"
+  version: string
+  extension: "png" | "jpg"
+  contentType: "image/png" | "image/jpeg"
+  url: string
+  width: number
+  height: number
+  byteLength: number
+  originalName: string
+  uploadedAt: string
+}
+
 type OrganizationId = typeof OrganizationTable.$inferSelect.id
 
 export type OrganizationMetadata = {
@@ -23,19 +36,15 @@ export type OrganizationMetadata = {
   seatsFreeAdditional?: number
   allowedDesktopVersions?: string[]
   requireSso?: boolean
+  brandAppName?: string
+  brandLogoUrl?: string
+  brandIconUrl?: string
+  brandLogoAsset?: ManagedBrandAssetMetadata
+  brandIconAsset?: ManagedBrandAssetMetadata
+  brandAccentColor?: string
 } & Record<string, unknown>
 
 type OrganizationMetadataInput = Record<string, unknown> | string | null | undefined
-
-// Read projection only: retain dormant settings and asset references in storage
-// so restoring the feature does not require reconstructing customer data.
-export function withoutRetiredSettings(metadata: Record<string, unknown>) {
-  const result = { ...metadata }
-  for (const key of ["brandAppName", "brandLogoUrl", "brandIconUrl", "brandLogoAsset", "brandIconAsset", "brandAccentColor"]) {
-    delete result[key]
-  }
-  return result
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)

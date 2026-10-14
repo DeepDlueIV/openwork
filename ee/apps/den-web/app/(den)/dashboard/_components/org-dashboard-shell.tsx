@@ -21,6 +21,7 @@ import {
   getAutomationsRoute,
   getApiKeysRoute,
   getAuditLogsRoute,
+  getBrandAppearanceRoute,
   getBillingRoute,
   getCustomLlmProvidersRoute,
   getDiagnosticsRoute,
@@ -32,6 +33,7 @@ import {
   getIntegrationsRoute,
   getLibraryRoute,
   getMcpConnectionsRoute,
+  getManagedBrandIconUrl,
   getMembersRoute,
   getToolTesterRoute,
   getYourConnectionsRoute,
@@ -122,6 +124,93 @@ function OpenWorkMark({ className = "h-9 w-auto" }: { className?: string }) {
   );
 }
 
+export function SidebarBrandMark({
+  metadata,
+  organizationName,
+  whiteLabelEnabled = false,
+}: {
+  metadata: string | null | undefined;
+  organizationName: string;
+  whiteLabelEnabled?: boolean;
+}) {
+  const [loadedUrl, setLoadedUrl] = useState<string | null>(null);
+  const [failedUrl, setFailedUrl] = useState<string | null>(null);
+
+  if (whiteLabelEnabled && metadata === undefined) {
+    return (
+      <div
+        className="h-10 w-10 rounded-xl"
+        aria-label="Loading organization icon"
+        data-sidebar-brand-icon="loading"
+      />
+    );
+  }
+
+  const iconUrl = whiteLabelEnabled ? getManagedBrandIconUrl(metadata ?? null) : null;
+  if (!iconUrl || failedUrl === iconUrl) {
+    return (
+      <div data-sidebar-brand-icon="fallback">
+        <OpenWorkMark />
+      </div>
+    );
+  }
+
+  return (
+    <div
+      className="h-10 w-10 overflow-hidden rounded-xl"
+      data-sidebar-brand-icon={loadedUrl === iconUrl ? "ready" : "loading"}
+    >
+      <img
+        src={iconUrl}
+        alt={`${organizationName} icon`}
+        className={`h-full w-full object-contain transition-opacity ${loadedUrl === iconUrl ? "opacity-100" : "opacity-0"}`}
+        onLoad={() => setLoadedUrl(iconUrl)}
+        onError={() => setFailedUrl(iconUrl)}
+      />
+    </div>
+  );
+}
+
+const DEFAULT_WORKSPACE_FAVICON_HREF = "/openwork-mark.svg";
+
+export function WorkspaceFavicon({
+  metadata,
+  whiteLabelEnabled = false,
+}: {
+  metadata: string | null | undefined;
+  whiteLabelEnabled?: boolean;
+}) {
+  const iconUrl = whiteLabelEnabled ? getManagedBrandIconUrl(metadata ?? null) : null;
+
+  useEffect(() => {
+    let favicon = document.head.querySelector<HTMLLinkElement>('link[rel="icon"]');
+    if (!favicon) {
+      favicon = document.createElement("link");
+      favicon.rel = "icon";
+      document.head.appendChild(favicon);
+    }
+
+    if (!iconUrl) {
+      favicon.href = DEFAULT_WORKSPACE_FAVICON_HREF;
+      favicon.removeAttribute("type");
+      return;
+    }
+
+    favicon.href = iconUrl;
+    favicon.type = iconUrl.toLowerCase().endsWith(".jpg")
+      || iconUrl.toLowerCase().endsWith(".jpeg")
+      ? "image/jpeg"
+      : "image/png";
+
+    return () => {
+      favicon.setAttribute("href", DEFAULT_WORKSPACE_FAVICON_HREF);
+      favicon.removeAttribute("type");
+    };
+  }, [iconUrl]);
+
+  return null;
+}
+
 function getDashboardPageTitle(pathname: string, orgSlug: string | null) {
   if (!orgSlug) {
     return "Home";
@@ -168,7 +257,10 @@ function getDashboardPageTitle(pathname: string, orgSlug: string | null) {
   if (pathname.startsWith(getWorkbotSettingsRoute(orgSlug))) {
     return "Workbot";
   }
-  if (pathname.startsWith(getMarketplacesRoute(orgSlug))) {
+  if (
+    pathname.startsWith(getMarketplacesRoute(orgSlug))
+    || pathname.startsWith(getBrandAppearanceRoute(orgSlug))
+  ) {
     return "Advanced";
   }
   if (pathname.startsWith(getDeploymentsRoute(orgSlug))) {
@@ -309,6 +401,7 @@ export function OrgDashboardShell({ children }: { children: React.ReactNode }) {
   if (isOnboarding) {
     return (
       <>
+        <WorkspaceFavicon metadata={orgContext?.organization.metadata} whiteLabelEnabled={orgFeatureEnabled(orgContext, "whiteLabel")} />
         <main data-testid="den-onboarding-shell">{children}</main>
       </>
     );
@@ -527,7 +620,11 @@ export function OrgDashboardShell({ children }: { children: React.ReactNode }) {
     <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
       <div className="shrink-0 border-b border-gray-100 px-4 pb-4 pt-5">
         <div className="flex items-center justify-between gap-3">
-          <OpenWorkMark />
+          <SidebarBrandMark
+            metadata={orgContext?.organization.metadata}
+            organizationName={activeOrg?.name ?? runtimeConfig.singleOrgName}
+            whiteLabelEnabled={orgFeatureEnabled(orgContext, "whiteLabel")}
+          />
           <button
             type="button"
             className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700 md:hidden"
@@ -657,6 +754,7 @@ export function OrgDashboardShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex min-h-screen flex-col bg-[#fafafa] md:h-screen md:flex-row">
+      <WorkspaceFavicon metadata={orgContext?.organization.metadata} whiteLabelEnabled={orgFeatureEnabled(orgContext, "whiteLabel")} />
       {/* Desktop sidebar — always visible at md+ */}
       <aside className="hidden min-h-0 shrink-0 overflow-hidden border-r border-gray-100 bg-white md:flex md:h-screen md:w-[260px] md:flex-col">
         {sidebarContent}

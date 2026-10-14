@@ -137,6 +137,8 @@ export type WorkspaceExportSummary = {
   excluded: string[];
 };
 
+export type BrandIconApplyResult = { ok: boolean; reason?: string };
+export type BrandIconState = { applied: boolean; sourceUrl: string | null; reason: string | null };
 export type EvalRelaunchResult = { ok: true };
 
 export type OpencodeCommandDraft = {
@@ -190,7 +192,9 @@ export type DesktopBootstrapOrgSkill = {
 };
 
 export type DesktopBootstrapConfig = {
-  /** Dormant on-disk rollback settings. Never apply to UI or native identity. */
+  /** Backend-resolved whiteLabel decision. Missing/false always uses stock identity. */
+  whiteLabelEnabled?: boolean;
+  /** Source settings retained while disabled; only effective when explicitly enabled. */
   brandAppName?: string | null;
   brandLogoUrl?: string | null;
   brandIconUrl?: string | null;
@@ -479,6 +483,9 @@ export type DesktopCommandMap = {
   __openPath: { args: [target: string]; result: unknown };
   __openWorkspaceFile: { args: [workspaceRoot: string, target: string]; result: DesktopWorkspaceFileOpenResult };
   __revealItemInDir: { args: [target: string]; result: unknown };
+  __applyBrandAppName: { args: [appName: string | null]; result: { ok: true; appName: string } };
+  __applyBrandIcon: { args: [url: string | null]; result: BrandIconApplyResult };
+  __getBrandIconState: { args: []; result: BrandIconState };
   __evalRelaunch: { args: []; result: EvalRelaunchResult };
   __getApplicationsForFile: { args: [target: string]; result: { name: string; appPath: string; icon: string | null }[] };
   __openWithApp: { args: [target: string, appPath: string, workspaceRoot: string]; result: unknown };

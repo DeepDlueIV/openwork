@@ -20,6 +20,9 @@ export type DenSignInSurfaceVariant = "panel" | "fullscreen";
 
 export type DenSignInSurfaceProps = {
   variant?: DenSignInSurfaceVariant;
+  whiteLabelEnabled?: boolean;
+  appName?: string;
+  logoUrl?: string | null;
   developerMode: boolean;
   baseUrl: string;
   baseUrlDraft: string;
@@ -70,7 +73,8 @@ const errorBannerClass =
  */
 export function DenSignInSurface(props: DenSignInSurfaceProps) {
   const variant: DenSignInSurfaceVariant = props.variant ?? "panel";
-  const appName = "OpenWork";
+  const appName = props.whiteLabelEnabled === true ? props.appName?.trim() || "OpenWork" : "OpenWork";
+  const logoUrl = props.whiteLabelEnabled === true ? props.logoUrl : null;
 
   /* -- Panel content (reused by both variants) -- */
   const panelContent = (
@@ -230,11 +234,11 @@ export function DenSignInSurface(props: DenSignInSurfaceProps) {
           <div className="w-full max-w-[720px] rounded-3xl border border-border bg-background px-8 pb-12 pt-10 sm:px-16 sm:pb-16 sm:pt-14">
             <div className="flex items-center gap-2.5">
               <img
-                src={resolveExtensionIconSrc("/openwork-mark.svg")}
+                src={logoUrl ?? resolveExtensionIconSrc("/openwork-mark.svg")}
                 alt=""
                 width={26}
                 height={26}
-                className="max-h-[26px] shrink-0 object-contain object-left dark:invert"
+                className={`max-h-[26px] shrink-0 object-contain object-left ${logoUrl ? "" : "dark:invert"}`}
                 aria-hidden="true"
               />
               <span className="text-[15px] font-semibold tracking-tight text-foreground">

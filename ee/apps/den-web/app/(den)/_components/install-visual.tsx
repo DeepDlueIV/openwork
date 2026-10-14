@@ -4,9 +4,16 @@ import { ArrowRight } from "lucide-react";
 
 type InstallVisualOs = "macos" | "windows" | "linux";
 
-function AppBadge() {
+function AppBadge({ iconUrl, size = "size-14" }: { iconUrl: string | null; size?: string }) {
+  if (iconUrl) {
+    return (
+      // Organization icons may be served by private on-prem hosts that Next/Image cannot proxy.
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={iconUrl} alt="" className={`${size} rounded-[22%] object-contain shadow-[0_4px_12px_rgba(16,24,40,0.18)]`} />
+    );
+  }
   return (
-    <img src="/openwork-mark.svg" alt="" className="size-14 rounded-[22%] object-contain shadow-[0_4px_12px_rgba(16,24,40,0.18)]" />
+    <img src="/openwork-mark.svg" alt="" className={`${size} rounded-[22%] object-contain shadow-[0_4px_12px_rgba(16,24,40,0.18)]`} />
   );
 }
 
@@ -23,7 +30,7 @@ function ApplicationsFolder() {
   );
 }
 
-function MacDragVisual() {
+function MacDragVisual({ appName, iconUrl }: { appName: string; iconUrl: string | null }) {
   return (
     <div className="w-full max-w-[26rem] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_10px_30px_-18px_rgba(16,24,40,0.3)]">
       <div className="relative flex h-7 items-center justify-center border-b border-slate-100 bg-[#f7f9fc]">
@@ -32,12 +39,12 @@ function MacDragVisual() {
           <span className="size-2.5 rounded-full bg-[#febc2e]" />
           <span className="size-2.5 rounded-full bg-[#28c840]" />
         </span>
-        <span className="text-[11px] font-medium text-[#3a3a3c]">OpenWork Enterprise</span>
+        <span className="text-[11px] font-medium text-[#3a3a3c]">{appName}</span>
       </div>
       <div className="flex items-center justify-center gap-6 bg-[linear-gradient(180deg,#fbfcfe,#f2f5f9)] px-6 py-7">
         <span className="grid justify-items-center gap-1.5">
-          <AppBadge />
-          <span className="max-w-[7.5rem] truncate text-[11px] font-medium text-[#344054]">OpenWork Enterprise</span>
+          <AppBadge iconUrl={iconUrl} />
+          <span className="max-w-[7.5rem] truncate text-[11px] font-medium text-[#344054]">{appName}</span>
         </span>
         <span className="grid justify-items-center gap-0.5 text-[#98a2b3]" aria-hidden="true">
           <ArrowRight className="size-6" strokeWidth={2.2} />
@@ -49,11 +56,11 @@ function MacDragVisual() {
   );
 }
 
-function WindowsRunAnywayVisual() {
+function WindowsRunAnywayVisual({ appName }: { appName: string }) {
   return (
     <div className="w-full max-w-[26rem] overflow-hidden rounded-xl border border-slate-200 bg-white shadow-[0_10px_30px_-18px_rgba(16,24,40,0.3)]">
       <div className="flex h-7 items-center justify-between border-b border-slate-100 bg-[#f7f9fc] px-3">
-        <span className="text-[11px] font-medium text-[#3a3a3c]">OpenWork Enterprise Setup</span>
+        <span className="text-[11px] font-medium text-[#3a3a3c]">{appName} Setup</span>
         <span className="flex items-center gap-2 text-[10px] text-[#6b7280]" aria-hidden="true">
           <span>—</span>
           <span>▢</span>
@@ -92,7 +99,15 @@ function LinuxTerminalVisual() {
 }
 
 /** Decorative picture of the install gesture for the detected OS. */
-export function InstallVisual({ os }: { os: InstallVisualOs | null }) {
+export function InstallVisual({
+  os,
+  appName,
+  iconUrl,
+}: {
+  os: InstallVisualOs | null;
+  appName: string;
+  iconUrl: string | null;
+}) {
   if (!os) {
     return null;
   }
@@ -100,9 +115,9 @@ export function InstallVisual({ os }: { os: InstallVisualOs | null }) {
   return (
     <div aria-hidden="true" data-testid="install-visual" data-visual-os={os}>
       {os === "macos" ? (
-        <MacDragVisual />
+        <MacDragVisual appName={appName} iconUrl={iconUrl} />
       ) : os === "windows" ? (
-        <WindowsRunAnywayVisual />
+        <WindowsRunAnywayVisual appName={appName} />
       ) : (
         <LinuxTerminalVisual />
       )}

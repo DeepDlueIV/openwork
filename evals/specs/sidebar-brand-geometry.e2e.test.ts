@@ -4,7 +4,7 @@ import { browserScript, evalIn, needs, test } from "@openwork/testkit";
 import { expect } from "vitest";
 import { setSidebarBrandTheme, sidebarBrandApp } from "../worlds/sidebar-brand.ts";
 
-test("stock sidebar mark painted bounds align with the action rail", async ({ place }) => {
+test("sidebar brand painted bounds align with the action rail without changing custom branding", async ({ place }) => {
   needs({ optIn: ["OPENWORK_EVAL_E2E_TESTS"], commands: place.kind === "daytona" ? ["daytona"] : ["pnpm", "bun"] });
   await using app = await sidebarBrandApp(place);
   await waitFor(app, () => Boolean(document.querySelector('[data-sidebar-brand] img')), { timeoutMs: 30_000 });
@@ -97,5 +97,37 @@ test("stock sidebar mark painted bounds align with the action rail", async ({ pl
       expect.soft(geometry.filter).toBe(dark ? "invert(1)" : "none");
       expect.soft(geometry.theme).toBe(dark ? "dark" : "light");
     }
+  }
+
+  const logo = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="120" height="32"><rect width="120" height="32" fill="#25262b"/><text x="12" y="22" fill="white">Studio</text></svg>');
+  await evalIn(app, browserScript(logo => {
+    document.documentElement.style.fontSize = "16px";
+    const config = { whiteLabelEnabled: true, brandAppName: "Studio", brandLogoUrl: logo };
+    window.__openworkApplyDesktopConfig(config);
+    window.__openworkSetDesktopConfigRefreshResult(config);
+  }, [logo]));
+  await waitFor(app, () => Boolean(document.querySelector('[data-testid="brand-logo"] img')), { timeoutMs: 10_000 });
+  for (const dark of [false, true]) {
+    await setSidebarBrandTheme(app, dark);
+    const custom = await evalIn(app, async () => {
+      const header = document.querySelector<HTMLElement>('[data-testid="brand-logo"]');
+      const image = header?.querySelector('img');
+      if (!header || !image) throw new Error("Custom branding disappeared");
+      await image.decode();
+      const box = image.getBoundingClientRect();
+      const row = header.getBoundingClientRect();
+      return {
+        theme: getComputedStyle(document.documentElement).colorScheme,
+        stockVisible: Boolean(document.querySelector('[data-sidebar-brand]')),
+        src: image.src, alt: image.alt, width: box.width, height: box.height, rowHeight: row.height,
+        inset: box.left - row.left, filter: getComputedStyle(image).filter,
+        contained: box.left >= row.left && box.right <= row.right && box.top >= row.top && box.bottom <= row.bottom,
+      };
+    }, { awaitPromise: true });
+    console.log("custom", dark, JSON.stringify(custom));
+    currentTestEvidence()?.recordAssertionEvidence(`Custom wordmark source (${dark ? "dark" : "light"})`, JSON.stringify({ expectedSrc: logo, actualSrc: custom.src }), custom.src === logo);
+    expect(custom).toEqual({ theme: dark ? "dark" : "light", stockVisible: false, src: logo, alt: "Organization logo", width: 120, height: 32, rowHeight: 56, inset: 12, filter: "none", contained: true });
+    currentTestEvidence()?.recordAssertionEvidence(`Custom wordmark unchanged (${dark ? "dark" : "light"})`, JSON.stringify(custom), true);
+    await screenshot(app);
   }
 });

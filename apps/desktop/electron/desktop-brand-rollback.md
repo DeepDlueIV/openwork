@@ -1,17 +1,20 @@
-# Retired desktop identity: rollback storage contract
+# Feature-gated desktop identity and rollback storage contract
 
-The current desktop always uses its packaged OpenWork identity. Bootstrap brand
-fields, cached images, and metadata are **rollback data only**: they are never
-used to render UI, set native identity, or fetch custom assets.
+The backend resolves the central `whiteLabel` feature into the bootstrap's
+`whiteLabelEnabled` boolean. Only explicit `true` permits custom native identity
+or asset fetching. False or missing uses the packaged OpenWork identity, cancels
+in-flight native work and restores stock OS identity without deleting source
+settings/cache. Restart/offline boot retains the last explicit persisted decision;
+legacy brand metadata, config presence and old links never imply enablement.
 
 ## Staying on the original target
 
 Reads and ordinary same-origin writes retain the original `brandAppName`,
 `brandLogoUrl`, and `brandIconUrl` values, including null/absent fields. Incoming
-wire or renderer strings cannot replace them. Native cleanup restores only
-owned stock shortcuts and removes the derived shortcut marker; it leaves image
-files and their sidecar unchanged. An older desktop can still find its original
-settings/cache after reverting on this target.
+stock wire or disabled renderer strings cannot replace them. Explicit enabled
+writes may update them from effective Den config. Native cleanup restores only
+owned stock shortcuts; unrelated links cannot be deleted or overwritten. Disabling
+leaves image files and their sidecar unchanged for re-enable and rollback.
 
 ## Switching target or organization
 
@@ -36,8 +39,9 @@ target. No archive is automatically applied by the current desktop.
 
 For a **confirmed same-origin organization switch**, the renderer sends all three
 brand fields explicitly as `null`. The shell archives the original settings and
-cache first, then clears the active dormant fields. A stock wire payload has
-`brandAppName: "OpenWork"`, not all-null, and therefore cannot erase originals.
+cache first, then clears the active dormant fields. While the flag is off, a
+stock wire payload cannot replace originals; it is not the explicit all-null
+organization-switch request.
 
 Bootstrap reads return an opaque process-local `rollbackSnapshotId`. During a
 failed handoff transaction the renderer forwards the previously read ID as
@@ -46,8 +50,9 @@ and the destination origin before restoring its saved dormant values/cache.
 When both the snapshot and destination identify known orgs via prepared/handoff
 records, their org IDs must also agree. Unscoped/MDM data is not assigned an owner
 based on asset URLs. Rejected restores change neither active storage/cache nor
-source archives. Caller-supplied brand strings and archive paths are never trusted.
-This does not restore/override activation or other security policy. Receipts are
+source archives. Restore receipts use shell-owned brand strings and archive paths,
+not caller-supplied replacements. This does not restore/override feature enablement,
+activation or other security policy. Receipts are
 never written to disk, are bounded to the latest 64 distinct snapshots, and expire
 on restart.
 
@@ -80,7 +85,8 @@ this scoped restoration through its shell-issued receipt instead.
 - An arbitrary external editor that changes the bootstrap target while bypassing
   both shell and CLI writes also bypasses cache archival. Before reverting after
   such a manual change, explicitly archive the old root-level cache. The current
-  desktop still ignores that cache, but older boot code is not target-aware.
+  desktop only applies a cache matching the explicitly enabled config's source
+  URL; older boot code is not target-aware.
 - If no prior org identity is recorded, CLI cannot infer a same-origin org change
   from a brand URL. It preserves data rather than guessing ownership. Confirmed
   organization changes through the renderer use the explicit all-null protocol.

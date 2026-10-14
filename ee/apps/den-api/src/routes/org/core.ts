@@ -1,3 +1,4 @@
+import { organizationFeatureEnabled } from "../../features.js"
 import { createHash } from "node:crypto"
 import { deploymentCapabilitiesSchema } from "@openwork/types/den/deployment-capabilities"
 import { permissionKeySchema } from "@openwork/types/den/permissions"
@@ -10,6 +11,7 @@ import { z } from "zod"
 import { auth } from "../../auth.js"
 import { attributeAuditRequest, auditSessionUserAttribution } from "../../audit/request-capture.js"
 import { verifyBotProtection } from "../../bot-protection.js"
+import { validateBrandIconUrl } from "../../brand-icon-validation.js"
 import { cloudHostingAvailable } from "../../capability-sources/cloud-hosting.js"
 import { db } from "../../db.js"
 import { checkEntitlement, getOrganizationEntitlements, parseOrganizationPlan } from "../../entitlements.js"
@@ -39,7 +41,7 @@ import {
 } from "../../orgs.js"
 import { getRequiredUserEmail } from "../../user.js"
 import { checkRateLimit } from "../../utils/rate-limit.js"
-import type { OrgRouteVariables } from "./shared.js"
+import { orgAccessFailureStatus, permissionFailureHeaders, requirePermission, type OrgRouteVariables } from "./shared.js"
 
 const createOrganizationSchema = z.object({
   name: z.string().trim().min(2).max(120),
@@ -50,7 +52,11 @@ const updateOrganizationSchema = z.object({
   allowedEmailDomains: z.array(z.string().trim().min(1).max(255)).max(100).nullable().optional(),
   allowedDesktopVersions: z.array(z.string().trim().min(1).max(32)).max(200).nullable().optional(),
   requireSso: z.boolean().optional(),
-}).strict().refine((value) => value.name !== undefined || value.allowedEmailDomains !== undefined || value.allowedDesktopVersions !== undefined || value.requireSso !== undefined, {
+  brandAppName: z.string().trim().min(1).max(64).nullable().optional(),
+  brandLogoUrl: z.string().url().max(2048).nullable().optional(),
+  brandIconUrl: z.string().url().max(2048).nullable().optional(),
+  brandAccentColor: z.string().trim().min(1).max(32).nullable().optional(),
+}).strict().refine((value) => value.name !== undefined || value.allowedEmailDomains !== undefined || value.allowedDesktopVersions !== undefined || value.requireSso !== undefined || value.brandAppName !== undefined || value.brandLogoUrl !== undefined || value.brandIconUrl !== undefined || value.brandAccentColor !== undefined, {
   message: "Provide at least one organization field to update.",
 })
 
@@ -141,7 +147,12 @@ const invitationPreviewResponseSchema = z.object({
     name: z.string(),
     slug: z.string(),
     allowedEmailDomains: z.array(z.string()).nullable(),
-    logo: z.string().nullable(),
+    whiteLabelEnabled: z.boolean(),
+    branding: z.object({
+      appName: z.string(),
+      logoUrl: z.string().url().nullable(),
+      iconUrl: z.string().url().nullable(),
+    }),
   }),
 }).meta({ ref: "InvitationPreviewResponse" })
 
@@ -189,9 +200,16 @@ const invalidEmailDomainSchema = z.object({
   invalidDomains: z.array(z.string()),
 }).meta({ ref: "InvalidEmailDomainError" })
 
+const invalidBrandIconSchema = z.object({
+  error: z.literal("invalid_brand_icon"),
+  reason: z.string(),
+  message: z.string(),
+}).meta({ ref: "InvalidBrandIconError" })
+
 const updateOrganizationBadRequestSchema = z.union([
   invalidRequestSchema,
   invalidEmailDomainSchema,
+  invalidBrandIconSchema,
 ]).meta({ ref: "UpdateOrganizationBadRequest" })
 
 const accountEmailDomainNotAllowedSchema = z.object({
@@ -323,7 +341,9 @@ export function registerOrgCoreRoutes<T extends { Variables: OrgRouteVariables }
       .where(eq(OrganizationTable.id, organizationId))
       .limit(1)
 
-    return c.json({ organization: organization[0] ?? null }, 201)
+    const created = organization[0]
+    const whiteLabelEnabled = await organizationFeatureEnabled(organizationId, "whiteLabel")
+    return c.json({ organization: created ? { ...created, logo: whiteLabelEnabled ? created.logo : null, metadata: serializeMemberFacingOrganizationMetadata(created.metadata, whiteLabelEnabled) } : null }, 201)
     },
   )
 
@@ -470,7 +490,7 @@ export function registerOrgCoreRoutes<T extends { Variables: OrgRouteVariables }
       description: "Updates organization fields. Requires the Edit organization settings permission. The slug is immutable to avoid breaking dashboard URLs.",
       responses: {
         200: jsonResponse("Organization updated successfully.", organizationResponseSchema),
-        400: jsonResponse("The organization update request body was invalid or contained malformed email domains.", updateOrganizationBadRequestSchema),
+        400: jsonResponse("The organization update request body was invalid, contained malformed email domains, or contained an invalid brand icon URL.", updateOrganizationBadRequestSchema),
         401: jsonResponse("The caller must be signed in to update an organization.", unauthorizedSchema),
         402: jsonResponse("Enabling enforced SSO or desktop version controls requires an Enterprise plan.", enterprisePlanRequiredSchema),
         403: jsonResponse("The caller does not have permission to update the requested organization fields.", forbiddenSchema),
@@ -505,24 +525,52 @@ export function registerOrgCoreRoutes<T extends { Variables: OrgRouteVariables }
         }
       }
 
+      const changesBranding = input.brandAppName !== undefined || input.brandLogoUrl !== undefined || input.brandIconUrl !== undefined || input.brandAccentColor !== undefined
+      if (changesBranding) {
+        if (!await organizationFeatureEnabled(payload.organization.id, "whiteLabel")) {
+          return c.json({ error: "feature_disabled", feature: "whiteLabel" }, 404)
+        }
+        const permission = await requirePermission(c, "branding.update")
+        if (!permission.ok) return c.json(permission.response, orgAccessFailureStatus(permission.response), permissionFailureHeaders(permission.response))
+      }
+
+      const enablesBranding = (typeof input.brandAppName === "string") || (typeof input.brandLogoUrl === "string") || (typeof input.brandIconUrl === "string") || (typeof input.brandAccentColor === "string")
+      if (enablesBranding) {
+        const entitlement = checkEntitlement(payload.organization.metadata, "desktopPolicies")
+        if (!entitlement.ok) {
+          return c.json(entitlement.response, entitlement.status)
+        }
+      }
+
+      if (typeof input.brandIconUrl === "string") {
+        const brandIconCheck = await validateBrandIconUrl(input.brandIconUrl)
+        if (!brandIconCheck.ok) {
+          return c.json({
+            error: "invalid_brand_icon",
+            reason: brandIconCheck.reason,
+            message: brandIconCheck.message,
+          }, 400)
+        }
+      }
+
       const updated = await updateOrganizationSettings({
         organizationId: payload.organization.id,
         name: input.name,
         allowedEmailDomains: normalizedDomains.domains,
         allowedDesktopVersions: input.allowedDesktopVersions,
         requireSso: input.requireSso,
+        brandAppName: input.brandAppName,
+        brandLogoUrl: input.brandLogoUrl,
+        brandIconUrl: input.brandIconUrl,
+        brandAccentColor: input.brandAccentColor,
       })
 
       if (!updated) {
         return c.json({ error: "organization_not_found" }, 404)
       }
 
-      return c.json({
-        organization: {
-          ...updated,
-          metadata: serializeMemberFacingOrganizationMetadata(updated.metadata),
-        },
-      })
+      const whiteLabelEnabled = await organizationFeatureEnabled(updated.id, "whiteLabel")
+      return c.json({ organization: { ...updated, logo: whiteLabelEnabled ? updated.logo : null, metadata: serializeMemberFacingOrganizationMetadata(updated.metadata, whiteLabelEnabled) } })
     },
   )
 
@@ -679,7 +727,8 @@ export function registerOrgCoreRoutes<T extends { Variables: OrgRouteVariables }
         },
         organization: {
           ...payload.organization,
-          metadata: serializeMemberFacingOrganizationMetadata(payload.organization.metadata),
+          metadata: serializeMemberFacingOrganizationMetadata(payload.organization.metadata, payload.features.whiteLabel),
+          logo: payload.features.whiteLabel ? payload.organization.logo : null,
           owner: owner
             ? {
               memberId: owner.id,

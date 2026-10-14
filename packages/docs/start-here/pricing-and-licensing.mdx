@@ -24,6 +24,7 @@ is included in every paid plan.
 | **SCIM provisioning and RBAC** | — | — | ✓ |
 | **Desktop policies and version controls** | — | — | ✓ |
 | **Audit log and spend observability** | — | — | ✓ |
+| **White-label appearance (where enabled)** | — | — | ✓ |
 | **Support** | Community | Standard, included | Standard SLA, included |
 
 ### Add-ons
@@ -35,11 +36,13 @@ Available on Team and Enterprise, billed per member alongside the plan:
 | **OpenWork Cloud Computer** | $50 per member / month | A cloud computer for each member, accessible from the browser. Separate from cloud automations, which are included in Team and Enterprise. |
 | **OpenWork models** | $10 per user / month | Managed inference — use OpenWork-provided models without bringing your own keys. |
 
-Analytics, SCIM, and desktop policies are the
+Analytics, SCIM, desktop policies, and white-labeling are the
 **Enterprise Features** — defined in the
 [subscription terms](https://openworklabs.com/terms/subscription) and
 reserved for the Enterprise plan (and for evaluations and pilots, so you can
 test what you would buy).
+
+White-label appearance is on by default for self-hosted deployments and retained for Cloud organizations already configured to use it. New Cloud organizations start with it off. Platform administrators control availability through `whiteLabel`; existing plan and permission requirements still apply. This does not change rights granted under prior agreements. See [Brand an on-prem deployment](/start-here/on-prem-branding).
 
 Enterprise is an annual contract with a 60-day opt-out, so you can leave
 early if it does not work for you. Discounts are by seat count and term only.
@@ -59,7 +62,7 @@ directory-split license, similar to GitLab:
 Under the EE License, no subscription is required for:
 
 1. **Production use by organizations with up to 5 users.** Enterprise
-   Features (analytics, SCIM, desktop policies) are excluded and require a plan.
+   Features (analytics, SCIM, desktop policies, white-labeling) are excluded and require a plan.
 2. **Internal evaluation for up to 30 days**, at any user count, with all
    features — extendable in writing.
 3. **Development and testing.**

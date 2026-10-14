@@ -15,16 +15,16 @@ export type ConnectLinkOrg = {
   name: string;
 };
 
+/** Maps one-for-one to desktop-bootstrap.json's managed branding fields. */
+export type ConnectLinkBrand = {
+  appName: string;
+  logoUrl: string | null;
+  iconUrl: string | null;
+};
+
 export type ConnectLinkDenTarget = {
   baseUrl: string;
   apiBaseUrl?: string | null;
-};
-
-/** @deprecated Wire compatibility only; custom branding is never applied. */
-export type ConnectLinkBrand = {
-  appName: "OpenWork";
-  logoUrl: null;
-  iconUrl: null;
 };
 
 export type ConnectLinkClaims = {
@@ -35,8 +35,8 @@ export type ConnectLinkClaims = {
   jti: string;
   v: typeof CONNECT_LINK_VERSION;
   org: ConnectLinkOrg;
-  /** @deprecated Required by older desktops; always stock OpenWork values. */
   brand: ConnectLinkBrand;
+  whiteLabelEnabled: boolean;
   den: ConnectLinkDenTarget;
   requireSignin: boolean;
 };

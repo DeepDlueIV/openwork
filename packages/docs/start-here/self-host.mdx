@@ -63,6 +63,8 @@ Use the dedicated Self-host planning pages instead of copying hostname, certific
 
 If you want self-hosted repository imports and sync from GitHub, configure the [GitHub connector for Helm](/start-here/github-connector-helm) after the core Den web and Den controller hosts are reachable.
 
+White-label appearance is enabled by default on self-hosted deployments. See [Brand an on-prem deployment](/start-here/on-prem-branding) for setup and the feature controls.
+
 ## How we deploy hosted workers
 
 Our hosted deployment uses Render for long-running services and worker provisioning. Render gives us service deploys, env vars, health checks, logs, and worker builds without asking us to operate raw AWS services directly. If you want to run closer to AWS yourself, use the same service boundaries on ECS/Fargate, EC2, Kubernetes, or another container platform.

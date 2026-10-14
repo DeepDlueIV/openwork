@@ -11,6 +11,7 @@ import {
 import { DitherBackdrop } from "@/components/dither-backdrop";
 import { Button } from "@/components/ui/button";
 import { ScrollArea, ScrollAreaViewport } from "@/components/ui/scroll-area";
+import { useBrandAppName } from "../cloud/brand-theme";
 
 type WelcomePageProps = {
   onGetStarted: () => void;
@@ -37,6 +38,7 @@ export function WelcomePage({
   onTeamSignIn,
   onJoinOrganization,
 }: WelcomePageProps) {
+  const appName = useBrandAppName();
   const { markRouteReady } = useBootState();
 
   // The boot splash overlay stays mounted (and swallows clicks) until the
@@ -71,7 +73,7 @@ export function WelcomePage({
                   aria-hidden="true"
                 />
                 <span className="text-[15px] font-semibold tracking-tight text-foreground">
-                  OpenWork
+                  {appName}
                 </span>
               </div>
 

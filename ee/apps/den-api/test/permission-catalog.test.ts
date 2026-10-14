@@ -93,6 +93,7 @@ const ADMIN_SCOPE_KEYS = [
 const OWNER_ONLY_KEYS = [
   "api_keys.manage",
   "billing_portal.use",
+  "branding.update",
   "connections.delete",
   "connections.update",
   "deployments.manage",

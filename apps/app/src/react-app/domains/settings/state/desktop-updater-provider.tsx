@@ -8,6 +8,7 @@ import { t } from "../../../../i18n";
 import { useLocal } from "../../../kernel/local-provider";
 import { useDesktopConfig } from "../../cloud/desktop-config-provider";
 import { useEnterpriseActivationRequired } from "../../cloud/enterprise-activation-gate";
+import { useBrandAppName } from "../../cloud/brand-theme";
 import { notifyAlert } from "../../../shell/notifications";
 import { useElectronUpdaterState } from "./electron-updater-state";
 
@@ -74,7 +75,7 @@ export function DesktopUpdaterProvider({ children }: { children: ReactNode }) {
 
 export function DesktopUpdateButton() {
   const updater = useContext(DesktopUpdaterContext);
-  const appName = "OpenWork";
+  const appName = useBrandAppName();
   const [confirmRestart, setConfirmRestart] = useState(false);
   if (updater?.updateStatus?.state !== "ready") return null;
   return (

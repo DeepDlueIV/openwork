@@ -1,4 +1,5 @@
 import { installConfigSchema, installExperienceConfigSchema } from "@openwork/install-config"
+import { organizationFeatureEnabled } from "../../features.js"
 import { connectLinkClaimsSchema } from "@openwork/connect-link"
 import { and, eq, gt, isNull, or } from "@openwork-ee/den-db/drizzle"
 import { InstallLinkTable, OrganizationTable } from "@openwork-ee/den-db/schema"
@@ -147,12 +148,18 @@ function organizationMetadataInput(value: unknown): Record<string, unknown> | st
   return typeof value === "object" && !Array.isArray(value) ? { ...value } : null
 }
 
-function buildInstallConfig(input: { organization: { name: string }; request: Request }) {
+async function buildInstallConfig(input: { organization: { id: string; name: string; logo: string | null; metadata: unknown }; request: Request }) {
+  const whiteLabelEnabled = await organizationFeatureEnabled(input.organization.id, "whiteLabel")
+  const metadata: Record<string, unknown> = whiteLabelEnabled ? normalizeOrganizationMetadata(organizationMetadataInput(input.organization.metadata)).metadata : {}
   return installConfigSchema.parse({
+    whiteLabelEnabled,
+    appName: typeof metadata.brandAppName === "string" ? metadata.brandAppName : "OpenWork",
     clientName: input.organization.name,
     webUrl: env.webUrl,
     apiUrl: resolvePublicOrigin(input.request, env.apiPublicUrl),
     requireSignin: true,
+    logoUrl: typeof metadata.brandLogoUrl === "string" ? metadata.brandLogoUrl : whiteLabelEnabled ? input.organization.logo ?? null : null,
+    iconUrl: typeof metadata.brandIconUrl === "string" ? metadata.brandIconUrl : null,
   })
 }
 
@@ -251,16 +258,16 @@ export async function installerReleaseTagForMetadata(metadataInput: unknown) {
 }
 
 async function resolveInstallConfigForOrganization(input: {
-  organization: { name: string; logo: string | null; metadata: unknown }
+  organization: { id: string; name: string; logo: string | null; metadata: unknown }
   request: Request
 }) {
   return {
-    config: buildInstallConfig(input),
+    config: await buildInstallConfig(input),
     installerReleaseTag: await installerReleaseTagForMetadata(input.organization.metadata),
   }
 }
 
-type InstallConfig = ReturnType<typeof buildInstallConfig>
+type InstallConfig = Awaited<ReturnType<typeof buildInstallConfig>>
 
 async function mintInstallHandoff(
   installer: InstallExperienceDependencies,
@@ -269,6 +276,10 @@ async function mintInstallHandoff(
   const connectInput = {
     installLinkId: input.installLinkId,
     organizationName: input.config.clientName,
+    whiteLabelEnabled: input.config.whiteLabelEnabled,
+    appName: input.config.appName,
+    logoUrl: input.config.logoUrl,
+    iconUrl: input.config.iconUrl,
     webUrl: input.config.webUrl,
     apiUrl: input.config.apiUrl,
   }
@@ -418,7 +429,7 @@ export function registerOrgInstallLinkRoutes<T extends { Variables: OrgRouteVari
 
       const { handoff } = await mintInstallHandoff(installer, {
         installLinkId: installLink.installLinkId,
-        config: buildInstallConfig({ organization: payload.organization, request: c.req.raw }),
+        config: await buildInstallConfig({ organization: payload.organization, request: c.req.raw }),
       })
 
       return c.json({
@@ -435,7 +446,7 @@ export function registerOrgInstallLinkRoutes<T extends { Variables: OrgRouteVari
     describeRoute({
       tags: ["Users"],
       summary: "Get current user's install configuration",
-      description: "Returns desktop distribution and approved version for the signed-in member's active organization.",
+      description: "Returns desktop branding, distribution, and approved version for the signed-in member's active organization.",
       responses: {
         200: jsonResponse("Authenticated install configuration resolved successfully.", authenticatedInstallConfigSchema),
         401: jsonResponse("The caller must be signed in to load install configuration.", unauthorizedSchema),

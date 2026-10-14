@@ -32,12 +32,29 @@ test("accepts signed unbranded claims and ignores legacy branding entirely", () 
   for (const payload of [claims, { ...claims, brand: { appName: "Legacy desktop", iconUrl: "http://unused.invalid/icon.png" } }, { ...claims, brand: "obsolete" }]) {
     const result = verify(payload);
     assert.equal(result.ok, true);
-    assert.deepEqual(result.claims, { ...claims, brand: { appName: "OpenWork", logoUrl: null, iconUrl: null } });
+    assert.deepEqual(result.claims, { ...claims, whiteLabelEnabled: false, brand: { appName: "OpenWork", logoUrl: null, iconUrl: null } });
     assert.deepEqual(desktopBootstrapFromConnectClaims(result.claims), {
       ...claims.den,
       requireSignin: true,
+      whiteLabelEnabled: false,
     });
   }
+});
+
+test("explicit backend ON carries custom fields but keeps signature and HTTPS verification", () => {
+  const brand = { appName: "Organization Desktop", logoUrl: "https://assets.example.test/logo.png", iconUrl: "https://assets.example.test/icon.png" };
+  const payload = { ...claims, whiteLabelEnabled: true, brand };
+  const result = verify(payload);
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.claims.brand, brand);
+  assert.equal(result.claims.whiteLabelEnabled, true);
+  assert.equal(desktopBootstrapFromConnectClaims(result.claims).brandAppName, brand.appName);
+  assert.equal(verify({ ...payload, brand: { ...brand, iconUrl: "http://assets.example.test/icon.png" } }).code, "insecure_url");
+  assert.equal(verify({ ...payload, brand: { ...brand, logoUrl: "javascript:alert(1)" } }).code, "malformed_claims");
+  assert.equal(verify({ ...payload, whiteLabelEnabled: "true" }).code, "malformed_claims");
+  const signed = token({ ...payload, whiteLabelEnabled: false }).split(".");
+  signed[1] = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  assert.equal(verifyConnectLinkToken({ token: signed.join("."), publicKeys, nowEpochSeconds: now }).code, "bad_signature");
 });
 
 test("still rejects wrong audience/version, expiry, malformed claims and insecure targets", () => {
@@ -68,7 +85,7 @@ test("exchange transport accepts new claims without weakening HTTPS or replay ha
     },
   });
   assert.equal(result.ok, true);
-  assert.deepEqual(result.claims, { ...exchangeClaims, brand: { appName: "OpenWork", logoUrl: null, iconUrl: null } });
+  assert.deepEqual(result.claims, { ...exchangeClaims, whiteLabelEnabled: false, brand: { appName: "OpenWork", logoUrl: null, iconUrl: null } });
   const mismatchedIssuer = await resolveConnectExchangeUrl(rawUrl, {
     mode: "exchange", nowEpochSeconds: now, fetcher: async () => Response.json({ claims }),
   });

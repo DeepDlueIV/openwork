@@ -17,10 +17,10 @@ const original = {
   brandIconUrl: "https://unused.invalid/original-icon.png",
 }
 
-function prepare(home, web, api) {
+function prepare(home, web, api, enabled = false) {
   const result = spawnSync(process.execPath, [
     "--import", fixture, cli, "cloud", "bootstrap-workspace", "--json",
-    "--workspace-name", "Test organization", "--prepare-desktop",
+    "--workspace-name", enabled ? "Enabled test organization" : "Test organization", "--prepare-desktop",
     "--web-base-url", web, "--base-url", api,
     "--desktop-bootstrap-path", join(home, "desktop-bootstrap.json"),
     "--skills-dir", join(home, "skills"), "--device-key-path", join(home, "device-key.json"),
@@ -29,6 +29,28 @@ function prepare(home, web, api) {
   assert.equal(result.status, 0, result.stderr)
   return JSON.parse(readFileSync(join(home, "desktop-bootstrap.json"), "utf8"))
 }
+
+test("CLI writes backend ON/OFF/re-enable decisions while preserving disabled source settings/cache", () => {
+  const home = mkdtempSync(join(tmpdir(), "bootstrap-white-label-test-"))
+  try {
+    writeFileSync(join(home, "desktop-bootstrap.json"), JSON.stringify(original))
+    const enabled = prepare(home, original.baseUrl, original.apiBaseUrl, true)
+    assert.equal(enabled.whiteLabelEnabled, true)
+    assert.equal(enabled.brandAppName, "Enabled desktop")
+    assert.equal(enabled.brandIconUrl, "https://assets.example.test/icon.png")
+    const cachePath = join(home, "userData", "brand-icon.png")
+    mkdirSync(join(home, "userData"), { recursive: true })
+    writeFileSync(cachePath, "enabled source bytes")
+    const disabled = prepare(home, original.baseUrl, original.apiBaseUrl)
+    assert.equal(disabled.whiteLabelEnabled, false)
+    assert.equal(disabled.brandAppName, enabled.brandAppName)
+    assert.equal(disabled.brandIconUrl, enabled.brandIconUrl)
+    assert.equal(readFileSync(cachePath, "utf8"), "enabled source bytes")
+    assert.equal(prepare(home, original.baseUrl, original.apiBaseUrl, true).whiteLabelEnabled, true)
+  } finally {
+    rmSync(home, { recursive: true, force: true })
+  }
+})
 
 for (const [name, web, api, preserve, previousOrg] of [
   ["same origin including path normalization", "https://den.example.test/", "https://api.example.test/", true, null],
@@ -52,6 +74,7 @@ for (const [name, web, api, preserve, previousOrg] of [
           if (preserve) assert.equal(saved[key], original[key])
           else assert.equal(Object.hasOwn(saved, key), false)
         }
+        assert.equal(saved.whiteLabelEnabled, false)
         assert.equal(saved.prepared.orgId, "test-org")
         assert.equal(saved.baseUrl, web.replace(/\/$/, ""))
       }

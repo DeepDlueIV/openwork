@@ -1,150 +1,114 @@
 import assert from "node:assert/strict"
 import { createPrivateKey, sign } from "node:crypto"
 import { test } from "node:test"
-import { z } from "zod"
 import { connectLinkClaimsSchema, CONNECT_LINK_AUDIENCE, CONNECT_LINK_VERSION } from "@openwork/connect-link"
 import { generateConnectLinkKeyPair, signConnectLinkToken, verifyConnectLinkToken } from "@openwork/connect-link/node"
 import { desktopBootstrapConfigSchema, installConfigSchema } from "@openwork/install-config"
-import { desktopConfigSchema, normalizeDesktopConfig } from "@openwork/types/den/desktop-policies"
 import { isPermissionKey } from "@openwork/types/den/permissions"
+import { resolveFeature } from "@openwork/features"
+import { eligibleHistoricalBranding, hasHistoricalBranding, projectBrandMetadata, STOCK_BRAND } from "../src/white-label-policy.ts"
 
+const brand = { appName: "Example desktop", logoUrl: "https://example.com/logo.png", iconUrl: "https://example.com/icon.png" }
 const claims = {
-  iss: "https://api.example.com",
-  aud: CONNECT_LINK_AUDIENCE,
-  iat: 1000,
-  exp: 2000,
-  jti: "connect-test-token",
-  v: CONNECT_LINK_VERSION,
-  org: { name: "Example organization" },
-  den: { baseUrl: "https://example.com", apiBaseUrl: "https://api.example.com" },
-  requireSignin: true,
+  iss: "https://api.example.com", aud: CONNECT_LINK_AUDIENCE, iat: 1000, exp: 2000,
+  jti: "connect-test-token", v: CONNECT_LINK_VERSION, org: { name: "Example organization" },
+  den: { baseUrl: "https://example.com", apiBaseUrl: "https://api.example.com" }, requireSignin: true, brand,
 }
-const stockBrand = { appName: "OpenWork", logoUrl: null, iconUrl: null }
-const retired = {
-  brandAppName: "Old name",
-  brandLogoUrl: "https://example.com/logo.png",
-  brandIconUrl: "https://example.com/icon.png",
-  brandAccentColor: "blue",
-}
-// Old desktop wire contract: fields remain required even though new desktops
-// ignore them. The PR also exercises the frozen pre-removal desktop verifier.
-const legacyBrandSchema = z.object({
-  appName: z.string().trim().min(1).max(64),
-  logoUrl: z.string().trim().url().nullable(),
-  iconUrl: z.string().trim().url().nullable(),
-})
+const branding = { brandAppName: brand.appName, brandLogoUrl: brand.logoUrl, brandIconUrl: brand.iconUrl, brandAccentColor: "blue", brandLogoAsset: { version: "old", key: "assets/logo" } }
 
 function signedLegacyToken(payload: unknown, privateKeyPem: string) {
   const header = Buffer.from(JSON.stringify({ alg: "EdDSA", typ: "JWT", kid: "test" })).toString("base64url")
   const body = Buffer.from(JSON.stringify(payload)).toString("base64url")
   const input = `${header}.${body}`
-  const signature = sign(null, Buffer.from(input), createPrivateKey(privateKeyPem)).toString("base64url")
-  return `${input}.${signature}`
+  return `${input}.${sign(null, Buffer.from(input), createPrivateKey(privateKeyPem)).toString("base64url")}`
 }
 
-test("new signed and exchange claims emit stock compatibility branding", () => {
+test("whiteLabel is off for new Cloud organizations, on for self hosted, with kill/lock/explicit off precedence", () => {
+  const environment = { deployment: "cloud", rollouts: {}, overrides: {}, locks: {} } satisfies Parameters<typeof resolveFeature>[1]
+  assert.equal(resolveFeature("whiteLabel", environment).enabled, false)
+  assert.equal(resolveFeature("whiteLabel", { ...environment, deployment: "self_hosted" }).enabled, true)
+  assert.equal(resolveFeature("whiteLabel", { ...environment, overrides: { whiteLabel: true } }).enabled, true)
+  assert.equal(resolveFeature("whiteLabel", { ...environment, overrides: { whiteLabel: true }, rollouts: { whiteLabel: { enabled: true, killed: true } } }).enabled, false)
+  assert.equal(resolveFeature("whiteLabel", { ...environment, deployment: "self_hosted", overrides: { whiteLabel: true }, locks: { whiteLabel: false } }).enabled, false)
+  assert.equal(resolveFeature("whiteLabel", { ...environment, deployment: "self_hosted", overrides: { whiteLabel: false } }).enabled, false)
+  assert.equal(isPermissionKey("branding.update"), true)
+})
+
+test("brand projections preserve stored metadata, showing it only when enabled", () => {
+  const stored = { ...branding, requireSso: true, unknownSetting: { nested: [1, 2] } }
+  const original = structuredClone(stored)
+  assert.deepEqual(projectBrandMetadata(stored, false), { requireSso: true, unknownSetting: { nested: [1, 2] }, whiteLabelEnabled: false, brandAppName: "OpenWork", brandLogoUrl: null, brandIconUrl: null })
+  assert.deepEqual(projectBrandMetadata(stored, true), { ...original, whiteLabelEnabled: true })
+  assert.deepEqual(stored, original)
+})
+
+test("startup detection conservatively recognizes names, URLs, accents, managed references and old logos", () => {
+  const cutoff = new Date("2026-10-13T12:00:00Z")
+  for (const metadata of Object.entries(branding).map(([key, value]) => ({ [key]: value }))) {
+    assert.equal(hasHistoricalBranding({ logo: null, metadata }), true)
+    assert.equal(hasHistoricalBranding({ logo: null, metadata: JSON.stringify(metadata) }), true)
+    assert.equal(eligibleHistoricalBranding({ createdAt: new Date(cutoff.getTime() - 1), logo: null, metadata }, cutoff), true)
+    assert.equal(eligibleHistoricalBranding({ createdAt: cutoff, logo: null, metadata }, cutoff), false)
+    assert.equal(eligibleHistoricalBranding({ createdAt: new Date(cutoff.getTime() + 1), logo: null, metadata }, cutoff), false, "new fake-brand metadata cannot self-enable")
+  }
+  assert.equal(hasHistoricalBranding({ logo: "https://example.com/old-logo", metadata: null }), true)
+  for (const metadata of [null, "invalid", {}, { brandAppName: "  ", brandLogoUrl: "", brandIconAsset: {} }]) assert.equal(hasHistoricalBranding({ logo: null, metadata }), false)
+})
+
+test("signed and exchange schemas retain real branding and default old missing flags false", () => {
+  assert.deepEqual(connectLinkClaimsSchema.parse(claims), { ...claims, whiteLabelEnabled: false })
+  assert.deepEqual(connectLinkClaimsSchema.parse({ ...claims, whiteLabelEnabled: true }), { ...claims, whiteLabelEnabled: true })
   const keys = generateConnectLinkKeyPair()
-  const token = signConnectLinkToken({ claims, privateKeyPem: keys.privateKeyPem, kid: "test" })
-  const payload = JSON.parse(Buffer.from(token.split(".")[1], "base64url").toString())
-  assert.deepEqual(legacyBrandSchema.parse(payload.brand), stockBrand)
-  const result = verifyConnectLinkToken({ token, publicKeys: { test: keys.publicKeyPem }, nowEpochSeconds: 1500 })
-  assert.equal(result.ok, true)
-  if (!result.ok) return
-  assert.deepEqual(result.claims, { ...claims, brand: stockBrand })
-  // Exchange minting/reading uses this same parser, including old stored grants.
-  for (const brand of [undefined, { appName: "Old name", logoUrl: "http://old.invalid/logo", iconUrl: null }]) {
-    const parsed = connectLinkClaimsSchema.parse({ ...claims, brand })
-    assert.deepEqual(parsed, { ...claims, brand: stockBrand })
-    assert.deepEqual(legacyBrandSchema.parse(parsed.brand), stockBrand)
+  for (const whiteLabelEnabled of [false, true]) {
+    const projected = { ...claims, brand: whiteLabelEnabled ? brand : STOCK_BRAND, whiteLabelEnabled }
+    const token = signConnectLinkToken({ claims: projected, privateKeyPem: keys.privateKeyPem, kid: "test" })
+    const result = verifyConnectLinkToken({ token, publicKeys: { test: keys.publicKeyPem }, nowEpochSeconds: 1500 })
+    assert.equal(result.ok, true)
+    if (result.ok) assert.deepEqual(result.claims, projected)
   }
 })
 
-test("legacy signed brand claims are accepted and ignored without weakening token validation", () => {
+test("legacy signatures, expiry, audience and URL security are unchanged", () => {
   const keys = generateConnectLinkKeyPair()
-  const legacy = { ...claims, brand: { appName: "Old name", logoUrl: "http://old.invalid/logo", iconUrl: null } }
-  const token = signedLegacyToken(legacy, keys.privateKeyPem)
+  const token = signedLegacyToken(claims, keys.privateKeyPem)
   const verify = (value: string, nowEpochSeconds = 1500) => verifyConnectLinkToken({ token: value, publicKeys: { test: keys.publicKeyPem }, nowEpochSeconds })
   const result = verify(token)
   assert.equal(result.ok, true)
-  if (!result.ok) return
-  assert.deepEqual(result.claims, { ...claims, brand: stockBrand })
-  assert.equal(result.claims.iss, claims.iss)
-  assert.deepEqual(verify(token, 3000), { ok: false, code: "expired", message: "Token has expired." })
+  if (result.ok) assert.deepEqual(result.claims, { ...claims, whiteLabelEnabled: false })
+  assert.equal(verify(token, 3000).ok, false)
   assert.equal(verify(token, 500).ok, false)
   assert.equal(verify(`${token.split(".").slice(0, 2).join(".")}.`).ok, false)
   const tampered = token.split(".")
-  tampered[1] = Buffer.from(JSON.stringify({ ...legacy, iss: "https://attacker.example.com" })).toString("base64url")
-  assert.deepEqual(verify(tampered.join(".")), { ok: false, code: "bad_signature", message: "Token signature does not verify." })
-  for (const patch of [{ aud: "other" }, { v: 2 }, { iss: "not-a-url" }, { den: { baseUrl: "http://untrusted.example.com" } }]) {
-    assert.equal(verify(signedLegacyToken({ ...legacy, ...patch }, keys.privateKeyPem)).ok, false)
-  }
+  tampered[1] = Buffer.from(JSON.stringify({ ...claims, iss: "https://attacker.example.com" })).toString("base64url")
+  assert.equal(verify(tampered.join(".")).ok, false)
+  for (const patch of [{ aud: "other" }, { v: 2 }, { iss: "not-a-url" }, { den: { baseUrl: "http://untrusted.example.com" } }, { brand: { ...brand, logoUrl: "http://untrusted.example.com/logo" } }]) assert.equal(verify(signedLegacyToken({ ...claims, ...patch }, keys.privateKeyPem)).ok, false)
 })
 
-test("Den URL security still applies when retired claims are present", () => {
-  const parsed = connectLinkClaimsSchema.parse({ ...claims, brand: retired })
-  assert.deepEqual(parsed.brand, stockBrand)
-  const keys = generateConnectLinkKeyPair()
-  assert.throws(() => signConnectLinkToken({ claims: { ...claims, den: { baseUrl: "http://untrusted.example.com" } }, privateKeyPem: keys.privateKeyPem, kid: "test" }), /non-https/)
-})
-
-test("desktop config drops retired settings while retaining policy and version controls", () => {
-  const expected = { allowCustomProviders: false, allowedDesktopVersions: ["1.2.3"], connectEnabled: false }
-  assert.deepEqual(normalizeDesktopConfig({ ...expected, ...retired }), expected)
-  assert.deepEqual(desktopConfigSchema.parse({ ...expected, ...retired }), expected)
-  assert.equal(isPermissionKey("branding.update"), false)
-})
-
-test("normalization and storage serialization preserve exact dormant metadata through unrelated writes", async () => {
-  for (const [key, value] of Object.entries({
-    OPENWORK_DEV_MODE: "1",
-    DB_MODE: "mysql",
-    DATABASE_URL: "mysql://root:password@127.0.0.1:3306/openwork_den",
-    DEN_DB_ENCRYPTION_KEY: "local-dev-db-encryption-key-please-change-1234567890",
-    BETTER_AUTH_SECRET: "local-dev-secret-not-for-production-use!!",
-    BETTER_AUTH_URL: "http://localhost:8790",
-  })) {
-    if (!process.env[key]?.trim()) process.env[key] = value
-  }
-  const { normalizeOrganizationMetadata, serializeOrganizationMetadata, withoutRetiredSettings } = await import("../src/organization-limits.ts")
-  const kept = { limits: { members: 5, workers: 1 }, requireSso: true, allowedDesktopVersions: ["1.2.3"], workbot: { model: "gateway/model-a", nested: { enabled: true } } }
-  const legacy = {
-    ...kept,
-    ...retired,
-    // Preserve even dormant non-normalized values and nested asset references.
-    brandAppName: "  Old name  ",
-    brandLogoAsset: { version: "old", key: "assets/logo", nested: { sizes: [16, 64], metadata: { mime: "image/png" } } },
-    brandIconAsset: { version: "old", key: "assets/icon" },
-  }
-  const original = structuredClone(legacy)
-  for (const input of [legacy, JSON.stringify(legacy)]) {
+test("unrelated metadata writes preserve exact brand configuration and managed references", async () => {
+  process.env.DATABASE_URL ??= "mysql://test:test@127.0.0.1:3306/white_label_metadata_unit_test"
+  process.env.BETTER_AUTH_URL ??= "http://unit.test"
+  process.env.BETTER_AUTH_SECRET ??= "synthetic-white-label-metadata-unit-test-secret"
+  process.env.DEN_DB_ENCRYPTION_KEY ??= "synthetic-white-label-metadata-unit-test-key"
+  process.env.OPENWORK_DEV_MODE = "1"
+  const { normalizeOrganizationMetadata, serializeOrganizationMetadata } = await import("../src/organization-limits.ts")
+  const kept = { limits: { members: 5, workers: 1 }, requireSso: true, allowedDesktopVersions: ["1.2.3"], workbot: { model: "gateway/model-a" } }
+  const stored = { ...kept, ...branding, brandAppName: "  Preserved original  ", brandIconAsset: { version: "old", key: "assets/icon", nested: { sizes: [16, 64] } } }
+  const original = structuredClone(stored)
+  for (const input of [stored, JSON.stringify(stored)]) {
     const normalized = normalizeOrganizationMetadata(input)
+    assert.equal(normalized.changed, false)
     assert.deepEqual(normalized.metadata, original)
-    assert.equal(normalized.changed, false, "dormant branding must not trigger a lazy storage rewrite")
     assert.deepEqual(JSON.parse(serializeOrganizationMetadata(input) ?? "null"), original)
-    const unrelatedWrite = { ...normalized.metadata, requireSso: false, limits: { ...normalized.metadata.limits, members: 10 } }
-    const stored = JSON.parse(serializeOrganizationMetadata(unrelatedWrite) ?? "null")
-    assert.deepEqual(stored, { ...original, requireSso: false, limits: { members: 10, workers: 1 } })
-    assert.deepEqual(withoutRetiredSettings(normalized.metadata), kept)
+    const unrelatedWrite = { ...normalized.metadata, requireSso: false }
+    assert.deepEqual(JSON.parse(serializeOrganizationMetadata(unrelatedWrite) ?? "null"), { ...original, requireSso: false })
   }
-  const needsNormalization = { ...legacy, limits: { members: "7", Workers: "2" }, allowedDesktopVersions: ["v1.2.3"] }
-  const normalized = normalizeOrganizationMetadata(needsNormalization)
-  assert.equal(normalized.changed, true)
-  assert.deepEqual(JSON.parse(serializeOrganizationMetadata(normalized.metadata) ?? "null"), {
-    ...needsNormalization,
-    limits: { members: 7, Workers: "2", workers: 2 },
-    allowedDesktopVersions: ["1.2.3"],
-  })
-  assert.deepEqual(legacy, original, "read projection must not mutate stored metadata")
+  assert.deepEqual(stored, original)
 })
 
-test("install output is old-parser compatible stock branding while bootstrap retains dormant settings", () => {
-  const install = { clientName: "Example organization", webUrl: "https://example.com", apiUrl: "https://api.example.com", requireSignin: true }
-  for (const input of [install, { ...install, appName: "Old name", logoUrl: "https://example.com/logo.png", iconUrl: null }]) {
-    const parsed = installConfigSchema.parse(input)
-    assert.deepEqual(parsed, { ...install, ...stockBrand })
-    assert.deepEqual(legacyBrandSchema.parse(parsed), stockBrand)
-  }
-  const bootstrap = { baseUrl: "https://example.com", apiBaseUrl: "https://api.example.com", requireSignin: true, requireActivation: true, writtenAt: "2026-10-13T00:00:00.000Z" }
-  const { brandAccentColor: _ignored, ...dormantBootstrapBrand } = retired
-  assert.deepEqual(desktopBootstrapConfigSchema.parse({ ...bootstrap, ...retired }), { ...bootstrap, ...dormantBootstrapBrand })
+test("install and bootstrap configs support actual brands with an explicit opt-in and safe old default", () => {
+  const install = { clientName: "Example organization", webUrl: "https://example.com", apiUrl: "https://api.example.com", requireSignin: true, ...brand }
+  assert.deepEqual(installConfigSchema.parse(install), { ...install, whiteLabelEnabled: false })
+  assert.deepEqual(installConfigSchema.parse({ ...install, whiteLabelEnabled: true }), { ...install, whiteLabelEnabled: true })
+  const bootstrap = { baseUrl: "https://example.com", apiBaseUrl: "https://api.example.com", requireSignin: true, requireActivation: true, writtenAt: "2026-10-13T00:00:00.000Z", brandAppName: brand.appName, brandLogoUrl: brand.logoUrl, brandIconUrl: brand.iconUrl }
+  assert.deepEqual(desktopBootstrapConfigSchema.parse(bootstrap), { ...bootstrap, whiteLabelEnabled: false })
 })

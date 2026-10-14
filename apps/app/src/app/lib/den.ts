@@ -210,7 +210,7 @@ export type DenEnterpriseActivation = {
   denBaseUrl: string;
 };
 
-/** Retained only for rollback to older clients; never render or apply these fields. */
+/** Retained for rollback while disabled; only applied with an explicit backend flag. */
 type DormantBootstrapBranding = {
   brandAppName?: string | null;
   brandLogoUrl?: string | null;
@@ -226,6 +226,7 @@ function dormantBootstrapBranding(input: DormantBootstrapBranding): DormantBoots
 }
 
 export type DenBootstrapConfig = DenBaseUrls & DormantBootstrapBranding & {
+  whiteLabelEnabled?: boolean;
   /** Opaque process-local shell receipt; never persisted in rollback archives. */
   rollbackSnapshotId?: string;
   source: DenBootstrapSource;
@@ -939,6 +940,7 @@ export function resolveCloudMcpResourceUrl(resource: string | null | undefined):
 
 function resolveDenBootstrapConfig(
   input: DormantBootstrapBranding & {
+    whiteLabelEnabled?: boolean;
     baseUrl: string;
     apiBaseUrl?: string | null;
     requireSignin?: boolean | null;
@@ -955,6 +957,7 @@ function resolveDenBootstrapConfig(
   return {
     ...resolveDenBaseUrls(input),
     ...dormantBootstrapBranding(input),
+    ...(typeof input.whiteLabelEnabled === "boolean" ? { whiteLabelEnabled: input.whiteLabelEnabled } : {}),
     ...(input.rollbackSnapshotId ? { rollbackSnapshotId: input.rollbackSnapshotId } : {}),
     source: input.source === "file" || input.fromFile === true ? "file" : "default",
     requireSignin: input.requireSignin === true,
@@ -1112,7 +1115,7 @@ function getPendingBootstrapConfig(next: DenSettings): DenBootstrapConfig | null
   const previous = readDenBootstrapConfig();
   return resolveDenBootstrapConfig({
     ...(denOriginComparisonKey(next.baseUrl ?? previous.baseUrl) === denOriginComparisonKey(previous.baseUrl)
-      ? dormantBootstrapBranding(previous)
+      ? { ...dormantBootstrapBranding(previous), whiteLabelEnabled: previous.whiteLabelEnabled }
       : {}),
     baseUrl: next.baseUrl ?? previous.baseUrl,
     apiBaseUrl: next.apiBaseUrl ?? previous.apiBaseUrl,
@@ -1424,14 +1427,19 @@ export async function setDenBootstrapConfig(
     : sameOrigin ? previous : {};
   const normalized = await resolveDenBootstrapConfigWithRuntimeApi({
     ...next,
-    // Branding is no longer an editable input. Only copy an existing snapshot
-    // within its origin; a new control plane must never receive old private URLs.
+    // Only a backend-projected enabled request can replace custom settings.
+    // Disabling keeps rollback data in its existing origin and organization.
+    whiteLabelEnabled: restore ? restore.whiteLabelEnabled
+      : typeof next.whiteLabelEnabled === "boolean" ? next.whiteLabelEnabled
+        : sameOrigin ? previous.whiteLabelEnabled : false,
     brandAppName: undefined,
     brandLogoUrl: undefined,
     brandIconUrl: undefined,
     ...(options?.clearDormantBranding
-      ? { brandAppName: null, brandLogoUrl: null, brandIconUrl: null }
-      : dormantBootstrapBranding(brandingSource)),
+      ? { whiteLabelEnabled: false, brandAppName: null, brandLogoUrl: null, brandIconUrl: null }
+      : next.whiteLabelEnabled === true && !restore
+        ? { ...dormantBootstrapBranding(brandingSource), ...dormantBootstrapBranding(next) }
+        : dormantBootstrapBranding(brandingSource)),
     // An omitted stamp retains the previous one; an explicit null clears it.
     // Cross-origin handoffs rely on the explicit clear: the old control
     // plane's activation must never mark a new control plane as activated.
@@ -1453,6 +1461,7 @@ export async function setDenBootstrapConfig(
         ? { requireActivation: normalized.requireActivation }
         : {}),
       ...dormantBootstrapBranding(normalized),
+      whiteLabelEnabled: normalized.whiteLabelEnabled === true,
       ...(restore?.rollbackSnapshotId ? { restoreSnapshotId: restore.rollbackSnapshotId } : {}),
       ...(normalized.handoff ? { handoff: normalized.handoff } : {}),
       ...(normalized.prepared ? { prepared: normalized.prepared } : {}),
@@ -1592,8 +1601,8 @@ export function readCachedDenDesktopConfig(key: string): DenDesktopConfig | null
 export function writeCachedDenDesktopConfig(key: string, config: DenDesktopConfig) {
   if (typeof window === "undefined" || !key) return;
   try {
-    // Cache namespaces already include Den + org. Retain only existing legacy
-    // identity data for rollback; never adopt identity from fresh wire config.
+    // Cache namespaces include Den + org. Disabled/missing flags retain source
+    // settings for rollback; an explicitly enabled server may update them.
     const raw = window.localStorage.getItem(key);
     let previous: unknown = null;
     try { previous = raw ? JSON.parse(raw) : null; } catch {}
@@ -1603,7 +1612,9 @@ export function writeCachedDenDesktopConfig(key: string, config: DenDesktopConfi
       : {};
     window.localStorage.setItem(
       key,
-      JSON.stringify({ ...normalizeDenDesktopConfig(config), ...dormant }),
+      JSON.stringify(config.whiteLabelEnabled === true
+        ? normalizeDenDesktopConfig(config)
+        : { ...normalizeDenDesktopConfig(config), ...dormant }),
     );
   } catch {
     // Quota / private-browsing failures are non-fatal — we just miss the cache next boot.

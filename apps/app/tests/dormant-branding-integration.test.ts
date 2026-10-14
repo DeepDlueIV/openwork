@@ -93,6 +93,16 @@ test("real shell getter, renderer normalization and refresh retain receipt and s
   expect(await diskBootstrap()).not.toHaveProperty("rollbackSnapshotId");
 });
 
+test("real shell persists enabled updates and same-org flag rollback without destroying settings", async () => {
+  await setDenBootstrapConfig({ ...target, whiteLabelEnabled: true, brandAppName: "Updated workspace" });
+  expect(await diskBootstrap()).toMatchObject({ ...branding, whiteLabelEnabled: true, brandAppName: "Updated workspace" });
+  await setDenBootstrapConfig({ ...target, whiteLabelEnabled: false });
+  expect(await diskBootstrap()).toMatchObject({ ...branding, whiteLabelEnabled: false, brandAppName: "Updated workspace" });
+  expect(writes.at(-1)).not.toMatchObject({ brandAppName: null, brandLogoUrl: null, brandIconUrl: null });
+  await setDenBootstrapConfig({ ...target, whiteLabelEnabled: true });
+  expect(readDenBootstrapConfig()).toMatchObject({ ...branding, whiteLabelEnabled: true, brandAppName: "Updated workspace" });
+});
+
 test("real org switch archives original bootstrap and cache before all-null active clear", async () => {
   const icon = Buffer.from("original dormant icon bytes");
   await writeFile(path.join(root, "brand-icon.png"), icon);

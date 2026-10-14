@@ -10,7 +10,7 @@ const test = spec.world(desktopConnectRollback, {
   timeout: 300_000,
 });
 
-test("retiring desktop branding preserves rollback data and interoperates with frozen old desktops", { tags: ["agent-flow"] }, async ({ world, step, evidence }) => {
+test("Cloud OFF branding preserves rollback data and interoperates with frozen old desktops", { tags: ["agent-flow"] }, async ({ world, step, evidence }) => {
   await step("the old-client rejection witness and all trust boundaries remain intact; the new desktop ignores old custom identity", async () => {
     const result = await world.wireBoundaries();
     expect(result.stock).toMatchObject({ ok: true, claims: { brand: STOCK_BRAND } });
@@ -43,7 +43,8 @@ test("retiring desktop branding preserves rollback data and interoperates with f
 
   await step("new Den signed and keyless handoffs are accepted by the actual frozen old Electron verifier", async () => {
     const minted = await world.mint();
-    expect(minted.config).toMatchObject({ appName: "OpenWork", logoUrl: null, iconUrl: null });
+    expect(minted.config).toMatchObject({ appName: "OpenWork", logoUrl: null, iconUrl: null, whiteLabelEnabled: false });
+    expect(minted.currentSigned).toMatchObject({ ok: true, claims: { brand: STOCK_BRAND, whiteLabelEnabled: false } });
     expect(minted.signed).toMatchObject({ ok: true, transport: "signed", claims: { brand: STOCK_BRAND, requireSignin: true } });
     const preview = await world.exchange(minted.exchangeUrl, "preview");
     expect(preview).toMatchObject({ ok: true, transport: "exchange", claims: { brand: STOCK_BRAND, requireSignin: true } });
@@ -53,13 +54,15 @@ test("retiring desktop branding preserves rollback data and interoperates with f
     const stored = await world.stored();
     expect(stored.metadata).toMatchObject(world.dormant);
     expect(stored.assets).toEqual(world.initial.assets);
-    evidence.recordAssertionEvidence("New backend → old desktop protocol compatibility", "Real Den install-link signed token, keyless preview and one-use exchange accepted by verbatim pre-removal Electron module; second exchange refused", true);
+    evidence.recordAssertionEvidence("New backend → old desktop protocol compatibility", "Real Den install-link signed token, keyless preview and one-use exchange accepted by verbatim pre-gate Electron module; second exchange refused", true);
   });
 
-  await step("retired branding mutation surfaces are unavailable", async () => {
-    const result = await world.retiredWrites();
-    expect(result.fieldsStatus).toBe(400);
+  await step("Cloud OFF recognizes branding fields but denies mutations through the feature gate", async () => {
+    const result = await world.disabledWrites();
+    expect(result.fieldsStatus).toBe(404);
+    expect(result.fieldsBody).toMatchObject({ error: "feature_disabled", feature: "whiteLabel" });
     expect(result.uploadStatus).toBe(404);
+    expect(result.uploadBody).toMatchObject({ error: "feature_disabled", feature: "whiteLabel" });
     const stored = await world.stored();
     expect(stored.metadata).toMatchObject(world.dormant);
     expect(stored.assets).toEqual(world.initial.assets);

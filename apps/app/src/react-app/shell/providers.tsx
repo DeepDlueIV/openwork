@@ -12,6 +12,7 @@ import { AutoRejectedTurnRecoveryBridge } from "@/react-app/domains/cloud/auto-a
 import { AutomationRunnerBridge } from "@/react-app/domains/automations/automation-runner-bridge";
 import { GlobalQueueDrainerBridge } from "@/react-app/domains/session/sync/global-queue-drainer-bridge";
 import { DesktopPolicyNotificationEffect } from "@/react-app/domains/cloud/desktop-policy-notification-effect";
+import { BrandThemeEffect } from "@/react-app/domains/cloud/brand-theme";
 import { DesktopConfigProvider } from "@/react-app/domains/cloud/desktop-config-provider";
 import { RestrictionNoticeProvider } from "@/react-app/domains/cloud/restriction-notice-provider";
 import { LocalProvider } from "@/react-app/kernel/local-provider";
@@ -65,6 +66,7 @@ export function EnterpriseAwareAppProviders({ children }: AppProvidersProps) {
       <ConnectLinkProvider>
         <DesktopConfigProvider>
           <DesktopPolicyNotificationEffect />
+          <BrandThemeEffect />
           <RestrictionNoticeProvider>
             <LocalProvider>
               <AutomationRunnerBridge />

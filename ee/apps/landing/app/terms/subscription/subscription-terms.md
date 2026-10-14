@@ -1,6 +1,6 @@
 # OpenWork Subscription Terms
 
-**Last updated: October 13, 2026**
+**Last updated: August 25, 2026**
 
 These Subscription Terms (the "Terms") govern production use of the OpenWork
 software made available under the OpenWork Enterprise Edition (EE) License by
@@ -35,9 +35,10 @@ any user count, or such longer period as OpenWork agrees to in writing; and
 "Enterprise Features" means the following capabilities of the EE-licensed
 software, however deployed: (a) single sign-on (SSO/SAML) and SCIM
 provisioning; (b) usage and adoption analytics; (c) desktop policies and
-version controls; and (d) any other capabilities identified as Enterprise
-Features on the pricing page or in the documentation at the start of Customer's
-term.
+version controls; (d) internal white-labeling (replacing OpenWork product
+names, logos, or accent branding with Customer's own for Customer's internal
+deployment); and (e) any other capabilities identified as Enterprise Features
+on the pricing page or in the documentation at the start of Customer's term.
 
 Enterprise Features are included in the Enterprise plan, in evaluations under
 Section 3(b), and in pilots or trials where the applicable order says so.
@@ -69,8 +70,9 @@ before the end of the then-current term.
 
 Customer will not resell, sublicense, or make the software available to third
 parties as a product or service, and will not remove copyright or license
-notices. External distribution, managed service use, or resale requires a
-separate written agreement. Software rights
+notices. An Enterprise plan permits white-labeling for Customer's internal
+use only; external distribution, managed service use, or resale under
+Customer's branding requires a separate written agreement. Software rights
 are governed by the EE License; where Customer and OpenWork have executed a
 separate written agreement (for example, a pilot agreement or enterprise
 order form), that agreement controls within its scope.

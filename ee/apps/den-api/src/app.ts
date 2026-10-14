@@ -407,7 +407,7 @@ const openApiOptions: Parameters<typeof generateSpecs>[1] = {
       { name: "SSO", description: "Organization single sign-on connector management routes." },
       { name: "Bootstrap", description: "Agent-first provisional workspace setup routes." },
       { name: "Users", description: "Current user and membership routes." },
-      { name: "Organizations", description: "Organization creation, context and install links." },
+      { name: "Organizations", description: "Organization creation, context, brand assets, and install links." },
       { name: "Invitations", description: "Invitation preview, acceptance, creation, and cancellation routes." },
       { name: "Members", description: "Organization member management routes." },
       { name: "Teams", description: "Organization team management routes." },

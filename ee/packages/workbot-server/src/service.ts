@@ -18,6 +18,9 @@ import { buildWorkbotTurns, GREETING_RUNNER_ID, interruptedTurnIds, threadBusy, 
 export type WorkbotActor = {
   organizationId: string
   organizationName: string
+  /** The organization's metadata (an object or its JSON), read for its brand name. */
+  whiteLabelEnabled?: boolean
+  organizationMetadata?: unknown
   memberId: string
   userId: string
   firstName: string | null
@@ -86,6 +89,27 @@ function sessionOf(actor: WorkbotActor, chat: WorkbotChat) {
   return chat ? workbotSideChatSessionId(actor.organizationId, actor.memberId, chat) : workbotSessionId(actor.organizationId, actor.memberId)
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function parseMetadata(metadata: WorkbotActor["organizationMetadata"]): Record<string, unknown> {
+  if (typeof metadata !== "string") return isRecord(metadata) ? metadata : {}
+  try {
+    const parsed: unknown = JSON.parse(metadata)
+    return isRecord(parsed) ? parsed : {}
+  } catch {
+    return {}
+  }
+}
+
+/** The organization's own app name when it set one (Settings → Brand), otherwise Workbot. */
+export function workbotName(metadata: WorkbotActor["organizationMetadata"], whiteLabelEnabled = false) {
+  if (!whiteLabelEnabled) return "Workbot"
+  const brand = parseMetadata(metadata).brandAppName
+  return typeof brand === "string" && brand.trim() && brand.trim() !== "OpenWork" ? brand.trim().slice(0, 40) : "Workbot"
+}
+
 /**
  * The model's instructions for one of the person's chats. They stay the same from one message to the next (the
  * runner dates each message instead), so the model provider's prompt cache keeps hitting.
@@ -149,7 +173,7 @@ function clientOf(deps: WorkbotDeps) {
  */
 async function ensureSession(actor: WorkbotActor, timeZone: string, deps: WorkbotDeps, chat: WorkbotChat = null) {
   const client = clientOf(deps)
-  const name = "Workbot"
+  const name = workbotName(actor.organizationMetadata, actor.whiteLabelEnabled)
   const canSchedule = await deps.canSchedule(actor.organizationId).catch(() => false)
   const main = workbotSessionId(actor.organizationId, actor.memberId)
   const common = {
@@ -242,7 +266,7 @@ export async function readWorkbotThread(
 ): Promise<WorkbotThread> {
   const client = clientOf(deps)
   const sessionId = sessionOf(actor, input.chat ?? null)
-  const name = "Workbot"
+  const name = workbotName(actor.organizationMetadata, actor.whiteLabelEnabled)
   // Windowed: reading a year-long thread costs the same as reading a new one.
   const read = await client.readSession(sessionId, { turns: input.turns ?? WORKBOT_PAGE_TURNS, limit: 2_000, outputs: "none" })
   if (!read.ok && read.status === 404) {

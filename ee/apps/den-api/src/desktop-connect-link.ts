@@ -4,13 +4,17 @@ import {
   CONNECT_LINK_AUDIENCE,
   CONNECT_LINK_DEFAULT_TTL_HOURS,
   CONNECT_LINK_VERSION,
-  connectLinkClaimsSchema,
+  type ConnectLinkClaims,
 } from "@openwork/connect-link"
 import { signConnectLinkToken } from "@openwork/connect-link/node"
 import { env } from "./env.js"
 
 export type DesktopConnectLinkInput = {
+  whiteLabelEnabled: boolean
   organizationName: string
+  appName: string
+  logoUrl: string | null
+  iconUrl: string | null
   webUrl: string
   apiUrl: string
 }
@@ -25,7 +29,7 @@ export function mintDesktopConnectLink(input: DesktopConnectLinkInput) {
   }
 
   const nowEpochSeconds = Math.floor(Date.now() / 1000)
-  const claims = connectLinkClaimsSchema.parse({
+  const claims: ConnectLinkClaims = {
     iss: input.apiUrl,
     aud: CONNECT_LINK_AUDIENCE,
     iat: nowEpochSeconds,
@@ -33,12 +37,18 @@ export function mintDesktopConnectLink(input: DesktopConnectLinkInput) {
     jti: randomBytes(16).toString("base64url"),
     v: CONNECT_LINK_VERSION,
     org: { name: input.organizationName },
+    whiteLabelEnabled: input.whiteLabelEnabled,
+    brand: {
+      appName: input.appName,
+      logoUrl: input.logoUrl,
+      iconUrl: input.iconUrl,
+    },
     den: {
       baseUrl: input.webUrl,
       apiBaseUrl: input.apiUrl,
     },
     requireSignin: true,
-  })
+  }
   const token = signConnectLinkToken({
     claims,
     privateKeyPem: env.connectLink.privateKeyPem,

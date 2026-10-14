@@ -362,6 +362,7 @@ OpenWork Cloud. Don't change it on a customer install.
 <!-- BEGIN GENERATED features (pnpm features:sync) -->
 | `config.features.*` | Environment variable | Default | What it does |
 | --- | --- | --- | --- |
+| `whiteLabel` | `DEN_FEATURE_WHITE_LABEL` | default on (self-hosted), off (cloud) | Customize organization app names, logos, icons, and colors. |
 | `teamMembershipCache` | `DEN_FEATURE_TEAM_MEMBERSHIP_CACHE` | default off | Reduce repeated team lookups while keeping access changes immediate. Enable only after every API instance runs revision-aware team writes. |
 | `managedDeployments` | `DEN_FEATURE_MANAGED_DEPLOYMENTS` | default off (cloud only) | Organization admins install OpenWork in their own cloud account (AWS first) and see its health and updates in OpenWork. |
 | `slackAssistant` | `DEN_FEATURE_SLACK_ASSISTANT` | default off | Answers Slack mentions and DMs for the organization after the Slack connector is set up. |

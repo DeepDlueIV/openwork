@@ -3,15 +3,14 @@ import { z } from "zod"
 export const DESKTOP_BOOTSTRAP_FILENAME = "desktop-bootstrap.json"
 
 export const installConfigSchema = z.object({
+  whiteLabelEnabled: z.boolean().default(false),
+  appName: z.string().trim().min(1).max(64).default("OpenWork"),
   clientName: z.string().trim().min(1),
   webUrl: z.string().trim().url(),
   apiUrl: z.string().trim().url(),
   requireSignin: z.boolean(),
-  // Deprecated wire fields required by older installers. Ignore legacy custom
-  // input and always emit stock values; these are not branding configuration.
-  appName: z.preprocess(() => "OpenWork", z.literal("OpenWork")),
-  logoUrl: z.preprocess(() => null, z.null()),
-  iconUrl: z.preprocess(() => null, z.null()),
+  logoUrl: z.string().trim().url().nullable().default(null),
+  iconUrl: z.string().trim().url().nullable().default(null),
 }).meta({ ref: "InstallConfig" })
 
 export type InstallConfig = z.infer<typeof installConfigSchema>
@@ -28,12 +27,11 @@ export const installExperienceConfigSchema = installConfigSchema.extend({
 export type InstallExperienceConfig = z.infer<typeof installExperienceConfigSchema>
 
 export const desktopBootstrapConfigSchema = z.object({
+  whiteLabelEnabled: z.boolean().default(false),
   baseUrl: z.string().trim().url(),
   apiBaseUrl: z.string().trim().url().optional(),
   requireSignin: z.boolean(),
   requireActivation: z.boolean().optional(),
-  // Dormant legacy settings retained on disk for rollback, never applied by the
-  // current desktop. Remove only with the deferred data-cleanup migration.
   brandAppName: z.string().trim().min(1).max(64).optional(),
   brandLogoUrl: z.string().trim().url().optional(),
   brandIconUrl: z.string().trim().url().optional(),

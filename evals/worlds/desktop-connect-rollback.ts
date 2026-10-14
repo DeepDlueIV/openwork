@@ -24,7 +24,15 @@ function metadata(value: unknown): Record<string, unknown> {
 }
 
 /** Browser-less real Den producer/storage world. No app or native OS is booted. */
+export async function selfHostedBranding(seed: Seed) {
+  return brandingWorld(seed, "self_hosted");
+}
+
 export async function desktopConnectRollback(seed: Seed) {
+  return brandingWorld(seed, "cloud");
+}
+
+async function brandingWorld(seed: Seed, deployment: "cloud" | "self_hosted") {
   if (process.env.OPENWORK_EVAL_DEN_API_URL?.trim() || process.env.OPENWORK_EVAL_DEN_WEB_URL?.trim()) {
     throw new Error("Rollback writes require a fresh testkit-owned Den, never an attached service");
   }
@@ -37,6 +45,7 @@ export async function desktopConnectRollback(seed: Seed) {
     web: false,
     org: { name: "Rollback compatibility workspace" },
     env: {
+      DEN_DEPLOYMENT: deployment,
       DEN_CONNECT_LINK_MODE: "signed",
       DEN_CONNECT_LINK_PRIVATE_KEY: keys.privateKeyPem,
       DEN_CONNECT_LINK_KEY_ID: kid,
@@ -89,15 +98,50 @@ export async function desktopConnectRollback(seed: Seed) {
 
   return {
     den, dormant, initial, stored,
+    async state() {
+      const result = await api("/v1/org");
+      if (result.response.status !== 200) throw new Error(`Read organization: ${result.text}`);
+      const [override] = await queryDenDatabase(databaseUrl, "SELECT enabled, source FROM organization_feature WHERE organization_id = ? AND feature_key = 'whiteLabel'", [organizationId]);
+      const [rollout] = await queryDenDatabase(databaseUrl, "SELECT created_at FROM feature_rollout WHERE feature_key = 'whiteLabel'");
+      return { body: result.body, override: override ? record(override) : null, cutoff: rollout ? record(rollout).created_at : null };
+    },
+    async setEnabled(enabled: boolean | null) {
+      const result = await api(`/v1/admin/organizations/${organizationId}/capabilities`, {
+        method: "PUT", body: JSON.stringify({ capabilities: { whiteLabel: enabled } }),
+      });
+      if (result.response.status !== 200) throw new Error(`Feature override: ${result.text}`);
+    },
+    async setKilled(killed: boolean) {
+      const result = await api("/v1/admin/features/whiteLabel", {
+        method: "PUT", body: JSON.stringify({ enabled: false, killed }),
+      });
+      if (result.response.status !== 200) throw new Error(`Feature kill: ${result.text}`);
+    },
+    // Reconstruct a pre-feature deployment solely in this disposable database.
+    // Startup must atomically create the rollout marker and eligible overrides;
+    // later startups must not repeat migration after an admin clears an override.
+    async restartWithHistoricalOrganization(configured = true) {
+      await queryDenDatabase(databaseUrl, "UPDATE organization SET created_at = '2020-01-01 00:00:00.000', metadata = ? WHERE id = ?", [JSON.stringify(configured ? originalMetadata : { rollbackSentinel: dormant.rollbackSentinel }), organizationId]);
+      await queryDenDatabase(databaseUrl, "DELETE FROM feature_rollout WHERE feature_key = 'whiteLabel'");
+      if (!den.restartApi) throw new Error("Automatic initializer proof requires restartApi");
+      await den.restartApi();
+    },
+    async injectBrandMetadata() {
+      await queryDenDatabase(databaseUrl, "UPDATE organization SET metadata = ? WHERE id = ?", [JSON.stringify(originalMetadata), organizationId]);
+    },
+    async restart() {
+      if (!den.restartApi) throw new Error("Automatic initializer proof requires restartApi");
+      await den.restartApi();
+    },
     async ordinaryEditAndRead() {
       const edited = await api("/v1/org", { method: "PATCH", body: JSON.stringify({ name: "Renamed rollback workspace", requireSso: false }) });
       const read = await api("/v1/org");
       return { editStatus: edited.response.status, editBody: edited.body, readStatus: read.response.status, readBody: read.body };
     },
-    async retiredWrites() {
+    async disabledWrites() {
       const fields = await api("/v1/org", { method: "PATCH", body: JSON.stringify({ brandAppName: "Must not apply" }) });
       const upload = await api("/v1/org/brand-assets", { method: "POST", body: JSON.stringify({ kind: "logo" }) });
-      return { fieldsStatus: fields.response.status, uploadStatus: upload.response.status };
+      return { fieldsStatus: fields.response.status, fieldsBody: fields.body, uploadStatus: upload.response.status, uploadBody: upload.body };
     },
     async mint() {
       const created = await api(`/v1/orgs/${organizationId}/install-links`, { method: "POST", body: "{}" });
@@ -111,7 +155,11 @@ export async function desktopConnectRollback(seed: Seed) {
       const exchangeUrl = buildConnectExchangeDeepLink(code, text(config.apiUrl));
       const token = legacy.extractConnectLinkToken(text(createdBody.connectUrl));
       if (!token) throw new Error("Signed mode did not mint a token through the real Den route");
-      return { config, token, exchangeUrl, signed: legacy.verifyConnectLinkUrl(text(createdBody.connectUrl), { publicKeys, allowInsecureLoopback: true }) };
+      return {
+        config, token, exchangeUrl,
+        signed: legacy.verifyConnectLinkUrl(text(createdBody.connectUrl), { publicKeys, allowInsecureLoopback: true }),
+        currentSigned: current.verifyConnectLinkUrl(text(createdBody.connectUrl), { publicKeys, allowInsecureLoopback: true }),
+      };
     },
     async exchange(exchangeUrl: string, mode: "preview" | "exchange") {
       return legacy.resolveConnectExchangeUrl(exchangeUrl, { mode, fetcher: fetch, allowInsecureLoopback: true });
@@ -174,7 +222,7 @@ export async function desktopConnectRollback(seed: Seed) {
         replay, currentSigned, currentExchange, currentSecurity,
         signedBootstrap: currentSigned.ok ? current.desktopBootstrapFromConnectClaims(currentSigned.claims) : null,
         exchangeBootstrap: currentExchange.ok ? current.desktopBootstrapFromConnectClaims(currentExchange.claims) : null,
-        expectedBootstrap: { baseUrl: base.den.baseUrl, apiBaseUrl, requireSignin: true },
+        expectedBootstrap: { baseUrl: base.den.baseUrl, apiBaseUrl, requireSignin: true, whiteLabelEnabled: false },
       };
     },
   };

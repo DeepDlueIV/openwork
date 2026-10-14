@@ -13,6 +13,7 @@ import {
   writeDenSettings,
 } from "../src/app/lib/den";
 import { exchangeHandoffAndSignIn } from "../src/app/lib/den-handoff";
+import { desktopCapabilityConfig } from "@openwork/types/den/desktop-policies";
 
 const branding = {
   brandAppName: "Legacy workspace",
@@ -33,8 +34,8 @@ beforeEach(async () => {
   const shellRead = spyOn(desktop, "getDesktopBootstrapConfig").mockImplementation(async () => stored);
   const shellWrite = spyOn(desktop, "setDesktopBootstrapConfig").mockImplementation(async (next) => {
     written.push(next);
-    // Shell contract: same-origin writes copy stored identity, never supplied
-    // strings. Explicit null clears are the only identity mutation accepted.
+    // Shell accepts source updates only when the projected flag is explicit;
+    // off/missing retain existing same-origin settings for rollback.
     const sameOrigin = new URL(next.baseUrl).origin === new URL(stored.baseUrl).origin
       && (!next.apiBaseUrl || !stored.apiBaseUrl
         || new URL(next.apiBaseUrl).origin === new URL(stored.apiBaseUrl).origin);
@@ -42,9 +43,9 @@ beforeEach(async () => {
     stored = {
       ...active,
       ...(sameOrigin ? {
-        brandAppName: brandAppName === null ? null : stored.brandAppName,
-        brandLogoUrl: brandLogoUrl === null ? null : stored.brandLogoUrl,
-        brandIconUrl: brandIconUrl === null ? null : stored.brandIconUrl,
+        brandAppName: brandAppName === null ? null : next.whiteLabelEnabled === true ? brandAppName ?? stored.brandAppName : stored.brandAppName,
+        brandLogoUrl: brandLogoUrl === null ? null : next.whiteLabelEnabled === true ? brandLogoUrl ?? stored.brandLogoUrl : stored.brandLogoUrl,
+        brandIconUrl: brandIconUrl === null ? null : next.whiteLabelEnabled === true ? brandIconUrl ?? stored.brandIconUrl : stored.brandIconUrl,
       } : {}),
       requireSignin: next.requireSignin === true,
     };
@@ -112,6 +113,28 @@ test("same-origin writes cannot edit dormant identity", async () => {
   expect(stored).toMatchObject(branding);
 });
 
+test("same-org flag toggles preserve bootstrap settings and allow new enabled server values", async () => {
+  await setDenBootstrapConfig({ baseUrl: origin, whiteLabelEnabled: true, ...branding });
+  await setDenBootstrapConfig({ baseUrl: origin, whiteLabelEnabled: false });
+  expect(stored).toMatchObject({ ...branding, whiteLabelEnabled: false });
+  expect(written.at(-1)).not.toMatchObject({ brandAppName: null });
+  await setDenBootstrapConfig({ baseUrl: origin, whiteLabelEnabled: true });
+  expect(stored).toMatchObject({ ...branding, whiteLabelEnabled: true });
+  await setDenBootstrapConfig({ baseUrl: origin, whiteLabelEnabled: true, brandAppName: "Updated workspace" });
+  expect(stored).toMatchObject({ ...branding, brandAppName: "Updated workspace", whiteLabelEnabled: true });
+});
+
+test("same-org cache rollout rollback retains raw settings and ignores them until re-enabled", () => {
+  writeDenSettings({ baseUrl: origin, authToken: "session", activeOrgId: "org-a" }, { persistBootstrap: false });
+  const key = getDenDesktopConfigCacheKey();
+  writeCachedDenDesktopConfig(key, { ...branding, whiteLabelEnabled: true });
+  writeCachedDenDesktopConfig(key, { whiteLabelEnabled: false, brandAppName: "OpenWork" });
+  expect(JSON.parse(window.localStorage.getItem(key) ?? "{}")).toMatchObject({ ...branding, whiteLabelEnabled: false });
+  expect(desktopCapabilityConfig(readCachedDenDesktopConfig(key) ?? {})).toEqual({ whiteLabelEnabled: false });
+  writeCachedDenDesktopConfig(key, { ...branding, whiteLabelEnabled: true, brandAppName: "Updated workspace" });
+  expect(readCachedDenDesktopConfig(key)).toMatchObject({ ...branding, whiteLabelEnabled: true, brandAppName: "Updated workspace" });
+});
+
 test("rollback cannot introduce arbitrary branding through a fabricated snapshot", async () => {
   const fabricated = { ...readDenBootstrapConfig(), brandAppName: "Arbitrary new name" };
   await expect(setDenBootstrapConfig({ baseUrl: origin }, { restoreSnapshot: fabricated }))
@@ -141,7 +164,7 @@ test("org cache refresh retains existing identity but exposes only policies", ()
   window.localStorage.setItem(key, JSON.stringify({ ...branding, brandAccentColor: "purple", connectEnabled: true }));
   writeCachedDenDesktopConfig(key, { connectEnabled: false, allowCustomProviders: false });
   expect(JSON.parse(window.localStorage.getItem(key) ?? "{}")).toMatchObject(branding);
-  expect(readCachedDenDesktopConfig(key)).toEqual({ connectEnabled: false, allowCustomProviders: false });
+  expect(desktopCapabilityConfig(readCachedDenDesktopConfig(key) ?? {})).toEqual({ connectEnabled: false, allowCustomProviders: false });
   writeDenSettings({ ...readDenSettings(), activeOrgId: "org-b" }, { persistBootstrap: false });
   const otherKey = getDenDesktopConfigCacheKey();
   writeCachedDenDesktopConfig(otherKey, { connectEnabled: true });

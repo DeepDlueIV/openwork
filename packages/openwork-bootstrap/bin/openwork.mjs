@@ -1092,6 +1092,12 @@ function writePreparedDesktop(input) {
   const dormant = readDormantDesktopBrand(bootstrapPath, input)
   const bootstrap = {
     ...dormant.settings,
+    whiteLabelEnabled: input.whiteLabelEnabled === true,
+    ...(input.whiteLabelEnabled === true ? {
+      ...(typeof input.brand?.appName === "string" ? { brandAppName: input.brand.appName } : {}),
+      ...(typeof input.brand?.logoUrl === "string" || input.brand?.logoUrl === null ? { brandLogoUrl: input.brand.logoUrl } : {}),
+      ...(typeof input.brand?.iconUrl === "string" || input.brand?.iconUrl === null ? { brandIconUrl: input.brand.iconUrl } : {}),
+    } : {}),
     baseUrl: input.baseUrl,
     apiBaseUrl: input.apiBaseUrl,
     requireSignin: false,
@@ -1312,7 +1318,11 @@ async function runCloudOnboard(args) {
   let desktop = null
   if (prepareDesktop) {
     const handoff = await createDesktopHandoff(baseUrl, auth)
+    const desktopConfig = await request(baseUrl, "/v1/me/desktop-config", { method: "GET", headers: auth })
+    const effective = desktopConfig.status === 200 ? desktopConfig.body : null
     desktop = writePreparedDesktop({
+      whiteLabelEnabled: effective?.whiteLabelEnabled === true,
+      brand: { appName: effective?.brandAppName, logoUrl: effective?.brandLogoUrl, iconUrl: effective?.brandIconUrl },
       baseUrl: webBaseUrl,
       apiBaseUrl: baseUrl,
       bootstrapPath: desktopBootstrapPath,
@@ -1402,6 +1412,8 @@ async function runCloudBootstrapWorkspace(args) {
       skillsDir,
       organization: response.body.organization,
       skill,
+      whiteLabelEnabled: response.body.whiteLabelEnabled === true,
+      brand: response.body.brand,
       claimLinks: response.body.claimLinks,
     })
   }

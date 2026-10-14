@@ -1,12 +1,26 @@
 import { spec } from "@openwork/testkit";
 import { expect } from "vitest";
-import { adminDashboardWeb } from "../worlds/den-admin-navigation.ts";
+import { adminDashboardWeb, selfHostedAdminDashboardWeb } from "../worlds/den-admin-navigation.ts";
 
 // The Den admin sidebar has two jobs: Work for everyone, and Manage plus Team
 // for admins. Collections lives in Settings › Advanced,
 // Desktop policies is its own Manage entry, and Plugins lists plugins without
 // GitHub sources while the legacy integrations URL still opens its old tab.
 const test = spec.world(adminDashboardWeb, { timeout: 420_000 });
+const selfHostedTest = spec.world(selfHostedAdminDashboardWeb, { timeout: 420_000 });
+
+selfHostedTest("self-hosted organizations keep Brand appearance in Settings › Advanced", async ({ world, user, probe, evidence }) => {
+  await user.see({ testId: "den-org-sidebar" }, { timeoutMs: 90_000 });
+  await user.click({ role: "link", label: "Settings" });
+  await user.click({ role: "link", label: "Advanced" });
+  await user.click({ role: "tab", label: "Brand appearance" });
+  await probe.eventually(() => world.location(), {
+    within: 30_000, label: "enabled Brand appearance route", until: (path) => path === "/dashboard/brand-appearance",
+  });
+  await user.see({ testId: "brand-appearance-screen" }, { timeoutMs: 30_000 });
+  evidence.recordAssertionEvidence("Brand appearance is available for selected organizations and self-hosted deployments", "Self-hosted default opens the original Brand appearance settings page", true);
+  await user.screenshot();
+});
 
 test("the Den admin sidebar groups Manage and moves Advanced into Settings", async ({ world, user, probe, evidence }) => {
   await user.see({ testId: "den-org-sidebar" }, { timeoutMs: 90_000 });

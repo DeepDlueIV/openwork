@@ -169,3 +169,50 @@ test("artifact editor renders code with Pierre and browses workspace files", asy
     await user.press("Escape");
   });
 });
+
+test("a person clicks a link inside a PDF in the side panel and OpenWork stays open", async ({ world, user, probe, step, evidence }) => {
+  const linkTab = { role: "button", label: /^Select tab: .*example\.com/ } as const;
+  let route = "";
+
+  await step("given a PDF with a link is open in the side panel", async () => {
+    await user.click("Select tab: overflow-tab-12.md");
+    await user.click({ role: "button", label: "Show workspace files" });
+    await user.see({ placeholder: "Search files" }, { timeoutMs: 30_000 });
+    await user.type({ placeholder: "Search files" }, "release-notes.pdf");
+    await user.press("Tab");
+    await user.press("Tab");
+    await user.press("Enter");
+    await user.see("Select tab: release-notes.pdf", { timeoutMs: 30_000 });
+    await user.click({ role: "button", label: "Hide workspace files" });
+    const [preview] = (await probe.eventually(() => probe.dom('[data-testid="artifact-pdf-preview"]'), {
+      within: 30_000,
+      label: "the PDF preview is mounted",
+      until: ({ elements }) => elements.length === 1 && elements[0]!.rect.width > 0,
+    })).elements;
+    route = await probe.hash();
+    evidence.recordAssertionEvidence("The PDF opens in the side panel", `PDF preview ${Math.round(preview!.rect.width)}×${Math.round(preview!.rect.height)}px on ${route}.`, true);
+    await user.screenshot();
+  });
+
+  await step("when the person clicks the link inside the PDF", async () => {
+    // The viewer draws the page after the embed mounts; retry the click until the link reacts.
+    let clicks = 0;
+    await probe.eventually(async () => {
+      clicks += 1;
+      await user.click({ testId: "artifact-pdf-preview" });
+      await user.see(linkTab, { timeoutMs: 3_000 });
+      return true;
+    }, { within: 30_000, label: "the PDF link opens a browser tab" });
+    evidence.recordAssertionEvidence("The click reached the PDF link", `${clicks} click(s) on the page opened a browser tab for ${world.pdfLinkUrl}.`, true);
+  });
+
+  await step("after: OpenWork is still open on the same chat, with the link in one browser tab", async () => {
+    await user.see("composer");
+    await user.see("Select tab: release-notes.pdf");
+    const [tabs, now] = await Promise.all([probe.dom('[role="button"][aria-label^="Select tab: "][aria-label*="example.com"]'), probe.hash()]);
+    expect(now).toBe(route);
+    expect(tabs.elements).toHaveLength(1);
+    evidence.recordAssertionEvidence("OpenWork kept the chat and opened the link once", `Route still ${now}; ${tabs.elements.length} browser tab for example.com; composer and the PDF tab are visible.`, true);
+    await user.screenshot();
+  });
+});

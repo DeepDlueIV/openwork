@@ -453,6 +453,28 @@ export async function scopedPermissionRefreshWorld(seed: Seed) {
   }
 }
 
+/** A one-page text-only PDF whose whole page is a link to `url`. */
+function linkedPdf(url: string) {
+  const text = "BT /F1 28 Tf 72 700 Td (Open the release notes) Tj ET";
+  const objects = [
+    "<< /Type /Catalog /Pages 2 0 R >>",
+    "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> /Annots [6 0 R] >>",
+    `<< /Length ${text.length} >>\nstream\n${text}\nendstream`,
+    "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
+    `<< /Type /Annot /Subtype /Link /Rect [0 0 612 792] /Border [0 0 0] /A << /S /URI /URI (${url}) >> >>`,
+  ];
+  let pdf = "%PDF-1.4\n";
+  const offsets = objects.map((object, index) => {
+    const offset = pdf.length;
+    pdf += `${index + 1} 0 obj\n${object}\nendobj\n`;
+    return offset;
+  });
+  const xref = pdf.length;
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n${offsets.map((offset) => `${String(offset).padStart(10, "0")} 00000 n \n`).join("")}`;
+  return `${pdf}trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+}
+
 export async function artifactCodeBrowserWorld(seed: Seed) {
   const tableMarkdown = [
     "# Table interactions",
@@ -464,13 +486,14 @@ export async function artifactCodeBrowserWorld(seed: Seed) {
     "",
     "After the table",
   ].join("\n");
-  // Asserts the native Electron context menu, which a browser does not have.
+  const pdfLinkUrl = "https://example.com/openwork-pdf-link";
+  // Asserts the native Electron context menu and the desktop PDF viewer, which a browser does not have.
   const base = await workspaceWorld(seed, { surface: "electron" });
   const [session] = await seed.sessions(base.app, ["Artifact code browser proof"]);
   if (!session) throw new Error("Could not seed the artifact code browser session.");
   await go(base.app, `/workspace/${base.workspace.workspaceId}/session/${session.sessionId}`);
   // TODO(primitive): write workspace files through the local server fixture.
-  const wrote = await seed.evalIn(base.app, browserScript(async (workspaceId, tableMarkdown) => {
+  const wrote = await seed.evalIn(base.app, browserScript(async (workspaceId, tableMarkdown, linkedPdfContent) => {
     const port = localStorage.getItem("openwork.server.port");
     const token = localStorage.getItem("openwork.server.token");
     if (!port || !token) return false;
@@ -487,9 +510,10 @@ export async function artifactCodeBrowserWorld(seed: Seed) {
       write("src/openwork-artifact-proof.ts", "export const artifactEditor = true;\n"),
       write("config/openwork-artifact-settings.json", "{\"artifactEditor\":true}\n"),
       write("docs/table-interactions.md", tableMarkdown),
+      write("docs/release-notes.pdf", linkedPdfContent),
     ]);
     return responses.every((response) => response.ok);
-  }, [base.workspace.workspaceId, tableMarkdown]), { awaitPromise: true });
+  }, [base.workspace.workspaceId, tableMarkdown, linkedPdf(pdfLinkUrl)]), { awaitPromise: true });
   if (wrote !== true) throw new Error("Could not seed artifact code files.");
   await waitForBehavior(
     base.app,
@@ -513,6 +537,7 @@ export async function artifactCodeBrowserWorld(seed: Seed) {
   return {
     ...base,
     tableMarkdown,
+    pdfLinkUrl,
     fileLinkPath,
     // Native Electron menus are OS widgets without DOM/CDP targets. Use the
     // existing development bridge to observe and dismiss the real popup.

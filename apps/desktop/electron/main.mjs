@@ -2542,10 +2542,21 @@ async function createMainWindow() {
     return { action: "deny" };
   });
 
+  // A link clicked in the inline PDF viewer reaches both handlers below for
+  // the same navigation (`did-start-navigation` first, then `will-navigate`),
+  // so open each blocked URL once instead of in two browser tabs.
+  let lastRoutedNavigation = null;
+  const routeBlockedNavigationOnce = (url) => {
+    const now = Date.now();
+    if (lastRoutedNavigation?.url === url && now - lastRoutedNavigation.at < 1000) return;
+    lastRoutedNavigation = { url, at: now };
+    browserPanel.routeBlockedMainWindowNavigation(url);
+  };
+
   mainWindow.webContents.on("will-navigate", (event, url) => {
     if (browserPanel.isMainWindowAllowedNavigation(url)) return;
     event.preventDefault();
-    browserPanel.routeBlockedMainWindowNavigation(url);
+    routeBlockedNavigationOnce(url);
   });
 
   // `will-navigate` does NOT fire for CDP `Page.navigate` (it behaves like
@@ -2557,12 +2568,17 @@ async function createMainWindow() {
   mainWindow.webContents.on("did-start-navigation", (_event, url, isInPlace, isMainFrame) => {
     if (!isMainFrame || isInPlace) return;
     if (browserPanel.isMainWindowAllowedNavigation(url)) return;
-    try {
-      mainWindow?.webContents.stop();
-    } catch {
-      // best effort — routing below still gives the user a way back
-    }
-    browserPanel.routeBlockedMainWindowNavigation(url);
+    // Stopping inside this event aborts the main process for navigations the
+    // PDF viewer starts (`chrome.tabs.update` on a link click), so cancel the
+    // load on the next tick instead.
+    setImmediate(() => {
+      try {
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.stop();
+      } catch {
+        // best effort — routing below still gives the user a way back
+      }
+    });
+    routeBlockedNavigationOnce(url);
   });
 
   const startUrl = process.env.OPENWORK_ELECTRON_START_URL?.trim() || process.env.ELECTRON_START_URL?.trim();

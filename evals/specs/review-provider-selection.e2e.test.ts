@@ -2,9 +2,9 @@ import { expect } from "vitest";
 import { spec, type Target } from "@openwork/testkit";
 import { reviewBothProviders, reviewDaytonaOnly, reviewNoProviders } from "../worlds/review-provider-selection.ts";
 
-const both = spec.world(reviewBothProviders, { resources: { surfaces: ["appWeb"], services: [] }, needs: { placement: "local" } });
-const daytona = spec.world(reviewDaytonaOnly, { resources: { surfaces: ["appWeb"], services: [] }, needs: { placement: "local" } });
-const none = spec.world(reviewNoProviders, { resources: { surfaces: ["appWeb"], services: [] }, needs: { placement: "local" } });
+const both = spec.world(reviewBothProviders, { resources: { surfaces: ["appWeb"], services: [] }, needs: { placement: "local", commands: ["openssl"] } });
+const daytona = spec.world(reviewDaytonaOnly, { resources: { surfaces: ["appWeb"], services: [] }, needs: { placement: "local", commands: ["openssl"] } });
+const none = spec.world(reviewNoProviders, { resources: { surfaces: ["appWeb"], services: [] }, needs: { placement: "local", commands: ["openssl"] } });
 const providerPicker: Target = { role: "combobox", label: "Sandbox provider" };
 
 both("a reviewer chooses Daytona without losing their existing preview when new launches are killed", async ({ world, user, probe, step, evidence }) => {

@@ -23,6 +23,9 @@ test("an owner finds agent permissions under Members › Teams, and old Agent pe
   await step("an old Agent permissions link opens Everyone in Members › Teams", async () => {
     await owner.navigate(`${world.webUrl}/dashboard/agent-permissions`);
     const landed = await landsOn("/dashboard/members/teams/everyone");
+    await owner.see({ testId: "everyone-screen" });
+    await owner.see({ testId: "agent-permissions-intro" }, { text: /^What agents can do on every member/ });
+    await owner.see({ testId: "agent-permissions-editor" });
     evidence.recordAssertionEvidence("/dashboard/agent-permissions", `→ ${landed}`, landed === "/dashboard/members/teams/everyone");
     expect(landed).toBe("/dashboard/members/teams/everyone");
     await owner.screenshot();
@@ -31,11 +34,15 @@ test("an owner finds agent permissions under Members › Teams, and old Agent pe
   await step("an old team link opens that team, and the old create link opens Members", async () => {
     await owner.navigate(`${world.webUrl}/dashboard/agent-permissions/${encodeURIComponent(world.teamId)}`);
     const team = await landsOn(`/dashboard/members/teams/${world.teamId}`);
+    await owner.see({ testId: "agent-permissions-intro" }, { text: /people in Contractors/ });
+    await owner.see({ testId: "agent-permission-commands-source" }, { text: "From Everyone" });
+    await owner.screenshot();
     await owner.navigate(`${world.webUrl}/dashboard/agent-permissions/new`);
     const created = await landsOn("/dashboard/members");
     evidence.recordAssertionEvidence("old team and create links", `team → ${team}; new → ${created}`, team === `/dashboard/members/teams/${world.teamId}` && created === "/dashboard/members");
     expect([team, created]).toEqual([`/dashboard/members/teams/${world.teamId}`, "/dashboard/members"]);
     await owner.see({ role: "tab", label: /^Teams/ });
+    await owner.see({ testId: "team-row-everyone" });
     await owner.screenshot();
   });
 });

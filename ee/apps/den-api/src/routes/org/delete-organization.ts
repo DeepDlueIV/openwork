@@ -98,6 +98,7 @@ import type { Hono } from "hono"
 import { describeRoute } from "hono-openapi"
 import { z } from "zod"
 import { deleteOrganizationAgentPermissions } from "../../agent-permissions.js"
+import { deleteOrganizationDefaultModels } from "../../default-model.js"
 import { addAuditRequestResource } from "../../audit/request-capture.js"
 import { cache } from "../../cache.js"
 import { db } from "../../db.js"
@@ -561,6 +562,7 @@ export function registerDeleteOrganizationRoutes<T extends { Variables: OrgRoute
 
         await tx.delete(DesktopPolicyMemberTable).where(eq(DesktopPolicyMemberTable.organizationId, organizationId))
         await deleteOrganizationAgentPermissions(tx, organizationId)
+        await deleteOrganizationDefaultModels(tx, organizationId)
         await tx.delete(DesktopPolicyTable).where(eq(DesktopPolicyTable.organizationId, organizationId))
 
         await tx.delete(OrganizationDiagnosticCredentialTable).where(eq(OrganizationDiagnosticCredentialTable.organizationId, organizationId))

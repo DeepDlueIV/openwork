@@ -377,6 +377,7 @@ OpenWork Cloud. Don't change it on a customer install.
 | `engineV2Upgrade` | `DEN_FEATURE_ENGINE_V2_UPGRADE` | default off | Desktop members still on OpenCode v1 see a short notice offering to upgrade: their chats are copied to v2 with a backup, then OpenWork switches engines. |
 | `remoteSessionEvents` | `DEN_FEATURE_REMOTE_SESSION_EVENTS` | default off | MCP clients can subscribe to changes in their remote session receipts and read the current state after reconnecting. |
 | `backgroundShellTasks` | `DEN_FEATURE_BACKGROUND_SHELL_TASKS` | default off | The desktop chat shows how many commands the agent left running in the background, and adds a short row when each one finishes. |
+| `orgDefaultModel` | `DEN_FEATURE_ORG_DEFAULT_MODEL` | default off | Organization admins choose the model new desktop chats start with, for everyone or per team. Applies to the OpenCode v2 engine only; members can still change the model in each chat. |
 <!-- END GENERATED features -->
 
 The table and the `config.features` block are generated: run `pnpm features:sync`

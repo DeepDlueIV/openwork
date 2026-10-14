@@ -37,6 +37,7 @@ import type {
   CreateWorkbotRunTokenResponses,
   DeactivateAutomationErrors,
   DeactivateAutomationResponses,
+  DefaultModelWrite,
   DeleteApiAuthScimV2GroupsByGroupIdErrors,
   DeleteApiAuthScimV2GroupsByGroupIdResponses,
   DeleteGmailDraftErrors,
@@ -436,6 +437,10 @@ import type {
   GetV1OauthProvidersByProviderIdStatusResponses,
   GetV1OrgActivityErrors,
   GetV1OrgActivityResponses,
+  GetV1OrgDefaultModelErrors,
+  GetV1OrgDefaultModelOptionsErrors,
+  GetV1OrgDefaultModelOptionsResponses,
+  GetV1OrgDefaultModelResponses,
   GetV1OrgErrors,
   GetV1OrgResponses,
   GetV1OrgsInvitationsPreviewErrors,
@@ -938,6 +943,10 @@ import type {
   PutV1McpConnectionsByConnectionIdToolPolicyResponses,
   PutV1McpConnectionsByKeyByExternalKeyErrors,
   PutV1McpConnectionsByKeyByExternalKeyResponses,
+  PutV1OrgDefaultModelEveryoneErrors,
+  PutV1OrgDefaultModelEveryoneResponses,
+  PutV1OrgDefaultModelTeamsByTeamIdErrors,
+  PutV1OrgDefaultModelTeamsByTeamIdResponses,
   PutV1OrgWorkbotSettingsErrors,
   PutV1OrgWorkbotSettingsResponses,
   PutV1PermissionsSetsByPermissionSetIdPermissionsErrors,
@@ -2378,7 +2387,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Get current user's desktop config
    *
-   * Returns the authenticated desktop app restrictions for the caller's active organization, including the caller's agent permissions as ordered OpenCode permission rules when the organization has agent permissions on.
+   * Returns the authenticated desktop app restrictions for the caller's active organization, including the caller's agent permissions as ordered OpenCode permission rules when the organization has agent permissions on, and the model new chats start with (defaultModel, applied by OpenCode v2 desktops only) when the organization has the default model feature on and has chosen one the caller can use.
    */
   public getV1MeDesktopConfig<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
     return (options?.client ?? this.client).get<
@@ -15056,6 +15065,99 @@ export class DenClient extends HeyApiClient {
       ThrowOnError
     >({
       url: "/v1/org/workbot-settings",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    });
+  }
+
+  /**
+   * Get default models
+   *
+   * Returns the model new desktop chats start with on the OpenCode v2 engine: the organization default (null for none) and each team's override (null when the team uses the organization default), teams by name. A member on several teams whose overrides differ starts on the organization default; conflictingMemberCount counts them per team. Members can still change the model in each chat. Requires the View OpenWork Models settings permission and the Organization default model feature.
+   */
+  public getV1OrgDefaultModel<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      GetV1OrgDefaultModelResponses,
+      GetV1OrgDefaultModelErrors,
+      ThrowOnError
+    >({ url: "/v1/org/default-model", ...options });
+  }
+
+  /**
+   * List models for the default model
+   *
+   * Lists every model the organization can choose as a default, read live from what it has set up: OpenWork Models, the AI Gateway's providers and models, and the organization's own providers. A source that cannot be read is named in unavailableSources and its models are left out. Requires the View OpenWork Models settings permission and the Organization default model feature.
+   */
+  public getV1OrgDefaultModelOptions<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      GetV1OrgDefaultModelOptionsResponses,
+      GetV1OrgDefaultModelOptionsErrors,
+      ThrowOnError
+    >({ url: "/v1/org/default-model/options", ...options });
+  }
+
+  /**
+   * Set the organization default model
+   *
+   * Sets the model new desktop chats start with for every member whose teams do not override it; null removes the organization default. Only models the organization has are accepted. Desktops pick it up the next time they refresh their organization's settings. Requires the Manage OpenWork Models permission, a recent sign-in and the Organization default model feature.
+   */
+  public putV1OrgDefaultModelEveryone<ThrowOnError extends boolean = false>(
+    parameters: {
+      defaultModelWrite: DefaultModelWrite;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "defaultModelWrite", map: "body" }] }]);
+    return (options?.client ?? this.client).put<
+      PutV1OrgDefaultModelEveryoneResponses,
+      PutV1OrgDefaultModelEveryoneErrors,
+      ThrowOnError
+    >({
+      url: "/v1/org/default-model/everyone",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    });
+  }
+
+  /**
+   * Set a team's default model
+   *
+   * Overrides the model new desktop chats start with for one team's members; null makes the team use the organization default again. A member on several teams whose overrides differ starts on the organization default. Only models the organization has are accepted. Requires the Manage OpenWork Models permission, a recent sign-in and the Organization default model feature.
+   */
+  public putV1OrgDefaultModelTeamsByTeamId<ThrowOnError extends boolean = false>(
+    parameters: {
+      teamId: string;
+      defaultModelWrite: DefaultModelWrite;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "teamId" },
+            { key: "defaultModelWrite", map: "body" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).put<
+      PutV1OrgDefaultModelTeamsByTeamIdResponses,
+      PutV1OrgDefaultModelTeamsByTeamIdErrors,
+      ThrowOnError
+    >({
+      url: "/v1/org/default-model/teams/{teamId}",
       ...options,
       ...params,
       headers: {

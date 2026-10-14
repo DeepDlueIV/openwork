@@ -394,6 +394,21 @@ export const desktopAgentPermissionsSchema = z
 
 export type DesktopAgentPermissionRule = z.infer<typeof desktopAgentPermissionsSchema>["rules"][number];
 
+/**
+ * The model new desktop chats start with on the OpenCode v2 engine, chosen by
+ * the organization or one of the member's teams (feature `orgDefaultModel`).
+ * Mirrors `desktopDefaultModelSchema` in ./default-model.ts, which owns the
+ * resolution rules; kept inline for the same reason as agent permissions.
+ */
+export const desktopConfigDefaultModelSchema = z
+  .object({
+    providerID: z.string().min(1).max(128),
+    modelID: z.string().min(1).max(255),
+    source: z.enum(["team", "organization"]),
+    teamName: z.string().max(255).optional(),
+  })
+  .meta({ ref: "DenDesktopConfigDefaultModel" });
+
 export const desktopConfigSchema = desktopPolicyValueSchema
   .extend({
     execution: effectiveDesktopExecutionPolicySchema.optional(),
@@ -411,6 +426,8 @@ export const desktopConfigSchema = desktopPolicyValueSchema
     onboardingPromptDescriptions: onboardingPromptDescriptionsSchema.optional(),
     /** The member's agent permissions, present when the organization has them on. */
     agentPermissions: desktopAgentPermissionsSchema.optional(),
+    /** The member's default model for new chats, present when the organization has one and the feature is on. */
+    defaultModel: desktopConfigDefaultModelSchema.optional(),
   })
   .meta({ ref: "DenDesktopConfig" });
 
@@ -804,6 +821,7 @@ export function normalizeDesktopConfig(value: unknown): DesktopConfig {
   const onboardingPromptConfig = normalizeOnboardingPromptConfig(raw);
   const execution = raw?.execution === undefined ? undefined : effectiveDesktopExecutionPolicySchema.parse(raw.execution);
   const agentPermissions = desktopAgentPermissionsSchema.safeParse(raw?.agentPermissions);
+  const defaultModel = desktopConfigDefaultModelSchema.safeParse(raw?.defaultModel);
 
   return {
     ...policy,
@@ -818,6 +836,7 @@ export function normalizeDesktopConfig(value: unknown): DesktopConfig {
     ...(connectEnabled !== undefined ? { connectEnabled } : {}),
     ...(onboardingPromptConfig !== undefined ? onboardingPromptConfig : {}),
     ...(agentPermissions.success ? { agentPermissions: agentPermissions.data } : {}),
+    ...(defaultModel.success ? { defaultModel: defaultModel.data } : {}),
   };
 }
 

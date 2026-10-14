@@ -91,6 +91,7 @@ const DESKTOP_CONFIG_ITEMS = [
   "onboardingPrompts",
   "onboardingPromptDescriptions",
   "agentPermissions",
+  "defaultModel",
 ] as const satisfies readonly (keyof DenDesktopConfig)[];
 
 // The member a cached config was fetched for. The cache is per organization,

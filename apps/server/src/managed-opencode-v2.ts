@@ -240,7 +240,9 @@ export function renderOpencodeV2Config(input: {
         limit: config.limit ?? { context: 128_000, output: 8_192 },
         ...(typeof config.family === "string" ? { family: config.family } : {}),
         ...(isRecord(config.options) ? { settings: config.options } : {}),
-        ...(isRecord(config.variants) ? {
+        // An absent variants key lets the engine infer reasoning efforts even
+        // when the provider explicitly says this model cannot reason.
+        ...(isRecord(config.variants) || config.reasoning === false ? {
           variants: nativeModelVariants(config.variants, providerPackage),
         } : {}),
         ...(isRecord(config.headers) ? { headers: config.headers } : {}),

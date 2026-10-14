@@ -1,6 +1,6 @@
 import { spec } from "@openwork/testkit";
 import { expect } from "vitest";
-import { modelPicker, modelPickerEffortWeb } from "../worlds/chat.ts";
+import { modelPicker, modelPickerEffortWeb, modelPickerWithOpenWorkModels } from "../worlds/chat.ts";
 import { readOpenWorkMarkContrast, setSidebarBrandTheme } from "../worlds/sidebar-brand.ts";
 
 const test = spec.world(modelPicker, {
@@ -9,7 +9,11 @@ const test = spec.world(modelPicker, {
 
 const searchPlaceholder = "Search models…";
 
-test("MODEL-BRAND a member can identify OpenWork models in dark and light pickers and the command palette", async ({ world, user, probe, step, evidence, place }) => {
+const brandTest = spec.world(modelPickerWithOpenWorkModels, {
+  timeout: 420_000, resources: { surfaces: ["appWeb"], services: ["den", "mock"] },
+});
+
+brandTest("MODEL-BRAND a member can identify OpenWork models in dark and light pickers and the command palette", async ({ world, user, probe, step, evidence, place }) => {
   const draft = "Keep this draft while changing appearance.";
   const marks = () => readOpenWorkMarkContrast(world.app);
   const checkMarks = async (previousInk?: string) => {
@@ -33,6 +37,9 @@ test("MODEL-BRAND a member can identify OpenWork models in dark and light picker
     await setSidebarBrandTheme(world.app, true);
     await user.click({ role: "button", label: "Change model" });
     await user.see({ text: "GPT-6 Luna" });
+    // OpenWork Models replaces free Auto in an entitled organization, not BYOK.
+    await user.notSee({ testId: `model-option-${world.auto.providerID}-${world.auto.modelID}` });
+    await user.see({ testId: `model-option-${world.favorite.providerID}-${world.favorite.modelID}` });
     darkInk = await checkMarks();
   });
   await step("the same marks stay dark and retain their size in the light picker", async () => {
@@ -115,11 +122,14 @@ test("a signed-in member keeps Auto and BYOK accessible while organizing pins wi
     await user.see({ role: "button", label: "Connect more providers" });
     await user.notSee({ role: "button", label: "Connect a provider" });
     const groups = (await probe.dom(`${picker} [data-slot="command-group-label"]`)).elements.map((element) => element.text);
-    expect(groups.slice(0, 3)).toEqual(["Pinned", "Recent", "OpenWork Models"]);
-    expect(groups.slice(3)).toContain("BYOK provider");
-    expect(groups.slice(3)).toEqual(groups.slice(3).sort((left, right) => left.localeCompare(right)));
+    // Auto moved into Recent when selected; it is not duplicated in a provider group.
+    expect(groups).toEqual(["Pinned", "Recent", "BYOK provider"]);
+    expect(groups.slice(2)).toContain("BYOK provider");
+    expect(groups.slice(2)).toEqual(groups.slice(2).sort((left, right) => left.localeCompare(right)));
     expect(await pins()).toEqual(["Organization witness", "Pinned witness"]);
-    for (const model of [world.organization, world.favorite, world.auto, world.recent, world.byok, { providerID: "openwork", modelID: "hosted-model" }]) {
+    // This organization's available model is BYOK, so free Auto stays offered.
+    await user.notSee({ testId: "model-option-openwork-hosted-model" });
+    for (const model of [world.organization, world.favorite, world.auto, world.recent, world.byok]) {
       expect((await probe.dom(`${picker} [data-model-key="${key(model)}"]`)).elements).toHaveLength(1);
     }
     await selected(world.auto);
@@ -245,7 +255,8 @@ test("a signed-in member recovers from an empty search, sees Effort managed by A
     await user.see(option(world.favorite));
     await user.see(option(world.organization));
     const groups = (await probe.dom(`${picker} [data-slot="command-group-label"]`)).elements.map((element) => element.text);
-    expect(groups.slice(0, 3)).toEqual(["Pinned", "Recent", "OpenWork Models"]);
+    // Auto moved into Recent when selected; it is not duplicated in a provider group.
+    expect(groups).toEqual(["Pinned", "Recent", "BYOK provider"]);
     await selected(world.auto);
     await user.see("composer", { text: draft });
     await user.screenshot();

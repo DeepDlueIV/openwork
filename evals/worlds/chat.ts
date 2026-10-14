@@ -592,7 +592,10 @@ export async function shimmerChat(seed: Seed) {
   return base;
 }
 
-async function seedModelPicker(seed: Seed, options: { disabledAutoDesktop?: boolean; disableAutoByEnvironment?: boolean } = {}) {
+async function seedModelPicker(seed: Seed, options: { disabledAutoDesktop?: boolean; disableAutoByEnvironment?: boolean; openWorkModels?: boolean } = {}) {
+  // Free Auto and organization OpenWork Models are separate entitlement states.
+  // Members with OpenWork Models pick them directly instead of seeing free Auto.
+  const openWorkModels = options.openWorkModels ?? options.disabledAutoDesktop ?? false;
   const [webPort] = await allocateFreePorts(1);
   if (!webPort) throw new Error("No app-web port available for the picker fixture");
   const den = await seed.den({
@@ -661,13 +664,13 @@ async function seedModelPicker(seed: Seed, options: { disabledAutoDesktop?: bool
   const organization = { providerID: organizationProviderId, modelID: "organization-model" };
   const providerOptions = { baseURL: `${witness.url}/v1`, apiKey: "synthetic-picker-key" };
   await configureProvider(seed, app, workspace.workspaceId, organization.providerID, organization.modelID, {
-    enabled_providers: [auto.providerID, byok.providerID, organization.providerID, "openwork"],
+    enabled_providers: [auto.providerID, byok.providerID, organization.providerID, ...(openWorkModels ? ["openwork"] : [])],
     provider: {
       // Native Auto belongs to the local relay; do not replace it with a mock BYOK provider.
       ...(options.disabledAutoDesktop ? {} : { [auto.providerID]: { npm: "@ai-sdk/openai-compatible", name: "OpenWork Free", options: providerOptions,
         models: { [auto.modelID]: { name: "GPT-6 Luna" } } } }),
-      openwork: { npm: "@ai-sdk/openai-compatible", name: "OpenWork Models", options: providerOptions,
-        models: { "hosted-model": { name: "Hosted witness" } } },
+      ...(openWorkModels ? { openwork: { npm: "@ai-sdk/openai-compatible", name: "OpenWork Models", options: providerOptions,
+        models: { "hosted-model": { name: "Hosted witness" } } } } : {}),
       [byok.providerID]: { npm: "@ai-sdk/openai-compatible", name: "BYOK provider", options: providerOptions,
         models: { [byok.modelID]: { name: "BYOK witness" }, [favorite.modelID]: { name: "Pinned witness" }, [recent.modelID]: { name: "Recent witness" } } },
       [organization.providerID]: { npm: "@ai-sdk/openai-compatible", name: "Organization provider", options: providerOptions,
@@ -687,6 +690,10 @@ async function seedModelPicker(seed: Seed, options: { disabledAutoDesktop?: bool
 
 export function modelPicker(seed: Seed) {
   return seedModelPicker(seed);
+}
+
+export function modelPickerWithOpenWorkModels(seed: Seed) {
+  return seedModelPicker(seed, { openWorkModels: true });
 }
 
 /** The picker world plus the chord that opens the command palette on this platform. */

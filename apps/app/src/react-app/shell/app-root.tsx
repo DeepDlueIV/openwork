@@ -349,7 +349,11 @@ function BrandThemeControlActions() {
     };
   }, []);
   useControlAction(applyAction);
+  return null;
+}
 
+/** Recovery hooks stay separate from optional branding controls and their stack. */
+function AppRecoveryControlActions() {
   const relaunchAction = useMemo<OpenworkControlAction | null>(() => {
     if (!import.meta.env.DEV) return null;
     return {
@@ -446,6 +450,7 @@ export function AppRoot() {
           <OpenworkContextPublisher />
           <DenAuthControlActions />
           <BrandThemeControlActions />
+          <AppRecoveryControlActions />
           <EnterpriseActivationGate>
             <DenSigninGate>
               <OpenWorkWebAccessGate>

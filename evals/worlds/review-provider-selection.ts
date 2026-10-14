@@ -14,8 +14,7 @@ async function providerWorld(_seed: Seed, { place }: { place: Place }, credentia
   if (place.kind !== "local") throw new Error("Reviewer provider UI proof requires isolated local placement.");
   const resources = new AsyncDisposableStack();
   try {
-    let enabled = true;
-    let unavailable = false;
+    const cloudRequests: string[] = [];
     const providerCalls: string[] = [];
     // Exercise the production HTTPS requirement with a per-run local CA. Trust
     // it only in this review child; never disable certificate verification.
@@ -30,8 +29,9 @@ async function providerWorld(_seed: Seed, { place }: { place: Place }, credentia
       response.setHeader("cache-control", "private, no-store");
       response.setHeader("content-type", "application/json");
       if (request.url === "/v1/features") {
-        response.writeHead(unavailable ? 503 : 200);
-        response.end(JSON.stringify({ version: 1, deployment: "cloud", features: { reviewerDaytonaPreviews: enabled } }));
+        cloudRequests.push(request.url);
+        response.writeHead(503);
+        response.end(JSON.stringify({ error: "Cloud authority is deliberately unavailable in this infrastructure fixture" }));
       } else {
         providerCalls.push(request.url ?? "unknown");
         response.writeHead(503); response.end(JSON.stringify({ message: "Local provider witness refuses provisioning" }));
@@ -47,14 +47,20 @@ async function providerWorld(_seed: Seed, { place }: { place: Place }, credentia
       DAYTONA_API_KEY: credentials === "neither" ? "" : "synthetic-daytona-fixture",
       OPENWORK_EVIDENCE_PROVIDER: "freestyle", DEN_API_BASE: authorityUrl, DAYTONA_API_URL: authorityUrl,
       NODE_EXTRA_CA_CERTS: certPath,
+      DEN_DEPLOYMENT: credentials === "both" ? "self_hosted" : "cloud",
     }));
-    let mode: "success" | "failure" | "building" | "real" = "success";
+    let mode: "success" | "failure" | "building" | "unavailable" | "real" = "success";
     const polls: string[] = [];
     const requests: { world?: string; provider?: string }[] = [];
     const proxy = createServer(async (request, response) => {
       try {
         if (request.method === "GET" && request.url?.includes("/launch?")) {
           polls.push(new URL(request.url, review.baseUrl).searchParams.get("provider") ?? "missing");
+          if (mode === "unavailable") {
+            response.writeHead(503, { "content-type": "application/json", "cache-control": "no-store" });
+            response.end(JSON.stringify({ error: "The provider is no longer configured" }));
+            return;
+          }
           if (mode === "building") {
             response.writeHead(200, { "content-type": "application/json", "cache-control": "no-store" });
             response.end(JSON.stringify({ ready: false, building: true, progress: { steps: [] } }));
@@ -67,7 +73,7 @@ async function providerWorld(_seed: Seed, { place }: { place: Place }, credentia
           requests.push(body);
           const provider = body.provider ?? "freestyle";
           const url = provider === "daytona" ? "https://8080-synthetic.daytonaproxy01.net/__openwork_launch?token=fixture" : `https://ow-${"a".repeat(32)}.preview.openwork.software/__openwork_launch?token=fixture`;
-          response.writeHead(mode === "success" ? 201 : mode === "building" ? 202 : 502, { "content-type": "application/json", "cache-control": "no-store" });
+          response.writeHead(mode === "success" ? 201 : mode === "building" ? 202 : mode === "unavailable" ? 503 : 502, { "content-type": "application/json", "cache-control": "no-store" });
           response.end(JSON.stringify(mode === "success" ? { provider, world: body.world, gitSha: review.report.gitSha, id: "synthetic-preview", url, expiresAt: new Date(Date.now() + 120_000).toISOString(), outputs: { webUrl: { value: url, group: "Services", secret: true } } } : mode === "building" ? { state: "building", provider } : { error: "Synthetic provider failure" }));
           return;
         }
@@ -90,8 +96,7 @@ async function providerWorld(_seed: Seed, { place }: { place: Place }, credentia
     const app = resources.use(await chrome({ name: "review-provider-selection", host, startUrl: "about:blank", headless: true }));
     await setViewport(app, { width: 1440, height: 1000, deviceScaleFactor: 1 });
     return {
-      app, baseUrl: `http://127.0.0.1:${proxyAddress.port}`, passed: review.passed, requests, providerCalls, polls,
-      enable(value: boolean) { enabled = value; }, unavailable(value: boolean) { unavailable = value; },
+      app, baseUrl: `http://127.0.0.1:${proxyAddress.port}`, passed: review.passed, requests, providerCalls, cloudRequests, polls,
       respond(value: typeof mode) { mode = value; },
       async [Symbol.asyncDispose]() { await resources.disposeAsync(); },
     };

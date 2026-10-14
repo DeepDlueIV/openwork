@@ -120,7 +120,7 @@ export function LaunchPreview({ id, connected, providerLabel, providers }: { id:
       setReveal(false); setExpired(false);
     } catch (failure) {
       if (!buildOutcome) setBuild(null);
-      setError(failure instanceof Error && failure.message === "launch-unavailable" ? `${label} launches are unavailable. Reload to check access, or ask the review app owner to check configuration and rollout.`
+      setError(failure instanceof Error && failure.message === "launch-unavailable" ? `${label} launches are unavailable. Reload to check access, or ask the review app owner to check provider configuration.`
         : buildOutcome === "still-building" ? "This commit's sandbox is still building. Try again in a few minutes."
         : buildOutcome === "failed" ? "This commit's sandbox could not be built. Try again; if it fails again, ask the review app owner to check the review app logs."
         : failure instanceof TypeError ? "The reviewer could not be reached. Reload this page and try again."

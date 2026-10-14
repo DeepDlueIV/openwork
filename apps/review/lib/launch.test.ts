@@ -4,25 +4,27 @@ import type { EvidenceProviderId } from "@openwork/evidence-provider";
 import { notReadyReviewProvider, type ReviewPreviewProvider } from "@openwork/evidence-provider/review";
 import { launchHandlers } from "./launch.ts";
 import type { PreviewProviderOption } from "./preview-options.ts";
+import { previewProviderOptions } from "./provider-status.ts";
 
 const sha = "a".repeat(40);
 const context = { params: Promise.resolve({ id: "owned-report" }) };
 const option = (id: EvidenceProviderId, connected = true): PreviewProviderOption => ({
-  id, label: id === "daytona" ? "Daytona" : "Freestyle", connected, worlds: ["app-web"], reason: connected ? undefined : "Launches are turned off by the deployment administrator.",
+  id, label: id === "daytona" ? "Daytona" : "Freestyle", connected, worlds: ["app-web"], reason: connected ? undefined : "The provider is not connected. The review app owner can configure it.",
 });
 const post = (body: unknown, origin = "https://review.example.test") => new Request("https://review.example.test/r/owned-report/launch", {
   method: "POST", headers: { origin, "content-type": "application/json" }, body: JSON.stringify(body),
 });
 
-function fixture() {
+function fixture(providerOptions?: () => Promise<PreviewProviderOption[]>) {
   const events: { provider: EvidenceProviderId; operation: string; source?: string; report?: string }[] = [];
   const scheduled: (() => Promise<void>)[] = [];
   let choices = [option("freestyle"), option("daytona")];
   let snapshot = true;
   let failure = false;
+  let supportsPreviews = true;
   let optionsReads = 0;
   const providers = (id: EvidenceProviderId = "freestyle"): ReviewPreviewProvider => ({
-    ...notReadyReviewProvider(id), configured: () => true, supportsPreviews: true,
+    ...notReadyReviewProvider(id), configured: () => true, supportsPreviews,
     hasSnapshot: async (source) => { events.push({ provider: id, operation: "has", source }); return snapshot; },
     buildSnapshot: async (source) => { events.push({ provider: id, operation: "build", source }); },
     buildProgress: async () => { events.push({ provider: id, operation: "progress" }); return { building: true, steps: [] }; },
@@ -37,9 +39,10 @@ function fixture() {
     setChoices: (value: PreviewProviderOption[]) => { choices = value; },
     setSnapshot: (value: boolean) => { snapshot = value; },
     setFailure: () => { failure = true; },
+    disablePreviews: () => { supportsPreviews = false; },
     getOptionsReads: () => optionsReads,
     handlers: launchHandlers({ readReview: async () => ({ gitSha: sha }), provider: providers,
-      options: async () => { optionsReads++; return choices; }, schedule: (task) => { scheduled.push(task); } }),
+      options: async () => { optionsReads++; return providerOptions ? providerOptions() : choices; }, schedule: (task) => { scheduled.push(task); } }),
   };
 }
 
@@ -65,12 +68,12 @@ test("Daytona-only configuration serves legacy requests without Freestyle fallba
   assert.deepEqual(f.events, []);
 });
 
-test("neither configured or killed means no provider calls or scheduled spend", async () => {
+test("neither provider configured means no provider calls or scheduled spend", async () => {
   const f = fixture();
   f.setChoices([option("freestyle", false), option("daytona", false)]);
   const response = await f.handlers.POST(post({ provider: "daytona" }), context);
   assert.equal(response.status, 503);
-  assert.match((await response.json()).error, /deployment administrator/);
+  assert.match((await response.json()).error, /review app owner/);
   assert.deepEqual(f.events, []);
   assert.deepEqual(f.scheduled, []);
 });
@@ -90,7 +93,15 @@ test("rejects unknown providers and unsupported worlds before allocation", async
   assert.deepEqual(f.events, []);
 });
 
-test("202 build is pinned to its provider and rechecks rollout when scheduled", async () => {
+test("configured credentials cannot authorize a provider without preview capabilities", async () => {
+  const f = fixture();
+  f.disablePreviews();
+  assert.equal((await f.handlers.POST(post({ provider: "daytona" }), context)).status, 503);
+  assert.deepEqual(f.events, []);
+  assert.deepEqual(f.scheduled, []);
+});
+
+test("202 build is pinned to its provider and rechecks configuration when scheduled", async () => {
   const f = fixture();
   f.setSnapshot(false);
   const response = await f.handlers.POST(post({ provider: "daytona" }), context);
@@ -105,7 +116,7 @@ test("202 build is pinned to its provider and rechecks rollout when scheduled", 
   assert.deepEqual(fresh.events.at(-1), { provider: "daytona", operation: "build", source: sha });
 });
 
-test("polling dispatches the chosen provider and stops immediately after a kill", async () => {
+test("polling dispatches the chosen provider and stops when it is no longer configured", async () => {
   const f = fixture(); f.setSnapshot(false);
   const get = () => new Request("https://review.example.test/r/owned-report/launch?world=app-web&provider=daytona");
   assert.equal((await f.handlers.GET(get(), context)).status, 200);
@@ -114,6 +125,41 @@ test("polling dispatches the chosen provider and stops immediately after a kill"
   f.setChoices([option("daytona", false)]);
   assert.equal((await f.handlers.GET(get(), context)).status, 503);
   assert.deepEqual(f.events, []);
+});
+
+test("production configuration drives launch, preparation and polling without a Cloud request", async () => {
+  const previous = { ...process.env };
+  const previousFetch = globalThis.fetch;
+  let cloudRequests = 0;
+  try {
+    process.env.DAYTONA_API_KEY = "synthetic-review-infrastructure-key";
+    process.env.FREESTYLE_API_KEY = "";
+    process.env.OPENWORK_EVIDENCE_PROVIDER = "daytona";
+    process.env.DEN_API_BASE = "https://unavailable-authority.invalid";
+    process.env.DEN_DEPLOYMENT = "self_hosted";
+    globalThis.fetch = async () => { cloudRequests++; throw new Error("No Cloud authority is available"); };
+    const f = fixture(previewProviderOptions);
+    f.setSnapshot(false);
+    assert.equal((await f.handlers.POST(post({ provider: "daytona" }), context)).status, 202);
+    const poll = () => f.handlers.GET(new Request("https://review.example.test/r/owned-report/launch?world=app-web&provider=daytona"), context);
+    assert.equal((await poll()).status, 200);
+    await f.scheduled[0]();
+    assert.deepEqual(f.events.at(-1), { provider: "daytona", operation: "build", source: sha });
+    f.setSnapshot(true);
+    assert.equal((await f.handlers.POST(post({ provider: "daytona" }), context)).status, 201);
+    assert.deepEqual(f.events.at(-1), { provider: "daytona", operation: "launch", source: sha, report: "owned-report" });
+    delete process.env.DAYTONA_API_KEY;
+    const before = f.events.length;
+    assert.equal((await poll()).status, 503);
+    assert.equal((await f.handlers.POST(post({ provider: "daytona" }), context)).status, 503);
+    assert.equal(f.events.length, before);
+    assert.equal(cloudRequests, 0);
+  } finally {
+    globalThis.fetch = previousFetch;
+    for (const key of ["DAYTONA_API_KEY", "FREESTYLE_API_KEY", "OPENWORK_EVIDENCE_PROVIDER", "DEN_API_BASE", "DEN_DEPLOYMENT"]) {
+      if (previous[key] === undefined) delete process.env[key]; else process.env[key] = previous[key];
+    }
+  }
 });
 
 test("provider failures are actionable and never return raw provider errors", async () => {

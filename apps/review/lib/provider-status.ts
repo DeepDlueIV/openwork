@@ -1,7 +1,6 @@
 import { EVIDENCE_PROVIDER_LABELS, EVIDENCE_PROVIDERS, evidenceProviderFromEnv, type EvidenceProviderId } from "@openwork/evidence-provider";
 import { daytonaConfigured, DAYTONA_PREVIEW_WORLDS } from "@openwork/daytona-evidence/credentials";
 import { freestyleConfigured } from "@openwork/freestyle/credentials";
-import { reviewerDaytonaAuthorization } from "./features.ts";
 import type { PreviewProviderOption } from "./preview-options.ts";
 
 /** Credential presence is checked on the review server, never against a local CLI profile. */
@@ -12,25 +11,23 @@ export const PROVIDER_CONFIGURED: Record<EvidenceProviderId, () => boolean> = {
 
 interface StatusDependencies {
   configured: Record<EvidenceProviderId, () => boolean>;
-  daytonaAccess: () => Promise<{ enabled: boolean; reason?: string }>;
   preferred: () => EvidenceProviderId;
 }
 
 /** Both choices are safe to serialize: no keys, tokens or provider responses. */
 export async function previewProviderOptions(deps: StatusDependencies = {
   configured: PROVIDER_CONFIGURED,
-  daytonaAccess: reviewerDaytonaAuthorization,
   preferred: evidenceProviderFromEnv,
 }): Promise<PreviewProviderOption[]> {
-  const access = deps.configured.daytona() ? await deps.daytonaAccess() : { enabled: false };
+  // Reviewer/CI infrastructure has no Cloud organization or product rollout.
+  // Availability comes only from this review server's provider configuration.
   const options: PreviewProviderOption[] = EVIDENCE_PROVIDERS.map((id) => {
     const configured = deps.configured[id]();
     return {
       id, label: EVIDENCE_PROVIDER_LABELS[id],
-      connected: configured && (id !== "daytona" || access.enabled),
+      connected: configured,
       worlds: id === "freestyle" ? ["app-web", "desktop", "acme-web", "workbot"] : DAYTONA_PREVIEW_WORLDS,
-      ...(!configured ? { reason: `${EVIDENCE_PROVIDER_LABELS[id]} is not connected. The review app owner can connect it.` }
-        : id === "daytona" && !access.enabled ? { reason: access.reason ?? "Daytona previews are not enabled. The review app owner can ask a platform admin to enable the rollout." } : {}),
+      ...(!configured ? { reason: `${EVIDENCE_PROVIDER_LABELS[id]} is not connected. The review app owner can connect it.` } : {}),
     };
   });
   try {
@@ -41,7 +38,7 @@ export async function previewProviderOptions(deps: StatusDependencies = {
   }
 }
 
-/** Checkpoints keep the provider recorded with the screenshot, independently of fresh-launch rollout. */
+/** Checkpoints keep the provider recorded with the screenshot, independently of the preferred fresh-launch provider. */
 export function connectedCheckpointProviders(): EvidenceProviderId[] {
   return EVIDENCE_PROVIDERS.filter((id) => PROVIDER_CONFIGURED[id]());
 }

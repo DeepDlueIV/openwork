@@ -78,8 +78,10 @@ an incident or grounds to restart services or allocate retries.
 
 ## Fresh review previews
 
-`daytonaReviewProvider` also implements fresh previews behind the review app's
-`reviewerDaytonaPreviews` feature gate. `DAYTONA_PREVIEW_WORLDS`, exported from
+`daytonaReviewProvider` also implements fresh reviewer infrastructure previews
+when its server-side provider credentials are configured. No OpenWork Cloud
+organization, deployment rollout, or feature-authority request is required.
+`DAYTONA_PREVIEW_WORLDS`, exported from
 `@openwork/daytona-evidence/previews`, currently contains only **`app-web`**.
 Desktop and ACME previews are refused before allocation; the evidence noVNC
 browser is never substituted for those worlds. Saved-checkpoint behavior is

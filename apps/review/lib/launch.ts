@@ -5,7 +5,7 @@ import type { PreviewProviderOption } from "./preview-options.ts";
 export interface LaunchDependencies {
   readReview(id: string): Promise<{ gitSha: string } | null>;
   provider(id?: EvidenceProviderId): ReviewPreviewProvider;
-  /** Fresh server-side configuration and rollout authority on every request/allocation. */
+  /** Fresh server-side provider configuration and capabilities on every request/allocation. */
   options: () => Promise<readonly PreviewProviderOption[]>;
   schedule(task: () => Promise<void>): void;
 }
@@ -67,7 +67,7 @@ export function launchHandlers(deps: LaunchDependencies) {
       if (!await provider.hasSnapshot(gitSha, world)) {
         deps.schedule(async () => {
           const current = await resolveProvider(providerId, world);
-          if (current instanceof Response) return; // killed after the page/POST: do not allocate a builder
+          if (current instanceof Response) return; // provider configuration was removed: do not allocate a builder
           const started = Date.now();
           try {
             await current.buildSnapshot(gitSha, world);
@@ -78,7 +78,7 @@ export function launchHandlers(deps: LaunchDependencies) {
         });
         return Response.json({ state: "building", provider: providerId }, { status: 202, headers });
       }
-      // Recheck immediately before spend; preserve already-issued previews/checkpoints on a kill.
+      // Recheck configuration immediately before spend; existing access expires independently.
       provider = await resolveProvider(providerId, world);
       if (provider instanceof Response) return provider;
       const preview = await provider.launchPreview({ gitSha, reportId: id, world });

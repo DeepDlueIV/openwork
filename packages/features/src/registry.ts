@@ -53,13 +53,6 @@ function defineFeatures<const T extends Record<string, FeatureDefinition>>(featu
 const everywhere = ["cloud", "self_hosted"] as const
 
 export const FEATURES = defineFeatures({
-  reviewerDaytonaPreviews: {
-    label: "Reviewer: Daytona previews",
-    description: "Reviewers can launch a fresh sandbox of a report's commit on a configured Daytona provider, alongside Freestyle.",
-    since: "2026-10",
-    deployments: ["cloud"],
-    default: false,
-  },
   teamMembershipCache: {
     label: "Team membership cache",
     description: "Reduce repeated team lookups while keeping access changes immediate. Enable only after every API instance runs revision-aware team writes.",

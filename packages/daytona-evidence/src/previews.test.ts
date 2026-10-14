@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { runInNewContext } from "node:vm";
 import { DaytonaApi, type Sandbox, type Snapshot } from "./api.ts";
 import { DAYTONA_BASE_SNAPSHOT } from "./builder.ts";
 import { cleanupDaytonaEvidence } from "./cleanup.ts";
@@ -208,6 +209,30 @@ test("the root socket cannot be squatted across gateway restarts and launch veri
   const checks = fixture.commands.filter((command) => command.includes("systemctl is-active --quiet openwork-review-gateway.socket openwork-review-gateway.service"));
   assert.equal(checks.length, 2, "check ownership both before issuing credentials and immediately before the handshake");
   assert.ok(fixture.commands.some((command) => command.startsWith("setpriv --reuid=openwork-preview --regid=openwork-preview --init-groups --no-new-privs --bounding-set=-all") && command.includes('test "$(id -u)" -ne 0 && test ! -r /opt/openwork-preview/access.json')));
+});
+
+test("gateway ownership accepts IPv4-only guests without weakening required procfs checks", async () => {
+  const descriptor = await previewDescriptor(sha, "app-web");
+  const code = descriptor.scripts["gateway-owner"].replace(/^import[^\n]+\n/, "");
+  const execute = (ipv6: "absent" | "present" | "denied", uid = "0", missingIpv4 = false) => runInNewContext(`(async () => { ${code} })()`, {
+    process: { argv: ["node", "gateway-owner.mjs", "123"] },
+    readdir: async () => ["3"], readlink: async () => "socket:[42]",
+    readFile: async (path: string) => {
+      if (path.endsWith("/status")) return `Uid:\t${uid}\t${uid}\t${uid}\t${uid}\n`;
+      if (path.endsWith("/cmdline")) return "node\0/opt/openwork-preview/gateway.mjs\0";
+      if (path === "/proc/net/tcp6") {
+        if (ipv6 !== "present") throw Object.assign(new Error("optional IPv6 table"), { code: ipv6 === "absent" ? "ENOENT" : "EACCES" });
+        return "header\n";
+      }
+      if (path === "/proc/net/tcp" && !missingIpv4) return "header\n0: 00000000:1F90 00000000:0000 0A 0:0 0:0 0 0 0 42\n";
+      throw Object.assign(new Error("required table missing"), { code: "ENOENT" });
+    },
+  });
+  await execute("absent");
+  await execute("present");
+  await assert.rejects(execute("denied"), /optional IPv6 table/);
+  await assert.rejects(execute("absent", "0", true), /required table missing/);
+  await assert.rejects(execute("absent", "1000"), /not root-owned/);
 });
 
 test("production review factory rejects unsafe credential authorities without any HTTP request", async (context) => {

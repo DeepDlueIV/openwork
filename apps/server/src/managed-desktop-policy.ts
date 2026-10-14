@@ -1,6 +1,4 @@
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { access, mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { DESKTOP_POLICY_ENFORCEMENT_ENABLED, desktopConfigSchema, type DesktopConfig } from "@openwork/types/den/desktop-policies-runtime";
 import type { CloudProviderDenSession } from "./cloud-provider-sync.js";
@@ -11,7 +9,6 @@ import { ApiError } from "./errors.js";
 import { clearManagedDesktopPolicy, readGlobalRuntimeOpencodeConfig, writeManagedDesktopPolicy, runtimeProviderMap } from "./runtime-opencode-config-store.js";
 import { policyDenial, policyRequestActions, type ManagedPolicyAction } from "./managed-policy-rules.js";
 import { agentPermissionDenial, agentPermissionRulesOf } from "./agent-permission-engine.js";
-import { runtimeStorageDir } from "./runtime-db.js";
 
 const services = new WeakMap<ServerConfig, ManagedDesktopPolicy>();
 /** Org-managed providers: Den-imported (lpr_), Gateway (ipr_) and hosted OpenWork Models. */
@@ -76,13 +73,6 @@ class ManagedDesktopPolicy {
   private fetching: { generation: number; promise: Promise<DesktopConfig | null> } | undefined;
   /** The last policy verified for this sign-in, used while a fresh read is in flight or Den is unreachable. */
   private lastKnown: { key: string; policy: DesktopConfig } | undefined;
-  /**
-   * Whether agent permissions were ever in force on this computer, recorded on
-   * disk and kept when a sign-out, another sign-in or a policy without them
-   * removes the stored rules, so an unverified sign-in is refused what they
-   * guard, also after a restart.
-   */
-  private agentPermissionsInForce = false;
   onChange: (() => void) | undefined;
   constructor(private readonly config: ServerConfig) {}
   authenticatesEvaluation(request: Request): boolean {
@@ -106,7 +96,6 @@ class ManagedDesktopPolicy {
       // previous one's policy: not while Den is unreachable, nor in the engine.
       this.lastKnown = undefined;
       const cleared = await clearManagedDesktopPolicy(this.config);
-      if (agentPermissionRulesOf(cleared.previous).length > 0) await this.markAgentPermissionsInForce();
       if (cleared.changed) this.onChange?.();
     }
     // Installing an identity never waits on Den while only model access is enforced.
@@ -119,7 +108,6 @@ class ManagedDesktopPolicy {
     this.installed = undefined;
     this.lastKnown = undefined;
     const cleared = await clearManagedDesktopPolicy(this.config);
-    if (agentPermissionRulesOf(cleared.previous).length > 0) await this.markAgentPermissionsInForce();
     if (cleared.changed) this.onChange?.();
   }
   current(): Promise<DesktopConfig | null> {
@@ -209,7 +197,6 @@ class ManagedDesktopPolicy {
     // one of them, so other organizations keep exactly the engine config and reload behaviour they had.
     const restrictsModelAccess = policy.allowCustomProviders === false;
     const hasAgentPermissions = (policy.agentPermissions?.rules.length ?? 0) > 0;
-    if (hasAgentPermissions) await this.markAgentPermissionsInForce();
     const result = DESKTOP_POLICY_ENFORCEMENT_ENABLED || restrictsModelAccess || hasAgentPermissions
       ? await writeManagedDesktopPolicy(this.config, policy)
       : await clearManagedDesktopPolicy(this.config);
@@ -294,11 +281,10 @@ class ManagedDesktopPolicy {
   }
   /**
    * Refuses a member adding a local skill or MCP server their agent
-   * permissions block. Only a policy verified for this sign-in counts: without
-   * one it waits for Den's answer. When Den cannot answer, it refuses wherever
-   * agent permissions were in force on this computer (stored, or for an
-   * earlier sign-in since OpenWork started); only with none ever in force is
-   * there nothing to enforce, so a fresh install is not held up offline.
+   * permissions block. A policy verified for this sign-in decides; without
+   * one it waits briefly for Den's answer. When Den cannot answer, the member
+   * keeps working with the latest rules stored on this computer, like every
+   * other desktop policy, rather than being refused.
    */
   async assertAgentPermission(action: "skill" | "mcp", name: string): Promise<void> {
     if (!this.session) return;
@@ -311,24 +297,19 @@ class ManagedDesktopPolicy {
       });
       this.identityChanged(generation);
     }
-    if (!policy) {
-      const stored = agentPermissionRulesOf((await readGlobalRuntimeOpencodeConfig(this.config)).managedPolicy);
-      this.identityChanged(generation);
-      if (stored.length === 0 && !await this.agentPermissionsWereInForce()) return;
-      throw new ApiError(403, "policy_unavailable", "Your organization's agent permissions could not be verified. Try again when connected.");
-    }
-    const denial = agentPermissionDenial(agentPermissionRulesOf(policy), action, [name]);
+    const rules = policy
+      ? agentPermissionRulesOf(policy)
+      : agentPermissionRulesOf((await readGlobalRuntimeOpencodeConfig(this.config)).managedPolicy);
+    this.identityChanged(generation);
+    const denial = agentPermissionDenial(rules, action, [name]);
     if (denial) throw new ApiError(403, "organization_policy_denied", denial);
   }
   /**
    * The member's website rules for the built-in browser, read by the desktop
    * process itself rather than taken from the app window. Den is asked first
-   * (briefly); when it cannot answer, the policy verified for this sign-in.
-   * Without one, the rules stored on this computer may be another sign-in's,
-   * so like adding a skill or MCP server, pages stay closed wherever agent
-   * permissions were in force (stored, or for an earlier sign-in since
-   * OpenWork started); an organization without them gets none, online or
-   * offline. Signed out there are none.
+   * (briefly); when it cannot answer, the policy verified for this sign-in,
+   * else the latest rules stored on this computer, so the member keeps
+   * working offline. Signed out there are none.
    */
   async websiteRules(): Promise<ReturnType<typeof agentPermissionRulesOf>> {
     if (!this.session) return [];
@@ -337,35 +318,10 @@ class ManagedDesktopPolicy {
       new Promise<null>((resolve) => setTimeout(() => resolve(null), 5_000)),
     ]);
     const policy = fresh ?? this.knownPolicy();
-    if (!policy) {
-      const stored = agentPermissionRulesOf((await readGlobalRuntimeOpencodeConfig(this.config)).managedPolicy);
-      if (stored.length === 0 && !await this.agentPermissionsWereInForce()) return [];
-      throw new ApiError(403, "policy_unavailable", "Your organization's agent permissions could not be verified. Try again when connected.");
-    }
-    return agentPermissionRulesOf(policy).filter((rule) => rule.action === "webfetch");
-  }
-  private agentPermissionsMarkerPath(): string {
-    return join(runtimeStorageDir(this.config), "agent-permissions-in-force");
-  }
-  private async markAgentPermissionsInForce(): Promise<void> {
-    if (this.agentPermissionsInForce) return;
-    this.agentPermissionsInForce = true;
-    try {
-      await mkdir(runtimeStorageDir(this.config), { recursive: true });
-      await writeFile(this.agentPermissionsMarkerPath(), "1", { mode: 0o600 });
-    } catch {
-      // Without the record a restart forgets it, as a first sign-in would.
-    }
-  }
-  private async agentPermissionsWereInForce(): Promise<boolean> {
-    if (this.agentPermissionsInForce) return true;
-    try {
-      await access(this.agentPermissionsMarkerPath());
-      this.agentPermissionsInForce = true;
-      return true;
-    } catch {
-      return false;
-    }
+    const rules = policy
+      ? agentPermissionRulesOf(policy)
+      : agentPermissionRulesOf((await readGlobalRuntimeOpencodeConfig(this.config)).managedPolicy);
+    return rules.filter((rule) => rule.action === "webfetch");
   }
   /** The policy to enforce now: verified for this sign-in, else the last one verified for it; never waits on Den. */
   private knownPolicy(): DesktopConfig | null {

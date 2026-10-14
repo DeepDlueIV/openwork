@@ -588,15 +588,12 @@ export function writeRuntimeOpencodeConfig(
   });
 }
 
-/** Signing out ends enforcement: a cached policy is not device enrollment (#5131). Returns the policy it removed. */
-export async function clearManagedDesktopPolicy(config: ServerConfig) {
-  let previous: DesktopConfig | undefined;
-  const result = await updateRuntimeConfig(config, ENGINE_GLOBAL_RUNTIME_CONFIG_ID, (current) => {
-    const { managedPolicy, ...rest } = current;
-    previous = managedPolicy;
+/** Signing out ends enforcement: a cached policy is not device enrollment (#5131). */
+export function clearManagedDesktopPolicy(config: ServerConfig) {
+  return updateRuntimeConfig(config, ENGINE_GLOBAL_RUNTIME_CONFIG_ID, (current) => {
+    const { managedPolicy: _cleared, ...rest } = current;
     return rest;
   });
-  return { ...result, previous };
 }
 
 // Only the verified Den-session boundary may call this writer.

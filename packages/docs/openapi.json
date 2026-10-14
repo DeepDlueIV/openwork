@@ -857,7 +857,6 @@
               "backgroundShellTasks",
               "orgDefaultModel",
               "gatewayProviderUsageLimits",
-              "stableInstallLinks",
               "teamPageTabs"
             ]
           },
@@ -1084,9 +1083,6 @@
                     "gatewayProviderUsageLimits": {
                       "type": "boolean"
                     },
-                    "stableInstallLinks": {
-                      "type": "boolean"
-                    },
                     "teamPageTabs": {
                       "type": "boolean"
                     },
@@ -1115,7 +1111,6 @@
                     "backgroundShellTasks",
                     "orgDefaultModel",
                     "gatewayProviderUsageLimits",
-                    "stableInstallLinks",
                     "teamPageTabs",
                     "gatewayDashboard"
                   ]
@@ -2075,62 +2070,6 @@
                         "overrideApplies"
                       ]
                     },
-                    "stableInstallLinks": {
-                      "type": "object",
-                      "properties": {
-                        "enabled": {
-                          "type": "boolean"
-                        },
-                        "source": {
-                          "type": "string",
-                          "enum": [
-                            "unavailable",
-                            "killed",
-                            "lock",
-                            "override",
-                            "everyone"
-                          ]
-                        },
-                        "everyone": {
-                          "type": "boolean"
-                        },
-                        "killed": {
-                          "type": "boolean"
-                        },
-                        "lock": {
-                          "anyOf": [
-                            {
-                              "type": "boolean"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "override": {
-                          "anyOf": [
-                            {
-                              "type": "boolean"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "overrideApplies": {
-                          "type": "boolean"
-                        }
-                      },
-                      "required": [
-                        "enabled",
-                        "source",
-                        "everyone",
-                        "killed",
-                        "lock",
-                        "override",
-                        "overrideApplies"
-                      ]
-                    },
                     "teamPageTabs": {
                       "type": "object",
                       "properties": {
@@ -2206,7 +2145,6 @@
                     "backgroundShellTasks",
                     "orgDefaultModel",
                     "gatewayProviderUsageLimits",
-                    "stableInstallLinks",
                     "teamPageTabs"
                   ],
                   "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
@@ -2632,9 +2570,6 @@
                     "gatewayProviderUsageLimits": {
                       "type": "boolean"
                     },
-                    "stableInstallLinks": {
-                      "type": "boolean"
-                    },
                     "teamPageTabs": {
                       "type": "boolean"
                     },
@@ -2663,7 +2598,6 @@
                     "backgroundShellTasks",
                     "orgDefaultModel",
                     "gatewayProviderUsageLimits",
-                    "stableInstallLinks",
                     "teamPageTabs",
                     "gatewayDashboard"
                   ]
@@ -3623,62 +3557,6 @@
                         "overrideApplies"
                       ]
                     },
-                    "stableInstallLinks": {
-                      "type": "object",
-                      "properties": {
-                        "enabled": {
-                          "type": "boolean"
-                        },
-                        "source": {
-                          "type": "string",
-                          "enum": [
-                            "unavailable",
-                            "killed",
-                            "lock",
-                            "override",
-                            "everyone"
-                          ]
-                        },
-                        "everyone": {
-                          "type": "boolean"
-                        },
-                        "killed": {
-                          "type": "boolean"
-                        },
-                        "lock": {
-                          "anyOf": [
-                            {
-                              "type": "boolean"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "override": {
-                          "anyOf": [
-                            {
-                              "type": "boolean"
-                            },
-                            {
-                              "type": "null"
-                            }
-                          ]
-                        },
-                        "overrideApplies": {
-                          "type": "boolean"
-                        }
-                      },
-                      "required": [
-                        "enabled",
-                        "source",
-                        "everyone",
-                        "killed",
-                        "lock",
-                        "override",
-                        "overrideApplies"
-                      ]
-                    },
                     "teamPageTabs": {
                       "type": "object",
                       "properties": {
@@ -3754,7 +3632,6 @@
                     "backgroundShellTasks",
                     "orgDefaultModel",
                     "gatewayProviderUsageLimits",
-                    "stableInstallLinks",
                     "teamPageTabs"
                   ],
                   "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
@@ -6252,7 +6129,6 @@
                     "branding.update",
                     "web_origins.view",
                     "web_origins.manage",
-                    "install_links.update",
                     "invitations.manage",
                     "members.update",
                     "members.delete",
@@ -9472,23 +9348,10 @@
       "CreateInstallLinkResponse": {
         "type": "object",
         "properties": {
-          "token": {
-            "description": "Absent when the organization shares the normal install page instead of one-off links.",
-            "type": "string"
-          },
           "installPageUrl": {
             "type": "string",
             "format": "uri",
-            "description": "Share this page: it downloads the OpenWork desktop app for this organization. People who open the normal install page sign in first."
-          },
-          "connectUrl": {
-            "description": "Open on a computer that already has OpenWork installed to point the desktop app at this organization. Short-lived; mint a new link when it expires. Absent with the normal install page: the desktop app signs in instead.",
-            "type": "string"
-          },
-          "connectExpiresAt": {
-            "type": "string",
-            "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+            "description": "Share this page: people sign in and download the OpenWork desktop app for their organization."
           }
         },
         "required": [
@@ -9499,7 +9362,7 @@
         "type": "object",
         "properties": {
           "rotate": {
-            "default": false,
+            "description": "Ignored. Install pages carry no token, so there is nothing to rotate.",
             "type": "boolean"
           }
         }
@@ -9571,280 +9434,6 @@
           "logoUrl",
           "desktopVersion",
           "distribution"
-        ]
-      },
-      "InstallExperienceConfig": {
-        "type": "object",
-        "properties": {
-          "appName": {
-            "default": "OpenWork",
-            "type": "string",
-            "minLength": 1,
-            "maxLength": 64
-          },
-          "clientName": {
-            "type": "string",
-            "minLength": 1
-          },
-          "webUrl": {
-            "type": "string",
-            "format": "uri"
-          },
-          "apiUrl": {
-            "type": "string",
-            "format": "uri"
-          },
-          "requireSignin": {
-            "type": "boolean"
-          },
-          "logoUrl": {
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uri"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "iconUrl": {
-            "default": null,
-            "anyOf": [
-              {
-                "type": "string",
-                "format": "uri"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "connectUrl": {
-            "type": "string",
-            "minLength": 1
-          },
-          "connectExpiresAt": {
-            "type": "string",
-            "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
-          },
-          "activationUrl": {
-            "type": "string",
-            "format": "uri"
-          },
-          "activationExpiresAt": {
-            "type": "string",
-            "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
-          },
-          "desktopVersion": {
-            "type": "string",
-            "minLength": 1
-          },
-          "distribution": {
-            "type": "string",
-            "enum": [
-              "cloud",
-              "enterprise"
-            ]
-          }
-        },
-        "required": [
-          "clientName",
-          "webUrl",
-          "apiUrl",
-          "requireSignin",
-          "logoUrl",
-          "connectUrl",
-          "connectExpiresAt",
-          "activationUrl",
-          "activationExpiresAt",
-          "desktopVersion",
-          "distribution"
-        ]
-      },
-      "InstallLinkNotFoundError": {
-        "type": "object",
-        "properties": {
-          "error": {
-            "type": "string",
-            "const": "install_link_not_found"
-          }
-        },
-        "required": [
-          "error"
-        ]
-      },
-      "ConnectLinkClaims": {
-        "type": "object",
-        "properties": {
-          "iss": {
-            "type": "string",
-            "format": "uri"
-          },
-          "aud": {
-            "type": "string",
-            "const": "openwork-desktop-connect"
-          },
-          "iat": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991
-          },
-          "exp": {
-            "type": "integer",
-            "minimum": 0,
-            "maximum": 9007199254740991
-          },
-          "jti": {
-            "type": "string",
-            "minLength": 8
-          },
-          "v": {
-            "type": "number",
-            "const": 1
-          },
-          "org": {
-            "type": "object",
-            "properties": {
-              "name": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 128
-              }
-            },
-            "required": [
-              "name"
-            ]
-          },
-          "brand": {
-            "type": "object",
-            "properties": {
-              "appName": {
-                "type": "string",
-                "minLength": 1,
-                "maxLength": 64
-              },
-              "logoUrl": {
-                "anyOf": [
-                  {
-                    "type": "string",
-                    "format": "uri"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              },
-              "iconUrl": {
-                "anyOf": [
-                  {
-                    "type": "string",
-                    "format": "uri"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              }
-            },
-            "required": [
-              "appName",
-              "logoUrl",
-              "iconUrl"
-            ]
-          },
-          "den": {
-            "type": "object",
-            "properties": {
-              "baseUrl": {
-                "type": "string",
-                "format": "uri"
-              },
-              "apiBaseUrl": {
-                "anyOf": [
-                  {
-                    "type": "string",
-                    "format": "uri"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ]
-              }
-            },
-            "required": [
-              "baseUrl"
-            ]
-          },
-          "requireSignin": {
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "iss",
-          "aud",
-          "iat",
-          "exp",
-          "jti",
-          "v",
-          "org",
-          "brand",
-          "den",
-          "requireSignin"
-        ]
-      },
-      "DesktopConnectGrantStatusResponse": {
-        "type": "object",
-        "properties": {
-          "status": {
-            "type": "string",
-            "enum": [
-              "pending",
-              "connected"
-            ]
-          },
-          "claims": {
-            "$ref": "#/components/schemas/ConnectLinkClaims"
-          },
-          "expiresAt": {
-            "type": "string",
-            "format": "date-time",
-            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
-          }
-        },
-        "required": [
-          "status",
-          "claims",
-          "expiresAt"
-        ]
-      },
-      "DesktopConnectGrantFailure": {
-        "type": "object",
-        "properties": {
-          "error": {
-            "type": "string",
-            "enum": [
-              "connect_grant_invalid",
-              "connect_grant_expired",
-              "connect_grant_replayed"
-            ]
-          }
-        },
-        "required": [
-          "error"
-        ]
-      },
-      "DesktopConnectGrantResponse": {
-        "type": "object",
-        "properties": {
-          "claims": {
-            "$ref": "#/components/schemas/ConnectLinkClaims"
-          }
-        },
-        "required": [
-          "claims"
         ]
       },
       "LlmProviderResponse": {
@@ -26740,9 +26329,6 @@
                         "gatewayProviderUsageLimits": {
                           "type": "boolean"
                         },
-                        "stableInstallLinks": {
-                          "type": "boolean"
-                        },
                         "teamPageTabs": {
                           "type": "boolean"
                         },
@@ -26771,7 +26357,6 @@
                         "backgroundShellTasks",
                         "orgDefaultModel",
                         "gatewayProviderUsageLimits",
-                        "stableInstallLinks",
                         "teamPageTabs",
                         "gatewayDashboard"
                       ]
@@ -27731,62 +27316,6 @@
                             "overrideApplies"
                           ]
                         },
-                        "stableInstallLinks": {
-                          "type": "object",
-                          "properties": {
-                            "enabled": {
-                              "type": "boolean"
-                            },
-                            "source": {
-                              "type": "string",
-                              "enum": [
-                                "unavailable",
-                                "killed",
-                                "lock",
-                                "override",
-                                "everyone"
-                              ]
-                            },
-                            "everyone": {
-                              "type": "boolean"
-                            },
-                            "killed": {
-                              "type": "boolean"
-                            },
-                            "lock": {
-                              "anyOf": [
-                                {
-                                  "type": "boolean"
-                                },
-                                {
-                                  "type": "null"
-                                }
-                              ]
-                            },
-                            "override": {
-                              "anyOf": [
-                                {
-                                  "type": "boolean"
-                                },
-                                {
-                                  "type": "null"
-                                }
-                              ]
-                            },
-                            "overrideApplies": {
-                              "type": "boolean"
-                            }
-                          },
-                          "required": [
-                            "enabled",
-                            "source",
-                            "everyone",
-                            "killed",
-                            "lock",
-                            "override",
-                            "overrideApplies"
-                          ]
-                        },
                         "teamPageTabs": {
                           "type": "object",
                           "properties": {
@@ -27862,7 +27391,6 @@
                         "backgroundShellTasks",
                         "orgDefaultModel",
                         "gatewayProviderUsageLimits",
-                        "stableInstallLinks",
                         "teamPageTabs"
                       ],
                       "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
@@ -28033,9 +27561,6 @@
                         "gatewayProviderUsageLimits": {
                           "type": "boolean"
                         },
-                        "stableInstallLinks": {
-                          "type": "boolean"
-                        },
                         "teamPageTabs": {
                           "type": "boolean"
                         },
@@ -28064,7 +27589,6 @@
                         "backgroundShellTasks",
                         "orgDefaultModel",
                         "gatewayProviderUsageLimits",
-                        "stableInstallLinks",
                         "teamPageTabs",
                         "gatewayDashboard"
                       ]
@@ -29024,62 +28548,6 @@
                             "overrideApplies"
                           ]
                         },
-                        "stableInstallLinks": {
-                          "type": "object",
-                          "properties": {
-                            "enabled": {
-                              "type": "boolean"
-                            },
-                            "source": {
-                              "type": "string",
-                              "enum": [
-                                "unavailable",
-                                "killed",
-                                "lock",
-                                "override",
-                                "everyone"
-                              ]
-                            },
-                            "everyone": {
-                              "type": "boolean"
-                            },
-                            "killed": {
-                              "type": "boolean"
-                            },
-                            "lock": {
-                              "anyOf": [
-                                {
-                                  "type": "boolean"
-                                },
-                                {
-                                  "type": "null"
-                                }
-                              ]
-                            },
-                            "override": {
-                              "anyOf": [
-                                {
-                                  "type": "boolean"
-                                },
-                                {
-                                  "type": "null"
-                                }
-                              ]
-                            },
-                            "overrideApplies": {
-                              "type": "boolean"
-                            }
-                          },
-                          "required": [
-                            "enabled",
-                            "source",
-                            "everyone",
-                            "killed",
-                            "lock",
-                            "override",
-                            "overrideApplies"
-                          ]
-                        },
                         "teamPageTabs": {
                           "type": "object",
                           "properties": {
@@ -29155,7 +28623,6 @@
                         "backgroundShellTasks",
                         "orgDefaultModel",
                         "gatewayProviderUsageLimits",
-                        "stableInstallLinks",
                         "teamPageTabs"
                       ],
                       "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
@@ -54610,11 +54077,11 @@
         "tags": [
           "Organizations"
         ],
-        "summary": "Create organization install link (download desktop app, install OpenWork)",
-        "description": "Download the desktop app and install OpenWork pointed at this organization. Returns installPageUrl, a shareable page that downloads OpenWork for this organization, and connectUrl, a short-lived link that opens an already-installed desktop app signed in to this organization. Any member can mint one. Older active links remain valid unless an owner or admin explicitly requests rotation. When the organization uses plain install links, returns only installPageUrl, the normal install page where people sign in, and creates no link.",
+        "summary": "Get organization install page (download desktop app, install OpenWork)",
+        "description": "Download the desktop app and install OpenWork for this organization. Returns installPageUrl, the normal install page: people sign in there and download the desktop app approved for their organization. Creates nothing and carries no token, so the address can be shared freely.",
         "responses": {
           "200": {
-            "description": "Install link created successfully.",
+            "description": "Install page resolved successfully.",
             "content": {
               "application/json": {
                 "schema": {
@@ -54634,21 +54101,11 @@
             }
           },
           "401": {
-            "description": "The caller must be signed in to create install links.",
+            "description": "The caller must be signed in to get the install page.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/UnauthorizedError"
-                }
-              }
-            }
-          },
-          "403": {
-            "description": "Rotating existing links needs the Rotate install links permission.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ForbiddenError"
                 }
               }
             }
@@ -54659,16 +54116,6 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/NotFoundError"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "The member has created too many install links.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RateLimitedError"
                 }
               }
             }
@@ -54844,324 +54291,26 @@
           "Organizations"
         ],
         "security": [],
-        "summary": "Resolve install-link configuration",
-        "description": "Returns organization setup details and a fresh desktop connection handoff for a valid install link token.",
+        "summary": "Get public install configuration",
+        "description": "Returns this deployment's public desktop setup: server addresses, sign-in requirement, and the default desktop version. Identifies no organization. Older desktop builds call it with the token from a pasted install link; the token is ignored.",
         "responses": {
           "200": {
             "description": "Install configuration resolved successfully.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/InstallExperienceConfig"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "The install-link token was invalid.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InvalidRequestError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "The install link was missing, expired, or revoked.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InstallLinkNotFoundError"
+                  "$ref": "#/components/schemas/AuthenticatedInstallConfig"
                 }
               }
             }
           },
           "429": {
-            "description": "Too many install-link attempts.",
+            "description": "Too many install configuration requests.",
             "content": {
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/RateLimitedError"
                 }
-              }
-            }
-          }
-        },
-        "parameters": [
-          {
-            "in": "query",
-            "name": "token",
-            "schema": {
-              "type": "string",
-              "maxLength": 255,
-              "pattern": "^[A-Za-z0-9_-]{8,}$"
-            },
-            "required": true
-          }
-        ]
-      }
-    },
-    "/v1/install-connect/status": {
-      "post": {
-        "operationId": "postV1InstallConnectStatus",
-        "tags": [
-          "Organizations"
-        ],
-        "security": [],
-        "summary": "Inspect desktop connection status",
-        "description": "Reports whether a short-lived organization connection code is still pending or has been accepted by a desktop.",
-        "responses": {
-          "200": {
-            "description": "Desktop connection status resolved successfully.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DesktopConnectGrantStatusResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "The connection code body was invalid.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InvalidRequestError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "The connection code was not found.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DesktopConnectGrantFailure"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "The connection code expired.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DesktopConnectGrantFailure"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Too many connection attempts.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RateLimitedError"
-                }
-              }
-            }
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "code": {
-                    "type": "string",
-                    "pattern": "^[A-Za-z0-9_-]{24,128}$"
-                  }
-                },
-                "required": [
-                  "code"
-                ]
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/install-connect/preview": {
-      "post": {
-        "operationId": "postV1InstallConnectPreview",
-        "tags": [
-          "Organizations"
-        ],
-        "security": [],
-        "summary": "Preview desktop connection",
-        "description": "Resolves a short-lived organization connection code without consuming it.",
-        "responses": {
-          "200": {
-            "description": "Desktop connection resolved successfully.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DesktopConnectGrantResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "The connection code body was invalid.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InvalidRequestError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "The connection code was not found.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DesktopConnectGrantFailure"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "The connection code was already consumed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DesktopConnectGrantFailure"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "The connection code expired.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DesktopConnectGrantFailure"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Too many connection attempts.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RateLimitedError"
-                }
-              }
-            }
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "code": {
-                    "type": "string",
-                    "pattern": "^[A-Za-z0-9_-]{24,128}$"
-                  }
-                },
-                "required": [
-                  "code"
-                ]
-              }
-            }
-          }
-        }
-      }
-    },
-    "/v1/install-connect/exchange": {
-      "post": {
-        "operationId": "postV1InstallConnectExchange",
-        "tags": [
-          "Organizations"
-        ],
-        "security": [],
-        "summary": "Accept desktop connection",
-        "description": "Consumes a short-lived organization connection code exactly once.",
-        "responses": {
-          "200": {
-            "description": "Desktop connection resolved successfully.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DesktopConnectGrantResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "The connection code body was invalid.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InvalidRequestError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "The connection code was not found.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DesktopConnectGrantFailure"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "The connection code was already consumed.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DesktopConnectGrantFailure"
-                }
-              }
-            }
-          },
-          "410": {
-            "description": "The connection code expired.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/DesktopConnectGrantFailure"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Too many connection attempts.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RateLimitedError"
-                }
-              }
-            }
-          }
-        },
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "code": {
-                    "type": "string",
-                    "pattern": "^[A-Za-z0-9_-]{24,128}$"
-                  }
-                },
-                "required": [
-                  "code"
-                ]
               }
             }
           }
@@ -55175,64 +54324,14 @@
           "Organizations"
         ],
         "security": [],
-        "summary": "Download managed OpenWork desktop",
-        "description": "Redirects hosted Cloud deployments to the sign-in-required Cloud app and private single-org deployments to the activation-required Enterprise app.",
+        "summary": "Open the install page",
+        "description": "Older install pages linked downloads here with a token. Redirects to the normal install page, where people sign in and download the desktop app approved for their organization.",
         "responses": {
-          "200": {
-            "description": "Mounted desktop artifact returned successfully.",
-            "content": {
-              "text/plain": {
-                "schema": {
-                  "type": "string"
-                }
-              }
-            }
-          },
           "302": {
-            "description": "Den redirected the browser to the signed desktop asset for this deployment."
-          },
-          "400": {
-            "description": "The install-link token or platform was invalid.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InvalidRequestError"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "The install link was missing, expired, or revoked.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/InstallLinkNotFoundError"
-                }
-              }
-            }
-          },
-          "429": {
-            "description": "Too many installer download attempts.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/RateLimitedError"
-                }
-              }
-            }
+            "description": "Den redirected the browser to the install page."
           }
         },
         "parameters": [
-          {
-            "in": "query",
-            "name": "token",
-            "schema": {
-              "type": "string",
-              "maxLength": 255,
-              "pattern": "^[A-Za-z0-9_-]{8,}$"
-            },
-            "required": true
-          },
           {
             "schema": {
               "type": "string"

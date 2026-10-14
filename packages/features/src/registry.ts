@@ -172,13 +172,6 @@ export const FEATURES = defineFeatures({
     deployments: everywhere,
     default: false,
   },
-  stableInstallLinks: {
-    label: "Plain install links",
-    description: "Download and Copy install link share the normal install page address instead of a one-off link. Teammates sign in to download; links shared earlier keep working.",
-    since: "2026-10",
-    deployments: everywhere,
-    default: false,
-  },
   teamPageTabs: {
     label: "Team page: Browser and Models tabs",
     description: "Each team's page, and Everyone's, gets a Browser tab for the pages agents and the built-in browser can open, and a Models tab with the AI providers the team can use, its spend limits and its default model.",

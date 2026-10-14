@@ -88,13 +88,6 @@ export const PERMISSIONS = {
     defaultOn: OWNER_ONLY,
     sensitive: true,
   },
-  "install_links.update": {
-    area: "organization",
-    label: "Rotate install links",
-    description: "Replace existing desktop install links. Creating a link stays open to every member.",
-    defaultOn: ADMIN,
-    sensitive: true,
-  },
 
   // Members and teams
   "invitations.manage": {

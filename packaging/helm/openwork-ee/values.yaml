@@ -43,7 +43,6 @@ config:
     backgroundShellTasks: ""       # default off · The desktop chat shows how many commands the agent left running in the background, and adds a short row when each one finishes.
     orgDefaultModel: ""            # default off · Organization admins choose the model new desktop chats start with, for everyone or per team. Applies to the OpenCode v2 engine only; members can still change the model in each chat.
     gatewayProviderUsageLimits: "" # default off · Admins can attach a spend limit to one AI provider. Spend on that provider counts toward its own limit instead of the default limit, and members see which provider ran out.
-    stableInstallLinks: ""         # default off · Download and Copy install link share the normal install page address instead of a one-off link. Teammates sign in to download; links shared earlier keep working.
     teamPageTabs: ""               # default off · Each team's page, and Everyone's, gets a Browser tab for the pages agents and the built-in browser can open, and a Models tab with the AI providers the team can use, its spend limits and its default model.
   # END GENERATED features
   tenancy:
@@ -101,8 +100,6 @@ config:
     # Enable only after compatible Desktop MCP Apps hosts are deployed.
     generatedArtifactViewsEnabled: "false"
     appMcpServersEnabled: "true"
-    connectLinkMode: exchange
-    connectLinkKeyId: ""
     openworkWebUrl: ""
     installerReleaseTag: ""
     installerReleaseRepo: ""
@@ -220,7 +217,6 @@ secret:
     githubConnectorAppClientSecret: GITHUB_CONNECTOR_APP_CLIENT_SECRET
     githubConnectorAppPrivateKey: GITHUB_CONNECTOR_APP_PRIVATE_KEY
     githubConnectorAppWebhookSecret: GITHUB_CONNECTOR_APP_WEBHOOK_SECRET
-    connectLinkPrivateKey: DEN_CONNECT_LINK_PRIVATE_KEY
     initialAdminBootstrapCode: DEN_INITIAL_ADMIN_BOOTSTRAP_CODE
     maintenanceToken: DEN_MAINTENANCE_TOKEN
   values:
@@ -244,7 +240,6 @@ secret:
     githubConnectorAppClientSecret: ""
     githubConnectorAppPrivateKey: ""
     githubConnectorAppWebhookSecret: ""
-    connectLinkPrivateKey: ""
     initialAdminBootstrapCode: ""
     # 24+ characters. Only rendered when set; used by denApi.auditUsage.
     maintenanceToken: ""

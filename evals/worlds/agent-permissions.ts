@@ -181,18 +181,23 @@ export async function agentPermissionsFeatureOff(seed: Seed) {
 }
 
 /** A request to the desktop app's own OpenWork server, with the app's token. */
-async function localServer(app: Surface, path: string): Promise<{ status: number; body: unknown }> {
-  const value = await evalIn(app, browserScript(async (requestPath) => {
+async function localServer(app: Surface, path: string, init: { method?: string; body?: unknown } = {}): Promise<{ status: number; body: unknown }> {
+  const value = await evalIn(app, browserScript(async (requestPath, method, requestBody) => {
     const info = await window.__OPENWORK_ELECTRON__?.invokeDesktop?.("openworkServerInfo");
     if (!info?.running || !info.baseUrl) return { status: 0, body: null };
     const response = await fetch(String(info.baseUrl).replace(/\/+$/, "") + requestPath, {
-      headers: { authorization: "Bearer " + String(info.ownerToken ?? info.clientToken ?? "") },
+      method,
+      headers: {
+        authorization: "Bearer " + String(info.ownerToken ?? info.clientToken ?? ""),
+        ...(requestBody === null ? {} : { "content-type": "application/json" }),
+      },
+      ...(requestBody === null ? {} : { body: JSON.stringify(requestBody) }),
     });
     const text = await response.text();
     let body: unknown = text;
     try { body = text ? JSON.parse(text) : null; } catch { body = text; }
     return { status: response.status, body };
-  }, [path]), { awaitPromise: true, timeoutMs: 30_000 });
+  }, [path, init.method ?? "GET", init.body ?? null]), { awaitPromise: true, timeoutMs: 180_000 });
   if (!isRecord(value) || typeof value.status !== "number") throw new Error(`Invalid local server response for ${path}`);
   return { status: value.status, body: value.body };
 }
@@ -354,6 +359,31 @@ async function desktopWorld(seed: Seed, place: Place, { feature }: { feature: bo
         return policy && isRecord(policy.agentPermissions) ? records(policy.agentPermissions.rules) : [];
       },
       mcpServers,
+      /**
+       * Stops and starts the engine, as Riley quitting and reopening OpenWork
+       * does, so it boots with the Contractors rules already stored. Resolves
+       * once the engine is running again, or with the reason it did not start.
+       */
+      async restartEngine(): Promise<{ running: boolean; error: string | null }> {
+        if (engine === "v1") {
+          const { status, body } = await localServer(app, `/workspace/${encodeURIComponent(app.workspaceId)}/engine/reload`, { method: "POST" });
+          return { running: status === 200, error: status === 200 ? null : `HTTP ${status} ${JSON.stringify(body)}` };
+        }
+        // Stop routing before stopping the process; start the process before routing to it.
+        const stopped = await localServer(app, "/experimental/engine-v2-preview", { method: "PUT", body: { enabled: false, chatRouting: false } });
+        if (stopped.status !== 200) return { running: false, error: `Stopping the engine failed: HTTP ${stopped.status}` };
+        const started = await localServer(app, "/experimental/engine-v2-preview", { method: "PUT", body: { enabled: true, chatRouting: true } });
+        if (started.status !== 200) return { running: false, error: `Starting the engine failed: HTTP ${started.status}` };
+        const deadline = Date.now() + 120_000;
+        while (Date.now() < deadline) {
+          const { body } = await localServer(app, "/experimental/engine-v2-preview/status");
+          const lastError = isRecord(body) && typeof body.lastError === "string" ? body.lastError : null;
+          if (isRecord(body) && body.running === true) return { running: true, error: lastError };
+          if (lastError) return { running: false, error: lastError };
+          await new Promise((resolveDelay) => setTimeout(resolveDelay, 500));
+        }
+        return { running: false, error: "The engine did not report running within 120 s" };
+      },
       /** The folder's local MCP server as the engine reports it: its status, or null when absent. */
       async notesServerStatus() {
         return (await mcpServers())["notes-server"] ?? null;

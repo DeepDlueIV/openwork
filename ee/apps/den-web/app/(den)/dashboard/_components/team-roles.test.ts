@@ -4,6 +4,7 @@ import { PERMISSION_KEYS, permissionDefaultKeys } from "@openwork/types/den/perm
 import {
   allowedKeys,
   customRoleChoice,
+  memberRoleOptions,
   parseRoleChoice,
   permissionSourceRoleLabel,
   roleKindLabel,
@@ -119,4 +120,19 @@ test("sharedRoles: custom roles read by their own name", () => {
   const teams = [{ id: "tem_sales", name: "Sales", memberIds: ["om_1"], grantsOrganizationAdmin: false }, { id: "tem_eng", name: "Engineering", memberIds: ["om_1"], grantsOrganizationAdmin: false }];
   const names = new Map([["tem_sales", "Skill publisher"], ["tem_eng", "Skill publisher"]]);
   assert.deepEqual(teamRoleLabels({ memberId: "om_1", ownRole: "member", teams, customTeamIds: new Set(["tem_sales", "tem_eng"]), customRoleNameByTeam: names }), ["Skill publisher"]);
+});
+
+test("Invite and Edit role list the same roles: Member, Admin, and custom roles by team unless roles are shared", () => {
+  const customRoleTeams = [{ id: "tem_eng", name: "test Permissions" }, { id: "tem_scim", name: "Directory", managedByScim: true }];
+  const shared = memberRoleOptions({ sharedRoles: true, customRoleTeams, canManageTeams: true });
+  assert.deepEqual(shared.map((option) => option.value), ["member", "admin"]);
+  const byTeam = memberRoleOptions({ sharedRoles: false, customRoleTeams, canManageTeams: true });
+  assert.deepEqual(byTeam.map((option) => [option.value, option.label, option.caption, option.disabled]), [
+    ["member", "Member", null, false],
+    ["admin", "Admin", null, false],
+    ["team:tem_eng", "test Permissions", "Custom role", false],
+    ["team:tem_scim", "Directory", "Custom role", true],
+  ]);
+  assert.ok(memberRoleOptions({ sharedRoles: false, customRoleTeams, canManageTeams: false }).filter((option) => option.caption).every((option) => option.disabled));
+  assert.deepEqual(parseRoleChoice(byTeam[2]?.value ?? ""), { role: "member", teamId: "tem_eng" });
 });

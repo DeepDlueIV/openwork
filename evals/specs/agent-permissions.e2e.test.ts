@@ -172,4 +172,27 @@ test("a contractor's agent asks before commands, runs the ones the team allows, 
     expect(added.status).toBe(403);
     expect(message).toContain('block the local MCP server \\"issue-tracker\\" (set for Contractors)');
   });
+
+  const restartedCommand = "printf '%s' 'saved after the restart' > 'restart-note.txt'";
+
+  await step("before: Riley's engine restarts with the Contractors rules already stored, and starts", async () => {
+    const restarted = await world.restartEngine();
+    evidence.recordAssertionEvidence(`the ${world.engine} engine after a restart with stored rules`, restarted.running ? "running" : `not running: ${restarted.error ?? "unknown"}`, restarted.running);
+    expect(restarted.running).toBe(true);
+    await user.see("composer", { editable: true, timeoutMs: 120_000 });
+    await user.screenshot();
+  });
+
+  await step("after: the restarted engine still blocks printf before it runs", async () => {
+    await turn("Save a note after the restart.", [shell(restartedCommand)]);
+    const call = await settled(world.shellTool, (input) => input.command === restartedCommand);
+    const wrote = await world.wrote("restart-note.txt");
+    const told = reason(call);
+    evidence.recordAssertionEvidence("printf after the restart", `note written: ${wrote}; the agent was told: ${told || "(nothing)"}`,
+      !wrote && call?.status === "error" && told.includes('"printf *" is blocked for Contractors'));
+    expect(wrote).toBe(false);
+    expect(call?.status).toBe("error");
+    expect(told).toContain('"printf *" is blocked for Contractors');
+    await user.screenshot();
+  });
 });

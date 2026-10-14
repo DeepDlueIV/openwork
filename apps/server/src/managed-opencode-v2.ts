@@ -322,6 +322,9 @@ export async function createManagedOpencodeV2Server(
   let skills: string[] = [...(options.skills ?? [])];
   let disabledProviderIds: string[] = [];
   let writes: Promise<void> = Promise.resolve();
+  // Declared before the boot config write, which reads it when the member
+  // already has stored agent permissions.
+  let agentPermissionsPluginWritten = false;
   const opencodeModelsUrl = (options.env?.OPENCODE_MODELS_URL ?? process.env.OPENCODE_MODELS_URL)?.replace(/\/+$/, "");
   // The engine needs OS paths and locale settings, not the server's provider,
   // cloud, database, or control-plane credentials. Unknown keys stay private.
@@ -438,7 +441,6 @@ export async function createManagedOpencodeV2Server(
 
   // The agent permissions plugin is written and loaded only for a member who
   // has agent permissions; everyone else's engine config stays as it was.
-  let agentPermissionsPluginWritten = false;
   async function agentPermissionsConfig(read: NonNullable<ManagedOpencodeV2ServerOptions["agentPermissions"]>) {
     const { rules, organizationMcp } = await read();
     if (rules.length === 0) return {};

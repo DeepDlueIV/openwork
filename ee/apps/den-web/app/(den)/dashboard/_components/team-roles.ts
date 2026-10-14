@@ -192,6 +192,44 @@ export function parseRoleChoice(value: string): { role: "member" | "admin"; team
   return { role: value === "admin" ? "admin" : "member", teamId: null };
 }
 
+export type MemberRoleOption = {
+  value: RoleChoiceValue;
+  label: string;
+  /** "Custom role" next to a custom role's name, null for built-in roles. */
+  caption: string | null;
+  disabled: boolean;
+};
+
+/**
+ * The roles a person can be given directly, for both Invite and Edit role.
+ *
+ * Member and Admin always. With teamRoles (not sharedRoles) each custom role
+ * is listed by its team: choosing it makes the person a Member of that team.
+ * With sharedRoles a custom role belongs to teams, not to people, so it is
+ * given through the person's teams and is not listed here (the same as
+ * Change role on a team, which is where custom roles are chosen).
+ */
+export function memberRoleOptions(input: {
+  sharedRoles: boolean;
+  customRoleTeams: readonly { id: string; name: string; managedByScim?: boolean }[];
+  canManageTeams: boolean;
+}): MemberRoleOption[] {
+  const builtIn: MemberRoleOption[] = [
+    { value: "member", label: TEAM_ROLE_LABELS.member, caption: null, disabled: false },
+    { value: "admin", label: TEAM_ROLE_LABELS.admin, caption: null, disabled: false },
+  ];
+  if (input.sharedRoles) return builtIn;
+  return [
+    ...builtIn,
+    ...input.customRoleTeams.map((team): MemberRoleOption => ({
+      value: customRoleChoice(team.id),
+      label: team.name,
+      caption: "Custom role",
+      disabled: !input.canManageTeams || team.managedByScim === true,
+    })),
+  ];
+}
+
 export type TeamRoleAbilities = {
   /** teams.manage_admin: make a team an Admin team, or turn that off. */
   canManageAdminTeams: boolean;

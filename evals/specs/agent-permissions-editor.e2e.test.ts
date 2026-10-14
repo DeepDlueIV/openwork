@@ -51,6 +51,8 @@ salesTest("an admin makes Sales agents ask before running commands, and undoes i
 
   await step("after saving: Riley, in Sales, is asked before commands run, and Morgan, in no team, is not", async () => {
     await admin.click({ role: "button", label: "Save changes" });
+    // The save bar closes once the save lands; an earlier "saved" toast may still be showing.
+    await admin.notSee({ testId: "agent-permissions-save-bar" }, { timeoutMs: 30_000 });
     await admin.see({ text: "Agent permissions saved" }, { timeoutMs: 30_000 });
     const riley = await world.receivedRules("riley");
     const morgan = await world.receivedRules("morgan");
@@ -129,6 +131,8 @@ teamTabTest("an owner changes Contractors' agent permissions on the team's Agent
 
   await step("after: the owner saves, and Riley's app receives the rules in order", async () => {
     await owner.click({ role: "button", label: "Save changes" });
+    // The save bar closes once the save lands; an earlier "saved" toast may still be showing.
+    await owner.notSee({ testId: "agent-permissions-save-bar" }, { timeoutMs: 30_000 });
     await owner.see({ text: "Agent permissions saved" }, { timeoutMs: 30_000 });
     const received = await world.receivedRules("riley");
     const expected = [rule("shell", "*", "deny", "Contractors"), rule("shell", "echo *", "allow", "Contractors")];
@@ -183,6 +187,8 @@ editorTest("Everyone's permissions reach every member, and a team's own choice r
     await owner.see({ testId: "agent-permissions-propagation-note" }, { text: "Members' desktop apps can take up to 5 minutes to pick up changes." });
     await owner.screenshot();
     await owner.click({ role: "button", label: "Save changes" });
+    // The save bar closes once the save lands; an earlier "saved" toast may still be showing.
+    await owner.notSee({ testId: "agent-permissions-save-bar" }, { timeoutMs: 30_000 });
     await owner.see({ text: "Agent permissions saved" }, { timeoutMs: 30_000 });
   });
 
@@ -204,6 +210,8 @@ editorTest("Everyone's permissions reach every member, and a team's own choice r
 
   await step("after: Morgan receives Everyone's rules and Riley the team's choice with Everyone's blocked list last", async () => {
     await owner.click({ role: "button", label: "Save changes" });
+    // The save bar closes once the save lands; an earlier "saved" toast may still be showing.
+    await owner.notSee({ testId: "agent-permissions-save-bar" }, { timeoutMs: 30_000 });
     await owner.see({ text: "Agent permissions saved" }, { timeoutMs: 30_000 });
     const morgan = await world.receivedRules("morgan");
     const riley = await world.receivedRules("riley");
@@ -253,6 +261,8 @@ twoTeamsTest("a member in two teams gets the strictest decision of the two, and 
     await owner.type({ testId: "agent-permission-commands-block-input" }, "git push *");
     await owner.press("Enter");
     await owner.click({ role: "button", label: "Save changes" });
+    // The save bar closes once the save lands; an earlier "saved" toast may still be showing.
+    await owner.notSee({ testId: "agent-permissions-save-bar" }, { timeoutMs: 30_000 });
     await owner.see({ text: "Agent permissions saved" }, { timeoutMs: 30_000 });
     await owner.screenshot();
   });
@@ -286,6 +296,8 @@ teamTabTest("an owner undoes a save, and Use Everyone's puts one row back withou
   await step("the owner turns web search off for Contractors, saves, and undoes it from the confirmation", async () => {
     await owner.click({ role: "switch", label: "Search the web" });
     await owner.click({ role: "button", label: "Save changes" });
+    // The save bar closes once the save lands; an earlier "saved" toast may still be showing.
+    await owner.notSee({ testId: "agent-permissions-save-bar" }, { timeoutMs: 30_000 });
     await owner.see({ text: "Agent permissions saved" }, { timeoutMs: 30_000 });
     const saved = await world.receivedRules("riley");
     await owner.click({ role: "button", label: "Undo" });
@@ -303,6 +315,8 @@ teamTabTest("an owner undoes a save, and Use Everyone's puts one row back withou
     await owner.click({ role: "button", label: "Use Everyone's setting for Run commands" });
     await owner.see({ testId: "agent-permission-commands-source" }, { text: "From Everyone" });
     await owner.click({ role: "button", label: "Save changes" });
+    // The save bar closes once the save lands; an earlier "saved" toast may still be showing.
+    await owner.notSee({ testId: "agent-permissions-save-bar" }, { timeoutMs: 30_000 });
     await owner.see({ text: "Agent permissions saved" }, { timeoutMs: 30_000 });
     const received = await world.receivedRules("riley");
     evidence.recordAssertionEvidence("Riley's rules", describeRules(received), received?.length === 0);
@@ -377,6 +391,8 @@ editorTest("blocking file edits blocks every command too, and the editor says wh
     await owner.see({ testId: "agent-permission-try-result" }, { text: /^Blocked/ });
     const blocked = await tryResult();
     await owner.click({ role: "button", label: "Save changes" });
+    // The save bar closes once the save lands; an earlier "saved" toast may still be showing.
+    await owner.notSee({ testId: "agent-permissions-save-bar" }, { timeoutMs: 30_000 });
     await owner.see({ text: "Agent permissions saved" }, { timeoutMs: 30_000 });
     const received = await world.receivedRules("morgan");
     const expected = [rule("edit", "*", "deny", "Everyone"), rule("shell", "*", "deny", "Everyone")];

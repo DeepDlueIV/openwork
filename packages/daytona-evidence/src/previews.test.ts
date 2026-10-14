@@ -152,7 +152,7 @@ test("report checkout, install and compile run only behind the unprivileged no-n
   const appBuild = file("/review-app-build.sh");
   const boundary = "setpriv --reuid=openwork-preview --regid=openwork-preview --init-groups --no-new-privs --bounding-set=-all env -i HOME=/home/openwork-preview USER=openwork-preview LOGNAME=openwork-preview PATH=/opt/openwork-preview/tools/node_modules/.bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /bin/bash -c '/bin/bash /opt/openwork-preview/review-app-build.sh'";
   assert.ok(controller.includes(boundary));
-  assert.ok(controller.indexOf("install -o root -g root -m 0600 /dev/null /opt/openwork-preview/access.json") < controller.indexOf(boundary));
+  assert.ok(controller.indexOf("install -o root -g root -m 0600 /dev/null /opt/openwork-preview/private/access.json") < controller.indexOf(boundary));
   const socketStart = controller.indexOf("systemctl start openwork-review-gateway.socket");
   const gatewayStart = controller.indexOf("systemctl start openwork-review-gateway.service");
   const ownershipCheck = controller.indexOf("node /opt/openwork-preview/gateway-owner.mjs");
@@ -166,6 +166,7 @@ test("report checkout, install and compile run only behind the unprivileged no-n
   assert.ok(appBuild.includes("writeFileSync('/home/openwork-preview/build/compiled-files'"));
   assert.ok(appBuild.includes("tar --null -T /home/openwork-preview/build/compiled-files -cf /home/openwork-preview/build/compiled.tar"));
   assert.ok(controller.includes("install -d -o root -g root -m 0755 /opt/openwork-preview"));
+  assert.ok(controller.includes("install -d -o root -g root -m 0700 /opt/openwork-preview/private"), "uploads remain inaccessible even before the final chmod");
   assert.ok(controller.includes("install -d -o openwork-preview -g openwork-preview -m 0700 /home/openwork-preview /home/openwork-preview/build /workspace /opt/openwork-preview/state"));
   for (const name of ["services.json", "outputs.json"]) {
     assert.ok(fixture.descriptor.scripts.runtime.includes(`/opt/openwork-preview/state/${name}`));
@@ -181,7 +182,7 @@ test("runtime is an unprivileged confined service with only exact app-owned outp
   const fixture = await witness();
   await buildDaytonaPreview(sha, "app-web", fixture.api, { sourceFetch: async () => Response.json({ tree: [], truncated: false }) });
   const unit = [...fixture.files.entries()].find(([path]) => path.endsWith("/openwork-review-runtime.service"))?.[1] ?? "";
-  for (const directive of ["User=openwork-preview", "Group=openwork-preview", "NoNewPrivileges=yes", "CapabilityBoundingSet=", "RestrictSUIDSGID=yes", "ProtectSystem=strict", "ProtectHome=read-only", "PrivateTmp=yes", "UMask=0077", "InaccessiblePaths=/opt/openwork-preview/access.json /root"]) assert.ok(unit.split("\n").includes(directive), directive);
+  for (const directive of ["User=openwork-preview", "Group=openwork-preview", "NoNewPrivileges=yes", "CapabilityBoundingSet=", "RestrictSUIDSGID=yes", "ProtectSystem=strict", "ProtectHome=read-only", "PrivateTmp=yes", "UMask=0077", "InaccessiblePaths=/opt/openwork-preview/private /root"]) assert.ok(unit.split("\n").includes(directive), directive);
   assert.equal(unit.split("\n").find((line) => line.startsWith("ReadWritePaths=")), "ReadWritePaths=/workspace /home/openwork-preview /opt/openwork-preview/state");
   ready(fixture);
   await launchDaytonaPreview({ gitSha: sha, reportId, world: "app-web" }, fixture.api, fixture.probe);
@@ -196,6 +197,7 @@ test("the root socket cannot be squatted across gateway restarts and launch veri
   const socket = file("/openwork-review-gateway.socket");
   assert.ok(socket.includes("ListenStream=8080\nBindIPv6Only=both"));
   assert.ok(file("/openwork-review-gateway.service").includes("User=root\nGroup=root\nNoNewPrivileges=yes\nSockets=openwork-review-gateway.socket"));
+  assert.ok(file("/openwork-review-gateway.service").includes("Environment=OPENWORK_PREVIEW_ACCESS_FILE=/opt/openwork-preview/private/access.json"));
   const gateway = file("/gateway.mjs");
   assert.ok(gateway.includes("server.listen({ fd: 3 })"));
   assert.ok(gateway.includes("Number(process.env.LISTEN_PID) !== process.pid"));
@@ -208,7 +210,7 @@ test("the root socket cannot be squatted across gateway restarts and launch veri
   await launchDaytonaPreview({ gitSha: sha, reportId, world: "app-web" }, fixture.api, fixture.probe);
   const checks = fixture.commands.filter((command) => command.includes("systemctl is-active --quiet openwork-review-gateway.socket openwork-review-gateway.service"));
   assert.equal(checks.length, 2, "check ownership both before issuing credentials and immediately before the handshake");
-  assert.ok(fixture.commands.some((command) => command.startsWith("setpriv --reuid=openwork-preview --regid=openwork-preview --init-groups --no-new-privs --bounding-set=-all") && command.includes('test "$(id -u)" -ne 0 && test ! -r /opt/openwork-preview/access.json')));
+  assert.ok(fixture.commands.some((command) => command.startsWith("setpriv --reuid=openwork-preview --regid=openwork-preview --init-groups --no-new-privs --bounding-set=-all") && command.includes('test "$(id -u)" -ne 0 && test ! -r /opt/openwork-preview/private/access.json')));
 });
 
 test("gateway ownership accepts IPv4-only guests without weakening required procfs checks", async () => {
@@ -287,10 +289,10 @@ test("each launch gets a private fresh VM, exact-source witness, deadline and si
   assert.equal(sandbox?.labels.expiresAt, first.expiresAt);
   assert.equal(sandbox?.labels.kind, PREVIEW_KIND);
   assert.ok(fixture.commands.some((command) => /systemd-run --unit=openwork-review-expiry --on-active=\d+s \/usr\/sbin\/poweroff/.test(command)));
-  const access = JSON.parse(fixture.files.get(`${first.id}/opt/openwork-preview/access.json`) ?? "{}");
+  const access = JSON.parse(fixture.files.get(`${first.id}/opt/openwork-preview/private/access.json`) ?? "{}");
   assert.deepEqual(access.allowedOrigins, [origin]);
   assert.equal(new URL(first.url).searchParams.get("token"), access.token);
-  assert.ok(fixture.commands.some((command) => command === "chmod 600 '/opt/openwork-preview/access.json'"));
+  assert.ok(fixture.commands.some((command) => command === "chmod 600 '/opt/openwork-preview/private/access.json'"));
   assert.equal(fixture.deleted.length, 0);
 });
 

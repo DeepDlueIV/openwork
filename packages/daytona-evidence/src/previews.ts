@@ -14,6 +14,8 @@ import { PREVIEW_KIND } from "./kinds.ts";
 export const PREVIEW_SNAPSHOT_PREFIX = "ow-dy-review-v1-";
 export const PREVIEW_TOOLS_PREFIX = "ow-dy-review-tools-v1-";
 const ROOT = "/opt/openwork-preview";
+const ACCESS_DIR = `${ROOT}/private`;
+const ACCESS_FILE = `${ACCESS_DIR}/access.json`;
 const APP_USER = "openwork-preview";
 const APP_HOME = "/home/openwork-preview";
 const APP_BUILD = `${APP_HOME}/build`;
@@ -62,7 +64,8 @@ const APP_SETUP = `id -u ${APP_USER} >/dev/null 2>&1 || useradd --system --user-
 test "$(id -u ${APP_USER})" -ne 0
 install -d -o root -g root -m 0755 ${ROOT}
 install -d -o ${APP_USER} -g ${APP_USER} -m 0700 ${APP_HOME} ${APP_BUILD} /workspace ${ROOT}/state
-install -o root -g root -m 0600 /dev/null ${ROOT}/access.json`;
+install -d -o root -g root -m 0700 ${ACCESS_DIR}
+install -o root -g root -m 0600 /dev/null ${ACCESS_FILE}`;
 
 function runtimeUnit(suffix: string): string {
   return `[Unit]
@@ -80,7 +83,7 @@ ProtectControlGroups=yes
 PrivateTmp=yes
 UMask=0077
 ReadWritePaths=/workspace ${APP_HOME} ${ROOT}/state
-InaccessiblePaths=${ROOT}/access.json /root
+InaccessiblePaths=${ACCESS_DIR} /root
 WorkingDirectory=/workspace
 Environment=HOME=${APP_HOME} USER=${APP_USER} LOGNAME=${APP_USER}
 Environment=PATH=${APP_PATH}
@@ -122,6 +125,7 @@ User=root
 Group=root
 NoNewPrivileges=yes
 Sockets=openwork-review-gateway.socket
+Environment=OPENWORK_PREVIEW_ACCESS_FILE=${ACCESS_FILE}
 ExecStart=/usr/bin/env node ${ROOT}/gateway.mjs
 Restart=on-failure
 `;
@@ -301,11 +305,11 @@ export async function launchDaytonaPreview(input: { gitSha: string; reportId: st
     await api.execChecked(sandbox, `systemd-run --unit=openwork-review-expiry --on-active=${remaining}s /usr/sbin/poweroff`, 30);
     stage = "gateway-owner";
     await api.execChecked(sandbox, VERIFY_GATEWAY, 30);
-    await api.execChecked(sandbox, unprivilegedCommand(`test "$(id -u)" -ne 0 && test ! -r ${ROOT}/access.json`), 30);
+    await api.execChecked(sandbox, unprivilegedCommand(`test "$(id -u)" -ne 0 && test ! -r ${ACCESS_FILE}`), 30);
     stage = "assign-access";
     const { origin } = previewOrigin(await api.signedPreviewUrl(sandbox.id, 8080, remaining));
     const token = randomBytes(32).toString("base64url");
-    await api.writeFile(sandbox, `${ROOT}/access.json`, JSON.stringify({ sandboxId: sandbox.id, sourceSha: input.gitSha, token, expiresAt, allowedOrigins: [origin] }), 0o600);
+    await api.writeFile(sandbox, ACCESS_FILE, JSON.stringify({ sandboxId: sandbox.id, sourceSha: input.gitSha, token, expiresAt, allowedOrigins: [origin] }), 0o600);
     stage = "guest-health";
     await api.execChecked(sandbox, `node ${ROOT}/health.mjs`, 75);
     const url = `${origin}/__openwork_launch?token=${token}`;

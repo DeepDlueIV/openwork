@@ -98,7 +98,7 @@ Report checkout, dependency rebuilds, compilation and runtime run as the dedicat
 unprivileged `openwork-preview` user with no new privileges or capabilities.
 Only `/workspace`, the user's home and `/opt/openwork-preview/state` are writable
 at runtime. Trusted controller/gateway files stay root-owned, and the gateway's
-root-only access file is outside that state directory. Build code therefore cannot
+root-only access file is inside a root-only `0700` directory outside that state directory, including while the provider uploads a replacement. Build code therefore cannot
 plant a privileged process before a later clone receives its access credential.
 
 Fresh snapshot names (`ow-dy-review-v1-*`) include the full report SHA, world and

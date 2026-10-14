@@ -6,6 +6,7 @@ import { type ElementType, useEffect, useMemo, useState } from "react";
 import {
   CheckCircle2,
   Circle,
+  Globe,
   Link as LinkIcon,
   Lock,
   MoreHorizontal,
@@ -26,6 +27,7 @@ import {
   getJoinOrgRoute,
   getOrgAccessFlags,
   getMembersRoute,
+  getEveryoneRoute,
   getNewRoleRoute,
   getTeamRoute,
   orgFeatureEnabled,
@@ -44,11 +46,13 @@ import { DenCard } from "../../_components/ui/card";
 import { DenInput } from "../../_components/ui/input";
 import { DenNotice } from "../../_components/ui/notice";
 import { DenSelect } from "../../_components/ui/select";
+import { DenSkeleton } from "../../_components/ui/skeleton";
 import { createOrganizationInstallLink } from "../../_lib/install-link-data";
 import { OrgMemberIdentity } from "./org-member-identity";
 import { MemberEffectivePermissions, canViewMemberPermissions } from "./member-effective-permissions";
 import { RolesTab, canCreateRole } from "./roles-tab";
-import { PeopleField } from "./access-rows";
+import { IconTile, PeopleField } from "./access-rows";
+import { teamOverrideSummary, useAgentPermissions } from "./agent-permissions-data";
 import { useCustomRoleTeams, useSharedRolesOn } from "./permissions-data";
 import { MemberTeamRoles } from "./member-team-roles";
 import { TEAM_ROLE_LABELS, memberRoleOptions, parseRoleChoice, teamRole, teamRoleLabels } from "./team-roles";
@@ -178,7 +182,12 @@ export function ManageMembersScreen() {
   const memberRoles = memberRoleOptions({ sharedRoles, customRoleTeams, canManageTeams: access.canManageTeams });
   const inviteTeamPicker = sharedRoles && access.canManageTeams && (orgContext?.teams.length ?? 0) > 0;
   const [inviteTeamId, setInviteTeamId] = useState("");
-  const teamListColumns = teamRoles ? "lg:grid-cols-[minmax(0,1fr)_120px_140px_200px]" : "lg:grid-cols-[minmax(0,1fr)_160px_200px]";
+  // agentPermissions: Teams lists Everyone first, and what each team changes from it.
+  const agentPermissionsColumn = Boolean(orgContext && orgFeatureEnabled(orgContext, "agentPermissions") && access.canViewAgentPermissions);
+  const agentPolicies = useAgentPermissions(orgContext?.organization.id ?? "", agentPermissionsColumn && Boolean(orgContext?.organization.id));
+  const teamListColumns = agentPermissionsColumn
+    ? teamRoles ? "lg:grid-cols-[minmax(0,1fr)_120px_170px_120px_200px]" : "lg:grid-cols-[minmax(0,1fr)_170px_140px_200px]"
+    : teamRoles ? "lg:grid-cols-[minmax(0,1fr)_120px_140px_200px]" : "lg:grid-cols-[minmax(0,1fr)_160px_200px]";
   const tabCounts: Record<Exclude<MembersTab, "roles">, number> = {
     members: orgContext?.members.length ?? 0,
     teams: orgContext?.teams.length ?? 0,
@@ -1080,9 +1089,29 @@ export function ManageMembersScreen() {
             <div className={`grid grid-cols-[minmax(0,1fr)_auto] gap-4 border-b border-gray-100 px-4 py-3 text-[12px] font-medium text-gray-500 lg:px-6 ${teamListColumns}`}>
               <span>Team</span>
               {teamRoles ? <span className="hidden lg:block">Role</span> : null}
+              {agentPermissionsColumn ? <span className="hidden lg:block">Agent permissions</span> : null}
               <span className="hidden lg:block">Members</span>
               <span />
             </div>
+
+            {agentPermissionsColumn ? (
+              <div
+                data-testid="team-row-everyone"
+                className={`flex flex-col gap-3 border-b border-gray-100 px-4 py-3.5 transition hover:bg-gray-50/60 lg:grid lg:items-center lg:gap-4 lg:px-6 ${teamListColumns}`}
+              >
+                <Link href={getEveryoneRoute(orgSlug)} className="group flex min-w-0 items-center gap-3 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400">
+                  <IconTile icon={Globe} />
+                  <span className="min-w-0">
+                    <span className="block text-[13px] font-medium text-gray-900 group-hover:underline">Everyone</span>
+                    <span className="mt-0.5 block truncate text-[12px] text-gray-500">Every member, including people in no team</span>
+                  </span>
+                </Link>
+                {teamRoles ? <span className="text-[13px] text-gray-700" data-testid="team-row-role">Member</span> : null}
+                <span className="text-[13px] text-gray-700" data-testid="team-row-agent-permissions">Base for every team</span>
+                <span className="text-[13px] text-gray-500">{`${orgContext.members.length} ${orgContext.members.length === 1 ? "member" : "members"}`}</span>
+                <span />
+              </div>
+            ) : null}
 
             {orgContext.teams.length === 0 ? (
               <div className="px-6 py-8 text-center text-[13px] text-gray-400">
@@ -1133,6 +1162,7 @@ export function ManageMembersScreen() {
                         : "—"}
                     </span>
                   ) : null}
+                  {agentPermissionsColumn ? <TeamAgentPermissionsCell summary={agentPolicies.isSuccess ? teamOverrideSummary(agentPolicies.data.teams.find((policy) => policy.scopeId === team.id)) : undefined} failed={agentPolicies.isError} /> : null}
                   <span className="text-[13px] text-gray-500">{`${team.memberIds.length} ${team.memberIds.length === 1 ? "member" : "members"}`}</span>
                   <div className="flex items-center justify-end gap-3">
                     {team.managedByScim ? (
@@ -1191,4 +1221,13 @@ export function ManageMembersScreen() {
 
     </DashboardPageTemplate>
   );
+}
+
+/** A team's agent permissions in the Teams list: its own overrides, or that it follows Everyone. */
+function TeamAgentPermissionsCell({ summary, failed }: { summary: string | null | undefined; failed: boolean }) {
+  if (failed) return <span className="text-[13px] text-gray-500" data-testid="team-row-agent-permissions" title="Couldn't load agent permissions">—</span>;
+  if (summary === undefined) return <span role="status" aria-label="Loading agent permissions" data-testid="team-row-agent-permissions"><DenSkeleton className="h-3 w-24" /></span>;
+  return summary === null
+    ? <span className="text-[13px] text-gray-500" data-testid="team-row-agent-permissions">Follows Everyone</span>
+    : <span className="text-[13px] text-gray-900" data-testid="team-row-agent-permissions">{summary}</span>;
 }

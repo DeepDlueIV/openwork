@@ -409,3 +409,19 @@ async function desktopWorld(seed: Seed, place: Place, { feature }: { feature: bo
     };
   } catch (error) { await stack.disposeAsync(); throw error; }
 }
+
+/**
+ * The owner on Members › Teams before agent permissions are on, with Riley in
+ * Contractors and Morgan in Engineering.
+ */
+export async function agentPermissionsTeamsList(seed: Seed) {
+  const world = await agentPermissionsOrganization(seed, { web: true, feature: false, teams: { Contractors: ["riley"], Engineering: ["morgan"] } });
+  const web = await seed.web({
+    den: world.den,
+    signedInAs: world.den.admin,
+    startPath: "/dashboard/members?tab=teams",
+    headless: true,
+    viewport: { width: 1440, height: 900 },
+  });
+  return { ...world, web };
+}

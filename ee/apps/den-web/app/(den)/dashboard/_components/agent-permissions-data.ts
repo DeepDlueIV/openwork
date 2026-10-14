@@ -62,9 +62,10 @@ export function agentPermissionsQueryKey(orgId: string): string[] {
   return ["agent-permissions", orgId];
 }
 
-export function useAgentPermissions(orgId: string) {
+export function useAgentPermissions(orgId: string, enabled = true) {
   return useQuery({
     queryKey: agentPermissionsQueryKey(orgId),
+    enabled,
     retry: false,
     refetchOnWindowFocus: false,
     queryFn: async ({ signal }): Promise<AgentPermissionPolicies> => {
@@ -144,4 +145,12 @@ export function useRemoveTeamAgentPermissions(orgId: string, teamId: string) {
 /** Whether a team has its own agent permissions: a saved record, not Everyone's. */
 export function hasTeamRecord(policy: AgentPermissionPolicy): boolean {
   return policy.scopeId !== EVERYONE_SCOPE && policy.updatedAt !== null;
+}
+
+/** A team's own agent permissions, counted for lists: "1 override", or null while it follows Everyone. */
+export function teamOverrideSummary(policy: AgentPermissionPolicy | undefined): string | null {
+  if (!policy || !hasTeamRecord(policy)) return null;
+  const count = Object.keys(normalizeAgentPermissionSettings(policy.settings)).length;
+  if (count === 0) return null;
+  return `${count} ${count === 1 ? "override" : "overrides"}`;
 }

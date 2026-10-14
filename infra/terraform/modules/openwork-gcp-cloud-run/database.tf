@@ -13,7 +13,7 @@ locals {
       random_password.db[0].result,
       google_sql_database_instance.this[0].private_ip_address,
       google_sql_database.den[0].name,
-      var.database.tls_query != "" ? "?${var.database.tls_query}" : "",
+      "?${var.database.tls_query}",
       ) : format(
       # The host is required by URL parsing; mysql2 connects to socketPath.
       "mysql://%s:%s@localhost/%s?socket=%s",
@@ -66,6 +66,14 @@ resource "google_sql_database_instance" "this" {
     precondition {
       condition     = !local.db_private || var.network != ""
       error_message = "database.private_network needs network and subnetwork so Cloud Run can reach the private IP."
+    }
+    # No silent default: on the private-IP path den-api speaks TCP to the
+    # instance and cannot verify the Cloud SQL server CA (it is not in Node's
+    # trust store and the certificate does not name the IP), so the operator
+    # must opt in to a TLS setting explicitly.
+    precondition {
+      condition     = !local.db_private || var.database.tls_query != ""
+      error_message = "database.private_network needs an explicit database.tls_query. Den cannot verify the Cloud SQL server certificate over a private IP: use the default connector path (leave private_network empty) for verified TLS, or set tls_query = \"sslaccept=accept\" to accept encrypted but unverified TLS inside your VPC."
     }
   }
 }

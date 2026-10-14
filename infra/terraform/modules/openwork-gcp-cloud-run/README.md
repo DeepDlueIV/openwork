@@ -125,11 +125,19 @@ the load balancer without a domain of your own (`sslip_domain = true`).
   both services and the job. `vpc_egress = "PRIVATE_RANGES_ONLY"` (default)
   keeps internet traffic (ghcr.io through the mirror, model providers) on
   Cloud Run's own egress; use `ALL_TRAFFIC` only with Cloud NAT on the VPC.
+- **Database TLS.** The default path is Cloud Run's Cloud SQL connector: the
+  instance has a public IP with no authorized networks, every connection is
+  authorized by the service account's IAM role, and the connector encrypts it
+  with a certificate it verifies. Prefer it.
 - **Private-IP Cloud SQL.** Set `database.private_network` to a VPC that
   already has private services access (a `servicenetworking` peering), plus
-  `network` and `subnetwork`. den-api then connects over TCP with
-  `database.tls_query` (default `sslaccept=accept`: encrypted, certificate not
-  verified).
+  `network` and `subnetwork`. den-api then connects over TCP to the private IP
+  and **you must set `database.tls_query`**: Den cannot yet verify the Cloud
+  SQL server certificate (its CA is not in Node's trust store and the
+  certificate does not name the IP address), so the only working choice today
+  is `tls_query = "sslaccept=accept"`: encrypted, but the server certificate
+  is not verified, so anyone able to intercept traffic inside your VPC could
+  impersonate the database. The apply fails until you choose.
 - **Existing load balancer pieces.** `ssl_certificate_ids` uses your
   certificates instead of a managed one; `load_balancer_ip_address` uses a
   reserved global address. With `restrict_ingress_to_load_balancer = true` the

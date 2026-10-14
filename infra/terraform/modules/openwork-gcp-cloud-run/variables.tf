@@ -276,7 +276,7 @@ variable "cloud_sql_connection_name" {
 }
 
 variable "database" {
-  description = "Cloud SQL settings. private_network (a VPC self link with private services access already configured) gives the instance a private IP only; den-api then connects over TCP and needs network/subnetwork."
+  description = "Cloud SQL settings. By default den-api reaches the instance through Cloud Run's Cloud SQL connector (IAM-authorized, TLS verified by the connector). private_network (a VPC self link with private services access already configured) gives the instance a private IP only; den-api then connects over TCP, needs network/subnetwork, and you must choose tls_query yourself (see the README: Den cannot verify the Cloud SQL server CA on that path yet)."
   type = object({
     tier                = optional(string, "db-f1-micro")
     edition             = optional(string, "ENTERPRISE")
@@ -286,7 +286,7 @@ variable "database" {
     backup_enabled      = optional(bool, true)
     deletion_protection = optional(bool, true)
     private_network     = optional(string, "")
-    tls_query           = optional(string, "sslaccept=accept")
+    tls_query           = optional(string, "")
   })
   default = {}
 }

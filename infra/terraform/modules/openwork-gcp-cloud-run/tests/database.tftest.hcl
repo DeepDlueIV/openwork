@@ -67,7 +67,7 @@ run "private_ip_database_uses_tcp" {
   variables {
     network    = "projects/test-project/global/networks/shared"
     subnetwork = "projects/test-project/regions/us-central1/subnetworks/run"
-    database   = { private_network = "projects/test-project/global/networks/shared" }
+    database   = { private_network = "projects/test-project/global/networks/shared", tls_query = "sslaccept=accept" }
   }
 
   assert {
@@ -80,7 +80,28 @@ run "private_ip_database_uses_tcp" {
   }
   assert {
     condition     = endswith(nonsensitive(google_secret_manager_secret_version.app["DATABASE_URL"].secret_data), "@10.10.0.5:3306/openwork_den?sslaccept=accept")
-    error_message = "DATABASE_URL must use the private IP over TLS."
+    error_message = "DATABASE_URL must use the private IP with the TLS setting the operator chose."
+  }
+}
+
+run "private_ip_database_needs_explicit_tls_choice" {
+  command = plan
+
+  variables {
+    network    = "projects/test-project/global/networks/shared"
+    subnetwork = "projects/test-project/regions/us-central1/subnetworks/run"
+    database   = { private_network = "projects/test-project/global/networks/shared" }
+  }
+
+  expect_failures = [google_sql_database_instance.this]
+}
+
+run "connector_path_has_no_tls_query" {
+  command = apply
+
+  assert {
+    condition     = !strcontains(nonsensitive(google_secret_manager_secret_version.app["DATABASE_URL"].secret_data), "sslaccept")
+    error_message = "The default connector path must not add an unverified TLS setting; the connector secures the connection."
   }
 }
 
@@ -88,7 +109,7 @@ run "private_ip_database_needs_network" {
   command = plan
 
   variables {
-    database = { private_network = "projects/test-project/global/networks/shared" }
+    database = { private_network = "projects/test-project/global/networks/shared", tls_query = "sslaccept=accept" }
   }
 
   expect_failures = [google_sql_database_instance.this]

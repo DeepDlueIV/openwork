@@ -215,7 +215,7 @@ const SHELL_INTERPRETERS = new Set(["sh", "bash", "zsh", "dash", "ksh", "mksh", 
 /** Programs, and `find` actions, that run the command following their own options and arguments. */
 const COMMAND_WRAPPERS = new Set([
   "sudo", "doas", "env", "nohup", "nice", "ionice", "command", "builtin", "exec", "timeout", "xargs",
-  "stdbuf", "setsid", "watch", "chrt", "taskset", "unbuffer", "caffeinate", "-exec", "-execdir", "-ok", "-okdir",
+  "stdbuf", "setsid", "watch", "chrt", "taskset", "unbuffer", "caffeinate", "busybox", "toybox", "-exec", "-execdir", "-ok", "-okdir",
 ]);
 
 /** Most text one command line's parse reads; a line that needs more cannot be checked. */

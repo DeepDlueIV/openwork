@@ -47,12 +47,14 @@ export async function launchDaytonaEvidenceWorld(template: DaytonaEvidenceLaunch
   const created = "sandbox" in template ? template.sandbox : await api.createSandbox({ name: `ow-dy-evidence-${randomUUID().replaceAll("-", "")}`, snapshot: template.name,
     labels: { kind: EVIDENCE_KIND, sourceSha }, autoStopMinutes: IDLE_STOP_MINUTES, autoDeleteMinutes: 0 });
   let owned = true;
+  let diagnosticSandbox = created;
   try {
     const sandbox = await api.waitForSandbox(created.id, ["started"]);
     if (sandbox.id !== created.id || ("sandbox" in template && (sandbox.labels.kind !== EVIDENCE_KIND || sandbox.labels.sourceSha !== sourceSha))) {
       owned = false;
       throw new Error("Refusing to adopt an unrelated prepared world");
     }
+    diagnosticSandbox = sandbox;
     if ("sandbox" in template && (await api.readFile(sandbox, `${ROOT}/built-from-sha`))?.trim() !== sourceSha) throw new Error("Prepared world source mismatch");
     // A template may serve several commits whose VM-side files are identical.
     if ((await api.readFile(sandbox, `${ROOT}/evidence-ready`))?.trim() !== "web-v1"
@@ -71,7 +73,7 @@ export async function launchDaytonaEvidenceWorld(template: DaytonaEvidenceLaunch
     // Collect while the owned VM still exists. Never publish the error text,
     // URLs, access file, service environment, or unfiltered guest logs.
     await boundedDiagnostic(async () => {
-      const health = await inspectGuest(api, created).catch(() => undefined);
+      const health = await inspectGuest(api, diagnosticSandbox).catch(() => undefined);
       const external = error instanceof CdpReadinessError ? error.history : [];
       const status = external.at(-1)?.status ?? 0;
       const summary = JSON.stringify({ stage: "daytona-evidence-launch", layer: failureLayer(health, status), external, health: health ?? "unavailable" });
@@ -118,7 +120,7 @@ export async function waitForCdp(session: DaytonaEvidenceSession, options: CdpWa
     try {
       const response = await probe(`${session.cdp.url}/json/version`, { headers: { cookie: session.cookie, "x-daytona-preview-token": session.cdp.previewToken, "x-daytona-skip-preview-warning": "true" }, signal: AbortSignal.timeout(Math.min(10_000, deadline - Date.now())) });
       status = response.status;
-      const body = await boundedBody(response);
+      const body = await boundedBody(response).catch(() => "");
       history.push(safeExternalResponse(status, response.headers, body));
       if (response.ok) {
         try {

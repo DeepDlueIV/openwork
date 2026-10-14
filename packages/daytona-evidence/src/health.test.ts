@@ -72,6 +72,19 @@ for (const status of [401, 403]) {
   });
 }
 
+test("a received auth status survives an unreadable private body", async () => {
+  const body = new ReadableStream<Uint8Array>({ start(controller) { controller.error(new Error("private body error")); } });
+  await assert.rejects(waitForCdp(session, { attempts: 1, probe: async () => new Response(body, { status: 401 }) }), /HTTP 401/);
+});
+
+test("diagnostics use the started sandbox's current toolbox route", async () => {
+  const started = { ...sandbox, toolboxProxyUrl: "https://current-toolbox.example" };
+  const api = fakeApi({ waitForSandbox: async () => started, execChecked: async (vm) => { assert.equal(vm.toolboxProxyUrl, started.toolboxProxyUrl); return JSON.stringify(healthy); } });
+  await assert.rejects(launchDaytonaEvidenceWorld({ sandbox, runtimeFingerprint: fingerprint }, sha, api, {
+    attempts: 1, probe: async () => new Response("bad gateway", { status: 502 }), diagnostic: async (summary) => { assert.ok(!summary.includes("current-toolbox.example")); },
+  }), /HTTP 502/);
+});
+
 test("transient external failure followed by a real CDP 200 succeeds", async () => {
   let calls = 0;
   await waitForCdp(session, { attempts: 2, pauseMs: 0, probe: async () => ++calls === 1 ? new Response("bad gateway", { status: 502 }) : new Response(cdpBody) });

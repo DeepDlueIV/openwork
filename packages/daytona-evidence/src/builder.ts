@@ -149,8 +149,10 @@ export async function ensureLayer(api: DaytonaApi, input: LayerInput): Promise<s
       if (error instanceof DaytonaApiError && (error.status === 409 || /already exists/i.test(error.message))) { await delay(2_000); continue; }
       throw error;
     }
+    let diagnosticSandbox = created;
     try {
       const sandbox = await api.waitForSandbox(created.id, ["started"]);
+      diagnosticSandbox = sandbox;
       const prepareStart = performance.now();
       await input.prepare(sandbox);
       input.observe({ stage: `${input.stage}-prepare`, durationMs: Math.round(performance.now() - prepareStart) });
@@ -166,7 +168,7 @@ export async function ensureLayer(api: DaytonaApi, input: LayerInput): Promise<s
       input.observe({ stage: input.stage, durationMs: Math.round(performance.now() - start), cacheHit: false });
       return input.name;
     } catch (error) {
-      if (input.stage === "daytona-world") await diagnoseGuestFailure(api, created, input.stage);
+      if (input.stage === "daytona-world") await diagnoseGuestFailure(api, diagnosticSandbox, input.stage);
       throw error;
     } finally {
       // Awaited: a failing CI step exits right after, and a builder left running holds the lock.
@@ -342,8 +344,10 @@ export async function prepareWorldLayer(api: DaytonaApi, input: LayerInput, sour
   const parent = await input.parent();
   const created = await api.createSandbox({ name: `ow-dy-evidence-${randomUUID().replaceAll("-", "")}`, snapshot: parent,
     labels: { kind: EVIDENCE_KIND, sourceSha }, autoStopMinutes: 30, autoDeleteMinutes: 0 });
+  let diagnosticSandbox = created;
   try {
     const sandbox = await api.waitForSandbox(created.id, ["started"]);
+    diagnosticSandbox = sandbox;
     const prepareStart = performance.now();
     await input.prepare(sandbox);
     input.observe({ stage: `${input.stage}-prepare`, durationMs: Math.round(performance.now() - prepareStart) });
@@ -354,7 +358,7 @@ export async function prepareWorldLayer(api: DaytonaApi, input: LayerInput, sour
       reason: "ephemeral PR world; template save omitted" });
     return { sandbox };
   } catch (error) {
-    await diagnoseGuestFailure(api, created, "daytona-world-prepare");
+    await diagnoseGuestFailure(api, diagnosticSandbox, "daytona-world-prepare");
     await api.deleteSandbox(created.id).catch(() => undefined);
     throw error;
   }

@@ -3385,6 +3385,9 @@ export function SessionRoute() {
     if (workspaceId === selectedWorkspaceId) void refreshCloudProviderSync("new_chat");
     claimComposerSessionDraftScope(session.id, sessionDraftScopeKey(pending.scope, endpoint.workspaceId, session.id));
     markComposerAutoSend(session.id, pendingConversationAutoSendPayload(pending, endpoint, session.id));
+    // The first message was typed in the new-task composer; keep the keyboard
+    // in the created session's composer so a follow-up needs no extra click.
+    useComposerStateStore.setState({ pendingFocusSessionId: session.id });
     rememberPendingCreatedSession(workspaceId, session.id);
     applyWorkspaceDefaultToSession(session.id, endpoint);
     const next = { ...sessionsByWorkspaceIdRef.current, [workspaceId]: mergeWorkspaceRouteSession(sessionsByWorkspaceIdRef.current[workspaceId] ?? [], session) };

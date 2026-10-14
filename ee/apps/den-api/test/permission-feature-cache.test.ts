@@ -16,6 +16,7 @@ const { cache, setCacheDependenciesForTest } = await import("../src/cache.js")
 const {
   getOrganizationFeatures, organizationFeatureEnabled, getFeaturesForOrganizations,
   deploymentFeatureEnabled, updateFeatureRollout, updateOrganizationFeatureOverrides,
+  readOrganizationWithPermissions,
 } = await import("../src/features.js")
 
 const organizationId = createDenTypeId("organization")
@@ -42,6 +43,7 @@ function setup() {
   mock.method(db, "select", (fields: Record<string, unknown>) => {
     const rows = () => {
       if (state.failDb) throw new Error("authoritative permission state unavailable")
+      if ("organization" in fields) return [{ organization: { id: organizationId }, rolloutEnabled: state.enabled, killed: state.killed, overrideEnabled: state.override }]
       if ("rolloutEnabled" in fields) return [{ organizationId, rolloutEnabled: state.enabled, killed: state.killed, overrideEnabled: state.override }]
       if ("metadata" in fields) return [{ metadata: {} }]
       if ("feature_key" in fields && "killed" in fields) return state.enabled === null ? [] : [{ feature_key: "permissions", enabled: state.enabled, killed: state.killed }]
@@ -156,5 +158,32 @@ test("Redis rollback cannot resurrect permission state after the database disabl
     h.values.clear()
     snapshot.forEach((value, key) => h.values.set(key, value))
     assert.equal((await getOrganizationFeatures(organizationId)).permissions, false)
+  } finally { h.restore() }
+})
+
+test("the organization row read carries the live permissions flag, and features reuse it without another read", async () => {
+  const h = setup()
+  try {
+    h.state.enabled = false
+    const read = await readOrganizationWithPermissions(organizationId)
+    assert.equal(read?.organization.id, organizationId)
+    assert.equal(read?.permissions, false, "the database disabled permissions; stale Redis still says enabled")
+    const selects = (db.select as unknown as { mock: { callCount(): number } }).mock
+    const before = selects.callCount()
+    const features = await getOrganizationFeatures(organizationId, { permissions: read?.permissions })
+    assert.equal(features.permissions, false)
+    assert.equal(features.teamMembershipCache, true, "ordinary flags still come from the cache")
+    assert.equal(selects.callCount() - before, 0)
+  } finally { h.restore() }
+})
+
+test("the organization row read resolves the kill switch and the override like the separate read", async () => {
+  const h = setup()
+  try {
+    for (const [enabled, killed, override] of [[true, true, true], [false, false, true], [true, false, false], [null, false, null], [true, false, null]] as const) {
+      Object.assign(h.state, { enabled, killed, override })
+      const read = await readOrganizationWithPermissions(organizationId)
+      assert.equal(read?.permissions, await organizationFeatureEnabled(organizationId, "permissions"), `enabled=${enabled} killed=${killed} override=${override}`)
+    }
   } finally { h.restore() }
 })

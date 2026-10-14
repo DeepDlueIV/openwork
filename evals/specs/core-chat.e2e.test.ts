@@ -1,11 +1,11 @@
 import { spec } from "@openwork/testkit";
-import { coreWebWorld } from "../worlds/core-web.ts";
+import { coreWebCredentials, coreWebWorld } from "../worlds/core-web.ts";
 
 // Core PR journey. CI runs it on every non-docs PR (see CORE_SPECS in
 // .github/scripts/pr-proof.mjs); its end-state checkpoint is the PR preview.
 const test = spec.world(coreWebWorld, {
   resources: { surfaces: ["appWeb"], services: ["den", "mock"] },
-  needs: { placement: "local", env: ["FREESTYLE_API_KEY"] },
+  needs: { placement: "local", env: coreWebCredentials() },
   timeout: 900_000,
 });
 

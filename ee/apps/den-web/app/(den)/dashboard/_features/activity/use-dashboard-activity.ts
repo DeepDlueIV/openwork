@@ -2,7 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import { getErrorMessage, requestJson } from "../../../_lib/den-flow";
-import { getOrgAccessFlags, orgFeatureEnabled } from "../../../_lib/den-org";
+import { getOrgAccessFlags } from "../../../_lib/den-org";
 import { ORG_SCOPE_HEADER } from "../../../_lib/org-scope";
 import { useDenFlow } from "../../../_providers/den-flow-provider";
 import { useOrgDashboard } from "../../_providers/org-dashboard-provider";
@@ -16,7 +16,7 @@ export function useDashboardActivity() {
   const isAdmin = member ? getOrgAccessFlags(member.role, member.isOwner, member.permissions).isAdmin : false;
   const enabled = Boolean(
     user && member?.userId === user.id && orgId && orgContext?.organization.id === orgId &&
-    isAdmin && orgFeatureEnabled(orgContext, "dashboardActivity") && !orgBusy && !orgError && mutationBusy !== "switch-organization",
+    isAdmin && !orgBusy && !orgError && mutationBusy !== "switch-organization",
   );
 
   return useQuery({

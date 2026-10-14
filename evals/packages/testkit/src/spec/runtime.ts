@@ -20,6 +20,7 @@ import {
 } from "@openwork/behaviors";
 import {
   callFunctionOnSurface,
+  CdpPageError,
   addInitScript,
   callFunction, connect, debuggerUrlFor, listTargets,
   clickTarget,
@@ -268,7 +269,10 @@ async function createSessionWhenReady(surface: Surface): Promise<string> {
       if (attempt === 1) throw new Error("session.create_task returned no session ID after one retry.");
     } catch (error) {
       const emptyResult = /did not return a session ID|returned no session ID|invalid session ID/i.test(messageText(error));
-      if (attempt === 1 || !emptyResult) throw error;
+      // The action can turn disabled again between the readiness check and the
+      // call (the previous task is still being selected); nothing ran, so retry.
+      const disabledMeanwhile = /Action is disabled/i.test(messageText(error));
+      if (attempt === 1 || !(emptyResult || disabledMeanwhile)) throw error;
     }
     await new Promise((resolve) => setTimeout(resolve, CONTROL_POLL_INTERVAL_MS));
   }
@@ -555,6 +559,14 @@ function focusLabel(target: Target, located: Located): string {
 function requireSurface(surface: Surface | null): Surface {
   if (!surface) throw new Error("This world has no primary surface; bind one with user.on(surface), agent.on(surface), or probe.on(surface).");
   return surface;
+}
+
+/** A request the page made itself failed (a stalled local server ends as "signal timed out"); say which one. */
+function namePageFailure(label: string): (error: unknown) => never {
+  return (error) => {
+    if (error instanceof CdpPageError) throw new Error(`${label} failed in the page: ${error.message}`, { cause: error });
+    throw error;
+  };
 }
 
 function sessionFromWebOptions(options: SeedWebOptions) {
@@ -1031,11 +1043,21 @@ export class AgentChannel implements Agent {
       if (!path.startsWith("/") || path.startsWith("//") || /[\\\s]/.test(path)) throw new Error("A root-relative server path is required.");
       const value = await callFunctionOnSurface(surface, async (path, encodedInput) => {
         const input = JSON.parse(encodedInput);
+        // Desktop: the bridge reports the embedded server. App in a browser:
+        // the app keeps the same address and token in localStorage.
         const info = await window.__OPENWORK_ELECTRON__?.invokeDesktop?.("openworkServerInfo");
-        if (!info?.running || !info.baseUrl) return { status: 0, body: { error: "local_server_unavailable" } };
-        const response = await fetch(String(info.baseUrl).replace(/\/+$/, "") + path, {
+        let baseUrl = info?.running && info.baseUrl ? String(info.baseUrl) : "";
+        let token = baseUrl ? String(info?.ownerToken ?? info?.clientToken ?? "") : "";
+        if (!baseUrl) {
+          const override = (localStorage.getItem("openwork.server.urlOverride") ?? "").trim();
+          const port = (localStorage.getItem("openwork.server.port") ?? "").trim();
+          baseUrl = override || (port ? "http://127.0.0.1:" + port : "");
+          token = (localStorage.getItem("openwork.server.token") ?? "").trim();
+        }
+        if (!baseUrl) return { status: 0, body: { error: "local_server_unavailable" } };
+        const response = await fetch(baseUrl.replace(/\/+$/, "") + path, {
           method: input.method,
-          headers: { Authorization: "Bearer " + String(info.ownerToken ?? info.clientToken ?? ""), "Content-Type": "application/json" },
+          headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
           body: input.body === undefined ? undefined : JSON.stringify(input.body),
           redirect: "error", signal: AbortSignal.timeout(30_000),
         });
@@ -1043,7 +1065,7 @@ export class AgentChannel implements Agent {
         let body = text;
         try { body = JSON.parse(text); } catch {}
         return { status: response.status, body };
-      }, [path, JSON.stringify(input)], { awaitPromise: true, timeoutMs: 35_000 });
+      }, [path, JSON.stringify(input)], { awaitPromise: true, timeoutMs: 35_000 }).catch(namePageFailure(`agent.desktopApi(${input.method} ${path})`));
       if (!isRecord(value) || typeof value.status !== "number") throw new Error("Invalid desktop API result");
       return { status: value.status, body: value.body };
     });
@@ -1222,7 +1244,11 @@ export class ProbeChannel implements Probe {
   hash(): Promise<string> {
     const surface = requireSurface(this.#surface);
     return this.#runtime.call("probe", "hash", "hash", surface, async () => {
-      const value = await evaluateOnSurface(surface, () => (window.location.hash));
+      // The desktop routes by hash. The app in a browser routes by path, so its
+      // route is reported in the same "#/workspace/..." form.
+      const value = await evaluateOnSurface(surface, () => (
+        window.location.hash || (window.__OPENWORK_ELECTRON__ || window.location.pathname === "/" ? "" : `#${window.location.pathname}`)
+      ));
       if (typeof value !== "string") throw new Error("window.location.hash was not a string.");
       return value;
     });
@@ -1262,11 +1288,21 @@ export class ProbeChannel implements Probe {
         throw new Error("probe.desktopApi requires a root-relative server path.");
       }
       const value = await callFunctionOnSurface(surface, async (path) => {
+        // Desktop: the bridge reports the embedded server. App in a browser:
+        // the app keeps the same address and token in localStorage.
         const info = await window.__OPENWORK_ELECTRON__?.invokeDesktop?.("openworkServerInfo");
-        if (!info?.running || !info.baseUrl) return { status: 0, body: { error: "local_server_unavailable" } };
-        const response = await fetch(String(info.baseUrl).replace(/\/+$/, "") + path, {
+        let baseUrl = info?.running && info.baseUrl ? String(info.baseUrl) : "";
+        let token = baseUrl ? String(info?.ownerToken ?? info?.clientToken ?? "") : "";
+        if (!baseUrl) {
+          const override = (localStorage.getItem("openwork.server.urlOverride") ?? "").trim();
+          const port = (localStorage.getItem("openwork.server.port") ?? "").trim();
+          baseUrl = override || (port ? "http://127.0.0.1:" + port : "");
+          token = (localStorage.getItem("openwork.server.token") ?? "").trim();
+        }
+        if (!baseUrl) return { status: 0, body: { error: "local_server_unavailable" } };
+        const response = await fetch(baseUrl.replace(/\/+$/, "") + path, {
           method: "GET",
-          headers: { Authorization: "Bearer " + String(info.ownerToken ?? info.clientToken ?? "") },
+          headers: { Authorization: "Bearer " + token },
           redirect: "error",
           signal: AbortSignal.timeout(15_000),
         });
@@ -1274,7 +1310,7 @@ export class ProbeChannel implements Probe {
         let body = text;
         try { body = text ? JSON.parse(text) : null; } catch {}
         return { status: response.status, body };
-      }, [path], { awaitPromise: true, timeoutMs: 20_000 });
+      }, [path], { awaitPromise: true, timeoutMs: 20_000 }).catch(namePageFailure(`probe.desktopApi(GET ${path})`));
       if (!isRecord(value) || typeof value.status !== "number" || !("body" in value)) {
         throw new Error("Invalid desktop API probe response.");
       }

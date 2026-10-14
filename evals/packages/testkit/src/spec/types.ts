@@ -105,6 +105,7 @@ export interface Probe {
   workspaceReadiness(workspaceId: string): ReturnType<typeof import("@openwork/behaviors").readWorkspaceReadiness>;
   storage(key: string): Promise<unknown>;
   storage<T>(key: string, pick: (value: unknown) => T): Promise<T>;
+  /** The app route as "#/workspace/...": the hash on the desktop, the path on the app in a browser. */
   hash(): Promise<string>;
   eval<T>(expression: BrowserEvaluation<T>, options?: ProbeEvalOptions): Promise<Awaited<T>>;
   eval<T>(surface: Surface, expression: BrowserEvaluation<T>, options?: ProbeEvalOptions): Promise<Awaited<T>>;

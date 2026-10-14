@@ -5,6 +5,7 @@ import { buildClientParams, type Client, type Options as Options2, type TDataSha
 import type {
   ActivateAutomationErrors,
   ActivateAutomationResponses,
+  AgentPermissionPolicyWrite,
   AppendGoogleSheetsValuesErrors,
   AppendGoogleSheetsValuesResponses,
   ArchiveAutomationErrors,
@@ -34,9 +35,9 @@ import type {
   CreatePermissionSetBody,
   CreateWorkbotRunTokenErrors,
   CreateWorkbotRunTokenResponses,
-  DashboardElement,
   DeactivateAutomationErrors,
   DeactivateAutomationResponses,
+  DefaultModelWrite,
   DeleteApiAuthScimV2GroupsByGroupIdErrors,
   DeleteApiAuthScimV2GroupsByGroupIdResponses,
   DeleteGmailDraftErrors,
@@ -51,6 +52,8 @@ import type {
   DeleteV1AdminAdminsByAdminIdResponses,
   DeleteV1AdminUsersByUserIdErrors,
   DeleteV1AdminUsersByUserIdResponses,
+  DeleteV1AgentPermissionsTeamsByTeamIdErrors,
+  DeleteV1AgentPermissionsTeamsByTeamIdResponses,
   DeleteV1ConfigObjectsByConfigObjectIdAccessByGrantIdErrors,
   DeleteV1ConfigObjectsByConfigObjectIdAccessByGrantIdResponses,
   DeleteV1ConfigObjectsByConfigObjectIdPluginsByPluginIdErrors,
@@ -59,10 +62,6 @@ import type {
   DeleteV1ConnectorInstancesByConnectorInstanceIdAccessByGrantIdResponses,
   DeleteV1ConnectorMappingsByConnectorMappingIdErrors,
   DeleteV1ConnectorMappingsByConnectorMappingIdResponses,
-  DeleteV1DashboardsByDashboardIdAccessByGrantIdErrors,
-  DeleteV1DashboardsByDashboardIdAccessByGrantIdResponses,
-  DeleteV1DashboardsByDashboardIdErrors,
-  DeleteV1DashboardsByDashboardIdResponses,
   DeleteV1DesktopPoliciesByDesktopPolicyIdErrors,
   DeleteV1DesktopPoliciesByDesktopPolicyIdResponses,
   DeleteV1DesktopPoliciesByKeyByExternalKeyResponses,
@@ -196,6 +195,8 @@ import type {
   GetV1AdminUsersByUserIdInferenceUsageResponses,
   GetV1AdminUsersErrors,
   GetV1AdminUsersResponses,
+  GetV1AgentPermissionsErrors,
+  GetV1AgentPermissionsResponses,
   GetV1ApiKeysErrors,
   GetV1ApiKeysResponses,
   GetV1AppsByAppIdResponses,
@@ -284,12 +285,6 @@ import type {
   GetV1ConnectorTargetsByConnectorTargetIdMappingsErrors,
   GetV1ConnectorTargetsByConnectorTargetIdMappingsResponses,
   GetV1ConnectorTargetsByConnectorTargetIdResponses,
-  GetV1DashboardsByDashboardIdAccessErrors,
-  GetV1DashboardsByDashboardIdAccessResponses,
-  GetV1DashboardsByDashboardIdErrors,
-  GetV1DashboardsByDashboardIdResponses,
-  GetV1DashboardsErrors,
-  GetV1DashboardsResponses,
   GetV1DesktopPoliciesByDesktopPolicyIdErrors,
   GetV1DesktopPoliciesByDesktopPolicyIdResponses,
   GetV1DesktopPoliciesByKeyByExternalKeyErrors,
@@ -358,6 +353,8 @@ import type {
   GetV1InstallConfigResponses,
   GetV1IntegrationsSlackOauthCallbackErrors,
   GetV1LibraryUsageByKindResponses,
+  GetV1LibraryUsageErrors,
+  GetV1LibraryUsageResponses,
   GetV1LlmProviderCatalogByProviderIdErrors,
   GetV1LlmProviderCatalogByProviderIdResponses,
   GetV1LlmProviderCatalogErrors,
@@ -416,8 +413,6 @@ import type {
   GetV1McpConnectionsResponses,
   GetV1McpConnectionsSlackConnectStartErrors,
   GetV1McpConnectionsSlackConnectStartResponses,
-  GetV1MeDashboardsErrors,
-  GetV1MeDashboardsResponses,
   GetV1MeDesktopConfigErrors,
   GetV1MeDesktopConfigResponses,
   GetV1MeErrors,
@@ -448,6 +443,10 @@ import type {
   GetV1OauthProvidersByProviderIdStatusResponses,
   GetV1OrgActivityErrors,
   GetV1OrgActivityResponses,
+  GetV1OrgDefaultModelErrors,
+  GetV1OrgDefaultModelOptionsErrors,
+  GetV1OrgDefaultModelOptionsResponses,
+  GetV1OrgDefaultModelResponses,
   GetV1OrgErrors,
   GetV1OrgResponses,
   GetV1OrgsInvitationsPreviewErrors,
@@ -578,8 +577,6 @@ import type {
   PatchV1ConnectorMappingsByConnectorMappingIdResponses,
   PatchV1ConnectorTargetsByConnectorTargetIdErrors,
   PatchV1ConnectorTargetsByConnectorTargetIdResponses,
-  PatchV1DashboardsByDashboardIdErrors,
-  PatchV1DashboardsByDashboardIdResponses,
   PatchV1DesktopPoliciesByDesktopPolicyIdErrors,
   PatchV1DesktopPoliciesByDesktopPolicyIdResponses,
   PatchV1GatewayUsageLimitPoliciesByPolicyIdErrors,
@@ -607,6 +604,8 @@ import type {
   PatchV1MeProfileResponses,
   PatchV1OrgErrors,
   PatchV1OrgResponses,
+  PatchV1PermissionsSetsByPermissionSetIdErrors,
+  PatchV1PermissionsSetsByPermissionSetIdResponses,
   PatchV1PluginsByPluginIdErrors,
   PatchV1PluginsByPluginIdResponses,
   PatchV1ScimErrors,
@@ -714,10 +713,6 @@ import type {
   PostV1ConnectorTargetsByConnectorTargetIdMappingsResponses,
   PostV1ConnectorTargetsByConnectorTargetIdResyncErrors,
   PostV1ConnectorTargetsByConnectorTargetIdResyncResponses,
-  PostV1DashboardsByDashboardIdAccessErrors,
-  PostV1DashboardsByDashboardIdAccessResponses,
-  PostV1DashboardsErrors,
-  PostV1DashboardsResponses,
   PostV1DesktopPoliciesErrors,
   PostV1DesktopPoliciesResponses,
   PostV1DiagnosticsEgressErrors,
@@ -924,6 +919,10 @@ import type {
   PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses,
   PutV1AdminOrganizationsByOrganizationIdOpenworkWebAccessErrors,
   PutV1AdminOrganizationsByOrganizationIdOpenworkWebAccessResponses,
+  PutV1AgentPermissionsEveryoneErrors,
+  PutV1AgentPermissionsEveryoneResponses,
+  PutV1AgentPermissionsTeamsByTeamIdErrors,
+  PutV1AgentPermissionsTeamsByTeamIdResponses,
   PutV1CapabilitiesMicrosoft365DriveFilesErrors,
   PutV1CapabilitiesMicrosoft365DriveFilesResponses,
   PutV1DesktopPoliciesByKeyByExternalKeyErrors,
@@ -950,12 +949,19 @@ import type {
   PutV1McpConnectionsByConnectionIdToolPolicyResponses,
   PutV1McpConnectionsByKeyByExternalKeyErrors,
   PutV1McpConnectionsByKeyByExternalKeyResponses,
+  PutV1OrgDefaultModelEveryoneErrors,
+  PutV1OrgDefaultModelEveryoneResponses,
+  PutV1OrgDefaultModelTeamsByTeamIdErrors,
+  PutV1OrgDefaultModelTeamsByTeamIdResponses,
   PutV1OrgWorkbotSettingsErrors,
   PutV1OrgWorkbotSettingsResponses,
   PutV1PermissionsSetsByPermissionSetIdPermissionsErrors,
   PutV1PermissionsSetsByPermissionSetIdPermissionsResponses,
   PutV1TeamsByKeyByExternalKeyErrors,
   PutV1TeamsByKeyByExternalKeyResponses,
+  PutV1TeamsByTeamIdPermissionSetErrors,
+  PutV1TeamsByTeamIdPermissionSetResponses,
+  RenamePermissionSetBody,
   RunAutomationNowErrors,
   RunAutomationNowResponses,
   SaveWorkflowErrors,
@@ -964,6 +970,7 @@ import type {
   SendGmailDraftResponses,
   SendMicrosoft365MailDraftErrors,
   SendMicrosoft365MailDraftResponses,
+  TeamPermissionSetBody,
   TrashGmailMessageErrors,
   TrashGmailMessageResponses,
   UntrashGmailMessageErrors,
@@ -2386,7 +2393,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Get current user's desktop config
    *
-   * Returns the authenticated desktop app restrictions for the caller's active organization.
+   * Returns the authenticated desktop app restrictions for the caller's active organization, including the caller's agent permissions as ordered OpenCode permission rules when the organization has agent permissions on, and the model new chats start with (defaultModel, applied by OpenCode v2 desktops only) when the organization has the default model feature on and has chosen one the caller can use.
    */
   public getV1MeDesktopConfig<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
     return (options?.client ?? this.client).get<
@@ -3118,7 +3125,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Get recent dashboard activity
    *
-   * Returns the organization's five newest additions for the admin dashboard, newest first (ties by event id): connections and model providers by their stored creation time, plugins added to an active marketplace (excluding the built-in catalog) by the attachment's creation time, and published versions of active skills in active plugins. A snapshot of existing resources, not an audit log: removed or archived resources do not contribute. Each source follows the permission of its own admin list (View all connections, View all providers, View Gateway providers on a Gateway-enabled deployment, Manage everything shared or the caller's plugin and marketplace access). Workspace owners and admins only, with the dashboardActivity feature.
+   * Returns the organization's five newest additions for the admin dashboard, newest first (ties by event id): connections and model providers by their stored creation time, plugins added to an active marketplace (excluding the built-in catalog) by the attachment's creation time, and published versions of active skills in active plugins. A snapshot of existing resources, not an audit log: removed or archived resources do not contribute. Each source follows the permission of its own admin list (View all connections, View all providers, View Gateway providers on a Gateway-enabled deployment, Manage everything shared or the caller's plugin and marketplace access). Workspace owners and admins only.
    */
   public getV1OrgActivity<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
     return (options?.client ?? this.client).get<GetV1OrgActivityResponses, GetV1OrgActivityErrors, ThrowOnError>({
@@ -3162,52 +3169,64 @@ export class DenClient extends HeyApiClient {
    */
   public postV1ManagedDeployments<ThrowOnError extends boolean = false>(
     parameters: {
-      name: string;
-      domainName: string;
-      ownerEmail: string;
-      size?: "small";
-      provider: "aws";
-      target: {
-        accountId: string;
-        region:
-          | "us-east-1"
-          | "us-east-2"
-          | "us-west-2"
-          | "eu-west-1"
-          | "eu-central-1"
-          | "ap-southeast-1"
-          | "ap-southeast-2";
-        route53ZoneId: string;
-        network?:
-          | {
-              mode: "dedicated";
-            }
-          | {
-              mode: "existing";
-              vpcId: string;
-              serviceSubnetIds: Array<string>;
-              loadBalancerSubnetIds: Array<string>;
-              ecsClusterArn?: string;
+      body:
+        | {
+            name: string;
+            domainName: string;
+            ownerEmail: string;
+            size?: "small";
+            provider: "aws";
+            target: {
+              accountId: string;
+              region:
+                | "us-east-1"
+                | "us-east-2"
+                | "us-west-2"
+                | "eu-west-1"
+                | "eu-central-1"
+                | "ap-southeast-1"
+                | "ap-southeast-2";
+              route53ZoneId: string;
+              network?:
+                | {
+                    mode: "dedicated";
+                  }
+                | {
+                    mode: "existing";
+                    vpcId: string;
+                    serviceSubnetIds: Array<string>;
+                    loadBalancerSubnetIds: Array<string>;
+                    ecsClusterArn?: string;
+                  };
             };
-      };
+          }
+        | {
+            name: string;
+            domainName: string;
+            ownerEmail: string;
+            size?: "small";
+            provider: "gcp";
+            target: {
+              projectId: string;
+              projectNumber: string;
+              region:
+                | "us-central1"
+                | "us-east1"
+                | "us-east4"
+                | "us-west1"
+                | "us-west2"
+                | "europe-west1"
+                | "europe-west2"
+                | "europe-west3"
+                | "asia-southeast1"
+                | "australia-southeast1";
+              dnsZoneName: string;
+            };
+          };
     },
     options?: Options<never, ThrowOnError>,
   ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "body", key: "name" },
-            { in: "body", key: "domainName" },
-            { in: "body", key: "ownerEmail" },
-            { in: "body", key: "size" },
-            { in: "body", key: "provider" },
-            { in: "body", key: "target" },
-          ],
-        },
-      ],
-    );
+    const params = buildClientParams([parameters], [{ args: [{ key: "body", map: "body" }] }]);
     return (options?.client ?? this.client).post<
       PostV1ManagedDeploymentsResponses,
       PostV1ManagedDeploymentsErrors,
@@ -3250,7 +3269,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Prepare an install, retry or approved update
    *
-   * Creates or reuses an installer run pinned to the published release and returns a console approval link (install) or an account-checked cloud shell command (retry, update).
+   * Creates or reuses an installer run pinned to the published release. AWS installs return a console approval link; AWS retry/update and all GCP runs return a target-checked cloud shell command.
    */
   public postV1ManagedDeploymentsByDeploymentIdLaunch<ThrowOnError extends boolean = false>(
     parameters: {
@@ -3295,12 +3314,19 @@ export class DenClient extends HeyApiClient {
     parameters: {
       deploymentId: string;
       runId: string;
-      headers: {
-        authorization: string;
-        "x-amz-date": string;
-        "x-amz-security-token": string;
-        "x-openwork-proof": string;
-      };
+      body:
+        | {
+            headers: {
+              authorization: string;
+              "x-amz-date": string;
+              "x-amz-security-token": string;
+              "x-openwork-proof": string;
+            };
+          }
+        | {
+            provider: "gcp";
+            idToken: string;
+          };
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -3311,7 +3337,7 @@ export class DenClient extends HeyApiClient {
           args: [
             { in: "path", key: "deploymentId" },
             { in: "path", key: "runId" },
-            { in: "body", key: "headers" },
+            { key: "body", map: "body" },
           ],
         },
       ],
@@ -4343,257 +4369,9 @@ export class DenClient extends HeyApiClient {
   }
 
   /**
-   * List dashboards
+   * List Apps built in OpenWork
    *
-   * Lists every dashboard in the organization, ordered by name, with its ordered MCP App elements. Workspace owners and admins only; members read the dashboards granted to them through GET /v1/me/dashboards.
-   */
-  public getV1Dashboards<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
-    return (options?.client ?? this.client).get<GetV1DashboardsResponses, GetV1DashboardsErrors, ThrowOnError>({
-      url: "/v1/dashboards",
-      ...options,
-    });
-  }
-
-  /**
-   * Create dashboard
-   *
-   * Creates an organization-owned dashboard: a named, ordered list of up to 50 MCP App elements, each pointing at a ui:// resource served by a connected MCP server or by an App built in OpenWork (from GET /v1/mcp-apps). An App's element always points at the App's current revision. Nobody sees the dashboard until access is granted through POST /v1/dashboards/{dashboardId}/access.
-   */
-  public postV1Dashboards<ThrowOnError extends boolean = false>(
-    parameters: {
-      name: string;
-      elements?: Array<DashboardElement>;
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "body", key: "name" },
-            { in: "body", key: "elements" },
-          ],
-        },
-      ],
-    );
-    return (options?.client ?? this.client).post<PostV1DashboardsResponses, PostV1DashboardsErrors, ThrowOnError>({
-      url: "/v1/dashboards",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    });
-  }
-
-  /**
-   * Delete dashboard
-   *
-   * Soft-deletes the dashboard so it disappears from admin lists and from every member's granted dashboards. Its access grants are kept but stop applying; there is no restore.
-   */
-  public deleteV1DashboardsByDashboardId<ThrowOnError extends boolean = false>(
-    parameters: {
-      dashboardId: string;
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "dashboardId" }] }]);
-    return (options?.client ?? this.client).delete<
-      DeleteV1DashboardsByDashboardIdResponses,
-      DeleteV1DashboardsByDashboardIdErrors,
-      ThrowOnError
-    >({
-      url: "/v1/dashboards/{dashboardId}",
-      ...options,
-      ...params,
-    });
-  }
-
-  /**
-   * Get dashboard
-   *
-   * Returns one dashboard with its ordered MCP App elements. Deleted dashboards answer 404.
-   */
-  public getV1DashboardsByDashboardId<ThrowOnError extends boolean = false>(
-    parameters: {
-      dashboardId: string;
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "dashboardId" }] }]);
-    return (options?.client ?? this.client).get<
-      GetV1DashboardsByDashboardIdResponses,
-      GetV1DashboardsByDashboardIdErrors,
-      ThrowOnError
-    >({
-      url: "/v1/dashboards/{dashboardId}",
-      ...options,
-      ...params,
-    });
-  }
-
-  /**
-   * Update dashboard
-   *
-   * Partially updates a dashboard. Send name, elements, or both; when elements is present it replaces the whole ordered element list.
-   */
-  public patchV1DashboardsByDashboardId<ThrowOnError extends boolean = false>(
-    parameters: {
-      dashboardId: string;
-      name?: string;
-      elements?: Array<DashboardElement>;
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "dashboardId" },
-            { in: "body", key: "name" },
-            { in: "body", key: "elements" },
-          ],
-        },
-      ],
-    );
-    return (options?.client ?? this.client).patch<
-      PatchV1DashboardsByDashboardIdResponses,
-      PatchV1DashboardsByDashboardIdErrors,
-      ThrowOnError
-    >({
-      url: "/v1/dashboards/{dashboardId}",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    });
-  }
-
-  /**
-   * List dashboard access grants
-   *
-   * Lists every access grant on the dashboard, oldest first, including revoked grants (removedAt set). Each grant targets exactly one member, one team, or the whole organization.
-   */
-  public getV1DashboardsByDashboardIdAccess<ThrowOnError extends boolean = false>(
-    parameters: {
-      dashboardId: string;
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "dashboardId" }] }]);
-    return (options?.client ?? this.client).get<
-      GetV1DashboardsByDashboardIdAccessResponses,
-      GetV1DashboardsByDashboardIdAccessErrors,
-      ThrowOnError
-    >({
-      url: "/v1/dashboards/{dashboardId}/access",
-      ...options,
-      ...params,
-    });
-  }
-
-  /**
-   * Grant dashboard access
-   *
-   * Assigns a dashboard to one member, one team, or the whole organization — the same subject model connector assignment grants use. Regranting a revoked subject reactivates the existing grant.
-   */
-  public postV1DashboardsByDashboardIdAccess<ThrowOnError extends boolean = false>(
-    parameters: {
-      dashboardId: string;
-      orgMembershipId?: string;
-      teamId?: string;
-      orgWide?: boolean;
-      role: "viewer" | "editor" | "manager";
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "dashboardId" },
-            { in: "body", key: "orgMembershipId" },
-            { in: "body", key: "teamId" },
-            { in: "body", key: "orgWide" },
-            { in: "body", key: "role" },
-          ],
-        },
-      ],
-    );
-    return (options?.client ?? this.client).post<
-      PostV1DashboardsByDashboardIdAccessResponses,
-      PostV1DashboardsByDashboardIdAccessErrors,
-      ThrowOnError
-    >({
-      url: "/v1/dashboards/{dashboardId}/access",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    });
-  }
-
-  /**
-   * Revoke dashboard access
-   *
-   * Revokes one access grant by setting removedAt; the grant row is kept so regranting the same subject reactivates it. Revoking an already revoked grant answers 204 again.
-   */
-  public deleteV1DashboardsByDashboardIdAccessByGrantId<ThrowOnError extends boolean = false>(
-    parameters: {
-      dashboardId: string;
-      grantId: string;
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "dashboardId" },
-            { in: "path", key: "grantId" },
-          ],
-        },
-      ],
-    );
-    return (options?.client ?? this.client).delete<
-      DeleteV1DashboardsByDashboardIdAccessByGrantIdResponses,
-      DeleteV1DashboardsByDashboardIdAccessByGrantIdErrors,
-      ThrowOnError
-    >({
-      url: "/v1/dashboards/{dashboardId}/access/{grantId}",
-      ...options,
-      ...params,
-    });
-  }
-
-  /**
-   * List dashboards granted to the current member
-   *
-   * Returns the dashboards the signed-in member can see: granted directly, through one of their teams, or org-wide, deduplicated and ordered by name. The desktop MCP Apps dashboard renders these as read-only tiles.
-   */
-  public getV1MeDashboards<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
-    return (options?.client ?? this.client).get<GetV1MeDashboardsResponses, GetV1MeDashboardsErrors, ThrowOnError>({
-      url: "/v1/me/dashboards",
-      ...options,
-    });
-  }
-
-  /**
-   * List Apps built in OpenWork for dashboards
-   *
-   * Lists the Apps built in OpenWork that the calling member can use, in the element shape organization Dashboards store. Each element opens the App through its own MCP server with open_app, and Dashboards keep it on the App's current revision. Members see a tile only when the App's Plugin is shared with them. Empty when Apps built in OpenWork are turned off. Only Apps the member can access are listed.
+   * Lists the Apps built in OpenWork that the calling member can use, in the same element shape connection MCP Apps use, so the desktop can show them on a personal Dashboard. Each element opens the App through its own MCP server with open_app. Members see an App only when its Plugin is shared with them. Empty when Apps built in OpenWork are turned off.
    */
   public getV1McpApps<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
     return (options?.client ?? this.client).get<GetV1McpAppsResponses, GetV1McpAppsErrors, ThrowOnError>({
@@ -4848,6 +4626,109 @@ export class DenClient extends HeyApiClient {
       ThrowOnError
     >({
       url: "/v1/desktop-policies",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    });
+  }
+
+  /**
+   * List agent permissions
+   *
+   * Returns what agents may do on members' computers: everyone's settings and each team's overrides, every team listed by name. A permission a team leaves out inherits everyone's. Members who can view desktop policies can read; canEdit says whether the caller can change them.
+   */
+  public getV1AgentPermissions<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      GetV1AgentPermissionsResponses,
+      GetV1AgentPermissionsErrors,
+      ThrowOnError
+    >({ url: "/v1/agent-permissions", ...options });
+  }
+
+  /**
+   * Set everyone's agent permissions
+   *
+   * Replaces the agent permissions that apply to every member. A permission left out allows, so members' own settings apply. Members' apps pick up the change the next time they refresh their organization's settings. Requires the agent_permissions.manage permission with a recent sign-in and the Agent permissions feature.
+   */
+  public putV1AgentPermissionsEveryone<ThrowOnError extends boolean = false>(
+    parameters: {
+      agentPermissionPolicyWrite: AgentPermissionPolicyWrite;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "agentPermissionPolicyWrite", map: "body" }] }]);
+    return (options?.client ?? this.client).put<
+      PutV1AgentPermissionsEveryoneResponses,
+      PutV1AgentPermissionsEveryoneErrors,
+      ThrowOnError
+    >({
+      url: "/v1/agent-permissions/everyone",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    });
+  }
+
+  /**
+   * Remove a team's agent permissions
+   *
+   * Removes one team's overrides, so its members get everyone's agent permissions. Idempotent. Requires the agent_permissions.manage permission with a recent sign-in and the Agent permissions feature.
+   */
+  public deleteV1AgentPermissionsTeamsByTeamId<ThrowOnError extends boolean = false>(
+    parameters: {
+      teamId: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "teamId" }] }]);
+    return (options?.client ?? this.client).delete<
+      DeleteV1AgentPermissionsTeamsByTeamIdResponses,
+      DeleteV1AgentPermissionsTeamsByTeamIdErrors,
+      ThrowOnError
+    >({
+      url: "/v1/agent-permissions/teams/{teamId}",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
+   * Set a team's agent permissions
+   *
+   * Replaces one team's overrides. A team's decision replaces everyone's for its members (the strictest wins when a member is in several teams that set one), and its allowed and blocked patterns add to everyone's. A permission left out inherits everyone's; saving no permissions removes the team's overrides. Requires the agent_permissions.manage permission with a recent sign-in and the Agent permissions feature.
+   */
+  public putV1AgentPermissionsTeamsByTeamId<ThrowOnError extends boolean = false>(
+    parameters: {
+      teamId: string;
+      agentPermissionPolicyWrite: AgentPermissionPolicyWrite;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "teamId" },
+            { key: "agentPermissionPolicyWrite", map: "body" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).put<
+      PutV1AgentPermissionsTeamsByTeamIdResponses,
+      PutV1AgentPermissionsTeamsByTeamIdErrors,
+      ThrowOnError
+    >({
+      url: "/v1/agent-permissions/teams/{teamId}",
       ...options,
       ...params,
       headers: {
@@ -5194,9 +5075,47 @@ export class DenClient extends HeyApiClient {
   }
 
   /**
+   * Break down how the organization's skills, plugins or connectors are used
+   *
+   * Uses of one kind of item (`kind`: skills, plugins or connectors) over the last `days` UTC calendar days including today (7, 30 or 90; default 30), grouped by any of `item`, `member` and `day` (comma separated in `groupBy`; default `item`). `item` is the skill, plugin or connector id, `member` the organization member id and `day` the UTC date; dimensions not grouped by come back null. Filter to one member (`memberId`), the current members of one team (`teamId`), or one item (`itemId`). A team view counts its members' past uses by their current team. Every skill load and connector call counts once. Plugins count their skills' loads plus their Workflows' runs. `failures` counts failed connector calls and failed Workflow runs; it is null for skills. `people` counts distinct members in the row. `sources` splits uses by what started them (agent, workflow, automation, app, artifact); a missing key is zero. Only used items appear; ids are resolved to names by the caller. At most 10000 rows: a larger result answers 422 library_usage_too_many_rows without truncation. Members with the usage_analytics.view permission only (owners and admins by default).
+   */
+  public getV1LibraryUsage<ThrowOnError extends boolean = false>(
+    parameters: {
+      kind: "skills" | "plugins" | "connectors";
+      days?: "7" | "30" | "90";
+      groupBy?: string;
+      memberId?: string;
+      teamId?: string;
+      itemId?: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "kind" },
+            { in: "query", key: "days" },
+            { in: "query", key: "groupBy" },
+            { in: "query", key: "memberId" },
+            { in: "query", key: "teamId" },
+            { in: "query", key: "itemId" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).get<GetV1LibraryUsageResponses, GetV1LibraryUsageErrors, ThrowOnError>({
+      url: "/v1/library-usage",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
    * Read how the organization's skills, plugins or connectors are used
    *
-   * Lists every active skill (`kind=skills`), plugin (`plugins`) or connector (`connectors`) in the organization with how often it was used over the last `days` days (7, 30 or 90; default 30), by how many members, and when it was last used. Items nobody used come back with zeros. Skills count loads of their SKILL.md through the OpenWork MCP gateway; repeated loads by the same member within 15 minutes count once. Plugins count their skills' loads plus their Workflows' runs, and `failures` counts failed runs. Connectors count tool calls made through OpenWork, and `failures` counts calls that failed. `failures` is null for skills. Counts cover use since the libraryUsage feature was turned on; `trackingSince` is the first recorded use. Aggregates only. Members with the usage_analytics.view permission only (owners and admins by default).
+   * Lists every active skill (`kind=skills`), plugin (`plugins`) or connector (`connectors`) in the organization with how often it was used over the last `days` UTC calendar days including today (7, 30 or 90; default 30), by how many members, and when it was last used. Items nobody used come back with zeros. Skills count every load of their SKILL.md through the OpenWork MCP gateway. Plugins count their skills' loads plus their Workflows' runs, and `failures` counts failed runs. Connectors count tool calls made through OpenWork, and `failures` counts calls that failed. `failures` is null for skills. Uses started by the member's agent, saved Workflows, Automations, Apps and live artifacts all count; GET /v1/library-usage splits them by source, member and day. Counts cover use since usage recording started; `trackingSince` is the first recorded use (skill loads before daily rollups were introduced were counted at most once per member per 15 minutes). Aggregates only. Members with the usage_analytics.view permission only (owners and admins by default).
    */
   public getV1LibraryUsageByKind<ThrowOnError extends boolean = false>(
     parameters: {
@@ -8552,7 +8471,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Create team permissions
    *
-   * Creates the permission set for one team, named "<team name> Permissions" (fixed from then on), links it to the team and stores its initial permissions. A team can have one active set, and the team can't be changed later. You can only turn on permissions you have yourself. Requires permissions.manage (only the owner has it by default), a recent sign-in, and the Permissions feature.
+   * Creates the permission set for one team, named "<team name> Permissions" (fixed from then on), links it to the team and stores its initial permissions. A team can have one active set. With Shared roles on, send name (and optionally teamIds) instead of teamId to create a named role that can be given to any number of teams; each listed team's current custom role is replaced. You can only turn on permissions you have yourself. Requires permissions.manage (only the owner has it by default), a recent sign-in, and the Permissions feature.
    */
   public postV1PermissionsSets<ThrowOnError extends boolean = false>(
     parameters: {
@@ -8620,6 +8539,84 @@ export class DenClient extends HeyApiClient {
       url: "/v1/permissions/sets/{permissionSetId}",
       ...options,
       ...params,
+    });
+  }
+
+  /**
+   * Rename a role
+   *
+   * Renames a team permission set (a custom role). Member and Admin permissions keep their names, and archived sets can't be changed. Requires permissions.manage (only the owner has it by default), a recent sign-in, and the Permissions and Shared roles features.
+   */
+  public patchV1PermissionsSetsByPermissionSetId<ThrowOnError extends boolean = false>(
+    parameters: {
+      permissionSetId: string;
+      renamePermissionSetBody: RenamePermissionSetBody;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "permissionSetId" },
+            { key: "renamePermissionSetBody", map: "body" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).patch<
+      PatchV1PermissionsSetsByPermissionSetIdResponses,
+      PatchV1PermissionsSetsByPermissionSetIdErrors,
+      ThrowOnError
+    >({
+      url: "/v1/permissions/sets/{permissionSetId}",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    });
+  }
+
+  /**
+   * Set a team's custom role
+   *
+   * Gives a team one custom role (a team permission set), replacing its current one, or none with permissionSetId null. The same role can be given to any number of teams; a role left with no team is kept until it is deleted. You can only give a role whose permissions you all have yourself. Whether the team is an Admin team is changed separately (PATCH /v1/teams/:teamId). Requires permissions.manage (only the owner has it by default), a recent sign-in, and the Permissions and Shared roles features.
+   */
+  public putV1TeamsByTeamIdPermissionSet<ThrowOnError extends boolean = false>(
+    parameters: {
+      teamId: string;
+      teamPermissionSetBody: TeamPermissionSetBody;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "teamId" },
+            { key: "teamPermissionSetBody", map: "body" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).put<
+      PutV1TeamsByTeamIdPermissionSetResponses,
+      PutV1TeamsByTeamIdPermissionSetErrors,
+      ThrowOnError
+    >({
+      url: "/v1/teams/{teamId}/permission-set",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
     });
   }
 
@@ -11314,7 +11311,7 @@ export class DenClient extends HeyApiClient {
   /**
    * List MCP Apps exposed by an External MCP Connection
    *
-   * Enumerates the connection's app-visible MCP App launch tools in the exact reference shape desktop dashboard tiles use, so organization Dashboards can add them as elements. Admin-only.
+   * Enumerates the connection's app-visible MCP App launch tools in the exact reference shape desktop dashboard tiles use. Admin-only.
    */
   public getV1McpConnectionsByConnectionIdMcpApps<ThrowOnError extends boolean = false>(
     parameters: {
@@ -15165,6 +15162,99 @@ export class DenClient extends HeyApiClient {
       ThrowOnError
     >({
       url: "/v1/org/workbot-settings",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    });
+  }
+
+  /**
+   * Get default models
+   *
+   * Returns the model new desktop chats start with on the OpenCode v2 engine: the organization default (null for none) and each team's override (null when the team uses the organization default), teams by name. A member on several teams whose overrides differ starts on the organization default; conflictingMemberCount counts them per team. Members can still change the model in each chat. Requires the View OpenWork Models settings permission and the Organization default model feature.
+   */
+  public getV1OrgDefaultModel<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      GetV1OrgDefaultModelResponses,
+      GetV1OrgDefaultModelErrors,
+      ThrowOnError
+    >({ url: "/v1/org/default-model", ...options });
+  }
+
+  /**
+   * List models for the default model
+   *
+   * Lists every model the organization can choose as a default, read live from what it has set up: OpenWork Models, the AI Gateway's providers and models, and the organization's own providers. A source that cannot be read is named in unavailableSources and its models are left out. Requires the View OpenWork Models settings permission and the Organization default model feature.
+   */
+  public getV1OrgDefaultModelOptions<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      GetV1OrgDefaultModelOptionsResponses,
+      GetV1OrgDefaultModelOptionsErrors,
+      ThrowOnError
+    >({ url: "/v1/org/default-model/options", ...options });
+  }
+
+  /**
+   * Set the organization default model
+   *
+   * Sets the model new desktop chats start with for every member whose teams do not override it; null removes the organization default. Only models the organization has are accepted. Desktops pick it up the next time they refresh their organization's settings. Requires the Manage OpenWork Models permission, a recent sign-in and the Organization default model feature.
+   */
+  public putV1OrgDefaultModelEveryone<ThrowOnError extends boolean = false>(
+    parameters: {
+      defaultModelWrite: DefaultModelWrite;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "defaultModelWrite", map: "body" }] }]);
+    return (options?.client ?? this.client).put<
+      PutV1OrgDefaultModelEveryoneResponses,
+      PutV1OrgDefaultModelEveryoneErrors,
+      ThrowOnError
+    >({
+      url: "/v1/org/default-model/everyone",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    });
+  }
+
+  /**
+   * Set a team's default model
+   *
+   * Overrides the model new desktop chats start with for one team's members; null makes the team use the organization default again. A member on several teams whose overrides differ starts on the organization default. Only models the organization has are accepted. Requires the Manage OpenWork Models permission, a recent sign-in and the Organization default model feature.
+   */
+  public putV1OrgDefaultModelTeamsByTeamId<ThrowOnError extends boolean = false>(
+    parameters: {
+      teamId: string;
+      defaultModelWrite: DefaultModelWrite;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "teamId" },
+            { key: "defaultModelWrite", map: "body" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).put<
+      PutV1OrgDefaultModelTeamsByTeamIdResponses,
+      PutV1OrgDefaultModelTeamsByTeamIdErrors,
+      ThrowOnError
+    >({
+      url: "/v1/org/default-model/teams/{teamId}",
       ...options,
       ...params,
       headers: {

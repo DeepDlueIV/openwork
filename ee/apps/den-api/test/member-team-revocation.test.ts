@@ -68,8 +68,9 @@ function forbidCacheReads() {
   const membership = mock.method(cache.org, "membership", fail)
   const rollouts = mock.method(cache.features, "rollouts", fail)
   const overrides = mock.method(cache.features, "overrides", fail)
+  const state = mock.method(cache.features, "state", fail)
   return () => {
-    for (const spy of [members, membership, rollouts, overrides]) assert.equal(spy.mock.callCount(), 0)
+    for (const spy of [members, membership, rollouts, overrides, state]) assert.equal(spy.mock.callCount(), 0)
   }
 }
 

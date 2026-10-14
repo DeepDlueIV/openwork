@@ -872,7 +872,7 @@ function buildFixtureOrganization(index: number): AdminOrganization {
     seatsFreeAdditional: target ? 20 : 0,
     billableSeatCount: target ? 103 : 0,
     features: mapFeatures((key) => {
-      const enabled = target && (key === "permissions" || key === "libraryUsage");
+      const enabled = target && (key === "permissions" || key === "workbot");
       return { enabled, source: "everyone", everyone: enabled, killed: false, override: null, overrideApplies: true };
     }),
     openworkWebAccess: {

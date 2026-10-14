@@ -80,20 +80,21 @@ export function AppBuilderStep({
         )
       : null;
   const editing =
-    progress.build && /(?:^|_)update_app$/.test(progress.build.toolName);
+    run.intent?.kind === "edit" ||
+    (progress.build && /(?:^|_)update_app$/.test(progress.build.toolName));
   // One plain rail row, like every other step: what is happening to which
   // app, a short state, Open when there is something to open, and the raw
   // calls behind the details icon.
-  const title = `“${progress.title}”`;
+  const title = progress.title ? ` “${progress.title}”` : "";
   const sentence = progress.app || progress.builtUnrecorded
-    ? `${editing ? "Updated" : "Created"} artifact ${title}`
+    ? `${editing ? "Updated" : "Created"} artifact${title}`
     : progress.failed
-      ? `Couldn’t ${editing ? "update" : "create"} artifact ${title}`
+      ? `Couldn’t ${editing ? "update" : "create"} artifact${title}`
       : progress.stage === "checking"
-        ? `Checking artifact ${title}`
+        ? `Checking artifact${title}`
         : progress.stage === "writing"
-          ? `${editing ? "Updating" : "Writing"} artifact ${title}`
-          : `Preparing artifact ${title}`;
+          ? `${editing ? "Updating" : "Writing"} artifact${title}`
+          : `Preparing artifact${title}`;
   const state = progress.failed
     ? latestProblem
     : progress.builtUnrecorded

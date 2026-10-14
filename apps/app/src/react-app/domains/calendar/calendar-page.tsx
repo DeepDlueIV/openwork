@@ -183,9 +183,8 @@ export function CalendarPage(props: {
   const { year, month, day } = anchor
   const range = useMemo(() => calendarRange(view, { year, month, day }, timeZone, WEEK_STARTS_ON), [day, month, timeZone, view, year])
   const feature = useCalendarFeature(denContext)
-  const polish = useCalendarFeature(denContext, "calendarPolish").data === true
   const enabled = feature.data === true
-  const organizationDefaultName = useCalendarDefaultModelName(denContext, polish && enabled).data
+  const organizationDefaultName = useCalendarDefaultModelName(denContext, enabled).data
   const listQuery = useAutomationListQuery(denContext)
   const automationItems = listQuery.data?.items
   const runsQuery = useAutomationRunsInRange(denContext, range, automationItems, enabled && layers.automations)
@@ -390,7 +389,6 @@ export function CalendarPage(props: {
         <div className="relative flex h-[max(24rem,calc(100dvh-10rem))] min-w-0 shrink-0 flex-col lg:h-auto lg:min-h-0 lg:flex-1">
           {view === "month" ? (
             <CalendarMonthGrid
-              polish={polish}
               range={range}
               timeZone={timeZone}
               now={now}
@@ -403,7 +401,6 @@ export function CalendarPage(props: {
             />
           ) : (
             <CalendarTimeGrid
-              polish={polish}
               range={range}
               timeZone={timeZone}
               now={now}
@@ -425,7 +422,6 @@ export function CalendarPage(props: {
         </div>
         {creating ? (
           <CreateAutomationCard
-            polish={polish}
             organizationDefaultName={organizationDefaultName}
             key={creating.slot.at}
             anchor={creating}
@@ -455,7 +451,6 @@ export function CalendarPage(props: {
         ) : null}
         {selectedAutomation ? (
           <AutomationDetailPanel
-            polish={polish}
             organizationDefaultName={organizationDefaultName}
             key={selectedAutomation.automation.id}
             item={selectedAutomation}

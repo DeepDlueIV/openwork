@@ -480,4 +480,19 @@ test("connected service actions reach only the selected account and enforce writ
     expect(await snapshot(selected)).toEqual(final);
   }
   evidence.recordAssertionEvidence("Administrator write revocation is enforced despite previously granted provider tokens", "Disabled Google mailbox management and Microsoft mail sending through the actual selected-client configuration routes. Both previously discovered actions were rejected without any additional provider request or state change.", true);
+  // Sheets reads stay enabled above. Only a rejected or under-scoped token should send the member to reconnect.
+  const readSheet = [...found.values()].find((entry) => text(entry.name).startsWith(`native:${google.id}:`) && entry.method === "GET"
+    && entry.path === "/v1/capabilities/google-workspace/spreadsheets/{spreadsheetId}");
+  if (!readSheet) throw new Error("Missing spreadsheet read action.");
+  for (const [spreadsheetId, expected] of [
+    ["api-disabled-1", { error: "google_api_error", message: expect.stringMatching(/^Google returned HTTP 403: Google Sheets API has not been used .* admin must enable Google Sheets API .* reconnecting does not help\.$/) }],
+    ["office-file-1", { error: "google_api_error", message: expect.stringMatching(/^Google returned HTTP 400: This operation is not supported .* only work on native Google Sheets/) }],
+    ["not-shared-1", { error: "google_api_error", message: expect.stringMatching(/^Google returned HTTP 403: The caller does not have permission\. The connected Google account may not have access/) }],
+    ["scope-missing-1", { error: "needs_connection", message: expect.stringContaining("Reconnect Google Workspace") }],
+  ] as const) {
+    const refused = await gateway(readScopeToken, "execute_capability", { name: readSheet.name, path: { spreadsheetId } });
+    expect(refused.result.isError).toBe(true);
+    expect(refused.payload).toEqual(expected);
+  }
+  evidence.recordAssertionEvidence("Google refusals name the fix instead of always asking to reconnect", "Only an under-scoped token returned needs_connection. A disabled Sheets API, an Office file and an unshared spreadsheet each returned google_api_error with Google's own reason plus the admin, file-format or access fix.", true);
 });

@@ -1,6 +1,7 @@
 import { getPermissionDefinition, type PermissionKey } from "@openwork/types/den/permissions";
 import {
   type DenOrgAccessFlags,
+  getAgentPermissionsRoute,
   getAiGatewayRoute,
   getApiKeysRoute,
   getBillingRoute,
@@ -13,6 +14,7 @@ import {
   getIntegrationsRoute,
   getMcpConnectionsRoute,
   getMembersRoute,
+  getNewRoleRoute,
   getOrgDashboardRoute,
   getPermissionsRoute,
   getPluginsRoute,
@@ -61,6 +63,8 @@ const ADMIN_ROUTE_RULES: readonly AdminRouteRule[] = [
     needs: MEMBERS_AREA_KEYS,
   },
   { prefix: `${getMembersRoute()}/teams`, allowed: (access) => access.canViewTeams, needs: ["teams.view"] },
+  // Creating a role makes a team and its permission set.
+  { prefix: getNewRoleRoute(), allowed: (access) => access.canManageTeams && access.canManagePermissions, needs: ["teams.manage", "permissions.manage"] },
   {
     prefix: `${getOrgDashboardRoute()}/manage-members`,
     allowed: (access) => access.canInviteMembers || access.canManageMembers || access.canRemoveMembers
@@ -70,6 +74,8 @@ const ADMIN_ROUTE_RULES: readonly AdminRouteRule[] = [
   // Feature-off and read-only states are shown by the Permissions screens themselves.
   { prefix: getPermissionsRoute(), allowed: (access) => access.canViewPermissions, needs: ["permissions.view"] },
   { prefix: `${getPermissionsRoute()}/new`, allowed: (access) => access.canManagePermissions, needs: ["permissions.manage"] },
+  { prefix: getAgentPermissionsRoute(), allowed: (access) => access.canViewAgentPermissions, needs: ["agent_permissions.view"] },
+  { prefix: `${getAgentPermissionsRoute()}/new`, allowed: (access) => access.canManageAgentPermissions, needs: ["agent_permissions.manage"] },
   { prefix: getMcpConnectionsRoute(), allowed: (access) => access.canViewAllConnections, needs: ["connections.view"] },
   { prefix: `${getMcpConnectionsRoute()}/new`, allowed: (access) => access.canManageConnections, needs: ["connections.manage"] },
   {

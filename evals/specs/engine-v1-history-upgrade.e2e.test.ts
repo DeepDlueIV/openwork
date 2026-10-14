@@ -1,6 +1,6 @@
 import { expect } from "vitest";
 import { spec } from "@openwork/testkit";
-import { engineV1HistoryUpgrade } from "../worlds/engine-v1-history.ts";
+import { engineV1HistoryUpgrade, engineV1HistoryWithChatsThatFail } from "../worlds/engine-v1-history.ts";
 
 // OPENWORK_EVAL_V1_HISTORY_LIMIT=all (local only) migrates a whole real history, which can take hours.
 const whole = Boolean(process.env.OPENWORK_EVAL_V1_HISTORY_SOURCE?.trim()) && process.env.OPENWORK_EVAL_V1_HISTORY_LIMIT?.trim() === "all";
@@ -8,6 +8,13 @@ const MIGRATION_WITHIN_MS = whole ? 6 * 3_600_000 : 300_000;
 
 const test = spec.world(engineV1HistoryUpgrade, {
   timeout: whole ? 7 * 3_600_000 : 900_000,
+  resources: {
+    surfaces: ["desktop"], services: ["den"],
+    nativeReason: "The upgrade copies chats from the v1 database file the desktop's engine owns into its v2 sidecar, and only the desktop offers it.",
+  },
+});
+const testWithChatsThatFail = spec.world(engineV1HistoryWithChatsThatFail, {
+  timeout: 2_400_000,
   resources: {
     surfaces: ["desktop"], services: ["den"],
     nativeReason: "The upgrade copies chats from the v1 database file the desktop's engine owns into its v2 sidecar, and only the desktop offers it.",
@@ -30,6 +37,8 @@ function migrationOf(status: Record<string, unknown>) {
     skipped: typeof migration.skipped === "number" ? migration.skipped : -1,
     total: typeof migration.total === "number" ? migration.total : -1,
     backupPath: typeof migration.backupPath === "string" ? migration.backupPath : null,
+    notCopied: (Array.isArray(migration.notCopied) ? migration.notCopied : []).filter(isRecord)
+      .map(chat => ({ id: String(chat.id), reason: String(chat.reason) })),
   };
 }
 
@@ -239,6 +248,18 @@ test("a member chooses a chat upgrade: chats are copied with a backup and OpenWo
     await user.screenshot();
   });
 
+  await step("while it runs: chats are copied by a separate process, so running out of memory cannot quit OpenWork", async () => {
+    const copy = world.readHeldCopy();
+    expect(copy).toMatchObject({ held: true, heldBy: { process: "migration" } });
+    expect(copy.mainPid).toBeGreaterThan(0);
+    expect(copy.heldBy?.pid).not.toBe(copy.mainPid);
+    evidence.recordAssertionEvidence(
+      "the held import was sent by the migration process, not the desktop's main process",
+      `held import from the ${copy.heldBy?.process ?? "unknown"} process; desktop main and migration are different processes: ${String(copy.heldBy?.pid !== copy.mainPid)}`,
+      copy.heldBy?.process === "migration" && copy.heldBy.pid !== copy.mainPid,
+    );
+  });
+
   for (const viewport of viewports) {
     await step(`while it runs: progress clears the usable conversation header at ${viewport.width}×${viewport.height}`, async () => {
       const layout = await floatingLayout("engine-migration-banner", viewport);
@@ -413,6 +434,7 @@ test("a member chooses a chat upgrade: chats are copied with a backup and OpenWo
       return;
     }
     const idsBefore = idsBeforeManual;
+    const seenBefore = world.readHeldCopy();
     // The command palette is one of the two homes of "Migrate chats" (Advanced settings is the other).
     await user.press(process.platform === "darwin" ? "Meta+K" : "Control+K");
     await user.type({ role: "combobox" }, "Migrate chats");
@@ -437,12 +459,152 @@ test("a member chooses a chat upgrade: chats are copied with a backup and OpenWo
     expect(again.chatRouting).not.toBe(true);
     await user.screenshot();
     const idsAfter = world.fixture ? await v2SessionIds() : [];
+    const seen = world.readHeldCopy();
+    const exported = seen.exports - seenBefore.exports;
+    const sent = seen.imports - seenBefore.imports;
     evidence.recordAssertionEvidence(
-      "a rerun skips chats already on v2",
-      `imported ${migration.imported}, skipped ${migration.skipped} of ${migration.total}; v2 chats ${idsBefore.length} → ${idsAfter.length}; manual completed dialog keeps Switch to OpenCode v2 / Not now and v1 routing`,
-      migration.imported === 0 && migration.skipped === world.expectedChats && idsAfter.length === idsBefore.length,
+      "a rerun skips chats already on v2 without exporting or sending them again",
+      `imported ${migration.imported}, skipped ${migration.skipped} of ${migration.total}; ${exported} chats exported and ${sent} sent for import; v2 chats ${idsBefore.length} → ${idsAfter.length}; manual completed dialog keeps Switch to OpenCode v2 / Not now and v1 routing`,
+      migration.imported === 0 && migration.skipped === world.expectedChats && exported === 0 && sent === 0 && idsAfter.length === idsBefore.length,
     );
     expect(migration).toMatchObject({ imported: 0, skipped: world.expectedChats });
+    expect({ exported, sent }).toEqual({ exported: 0, sent: 0 });
     expect(idsAfter).toEqual(idsBefore);
+  });
+});
+
+testWithChatsThatFail("chats that cannot be copied whole are copied trimmed, or stay in v1 once trimming fails too", async ({ world, user, probe, step, evidence }) => {
+  const workspaceId = world.workspace.workspaceId;
+  const status = async () => {
+    const response = await probe.desktopApi("/experimental/engine-v2-preview/status");
+    expect(response.status).toBe(200);
+    if (!isRecord(response.body)) throw new Error("Engine status missing");
+    return response.body;
+  };
+  const v2SessionIds = async () => {
+    const response = await probe.desktopApi(`/workspace/${workspaceId}/opencode2/api/session`);
+    expect(response.status).toBe(200);
+    const items = isRecord(response.body) ? response.body.data : response.body;
+    return (Array.isArray(items) ? items : []).filter(isRecord).map(item => String(item.id)).sort();
+  };
+  const chatOf = (id: string) => world.chats.find(chat => chat.id === id)!;
+  const large = chatOf(world.failing.large);
+  const crashing = chatOf(world.failing.crash);
+  const copiedWhole = world.chats.map(chat => chat.id).filter(id => id !== large.id && id !== crashing.id).sort();
+  const note = "Left out when this chat was upgraded to OpenCode v2 because it was too large. The full version is in OpenCode v1.";
+  const migrationError = (value: Record<string, unknown>) => isRecord(value.migration) && typeof value.migration.error === "string" ? value.migration.error : "";
+  const trimmedOf = (value: Record<string, unknown>) => (isRecord(value.migration) && Array.isArray(value.migration.trimmed) ? value.migration.trimmed : [])
+    .filter(isRecord).map(chat => String(chat.id));
+
+  await step("before: the member starts the upgrade with a sub-chat too large to copy whole and a chat that stops the copy", async () => {
+    await user.resizeViewport({ width: 1280, height: 800, deviceScaleFactor: 1 });
+    await probe.eventually(status, {
+      within: 60_000, label: "v1 engine with v1 history",
+      until: value => value.chatRouting !== true && value.v1HistoryAvailable === true,
+    });
+    await user.see({ testId: "engine-upgrade-notice" }, { timeoutMs: 60_000 });
+    await user.click({ role: "button", text: /^Upgrade$/ });
+    await user.see({ testId: "engine-migration-consent" });
+    await user.click({ role: "button", text: /^Upgrade$/ });
+    await probe.eventually(status, { within: 120_000, label: "migration started", until: value => migrationOf(value).state !== "idle" });
+    await user.screenshot();
+  });
+
+  await step("the chat that stops the copy ends the run, named, with one more try to come", async () => {
+    const stopped = await probe.eventually(status, {
+      within: 600_000, intervalMs: 1_000, label: "the migration process stopped on a chat",
+      until: value => migrationOf(value).state === "error",
+    });
+    await user.see({ testId: "engine-migration-progress" }, { timeoutMs: 10_000 });
+    await user.see({ text: "Migration didn't finish" });
+    await user.see({ text: `Chat migration stopped while copying "${crashing.title}" (SIGKILL). Retry migration; that chat will be tried once more` });
+    const copy = world.readHeldCopy();
+    expect(copy.crashes).toHaveLength(1);
+    expect(copy.crashes[0]).toMatchObject({ process: "migration" });
+    expect(copy.crashes[0]!.pid).not.toBe(copy.mainPid);
+    // The large sub-chat waits for the trimmed pass, which this run never reached.
+    expect(migrationOf(stopped)).toMatchObject({ imported: copiedWhole.length, notCopied: [] });
+    expect(stopped.chatRouting).not.toBe(true);
+    evidence.recordAssertionEvidence(
+      "a crash on one chat ends the run and says that chat gets one more try",
+      `migration process (not the desktop) killed while exporting "${crashing.title}"; ${migrationOf(stopped).imported} chats copied; "${large.title}" (~315 MiB) held for the trimmed pass; v1 still selected`,
+      copy.crashes.length === 1 && stopped.chatRouting !== true,
+    );
+    await user.screenshot();
+  });
+
+  await step("its one trimmed try stops the copy again, so it stays in v1 for good", async () => {
+    const trimmedStop = `Chat migration stopped while copying "${crashing.title}" without its largest outputs (SIGKILL)`;
+    await user.click({ role: "button", text: /^Try again$/ });
+    const stoppedAgain = await probe.eventually(status, {
+      within: 600_000, intervalMs: 1_000, label: "the trimmed try stopped the migration process",
+      // The first stop's message also mentions the trimmed try; wait for the trimmed try's own.
+      until: value => migrationOf(value).state === "error" && migrationError(value).startsWith(trimmedStop),
+    });
+    await user.see({ text: trimmedStop });
+    await user.see({ role: "button", text: /^Try again$/ });
+    expect(world.readHeldCopy().crashes).toHaveLength(2);
+    expect(stoppedAgain.chatRouting).not.toBe(true);
+    expect(world.readV1History()).toEqual(world.before);
+    evidence.recordAssertionEvidence(
+      "a chat that also stops its trimmed copy is not tried again",
+      `second kill while exporting the trimmed "${crashing.title}"; the error says it stays in OpenCode v1; v1 unchanged`,
+      world.readHeldCopy().crashes.length === 2,
+    );
+    await user.screenshot();
+  });
+
+  await step("after: Try again copies the large sub-chat trimmed and lists the chat left in v1", async () => {
+    await user.click({ role: "button", text: /^Try again$/ });
+    const done = await probe.eventually(status, {
+      within: 600_000, intervalMs: 1_000, label: "the retry completed",
+      until: value => migrationOf(value).state === "completed",
+    });
+    await user.see({ text: "Chats migrated to OpenCode v2" }, { timeoutMs: 30_000 });
+    await user.see({ text: /1 chat couldn't be copied and stays in OpenCode v1\./ });
+    await user.see({ text: /1 chat was copied without its largest attachments or outputs; the full version stays in OpenCode v1\./ });
+    await user.see({ role: "button", text: "Switch to OpenCode v2" });
+    const listed = (await probe.dom('[data-testid="engine-migration-not-copied"] li')).elements.map(element => element.text);
+    const migration = migrationOf(done);
+    expect(listed).toEqual([crashing.title]);
+    expect(trimmedOf(done)).toEqual([large.id]);
+    expect(migration).toMatchObject({
+      imported: 0, skipped: copiedWhole.length, total: world.expectedChats,
+      notCopied: [{ id: crashing.id, reason: "stopped" }],
+    });
+    expect(world.readHeldCopy().crashes).toHaveLength(2);
+    expect(done.chatRouting).not.toBe(true);
+    evidence.recordAssertionEvidence(
+      "the run finishes: the large chat is copied trimmed and the chat that stopped twice is named",
+      `completed: ${migration.skipped} already copied, 1 trimmed ("${large.title}"), ${migration.notCopied.length} left in v1 (${listed.join("; ")}); no third crash; OpenWork waits for the member's choice`,
+      migration.state === "completed" && trimmedOf(done).length === 1 && done.chatRouting !== true,
+    );
+    await user.screenshot();
+  });
+
+  await step("after: on v2 the trimmed sub-chat keeps its parent, its reply and its other outputs, with the note in place of the largest", async () => {
+    await user.click({ role: "button", text: "Switch to OpenCode v2" });
+    await probe.eventually(status, {
+      within: 60_000, label: "OpenWork switched to v2",
+      until: value => value.chatRouting === true && value.running === true,
+    });
+    const ids = await probe.eventually(v2SessionIds, {
+      within: 60_000, label: "copied chats listed by v2",
+      until: value => [...copiedWhole, large.id].every(id => value.includes(id)),
+    });
+    expect(ids).not.toContain(crashing.id);
+    const chat = await world.readV2Chat(large.id, [note, large.reply, "A long build log line"]);
+    expect(chat.parentId).toBe(large.parentId);
+    expect(chat.containing.every(count => count > 0)).toBe(true);
+    const first = world.chats[0]!;
+    await user.click({ testId: `sidebar-session-${first.id}` });
+    await user.see({ text: first.reply }, { timeoutMs: 60_000 });
+    expect(world.readV1History()).toEqual(world.before);
+    evidence.recordAssertionEvidence(
+      "the trimmed copy is a real chat on v2, and v1 still has the full one",
+      `v2 lists ${[...copiedWhole, large.id].filter(id => ids.includes(id)).length} of 3 copied chats and not "${crashing.title}"; "${large.title}" is a sub-chat of ${chat.parentId} with ${chat.messages} messages; messages with the note ${chat.containing[0]}, with its reply ${chat.containing[1]}, with kept build output ${chat.containing[2]}; v1 digest unchanged`,
+      chat.parentId === large.parentId && chat.containing.every(count => count > 0),
+    );
+    await user.screenshot();
   });
 });

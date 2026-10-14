@@ -1,7 +1,7 @@
 {
   "version": "5",
   "dialect": "mysql",
-  "id": "41fc5ae1-6f0d-4e8d-a148-73281449220e",
+  "id": "782b6dd5-548e-48ad-b185-0d0ee43b97b0",
   "prevId": "1129ea0b-70e0-41d0-950c-44305c298b66",
   "tables": {
     "account": {
@@ -3634,26 +3634,13 @@
           "notNull": false,
           "autoincrement": false
         },
-        "tool_name": {
-          "name": "tool_name",
-          "type": "varchar(255)",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "via": {
-          "name": "via",
+        "source": {
+          "name": "source",
           "type": "varchar(32)",
           "primaryKey": false,
           "notNull": true,
-          "autoincrement": false
-        },
-        "dedupe_key": {
-          "name": "dedupe_key",
-          "type": "varchar(191)",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
+          "autoincrement": false,
+          "default": "'agent'"
         },
         "outcome": {
           "name": "outcome",
@@ -3672,13 +3659,12 @@
         }
       },
       "indexes": {
-        "capability_usage_dedupe": {
-          "name": "capability_usage_dedupe",
+        "capability_usage_created": {
+          "name": "capability_usage_created",
           "columns": [
-            "organization_id",
-            "dedupe_key"
+            "created_at"
           ],
-          "isUnique": true
+          "isUnique": false
         },
         "capability_usage_object": {
           "name": "capability_usage_object",
@@ -3694,6 +3680,15 @@
           "name": "capability_usage_recent",
           "columns": [
             "organization_id",
+            "created_at"
+          ],
+          "isUnique": false
+        },
+        "capability_usage_member": {
+          "name": "capability_usage_member",
+          "columns": [
+            "organization_id",
+            "org_membership_id",
             "created_at"
           ],
           "isUnique": false
@@ -3722,6 +3717,227 @@
       "compositePrimaryKeys": {
         "capability_usage_event_id": {
           "name": "capability_usage_event_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "capability_usage_rollup_lock": {
+      "name": "capability_usage_rollup_lock",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "capability_usage_rollup_lock_id": {
+          "name": "capability_usage_rollup_lock_id",
+          "columns": [
+            "id"
+          ]
+        }
+      },
+      "uniqueConstraints": {},
+      "checkConstraint": {}
+    },
+    "capability_usage_rollups": {
+      "name": "capability_usage_rollups",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "bucket_start": {
+          "name": "bucket_start",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "dimension_key": {
+          "name": "dimension_key",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "organization_id": {
+          "name": "organization_id",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "org_membership_id": {
+          "name": "org_membership_id",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "varchar(32)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "plugin_id": {
+          "name": "plugin_id",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "config_object_id": {
+          "name": "config_object_id",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "connection_id": {
+          "name": "connection_id",
+          "type": "varchar(64)",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "use_count": {
+          "name": "use_count",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "ok_count": {
+          "name": "ok_count",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "error_count": {
+          "name": "error_count",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "source_row_count": {
+          "name": "source_row_count",
+          "type": "int",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": 0
+        },
+        "source_counts": {
+          "name": "source_counts",
+          "type": "json",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "last_used_at": {
+          "name": "last_used_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "(now())"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp(3)",
+          "primaryKey": false,
+          "notNull": true,
+          "autoincrement": false,
+          "default": "CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)"
+        }
+      },
+      "indexes": {
+        "capability_usage_rollups_bucket_dimension": {
+          "name": "capability_usage_rollups_bucket_dimension",
+          "columns": [
+            "bucket_start",
+            "dimension_key"
+          ],
+          "isUnique": true
+        },
+        "capability_usage_rollups_org_bucket": {
+          "name": "capability_usage_rollups_org_bucket",
+          "columns": [
+            "organization_id",
+            "bucket_start"
+          ],
+          "isUnique": false
+        },
+        "capability_usage_rollups_member": {
+          "name": "capability_usage_rollups_member",
+          "columns": [
+            "organization_id",
+            "org_membership_id",
+            "bucket_start"
+          ],
+          "isUnique": false
+        },
+        "capability_usage_rollups_object": {
+          "name": "capability_usage_rollups_object",
+          "columns": [
+            "organization_id",
+            "kind",
+            "config_object_id",
+            "bucket_start"
+          ],
+          "isUnique": false
+        },
+        "capability_usage_rollups_connection": {
+          "name": "capability_usage_rollups_connection",
+          "columns": [
+            "organization_id",
+            "kind",
+            "connection_id",
+            "bucket_start"
+          ],
+          "isUnique": false
+        },
+        "capability_usage_rollups_plugin": {
+          "name": "capability_usage_rollups_plugin",
+          "columns": [
+            "organization_id",
+            "plugin_id",
+            "bucket_start"
+          ],
+          "isUnique": false
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {
+        "capability_usage_rollups_id": {
+          "name": "capability_usage_rollups_id",
           "columns": [
             "id"
           ]
@@ -13430,67 +13646,6 @@
           "name": "plugin_mcp_requirement_binding_id",
           "columns": [
             "id"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "checkConstraint": {}
-    },
-    "slack_installation": {
-      "name": "slack_installation",
-      "columns": {
-        "client_id": {
-          "name": "client_id",
-          "type": "varchar(512)",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "workspace_id": {
-          "name": "workspace_id",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "access_token": {
-          "name": "access_token",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false
-        },
-        "refresh_token": {
-          "name": "refresh_token",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "expires_at": {
-          "name": "expires_at",
-          "type": "timestamp(3)",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp(3)",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": "CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)"
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {
-        "slack_installation_client_id_workspace_id_pk": {
-          "name": "slack_installation_client_id_workspace_id_pk",
-          "columns": [
-            "client_id",
-            "workspace_id"
           ]
         }
       },

@@ -1,4 +1,5 @@
 import { expect } from "vitest";
+import { z } from "zod";
 import { spec } from "@openwork/testkit";
 import { libraryUsage } from "../worlds/library-usage.ts";
 import { isEmulatedClientWidth } from "../worlds/library.ts";
@@ -10,6 +11,10 @@ const test = spec.world(libraryUsage, {
 
 const row = (name: string) => `[data-testid="library-usage-row"][data-item="${name}"]`;
 const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
+const breakdownSchema = z.object({
+  timezone: z.string(),
+  rows: z.array(z.object({ itemId: z.string().nullable(), memberId: z.string().nullable(), uses: z.number(), people: z.number(), failures: z.number().nullable(), sources: z.record(z.string(), z.number()) })),
+});
 
 test("an owner sees which plugins, skills and connectors the team uses, which fail, and which nobody uses, while a teammate cannot see usage", async ({ world, user, probe, step, evidence }) => {
   const owner = user.on(world.web);
@@ -56,7 +61,7 @@ test("an owner sees which plugins, skills and connectors the team uses, which fa
   await step("when teammates' agents load skills and make two successful connector calls through OpenWork", async () => {
     const loads = [
       await world.loadSkill("alice", "draftReply", "get_skill"),
-      // The same teammate loading the same skill again a moment later is one use.
+      // The same teammate loading the same skill again a moment later is another use.
       await world.loadSkill("alice", "draftReply", "get_skill"),
       await world.loadSkill("blair", "draftReply", "execute_capability"),
       await world.loadSkill("blair", "summarizeTicket", "get_skill"),
@@ -117,15 +122,15 @@ test("an owner sees which plugins, skills and connectors the team uses, which fa
     expect(refused).toBe(true);
   });
 
-  await step("after: Support kit shows 3 uses by 2 people today and GitHub still reads Not used", async () => {
+  await step("after: Support kit shows 4 uses by 2 people today and GitHub still reads Not used", async () => {
     await openView("Plugins", "Support kit");
     await page.eventually(async () => {
       await owner.reload();
       await owner.see({ testId: "library-usage-row" }, { timeoutMs: 30_000 });
       const uses = (await page.dom(`${row("Support kit")} [data-item-uses]`)).elements.map((entry) => entry.text);
-      if (uses[0] !== "3") throw new Error(`Support kit shows ${uses.join() || "nothing"} uses so far.`);
+      if (uses[0] !== "4") throw new Error(`Support kit shows ${uses.join() || "nothing"} uses so far.`);
       return uses;
-    }, { within: 60_000, intervalMs: 2_000, label: "Support kit counts three uses" });
+    }, { within: 60_000, intervalMs: 2_000, label: "Support kit counts four uses" });
     const support = await rowText("Support kit");
     const sales = await rowText("GitHub");
     evidence.recordAssertionEvidence("plugins add up their skills' uses", `Support kit: ${support}; GitHub: ${sales}`, support.includes("Today") && sales.includes("Not used"));
@@ -135,7 +140,7 @@ test("an owner sees which plugins, skills and connectors the team uses, which fa
     await owner.screenshot();
   });
 
-  await step("the Skills view counts the repeated load once and the Not used filter leaves only the skill nobody used", async () => {
+  await step("the Skills view counts every load, including the repeated one, and the Not used filter leaves only the skill nobody used", async () => {
     await openView("Skills", draftReply.title);
     const draft = await rowText(draftReply.title);
     const draftUses = (await page.dom(`${row(draftReply.title)} [data-item-uses]`)).elements[0]?.text ?? "";
@@ -143,10 +148,25 @@ test("an owner sees which plugins, skills and connectors the team uses, which fa
     await owner.click({ role: "radio", label: "Not used" });
     await owner.see({ text: quoteBuilder.title });
     const visible = (await page.dom('[data-testid="library-usage-row"]')).elements.map((entry) => oneLine(entry.text));
-    evidence.recordAssertionEvidence("skill counts and the Not used filter", `${draftReply.title}: ${draftUses} uses (${draft}); ${summarizeTicket.title}: ${summary}; Not used shows ${visible.length} row: ${visible.join(", ")}`, visible.length === 1 && draftUses === "2");
-    expect(draftUses).toBe("2");
+    evidence.recordAssertionEvidence("skill counts and the Not used filter", `${draftReply.title}: ${draftUses} uses (${draft}); ${summarizeTicket.title}: ${summary}; Not used shows ${visible.length} row: ${visible.join(", ")}`, visible.length === 1 && draftUses === "3");
+    expect(draftUses).toBe("3");
     expect(visible).toHaveLength(1);
     await owner.screenshot();
+  });
+
+  await step("the usage breakdown shows who loaded each skill, how often, and that their agents started every load", async () => {
+    const draftId = draftReply.capability.split(":")[2] ?? "";
+    const { alice, blair } = world.memberIds;
+    const result = await probe.api(world.den.admin, `/v1/library-usage?kind=skills&groupBy=item,member&itemId=${encodeURIComponent(draftId)}`);
+    const body = breakdownSchema.parse(result.body);
+    const rows = body.rows;
+    const perMember = rows.map((entry) => `${entry.memberId === alice ? "Alice" : entry.memberId === blair ? "Blair" : entry.memberId}: ${entry.uses} (${Object.entries(entry.sources).map(([source, count]) => `${source} ${count}`).join(", ")})`);
+    const ok = result.response.status === 200 && body.timezone === "UTC" && rows.length === 2
+      && rows.every((entry) => entry.itemId === draftId && entry.people === 1 && entry.sources.agent === entry.uses)
+      && rows.find((entry) => entry.memberId === alice)?.uses === 2
+      && rows.find((entry) => entry.memberId === blair)?.uses === 1;
+    evidence.recordAssertionEvidence("one skill broken down by member and source", `HTTP ${result.response.status}; ${draftReply.title}: ${perMember.join("; ")}`, ok);
+    expect(ok).toBe(true);
   });
 
   await step("the Connectors view shows 1 of 3 calls failed on Team tracker and Old wiki was never used", async () => {
@@ -176,6 +196,39 @@ test("an owner sees which plugins, skills and connectors the team uses, which fa
     evidence.recordAssertionEvidence("only a real failed call gets the attention state", `Team tracker: ${tracker}; Old wiki: ${wiki}; Failing shows ${failing.length} row; card ${card}, ${flagged.length} attention stat, ${dangerValue.length} danger value; ${inventedLogos.length} fabricated service logos`, ok);
     expect(ok).toBe(true);
     await owner.screenshot();
+  });
+
+  await step("when the gateway's nightly rollup folds today's uses into daily rows, the breakdown and the Plugins view count exactly the same", async () => {
+    const draftId = draftReply.capability.split(":")[2] ?? "";
+    const trackerId = world.connectionIds.tracker;
+    const read = async (path: string) => breakdownSchema.parse((await probe.api(world.den.admin, path)).body).rows;
+    const skillsBefore = await read(`/v1/library-usage?kind=skills&groupBy=item,member&itemId=${encodeURIComponent(draftId)}`);
+    const trackerBefore = await read(`/v1/library-usage?kind=connectors&groupBy=item&itemId=${encodeURIComponent(trackerId)}`);
+    const folded = await world.foldUsage();
+    // 4 skill loads and 3 connector calls were recorded today; the job moves every one into a daily row.
+    const foldedAll = folded.status === 200 && folded.dayBuckets >= 1 && folded.rowsDeleted === 7;
+    evidence.recordAssertionEvidence("the real rollup job consumed today's raw uses", `POST /internal/rollups/run as of ${folded.now}: HTTP ${folded.status}; ${folded.dayBuckets} day folded; ${folded.rowsDeleted} raw rows moved into daily rollups`, foldedAll);
+    expect(foldedAll).toBe(true);
+    const skillsAfter = await read(`/v1/library-usage?kind=skills&groupBy=item,member&itemId=${encodeURIComponent(draftId)}`);
+    const trackerAfter = await read(`/v1/library-usage?kind=connectors&groupBy=item&itemId=${encodeURIComponent(trackerId)}`);
+    const sortByMember = (rows: typeof skillsBefore) => [...rows].sort((a, b) => (a.memberId ?? "").localeCompare(b.memberId ?? "")).map((entry) => ({ memberId: entry.memberId, uses: entry.uses, sources: entry.sources }));
+    const tracker = (rows: typeof trackerBefore) => rows.map((entry) => ({ uses: entry.uses, people: entry.people, failures: entry.failures, sources: entry.sources }));
+    const sameSkills = JSON.stringify(sortByMember(skillsAfter)) === JSON.stringify(sortByMember(skillsBefore));
+    const sameTracker = JSON.stringify(tracker(trackerAfter)) === JSON.stringify(tracker(trackerBefore)) && trackerAfter[0]?.uses === 3 && trackerAfter[0]?.failures === 1;
+    evidence.recordAssertionEvidence("daily rollups answer exactly what the raw uses did", `${draftReply.title} per member before ${JSON.stringify(sortByMember(skillsBefore))}, after ${JSON.stringify(sortByMember(skillsAfter))}; ${world.connectors.tracker} before ${JSON.stringify(tracker(trackerBefore))}, after ${JSON.stringify(tracker(trackerAfter))}`, sameSkills && sameTracker);
+    expect(sameSkills).toBe(true);
+    expect(sameTracker).toBe(true);
+    await openView("Plugins", "Support kit");
+    await owner.reload();
+    await owner.see({ testId: "library-usage-row" }, { timeoutMs: 30_000 });
+    const support = await rowText("Support kit");
+    const supportUses = (await page.dom(`${row("Support kit")} [data-item-uses]`)).elements[0]?.text;
+    evidence.recordAssertionEvidence("the Plugins view reads the daily rollups", `Support kit after the fold: ${support}`, supportUses === "4" && support.includes("Today"));
+    expect(supportUses).toBe("4");
+    expect(support).toContain("Today");
+    await owner.screenshot();
+    // The next steps compare connectors, where this journey was before the fold.
+    await openView("Connectors", world.connectors.tracker);
   });
 
   await step("after: at phone width the owner's comparison table scrolls sideways without widening the page", async () => {
@@ -256,24 +309,102 @@ test("an owner sees which plugins, skills and connectors the team uses, which fa
     await world.faults.recover();
     await owner.click({ role: "button", label: "Try again" });
     await owner.see({ testId: "library-usage-row" }, { timeoutMs: 30_000 });
-    expect((await page.dom(`${row("Support kit")} [data-item-uses]`)).elements[0]?.text).toBe("3");
-    evidence.recordAssertionEvidence("retry restores real usage", "Support kit again shows its 3 recorded uses after the transport recovers.", true);
+    expect((await page.dom(`${row("Support kit")} [data-item-uses]`)).elements[0]?.text).toBe("4");
+    evidence.recordAssertionEvidence("retry restores real usage", "Support kit again shows its 4 recorded uses after the transport recovers.", true);
     await owner.screenshot();
   });
 
-  await step("the owner opens the same plugin and connector details from usage", async () => {
+  await step("the owner opens Support kit's usage and sees who uses it, how often, and what started it", async () => {
     await owner.click({ role: "link", label: /Support kit/ });
-    await owner.see({ role: "heading", label: "Support kit" }, { timeoutMs: 60_000 });
+    await owner.see({ testId: "library-usage-item" }, { timeoutMs: 60_000 });
+    await owner.see({ testId: "library-usage-person" }, { timeoutMs: 60_000 });
+    const heading = oneLine((await page.dom('[data-testid="library-usage-item-heading"] h2')).elements[0]?.text ?? "");
+    const people = (await page.dom('[data-testid="library-usage-person"]')).elements.map((entry) => oneLine(entry.text));
+    const aliceUses = (await page.dom('[data-testid="library-usage-person"][data-person="Alice Teammate"] [data-item-uses]')).elements[0]?.text;
+    const blairUses = (await page.dom('[data-testid="library-usage-person"][data-person="Blair Teammate"] [data-item-uses]')).elements[0]?.text;
+    const sources = (await page.dom('[data-testid="library-usage-sources"] li')).elements.map((entry) => oneLine(entry.text));
+    const agentUses = oneLine((await page.dom('[data-testid="library-usage-sources"] li[data-source="agent"] span:last-child')).elements[0]?.text ?? "");
+    const daily = (await page.dom('[data-testid="library-usage-daily"] figure')).elements.length;
+    const ok = heading === "Support kit" && people.length === 2 && aliceUses === "2" && blairUses === "2" && sources.length === 1 && agentUses === "4" && daily === 1;
+    evidence.recordAssertionEvidence("one plugin's people, days and sources", `${heading}: ${people.join("; ")}; started by ${sources.join(", ")}; ${daily} uses-per-day chart`, ok);
+    expect(ok).toBe(true);
+    await owner.screenshot();
+  });
+
+  await step("a slow read of who uses it keeps the page's layout with skeletons, and an outage never shows an empty list", async () => {
+    await world.breakdownFaults.delay();
+    await owner.reload();
+    await owner.see({ testId: "library-usage-daily-loading" }, { timeoutMs: 8_000 });
+    await owner.see({ testId: "item-rows-skeleton" });
+    const stats = (await page.dom('[data-testid="library-usage-item-summary"] [data-analytics-stat]')).elements.length;
+    await owner.notSee({ text: "Loading activity…" });
+    await owner.screenshot();
+    await world.breakdownFaults.recover();
+    await owner.see({ testId: "library-usage-person" }, { timeoutMs: 30_000 });
+    const delayed = (await world.breakdownFaults.requests()).filter((request) => request.faulted && request.status === 200).length;
+    await world.breakdownFaults.fail();
+    await owner.reload();
+    await owner.see({ text: "Couldn't load who uses it" }, { timeoutMs: 30_000 });
+    const people = (await page.dom('[data-testid="library-usage-person"]')).elements.length;
+    await owner.screenshot();
+    await world.breakdownFaults.recover();
+    await owner.reload();
+    await owner.see({ testId: "library-usage-person" }, { timeoutMs: 30_000 });
+    const ok = delayed > 0 && stats === 4 && people === 0;
+    evidence.recordAssertionEvidence("drill-down loading and outage states", `${delayed} delayed breakdown reads showed list and chart skeletons under the 4 known totals; an outage showed "Couldn't load who uses it" with ${people} invented rows, then real people returned`, ok);
+    expect(ok).toBe(true);
+  });
+
+  await step("from there the owner opens Alice and sees which plugins and skills she used", async () => {
+    await owner.click({ role: "link", label: /Alice Teammate/ });
+    await owner.see({ testId: "library-usage-member" }, { timeoutMs: 60_000 });
+    await owner.see({ testId: "library-usage-member-item" }, { timeoutMs: 60_000 });
+    const plugins = (await page.dom('[data-testid="library-usage-member-item"]')).elements.map((entry) => oneLine(entry.text));
+    const supportUses = (await page.dom('[data-testid="library-usage-member-item"][data-item="Support kit"] [data-item-uses]')).elements[0]?.text;
+    await owner.screenshot();
+    await owner.click({ role: "radio", label: "Skills" });
+    await page.eventually(async () => {
+      if ((await page.dom(`[data-testid="library-usage-member-item"][data-item="${draftReply.title}"]`)).elements.length === 0) throw new Error("Alice's skills have not loaded yet.");
+      return true;
+    }, { within: 30_000, intervalMs: 500, label: "Alice's skills" });
+    const skillRows = (await page.dom('[data-testid="library-usage-member-item"]')).elements.map((entry) => oneLine(entry.text));
+    const draftUses = (await page.dom(`[data-testid="library-usage-member-item"][data-item="${draftReply.title}"] [data-item-uses]`)).elements[0]?.text;
+    const ok = plugins.length === 1 && supportUses === "2" && skillRows.length === 1 && draftUses === "2";
+    evidence.recordAssertionEvidence("one person's plugins and skills", `Alice's plugins: ${plugins.join("; ")}; her skills: ${skillRows.join("; ")}`, ok);
+    expect(ok).toBe(true);
+    await owner.screenshot();
+  });
+
+  await step("usage pages still lead to where each plugin and connector is managed", async () => {
+    // A first visit can compile the destination page, so allow the same time as other page loads.
+    const leftUsagePage = (label: string) => page.eventually(async () => {
+      if ((await page.dom('[data-testid="library-usage-item"]')).elements.length > 0) throw new Error(`${label} has not left the usage page yet.`);
+      return true;
+    }, { within: 60_000, intervalMs: 500, label: `${label} leaves the usage page` });
+    await owner.click({ role: "link", label: new RegExp(draftReply.title) });
+    await owner.see({ testId: "library-usage-item" }, { timeoutMs: 60_000 });
+    await owner.navigate(`${world.baseUrl}/dashboard/analytics/library?view=plugins`);
+    await owner.see({ testId: "library-usage-row" }, { timeoutMs: 60_000 });
+    await owner.click({ role: "link", label: /Support kit/ });
+    await owner.see({ testId: "library-usage-item" }, { timeoutMs: 60_000 });
+    await owner.click({ role: "link", label: "Open in Library" });
+    await leftUsagePage("Open in Library");
+    // The Library header reads its logo letter before the name.
+    await owner.see({ role: "heading", label: /Support kit$/ }, { timeoutMs: 60_000 });
     await owner.screenshot();
     await owner.navigate(`${world.baseUrl}/dashboard/analytics/library?view=connectors`);
     await owner.see({ testId: "library-usage-row" }, { timeoutMs: 60_000 });
     const marks = (await page.dom(`${row("GitHub")} img`)).elements;
     expect(marks).toHaveLength(1);
     expect((await page.dom(`${row(world.connectors.tracker)} img`)).elements).toHaveLength(0);
-    await owner.screenshot();
     await owner.click({ role: "link", label: /Team tracker/ });
-    await owner.see({ role: "heading", label: world.connectors.tracker }, { timeoutMs: 60_000 });
-    evidence.recordAssertionEvidence("usage and management have one detail destination", "Support kit opens its Library detail; Team tracker opens its existing Connectors detail, with no new analytics-only destination.", true);
+    await owner.see({ testId: "library-usage-item" }, { timeoutMs: 60_000 });
+    const trackerFailures = (await page.dom('[data-testid="library-usage-person"] [data-item-failures]')).elements.map((entry) => entry.text);
+    await owner.screenshot();
+    await owner.click({ role: "link", label: "Open connector" });
+    await leftUsagePage("Open connector");
+    await owner.see({ role: "heading", label: new RegExp(`${world.connectors.tracker}$`) }, { timeoutMs: 60_000 });
+    evidence.recordAssertionEvidence("usage pages link to the management pages", `Support kit's usage opens its Library detail; Team tracker's usage (failures per person: ${trackerFailures.join(", ")}) opens its Connectors detail.`, true);
     await owner.screenshot();
   });
 
@@ -295,11 +426,14 @@ test("an owner sees which plugins, skills and connectors the team uses, which fa
     await teammate.notSee({ role: "heading", label: "Plugins & connectors" });
     const alice = world.den.members.alice;
     if (!alice) throw new Error("Missing teammate session.");
-    const denied = await Promise.all(["plugins", "skills", "connectors"].map((kind) => probe.api(alice, `/v1/library-usage/${kind}`)));
+    const denied = await Promise.all([
+      ...["plugins", "skills", "connectors"].map((kind) => probe.api(alice, `/v1/library-usage/${kind}`)),
+      probe.api(alice, "/v1/library-usage?kind=skills&groupBy=member"),
+    ]);
     const statuses = denied.map((result) => result.response.status);
     const headings = (await memberPage.dom("h1")).elements.map((entry) => entry.text);
     evidence.recordAssertionEvidence("usage is for owners and admins only", `teammate API reads: ${statuses.join(", ")}; teammate page headings: ${headings.join(", ") || "none"}`, statuses.every((status) => status === 403));
-    expect(statuses).toEqual([403, 403, 403]);
+    expect(statuses).toEqual([403, 403, 403, 403]);
     await teammate.screenshot();
   });
 });

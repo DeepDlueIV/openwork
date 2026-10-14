@@ -9,7 +9,7 @@ import {
   resolveProviderScopes,
   type NativeOAuthProviderConfig,
 } from "./provider-registry.js"
-import { getConnectedAccount } from "./oauth-credentials.js"
+import { getConnectedAccount, getConnectedAccountForListing } from "./oauth-credentials.js"
 import { getNativeOAuthClient } from "./native-oauth-client.js"
 import { parseSlackAccountIdentity, slackCloudPolicyError } from "./slack-policy.js"
 import { readProviderTenantId } from "./oauth-tenant.js"
@@ -168,7 +168,7 @@ export async function listNativeProviderUsableEntries(input: {
     if (!provider) continue
     const client = await getNativeOAuthClient(input.organizationId, connection.id)
     if (!client) continue
-    const account = await getConnectedAccount({
+    const account = await getConnectedAccountForListing({
       organizationId: input.organizationId,
       orgMembershipId: input.orgMembershipId,
       providerId: connection.id,
@@ -198,7 +198,7 @@ export async function listNativeProviderUsableEntries(input: {
   for (const provider of Object.values(NATIVE_OAUTH_PROVIDERS)) {
     const client = await getNativeOAuthClient(input.organizationId, provider.providerId)
     if (!client) continue
-    const storedAccount = await getConnectedAccount({
+    const storedAccount = await getConnectedAccountForListing({
       organizationId: input.organizationId,
       orgMembershipId: input.orgMembershipId,
       providerId: provider.providerId,

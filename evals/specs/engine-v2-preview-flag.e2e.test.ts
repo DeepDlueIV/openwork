@@ -242,7 +242,11 @@ test.skipIf(!enabled)(title, async ({ evidence, place }) => {
               npm: "@ai-sdk/openai-compatible",
               name: "Witness E2E",
               options: { baseURL: "http://127.0.0.1:65533/v1", apiKey: "witness-key-e2e" },
-              models: { "witness-model-e2e": { name: "Witness Model E2E" } },
+              models: {
+                "witness-model-e2e": { name: "Witness Model E2E" },
+                // models.dev marks retired models deprecated; the engine hides them.
+                "witness-deprecated-e2e": { name: "Witness Deprecated E2E", status: "deprecated" },
+              },
             },
             "openwork-skip-e2e": { name: "Skip E2E", options: {} },
             "openwork-untrusted-api-e2e": {
@@ -265,11 +269,22 @@ test.skipIf(!enabled)(title, async ({ evidence, place }) => {
     const mirrorLatencyMs = Date.now() - patchCompletedAt;
     const catalogStatus = await untilStatus(
       app,
-      (status) => status.catalogModelIds.includes("witness-model-e2e"),
+      (status) => status.catalogModelIds.includes("witness-model-e2e") && status.lastError === undefined,
       120_000,
       "the witness model to appear in the catalog",
     );
     const catalogLatencyMs = Date.now() - patchCompletedAt;
+    const catalogResponse = await serverFetchJson(app, `/workspace/${workspaceId}/opencode2/api/model`);
+    expect(catalogResponse.status).toBe(200);
+    const catalogModels = isRecord(catalogResponse.json) && Array.isArray(catalogResponse.json.data)
+      ? catalogResponse.json.data : [];
+    expect(catalogModels).toEqual(expect.arrayContaining([
+      expect.objectContaining({ providerID: "openwork-witness-e2e", id: "witness-model-e2e" }),
+    ]));
+    expect(catalogModels.some((model) => isRecord(model)
+      && (model.providerID === "openwork-skip-e2e" || model.providerID === "openwork-untrusted-api-e2e"))).toBe(false);
+    expect(catalogModels.some((model) => isRecord(model) && model.id === "witness-deprecated-e2e")).toBe(false);
+    expect(catalogStatus.catalogModelIds).not.toContain("witness-deprecated-e2e");
     console.info(`[engine-v2-preview-flag] mirror latency after PATCH 200: ${mirrorLatencyMs}ms; catalog latency: ${catalogLatencyMs}ms`);
     expect(mirroredStatus.skippedProviderIds).toContain("openwork-skip-e2e");
     expect(mirroredStatus.mirroredProviderIds).not.toContain("openwork-skip-e2e");
@@ -291,7 +306,7 @@ test.skipIf(!enabled)(title, async ({ evidence, place }) => {
     );
     evidence.recordAssertionEvidence(
       "F3 provider changes hot-mirror without restarting the sidecar",
-      `The witness provider mirrored after ${mirrorLatencyMs}ms and its model appeared in the catalog after ${catalogLatencyMs}ms, the invalid provider was skipped and never mirrored, and the sidecar remained running at pid ${pid0}.`,
+      `The witness provider mirrored after ${mirrorLatencyMs}ms and its exact provider/model pair appeared in the live catalog without a readiness error after ${catalogLatencyMs}ms; its deprecated model stayed hidden without being reported missing, skipped providers were absent, and the sidecar remained running at pid ${pid0}.`,
       true,
     );
 

@@ -1,6 +1,5 @@
 import { createAndSelectWorkspace, waitFor } from "@openwork/behaviors";
-import { desktop } from "@openwork/hosts";
-import { browserScript, type Place, type Surface } from "@openwork/testkit";
+import { appWeb, browserScript, type Place, type Surface } from "@openwork/testkit";
 
 export async function setSidebarBrandTheme(app: Surface, dark: boolean) {
   const theme = dark ? "dark" : "light";
@@ -9,11 +8,12 @@ export async function setSidebarBrandTheme(app: Surface, dark: boolean) {
     && getComputedStyle(document.documentElement).colorScheme === theme, [theme]), { timeoutMs: 5_000 });
 }
 
+/** The app in headless Chrome with one workspace; the brand geometry is app UI. */
 export async function sidebarBrandApp(place: Place) {
-  const app = await desktop({ name: "sidebar-brand-geometry", host: place.host() });
+  const workspacePath = `/tmp/openwork-sidebar-brand-${Date.now()}`;
+  const app = await appWeb({ place, name: "sidebar-brand-geometry", workspacePath, mouse: true });
   try {
-    if (!app.workspaceRoot) throw new Error("Expected an isolated spawned app");
-    await createAndSelectWorkspace(app, { path: `${app.workspaceRoot}/evals-tmp/sidebar-brand-${Date.now()}` });
+    await createAndSelectWorkspace(app, { path: workspacePath });
     return app;
   } catch (error) {
     await app.stop();

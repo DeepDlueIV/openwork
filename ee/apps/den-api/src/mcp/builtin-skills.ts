@@ -1,4 +1,6 @@
+import { env } from "../env.js"
 import { SLACK_ASSISTANT_INSTRUCTIONS } from "../slack-assistant/protocol.js"
+import { BUILD_AN_APP_SKILL_SOURCE, BUILTIN_BUILD_AN_APP_CAPABILITY } from "./build-an-app-skill.js"
 import type { RemoteSkillDescriptor } from "./marketplace-capabilities.js"
 import { scoreText, tokenize, type CapabilityMatch } from "./search.js"
 
@@ -6,6 +8,8 @@ export type BuiltinSkillDefinition = {
   descriptor: RemoteSkillDescriptor
   source: string
   searchExtraTokens: string
+  /** Listed only while the tools it teaches exist on this deployment. */
+  available?: () => boolean
 }
 
 export const BUILTIN_CREATE_SKILL_CAPABILITY = "skill:create-skill"
@@ -249,9 +253,23 @@ export const BUILTIN_SKILLS: BuiltinSkillDefinition[] = [
     source: SHARE_PLUGIN_SOURCE,
     searchExtraTokens: "share give grant access person member team plugin skill viewer editor",
   },
+  {
+    descriptor: {
+      name: "build-an-app",
+      title: "Build an App",
+      description: "Build or change an App, such as a dashboard, tracker, lookup, form, or calculator, that opens beside the chat.",
+      capability: BUILTIN_BUILD_AN_APP_CAPABILITY,
+      location: "skill://build-an-app/SKILL.md",
+    },
+    source: BUILD_AN_APP_SKILL_SOURCE,
+    searchExtraTokens: "app apps build make create edit update dashboard tracker calculator form lookup interactive view mcp artifact",
+    available: () => env.appMcpServersEnabled,
+  },
 ]
 
-export const BUILTIN_SKILL_DESCRIPTORS: RemoteSkillDescriptor[] = BUILTIN_SKILLS.map((skill) => skill.descriptor)
+function availableBuiltinSkills(): BuiltinSkillDefinition[] {
+  return BUILTIN_SKILLS.filter((skill) => skill.available?.() ?? true)
+}
 
 export type BuiltinSkillCapabilityMatch = CapabilityMatch & {
   kind: "skill"
@@ -266,11 +284,11 @@ export type BuiltinSkillExecutePayload = {
 }
 
 function findBuiltinSkill(capability: string): BuiltinSkillDefinition | undefined {
-  return BUILTIN_SKILLS.find((skill) => skill.descriptor.capability === capability)
+  return availableBuiltinSkills().find((skill) => skill.descriptor.capability === capability)
 }
 
 export function listBuiltinSkillDescriptors(): RemoteSkillDescriptor[] {
-  return BUILTIN_SKILL_DESCRIPTORS
+  return availableBuiltinSkills().map((skill) => skill.descriptor)
 }
 
 export function searchBuiltinSkillCapabilities(query: string, limit = 5): BuiltinSkillCapabilityMatch[] {
@@ -278,7 +296,7 @@ export function searchBuiltinSkillCapabilities(query: string, limit = 5): Builti
   if (queryTokens.length === 0) return []
 
   const matches: BuiltinSkillCapabilityMatch[] = []
-  for (const skill of BUILTIN_SKILLS) {
+  for (const skill of availableBuiltinSkills()) {
     const score = scoreText(
       tokenize(`${skill.descriptor.name} ${skill.descriptor.title}`),
       tokenize(skill.descriptor.description),

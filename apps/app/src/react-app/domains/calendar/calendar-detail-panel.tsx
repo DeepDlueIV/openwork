@@ -64,7 +64,6 @@ export type AutomationPanelActions = {
 
 /** Right-hand panel for one Automation: when it runs, where, its recent runs, and Pause / Edit schedule / Run now. */
 export function AutomationDetailPanel(props: {
-  polish?: boolean
   organizationDefaultName?: string | null
   item: AutomationListItem
   selectedBlock: AutomationCalendarItem | null
@@ -117,7 +116,7 @@ export function AutomationDetailPanel(props: {
           <Row label="Runs on">{runsOnLine(props.item)}</Row>
           {revision.action?.kind === "saved_script" ? null : (
             <>
-              <Row label="Model"><CalendarModelSummary model={revision.model} options={props.modelOptions} polish={props.polish} organizationDefaultName={props.organizationDefaultName} /></Row>
+              <Row label="Model"><CalendarModelSummary model={revision.model} options={props.modelOptions} organizationDefaultName={props.organizationDefaultName} /></Row>
               <Row label="Instructions"><p className="line-clamp-4 whitespace-pre-line" data-calendar-instructions>{revision.instructions}</p></Row>
             </>
           )}

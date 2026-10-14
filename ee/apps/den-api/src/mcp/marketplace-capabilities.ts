@@ -1,4 +1,5 @@
 import { and, desc, eq, inArray, isNull, notExists } from "@openwork-ee/den-db/drizzle"
+import { memberAgentPermissionRules, organizationAgentPermissionDenial } from "../agent-permissions.js"
 import {
   ConfigObjectAccessGrantTable,
   ConfigObjectTable,
@@ -12,7 +13,7 @@ import {
   PluginTable,
 } from "@openwork-ee/den-db/schema"
 import { normalizeDenTypeId, type DenTypeId } from "@openwork-ee/utils/typeid"
-import type { CapabilityUsageVia } from "@openwork-ee/den-db/schema"
+import type { CapabilityUsageSource } from "@openwork-ee/den-db/schema"
 import { isAuthoredMcpAppVersion, MCP_APP_LAUNCH_TOOL_NAME, mcpAppServerPath } from "@openwork/types/mcp-app"
 import {
   listExternalMcpConnections,
@@ -29,6 +30,7 @@ import {
 import { EXTERNAL_MCP_PRESETS } from "../capability-sources/external-mcp-presets.js"
 import { getConnectedAccount, getOrgOAuthClient } from "../capability-sources/oauth-credentials.js"
 import { db } from "../db.js"
+import { requestRead } from "../request-reads.js"
 import { env } from "../env.js"
 import { recordSkillUse } from "../capability-usage.js"
 import { resolvePluginArchGrantRole } from "../routes/org/plugin-system/access.js"
@@ -83,6 +85,16 @@ export function standardSkillName(title: string, stableId: string): string {
   const bounded = base.slice(0, Math.max(1, 64 - suffix.length - 1)).replace(/-+$/g, "")
   const name = `${bounded || "skill"}-${suffix}`
   return AGENT_SKILL_NAME_PATTERN.test(name) ? name : `skill-${suffix}`
+}
+
+/**
+ * The names an organization skill goes by, for agent permission patterns: its
+ * title, the name the skill catalog lists it under, and that name without the
+ * catalog's unique suffix.
+ */
+function marketplaceSkillNames(row: { plugin: { id: string }; configObject: { id: string; title: string } }): string[] {
+  const name = standardSkillName(row.configObject.title, `${row.plugin.id.slice(-4)}${row.configObject.id.slice(-4)}`)
+  return [row.configObject.title, name, name.slice(0, name.lastIndexOf("-"))]
 }
 
 type OrganizationId = DenTypeId<"organization">
@@ -497,10 +509,14 @@ async function listGrantOnlyRows(organizationId: OrganizationId): Promise<Market
   return rows.map((row) => ({ ...row, marketplace: null }))
 }
 
+/** Read once per request (search, skills and Apps all list them); each caller gets its own array. */
 async function listActiveCapabilityRows(organizationId: OrganizationId): Promise<MarketplaceCapabilityRow[]> {
-  const marketplaceRows = await listActiveMarketplaceRows(organizationId)
-  const grantOnlyRows = await listGrantOnlyRows(organizationId)
-  return [...marketplaceRows, ...grantOnlyRows]
+  const rows = await requestRead(`active-capability-rows:${organizationId}`, async () => {
+    const marketplaceRows = await listActiveMarketplaceRows(organizationId)
+    const grantOnlyRows = await listGrantOnlyRows(organizationId)
+    return [...marketplaceRows, ...grantOnlyRows]
+  })
+  return [...rows]
 }
 
 async function listActiveMarketplaceRowsForCapability(input: {
@@ -740,10 +756,13 @@ export async function listAccessibleMarketplaceSkillDescriptors(input: {
     rows: (await listActiveCapabilityRows(organizationId))
       .filter((row) => row.configObject.objectType === "skill"),
   })
+  // Skills the member's agent permissions block are not offered at all.
+  const agentRules = await memberAgentPermissionRules(organizationId, input.member.orgMembershipId)
   const descriptors = new Map<string, RemoteSkillDescriptor>()
   for (const row of rows) {
     const capability = buildMarketplaceCapabilityName(row.plugin.id, row.configObject.id)
     if (descriptors.has(capability)) continue
+    if (organizationAgentPermissionDenial(agentRules, "skill", marketplaceSkillNames(row))) continue
     const uniqueSuffix = `${row.plugin.id.slice(-4)}${row.configObject.id.slice(-4)}`
     const name = standardSkillName(row.configObject.title, uniqueSuffix)
     descriptors.set(capability, {
@@ -1584,8 +1603,8 @@ export async function executeMarketplaceCapability(input: {
   liveRuntime?: { timeZone?: string }
   /** MCP callers record the run as workflow.execute; route and Automation callers omit it. */
   auditWorkflowExecution?: MarketplaceWorkflowAudit
-  /** Agent-facing callers name how a served skill reached the agent so it counts in Skill usage; others omit it. */
-  usageVia?: CapabilityUsageVia
+  /** Callers that serve a skill to someone name what started the use so it counts in Library usage; others omit it. */
+  usageSource?: CapabilityUsageSource
   /** Names the connection to fix when a required capability is missing. */
   describeUnavailable?: (missing: readonly { capabilityName: string }[]) => Promise<{
     connectionStatus: Record<string, unknown>
@@ -1772,13 +1791,21 @@ export async function executeMarketplaceCapability(input: {
     || row.configObject.objectType === "custom"
     || row.configObject.objectType === "agent"
   ) {
-    if (input.usageVia && row.configObject.objectType === "skill") {
+    if (row.configObject.objectType === "skill") {
+      const blocked = organizationAgentPermissionDenial(
+        await memberAgentPermissionRules(organizationId, input.member.orgMembershipId),
+        "skill",
+        marketplaceSkillNames(row),
+      )
+      if (blocked) return { ok: false, error: "forbidden", message: blocked }
+    }
+    if (input.usageSource && row.configObject.objectType === "skill") {
       recordSkillUse({
         organizationId,
         orgMembershipId: input.member.orgMembershipId,
         pluginId: row.plugin.id,
         configObjectId: row.configObject.id,
-        via: input.usageVia,
+        source: input.usageSource,
       })
     }
     return {

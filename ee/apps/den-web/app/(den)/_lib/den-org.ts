@@ -131,6 +131,10 @@ export type DenOrgAccessFlags = {
   canViewPermissions: boolean;
   /** `permissions.manage`: change Member, Admin and team permissions. */
   canManagePermissions: boolean;
+  /** `agent_permissions.view`: what agents can do on members' computers. */
+  canViewAgentPermissions: boolean;
+  /** `agent_permissions.manage`: change what agents can do on members' computers. */
+  canManageAgentPermissions: boolean;
   /** `api_keys.view` */
   canViewApiKeys: boolean;
   /** `api_keys.manage` */
@@ -206,10 +210,6 @@ export type DenOrgAccessFlags = {
   canManageAllShared: boolean;
   /** `sharing.share_org_wide` */
   canShareWithEveryone: boolean;
-  /** `dashboards.view` */
-  canViewDashboards: boolean;
-  /** `dashboards.manage` */
-  canManageDashboards: boolean;
   /** Owner only. */
   canTransferOwnership: boolean;
   /** Owner only. */
@@ -356,7 +356,6 @@ export type DenOrgEntitlements = {
 export type DenOrgCapabilities = {
   /** Effective organization rollout and deployment visibility, separate from capture entitlement. */
   auditLogs: boolean;
-  orgManagedDashboards: boolean;
   installLinks: boolean;
   mcpConnections: boolean;
   /** Apps built in OpenWork are served as their own MCP servers; absent (off) on older servers. */
@@ -593,6 +592,8 @@ export function getOrgAccessFlags(roleValue: string, isOwner: boolean, permissio
     canManageAdminTeams: can("teams.manage_admin"),
     canViewPermissions: can("permissions.view"),
     canManagePermissions: can("permissions.manage"),
+    canViewAgentPermissions: can("agent_permissions.view"),
+    canManageAgentPermissions: can("agent_permissions.manage"),
     canViewApiKeys: can("api_keys.view"),
     canManageApiKeys: can("api_keys.manage"),
     canViewScim: can("scim.view"),
@@ -632,8 +633,6 @@ export function getOrgAccessFlags(roleValue: string, isOwner: boolean, permissio
     canManageSyncSources: can("connectors.manage"),
     canManageAllShared: can("sharing.manage_all"),
     canShareWithEveryone: can("sharing.share_org_wide"),
-    canViewDashboards: can("dashboards.view"),
-    canManageDashboards: can("dashboards.manage"),
     canTransferOwnership: resolvedIsOwner,
     canDeleteOrganization: resolvedIsOwner,
     canStartSeatCheckout: can("billing.manage"),
@@ -704,6 +703,10 @@ export function getTeamRoute(orgSlug: string | null | undefined, teamId: string)
   return `${getMembersRoute(orgSlug)}/teams/${encodeURIComponent(teamId)}`;
 }
 
+export function getNewRoleRoute(orgSlug?: string | null): string {
+  return `${getMembersRoute(orgSlug)}/roles/new`;
+}
+
 export function getWorkflowRunsRoute(orgSlug?: string | null): string {
   return `${getAnalyticsRoute(orgSlug)}/workflow-runs`;
 }
@@ -726,6 +729,19 @@ export function getWebRoute(orgSlug?: string | null): string {
 
 export function getLlmProvidersRoute(orgSlug?: string | null): string {
   return getCustomLlmProvidersRoute(orgSlug);
+}
+
+export function getAgentPermissionsRoute(orgSlug?: string | null): string {
+  return `${getOrgDashboardRoute(orgSlug)}/agent-permissions`;
+}
+
+export function getNewTeamAgentPermissionsRoute(orgSlug?: string | null): string {
+  return `${getAgentPermissionsRoute(orgSlug)}/new`;
+}
+
+/** One record: "everyone" or a team's id. */
+export function getAgentPermissionsScopeRoute(orgSlug: string | null | undefined, scopeId: string): string {
+  return `${getAgentPermissionsRoute(orgSlug)}/${encodeURIComponent(scopeId)}`;
 }
 
 export function getDesktopPoliciesRoute(orgSlug?: string | null): string {
@@ -1227,12 +1243,11 @@ export function orgFeatureEnabled(orgContext: Pick<DenOrgContext, "features"> | 
 
 function parseOrgCapabilities(value: unknown): DenOrgCapabilities {
   if (!isRecord(value)) {
-    return { auditLogs: false, orgManagedDashboards: false, installLinks: false, mcpConnections: false, appMcpServers: false, workflows: true, openworkWeb: false, cloud: false, workbot: false };
+    return { auditLogs: false, installLinks: false, mcpConnections: false, appMcpServers: false, workflows: true, openworkWeb: false, cloud: false, workbot: false };
   }
 
   return {
     auditLogs: value.auditLogs === true,
-    orgManagedDashboards: value.orgManagedDashboards === true,
     installLinks: value.installLinks === true,
     mcpConnections: value.mcpConnections === true,
     appMcpServers: value.appMcpServers === true,

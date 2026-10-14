@@ -60,12 +60,18 @@ export async function engineConnectorsParity(seed: Seed, context: { place: Place
  */
 export async function engineConnectorNeedsSignIn(seed: Seed, context: { place: Place }) {
   await using setup = new AsyncDisposableStack();
-  const base = setup.use(await engineParity(seed, context));
-  const den = await seed.den({ web: false, org: { name: "Connector sign-in" }, mocks: {
+  const den = await seed.den({ org: { name: "Connector sign-in" }, mocks: {
     notion: seed.mock({ tools: [
       { name: "search_pages", description: "Search Notion pages", inputSchema: { type: "object", properties: {} }, result: { content: [{ type: "text", text: "Roadmap" }] } },
     ] }),
   } });
+  // The person is signed in to OpenWork Cloud, so the card's Connect starts Notion's own sign-in.
+  const base = setup.use(await engineParity(seed, context, { env: {
+    OPENWORK_DEV_HEADLESS_WEB_DEN_PROXY: "1", OPENWORK_DEV_DEN_PROXY_TARGET: den.ref.webUrl,
+    OPENWORK_DEV_HEADLESS_DEN_API_TARGET: den.ref.apiUrl,
+    VITE_DEN_BASE_URL: den.ref.webUrl, VITE_DEN_API_BASE_URL: "/api/den",
+  } }));
+  await seed.signIn(base.app, den.admin, "Notion member");
   await seed.orgConnection(den.admin, { name: "Notion", url: den.mocks.notion.mcpUrl, authType: "oauth", credentialMode: "per_member", access: { orgWide: true } });
   const org = await seed.api(den.admin, "/v1/org");
   const orgId = parityRecord(parityRecord(org.body).organization).id;
@@ -98,6 +104,14 @@ export async function engineConnectorNeedsSignIn(seed: Seed, context: { place: P
         { tool: "execute_capability", arguments: { body: {} }, argumentsFrom: "capability-search" },
       ];
       await base.prepareTurn(prompt, reply, steps);
+    },
+    async notionSignedIn() {
+      const listed = parityRecord((await seed.api(den.admin, "/v1/mcp-connections?scope=usable")).body).connections;
+      return Array.isArray(listed) && listed.some((entry) => parityRecord(entry).name === "Notion" && parityRecord(entry).connectedForMe === true);
+    },
+    /** Notion's sign-in opens in its own tab; bring the chat back in front. */
+    async returnToOpenWork() {
+      await base.app.client.send("Page.bringToFront");
     },
     async [Symbol.asyncDispose]() { await resources.disposeAsync(); },
   };

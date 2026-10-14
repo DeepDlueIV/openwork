@@ -11,6 +11,7 @@ import type { TestRunRecord } from "@openwork/test-artifacts";
 import { setViewport } from "@openwork/cdp";
 import type { Place, Seed } from "@openwork/env";
 import { chrome, localHost } from "@openwork/hosts";
+import { prepareReviewBuild } from "./review-build.ts";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 
@@ -19,7 +20,9 @@ export async function reviewWorld(
   environment: "preview" | "production" = "preview",
   sandboxFixture = false,
   checkpointFixture = false,
+  previewEnvironment: Record<string, string> = {},
 ) {
+  prepareReviewBuild();
   const directory = await mkdtemp(join(tmpdir(), "openwork-review-world-"));
   const storage = join(directory, "reports");
   await mkdir(storage);
@@ -217,6 +220,9 @@ export async function reviewWorld(
         ...process.env,
         // This isolated HTTP fixture must never inherit live sandbox access.
         FREESTYLE_API_KEY: sandboxFixture ? "synthetic-ui-fixture-not-a-provider-key" : "",
+        DAYTONA_API_KEY: "",
+        OPENWORK_EVIDENCE_PROVIDER: "freestyle",
+        ...previewEnvironment,
         OPENWORK_REVIEW_LOCAL_DIR: storage,
         VERCEL: "1",
         VERCEL_ENV: environment,

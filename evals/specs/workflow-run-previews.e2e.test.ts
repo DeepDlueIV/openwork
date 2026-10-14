@@ -4,7 +4,6 @@ import { queryDenDatabase } from "@openwork/env";
 import { defaultDaytonaExec, execInSandbox } from "@openwork/hosts";
 import { spec } from "@openwork/testkit";
 import { activityTransportFaults } from "../worlds/den-dashboard-activity-faults.ts";
-import { enableOrganizationCapabilities } from "../worlds/dashboards.ts";
 import { enterprisePlanNoticeMeasurements } from "../worlds/workflow-run-previews.ts";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -34,13 +33,6 @@ const test = spec.world(async (seed) => {
   const den = await seed.den({ env: { DEN_PLAN_GATING_ENABLED: "true", DEN_ORG_MODE: "multi_org", STRIPE_SECRET_KEY: "" }, org: { name: "Workflow activity", members: { colleague: { name: "Teammate" }, planViewer: { name: "Analytics teammate" } } } });
   const organization = record((await seed.api(den.admin, "/v1/org")).body);
   const organizationId = field(organization.organization, "id");
-  await enableOrganizationCapabilities(seed, den.admin, { denFlatPageHeaders: true }, organizationId);
-  const setLibraryUsage = async (enabled: boolean) => {
-    const result = await seed.api(den.admin, `/v1/admin/organizations/${organizationId}/capabilities`, {
-      method: "PUT", body: JSON.stringify({ capabilities: { libraryUsage: enabled } }),
-    });
-    if (!result.response.ok) throw new Error(`Library usage rollout: HTTP ${result.response.status}`);
-  };
   if (!Array.isArray(organization.members)) throw new Error("Expected organization members");
   const planViewerMember = organization.members.map(record).find((member) => String(record(member.user).email).toLowerCase() === den.members.planViewer.email.toLowerCase()); // Den stores emails lowercased.
   // A non-owner admin can open Analytics, while the ordinary teammate below
@@ -106,7 +98,7 @@ const test = spec.world(async (seed) => {
   const memberWeb = await seed.web({ den, signedInAs: den.members.colleague, startPath: "/dashboard", headless: true, viewport });
   const planViewerWeb = await seed.web({ den, signedInAs: den.members.planViewer, startPath: "/dashboard/analytics", headless: true, viewport });
   const faults = await activityTransportFaults(web, new URL(den.ref.webUrl).origin, "/api/browser/v1/workflow-runs");
-  return { faults, async [Symbol.asyncDispose]() { await faults[Symbol.asyncDispose](); }, den, web, memberWeb, planViewerWeb, planNotice: () => enterprisePlanNoticeMeasurements(web), planViewerNotice: () => enterprisePlanNoticeMeasurements(planViewerWeb), setEnterprise, setLibraryUsage, configObjectId, pluginId, configObjectVersionId, receiptId: field(firstRun, "receiptId"), originalGraph: record(saved.body).graph, revisedGraph: record(revised.body).graph };
+  return { faults, async [Symbol.asyncDispose]() { await faults[Symbol.asyncDispose](); }, den, web, memberWeb, planViewerWeb, planNotice: () => enterprisePlanNoticeMeasurements(web), planViewerNotice: () => enterprisePlanNoticeMeasurements(planViewerWeb), setEnterprise, configObjectId, pluginId, configObjectVersionId, receiptId: field(firstRun, "receiptId"), originalGraph: record(saved.body).graph, revisedGraph: record(revised.body).graph };
 }, { timeout: 600_000, resources: { surfaces: ["web"], services: ["den"] } });
 
 test("workflow activity shows linked version diagrams and keeps one-off and inaccessible runs readable", async ({ world, user, probe, seed, evidence, step }) => {
@@ -244,37 +236,39 @@ test("workflow activity shows linked version diagrams and keeps one-off and inac
   const oneOff = before.find((run) => run.source === "adhoc" && run.status === "succeeded");
   const oneOffReceiptId = field(oneOff, "id");
 
-  await step("read existing diagrams directly in the run list", async () => {
+  await step("read existing runs as rows and open each executed diagram on demand", async () => {
     await user.see({ text: "Workflow Runs" }, { timeoutMs: 90_000 });
     await user.see({ role: "heading", label: "Workflow Runs" });
     for (const receiptId of [world.receiptId, failedReceiptId]) {
+      await user.see({ testId: `workflow-run-link-${receiptId}` }, { text: "Weekly briefing" });
+      await user.see({ testId: `workflow-run-time-${receiptId}` });
+      await user.notSee({ testId: `workflow-run-visualization-${receiptId}` });
+      await user.click({ testId: `workflow-run-preview-${receiptId}` });
       // Scope rendered node text to each receipt; an empty diagram or the latest
-      // version (Revised count) must fail even when another card is correct.
+      // version (Revised count) must fail even when another run is correct.
       await user.see({ testId: `workflow-run-visualization-${receiptId}` }, {
         text: /^(?![\s\S]*Revised count)(?=[\s\S]*Get workers)(?=[\s\S]*For each item in workers workers)(?=[\s\S]*Topic is set)(?=[\s\S]*Finish with: Topic, Count)[\s\S]*$/,
       });
-      await user.see({ testId: `workflow-run-link-${receiptId}` }, { text: "Weekly briefing" });
-      await user.see({ testId: `workflow-run-time-${receiptId}` });
+      await user.click({ testId: `workflow-run-preview-${receiptId}` });
+      await user.notSee({ testId: `workflow-run-visualization-${receiptId}` });
     }
-    await user.notSee({ testId: "den-workflow-flow-diagram", nth: 2 });
-    await user.see({ testId: `workflow-run-link-${world.receiptId}` }, { text: "Weekly briefing" });
-    await user.see({ testId: `workflow-run-time-${world.receiptId}` });
     await user.see({ text: "Succeeded" });
     await user.see({ text: "Failed" });
     await user.notSee({ text: `plugin:${world.pluginId}:${world.configObjectId}` });
-    await user.see({ testId: `workflow-run-${oneOffReceiptId}` }, { text: /One-off task[\s\S]*Succeeded[\s\S]*Technical details/ });
+    await user.see({ testId: `workflow-run-${oneOffReceiptId}` }, { text: /One-off task[\s\S]*Succeeded/ });
     await user.see({ testId: `workflow-run-time-${oneOffReceiptId}` });
     await user.notSee({ testId: `workflow-run-link-${oneOffReceiptId}` });
+    await user.click({ testId: `workflow-run-preview-${oneOffReceiptId}` });
     await user.notSee({ testId: `workflow-run-visualization-${oneOffReceiptId}` });
     await user.click({ testId: `workflow-run-details-${oneOffReceiptId}` });
     await user.see({ testId: `workflow-run-${oneOffReceiptId}` }, { text: /Source[\s\S]*adhoc[\s\S]*Tool calls[\s\S]*den.getWorkers[\s\S]*Duration[\s\S]*\d+(?:\.\d+)? (?:ms|s)/ });
-    await user.click({ testId: `workflow-run-details-${oneOffReceiptId}` });
+    await user.click({ testId: `workflow-run-preview-${oneOffReceiptId}` });
     await user.notSee({ role: "link", label: "One-off task" });
     await user.notSee({ label: "One-off task workflow visualization" });
     await user.screenshot();
   });
-  evidence.recordAssertionEvidence("Saved runs show the existing visualization of their executed version", "The API graph matches the original version and differs from the later edit. The activity page renders both saved-run diagrams with a library link, status and time; one-off runs have neither a fabricated link nor a visualization.", true);
-  evidence.recordAssertionEvidence("Workflow activity explains reuse and keeps raw run details collapsed", "The introduction is visible and the closed details element keeps raw source values out of the visible run card.", true);
+  evidence.recordAssertionEvidence("Saved runs show the existing visualization of their executed version", "The API graph matches the original version and differs from the later edit. Each saved run is a row with a library link, status and time, and its Details open that run's executed diagram; one-off runs have neither a fabricated link nor a visualization.", true);
+  evidence.recordAssertionEvidence("Workflow activity explains reuse and keeps raw run details collapsed", "Raw source values stay out of the run row until Details and Technical details are opened.", true);
 
   await step("open the linked workflow in the existing library", async () => {
     await user.click({ testId: `workflow-run-link-${world.receiptId}` });
@@ -285,6 +279,7 @@ test("workflow activity shows linked version diagrams and keeps one-off and inac
     await user.navigate(`${world.den.ref.webUrl}/dashboard/workflow-runs`);
     await user.see({ text: "Workflow Runs" });
     expect(await probe.eval(world.web, () => location.pathname)).toBe("/dashboard/analytics/workflow-runs");
+    await user.click({ testId: `workflow-run-preview-${world.receiptId}` });
     await user.click({ testId: `workflow-run-details-${world.receiptId}` });
     await user.see({ text: `plugin:${world.pluginId}:${world.configObjectId}` });
 
@@ -356,17 +351,10 @@ test("workflow activity shows linked version diagrams and keeps one-off and inac
   });
   evidence.recordAssertionEvidence("The workflow opens with a simple run form and shows the submitted result", "The form precedes the latest result and existing diagram. Advanced input starts hidden and stays synchronized with the named field; editing and inspecting it create no runs. Submitting creates exactly one successful run of the current saved version and displays the entered topic in its result.", true);
 
-  await step("before: workflow history expands every diagram in separate cards", async () => {
-    await user.navigate(`${world.den.ref.webUrl}/dashboard/analytics/workflow-runs`);
-    await user.see({ testId: `workflow-run-visualization-${world.receiptId}` }, { timeoutMs: 60_000 });
-    expect((await probe.dom('[data-analytics-integrated="false"]')).elements).toHaveLength(1);
-    evidence.recordAssertionEvidence("the old workflow history remains available with the rollout off", "Executed-version diagrams stay open and the original Library destinations remain.", true);
-    await user.screenshot();
-  });
-
-  await step("after: workflow history shares Den rows and opens the executed preview on demand", async () => {
+  await step("workflow history loads as Den rows and opens the executed preview on demand", async () => {
     const receipts = await readRuns();
-    await world.setLibraryUsage(true);
+    await user.navigate(`${world.den.ref.webUrl}/dashboard/analytics/workflow-runs`);
+    await user.see({ testId: `workflow-run-preview-${world.receiptId}` }, { timeoutMs: 60_000 });
     await world.faults.delay();
     await user.reload();
     await user.see({ testId: "item-rows-skeleton" }, { timeoutMs: 5_000 });
@@ -409,7 +397,7 @@ test("workflow activity shows linked version diagrams and keeps one-off and inac
     await user.screenshot();
   });
 
-  await step("after: workflow names and Details remain usable at phone width", async () => {
+  await step("workflow names and Details remain usable at phone width", async () => {
     await user.resizeViewport({ width: 320, height: 844, deviceScaleFactor: 1 });
     await user.see({ testId: `workflow-run-preview-${world.receiptId}` });
     const frame = (await probe.dom("html")).elements[0];

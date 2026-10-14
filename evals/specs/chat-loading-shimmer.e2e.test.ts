@@ -2,7 +2,7 @@ import { expect } from "vitest";
 import { spec } from "@openwork/testkit";
 import { arrangeControl, shimmerChat } from "../worlds/chat.ts";
 
-const test = spec.world(shimmerChat);
+const test = spec.world(shimmerChat, { resources: { surfaces: ["appWeb"], services: [] } });
 
 // `.ow-text-shimmer` animates `background-position`, which Chromium paints on
 // the main thread, so its sweep is stepped (`steps(48, end)` over 2.4s): twenty

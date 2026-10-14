@@ -70,6 +70,11 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
+    env:
+      # Sandbox provider for evidence worlds: a repository variable, Freestyle when unset.
+      OPENWORK_EVIDENCE_PROVIDER: ${{ vars.OPENWORK_EVIDENCE_PROVIDER || 'freestyle' }}
+      # Disposable Core PR worlds skip template saves; dev warm-up is unchanged.
+      OPENWORK_DAYTONA_EPHEMERAL_WORLD: '1'
     strategy:
       fail-fast: false
       matrix: ${{ fromJSON(needs.select.outputs.coreMatrix) }}
@@ -94,12 +99,13 @@ jobs:
           restore-keys: ${{ runner.os }}-pnpm-core-
       - name: Install only the test tools
         run: |
-          pnpm --filter @openwork/freestyle... --filter @openwork/review... --filter @openwork/world... --filter @openwork/types... --filter @openwork/sdk... install --frozen-lockfile --ignore-scripts --prefer-offline
+          pnpm --filter @openwork/freestyle... --filter @openwork/daytona-evidence... --filter @openwork/review... --filter @openwork/world... --filter @openwork/types... --filter @openwork/sdk... install --frozen-lockfile --ignore-scripts --prefer-offline
           pnpm --dir evals install --frozen-lockfile --ignore-scripts --prefer-offline
-      - name: Prepare this commit's Freestyle world
+      - name: Prepare this commit's evidence world
         timeout-minutes: 35
         env:
           FREESTYLE_API_KEY: ${{ secrets.FREESTYLE_API_KEY }}
+          DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
           OPENWORK_EVIDENCE_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
           OPENWORK_PREVIEW_GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/prepare-evidence-web.ts
@@ -107,6 +113,7 @@ jobs:
         timeout-minutes: 15
         env:
           FREESTYLE_API_KEY: ${{ secrets.FREESTYLE_API_KEY }}
+          DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
           OPENWORK_EVIDENCE_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
           OPENWORK_PREVIEW_GITHUB_TOKEN: ${{ github.token }}
           PROOF_SPEC: ${{ matrix.spec }}
@@ -132,7 +139,7 @@ jobs:
     timeout-minutes: 30
     strategy:
       fail-fast: false
-      max-parallel: 4
+      max-parallel: 12
       matrix: ${{ fromJSON(needs.select.outputs.matrix) }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
@@ -146,18 +153,20 @@ jobs:
       - name: Check CDP input safety
         timeout-minutes: 2
         run: pnpm exec node --test evals/packages/cdp/test/*.test.ts
-      - name: Build local Den dependencies and the review app
+      - name: Build local Den dependencies
         shell: bash
         run: |
           pnpm --filter @openwork/types build
           pnpm --filter @openwork-ee/den-db build
           pnpm --filter @openwork/email build
-          pnpm --filter @openwork/review-app build
           pnpm dev:den:mysql
       - name: Run the selected changed spec on the PR head
         timeout-minutes: 20
         env:
           PROOF_SPEC: ${{ matrix.spec }}
+          # Review worlds build production output on first use; other worlds
+          # need no review app. No shared build output or credentials involved.
+          OPENWORK_EVAL_BUILD_REVIEW_APP: "1"
           # CI runners cannot use Chromium's SUID sandbox (the pnpm-store helper
           # is not root-owned). The testkit's container mode launches Electron
           # with --no-sandbox, as it already does on Daytona.
@@ -202,7 +211,7 @@ jobs:
     timeout-minutes: 15
     strategy:
       fail-fast: false
-      max-parallel: 4
+      max-parallel: 8
       matrix: ${{ fromJSON(needs.select.outputs.matrix) }}
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
@@ -243,7 +252,10 @@ jobs:
       # OpenWork Design rubric in evals/design-review/rubric.md. Notes land in
       # design-review.json beside each record, in this job's summary, and on
       # each screenshot in the review report. A finding never fails the job.
+      # Hard-cap only this advisory process tree at 120s; completed notes survive.
+      # Deferred screenshot assertions above are authoritative and uncapped here.
       - name: Review the design of every screenshot (advisory)
+        timeout-minutes: 3
         continue-on-error: true
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -254,7 +266,7 @@ jobs:
             echo 'The default branch does not have the design review yet.'
             exit 0
           fi
-          node evals/scripts/design-review-journeys.mjs
+          node evals/scripts/run-advisory-design-review.mjs
       - name: Replace the proof records with judged ones
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
@@ -428,6 +440,9 @@ jobs:
     timeout-minutes: 60
     permissions:
       contents: read
+    env:
+      # Sandbox provider for evidence worlds: a repository variable, Freestyle when unset.
+      OPENWORK_EVIDENCE_PROVIDER: ${{ vars.OPENWORK_EVIDENCE_PROVIDER || 'freestyle' }}
     strategy:
       fail-fast: false
       max-parallel: 1
@@ -445,6 +460,7 @@ jobs:
         timeout-minutes: 35
         env:
           FREESTYLE_API_KEY: ${{ secrets.FREESTYLE_API_KEY }}
+          DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
           OPENWORK_EVIDENCE_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
           OPENWORK_PREVIEW_GITHUB_TOKEN: ${{ github.token }}
         run: node scripts/prepare-evidence-web.ts
@@ -456,6 +472,7 @@ jobs:
         timeout-minutes: 20
         env:
           FREESTYLE_API_KEY: ${{ secrets.FREESTYLE_API_KEY }}
+          DAYTONA_API_KEY: ${{ secrets.DAYTONA_API_KEY }}
           OPENWORK_EVIDENCE_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
           OPENWORK_PREVIEW_GITHUB_TOKEN: ${{ github.token }}
           PROOF_SPEC: ${{ matrix.spec }}

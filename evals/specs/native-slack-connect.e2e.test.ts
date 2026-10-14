@@ -290,7 +290,12 @@ test("a platform admin rolls Slack search out by organization while members keep
     await closeConnections(user, probe);
   });
 
-  await step("before: managed Slack stays out of the loaded catalogs while its feature is off", async () => {
+  await step("before: managed Slack stays out of Dashboard and the catalogs while its feature is off", async () => {
+    await navigateAdmin(denUrl("/dashboard"));
+    await admin.see({ testId: "dashboard-activity" });
+    await admin.notSee({ testId: "dashboard-managed-slack" });
+    await admin.notSee({ testId: "connect-slack-search" });
+    await admin.screenshot();
     await navigateAdmin(denUrl("/dashboard/mcp-connections/new"));
     await admin.see({ testId: "slack-custom-app-disclosure" });
     await admin.notSee({ testId: "connector-picker-slack-search" });
@@ -301,7 +306,7 @@ test("a platform admin rolls Slack search out by organization while members keep
     await member.notSee({ testId: "connector-picker-slack-search" });
     await member.notSee({ testId: "connect-slack-search" });
     expect(await world.connection("first")).toBeUndefined();
-    evidence.recordAssertionEvidence("The organization switch also controls web discovery", "The loaded admin catalog retains the custom-app choice but offers no managed Slack row or action. The member catalog likewise has no managed action, and the server has no native connection for the member.", true);
+    evidence.recordAssertionEvidence("The organization switch also controls web discovery", "Dashboard keeps Activity without a managed Slack action. The loaded admin catalog retains the custom-app choice but offers no managed Slack row or action. The member catalog likewise has no managed action, and the server has no native connection for the member.", true);
     await member.screenshot();
   });
 
@@ -450,7 +455,9 @@ test("a platform admin rolls Slack search out by organization while members keep
 
   await step("after: the dashboard and catalogs offer the OpenWork app without custom setup", async () => {
     await navigateAdmin(denUrl("/dashboard"));
-    await admin.see({ testId: "quick-add-slack-search" });
+    await admin.see({ testId: "dashboard-managed-slack" });
+    await admin.see({ testId: "dashboard-activity" });
+    await admin.see({ testId: "connect-slack-search" }, { text: "Connect Slack" });
     await admin.see({ text: "Provided by OpenWork" });
     await admin.screenshot();
     await navigateAdmin(denUrl("/dashboard/mcp-connections/new"));
@@ -468,7 +475,7 @@ test("a platform admin rolls Slack search out by organization while members keep
     await member.notSee({ text: /^Client ID$/i });
     await member.notSee({ text: /^Client secret$/i });
     expect(await world.connection("first")).toMatchObject({ connectedForMe: false });
-    evidence.recordAssertionEvidence("Managed Slack is discoverable without configuring a custom app", "Dashboard Quick add and both catalogs show Slack search with its personal Connect Slack action. The admin's custom-app option opens only on request; the member catalog asks for no developer credentials. No member is connected by these page visits.", true);
+    evidence.recordAssertionEvidence("Managed Slack is discoverable without configuring a custom app", "Dashboard keeps Activity and offers Slack search alongside it; both catalogs show the same personal Connect Slack action. The admin's custom-app option opens only on request; the member catalog asks for no developer credentials. No member is connected by these page visits.", true);
     await member.screenshot();
   });
 
@@ -731,16 +738,23 @@ test("a platform admin rolls Slack search out by organization while members keep
     expect(retained.status).toBe(200);
     expect(world.objects(retained.body).some(entry => entry.error === "needs_connection")).toBe(true);
     expect(world.slack.calls()).toHaveLength(before);
-    await otherOwner.navigate(await world.startAuthorization("other"));
-    await otherOwner.click({ role: "button", text: "Authorize another workspace" });
-    await otherOwner.see({ role: "heading", text: "You're connected" }, { timeoutMs: 30_000 });
+    await otherOwner.navigate(denUrl("/dashboard"));
+    await otherOwner.see({ testId: "dashboard-activity" });
+    await otherOwner.see({ testId: "dashboard-managed-slack" });
+    await otherOwner.see({ testId: "connect-slack-search" }, { text: "Connect Slack" });
+    await otherOwner.click({ testId: "connect-slack-search" });
+    const consent = user.on(await world.oauthSurface(world.otherWeb));
+    await consent.see({ text: "Synthetic Slack consent" });
+    await consent.click({ role: "button", text: "Authorize another workspace" });
+    await consent.see({ role: "heading", text: "You're connected" }, { timeoutMs: 30_000 });
     expect(await world.connection("other")).toMatchObject({ connectedForMe: true });
+    await otherOwner.see({ testId: "connect-slack-search" }, { text: "Manage account", timeoutMs: 30_000 });
     await rememberAccount("other");
     const ownSearch = await world.memberRequest("other", "/v1/capabilities/slack/search?query=Amber%20launch");
     expect(ownSearch.status).toBe(200);
     expect(ownSearch.text).toContain(world.slack.otherConversations[0].text);
     expect(JSON.stringify(await world.connection("first"))).toContain("TSYNTHETIC");
-    evidence.recordAssertionEvidence("Availability never substitutes for member consent", "After B's explicit rollout, both start aliases returned 200 but search/threads returned 409 and retained execution required a connection. B's independently signed-in browser then connected its own workspace; search succeeded without sharing A's grant.", true);
+    evidence.recordAssertionEvidence("Availability never substitutes for member consent", "After B's explicit rollout, both start aliases returned 200 but search/threads returned 409 and retained execution required a connection. B's owner used Dashboard's Connect Slack action to authorize their own workspace in their independently signed-in browser; the row became Manage account and search succeeded without sharing A's grant.", true);
     await otherOwner.screenshot();
     await otherOwner.navigate(world.connectionsUrl);
   });

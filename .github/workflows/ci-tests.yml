@@ -101,6 +101,12 @@ jobs:
         run: pnpm --filter @openwork/calendar test
       - name: Test fork authorization and free screening policy
         run: node --test .github/scripts/contributor-pr.test.mjs .github/scripts/contributor-screen.test.mjs .github/scripts/warden-check.test.mjs .github/scripts/warden-report.test.mjs
+      - name: Test on-demand PR proof review builds
+        run: node --test .github/scripts/pr-proof-review-build.test.mjs
+      - name: Test packaged smoke engine diagnosis and kept logs
+        run: |
+          node --test apps/desktop/test/engine-diagnosis.test.mjs
+          pnpm --dir evals exec vitest run --config vitest.config.ts --project pr packages/hosts/src/local-surface-log.test.ts
       - name: Run core unit tests
         run: pnpm --dir evals run test:core
       - name: Test native MCP readiness and Stop ownership
@@ -120,6 +126,11 @@ jobs:
           pnpm --filter @openwork/sandbox-daytona test
           pnpm --filter @openwork/sandbox-freestyle typecheck
           pnpm --filter @openwork/sandbox-freestyle test
+          pnpm --filter @openwork/evidence-provider typecheck
+          pnpm --filter @openwork/evidence-provider test
+          pnpm --filter @openwork/daytona-evidence typecheck
+          pnpm --filter @openwork/daytona-evidence test
+          pnpm --filter @openwork/review-app test
       - name: Test shared Workbot world transports (no cloud resources)
         run: |
           pnpm --filter @openwork/sandbox-freestyle build

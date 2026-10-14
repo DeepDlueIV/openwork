@@ -467,7 +467,7 @@ export function SsoScreen() {
 
   if (!orgContext) {
     return (
-      <DashboardPageTemplate icon={Shield} title="SSO" description="Set up enterprise single sign-on for this workspace." colors={["#F5F3FF", "#4C1D95", "#8B5CF6", "#DDD6FE"]}>
+      <DashboardPageTemplate icon={Shield} title="SSO" description="Set up enterprise single sign-on for this workspace.">
         <div className="rounded-[28px] border border-gray-200 bg-white px-6 py-10 text-[15px] text-gray-500">Loading organization details...</div>
       </DashboardPageTemplate>
     );
@@ -476,7 +476,7 @@ export function SsoScreen() {
   const ssoFormDisabled = formReadOnly || saving || !orgContext.entitlements.sso;
 
   return (
-    <DashboardPageTemplate icon={Shield} title="SSO" description="Configure one enterprise SSO connection per workspace and share the generated sign-in URL with your team." colors={["#F5F3FF", "#4C1D95", "#8B5CF6", "#DDD6FE"]}>
+    <DashboardPageTemplate icon={Shield} title="SSO" description="Configure one enterprise SSO connection per workspace and share the generated sign-in URL with your team.">
       {!access.canViewSso ? (
         <div className="rounded-[28px] border border-[var(--dls-border)] bg-[var(--dls-hover)] px-6 py-5 text-[14px] text-[var(--dls-text-primary)]">{permissionLockReason("sso.view")}</div>
       ) : (

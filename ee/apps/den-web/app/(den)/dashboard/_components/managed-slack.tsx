@@ -10,7 +10,7 @@ import { getAddConnectorRoute, getLibraryConnectorRoute, getMcpConnectionRoute, 
 import { connectionForPresetUrl } from "./connector-catalog";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
 import { connectorAccountReady, connectorLimitedAccess, isManagedSlackConnection } from "./connector-detail";
-import { DetailRows, ItemRow, LinkButton } from "./item-list";
+import { DetailRows, ItemRow, ItemRowsSkeleton, LinkButton } from "./item-list";
 import { ConnectorLogo } from "./item-logo";
 import { libraryQueryKeys } from "./library-data";
 import { type ExternalMcpConnection, useDisconnectMyProviderAccount, useMcpConnections } from "./mcp-connections-data";
@@ -61,6 +61,28 @@ export function ManagedSlackAccountAction({ connection }: { connection: External
       <DenButton size="xs" variant="secondary" disabled={!action.available} loading={action.pending} onClick={action.select} data-testid="connect-slack-search">{action.label}</DenButton>
       {action.error ? <span role="alert" className="text-xs text-destructive">{action.error}</span> : null}
     </span>
+  );
+}
+
+/** Mounted only for the Slack rollout; Activity keeps its independent server read. */
+export function DashboardManagedSlack() {
+  const { connection, loading, error } = useManagedSlackDiscovery();
+  if (!connection && !loading && !error) return null;
+  return (
+    <div className="mt-5 border-b border-border" data-testid="dashboard-managed-slack">
+      {loading ? <ItemRowsSkeleton label="Loading Slack account" rows={1} /> : connection ? (
+        <ItemRow
+          compact
+          wideAction
+          logo={<ConnectorLogo name="Slack" url={connection.url} />}
+          title="Slack search"
+          description="Provided by OpenWork"
+          status={connectorLimitedAccess(connection) ? "Limited access" : undefined}
+          action={<ManagedSlackAccountAction connection={connection} />}
+        />
+      ) : null}
+      {error ? <p role="alert" className="px-3 py-2 text-[13px] text-muted-foreground">Your Slack account availability could not be checked. Reload the page to try again.</p> : null}
+    </div>
   );
 }
 

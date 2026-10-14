@@ -3,6 +3,7 @@ import { HTTPException } from "hono/http-exception"
 import type { AppLogger } from "./logger.js"
 import { appLogger } from "./logger.js"
 import { countDbQueries } from "./db-query-count.js"
+import { withRequestReads } from "../request-reads.js"
 import { normalizedHonoRoute } from "./hono-route.js"
 import { attachRequestContext, getRuntimeState } from "./runtime.js"
 import { sanitizeExceptionForTelemetry, sanitizeText } from "./safe-fields.js"
@@ -53,7 +54,8 @@ export function createRequestAccessLogMiddleware(logger: AppLogger = appLogger.c
     })
 
     try {
-      await countDbQueries(queries, next)
+      // Each request, including a nested app.fetch, gets its own shared reads.
+      await countDbQueries(queries, () => withRequestReads(next))
     } catch (error) {
       thrownError = error
       throw error

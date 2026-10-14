@@ -1,8 +1,17 @@
 import { expect } from "vitest";
 import { spec } from "@openwork/testkit";
-import { emptySession } from "../worlds/desktop.ts";
+import { emptyDesktopSession } from "../worlds/desktop.ts";
 
-const test = spec.world(emptySession);
+// Kept on the desktop: in headless Chrome 155, Shift+End after Shift+Home leaves
+// the selection at the line start, while the desktop app's Chromium moves it to
+// the line end. Move this to appWeb once that difference is understood.
+const test = spec.world(emptyDesktopSession, {
+  resources: {
+    surfaces: ["desktop"],
+    services: [],
+    nativeReason: "Proves the macOS line-boundary keys in the desktop app's own Chromium, which selects differently from current Chrome.",
+  },
+});
 
 const firstLine = "first line";
 const secondLine = "second line";

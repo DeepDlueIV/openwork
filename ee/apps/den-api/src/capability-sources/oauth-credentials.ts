@@ -7,6 +7,7 @@ import {
 } from "@openwork-ee/den-db/schema"
 import { createDenTypeId, type DenTypeId } from "@openwork-ee/utils/typeid"
 import { db } from "../db.js"
+import { requestRead } from "../request-reads.js"
 
 /**
  * Generic, provider-agnostic reads/writes for the two credential tables.
@@ -84,7 +85,12 @@ function connectedAccountChanges(input: ConnectedAccountUpsertInput) {
   }
 }
 
-export async function getOrgOAuthClient(organizationId: OrganizationId, providerId: string): Promise<OrgOAuthClientRow | null> {
+/** Shared within the request. A writer reading back its own row uses readOrgOAuthClient. */
+export function getOrgOAuthClient(organizationId: OrganizationId, providerId: string): Promise<OrgOAuthClientRow | null> {
+  return requestRead(`org-oauth-client:${organizationId}:${providerId}`, () => readOrgOAuthClient(organizationId, providerId))
+}
+
+async function readOrgOAuthClient(organizationId: OrganizationId, providerId: string): Promise<OrgOAuthClientRow | null> {
   const rows = await db
     .select()
     .from(OrgOAuthClientTable)
@@ -131,7 +137,16 @@ export async function upsertOrgOAuthClient(input: {
     extra: input.extra ?? null,
     createdByOrgMembershipId: input.createdByOrgMembershipId,
   })
-  return (await getOrgOAuthClient(input.organizationId, input.providerId))!
+  return (await readOrgOAuthClient(input.organizationId, input.providerId))!
+}
+
+/**
+ * getConnectedAccount for listings and status checks, shared within the request.
+ * Code that refreshes or uses a token keeps calling getConnectedAccount, which
+ * always reads fresh: a refresh that lost a race re-reads without writing.
+ */
+export function getConnectedAccountForListing(input: Parameters<typeof getConnectedAccount>[0]): Promise<ConnectedAccountRow | null> {
+  return requestRead(`connected-account:${input.organizationId}:${input.orgMembershipId}:${input.providerId}`, () => getConnectedAccount(input))
 }
 
 export async function getConnectedAccount(input: {

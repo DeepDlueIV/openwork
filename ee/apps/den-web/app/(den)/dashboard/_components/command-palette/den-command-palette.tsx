@@ -38,7 +38,6 @@ const EMPTY_CAPABILITIES: DenOrgCapabilities = {
   installLinks: false,
   mcpConnections: false,
   openworkWeb: false,
-  orgManagedDashboards: false,
   workflows: false,
 };
 
@@ -125,7 +124,9 @@ export function DenCommandPalette({ open, onOpenChange }: DenCommandPaletteProps
   ), [orgContext?.currentMember.role, orgContext?.currentMember.isOwner, orgContext?.currentMember.permissions]);
   const capabilities = orgContext?.capabilities ?? EMPTY_CAPABILITIES;
   const permissionsEnabled = orgFeatureEnabled(orgContext, "permissions");
+  const teamRoles = orgFeatureEnabled(orgContext, "teamRoles");
   const workbotSettings = capabilities.workbot === true;
+  const agentPermissionsEnabled = orgFeatureEnabled(orgContext, "agentPermissions");
   // Plugin results open the admin plugin page, which needs `sharing.manage_all`.
   const pluginsQuery = usePluginSummaries({ enabled: open && access.canManageAllShared });
   const automationsQuery = useAutomations({ enabled: open && capabilities.workflows });
@@ -158,7 +159,9 @@ export function DenCommandPalette({ open, onOpenChange }: DenCommandPaletteProps
       orgMode: runtimeConfig.orgMode,
       runtimeConfigLoaded,
       permissionsEnabled,
+      teamRoles,
       workbotSettings,
+      agentPermissionsEnabled,
     });
     return flattenNavigationForSearch(sections)
       .filter((entry) => entry.href !== "#")
@@ -168,7 +171,9 @@ export function DenCommandPalette({ open, onOpenChange }: DenCommandPaletteProps
     activeOrg?.slug,
     capabilities,
     permissionsEnabled,
+    teamRoles,
     workbotSettings,
+    agentPermissionsEnabled,
     runtimeConfig.orgMode,
     runtimeConfigLoaded,
   ]);

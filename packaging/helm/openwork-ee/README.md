@@ -158,8 +158,41 @@ Set service enablement as well (`gateway.enabled` or legacy `inference.enabled`)
 Retention's reference is authoritative for **both** `GATEWAY_ADMIN_TOKEN` and
 `INFERENCE_ADMIN_TOKEN` on the Gateway and CronJob, even if the shared Secret
 contains different tokens. It enables admin access without requiring
-`gateway.admin.enabled`. Do not set token env overrides. The retained CronJob
-name, schedule and internal Service target do not change automatically.
+`gateway.admin.enabled`. Do not set token env overrides. Moving from legacy
+`inference.*` to canonical `gateway.*` values does not rename the CronJob or
+change its internal Service target.
+
+The CronJob runs hourly, like the hosted deployment. Each run calls the Gateway's
+`POST /internal/rollups/run`, folds closed request-log hours older than two days
+into hourly usage rollups, and deletes the raw rows it folded in the same
+transaction. Hourly rollups older than 90 days fold into daily rollups the same
+way. The usage dashboard reads raw rows and rollups together, so totals are
+correct whether or not a run has happened yet.
+
+| Setting | Default | Notes |
+| --- | --- | --- |
+| `schedule` | `5 * * * *` | Five minutes past every hour. Older charts defaulted to nightly `0 3 * * *`; an install that set `schedule` explicitly keeps its value. |
+| `timeZone` | `Etc/UTC` | |
+| `maxBucketsPerRun` | `48` | Hours (and days) handled per run. Gateway accepts 1 to 1000. |
+| `maxSourceRowsPerBucket` | `5000` | Rows consumed per hour per run, in one transaction. Gateway accepts 1 to 5000. |
+
+One run consumes at most `maxBucketsPerRun x maxSourceRowsPerBucket` rows
+(240,000 by default). An hour with more rows than `maxSourceRowsPerBucket` is
+finished over the following runs, so hourly runs keep up with up to about
+240,000 requests per hour. The previous defaults (nightly, 1,000 rows) kept up
+with only about 48,000 requests per day. The job logs a summary such as
+`{"hourBuckets":1,"dayBuckets":0,"rawRowsDeleted":1253,...}`. `hourBuckets`
+staying above 1 for several runs means the job is catching up; raise
+`maxSourceRowsPerBucket` toward 5000 before running it more often.
+
+Non-Helm deployments need their own hourly caller with the same body:
+
+```sh
+curl -fsS -X POST -H "Authorization: Bearer $GATEWAY_ADMIN_TOKEN" \
+  -H "content-type: application/json" \
+  -d '{"maxBucketsPerRun":48,"maxSourceRowsPerBucket":5000}' \
+  http://<gateway>:8791/internal/rollups/run
+```
 
 Render-only verification: `bash packaging/helm/openwork-ee/tests/gateway.sh`.
 This does not deploy resources, run migrations, or invoke the retention endpoint.
@@ -310,8 +343,8 @@ you can also lock a feature for the whole install under `config.features`:
 ```yaml
 config:
   features:
-    orgManagedDashboards: "true"   # on for everyone on this install
-    installLinks: "false"          # off for everyone on this install
+    permissions: "true"            # on for everyone on this install
+    automationCalendar: "false"    # off for everyone on this install
 ```
 
 - `""` (the default) follows `/admin`, which starts from the default listed
@@ -330,23 +363,21 @@ OpenWork Cloud. Don't change it on a customer install.
 | `config.features.*` | Environment variable | Default | What it does |
 | --- | --- | --- | --- |
 | `teamMembershipCache` | `DEN_FEATURE_TEAM_MEMBERSHIP_CACHE` | default off | Reduce repeated team lookups while keeping access changes immediate. Enable only after every API instance runs revision-aware team writes. |
+| `managedDeploymentsGcp` | `DEN_FEATURE_MANAGED_DEPLOYMENTS_GCP` | default off (cloud only) | Organization admins approve OpenWork installations in their own Google Cloud project and track health and updates. |
 | `managedDeployments` | `DEN_FEATURE_MANAGED_DEPLOYMENTS` | default off (cloud only) | Organization admins install OpenWork in their own cloud account (AWS first) and see its health and updates in OpenWork. |
-| `denFlatPageHeaders` | `DEN_FEATURE_DEN_FLAT_PAGE_HEADERS` | default off | Members see compact, readable page headings in Den instead of decorative gradient banners. |
-| `dashboardActivity` | `DEN_FEATURE_DASHBOARD_ACTIVITY` | default off | Organization admins see recent additions and skill updates on their dashboard instead of Quick add. |
-| `libraryIntegrated` | `DEN_FEATURE_LIBRARY_INTEGRATED` | default off | Members see Library lists, details and add flows that match the rest of Den and the desktop app. |
-| `libraryUsage` | `DEN_FEATURE_LIBRARY_USAGE` | default off | Organization admins see Analytics in the same style as Library and Connectors, including how often each skill, plugin and connector is used, by how many people, which calls fail, and what nobody uses, so they can decide what to keep. |
-| `modelsAnalytics` | `DEN_FEATURE_MODELS_ANALYTICS` | default off | Organization admins can opt in to task analytics for OpenWork Models. |
-| `orgManagedDashboards` | `DEN_FEATURE_ORG_MANAGED_DASHBOARDS` | default off | Organization admins publish dashboards to members in Den and the desktop app. |
 | `nativeSlack` | `DEN_FEATURE_NATIVE_SLACK` | default off (cloud only) | Members connect their own Slack account to search messages and read threads through the OpenWork-provided app. |
 | `slackAssistant` | `DEN_FEATURE_SLACK_ASSISTANT` | default off | Answers Slack mentions and DMs for the organization after the Slack connector is set up. |
 | `slackWorkbotReplies` | `DEN_FEATURE_SLACK_WORKBOT_REPLIES` | default off | OpenWork in Slack writes its reply as it works, reacts to messages with an emoji, and takes bigger jobs into the background, posting the result in the thread when done. |
-| `headlessAutomations` | `DEN_FEATURE_HEADLESS_AUTOMATIONS` | default off | Runs the organization's cloud Automations on the shared headless runner. Needs the deployment's headless runner and a plan that includes it. |
-| `workbot` | `DEN_FEATURE_WORKBOT` | default off | Members can use Workbot, with side chats and a Calendar tab of its scheduled work, and organization admins choose the default model Workbot, the Slack assistant and cloud Automations answer with. Needs the deployment's Workbot app. |
-| `calendarPolish` | `DEN_FEATURE_CALENDAR_POLISH` | default off | Members recognize their organization's default model and meeting providers, and can run stopped Workbot tasks again. |
+| `workbot` | `DEN_FEATURE_WORKBOT` | default off | Members can use Workbot, with side chats, a Calendar tab of its scheduled work and the option to run stopped tasks again, and organization admins choose the default model Workbot, the Slack assistant and cloud Automations answer with. Needs the deployment's Workbot app. |
 | `automationCalendar` | `DEN_FEATURE_AUTOMATION_CALENDAR` | default off | Members see a Calendar in the desktop app with their Automations next to meetings from their connected Google or Outlook calendar. |
 | `permissions` | `DEN_FEATURE_PERMISSIONS` | default off | Organization admins choose what members, admins and each team can do, instead of the fixed Member and Admin defaults. |
+| `teamRoles` | `DEN_FEATURE_TEAM_ROLES` | default off | Members › Teams shows each team's role (Member, Admin or Custom) with one Change role action, and Members gets a Roles tab to see and create roles. |
+| `sharedRoles` | `DEN_FEATURE_SHARED_ROLES` | default off | A custom role can be given to more than one team: Change role lists every role, each role's page lists its teams, and a role can be created before any team has it. Needs Team roles and Permissions. |
+| `agentPermissions` | `DEN_FEATURE_AGENT_PERMISSIONS` | default off | Organization admins choose what agents can do on members' computers: run commands, edit files, open websites and use local skills and MCP servers, for everyone or per team. |
 | `engineV2Upgrade` | `DEN_FEATURE_ENGINE_V2_UPGRADE` | default off | Desktop members still on OpenCode v1 see a short notice offering to upgrade: their chats are copied to v2 with a backup, then OpenWork switches engines. |
 | `remoteSessionEvents` | `DEN_FEATURE_REMOTE_SESSION_EVENTS` | default off | MCP clients can subscribe to changes in their remote session receipts and read the current state after reconnecting. |
+| `backgroundShellTasks` | `DEN_FEATURE_BACKGROUND_SHELL_TASKS` | default off | The desktop chat shows how many commands the agent left running in the background, and adds a short row when each one finishes. |
+| `orgDefaultModel` | `DEN_FEATURE_ORG_DEFAULT_MODEL` | default off | Organization admins choose the model new desktop chats start with, for everyone or per team. Applies to the OpenCode v2 engine only; members can still change the model in each chat. |
 <!-- END GENERATED features -->
 
 The table and the `config.features` block are generated: run `pnpm features:sync`
@@ -405,7 +436,7 @@ immediately by setting both values to false.
 
 ### Dashboards rollout
 
-The organization-managed Dashboard is unavailable by default. Enable it for a
+The personal desktop Dashboard is unavailable by default. Enable it for a
 self-hosted or customer-managed deployment with:
 
 ```yaml

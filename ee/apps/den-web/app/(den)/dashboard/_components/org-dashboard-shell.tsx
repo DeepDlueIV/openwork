@@ -425,7 +425,9 @@ export function OrgDashboardShell({ children }: { children: React.ReactNode }) {
     orgContext?.currentMember.permissions,
   );
 
-  const pageTitle = getDashboardPageTitle(pathname, activeOrg?.slug ?? null);
+  const basePageTitle = getDashboardPageTitle(pathname, activeOrg?.slug ?? null);
+  // teamRoles: the permission pages are role pages.
+  const pageTitle = basePageTitle === "Permissions" && orgFeatureEnabled(orgContext, "teamRoles") ? "Roles" : basePageTitle;
   const shouldShowProfilePrompt = Boolean(
     user &&
       !profilePromptDismissed &&
@@ -446,14 +448,15 @@ export function OrgDashboardShell({ children }: { children: React.ReactNode }) {
       installLinks: false,
       mcpConnections: false,
       openworkWeb: false,
-      orgManagedDashboards: false,
       workflows: false,
     },
     orgMode: runtimeConfig.orgMode,
     runtimeConfigLoaded,
     permissionsEnabled: orgFeatureEnabled(orgContext, "permissions"),
+    teamRoles: orgFeatureEnabled(orgContext, "teamRoles"),
     managedDeployments: orgFeatureEnabled(orgContext, "managedDeployments"),
     workbotSettings: orgContext?.capabilities.workbot === true,
+    agentPermissionsEnabled: orgFeatureEnabled(orgContext, "agentPermissions"),
   });
 
   const orgSwitcher = isSingleOrgMode ? (

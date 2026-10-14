@@ -72,7 +72,7 @@ test("an owner sees real workspace additions, keeps them during an outage, and d
   const connection = await step("the owner adds a credential-free connector through the setup page", async () => {
     await admin.click({ role: "link", label: "Add a connector" });
     await admin.see({ role: "heading", label: "Add a connector" }, { timeoutMs: 60_000 });
-    await admin.type({ placeholder: "Filter by name, or paste an MCP URL" }, world.names.connection);
+    await admin.type({ placeholder: "Filter by name" }, world.names.connection);
     await admin.click({ testId: "connector-picker-no-match-add" });
     await admin.type({ label: "Address" }, world.connector.mcpUrl);
     await admin.see({ label: "Name" }, { value: world.names.connection });
@@ -232,43 +232,34 @@ test("an owner sees real workspace additions, keeps them during an outage, and d
     await admin.screenshot();
   });
 
-  await step("a workspace outside the rollout keeps Quick add and its existing connections", async () => {
+  await step("a third workspace shows its own stored connector as activity, with readable sidebar labels", async () => {
     await admin.click({ testId: "workspace-switcher-trigger" });
-    await admin.click({ role: "button", label: new RegExp(`^${world.names.disabledWorkspace}`) });
-    await admin.see({ role: "heading", label: "Quick add" }, { timeoutMs: 60_000 });
-    await admin.see({ role: "heading", label: /From your workspace suite/i }, { timeoutMs: 60_000 });
-    await admin.see({ role: "heading", label: /MCP servers/i }, { timeoutMs: 60_000 });
+    await admin.click({ role: "button", label: new RegExp(`^${world.names.retainedWorkspace}`) });
+    await admin.see({ testId: "dashboard-activity-row" }, { text: /Retained connection was added/, timeoutMs: 60_000 });
+    await admin.notSee({ role: "heading", label: "Quick add" });
+    await admin.notSee({ text: connectionTitle });
     await admin.screenshot();
-    await admin.notSee({ testId: "dashboard-activity" });
-    const context = await probe.api(world.den.admin, "/v1/org", { headers: { "x-openwork-org-id": world.disabledOrgId } });
-    expect(context.response.ok).toBe(true);
-    expect(isRecord(context.body) && isRecord(context.body.features) && context.body.features.dashboardActivity).toBe(false);
-    const stored = await probe.api(world.den.admin, `/v1/mcp-connections/${world.disabledConnectionId}`, { headers: { "x-openwork-org-id": world.disabledOrgId } });
+    const stored = await probe.api(world.den.admin, `/v1/mcp-connections/${world.retainedConnectionId}`, { headers: { "x-openwork-org-id": world.retainedOrgId } });
     expect(stored.response.ok).toBe(true);
     expect(isRecord(stored.body) && stored.body.name).toBe("Retained connection");
     const typography = await world.ownerTypography();
-    expect(typography.quickAddHeadings.map((heading) => heading.text)).toEqual(["From your workspace suite", "MCP servers"]);
     expect(typography.sidebarLabels.map((label) => label.text)).toEqual(["Work", "Manage", "Observability", "Team"]);
     expect(typography.sidebarBadges.some((badge) => badge.text === "MCPs")).toBe(true);
-    for (const heading of typography.quickAddHeadings) {
-      expect(heading.fontSize).toBeGreaterThanOrEqual(12);
-      expect(heading.fontSize).toBeLessThanOrEqual(13);
-    }
     for (const label of [...typography.sidebarLabels, ...typography.sidebarBadges]) {
       expect(label.fontSize).toBeGreaterThanOrEqual(11);
       expect(label.fontSize).toBeLessThanOrEqual(13);
     }
-    for (const label of [...typography.quickAddHeadings, ...typography.sidebarLabels]) {
+    for (const label of typography.sidebarLabels) {
       expect(label.fontWeight).toBe(500);
       expect(label.textTransform).toBe("none");
       expect(label.letterSpacing).toBe(0);
     }
-    for (const label of [...typography.quickAddHeadings, ...typography.sidebarLabels, ...typography.sidebarBadges]) {
+    for (const label of [...typography.sidebarLabels, ...typography.sidebarBadges]) {
       expect(label.contrast).toBeGreaterThanOrEqual(4.5);
     }
-    const measured = [...typography.quickAddHeadings, ...typography.sidebarLabels, ...typography.sidebarBadges]
+    const measured = [...typography.sidebarLabels, ...typography.sidebarBadges]
       .map((label) => `${label.text}: ${label.fontSize}px, ${label.contrast.toFixed(2)}:1`).join("; ");
-    evidence.recordAssertionEvidence("the feature-off workspace keeps readable labels and its stored connector", `Den reports dashboardActivity=false; Quick add and Retained connection remain, Activity is absent. Section headings have no uppercase transform or tracking. Rendered typography: ${measured}.`, true);
+    evidence.recordAssertionEvidence("each workspace's Activity shows only its own stored connector, with readable labels", `Retained connection appears as that workspace's addition and the first workspace's ${world.names.connection} does not; Quick add is gone. Section labels have no uppercase transform or tracking. Rendered typography: ${measured}.`, true);
     await admin.screenshot();
   });
 

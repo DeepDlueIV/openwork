@@ -53,7 +53,7 @@ export async function workbotThreadWorld(_seed: Seed, { place }: { place: Place 
   const streams = new Set<ServerResponse>();
   // Match the standalone host's real contracts: /me reports these features, the thread reports filesEnabled,
   // and /files reports { enabled, files }. Files are deliberately unavailable before any browser act.
-  const features = { calendar: false, canSchedule: false, sideChats: false, calendarPolish: false };
+  const features = { calendar: false, canSchedule: false, sideChats: false };
   const files = { enabled: false, files: [] };
   const writes: Array<{ method: string; path: string }> = [];
   const requests = { threadReads: 0, fileReads: 0, writes };
@@ -149,7 +149,6 @@ export async function workbotThreadWorld(_seed: Seed, { place }: { place: Place 
     const nativePickers = await observeFilePickers(app, resources);
     return {
       app, url,
-      setCalendarPolish: (enabled: boolean) => { features.calendarPolish = enabled; },
       taskWitness: () => turns.flatMap((turn) => turn.tasks.map((task) => ({ id: task.id, status: task.status, request: turn.text }))),
       fileAccessWitness: () => ({ filesEnabled: files.enabled, threadReads: requests.threadReads,
         fileReads: requests.fileReads, fileWrites: requests.writes.filter((request) => request.path.startsWith("/v1/workbot/files")),

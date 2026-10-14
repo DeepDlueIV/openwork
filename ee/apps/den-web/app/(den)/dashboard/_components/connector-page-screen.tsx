@@ -12,7 +12,6 @@ import { ownedAccessStatus } from "./access-summary";
 import { connectorChatDeepLink, connectorChatPrompt } from "./connector-catalog";
 import { connectorAccountLabel, connectorAccountReady, connectorLimitedAccess, isManagedSlackConnection } from "./connector-detail";
 import { ManagedSlackAccount } from "./managed-slack";
-import { useLibraryIntegrated } from "./use-library-integrated";
 import { toolSummary, toolTitle, useMemberSignIn } from "./connector-setup";
 import { useDenToast } from "./den-toast";
 import { formatAddedDate } from "./item-dates";
@@ -95,7 +94,6 @@ export function LibraryConnectorScreen({ connectionId }: { connectionId: string 
   const queryClient = useQueryClient();
   const toast = useDenToast();
   const { orgSlug, orgContext } = useOrgDashboard();
-  const integrated = useLibraryIntegrated();
   const library = useLibrary();
   const usable = useMcpConnections("usable");
   const signIn = useMemberSignIn();
@@ -145,7 +143,7 @@ export function LibraryConnectorScreen({ connectionId }: { connectionId: string 
   if (isManagedSlackConnection(connection)) return (
     <ItemPage testId="library-connector">
       <ItemHeader
-        compact={integrated}
+        compact
         back={back}
         logo={<ConnectorLogo name="Slack search" url={connection.url} size="lg" />}
         title="Slack search"

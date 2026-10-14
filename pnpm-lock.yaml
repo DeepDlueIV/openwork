@@ -412,6 +412,12 @@ importers:
 
   apps/review:
     dependencies:
+      '@openwork/daytona-evidence':
+        specifier: workspace:*
+        version: link:../../packages/daytona-evidence
+      '@openwork/evidence-provider':
+        specifier: workspace:*
+        version: link:../../packages/evidence-provider
       '@openwork/freestyle':
         specifier: workspace:*
         version: link:../../packages/freestyle
@@ -1493,6 +1499,22 @@ importers:
         specifier: ^5.6.3
         version: 5.9.3
 
+  packages/daytona-evidence:
+    dependencies:
+      '@openwork/evidence-provider':
+        specifier: workspace:*
+        version: link:../evidence-provider
+      '@openwork/freestyle':
+        specifier: workspace:*
+        version: link:../freestyle
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   packages/email:
     dependencies:
       '@react-email/components':
@@ -1571,6 +1593,15 @@ importers:
         specifier: ^5.6.3
         version: 5.9.3
 
+  packages/evidence-provider:
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   packages/features:
     dependencies:
       zod:
@@ -1602,6 +1633,9 @@ importers:
 
   packages/freestyle:
     dependencies:
+      '@openwork/evidence-provider':
+        specifier: workspace:*
+        version: link:../evidence-provider
       '@openwork/sandbox':
         specifier: workspace:*
         version: link:../sandbox
@@ -1649,6 +1683,9 @@ importers:
       fast-xml-parser:
         specifier: 5.8.0
         version: 5.8.0
+      jose:
+        specifier: 6.2.8
+        version: 6.2.8
       zod:
         specifier: ^4.3.6
         version: 4.3.6
@@ -1739,9 +1776,9 @@ importers:
 
   packages/review:
     dependencies:
-      '@openwork/freestyle':
+      '@openwork/evidence-provider':
         specifier: workspace:*
-        version: link:../freestyle
+        version: link:../evidence-provider
       '@vercel/blob':
         specifier: ^2.3.0
         version: 2.8.0

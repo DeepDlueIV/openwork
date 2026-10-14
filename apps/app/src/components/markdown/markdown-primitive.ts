@@ -29,7 +29,7 @@ type MarkdownProfile = {
   rawHtmlMode: RawHtmlMode;
   headingClassName: (depth: number) => string;
   listClassName: (ordered: boolean) => string;
-  blockquoteClassName: string;
+  blockquoteHtml: (html: string, copyText: string | null) => string;
   codeBlockHtml: (text: string, lang: string | undefined) => string;
   codeSpanClassName: string;
   linkPresentation: "chat" | "simple";
@@ -144,8 +144,17 @@ function createEmojiAliases() {
 
 const emojiAliases = createEmojiAliases();
 
+const COPY_LABELS = {
+  code: { copy: "Copy code block", copied: "Code block copied" },
+  quote: { copy: "Copy quote", copied: "Quote copied" },
+};
+
+function copyButton(attribute: string, label: string) {
+  return `<button type="button" ${attribute} class="absolute right-2 top-2 z-10 inline-flex h-7 w-7 items-center justify-center rounded-md border border-border/70 bg-background/95 text-muted-foreground shadow-sm transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label="${label}" title="${label}">${CODE_COPY_ICON}${CODE_COPIED_ICON}<span data-openwork-code-copy-label="" class="sr-only" aria-live="polite">${label}</span></button>`;
+}
+
 function codeCopyButton() {
-  return `<button type="button" data-openwork-code-copy="" class="absolute right-2 top-2 z-10 inline-flex h-7 w-7 items-center justify-center rounded-md border border-border/70 bg-background/95 text-muted-foreground shadow-sm transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" aria-label="Copy code block" title="Copy code block">${CODE_COPY_ICON}${CODE_COPIED_ICON}<span data-openwork-code-copy-label="" class="sr-only" aria-live="polite">Copy code block</span></button>`;
+  return copyButton(`data-openwork-code-copy=""`, COPY_LABELS.code.copy);
 }
 
 function codeWrapButton() {
@@ -163,6 +172,18 @@ function chatCodeBlockHtml(text: string, lang: string | undefined) {
     `<pre data-openwork-code-scroll="" class="overflow-x-auto px-4 pb-3 pt-11"><code${codeLanguageClass(lang)}>${escapeHtml(text)}</code></pre>`,
     false,
   );
+}
+
+// A quote is often a draft meant to be pasted elsewhere: it keeps its line
+// breaks (see index.css) and copies its own Markdown, bullets included.
+function chatBlockquoteHtml(html: string, copyText: string | null) {
+  const button = copyText === null ? "" : copyButton(`data-openwork-quote-copy="${escapeAttribute(copyText)}"`, COPY_LABELS.quote.copy);
+  const padding = copyText === null ? "pr-4" : "pr-11";
+  return `<blockquote data-openwork-quote="" class="relative my-4 rounded-r-lg border-l border-border bg-muted/40 py-1 pl-4 ${padding} italic text-muted-foreground">${button}${html}</blockquote>`;
+}
+
+function surfaceBlockquoteHtml(html: string) {
+  return `<blockquote class="my-4 rounded-r-lg border-l border-dls-border bg-dls-hover/40 pl-4 italic text-muted-foreground">${html}</blockquote>`;
 }
 
 function surfaceCodeBlockHtml(text: string, lang: string | undefined) {
@@ -204,15 +225,16 @@ export function syncMarkdownImagePreviews(root: HTMLElement) {
   }
 }
 
-export function setCodeCopyButtonState(button: HTMLButtonElement, copied: boolean) {
+export function setCopyButtonState(button: HTMLButtonElement, copied: boolean) {
+  const labels = button.hasAttribute("data-openwork-quote-copy") ? COPY_LABELS.quote : COPY_LABELS.code;
   const label = button.querySelector("[data-openwork-code-copy-label]");
-  if (label) label.textContent = copied ? "Code block copied" : "Copy code block";
+  if (label) label.textContent = copied ? labels.copied : labels.copy;
 
   button.querySelector("[data-openwork-code-copy-icon]")?.toggleAttribute("hidden", copied);
   button.querySelector("[data-openwork-code-copy-check-icon]")?.toggleAttribute("hidden", !copied);
 
-  button.title = copied ? "Copied" : "Copy code block";
-  button.setAttribute("aria-label", copied ? "Code block copied" : "Copy code block");
+  button.title = copied ? "Copied" : labels.copy;
+  button.setAttribute("aria-label", copied ? labels.copied : labels.copy);
 }
 
 export function codeWrapClassStates(wrapped: boolean) {
@@ -270,6 +292,8 @@ function sanitizeMarkdownHtml(value: string) {
       "data-openwork-inline-code-path",
       "data-openwork-link-href",
       "data-openwork-link-chevron",
+      "data-openwork-quote",
+      "data-openwork-quote-copy",
       "data-openwork-shiki",
       "decoding",
       "disabled",
@@ -295,7 +319,7 @@ function markdownProfileForPresentation(presentation: MarkdownPresentation): Mar
           ? "my-4 text-lg font-semibold"
           : "my-3 text-base font-semibold",
       listClassName: (ordered) => ordered ? "my-3 list-decimal pl-6" : "my-3 list-disc pl-6",
-      blockquoteClassName: "my-4 rounded-r-lg border-l border-dls-border bg-dls-hover/40 pl-4 italic text-muted-foreground",
+      blockquoteHtml: surfaceBlockquoteHtml,
       codeBlockHtml: surfaceCodeBlockHtml,
       codeSpanClassName: "rounded-md bg-gray-2/70 px-1.5 py-0.5 font-mono text-sm text-foreground",
       linkPresentation: "simple",
@@ -315,7 +339,7 @@ function markdownProfileForPresentation(presentation: MarkdownPresentation): Mar
         ? "font-semibold my-4 text-lg"
         : "font-semibold my-3 text-base",
     listClassName: (ordered) => ordered ? "my-3 pl-6 list-decimal" : "my-3 pl-6 list-disc",
-    blockquoteClassName: "my-4 rounded-r-lg border-l border-border bg-muted/40 pl-4 italic text-muted-foreground",
+    blockquoteHtml: chatBlockquoteHtml,
     codeBlockHtml: chatCodeBlockHtml,
     codeSpanClassName: "rounded-md bg-gray-2/70 px-1.5 py-0.5 font-mono text-sm text-foreground",
     linkPresentation: "chat",
@@ -388,6 +412,7 @@ function renderImage(profile: MarkdownProfile, href: string, title: string | nul
 
 function createMarkedOptions(profile: MarkdownProfile, presentation: MarkdownPresentation, isAsync: boolean, resolveReference?: ResolveSessionReference, unsafeReferenceTokens = new WeakSet<object>(), generatedHtmlTokens = new WeakSet<object>()) {
   let suppressReferences = 0;
+  let quoteDepth = 0;
   const withoutReferences = (render: () => string) => {
     suppressReferences++;
     try { return render(); } finally { suppressReferences--; }
@@ -428,8 +453,12 @@ function createMarkedOptions(profile: MarkdownProfile, presentation: MarkdownPre
         // Marked includes the task checkbox in item.tokens; render it only once.
         return `<li class="my-1">${this.parser.parse(item.tokens)}</li>`;
       },
-      blockquote({ tokens }) {
-        return `<blockquote class="${profile.blockquoteClassName}">${this.parser.parse(tokens)}</blockquote>`;
+      blockquote({ tokens, text }) {
+        quoteDepth++;
+        let html: string;
+        try { html = this.parser.parse(tokens); } finally { quoteDepth--; }
+        // Only the outermost quote gets a copy button; a nested one is copied with it.
+        return profile.blockquoteHtml(html, quoteDepth === 0 ? text.trim() : null);
       },
       code({ text, lang }) {
         if (isMermaidLanguage(lang)) return mermaidBlockHtml(text, presentation);

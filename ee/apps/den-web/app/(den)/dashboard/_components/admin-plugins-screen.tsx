@@ -2,10 +2,9 @@
 
 import { useQueryClient } from "@tanstack/react-query";
 import { Popover } from "@base-ui/react/popover";
-import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
-import { ArrowDownWideNarrow, Check, ChevronDown, Plus, Search, X } from "lucide-react";
+import { Check, ChevronDown, Plus, Search, X } from "lucide-react";
 import { DenPageHeader } from "../../_components/ui/page-header";
 import { DenButton } from "../../_components/ui/button";
 import { getNewPluginRoute, getPluginRoute } from "../../_lib/den-org";
@@ -14,17 +13,13 @@ import { managedAccessStatus } from "./access-summary";
 import { useDenToast } from "./den-toast";
 import { ItemPage } from "./item-header";
 import { FilterInput, ItemMenu, ItemRow, removeEntry, ItemPanel, ItemRowsSkeleton, LinkButton } from "./item-list";
-import { formatAddedDate } from "./item-dates";
-import { LetterTile, PluginLogo } from "./item-logo";
-import { useLibraryIntegrated } from "./use-library-integrated";
+import { PluginLogo } from "./item-logo";
 import { draftFromPluginGrants } from "./item-sharing";
-import { ConnectorLogoStrip } from "./library-add-dialog";
 import { usePluginAccess } from "./plugin-access-data";
 import { type DenPluginSummary, pluginDetailQueryOptions, useArchivePlugin, usePluginDirectory } from "./plugin-data";
 
 function PluginsEmpty({ orgSlug }: { orgSlug: string | null }) {
-  const integrated = useLibraryIntegrated();
-  if (integrated) return (
+  return (
     <ItemPanel>
       <div className="flex flex-col items-center gap-3 px-5 py-8 text-center" data-testid="plugins-empty">
         <h2 className="text-sm font-medium text-[var(--dls-text-primary)]">No plugins yet</h2>
@@ -34,29 +29,12 @@ function PluginsEmpty({ orgSlug }: { orgSlug: string | null }) {
       </div>
     </ItemPanel>
   );
-  return (
-    <div className="flex flex-col items-center gap-3">
-      <div className="flex w-full flex-col items-center gap-5 rounded-2xl border border-gray-100 bg-white px-6 pb-14 pt-16 text-center" data-testid="plugins-empty">
-        <ConnectorLogoStrip size="md" />
-        <div className="flex flex-col gap-1.5">
-          <p className="text-[15px] font-semibold leading-5 text-gray-900">No plugins yet</p>
-          <p className="text-[13px] leading-[18px] text-gray-500">Skills, commands and connectors bundled for a job. You choose which teams get each one.</p>
-        </div>
-        <LinkButton variant="primary" href={getNewPluginRoute(orgSlug)}>
-          <Plus className="h-4 w-4" aria-hidden />
-          Create a plugin
-        </LinkButton>
-      </div>
-      <p className="text-[12px] leading-4 text-gray-400">Members can still make plugins for themselves in My Library.</p>
-    </div>
-  );
 }
 
 function PluginRow({ plugin }: { plugin: DenPluginSummary }) {
   const toast = useDenToast();
   const queryClient = useQueryClient();
   const { orgSlug, orgContext } = useOrgDashboard();
-  const integrated = useLibraryIntegrated();
   const access = usePluginAccess(plugin.id, { enabled: !plugin.accessIncluded });
   const archive = useArchivePlugin();
   const href = getPluginRoute(orgSlug, plugin.id);
@@ -76,34 +54,13 @@ function PluginRow({ plugin }: { plugin: DenPluginSummary }) {
     void queryClient.prefetchQuery(pluginDetailQueryOptions(plugin.id));
   }
 
-  if (integrated) return (
+  return (
     <div data-plugin-row={plugin.name} data-plugin-access={sharing} onPointerEnter={prefetch} onFocus={prefetch}>
       <ItemRow compact href={href} logo={<PluginLogo name={plugin.name} />} title={plugin.name} description={plugin.description || "Plugin"} status={status ? status === "Only you" ? "Private" : "Shared" : "Unknown"} action={<ItemMenu label={`More for ${plugin.name}`} entries={[
         { label: "Open", href },
         ...(status === "Only you" ? [{ label: "Share", href }] : []),
         removeEntry(plugin.name, remove),
       ]} />} />
-    </div>
-  );
-  return (
-    <div data-plugin-row={plugin.name} onPointerEnter={prefetch} onFocus={prefetch} className="grid h-full grid-cols-[minmax(0,1fr)_minmax(120px,0.6fr)_minmax(100px,0.45fr)_80px_32px] items-center gap-4 px-5 text-[13px]">
-      <Link href={href} className="flex min-w-0 items-center gap-3 rounded-lg focus-visible:ring-2 focus-visible:ring-gray-300">
-        <LetterTile name={plugin.name} />
-        <span className="min-w-0">
-          <span className="block truncate font-medium text-gray-900">{plugin.name}</span>
-          {plugin.description ? <span className="block truncate text-[12px] text-gray-500">{plugin.description}</span> : null}
-        </span>
-      </Link>
-      <div className="min-w-0" data-item-status title={sharing}>
-        {sharing ? <span className="inline-block max-w-full truncate rounded bg-gray-100 px-1.5 py-0.5 text-[12px] text-gray-600">{sharing}</span> : <span className="text-gray-400">—</span>}
-      </div>
-      <span className="truncate text-gray-600" title={ownerName}>{ownerName}</span>
-      <time dateTime={plugin.updatedAt} title={plugin.updatedAt} className="text-[12px] text-gray-500">{formatAddedDate(plugin.updatedAt) || "—"}</time>
-      <ItemMenu label={`More for ${plugin.name}`} entries={[
-        { label: "Open", href },
-        ...(status === "Only you" ? [{ label: "Share", href }] : []),
-        removeEntry(plugin.name, remove),
-      ]} />
     </div>
   );
 }
@@ -116,13 +73,12 @@ function DirectoryFilter({ label, title, value, options, counts, onChange }: {
   options: { id: string; name: string }[];
   onChange: (value: string | null) => void;
 }) {
-  const integrated = useLibraryIntegrated();
   const [search, setSearch] = useState("");
   const selected = options.find((option) => option.id === value);
   const matches = options.filter((option) => option.name.toLowerCase().includes(search.trim().toLowerCase()));
   return (
     <Popover.Root onOpenChange={(open) => { if (!open) setSearch(""); }}>
-      <Popover.Trigger className={`inline-flex ${integrated ? "h-8" : "h-9"} max-w-[210px] items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 text-[13px] text-gray-700 hover:bg-gray-50 focus-visible:ring-2 focus-visible:ring-gray-300`}>
+      <Popover.Trigger className={`inline-flex h-8 max-w-[210px] items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 text-[13px] text-gray-700 hover:bg-gray-50 focus-visible:ring-2 focus-visible:ring-gray-300`}>
         <span className="truncate">{selected ? `${label}: ${selected.name}` : label}</span>
         <ChevronDown className="h-3.5 w-3.5 shrink-0" aria-hidden />
       </Popover.Trigger>
@@ -159,25 +115,18 @@ export function pluginDirectoryRange(scrollTop: number, viewportHeight: number, 
 
 function DirectoryResults({ plugins, filtered }: { plugins: ReturnType<typeof usePluginDirectory>; filtered: boolean }) {
   const { orgSlug } = useOrgDashboard();
-  const integrated = useLibraryIntegrated();
   const [scrollTop, setScrollTop] = useState(0);
   const rows = plugins.data?.pages.flatMap((page) => page.items) ?? [];
-  const rowHeight = integrated ? 64 : 56;
+  const rowHeight = 64;
   const viewportHeight = 544;
   const { start, end } = pluginDirectoryRange(scrollTop, viewportHeight, rowHeight, rows.length);
-  const total = plugins.data?.pages[0]?.total ?? rows.length;
-  const ResultsPanel = integrated ? ItemPanel : "div";
 
   if (plugins.isPending) return <ItemPanel><ItemRowsSkeleton label="Loading plugins" rows={6} /></ItemPanel>;
   if (plugins.isError && rows.length === 0) return <div role="alert" className="rounded-xl border border-gray-200 bg-white p-5 text-[13px] text-gray-700">The list did not load. <button type="button" onClick={() => void plugins.refetch()} className="font-medium underline">Try again</button></div>;
   if (rows.length === 0) return filtered ? <div className="rounded-xl border border-gray-200 bg-white p-6 text-[13px] text-gray-600">No plugins match. Try another name, team, or owner.</div> : <PluginsEmpty orgSlug={orgSlug} />;
 
   return (
-    <ResultsPanel className={integrated ? "overflow-hidden" : "overflow-x-auto rounded-xl border border-gray-200 bg-white"}><div className={integrated ? "min-w-0" : "min-w-[760px]"}>
-      {!integrated ? <>
-      <div className="border-b border-gray-100 px-5 py-2.5 text-[12px] text-gray-500">{total} {total === 1 ? "plugin" : "plugins"}{plugins.hasNextPage ? ` · ${rows.length} loaded` : ""}</div>
-      <div className="grid grid-cols-[minmax(0,1fr)_minmax(120px,0.6fr)_minmax(100px,0.45fr)_80px_32px] gap-4 border-b border-gray-100 bg-gray-50 px-5 py-2 text-[12px] text-gray-500" data-testid="plugin-directory-columns"><span>Name</span><span>Shared with</span><span>Owner</span><span>Updated</span><span className="sr-only">Actions</span></div>
-      </> : null}
+    <ItemPanel className="overflow-hidden"><div className="min-w-0">
       <div data-testid="plugin-directory-scroll" className="overflow-y-auto" style={{ height: Math.min(viewportHeight, rows.length * rowHeight + (plugins.hasNextPage ? 48 : 0)) }} onScroll={(event) => {
         const target = event.currentTarget;
         setScrollTop(target.scrollTop);
@@ -194,7 +143,7 @@ function DirectoryResults({ plugins, filtered }: { plugins: ReturnType<typeof us
       </div>
       </div>
       {plugins.isFetchNextPageError ? <div role="alert" className="border-t border-gray-100 px-5 py-3 text-[13px] text-red-600">More plugins did not load. Use Load more to try again.</div> : null}
-    </ResultsPanel>
+    </ItemPanel>
   );
 }
 
@@ -211,7 +160,6 @@ export function AdminPluginsScreen() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { orgSlug, orgId, orgContext } = useOrgDashboard();
-  const integrated = useLibraryIntegrated();
   const q = searchParams.get("name") ?? "";
   const [search, setSearch] = useState(q);
   const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -225,7 +173,7 @@ export function AdminPluginsScreen() {
   const firstPage = plugins.data?.pages[0];
   const legacyMember = orgContext?.members.find((member) => member.id === memberId);
   const empty = firstPage?.total === 0 && !q && !teamId && !memberId && !ownerId;
-  const createAction = <LinkButton variant="primary" size={integrated ? "sm" : "md"} href={getNewPluginRoute(orgSlug)}><Plus className="h-4 w-4" aria-hidden />Create a plugin</LinkButton>;
+  const createAction = <LinkButton variant="primary" size="sm" href={getNewPluginRoute(orgSlug)}><Plus className="h-4 w-4" aria-hidden />Create a plugin</LinkButton>;
 
   function setFilters(next: { name: string; teamId: string | null; memberId: string | null; ownerId?: string | null }) {
     if (searchTimer.current) clearTimeout(searchTimer.current);
@@ -245,16 +193,13 @@ export function AdminPluginsScreen() {
   }, [search, q, teamId, memberId, ownerId, router, searchParams]);
 
   return (
-    <ItemPage testId="admin-plugins" wide={!integrated}>
-      <DenPageHeader size={integrated ? "compact" : "default"} title={<>Plugins{!integrated && firstPage?.total != null ? <span className="ml-2 text-[14px] font-normal tracking-normal text-gray-500" data-testid="plugin-directory-total">{firstPage.total.toLocaleString()}</span> : null}</>} action={integrated ? undefined : createAction} />
-      {!integrated || !empty ? <div className="flex flex-wrap items-center gap-2" data-testid="plugin-directory-toolbar">
-        {integrated ? <FilterInput value={search} onChange={setSearch} className="w-[200px] max-w-full" /> : <label className="flex h-9 min-w-[220px] flex-1 items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 focus-within:ring-2 focus-within:ring-gray-300">
-          <Search className="h-4 w-4 shrink-0 text-gray-400" aria-hidden />
-          <input type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search plugins by name" aria-label="Search plugins by name" className="min-w-0 flex-1 bg-transparent text-[13px] outline-none" />
-        </label>}
+    <ItemPage testId="admin-plugins">
+      <DenPageHeader size="compact" title="Plugins" />
+      {!empty ? <div className="flex flex-wrap items-center gap-2" data-testid="plugin-directory-toolbar">
+        <FilterInput value={search} onChange={setSearch} className="w-[200px] max-w-full" />
         <DirectoryFilter label="Team" title="Plugins available to a team" counts={firstPage?.teamCounts} value={teamId} options={orgContext?.teams ?? []} onChange={(id) => setFilters({ name: search.trim(), teamId: id, memberId: null, ownerId })} />
         <DirectoryFilter label="Owner" title="Plugins created by" counts={firstPage?.ownerCounts} value={ownerId} options={(orgContext?.members ?? []).map((member) => ({ id: member.id, name: member.user.name || member.user.email }))} onChange={(id) => setFilters({ name: search.trim(), teamId, memberId: null, ownerId: id })} />
-        {integrated ? <span className="sm:ml-auto">{createAction}</span> : <span className="inline-flex h-9 shrink-0 items-center gap-2 rounded-lg border border-gray-200 bg-white px-3 text-[13px] text-gray-700" title="Sorted by most recently updated"><ArrowDownWideNarrow className="h-3.5 w-3.5 text-gray-500" aria-hidden />Recently updated</span>}
+        <span className="sm:ml-auto">{createAction}</span>
       </div> : null}
       {search || teamId || memberId || ownerId ? <button type="button" onClick={() => { setSearch(""); setFilters({ name: "", teamId: null, memberId: null, ownerId: null }); }} className="-mt-2 inline-flex w-fit items-center gap-1 text-[12px] text-gray-600 hover:text-gray-900"><X className="h-3.5 w-3.5" aria-hidden />Clear filters</button> : null}
       {legacyMember ? <p className="text-[13px] text-gray-600">Available to {legacyMember.user.name || legacyMember.user.email}</p> : null}

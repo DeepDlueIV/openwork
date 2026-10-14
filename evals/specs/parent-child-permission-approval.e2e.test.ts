@@ -3,9 +3,9 @@ import { spec } from "@openwork/testkit";
 import { parentChildPermissionWorld, scopedPermissionRefreshWorld } from "../worlds/first-run.ts";
 import { delegatedQuestionHandoff, permissionStopRecovery } from "../worlds/chat.ts";
 
-const test = spec.world(parentChildPermissionWorld);
+const test = spec.world(parentChildPermissionWorld, { resources: { surfaces: ["appWeb"], services: [] } });
 
-const scopeTest = spec.world(scopedPermissionRefreshWorld, { timeout: 600_000 });
+const scopeTest = spec.world(scopedPermissionRefreshWorld, { resources: { surfaces: ["appWeb"], services: [] }, timeout: 600_000 });
 
 scopeTest("switching and creating threads hydrate permissions without waiting for unrelated roots", async ({ world, user, agent, probe, step, evidence }) => {
   user = user.on(world.app);
@@ -105,7 +105,7 @@ function text(value: unknown): string {
   return value;
 }
 
-const stopTest = spec.world(permissionStopRecovery, { timeout: 600_000 });
+const stopTest = spec.world(permissionStopRecovery, { resources: { surfaces: ["appWeb"], services: ["mock"] }, timeout: 600_000 });
 
 stopTest("retry recovery and stopping a permission leave other requests and fresh work intact", async ({ world, user, probe, step, evidence }) => {
   const v2 = world.engine === "v2";
@@ -170,7 +170,7 @@ stopTest("retry recovery and stopping a permission leave other requests and fres
     expect(await pending(world.other.sessionId)).toEqual(unrelated);
   });
 
-  await step("fresh work completes once and the unrelated approval remains answerable", async () => {
+  await step("fresh work completes once, and Allow once answers the unrelated approval so its command runs", async () => {
     await send(world.followup.prompt);
     await user.see({ text: world.followup.reply }, { timeoutMs: 45_000 });
     const freshFinals = (await world.mock.agentRequests({ promptMarker: world.followup.prompt })).filter((call) => call.kind === "final");
@@ -183,15 +183,20 @@ stopTest("retry recovery and stopping a permission leave other requests and fres
     await user.notSee("Allow once");
     const stoppedPending = await pending(world.stopped.sessionId);
     const stoppedFinals = (await world.mock.agentRequests({ promptMarker: world.stopped.prompt })).filter((call) => call.kind === "final");
+    // The engine accepted the reply: nothing is left pending and the approved command ran to a final reply.
+    const otherPending = await pending(world.other.sessionId);
+    const otherFinals = (await world.mock.agentRequests({ promptMarker: world.other.prompt })).filter((call) => call.kind === "final");
     expect(stoppedPending).toEqual([]);
     expect(stoppedFinals).toHaveLength(0);
-    evidence.recordAssertionEvidence("Stop preserves the other approval and fresh work completes once", `${freshFinals.length} fresh final reply; ${stoppedPending.length} stopped approvals; ${stoppedFinals.length} final replies for the interrupted prompt. The unchanged unrelated request was answered through Allow once and its reply was visible.`,
-      freshFinals.length === 1 && stoppedPending.length === 0 && stoppedFinals.length === 0);
+    expect(otherPending).toEqual([]);
+    expect(otherFinals).toHaveLength(1);
+    evidence.recordAssertionEvidence("Stop preserves the other approval, fresh work completes once, and Allow once reaches the engine", `${freshFinals.length} fresh final reply; ${stoppedPending.length} stopped approvals; ${stoppedFinals.length} final replies for the interrupted prompt; after Allow once, ${otherPending.length} approvals left for the other conversation and ${otherFinals.length} final reply for its command.`,
+      freshFinals.length === 1 && stoppedPending.length === 0 && stoppedFinals.length === 0 && otherPending.length === 0 && otherFinals.length === 1);
     await user.screenshot();
   });
 });
 
-const questionTest = spec.world(delegatedQuestionHandoff, { timeout: 600_000 });
+const questionTest = spec.world(delegatedQuestionHandoff, { resources: { surfaces: ["appWeb"], services: ["mock"] }, timeout: 600_000 });
 questionTest("a parent answers and stops real child questions, then finishes fresh work without settling an unrelated root question", { timeout: 1_200_000 }, async ({ world, user, probe, step, evidence }) => {
   const v2 = world.engine === "v2";
   const mount = `/workspace/${encodeURIComponent(world.workspace.workspaceId)}/${v2 ? "opencode2/api" : "opencode"}`;
@@ -338,10 +343,10 @@ questionTest("a parent answers and stops real child questions, then finishes fre
       until: (items) => items.length === 1 && items[0]?.id === unrelated.id,
     });
     if (v2) {
-      expect(await read(`${sessionPath(child.sessionID)}/form/${encodeURIComponent(child.id)}/state`))
-        .toEqual({ status: "answered", answer: { q0: world.child.answer } });
-      expect(await read(`${sessionPath(unrelated.sessionID)}/form/${encodeURIComponent(unrelated.id)}/state`))
-        .toEqual({ status: "pending" });
+      // OpenCode v2 2.0.26 reports a form's state on the form itself (no /state route).
+      const formState = async (sessionID: string, id: string) => record(await read(`${sessionPath(sessionID)}/form/${encodeURIComponent(id)}`)).state;
+      expect(await formState(child.sessionID, child.id)).toEqual({ status: "answered", answer: { q0: world.child.answer } });
+      expect(await formState(unrelated.sessionID, unrelated.id)).toEqual({ status: "pending" });
     }
     const answer = `"${world.child.question}"="${world.child.answer}"`;
     const childFinished = await complete(child.sessionID, world.child.prompt, "question", answer, world.unrelated.answer);

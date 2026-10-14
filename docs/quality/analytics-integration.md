@@ -1,8 +1,8 @@
 # Analytics integration
 
 The `library-usage`, `workflow-run-previews`, and `org-model-analytics`
-journeys compare the existing presentation with the integrated one, which
-comes with `libraryUsage` (it replaced the retired `analyticsIntegrated` flag).
+journeys prove the integrated presentation, which is now the only one (the
+former `analyticsIntegrated` and `libraryUsage` flags are retired).
 The Library journey also records Members and Connectors in the same workspace.
 
 ## Mismatches
@@ -20,30 +20,29 @@ The Library journey also records Members and Connectors in the same workspace.
 - Models and workflow first loads used loading prose rather than the Den row
   skeleton; their errors did not offer the same inline retry pattern.
 
-## Scope and rollback
+## Scope
 
-The integrated presentation follows `libraryUsage`. It changes
-presentation only: no counts, collection, consent, entitlements, permissions,
-API queries, or persisted history change. Turning it off restores the original
-views immediately. Rows keep their existing Library/Connectors destinations;
-one-off or inaccessible workflow receipts do not acquire fabricated links.
+The integrated presentation changed presentation only: no counts, collection,
+consent, entitlements, permissions, API queries, or persisted history change.
+Plugins & connectors rows open the item's usage (who uses it, uses per
+day, what started the uses), and a person there opens their own usage. Each
+item's usage page links to its existing Library or Connectors page; one-off or
+inaccessible workflow receipts do not acquire fabricated links.
 
-`denFlatPageHeaders` still exclusively controls compact versus legacy headings.
-This rollout does not replace that check, remove descriptions, or redesign
-Members/Connectors headers. Both header settings can be combined independently.
+Compact page headings are the only heading presentation (the former
+`denFlatPageHeaders` flag is retired). This change does not remove
+descriptions or redesign Members/Connectors headers.
 
 The proof includes named plugin/connector marks, custom fallback, row-to-detail
-navigation, narrow comparison scrolling, teammate refusal, and rollback with
-unchanged counts. The model journey retains its cross-organization and outage
+navigation, narrow comparison scrolling, teammate refusal, and unchanged
+counts. The model journey retains its cross-organization and outage
 checks. The workflow journey retains executed-version and revoked-access checks.
 
 ## Advisory review decisions
 
-- Flag-off accent tiles, letter marks and expanded diagrams are the required
-  before evidence, not the integrated presentation.
 - Members, Connectors, member download entry points, pricing actions and
   shared Library diagrams are comparison/detail destinations. Their existing
-  policy, copy and diagram styling are not redesigned by this rollout.
+  policy, copy and diagram styling are not redesigned by this change.
 - Counting dates and measurement periods report state; they are not interface
   explanations. Chart dates belong at opposite ends of the time axis, not in
   adjacent list columns. Model dimension labels in the collection fixture are

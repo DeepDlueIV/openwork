@@ -317,13 +317,15 @@ export function resolveHeadlessWorldRuntimePaths(
  * as the installed desktop app, so both processes contend for one SQLite
  * writer and the world's sessions land in the person's history. Provider
  * credentials and the engine log stay where they are so the world keeps
- * working with the person's configured providers. An explicit OPENCODE_DB wins.
+ * working with the person's configured providers. An explicit OPENCODE_DB wins,
+ * except inside a coding agent's shell (OPENCODE=1): there it is the agent
+ * host's own database, which the world must never open.
  */
 export function isolatedHeadlessEngineEnv(
   runtimePaths: Pick<HeadlessWorldRuntimePaths, "opencodeDbPath">,
   env: NodeJS.ProcessEnv,
 ): NodeJS.ProcessEnv {
-  const explicit = env.OPENCODE_DB?.trim();
+  const explicit = env.OPENCODE === "1" ? undefined : env.OPENCODE_DB?.trim();
   return { OPENCODE_DB: explicit || runtimePaths.opencodeDbPath };
 }
 

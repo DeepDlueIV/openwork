@@ -1,7 +1,6 @@
 import type { Seed } from "@openwork/env";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { enableOrganizationCapabilities } from "./dashboards.ts";
 
 /** Skills a member wrote in this workspace: enough rows to read lanes across. */
 export const librarySkills = [
@@ -21,10 +20,9 @@ const handWrittenServers = {
 
 /**
  * One member's workspace with a handful of skills and MCP servers, opened in
- * the real app in headless Chrome. The signed-out case reads the real public
- * deployment flags; the signed-in case adds an organization-only override.
+ * the real app in headless Chrome, signed in to the member's organization.
  */
-async function buildLibraryListWide(seed: Seed, integrated: boolean) {
+export async function libraryListWide(seed: Seed) {
   const workspacePath = seed.tmpPath("library-list-wide");
   for (const skill of librarySkills) {
     const directory = join(workspacePath, ".opencode", "skills", skill.name);
@@ -36,7 +34,6 @@ async function buildLibraryListWide(seed: Seed, integrated: boolean) {
     `${JSON.stringify({ $schema: "https://opencode.ai/config.json", mcp: handWrittenServers }, null, 2)}\n`,
   );
   const den = await seed.den({ org: { name: "Integrated Library", admin: { name: "Library Owner" } } });
-  if (integrated) await enableOrganizationCapabilities(seed, den.admin, { libraryIntegrated: true });
   const app = await seed.appWeb({ name: "library-list-wide", workspacePath,
     env: {
       // Use the existing app-web Den proxy, as the MCP App journeys do. Browser
@@ -51,9 +48,6 @@ async function buildLibraryListWide(seed: Seed, integrated: boolean) {
       ...(process.env.OPENWORK_OPENCODE_BIN ? { OPENWORK_OPENCODE_BIN: process.env.OPENWORK_OPENCODE_BIN } : {}),
     },
   });
-  if (integrated) await seed.signIn(app, den.admin, "Library Owner");
+  await seed.signIn(app, den.admin, "Library Owner");
   return { app, den, workspacePath, skills: librarySkills.map((skill) => skill.name), servers: Object.keys(handWrittenServers) };
 }
-
-export const libraryListWide = (seed: Seed) => buildLibraryListWide(seed, false);
-export const integratedLibraryListWide = (seed: Seed) => buildLibraryListWide(seed, true);

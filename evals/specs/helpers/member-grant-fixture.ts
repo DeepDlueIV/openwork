@@ -28,8 +28,6 @@ export async function seedMemberGrantFixture(databaseUrl: string, organizationId
       resourceColumns: "name", resourceValues: "'SCIM grant fixture'" },
     { table: "connector_instance_access_grant", resource: "connector_instance", prefix: "cin", grantPrefix: "cia", memberColumn: "org_membership_id", softDelete: true,
       resourceColumns: "name, connector_type, connector_account_id", resourceValues: "'SCIM grant fixture', 'github', ?" },
-    { table: "dashboard_access_grant", resource: "dashboard", prefix: "dsb", grantPrefix: "dsg", memberColumn: "org_membership_id", softDelete: true,
-      resourceColumns: "name, elements_json", resourceValues: "'SCIM grant fixture', JSON_ARRAY()" },
   ];
   type ExpectedGrantRow = { id: string; memberId: string | null; teamId: string | null; shared: boolean };
   const grants: { table: string; resource: string; resourceId: string; memberColumn: string; softDelete: boolean; managedGrantId: string; expectedRows: ExpectedGrantRow[] }[] = [];

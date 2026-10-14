@@ -164,23 +164,21 @@ export type NotFoundError = {
 export type AdminFeature = {
   key:
     | "teamMembershipCache"
+    | "managedDeploymentsGcp"
     | "managedDeployments"
-    | "denFlatPageHeaders"
-    | "dashboardActivity"
-    | "libraryIntegrated"
-    | "libraryUsage"
-    | "modelsAnalytics"
-    | "orgManagedDashboards"
     | "nativeSlack"
     | "slackAssistant"
     | "slackWorkbotReplies"
-    | "headlessAutomations"
     | "workbot"
-    | "calendarPolish"
     | "automationCalendar"
     | "permissions"
+    | "teamRoles"
+    | "sharedRoles"
+    | "agentPermissions"
     | "engineV2Upgrade"
-    | "remoteSessionEvents";
+    | "remoteSessionEvents"
+    | "backgroundShellTasks"
+    | "orgDefaultModel";
   label: string;
   description: string;
   since: string;
@@ -220,23 +218,21 @@ export type AdminOrganizationsPageResponse = {
   organizations: Array<{
     capabilities: {
       teamMembershipCache: boolean;
+      managedDeploymentsGcp: boolean;
       managedDeployments: boolean;
-      denFlatPageHeaders: boolean;
-      dashboardActivity: boolean;
-      libraryIntegrated: boolean;
-      libraryUsage: boolean;
-      modelsAnalytics: boolean;
-      orgManagedDashboards: boolean;
       nativeSlack: boolean;
       slackAssistant: boolean;
       slackWorkbotReplies: boolean;
-      headlessAutomations: boolean;
       workbot: boolean;
-      calendarPolish: boolean;
       automationCalendar: boolean;
       permissions: boolean;
+      teamRoles: boolean;
+      sharedRoles: boolean;
+      agentPermissions: boolean;
       engineV2Upgrade: boolean;
       remoteSessionEvents: boolean;
+      backgroundShellTasks: boolean;
+      orgDefaultModel: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -257,61 +253,16 @@ export type AdminOrganizationsPageResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
+      managedDeploymentsGcp: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       managedDeployments: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      denFlatPageHeaders: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      dashboardActivity: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      libraryIntegrated: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      libraryUsage: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      modelsAnalytics: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      orgManagedDashboards: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -347,25 +298,7 @@ export type AdminOrganizationsPageResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      headlessAutomations: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
       workbot: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      calendarPolish: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -392,6 +325,33 @@ export type AdminOrganizationsPageResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
+      teamRoles: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      sharedRoles: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      agentPermissions: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       engineV2Upgrade: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -402,6 +362,24 @@ export type AdminOrganizationsPageResponse = {
         overrideApplies: boolean;
       };
       remoteSessionEvents: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      backgroundShellTasks: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      orgDefaultModel: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -474,23 +452,21 @@ export type AdminOverviewResponse = {
   organizations: Array<{
     capabilities: {
       teamMembershipCache: boolean;
+      managedDeploymentsGcp: boolean;
       managedDeployments: boolean;
-      denFlatPageHeaders: boolean;
-      dashboardActivity: boolean;
-      libraryIntegrated: boolean;
-      libraryUsage: boolean;
-      modelsAnalytics: boolean;
-      orgManagedDashboards: boolean;
       nativeSlack: boolean;
       slackAssistant: boolean;
       slackWorkbotReplies: boolean;
-      headlessAutomations: boolean;
       workbot: boolean;
-      calendarPolish: boolean;
       automationCalendar: boolean;
       permissions: boolean;
+      teamRoles: boolean;
+      sharedRoles: boolean;
+      agentPermissions: boolean;
       engineV2Upgrade: boolean;
       remoteSessionEvents: boolean;
+      backgroundShellTasks: boolean;
+      orgDefaultModel: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -511,61 +487,16 @@ export type AdminOverviewResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
+      managedDeploymentsGcp: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       managedDeployments: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      denFlatPageHeaders: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      dashboardActivity: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      libraryIntegrated: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      libraryUsage: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      modelsAnalytics: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      orgManagedDashboards: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -601,25 +532,7 @@ export type AdminOverviewResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      headlessAutomations: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
       workbot: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      calendarPolish: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -646,6 +559,33 @@ export type AdminOverviewResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
+      teamRoles: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      sharedRoles: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      agentPermissions: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       engineV2Upgrade: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -656,6 +596,24 @@ export type AdminOverviewResponse = {
         overrideApplies: boolean;
       };
       remoteSessionEvents: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      backgroundShellTasks: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      orgDefaultModel: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -812,6 +770,22 @@ export type UpdateCurrentUserProfileResponse = {
   };
 };
 
+export type DenDesktopAgentPermissions = {
+  rules: Array<{
+    action: string;
+    resource: string;
+    effect: "allow" | "ask" | "deny";
+    source: string;
+  }>;
+};
+
+export type DenDesktopConfigDefaultModel = {
+  providerID: string;
+  modelID: string;
+  source: "team" | "organization";
+  teamName?: string;
+};
+
 export type CurrentUserDesktopConfigResponse = {
   allowCustomProviders?: boolean;
   allowZenModel?: boolean;
@@ -859,6 +833,8 @@ export type CurrentUserDesktopConfigResponse = {
   connectEnabled?: boolean;
   onboardingPrompts?: Array<string>;
   onboardingPromptDescriptions?: Array<string>;
+  agentPermissions?: DenDesktopAgentPermissions;
+  defaultModel?: DenDesktopConfigDefaultModel;
 };
 
 export type AutomationRunnerTokenResponse = {
@@ -1233,6 +1209,8 @@ export type OrganizationContextResponse = {
       | "teams.manage_admin"
       | "permissions.view"
       | "permissions.manage"
+      | "agent_permissions.view"
+      | "agent_permissions.manage"
       | "sharing.manage_all"
       | "sharing.share_org_wide"
       | "sso.view"
@@ -1276,8 +1254,6 @@ export type OrganizationContextResponse = {
       | "marketplaces.manage"
       | "plugins.import"
       | "connectors.manage"
-      | "dashboards.view"
-      | "dashboards.manage"
     >;
     [key: string]: unknown;
   };
@@ -1547,69 +1523,6 @@ export type WorkflowRunListResponse = {
   nextCursor: string | null;
 };
 
-export type DashboardElement = {
-  serverName: string;
-  connectionId?: string;
-  toolName: string;
-  projectedToolName: string;
-  resourceUri: string;
-  title: string;
-  launchArguments?: {
-    [key: string]: unknown;
-  };
-  requiresApproval?: boolean;
-  organizationAutoLaunch?: boolean;
-};
-
-export type Dashboard = {
-  id: string;
-  organizationId: string;
-  name: string;
-  elements: Array<DashboardElement>;
-  createdByOrgMembershipId: string;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type DashboardListResponse = {
-  items: Array<Dashboard>;
-};
-
-export type DashboardResponse = {
-  item: Dashboard;
-};
-
-export type DashboardAccessGrant = {
-  id: string;
-  orgMembershipId: string | null;
-  teamId: string | null;
-  orgWide: boolean;
-  role: "viewer" | "editor" | "manager";
-  createdByOrgMembershipId: string;
-  createdAt: string;
-  removedAt: string | null;
-};
-
-export type DashboardAccessListResponse = {
-  items: Array<DashboardAccessGrant>;
-};
-
-export type DashboardAccessResponse = {
-  ok: true;
-  item: DashboardAccessGrant;
-};
-
-export type MeDashboard = {
-  id: string;
-  name: string;
-  elements: Array<DashboardElement>;
-  updatedAt: string;
-};
-
-export type MeDashboardListResponse = {
-  items: Array<MeDashboard>;
-};
-
 export type BuiltMcpApp = {
   serverName: string;
   connectionId: string;
@@ -1678,6 +1591,43 @@ export type DesktopPolicyListResponse = {
   }>;
 };
 
+export type AgentPermissionSetting = {
+  decision?: "allow" | "ask" | "deny";
+  allow?: Array<string>;
+  block?: Array<string>;
+};
+
+export type AgentPermissionSettings = {
+  commands?: AgentPermissionSetting;
+  fileEdits?: AgentPermissionSetting;
+  websites?: AgentPermissionSetting;
+  webSearch?: AgentPermissionSetting;
+  localSkills?: AgentPermissionSetting;
+  localMcpServers?: AgentPermissionSetting;
+};
+
+export type AgentPermissionPolicy = {
+  teamId: string | null;
+  name: string;
+  memberCount: number | null;
+  settings: AgentPermissionSettings;
+  updatedAt: string | null;
+};
+
+export type AgentPermissionPolicyList = {
+  everyone: AgentPermissionPolicy;
+  teams: Array<AgentPermissionPolicy>;
+  canEdit: boolean;
+};
+
+export type AgentPermissionPolicyResponse = {
+  policy: AgentPermissionPolicy;
+};
+
+export type AgentPermissionPolicyWrite = {
+  settings: AgentPermissionSettings;
+};
+
 export type InferenceAccessResponse = {
   access: {
     kind: "free" | "paid" | "exhausted" | "unavailable";
@@ -1734,6 +1684,36 @@ export type InferenceStatusResponse = {
 export type InferenceProviderMissingError = {
   error: "openrouter_management_api_key_missing";
   message: string;
+};
+
+export type LibraryUsageSourceCounts = {
+  agent?: number;
+  workflow?: number;
+  automation?: number;
+  app?: number;
+  artifact?: number;
+};
+
+export type LibraryUsageBreakdownRow = {
+  itemId: string | null;
+  memberId: string | null;
+  date: string | null;
+  uses: number;
+  people: number;
+  failures: number | null;
+  lastUsedAt: string | null;
+  sources: LibraryUsageSourceCounts;
+};
+
+export type LibraryUsageBreakdown = {
+  kind: "skills" | "plugins" | "connectors";
+  days: number;
+  from: string;
+  to: string;
+  timezone: "UTC";
+  groupBy: Array<"item" | "member" | "day">;
+  trackingSince: string | null;
+  rows: Array<LibraryUsageBreakdownRow>;
 };
 
 export type LibraryUsageRow = {
@@ -2507,6 +2487,10 @@ export type PermissionSetAppliesToSummary =
   | {
       kind: "team";
       team: PermissionSetTeam | null;
+      teams: Array<PermissionSetTeam>;
+      /**
+       * People in any of the set's teams, each counted once.
+       */
       memberCount: number;
     };
 
@@ -2514,7 +2498,14 @@ export type PermissionSetSummary = {
   id: string;
   name: string;
   kind: "member_default" | "admin_default" | "team";
+  /**
+   * The first team the set applies to. Kept for older clients; see teams.
+   */
   team: PermissionSetTeam | null;
+  /**
+   * Every team the set applies to now. More than one only with Shared roles.
+   */
+  teams: Array<PermissionSetTeam>;
   allowedCount: number;
   createdAt: string;
   appliesTo: PermissionSetAppliesToSummary;
@@ -2579,9 +2570,13 @@ export type PermissionSetAppliesTo =
   | {
       kind: "team";
       team: PermissionSetTeam | null;
+      teams: Array<PermissionSetTeam>;
+      /**
+       * People in any of the set's teams, each counted once.
+       */
       memberCount: number;
       /**
-       * Names and emails of the team's members. Null unless the caller holds teams.view; memberCount is always returned.
+       * Names and emails of the people in the set's teams. Null unless the caller holds teams.view; memberCount is always returned.
        */
       members: Array<PermissionPerson> | null;
     };
@@ -2590,7 +2585,14 @@ export type PermissionSetDetail = {
   id: string;
   name: string;
   kind: "member_default" | "admin_default" | "team";
+  /**
+   * The first team the set applies to. Kept for older clients; see teams.
+   */
   team: PermissionSetTeam | null;
+  /**
+   * Every team the set applies to now. More than one only with Shared roles.
+   */
+  teams: Array<PermissionSetTeam>;
   allowedCount: number;
   createdAt: string;
   archivedAt: string | null;
@@ -2621,9 +2623,17 @@ export type PermissionSetConflictError = {
 
 export type CreatePermissionSetBody = {
   /**
-   * The team this set applies to. A team can have one active permission set; it can't be changed later.
+   * The one team this set applies to, named "<team name> Permissions". A team can have one active permission set. Required unless Shared roles is on and name is given.
    */
-  teamId: string;
+  teamId?: string;
+  /**
+   * Shared roles: the role's name. Required when teamId is left out.
+   */
+  name?: string;
+  /**
+   * Shared roles: teams that get this role now. Each team's current custom role is replaced. Left out or empty, the role starts with no team.
+   */
+  teamIds?: Array<string>;
   /**
    * Initial status per key. Keys left out, or set to deny, start denied.
    */
@@ -2634,6 +2644,29 @@ export type CreatePermissionSetBody = {
     key: string;
     status: "allow" | "deny";
   }>;
+};
+
+export type DefaultPermissionSetError = {
+  error: "default_permission_set";
+  message: string;
+};
+
+export type RenamePermissionSetBody = {
+  /**
+   * The role's new name.
+   */
+  name: string;
+};
+
+export type TeamPermissionSetResponse = {
+  set: PermissionSetDetail | null;
+};
+
+export type TeamPermissionSetBody = {
+  /**
+   * The custom role (team permission set) the team gets, replacing its current one. Null leaves the team with no custom role.
+   */
+  permissionSetId: string | null;
 };
 
 export type UpdatePermissionSetPermissionsBody = {
@@ -2670,11 +2703,6 @@ export type PermissionHistoryPage = {
   nextCursor: string | null;
 };
 
-export type DefaultPermissionSetError = {
-  error: "default_permission_set";
-  message: string;
-};
-
 export type PermissionKeyStatus = {
   permission: PermissionDefinition;
   sets: Array<{
@@ -2682,6 +2710,7 @@ export type PermissionKeyStatus = {
     name: string;
     kind: "member_default" | "admin_default" | "team";
     team: PermissionSetTeam | null;
+    teams: Array<PermissionSetTeam>;
     status: "allow" | "deny";
     locked: boolean;
   }>;
@@ -5508,6 +5537,53 @@ export type WorkbotSettingsInput = {
   model: string | null;
 };
 
+export type DefaultModelChoice = {
+  providerId: string;
+  modelId: string;
+};
+
+export type DefaultModelTeam = {
+  teamId: string;
+  name: string;
+  memberCount: number;
+  model: DefaultModelChoice | null;
+  conflictingMemberCount: number;
+};
+
+export type DefaultModelSettings = {
+  everyone: DefaultModelChoice | null;
+  teams: Array<DefaultModelTeam>;
+  canEdit: boolean;
+};
+
+export type DefaultModelOption = {
+  providerId: string;
+  modelId: string;
+  providerName: string;
+  modelName: string;
+  logoProviderId: string;
+  source: "openwork" | "gateway" | "provider";
+};
+
+export type DefaultModelOptions = {
+  options: Array<DefaultModelOption>;
+  unavailableSources: Array<"openwork" | "gateway" | "provider">;
+};
+
+export type DefaultModelUnknownModelError = {
+  error: "unknown_model";
+  message: string;
+};
+
+export type DefaultModelSourceUnavailableError = {
+  error: "model_source_unavailable";
+  message: string;
+};
+
+export type DefaultModelWrite = {
+  model: DefaultModelChoice | null;
+};
+
 export type WorkbotSession = {
   user: {
     id: string;
@@ -5524,7 +5600,6 @@ export type WorkbotSession = {
   canSchedule: boolean;
   calendar?: boolean;
   sideChats: boolean;
-  calendarPolish?: boolean;
   model?: string | null;
 };
 
@@ -6276,23 +6351,21 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
   200: {
     capabilities: {
       teamMembershipCache: boolean;
+      managedDeploymentsGcp: boolean;
       managedDeployments: boolean;
-      denFlatPageHeaders: boolean;
-      dashboardActivity: boolean;
-      libraryIntegrated: boolean;
-      libraryUsage: boolean;
-      modelsAnalytics: boolean;
-      orgManagedDashboards: boolean;
       nativeSlack: boolean;
       slackAssistant: boolean;
       slackWorkbotReplies: boolean;
-      headlessAutomations: boolean;
       workbot: boolean;
-      calendarPolish: boolean;
       automationCalendar: boolean;
       permissions: boolean;
+      teamRoles: boolean;
+      sharedRoles: boolean;
+      agentPermissions: boolean;
       engineV2Upgrade: boolean;
       remoteSessionEvents: boolean;
+      backgroundShellTasks: boolean;
+      orgDefaultModel: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -6313,61 +6386,16 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
+      managedDeploymentsGcp: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       managedDeployments: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      denFlatPageHeaders: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      dashboardActivity: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      libraryIntegrated: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      libraryUsage: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      modelsAnalytics: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      orgManagedDashboards: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6403,25 +6431,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      headlessAutomations: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
       workbot: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      calendarPolish: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6448,6 +6458,33 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
+      teamRoles: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      sharedRoles: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      agentPermissions: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       engineV2Upgrade: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -6458,6 +6495,24 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       remoteSessionEvents: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      backgroundShellTasks: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      orgDefaultModel: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6518,23 +6573,21 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
     };
     capabilities: {
       teamMembershipCache: boolean;
+      managedDeploymentsGcp: boolean;
       managedDeployments: boolean;
-      denFlatPageHeaders: boolean;
-      dashboardActivity: boolean;
-      libraryIntegrated: boolean;
-      libraryUsage: boolean;
-      modelsAnalytics: boolean;
-      orgManagedDashboards: boolean;
       nativeSlack: boolean;
       slackAssistant: boolean;
       slackWorkbotReplies: boolean;
-      headlessAutomations: boolean;
       workbot: boolean;
-      calendarPolish: boolean;
       automationCalendar: boolean;
       permissions: boolean;
+      teamRoles: boolean;
+      sharedRoles: boolean;
+      agentPermissions: boolean;
       engineV2Upgrade: boolean;
       remoteSessionEvents: boolean;
+      backgroundShellTasks: boolean;
+      orgDefaultModel: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -6555,61 +6608,16 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
+      managedDeploymentsGcp: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       managedDeployments: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      denFlatPageHeaders: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      dashboardActivity: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      libraryIntegrated: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      libraryUsage: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      modelsAnalytics: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      orgManagedDashboards: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6645,25 +6653,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      headlessAutomations: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
       workbot: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      calendarPolish: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6690,6 +6680,33 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
+      teamRoles: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      sharedRoles: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      agentPermissions: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       engineV2Upgrade: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -6700,6 +6717,24 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       remoteSessionEvents: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      backgroundShellTasks: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      orgDefaultModel: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -9226,13 +9261,6 @@ export type GetV1OrgActivityErrors = {
    * Only workspace owners and admins can read dashboard activity.
    */
   403: ForbiddenError;
-  /**
-   * The organization was not found, or dashboard activity is off.
-   */
-  404: {
-    error: "feature_disabled";
-    feature: string;
-  };
 };
 
 export type GetV1OrgActivityError = GetV1OrgActivityErrors[keyof GetV1OrgActivityErrors];
@@ -9310,6 +9338,8 @@ export type GetV1ManagedDeploymentsConfigurationResponses = {
       provider: "aws" | "azure" | "gcp";
       available: boolean;
       version: string | null;
+      reason?: "ready" | "not_configured" | "invalid_configuration" | "not_supported" | "feature_disabled";
+      missingFields?: Array<string>;
     }>;
     updateMode: "approval";
   };
@@ -9377,144 +9407,265 @@ export type GetV1ManagedDeploymentsResponses = {
    * List the organization's managed deployments
    */
   200: {
-    deployments: Array<{
-      id: string;
-      name: string;
-      provider: "aws" | "azure" | "gcp";
-      target: {
-        accountId: string;
-        region:
-          | "us-east-1"
-          | "us-east-2"
-          | "us-west-2"
-          | "eu-west-1"
-          | "eu-central-1"
-          | "ap-southeast-1"
-          | "ap-southeast-2";
-        route53ZoneId: string;
-        network?:
-          | {
-              mode: "dedicated";
-            }
-          | {
-              mode: "existing";
-              vpcId: string;
-              serviceSubnetIds: Array<string>;
-              loadBalancerSubnetIds: Array<string>;
-              ecsClusterArn?: string;
-            };
-      };
-      domainName: string;
-      ownerEmail: string;
-      size: "small";
-      updateMode: "approval";
-      createdAt: string;
-      webUrl: string;
-      consoleUrl: string;
-      installedVersion: string | null;
-      availableVersion: string | null;
-      updateAvailable: boolean;
-      health: {
-        state: "operational" | "degraded" | "down" | "not_reporting" | "awaiting_report";
-        reportedAt: string | null;
-        version: string | null;
-        checks: Array<{
-          id:
-            | "api_health"
-            | "database_ready"
-            | "web_available"
-            | "services_running"
-            | "load_balancer_targets"
-            | "database_instance"
-            | "database_storage"
-            | "database_backups"
-            | "certificate";
-          status: "ok" | "warning" | "failing" | "unknown";
-          value?: number;
-          total?: number;
-          code?:
-            | "http_error"
-            | "unreachable"
-            | "slow"
-            | "not_running"
-            | "unhealthy"
-            | "unavailable"
-            | "permission_denied"
-            | "low_storage"
-            | "stale_backup"
-            | "backups_disabled"
-            | "not_issued"
-            | "expiring"
-            | "expired";
-        }>;
-      };
-      run: {
-        id: string;
-        kind: "install" | "update" | "retry";
-        version: string;
-        state: "awaiting_approval" | "provisioning" | "ready" | "failed";
-        createdAt: string;
-        lastSeenAt: string | null;
-        expiresAt: string;
-        expired: boolean;
-        events: Array<{
-          sequence: number;
-          step:
-            | "runner_connected"
-            | "release_verified"
-            | "account_verified"
-            | "infrastructure_applied"
-            | "services_ready"
-            | "health_verified";
-          outcome: "succeeded" | "failed";
-          errorCode?:
-            | "release_verification_failed"
-            | "network_check_failed"
-            | "infrastructure_failed"
-            | "certificate_failed"
-            | "service_unhealthy"
-            | "health_check_failed"
-            | "runner_failed";
-          receivedAt: string;
-        }>;
-      } | null;
-    }>;
+    deployments: Array<
+      | {
+          id: string;
+          name: string;
+          domainName: string;
+          ownerEmail: string;
+          size: "small";
+          updateMode: "approval";
+          createdAt: string;
+          webUrl: string;
+          consoleUrl: string;
+          installedVersion: string | null;
+          availableVersion: string | null;
+          updateAvailable: boolean;
+          health: {
+            state: "operational" | "degraded" | "down" | "not_reporting" | "awaiting_report";
+            reportedAt: string | null;
+            version: string | null;
+            checks: Array<{
+              id:
+                | "api_health"
+                | "database_ready"
+                | "web_available"
+                | "services_running"
+                | "load_balancer_targets"
+                | "database_instance"
+                | "database_storage"
+                | "database_backups"
+                | "certificate";
+              status: "ok" | "warning" | "failing" | "unknown";
+              value?: number;
+              total?: number;
+              code?:
+                | "http_error"
+                | "unreachable"
+                | "slow"
+                | "not_running"
+                | "unhealthy"
+                | "unavailable"
+                | "permission_denied"
+                | "low_storage"
+                | "stale_backup"
+                | "backups_disabled"
+                | "not_issued"
+                | "expiring"
+                | "expired";
+            }>;
+          };
+          run: {
+            id: string;
+            kind: "install" | "update" | "retry";
+            version: string;
+            state: "awaiting_approval" | "provisioning" | "ready" | "failed";
+            createdAt: string;
+            lastSeenAt: string | null;
+            expiresAt: string;
+            expired: boolean;
+            events: Array<{
+              sequence: number;
+              step:
+                | "runner_connected"
+                | "release_verified"
+                | "account_verified"
+                | "infrastructure_applied"
+                | "services_ready"
+                | "health_verified";
+              outcome: "succeeded" | "failed";
+              errorCode?:
+                | "release_verification_failed"
+                | "network_check_failed"
+                | "infrastructure_failed"
+                | "certificate_failed"
+                | "service_unhealthy"
+                | "health_check_failed"
+                | "runner_failed";
+              receivedAt: string;
+            }>;
+          } | null;
+          provider: "aws";
+          target: {
+            accountId: string;
+            region:
+              | "us-east-1"
+              | "us-east-2"
+              | "us-west-2"
+              | "eu-west-1"
+              | "eu-central-1"
+              | "ap-southeast-1"
+              | "ap-southeast-2";
+            route53ZoneId: string;
+            network?:
+              | {
+                  mode: "dedicated";
+                }
+              | {
+                  mode: "existing";
+                  vpcId: string;
+                  serviceSubnetIds: Array<string>;
+                  loadBalancerSubnetIds: Array<string>;
+                  ecsClusterArn?: string;
+                };
+          };
+        }
+      | {
+          id: string;
+          name: string;
+          domainName: string;
+          ownerEmail: string;
+          size: "small";
+          updateMode: "approval";
+          createdAt: string;
+          webUrl: string;
+          consoleUrl: string;
+          installedVersion: string | null;
+          availableVersion: string | null;
+          updateAvailable: boolean;
+          health: {
+            state: "operational" | "degraded" | "down" | "not_reporting" | "awaiting_report";
+            reportedAt: string | null;
+            version: string | null;
+            checks: Array<{
+              id:
+                | "api_health"
+                | "database_ready"
+                | "web_available"
+                | "services_running"
+                | "load_balancer_targets"
+                | "database_instance"
+                | "database_storage"
+                | "database_backups"
+                | "certificate";
+              status: "ok" | "warning" | "failing" | "unknown";
+              value?: number;
+              total?: number;
+              code?:
+                | "http_error"
+                | "unreachable"
+                | "slow"
+                | "not_running"
+                | "unhealthy"
+                | "unavailable"
+                | "permission_denied"
+                | "low_storage"
+                | "stale_backup"
+                | "backups_disabled"
+                | "not_issued"
+                | "expiring"
+                | "expired";
+            }>;
+          };
+          run: {
+            id: string;
+            kind: "install" | "update" | "retry";
+            version: string;
+            state: "awaiting_approval" | "provisioning" | "ready" | "failed";
+            createdAt: string;
+            lastSeenAt: string | null;
+            expiresAt: string;
+            expired: boolean;
+            events: Array<{
+              sequence: number;
+              step:
+                | "runner_connected"
+                | "release_verified"
+                | "account_verified"
+                | "infrastructure_applied"
+                | "services_ready"
+                | "health_verified";
+              outcome: "succeeded" | "failed";
+              errorCode?:
+                | "release_verification_failed"
+                | "network_check_failed"
+                | "infrastructure_failed"
+                | "certificate_failed"
+                | "service_unhealthy"
+                | "health_check_failed"
+                | "runner_failed";
+              receivedAt: string;
+            }>;
+          } | null;
+          provider: "gcp";
+          target: {
+            projectId: string;
+            projectNumber: string;
+            region:
+              | "us-central1"
+              | "us-east1"
+              | "us-east4"
+              | "us-west1"
+              | "us-west2"
+              | "europe-west1"
+              | "europe-west2"
+              | "europe-west3"
+              | "asia-southeast1"
+              | "australia-southeast1";
+            dnsZoneName: string;
+          };
+        }
+    >;
   };
 };
 
 export type GetV1ManagedDeploymentsResponse = GetV1ManagedDeploymentsResponses[keyof GetV1ManagedDeploymentsResponses];
 
 export type PostV1ManagedDeploymentsData = {
-  body: {
-    name: string;
-    domainName: string;
-    ownerEmail: string;
-    size?: "small";
-    provider: "aws";
-    target: {
-      accountId: string;
-      region:
-        | "us-east-1"
-        | "us-east-2"
-        | "us-west-2"
-        | "eu-west-1"
-        | "eu-central-1"
-        | "ap-southeast-1"
-        | "ap-southeast-2";
-      route53ZoneId: string;
-      network?:
-        | {
-            mode: "dedicated";
-          }
-        | {
-            mode: "existing";
-            vpcId: string;
-            serviceSubnetIds: Array<string>;
-            loadBalancerSubnetIds: Array<string>;
-            ecsClusterArn?: string;
-          };
-    };
-  };
+  body:
+    | {
+        name: string;
+        domainName: string;
+        ownerEmail: string;
+        size?: "small";
+        provider: "aws";
+        target: {
+          accountId: string;
+          region:
+            | "us-east-1"
+            | "us-east-2"
+            | "us-west-2"
+            | "eu-west-1"
+            | "eu-central-1"
+            | "ap-southeast-1"
+            | "ap-southeast-2";
+          route53ZoneId: string;
+          network?:
+            | {
+                mode: "dedicated";
+              }
+            | {
+                mode: "existing";
+                vpcId: string;
+                serviceSubnetIds: Array<string>;
+                loadBalancerSubnetIds: Array<string>;
+                ecsClusterArn?: string;
+              };
+        };
+      }
+    | {
+        name: string;
+        domainName: string;
+        ownerEmail: string;
+        size?: "small";
+        provider: "gcp";
+        target: {
+          projectId: string;
+          projectNumber: string;
+          region:
+            | "us-central1"
+            | "us-east1"
+            | "us-east4"
+            | "us-west1"
+            | "us-west2"
+            | "europe-west1"
+            | "europe-west2"
+            | "europe-west3"
+            | "asia-southeast1"
+            | "australia-southeast1";
+          dnsZoneName: string;
+        };
+      };
   path?: never;
   query?: never;
   url: "/v1/managed-deployments";
@@ -9571,108 +9722,204 @@ export type PostV1ManagedDeploymentsResponses = {
   /**
    * Create a managed deployment
    */
-  200: {
-    id: string;
-    name: string;
-    provider: "aws" | "azure" | "gcp";
-    target: {
-      accountId: string;
-      region:
-        | "us-east-1"
-        | "us-east-2"
-        | "us-west-2"
-        | "eu-west-1"
-        | "eu-central-1"
-        | "ap-southeast-1"
-        | "ap-southeast-2";
-      route53ZoneId: string;
-      network?:
-        | {
-            mode: "dedicated";
-          }
-        | {
-            mode: "existing";
-            vpcId: string;
-            serviceSubnetIds: Array<string>;
-            loadBalancerSubnetIds: Array<string>;
-            ecsClusterArn?: string;
-          };
-    };
-    domainName: string;
-    ownerEmail: string;
-    size: "small";
-    updateMode: "approval";
-    createdAt: string;
-    webUrl: string;
-    consoleUrl: string;
-    installedVersion: string | null;
-    availableVersion: string | null;
-    updateAvailable: boolean;
-    health: {
-      state: "operational" | "degraded" | "down" | "not_reporting" | "awaiting_report";
-      reportedAt: string | null;
-      version: string | null;
-      checks: Array<{
-        id:
-          | "api_health"
-          | "database_ready"
-          | "web_available"
-          | "services_running"
-          | "load_balancer_targets"
-          | "database_instance"
-          | "database_storage"
-          | "database_backups"
-          | "certificate";
-        status: "ok" | "warning" | "failing" | "unknown";
-        value?: number;
-        total?: number;
-        code?:
-          | "http_error"
-          | "unreachable"
-          | "slow"
-          | "not_running"
-          | "unhealthy"
-          | "unavailable"
-          | "permission_denied"
-          | "low_storage"
-          | "stale_backup"
-          | "backups_disabled"
-          | "not_issued"
-          | "expiring"
-          | "expired";
-      }>;
-    };
-    run: {
-      id: string;
-      kind: "install" | "update" | "retry";
-      version: string;
-      state: "awaiting_approval" | "provisioning" | "ready" | "failed";
-      createdAt: string;
-      lastSeenAt: string | null;
-      expiresAt: string;
-      expired: boolean;
-      events: Array<{
-        sequence: number;
-        step:
-          | "runner_connected"
-          | "release_verified"
-          | "account_verified"
-          | "infrastructure_applied"
-          | "services_ready"
-          | "health_verified";
-        outcome: "succeeded" | "failed";
-        errorCode?:
-          | "release_verification_failed"
-          | "network_check_failed"
-          | "infrastructure_failed"
-          | "certificate_failed"
-          | "service_unhealthy"
-          | "health_check_failed"
-          | "runner_failed";
-        receivedAt: string;
-      }>;
-    } | null;
-  };
+  200:
+    | {
+        id: string;
+        name: string;
+        domainName: string;
+        ownerEmail: string;
+        size: "small";
+        updateMode: "approval";
+        createdAt: string;
+        webUrl: string;
+        consoleUrl: string;
+        installedVersion: string | null;
+        availableVersion: string | null;
+        updateAvailable: boolean;
+        health: {
+          state: "operational" | "degraded" | "down" | "not_reporting" | "awaiting_report";
+          reportedAt: string | null;
+          version: string | null;
+          checks: Array<{
+            id:
+              | "api_health"
+              | "database_ready"
+              | "web_available"
+              | "services_running"
+              | "load_balancer_targets"
+              | "database_instance"
+              | "database_storage"
+              | "database_backups"
+              | "certificate";
+            status: "ok" | "warning" | "failing" | "unknown";
+            value?: number;
+            total?: number;
+            code?:
+              | "http_error"
+              | "unreachable"
+              | "slow"
+              | "not_running"
+              | "unhealthy"
+              | "unavailable"
+              | "permission_denied"
+              | "low_storage"
+              | "stale_backup"
+              | "backups_disabled"
+              | "not_issued"
+              | "expiring"
+              | "expired";
+          }>;
+        };
+        run: {
+          id: string;
+          kind: "install" | "update" | "retry";
+          version: string;
+          state: "awaiting_approval" | "provisioning" | "ready" | "failed";
+          createdAt: string;
+          lastSeenAt: string | null;
+          expiresAt: string;
+          expired: boolean;
+          events: Array<{
+            sequence: number;
+            step:
+              | "runner_connected"
+              | "release_verified"
+              | "account_verified"
+              | "infrastructure_applied"
+              | "services_ready"
+              | "health_verified";
+            outcome: "succeeded" | "failed";
+            errorCode?:
+              | "release_verification_failed"
+              | "network_check_failed"
+              | "infrastructure_failed"
+              | "certificate_failed"
+              | "service_unhealthy"
+              | "health_check_failed"
+              | "runner_failed";
+            receivedAt: string;
+          }>;
+        } | null;
+        provider: "aws";
+        target: {
+          accountId: string;
+          region:
+            | "us-east-1"
+            | "us-east-2"
+            | "us-west-2"
+            | "eu-west-1"
+            | "eu-central-1"
+            | "ap-southeast-1"
+            | "ap-southeast-2";
+          route53ZoneId: string;
+          network?:
+            | {
+                mode: "dedicated";
+              }
+            | {
+                mode: "existing";
+                vpcId: string;
+                serviceSubnetIds: Array<string>;
+                loadBalancerSubnetIds: Array<string>;
+                ecsClusterArn?: string;
+              };
+        };
+      }
+    | {
+        id: string;
+        name: string;
+        domainName: string;
+        ownerEmail: string;
+        size: "small";
+        updateMode: "approval";
+        createdAt: string;
+        webUrl: string;
+        consoleUrl: string;
+        installedVersion: string | null;
+        availableVersion: string | null;
+        updateAvailable: boolean;
+        health: {
+          state: "operational" | "degraded" | "down" | "not_reporting" | "awaiting_report";
+          reportedAt: string | null;
+          version: string | null;
+          checks: Array<{
+            id:
+              | "api_health"
+              | "database_ready"
+              | "web_available"
+              | "services_running"
+              | "load_balancer_targets"
+              | "database_instance"
+              | "database_storage"
+              | "database_backups"
+              | "certificate";
+            status: "ok" | "warning" | "failing" | "unknown";
+            value?: number;
+            total?: number;
+            code?:
+              | "http_error"
+              | "unreachable"
+              | "slow"
+              | "not_running"
+              | "unhealthy"
+              | "unavailable"
+              | "permission_denied"
+              | "low_storage"
+              | "stale_backup"
+              | "backups_disabled"
+              | "not_issued"
+              | "expiring"
+              | "expired";
+          }>;
+        };
+        run: {
+          id: string;
+          kind: "install" | "update" | "retry";
+          version: string;
+          state: "awaiting_approval" | "provisioning" | "ready" | "failed";
+          createdAt: string;
+          lastSeenAt: string | null;
+          expiresAt: string;
+          expired: boolean;
+          events: Array<{
+            sequence: number;
+            step:
+              | "runner_connected"
+              | "release_verified"
+              | "account_verified"
+              | "infrastructure_applied"
+              | "services_ready"
+              | "health_verified";
+            outcome: "succeeded" | "failed";
+            errorCode?:
+              | "release_verification_failed"
+              | "network_check_failed"
+              | "infrastructure_failed"
+              | "certificate_failed"
+              | "service_unhealthy"
+              | "health_check_failed"
+              | "runner_failed";
+            receivedAt: string;
+          }>;
+        } | null;
+        provider: "gcp";
+        target: {
+          projectId: string;
+          projectNumber: string;
+          region:
+            | "us-central1"
+            | "us-east1"
+            | "us-east4"
+            | "us-west1"
+            | "us-west2"
+            | "europe-west1"
+            | "europe-west2"
+            | "europe-west3"
+            | "asia-southeast1"
+            | "australia-southeast1";
+          dnsZoneName: string;
+        };
+      };
 };
 
 export type PostV1ManagedDeploymentsResponse =
@@ -9811,108 +10058,204 @@ export type PostV1ManagedDeploymentsByDeploymentIdLaunchResponses = {
    * Prepare an install, retry or approved update
    */
   200: {
-    deployment: {
-      id: string;
-      name: string;
-      provider: "aws" | "azure" | "gcp";
-      target: {
-        accountId: string;
-        region:
-          | "us-east-1"
-          | "us-east-2"
-          | "us-west-2"
-          | "eu-west-1"
-          | "eu-central-1"
-          | "ap-southeast-1"
-          | "ap-southeast-2";
-        route53ZoneId: string;
-        network?:
-          | {
-              mode: "dedicated";
-            }
-          | {
-              mode: "existing";
-              vpcId: string;
-              serviceSubnetIds: Array<string>;
-              loadBalancerSubnetIds: Array<string>;
-              ecsClusterArn?: string;
-            };
-      };
-      domainName: string;
-      ownerEmail: string;
-      size: "small";
-      updateMode: "approval";
-      createdAt: string;
-      webUrl: string;
-      consoleUrl: string;
-      installedVersion: string | null;
-      availableVersion: string | null;
-      updateAvailable: boolean;
-      health: {
-        state: "operational" | "degraded" | "down" | "not_reporting" | "awaiting_report";
-        reportedAt: string | null;
-        version: string | null;
-        checks: Array<{
-          id:
-            | "api_health"
-            | "database_ready"
-            | "web_available"
-            | "services_running"
-            | "load_balancer_targets"
-            | "database_instance"
-            | "database_storage"
-            | "database_backups"
-            | "certificate";
-          status: "ok" | "warning" | "failing" | "unknown";
-          value?: number;
-          total?: number;
-          code?:
-            | "http_error"
-            | "unreachable"
-            | "slow"
-            | "not_running"
-            | "unhealthy"
-            | "unavailable"
-            | "permission_denied"
-            | "low_storage"
-            | "stale_backup"
-            | "backups_disabled"
-            | "not_issued"
-            | "expiring"
-            | "expired";
-        }>;
-      };
-      run: {
-        id: string;
-        kind: "install" | "update" | "retry";
-        version: string;
-        state: "awaiting_approval" | "provisioning" | "ready" | "failed";
-        createdAt: string;
-        lastSeenAt: string | null;
-        expiresAt: string;
-        expired: boolean;
-        events: Array<{
-          sequence: number;
-          step:
-            | "runner_connected"
-            | "release_verified"
-            | "account_verified"
-            | "infrastructure_applied"
-            | "services_ready"
-            | "health_verified";
-          outcome: "succeeded" | "failed";
-          errorCode?:
-            | "release_verification_failed"
-            | "network_check_failed"
-            | "infrastructure_failed"
-            | "certificate_failed"
-            | "service_unhealthy"
-            | "health_check_failed"
-            | "runner_failed";
-          receivedAt: string;
-        }>;
-      } | null;
-    };
+    deployment:
+      | {
+          id: string;
+          name: string;
+          domainName: string;
+          ownerEmail: string;
+          size: "small";
+          updateMode: "approval";
+          createdAt: string;
+          webUrl: string;
+          consoleUrl: string;
+          installedVersion: string | null;
+          availableVersion: string | null;
+          updateAvailable: boolean;
+          health: {
+            state: "operational" | "degraded" | "down" | "not_reporting" | "awaiting_report";
+            reportedAt: string | null;
+            version: string | null;
+            checks: Array<{
+              id:
+                | "api_health"
+                | "database_ready"
+                | "web_available"
+                | "services_running"
+                | "load_balancer_targets"
+                | "database_instance"
+                | "database_storage"
+                | "database_backups"
+                | "certificate";
+              status: "ok" | "warning" | "failing" | "unknown";
+              value?: number;
+              total?: number;
+              code?:
+                | "http_error"
+                | "unreachable"
+                | "slow"
+                | "not_running"
+                | "unhealthy"
+                | "unavailable"
+                | "permission_denied"
+                | "low_storage"
+                | "stale_backup"
+                | "backups_disabled"
+                | "not_issued"
+                | "expiring"
+                | "expired";
+            }>;
+          };
+          run: {
+            id: string;
+            kind: "install" | "update" | "retry";
+            version: string;
+            state: "awaiting_approval" | "provisioning" | "ready" | "failed";
+            createdAt: string;
+            lastSeenAt: string | null;
+            expiresAt: string;
+            expired: boolean;
+            events: Array<{
+              sequence: number;
+              step:
+                | "runner_connected"
+                | "release_verified"
+                | "account_verified"
+                | "infrastructure_applied"
+                | "services_ready"
+                | "health_verified";
+              outcome: "succeeded" | "failed";
+              errorCode?:
+                | "release_verification_failed"
+                | "network_check_failed"
+                | "infrastructure_failed"
+                | "certificate_failed"
+                | "service_unhealthy"
+                | "health_check_failed"
+                | "runner_failed";
+              receivedAt: string;
+            }>;
+          } | null;
+          provider: "aws";
+          target: {
+            accountId: string;
+            region:
+              | "us-east-1"
+              | "us-east-2"
+              | "us-west-2"
+              | "eu-west-1"
+              | "eu-central-1"
+              | "ap-southeast-1"
+              | "ap-southeast-2";
+            route53ZoneId: string;
+            network?:
+              | {
+                  mode: "dedicated";
+                }
+              | {
+                  mode: "existing";
+                  vpcId: string;
+                  serviceSubnetIds: Array<string>;
+                  loadBalancerSubnetIds: Array<string>;
+                  ecsClusterArn?: string;
+                };
+          };
+        }
+      | {
+          id: string;
+          name: string;
+          domainName: string;
+          ownerEmail: string;
+          size: "small";
+          updateMode: "approval";
+          createdAt: string;
+          webUrl: string;
+          consoleUrl: string;
+          installedVersion: string | null;
+          availableVersion: string | null;
+          updateAvailable: boolean;
+          health: {
+            state: "operational" | "degraded" | "down" | "not_reporting" | "awaiting_report";
+            reportedAt: string | null;
+            version: string | null;
+            checks: Array<{
+              id:
+                | "api_health"
+                | "database_ready"
+                | "web_available"
+                | "services_running"
+                | "load_balancer_targets"
+                | "database_instance"
+                | "database_storage"
+                | "database_backups"
+                | "certificate";
+              status: "ok" | "warning" | "failing" | "unknown";
+              value?: number;
+              total?: number;
+              code?:
+                | "http_error"
+                | "unreachable"
+                | "slow"
+                | "not_running"
+                | "unhealthy"
+                | "unavailable"
+                | "permission_denied"
+                | "low_storage"
+                | "stale_backup"
+                | "backups_disabled"
+                | "not_issued"
+                | "expiring"
+                | "expired";
+            }>;
+          };
+          run: {
+            id: string;
+            kind: "install" | "update" | "retry";
+            version: string;
+            state: "awaiting_approval" | "provisioning" | "ready" | "failed";
+            createdAt: string;
+            lastSeenAt: string | null;
+            expiresAt: string;
+            expired: boolean;
+            events: Array<{
+              sequence: number;
+              step:
+                | "runner_connected"
+                | "release_verified"
+                | "account_verified"
+                | "infrastructure_applied"
+                | "services_ready"
+                | "health_verified";
+              outcome: "succeeded" | "failed";
+              errorCode?:
+                | "release_verification_failed"
+                | "network_check_failed"
+                | "infrastructure_failed"
+                | "certificate_failed"
+                | "service_unhealthy"
+                | "health_check_failed"
+                | "runner_failed";
+              receivedAt: string;
+            }>;
+          } | null;
+          provider: "gcp";
+          target: {
+            projectId: string;
+            projectNumber: string;
+            region:
+              | "us-central1"
+              | "us-east1"
+              | "us-east4"
+              | "us-west1"
+              | "us-west2"
+              | "europe-west1"
+              | "europe-west2"
+              | "europe-west3"
+              | "asia-southeast1"
+              | "australia-southeast1";
+            dnsZoneName: string;
+          };
+        };
     kind: "install" | "update" | "retry";
     approvalUrl: string | null;
     command: string | null;
@@ -9924,14 +10267,19 @@ export type PostV1ManagedDeploymentsByDeploymentIdLaunchResponse =
   PostV1ManagedDeploymentsByDeploymentIdLaunchResponses[keyof PostV1ManagedDeploymentsByDeploymentIdLaunchResponses];
 
 export type PostV1ManagedDeploymentsByDeploymentIdRunsByRunIdEnrollData = {
-  body: {
-    headers: {
-      authorization: string;
-      "x-amz-date": string;
-      "x-amz-security-token": string;
-      "x-openwork-proof": string;
-    };
-  };
+  body:
+    | {
+        headers: {
+          authorization: string;
+          "x-amz-date": string;
+          "x-amz-security-token": string;
+          "x-openwork-proof": string;
+        };
+      }
+    | {
+        provider: "gcp";
+        idToken: string;
+      };
   path: {
     deploymentId: string;
     runId: string;
@@ -12584,362 +12932,6 @@ export type DeleteV1WorkflowsByConfigObjectIdSnapshotsByReceiptIdContentResponse
 export type DeleteV1WorkflowsByConfigObjectIdSnapshotsByReceiptIdContentResponse =
   DeleteV1WorkflowsByConfigObjectIdSnapshotsByReceiptIdContentResponses[keyof DeleteV1WorkflowsByConfigObjectIdSnapshotsByReceiptIdContentResponses];
 
-export type GetV1DashboardsData = {
-  body?: never;
-  path?: never;
-  query?: never;
-  url: "/v1/dashboards";
-};
-
-export type GetV1DashboardsErrors = {
-  /**
-   * The caller must be signed in.
-   */
-  401: UnauthorizedError;
-  /**
-   * Only workspace owners and admins can list dashboards.
-   */
-  403: ForbiddenError;
-};
-
-export type GetV1DashboardsError = GetV1DashboardsErrors[keyof GetV1DashboardsErrors];
-
-export type GetV1DashboardsResponses = {
-  /**
-   * Dashboards returned successfully.
-   */
-  200: DashboardListResponse;
-};
-
-export type GetV1DashboardsResponse = GetV1DashboardsResponses[keyof GetV1DashboardsResponses];
-
-export type PostV1DashboardsData = {
-  body: {
-    name: string;
-    elements?: Array<DashboardElement>;
-  };
-  path?: never;
-  query?: never;
-  url: "/v1/dashboards";
-};
-
-export type PostV1DashboardsErrors = {
-  /**
-   * The dashboard request was invalid.
-   */
-  400: InvalidRequestError;
-  /**
-   * The caller must be signed in.
-   */
-  401: UnauthorizedError;
-  /**
-   * Only workspace owners and admins can create dashboards.
-   */
-  403: ForbiddenError;
-};
-
-export type PostV1DashboardsError = PostV1DashboardsErrors[keyof PostV1DashboardsErrors];
-
-export type PostV1DashboardsResponses = {
-  /**
-   * Dashboard created successfully.
-   */
-  201: DashboardResponse;
-};
-
-export type PostV1DashboardsResponse = PostV1DashboardsResponses[keyof PostV1DashboardsResponses];
-
-export type DeleteV1DashboardsByDashboardIdData = {
-  body?: never;
-  path: {
-    /**
-     * Den TypeID with 'dsb_' prefix and a 26-character base32 suffix.
-     */
-    dashboardId: string;
-  };
-  query?: never;
-  url: "/v1/dashboards/{dashboardId}";
-};
-
-export type DeleteV1DashboardsByDashboardIdErrors = {
-  /**
-   * The caller must be signed in.
-   */
-  401: UnauthorizedError;
-  /**
-   * Only workspace owners and admins can delete dashboards.
-   */
-  403: ForbiddenError;
-  /**
-   * The dashboard was not found.
-   */
-  404: NotFoundError;
-};
-
-export type DeleteV1DashboardsByDashboardIdError =
-  DeleteV1DashboardsByDashboardIdErrors[keyof DeleteV1DashboardsByDashboardIdErrors];
-
-export type DeleteV1DashboardsByDashboardIdResponses = {
-  /**
-   * Dashboard deleted successfully.
-   */
-  204: void;
-};
-
-export type DeleteV1DashboardsByDashboardIdResponse =
-  DeleteV1DashboardsByDashboardIdResponses[keyof DeleteV1DashboardsByDashboardIdResponses];
-
-export type GetV1DashboardsByDashboardIdData = {
-  body?: never;
-  path: {
-    /**
-     * Den TypeID with 'dsb_' prefix and a 26-character base32 suffix.
-     */
-    dashboardId: string;
-  };
-  query?: never;
-  url: "/v1/dashboards/{dashboardId}";
-};
-
-export type GetV1DashboardsByDashboardIdErrors = {
-  /**
-   * The caller must be signed in.
-   */
-  401: UnauthorizedError;
-  /**
-   * Only workspace owners and admins can view dashboards.
-   */
-  403: ForbiddenError;
-  /**
-   * The dashboard was not found.
-   */
-  404: NotFoundError;
-};
-
-export type GetV1DashboardsByDashboardIdError =
-  GetV1DashboardsByDashboardIdErrors[keyof GetV1DashboardsByDashboardIdErrors];
-
-export type GetV1DashboardsByDashboardIdResponses = {
-  /**
-   * Dashboard returned successfully.
-   */
-  200: DashboardResponse;
-};
-
-export type GetV1DashboardsByDashboardIdResponse =
-  GetV1DashboardsByDashboardIdResponses[keyof GetV1DashboardsByDashboardIdResponses];
-
-export type PatchV1DashboardsByDashboardIdData = {
-  body: {
-    name?: string;
-    elements?: Array<DashboardElement>;
-  };
-  path: {
-    /**
-     * Den TypeID with 'dsb_' prefix and a 26-character base32 suffix.
-     */
-    dashboardId: string;
-  };
-  query?: never;
-  url: "/v1/dashboards/{dashboardId}";
-};
-
-export type PatchV1DashboardsByDashboardIdErrors = {
-  /**
-   * The dashboard request was invalid.
-   */
-  400: InvalidRequestError;
-  /**
-   * The caller must be signed in.
-   */
-  401: UnauthorizedError;
-  /**
-   * Only workspace owners and admins can update dashboards.
-   */
-  403: ForbiddenError;
-  /**
-   * The dashboard was not found.
-   */
-  404: NotFoundError;
-};
-
-export type PatchV1DashboardsByDashboardIdError =
-  PatchV1DashboardsByDashboardIdErrors[keyof PatchV1DashboardsByDashboardIdErrors];
-
-export type PatchV1DashboardsByDashboardIdResponses = {
-  /**
-   * Dashboard updated successfully.
-   */
-  200: DashboardResponse;
-};
-
-export type PatchV1DashboardsByDashboardIdResponse =
-  PatchV1DashboardsByDashboardIdResponses[keyof PatchV1DashboardsByDashboardIdResponses];
-
-export type GetV1DashboardsByDashboardIdAccessData = {
-  body?: never;
-  path: {
-    /**
-     * Den TypeID with 'dsb_' prefix and a 26-character base32 suffix.
-     */
-    dashboardId: string;
-  };
-  query?: never;
-  url: "/v1/dashboards/{dashboardId}/access";
-};
-
-export type GetV1DashboardsByDashboardIdAccessErrors = {
-  /**
-   * The caller must be signed in.
-   */
-  401: UnauthorizedError;
-  /**
-   * Only workspace owners and admins can list dashboard access.
-   */
-  403: ForbiddenError;
-  /**
-   * The dashboard was not found.
-   */
-  404: NotFoundError;
-};
-
-export type GetV1DashboardsByDashboardIdAccessError =
-  GetV1DashboardsByDashboardIdAccessErrors[keyof GetV1DashboardsByDashboardIdAccessErrors];
-
-export type GetV1DashboardsByDashboardIdAccessResponses = {
-  /**
-   * Dashboard access grants returned successfully.
-   */
-  200: DashboardAccessListResponse;
-};
-
-export type GetV1DashboardsByDashboardIdAccessResponse =
-  GetV1DashboardsByDashboardIdAccessResponses[keyof GetV1DashboardsByDashboardIdAccessResponses];
-
-export type PostV1DashboardsByDashboardIdAccessData = {
-  body: {
-    /**
-     * Den TypeID with 'om_' prefix and a 26-character base32 suffix.
-     */
-    orgMembershipId?: string;
-    /**
-     * Den TypeID with 'tem_' prefix and a 26-character base32 suffix.
-     */
-    teamId?: string;
-    orgWide?: boolean;
-    role: "viewer" | "editor" | "manager";
-  };
-  path: {
-    /**
-     * Den TypeID with 'dsb_' prefix and a 26-character base32 suffix.
-     */
-    dashboardId: string;
-  };
-  query?: never;
-  url: "/v1/dashboards/{dashboardId}/access";
-};
-
-export type PostV1DashboardsByDashboardIdAccessErrors = {
-  /**
-   * The grant request was invalid.
-   */
-  400: InvalidRequestError;
-  /**
-   * The caller must be signed in.
-   */
-  401: UnauthorizedError;
-  /**
-   * Only workspace owners and admins can grant dashboard access.
-   */
-  403: ForbiddenError;
-  /**
-   * The dashboard, member, or team was not found.
-   */
-  404: NotFoundError;
-};
-
-export type PostV1DashboardsByDashboardIdAccessError =
-  PostV1DashboardsByDashboardIdAccessErrors[keyof PostV1DashboardsByDashboardIdAccessErrors];
-
-export type PostV1DashboardsByDashboardIdAccessResponses = {
-  /**
-   * Dashboard access granted successfully.
-   */
-  201: DashboardAccessResponse;
-};
-
-export type PostV1DashboardsByDashboardIdAccessResponse =
-  PostV1DashboardsByDashboardIdAccessResponses[keyof PostV1DashboardsByDashboardIdAccessResponses];
-
-export type DeleteV1DashboardsByDashboardIdAccessByGrantIdData = {
-  body?: never;
-  path: {
-    /**
-     * Den TypeID with 'dsb_' prefix and a 26-character base32 suffix.
-     */
-    dashboardId: string;
-    /**
-     * Den TypeID with 'dsg_' prefix and a 26-character base32 suffix.
-     */
-    grantId: string;
-  };
-  query?: never;
-  url: "/v1/dashboards/{dashboardId}/access/{grantId}";
-};
-
-export type DeleteV1DashboardsByDashboardIdAccessByGrantIdErrors = {
-  /**
-   * The caller must be signed in.
-   */
-  401: UnauthorizedError;
-  /**
-   * Only workspace owners and admins can revoke dashboard access.
-   */
-  403: ForbiddenError;
-  /**
-   * The dashboard or grant was not found.
-   */
-  404: NotFoundError;
-};
-
-export type DeleteV1DashboardsByDashboardIdAccessByGrantIdError =
-  DeleteV1DashboardsByDashboardIdAccessByGrantIdErrors[keyof DeleteV1DashboardsByDashboardIdAccessByGrantIdErrors];
-
-export type DeleteV1DashboardsByDashboardIdAccessByGrantIdResponses = {
-  /**
-   * Dashboard access revoked successfully.
-   */
-  204: void;
-};
-
-export type DeleteV1DashboardsByDashboardIdAccessByGrantIdResponse =
-  DeleteV1DashboardsByDashboardIdAccessByGrantIdResponses[keyof DeleteV1DashboardsByDashboardIdAccessByGrantIdResponses];
-
-export type GetV1MeDashboardsData = {
-  body?: never;
-  path?: never;
-  query?: never;
-  url: "/v1/me/dashboards";
-};
-
-export type GetV1MeDashboardsErrors = {
-  /**
-   * The caller must be signed in.
-   */
-  401: UnauthorizedError;
-};
-
-export type GetV1MeDashboardsError = GetV1MeDashboardsErrors[keyof GetV1MeDashboardsErrors];
-
-export type GetV1MeDashboardsResponses = {
-  /**
-   * Granted dashboards returned successfully.
-   */
-  200: MeDashboardListResponse;
-};
-
-export type GetV1MeDashboardsResponse = GetV1MeDashboardsResponses[keyof GetV1MeDashboardsResponses];
-
 export type GetV1McpAppsData = {
   body?: never;
   path?: never;
@@ -12962,7 +12954,7 @@ export type GetV1McpAppsError = GetV1McpAppsErrors[keyof GetV1McpAppsErrors];
 
 export type GetV1McpAppsResponses = {
   /**
-   * Apps built in OpenWork that can be added to a dashboard.
+   * Apps built in OpenWork the member can use.
    */
   200: BuiltMcpAppListResponse;
 };
@@ -13285,6 +13277,162 @@ export type PostV1DesktopPoliciesResponses = {
 };
 
 export type PostV1DesktopPoliciesResponse = PostV1DesktopPoliciesResponses[keyof PostV1DesktopPoliciesResponses];
+
+export type GetV1AgentPermissionsData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/agent-permissions";
+};
+
+export type GetV1AgentPermissionsErrors = {
+  /**
+   * The caller must be signed in.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller needs the agent_permissions.view permission.
+   */
+  403: ForbiddenError;
+  /**
+   * Agent permissions are not turned on for this organization.
+   */
+  404: NotFoundError;
+};
+
+export type GetV1AgentPermissionsError = GetV1AgentPermissionsErrors[keyof GetV1AgentPermissionsErrors];
+
+export type GetV1AgentPermissionsResponses = {
+  /**
+   * Agent permissions returned successfully.
+   */
+  200: AgentPermissionPolicyList;
+};
+
+export type GetV1AgentPermissionsResponse = GetV1AgentPermissionsResponses[keyof GetV1AgentPermissionsResponses];
+
+export type PutV1AgentPermissionsEveryoneData = {
+  body: AgentPermissionPolicyWrite;
+  path?: never;
+  query?: never;
+  url: "/v1/agent-permissions/everyone";
+};
+
+export type PutV1AgentPermissionsEveryoneErrors = {
+  /**
+   * A permission or pattern was not valid.
+   */
+  400: InvalidRequestError;
+  /**
+   * The caller must be signed in.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller needs the agent_permissions.manage permission and a recent sign-in.
+   */
+  403: ForbiddenError;
+  /**
+   * Agent permissions are not turned on for this organization.
+   */
+  404: NotFoundError;
+};
+
+export type PutV1AgentPermissionsEveryoneError =
+  PutV1AgentPermissionsEveryoneErrors[keyof PutV1AgentPermissionsEveryoneErrors];
+
+export type PutV1AgentPermissionsEveryoneResponses = {
+  /**
+   * Everyone's agent permissions saved.
+   */
+  200: AgentPermissionPolicyResponse;
+};
+
+export type PutV1AgentPermissionsEveryoneResponse =
+  PutV1AgentPermissionsEveryoneResponses[keyof PutV1AgentPermissionsEveryoneResponses];
+
+export type DeleteV1AgentPermissionsTeamsByTeamIdData = {
+  body?: never;
+  path: {
+    /**
+     * Den TypeID with 'tem_' prefix and a 26-character base32 suffix.
+     */
+    teamId: string;
+  };
+  query?: never;
+  url: "/v1/agent-permissions/teams/{teamId}";
+};
+
+export type DeleteV1AgentPermissionsTeamsByTeamIdErrors = {
+  /**
+   * The caller must be signed in.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller needs the agent_permissions.manage permission and a recent sign-in.
+   */
+  403: ForbiddenError;
+  /**
+   * The team was not found, or agent permissions are not turned on for this organization.
+   */
+  404: NotFoundError;
+};
+
+export type DeleteV1AgentPermissionsTeamsByTeamIdError =
+  DeleteV1AgentPermissionsTeamsByTeamIdErrors[keyof DeleteV1AgentPermissionsTeamsByTeamIdErrors];
+
+export type DeleteV1AgentPermissionsTeamsByTeamIdResponses = {
+  /**
+   * The team's overrides were removed.
+   */
+  204: void;
+};
+
+export type DeleteV1AgentPermissionsTeamsByTeamIdResponse =
+  DeleteV1AgentPermissionsTeamsByTeamIdResponses[keyof DeleteV1AgentPermissionsTeamsByTeamIdResponses];
+
+export type PutV1AgentPermissionsTeamsByTeamIdData = {
+  body: AgentPermissionPolicyWrite;
+  path: {
+    /**
+     * Den TypeID with 'tem_' prefix and a 26-character base32 suffix.
+     */
+    teamId: string;
+  };
+  query?: never;
+  url: "/v1/agent-permissions/teams/{teamId}";
+};
+
+export type PutV1AgentPermissionsTeamsByTeamIdErrors = {
+  /**
+   * A permission or pattern was not valid.
+   */
+  400: InvalidRequestError;
+  /**
+   * The caller must be signed in.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller needs the agent_permissions.manage permission and a recent sign-in.
+   */
+  403: ForbiddenError;
+  /**
+   * The team was not found, or agent permissions are not turned on for this organization.
+   */
+  404: NotFoundError;
+};
+
+export type PutV1AgentPermissionsTeamsByTeamIdError =
+  PutV1AgentPermissionsTeamsByTeamIdErrors[keyof PutV1AgentPermissionsTeamsByTeamIdErrors];
+
+export type PutV1AgentPermissionsTeamsByTeamIdResponses = {
+  /**
+   * The team's agent permissions saved.
+   */
+  200: AgentPermissionPolicyResponse;
+};
+
+export type PutV1AgentPermissionsTeamsByTeamIdResponse =
+  PutV1AgentPermissionsTeamsByTeamIdResponses[keyof PutV1AgentPermissionsTeamsByTeamIdResponses];
 
 export type GetV1DiagnosticsEgressData = {
   body?: never;
@@ -14000,6 +14148,57 @@ export type GetV1InferenceAnalyticsConsumptionResponses = {
 
 export type GetV1InferenceAnalyticsConsumptionResponse =
   GetV1InferenceAnalyticsConsumptionResponses[keyof GetV1InferenceAnalyticsConsumptionResponses];
+
+export type GetV1LibraryUsageData = {
+  body?: never;
+  path?: never;
+  query: {
+    kind: "skills" | "plugins" | "connectors";
+    days?: "7" | "30" | "90";
+    groupBy?: string;
+    memberId?: string;
+    teamId?: string;
+    itemId?: string;
+  };
+  url: "/v1/library-usage";
+};
+
+export type GetV1LibraryUsageErrors = {
+  /**
+   * Invalid query
+   */
+  400: InvalidRequestError;
+  /**
+   * Sign-in required
+   */
+  401: UnauthorizedError;
+  /**
+   * View usage analytics permission required
+   */
+  403: ForbiddenError;
+  /**
+   * The team is not in this organization
+   */
+  404: NotFoundError;
+  /**
+   * Too many rows; narrow the window, grouping or filters
+   */
+  422: {
+    error: "library_usage_too_many_rows";
+    message: string;
+  };
+};
+
+export type GetV1LibraryUsageError = GetV1LibraryUsageErrors[keyof GetV1LibraryUsageErrors];
+
+export type GetV1LibraryUsageResponses = {
+  /**
+   * Library usage breakdown
+   */
+  200: LibraryUsageBreakdown;
+};
+
+export type GetV1LibraryUsageResponse = GetV1LibraryUsageResponses[keyof GetV1LibraryUsageResponses];
 
 export type GetV1LibraryUsageByKindData = {
   body?: never;
@@ -20884,6 +21083,102 @@ export type GetV1PermissionsSetsByPermissionSetIdResponses = {
 
 export type GetV1PermissionsSetsByPermissionSetIdResponse =
   GetV1PermissionsSetsByPermissionSetIdResponses[keyof GetV1PermissionsSetsByPermissionSetIdResponses];
+
+export type PatchV1PermissionsSetsByPermissionSetIdData = {
+  body: RenamePermissionSetBody;
+  path: {
+    /**
+     * Den TypeID with 'pms_' prefix and a 26-character base32 suffix.
+     */
+    permissionSetId: string;
+  };
+  query?: never;
+  url: "/v1/permissions/sets/{permissionSetId}";
+};
+
+export type PatchV1PermissionsSetsByPermissionSetIdErrors = {
+  /**
+   * The body or id was invalid, or the set is Member or Admin permissions.
+   */
+  400: InvalidRequestError | DefaultPermissionSetError;
+  /**
+   * The caller must be signed in.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller lacks permissions.manage or needs a recent sign-in.
+   */
+  403: ForbiddenError | PermissionDeniedError;
+  /**
+   * The permission set or organization was not found, or Permissions or Shared roles is turned off.
+   */
+  404: PermissionsNotFoundError;
+  /**
+   * The permission set is archived.
+   */
+  409: PermissionSetConflictError;
+};
+
+export type PatchV1PermissionsSetsByPermissionSetIdError =
+  PatchV1PermissionsSetsByPermissionSetIdErrors[keyof PatchV1PermissionsSetsByPermissionSetIdErrors];
+
+export type PatchV1PermissionsSetsByPermissionSetIdResponses = {
+  /**
+   * Role renamed; its current state is returned.
+   */
+  200: PermissionSetResponse;
+};
+
+export type PatchV1PermissionsSetsByPermissionSetIdResponse =
+  PatchV1PermissionsSetsByPermissionSetIdResponses[keyof PatchV1PermissionsSetsByPermissionSetIdResponses];
+
+export type PutV1TeamsByTeamIdPermissionSetData = {
+  body: TeamPermissionSetBody;
+  path: {
+    /**
+     * Den TypeID with 'tem_' prefix and a 26-character base32 suffix.
+     */
+    teamId: string;
+  };
+  query?: never;
+  url: "/v1/teams/{teamId}/permission-set";
+};
+
+export type PutV1TeamsByTeamIdPermissionSetErrors = {
+  /**
+   * The body or id was invalid, or the set is Member or Admin permissions.
+   */
+  400: InvalidRequestError | DefaultPermissionSetError;
+  /**
+   * The caller must be signed in.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller lacks permissions.manage, needs a recent sign-in, tried to turn on a permission they don't have, or tried to change Admin permissions without being the owner or an admin.
+   */
+  403: ForbiddenError | PermissionDeniedError | PermissionEditError;
+  /**
+   * The team, permission set or organization was not found, or Permissions or Shared roles is turned off.
+   */
+  404: PermissionsNotFoundError;
+  /**
+   * The permission set is archived.
+   */
+  409: PermissionSetConflictError;
+};
+
+export type PutV1TeamsByTeamIdPermissionSetError =
+  PutV1TeamsByTeamIdPermissionSetErrors[keyof PutV1TeamsByTeamIdPermissionSetErrors];
+
+export type PutV1TeamsByTeamIdPermissionSetResponses = {
+  /**
+   * The team's custom role was set; the role's current state is returned, or null when the team has none.
+   */
+  200: TeamPermissionSetResponse;
+};
+
+export type PutV1TeamsByTeamIdPermissionSetResponse =
+  PutV1TeamsByTeamIdPermissionSetResponses[keyof PutV1TeamsByTeamIdPermissionSetResponses];
 
 export type PutV1PermissionsSetsByPermissionSetIdPermissionsData = {
   body: UpdatePermissionSetPermissionsBody;
@@ -30608,6 +30903,165 @@ export type PutV1OrgWorkbotSettingsResponses = {
 };
 
 export type PutV1OrgWorkbotSettingsResponse = PutV1OrgWorkbotSettingsResponses[keyof PutV1OrgWorkbotSettingsResponses];
+
+export type GetV1OrgDefaultModelData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/org/default-model";
+};
+
+export type GetV1OrgDefaultModelErrors = {
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller lacks the View OpenWork Models settings permission.
+   */
+  403: ForbiddenError;
+  /**
+   * The organization or team was not found, or the organization default model is off.
+   */
+  404: NotFoundError;
+};
+
+export type GetV1OrgDefaultModelError = GetV1OrgDefaultModelErrors[keyof GetV1OrgDefaultModelErrors];
+
+export type GetV1OrgDefaultModelResponses = {
+  /**
+   * Default models returned.
+   */
+  200: DefaultModelSettings;
+};
+
+export type GetV1OrgDefaultModelResponse = GetV1OrgDefaultModelResponses[keyof GetV1OrgDefaultModelResponses];
+
+export type GetV1OrgDefaultModelOptionsData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/org/default-model/options";
+};
+
+export type GetV1OrgDefaultModelOptionsErrors = {
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller lacks the View OpenWork Models settings permission.
+   */
+  403: ForbiddenError;
+  /**
+   * The organization or team was not found, or the organization default model is off.
+   */
+  404: NotFoundError;
+};
+
+export type GetV1OrgDefaultModelOptionsError =
+  GetV1OrgDefaultModelOptionsErrors[keyof GetV1OrgDefaultModelOptionsErrors];
+
+export type GetV1OrgDefaultModelOptionsResponses = {
+  /**
+   * Models returned.
+   */
+  200: DefaultModelOptions;
+};
+
+export type GetV1OrgDefaultModelOptionsResponse =
+  GetV1OrgDefaultModelOptionsResponses[keyof GetV1OrgDefaultModelOptionsResponses];
+
+export type PutV1OrgDefaultModelEveryoneData = {
+  body: DefaultModelWrite;
+  path?: never;
+  query?: never;
+  url: "/v1/org/default-model/everyone";
+};
+
+export type PutV1OrgDefaultModelEveryoneErrors = {
+  /**
+   * The model is not one the organization has, or the request was invalid.
+   */
+  400: DefaultModelUnknownModelError | InvalidRequestError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller lacks the Manage OpenWork Models permission or needs to sign in again.
+   */
+  403: ForbiddenError;
+  /**
+   * The organization or team was not found, or the organization default model is off.
+   */
+  404: NotFoundError;
+  /**
+   * The model's provider could not be read to check the model.
+   */
+  503: DefaultModelSourceUnavailableError;
+};
+
+export type PutV1OrgDefaultModelEveryoneError =
+  PutV1OrgDefaultModelEveryoneErrors[keyof PutV1OrgDefaultModelEveryoneErrors];
+
+export type PutV1OrgDefaultModelEveryoneResponses = {
+  /**
+   * Default models saved.
+   */
+  200: DefaultModelSettings;
+};
+
+export type PutV1OrgDefaultModelEveryoneResponse =
+  PutV1OrgDefaultModelEveryoneResponses[keyof PutV1OrgDefaultModelEveryoneResponses];
+
+export type PutV1OrgDefaultModelTeamsByTeamIdData = {
+  body: DefaultModelWrite;
+  path: {
+    /**
+     * Den TypeID with 'tem_' prefix and a 26-character base32 suffix.
+     */
+    teamId: string;
+  };
+  query?: never;
+  url: "/v1/org/default-model/teams/{teamId}";
+};
+
+export type PutV1OrgDefaultModelTeamsByTeamIdErrors = {
+  /**
+   * The model is not one the organization has, or the request was invalid.
+   */
+  400: DefaultModelUnknownModelError | InvalidRequestError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller lacks the Manage OpenWork Models permission or needs to sign in again.
+   */
+  403: ForbiddenError;
+  /**
+   * The organization or team was not found, or the organization default model is off.
+   */
+  404: NotFoundError;
+  /**
+   * The model's provider could not be read to check the model.
+   */
+  503: DefaultModelSourceUnavailableError;
+};
+
+export type PutV1OrgDefaultModelTeamsByTeamIdError =
+  PutV1OrgDefaultModelTeamsByTeamIdErrors[keyof PutV1OrgDefaultModelTeamsByTeamIdErrors];
+
+export type PutV1OrgDefaultModelTeamsByTeamIdResponses = {
+  /**
+   * Default models saved.
+   */
+  200: DefaultModelSettings;
+};
+
+export type PutV1OrgDefaultModelTeamsByTeamIdResponse =
+  PutV1OrgDefaultModelTeamsByTeamIdResponses[keyof PutV1OrgDefaultModelTeamsByTeamIdResponses];
 
 export type GetV1McpConnectionsByConnectionIdSlackAssistantData = {
   body?: never;

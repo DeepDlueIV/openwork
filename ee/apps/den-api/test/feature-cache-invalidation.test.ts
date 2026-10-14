@@ -208,15 +208,17 @@ for (const writer of ["rollout", "override"]) {
 }
 
 test("organization maps cache ordinary flags but permissions comes from one live indexed read", async () => {
-  const rollouts = mock.method(cache.features, "rollouts", async () => ({ permissions: { enabled: true, killed: false } }))
-  const overrides = mock.method(cache.features, "overrides", async () => ({ permissions: true, teamMembershipCache: true }))
+  const state = mock.method(cache.features, "state", async () => ({
+    rollouts: { permissions: { enabled: true, killed: false } },
+    overrides: { permissions: true, teamMembershipCache: true },
+  }))
   const reads = stubReads([[{ organizationId, rolloutEnabled: false, killed: false, overrideEnabled: false }]])
   const features = await getOrganizationFeatures(organizationId)
   assert.equal(features.permissions, false)
   assert.equal(features.teamMembershipCache, true)
   assert.deepEqual(reads.map((read) => read.fields), [["organizationId", "rolloutEnabled", "killed", "overrideEnabled"]])
-  assert.equal(rollouts.mock.callCount(), 1)
-  assert.deepEqual(overrides.mock.calls[0].arguments, [organizationId])
+  assert.equal(state.mock.callCount(), 1)
+  assert.deepEqual(state.mock.calls[0].arguments, [organizationId])
 })
 
 for (const locked of [false, true]) {
@@ -226,6 +228,7 @@ for (const locked of [false, true]) {
     stubTransaction(events)
     mock.method(cache.features, "rollouts", () => { throw new Error("transaction read touched Redis rollouts") })
     mock.method(cache.features, "overrides", () => { throw new Error("transaction read touched Redis overrides") })
+    mock.method(cache.features, "state", () => { throw new Error("transaction read touched Redis feature state") })
     const result = await db.transaction(async (tx) => getOrganizationFeatures(organizationId, { database: tx, lock: locked ? "share" : undefined }))
     assert.equal(result.permissions, true)
     assert.deepEqual(reads.map((read) => read.fields), [["feature_key", "enabled", "killed"], ["feature_key", "enabled"]])
@@ -239,6 +242,7 @@ test("a share lock alone bypasses Redis and organizationFeatureEnabled propagate
   const reads = stubReads([rolloutAfter, overrideAfter])
   mock.method(cache.features, "rollouts", () => { throw new Error("locked read touched Redis rollouts") })
   mock.method(cache.features, "overrides", () => { throw new Error("locked read touched Redis overrides") })
+  mock.method(cache.features, "state", () => { throw new Error("locked read touched Redis feature state") })
   assert.equal(await organizationFeatureEnabled(organizationId, "permissions", { lock: "share" }), false)
   assert.equal(reads.length, 2)
   assert.equal(reads[1].lock, "share")

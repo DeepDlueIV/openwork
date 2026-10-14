@@ -9,6 +9,7 @@ import { z } from "zod"
 import type {
   EnterpriseMcpAuthorization,
   EnterpriseMcpAbandonAuthorizationInput,
+  EnterpriseMcpCallListedToolInput,
   EnterpriseMcpCallToolInput,
   EnterpriseMcpClient,
   EnterpriseMcpClientOptions,
@@ -679,6 +680,32 @@ export function createEnterpriseMcpClient(options: EnterpriseMcpClientOptions): 
         redirectUri: input.redirectUri,
         operationPhase: "tool-execution",
         operation: async (session) => {
+          const result = await session.client.callTool({
+            name: toolName,
+            arguments: input.arguments,
+          }, session.requestOptions)
+          if ("isError" in result && result.isError) throw new EnterpriseMcpToolResultError(result)
+          return result
+        },
+      })
+    },
+
+    async callListedTool(input: EnterpriseMcpCallListedToolInput) {
+      const toolName = configurationValue(() => toolNameSchema.parse(input.toolName))
+      configurationValue(() => assertEnterpriseMcpToolArguments(input.arguments))
+      return runConnectedOperation({
+        connection: input.connection,
+        redirectUri: input.redirectUri,
+        operationPhase: "tool-execution",
+        operation: async (session) => {
+          const tools = await collectEnterpriseMcpTools({
+            requestOptions: session.requestOptions,
+            listPage: (cursor, options) => session.client.listTools(
+              cursor ? { cursor } : undefined,
+              options,
+            ),
+          })
+          await input.beforeCall(tools)
           const result = await session.client.callTool({
             name: toolName,
             arguments: input.arguments,

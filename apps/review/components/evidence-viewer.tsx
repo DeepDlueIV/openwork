@@ -5,7 +5,7 @@ import type { ReviewReport } from "@openwork/review";
 import { CopyButton } from "./copy-button";
 import { OpenCheckpoint } from "./open-checkpoint";
 
-export function EvidenceViewer({ report, id, connected = false }: { report: ReviewReport; id: string; connected?: boolean }) {
+export function EvidenceViewer({ report, id, checkpointProviders = [] }: { report: ReviewReport; id: string; checkpointProviders?: readonly string[] }) {
   const images = report.evidence.filter((item) => item.kind === "image");
   const [selected, setSelected] = useState<string | null>(null);
   const [actualSize, setActualSize] = useState(false);
@@ -64,7 +64,7 @@ export function EvidenceViewer({ report, id, connected = false }: { report: Revi
           </div>
         </div>
         <aside className="viewer-context" aria-label="Evidence context">
-          <OpenCheckpoint key={item.id} id={id} image={item} connected={connected} />
+          <OpenCheckpoint key={item.id} id={id} image={item} connected={Boolean(item.checkpoint && checkpointProviders.includes(item.checkpoint.provider))} />
           <CopyButton label="Copy image link" value={`#evidence-${item.id}`} link />
           <p>{item.description}</p>
           <p>{source?.name}</p>

@@ -15,6 +15,13 @@ maxFileLines = 5000
 maxFiles = 400
 maxChangedLines = 60000
 
+# Keep every eligible diff line, but amortize prompts and extraction across
+# slightly larger chunks. No generated-file exclusions: see .warden/README.md.
+[defaults.chunking.coalesce]
+enabled = true
+maxGapLines = 30
+maxChunkSize = 12000
+
 [defaults.agent]
 model = "openai/gpt-6-luna"
 

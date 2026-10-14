@@ -95,7 +95,6 @@ export function WorkbotSettingsScreen() {
       <DashboardPageTemplate
         title="Workbot"
         description={null}
-        colors={["#ECFDF5", "#064E3B", "#047857", "#A7F3D0"]}
       >
         <div className="grid gap-4">
           {settings && !settings.runnerReachable ? (

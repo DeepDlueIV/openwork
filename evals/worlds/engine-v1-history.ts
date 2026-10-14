@@ -8,7 +8,7 @@ import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { localMysqlIsRunning, SkipError, type Place, type Seed } from "@openwork/env";
-import { enableOrganizationCapabilities } from "./dashboards.ts";
+import { enableOrganizationCapabilities } from "./organization-capabilities.ts";
 
 /**
  * An OpenCode v1 chat history, isolated in its own database file, that the
@@ -68,12 +68,29 @@ export const V1_FIXTURE_CHATS: readonly V1FixtureChat[] = [
   },
 ];
 
+/**
+ * Fixture chats that cannot be copied as they are: `large` holds more tool
+ * output than any chat may be copied whole, and the history-copy gate kills
+ * the migration process whenever it exports `crash` (see heldHistoryCopy).
+ */
+interface ChatsThatFail {
+  large: string;
+  crash: string;
+}
+
+/** Tool outputs in the large chat: 30 of ~10.5 MiB, ~315 MiB in all. */
+const LARGE_CHAT_OUTPUTS = 30;
+const LARGE_CHAT_OUTPUT = "A long build log line that the upgrade can leave out.\n".repeat(200_000);
+
 function json(value: unknown): string {
   return JSON.stringify(value);
 }
 
-/** Write the fixture history for `directory` (the workspace the chats belong to). Overwrites `database`. */
-export async function writeV1FixtureHistory(database: string, directory: string): Promise<{ chats: number }> {
+/**
+ * Write the fixture history for `directory` (the workspace the chats belong to). Overwrites `database`.
+ * `largeChat` also gets LARGE_CHAT_OUTPUTS big tool outputs.
+ */
+export async function writeV1FixtureHistory(database: string, directory: string, largeChat?: string): Promise<{ chats: number }> {
   await mkdir(dirname(database), { recursive: true });
   for (const suffix of ["", "-wal", "-shm"]) await rm(`${database}${suffix}`, { force: true });
   const db = new DatabaseSync(database);
@@ -116,6 +133,17 @@ export async function writeV1FixtureHistory(database: string, directory: string)
             metadata: {}, title: chat.readFile, time: { start: start + 2_000, end: start + 3_000 },
           },
         }));
+      }
+      if (chat.id === largeChat) {
+        for (let n = 1; n <= LARGE_CHAT_OUTPUTS; n++) {
+          part.run(fixtureId("prt", ++partN), assistantId, chat.id, start + 2_000, start + 3_000, json({
+            type: "tool", tool: "bash", callID: `call_fixture_log_${n}`,
+            state: {
+              status: "completed", input: { command: `cat build-${n}.log`, description: "Read a build log" },
+              output: LARGE_CHAT_OUTPUT, metadata: {}, title: `build-${n}.log`, time: { start: start + 2_000, end: start + 3_000 },
+            },
+          }));
+        }
       }
       part.run(fixtureId("prt", ++partN), assistantId, chat.id, start + 4_000, end, json({
         type: "text", text: chat.reply, time: { start: start + 4_000, end },
@@ -236,6 +264,25 @@ export function readMigrationCoverage(v1Database: string, v2Database: string): {
   }
 }
 
+/** A chat as v2 stored it: its parent, its messages, and how many of them contain each phrase. */
+export function readV2Chat(v2Database: string, sessionId: string, phrases: string[]) {
+  const db = new DatabaseSync(v2Database, { readOnly: true });
+  try {
+    const session = db.prepare("SELECT parent_id FROM session_v2 WHERE id = ?").get(sessionId);
+    const count = (sql: string, ...params: string[]) => {
+      const value = Reflect.get(db.prepare(sql).get(...params) ?? {}, "n");
+      return typeof value === "number" ? value : 0;
+    };
+    return {
+      parentId: session ? stringColumn(session, "parent_id") || null : undefined,
+      messages: count("SELECT count(*) AS n FROM session_message WHERE session_id = ?", sessionId),
+      containing: phrases.map(phrase => count("SELECT count(*) AS n FROM session_message WHERE session_id = ? AND instr(data, ?) > 0", sessionId, phrase)),
+    };
+  } finally {
+    db.close();
+  }
+}
+
 /** The desktop's live v2 chat database inside an Electron profile. */
 async function findV2Database(profileDir: string): Promise<string> {
   const entries = await readdir(profileDir, { recursive: true });
@@ -269,16 +316,25 @@ export async function cloneWholeV1History(source: string, database: string): Pro
 }
 
 /**
- * A source-built Electron-main fetch gate: only the first real v2 import of
- * each arranged attempt waits. The engines, snapshots, backups and all status
- * responses remain real; a renderer-only status delay would not prove this.
- * No request headers, chat data or response bodies are retained by the witness.
+ * A source-built Electron fetch gate in the desktop's main process and its
+ * chat-migration process: only the first real v2 import of each arranged
+ * attempt waits. The engines, snapshots, backups and all status responses
+ * remain real; a renderer-only status delay would not prove this. The witness
+ * also counts chat exports and imports and notes which process sent a held
+ * import. No request headers, chat data or response bodies are retained.
+ *
+ * With `failing`, the migration process is killed whenever it exports
+ * `failing.crash`, as running out of memory would.
  */
-async function heldHistoryCopy(database: string, attempts: number) {
+async function heldHistoryCopy(database: string, attempts: number, failing?: ChatsThatFail) {
   const token = randomBytes(24).toString("hex");
   let held: ServerResponse | null = null;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const state = { installed: false, arrived: 0, released: 0, failed: 0, expired: false };
+  const state = {
+    installed: false, arrived: 0, released: 0, failed: 0, expired: false, exports: 0, imports: 0,
+    crashes: [] as { process: string; pid: number }[],
+    mainPid: null as number | null, heldBy: null as { process: string; pid: number } | null,
+  };
   const release = (outcome: "continue" | "fail") => {
     if (!held) throw new Error("No real history import is held");
     clearTimeout(timer);
@@ -294,12 +350,18 @@ async function heldHistoryCopy(database: string, attempts: number) {
       return;
     }
     response.setHeader("content-type", "text/plain");
-    if (request.url === "/ready") { state.installed = true; response.end("ready"); return; }
-    if (request.url !== "/copy") { response.writeHead(404).end(); return; }
+    const url = new URL(request.url ?? "/", "http://witness");
+    const sender = { process: url.searchParams.get("process") ?? "unknown", pid: Number(url.searchParams.get("pid")) };
+    if (url.pathname === "/ready") { state.installed = true; state.mainPid = sender.pid; response.end("ready"); return; }
+    if (url.pathname === "/seen/export") { state.exports++; response.end("ok"); return; }
+    if (url.pathname === "/seen/import") { state.imports++; response.end("ok"); return; }
+    if (url.pathname === "/seen/crash") { state.crashes.push(sender); response.end("ok"); return; }
+    if (url.pathname !== "/copy") { response.writeHead(404).end(); return; }
     if (held) { response.writeHead(409).end("fail"); return; }
     state.arrived++;
     if (state.arrived > attempts) { response.end("continue"); return; }
     held = response;
+    state.heldBy = sender;
     // The native import has a 30-second deadline. Expiry fails the witness,
     // rather than silently completing before the person's acts finish.
     timer = setTimeout(() => { state.expired = true; release("fail"); }, 25_000);
@@ -314,27 +376,39 @@ async function heldHistoryCopy(database: string, attempts: number) {
   // --require applies only to source-built Electron. The guard excludes the
   // pnpm/Vite processes and every child engine sharing this environment.
   await writeFile(preload, `
-if (process.versions.electron && process.type === "browser" && process.env.OPENCODE_DB === ${JSON.stringify(database)}) {
+const migrationProcess = String(process.argv[1] ?? "").endsWith("opencode-v2-migration-process.js");
+if (process.versions.electron && (process.type === "browser" || migrationProcess) && process.env.OPENCODE_DB === ${JSON.stringify(database)}) {
   const delegate = globalThis.fetch;
+  const sender = \`process=\${process.type === "browser" ? "main" : "migration"}&pid=\${process.pid}\`;
+  const witness = (path, signal) => delegate(${JSON.stringify(`http://127.0.0.1:${address.port}`)} + path + "?" + sender, {
+    headers: { authorization: ${JSON.stringify(`Bearer ${token}`)} }, signal,
+  });
   let heldAttempts = 0;
   globalThis.fetch = async (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
     const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
-    if (method === "POST" && url.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname)
-        && url.pathname === "/api/session/import" && heldAttempts < ${attempts}) {
-      heldAttempts++;
-      const control = await delegate(${JSON.stringify(`http://127.0.0.1:${address.port}/copy`)}, {
-        headers: { authorization: ${JSON.stringify(`Bearer ${token}`)} }, signal: init?.signal,
-      });
-      if (!control.ok || await control.text() !== "continue") {
-        return new Response(JSON.stringify({ error: "Fixture-held copy interrupted" }), { status: 503, headers: { "content-type": "application/json" } });
+    const loopback = url.protocol === "http:" && ["127.0.0.1", "localhost", "[::1]"].includes(url.hostname);
+    const exportOf = loopback && method === "GET" ? /^\\/api\\/experimental\\/session\\/([^/]+)\\/export$/.exec(url.pathname)?.[1] : undefined;
+    if (exportOf) {
+      await witness("/seen/export").then(response => response.text()).catch(() => undefined);
+      if (migrationProcess && exportOf === ${JSON.stringify(failing?.crash ?? null)}) {
+        await witness("/seen/crash").then(response => response.text()).catch(() => undefined);
+        process.kill(process.pid, "SIGKILL");
+      }
+    }
+    if (loopback && method === "POST" && url.pathname === "/api/experimental/session/import") {
+      await witness("/seen/import").then(response => response.text()).catch(() => undefined);
+      if (heldAttempts < ${attempts}) {
+        heldAttempts++;
+        const control = await witness("/copy", init?.signal);
+        if (!control.ok || await control.text() !== "continue") {
+          return new Response(JSON.stringify({ error: "Fixture-held copy interrupted" }), { status: 503, headers: { "content-type": "application/json" } });
+        }
       }
     }
     return delegate(input, init);
   };
-  void delegate(${JSON.stringify(`http://127.0.0.1:${address.port}/ready`)}, {
-    headers: { authorization: ${JSON.stringify(`Bearer ${token}`)} },
-  }).then(response => response.text()).catch(() => undefined);
+  if (process.type === "browser") void witness("/ready").then(response => response.text()).catch(() => undefined);
 }
 `, { mode: 0o600 });
   return {
@@ -356,13 +430,26 @@ if (process.versions.electron && process.type === "browser" && process.env.OPENC
  * organization's `engineV2Upgrade` feature on, so it is offered the upgrade.
  */
 export async function engineV1HistoryUpgrade(seed: Seed, { place }: { place: Place }) {
+  return startV1HistoryDesktop(seed, place);
+}
+
+/**
+ * The same desktop and fixture history, where the sub-chat is too large to
+ * copy whole and copying another chat kills the migration process. Nothing is held.
+ */
+export async function engineV1HistoryWithChatsThatFail(seed: Seed, { place }: { place: Place }) {
+  const failing = { large: V1_FIXTURE_CHATS[1]!.id, crash: V1_FIXTURE_CHATS[3]!.id };
+  return { ...await startV1HistoryDesktop(seed, place, failing), failing };
+}
+
+async function startV1HistoryDesktop(seed: Seed, place: Place, failing?: ChatsThatFail) {
   if (place.kind !== "local") throw new SkipError("the seeded v1 history is a file the local desktop opens directly");
   if (!await localMysqlIsRunning()) throw new SkipError("local MySQL for a disposable Den database");
   if (process.env.OPENWORK_EVAL_ELECTRON_BINARY?.trim()) {
     throw new SkipError("the real held-copy witness requires source-built Electron's main-process preload");
   }
   await using resources = new AsyncDisposableStack();
-  const source = process.env.OPENWORK_EVAL_V1_HISTORY_SOURCE?.trim() || null;
+  const source = failing ? null : process.env.OPENWORK_EVAL_V1_HISTORY_SOURCE?.trim() || null;
   const profileDir = seed.tmpPath("v1-history-profile");
   const workspaceDir = seed.tmpPath("v1-history-workspace");
   await mkdir(workspaceDir, { recursive: true });
@@ -373,7 +460,7 @@ export async function engineV1HistoryUpgrade(seed: Seed, { place }: { place: Pla
   const limit = process.env.OPENWORK_EVAL_V1_HISTORY_LIMIT?.trim();
   const whole = source !== null && limit === "all";
   const seeded = !source
-    ? await writeV1FixtureHistory(database, workspacePath)
+    ? await writeV1FixtureHistory(database, workspacePath, failing?.large)
     : whole
       ? await cloneWholeV1History(source, database)
       : await copyRecentV1History(source, database, Number(limit) || 40);
@@ -382,7 +469,7 @@ export async function engineV1HistoryUpgrade(seed: Seed, { place }: { place: Pla
   const den = await seed.den({ org: { name: "Engine upgrade" } });
   await enableOrganizationCapabilities(seed, den.admin, { engineV2Upgrade: true });
   const opencode2 = process.env.OPENWORK_EVAL_OPENCODE2_BIN?.trim();
-  const copyGate = resources.use(await heldHistoryCopy(database, source === null ? 2 : 1));
+  const copyGate = resources.use(await heldHistoryCopy(database, failing ? 0 : source === null ? 2 : 1, failing));
   const nodeOptions = [process.env.NODE_OPTIONS?.trim(), `--require=${JSON.stringify(copyGate.preload)}`].filter(Boolean).join(" ");
   const app = await seed.desktop({
     den, as: "admin", name: "v1-history-upgrade", profileDir, workspacePath,
@@ -418,6 +505,7 @@ export async function engineV1HistoryUpgrade(seed: Seed, { place }: { place: Pla
     chats: source === null ? V1_FIXTURE_CHATS : [],
     readV1History: () => readV1HistoryDigest(database),
     readCoverage: async () => readMigrationCoverage(database, await findV2Database(profileDir)),
+    readV2Chat: async (sessionId: string, phrases: string[]) => readV2Chat(await findV2Database(profileDir), sessionId, phrases),
     async [Symbol.asyncDispose]() { await lifetime.disposeAsync(); },
   };
 }

@@ -10,7 +10,7 @@ import type { EvidenceFocus, RecordScreenshotOptions, ScreenshotArtifact } from 
 import { decodePng, diffPixels, diffText } from "./screen-change.ts";
 import { redactText } from "./redact.ts";
 import type { EvidenceBox, ScreenChange } from "./screen-change.ts";
-import { parseEvidenceCheckpoint } from "@openwork/freestyle/checkpoint-schema";
+import { parseEvidenceCheckpoint } from "@openwork/evidence-provider/checkpoint";
 import { judgeVision } from "./validate.ts";
 import type { ValidateOptions, VisualEvidenceResult, VisualExpectationResult } from "./validate.ts";
 

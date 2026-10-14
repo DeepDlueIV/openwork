@@ -17,7 +17,6 @@ import {
 } from "./plugin-access-data";
 import { OrgMemberIdentity } from "./org-member-identity";
 import { SectionTitle } from "./item-header";
-import { useLibraryIntegrated } from "./use-library-integrated";
 
 type PluginAccessSectionProps = {
   pluginId: string;
@@ -241,7 +240,6 @@ export function PluginAccessSection({
   error,
 }: PluginAccessSectionProps) {
   const { orgContext } = useOrgDashboard();
-  const integrated = useLibraryIntegrated();
   const grantMutation = useGrantPluginAccess();
   const revokeMutation = useRevokePluginAccess();
   const access = getOrgAccessFlags(
@@ -316,9 +314,7 @@ export function PluginAccessSection({
 
   return (
     <section>
-      {integrated ? <div className="mb-3"><SectionTitle title="Who can use it" /></div> : <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.16em] text-gray-400">
-        Who can access this
-      </h2>}
+      <div className="mb-3"><SectionTitle title="Who can use it" /></div>
 
       {error ? (
         <DenNotice
@@ -381,7 +377,7 @@ export function PluginAccessSection({
                         <AccessRolePill role={grant.role} />
                       </div>
                       {creatorGrant ? (
-                        <span className={integrated ? "text-[13px] text-[var(--dls-text-secondary)]" : "text-[12px] font-medium text-gray-400"}>{integrated ? "Creator" : "creator"}</span>
+                        <span className="text-[13px] text-[var(--dls-text-secondary)]">Creator</span>
                       ) : (
                         <>
                           <p className="text-[11.5px] text-gray-400">

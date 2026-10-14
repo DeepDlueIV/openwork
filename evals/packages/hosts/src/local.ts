@@ -718,6 +718,28 @@ export async function preserveSurfaceLog(handle: SurfaceHandle, logsDir: string)
   return target;
 }
 
+/**
+ * Copy the engine's (OpenCode's) own logs out of a surface profile before it is
+ * removed, next to the surface log and named after the same profile. The desktop
+ * log only shows that engine requests failed; these say why. Returns the copies.
+ */
+export async function preserveEngineLogs(handle: SurfaceHandle, logsDir: string): Promise<string[]> {
+  const profileRoot = handle.meta?.profileRoot ?? handle.profileDir;
+  if (!profileRoot) return [];
+  const engineLogs = join(electronProfilePaths(profileRoot).dataHome, "opencode", "log");
+  if (!existsSync(engineLogs)) return [];
+  const names = (await readdir(engineLogs)).filter((name) => name.endsWith(".log")).sort();
+  if (!names.length) return [];
+  await mkdir(logsDir, { recursive: true });
+  const kept: string[] = [];
+  for (const name of names) {
+    const target = join(logsDir, `${basename(profileRoot)}-opencode-${name}`);
+    await copyFile(join(engineLogs, name), target);
+    kept.push(target);
+  }
+  return kept;
+}
+
 export async function removeOwnedSurfaceFiles(handle: SurfaceHandle): Promise<void> {
   for (const path of ownedSurfaceFilePaths(handle)) {
     await rm(path, { recursive: true, force: true });
@@ -1050,6 +1072,9 @@ async function ensureDisplay(repoRoot: string, env: NodeJS.ProcessEnv, log: (mes
         await preserveSurfaceLog(handle, logsDir)
           .then((kept) => { if (kept) log(`Kept ${handle.name} log at ${kept}`); })
           .catch((error: unknown) => log(`Could not keep ${handle.name} log: ${messageText(error)}`));
+        await preserveEngineLogs(handle, logsDir)
+          .then((kept) => { if (kept.length) log(`Kept ${kept.length} ${handle.name} engine log(s) in ${logsDir}`); })
+          .catch((error: unknown) => log(`Could not keep ${handle.name} engine logs: ${messageText(error)}`));
       }
       await removeOwnedSurfaceFiles(handle);
       if (handle.meta?.profileOwner !== "caller" && handle.meta?.profileRoot) unregisterLiveProfileRoot(handle.meta.profileRoot);

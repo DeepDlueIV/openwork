@@ -300,6 +300,10 @@ export async function go(app: Surface, hashPath: string, opts: { timeoutMs?: num
       window.location.hash = inputHash;
       return true;
     }
+    // Right after a load the router may not be listening yet, and a popstate it
+    // misses leaves the old page on screen under the new address. The control
+    // API is installed after the router subscribes, so wait for it first.
+    if (!window.__openworkControl) return false;
     const path = inputHash.slice(1);
     if (`${window.location.pathname}${window.location.search}` !== path) {
       window.history.pushState(window.history.state, "", path);

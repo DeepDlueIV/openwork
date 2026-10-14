@@ -9,8 +9,16 @@ const test = spec.world(connectorBranding, {
 
 test("connector-backed tool calls show first-class branding and human-readable labels", async ({ world, user, probe, step, evidence }) => {
   const sinceIso = new Date().toISOString();
-  await user.type("composer", world.prompt);
-  await user.click("Run task");
+  // Send as a person does: type, wait until Run task accepts the draft, then click.
+  const send = async (prompt: string) => {
+    await user.type("composer", prompt);
+    await probe.eventually(() => probe.composer(), {
+      within: 30_000, label: "composer ready to send the draft",
+      until: (state) => state.runTaskEnabled && state.draftText.trim() === prompt,
+    });
+    await user.click("Run task");
+  };
+  await send(world.prompt);
 
   await step("before: a member sees the running lookup without raw tool output", async () => {
     await user.see({ text: /Searched your connections for.*Slack list_channels/ }, { timeoutMs: 60_000 });
@@ -68,8 +76,7 @@ test("connector-backed tool calls show first-class branding and human-readable l
   });
 
   await step("a member sees the note being created rather than the last lookup", async () => {
-    await user.type("composer", world.mutationPrompt);
-    await user.click("Run task");
+    await send(world.mutationPrompt);
     await user.see({ text: /(?:Creating|Created) note/ }, { timeoutMs: 60_000 });
     if (world.engine === "v2") await user.notSee({ text: /Tool activity|Task step|Completed with errors/ });
     evidence.recordAssertionEvidence("creation in progress", "Creating or Created note is visible, not Tool activity", true);
@@ -90,8 +97,7 @@ test("connector-backed tool calls show first-class branding and human-readable l
   });
 
   await step("a failed connector action stays identifiable and is not shown as successful", async () => {
-    await user.type("composer", world.failurePrompt);
-    await user.click("Run task");
+    await send(world.failurePrompt);
     await user.see({ role: "button", label: /technical details for (?:Reading history|Couldn.t read history)/ }, { timeoutMs: 60_000 });
     if (world.engine === "v2") await user.notSee({ text: /Completed with errors|Tool activity/ });
     await user.see("Run task");

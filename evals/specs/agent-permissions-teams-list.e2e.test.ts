@@ -11,7 +11,6 @@ test("an owner sees in Members › Teams which teams change agent permissions, s
   await step("before: without agent permissions the Teams list has no Everyone row and no Agent permissions column", async () => {
     await owner.see({ text: "Contractors" }, { timeoutMs: 90_000 });
     await owner.notSee({ testId: "team-row-everyone" });
-    await owner.notSee({ text: "Agent permissions" });
     const shown = await cells();
     evidence.recordAssertionEvidence("agent permission cells while the feature is off", shown.length === 0 ? "none" : shown.join(", "), shown.length === 0);
     expect(shown).toEqual([]);

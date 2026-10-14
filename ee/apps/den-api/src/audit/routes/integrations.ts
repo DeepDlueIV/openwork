@@ -66,6 +66,7 @@ export const integrationsAuditRoutes: readonly AuditRouteDeclaration[] = [
   support(`${GW}/*`, "capabilities_google_workspace", "app.use contextStorage so token resolvers can read signed internal capability headers; concrete handlers are declared."),
   support(`${MS}/*`, "capabilities_microsoft_365", "app.use contextStorage for the Microsoft token resolver; concrete handlers are declared."),
   support("/v1/direct-uploads/google-workspace/*", "direct_uploads_google_workspace", "app.use contextStorage for direct-upload handlers; concrete handlers are declared."),
+  support("/v1/direct-downloads/google-workspace/*", "direct_downloads_google_workspace", "app.use contextStorage for direct-download handlers; concrete handlers are declared."),
 
   // Google Workspace capabilities
   read(`${GW}/gmail-labels`, "capability.gmail.label.list", GWK, res("gmail_label"), CAP),
@@ -104,6 +105,8 @@ export const integrationsAuditRoutes: readonly AuditRouteDeclaration[] = [
   external("POST", `${GW}/drive-upload-sessions`, "capability.google_drive.upload.prepare", GWK, res("google_drive_file"), GOOGLE, `${CAP} Returns a secret resumable upload URL; no file bytes or session URL are captured in audit evidence.`),
   external("POST", "/v1/direct-uploads/google-workspace/drive-upload-sessions", "capability.google_drive.host_upload.prepare", GWK, res("google_drive_file"), GOOGLE, "cloudTransportRoute; host prepares a selected-account resumable session, bytes bypass Den. Session URL is not audit evidence."),
   external("POST", "/v1/direct-uploads/google-workspace/drive-files", "capability.google_drive.file.upload", GWK, res("google_drive_file"), GOOGLE, "cloudTransportRoute (MCP OAuth token, org from token); host file transport, bytes not echoed. Conditional token refresh write."),
+  read("/v1/direct-downloads/google-workspace/drive-files/:fileId", "capability.google_drive.host_download.prepare", GWK, res("google_drive_file", "fileId"), "cloudTransportReadRoute (MCP OAuth token, org from token); file metadata and pull plan only, no content."),
+  access("GET", "/v1/direct-downloads/google-workspace/drive-files/:fileId/content", "capability.google_drive.host_download.content", GWK, res("google_drive_file", "fileId"), "cloudTransportReadRoute; streams the member's file bytes to their host, never stored or used as audit evidence. Conditional token refresh write."),
   external("POST", "/v1/direct-uploads/google-workspace/gmail-drafts", "capability.gmail.draft.attachments.create", GWK, res("gmail_draft"), GOOGLE, "cloudTransportRoute (MCP OAuth token, org from token); creates a draft with attachments, never sends. Conditional token refresh write."),
 
   // Microsoft 365 capabilities

@@ -71,6 +71,8 @@ function googleFailureMessage(status: number, google: ReturnType<typeof parseGoo
   let hint = ""
   if (google.reasons.has("SERVICE_DISABLED") || google.reasons.has("accessNotConfigured")) {
     hint = ` An organization admin must enable ${google.service ?? "this Google API"} in the Google Cloud project that owns the Google Workspace connector's OAuth client; reconnecting does not help.`
+  } else if (google.reasons.has("exportSizeLimitExceeded")) {
+    hint = " Google exports Docs, Sheets and Slides files only up to 10 MB. Export a smaller format such as csv or txt, or split the file."
   } else if (google.status === "FAILED_PRECONDITION" && url.pathname.includes("/v4/spreadsheets/")) {
     hint = " Sheets actions only work on native Google Sheets. Save Office files such as .xlsx as Google Sheets in Drive first (File > Save as Google Sheets), then use the new spreadsheet."
   } else if (status === 404 || (status === 403 && google.reasons.size === 0)) {

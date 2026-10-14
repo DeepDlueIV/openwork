@@ -12424,6 +12424,29 @@
             "type": "number",
             "const": 8388608
           },
+          "replaces": {
+            "description": "Present when the upload replaces an existing file's content.",
+            "type": "object",
+            "properties": {
+              "fileId": {
+                "type": "string"
+              },
+              "previousRevision": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "fileId",
+              "previousRevision"
+            ]
+          },
           "instructions": {
             "type": "string"
           }
@@ -12435,6 +12458,167 @@
           "size",
           "chunkSize",
           "instructions"
+        ]
+      },
+      "GoogleDriveDownloadInfo": {
+        "type": "object",
+        "properties": {
+          "ok": {
+            "type": "boolean",
+            "const": true
+          },
+          "file": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "name": {
+                "type": "string"
+              },
+              "mimeType": {
+                "type": "string"
+              },
+              "native": {
+                "type": "boolean",
+                "description": "Google Docs, Sheets, Slides or Drawings file, pulled as an export."
+              },
+              "revision": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Pass back as baseRevision when replacing this file, so newer Drive changes are never overwritten silently."
+              },
+              "md5Checksum": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "size": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "modifiedTime": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "webViewLink": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "parents": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": [
+              "id",
+              "name",
+              "mimeType",
+              "native",
+              "revision",
+              "md5Checksum",
+              "size",
+              "modifiedTime",
+              "webViewLink",
+              "parents"
+            ]
+          },
+          "download": {
+            "type": "object",
+            "properties": {
+              "format": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "mimeType": {
+                "type": "string"
+              },
+              "extension": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Extension the saved file needs, for exports."
+              },
+              "size": {
+                "anyOf": [
+                  {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "description": "Exact bytes for stored files; unknown until downloaded for exports."
+              },
+              "exported": {
+                "type": "boolean"
+              },
+              "maxBytes": {
+                "type": "integer",
+                "minimum": -9007199254740991,
+                "maximum": 9007199254740991
+              }
+            },
+            "required": [
+              "format",
+              "mimeType",
+              "extension",
+              "size",
+              "exported",
+              "maxBytes"
+            ]
+          }
+        },
+        "required": [
+          "ok",
+          "file",
+          "download"
         ]
       },
       "GoogleWorkspaceDriveFileSummary": {
@@ -71821,8 +72005,8 @@
         "tags": [
           "Capability Sources"
         ],
-        "summary": "Prepare a resumable Google Drive file upload for a client with local file transport",
-        "description": "Prepare a Google Drive resumable upload session for an explicitly requested file upload. This does not upload bytes or prove completion. Clients with file transport can PUT local bytes directly to the returned secret uploadUrl, outside model context. Google sessions can remain valid for up to one week; they are not short-lived signed URLs. Do not automatically create another session after an uncertain result. Final PUT returns file metadata. Uses the selected connection.",
+        "summary": "Prepare a resumable Google Drive upload, or a replacement of an existing file's content, for a client with local file transport",
+        "description": "Prepare a Google Drive resumable upload session for an explicitly requested file upload. This does not upload bytes or prove completion. Clients with file transport can PUT local bytes directly to the returned secret uploadUrl, outside model context. With fileId the upload replaces that file's content as a new Drive version; with convertTo a new Office file becomes a native Google file. Google sessions can remain valid for up to one week; they are not short-lived signed URLs. Do not automatically create another session after an uncertain result. Final PUT returns file metadata, including headRevisionId and md5Checksum for later replaces. Uses the selected connection.",
         "responses": {
           "200": {
             "description": "Secret upload session; file not yet uploaded.",
@@ -71835,11 +72019,30 @@
             }
           },
           "400": {
-            "description": "Invalid upload metadata.",
+            "description": "Invalid upload metadata, or a Google Docs, Sheets or Slides file cannot be replaced by an upload.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/InvalidRequestError"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "error",
+                        "message"
+                      ]
+                    }
+                  ]
                 }
               }
             }
@@ -71877,7 +72080,7 @@
             }
           },
           "409": {
-            "description": "Connect Google with Drive write access.",
+            "description": "Connect Google with Drive write access, or the file changed in Drive since baseRevision (drive_conflict) or is in the trash.",
             "content": {
               "application/json": {
                 "schema": {
@@ -71888,6 +72091,26 @@
                     },
                     "message": {
                       "type": "string"
+                    },
+                    "currentRevision": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "modifiedTime": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -71933,7 +72156,7 @@
                     "minLength": 1,
                     "maxLength": 255,
                     "pattern": "^[^\\x00-\\x1f\\x7f]+$",
-                    "description": "File basename; no file bytes or local paths."
+                    "description": "File basename; no file bytes or local paths. Ignored when replacing a file."
                   },
                   "size": {
                     "type": "integer",
@@ -71953,6 +72176,28 @@
                     "minLength": 1,
                     "maxLength": 512,
                     "pattern": "^[A-Za-z0-9_-]+$"
+                  },
+                  "fileId": {
+                    "description": "Replace this existing file's content instead of creating a file. It keeps its ID, link, sharing and comments; the previous version stays in Drive's version history for 30 days.",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512,
+                    "pattern": "^[A-Za-z0-9_-]+$"
+                  },
+                  "baseRevision": {
+                    "description": "Required with fileId: the revision your copy was downloaded from. Refused with drive_conflict when Drive changed since; download the newer version and reapply the edits, or save a new file.",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                  },
+                  "convertTo": {
+                    "description": "New files only: save the uploaded Office file as this native Google Docs, Sheets or Slides type.",
+                    "type": "string",
+                    "enum": [
+                      "application/vnd.google-apps.spreadsheet",
+                      "application/vnd.google-apps.document",
+                      "application/vnd.google-apps.presentation"
+                    ]
                   }
                 },
                 "required": [
@@ -71981,7 +72226,7 @@
           "Direct uploads"
         ],
         "summary": "Prepare a Google Drive session for host file transport",
-        "description": "Prepare a Google Drive resumable upload session for an explicitly requested file upload. This does not upload bytes or prove completion. Clients with file transport can PUT local bytes directly to the returned secret uploadUrl, outside model context. Google sessions can remain valid for up to one week; they are not short-lived signed URLs. Do not automatically create another session after an uncertain result. Final PUT returns file metadata. Uses the selected connection.",
+        "description": "Prepare a Google Drive resumable upload session for an explicitly requested file upload. This does not upload bytes or prove completion. Clients with file transport can PUT local bytes directly to the returned secret uploadUrl, outside model context. With fileId the upload replaces that file's content as a new Drive version; with convertTo a new Office file becomes a native Google file. Google sessions can remain valid for up to one week; they are not short-lived signed URLs. Do not automatically create another session after an uncertain result. Final PUT returns file metadata, including headRevisionId and md5Checksum for later replaces. Uses the selected connection.",
         "responses": {
           "200": {
             "description": "Secret upload session for host transport.",
@@ -71994,11 +72239,30 @@
             }
           },
           "400": {
-            "description": "Invalid upload metadata.",
+            "description": "Invalid upload metadata, or a Google Docs, Sheets or Slides file cannot be replaced by an upload.",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/InvalidRequestError"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "error",
+                        "message"
+                      ]
+                    }
+                  ]
                 }
               }
             }
@@ -72036,7 +72300,7 @@
             }
           },
           "409": {
-            "description": "Connect Google with Drive write access.",
+            "description": "Connect Google with Drive write access, or the file changed in Drive since baseRevision (drive_conflict) or is in the trash.",
             "content": {
               "application/json": {
                 "schema": {
@@ -72047,6 +72311,26 @@
                     },
                     "message": {
                       "type": "string"
+                    },
+                    "currentRevision": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "modifiedTime": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": [
@@ -72092,7 +72376,7 @@
                     "minLength": 1,
                     "maxLength": 255,
                     "pattern": "^[^\\x00-\\x1f\\x7f]+$",
-                    "description": "File basename; no file bytes or local paths."
+                    "description": "File basename; no file bytes or local paths. Ignored when replacing a file."
                   },
                   "size": {
                     "type": "integer",
@@ -72112,6 +72396,28 @@
                     "minLength": 1,
                     "maxLength": 512,
                     "pattern": "^[A-Za-z0-9_-]+$"
+                  },
+                  "fileId": {
+                    "description": "Replace this existing file's content instead of creating a file. It keeps its ID, link, sharing and comments; the previous version stays in Drive's version history for 30 days.",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512,
+                    "pattern": "^[A-Za-z0-9_-]+$"
+                  },
+                  "baseRevision": {
+                    "description": "Required with fileId: the revision your copy was downloaded from. Refused with drive_conflict when Drive changed since; download the newer version and reapply the edits, or save a new file.",
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512
+                  },
+                  "convertTo": {
+                    "description": "New files only: save the uploaded Office file as this native Google Docs, Sheets or Slides type.",
+                    "type": "string",
+                    "enum": [
+                      "application/vnd.google-apps.spreadsheet",
+                      "application/vnd.google-apps.document",
+                      "application/vnd.google-apps.presentation"
+                    ]
                   },
                   "connectionId": {
                     "type": "string",
@@ -72133,6 +72439,386 @@
           },
           {
             "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/direct-downloads/google-workspace/drive-files/{fileId}": {
+      "get": {
+        "operationId": "describeHostGoogleDriveDownload",
+        "tags": [
+          "Direct uploads"
+        ],
+        "security": [
+          {
+            "mcpAccessToken": []
+          }
+        ],
+        "summary": "Describe a Google Drive file pull for host file transport",
+        "description": "Returns the file's revision, checksum and the exact format and size a pull would save, without downloading content. Hosts then fetch the content route in ranged chunks. Optional connectionId selects a native Google Workspace connection; unavailable selections never fall back to the default.",
+        "responses": {
+          "200": {
+            "description": "Pull plan; no file content.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GoogleDriveDownloadInfo"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Folder, unsupported Google file type or invalid format.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "error",
+                        "message"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Organization policy blocks the selected connection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Connect Google with Drive read access, or the file is in the trash.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The file is larger than the pull size limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Google refused or did not return the file; the message gives Google's reason.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "fileId",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "format",
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z]{2,5}$"
+            },
+            "description": "Google Docs, Sheets, Slides and Drawings only: export format, such as xlsx or csv for a Sheet, docx, md, txt or pdf for a Doc, pptx for Slides. Defaults to the Office format."
+          },
+          {
+            "in": "query",
+            "name": "connectionId",
+            "schema": {
+              "type": "string",
+              "pattern": "^(google-workspace|emc_[A-Za-z0-9]+)$"
+            }
+          }
+        ]
+      }
+    },
+    "/v1/direct-downloads/google-workspace/drive-files/{fileId}/content": {
+      "get": {
+        "operationId": "downloadHostGoogleDriveFile",
+        "tags": [
+          "Direct uploads"
+        ],
+        "security": [
+          {
+            "mcpAccessToken": []
+          }
+        ],
+        "summary": "Stream a Google Drive file's bytes to host file transport",
+        "description": "Streams stored files as-is (Range: bytes=START-END, up to 8 MiB per request) or exports Google files whole in the requested format. Den does not keep or inspect the bytes. Responses stop at the pull size limit.",
+        "responses": {
+          "200": {
+            "description": "File bytes.",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "206": {
+            "description": "Requested byte range.",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Folder, unsupported Google file type or invalid format.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "type": "object",
+                      "properties": {
+                        "error": {
+                          "type": "string"
+                        },
+                        "message": {
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "error",
+                        "message"
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Sign in first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Organization policy blocks the selected connection.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Connect Google with Drive read access, or the file is in the trash.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "The file is larger than the pull size limit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Google refused or did not return the file; the message gives Google's reason.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "fileId",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "required": true
+          },
+          {
+            "in": "query",
+            "name": "format",
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z]{2,5}$"
+            },
+            "description": "Google Docs, Sheets, Slides and Drawings only: export format, such as xlsx or csv for a Sheet, docx, md, txt or pdf for a Doc, pptx for Slides. Defaults to the Office format."
+          },
+          {
+            "in": "query",
+            "name": "connectionId",
+            "schema": {
+              "type": "string",
+              "pattern": "^(google-workspace|emc_[A-Za-z0-9]+)$"
+            }
           }
         ]
       }

@@ -54,6 +54,16 @@ because the local integration was removed.
 Google and Gemini under **AI Providers** are separate model-provider integrations
 and are unchanged. Custom MCP servers and other connectors are also unchanged.
 
+### Enable the Google APIs your permissions use
+
+The Google Workspace connector uses your organization's own Google Cloud OAuth
+client. In the Google Cloud project that owns that client, open **APIs &
+Services › Library** and enable the API for each permission you turn on: Gmail
+API, Google Calendar API, Google Drive API, Google Sheets API, and Google Chat
+API. Until an API is enabled, its actions fail with a message such as “Google
+Sheets API has not been used in project … or it is disabled”, and reconnecting
+does not help.
+
 ## Ask your agent to use it
 
 For Microsoft 365 administrator setup, client secrets, and consent, see

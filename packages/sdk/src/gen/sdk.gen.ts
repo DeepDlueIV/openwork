@@ -127,6 +127,10 @@ import type {
   DeleteV1WorkflowsByConfigObjectIdSnapshotsByReceiptIdContentErrors,
   DeleteV1WorkflowsByConfigObjectIdSnapshotsByReceiptIdContentResponses,
   DenDesktopPolicyDocumentWrite,
+  DescribeHostGoogleDriveDownloadErrors,
+  DescribeHostGoogleDriveDownloadResponses,
+  DownloadHostGoogleDriveFileErrors,
+  DownloadHostGoogleDriveFileResponses,
   ExternalMcpConnectionAccessInput,
   ExternalMcpConnectionByKeyUpsertInput,
   ExternalMcpConnectionToolPolicyInput,
@@ -8943,9 +8947,9 @@ export class DenClient extends HeyApiClient {
   }
 
   /**
-   * Prepare a resumable Google Drive file upload for a client with local file transport
+   * Prepare a resumable Google Drive upload, or a replacement of an existing file's content, for a client with local file transport
    *
-   * Prepare a Google Drive resumable upload session for an explicitly requested file upload. This does not upload bytes or prove completion. Clients with file transport can PUT local bytes directly to the returned secret uploadUrl, outside model context. Google sessions can remain valid for up to one week; they are not short-lived signed URLs. Do not automatically create another session after an uncertain result. Final PUT returns file metadata. Uses the selected connection.
+   * Prepare a Google Drive resumable upload session for an explicitly requested file upload. This does not upload bytes or prove completion. Clients with file transport can PUT local bytes directly to the returned secret uploadUrl, outside model context. With fileId the upload replaces that file's content as a new Drive version; with convertTo a new Office file becomes a native Google file. Google sessions can remain valid for up to one week; they are not short-lived signed URLs. Do not automatically create another session after an uncertain result. Final PUT returns file metadata, including headRevisionId and md5Checksum for later replaces. Uses the selected connection.
    */
   public createGoogleDriveUploadSession<ThrowOnError extends boolean = false>(
     parameters: {
@@ -8953,6 +8957,12 @@ export class DenClient extends HeyApiClient {
       size: number;
       mimeType?: string;
       folderId?: string;
+      fileId?: string;
+      baseRevision?: string;
+      convertTo?:
+        | "application/vnd.google-apps.spreadsheet"
+        | "application/vnd.google-apps.document"
+        | "application/vnd.google-apps.presentation";
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -8965,6 +8975,9 @@ export class DenClient extends HeyApiClient {
             { in: "body", key: "size" },
             { in: "body", key: "mimeType" },
             { in: "body", key: "folderId" },
+            { in: "body", key: "fileId" },
+            { in: "body", key: "baseRevision" },
+            { in: "body", key: "convertTo" },
           ],
         },
       ],
@@ -8988,7 +9001,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Prepare a Google Drive session for host file transport
    *
-   * Prepare a Google Drive resumable upload session for an explicitly requested file upload. This does not upload bytes or prove completion. Clients with file transport can PUT local bytes directly to the returned secret uploadUrl, outside model context. Google sessions can remain valid for up to one week; they are not short-lived signed URLs. Do not automatically create another session after an uncertain result. Final PUT returns file metadata. Uses the selected connection.
+   * Prepare a Google Drive resumable upload session for an explicitly requested file upload. This does not upload bytes or prove completion. Clients with file transport can PUT local bytes directly to the returned secret uploadUrl, outside model context. With fileId the upload replaces that file's content as a new Drive version; with convertTo a new Office file becomes a native Google file. Google sessions can remain valid for up to one week; they are not short-lived signed URLs. Do not automatically create another session after an uncertain result. Final PUT returns file metadata, including headRevisionId and md5Checksum for later replaces. Uses the selected connection.
    */
   public prepareHostGoogleDriveUploadSession<ThrowOnError extends boolean = false>(
     parameters: {
@@ -8996,6 +9009,12 @@ export class DenClient extends HeyApiClient {
       size: number;
       mimeType?: string;
       folderId?: string;
+      fileId?: string;
+      baseRevision?: string;
+      convertTo?:
+        | "application/vnd.google-apps.spreadsheet"
+        | "application/vnd.google-apps.document"
+        | "application/vnd.google-apps.presentation";
       connectionId?: string;
     },
     options?: Options<never, ThrowOnError>,
@@ -9009,6 +9028,9 @@ export class DenClient extends HeyApiClient {
             { in: "body", key: "size" },
             { in: "body", key: "mimeType" },
             { in: "body", key: "folderId" },
+            { in: "body", key: "fileId" },
+            { in: "body", key: "baseRevision" },
+            { in: "body", key: "convertTo" },
             { in: "body", key: "connectionId" },
           ],
         },
@@ -9027,6 +9049,78 @@ export class DenClient extends HeyApiClient {
         ...options?.headers,
         ...params.headers,
       },
+    });
+  }
+
+  /**
+   * Describe a Google Drive file pull for host file transport
+   *
+   * Returns the file's revision, checksum and the exact format and size a pull would save, without downloading content. Hosts then fetch the content route in ranged chunks. Optional connectionId selects a native Google Workspace connection; unavailable selections never fall back to the default.
+   */
+  public describeHostGoogleDriveDownload<ThrowOnError extends boolean = false>(
+    parameters: {
+      fileId: string;
+      format?: string;
+      connectionId?: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "fileId" },
+            { in: "query", key: "format" },
+            { in: "query", key: "connectionId" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).get<
+      DescribeHostGoogleDriveDownloadResponses,
+      DescribeHostGoogleDriveDownloadErrors,
+      ThrowOnError
+    >({
+      url: "/v1/direct-downloads/google-workspace/drive-files/{fileId}",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
+   * Stream a Google Drive file's bytes to host file transport
+   *
+   * Streams stored files as-is (Range: bytes=START-END, up to 8 MiB per request) or exports Google files whole in the requested format. Den does not keep or inspect the bytes. Responses stop at the pull size limit.
+   */
+  public downloadHostGoogleDriveFile<ThrowOnError extends boolean = false>(
+    parameters: {
+      fileId: string;
+      format?: string;
+      connectionId?: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "fileId" },
+            { in: "query", key: "format" },
+            { in: "query", key: "connectionId" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).get<
+      DownloadHostGoogleDriveFileResponses,
+      DownloadHostGoogleDriveFileErrors,
+      ThrowOnError
+    >({
+      url: "/v1/direct-downloads/google-workspace/drive-files/{fileId}/content",
+      ...options,
+      ...params,
     });
   }
 

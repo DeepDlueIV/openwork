@@ -2802,7 +2802,50 @@ export type GoogleDriveUploadSessionResponse = {
   method: "PUT";
   size: number;
   chunkSize: 8388608;
+  /**
+   * Present when the upload replaces an existing file's content.
+   */
+  replaces?: {
+    fileId: string;
+    previousRevision: string | null;
+  };
   instructions: string;
+};
+
+export type GoogleDriveDownloadInfo = {
+  ok: true;
+  file: {
+    id: string;
+    name: string;
+    mimeType: string;
+    /**
+     * Google Docs, Sheets, Slides or Drawings file, pulled as an export.
+     */
+    native: boolean;
+    /**
+     * Pass back as baseRevision when replacing this file, so newer Drive changes are never overwritten silently.
+     */
+    revision: string | null;
+    md5Checksum: string | null;
+    size: number | null;
+    modifiedTime: string | null;
+    webViewLink: string | null;
+    parents: Array<string>;
+  };
+  download: {
+    format: string | null;
+    mimeType: string;
+    /**
+     * Extension the saved file needs, for exports.
+     */
+    extension: string | null;
+    /**
+     * Exact bytes for stored files; unknown until downloaded for exports.
+     */
+    size: number | null;
+    exported: boolean;
+    maxBytes: number;
+  };
 };
 
 export type GoogleWorkspaceDriveFileSummary = {
@@ -21650,7 +21693,7 @@ export type PostV1OauthProvidersByProviderIdDisconnectResponse =
 export type CreateGoogleDriveUploadSessionData = {
   body: {
     /**
-     * File basename; no file bytes or local paths.
+     * File basename; no file bytes or local paths. Ignored when replacing a file.
      */
     name: string;
     /**
@@ -21659,6 +21702,21 @@ export type CreateGoogleDriveUploadSessionData = {
     size: number;
     mimeType?: string;
     folderId?: string;
+    /**
+     * Replace this existing file's content instead of creating a file. It keeps its ID, link, sharing and comments; the previous version stays in Drive's version history for 30 days.
+     */
+    fileId?: string;
+    /**
+     * Required with fileId: the revision your copy was downloaded from. Refused with drive_conflict when Drive changed since; download the newer version and reapply the edits, or save a new file.
+     */
+    baseRevision?: string;
+    /**
+     * New files only: save the uploaded Office file as this native Google Docs, Sheets or Slides type.
+     */
+    convertTo?:
+      | "application/vnd.google-apps.spreadsheet"
+      | "application/vnd.google-apps.document"
+      | "application/vnd.google-apps.presentation";
   };
   path?: never;
   query?: never;
@@ -21667,9 +21725,14 @@ export type CreateGoogleDriveUploadSessionData = {
 
 export type CreateGoogleDriveUploadSessionErrors = {
   /**
-   * Invalid upload metadata.
+   * Invalid upload metadata, or a Google Docs, Sheets or Slides file cannot be replaced by an upload.
    */
-  400: InvalidRequestError;
+  400:
+    | InvalidRequestError
+    | {
+        error: string;
+        message: string;
+      };
   /**
    * Sign in first.
    */
@@ -21682,11 +21745,13 @@ export type CreateGoogleDriveUploadSessionErrors = {
     message: string;
   };
   /**
-   * Connect Google with Drive write access.
+   * Connect Google with Drive write access, or the file changed in Drive since baseRevision (drive_conflict) or is in the trash.
    */
   409: {
     error: string;
     message: string;
+    currentRevision?: string | null;
+    modifiedTime?: string | null;
   };
   /**
    * Google did not confirm upload preparation.
@@ -21713,7 +21778,7 @@ export type CreateGoogleDriveUploadSessionResponse =
 export type PrepareHostGoogleDriveUploadSessionData = {
   body: {
     /**
-     * File basename; no file bytes or local paths.
+     * File basename; no file bytes or local paths. Ignored when replacing a file.
      */
     name: string;
     /**
@@ -21722,6 +21787,21 @@ export type PrepareHostGoogleDriveUploadSessionData = {
     size: number;
     mimeType?: string;
     folderId?: string;
+    /**
+     * Replace this existing file's content instead of creating a file. It keeps its ID, link, sharing and comments; the previous version stays in Drive's version history for 30 days.
+     */
+    fileId?: string;
+    /**
+     * Required with fileId: the revision your copy was downloaded from. Refused with drive_conflict when Drive changed since; download the newer version and reapply the edits, or save a new file.
+     */
+    baseRevision?: string;
+    /**
+     * New files only: save the uploaded Office file as this native Google Docs, Sheets or Slides type.
+     */
+    convertTo?:
+      | "application/vnd.google-apps.spreadsheet"
+      | "application/vnd.google-apps.document"
+      | "application/vnd.google-apps.presentation";
     connectionId?: string;
   };
   path?: never;
@@ -21731,9 +21811,14 @@ export type PrepareHostGoogleDriveUploadSessionData = {
 
 export type PrepareHostGoogleDriveUploadSessionErrors = {
   /**
-   * Invalid upload metadata.
+   * Invalid upload metadata, or a Google Docs, Sheets or Slides file cannot be replaced by an upload.
    */
-  400: InvalidRequestError;
+  400:
+    | InvalidRequestError
+    | {
+        error: string;
+        message: string;
+      };
   /**
    * Sign in first.
    */
@@ -21746,11 +21831,13 @@ export type PrepareHostGoogleDriveUploadSessionErrors = {
     message: string;
   };
   /**
-   * Connect Google with Drive write access.
+   * Connect Google with Drive write access, or the file changed in Drive since baseRevision (drive_conflict) or is in the trash.
    */
   409: {
     error: string;
     message: string;
+    currentRevision?: string | null;
+    modifiedTime?: string | null;
   };
   /**
    * Google did not confirm upload preparation.
@@ -21773,6 +21860,154 @@ export type PrepareHostGoogleDriveUploadSessionResponses = {
 
 export type PrepareHostGoogleDriveUploadSessionResponse =
   PrepareHostGoogleDriveUploadSessionResponses[keyof PrepareHostGoogleDriveUploadSessionResponses];
+
+export type DescribeHostGoogleDriveDownloadData = {
+  body?: never;
+  path: {
+    fileId: string;
+  };
+  query?: {
+    /**
+     * Google Docs, Sheets, Slides and Drawings only: export format, such as xlsx or csv for a Sheet, docx, md, txt or pdf for a Doc, pptx for Slides. Defaults to the Office format.
+     */
+    format?: string;
+    connectionId?: string;
+  };
+  url: "/v1/direct-downloads/google-workspace/drive-files/{fileId}";
+};
+
+export type DescribeHostGoogleDriveDownloadErrors = {
+  /**
+   * Folder, unsupported Google file type or invalid format.
+   */
+  400:
+    | InvalidRequestError
+    | {
+        error: string;
+        message: string;
+      };
+  /**
+   * Sign in first.
+   */
+  401: UnauthorizedError;
+  /**
+   * Organization policy blocks the selected connection.
+   */
+  403: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Connect Google with Drive read access, or the file is in the trash.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The file is larger than the pull size limit.
+   */
+  413: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Google refused or did not return the file; the message gives Google's reason.
+   */
+  502: {
+    error: string;
+    message: string;
+  };
+};
+
+export type DescribeHostGoogleDriveDownloadError =
+  DescribeHostGoogleDriveDownloadErrors[keyof DescribeHostGoogleDriveDownloadErrors];
+
+export type DescribeHostGoogleDriveDownloadResponses = {
+  /**
+   * Pull plan; no file content.
+   */
+  200: GoogleDriveDownloadInfo;
+};
+
+export type DescribeHostGoogleDriveDownloadResponse =
+  DescribeHostGoogleDriveDownloadResponses[keyof DescribeHostGoogleDriveDownloadResponses];
+
+export type DownloadHostGoogleDriveFileData = {
+  body?: never;
+  path: {
+    fileId: string;
+  };
+  query?: {
+    /**
+     * Google Docs, Sheets, Slides and Drawings only: export format, such as xlsx or csv for a Sheet, docx, md, txt or pdf for a Doc, pptx for Slides. Defaults to the Office format.
+     */
+    format?: string;
+    connectionId?: string;
+  };
+  url: "/v1/direct-downloads/google-workspace/drive-files/{fileId}/content";
+};
+
+export type DownloadHostGoogleDriveFileErrors = {
+  /**
+   * Folder, unsupported Google file type or invalid format.
+   */
+  400:
+    | InvalidRequestError
+    | {
+        error: string;
+        message: string;
+      };
+  /**
+   * Sign in first.
+   */
+  401: UnauthorizedError;
+  /**
+   * Organization policy blocks the selected connection.
+   */
+  403: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Connect Google with Drive read access, or the file is in the trash.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The file is larger than the pull size limit.
+   */
+  413: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Google refused or did not return the file; the message gives Google's reason.
+   */
+  502: {
+    error: string;
+    message: string;
+  };
+};
+
+export type DownloadHostGoogleDriveFileError =
+  DownloadHostGoogleDriveFileErrors[keyof DownloadHostGoogleDriveFileErrors];
+
+export type DownloadHostGoogleDriveFileResponses = {
+  /**
+   * File bytes.
+   */
+  200: Blob | File;
+  /**
+   * Requested byte range.
+   */
+  206: Blob | File;
+};
+
+export type DownloadHostGoogleDriveFileResponse =
+  DownloadHostGoogleDriveFileResponses[keyof DownloadHostGoogleDriveFileResponses];
 
 export type SendGmailDraftData = {
   body: {

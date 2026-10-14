@@ -8,7 +8,7 @@ const test = spec.world(liveBedrockTitle, {
   needs: { env: ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "OPENWORK_BEDROCK_COLUMN"] }, timeout: 240_000,
 });
 
-test("real Bedrock checks session-title signatures with OpenWork plugins loaded", async ({ world, evidence }) => {
+test("real Bedrock checks session-title signatures with OpenWork plugins loaded", { timeout: 300_000 }, async ({ world, evidence }) => {
   const session = await world.engine("POST", "/session", {});
   if (!isRecord(session) || typeof session.id !== "string") throw new Error("Missing session id");
   await world.engine("POST", `/session/${session.id}/message`, {

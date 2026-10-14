@@ -170,6 +170,17 @@ export const managedDeploymentLaunchSchema = z.object({
   approvalUrl: z.string().url().nullable(),
   /** Account-checked command for the customer's cloud shell, updating the existing installer. */
   command: z.string().nullable(),
+  /**
+   * The one step the person takes in their own cloud, for agents and other API
+   * clients: approve at `url` (open_link), or open the cloud shell at `url` and
+   * run `command` (run_in_cloud_shell). OpenWork never runs it for them.
+   * The API always sends it; optional only so a Den web build deployed before
+   * the API keeps parsing launches. Make it required once both have shipped.
+   */
+  handoff: z.discriminatedUnion("action", [
+    z.object({ action: z.literal("open_link"), url: z.string().url(), command: z.null(), instructions: z.string() }),
+    z.object({ action: z.literal("run_in_cloud_shell"), url: z.string().url(), command: z.string(), instructions: z.string() }),
+  ]).optional(),
   expiresAt: z.string().datetime(),
 })
 export const managedDeploymentConfigurationSchema = z.object({

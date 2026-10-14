@@ -38,6 +38,16 @@
               ],
               "description": "GCP managed deployments: Organization admins approve OpenWork installations in their own Google Cloud project and track health and updates. Renders DEN_FEATURE_MANAGED_DEPLOYMENTS_GCP."
             },
+            "managedDeploymentsMcp": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Managed deployments in agents: Agents connected to OpenWork can check deployment readiness, create deployments, prepare the cloud approval link or command, and follow progress until the deployment is ready. Renders DEN_FEATURE_MANAGED_DEPLOYMENTS_MCP."
+            },
             "managedDeployments": {
               "enum": [
                 "",

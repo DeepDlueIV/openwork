@@ -67,6 +67,13 @@ export const FEATURES = defineFeatures({
     deployments: ["cloud"],
     default: false,
   },
+  managedDeploymentsMcp: {
+    label: "Managed deployments in agents",
+    description: "Agents connected to OpenWork can check deployment readiness, create deployments, prepare the cloud approval link or command, and follow progress until the deployment is ready.",
+    since: "2026-10",
+    deployments: ["cloud"],
+    default: false,
+  },
   managedDeployments: {
     label: "Managed deployments",
     description: "Organization admins install OpenWork in their own cloud account (AWS first) and see its health and updates in OpenWork.",

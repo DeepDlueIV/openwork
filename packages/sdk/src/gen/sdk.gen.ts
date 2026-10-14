@@ -3152,7 +3152,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Read which clouds can be launched
    *
-   * Lists the clouds this OpenWork environment can install into and the published installer version for each.
+   * Lists the clouds this OpenWork environment can install into and the published installer version for each. Agents call this first: only a provider with available true can be deployed; otherwise relay its reason and missing field names to the person.
    */
   public getV1ManagedDeploymentsConfiguration<ThrowOnError extends boolean = false>(
     options?: Options<never, ThrowOnError>,
@@ -3167,7 +3167,7 @@ export class DenClient extends HeyApiClient {
   /**
    * List the organization's managed deployments
    *
-   * Returns each installation in the organization's own cloud accounts with its latest installer run, health checks and available update.
+   * Returns each installation in the organization's own cloud accounts with its latest installer run, health checks and available update. Agents poll this after the person approves: report run.events as progress, a failed event's errorCode as the problem, and give the person webUrl only once health.state is operational.
    */
   public getV1ManagedDeployments<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
     return (options?.client ?? this.client).get<
@@ -3180,7 +3180,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Create a managed deployment
    *
-   * Records a new installation target (cloud account, region, address). Nothing is launched until an owner prepares and approves it in their cloud.
+   * Records a new installation target (cloud account or project, region, address). Nothing is launched or billed until an owner prepares and approves it in their cloud. Agents confirm the target, address and that the person's cloud account will be billed before calling this.
    */
   public postV1ManagedDeployments<ThrowOnError extends boolean = false>(
     parameters: {
@@ -3284,7 +3284,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Prepare an install, retry or approved update
    *
-   * Creates or reuses an installer run pinned to the published release. AWS installs return a console approval link; AWS retry/update and all GCP runs return a target-checked cloud shell command.
+   * Creates or reuses an installer run pinned to the published release and returns handoff: the one step the person takes in their own cloud. open_link: give them handoff.url to approve. run_in_cloud_shell: give them handoff.url and handoff.command to paste. OpenWork never runs it; repeating this call reopens the same pending run.
    */
   public postV1ManagedDeploymentsByDeploymentIdLaunch<ThrowOnError extends boolean = false>(
     parameters: {

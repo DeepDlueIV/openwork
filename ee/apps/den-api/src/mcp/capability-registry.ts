@@ -10,6 +10,7 @@ import { AuditUnavailableError, auditUnavailableToolResult, runMcpServiceAction,
 import type { AuditServiceActionName } from "../audit/service-actions.js"
 import { isPlatformAdminUserId } from "../middleware/admin.js"
 import { mcpPrincipalCredentialId, type McpPrincipal } from "./auth.js"
+import { catalogOperationAvailableToCapabilities } from "./catalog-availability.js"
 import type { McpToolOperation } from "./catalog.js"
 import {
   executeAdminCapability,
@@ -127,6 +128,8 @@ export type CapabilityRegistryContext = {
   member: McpMemberIdentity | null
   redirectUriBase: string
   generatedArtifactViewsEnabled: boolean
+  /** Managed deployment planning, launch preparation and status (both rollouts on). */
+  managedDeploymentsMcpEnabled: boolean
   remoteSessionEventsEnabled: boolean
   resolvePlatformAdmin: () => Promise<boolean>
   resolveNamespaceContext: () => Promise<CodemodeConnectionNamespaceContext>
@@ -146,7 +149,7 @@ export type CapabilityRegistryContextInput = {
   redirectUriBase: string
   generatedArtifactViewsEnabled: boolean
   /** Effective features of the organization (see features.ts). */
-  organizationFeatures: Partial<Pick<FeatureMap, "remoteSessionEvents">>
+  organizationFeatures: Partial<Pick<FeatureMap, "remoteSessionEvents" | "managedDeployments" | "managedDeploymentsMcp">>
   /** MCP transports pass the verified caller; route and Automation contexts omit it (their route records the request). */
   audit?: McpAuditPrincipal | null
   /**
@@ -180,6 +183,8 @@ export function createCapabilityRegistryContext(input: CapabilityRegistryContext
     member: input.member,
     redirectUriBase: input.redirectUriBase,
     generatedArtifactViewsEnabled: input.generatedArtifactViewsEnabled,
+    managedDeploymentsMcpEnabled: input.organizationFeatures.managedDeployments === true
+      && input.organizationFeatures.managedDeploymentsMcp === true,
     remoteSessionEventsEnabled: input.organizationFeatures.remoteSessionEvents === true,
     resolvePlatformAdmin,
     resolveNamespaceContext,
@@ -229,14 +234,7 @@ function remoteSessionResourceId(body: unknown): string | null {
   return serviceAuditResourceId(normalized.sessionId)
 }
 
-export function catalogOperationAvailableToCapabilities(
-  context: Pick<CapabilityRegistryContext, "generatedArtifactViewsEnabled">,
-  operation: Pick<McpToolOperation, "method" | "path">,
-) {
-  if (context.generatedArtifactViewsEnabled) return true
-  return operation.path !== "/v1/workflows/{configObjectId}/views"
-    && !operation.path.startsWith("/v1/artifact-views/")
-}
+export { catalogOperationAvailableToCapabilities }
 
 type CapabilitySearchContext = CapabilityRegistryContext & {
   sourceFilter: ReturnType<typeof searchCapabilitySourceFilter>

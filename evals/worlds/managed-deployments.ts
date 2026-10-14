@@ -64,6 +64,15 @@ export async function managedDeployments(seed: Seed) {
   const web = await signedInBrowser(den.admin, disabledOrg.id, "/dashboard/deployments");
   return {
     den, web, names, enabledOrgId, disabledOrgId: disabledOrg.id, baseUrl: den.ref.webUrl,
+    // What an API or MCP client receives when it (re)opens a prepared launch.
+    // Reopening an awaiting-approval run is idempotent: it returns the same run.
+    reopenLaunch: async (organizationId: string, deploymentId: string) => {
+      const result = await seed.api(den.admin, `/v1/managed-deployments/${deploymentId}/launch`, {
+        method: "POST", headers: { "x-openwork-org-id": organizationId, "content-type": "application/json" }, body: JSON.stringify({ kind: "install" }),
+      });
+      if (!result.response.ok) throw new Error(`Reopening the launch failed: HTTP ${result.response.status}`);
+      return result.body;
+    },
     enableGcp: () => enableOrganizationCapabilities(seed, den.admin, { managedDeployments: true, managedDeploymentsGcp: true }, enabledOrgId),
     // Fixed, read-only text observations: probe.dom() has bounds, but does not
     // expose computed text/background colors or React text-node fragmentation.

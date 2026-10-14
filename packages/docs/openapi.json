@@ -842,6 +842,7 @@
             "enum": [
               "teamMembershipCache",
               "managedDeploymentsGcp",
+              "managedDeploymentsMcp",
               "managedDeployments",
               "slackAssistant",
               "slackWorkbotReplies",
@@ -1036,6 +1037,9 @@
                     "managedDeploymentsGcp": {
                       "type": "boolean"
                     },
+                    "managedDeploymentsMcp": {
+                      "type": "boolean"
+                    },
                     "managedDeployments": {
                       "type": "boolean"
                     },
@@ -1088,6 +1092,7 @@
                   "required": [
                     "teamMembershipCache",
                     "managedDeploymentsGcp",
+                    "managedDeploymentsMcp",
                     "managedDeployments",
                     "slackAssistant",
                     "slackWorkbotReplies",
@@ -1220,6 +1225,62 @@
                         "overrideApplies"
                       ]
                     },
+                    "managedDeploymentsMcp": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "managedDeployments": {
                       "type": "object",
                       "properties": {
@@ -2008,6 +2069,7 @@
                   "required": [
                     "teamMembershipCache",
                     "managedDeploymentsGcp",
+                    "managedDeploymentsMcp",
                     "managedDeployments",
                     "slackAssistant",
                     "slackWorkbotReplies",
@@ -2401,6 +2463,9 @@
                     "managedDeploymentsGcp": {
                       "type": "boolean"
                     },
+                    "managedDeploymentsMcp": {
+                      "type": "boolean"
+                    },
                     "managedDeployments": {
                       "type": "boolean"
                     },
@@ -2453,6 +2518,7 @@
                   "required": [
                     "teamMembershipCache",
                     "managedDeploymentsGcp",
+                    "managedDeploymentsMcp",
                     "managedDeployments",
                     "slackAssistant",
                     "slackWorkbotReplies",
@@ -2585,6 +2651,62 @@
                         "overrideApplies"
                       ]
                     },
+                    "managedDeploymentsMcp": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "managedDeployments": {
                       "type": "object",
                       "properties": {
@@ -3373,6 +3495,7 @@
                   "required": [
                     "teamMembershipCache",
                     "managedDeploymentsGcp",
+                    "managedDeploymentsMcp",
                     "managedDeployments",
                     "slackAssistant",
                     "slackWorkbotReplies",
@@ -26328,6 +26451,9 @@
                         "managedDeploymentsGcp": {
                           "type": "boolean"
                         },
+                        "managedDeploymentsMcp": {
+                          "type": "boolean"
+                        },
                         "managedDeployments": {
                           "type": "boolean"
                         },
@@ -26380,6 +26506,7 @@
                       "required": [
                         "teamMembershipCache",
                         "managedDeploymentsGcp",
+                        "managedDeploymentsMcp",
                         "managedDeployments",
                         "slackAssistant",
                         "slackWorkbotReplies",
@@ -26512,6 +26639,62 @@
                             "overrideApplies"
                           ]
                         },
+                        "managedDeploymentsMcp": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "managedDeployments": {
                           "type": "object",
                           "properties": {
@@ -27300,6 +27483,7 @@
                       "required": [
                         "teamMembershipCache",
                         "managedDeploymentsGcp",
+                        "managedDeploymentsMcp",
                         "managedDeployments",
                         "slackAssistant",
                         "slackWorkbotReplies",
@@ -27438,6 +27622,9 @@
                         "managedDeploymentsGcp": {
                           "type": "boolean"
                         },
+                        "managedDeploymentsMcp": {
+                          "type": "boolean"
+                        },
                         "managedDeployments": {
                           "type": "boolean"
                         },
@@ -27490,6 +27677,7 @@
                       "required": [
                         "teamMembershipCache",
                         "managedDeploymentsGcp",
+                        "managedDeploymentsMcp",
                         "managedDeployments",
                         "slackAssistant",
                         "slackWorkbotReplies",
@@ -27622,6 +27810,62 @@
                             "overrideApplies"
                           ]
                         },
+                        "managedDeploymentsMcp": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "managedDeployments": {
                           "type": "object",
                           "properties": {
@@ -28410,6 +28654,7 @@
                       "required": [
                         "teamMembershipCache",
                         "managedDeploymentsGcp",
+                        "managedDeploymentsMcp",
                         "managedDeployments",
                         "slackAssistant",
                         "slackWorkbotReplies",
@@ -34112,7 +34357,8 @@
           "Managed deployments"
         ],
         "summary": "Read which clouds can be launched",
-        "description": "Lists the clouds this OpenWork environment can install into and the published installer version for each.",
+        "description": "Lists the clouds this OpenWork environment can install into and the published installer version for each. Agents call this first: only a provider with available true can be deployed; otherwise relay its reason and missing field names to the person.",
+        "x-mcp": true,
         "responses": {
           "200": {
             "description": "Read which clouds can be launched",
@@ -34330,7 +34576,8 @@
           "Managed deployments"
         ],
         "summary": "List the organization's managed deployments",
-        "description": "Returns each installation in the organization's own cloud accounts with its latest installer run, health checks and available update.",
+        "description": "Returns each installation in the organization's own cloud accounts with its latest installer run, health checks and available update. Agents poll this after the person approves: report run.events as progress, a failed event's errorCode as the problem, and give the person webUrl only once health.state is operational.",
+        "x-mcp": true,
         "responses": {
           "200": {
             "description": "List the organization's managed deployments",
@@ -35280,7 +35527,8 @@
           "Managed deployments"
         ],
         "summary": "Create a managed deployment",
-        "description": "Records a new installation target (cloud account, region, address). Nothing is launched until an owner prepares and approves it in their cloud.",
+        "description": "Records a new installation target (cloud account or project, region, address). Nothing is launched or billed until an owner prepares and approves it in their cloud. Agents confirm the target, address and that the person's cloud account will be billed before calling this.",
+        "x-mcp": true,
         "responses": {
           "200": {
             "description": "Create a managed deployment",
@@ -36441,6 +36689,7 @@
         ],
         "summary": "Remove a deployment that was never installed",
         "description": "Deletes a deployment record that never reached the customer's cloud. Installed deployments stay tracked and answer 409.",
+        "x-mcp": false,
         "responses": {
           "200": {
             "description": "Remove a deployment that was never installed",
@@ -36617,7 +36866,8 @@
           "Managed deployments"
         ],
         "summary": "Prepare an install, retry or approved update",
-        "description": "Creates or reuses an installer run pinned to the published release. AWS installs return a console approval link; AWS retry/update and all GCP runs return a target-checked cloud shell command.",
+        "description": "Creates or reuses an installer run pinned to the published release and returns handoff: the one step the person takes in their own cloud. open_link: give them handoff.url to approve. run_in_cloud_shell: give them handoff.url and handoff.command to paste. OpenWork never runs it; repeating this call reopens the same pending run.",
+        "x-mcp": true,
         "responses": {
           "200": {
             "description": "Prepare an install, retry or approved update",
@@ -37443,6 +37693,60 @@
                         }
                       ]
                     },
+                    "handoff": {
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "action": {
+                              "type": "string",
+                              "const": "open_link"
+                            },
+                            "url": {
+                              "type": "string",
+                              "format": "uri"
+                            },
+                            "command": {
+                              "type": "null"
+                            },
+                            "instructions": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "action",
+                            "url",
+                            "command",
+                            "instructions"
+                          ]
+                        },
+                        {
+                          "type": "object",
+                          "properties": {
+                            "action": {
+                              "type": "string",
+                              "const": "run_in_cloud_shell"
+                            },
+                            "url": {
+                              "type": "string",
+                              "format": "uri"
+                            },
+                            "command": {
+                              "type": "string"
+                            },
+                            "instructions": {
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "action",
+                            "url",
+                            "command",
+                            "instructions"
+                          ]
+                        }
+                      ]
+                    },
                     "expiresAt": {
                       "type": "string",
                       "format": "date-time",
@@ -37639,6 +37943,7 @@
         ],
         "summary": "Enroll a customer-side installer run",
         "description": "Called by the installer in the customer's cloud. Verifies its signed cloud identity and run challenge, then issues a single-use run token.",
+        "x-mcp": false,
         "security": [],
         "responses": {
           "200": {
@@ -37891,6 +38196,7 @@
         ],
         "summary": "Report an installer milestone",
         "description": "Called by an enrolled installer to report the next ordered milestone with an allowlisted outcome code.",
+        "x-mcp": false,
         "security": [
           {
             "bearerAuth": []
@@ -38128,6 +38434,7 @@
         ],
         "summary": "Report installation health",
         "description": "Called by the read-only health agent in the customer's cloud every 5 minutes. The signed identity is bound to the exact report body; replays are rejected.",
+        "x-mcp": false,
         "security": [],
         "responses": {
           "200": {

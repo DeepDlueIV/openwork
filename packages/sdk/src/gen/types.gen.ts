@@ -165,6 +165,7 @@ export type AdminFeature = {
   key:
     | "teamMembershipCache"
     | "managedDeploymentsGcp"
+    | "managedDeploymentsMcp"
     | "managedDeployments"
     | "slackAssistant"
     | "slackWorkbotReplies"
@@ -219,6 +220,7 @@ export type AdminOrganizationsPageResponse = {
     capabilities: {
       teamMembershipCache: boolean;
       managedDeploymentsGcp: boolean;
+      managedDeploymentsMcp: boolean;
       managedDeployments: boolean;
       slackAssistant: boolean;
       slackWorkbotReplies: boolean;
@@ -254,6 +256,15 @@ export type AdminOrganizationsPageResponse = {
         overrideApplies: boolean;
       };
       managedDeploymentsGcp: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      managedDeploymentsMcp: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -453,6 +464,7 @@ export type AdminOverviewResponse = {
     capabilities: {
       teamMembershipCache: boolean;
       managedDeploymentsGcp: boolean;
+      managedDeploymentsMcp: boolean;
       managedDeployments: boolean;
       slackAssistant: boolean;
       slackWorkbotReplies: boolean;
@@ -488,6 +500,15 @@ export type AdminOverviewResponse = {
         overrideApplies: boolean;
       };
       managedDeploymentsGcp: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      managedDeploymentsMcp: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6406,6 +6427,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
     capabilities: {
       teamMembershipCache: boolean;
       managedDeploymentsGcp: boolean;
+      managedDeploymentsMcp: boolean;
       managedDeployments: boolean;
       slackAssistant: boolean;
       slackWorkbotReplies: boolean;
@@ -6441,6 +6463,15 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       managedDeploymentsGcp: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      managedDeploymentsMcp: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6628,6 +6659,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
     capabilities: {
       teamMembershipCache: boolean;
       managedDeploymentsGcp: boolean;
+      managedDeploymentsMcp: boolean;
       managedDeployments: boolean;
       slackAssistant: boolean;
       slackWorkbotReplies: boolean;
@@ -6663,6 +6695,15 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       managedDeploymentsGcp: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      managedDeploymentsMcp: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -10339,6 +10380,19 @@ export type PostV1ManagedDeploymentsByDeploymentIdLaunchResponses = {
     kind: "install" | "update" | "retry";
     approvalUrl: string | null;
     command: string | null;
+    handoff?:
+      | {
+          action: "open_link";
+          url: string;
+          command: null;
+          instructions: string;
+        }
+      | {
+          action: "run_in_cloud_shell";
+          url: string;
+          command: string;
+          instructions: string;
+        };
     expiresAt: string;
   };
 };

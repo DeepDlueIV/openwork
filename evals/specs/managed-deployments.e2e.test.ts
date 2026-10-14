@@ -1,6 +1,6 @@
 import { expect } from "vitest";
 import { eventually, spec } from "@openwork/testkit";
-import { managedDeploymentListSchema } from "@openwork/types/den/managed-deployments";
+import { managedDeploymentLaunchSchema, managedDeploymentListSchema } from "@openwork/types/den/managed-deployments";
 import { managedDeployments } from "../worlds/managed-deployments.ts";
 import { isEmulatedClientWidth } from "../worlds/library.ts";
 
@@ -131,6 +131,14 @@ test("an owner prepares AWS installs without claiming they are running and can c
     runId = item.run?.id ?? "";
     await owner.notSee({ text: "Operational" });
     evidence.recordAssertionEvidence("nothing reached AWS", `Run ${runId} awaits approval with zero installer events; the status never reads Operational.`, true);
+    // What an agent gets from the same API: one approval link, no command.
+    const launch = managedDeploymentLaunchSchema.parse(await world.reopenLaunch(world.enabledOrgId, item.id));
+    expect(launch.deployment.run?.id).toBe(runId);
+    expect(launch.handoff?.action).toBe("open_link");
+    expect(launch.handoff?.command).toBeNull();
+    expect(launch.handoff?.url).toBe(launch.approvalUrl);
+    expect(new URL(launch.handoff?.url ?? "").hostname).toMatch(/(^|\.)console\.aws\.amazon\.com$/);
+    evidence.recordAssertionEvidence("agents receive the same single AWS approval link", `Reopening the launch through the API returns run ${runId} again with handoff open_link to the AWS console, identical to the page's approval link, and no command.`, true);
     await owner.screenshot();
   });
 
@@ -499,6 +507,17 @@ test("Google Cloud stays locked until rollout, then hands approval to the custom
     expect(item.installedVersion).toBeNull();
     runId = item.run?.id ?? "";
     evidence.recordAssertionEvidence("Google Cloud Shell is the customer-owned approval boundary", `Run ${runId} awaits approval with zero events and no installed version. The UI provides Copy command / Open Google Cloud Shell and does not repeatedly offer Prepare or claim Operational. The UI-only fixture command is never executed.`, true);
+    // What an agent gets from the same API: the project's Cloud Shell link and the command.
+    const launch = managedDeploymentLaunchSchema.parse(await world.reopenLaunch(world.enabledOrgId, item.id));
+    expect(launch.deployment.run?.id).toBe(runId);
+    expect(launch.handoff?.action).toBe("run_in_cloud_shell");
+    expect(launch.handoff?.command).toBe(launch.command);
+    const shell = new URL(launch.handoff?.url ?? "");
+    expect(shell.hostname).toBe("console.cloud.google.com");
+    expect(shell.searchParams.get("project")).toBe("openwork-rehearsal");
+    expect(shell.searchParams.get("cloudshell")).toBe("true");
+    expect(launch.handoff?.instructions).toMatch(/type the project ID to approve/);
+    evidence.recordAssertionEvidence("agents receive a Cloud Shell link and the same command", `Reopening through the API returns run ${runId} again with handoff run_in_cloud_shell: Cloud Shell opened on project openwork-rehearsal and the identical verified command. The fixture command is not executed.`, true);
     await owner.screenshot();
   });
 

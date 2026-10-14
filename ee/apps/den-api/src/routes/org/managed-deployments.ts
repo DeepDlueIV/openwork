@@ -13,7 +13,7 @@ import {
   managedDeploymentSchema, type ManagedDeployment,
 } from "@openwork/managed-deployments/schema"
 import type { Hono } from "hono"
-import { describeRoute } from "hono-openapi"
+import { describeRoute, type DescribeRouteOptions } from "hono-openapi"
 import { z } from "zod"
 import { attributeAuditRequest, auditServiceAttribution } from "../../audit/request-capture.js"
 import { db } from "../../db.js"
@@ -36,9 +36,17 @@ const errorSchema = z.object({ error: z.string() })
 type DeploymentRow = typeof ManagedDeploymentTable.$inferSelect
 type RunRow = typeof ManagedDeploymentRunTable.$inferSelect
 
-function operation(summary: string, description: string, response: z.ZodType, security?: Array<Record<string, string[]>>) {
-  return describeRoute({
-    tags: ["Managed deployments"], summary, description, ...(security ? { security } : {}),
+// Agents may read readiness and status, record a deployment and prepare its
+// cloud handoff. They never remove records or call installer/health endpoints.
+// Generated operation ids (and SDK method names) are unchanged.
+type McpExposure = { mcp: boolean }
+
+type ManagedDeploymentRouteOptions = DescribeRouteOptions & { "x-mcp": boolean }
+const describeManagedDeploymentRoute = (options: ManagedDeploymentRouteOptions) => describeRoute(options)
+
+function operation(summary: string, description: string, response: z.ZodType, exposure: McpExposure, security?: Array<Record<string, string[]>>) {
+  return describeManagedDeploymentRoute({
+    tags: ["Managed deployments"], summary, description, "x-mcp": exposure.mcp, ...(security ? { security } : {}),
     responses: {
       200: jsonResponse(summary, response),
       400: jsonResponse("Invalid input.", errorSchema),
@@ -67,12 +75,43 @@ function launchDetails(row: DeploymentRow, run: RunRow) {
     release: { templateUrl: run.template_url, bundleUrl: run.bundle_url, bundleSha256: run.bundle_sha256, version: run.version, apiOrigin: run.api_origin },
   }
   if (row.provider === "gcp") {
-    const launch: GcpLaunch = { ...common, target: gcpTargetSchema.parse(row.target) }
-    return { approvalUrl: null, command: cloudShellCommand(launch) }
+    const target = gcpTargetSchema.parse(row.target)
+    const command = cloudShellCommand({ ...common, target } satisfies GcpLaunch)
+    return {
+      approvalUrl: null, command,
+      handoff: {
+        action: "run_in_cloud_shell" as const, url: gcpCloudShellUrl(target.projectId), command,
+        instructions: `Open Google Cloud Shell for project ${target.projectId}, then paste and run the command. It verifies the pinned installer, asks you to type the project ID to approve, and only then creates billable resources.`,
+      },
+    }
   }
   const launch: AwsLaunch = { ...common, target: awsTarget(row) }
-  return run.kind === "install" ? { approvalUrl: quickCreateUrl(launch), command: null }
-    : { approvalUrl: null, command: updateStackCommand(launch) }
+  if (run.kind === "install") {
+    const url = quickCreateUrl(launch)
+    return {
+      approvalUrl: url, command: null,
+      handoff: {
+        action: "open_link" as const, url, command: null,
+        instructions: `Open the link signed in to AWS account ${launch.target.accountId}, review the installer permissions, acknowledge IAM and choose Create stack. Nothing is created until you do.`,
+      },
+    }
+  }
+  const command = updateStackCommand(launch)
+  return {
+    approvalUrl: null, command,
+    handoff: {
+      action: "run_in_cloud_shell" as const, url: awsCloudShellUrl(launch.target.region), command,
+      instructions: `Open AWS CloudShell signed in to account ${launch.target.accountId}, then paste and run the command. It checks the account and updates only the existing installer; nothing is deleted.`,
+    },
+  }
+}
+
+function gcpCloudShellUrl(projectId: string) {
+  return `https://console.cloud.google.com/?project=${encodeURIComponent(projectId)}&cloudshell=true`
+}
+
+function awsCloudShellUrl(region: string) {
+  return `https://${region}.console.aws.amazon.com/cloudshell/home?region=${region}`
 }
 
 async function deploymentViews(rows: DeploymentRow[], now = new Date()): Promise<ManagedDeployment[]> {
@@ -119,7 +158,7 @@ function bearerToken(header: string | undefined) {
 }
 
 export function registerManagedDeploymentRoutes<T extends { Variables: OrgRouteVariables }>(app: Hono<T>) {
-  app.get(`${PATH}/configuration`, operation("Read which clouds can be launched", "Lists the clouds this OpenWork environment can install into and the published installer version for each.", managedDeploymentConfigurationSchema),
+  app.get(`${PATH}/configuration`, operation("Read which clouds can be launched", "Lists the clouds this OpenWork environment can install into and the published installer version for each. Agents call this first: only a provider with available true can be deployed; otherwise relay its reason and missing field names to the person.", managedDeploymentConfigurationSchema, { mcp: true }),
     orgPermissionRoute("deployments.view"), requireFeature("managedDeployments"), async (c) => {
       const org = c.get("organizationContext")
       if (!org) return c.json({ error: "organization_not_found" }, 404)
@@ -135,7 +174,7 @@ export function registerManagedDeploymentRoutes<T extends { Variables: OrgRouteV
       }))
     })
 
-  app.get(PATH, operation("List the organization's managed deployments", "Returns each installation in the organization's own cloud accounts with its latest installer run, health checks and available update.", managedDeploymentListSchema),
+  app.get(PATH, operation("List the organization's managed deployments", "Returns each installation in the organization's own cloud accounts with its latest installer run, health checks and available update. Agents poll this after the person approves: report run.events as progress, a failed event's errorCode as the problem, and give the person webUrl only once health.state is operational.", managedDeploymentListSchema, { mcp: true }),
     orgPermissionRoute("deployments.view"), requireFeature("managedDeployments"), async (c) => {
       const org = c.get("organizationContext")
       if (!org) return c.json({ error: "organization_not_found" }, 404)
@@ -143,7 +182,7 @@ export function registerManagedDeploymentRoutes<T extends { Variables: OrgRouteV
       return c.json({ deployments: await deploymentViews(rows) })
     })
 
-  app.post(PATH, operation("Create a managed deployment", "Records a new installation target (cloud account, region, address). Nothing is launched until an owner prepares and approves it in their cloud.", managedDeploymentSchema),
+  app.post(PATH, operation("Create a managed deployment", "Records a new installation target (cloud account or project, region, address). Nothing is launched or billed until an owner prepares and approves it in their cloud. Agents confirm the target, address and that the person's cloud account will be billed before calling this.", managedDeploymentSchema, { mcp: true }),
     orgPermissionRoute("deployments.manage"), requireFeature("managedDeployments"), jsonValidator(managedDeploymentInputSchema), async (c) => {
       const org = c.get("organizationContext")
       if (!org) return c.json({ error: "organization_not_found" }, 404)
@@ -160,7 +199,7 @@ export function registerManagedDeploymentRoutes<T extends { Variables: OrgRouteV
       return c.json(await oneView(row))
     })
 
-  app.delete(`${PATH}/:deploymentId`, operation("Remove a deployment that was never installed", "Deletes a deployment record that never reached the customer's cloud. Installed deployments stay tracked and answer 409.", acceptedSchema),
+  app.delete(`${PATH}/:deploymentId`, operation("Remove a deployment that was never installed", "Deletes a deployment record that never reached the customer's cloud. Installed deployments stay tracked and answer 409.", acceptedSchema, { mcp: false }),
     orgPermissionRoute("deployments.manage"), requireFeature("managedDeployments"), paramValidator(deploymentParam), async (c) => {
       const org = c.get("organizationContext")
       if (!org) return c.json({ error: "organization_not_found" }, 404)
@@ -181,7 +220,7 @@ export function registerManagedDeploymentRoutes<T extends { Variables: OrgRouteV
       return c.json({ ok: true })
     })
 
-  app.post(`${PATH}/:deploymentId/launch`, operation("Prepare an install, retry or approved update", "Creates or reuses an installer run pinned to the published release. AWS installs return a console approval link; AWS retry/update and all GCP runs return a target-checked cloud shell command.", managedDeploymentLaunchSchema),
+  app.post(`${PATH}/:deploymentId/launch`, operation("Prepare an install, retry or approved update", "Creates or reuses an installer run pinned to the published release and returns handoff: the one step the person takes in their own cloud. open_link: give them handoff.url to approve. run_in_cloud_shell: give them handoff.url and handoff.command to paste. OpenWork never runs it; repeating this call reopens the same pending run.", managedDeploymentLaunchSchema, { mcp: true }),
     orgPermissionRoute("deployments.manage"), requireFeature("managedDeployments"), paramValidator(deploymentParam), jsonValidator(managedDeploymentLaunchInputSchema), async (c) => {
       const org = c.get("organizationContext")
       if (!org) return c.json({ error: "organization_not_found" }, 404)
@@ -233,7 +272,7 @@ export function registerManagedDeploymentRoutes<T extends { Variables: OrgRouteV
   // keep working when the feature is turned off so in-flight installs finish
   // and existing installations keep reporting; nothing new can be launched.
 
-  app.post(`${PATH}/:deploymentId/runs/:runId/enroll`, operation("Enroll a customer-side installer run", "Called by the installer in the customer's cloud. Verifies its signed cloud identity and run challenge, then issues a single-use run token.", enrollmentResponseSchema, []),
+  app.post(`${PATH}/:deploymentId/runs/:runId/enroll`, operation("Enroll a customer-side installer run", "Called by the installer in the customer's cloud. Verifies its signed cloud identity and run challenge, then issues a single-use run token.", enrollmentResponseSchema, { mcp: false }, []),
     tokenRoute, paramValidator(runParam), jsonValidator(z.union([awsEnrollmentSchema, gcpEnrollmentSchema])), async (c) => {
       const { deploymentId, runId } = c.req.valid("param")
       const [row] = await db.select().from(ManagedDeploymentTable).where(eq(ManagedDeploymentTable.id, deploymentId)).limit(1)
@@ -273,7 +312,7 @@ export function registerManagedDeploymentRoutes<T extends { Variables: OrgRouteV
       return c.json({ token, expiresAt: run.expires_at.toISOString() })
     })
 
-  app.post(`${PATH}/:deploymentId/runs/:runId/events`, operation("Report an installer milestone", "Called by an enrolled installer to report the next ordered milestone with an allowlisted outcome code.", acceptedSchema, [{ bearerAuth: [] }]),
+  app.post(`${PATH}/:deploymentId/runs/:runId/events`, operation("Report an installer milestone", "Called by an enrolled installer to report the next ordered milestone with an allowlisted outcome code.", acceptedSchema, { mcp: false }, [{ bearerAuth: [] }]),
     tokenRoute, paramValidator(runParam), jsonValidator(deploymentEventInputSchema), async (c) => {
       const { deploymentId, runId } = c.req.valid("param")
       const token = bearerToken(c.req.header("authorization"))
@@ -303,7 +342,7 @@ export function registerManagedDeploymentRoutes<T extends { Variables: OrgRouteV
       return c.json({ ok: true })
     })
 
-  app.post(`${PATH}/:deploymentId/heartbeat`, operation("Report installation health", "Called by the read-only health agent in the customer's cloud every 5 minutes. The signed identity is bound to the exact report body; replays are rejected.", acceptedSchema, []),
+  app.post(`${PATH}/:deploymentId/heartbeat`, operation("Report installation health", "Called by the read-only health agent in the customer's cloud every 5 minutes. The signed identity is bound to the exact report body; replays are rejected.", acceptedSchema, { mcp: false }, []),
     tokenRoute, paramValidator(deploymentParam), async (c) => {
       const { deploymentId } = c.req.valid("param")
       const raw = await c.req.text()

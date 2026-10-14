@@ -52,6 +52,30 @@ published release and approved customer-project install pass. Design and contrac
    `DEN_INITIAL_ADMIN_BOOTSTRAP_CODE`. OpenWork never receives this code.
    Configure SMTP and SSO after setup.
 
+## From an agent (MCP)
+
+With `managedDeploymentsMcp` also on for the organization (cloud only, off by
+default), agents connected to the OpenWork MCP gateway can drive the same flow
+through `search_capabilities` / `execute_capability`:
+
+1. Read readiness (`GET /v1/managed-deployments/configuration`).
+2. Record the target (`POST /v1/managed-deployments`) after confirming the
+   account or project, address and who is billed.
+3. Prepare the launch (`POST /v1/managed-deployments/:id/launch`). The response's
+   `handoff` is the one step the person takes in their own cloud: `open_link`
+   (AWS install: approve the prefilled CloudFormation stack) or
+   `run_in_cloud_shell` (GCP, and AWS retry/update: open the cloud shell link and
+   run the verified command). OpenWork never runs it. Calling it again reopens
+   the same pending run.
+4. Follow progress (`GET /v1/managed-deployments`) and give the person `webUrl`
+   once health reads operational.
+
+Agents cannot remove deployment records or call the installer's enrollment,
+milestone or health endpoints. The routes keep their permissions
+(`deployments.view` / `deployments.manage`) and feature checks; turning
+`managedDeploymentsMcp` off hides the capabilities without affecting the page,
+running installs or health reports.
+
 ## Status checks
 
 A read-only Lambda health agent in the customer's account reports every

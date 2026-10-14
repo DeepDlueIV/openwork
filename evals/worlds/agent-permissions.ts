@@ -425,3 +425,16 @@ export async function agentPermissionsTeamsList(seed: Seed) {
   });
   return { ...world, web };
 }
+
+/** The owner on the dashboard, with agent permissions on and Riley in Contractors. */
+export async function agentPermissionsMoved(seed: Seed) {
+  const world = await agentPermissionsOrganization(seed, { web: true });
+  const web = await seed.web({
+    den: world.den,
+    signedInAs: world.den.admin,
+    startPath: "/dashboard",
+    headless: true,
+    viewport: { width: 1440, height: 1000 },
+  });
+  return { ...world, web, webUrl: world.den.ref.webUrl };
+}

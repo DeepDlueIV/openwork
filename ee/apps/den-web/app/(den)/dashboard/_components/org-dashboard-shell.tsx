@@ -456,7 +456,6 @@ export function OrgDashboardShell({ children }: { children: React.ReactNode }) {
     teamRoles: orgFeatureEnabled(orgContext, "teamRoles"),
     managedDeployments: orgFeatureEnabled(orgContext, "managedDeployments"),
     workbotSettings: orgContext?.capabilities.workbot === true,
-    agentPermissionsEnabled: orgFeatureEnabled(orgContext, "agentPermissions"),
   });
 
   const orgSwitcher = isSingleOrgMode ? (

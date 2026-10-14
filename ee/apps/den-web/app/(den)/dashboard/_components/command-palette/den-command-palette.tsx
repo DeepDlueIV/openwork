@@ -126,7 +126,6 @@ export function DenCommandPalette({ open, onOpenChange }: DenCommandPaletteProps
   const permissionsEnabled = orgFeatureEnabled(orgContext, "permissions");
   const teamRoles = orgFeatureEnabled(orgContext, "teamRoles");
   const workbotSettings = capabilities.workbot === true;
-  const agentPermissionsEnabled = orgFeatureEnabled(orgContext, "agentPermissions");
   // Plugin results open the admin plugin page, which needs `sharing.manage_all`.
   const pluginsQuery = usePluginSummaries({ enabled: open && access.canManageAllShared });
   const automationsQuery = useAutomations({ enabled: open && capabilities.workflows });
@@ -161,7 +160,6 @@ export function DenCommandPalette({ open, onOpenChange }: DenCommandPaletteProps
       permissionsEnabled,
       teamRoles,
       workbotSettings,
-      agentPermissionsEnabled,
     });
     return flattenNavigationForSearch(sections)
       .filter((entry) => entry.href !== "#")
@@ -173,7 +171,6 @@ export function DenCommandPalette({ open, onOpenChange }: DenCommandPaletteProps
     permissionsEnabled,
     teamRoles,
     workbotSettings,
-    agentPermissionsEnabled,
     runtimeConfig.orgMode,
     runtimeConfigLoaded,
   ]);

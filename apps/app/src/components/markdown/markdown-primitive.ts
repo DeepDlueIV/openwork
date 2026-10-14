@@ -174,8 +174,8 @@ function chatCodeBlockHtml(text: string, lang: string | undefined) {
   );
 }
 
-// A quote is often a draft meant to be pasted elsewhere: it keeps its line
-// breaks (see index.css) and copies its own Markdown, bullets included.
+// A quote is often a draft meant to be pasted elsewhere: it copies its own
+// Markdown, bullets included.
 function chatBlockquoteHtml(html: string, copyText: string | null) {
   const button = copyText === null ? "" : copyButton(`data-openwork-quote-copy="${escapeAttribute(copyText)}"`, COPY_LABELS.quote.copy);
   const padding = copyText === null ? "pr-4" : "pr-11";
@@ -420,7 +420,9 @@ function createMarkedOptions(profile: MarkdownProfile, presentation: MarkdownPre
   const inline = (tokens: Token[], render: () => string) => containsInlineHtml(tokens) ? withoutReferences(render) : render();
   return {
     async: isAsync,
-    breaks: false,
+    // Chat text is written line by line, so a single newline stays a line break.
+    // File previews keep CommonMark wrapping for hard-wrapped Markdown files.
+    breaks: presentation === "chat",
     gfm: true,
     pedantic: false,
     silent: true,

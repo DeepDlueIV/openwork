@@ -1176,6 +1176,12 @@ export const quotedDraft = [
   "Thanks!",
 ].join("\n");
 export const quotedDraftCommand = "pnpm release --dry-run";
+/** A plain paragraph written one line each, with no blank lines between them. */
+export const quotedDraftChecklist = [
+  "Before you send it:",
+  "Dates match the calendar",
+  "Every link opens",
+].join("\n");
 export const quotedDraftAnswer = [
   "Here is a reply you can send:",
   "",
@@ -1186,6 +1192,8 @@ export const quotedDraftAnswer = [
   "```sh",
   quotedDraftCommand,
   "```",
+  "",
+  quotedDraftChecklist,
 ].join("\n");
 
 /** An answer that quotes a draft to paste elsewhere, next to a code block. */

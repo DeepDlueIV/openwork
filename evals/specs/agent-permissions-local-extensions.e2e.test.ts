@@ -34,25 +34,36 @@ test("a contractor's agent uses no local skills or local MCP servers while the t
     await user.screenshot();
   });
 
-  await step("before: the folder's checklist skill never reaches the agent", async () => {
-    const prompt = `Follow the team checklist. ${randomUUID()}`;
-    const reply = `Checklist unavailable. ${randomUUID()}`;
-    await world.prepareTurn(prompt, reply, loadSkill(skill.name));
-    await send(prompt);
-    await user.see({ text: reply }, { timeoutMs: 120_000 });
-    await user.notSee({ text: skill.marker });
-    const call = await world.toolCall("skill", isSkill(skill.name));
-    const reason = `${call?.error ?? ""} ${call?.output ?? ""}`.trim();
-    // v2 leaves a blocked skill out of the catalog it offers; a call that still names it is refused with the rule.
-    const kept = call === null
-      ? (await world.mock.agentRequests({ promptMarker: prompt })).every((request) => request.toolName !== "skill")
-      : call.status === "error" && reason.includes(`Your organization's agent permissions block the local skill "${skill.name}" (set for Contractors)`);
-    evidence.recordAssertionEvidence("the team-checklist skill", call === null
-      ? "not offered to the agent, and the agent loaded no skill"
-      : `${call.status}; the agent was told: ${reason || "(nothing)"}`, kept);
-    expect(kept).toBe(true);
-    await user.screenshot();
-  });
+  for (const blocked of [skill, folderSkills.cloudNamed]) {
+    await step(`before: the folder's ${blocked.name} skill never reaches the agent`, async () => {
+      const prompt = `Use the ${blocked.name} skill. ${randomUUID()}`;
+      const reply = `Skill unavailable. ${randomUUID()}`;
+      await world.prepareTurn(prompt, reply, loadSkill(blocked.name));
+      await send(prompt);
+      // With every local skill blocked, v2 may offer no skill tool at all; the witness then cannot load one.
+      const offered = (await world.offeredTools(prompt)).includes("skill");
+      if (offered) await user.see({ text: reply }, { timeoutMs: 120_000 });
+      else {
+        await probe.eventually(() => world.mock.agentRequests({ promptMarker: prompt }), {
+          within: 120_000, label: "the witness reports it had no skill tool", until: (requests) => requests.some((request) => request.kind === "error"),
+        });
+        await user.see("composer", { editable: true, timeoutMs: 120_000 });
+      }
+      await user.notSee({ text: blocked.marker });
+      const call = await world.toolCall("skill", isSkill(blocked.name));
+      const reason = `${call?.error ?? ""} ${call?.output ?? ""}`.trim();
+      // v2 leaves a blocked skill out of the catalog it offers; a call that still names it is refused with the rule.
+      const kept = call === null
+        // The witness records a skill it could not call (no such tool, or no such skill in the catalog) as an error.
+        ? (await world.mock.agentRequests({ promptMarker: prompt })).every((request) => request.toolName !== "skill" || request.kind === "error")
+        : call.status === "error" && reason.includes(`Your organization's agent permissions block the local skill "${blocked.name}" (set for Contractors)`);
+      evidence.recordAssertionEvidence(`the ${blocked.name} skill`, call === null
+        ? `${offered ? "left out of the skill catalog" : "no skill tool offered"}, and the agent loaded no skill`
+        : `${call.status}; the agent was told: ${reason || "(nothing)"}`, kept);
+      expect(kept).toBe(true);
+      await user.screenshot();
+    });
+  }
 
   await step("the folder's MCP server is off while OpenWork Cloud, the organization's connection, stays on", async () => {
     const servers = await probe.eventually(() => world.mcpServers(), {

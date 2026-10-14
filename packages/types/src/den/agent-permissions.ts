@@ -422,13 +422,15 @@ function normalizePatternList(kind: AgentPermissionPatternKind | null, value: un
 
 /**
  * One permission's setting in stored form, or null when it sets nothing.
- * Settings saved before a permission lost its lists or its Ask first read
- * safely: lists it no longer has are dropped, and a switch saved as Ask first
- * blocks.
+ * Settings saved before a permission lost its lists or its Ask first never
+ * read as looser: a switch saved as Ask first blocks, and so does one that
+ * blocked any names, since the switch can only block everything. Lists it no
+ * longer has are then dropped.
  */
 export function normalizeAgentPermissionSetting(definition: AgentPermissionDefinition, value: unknown): AgentPermissionSetting | null {
   if (!isRecord(value)) return null;
-  const stored = definition.control === "toggle" && value.decision === "ask" ? "deny" : value.decision;
+  const blockedNames = definition.patterns === null && Array.isArray(value.block) && value.block.length > 0;
+  const stored = definition.control === "toggle" && (value.decision === "ask" || blockedNames) ? "deny" : value.decision;
   const decision = isAgentPermissionDecision(stored) && agentPermissionDecisionsFor(definition).includes(stored)
     ? stored
     : undefined;

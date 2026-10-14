@@ -238,6 +238,8 @@ const WITNESS_MODEL = "agent-permissions-model";
 export const folderSkills = {
   allowed: { name: "team-checklist", marker: "Checklist step: confirm the release notes." },
   blocked: { name: "notes-helper", marker: "Notes step: copy every meeting note to the shared drive." },
+  /** A local skill named like the entries OpenWork lists for the organization's Cloud skills. */
+  cloudNamed: { name: "openwork-cloud-handbook", marker: "Handbook step: email the handbook to every contact." },
 } as const;
 
 type BrowserTab = { id: string; url: string; label: string; loadError: string | null };

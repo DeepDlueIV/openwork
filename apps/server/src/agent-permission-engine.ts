@@ -29,16 +29,19 @@ export function agentPermissionRulesOf(policy: { agentPermissions?: { rules: unk
 const WHOLE_CATEGORY_ACTIONS: readonly AgentPermissionAction[] = ["skill", "mcp"];
 
 /**
- * Rules from plugin options or a stored policy; anything malformed is dropped,
- * and so are skill and MCP server rules for one name, which a policy stored
- * before those permissions became switches may still hold.
+ * Rules from plugin options or a stored policy; anything malformed is dropped.
+ * A policy stored before skills and MCP servers became switches may still
+ * name them: a name it blocks blocks the whole category, since the switch can
+ * only block everything, and a name it allows is dropped.
  */
 export function parseAgentPermissionRules(value: unknown): AgentPermissionRule[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((entry) => {
     const parsed = agentPermissionRuleSchema.safeParse(entry);
     if (!parsed.success) return [];
-    return WHOLE_CATEGORY_ACTIONS.includes(parsed.data.action) && parsed.data.resource !== "*" ? [] : [parsed.data];
+    const rule = parsed.data;
+    if (!WHOLE_CATEGORY_ACTIONS.includes(rule.action) || rule.resource === "*") return [rule];
+    return rule.effect === "deny" ? [{ ...rule, resource: "*" }] : [];
   });
 }
 
@@ -66,17 +69,6 @@ export function agentPermissionEngineMcpDenial(
   return agentPermissionDenial(rules, "mcp", [name]);
 }
 
-/**
- * Skills OpenWork lists for the organization's Cloud skills
- * (openwork-cloud-skills-v2.ts): discovery entries whose instructions Den
- * serves and authorizes, so blocking local skills leaves them alone.
- */
-const CLOUD_SKILL_ID_PREFIX = "openwork-cloud-";
-
-function localSkills(resources: readonly string[]): string[] {
-  return resources.filter((resource) => !resource.startsWith(CLOUD_SKILL_ID_PREFIX));
-}
-
 // ---------------------------------------------------------------------------
 // OpenCode v2: native permission rules, refined by the agent permissions plugin
 // ---------------------------------------------------------------------------
@@ -95,17 +87,26 @@ function v2Action(action: string): AgentPermissionAction | null {
  * through tools OpenWork wraps, so the plugin decides denials instead: they
  * ask natively, which still stops a call if the plugin is missing. Blocked
  * local skills keep a native denial so the engine leaves them out of the
- * catalog it offers, with the Cloud skills' discovery entries allowed after
- * it. Website patterns become URL wildcards that never block a URL the
- * pattern allows; the plugin then decides with the exact pattern.
+ * catalog it offers. The engine cannot tell a Cloud skill's discovery entry
+ * from a local skill named like one, so those entries are left out too; the
+ * organization's skills stay available through OpenWork Connect, which Den
+ * serves and authorizes. A denial for every skill is followed by an allow for
+ * a name no skill has: with only the denial the engine removes the skill tool
+ * and does not bring it back once skills are allowed again, and the plugin
+ * still refuses any skill that matched it. Website patterns become URL wildcards that never
+ * block a URL the pattern allows; the plugin then decides with the exact
+ * pattern.
  */
+/** A skill name no folder can have (skill ids are folder names), allowed natively only to keep the skill tool registered. */
+const SKILL_TOOL_KEEPER = "openwork/agent-permissions/no-skill";
+
 export function agentPermissionEngineV2Rules(rules: readonly AgentPermissionRule[]): EngineV2PermissionRule[] {
-  return rules.flatMap((rule): EngineV2PermissionRule[] => {
+  return rules.flatMap((rule) => {
     if (!V2_ACTIONS.includes(rule.action)) return [];
     if (rule.action === "skill") {
-      return rule.effect === "deny"
-        ? [{ action: "skill", resource: "*", effect: "deny" }, { action: "skill", resource: `${CLOUD_SKILL_ID_PREFIX}*`, effect: "allow" }]
-        : [{ action: "skill", resource: "*", effect: rule.effect }];
+      return rule.effect === "deny" && rule.resource === "*"
+        ? [{ action: "skill", resource: "*", effect: "deny" }, { action: "skill", resource: SKILL_TOOL_KEEPER, effect: "allow" }]
+        : [{ action: "skill", resource: rule.resource, effect: rule.effect }];
     }
     const effect = rule.effect === "deny" ? "ask" : rule.effect;
     if (rule.action !== "webfetch") return [{ action: rule.action, resource: rule.resource, effect }];
@@ -126,9 +127,8 @@ export function agentPermissionEngineV2Decision(
 ): { effect: "allow" | "ask" | "deny"; message?: string } {
   const ourAction = v2Action(action);
   if (!ourAction) return { effect: engineEffect };
-  if (ourAction === "skill" && resources.length > 0 && localSkills(resources).length === 0) return { effect: engineEffect };
   const parsed = ourAction === "shell" ? resources.map(parseShellCommands) : [];
-  const commands = ourAction === "shell" ? parsed.flatMap((entry) => entry.commands) : ourAction === "skill" ? localSkills(resources) : resources;
+  const commands = ourAction === "shell" ? parsed.flatMap((entry) => entry.commands) : resources;
   const ours = decideAgentPermission(rules, ourAction, commands);
   if (ours.effect === "deny" && ours.rule) return { effect: "deny", message: agentPermissionDenialMessage(ours.rule, ours.resource) };
   // A line the parser cannot fully check is blocked where commands are, and

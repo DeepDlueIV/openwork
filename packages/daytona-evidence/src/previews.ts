@@ -138,7 +138,12 @@ const handles = await readdir("/proc/" + pid + "/fd");
 const sockets = new Set(await Promise.all(handles.map((fd) => readlink("/proc/" + pid + "/fd/" + fd).catch(() => ""))));
 let owned = false;
 for (const table of ["tcp", "tcp6"]) {
-  const lines = (await readFile("/proc/net/" + table, "utf8")).trim().split("\\n").slice(1);
+  const content = await readFile("/proc/net/" + table, "utf8").catch((error) => {
+    // IPv4-only kernels omit tcp6. Other missing/unreadable observations fail closed.
+    if (table === "tcp6" && error?.code === "ENOENT") return "";
+    throw error;
+  });
+  const lines = content.trim().split("\\n").slice(1);
   for (const line of lines) {
     const fields = line.trim().split(/\\s+/);
     if (fields[1]?.split(":").at(-1) !== "1F90" || fields[3] !== "0A") continue;

@@ -50,7 +50,7 @@ import { OrgMemberIdentity } from "./org-member-identity";
 import { MemberEffectivePermissions, canViewMemberPermissions } from "./member-effective-permissions";
 import { RolesTab, canCreateRole } from "./roles-tab";
 import { PeopleField } from "./access-rows";
-import { useCustomRoleTeams } from "./permissions-data";
+import { useCustomRoleTeams, useSharedRolesOn } from "./permissions-data";
 import { MemberTeamRoles } from "./member-team-roles";
 import { TEAM_ROLE_LABELS, customRoleChoice, parseRoleChoice, teamRole } from "./team-roles";
 
@@ -173,6 +173,10 @@ export function ManageMembersScreen() {
   const permissionsFeature = orgContext ? orgFeatureEnabled(orgContext, "permissions") : false;
   const customRoles = useCustomRoleTeams(orgContext?.organization.id ?? null, teamRoles && permissionsFeature && access.canViewPermissions);
   const customRoleTeams = teamRoles ? (orgContext?.teams ?? []).filter((team) => customRoles.teamIds.has(team.id)) : [];
+  // sharedRoles: invite with Member or Admin and a team (which carries its role).
+  const sharedRoles = useSharedRolesOn();
+  const inviteTeamPicker = sharedRoles && access.canManageTeams && (orgContext?.teams.length ?? 0) > 0;
+  const [inviteTeamId, setInviteTeamId] = useState("");
   const teamListColumns = teamRoles ? "lg:grid-cols-[minmax(0,1fr)_120px_140px_200px]" : "lg:grid-cols-[minmax(0,1fr)_160px_200px]";
   const tabCounts: Record<Exclude<MembersTab, "roles">, number> = {
     members: orgContext?.members.length ?? 0,
@@ -214,6 +218,7 @@ export function ManageMembersScreen() {
   function resetInviteForm() {
     setInviteEmail("");
     setInviteRole("member");
+    setInviteTeamId("");
     setShowInviteForm(false);
   }
 
@@ -340,14 +345,14 @@ export function ManageMembersScreen() {
     showInviteForm && access.canInviteMembers ? (
       <DenCard className="mb-6">
         <form
-          className={`grid gap-4 lg:items-end ${access.canManageRoles ? "lg:grid-cols-[minmax(0,1.4fr)_220px_auto]" : "lg:grid-cols-[minmax(0,1fr)_220px_auto]"}`}
+          className={`grid gap-4 lg:items-end ${inviteTeamPicker ? "lg:grid-cols-[minmax(0,1fr)_180px_220px]" : access.canManageRoles ? "lg:grid-cols-[minmax(0,1.4fr)_220px_auto]" : "lg:grid-cols-[minmax(0,1fr)_220px_auto]"}`}
           onSubmit={async (event) => {
             event.preventDefault();
             setPageError(null);
             try {
-              // A custom role invites a Member into that role's team.
+              // A custom role invites a Member into that role's team; with sharedRoles the team is picked directly.
               const choice = parseRoleChoice(access.canManageRoles ? inviteRole : "member");
-              await inviteMember({ email: inviteEmail, role: choice.role, teamId: choice.teamId });
+              await inviteMember({ email: inviteEmail, role: choice.role, teamId: inviteTeamPicker ? inviteTeamId || null : choice.teamId });
               resetInviteForm();
             } catch (error) {
               const paymentRequiredError = getOrgPaymentRequiredError(error);
@@ -390,7 +395,7 @@ export function ManageMembersScreen() {
                     {formatRoleLabel(role)}
                   </option>
                 ))}
-                {customRoleTeams.map((team) => (
+                {(sharedRoles ? [] : customRoleTeams).map((team) => (
                   <option key={team.id} value={customRoleChoice(team.id)} disabled={!access.canManageTeams}>
                     {team.name}
                     <span className="ml-1.5 text-gray-500">Custom role</span>
@@ -404,7 +409,22 @@ export function ManageMembersScreen() {
               <DenInput value="Member" readOnly disabled aria-describedby="invite-role-locked" />
             </div>
           )}
-          <div className="flex gap-2 lg:justify-end">
+          {inviteTeamPicker ? (
+            <label className="grid gap-3">
+              <span className="text-[14px] font-medium text-gray-700">Team</span>
+              {/* sharedRoles: each team shows its role, so picking a team decides the custom role. */}
+              <DenSelect aria-label="Team" value={inviteTeamId} onChange={(event) => setInviteTeamId(event.target.value)}>
+                <option value="">No team</option>
+                {orgContext.teams.filter((team) => !team.managedByScim && (!team.grantsOrganizationAdmin || access.canManageAdminTeams)).map((team) => (
+                  <option key={team.id} value={team.id}>
+                    {team.name}
+                    <span className="ml-1.5 text-gray-500">{team.grantsOrganizationAdmin ? "Admin" : customRoles.nameByTeam.get(team.id) ?? "Member"}</span>
+                  </option>
+                ))}
+              </DenSelect>
+            </label>
+          ) : null}
+          <div className={`flex gap-2 lg:justify-end ${inviteTeamPicker ? "lg:col-span-3" : ""}`}>
             <ActionButton size="md" onClick={resetInviteForm}>Cancel</ActionButton>
             <DenButton type="submit" loading={mutationBusy === "invite-member"}>
               Send invite
@@ -416,7 +436,7 @@ export function ManageMembersScreen() {
               {`Inviting someone as an admin is locked. ${permissionLockReason("members.update")}`}
             </p>
           )}
-          {access.canManageRoles && customRoleTeams.length > 0 && !access.canManageTeams ? (
+          {access.canManageRoles && !sharedRoles && customRoleTeams.length > 0 && !access.canManageTeams ? (
             <p className="flex items-center gap-1.5 text-[13px] text-gray-500 lg:col-span-3">
               <Lock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
               {`Inviting someone into a custom role is locked. ${permissionLockReason("teams.manage")}`}
@@ -754,7 +774,7 @@ export function ManageMembersScreen() {
                   <span className="col-start-1 row-start-2 pl-11 text-[13px] text-gray-500 lg:col-auto lg:row-auto lg:pl-0" data-testid="member-role">
                     {splitRoleString(member.role).map(formatRoleLabel).join(", ")}
                     {teamRoles ? (
-                      <MemberTeamRoles member={member} teams={orgContext.teams} customTeamIds={customRoles.teamIds} />
+                      <MemberTeamRoles member={member} teams={orgContext.teams} customTeamIds={customRoles.teamIds} customRoleNameByTeam={sharedRoles ? customRoles.nameByTeam : undefined} />
                     ) : member.adminTeams.length > 0 ? (
                       <span className="mt-1 block text-[12px] text-cyan-700">Admin via {member.adminTeams.map((team) => team.name).join(", ")}</span>
                     ) : null}
@@ -1094,7 +1114,9 @@ export function ManageMembersScreen() {
                     <span className="text-[13px] text-gray-700" data-testid="team-row-role">
                       {/* Without permissions.view a custom role can't be told from Member, so only Admin is named. */}
                       {team.grantsOrganizationAdmin || !permissionsFeature || access.canViewPermissions
-                        ? TEAM_ROLE_LABELS[teamRole({ admin: team.grantsOrganizationAdmin, customSetId: customRoles.setByTeam.get(team.id)?.id ?? null })]
+                        ? team.grantsOrganizationAdmin || !sharedRoles || !customRoles.setByTeam.get(team.id)
+                          ? TEAM_ROLE_LABELS[teamRole({ admin: team.grantsOrganizationAdmin, customSetId: customRoles.setByTeam.get(team.id)?.id ?? null })]
+                          : customRoles.setByTeam.get(team.id)?.name
                         : "—"}
                     </span>
                   ) : null}

@@ -5,6 +5,7 @@ import { buildClientParams, type Client, type Options as Options2, type TDataSha
 import type {
   ActivateAutomationErrors,
   ActivateAutomationResponses,
+  AgentPermissionPolicyWrite,
   AppendGoogleSheetsValuesErrors,
   AppendGoogleSheetsValuesResponses,
   ArchiveAutomationErrors,
@@ -50,6 +51,8 @@ import type {
   DeleteV1AdminAdminsByAdminIdResponses,
   DeleteV1AdminUsersByUserIdErrors,
   DeleteV1AdminUsersByUserIdResponses,
+  DeleteV1AgentPermissionsTeamsByTeamIdErrors,
+  DeleteV1AgentPermissionsTeamsByTeamIdResponses,
   DeleteV1ConfigObjectsByConfigObjectIdAccessByGrantIdErrors,
   DeleteV1ConfigObjectsByConfigObjectIdAccessByGrantIdResponses,
   DeleteV1ConfigObjectsByConfigObjectIdPluginsByPluginIdErrors,
@@ -191,6 +194,8 @@ import type {
   GetV1AdminUsersByUserIdInferenceUsageResponses,
   GetV1AdminUsersErrors,
   GetV1AdminUsersResponses,
+  GetV1AgentPermissionsErrors,
+  GetV1AgentPermissionsResponses,
   GetV1ApiKeysErrors,
   GetV1ApiKeysResponses,
   GetV1AppsByAppIdResponses,
@@ -588,6 +593,8 @@ import type {
   PatchV1MeProfileResponses,
   PatchV1OrgErrors,
   PatchV1OrgResponses,
+  PatchV1PermissionsSetsByPermissionSetIdErrors,
+  PatchV1PermissionsSetsByPermissionSetIdResponses,
   PatchV1PluginsByPluginIdErrors,
   PatchV1PluginsByPluginIdResponses,
   PatchV1ScimErrors,
@@ -901,6 +908,10 @@ import type {
   PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses,
   PutV1AdminOrganizationsByOrganizationIdOpenworkWebAccessErrors,
   PutV1AdminOrganizationsByOrganizationIdOpenworkWebAccessResponses,
+  PutV1AgentPermissionsEveryoneErrors,
+  PutV1AgentPermissionsEveryoneResponses,
+  PutV1AgentPermissionsTeamsByTeamIdErrors,
+  PutV1AgentPermissionsTeamsByTeamIdResponses,
   PutV1CapabilitiesMicrosoft365DriveFilesErrors,
   PutV1CapabilitiesMicrosoft365DriveFilesResponses,
   PutV1DesktopPoliciesByKeyByExternalKeyErrors,
@@ -933,6 +944,9 @@ import type {
   PutV1PermissionsSetsByPermissionSetIdPermissionsResponses,
   PutV1TeamsByKeyByExternalKeyErrors,
   PutV1TeamsByKeyByExternalKeyResponses,
+  PutV1TeamsByTeamIdPermissionSetErrors,
+  PutV1TeamsByTeamIdPermissionSetResponses,
+  RenamePermissionSetBody,
   RunAutomationNowErrors,
   RunAutomationNowResponses,
   SaveWorkflowErrors,
@@ -941,6 +955,7 @@ import type {
   SendGmailDraftResponses,
   SendMicrosoft365MailDraftErrors,
   SendMicrosoft365MailDraftResponses,
+  TeamPermissionSetBody,
   TrashGmailMessageErrors,
   TrashGmailMessageResponses,
   UntrashGmailMessageErrors,
@@ -2363,7 +2378,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Get current user's desktop config
    *
-   * Returns the authenticated desktop app restrictions for the caller's active organization.
+   * Returns the authenticated desktop app restrictions for the caller's active organization, including the caller's agent permissions as ordered OpenCode permission rules when the organization has agent permissions on.
    */
   public getV1MeDesktopConfig<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
     return (options?.client ?? this.client).get<
@@ -3139,52 +3154,64 @@ export class DenClient extends HeyApiClient {
    */
   public postV1ManagedDeployments<ThrowOnError extends boolean = false>(
     parameters: {
-      name: string;
-      domainName: string;
-      ownerEmail: string;
-      size?: "small";
-      provider: "aws";
-      target: {
-        accountId: string;
-        region:
-          | "us-east-1"
-          | "us-east-2"
-          | "us-west-2"
-          | "eu-west-1"
-          | "eu-central-1"
-          | "ap-southeast-1"
-          | "ap-southeast-2";
-        route53ZoneId: string;
-        network?:
-          | {
-              mode: "dedicated";
-            }
-          | {
-              mode: "existing";
-              vpcId: string;
-              serviceSubnetIds: Array<string>;
-              loadBalancerSubnetIds: Array<string>;
-              ecsClusterArn?: string;
+      body:
+        | {
+            name: string;
+            domainName: string;
+            ownerEmail: string;
+            size?: "small";
+            provider: "aws";
+            target: {
+              accountId: string;
+              region:
+                | "us-east-1"
+                | "us-east-2"
+                | "us-west-2"
+                | "eu-west-1"
+                | "eu-central-1"
+                | "ap-southeast-1"
+                | "ap-southeast-2";
+              route53ZoneId: string;
+              network?:
+                | {
+                    mode: "dedicated";
+                  }
+                | {
+                    mode: "existing";
+                    vpcId: string;
+                    serviceSubnetIds: Array<string>;
+                    loadBalancerSubnetIds: Array<string>;
+                    ecsClusterArn?: string;
+                  };
             };
-      };
+          }
+        | {
+            name: string;
+            domainName: string;
+            ownerEmail: string;
+            size?: "small";
+            provider: "gcp";
+            target: {
+              projectId: string;
+              projectNumber: string;
+              region:
+                | "us-central1"
+                | "us-east1"
+                | "us-east4"
+                | "us-west1"
+                | "us-west2"
+                | "europe-west1"
+                | "europe-west2"
+                | "europe-west3"
+                | "asia-southeast1"
+                | "australia-southeast1";
+              dnsZoneName: string;
+            };
+          };
     },
     options?: Options<never, ThrowOnError>,
   ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "body", key: "name" },
-            { in: "body", key: "domainName" },
-            { in: "body", key: "ownerEmail" },
-            { in: "body", key: "size" },
-            { in: "body", key: "provider" },
-            { in: "body", key: "target" },
-          ],
-        },
-      ],
-    );
+    const params = buildClientParams([parameters], [{ args: [{ key: "body", map: "body" }] }]);
     return (options?.client ?? this.client).post<
       PostV1ManagedDeploymentsResponses,
       PostV1ManagedDeploymentsErrors,
@@ -3227,7 +3254,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Prepare an install, retry or approved update
    *
-   * Creates or reuses an installer run pinned to the published release and returns a console approval link (install) or an account-checked cloud shell command (retry, update).
+   * Creates or reuses an installer run pinned to the published release. AWS installs return a console approval link; AWS retry/update and all GCP runs return a target-checked cloud shell command.
    */
   public postV1ManagedDeploymentsByDeploymentIdLaunch<ThrowOnError extends boolean = false>(
     parameters: {
@@ -3272,12 +3299,19 @@ export class DenClient extends HeyApiClient {
     parameters: {
       deploymentId: string;
       runId: string;
-      headers: {
-        authorization: string;
-        "x-amz-date": string;
-        "x-amz-security-token": string;
-        "x-openwork-proof": string;
-      };
+      body:
+        | {
+            headers: {
+              authorization: string;
+              "x-amz-date": string;
+              "x-amz-security-token": string;
+              "x-openwork-proof": string;
+            };
+          }
+        | {
+            provider: "gcp";
+            idToken: string;
+          };
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -3288,7 +3322,7 @@ export class DenClient extends HeyApiClient {
           args: [
             { in: "path", key: "deploymentId" },
             { in: "path", key: "runId" },
-            { in: "body", key: "headers" },
+            { key: "body", map: "body" },
           ],
         },
       ],
@@ -4577,6 +4611,109 @@ export class DenClient extends HeyApiClient {
       ThrowOnError
     >({
       url: "/v1/desktop-policies",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    });
+  }
+
+  /**
+   * List agent permissions
+   *
+   * Returns what agents may do on members' computers: everyone's settings and each team's overrides, every team listed by name. A permission a team leaves out inherits everyone's. Members who can view desktop policies can read; canEdit says whether the caller can change them.
+   */
+  public getV1AgentPermissions<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      GetV1AgentPermissionsResponses,
+      GetV1AgentPermissionsErrors,
+      ThrowOnError
+    >({ url: "/v1/agent-permissions", ...options });
+  }
+
+  /**
+   * Set everyone's agent permissions
+   *
+   * Replaces the agent permissions that apply to every member. A permission left out allows, so members' own settings apply. Members' apps pick up the change the next time they refresh their organization's settings. Requires the agent_permissions.manage permission with a recent sign-in and the Agent permissions feature.
+   */
+  public putV1AgentPermissionsEveryone<ThrowOnError extends boolean = false>(
+    parameters: {
+      agentPermissionPolicyWrite: AgentPermissionPolicyWrite;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "agentPermissionPolicyWrite", map: "body" }] }]);
+    return (options?.client ?? this.client).put<
+      PutV1AgentPermissionsEveryoneResponses,
+      PutV1AgentPermissionsEveryoneErrors,
+      ThrowOnError
+    >({
+      url: "/v1/agent-permissions/everyone",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    });
+  }
+
+  /**
+   * Remove a team's agent permissions
+   *
+   * Removes one team's overrides, so its members get everyone's agent permissions. Idempotent. Requires the agent_permissions.manage permission with a recent sign-in and the Agent permissions feature.
+   */
+  public deleteV1AgentPermissionsTeamsByTeamId<ThrowOnError extends boolean = false>(
+    parameters: {
+      teamId: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "teamId" }] }]);
+    return (options?.client ?? this.client).delete<
+      DeleteV1AgentPermissionsTeamsByTeamIdResponses,
+      DeleteV1AgentPermissionsTeamsByTeamIdErrors,
+      ThrowOnError
+    >({
+      url: "/v1/agent-permissions/teams/{teamId}",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
+   * Set a team's agent permissions
+   *
+   * Replaces one team's overrides. A team's decision replaces everyone's for its members (the strictest wins when a member is in several teams that set one), and its allowed and blocked patterns add to everyone's. A permission left out inherits everyone's; saving no permissions removes the team's overrides. Requires the agent_permissions.manage permission with a recent sign-in and the Agent permissions feature.
+   */
+  public putV1AgentPermissionsTeamsByTeamId<ThrowOnError extends boolean = false>(
+    parameters: {
+      teamId: string;
+      agentPermissionPolicyWrite: AgentPermissionPolicyWrite;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "teamId" },
+            { key: "agentPermissionPolicyWrite", map: "body" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).put<
+      PutV1AgentPermissionsTeamsByTeamIdResponses,
+      PutV1AgentPermissionsTeamsByTeamIdErrors,
+      ThrowOnError
+    >({
+      url: "/v1/agent-permissions/teams/{teamId}",
       ...options,
       ...params,
       headers: {
@@ -8319,7 +8456,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Create team permissions
    *
-   * Creates the permission set for one team, named "<team name> Permissions" (fixed from then on), links it to the team and stores its initial permissions. A team can have one active set, and the team can't be changed later. You can only turn on permissions you have yourself. Requires permissions.manage (only the owner has it by default), a recent sign-in, and the Permissions feature.
+   * Creates the permission set for one team, named "<team name> Permissions" (fixed from then on), links it to the team and stores its initial permissions. A team can have one active set. With Shared roles on, send name (and optionally teamIds) instead of teamId to create a named role that can be given to any number of teams; each listed team's current custom role is replaced. You can only turn on permissions you have yourself. Requires permissions.manage (only the owner has it by default), a recent sign-in, and the Permissions feature.
    */
   public postV1PermissionsSets<ThrowOnError extends boolean = false>(
     parameters: {
@@ -8387,6 +8524,84 @@ export class DenClient extends HeyApiClient {
       url: "/v1/permissions/sets/{permissionSetId}",
       ...options,
       ...params,
+    });
+  }
+
+  /**
+   * Rename a role
+   *
+   * Renames a team permission set (a custom role). Member and Admin permissions keep their names, and archived sets can't be changed. Requires permissions.manage (only the owner has it by default), a recent sign-in, and the Permissions and Shared roles features.
+   */
+  public patchV1PermissionsSetsByPermissionSetId<ThrowOnError extends boolean = false>(
+    parameters: {
+      permissionSetId: string;
+      renamePermissionSetBody: RenamePermissionSetBody;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "permissionSetId" },
+            { key: "renamePermissionSetBody", map: "body" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).patch<
+      PatchV1PermissionsSetsByPermissionSetIdResponses,
+      PatchV1PermissionsSetsByPermissionSetIdErrors,
+      ThrowOnError
+    >({
+      url: "/v1/permissions/sets/{permissionSetId}",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    });
+  }
+
+  /**
+   * Set a team's custom role
+   *
+   * Gives a team one custom role (a team permission set), replacing its current one, or none with permissionSetId null. The same role can be given to any number of teams; a role left with no team is kept until it is deleted. You can only give a role whose permissions you all have yourself. Whether the team is an Admin team is changed separately (PATCH /v1/teams/:teamId). Requires permissions.manage (only the owner has it by default), a recent sign-in, and the Permissions and Shared roles features.
+   */
+  public putV1TeamsByTeamIdPermissionSet<ThrowOnError extends boolean = false>(
+    parameters: {
+      teamId: string;
+      teamPermissionSetBody: TeamPermissionSetBody;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "teamId" },
+            { key: "teamPermissionSetBody", map: "body" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).put<
+      PutV1TeamsByTeamIdPermissionSetResponses,
+      PutV1TeamsByTeamIdPermissionSetErrors,
+      ThrowOnError
+    >({
+      url: "/v1/teams/{teamId}/permission-set",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
     });
   }
 

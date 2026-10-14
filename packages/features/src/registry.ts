@@ -71,6 +71,13 @@ export const FEATURES = defineFeatures({
     deployments: everywhere,
     default: false,
   },
+  managedDeploymentsGcp: {
+    label: "GCP managed deployments",
+    description: "Organization admins approve OpenWork installations in their own Google Cloud project and track health and updates.",
+    since: "2026-10",
+    deployments: ["cloud"],
+    default: false,
+  },
   managedDeployments: {
     label: "Managed deployments",
     description: "Organization admins install OpenWork in their own cloud account (AWS first) and see its health and updates in OpenWork.",
@@ -120,6 +127,20 @@ export const FEATURES = defineFeatures({
     deployments: everywhere,
     default: false,
   },
+  sharedRoles: {
+    label: "Shared roles",
+    description: "A custom role can be given to more than one team: Change role lists every role, each role's page lists its teams, and a role can be created before any team has it. Needs Team roles and Permissions.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
+  agentPermissions: {
+    label: "Agent permissions",
+    description: "Organization admins choose what agents can do on members' computers: run commands, edit files, open websites and use local skills and MCP servers, for everyone or per team.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
   engineV2Upgrade: {
     label: "Desktop: upgrade prompt to OpenCode v2",
     description: "Desktop members still on OpenCode v1 see a short notice offering to upgrade: their chats are copied to v2 with a backup, then OpenWork switches engines.",
@@ -130,6 +151,13 @@ export const FEATURES = defineFeatures({
   remoteSessionEvents: {
     label: "Remote session events",
     description: "MCP clients can subscribe to changes in their remote session receipts and read the current state after reconnecting.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
+  backgroundShellTasks: {
+    label: "Desktop: running background tasks in chat",
+    description: "The desktop chat shows how many commands the agent left running in the background, and adds a short row when each one finishes.",
     since: "2026-10",
     deployments: everywhere,
     default: false,

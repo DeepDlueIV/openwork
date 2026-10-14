@@ -8,11 +8,13 @@ import { externalFetch } from "./server-fetch.js";
 import { ApiError } from "./errors.js";
 import { clearManagedDesktopPolicy, readGlobalRuntimeOpencodeConfig, writeManagedDesktopPolicy, runtimeProviderMap } from "./runtime-opencode-config-store.js";
 import { policyDenial, policyRequestActions, type ManagedPolicyAction } from "./managed-policy-rules.js";
+import { agentPermissionDenial, agentPermissionRulesOf } from "./agent-permission-engine.js";
 
 const services = new WeakMap<ServerConfig, ManagedDesktopPolicy>();
 /** Org-managed providers: Den-imported (lpr_), Gateway (ipr_) and hosted OpenWork Models. */
 const MANAGED_PROVIDER = /^(?:lpr_|ipr_)|^openwork$/i;
-function sessionKey(session: CloudProviderDenSession) { return `${session.baseUrl}\n${session.orgId}`; }
+/** One member's sign-in: another member of the same organization has another token. */
+function sessionKey(session: CloudProviderDenSession) { return `${session.baseUrl}\n${session.orgId}\n${session.token}`; }
 // The first cold read previously had 10s; keep two reads under the 15s plugin budget and one read under the 10s session-install budget.
 const DEN_READ_DEADLINE_MS = 6_000;
 const DEN_READ_ATTEMPT_TIMEOUT_MS = 3_500;
@@ -84,11 +86,18 @@ class ManagedDesktopPolicy {
     // The desktop re-delivers the same identity on every launch, reload, and
     // resume. Only a different account may invalidate in-flight verifications.
     const current = this.session;
-    if (!current || current.baseUrl !== session.baseUrl || current.token !== session.token || current.orgId !== session.orgId) {
+    if (!current || sessionKey(current) !== sessionKey(session)) {
       this.generation++;
       this.installed = undefined;
     }
     this.session = session;
+    if (current && sessionKey(current) !== sessionKey(session)) {
+      // Another sign-in, even in the same organization, never keeps the
+      // previous one's policy: not while Den is unreachable, nor in the engine.
+      this.lastKnown = undefined;
+      const cleared = await clearManagedDesktopPolicy(this.config);
+      if (cleared.changed) this.onChange?.();
+    }
     // Installing an identity never waits on Den while only model access is enforced.
     if (DESKTOP_POLICY_ENFORCEMENT_ENABLED) await this.current();
     else void this.current().catch(() => undefined);
@@ -184,10 +193,11 @@ class ManagedDesktopPolicy {
       throw new ApiError(403, "policy_unavailable", "Your organization's policy could not be verified. Try again when connected.");
     }
     if (generation !== this.generation) throw new ApiError(409, "policy_identity_changed", "The signed-in account changed. Retry the action.");
-    // While only model access is enforced, cache a policy only when it restricts models, so
-    // organizations without it keep exactly the engine config and reload behaviour they had.
+    // While only model access and agent permissions are enforced, cache a policy only when it carries
+    // one of them, so other organizations keep exactly the engine config and reload behaviour they had.
     const restrictsModelAccess = policy.allowCustomProviders === false;
-    const result = DESKTOP_POLICY_ENFORCEMENT_ENABLED || restrictsModelAccess
+    const hasAgentPermissions = (policy.agentPermissions?.rules.length ?? 0) > 0;
+    const result = DESKTOP_POLICY_ENFORCEMENT_ENABLED || restrictsModelAccess || hasAgentPermissions
       ? await writeManagedDesktopPolicy(this.config, policy)
       : await clearManagedDesktopPolicy(this.config);
     if (generation !== this.generation) throw new ApiError(409, "policy_identity_changed", "The signed-in account changed. Retry the action.");
@@ -268,6 +278,50 @@ class ManagedDesktopPolicy {
     if (!isRecord(body)) return;
     const model = isRecord(body.model) ? body.model : body;
     if (typeof model.providerID === "string") await this.assert("model", { providerID: model.providerID });
+  }
+  /**
+   * Refuses a member adding a local skill or MCP server their agent
+   * permissions block. A policy verified for this sign-in decides; without
+   * one it waits briefly for Den's answer. When Den cannot answer, the member
+   * keeps working with the latest rules stored on this computer, like every
+   * other desktop policy, rather than being refused.
+   */
+  async assertAgentPermission(action: "skill" | "mcp", name: string): Promise<void> {
+    if (!this.session) return;
+    const generation = this.generation;
+    let policy = this.knownPolicy();
+    if (!policy) {
+      policy = await this.current().catch((error: unknown) => {
+        if (error instanceof ApiError && error.code === "policy_identity_changed") throw error;
+        return null;
+      });
+      this.identityChanged(generation);
+    }
+    const rules = policy
+      ? agentPermissionRulesOf(policy)
+      : agentPermissionRulesOf((await readGlobalRuntimeOpencodeConfig(this.config)).managedPolicy);
+    this.identityChanged(generation);
+    const denial = agentPermissionDenial(rules, action, [name]);
+    if (denial) throw new ApiError(403, "organization_policy_denied", denial);
+  }
+  /**
+   * The member's website rules for the built-in browser, read by the desktop
+   * process itself rather than taken from the app window. Den is asked first
+   * (briefly); when it cannot answer, the policy verified for this sign-in,
+   * else the latest rules stored on this computer, so the member keeps
+   * working offline. Signed out there are none.
+   */
+  async websiteRules(): Promise<ReturnType<typeof agentPermissionRulesOf>> {
+    if (!this.session) return [];
+    const fresh = await Promise.race([
+      this.current().catch(() => null),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 5_000)),
+    ]);
+    const policy = fresh ?? this.knownPolicy();
+    const rules = policy
+      ? agentPermissionRulesOf(policy)
+      : agentPermissionRulesOf((await readGlobalRuntimeOpencodeConfig(this.config)).managedPolicy);
+    return rules.filter((rule) => rule.action === "webfetch");
   }
   /** The policy to enforce now: verified for this sign-in, else the last one verified for it; never waits on Den. */
   private knownPolicy(): DesktopConfig | null {

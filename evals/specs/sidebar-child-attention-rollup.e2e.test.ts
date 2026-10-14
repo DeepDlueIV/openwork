@@ -8,7 +8,7 @@ import { parentChildHeldToolWorld, parentChildPermissionWorld } from "../worlds/
 // child, not the working spinner, and agents asking list_sessions must see
 // the parent as waiting. Answering the request returns the spinner.
 
-const test = spec.world(parentChildPermissionWorld);
+const test = spec.world(parentChildPermissionWorld, { resources: { surfaces: ["appWeb"], services: [] } });
 
 const CHILD_TITLE = "Investigate the deployment failure";
 
@@ -71,7 +71,7 @@ test("a delegated child's pending permission turns the parent's sidebar row oran
   });
 });
 
-const heldToolTest = spec.world(parentChildHeldToolWorld, { timeout: 600_000 });
+const heldToolTest = spec.world(parentChildHeldToolWorld, { resources: { surfaces: ["appWeb"], services: [] }, timeout: 600_000 });
 
 heldToolTest("an idle parent's sidebar spinner and descendantActivity follow a real child's held MCP tool", { timeout: 240_000 }, async ({ world, user, agent, probe, step }) => {
   const parentId = world.session.sessionId;

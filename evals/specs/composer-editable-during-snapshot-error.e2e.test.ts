@@ -2,7 +2,7 @@ import { expect } from "vitest";
 import { spec } from "@openwork/testkit";
 import { snapshotFailure } from "../worlds/chat.ts";
 
-const test = spec.world(snapshotFailure);
+const test = spec.world(snapshotFailure, { resources: { surfaces: ["appWeb"], services: [] } });
 
 test("the composer stays editable while the session snapshot query is in error", async ({ user, agent, step }) => {
   const text = "Draft survives the broken snapshot without being sent — composer proof 9472.";

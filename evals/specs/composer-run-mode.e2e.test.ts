@@ -1,8 +1,14 @@
 import { expect } from "vitest";
 import { spec } from "@openwork/testkit";
-import { emptySession } from "../worlds/desktop.ts";
+import { emptyDesktopSession } from "../worlds/desktop.ts";
 
-const test = spec.world(emptySession);
+const test = spec.world(emptyDesktopSession, {
+  resources: {
+    surfaces: ["desktop"],
+    services: [],
+    nativeReason: "Workspace run mode is offered only with the standard desktop engine; the switch is disabled in a browser.",
+  },
+});
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

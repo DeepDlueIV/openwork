@@ -43,16 +43,26 @@ To change an App, keep its purpose and tools unless the person asks otherwise, a
 
 prepare_app picks one from the tools you declare. Each is also a resource you can read before you start:
 
-- lookup (${appStarterResourceUri("lookup")}): every tool only reads. It loads on its button, with inputs filled from the launch input. For dashboards, lists, status boards, and search.
+- lookup (${appStarterResourceUri("lookup")}): every tool only reads. It shows the last result for its inputs at once and loads on its button, with inputs filled from the launch input. For dashboards, lists, status boards, and search.
 - action (${appStarterResourceUri("action")}): at least one tool changes data. Inputs, one primary button that makes one call, the outcome, and a read on its own button.
 - standalone (${appStarterResourceUri("standalone")}): no tools. Its logic runs on the inputs and the launch input. For calculators, converters, and planners.
 
+## Make it fast
+
+- Load what the focal view needs in one call: one tool, or one live Workflow that combines the sources, rather than several calls or a call that waits on another.
+- Start independent reads together, never one after another.
+- Keep the starter's cached read: on open the App shows the last result for its inputs at once and refreshes from its button. Show its "Updated" time.
+- Let the launch input carry the record or filter, so the chat opens the App on it without a lookup first.
+- Return only what the view shows: the top rows and a count, not full records.
+
 ## What a good App looks like
 
-- It fits in one scroll of the reply: no internal scrolling, no automatic navigation, and at most two primary actions. Show the top rows and a count rather than everything.
+- Its height is its content: the host grows the frame to fit, up to hostContext.containerDimensions.maxHeight. Never set a height, 100vh or 100% on the root, and add no scrolling areas inside; show the top rows and a count rather than everything. No automatic navigation.
+- It reads well at every width it opens in: the chat, the side panel and narrow dashboard tiles. Keep the starter's root container (container-type: inline-size) and adapt with @container rules, never viewport units or fixed widths.
+- At most two primary actions. The main one sits right after the inputs it uses and spans the width when narrow; anything else is a quiet link.
 - The host already shows the App's title, so do not repeat it as a heading or add a paragraph explaining the App. Report state instead: "12 open issues · updated 9:41".
 - Every state is designed. Loading keeps the layout with placeholder rows instead of "Loading…". Empty says what to try. An error says what happened and what to do next. Blocked is neutral and says why.
 - Buttons name their outcome ("Create invoice", "Find orders") in sentence case. No tool names, ids, or JSON on screen.
-- Colors come from the host theme the starter applies, such as var(--color-text-primary) and var(--color-border-primary). No hard-coded black or white, gradients, emoji, or decorative badges.
+- Colors and fonts come from the host theme the starter applies, such as var(--color-text-primary) and var(--color-border-primary), with system colors (CanvasText, Canvas) as fallbacks, so it follows light and dark by itself. No hard-coded colors, gradients, emoji, or decorative badges.
 - The launch input fills the App's inputs, so the chat can open it on a specific record.
 `

@@ -37,7 +37,7 @@ process.once("message", async (message: unknown) => {
       void send({ type: "scratch", scratch });
     },
     // Delivered before the export starts, so a crash on this chat is attributed to it.
-    copying: (chat) => send({ type: "copying", chat }),
+    copying: (chat, trimmed) => send({ type: "copying", chat, trimmed }),
   });
   // The migration has cleaned up; exit once its final status is delivered.
   await reported;

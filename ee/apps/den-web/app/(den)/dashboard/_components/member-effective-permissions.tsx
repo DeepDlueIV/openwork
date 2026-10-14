@@ -6,7 +6,7 @@ import { DenButton } from "../../_components/ui/button";
 import { DenNotice } from "../../_components/ui/notice";
 import { getOrgAccessFlags, getPermissionSetRoute, orgFeatureEnabled, type DenOrgContext } from "../../_lib/den-org";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
-import { useMemberPermissions, type MemberPermissions } from "./permissions-data";
+import { useMemberPermissions, useSharedRolesOn, type MemberPermissions } from "./permissions-data";
 import { PermissionAreaSection, PermissionRowsSkeleton, permissionAreas } from "./permissions-ui";
 import { permissionSourceRoleLabel } from "./team-roles";
 
@@ -27,9 +27,9 @@ function viewerCanViewPermissions(orgContext: DenOrgContext): boolean {
 type Entry = MemberPermissions["permissions"][number];
 type Source = Entry["sources"][number];
 
-function SourceLink({ source, orgSlug, linked, teamRoles }: { source: Source; orgSlug: string | null; linked: boolean; teamRoles: boolean }) {
+function SourceLink({ source, orgSlug, linked, teamRoles, sharedRoles }: { source: Source; orgSlug: string | null; linked: boolean; teamRoles: boolean; sharedRoles: boolean }) {
   // teamRoles: each source reads as the role that gives it.
-  const label = teamRoles ? permissionSourceRoleLabel(source) : source.label;
+  const label = teamRoles ? permissionSourceRoleLabel(source, { shared: sharedRoles }) : source.label;
   if (!source.setId || !linked) return <>{label}</>;
   return <Link className="underline-offset-2 hover:text-gray-900 hover:underline" href={getPermissionSetRoute(orgSlug, source.setId)}>{label}</Link>;
 }
@@ -41,6 +41,7 @@ export function MemberEffectivePermissions({ memberId, memberName }: { memberId:
   // Set pages need permissions.view; someone reading only their own sees plain labels.
   const linked = orgContext ? viewerCanViewPermissions(orgContext) : false;
   const teamRoles = orgContext ? orgFeatureEnabled(orgContext, "teamRoles") : false;
+  const sharedRoles = useSharedRolesOn();
 
   if (query.isPending) return <PermissionRowsSkeleton rows={4} label={`Loading permissions for ${memberName}`} />;
   if (query.isError) {
@@ -77,7 +78,7 @@ export function MemberEffectivePermissions({ memberId, memberName }: { memberId:
                   {entry.sources.map((source, index) => (
                     <span key={`${source.kind}-${source.setId ?? index}`}>
                       {index > 0 ? ", " : null}
-                      <SourceLink source={source} orgSlug={orgSlug} linked={linked} teamRoles={teamRoles} />
+                      <SourceLink source={source} orgSlug={orgSlug} linked={linked} teamRoles={teamRoles} sharedRoles={sharedRoles} />
                     </span>
                   ))}
                 </span>

@@ -25,6 +25,21 @@ import type { McpStatusMap, OpencodeEvent } from "../types";
 import { normalizeDirectoryPath } from "../utils";
 import { dispatchProviderCatalogChanged } from "./provider-events";
 import { attachmentMarker, attachmentNoteFilenames, composeV2Prompt, splitV2Prompt, wrapPastedText, type PromptAttachment } from "./v2-prompt-context";
+import {
+  BACKGROUND_SHELL_FINISHED_EVENT,
+  BACKGROUND_SHELL_NOTICE_KEY,
+  BACKGROUND_SHELL_STARTED_EVENT,
+  SHELL_CREATED_EVENT,
+  SHELL_DELETED_EVENT,
+  SHELL_EXITED_EVENT,
+  backgroundShellIdFromToolMetadata,
+  backgroundShellNoticeLabel,
+  backgroundShellTasksEnabled,
+  readBackgroundShellCompletion,
+  readEngineShell,
+  type BackgroundShellNotice,
+  type EngineShell,
+} from "./background-shell-tasks";
 
 type RequestOptions = {
   signal?: AbortSignal;
@@ -848,6 +863,25 @@ function mapV2UserPart(part: Part): Part[] {
   }];
 }
 
+/**
+ * A background command's completion notice as a compact transcript row. The
+ * engine's own text is `<shell …>output</shell>` for the model; the person
+ * sees one plain sentence, and the row keeps its details in part metadata.
+ */
+function backgroundShellNoticeMessage(id: string, sessionID: string, created: number, notice: BackgroundShellNotice): V2MappedMessage {
+  return {
+    info: { id, sessionID, role: "system", time: { created } },
+    parts: [{
+      id: `${id}:0`,
+      messageID: id,
+      sessionID,
+      type: "text",
+      text: backgroundShellNoticeLabel(notice),
+      metadata: { [BACKGROUND_SHELL_NOTICE_KEY]: notice },
+    }],
+  };
+}
+
 function mapV2Message(
   value: unknown,
   sessionID: string,
@@ -856,7 +890,15 @@ function mapV2Message(
   if (!isRecord(value)) return null;
   // Native instruction/catalog updates belong to the model context, not the
   // visible conversation. Filter by role so identical user text is preserved.
-  if (messageRole(value) === "system") return null;
+  // The one exception is a background command's completion notice, which the
+  // chat shows as a short row while `backgroundShellTasks` is on.
+  if (messageRole(value) === "system") {
+    const notice = backgroundShellTasksEnabled() ? readBackgroundShellCompletion(value) : null;
+    const id = readString(value, "id") ?? readString(value, "messageID");
+    if (!notice || !id) return null;
+    const created = readNumber(readRecord(value, "time"), "created") ?? readNumber(value, "timestamp") ?? 0;
+    return backgroundShellNoticeMessage(id, readString(value, "sessionID") ?? sessionID, created, notice);
+  }
   const id = readString(value, "id") ?? readString(value, "messageID");
   if (!id) return null;
   const time = readRecord(value, "time");
@@ -1358,10 +1400,39 @@ export function translateV2Event(
     } }] : null;
   }
 
+  if (type === SHELL_CREATED_EVENT) {
+    // Forward the engine's own Shell.Info; readers parse it with readEngineShell.
+    const info = readRecord(properties, "info");
+    return info && readEngineShell(info) ? [{ type: SHELL_CREATED_EVENT, properties: info }] : null;
+  }
+
+  if (type === SHELL_EXITED_EVENT || type === SHELL_DELETED_EVENT) {
+    const id = readString(properties, "id");
+    if (!id) return null;
+    return [{ type, properties: {
+      id,
+      ...(type === SHELL_EXITED_EVENT ? { status: readString(properties, "status"), exit: readNumber(properties, "exit") ?? null } : {}),
+    } }];
+  }
+
   if (type === "session.inbox.enqueued") {
     const messageID = readString(properties, "inboxID");
     const item = readRecord(properties, "item");
     const payload = readRecord(item, "payload");
+    const finished = readString(item, "type") === "synthetic" ? readBackgroundShellCompletion(payload) : null;
+    if (sessionID && finished) {
+      const created = readNumber(value, "created") ?? readNumber(properties, "timestamp") ?? Date.now();
+      const notice = messageID && backgroundShellTasksEnabled()
+        ? backgroundShellNoticeMessage(messageID, sessionID, created, finished)
+        : null;
+      return [
+        { type: BACKGROUND_SHELL_FINISHED_EVENT, properties: { sessionID, shellID: finished.shellId, outcome: finished.outcome, exit: finished.exit } },
+        ...(notice ? [
+          { type: "message.updated", properties: { info: notice.info } },
+          ...notice.parts.map((part): OpencodeEvent => ({ type: "message.part.updated", properties: { part } })),
+        ] : []),
+      ];
+    }
     if (!sessionID || !messageID || readString(item, "type") !== "user" || !payload) return null;
     // The inbox ID becomes the persisted user-message ID on delivery. Using
     // it here lets the live row reconcile with history without duplicating it.
@@ -1632,12 +1703,26 @@ export function translateV2Event(
 
   if (type === "session.tool.success" || type === "session.next.tool.success") {
     const stream = resolveToolStream(properties, state);
-    if (!stream) return null;
+    // A background shell call succeeds at once with its shell id. Report it
+    // even when this stream joined after the call began (no tool stream).
+    const shellID = backgroundShellIdFromToolMetadata(readRecord(properties, "metadata") ?? readRecord(properties, "structured"));
+    const background: OpencodeEvent[] = sessionID && shellID && (!stream || stream.tool === "shell" || stream.tool === "bash")
+      ? [{ type: BACKGROUND_SHELL_STARTED_EVENT, properties: {
+        sessionID,
+        shellID,
+        command: typeof stream?.input.command === "string" ? stream.input.command : null,
+        startedAt: stream?.start ?? toolEventTimestamp(value, properties),
+      } }]
+      : [];
+    if (!stream) return background.length ? background : null;
     updateToolStreamMetadata(stream, properties);
     const part = completedToolPart(stream, properties, toolEventTimestamp(value, properties), state.taskSessions);
     state.tools.set(toolStreamKey(stream.sessionID, stream.callID), null);
     clearV2SessionTranslation(state, stream.sessionID);
-    return [part, ...codeModeConnectionParts(part)].map((next) => ({ type: "message.part.updated", properties: { part: next } }));
+    return [
+      ...[part, ...codeModeConnectionParts(part)].map((next): OpencodeEvent => ({ type: "message.part.updated", properties: { part: next } })),
+      ...background,
+    ];
   }
 
   if (type === "session.tool.failed" || type === "session.next.tool.failed") {
@@ -2701,7 +2786,24 @@ export function createClientV2(
   Object.assign(compatibilityClient.mcp, adapter.mcp);
   Object.assign(compatibilityClient.event, adapter.event);
   v2Clients.add(compatibilityClient);
+  /**
+   * Commands still running in this engine location, across conversations.
+   * Exited commands are not listed, so this is the truth to resync against
+   * after the volatile event stream may have dropped an exit.
+   */
+  const listRunningShells = async (options?: RequestOptions): Promise<FieldsResult<EngineShell[]>> => {
+    const query = directory ? `?${new URLSearchParams({ "location[directory]": directory }).toString()}` : "";
+    const result = await request("GET", `/api/shell${query}`, undefined, options?.signal);
+    if (!result.response.ok) return failedResult(result);
+    if (!Array.isArray(responseData(result.payload))) return failedResult({ ...result, payload: { name: "InvalidV2ShellListResponse" } });
+    return successfulResult(result, responseItems(result.payload).flatMap((item) => {
+      const shell = readEngineShell(item);
+      return shell && shell.status === "running" ? [shell] : [];
+    }));
+  };
+
   return Object.assign(compatibilityClient, {
+    listRunningShells,
     listSessionsPage: session.list, listMessagesPage: session.messages,
     listSessionQuestions: (parameters: SessionParameters, options?: RequestOptions) => listQuestions(parameters, options),
     replySessionQuestion: (parameters: SessionParameters & { requestID: string; answers: string[][] }, options?: RequestOptions) =>

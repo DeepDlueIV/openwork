@@ -10,8 +10,8 @@ import {
   warmCachedLongHistory,
 } from "../worlds/chat.ts";
 
-const test = spec.world((seed) => longHistory(seed, { holdAncillaryReads: true }), { timeout: 600_000 });
-const warmTest = spec.world(warmCachedLongHistory, { timeout: 600_000 });
+const test = spec.world((seed) => longHistory(seed, { holdAncillaryReads: true }), { resources: { surfaces: ["appWeb"], services: [] }, timeout: 600_000 });
+const warmTest = spec.world(warmCachedLongHistory, { resources: { surfaces: ["appWeb"], services: [] }, timeout: 600_000 });
 
 const pageSize = 24;
 const scrollStorageKey = "openwork:session-scroll:v1";

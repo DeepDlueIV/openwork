@@ -142,14 +142,24 @@ export class DaytonaApi {
   private async listAll(path: string): Promise<unknown[]> {
     const items: unknown[] = [];
     const seen = new Set<string>();
+    // Snapshots page by number; sandboxes ignore `page` and page by `nextCursor`.
+    let cursor: string | undefined;
     for (let page = 1; page <= 50; page++) {
-      const value = await this.call("GET", `${path}${path.includes("?") ? "&" : "?"}page=${page}&limit=100`);
+      const position = cursor === undefined ? `page=${page}` : `cursor=${encodeURIComponent(cursor)}`;
+      const value = await this.call("GET", `${path}${path.includes("?") ? "&" : "?"}${position}&limit=100`);
       const batch = Array.isArray(value) ? value : record(value) && Array.isArray(value.items) ? value.items : null;
       if (!batch) throw new Error("Invalid Daytona paginated listing; refusing partial inventory");
       for (const item of batch) {
         if (!record(item) || typeof item.id !== "string" || seen.has(item.id)) throw new Error("Invalid or repeated Daytona listing page; refusing partial inventory");
         seen.add(item.id);
         items.push(item);
+      }
+      if (record(value) && "nextCursor" in value) {
+        const next = value.nextCursor;
+        if (next === null || next === undefined || next === "") return items;
+        if (typeof next !== "string" && typeof next !== "number") throw new Error("Invalid Daytona listing cursor; refusing partial inventory");
+        cursor = String(next);
+        continue;
       }
       const reportedPage = record(value) ? value.page : undefined;
       if (reportedPage !== undefined && reportedPage !== page) throw new Error("Unexpected Daytona page number; refusing partial inventory");

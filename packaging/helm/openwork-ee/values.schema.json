@@ -38,6 +38,16 @@
               ],
               "description": "Team membership cache: Reduce repeated team lookups while keeping access changes immediate. Enable only after every API instance runs revision-aware team writes. Renders DEN_FEATURE_TEAM_MEMBERSHIP_CACHE."
             },
+            "managedDeploymentsGcp": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "GCP managed deployments: Organization admins approve OpenWork installations in their own Google Cloud project and track health and updates. Renders DEN_FEATURE_MANAGED_DEPLOYMENTS_GCP."
+            },
             "managedDeployments": {
               "enum": [
                 "",
@@ -108,6 +118,26 @@
               ],
               "description": "Team roles: Members › Teams shows each team's role (Member, Admin or Custom) with one Change role action, and Members gets a Roles tab to see and create roles. Renders DEN_FEATURE_TEAM_ROLES."
             },
+            "sharedRoles": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Shared roles: A custom role can be given to more than one team: Change role lists every role, each role's page lists its teams, and a role can be created before any team has it. Needs Team roles and Permissions. Renders DEN_FEATURE_SHARED_ROLES."
+            },
+            "agentPermissions": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Agent permissions: Organization admins choose what agents can do on members' computers: run commands, edit files, open websites and use local skills and MCP servers, for everyone or per team. Renders DEN_FEATURE_AGENT_PERMISSIONS."
+            },
             "engineV2Upgrade": {
               "enum": [
                 "",
@@ -127,6 +157,16 @@
                 false
               ],
               "description": "Remote session events: MCP clients can subscribe to changes in their remote session receipts and read the current state after reconnecting. Renders DEN_FEATURE_REMOTE_SESSION_EVENTS."
+            },
+            "backgroundShellTasks": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Desktop: running background tasks in chat: The desktop chat shows how many commands the agent left running in the background, and adds a short row when each one finishes. Renders DEN_FEATURE_BACKGROUND_SHELL_TASKS."
             },
             "gatewayDashboard": {
               "enum": [

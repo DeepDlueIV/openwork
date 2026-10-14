@@ -120,9 +120,9 @@ function refusedForRunningTasks(cause: unknown): number | null {
 
 const formatCount = (value: number) => new Intl.NumberFormat().format(value);
 
-/** Chats dealt with so far: copied, already in v2, or left in v1. */
+/** Chats dealt with so far: copied (whole or trimmed), already in v2, or left in v1. */
 const handledCount = (migration: EngineV2MigrationStatus) =>
-  migration.imported + migration.skipped + (migration.notCopied?.length ?? 0);
+  migration.imported + migration.skipped + (migration.notCopied?.length ?? 0) + (migration.trimmed?.length ?? 0);
 
 /** The settings-row state line, e.g. "Migrated 2 chats; 1 already in v2." */
 export function engineMigrationMessage(migration: EngineV2MigrationStatus | undefined): string | undefined {
@@ -148,7 +148,12 @@ function migratedSummary(migration: EngineV2MigrationStatus) {
     skipped: formatCount(migration.skipped),
   });
   const left = migration.notCopied?.length ?? 0;
-  return left ? `${summary} ${t("engine_migration.not_copied", { count: left, left: formatCount(left) })}` : summary;
+  const trimmed = migration.trimmed?.length ?? 0;
+  return [
+    summary,
+    left ? t("engine_migration.not_copied", { count: left, left: formatCount(left) }) : "",
+    trimmed ? t("engine_migration.trimmed", { count: trimmed, trimmed: formatCount(trimmed) }) : "",
+  ].filter(Boolean).join(" ");
 }
 
 function updateConsent(client: EngineMigrationClient, patch: Partial<Omit<ConsentState, "client">>) {

@@ -204,8 +204,8 @@ const MAX_ROWS = 8;
 const MAX_COLUMNS = 4;
 const numberFormat = new Intl.NumberFormat();
 
-// The host sends its colors and fonts; applying them at the root keeps the App
-// readable in light and dark themes.
+// The host sends its colors and fonts, and sends them again when the person
+// switches light or dark; applying them at the root keeps the App in step.
 function useTheme(hostContext) {
   const variables = hostContext?.styles?.variables;
   const scheme = hostContext?.theme ?? "light dark";
@@ -246,17 +246,46 @@ function messageOf(response) {
 
 // One declared tool, with every state the person can see. Only the latest
 // call updates the view, so a slow earlier answer never replaces a newer one.
+// OpenWork keeps read-only results, so peek shows the last one at once
+// without running the tool, and the next call replaces it.
 function useToolCall(app, name) {
   const [state, setState] = React.useState({ status: "idle" });
   const latest = React.useRef(0);
+  const latestPeek = React.useRef(0);
   const available = Boolean(name) && Boolean(app?.getHostCapabilities()?.serverTools);
+  // Only OpenWork answers a cached read from storage; elsewhere it would run the tool.
+  const cacheable = app?.getHostContext()?.experimental?.["openwork/result-cache"] === true;
+  const peek = React.useCallback(async (args) => {
+    if (!available || !cacheable) return;
+    const id = latest.current;
+    // A slower earlier peek never overwrites a newer one, and any call wins over both.
+    const peekId = ++latestPeek.current;
+    let response;
+    try {
+      response = await app.callServerTool({ name, arguments: args, _meta: { "openwork/cache": "read" } });
+    } catch {
+      return;
+    }
+    if (id !== latest.current || peekId !== latestPeek.current) return;
+    const meta = response?._meta;
+    // A kept result replaces nothing newer; with none kept, an earlier kept
+    // result for other inputs is cleared rather than shown under these.
+    if (response?.isError || meta?.["openwork/cached"] !== true) {
+      setState((previous) => previous.cached ? { status: "idle" } : previous);
+      return;
+    }
+    const cachedAt = new Date(meta["openwork/cachedAt"]);
+    setState((previous) => previous.status === "idle" || previous.cached
+      ? { status: "ready", value: valueOf(response), updatedAt: Number.isNaN(cachedAt.getTime()) ? new Date() : cachedAt, cached: true }
+      : previous);
+  }, [app, name, available, cacheable]);
   const call = React.useCallback(async (args) => {
     if (!available) return false;
     const id = ++latest.current;
     setState((previous) => ({ ...previous, status: "loading" }));
     let response;
     try {
-      response = await app.callServerTool({ name, arguments: args });
+      response = await app.callServerTool({ name, arguments: args, _meta: { "openwork/cache": "store" } });
     } catch (reason) {
       response = { isError: true, content: [{ type: "text", text: reason instanceof Error ? reason.message : String(reason) }] };
     }
@@ -269,7 +298,7 @@ function useToolCall(app, name) {
     setState({ status: "ready", value: valueOf(response), updatedAt: new Date() });
     return true;
   }, [app, name, available]);
-  return { ...state, available, call };
+  return { ...state, available, call, peek };
 }
 
 function humanize(key) {
@@ -479,6 +508,11 @@ export default function App({ app, input, hostContext }) {
   React.useEffect(() => {
     setValues(initialValues(LOAD.fields, input));
   }, [launch]);
+  // The last result for these inputs shows at once, from OpenWork's storage.
+  const query = JSON.stringify(values);
+  React.useEffect(() => {
+    if (isReady(LOAD.fields, values)) load.peek(argumentsFor(LOAD, values));
+  }, [query]);
   const ready = isReady(LOAD.fields, values);
   const find = () => {
     if (ready) load.call(argumentsFor(LOAD, values));
@@ -517,6 +551,10 @@ export default function App({ app, input, hostContext }) {
   React.useEffect(() => {
     setValues(initialValues(CHANGE.fields, input));
   }, [launch]);
+  // The last loaded view shows at once; it reloads only from its button.
+  React.useEffect(() => {
+    if (LOAD) load.peek(argumentsFor(LOAD, {}));
+  }, []);
   const reload = () => {
     if (LOAD) load.call(argumentsFor(LOAD, {}));
   };
@@ -613,7 +651,7 @@ export default function App({ input, hostContext }) {
 `
 
 const STARTER_CSS = `body { margin: 0; }
-.app { box-sizing: border-box; display: grid; gap: 12px; padding: 12px 14px; color: var(--color-text-primary, CanvasText); font: 13px/1.5 var(--font-sans, system-ui, sans-serif); }
+.app { box-sizing: border-box; container-type: inline-size; display: grid; gap: 12px; min-width: 0; padding: 12px 14px; color: var(--color-text-primary, CanvasText); font: 13px/1.5 var(--font-sans, system-ui, sans-serif); }
 .app *, .app *::before, .app *::after { box-sizing: border-box; }
 .controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
 .field { display: grid; flex: 1 1 140px; gap: 4px; min-width: 0; }
@@ -642,7 +680,14 @@ td { padding: 6px 8px 6px 0; border-top: 1px solid var(--color-border-primary, r
 .facts dd { margin: 0; overflow-wrap: anywhere; }
 .skeleton { display: grid; gap: 8px; }
 .skeleton-row { height: 14px; border-radius: 4px; background: var(--color-background-tertiary, rgba(128, 128, 128, 0.15)); }
-@media (prefers-reduced-motion: no-preference) { button { transition: opacity 150ms ease-out, background-color 150ms ease-out; } }`
+@media (prefers-reduced-motion: no-preference) { button { transition: opacity 150ms ease-out, background-color 150ms ease-out; } }
+@container (max-width: 380px) {
+  .controls { flex-direction: column; align-items: stretch; }
+  .field { flex-basis: auto; }
+  .controls button.primary { width: 100%; }
+  .facts { grid-template-columns: 1fr; gap: 0; }
+  .facts dd { margin-bottom: 6px; }
+}`
 
 const SAMPLE_CAPABILITY = "<exact capability from search_capabilities>"
 

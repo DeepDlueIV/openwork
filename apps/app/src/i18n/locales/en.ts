@@ -688,6 +688,8 @@ export default {
   "engine_migration.switch_running_title_one": "1 task is still running on OpenCode {engine}",
   "engine_migration.switch_running_title_other": "{count} tasks are still running on OpenCode {engine}",
   "engine_migration.switch_to_v2": "Switch to OpenCode v2",
+  "engine_migration.trimmed_one": "1 chat was copied without its largest attachments or outputs; the full version stays in OpenCode v1.",
+  "engine_migration.trimmed_other": "{trimmed} chats were copied without their largest attachments or outputs; the full versions stay in OpenCode v1.",
   "engine_migration.try_again": "Try again",
   "engine_migration.upgrade": "Upgrade",
   "engine_migration.upgrade_later": "Later",

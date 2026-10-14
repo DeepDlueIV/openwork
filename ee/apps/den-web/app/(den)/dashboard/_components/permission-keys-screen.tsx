@@ -7,7 +7,7 @@ import { DenButton } from "../../_components/ui/button";
 import { DenNotice } from "../../_components/ui/notice";
 import { getMembersRoute, getPermissionKeyRoute, getPermissionKeysRoute, getPermissionSetRoute, getPermissionsRoute, orgFeatureEnabled } from "../../_lib/den-org";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
-import { PermissionsRequestError, usePermissionKeyStatus } from "./permissions-data";
+import { PermissionsRequestError, usePermissionKeyStatus, useSharedRolesOn } from "./permissions-data";
 import { roleKindLabel, roleName } from "./team-roles";
 import {
   PermissionAreaSection,
@@ -67,6 +67,7 @@ const SET_KIND_ORDER = { member_default: 0, admin_default: 1, team: 2 } as const
 export function PermissionKeyScreen({ permissionKey }: { permissionKey: string }) {
   const permissions = usePermissionsAccess();
   const teamRoles = useTeamRolesOn();
+  const sharedRoles = useSharedRolesOn();
   const ready = permissions.state === "ready" ? permissions : null;
   const query = usePermissionKeyStatus(ready?.orgId ?? null, permissionKey);
   const title = isPermissionKey(permissionKey) ? getPermissionDefinition(permissionKey).label : "Permission";
@@ -108,7 +109,7 @@ export function PermissionKeyScreen({ permissionKey }: { permissionKey: string }
               <span className="flex min-w-0 flex-1 flex-col gap-0.5">
                 {teamRoles ? (
                   <>
-                    <span className="truncate text-[13px] font-medium text-gray-900">{roleName(set)}</span>
+                    <span className="truncate text-[13px] font-medium text-gray-900">{roleName(set, { shared: sharedRoles })}</span>
                     <span className="truncate text-[12px] text-gray-500">{roleKindLabel(set)}</span>
                   </>
                 ) : (

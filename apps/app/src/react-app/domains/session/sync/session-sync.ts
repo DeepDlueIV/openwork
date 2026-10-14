@@ -60,6 +60,23 @@ import {
   type PendingDelta,
 } from "./session-transcript-deltas";
 import { startSyncStreamLifecycle, type SyncStreamPhase } from "./sync-stream-lifecycle";
+import {
+  BACKGROUND_SHELL_FINISHED_EVENT,
+  BACKGROUND_SHELL_STARTED_EVENT,
+  SHELL_CREATED_EVENT,
+  SHELL_DELETED_EVENT,
+  SHELL_EXITED_EVENT,
+  backgroundShellIdFromToolMetadata,
+  readEngineShell,
+  type EngineShell,
+} from "@/app/lib/background-shell-tasks";
+import {
+  addBackgroundShell,
+  clearBackgroundShellSession,
+  resyncBackgroundShells,
+  settleBackgroundShell,
+  useBackgroundShellStore,
+} from "../status/background-shell-store";
 
 export { type SyncStreamPhase } from "./sync-stream-lifecycle";
 export {
@@ -118,6 +135,10 @@ type SyncEntry = {
   nativeTerminalSessions: Set<string>;
   permissionReconciles: Map<string, AbortController>;
   titleRecovery: SessionTitleRecovery | null;
+  /** `shell.created` details, so a background call's start can name its command. */
+  shellInfo: Map<string, EngineShell>;
+  /** In-flight running-command reads; disposal aborts them. */
+  backgroundShellReads: Set<AbortController>;
 };
 
 type DeltaFlushScheduler = (
@@ -256,6 +277,10 @@ let sessionStatusFetcher = defaultSessionStatusFetcher;
 const defaultSessionPermissionFetcher = async (baseUrl: string, token: string, sessionID: string, signal: AbortSignal) =>
   unwrap(await createSyncClient(baseUrl, token).v2.session.permission.list({ sessionID }, { signal })).data;
 let sessionPermissionFetcher = defaultSessionPermissionFetcher;
+type RunningShellFetcher = (baseUrl: string, openworkToken: string, signal: AbortSignal) => Promise<EngineShell[]>;
+const defaultRunningShellFetcher: RunningShellFetcher = async (baseUrl, token, signal) =>
+  unwrap(await createClientV2(baseUrl, undefined, { token }).listRunningShells({ signal }));
+let runningShellFetcher = defaultRunningShellFetcher;
 
 const defaultDeltaFlushScheduler: DeltaFlushScheduler = (lane, run) => {
   if (
@@ -633,6 +658,9 @@ function disposeWorkspaceSync(key: string, entry: SyncEntry) {
   entry.statusReconcileAbort = null;
   for (const controller of entry.permissionReconciles.values()) controller.abort();
   entry.permissionReconciles.clear();
+  for (const controller of entry.backgroundShellReads) controller.abort();
+  entry.backgroundShellReads.clear();
+  entry.shellInfo.clear();
   entry.liveSessionIds.clear();
   entry.runActiveObservedAt.clear();
   entry.assistantMessageCompletedAt.clear();
@@ -976,10 +1004,167 @@ function upsertPart(messages: UIMessage[], messageId: string, partId: string, ne
   });
 }
 
+const SHELL_INFO_LIMIT = 200;
+
+function eventRecord(event: OpencodeEvent): Record<string, unknown> {
+  const props = event.properties;
+  return props && typeof props === "object" && !Array.isArray(props) ? { ...props } : {};
+}
+
+function stringField(record: Record<string, unknown>, key: string): string {
+  const value = record[key];
+  return typeof value === "string" ? value : "";
+}
+
+/**
+ * Background commands (`backgroundShellTasks`): a background tool call adds
+ * one, and its exit, deletion or completion notice settles it. A foreground
+ * call never reports a running shell id, so it is never added.
+ */
+function applyBackgroundShellEvent(entry: SyncEntry, workspaceId: string, event: OpencodeEvent) {
+  const store = useBackgroundShellStore.getState();
+  if (!store.enabled || !isOpencodeV2BaseUrl(entry.input.baseUrl)) return;
+  const props = eventRecord(event);
+  if (event.type === SHELL_CREATED_EVENT) {
+    const shell = readEngineShell(props);
+    if (!shell?.sessionID) return;
+    entry.shellInfo.delete(shell.id);
+    entry.shellInfo.set(shell.id, shell);
+    if (entry.shellInfo.size > SHELL_INFO_LIMIT) {
+      const oldest = entry.shellInfo.keys().next().value;
+      if (oldest !== undefined) entry.shellInfo.delete(oldest);
+    }
+    return;
+  }
+  if (event.type === SHELL_EXITED_EVENT || event.type === SHELL_DELETED_EVENT) {
+    const id = stringField(props, "id");
+    if (!id) return;
+    entry.shellInfo.delete(id);
+    store.update(workspaceId, (book) => settleBackgroundShell(book, id));
+    return;
+  }
+  if (event.type === BACKGROUND_SHELL_FINISHED_EVENT) {
+    const id = stringField(props, "shellID");
+    if (id) store.update(workspaceId, (book) => settleBackgroundShell(book, id));
+    return;
+  }
+  if (event.type === BACKGROUND_SHELL_STARTED_EVENT) {
+    const id = stringField(props, "shellID");
+    const sessionId = sessionIdFromProperties(props);
+    if (!id || !sessionId) return;
+    const info = entry.shellInfo.get(id);
+    const startedAt = typeof props.startedAt === "number" ? props.startedAt : Date.now();
+    store.update(workspaceId, (book) => addBackgroundShell(book, {
+      id,
+      sessionId,
+      command: stringField(props, "command") || info?.command || "",
+      startedAt: info?.startedAt || startedAt,
+      observedAt: Date.now(),
+    }));
+  }
+}
+
+function isBackgroundShellEvent(event: OpencodeEvent) {
+  return event.type === SHELL_CREATED_EVENT || event.type === SHELL_EXITED_EVENT || event.type === SHELL_DELETED_EVENT
+    || event.type === BACKGROUND_SHELL_STARTED_EVENT || event.type === BACKGROUND_SHELL_FINISHED_EVENT;
+}
+
+// Background shell ids each conversation's loaded history reports, keyed by
+// workspace and session. They let a resync count a listed command while its
+// conversation is busy, when the listing alone cannot tell it from a
+// foreground one.
+const historyBackgroundShellIds = new Map<string, Set<string>>();
+
+function historyBackgroundShellKey(workspaceId: string, sessionId: string) {
+  return JSON.stringify([workspaceId, sessionId]);
+}
+
+function rememberHistoryBackgroundShells(workspaceId: string, snapshot: OpenworkSessionHistory) {
+  const ids = new Set<string>();
+  for (const message of snapshot.messages) {
+    for (const part of message.parts) {
+      if (part.type !== "tool" || !("metadata" in part.state)) continue;
+      const shellId = backgroundShellIdFromToolMetadata(part.state.metadata);
+      if (shellId) ids.add(shellId);
+    }
+  }
+  const key = historyBackgroundShellKey(workspaceId, snapshot.session.id);
+  if (ids.size === 0) return;
+  const known = historyBackgroundShellIds.get(key) ?? new Set<string>();
+  for (const id of ids) known.add(id);
+  historyBackgroundShellIds.delete(key);
+  historyBackgroundShellIds.set(key, known);
+  if (historyBackgroundShellIds.size > SHELL_INFO_LIMIT) {
+    const oldest = historyBackgroundShellIds.keys().next().value;
+    if (oldest !== undefined) historyBackgroundShellIds.delete(oldest);
+  }
+}
+
+/**
+ * Converge background commands on the engine's list of running commands.
+ * The event stream is volatile, so an exit sent while it was down is lost;
+ * this read is the source of truth on connect, revalidation and session open.
+ */
+async function reconcileBackgroundShells(entry: SyncEntry, scope: "all" | string) {
+  if (!useBackgroundShellStore.getState().enabled || !isOpencodeV2BaseUrl(entry.input.baseUrl)) return;
+  const controller = new AbortController();
+  entry.backgroundShellReads.add(controller);
+  const startedAt = Date.now();
+  try {
+    const listed = await runningShellFetcher(entry.input.baseUrl, entry.openworkToken,
+      AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]));
+    if (controller.signal.aborted || syncs.get(syncKey(entry.input)) !== entry) return;
+    const workspaceId = entry.input.workspaceId;
+    const records = useSessionActivityStore.getState().recordsByWorkspaceId[workspaceId] ?? {};
+    useBackgroundShellStore.getState().update(workspaceId, (book) => resyncBackgroundShells(book, {
+      listed,
+      startedAt,
+      sessionIds: scope === "all" ? "all" : new Set([scope]),
+      admit: (shell) => {
+        if (historyBackgroundShellIds.get(historyBackgroundShellKey(workspaceId, shell.sessionID))?.has(shell.id)) return true;
+        // A running conversation may be waiting on this very command in the
+        // foreground; one this app has never seen has no known state.
+        const record = records[shell.sessionID];
+        return record !== undefined && !record.runActive;
+      },
+    }));
+  } catch {
+    // A failed read is not evidence that anything ended. Keep the last state.
+  } finally {
+    entry.backgroundShellReads.delete(controller);
+  }
+}
+
+/**
+ * Apply the `backgroundShellTasks` switch. Turning it on reads every
+ * workspace's running commands at once instead of waiting for a reconnect.
+ */
+export function setBackgroundShellTasksEnabled(enabled: boolean) {
+  const store = useBackgroundShellStore.getState();
+  if (store.enabled === enabled) return;
+  store.setEnabled(enabled);
+  if (!enabled) {
+    historyBackgroundShellIds.clear();
+    for (const entry of syncs.values()) entry.shellInfo.clear();
+    return;
+  }
+  for (const entry of syncs.values()) void reconcileBackgroundShells(entry, "all");
+  // History read while the feature was off left completion notices out.
+  // Read open conversations again so their rows appear where they belong.
+  const queryClient = getReactQueryClient();
+  void queryClient.invalidateQueries({ queryKey: ["react-session-snapshot"] });
+  void queryClient.invalidateQueries({ queryKey: ["react-session-latest"] });
+}
+
 function applyEvent(entry: SyncEntry, workspaceId: string, event: OpencodeEvent) {
   observeModelsTaskEvent(workspaceId, event);
   const queryClient = getReactQueryClient();
   const input = entry.input;
+
+  if (isBackgroundShellEvent(event)) {
+    applyBackgroundShellEvent(entry, workspaceId, event);
+    return;
+  }
 
   // Native durable sequence numbers order lifecycle edges across successor
   // executions. A replayed terminal must never settle a newer run.
@@ -1089,6 +1274,8 @@ function applyEvent(entry: SyncEntry, workspaceId: string, event: OpencodeEvent)
     void closeSessionBrowserTabs(sessionId);
     entry.titleRecovery?.resolve(sessionId);
     useSessionActivityStore.getState().removeSession(workspaceId, sessionId);
+    useBackgroundShellStore.getState().update(workspaceId, (book) => clearBackgroundShellSession(book, sessionId));
+    historyBackgroundShellIds.delete(historyBackgroundShellKey(workspaceId, sessionId));
     useWorkbenchStore.getState().closeTab({ workspaceId, sessionId });
     stopTrackingLiveSession(entry, sessionId);
     for (const listener of entry.sessionDeletedListeners.keys()) listener(sessionId);
@@ -1808,6 +1995,9 @@ async function reconcileSessionRunStatuses(
       source,
     });
   }
+  // With run states settled, background commands can be told from foreground
+  // ones. Steady-state polls stay status-only.
+  if (source === "connect-reconcile") void reconcileBackgroundShells(entry, "all");
 }
 
 function clearActiveSessionStatusReconcileTimer(entry: SyncEntry) {
@@ -1974,6 +2164,8 @@ export function ensureWorkspaceSessionSync(input: SyncOptions) {
     nativeTerminalSessions: new Set(),
     permissionReconciles: new Map(),
     titleRecovery: null,
+    shellInfo: new Map(),
+    backgroundShellReads: new Set(),
   };
   created.titleRecovery = createSessionTitleRecovery({
     fetch: async (sessionId) => {
@@ -2193,8 +2385,16 @@ export function seedSessionState(
   useSessionActivityStore.getState().observeTranscript(workspaceId, snapshot.session.id, transcript, true, {
     snapshotStartedAt,
   });
+  const backgroundShells = useBackgroundShellStore.getState().enabled;
+  if (backgroundShells) rememberHistoryBackgroundShells(workspaceId, snapshot);
   for (const entry of syncs.values()) {
-    if (entry.input.workspaceId === workspaceId) discoverTaskSessions(entry, snapshot.session.id);
+    if (entry.input.workspaceId !== workspaceId) continue;
+    discoverTaskSessions(entry, snapshot.session.id);
+    // Opening a conversation (or refreshing it after a run) reads which of its
+    // background commands still run, now that its run state is seeded.
+    if (backgroundShells && (!options.engine || syncEngine(entry.input.baseUrl) === options.engine)) {
+      void reconcileBackgroundShells(entry, snapshot.session.id);
+    }
   }
 }
 
@@ -2334,6 +2534,8 @@ export function __createWorkspaceSessionSyncForTest(input: SyncOptions) {
     nativeTerminalSessions: new Set(),
     permissionReconciles: new Map(),
     titleRecovery: null,
+    shellInfo: new Map(),
+    backgroundShellReads: new Set(),
   });
   return () => {
     const entry = syncs.get(key);
@@ -2342,6 +2544,7 @@ export function __createWorkspaceSessionSyncForTest(input: SyncOptions) {
       if (entry.statusReconcileTimer) clearTimeout(entry.statusReconcileTimer);
       entry.statusReconcileAbort?.abort();
       for (const controller of entry.permissionReconciles.values()) controller.abort();
+      for (const controller of entry.backgroundShellReads) controller.abort();
     }
     syncs.delete(key);
   };
@@ -2386,4 +2589,13 @@ export function __setWorkspaceSessionSyncStatusFetcherForTest(fetcher: SessionSt
 
 export function __setWorkspaceSessionSyncPermissionFetcherForTest(fetcher: typeof defaultSessionPermissionFetcher | null) {
   sessionPermissionFetcher = fetcher ?? defaultSessionPermissionFetcher;
+}
+
+export function __setWorkspaceSessionSyncRunningShellFetcherForTest(fetcher: RunningShellFetcher | null) {
+  runningShellFetcher = fetcher ?? defaultRunningShellFetcher;
+}
+
+export function __reconcileBackgroundShellsForTest(input: SyncOptions, scope: "all" | string) {
+  const entry = syncs.get(syncKey(input));
+  return entry ? reconcileBackgroundShells(entry, scope) : Promise.resolve();
 }

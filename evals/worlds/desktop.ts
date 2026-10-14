@@ -1,5 +1,5 @@
-import { browserScript } from "@openwork/cdp";
-import type { Seed } from "@openwork/env";
+import { mkdir, writeFile } from "node:fs/promises";
+import { SkipError, type Place, type Seed } from "@openwork/env";
 
 // Cover both Claude-style string commands and OpenCode's command arrays.
 const handWrittenConfig = {
@@ -11,7 +11,20 @@ const handWrittenConfig = {
   },
 };
 
+/** The real app in headless Chrome with one workspace and one open session. */
 export async function emptySession(seed: Seed) {
+  const workspacePath = seed.tmpPath("empty-session");
+  const app = await seed.appWeb({ name: "empty-session", workspacePath, mouse: true });
+  const workspace = await seed.workspace(app, workspacePath);
+  const session = await seed.session(app);
+  return { app, workspace, session, workspacePath };
+}
+
+/**
+ * The same on the desktop app, for a claim only the desktop runtime has.
+ * Bind it with `surfaces: ["desktop"]` and a `nativeReason`.
+ */
+export async function emptyDesktopSession(seed: Seed) {
   const workspacePath = seed.tmpPath("empty-session");
   const app = await seed.desktop({ name: "empty-session" });
   // Create the workspace at the declared tmp path. Without `create`, the seed
@@ -24,7 +37,9 @@ export async function emptySession(seed: Seed) {
   return { app, workspace, session, workspacePath };
 }
 
-export async function libraryMcpServersFromConfig(seed: Seed) {
+export async function libraryMcpServersFromConfig(seed: Seed, { place }: { place: Place }) {
+  // The hand-written file is placed on this machine's disk before the app opens the folder.
+  if (place.kind !== "local") throw new SkipError("Writes the workspace's opencode.json on local disk (--local).");
   const den = await seed.den({
     provision: false,
     web: false,
@@ -34,7 +49,6 @@ export async function libraryMcpServersFromConfig(seed: Seed) {
   if (!readyMock) throw new Error("Missing Library readiness MCP witness");
   const handshakeSince = new Date().toISOString();
   const workspacePath = seed.tmpPath("library-mcp-config");
-  const app = await seed.desktop({ name: "library-mcp-config" });
   const config = {
     ...handWrittenConfig,
     mcp: {
@@ -44,11 +58,11 @@ export async function libraryMcpServersFromConfig(seed: Seed) {
   };
   // The enabled server must be discovered from disk when the workspace opens.
   // Do not register it through the MCP API: that would bypass config loading.
-  const configWrite = await seed.evalIn(app, browserScript(async (workspacePath: string, content: string) => {
-    const result = await window.__OPENWORK_ELECTRON__?.invokeDesktop?.("writeOpencodeConfig", "project", workspacePath, content);
-    return result ?? { ok: false, stderr: "desktop bridge unavailable" };
-  }, [workspacePath, `${JSON.stringify(config, null, 2)}\n`]));
-  const workspace = await seed.workspace(app, workspacePath, { create: true });
+  await mkdir(workspacePath, { recursive: true });
+  await writeFile(`${workspacePath}/opencode.json`, `${JSON.stringify(config, null, 2)}\n`, "utf8");
+  const configWrite = { ok: true, path: `${workspacePath}/opencode.json` };
+  const app = await seed.appWeb({ name: "library-mcp-config", workspacePath, mouse: true });
+  const workspace = await seed.workspace(app, workspacePath);
   const session = await seed.session(app);
   return { app, workspace, session, workspacePath, configWrite, readyMock, handshakeSince };
 }

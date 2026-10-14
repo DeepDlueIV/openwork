@@ -4,8 +4,8 @@ import { resolveEvalEngine, SkipError, type Place, type Seed } from "@openwork/e
 import { configureProvider } from "./chat.ts";
 
 export async function sessionProviderAttribution(seed: Seed, { place }: { place: Place }) {
-  if (place.kind !== "local" || resolveEvalEngine() !== "v1") throw new SkipError("Requires isolated local Electron and engine v1");
-  if (process.env.OPENWORK_EVAL_ELECTRON_BINARY?.trim()) throw new SkipError("Requires source-built isolated Electron");
+  // The provider witness listens on this machine's loopback.
+  if (place.kind !== "local" || resolveEvalEngine() !== "v1") throw new SkipError("Requires local placement (--local) and engine v1");
   await using resources = new AsyncDisposableStack();
   const prompt = `Attribute terminal provider rejection ${Date.now()}-${process.pid}.`;
   const errorMessage = "Attribution witness: provider rejected this request before assistant text.";
@@ -31,8 +31,9 @@ export async function sessionProviderAttribution(seed: Seed, { place }: { place:
   if (!address || typeof address === "string") throw new Error("Provider witness failed to bind");
   const providerId = "attribution-terminal";
   const modelId = "attribution-model";
-  const app = await seed.desktop({ name: "session-provider-attribution", model: `${providerId}/${modelId}` });
-  const workspace = await seed.workspace(app, seed.tmpPath("provider-attribution"));
+  const workspacePath = seed.tmpPath("provider-attribution");
+  const app = await seed.appWeb({ name: "session-provider-attribution", workspacePath, mouse: true });
+  const workspace = await seed.workspace(app, workspacePath);
   await configureProvider(seed, app, workspace.workspaceId, providerId, modelId, {
     model: `${providerId}/${modelId}`, small_model: `${providerId}/${modelId}`,
     provider: { [providerId]: { npm: "@ai-sdk/openai-compatible", name: "Attribution model",
@@ -41,11 +42,11 @@ export async function sessionProviderAttribution(seed: Seed, { place }: { place:
   });
   const [session] = await seed.sessions(app, ["Provider terminal attribution"]);
   if (!session) throw new Error("Attribution session not created");
-  const server = await evaluate(app.client, async () => {
-    const info = await window.__OPENWORK_ELECTRON__.invokeDesktop("openworkServerInfo");
-    if (!info.running || !info.baseUrl) throw new Error("Isolated server is unavailable");
-    return { baseUrl: info.baseUrl, token: info.ownerToken ?? info.clientToken };
-  }, { awaitPromise: true });
+  const server = await evaluate(app.client, () => {
+    const port = localStorage.getItem("openwork.server.port");
+    if (!port) throw new Error("Isolated server is unavailable");
+    return { baseUrl: `http://127.0.0.1:${port}`, token: localStorage.getItem("openwork.server.token") ?? "" };
+  });
   if (!server.token || !["127.0.0.1", "localhost"].includes(new URL(server.baseUrl).hostname)) throw new Error("Only isolated loopback server is permitted");
   await evaluate(app.client, browserScript(sessionId => {
     let trusted = false;

@@ -1,9 +1,11 @@
 # Managed deployments
 
-A workspace owner installs OpenWork in their own AWS account from hosted
-OpenWork, approves it in the AWS console, and then sees its status checks and
-available updates in **Manage › Deployments**. Behind the `managedDeployments`
-feature (cloud only, off by default). Design and contract:
+A workspace owner installs OpenWork in their own cloud from hosted OpenWork,
+approves it in the provider console or Cloud Shell, and then sees its status
+checks and available updates in **Manage › Deployments**. AWS is behind
+`managedDeployments`; Google Cloud additionally requires `managedDeploymentsGcp`
+(both cloud only, off by default). GCP remains an unverified rollout until a real
+published release and approved customer-project install pass. Design and contract:
 `infra/managed-deployments/README.md`.
 
 ## What the customer needs
@@ -92,10 +94,86 @@ bound to the exact report body; replays are rejected.
    roll out. Turning it off blocks new launches and hides the page; running
    installs keep reporting and nothing in customer accounts changes.
 
+## Publication troubleshooting
+
+The Deployments page is not proof of installer publication. A feature rollout
+only allows the page/API; it does not produce or publish release artifacts.
+The **Managed Deployments** workflow's pull-request runs verify code only.
+A manual run builds artifacts for operator review; it deliberately does not
+publish them or configure hosted Den.
+
+The configuration API reports `not_configured`, `invalid_configuration`,
+`feature_disabled`, or `not_supported`, with missing/invalid **field names**
+under Technical details (never configuration values or credentials). The
+operator must publish real reviewed artifacts and set all four provider fields
+and a public `DEN_API_PUBLIC_URL` origin. GCP URLs must pin GCS object
+generations. Local fixture URLs must never be used in a real environment.
+`available` means syntactically configured and enabled, not a live cloud
+installation; checksum verification and cloud identity checks happen at launch.
+
+A cloud CLI login on the customer's Mac cannot fix server-side publication.
+Do not hide the lock, invent a checksum or configure a mutable/latest artifact
+to make the page look ready. Publication, hosted configuration, and rollout
+changes require explicit operator approval.
+
+## Google Cloud (GCP)
+
+Use a dedicated billing-enabled project, a supported region, and an already
+public authoritative Cloud DNS zone for the chosen address. The form requires
+both project ID and number, zone name, domain, first administrator email, and
+cost/permission consent. IAM permissions are project-wide in this initial
+profile; do not use a shared production project. See
+`infra/managed-deployments/gcp/README.md` for permissions and policy limits.
+
+1. Build a local reviewed installer for an exact published image version:
+   `node infra/managed-deployments/tools/build-release.mjs gcp <version> <dir>`.
+   Docker registry inspection resolves and verifies unique Linux/amd64 manifest
+   digests at operator build time. The checksummed bundle records fixed image
+   repositories and digests; customer runs reject missing pins and never pull
+   source version tags. The builder needs registry access, not a Docker daemon.
+2. After explicit publication approval, publish into an existing dedicated,
+   versioned, publicly readable release bucket:
+   `node infra/managed-deployments/tools/publish-gcp-release.mjs <dir> <bucket> <release-project-id> <release-project-number>`.
+   It checks project/bucket identity, refuses object overwrites, pins generations,
+   and verifies unauthenticated downloads and hashes before printing configuration.
+   It does not create a bucket or change IAM/public-access policy. This initial
+   publisher requires an unconditional `allUsers` → `roles/storage.objectViewer`
+   bucket policy; conditional policies and per-object ACLs fail closed. Failed
+   multi-object publication can leave partial uploaded objects, but prints no
+   ready configuration and never deletes or changes cloud resources.
+3. Set `DEN_MANAGED_DEPLOYMENT_GCP_VERSION`,
+   `DEN_MANAGED_DEPLOYMENT_GCP_TEMPLATE_URL` (the pinned tutorial),
+   `DEN_MANAGED_DEPLOYMENT_GCP_BUNDLE_URL`, and
+   `DEN_MANAGED_DEPLOYMENT_GCP_BUNDLE_SHA256` on hosted Den. The control plane
+   must have a publicly reachable HTTPS origin.
+4. Only after live rollout gates pass, opt an internal organization into both
+   features through `/admin`. Turning GCP off blocks create/launch but keeps
+   existing records and authenticated reports; it never removes cloud resources.
+5. Create a deployment and prepare approval. Review the generated command,
+   open Google Cloud Shell, and run it there. The command verifies the pinned
+   bundle before extraction/execution. The installer checks project number and
+   DNS, asks for the exact project ID as approval, and prompts for Google ADC
+   consent. It never asks for service-account keys.
+6. Terraform runs as the deployment runner identity with customer-owned,
+   private, versioned GCS state. Cloud SQL backups/deletion protection and plan
+   checks protect data-bearing resources. Updates/retries require another
+   explicit approved command; no automatic update or teardown exists.
+7. Open `https://<address>/setup` and retrieve
+   `DEN_INITIAL_ADMIN_BOOTSTRAP_CODE` from the deployment's Secret Manager
+   secret. OpenWork never receives it. Cloud Run logs contain installer/service
+   diagnostics; the read-only health job posts allowlisted checks every five
+   minutes with a Google-signed, exact-body-bound ID token. Old reports remain
+   visible when reporting stops; unknown checks are not shown as successful.
+
+Expected costs include Cloud Run, Cloud SQL, global HTTPS load balancer,
+Artifact Registry, DNS, Scheduler and storage; review current Google pricing
+rather than reusing AWS estimates. No live project has been installed by these
+local tests. Gateway/automations are disabled in the initial GCP profile.
+
 ## Limits
 
-- AWS only. The contract, API, data model and UI are provider-neutral; Azure
-  and GCP need their bootstrap, identity proof, Terraform root and agent.
+- Azure remains unsupported. GCP code and offline validation do not prove a
+  live deployment or publication; those are required before rollout.
 - Shared accounts (existing VPC): the runner may only create security groups
   in the chosen VPC and change groups tagged with its deployment, services
   named with its prefix in the chosen cluster, and its own load balancer,

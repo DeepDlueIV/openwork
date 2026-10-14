@@ -1,6 +1,6 @@
 import { expect } from "vitest";
 import { spec, type SpecBodyContext } from "@openwork/testkit";
-import { appSource, appTitle, buildPrompt, buildReply, chatPrompt, chatReply, guidedReply, guidedTitle, launchInput, mcpAppServers, mcpAppServersChat, mcpAppServersChatOwnSignIn, mcpAppCreationV1, mcpAppCreationV2, mcpAppCreationDesktop, payload, pricerTitle, record, reopenPrompt, reopenReply, reservationId, rows, signInPrompt, signInReply, toolNames } from "../worlds/mcp-app-servers.ts";
+import { appSource, appTitle, buildPrompt, buildReply, chatPrompt, chatReply, guidedReply, guidedTitle, launchInput, mcpAppServers, mcpAppServersChat, mcpAppServersChatOwnSignIn, mcpAppCreationV1, mcpAppCreationV2, payload, pricerTitle, record, reopenPrompt, reopenReply, reservationId, rows, signInPrompt, signInReply, toolNames } from "../worlds/mcp-app-servers.ts";
 
 const test = spec.world(mcpAppServers, {
   resources: { surfaces: ["web"], services: ["den", "mock"] },
@@ -569,10 +569,9 @@ signInTest("a person who has not signed in to the service an App uses is asked t
 
 const creationV1Test = spec.world(mcpAppCreationV1, { resources: { surfaces: ["appWeb"], services: ["den", "mock"] }, needs: { commands: ["bun", "pnpm", "opencode"] }, timeout: 600_000 });
 const creationV2Test = spec.world(mcpAppCreationV2, { resources: { surfaces: ["appWeb"], services: ["den", "mock"] }, needs: { commands: ["bun", "pnpm", "opencode"] }, timeout: 600_000 });
-const creationDesktopTest = spec.world(mcpAppCreationDesktop, { resources: { surfaces: ["desktop"], services: ["den", "mock"], nativeReason: "Verify the App pane beside Electron's native composer and personal dashboard tile controls in the Desktop shell." }, needs: { commands: ["bun", "pnpm", "opencode"] }, timeout: 600_000 });
 
 async function creationJourney({ world, agent, user, probe, step, evidence }: SpecBodyContext<Awaited<ReturnType<typeof mcpAppCreationV1>>>) {
-    const name = world.engine + ("openworkUrl" in world.app ? " web" : " native Desktop");
+    const name = `${world.engine} web`;
     let frame: Awaited<ReturnType<typeof world.appFrame>> | undefined;
     const closeFrame = async () => { await frame?.[Symbol.asyncDispose](); frame = undefined; };
     await using cleanup = { [Symbol.asyncDispose]: async () => { await frame?.[Symbol.asyncDispose](); } };
@@ -616,6 +615,19 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
       await user.screenshot();
     });
     let appId = "";
+    await step("after: switching OpenWork to dark restyles the open App without reopening it", async () => {
+      await revision("revision one");
+      const appView = user.on(frame!);
+      await appView.see({ testId: "host-context" }, { text: /^Theme light · fits 800 px$/ });
+      await world.setColorScheme("dark");
+      // Witness: the same frame, never reopened, now reports the dark theme.
+      await appView.see({ testId: "host-context" }, { text: /^Theme dark · fits 800 px$/, timeoutMs: 10_000 });
+      expect((await probe.dom("[data-built-app-preview] iframe")).elements).toHaveLength(1);
+      await user.screenshot();
+      evidence.recordAssertionEvidence("An open App follows the host theme", `${name}: with ${pricerTitle} open, the system switched to dark; the same App frame re-rendered with theme dark and a height budget of 800 px, with 1 frame and no reopen. Before, an open App kept the theme it opened with.`, true);
+      await world.setColorScheme("light");
+      await appView.see({ testId: "host-context" }, { text: /^Theme light/, timeoutMs: 10_000 });
+    });
     await step("after: an edit shows its step and marks the open App Updating while the agent is still writing", async () => {
       expect((await probe.dom("[data-built-app-preview]")).elements).toHaveLength(1);
       const prompt = "Update this App to revision two.";
@@ -703,6 +715,23 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
       await closeFrame();
       await user.click({ role: "button", label: "Close panel" });
     });
+    await step("after: reopening the price board shows the last unit price for a SKU before any Inventory call", async () => {
+      // The price board is the newest App in the conversation, so its creation step has the last Open preview.
+      const openButtons = (await probe.dom('button[aria-label="Open preview"]')).elements.length;
+      await user.click({ role: "button", label: "Open preview", nth: openButtons - 1 });
+      frame = await world.appFrameShowing(guidedTitle, "Show unit price");
+      const reopenedAt = new Date().toISOString();
+      // Typing the SKU looked up before shows its kept price; nothing is clicked, so no tool runs.
+      await user.on(frame).type({ role: "textbox", label: "Sku" }, launchInput.sku);
+      await user.on(frame).see({ text: "Unit price" }, { timeoutMs: 15_000 });
+      await user.on(frame).see({ text: /Updated / });
+      const calls = await world.inventoryCalls({ sinceIso: reopenedAt });
+      expect(calls).toHaveLength(0);
+      await user.screenshot();
+      evidence.recordAssertionEvidence("A reopened App shows its last read at once", `${name}: after reopening ${guidedTitle} and typing ${launchInput.sku}, its last unit price showed without a click, and Inventory recorded ${calls.length} lookups since the reopen; before, the price appeared only after a click and a full Inventory round trip.`, calls.length === 0);
+      await closeFrame();
+      await user.click({ role: "button", label: "Close panel" });
+    });
     await step("after: stopping creation pauses its step without opening an App", async () => {
       const prompt = "Create an App and hold while writing so I can stop it.";
       await world.prepareLifecycleTurn(prompt, "interrupt");
@@ -742,4 +771,3 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
 
 creationV1Test("an owner creates, edits, reopens and stops an App on v1 web", creationJourney);
 creationV2Test("an owner creates, edits, reopens and stops an App on v2 web", creationJourney);
-creationDesktopTest("an owner creates, edits, reopens and stops an App on native Desktop", creationJourney);

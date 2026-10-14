@@ -49,6 +49,22 @@ test("cleanup only removes unused or surplus evidence snapshots and sandboxes it
   assert.deepEqual(result, { deletedSnapshots: ["ow-dy-evidence-web-v1-old", "ow-dy-evidence-image-v1-older", "ow-dy-base-ubuntu2404-v1", `ow-dy-checkpoint-v1-${"a".repeat(32)}`, `ow-dy-checkpoint-v1-${"b".repeat(32)}`], deletedSandboxes: ["world-old", "copy-old"] });
 });
 
+test("sandbox listings follow Daytona's cursor instead of page numbers", async () => {
+  const requests: string[] = [];
+  const sandbox = (id: string) => ({ id, name: id, state: "started", labels: {} });
+  const api = new DaytonaApi({ apiKey: "k", apiUrl: "https://x.test/api", region: "r" }, async (input) => {
+    const url = new URL(String(input));
+    requests.push(url.search);
+    const body = url.searchParams.get("cursor") === "next"
+      ? { items: [sandbox("b")], nextCursor: null }
+      : { items: [sandbox("a")], nextCursor: "next" };
+    return new Response(JSON.stringify(body), { status: 200 });
+  });
+  assert.deepEqual((await api.listSandboxes()).map((item) => item.id), ["a", "b"]);
+  assert.equal(requests.length, 2);
+  assert.match(requests[1] ?? "", /cursor=next/);
+});
+
 test("trailing slashes are trimmed in linear time", () => {
   assert.equal(trimTrailingSlashes("https://x.test/api///"), "https://x.test/api");
   assert.equal(trimTrailingSlashes("/".repeat(100_000)), "");

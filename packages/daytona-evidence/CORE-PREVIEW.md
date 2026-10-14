@@ -7,8 +7,9 @@ screenshot, but captures only the final state. Other journeys retain Start/End.
 On Daytona, `OPENWORK_DAYTONA_PREVIEW_OWNER=<run>-<attempt>-core` opts Core into
 this lifecycle:
 
-1. Label the source with its owner, source SHA and its own ID. This distinguishes
-   an unlabelled fork that inherits the source's labels from the actual source.
+1. The source's creation request includes owner, source SHA and its own unique
+   name, so interrupted builds and lost creation responses remain discoverable.
+   Its name distinguishes a fork inheriting source labels from the actual source.
 2. Before requesting a fork, persist a credential-free control-plane label receipt
    (also a private guest file) containing checkpoint, screenshot hash, source ID
    and deterministic random fork name. Recovery works even when the source is

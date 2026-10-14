@@ -27,6 +27,7 @@ export async function daytonaEvidenceWeb(sourceSha: string, options: { corePrevi
   const prepare = process.env.OPENWORK_DAYTONA_EPHEMERAL_WORLD === "1" ? prepareEvidenceWorld : ensureEvidenceTemplate;
   const template = await prepare(sourceSha, api, {
     imageSha: process.env.OPENWORK_EVIDENCE_IMAGE_SHA || undefined,
+    previewOwner: owner,
     observe: (event) => console.log(JSON.stringify(event)),
     diagnostic: async (stage, log) => {
       console.log(`::group::${stage} builder log (last 80 lines)`);
@@ -34,7 +35,7 @@ export async function daytonaEvidenceWeb(sourceSha: string, options: { corePrevi
       console.log("::endgroup::");
     },
   });
-  const session = await launchDaytonaEvidenceWorld(template, sourceSha, api);
+  const session = await launchDaytonaEvidenceWorld(template, sourceSha, api, owner);
   try {
     if (handoff) await ownPreviewSource(session.id, handoff, api);
     await trackResource({ kind: "daytona-evidence", id: session.id, match: session.id, label: "evidence-web" });

@@ -50,6 +50,17 @@ for (const state of ["missing", "snapshotting", "error"]) {
   });
 }
 
+test("Core ownership is present in the creation request even if its response is lost", async () => {
+  const api = fakeApi({ getSnapshot: async () => null, createSandbox: async input => {
+    assert.equal(input.labels.previewOwner, "123-1-core");
+    assert.equal(input.labels.previewSource, input.name);
+    assert.equal(input.labels.sourceSha, sha);
+    throw new Error("creation response lost");
+  } });
+  await assert.rejects(prepareWorldLayer(api, layer([]), sha, "123-1-core"), /creation response lost/);
+  await assert.rejects(launchDaytonaEvidenceWorld({ name: "cached", runtimeFingerprint: fingerprint }, sha, api, "123-1-core"), /creation response lost/);
+});
+
 test("failed preparation deletes only its owned VM before surfacing the error", async () => {
   const events: string[] = [];
   const api = fakeApi({ getSnapshot: async () => null, createSandbox: async () => sandbox,

@@ -88,6 +88,14 @@ test("canceled producer with lost fork response is recovered from the pre-reques
   assert.equal(api.requested, 0); assert.deepEqual(api.deleted, ["fork", "source"]);
 });
 
+test("a lost-response fork without inherited labels is recovered through its private manifest", async () => {
+  const api = new Provider(); api.ambiguousFork = true;
+  await assert.rejects(captured(api), /response lost/);
+  const fork = await api.getSandbox("fork"); assert.ok(fork); fork.labels = {};
+  await finalizePreviewHandoffs(owner, api, { cleanupOnly: true });
+  assert.deepEqual(api.deleted, ["fork", "source"]);
+});
+
 test("rejected fork deletion preserves source; another job can recover", async () => {
   const api = new Provider(); await captured(api); api.failDelete = true;
   await assert.rejects(finalizePreviewHandoffs(owner, api), /Optional preview/);

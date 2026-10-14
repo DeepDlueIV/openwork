@@ -16,7 +16,7 @@ export function validatePreviewOwner(input: PreviewOwner): void {
   if (!/^\d+-\d+-[a-z0-9-]+$/.test(input.owner) || !/^[a-f0-9]{40}$/.test(input.sourceSha)) throw new Error("Invalid preview owner or source SHA");
 }
 function owned(source: Sandbox, input: PreviewOwner): boolean {
-  return source.labels.kind === EVIDENCE_KIND && source.labels.previewSource === source.id
+  return source.labels.kind === EVIDENCE_KIND && source.labels.previewSource === source.name
     && source.labels[OWNER_LABEL] === input.owner && source.labels.sourceSha === input.sourceSha;
 }
 export async function ownPreviewSource(id: string, input: PreviewOwner, api = new DaytonaApi()): Promise<void> {
@@ -24,7 +24,7 @@ export async function ownPreviewSource(id: string, input: PreviewOwner, api = ne
   const source = await api.getSandbox(id);
   if (!source || source.labels.kind !== EVIDENCE_KIND || source.labels.sourceSha !== input.sourceSha
     || (source.labels[OWNER_LABEL] && source.labels[OWNER_LABEL] !== input.owner)) throw new Error("Not an owned preview source");
-  await api.setLabels(id, { ...source.labels, [OWNER_LABEL]: input.owner, previewSource: id });
+  await api.setLabels(id, { ...source.labels, [OWNER_LABEL]: input.owner, previewSource: source.name });
 }
 
 /** Durable receipt precedes the fork request, including an ambiguous provider response.
@@ -72,7 +72,7 @@ export async function finalizePreviewHandoffs(input: PreviewOwner, api = new Day
   const deadline = Date.now() + (options.timeoutMs ?? 10 * 60_000);
   for (const source of await api.listSandboxes({ kind: EVIDENCE_KIND, [OWNER_LABEL]: input.owner, sourceSha: input.sourceSha })) {
     // A fork can inherit the source labels if the producer dies before relabelling it.
-    if (source.labels.previewSource !== source.id) continue;
+    if (source.labels.previewSource !== source.name) continue;
     if (!owned(source, input)) throw new Error("Provider returned an unrelated preview source");
     let receipt: Receipt | undefined;
     let fork: Sandbox | null = null;
@@ -85,7 +85,7 @@ export async function finalizePreviewHandoffs(input: PreviewOwner, api = new Day
       if (fork) {
         safeToRelease = fork.labels[OWNER_LABEL] === input.owner && fork.labels.sourceSha === input.sourceSha
           && ((fork.labels.kind === CAPTURE_KIND && fork.labels.checkpoint === receipt.checkpoint.id)
-            || (fork.labels.kind === EVIDENCE_KIND && fork.labels.previewSource === source.id
+            || (fork.labels.kind === EVIDENCE_KIND && fork.labels.previewSource === source.name
               && fork.labels.previewReceipt === text));
         // Fork labels may not yet have been written when the producer died.
         // Name + the inherited private manifest prove it is this receipt's fork.

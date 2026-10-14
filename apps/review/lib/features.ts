@@ -32,7 +32,7 @@ function record(value: unknown): value is Record<string, unknown> {
 export async function reviewerDaytonaAuthorization(options: FeatureAuthorityOptions = {}): Promise<ReviewerDaytonaAuthorization> {
   try {
     const base = new URL(options.baseUrl ?? process.env.DEN_API_BASE ?? DEFAULT_DEN_API_BASE);
-    if (!["https:", "http:"].includes(base.protocol) || base.username || base.password || base.search || base.hash) {
+    if (base.protocol !== "https:" || base.username || base.password || base.search || base.hash) {
       return { enabled: false, reason: UNAVAILABLE };
     }
     const response = await (options.fetch ?? globalThis.fetch)(new URL("/v1/features", base), {

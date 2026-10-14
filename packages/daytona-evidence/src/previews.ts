@@ -37,7 +37,9 @@ export function previewOrigin(value: string): { origin: string; suffix: string }
 function daytonaRuntime(source: string): string {
   const original = 'browserHostSuffix: ".preview.openwork.software"';
   if (source.split(original).length !== 2) throw new Error("Shared app preview runtime has changed");
-  return source.replace(original, "browserHostSuffix: process.env.OPENWORK_DAYTONA_PREVIEW_HOST_SUFFIX");
+  return source.replace(original, "browserHostSuffix: process.env.OPENWORK_DAYTONA_PREVIEW_HOST_SUFFIX")
+    .replaceAll('"/opt/openwork-preview/services.json"', '"/opt/openwork-preview/state/services.json"')
+    .replaceAll('"/opt/openwork-preview/outputs.json"', '"/opt/openwork-preview/state/outputs.json"');
 }
 
 export async function previewDescriptor(sha: string, world: PreviewWorld) {
@@ -45,11 +47,13 @@ export async function previewDescriptor(sha: string, world: PreviewWorld) {
   const [runtime, gateway, origins, health] = await Promise.all([
     readAsset("runtime.mjs"), readAsset("gateway.mjs"), readAsset("origins.mjs"), readAsset("health.mjs"),
   ]);
-  const scripts = { runtime: daytonaRuntime(runtime), gateway, origins, health };
+  const scripts = { runtime: daytonaRuntime(runtime), gateway, origins,
+    health: health.replaceAll('"/opt/openwork-preview/services.json"', '"/opt/openwork-preview/state/services.json"')
+      .replaceAll('"/opt/openwork-preview/outputs.json"', '"/opt/openwork-preview/state/outputs.json"') };
   const tools = toolsRecipe(world);
   const dependencies = dependencyRecipe(world);
-  const compile = compiledRecipe(world);
-  const controllerHash = digest(JSON.stringify({ version: 1, base: DAYTONA_BASE_SNAPSHOT, scripts, tools, dependencies, compile }));
+  const compile = compiledRecipe(world).replaceAll("/opt/openwork-preview/compiled", "/opt/openwork-preview/state/compiled");
+  const controllerHash = digest(JSON.stringify({ version: 2, base: DAYTONA_BASE_SNAPSHOT, scripts, tools, dependencies, compile }));
   return { name: `${PREVIEW_SNAPSHOT_PREFIX}${digest(`${sha}\n${world}\n${controllerHash}`)}`,
     toolsName: `${PREVIEW_TOOLS_PREFIX}${digest(DAYTONA_BASE_SNAPSHOT + tools)}`, controllerHash, scripts, tools, dependencies, compile };
 }
@@ -80,11 +84,15 @@ export async function buildDaytonaPreview(sha: string, world: PreviewWorld, api 
       for (const [name, source] of Object.entries(descriptor.scripts)) {
         await api.writeFile(sandbox, `${ROOT}/${name}.mjs`, source);
       }
-      await api.writeFile(sandbox, "/etc/systemd/system/openwork-review-runtime.service", `[Unit]\nDescription=OpenWork fresh web preview\n[Service]\nType=oneshot\nRemainAfterExit=yes\nWorkingDirectory=/workspace\nEnvironment=PATH=${ROOT}/tools/node_modules/.bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\nEnvironment=OPENWORK_DAYTONA_PREVIEW_HOST_SUFFIX=${suffix}\nExecStart=/usr/bin/env node ${ROOT}/runtime.mjs\n`);
+      await api.writeFile(sandbox, "/etc/systemd/system/openwork-review-runtime.service", `[Unit]\nDescription=OpenWork fresh web preview\n[Service]\nType=oneshot\nRemainAfterExit=yes\nUser=openwork-preview\nGroup=openwork-preview\nNoNewPrivileges=yes\nCapabilityBoundingSet=\nProtectSystem=strict\nPrivateTmp=yes\nReadWritePaths=/workspace ${ROOT}/state /home/openwork-preview\nWorkingDirectory=/workspace\nEnvironment=PATH=${ROOT}/tools/node_modules/.bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\nEnvironment=OPENWORK_DAYTONA_PREVIEW_HOST_SUFFIX=${suffix}\nExecStart=/usr/bin/env node ${ROOT}/runtime.mjs\n`);
       await api.writeFile(sandbox, "/etc/systemd/system/openwork-review-gateway.service", `[Unit]\nDescription=Private OpenWork review gateway\n[Service]\nExecStart=/usr/bin/env node ${ROOT}/gateway.mjs\nRestart=on-failure\n`);
-      await runScript(api, sandbox, "review-world", `${checkoutRecipe(sha)}
-${descriptor.dependencies}
-${descriptor.compile}
+      // The checkout, dependency tools and build all execute report code. None may
+      // run as root, even before access is assigned: they could plant a token thief
+      // in the hot snapshot. Controller scripts and the gateway stay root-owned.
+      await api.writeFile(sandbox, `${ROOT}/review-app.sh`, `#!/bin/bash\nset -euo pipefail\nexport HOME=/home/openwork-preview\nexport pnpm_config_verify_deps_before_run=false\n${checkoutRecipe(sha)}\n${descriptor.dependencies}\n${descriptor.compile}\n`);
+      await runScript(api, sandbox, "review-world", `useradd --create-home --shell /usr/sbin/nologin openwork-preview
+install -d -o openwork-preview -g openwork-preview /workspace ${ROOT}/state
+systemd-run --wait --pipe --collect --unit=openwork-review-app --property=User=openwork-preview --property=Group=openwork-preview --property=NoNewPrivileges=yes --property=CapabilityBoundingSet= /bin/bash ${ROOT}/review-app.sh
 systemctl daemon-reload
 systemctl start openwork-review-runtime
 node ${ROOT}/health.mjs
@@ -163,7 +171,7 @@ export async function launchDaytonaPreview(input: { gitSha: string; reportId: st
     stage = "verify-source";
     const [source, controller, head] = await Promise.all([
       api.readFile(sandbox, `${ROOT}/source-sha`), api.readFile(sandbox, `${ROOT}/review-controller`),
-      api.execChecked(sandbox, "cd /workspace && git rev-parse HEAD", 30),
+      api.execChecked(sandbox, "runuser -u openwork-preview -- /bin/bash -c 'cd /workspace && git rev-parse HEAD'", 30),
     ]);
     if (source?.trim() !== input.gitSha || head.trim() !== input.gitSha || controller?.trim() !== descriptor.controllerHash) throw new Error("Preview source mismatch");
     stage = "deadline";

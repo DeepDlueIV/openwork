@@ -94,6 +94,13 @@ checkout, or host execution of PR code is needed. Only the isolated guest fetche
 and executes the exact pushed report SHA. Production uses `DAYTONA_API_KEY` and
 the evidence region/API settings described above.
 
+Report checkout, dependency rebuilds, compilation and runtime run as the dedicated
+unprivileged `openwork-preview` user with no new privileges or capabilities.
+Only `/workspace`, the user's home and `/opt/openwork-preview/state` are writable
+at runtime. Trusted controller/gateway files stay root-owned, and the gateway's
+root-only access file is outside that state directory. Build code therefore cannot
+plant a privileged process before a later clone receives its access credential.
+
 Fresh snapshot names (`ow-dy-review-v1-*`) include the full report SHA, world and
 controller/recipe digest in their immutable key. Tools alone are shared by recipe.
 A launch verifies restored HEAD, the exact source marker and controller digest,

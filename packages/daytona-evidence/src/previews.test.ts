@@ -115,10 +115,20 @@ test("build reuses private base/layer machinery and saves a hot exact-source wor
   await buildDaytonaPreview(sha, "app-web", fixture.api, { sourceFetch: async () => Response.json({ tree: [], truncated: false }) });
   assert.equal(await hasDaytonaPreview(sha, "app-web", fixture.api), true);
   const script = [...fixture.files.entries()].find(([path]) => path.endsWith("/review-world.sh"))?.[1] ?? "";
-  assert.ok(script.includes(`git fetch --depth=1 origin ${sha}`));
-  assert.ok(script.includes(`test "$(git rev-parse HEAD)" = "${sha}"`));
+  const appScript = [...fixture.files.entries()].find(([path]) => path.endsWith("/review-app.sh"))?.[1] ?? "";
+  assert.ok(appScript.includes(`git fetch --depth=1 origin ${sha}`));
+  assert.ok(appScript.includes(`test "$(git rev-parse HEAD)" = "${sha}"`));
+  assert.ok(script.includes("--property=User=openwork-preview --property=Group=openwork-preview --property=NoNewPrivileges=yes --property=CapabilityBoundingSet="));
+  assert.ok(script.includes("/bin/bash /opt/openwork-preview/review-app.sh"));
+  assert.equal(script.includes("pnpm install"), false);
+  const unit = [...fixture.files.entries()].find(([path]) => path.endsWith("/openwork-review-runtime.service"))?.[1] ?? "";
+  assert.ok(unit.includes("User=openwork-preview\nGroup=openwork-preview\nNoNewPrivileges=yes\nCapabilityBoundingSet="));
+  assert.ok(unit.includes("ProtectSystem=strict\nPrivateTmp=yes\nReadWritePaths=/workspace /opt/openwork-preview/state /home/openwork-preview"));
+  assert.equal(unit.includes("ReadWritePaths=/opt/openwork-preview\n"), false);
+  assert.ok(fixture.descriptor.scripts.runtime.includes('"/opt/openwork-preview/state/services.json"'));
+  assert.ok(fixture.descriptor.scripts.health.includes('"/opt/openwork-preview/state/outputs.json"'));
   assert.ok(script.includes("node /opt/openwork-preview/health.mjs"));
-  assert.ok(script.includes("pnpm install --frozen-lockfile --ignore-scripts --ignore-pnpmfile"));
+  assert.ok(appScript.includes("pnpm install --frozen-lockfile --ignore-scripts --ignore-pnpmfile"));
   assert.equal(script.includes("host-only-key"), false);
   const saves = fixture.requests.filter((entry) => entry.path.endsWith("/snapshot"));
   assert.deepEqual(saves.map((entry) => entry.body), [

@@ -12,15 +12,17 @@ import { mcpAppPresentationScope } from "./mcp-app-presentation-cache";
 export const MCP_APP_CACHE_REQUEST_META = "openwork/cache";
 export const MCP_APP_CACHED_RESULT_META = "openwork/cached";
 export const MCP_APP_CACHED_AT_META = "openwork/cachedAt";
-// Set by the OpenWork server from the tool's annotations, never by the App or provider.
+// Set by the OpenWork server, never by the App or provider: the tool's
+// annotations, and a hash of the verified server the result came from.
 const READ_ONLY_RESULT_META = "openwork/readOnly";
+const PROVIDER_IDENTITY_META = "openwork/providerIdentity";
 
 const STORAGE_KEY = `${DASHBOARD_TILE_CACHE_STORAGE_PREFIX}.appResults`;
 const TTL_MS = 24 * 60 * 60_000;
 const MAX_BYTES = 1_000_000;
 const MAX_ENTRY_BYTES = 200_000;
 
-type Entry = { cachedAt: number; content: CallToolResult["content"]; structuredContent?: Record<string, unknown> };
+type Entry = { cachedAt: number; providerIdentity: string; content: CallToolResult["content"]; structuredContent?: Record<string, unknown> };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -31,10 +33,12 @@ function parse(value: unknown, now: number): Map<string, Entry> {
   if (!isRecord(value) || value.v !== 1 || !Array.isArray(value.entries)) return entries;
   for (const item of value.entries) {
     if (!Array.isArray(item) || typeof item[0] !== "string" || !isRecord(item[1])) continue;
-    const { cachedAt, content, structuredContent } = item[1];
-    if (typeof cachedAt !== "number" || now - cachedAt > TTL_MS || cachedAt > now || !Array.isArray(content)) continue;
+    const { cachedAt, providerIdentity, content, structuredContent } = item[1];
+    if (typeof cachedAt !== "number" || now - cachedAt > TTL_MS || cachedAt > now || !Array.isArray(content)
+      || typeof providerIdentity !== "string") continue;
     entries.set(item[0], {
       cachedAt,
+      providerIdentity,
       content: content as CallToolResult["content"],
       ...(isRecord(structuredContent) ? { structuredContent } : {}),
     });
@@ -79,10 +83,13 @@ async function entryKey(origin: McpAppOrigin, app: OpenworkMcpAppResource, name:
   return { key, current: scope.current };
 }
 
-/** This person's last read-only result for the call, or null. Calls no tool. */
+/**
+ * This person's last read-only result for the call and the server it came
+ * from, or null. Calls no tool; the caller must match the server first.
+ */
 export async function cachedMcpAppResult(
   origin: McpAppOrigin, app: OpenworkMcpAppResource, name: string, args: Record<string, unknown>,
-): Promise<CallToolResult | null> {
+): Promise<{ providerIdentity: string; result: CallToolResult } | null> {
   try {
     const entry = await entryKey(origin, app, name, args);
     if (!entry || !entry.current()) return null;
@@ -90,9 +97,12 @@ export async function cachedMcpAppResult(
     const cached = entries?.get(entry.key);
     if (!entries || !cached || Date.now() - cached.cachedAt > TTL_MS) return null;
     return {
-      content: cached.content,
-      ...(cached.structuredContent ? { structuredContent: cached.structuredContent } : {}),
-      _meta: { [MCP_APP_CACHED_RESULT_META]: true, [MCP_APP_CACHED_AT_META]: new Date(cached.cachedAt).toISOString() },
+      providerIdentity: cached.providerIdentity,
+      result: {
+        content: cached.content,
+        ...(cached.structuredContent ? { structuredContent: cached.structuredContent } : {}),
+        _meta: { [MCP_APP_CACHED_RESULT_META]: true, [MCP_APP_CACHED_AT_META]: new Date(cached.cachedAt).toISOString() },
+      },
     };
   } catch {
     return null;
@@ -108,13 +118,15 @@ export async function rememberMcpAppResult(
     if (!entry) return;
     const entries = store.read(STORAGE_KEY);
     if (!entries) return;
-    if (result.isError || result._meta?.[READ_ONLY_RESULT_META] !== true) {
+    const providerIdentity = result._meta?.[PROVIDER_IDENTITY_META];
+    if (result.isError || result._meta?.[READ_ONLY_RESULT_META] !== true || typeof providerIdentity !== "string") {
       // A failed or non-read-only answer must not leave an older value behind.
       if (entries.delete(entry.key)) store.schedule(STORAGE_KEY);
       return;
     }
     const kept: Entry = {
       cachedAt: Date.now(),
+      providerIdentity,
       content: result.content,
       ...(isRecord(result.structuredContent) ? { structuredContent: result.structuredContent } : {}),
     };

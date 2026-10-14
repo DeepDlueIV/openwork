@@ -547,13 +547,14 @@ export function McpAppSandboxView({ origin, app, resolveLiveActions, toolName, i
           const miss = { content: [], isError: true, _meta: { [MCP_APP_CACHED_RESULT_META]: false } }
           const cached = await cachedMcpAppResult(origin, app, name, args ?? {})
           if (!cached) return miss
-          const allowed = await actions.checkRead(name, args ?? {}).catch(() => false)
+          const identity = await actions.checkRead(name, args ?? {}).catch(() => null)
           if (disposed || failed) throw new Error("This artifact view has closed or changed.")
-          if (!allowed) {
+          // Kept from this same verified server only; a replaced server starts empty.
+          if (!identity || identity !== cached.providerIdentity) {
             void forgetMcpAppResult(origin, app, name, args ?? {})
             return miss
           }
-          return cached
+          return cached.result
         }
         const userInteraction = _meta?.["openwork/userInteraction"] === true
         const toolResult = connectionController

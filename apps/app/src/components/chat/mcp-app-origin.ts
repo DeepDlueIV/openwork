@@ -36,7 +36,7 @@ export function createMcpAppActions(
   return {
     dispose: () => { active = false; },
     assertActive,
-    /** Whether a call that needs no approval is allowed now, checked without running the tool. */
+    /** The verified server identity when a call that needs no approval is allowed now, checked without running the tool. */
     checkRead: async (name: string, args?: Record<string, unknown>) => {
       assertActive();
       const result = await origin.client.callMcpAppTool(origin.workspaceId, {
@@ -50,7 +50,8 @@ export function createMcpAppActions(
         checkOnly: true,
       });
       assertActive();
-      return result._meta?.["openwork/readOnly"] === true && result.isError !== true;
+      const identity = result._meta?.["openwork/providerIdentity"];
+      return result._meta?.["openwork/readOnly"] === true && result.isError !== true && typeof identity === "string" ? identity : null;
     },
     callTool: async (name: string, args?: Record<string, unknown>, userInteraction = false) => {
       assertActive();

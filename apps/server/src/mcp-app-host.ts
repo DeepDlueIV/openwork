@@ -60,6 +60,8 @@ export type McpAppToolResult = CallToolResult & { hostAction?: ConnectionActionI
 
 /** Result _meta key the host trusts to decide whether a result may be kept. */
 export const MCP_APP_READ_ONLY_RESULT_META = "openwork/readOnly";
+/** Result _meta key naming the verified server a result came from, so a kept result never crosses servers. */
+export const MCP_APP_PROVIDER_IDENTITY_META = "openwork/providerIdentity";
 
 export async function supportsHostConnectionActions(serverName: string, config: Record<string, unknown>, toolName: string, resourceUri: string): Promise<boolean> {
   if (serverName !== "openwork-cloud" && serverName !== "openwork") return false;
@@ -1178,13 +1180,15 @@ export async function callMcpAppTool(input: {
     }
     await currentConfig();
     assertLive();
+    // The configured server this launch verified, without its credentials.
+    const providerIdentity = createHash("sha256").update(JSON.stringify([input.serverName, remoteUrl(config)?.href ?? null])).digest("hex");
     // For a cached read: the call would be allowed now without approval, so
-    // the host may show the result it kept. Nothing reaches the tool.
+    // the host may show the result it kept from this same server. Nothing reaches the tool.
     if (input.checkOnly) {
       if (input.approved === true || toolRequiresApproval(tool) || hostConnectionAction) {
         throw new McpAppHostError("tool_requires_approval", "Only a read-only App tool's kept result can be shown.");
       }
-      return { content: [], _meta: { [MCP_APP_READ_ONLY_RESULT_META]: true } };
+      return { content: [], _meta: { [MCP_APP_READ_ONLY_RESULT_META]: true, [MCP_APP_PROVIDER_IDENTITY_META]: providerIdentity } };
     }
     // A provider that rejects the call (for example JSON-RPC -32602 for a
     // missing required argument) must reach the member as that rejection,
@@ -1200,7 +1204,7 @@ export async function callMcpAppTool(input: {
     // Whether the tool ran without needing approval: read-only and not
     // destructive. The host keeps only such results for instant reopening.
     // Set here, never taken from the provider.
-    const sanitized = { ...parsed, _meta: { ...parsed._meta, [MCP_APP_READ_ONLY_RESULT_META]: !toolRequiresApproval(tool) } };
+    const sanitized = { ...parsed, _meta: { ...parsed._meta, [MCP_APP_READ_ONLY_RESULT_META]: !toolRequiresApproval(tool), [MCP_APP_PROVIDER_IDENTITY_META]: providerIdentity } };
     if (!hostConnectionAction || sanitized.isError) return sanitized;
     await currentConfig();
     await input.assertSessionActive?.();

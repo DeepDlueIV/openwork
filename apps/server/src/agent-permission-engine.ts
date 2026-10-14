@@ -342,7 +342,8 @@ export function parseShellCommands(command: string): { commands: string[]; unche
     for (const payload of interpreterPayloads(line, spend)) visit(payload, depth + 1);
     for (const wrapped of wrappedCommands(line, spend)) visit(wrapped, depth + 1);
     for (const inner of shellSubstitutions(line)) visit(inner, depth + 1);
-    for (const part of line.split(/&&|\|\||[;|&\n]/)) visit(part, depth + 1);
+    // Braces split too, so the commands in a function body or group (`f() { rm x; }`) are found.
+    for (const part of line.split(/&&|\|\||[;|&\n{}]/)) visit(part, depth + 1);
   };
   visit(command, 0);
   return { commands: [...found].filter(Boolean), unchecked };

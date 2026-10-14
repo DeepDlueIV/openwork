@@ -31,6 +31,7 @@ const specs = new Set([
   "evals/specs/agent-permissions.e2e.test.ts",
   "evals/specs/agent-permissions-local-extensions.e2e.test.ts",
   "evals/specs/agent-permissions-off.e2e.test.ts",
+  "evals/specs/remote-session-subagents.e2e.test.ts",
 ]);
 
 export function parityProofPlan(spec) {

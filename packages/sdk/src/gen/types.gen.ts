@@ -188,7 +188,8 @@ export type AdminFeature = {
     | "gatewayProviderUsageLimits"
     | "teamAccessRows"
     | "teamPageTabs"
-    | "inviteLinkVerifiesEmail";
+    | "inviteLinkVerifiesEmail"
+    | "remoteSessionSubagents";
   label: string;
   description: string;
   since: string;
@@ -253,6 +254,7 @@ export type AdminOrganizationsPageResponse = {
       teamAccessRows: boolean;
       teamPageTabs: boolean;
       inviteLinkVerifiesEmail: boolean;
+      remoteSessionSubagents: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -490,6 +492,15 @@ export type AdminOrganizationsPageResponse = {
         overrideApplies: boolean;
       };
       inviteLinkVerifiesEmail: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      remoteSessionSubagents: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -587,6 +598,7 @@ export type AdminOverviewResponse = {
       teamAccessRows: boolean;
       teamPageTabs: boolean;
       inviteLinkVerifiesEmail: boolean;
+      remoteSessionSubagents: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -824,6 +836,15 @@ export type AdminOverviewResponse = {
         overrideApplies: boolean;
       };
       inviteLinkVerifiesEmail: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      remoteSessionSubagents: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -1291,6 +1312,58 @@ export type AutomationRunReceipt = {
   automation: Automation;
   revision: AutomationRevision;
   events: Array<AutomationRunEvent>;
+};
+
+export type RemoteSessionStatusResult = {
+  threads: Array<
+    | {
+        ref: string;
+        changed: true;
+        version: string;
+        target: "cloud" | "desktop";
+        state: "starting" | "running" | "waiting" | "idle" | "error";
+        waitingFor: "permission" | "question" | null;
+        title: string | null;
+        computerId: string | null;
+        computerLabel: string | null;
+        sessionId: string | null;
+        workspaceId: string | null;
+        messageCount: number | null;
+        preview: string | null;
+        error: {
+          code: string;
+          message: string;
+        } | null;
+        observedAt: number | null;
+      }
+    | {
+        ref: string;
+        changed: false;
+        version: string;
+        stale?: boolean;
+      }
+  >;
+  retryAfterMs: number | null;
+};
+
+export type RemoteSessionError = {
+  error: string;
+  message?: string;
+  retryable?: boolean;
+  [key: string]: unknown;
+};
+
+export type RemoteSessionStatusRequest = {
+  threads: Array<{
+    commandId?: string;
+    sessionId?: string;
+    version?: string;
+  }>;
+  waitMs?: number;
+};
+
+export type RemoteSessionResult = {
+  [key: string]: unknown;
 };
 
 export type OrganizationResponse = {
@@ -6620,6 +6693,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       teamAccessRows: boolean;
       teamPageTabs: boolean;
       inviteLinkVerifiesEmail: boolean;
+      remoteSessionSubagents: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -6857,6 +6931,15 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       inviteLinkVerifiesEmail: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      remoteSessionSubagents: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6942,6 +7025,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       teamAccessRows: boolean;
       teamPageTabs: boolean;
       inviteLinkVerifiesEmail: boolean;
+      remoteSessionSubagents: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -7179,6 +7263,15 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       inviteLinkVerifiesEmail: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      remoteSessionSubagents: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -9494,6 +9587,217 @@ export type CancelAutomationRunResponses = {
 };
 
 export type CancelAutomationRunResponse = CancelAutomationRunResponses[keyof CancelAutomationRunResponses];
+
+export type PostV1RemoteSessionsStatusData = {
+  body: RemoteSessionStatusRequest;
+  path?: never;
+  query?: never;
+  url: "/v1/remote-sessions/status";
+};
+
+export type PostV1RemoteSessionsStatusErrors = {
+  /**
+   * The request or its arguments were invalid.
+   */
+  400: InvalidRequestError | RemoteSessionError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * The task is unknown, the organization was not found, or the feature is off.
+   */
+  404:
+    | NotFoundError
+    | {
+        error: string;
+        feature?: string;
+      };
+  /**
+   * The task cannot do that now.
+   */
+  409: RemoteSessionError;
+  /**
+   * The computer or cloud workspace that runs the task can't be reached right now; retry.
+   */
+  503: RemoteSessionError;
+};
+
+export type PostV1RemoteSessionsStatusError = PostV1RemoteSessionsStatusErrors[keyof PostV1RemoteSessionsStatusErrors];
+
+export type PostV1RemoteSessionsStatusResponses = {
+  /**
+   * The status of each session.
+   */
+  200: RemoteSessionStatusResult;
+};
+
+export type PostV1RemoteSessionsStatusResponse =
+  PostV1RemoteSessionsStatusResponses[keyof PostV1RemoteSessionsStatusResponses];
+
+export type PostV1RemoteSessionsReadData = {
+  body: {
+    messageId?: string;
+    sessionId?: string;
+    commandId?: string;
+    requestId?: string;
+    workspaceId?: string;
+    from?: "start" | "end";
+    cursor?: string;
+    limit?: number;
+  };
+  path?: never;
+  query?: never;
+  url: "/v1/remote-sessions/read";
+};
+
+export type PostV1RemoteSessionsReadErrors = {
+  /**
+   * The request or its arguments were invalid.
+   */
+  400: InvalidRequestError | RemoteSessionError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * The task is unknown, the organization was not found, or the feature is off.
+   */
+  404:
+    | NotFoundError
+    | {
+        error: string;
+        feature?: string;
+      };
+  /**
+   * The task cannot do that now.
+   */
+  409: RemoteSessionError;
+  /**
+   * The computer or cloud workspace that runs the task can't be reached right now; retry.
+   */
+  503: RemoteSessionError;
+};
+
+export type PostV1RemoteSessionsReadError = PostV1RemoteSessionsReadErrors[keyof PostV1RemoteSessionsReadErrors];
+
+export type PostV1RemoteSessionsReadResponses = {
+  /**
+   * The transcript page or receipt.
+   */
+  200: RemoteSessionResult;
+};
+
+export type PostV1RemoteSessionsReadResponse =
+  PostV1RemoteSessionsReadResponses[keyof PostV1RemoteSessionsReadResponses];
+
+export type PostV1RemoteSessionsSendData = {
+  body: {
+    messageId?: string;
+    sessionId: string;
+    workspaceId?: string;
+    prompt: string;
+    model?: {
+      providerId: string;
+      modelId: string;
+      variant?: string;
+    };
+  };
+  path?: never;
+  query?: never;
+  url: "/v1/remote-sessions/send";
+};
+
+export type PostV1RemoteSessionsSendErrors = {
+  /**
+   * The request or its arguments were invalid.
+   */
+  400: InvalidRequestError | RemoteSessionError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * The task is unknown, the organization was not found, or the feature is off.
+   */
+  404:
+    | NotFoundError
+    | {
+        error: string;
+        feature?: string;
+      };
+  /**
+   * The task cannot do that now.
+   */
+  409: RemoteSessionError;
+  /**
+   * The computer or cloud workspace that runs the task can't be reached right now; retry.
+   */
+  503: RemoteSessionError;
+};
+
+export type PostV1RemoteSessionsSendError = PostV1RemoteSessionsSendErrors[keyof PostV1RemoteSessionsSendErrors];
+
+export type PostV1RemoteSessionsSendResponses = {
+  /**
+   * The follow-up was accepted or is pending.
+   */
+  200: RemoteSessionResult;
+};
+
+export type PostV1RemoteSessionsSendResponse =
+  PostV1RemoteSessionsSendResponses[keyof PostV1RemoteSessionsSendResponses];
+
+export type PostV1RemoteSessionsStopData = {
+  body: {
+    sessionId: string;
+    workspaceId?: string;
+    messageId?: string;
+  };
+  path?: never;
+  query?: never;
+  url: "/v1/remote-sessions/stop";
+};
+
+export type PostV1RemoteSessionsStopErrors = {
+  /**
+   * The request or its arguments were invalid.
+   */
+  400: InvalidRequestError | RemoteSessionError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * The task is unknown, the organization was not found, or the feature is off.
+   */
+  404:
+    | NotFoundError
+    | {
+        error: string;
+        feature?: string;
+      };
+  /**
+   * The task cannot do that now.
+   */
+  409: RemoteSessionError;
+  /**
+   * The computer or cloud workspace that runs the task can't be reached right now; retry.
+   */
+  503: RemoteSessionError;
+};
+
+export type PostV1RemoteSessionsStopError = PostV1RemoteSessionsStopErrors[keyof PostV1RemoteSessionsStopErrors];
+
+export type PostV1RemoteSessionsStopResponses = {
+  /**
+   * Whether the session stopped, or a pending requestId.
+   */
+  200: RemoteSessionResult;
+};
+
+export type PostV1RemoteSessionsStopResponse =
+  PostV1RemoteSessionsStopResponses[keyof PostV1RemoteSessionsStopResponses];
 
 export type DeleteV1OrgData = {
   body?: never;

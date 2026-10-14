@@ -125,7 +125,8 @@ import type {
   NewTaskComposerHandoff,
 } from "@/react-app/domains/session/chat/new-task-composer";
 import { isDesktopProviderBlocked } from "@/app/cloud/desktop-app-restrictions";
-import { useCheckDesktopRestriction } from "@/react-app/domains/cloud/desktop-config-provider";
+import { useCheckDesktopRestriction, useOrgRestrictions } from "@/react-app/domains/cloud/desktop-config-provider";
+import { newChatDefaultModel, orgDefaultModelForEngine } from "@/react-app/domains/models/org-default-model";
 import { useRestrictionNotice } from "@/react-app/domains/cloud/restriction-notice-provider";
 import { ReactSessionRuntime } from "@/react-app/domains/session/sync/runtime-sync";
 import { createSessionChildIdsSelector, useSessionActivityStore } from "@/react-app/domains/session/status/session-activity-store";
@@ -284,7 +285,7 @@ import {
 import { WorkspaceProvider } from "./workspace-provider";
 import type { OpenTarget } from "@/react-app/domains/session/artifacts/open-target";
 import { SettingsSurface } from "./settings-route";
-import { resolveNewTaskModel, setWorkspaceDefaultModel, useWorkspaceDefaultModel, workspaceModelScope, writeStoredDefaultModel } from "@/react-app/kernel/model-config";
+import { readWorkspaceDefaultModel, setWorkspaceDefaultModel, useWorkspaceDefaultModel, workspaceModelScope, writeStoredDefaultModel } from "@/react-app/kernel/model-config";
 import { useWorkspaceDefaultModelSync } from "@/react-app/kernel/workspace-default-model-sync";
 import { useWorkspaceModelProfile } from "@/react-app/kernel/use-workspace-model-default";
 import {
@@ -496,6 +497,8 @@ export function SessionRoute() {
   ]);
   const reloadCoordinator = useReloadCoordinator();
   const checkDesktopRestriction = useCheckDesktopRestriction();
+  // The organization's (or team's) default model for new chats; only the v2 engine applies it.
+  const orgConfiguredDefaultModel = useOrgRestrictions().defaultModel;
   const restrictionNotice = useRestrictionNotice();
   const [activeOrganizationRole, setActiveOrganizationRole] = useState<DenOrgRole | null>(null);
   const [openworkServerHostInfoState, setOpenworkServerHostInfoState] = useState<OpenworkServerInfo | null>(null);
@@ -565,7 +568,15 @@ export function SessionRoute() {
   const workspaceDefaultScope = workspaceModelScope({ profileId: modelProfileId,
     workspaceId: selectedWorkspaceEndpoint?.workspaceId ?? selectedWorkspaceId, opencodeBaseUrl, localRuntime: isDesktopRuntime() });
   const workspaceDefault = useWorkspaceDefaultModel(workspaceDefaultScope);
-  const configuredNewTaskModel = workspaceDefault?.model ?? local.prefs.defaultModel;
+  // An organization model this desktop confirms it cannot use falls back to the app's own default.
+  const [unusableOrgDefaultKey, setUnusableOrgDefaultKey] = useState<string | null>(null);
+  const orgNewTaskModel = useMemo(() => {
+    const model = orgDefaultModelForEngine(orgConfiguredDefaultModel, opencodeBaseUrl);
+    return model && `${model.providerID}/${model.modelID}` !== unusableOrgDefaultKey ? model : null;
+  }, [orgConfiguredDefaultModel, opencodeBaseUrl, unusableOrgDefaultKey]);
+  const newChatDefault = newChatDefaultModel({ workspaceDefault, orgDefault: orgNewTaskModel,
+    appDefault: { model: local.prefs.defaultModel, variant: local.prefs.modelVariant ?? null } });
+  const configuredNewTaskModel = newChatDefault.model;
   // This route creates the provider below; use its same scope when choosing a new-task default.
   const autoAccessWorkspace = { openworkServerClient: selectedWorkspaceEndpoint?.client ?? null,
     workspaceId: selectedWorkspaceEndpoint?.workspaceId ?? "" };
@@ -573,7 +584,7 @@ export function SessionRoute() {
   const observedAutoStatus = observedAutoSnapshot?.status === "success" ? observedAutoSnapshot.data : undefined;
   const autoChecking = isDesktopRuntime() && observedAutoSnapshot?.status !== "error" && !observedAutoStatus;
   const newTaskModel = modelForNewTask(configuredNewTaskModel, observedAutoStatus, autoChecking);
-  const newTaskVariant = workspaceDefault ? workspaceDefault.variant : local.prefs.modelVariant ?? null;
+  const newTaskVariant = newChatDefault.variant;
   // Background callers (automations, remote sessions) read this from the workspace's server.
   useWorkspaceDefaultModelSync({ endpoint: selectedWorkspaceEndpoint, connected: !selectedWorkspaceError,
     model: newTaskModel, variant: newTaskVariant, pending: autoChecking });
@@ -1287,6 +1298,11 @@ export function SessionRoute() {
   }, [modelAvailabilityGate, resolveModelAvailability]);
   const selectedModelUnavailable =
     resolveModelAvailability(newTaskModel).status === "unavailable";
+  const orgNewTaskModelUnavailable = Boolean(orgNewTaskModel && !workspaceDefault
+    && resolveModelAvailability(orgNewTaskModel).status === "unavailable");
+  useEffect(() => {
+    if (orgNewTaskModelUnavailable && orgNewTaskModel) setUnusableOrgDefaultKey(`${orgNewTaskModel.providerID}/${orgNewTaskModel.modelID}`);
+  }, [orgNewTaskModel, orgNewTaskModelUnavailable]);
   // The composer the user is looking at: the selected conversation's
   // remembered model when it has one, otherwise the global default.
   const selectedSessionModelSelection = useSessionModelStore((state) =>
@@ -2447,10 +2463,12 @@ export function SessionRoute() {
     if (getSessionModelSelection(sessionId)) return;
     const scope = workspaceModelScope({ profileId: modelProfileId, workspaceId: endpoint.workspaceId,
       opencodeBaseUrl: endpoint.opencodeBaseUrl, localRuntime: isDesktopRuntime() });
-    const { model, variant } = resolveNewTaskModel(scope, { model: local.prefs.defaultModel, variant: local.prefs.modelVariant ?? null });
+    const { model, variant } = newChatDefaultModel({ workspaceDefault: readWorkspaceDefaultModel(scope),
+      orgDefault: orgDefaultModelForEngine(orgConfiguredDefaultModel, endpoint.opencodeBaseUrl),
+      appDefault: { model: local.prefs.defaultModel, variant: local.prefs.modelVariant ?? null } });
     const availableModel = modelForNewTask(model, observedAutoStatus, autoChecking);
     if (availableModel?.providerID && availableModel.modelID) useSessionModelStore.getState().setModel(sessionId, availableModel, variant);
-  }, [local.prefs.defaultModel, local.prefs.modelVariant, modelProfileId, observedAutoStatus, autoChecking]);
+  }, [local.prefs.defaultModel, local.prefs.modelVariant, modelProfileId, observedAutoStatus, autoChecking, orgConfiguredDefaultModel]);
 
   const handleCreateTaskInWorkspaceWithOpenMode = useCallback(async (
     workspaceId: string,

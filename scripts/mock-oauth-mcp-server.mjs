@@ -6,6 +6,7 @@ const host = process.env.HOST || "127.0.0.1";
 const port = Number(process.env.PORT || 3978);
 const issuer = process.env.ISSUER || `http://${host}:${port}`;
 const extraToolCount = Number(process.env.MOCK_EXTRA_TOOL_COUNT || 0);
+const protectedResource = process.env.MOCK_PROTECTED_RESOURCE || "";
 const autoApprove = process.env.AUTO_APPROVE !== "0";
 const disableDcr = process.env.DISABLE_DCR === "1";
 const rejectDcrRedirectUris = process.env.MOCK_REJECT_DCR_REDIRECT_URIS || "";
@@ -71,6 +72,12 @@ const clients = new Map();
 const codes = new Map();
 const tokens = new Set();
 const refreshTokens = new Set();
+// Each refresh token maps to its grant's { current, previous } refresh tokens.
+const refreshFamilies = new Map();
+// "reject-reuse": a refresh token works once. "keep-latest": the grant's
+// current and previous refresh tokens both work and every refresh makes its
+// new token current, so of concurrent refreshes only the last stays usable.
+let refreshRotation = "reject-reuse";
 let holdRefreshResponses = false;
 let nextRefreshResponseId = 0;
 const pendingRefreshResponses = new Map();
@@ -83,6 +90,7 @@ const AGENT_REPLY_GATE_TIMEOUT_MS = 60_000;
 let agentRepliesHeld = false;
 const heldAgentReplies = new Set();
 let configuredTools = [];
+let toolsConfigured = false;
 let oauthCallback = {};
 
 const gmailThreadId = "thread-q3-launch";
@@ -251,13 +259,14 @@ function validateAgentWorkloads(value) {
       if (!step.arguments || typeof step.arguments !== "object" || Array.isArray(step.arguments)) {
         throw new Error(`agent workload ${promptMarker} tool ${step.tool} needs object arguments`);
       }
-      if (step.argumentsFrom !== undefined && !["computer-mention", "skill-catalog", "capability-search", "skill-list"].includes(step.argumentsFrom)) {
+      if (step.argumentsFrom !== undefined && !["computer-mention", "skill-catalog", "capability-search", "skill-list", "app-preparation", "app-starter", "app-read"].includes(step.argumentsFrom)) {
         throw new Error(`agent workload ${promptMarker} has an unknown argument source`);
       }
       if (step.allowUnadvertisedTool !== undefined && typeof step.allowUnadvertisedTool !== "boolean") {
         throw new Error(`agent workload ${promptMarker} allowUnadvertisedTool must be a boolean`);
       }
-      return { tool: step.tool.trim(), arguments: structuredClone(step.arguments), argumentsFrom: step.argumentsFrom,
+      if (step.holdUntilReleased !== undefined && typeof step.holdUntilReleased !== "boolean") throw new Error("holdUntilReleased must be a boolean");
+      return { holdUntilReleased: step.holdUntilReleased === true, tool: step.tool.trim(), arguments: structuredClone(step.arguments), argumentsFrom: step.argumentsFrom,
         allowUnadvertisedTool: step.allowUnadvertisedTool === true };
     });
     if (workload.matchAll !== undefined && typeof workload.matchAll !== "boolean")
@@ -503,6 +512,47 @@ function capabilitySearchArguments(messages) {
   return { name: matches[0].name };
 }
 
+// App creation must use the id actually returned by prepare_app, never a guessed one.
+function appPreparationArguments(messages) {
+  let payload = JSON.parse(lastToolText(messages));
+  if (Array.isArray(payload.content)) payload = JSON.parse(agentContentText(payload));
+  const preparationId = payload.preparationId ?? payload.structuredContent?.preparationId;
+  if (typeof preparationId !== "string" || !/^[0-9a-f-]{36}$/i.test(preparationId)) throw new Error("prepare_app did not return a preparation id");
+  return { preparationId };
+}
+
+// Code Mode uses the same actual preparation id, embedded as a JSON literal in
+// the scripted call. The marker is a fixture placeholder, never a guessed id.
+function appPreparationStepArguments(messages, argumentsValue) {
+  const prepared = appPreparationArguments(messages);
+  if (typeof argumentsValue.code === "string") return { ...argumentsValue, code: argumentsValue.code.replace('"__APP_PREPARATION_ID__"', JSON.stringify(prepared.preparationId)) };
+  return { ...argumentsValue, ...prepared };
+}
+
+// Builds from the unchanged starter prepare_app actually returned, so the
+// starter itself is what compiles and opens. Code Mode spreads it in place of
+// a fixture marker.
+function appStarterStepArguments(messages, argumentsValue) {
+  let payload = JSON.parse(lastToolText(messages));
+  if (Array.isArray(payload.content)) payload = JSON.parse(agentContentText(payload));
+  const prepared = payload.starter ? payload : payload.structuredContent;
+  if (typeof prepared?.preparationId !== "string" || typeof prepared?.starter?.reactSource !== "string") throw new Error("prepare_app did not return a starter");
+  const starter = { preparationId: prepared.preparationId, reactSource: prepared.starter.reactSource, cssSource: prepared.starter.cssSource };
+  // A replacer function, since source text can hold "$" patterns String#replace would expand.
+  if (typeof argumentsValue.code === "string") return { ...argumentsValue, code: argumentsValue.code.replace('"__APP_STARTER__"', () => JSON.stringify(starter)) };
+  return { ...argumentsValue, ...starter };
+}
+
+// Optimistic updates must carry the revision the model actually read.
+function appReadStepArguments(messages, argumentsValue) {
+  let payload = JSON.parse(lastToolText(messages));
+  if (Array.isArray(payload.content)) payload = JSON.parse(agentContentText(payload));
+  const app = payload.app ?? payload.structuredContent?.app;
+  if (typeof app?.revisionId !== "string") throw new Error("read_app did not return a revision id");
+  if (typeof argumentsValue.code === "string") return { ...argumentsValue, code: argumentsValue.code.replace('"__APP_REVISION_ID__"', JSON.stringify(app.revisionId)) };
+  return { ...argumentsValue, expectedRevisionId: app.revisionId };
+}
+
 // list_skills handoff: the next get_skill reads the one skill the catalog returned.
 function skillListArguments(messages) {
   let payload = JSON.parse(lastToolText(messages));
@@ -661,7 +711,10 @@ async function handleAgentCompletion(req, res, entry) {
   const toolArguments = step.argumentsFrom === "computer-mention" ? computerMentionArguments(messages)
     : step.argumentsFrom === "skill-catalog" ? skillCatalogArguments(messages, step.arguments.skill)
     : step.argumentsFrom === "capability-search" ? { ...step.arguments, ...capabilitySearchArguments(scopedMessages) }
-    : step.argumentsFrom === "skill-list" ? { ...step.arguments, ...skillListArguments(scopedMessages) } : step.arguments;
+    : step.argumentsFrom === "skill-list" ? { ...step.arguments, ...skillListArguments(scopedMessages) }
+    : step.argumentsFrom === "app-preparation" ? appPreparationStepArguments(scopedMessages, step.arguments)
+    : step.argumentsFrom === "app-starter" ? appStarterStepArguments(scopedMessages, step.arguments)
+    : step.argumentsFrom === "app-read" ? appReadStepArguments(scopedMessages, step.arguments) : step.arguments;
   if (step.argumentsFrom === "skill-catalog" && toolArguments === null) {
     entry.agentCompletion = { ...baseRequest, kind: "final", promptMarker: workload.promptMarker, toolName: null, arguments: {} };
     agentStream(res, model, [agentChunk(model, { role: "assistant" }),
@@ -687,7 +740,7 @@ async function handleAgentCompletion(req, res, entry) {
       }],
     }),
     agentChunk(model, {}, "tool_calls"),
-  ]);
+  ], step.holdUntilReleased && agentRepliesHeld);
 }
 
 async function readJson(req) {
@@ -717,7 +770,7 @@ function record(req, url, res) {
 
 function protectedResourceMetadata() {
   return {
-    resource: `${issuer}/mcp`,
+    resource: protectedResource || `${issuer}/mcp`,
     authorization_servers: [issuer],
     scopes_supported: advertisedScopes,
     bearer_methods_supported: ["header"],
@@ -983,7 +1036,11 @@ async function issueToken(req, res, entry) {
       return;
     }
     if (strictRefreshTokens) {
-      if (!form.refresh_token || !refreshTokens.has(form.refresh_token)) {
+      const family = refreshFamilies.get(form.refresh_token);
+      const usable = refreshRotation === "keep-latest"
+        ? Boolean(family && (family.current === form.refresh_token || family.previous === form.refresh_token))
+        : Boolean(form.refresh_token && refreshTokens.has(form.refresh_token));
+      if (!usable) {
         await respond(400, { error: "invalid_grant", error_description: "unknown refresh token" });
         return;
       }
@@ -1000,7 +1057,17 @@ async function issueToken(req, res, entry) {
   tokens.add(accessToken);
   const refreshToken = `mock-refresh-${randomUUID()}`;
   const issueRefreshToken = oauthCallback.issueRefreshToken !== false;
-  if (issueRefreshToken) refreshTokens.add(refreshToken);
+  if (issueRefreshToken) {
+    refreshTokens.add(refreshToken);
+    const family = grantType === "refresh_token" ? refreshFamilies.get(form.refresh_token) : undefined;
+    if (family) {
+      family.previous = form.refresh_token;
+      family.current = refreshToken;
+      refreshFamilies.set(refreshToken, family);
+    } else {
+      refreshFamilies.set(refreshToken, { current: refreshToken, previous: null });
+    }
+  }
   entry.tokenId = createHash("sha256").update(accessToken).digest("hex").slice(0, 12);
   entry.refreshTokenIssued = issueRefreshToken;
   await respond(200, {
@@ -1039,7 +1106,7 @@ function tokenFingerprint(req) {
 }
 
 function mcpResult(message) {
-  if (configuredTools.length && message.method === "tools/list") {
+  if (toolsConfigured && message.method === "tools/list") {
     return { tools: configuredTools.map(({ result, delayMs, appHtml, validateRequiredArguments, ...tool }) => tool) };
   }
   if (message.method === "resources/read") {
@@ -1350,6 +1417,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       configuredTools = body.tools;
+      toolsConfigured = true;
       json(res, 200, { configured: configuredTools.length });
       return;
     }
@@ -1482,6 +1550,8 @@ const server = http.createServer(async (req, res) => {
     // Hold completed refresh responses so a journey can commit a successful
     // rotation before delivering another request's rejection of the old grant.
     if (url.pathname === "/admin/refresh-responses" && req.method === "POST") {
+      const body = await readJson(req).catch(() => ({}));
+      refreshRotation = body?.rotation === "keep-latest" ? "keep-latest" : "reject-reuse";
       tokens.clear();
       strictRefreshTokens = true;
       holdRefreshResponses = true;
@@ -1508,6 +1578,7 @@ const server = http.createServer(async (req, res) => {
       const expiredRefreshTokens = refreshTokens.size;
       tokens.clear();
       refreshTokens.clear();
+      refreshFamilies.clear();
       strictRefreshTokens = true;
       json(res, 200, { expiredAccessTokens, expiredRefreshTokens });
       return;

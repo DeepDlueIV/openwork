@@ -52,7 +52,7 @@ export class McpAppError extends Error {
 
 type Revision = typeof ConfigObjectVersionTable.$inferSelect
 type DatabaseReader = Pick<typeof db, "select">
-export type McpAppAccessInput = { organizationId: string; member: McpMemberIdentity | null; enabled?: boolean; requestScope?: object }
+export type McpAppAccessInput = { organizationId: string; member: McpMemberIdentity | null; requestScope?: object }
 export type McpAppResource = { app: McpAppSummary; html: string; csp: McpAppCsp; resourceDigest: string }
 /** An App a member may use, without its compiled HTML. */
 export type McpAppEntry = { appId: string; pluginId: string; revisionId: string; title: string; description: string | null; serverPath: string }
@@ -470,17 +470,6 @@ export function listAccessibleMcpApps(input: McpAppAccessInput): Promise<McpAppE
   return timeMcpApp("den.accessible-apps", () => listAccessibleMcpAppsUntimed(input))
 }
 
-/**
- * The current revision of each active authored App among these ids, by App id.
- * Access is not checked: callers use it only to keep a stored reference to an
- * App pointing at the revision the App's own server now serves.
- */
-export async function currentMcpAppRevisionIds(input: { organizationId: string; appIds: string[] }): Promise<Map<string, string>> {
-  const ids = [...new Set(input.appIds)].flatMap((id) => mcpAppIdSchema.safeParse(id).success ? [appId(id)] : [])
-  const apps = await latestAuthoredApps(normalizeDenTypeId("organization", input.organizationId), ids)
-  return new Map(apps.map((app) => [app.id, app.revisionId]))
-}
-
 /** A cheap check before access-checked App work: is this config object an active App? */
 export async function isActiveMcpApp(input: { organizationId: string; appId: string }): Promise<boolean> {
   const id = mcpAppIdSchema.safeParse(input.appId)
@@ -490,11 +479,17 @@ export async function isActiveMcpApp(input: { organizationId: string; appId: str
 
 async function accessibleRevisionUncached(input: McpAppAccessInput & { appId: string }) {
   const id = appId(input.appId)
-  const pluginId = (await accessibleAppPlugins(input)).get(id)
-  if (!pluginId) return notFound()
   const organizationId = normalizeDenTypeId("organization", input.organizationId)
-  if (!await activeApp(organizationId, id)) return notFound()
-  const current = await latestRevision(organizationId, id)
+  // Read together: each is a database round trip on every App request. Nothing
+  // from the App or its revision is used unless the member can reach its Plugin.
+  const [plugins, active, current] = await Promise.all([
+    accessibleAppPlugins(input),
+    activeApp(organizationId, id),
+    latestRevision(organizationId, id),
+  ])
+  const pluginId = plugins.get(id)
+  if (!pluginId) return notFound()
+  if (!active) return notFound()
   const payload = current && compiledRevision(current)
   if (!current || !payload) return notFound()
   return { id, pluginId, organizationId, current, payload }
@@ -506,7 +501,7 @@ function accessibleRevision(input: McpAppAccessInput & { appId: string }) {
   if (!input.requestScope) return accessibleRevisionUncached(input)
   let revisions = requestRevisions.get(input.requestScope)
   if (!revisions) { revisions = new Map(); requestRevisions.set(input.requestScope, revisions) }
-  const key = JSON.stringify([input.organizationId, input.member?.orgMembershipId, input.member?.teamIds, input.enabled, input.appId])
+  const key = JSON.stringify([input.organizationId, input.member?.orgMembershipId, input.member?.teamIds, input.appId])
   let revision = revisions.get(key)
   if (!revision) { revision = accessibleRevisionUncached(input); revisions.set(key, revision) }
   return revision

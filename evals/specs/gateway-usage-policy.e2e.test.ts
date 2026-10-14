@@ -189,8 +189,10 @@ test("GATEWAY-USAGE-01 admin policy blocks member Gateway calls until a reviewed
     await admin.see({ testId: "gateway-person-limit" }, { text: /No limit/, timeoutMs: 60_000 });
     await admin.notSee({ testId: "gateway-person-limit-row" });
     await admin.notSee({ role: "link", label: "Old Gateway" });
+    // Installed desktops (0.18.55–0.18.57) still open the bare old address, so it forwards to AI Providers.
+    await admin.navigate(new URL("/dashboard/gateway-providers", world.den.ref.webUrl).toString());
+    await expectAdminRoute("/dashboard/ai-gateway?tab=ai-providers", "AI Providers");
     for (const oldPath of [
-      "/dashboard/gateway-providers",
       "/dashboard/gateway-providers/new",
       `/dashboard/gateway-providers/${world.providerId}`,
       `/dashboard/gateway-providers/${world.providerId}/edit`,

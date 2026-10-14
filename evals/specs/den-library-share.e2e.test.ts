@@ -44,9 +44,9 @@ test("a member: I want Maya and the Support team to use Slack so they can search
     await user.screenshot();
   });
 
-  await step("3. I choose Add to your Library and pick Connector", async () => {
-    await user.click({ role: "button", label: "Add to your Library" });
-    await user.see({ testId: "library-add-dialog" }, { text: /Connect the tools your AI works in/ });
+  await step("3. I choose Add to library and pick Connector", async () => {
+    await user.click({ role: "button", label: "Add to library" });
+    await user.see({ testId: "library-add-dialog" }, { text: /Only you can use it until you share it/ });
     await user.click({ testId: "library-add-connector" });
     await user.screenshot();
   });
@@ -105,6 +105,9 @@ test("a member: I want Maya and the Support team to use Slack so they can search
     await user.see({ testId: "den-toast" }, { text: /Slack is shared/, timeoutMs: 60_000 });
     await user.see({ testId: "den-toast" }, { text: new RegExp(`${reach} people can use it now\\.`) });
     await user.see({ testId: "library-section-mine" }, { text: /Slack/, timeoutMs: 60_000 });
+    // The Library row says whether Slack is ready; who can use it lives on Slack's own page.
+    await user.click({ role: "link", label: /Slack/ });
+    await user.see({ testId: "library-connector" }, { timeoutMs: 60_000 });
     await user.see({ text: "Shared with Maya and Support" });
     for (const person of ["maya", "ana", "lee", "noor"] as const) {
       expect(names(await world.library(world.den.members[person])), `${person} has Slack`).toContain("Slack");
@@ -115,10 +118,10 @@ test("a member: I want Maya and the Support team to use Slack so they can search
 });
 
 withSlack("a member: I want Sales to use my plugin so every sales call starts with the same prep", async ({ world, user, probe, step, evidence }) => {
-  await step("1. I choose Add to your Library and pick Plugin", async () => {
+  await step("1. I choose Add to library and pick Plugin", async () => {
     await user.navigate(`${world.den.ref.webUrl}/dashboard/library`);
     await user.see({ testId: "library-section-mine" }, { timeoutMs: 60_000 });
-    await user.click({ role: "button", label: "Add to your Library" });
+    await user.click({ role: "button", label: "Add to library" });
     await user.click({ testId: "library-add-plugin" });
     await user.click({ role: "button", label: "Continue" });
     await user.see({ testId: "plugin-create-form" }, { timeoutMs: 60_000 });
@@ -145,8 +148,8 @@ withSlack("a member: I want Sales to use my plugin so every sales call starts wi
   await step("3. I create it and see what's inside", async () => {
     await user.click({ role: "button", label: "Create plugin" });
     await user.see({ testId: "plugin-page" }, { timeoutMs: 60_000 });
-    await user.see({ role: "heading", label: "Sales call prep" });
-    await user.see({ testId: "whats-inside" }, { text: /3 things/ });
+    await user.see({ role: "heading", label: /Sales call prep$/ });
+    expect((await probe.dom('[data-testid="whats-inside"] [data-library-integrated-row]')).elements).toHaveLength(3);
     await user.see({ testId: "whats-inside" }, { text: /Prep a sales call/ });
     await user.see({ testId: "whats-inside" }, { text: /\/follow-up/ });
     await user.see({ text: "Only you" });
@@ -169,7 +172,7 @@ withSlack("a member: I want Sales to use my plugin so every sales call starts wi
     await user.click({ role: "button", label: `Share with ${reach} people` });
     await user.see({ testId: "den-toast" }, { text: /Sales call prep is shared/, timeoutMs: 60_000 });
     await user.see({ testId: "den-toast" }, { text: new RegExp(`${reach} people in Sales can use it now\\.`) });
-    await user.see({ text: "Shared with Sales" }, { timeoutMs: 60_000 });
+    await user.see({ testId: "library-section-mine" }, { text: /Sales call prep/, timeoutMs: 60_000 });
     for (const person of ["omar", "tess"] as const) {
       expect(names(await world.library(world.den.members[person])), `${person} has the plugin`).toContain("Sales call prep");
       const usable = await probe.api(world.den.members[person], "/v1/mcp-connections?scope=usable");
@@ -184,18 +187,21 @@ withSlack("a member: I want Sales to use my plugin so every sales call starts wi
     await user.screenshot();
   });
 
-  await step("after: My Library shows who has Sales call prep without asking Den about each plugin", async () => {
+  await step("after: My Library lists Sales call prep without asking Den about each plugin, and its page says who has it", async () => {
     const logStart = (await world.proxy.requestLog()).length;
     await user.navigate(`${world.den.ref.webUrl}/dashboard/library`);
     const status = await probe.eventually(async () => (await probe.dom('[data-library-item="Sales call prep"] [data-item-status]')).elements[0]?.text ?? "", {
-      within: 60_000, label: "who has the plugin in My Library", until: (text) => text.includes("Sales"),
+      within: 60_000, label: "the plugin's row in My Library", until: (text) => text === "Ready",
     });
-    const pluginCalls = (await world.proxy.requestLog()).slice(logStart).map((entry) => entry.path)
-      .filter((path) => path.startsWith("/v1/plugins?") || /^\/v1\/plugins\/[^/?]+\/access/.test(path));
-    expect(pluginCalls, "who has each plugin arrives with the plugin list").toEqual(["/v1/plugins?status=active&limit=100&includeAccess=true"]);
+    const accessCalls = (await world.proxy.requestLog()).slice(logStart).map((entry) => entry.path)
+      .filter((path) => /^\/v1\/plugins\/[^/?]+\/access/.test(path));
+    expect(accessCalls, "the Library list reads no plugin's access one by one").toEqual([]);
+    await user.click({ role: "link", label: /Sales call prep/ });
+    await user.see({ testId: "plugin-page" }, { timeoutMs: 60_000 });
+    await user.see({ text: "Shared with Sales" }, { timeoutMs: 60_000 });
     evidence.recordAssertionEvidence(
-      "My Library shows who has each of my plugins from one request",
-      `The Sales call prep row reads "${status}"; plugin requests Den received: ${pluginCalls.join(", ")}`,
+      "My Library lists my plugin without per-plugin access reads, and its page says who has it",
+      `The Sales call prep row reads "${status}" with no /v1/plugins/<id>/access request; its page reads "Shared with Sales"`,
       true,
     );
     await user.screenshot();

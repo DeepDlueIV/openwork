@@ -1,13 +1,15 @@
 import type { EnginePermissionRule } from "./managed-policy-rules.js";
+import { agentPermissionEngineV2Rules, type AgentPermissionRule, type EngineV2PermissionRule } from "./agent-permission-engine.js";
+import type { OrganizationMcpServers } from "./organization-mcp-names.js";
 import { nativeModelVariants } from "@openwork/types/cloud-model-fast";
 import { gatewayBase } from "./gateway-quota.js";
-import { openworkContextV2PluginPath, openworkGatewayQuotaV2PluginPath, openworkMcpResultsV2PluginPath, openworkProviderFiltersV2PluginPath } from "./openwork-extensions-plugin-path.js";
+import { openworkAgentPermissionsV2PluginPath, openworkContextV2PluginPath, openworkGatewayQuotaV2PluginPath, openworkMcpResultsV2PluginPath, openworkMcpReadinessV2PluginPath, openworkProviderFiltersV2PluginPath } from "./openwork-extensions-plugin-path.js";
 import { pathToFileURL } from "node:url";
 // Parallel v2 lane prototype: provider injection is a watched-config write. This module
 // deliberately has no reload/dispose call, unlike managed-opencode.ts and server.ts reloadOpencodeEngine.
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { chmod, mkdir, rename, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { appendEngineOutputTail, createEngineStartupLineReader } from "./engine-output.js";
 
@@ -37,12 +39,30 @@ export interface OpencodeV2ProviderSpec {
 export interface ManagedOpencodeV2ServerOptions {
   bin: string;
   rootDir: string;
+  /**
+   * Scopes this server's generated config and plugin loaders under
+   * `<rootDir>/instances/<instanceId>`. Several OpenWork apps (an installed
+   * build, a dev build, a test world) can share one engine state directory;
+   * with one shared config they overwrite each other's file, each write
+   * reloads the engine's model catalog, and a turn that starts mid-reload or
+   * after the other app's write fails with "Model unavailable". History
+   * (`opencode.db`) and the workspace stay shared.
+   */
+  instanceId?: string;
   hostname?: string;
   port?: number;
   env?: Record<string, string>;
   bootTimeoutMs?: number;
-  contextTools?: { url: string; token: string };
+  contextTools?: { url: string; token: string; browser?: { url: string; token: string } };
   permissions?: () => Promise<EnginePermissionRule[]>;
+  /** Extra absolute skill directories registered before boot, so no later config write reloads the catalog. */
+  skills?: string[];
+  /**
+   * The signed-in member's agent permissions, which the engine and the agent
+   * permissions plugin apply, with the organization MCP servers OpenWork
+   * registered, which they leave alone.
+   */
+  agentPermissions?: () => Promise<{ rules: AgentPermissionRule[]; organizationMcp: OrganizationMcpServers }>;
 }
 
 export interface OpencodeV2Health {
@@ -51,16 +71,37 @@ export interface OpencodeV2Health {
   pid: number;
 }
 
-export interface ManagedOpencodeV2Server {
+export interface OpencodeV2RequestInit {
+  method?: string;
+  body?: unknown;
+  directory?: string;
+  timeoutMs?: number;
+  /** Stop reading a larger response body and throw OpencodeV2ResponseTooLargeError instead. */
+  maxResponseBytes?: number;
+}
+
+/** A response body was larger than the caller's `maxResponseBytes`; it was not read into memory. */
+export class OpencodeV2ResponseTooLargeError extends Error {
+  constructor(readonly limitBytes: number) {
+    super(`OpenCode v2 response is larger than ${limitBytes} bytes`);
+    this.name = "OpencodeV2ResponseTooLargeError";
+  }
+}
+
+/** Where a running OpenCode v2 server listens, with its generated Basic credentials. */
+export interface OpencodeV2Connection {
   url: string;
   username: string;
   password: string;
+}
+
+export interface ManagedOpencodeV2Server extends OpencodeV2Connection {
   childPid: number | undefined;
   readonly exitCode: number | null;
   readonly stdout: string;
   readonly stderr: string;
   health(): Promise<OpencodeV2Health>;
-  fetchJson(path: string, init?: { method?: string; body?: unknown; directory?: string; timeoutMs?: number }): Promise<{ status: number; json: unknown }>;
+  fetchJson(path: string, init?: OpencodeV2RequestInit): Promise<{ status: number; json: unknown }>;
   injectProvider(spec: OpencodeV2ProviderSpec): Promise<void>;
   /**
    * Replace the mirrored providers. `disabledProviderIds` hides those
@@ -70,6 +111,8 @@ export interface ManagedOpencodeV2Server {
   setProviders(specs: OpencodeV2ProviderSpec[], disabledProviderIds?: string[]): Promise<void>;
   /** Extra absolute skill directories registered through native config `skills`. */
   setSkills(directories: string[]): Promise<void>;
+  /** Rewrites the config when what it is read from changed, e.g. the organization MCP servers OpenWork registers. */
+  refreshConfig(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -81,11 +124,79 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** One JSON request to a running OpenCode v2 server, also usable from another process. */
+export async function fetchOpencodeV2Json(
+  connection: OpencodeV2Connection,
+  path: string,
+  init: OpencodeV2RequestInit = {},
+): Promise<{ status: number; json: unknown }> {
+  const separator = path.includes("?") ? "&" : "?";
+  const requestPath = init.directory === undefined
+    ? path
+    : `${path}${separator}location%5Bdirectory%5D=${encodeURIComponent(init.directory)}`;
+  const response = await loopbackFetch(`${connection.url}${requestPath}`, {
+    method: init.method,
+    headers: {
+      authorization: `Basic ${Buffer.from(`${connection.username}:${connection.password}`).toString("base64")}`,
+      "content-type": "application/json",
+    },
+    body: init.body === undefined ? undefined : JSON.stringify(init.body),
+    signal: init.timeoutMs === undefined ? undefined : AbortSignal.timeout(init.timeoutMs),
+  });
+  const text = init.maxResponseBytes === undefined
+    ? await response.text()
+    : await readBoundedText(response, init.maxResponseBytes);
+  let json: unknown = text;
+  try {
+    json = JSON.parse(text);
+  } catch {
+    // Non-JSON engine responses remain observable as raw text.
+  }
+  return { status: response.status, json };
+}
+
+/** Read a body as UTF-8 only while it stays within `limit` bytes; chunks stay off the JS heap until decoded. */
+async function readBoundedText(response: Response, limit: number): Promise<string> {
+  if (Number(response.headers.get("content-length")) > limit) {
+    await response.body?.cancel();
+    throw new OpencodeV2ResponseTooLargeError(limit);
+  }
+  const reader = response.body?.getReader();
+  if (!reader) return "";
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    bytes += value.byteLength;
+    if (bytes > limit) {
+      await reader.cancel();
+      throw new OpencodeV2ResponseTooLargeError(limit);
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks, bytes).toString("utf8");
+}
+
 function diagnostics(exitCode: number | null, stdout: string, stderr: string): Error {
   const tail = (value: string) => value.slice(-4_000);
   return new Error(
     `OpenCode v2 server exited with code ${String(exitCode)}\nstdout:\n${tail(stdout)}\nstderr:\n${tail(stderr)}`,
   );
+}
+
+function passesModelFilters(provider: OpencodeV2ProviderSpec, model: OpencodeV2ModelSpec): boolean {
+  return (provider.whitelist === undefined || provider.whitelist.includes(model.id)) && !provider.blacklist?.includes(model.id);
+}
+
+/** A models.dev `deprecated` status is written as `disabled`, which the engine's catalog hides. */
+function isDeprecatedModel(model: OpencodeV2ModelSpec): boolean {
+  return model.config?.status === "deprecated";
+}
+
+/** Whether the engine's model catalog lists this model once the generated config loads. */
+export function engineListsModel(provider: OpencodeV2ProviderSpec, model: OpencodeV2ModelSpec): boolean {
+  return passesModelFilters(provider, model) && !isDeprecatedModel(model);
 }
 
 /** The whole generated engine config: every writer emits all current keys. */
@@ -99,16 +210,21 @@ export function renderOpencodeV2Config(input: {
   providerFiltersPluginDirectory?: string;
   /** Preserves OpenWork Cloud connection reports from Code Mode calls for the chat. */
   mcpResultsPluginDirectory?: string;
+  mcpReadinessPluginDirectory?: string;
   contextPluginDirectory?: string;
-  contextTools?: { url: string; token: string };
+  contextTools?: { url: string; token: string; browser?: { url: string; token: string } };
+  agentPermissionRules?: AgentPermissionRule[];
+  organizationMcp?: OrganizationMcpServers;
+  agentPermissionsPluginDirectory?: string;
 }): Record<string, unknown> {
   const disabled = new Set(input.disabledProviderIds ?? []);
   const enabledProviders = input.providers.filter((provider) => !disabled.has(provider.id));
   const providerConfig: Record<string, unknown> = {};
   for (const provider of enabledProviders) {
+    const providerPackage = provider.package?.replace(/^@opencode-ai\/ai\//, "@opencode/ai/") ?? "@opencode/ai/providers/openai-compatible";
     const models: Record<string, unknown> = {};
     for (const model of provider.models) {
-      if ((provider.whitelist !== undefined && !provider.whitelist.includes(model.id)) || provider.blacklist?.includes(model.id)) continue;
+      if (!passesModelFilters(provider, model)) continue;
       const config = model.config ?? {};
       const modalities = isRecord(config.modalities) ? config.modalities : {};
       models[model.id] = {
@@ -125,15 +241,15 @@ export function renderOpencodeV2Config(input: {
         ...(typeof config.family === "string" ? { family: config.family } : {}),
         ...(isRecord(config.options) ? { settings: config.options } : {}),
         ...(isRecord(config.variants) ? {
-          variants: nativeModelVariants(config.variants, provider.package),
+          variants: nativeModelVariants(config.variants, providerPackage),
         } : {}),
         ...(isRecord(config.headers) ? { headers: config.headers } : {}),
-        ...(config.status === "deprecated" ? { disabled: true } : {}),
+        ...(isDeprecatedModel(model) ? { disabled: true } : {}),
       };
     }
     providerConfig[provider.id] = {
       name: provider.name,
-      package: provider.package ?? "@opencode-ai/ai/providers/openai-compatible",
+      package: providerPackage,
       settings: {
         ...provider.settings,
         ...(provider.baseUrl ? { baseURL: provider.baseUrl } : {}),
@@ -167,12 +283,20 @@ export function renderOpencodeV2Config(input: {
       options: { providers: filters },
     }] : []),
     ...(input.mcpResultsPluginDirectory ? [{ package: pathToFileURL(input.mcpResultsPluginDirectory).href }] : []),
+    ...(input.mcpReadinessPluginDirectory ? [{ package: pathToFileURL(input.mcpReadinessPluginDirectory).href }] : []),
+    ...(input.agentPermissionRules?.length && input.agentPermissionsPluginDirectory ? [{
+      package: pathToFileURL(input.agentPermissionsPluginDirectory).href,
+      options: { rules: input.agentPermissionRules, organizationMcp: input.organizationMcp ?? {} },
+    }] : []),
   ];
+  // The engine applies the last matching rule, so the managed execution
+  // denials come last: an agent permission exception never lifts them.
+  const permissions: EngineV2PermissionRule[] = [...agentPermissionEngineV2Rules(input.agentPermissionRules ?? []), ...(input.permissions ?? [])];
   return {
     $schema: "https://opencode.ai/config.json",
     providers: providerConfig,
     ...(plugins.length ? { plugins } : {}),
-    ...(input.permissions ? { permissions: input.permissions } : {}),
+    ...(input.permissions || permissions.length ? { permissions } : {}),
     ...(input.skills.length ? { skills: [...input.skills] } : {}),
   };
 }
@@ -183,18 +307,24 @@ export async function createManagedOpencodeV2Server(
   const hostname = options.hostname ?? "127.0.0.1";
   const port = options.port ?? 0;
   const bootTimeoutMs = options.bootTimeoutMs ?? 60_000;
-  const configDir = join(options.rootDir, "config");
-  const gatewayQuotaPluginDirectory = join(options.rootDir, "gateway-quota-plugin");
-  const providerFiltersPluginDirectory = join(options.rootDir, "provider-filters-plugin");
-  const mcpResultsPluginDirectory = join(options.rootDir, "mcp-results-plugin");
-  const contextPluginDirectory = join(options.rootDir, "context-plugin");
+  const instanceRoot = options.instanceId ? join(options.rootDir, "instances", options.instanceId) : options.rootDir;
+  const configDir = join(instanceRoot, "config");
+  const gatewayQuotaPluginDirectory = join(instanceRoot, "gateway-quota-plugin");
+  const providerFiltersPluginDirectory = join(instanceRoot, "provider-filters-plugin");
+  const mcpResultsPluginDirectory = join(instanceRoot, "mcp-results-plugin");
+  const mcpReadinessPluginDirectory = join(instanceRoot, "mcp-readiness-plugin");
+  const contextPluginDirectory = join(instanceRoot, "context-plugin");
+  const agentPermissionsPluginDirectory = join(instanceRoot, "agent-permissions-plugin");
   const password = randomBytes(24).toString("base64url");
   const username = "opencode";
   let url = "";
   const providers = new Map<string, OpencodeV2ProviderSpec>();
-  let skills: string[] = [];
+  let skills: string[] = [...(options.skills ?? [])];
   let disabledProviderIds: string[] = [];
   let writes: Promise<void> = Promise.resolve();
+  // Declared before the boot config write, which reads it when the member
+  // already has stored agent permissions.
+  let agentPermissionsPluginWritten = false;
   const opencodeModelsUrl = (options.env?.OPENCODE_MODELS_URL ?? process.env.OPENCODE_MODELS_URL)?.replace(/\/+$/, "");
   // The engine needs OS paths and locale settings, not the server's provider,
   // cloud, database, or control-plane credentials. Unknown keys stay private.
@@ -229,6 +359,10 @@ export async function createManagedOpencodeV2Server(
   await writeFile(join(mcpResultsPluginDirectory, "package.json"), JSON.stringify({ type: "module" }), { mode: 0o600 });
   await writeFile(join(mcpResultsPluginDirectory, "server.js"),
     `export { default } from ${JSON.stringify(pathToFileURL(openworkMcpResultsV2PluginPath()).href)};\n`, { mode: 0o600 });
+  await mkdir(mcpReadinessPluginDirectory, { recursive: true, mode: 0o700 });
+  await writeFile(join(mcpReadinessPluginDirectory, "package.json"), JSON.stringify({ type: "module" }), { mode: 0o600 });
+  await writeFile(join(mcpReadinessPluginDirectory, "server.js"),
+    `export { default } from ${JSON.stringify(pathToFileURL(openworkMcpReadinessV2PluginPath()).href)};\n`, { mode: 0o600 });
   if (options.contextTools) {
     await mkdir(contextPluginDirectory, { recursive: true, mode: 0o700 });
     await writeFile(join(contextPluginDirectory, "package.json"), JSON.stringify({ type: "module" }), { mode: 0o600 });
@@ -279,47 +413,22 @@ export async function createManagedOpencodeV2Server(
     spawnError = error;
   });
 
-  const authorization = `Basic ${Buffer.from(`${username}:${password}`).toString("base64")}`;
-
-  async function fetchJson(
-    path: string,
-    init: { method?: string; body?: unknown; directory?: string; timeoutMs?: number } = {},
-  ): Promise<{ status: number; json: unknown }> {
+  async function fetchJson(path: string, init: OpencodeV2RequestInit = {}): Promise<{ status: number; json: unknown }> {
     if (!url) throw new Error("OpenCode v2 has not announced its listener");
-    const separator = path.includes("?") ? "&" : "?";
-    const requestPath = init.directory === undefined
-      ? path
-      : `${path}${separator}location%5Bdirectory%5D=${encodeURIComponent(init.directory)}`;
-    const response = await loopbackFetch(`${url}${requestPath}`, {
-      method: init.method,
-      headers: {
-        authorization,
-        "content-type": "application/json",
-      },
-      body: init.body === undefined ? undefined : JSON.stringify(init.body),
-      signal: init.timeoutMs === undefined ? undefined : AbortSignal.timeout(init.timeoutMs),
-    });
-    const text = await response.text();
-    let json: unknown = text;
-    try {
-      json = JSON.parse(text);
-    } catch {
-      // Non-JSON engine responses remain observable as raw text.
-    }
-    return { status: response.status, json };
+    return fetchOpencodeV2Json({ url, username, password }, path, init);
   }
 
   async function health(): Promise<OpencodeV2Health> {
-    const response = await fetchJson("/api/health", { timeoutMs: 5_000 });
+    const response = await fetchJson("/api/info", { timeoutMs: 5_000 });
     if (response.status !== 200 || !isRecord(response.json)) {
       throw new Error(`OpenCode v2 health returned HTTP ${response.status}`);
     }
-    const { healthy, version, pid } = response.json;
-    if (typeof healthy !== "boolean" || typeof version !== "string" || typeof pid !== "number") {
+    const { version, pid } = response.json;
+    if (typeof version !== "string" || typeof pid !== "number") {
       throw new Error("OpenCode v2 health returned an invalid payload");
     }
     if (pid !== child.pid) throw new Error("OpenCode v2 health did not match the spawned child");
-    return { healthy, version, pid };
+    return { healthy: true, version, pid };
   }
 
   // Every rewrite (providers, permissions, skills) serializes through one
@@ -330,20 +439,43 @@ export async function createManagedOpencodeV2Server(
     return next;
   }
 
+  // The agent permissions plugin is written and loaded only for a member who
+  // has agent permissions; everyone else's engine config stays as it was.
+  async function agentPermissionsConfig(read: NonNullable<ManagedOpencodeV2ServerOptions["agentPermissions"]>) {
+    const { rules, organizationMcp } = await read();
+    if (rules.length === 0) return {};
+    if (!agentPermissionsPluginWritten) {
+      await mkdir(agentPermissionsPluginDirectory, { recursive: true, mode: 0o700 });
+      await writeFile(join(agentPermissionsPluginDirectory, "package.json"), JSON.stringify({ type: "module" }), { mode: 0o600 });
+      await writeFile(join(agentPermissionsPluginDirectory, "server.js"),
+        `export { default } from ${JSON.stringify(pathToFileURL(openworkAgentPermissionsV2PluginPath()).href)};\n`, { mode: 0o600 });
+      agentPermissionsPluginWritten = true;
+    }
+    return { agentPermissionRules: rules, organizationMcp, agentPermissionsPluginDirectory };
+  }
+
   async function writeConfigNow(): Promise<void> {
     const target = join(configDir, "opencode.json");
-    const temporary = `${target}.tmp-${randomBytes(8).toString("hex")}`;
-    await writeFile(temporary, `${JSON.stringify(renderOpencodeV2Config({
+    const next = `${JSON.stringify(renderOpencodeV2Config({
       providers: [...providers.values()],
       disabledProviderIds,
       gatewayQuotaPluginDirectory,
       providerFiltersPluginDirectory,
       mcpResultsPluginDirectory,
+      mcpReadinessPluginDirectory,
       contextPluginDirectory,
       contextTools: options.contextTools,
       ...(options.permissions ? { permissions: await options.permissions() } : {}),
+      ...(options.agentPermissions ? await agentPermissionsConfig(options.agentPermissions) : {}),
       skills,
-    }), null, 2)}\n`, { mode: 0o600 });
+    }), null, 2)}\n`;
+    // The engine watches this file and reloads its model catalog on every
+    // change; an identical rewrite would only open a window where models are
+    // briefly unavailable.
+    const current = await readFile(target, "utf8").catch(() => null);
+    if (current === next) return;
+    const temporary = `${target}.tmp-${randomBytes(8).toString("hex")}`;
+    await writeFile(temporary, next, { mode: 0o600 });
     await rename(temporary, target);
   }
 
@@ -395,6 +527,7 @@ export async function createManagedOpencodeV2Server(
       skills = [...directories];
       await writeConfig();
     },
+    refreshConfig: writeConfig,
     close,
   };
 

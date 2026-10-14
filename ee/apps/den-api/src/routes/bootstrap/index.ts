@@ -21,9 +21,10 @@ import {
 } from "@openwork-ee/den-db/schema"
 import { createDenTypeId, normalizeDenTypeId, parseSkillMarkdown } from "@openwork-ee/utils"
 import { createHash, randomBytes } from "node:crypto"
-import type { Hono } from "hono"
+import type { Context, Hono } from "hono"
 import { describeRoute } from "hono-openapi"
 import { z } from "zod"
+import { attributeAuditRequest, auditSessionUserAttribution } from "../../audit/request-capture.js"
 import { db } from "../../db.js"
 import { ensureDefaultDesktopPolicyForOrganization } from "../../desktop-policies.js"
 import { env } from "../../env.js"
@@ -44,7 +45,7 @@ import {
 } from "../../workspace-preclaim.js"
 import { DEFAULT_ORGANIZATION_LIMITS } from "../../organization-limits.js"
 import { denTypeIdSchema, forbiddenSchema, invalidRequestSchema, jsonResponse, notFoundSchema, unauthorizedSchema } from "../../openapi.js"
-import { seedDefaultOrganizationRoles, setSessionActiveOrganization } from "../../orgs.js"
+import { setSessionActiveOrganization } from "../../orgs.js"
 import { clampUtf8Bytes, PROJECTION_TEXT_MAX_BYTES } from "../org/plugin-system/projection-text.js"
 import type { AuthContextVariables } from "../../session.js"
 import {
@@ -53,7 +54,9 @@ import {
   DEFAULT_OPENWORK_MARKETPLACE_NAME,
 } from "../org/plugin-system/default-marketplaces.js"
 
-const BOOTSTRAP_TTL_MS = 1000 * 60 * 60 * 24
+// Long enough to come back the next day or after a weekend; the 15-minute
+// pre-claim tokens and claim codes are separate, shorter clocks.
+const BOOTSTRAP_TTL_MS = 1000 * 60 * 60 * 72
 const BOOTSTRAP_RATE_LIMIT_WINDOW_MS = 1000 * 60 * 60
 const BOOTSTRAP_RATE_LIMIT_MAX = 5
 const CLAIM_TOKEN_BYTES = 32
@@ -120,6 +123,7 @@ const bootstrapWorkspaceResponseSchema = z.object({
 
 const acceptClaimResponseSchema = z.object({
   ok: z.literal(true),
+  teammateEmails: z.array(z.string()).optional().describe("Teammates to invite now that the caller owns the workspace. Only returned to the owner."),
   organization: z.object({
     id: denTypeIdSchema("organization"),
     name: z.string(),
@@ -181,6 +185,19 @@ async function readPreclaimAssertion(headers: Headers, bootstrapId: string) {
   return { ok: true as const, bootstrap: checked.bootstrap, revoked: checked.revoked }
 }
 
+/**
+ * Audit attribution for a verified bootstrap credential: the provisional
+ * organization it is bound to, actor = the authenticated user (the setup agent
+ * with its setup member for pre-claim assertions; the claiming person, not
+ * yet a member, for claim codes/links).
+ */
+async function attributeBootstrap(c: Context, input: { organizationId: string; userId: string | null; memberId?: string | null }) {
+  const attribution = input.userId ? auditSessionUserAttribution(input.userId, input.memberId) : null
+  if (!attribution) return null
+  const audited = await attributeAuditRequest(c, { organizationId: input.organizationId, ...attribution })
+  return audited.ok ? null : audited.response
+}
+
 function sha256(value: string) {
   return createHash("sha256").update(value).digest("hex")
 }
@@ -190,7 +207,19 @@ function requestAddress(headers: Headers) {
   return forwarded || headers.get("x-real-ip")?.trim() || "unknown"
 }
 
-function claimUrl(token: string, options?: { prefillEmail?: string | null; inviteEmails?: readonly string[] | null }) {
+/** Teammates saved at setup, handed to the new owner to invite. */
+async function teammateInvitesFor(bootstrapId: string, role: string): Promise<{ teammateEmails?: string[] }> {
+  if (role !== "owner") return {}
+  const [row] = await db
+    .select({ teammateEmails: WorkspaceBootstrapTable.teammateEmails })
+    .from(WorkspaceBootstrapTable)
+    .where(eq(WorkspaceBootstrapTable.id, normalizeDenTypeId("workspaceBootstrap", bootstrapId)))
+    .limit(1)
+  const emails = Array.isArray(row?.teammateEmails) ? row.teammateEmails.filter((email) => typeof email === "string" && email.includes("@")) : []
+  return emails.length > 0 ? { teammateEmails: emails } : {}
+}
+
+export function claimUrl(token: string, options?: { prefillEmail?: string | null; inviteEmails?: readonly string[] | null }) {
   let url = `${env.betterAuthUrl}/workspace-claim?token=${encodeURIComponent(token)}`
   if (options?.prefillEmail) {
     url += `&email=${encodeURIComponent(options.prefillEmail)}`
@@ -392,6 +421,8 @@ export function registerBootstrapRoutes<T extends { Variables: AuthContextVariab
           expiresAt,
           agentUserId: agentUser.id,
           assertionJti,
+          ownerEmail: input.ownerEmail ?? null,
+          teammateEmails: input.teammateEmails && input.teammateEmails.length > 0 ? [...new Set(input.teammateEmails)] : null,
         })
 
         await tx.insert(PluginTable).values({
@@ -557,7 +588,6 @@ export function registerBootstrapRoutes<T extends { Variables: AuthContextVariab
       })
 
       await ensureDefaultDesktopPolicyForOrganization({ organizationId: result.organization.id, createdByOrgMemberId: result.setupMemberId })
-      await seedDefaultOrganizationRoles(result.organization.id)
 
       const assertion = await signPreclaimAssertion({
         bootstrapId: result.setup.id,
@@ -609,6 +639,18 @@ export function registerBootstrapRoutes<T extends { Variables: AuthContextVariab
       const now = new Date()
       const tokenHash = sha256(input.token)
       const normalizedUserId = normalizeDenTypeId("user", user.id)
+
+      // Resolve the claim's organization (no lock) to record the intent before
+      // the locking transfer transaction below.
+      const [pendingClaim] = await db
+        .select({ organizationId: WorkspaceClaimTable.organizationId })
+        .from(WorkspaceClaimTable)
+        .where(and(eq(WorkspaceClaimTable.tokenHash, tokenHash), eq(WorkspaceClaimTable.status, "pending"), gt(WorkspaceClaimTable.expiresAt, now)))
+        .limit(1)
+      if (pendingClaim) {
+        const auditBlocked = await attributeBootstrap(c, { organizationId: pendingClaim.organizationId, userId: normalizedUserId })
+        if (auditBlocked) return auditBlocked
+      }
 
       const result = await db.transaction(async (tx) => {
         const [claim] = await tx
@@ -683,7 +725,7 @@ export function registerBootstrapRoutes<T extends { Variables: AuthContextVariab
       await revokePreclaimCredentials(result.bootstrapId)
       await retirePreclaimAgent(result.bootstrapId)
       await db.update(WorkspaceClaimCodeTable).set({ state: "cancelled" }).where(and(eq(WorkspaceClaimCodeTable.bootstrapId, result.bootstrapId), eq(WorkspaceClaimCodeTable.state, "pending")))
-      return c.json({ ok: true, organization: result.organization })
+      return c.json({ ok: true, organization: result.organization, ...(await teammateInvitesFor(result.bootstrapId, result.organization.role)) })
     },
   )
 
@@ -707,6 +749,8 @@ export function registerBootstrapRoutes<T extends { Variables: AuthContextVariab
       if (checked.revoked) {
         return c.json({ error: "invalid_token", error_description: "This workspace was already claimed or expired." }, 401)
       }
+      const auditBlocked = await attributeBootstrap(c, { organizationId: checked.bootstrap.organizationId, userId: checked.bootstrap.agentUserId, memberId: checked.bootstrap.setupMemberId })
+      if (auditBlocked) return auditBlocked
       c.header("Cache-Control", "no-store")
       return c.json(await issueClaimCode(checked.bootstrap))
     },
@@ -729,6 +773,8 @@ export function registerBootstrapRoutes<T extends { Variables: AuthContextVariab
     async (c) => {
       const checked = await readPreclaimAssertion(c.req.raw.headers, c.req.valid("param").bootstrapId)
       if (!checked.ok) return c.json(checked.body, 401)
+      const auditBlocked = await attributeBootstrap(c, { organizationId: checked.bootstrap.organizationId, userId: checked.bootstrap.agentUserId, memberId: checked.bootstrap.setupMemberId })
+      if (auditBlocked) return auditBlocked
       c.header("Cache-Control", "no-store")
       return c.json(await readClaimState(checked.bootstrap))
     },
@@ -755,6 +801,8 @@ export function registerBootstrapRoutes<T extends { Variables: AuthContextVariab
       if (!lookup.ok) {
         return c.json({ error: "invalid_user_code", message: "This code is invalid or has expired. Ask your agent for a new one." }, 404)
       }
+      const auditBlocked = await attributeBootstrap(c, { organizationId: lookup.organizationId, userId: c.get("user").id })
+      if (auditBlocked) return auditBlocked
       return c.json({ organization: { id: lookup.organizationId, name: lookup.organizationName } })
     },
   )
@@ -790,6 +838,8 @@ export function registerBootstrapRoutes<T extends { Variables: AuthContextVariab
       if (!lookup.ok) {
         return c.json({ error: "invalid_user_code", message: "This code is invalid or has expired. Ask your agent for a new one." }, 404)
       }
+      const auditBlocked = await attributeBootstrap(c, { organizationId: lookup.organizationId, userId: normalizedUserId })
+      if (auditBlocked) return auditBlocked
 
       const result = await db.transaction(async (tx) => {
         const [code] = await tx
@@ -846,7 +896,7 @@ export function registerBootstrapRoutes<T extends { Variables: AuthContextVariab
         await setSessionActiveOrganization(normalizeDenTypeId("session", session.id), result.organization.id)
       }
       await ensureMemberGatewayKey({ organizationId: result.organization.id, memberId: result.memberId })
-      return c.json({ ok: true, organization: result.organization })
+      return c.json({ ok: true, organization: result.organization, ...(await teammateInvitesFor(lookup.bootstrapId, result.organization.role)) })
     },
   )
 }

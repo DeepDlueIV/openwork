@@ -21,6 +21,8 @@ export interface BrowserOptions {
   host?: Host;
   startUrl?: string;
   headless?: boolean;
+  /** Report a hover-capable mouse even where headless Chrome finds no pointer device. See `ChromeSurfaceOptions.mouse`. */
+  mouse?: boolean;
   timeoutMs?: number;
 }
 
@@ -39,11 +41,16 @@ export async function chrome(opts: BrowserOptions = {}): Promise<AttachedSurface
     profile: "fresh",
     startUrl: opts.startUrl,
     headless: opts.headless,
+    mouse: opts.mouse,
   });
 
   let surface: AttachedSurface;
   try {
     surface = await attachSurface(handle, { timeoutMs: opts.timeoutMs ?? DEFAULT_TIMEOUT_MS });
+    // Headless proof fixes Intl as well as --lang; windowed previews keep their native locale.
+    if (opts.headless === true || process.env.OPENWORK_EVAL_CHROME_HEADLESS === "1" || host.kind === "daytona") {
+      await surface.client.send("Emulation.setLocaleOverride", { locale: "en_US" });
+    }
   } catch (error) {
     await host.disposeSurface(handle).catch(() => undefined);
     throw error;

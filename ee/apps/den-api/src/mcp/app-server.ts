@@ -26,7 +26,7 @@ import type { Context, Hono } from "hono"
 import { resolvePublicOrigin } from "../capability-sources/generic-oauth.js"
 import { db } from "../db.js"
 import { env } from "../env.js"
-import { appMcpServersEnabled } from "../mcp-app-rollout.js"
+import { getOrganizationFeatures } from "../features.js"
 import {
   loadMcpAppResource,
   loadMcpAppServerDefinition,
@@ -36,7 +36,8 @@ import {
 } from "../mcp-apps.js"
 import { executeCapabilityWithBudget } from "./agent.js"
 import { callMcpAppTool } from "./app-tools.js"
-import type { McpPrincipal } from "./auth.js"
+import { mcpAuditPrincipal } from "../audit/mcp-service-audit.js"
+import { mcpPrincipalCredentialId, type McpPrincipal } from "./auth.js"
 import { createCapabilityRegistryContext, type ExecuteCapabilityToolResult } from "./capability-registry.js"
 import { resolveMcpMemberIdentity } from "./external-capabilities.js"
 import { getCatalog } from "./index.js"
@@ -195,6 +196,11 @@ export function createMcpAppServer(input: {
     }
     const binding = tools.find((tool) => tool.name === request.params.name)
     if (!binding) throw new McpError(ErrorCode.InvalidParams, `Tool ${request.params.name} is not available on ${app.title}.`)
+    // OpenWork's host answers a cached read from its own storage. One that
+    // reaches this server came from another host and must not run the tool.
+    if (request.params._meta?.["openwork/cache"] === "read") {
+      return { isError: true, content: [{ type: "text", text: "No kept result is available from this host." }], _meta: { "openwork/cached": false } }
+    }
     const scope = requiredScope(binding)
     if (!input.scopes.has(scope)) return scopeError(binding.name, scope)
     return input.callTool(binding, args)
@@ -246,18 +252,16 @@ async function handleMcpAppServerRequestUntimed(input: {
   const organizationId = normalizeDenTypeId("organization", principal.organizationId)
   const refuse = (reason: AppRefusal, organizationName?: string) =>
     refuseAppRequest(context.req.raw, { reason, organizationId, appId: input.appId, organizationName })
-  const [member, home, organization, catalog] = await Promise.all([
+  const [member, home, organizationFeatures, catalog] = await Promise.all([
     resolveMcpMemberIdentity({ userId: principal.userId, organizationId }),
     appOrganizationForMember(input.appId, principal.userId),
-    db.select({ metadata: OrganizationTable.metadata }).from(OrganizationTable)
-      .where(eq(OrganizationTable.id, organizationId)).limit(1),
+    getOrganizationFeatures(organizationId),
     getCatalog(input.app, context.env),
   ])
   if (!member) return refuse("not_a_member")
   // A client authorized for one organization cannot reach an App built in another.
   if (home && home.id !== organizationId) return refuse("other_organization", home.name)
-  // Building your own Apps is per-organization and default-off.
-  if (!appMcpServersEnabled(organization[0]?.metadata)) return refuse("apps_off")
+  if (!env.appMcpServersEnabled) return refuse("apps_off")
   const capabilityContext = createCapabilityRegistryContext({
     app: input.app,
     env: context.env,
@@ -267,10 +271,11 @@ async function handleMcpAppServerRequestUntimed(input: {
     member,
     redirectUriBase: resolvePublicOrigin(context.req.raw, env.apiPublicUrl),
     generatedArtifactViewsEnabled: env.generatedArtifactViewsEnabled,
-    organizationMetadata: organization[0]?.metadata,
-    mcpConnectionsGatingEnabled: env.mcpConnectionsGatingEnabled,
+    organizationFeatures,
+    audit: mcpAuditPrincipal({ organizationId, userId: principal.userId, memberId: member.orgMembershipId, credentialId: mcpPrincipalCredentialId(principal) }),
+    usageSource: "app",
   })
-  const access = { organizationId, member, enabled: capabilityContext.externalMcpConnectionsEnabled, requestScope: {} }
+  const access = { organizationId, member, requestScope: {} }
   let definition: McpAppServerDefinition
   try {
     definition = await loadMcpAppServerDefinition({ ...access, appId: input.appId })

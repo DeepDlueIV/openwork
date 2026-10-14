@@ -1,15 +1,14 @@
 /** @jsxImportSource react */
-import { useEffect, useState, type ComponentProps, type ReactNode } from "react";
-import { CircleAlert, Cpu, Info, RefreshCcw, Server } from "lucide-react";
+import { useState, type ComponentProps, type ReactNode } from "react";
+import { Cpu, RefreshCcw, Server } from "lucide-react";
 
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import type { OpenworkServerClient, OpenworkCloudMcpHealth, OpenworkRuntimeConfigStatus, OpenworkServerStatus } from "@/app/lib/openwork-server";
+import type { OpenworkServerClient, OpenworkCloudMcpHealth, OpenworkRuntimeConfigStatus } from "@/app/lib/openwork-server";
 import { sanitizeCloudMcpHealthDiagnostic, sanitizeDiagnosticRecord } from "@/app/lib/diagnostic-sanitizer";
 import {
   DEFAULT_DEN_API_BASE_URL,
@@ -23,6 +22,7 @@ import {
   type DenEndpointSource,
 } from "@/app/lib/den-endpoint-sources";
 import { useOpencodeEngineControls } from "@/react-app/shell/opencode-engine-controls";
+import { showEngineMigrationProgress } from "@/react-app/shell/engine-migration";
 import { isDesktopRuntime } from "@/app/utils";
 import { t } from "@/i18n";
 import { ControlPlaneUrlEditor } from "../cloud/control-plane-url-editor";
@@ -702,45 +702,6 @@ export function AdvancedRuntimeConfigSourcesSection(props: AdvancedRuntimeConfig
   );
 }
 
-interface AdvancedOpencodeSectionProps {
-  busy: boolean;
-  enabled: boolean;
-  onToggle: () => void;
-}
-
-export function AdvancedOpencodeSection(props: AdvancedOpencodeSectionProps) {
-  return (
-    <LayoutSection>
-      <LayoutSectionHeader>
-        <LayoutSectionTitle>
-          {t("settings.opencode_section_label")}
-        </LayoutSectionTitle>
-        <LayoutSectionDescription>{t("settings.opencode_engine_desc")}</LayoutSectionDescription>
-      </LayoutSectionHeader>
-
-      <LayoutSectionItem>
-        <LayoutSectionItemHeader>
-          <LayoutSectionItemTitle>{t("settings.enable_exa")}</LayoutSectionItemTitle>
-          <LayoutSectionItemDescription>{t("settings.enable_exa_desc")}</LayoutSectionItemDescription>
-          <LayoutSectionItemHeaderActions>
-            <Switch
-              aria-label={t("settings.enable_exa")}
-              checked={props.enabled}
-              disabled
-              onCheckedChange={props.onToggle}
-            />
-          </LayoutSectionItemHeaderActions>
-        </LayoutSectionItemHeader>
-        <Alert>
-          <Info />
-          <AlertDescription>{t("settings.exa_unavailable")}</AlertDescription>
-        </Alert>
-        <LayoutSectionItemFootnote>{t("settings.exa_restart_hint")}</LayoutSectionItemFootnote>
-      </LayoutSectionItem>
-    </LayoutSection>
-  );
-}
-
 export function AdvancedWorkspaceRunModeSection() {
   const { workspaceRunModeEnabled, toggleWorkspaceRunMode } = useFeatureFlagsPreferences();
   const restricted = useDesktopRestriction("allowControlSettings");
@@ -774,43 +735,10 @@ export function AdvancedWorkspaceRunModeSection() {
   );
 }
 
-interface AdvancedFeatureFlagsSectionProps {
-  busy: boolean;
-  microsandboxCreateSandboxEnabled: boolean;
-  onToggleMicrosandboxCreateSandbox: () => void;
-}
-
-export function AdvancedFeatureFlagsSection(props: AdvancedFeatureFlagsSectionProps) {
-  return (
-    <LayoutSection>
-      <LayoutSectionHeader>
-        <LayoutSectionTitle>Feature flags</LayoutSectionTitle>
-        <LayoutSectionDescription>Experimental controls for sandbox and workspace behaviors.</LayoutSectionDescription>
-      </LayoutSectionHeader>
-
-      <LayoutSectionItem>
-        <LayoutSectionItemHeader>
-          <LayoutSectionItemTitle>Create Sandbox uses microsandbox image</LayoutSectionItemTitle>
-          <LayoutSectionItemDescription>
-            When enabled, Create Sandbox launches the detached worker with the microsandbox image flow instead of the default Docker image flow.
-          </LayoutSectionItemDescription>
-          <LayoutSectionItemHeaderActions>
-            <Switch
-              aria-label="Create Sandbox uses microsandbox image"
-              checked={props.microsandboxCreateSandboxEnabled}
-              disabled={props.busy || !isDesktopRuntime()}
-              onCheckedChange={props.onToggleMicrosandboxCreateSandbox}
-            />
-          </LayoutSectionItemHeaderActions>
-        </LayoutSectionItemHeader>
-      </LayoutSectionItem>
-    </LayoutSection>
-  );
-}
-
 export function AdvancedEngineV2PreviewSection(props: { client: OpenworkServerClient | null }) {
   const engine = useOpencodeEngineControls(props.client);
   const runtimeError = engine.status?.enabled ? engine.status.lastError : undefined;
+  const engineNote = engine.blockedReason ?? (engine.migrating ? "Wait for chat migration to finish." : undefined);
   return (
     <LayoutSection id="advanced-experimental-engine">
       <LayoutSectionHeader><LayoutSectionTitle>OpenCode engine</LayoutSectionTitle></LayoutSectionHeader>
@@ -825,14 +753,18 @@ export function AdvancedEngineV2PreviewSection(props: { client: OpenworkServerCl
             </ToggleGroup>
           </LayoutSectionItemHeaderActions>
         </LayoutSectionItemHeader>
-        {engine.blockedReason ? <p className="text-xs text-muted-foreground">{engine.blockedReason}</p> : null}
+        {engineNote ? <p className="text-xs text-muted-foreground">{engineNote}</p> : null}
         {engine.status?.enabled && !engine.status.running && !engine.status.lastError ? <p role="status" className="text-xs text-muted-foreground">OpenCode v2 is starting…</p> : null}
         {engine.error || runtimeError ? <p role="alert" className="text-xs text-destructive">{engine.error ?? runtimeError}</p> : null}
       </LayoutSectionItem>
       <LayoutSectionItem>
         <LayoutSectionItemHeader>
           <LayoutSectionItemTitle>V1 chat history</LayoutSectionItemTitle>
-          <LayoutSectionItemHeaderActions><Button variant="outline" size="sm" disabled={engine.disabled || !engine.status?.migration} onClick={engine.openMigration}>Migrate chats to OpenCode v2</Button></LayoutSectionItemHeaderActions>
+          <LayoutSectionItemHeaderActions>
+            {engine.migrating
+              ? <Button variant="outline" size="sm" onClick={showEngineMigrationProgress}>{t("engine_migration.show_progress")}</Button>
+              : <Button variant="outline" size="sm" disabled={engine.disabled || !engine.status?.migration} onClick={engine.openMigration}>Migrate chats to OpenCode v2</Button>}
+          </LayoutSectionItemHeaderActions>
         </LayoutSectionItemHeader>
         {engine.message ? <p role="status" className="text-xs text-muted-foreground">{engine.message}</p> : null}
       </LayoutSectionItem>
@@ -840,7 +772,6 @@ export function AdvancedEngineV2PreviewSection(props: { client: OpenworkServerCl
         <p className="py-2">Each engine has its own chat history. Switching engines does not migrate chats.</p>
         {engine.status?.running ? <p>OpenCode {engine.status.version} · {engine.status.mirroredProviderIds.length} providers · {engine.status.catalogModelIds.length} models</p> : null}
       </details>
-      {engine.dialog}
     </LayoutSection>
   );
 }
@@ -928,94 +859,6 @@ export function AdvancedDeveloperSection(props: AdvancedDeveloperSectionProps) {
           {props.deepLinkStatus ? <SettingsNotice>{props.deepLinkStatus}</SettingsNotice> : null}
         </LayoutSectionItem>
       ) : null}
-    </LayoutSection>
-  );
-}
-
-interface AdvancedConnectionSectionProps {
-  busy: boolean;
-  headerStatus: string;
-  baseUrl: string;
-  openworkServerUrl: string;
-  openworkServerStatus: OpenworkServerStatus;
-  openworkReconnectBusy: boolean;
-  isLocalEngineRunning: boolean;
-  restartBusy: boolean;
-  reconnectStatus: string | null;
-  reconnectError: string | null;
-  restartStatus: string | null;
-  restartError: string | null;
-  onReconnect: () => Promise<void>;
-  onRestart: () => Promise<void>;
-  onStopHost: () => void;
-}
-
-export function AdvancedConnectionSection(props: AdvancedConnectionSectionProps) {
-  return (
-    <LayoutSection>
-      <LayoutSectionHeader>
-        <LayoutSectionTitle>{t("settings.connection_title")}</LayoutSectionTitle>
-        <LayoutSectionDescription>{props.headerStatus}</LayoutSectionDescription>
-      </LayoutSectionHeader>
-
-      <LayoutSectionItem className="gap-3">
-        <div className="break-all font-mono text-xs text-gray-8">{props.baseUrl}</div>
-        <div className="flex flex-wrap gap-2 pt-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => void props.onReconnect()}
-            disabled={props.busy || props.openworkReconnectBusy || !props.openworkServerUrl.trim()}
-          >
-            <RefreshCcw size={14} className={props.openworkReconnectBusy ? "animate-spin" : ""} />
-            {props.openworkReconnectBusy ? t("settings.reconnecting") : t("settings.reconnect_server")}
-          </Button>
-
-          {props.isLocalEngineRunning ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => void props.onRestart()}
-              disabled={props.busy || props.restartBusy}
-            >
-              <RefreshCcw size={14} className={props.restartBusy ? "animate-spin" : ""} />
-              {props.restartBusy ? t("settings.restarting") : t("settings.restart_openwork_server")}
-            </Button>
-          ) : null}
-
-          {props.isLocalEngineRunning ? (
-            <Button
-              type="button"
-              variant="destructive"
-              size="sm"
-              onClick={props.onStopHost}
-              disabled={props.busy}
-            >
-              <CircleAlert size={14} />
-              {t("settings.stop_local_server")}
-            </Button>
-          ) : null}
-
-          {!props.isLocalEngineRunning && props.openworkServerStatus === "connected" ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={props.onStopHost}
-              disabled={props.busy}
-            >
-              {t("settings.disconnect_server")}
-            </Button>
-          ) : null}
-        </div>
-
-        {props.reconnectStatus ? <SettingsNotice>{props.reconnectStatus}</SettingsNotice> : null}
-        {props.reconnectError ? <SettingsNotice tone="error">{props.reconnectError}</SettingsNotice> : null}
-        {props.restartStatus ? <SettingsNotice>{props.restartStatus}</SettingsNotice> : null}
-        {props.restartError ? <SettingsNotice tone="error">{props.restartError}</SettingsNotice> : null}
-      </LayoutSectionItem>
     </LayoutSection>
   );
 }

@@ -11,7 +11,7 @@ import { describeRoute } from "hono-openapi"
 import { z } from "zod"
 import { OPENWORK_DOWNLOAD_URL } from "../../CONSTS.js"
 import { resolvePublicOrigin } from "../../capability-sources/generic-oauth.js"
-import { organizationInstallLinksEnabled } from "../../capability-sources/install-links-rollout.js"
+import { attributeAuditRequest, auditServiceAttribution } from "../../audit/request-capture.js"
 import { db } from "../../db.js"
 import { mintDesktopConnectLink } from "../../desktop-connect-link.js"
 import { resolveInstallerReleaseTag } from "../../desktop-releases.js"
@@ -23,9 +23,8 @@ import {
 } from "../../desktop-connect-grants.js"
 import { env } from "../../env.js"
 import { hashInstallLinkToken, mintOrganizationInstallLink } from "../../install-links.js"
-import { jsonValidator, orgMemberRoute, orgRoleRoute, publicRoute, queryValidator } from "../../middleware/index.js"
+import { jsonValidator, orgMemberRoute, publicRoute, queryValidator } from "../../middleware/index.js"
 import { denTypeIdSchema, emptyResponse, forbiddenSchema, invalidRequestSchema, jsonResponse, notFoundSchema, textResponse, unauthorizedSchema } from "../../openapi.js"
-import { organizationCapabilityKeySchema } from "../../organization-capabilities.js"
 import { normalizeOrganizationMetadata } from "../../organization-limits.js"
 import {
   cloudDesktopReleaseAssetName,
@@ -35,7 +34,7 @@ import {
 } from "../../utils/installer-artifacts.js"
 import { checkRateLimit, enforceRateLimit } from "../../utils/rate-limit.js"
 import type { OrgRouteVariables } from "./shared.js"
-import { ensureOrganizationAdmin, orgAccessFailureStatus } from "./shared.js"
+import { orgAccessFailureStatus, permissionFailureHeaders, requirePermission } from "./shared.js"
 
 const INSTALL_LINK_RATE_LIMIT_WINDOW_MS = 1000 * 60 * 60
 const INSTALL_LINK_MINT_RATE_LIMIT_MAX = 30
@@ -92,11 +91,6 @@ const authenticatedInstallConfigSchema = installConfigSchema.extend({
 const installLinkNotFoundSchema = z.object({
   error: z.literal("install_link_not_found"),
 }).meta({ ref: "InstallLinkNotFoundError" })
-
-const capabilityDisabledSchema = z.object({
-  error: z.literal("capability_disabled"),
-  capability: organizationCapabilityKeySchema,
-}).meta({ ref: "CapabilityDisabledError" })
 
 const rateLimitedSchema = z.object({
   error: z.literal("rate_limited"),
@@ -313,8 +307,22 @@ async function resolveInstallConfigForToken(token: string, request: Request) {
   return {
     ...await resolveInstallConfigForOrganization({ organization: row.organization, request }),
     installLinkId: row.installLink.id,
+    organizationId: row.organization.id,
     organizationSlug: row.organization.slug,
   }
+}
+
+/**
+ * The verified install-link token (or a connect grant issued from it) names
+ * the organization; actor service install_link:<installLinkId>. Never the
+ * token, code or a hash of either.
+ */
+async function attributeInstallLink(c: Context, owner: { organizationId: string; installLinkId: string }) {
+  const audited = await attributeAuditRequest(c, {
+    organizationId: owner.organizationId,
+    ...auditServiceAttribution("install_link", owner.installLinkId),
+  })
+  return audited.ok ? null : audited.response
 }
 
 async function serveInstallerArtifact<
@@ -379,28 +387,22 @@ export function registerOrgInstallLinkRoutes<T extends { Variables: OrgRouteVari
         200: jsonResponse("Install link created successfully.", createInstallLinkResponseSchema),
         400: jsonResponse("The install-link request was invalid.", invalidRequestSchema),
         401: jsonResponse("The caller must be signed in to create install links.", unauthorizedSchema),
-        403: jsonResponse("The organization needs the installLinks capability enabled, and only workspace owners and admins can rotate existing links.", forbiddenSchema.or(capabilityDisabledSchema)),
+        403: jsonResponse("Rotating existing links needs the Rotate install links permission.", forbiddenSchema),
         404: jsonResponse("The organization could not be found.", notFoundSchema),
         429: jsonResponse("The member has created too many install links.", rateLimitedSchema),
       },
     }),
     setActiveOrganizationFromParam,
-    orgRoleRoute(["member"]),
+    orgMemberRoute(),
     jsonValidator(createInstallLinkBodySchema),
     async (c) => {
       const input = c.req.valid("json")
       const payload = c.get("organizationContext")
 
-      if (!organizationInstallLinksEnabled(payload.organization.metadata, {
-        gatingEnabled: env.installLinksGatingEnabled,
-      })) {
-        return c.json({ error: "capability_disabled", capability: "installLinks" }, 403)
-      }
-
       if (input.rotate) {
-        const permission = ensureOrganizationAdmin(c, "Only workspace owners and admins can rotate install links.")
+        const permission = await requirePermission(c, "install_links.update")
         if (!permission.ok) {
-          return c.json(permission.response, orgAccessFailureStatus(permission.response))
+          return c.json(permission.response, orgAccessFailureStatus(permission.response), permissionFailureHeaders(permission.response))
         }
       }
 
@@ -418,13 +420,8 @@ export function registerOrgInstallLinkRoutes<T extends { Variables: OrgRouteVari
       const installLink = await mintOrganizationInstallLink({
         organizationId: payload.organization.id,
         createdByUserId: payload.currentMember.userId,
-        metadata: payload.organization.metadata,
         rotate: input.rotate,
       })
-
-      if (!installLink) {
-        return c.json({ error: "capability_disabled", capability: "installLinks" }, 403)
-      }
 
       const { handoff } = await mintInstallHandoff(installer, {
         installLinkId: installLink.installLinkId,
@@ -533,6 +530,8 @@ export function registerOrgInstallLinkRoutes<T extends { Variables: OrgRouteVari
       if (!resolved) {
         return c.json({ error: "install_link_not_found" }, 404)
       }
+      const auditBlocked = await attributeInstallLink(c, resolved)
+      if (auditBlocked) return auditBlocked
 
       const { handoff, exchangeHandoff } = await mintInstallHandoff(installer, {
         installLinkId: resolved.installLinkId,
@@ -577,6 +576,8 @@ export function registerOrgInstallLinkRoutes<T extends { Variables: OrgRouteVari
 
       const result = await installer.inspectConnectGrant(c.req.valid("json").code)
       if (result.ok) {
+        const auditBlocked = await attributeInstallLink(c, result)
+        if (auditBlocked) return auditBlocked
         return c.json({
           status: result.status,
           claims: result.claims,
@@ -620,9 +621,14 @@ export function registerOrgInstallLinkRoutes<T extends { Variables: OrgRouteVari
         }
 
         const input = c.req.valid("json")
-        const result = mode === "preview"
-          ? await installer.previewConnectGrant(input.code)
-          : await installer.consumeConnectGrant(input.code)
+        // Resolve the grant's organization without consuming it, attribute,
+        // then perform the (possibly one-time) exchange.
+        const preview = await installer.previewConnectGrant(input.code)
+        if (preview.ok) {
+          const auditBlocked = await attributeInstallLink(c, preview)
+          if (auditBlocked) return auditBlocked
+        }
+        const result = mode === "preview" ? preview : await installer.consumeConnectGrant(input.code)
         if (result.ok) {
           return c.json({ claims: result.claims })
         }
@@ -671,6 +677,8 @@ export function registerOrgInstallLinkRoutes<T extends { Variables: OrgRouteVari
       if (!resolved) {
         return c.json({ error: "install_link_not_found" }, 404)
       }
+      const auditBlocked = await attributeInstallLink(c, resolved)
+      if (auditBlocked) return auditBlocked
 
       return serveInstallerArtifact(c, installer, platformResult.data.platform, resolved.installerReleaseTag)
     },

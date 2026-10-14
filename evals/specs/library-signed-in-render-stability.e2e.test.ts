@@ -1,10 +1,11 @@
 import { browserScript } from "@openwork/testkit";
 import { fileURLToPath } from "node:url";
 import { expect } from "vitest";
-import { clickText, createAndSelectWorkspace, evalIn, waitFor } from "@openwork/behaviors";
-import { app, needs, server, test } from "@openwork/testkit";
+import { clickText, createAndSelectWorkspace, evalIn, signInDesktopAs, waitFor } from "@openwork/behaviors";
+import { allocateFreePorts, appWeb, needs, server, test } from "@openwork/testkit";
 
-const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
+// No trailing slash: the workspace is matched by its exact folder path.
+const repoRoot = fileURLToPath(new URL("../..", import.meta.url)).replace(/\/+$/, "");
 const enabled = process.env.OPENWORK_EVAL_E2E_TESTS === "1";
 const title = enabled
   ? "signed-in Library stays rendered without provider refresh storms"
@@ -12,15 +13,22 @@ const title = enabled
 
 test.skipIf(!enabled)(title, { timeout: 10 * 60_000 }, async ({ evidence, place }) => {
   needs({ optIn: ["OPENWORK_EVAL_E2E_TESTS"] });
+  const [webPort] = await allocateFreePorts(1);
+  if (!webPort) throw new Error("No port available for the app in a browser.");
   await using den = await server({
     place,
+    trustedOrigins: [`http://127.0.0.1:${webPort}`],
     org: {
       name: "Library Render Stability",
       admin: { name: "Library Admin" },
       members: { member: { name: "Library Member" } },
     },
   });
-  await using desktopApp = await app({ den, as: "member", place });
+  // The member's app in headless Chrome, on the repository workspace.
+  await using desktopApp = await appWeb({ place, name: "library-signed-in-render-stability", workspacePath: repoRoot, webPort, den: den.ref, mouse: true });
+  const member = den.members.member;
+  if (!member) throw new Error("The Library member was not created.");
+  await signInDesktopAs(desktopApp, den.ref, member);
   const workspace = await createAndSelectWorkspace(desktopApp, { path: repoRoot });
 
   const instrumented = await evalIn(desktopApp, browserScript((value) => {
@@ -38,20 +46,22 @@ test.skipIf(!enabled)(title, { timeout: 10 * 60_000 }, async ({ evidence, place 
     window.addEventListener("openwork-den-settings-changed", () => {
       window.__libraryStability.denEvents += 1;
     });
-    location.hash = value;
+    // The app in a browser routes by path; its router follows popstate.
+    history.pushState(history.state, "", value);
+    window.dispatchEvent(new PopStateEvent("popstate", { state: history.state }));
     return true;
-  }, [`#/workspace/${workspace.workspaceId}/extensions`]));
+  }, [`/workspace/${workspace.workspaceId}/extensions`]));
   expect(instrumented).toBe(true);
   await waitFor(
     desktopApp,
-    () => (location.hash.includes("/extensions")
+    () => (location.pathname.includes("/extensions")
       && [...document.querySelectorAll<HTMLElement>("h1, h2")].some((heading) => heading.textContent?.trim() === "Library")),
     { timeoutMs: 60_000, label: "signed-in Library" },
   );
 
   // The repository workspace ships skills under .opencode/skills, so Skills is
   // the deterministic card inventory for a fresh member. OpenWork's own
-  // runtimes (Browser, Computer Use) are no longer Library cards. The
+  // runtimes (such as Browser) are no longer Library cards. The
   // regression this spec guards against fires on the Library route itself:
   // repeated Den settings echoes retrigger provider sync and remove/re-add
   // inventory cards.
@@ -60,8 +70,7 @@ test.skipIf(!enabled)(title, { timeout: 10 * 60_000 }, async ({ evidence, place 
     desktopApp,
     () => (document.body.innerText.includes("browser-automation")
       && document.body.innerText.includes("create-plugin")
-      && !document.body.innerText.includes("OpenWork Browser")
-      && !document.body.innerText.includes("Computer Use")),
+      && !document.body.innerText.includes("OpenWork Browser")),
     { timeoutMs: 120_000, label: "signed-in Library inventory" },
   );
 

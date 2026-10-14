@@ -12,6 +12,8 @@ interface MockGoogleServerOptions {
   autoApprove: boolean;
   baseUrl?: string;
   threads?: Record<string, MockGoogleThread[]>;
+  /** Access-token lifetime returned by /token; below Den's 60 s safety window forces a refresh on every call. */
+  accessTokenTtlSeconds?: number;
 }
 
 export interface MockGoogleThread {
@@ -84,6 +86,17 @@ interface RecordedDriveUpload extends RecordedAttachment {
   at: string;
 }
 
+interface DriveSession {
+  email: string;
+  tokenId: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+  chunks: Buffer[];
+  received: number;
+  file?: Record<string, unknown>;
+}
+
 interface SigningKeys {
   keyId: string;
   privateKeyPem: string;
@@ -92,6 +105,7 @@ interface SigningKeys {
 interface MockGoogleState {
   accounts: Account[];
   autoApprove: boolean;
+  accessTokenTtlSeconds: number;
   baseUrl: string;
   requests: RequestEntry[];
   pending: Map<string, PendingAuthorization>;
@@ -101,6 +115,7 @@ interface MockGoogleState {
   drafts: Map<string, RecordedDraft[]>;
   threads: Record<string, MockGoogleThread[]>;
   driveUploads: Map<string, RecordedDriveUpload[]>;
+  driveSessions: Map<string, DriveSession>;
   keys: SigningKeys;
   actions: ReturnType<typeof serviceActionsWitness>;
 }
@@ -398,7 +413,7 @@ async function token(state: MockGoogleState, request: IncomingMessage, response:
     access_token: issued.accessToken,
     refresh_token: issued.refreshToken,
     token_type: "Bearer",
-    expires_in: 3600,
+    expires_in: state.accessTokenTtlSeconds,
     scope: credential.scope,
     id_token: issued.idToken,
   });
@@ -621,6 +636,41 @@ async function createDriveUpload(state: MockGoogleState, request: IncomingMessag
   });
 }
 
+async function driveResumable(state: MockGoogleState, request: IncomingMessage, response: ServerResponse, url: URL): Promise<void> {
+  if (request.method === "POST") {
+    const account = accountForRequest(state, request);
+    const token = bearerToken(request);
+    if (!account || !token) { sendJson(response, 401, { error: "unauthorized" }); return; }
+    const metadata: unknown = JSON.parse((await requestBuffer(request)).toString());
+    const size = Number(requestHeader(request, "x-upload-content-length"));
+    if (!isRecord(metadata) || typeof metadata.name !== "string" || !Number.isSafeInteger(size) || size < 1) { sendJson(response, 400, { error: "bad_metadata" }); return; }
+    const id = randomUUID();
+    state.driveSessions.set(id, { email: account.email, tokenId: tokenId(token), filename: metadata.name, mimeType: requestHeader(request, "x-upload-content-type"), size, chunks: [], received: 0 });
+    const location = new URL("/upload/drive/v3/files", state.baseUrl);
+    location.searchParams.set("uploadType", "resumable"); location.searchParams.set("upload_id", id);
+    response.writeHead(200, { location: location.href }); response.end(); return;
+  }
+  const session = state.driveSessions.get(url.searchParams.get("upload_id") ?? "");
+  if (!session) { sendJson(response, 404, { error: "session_expired" }); return; }
+  // A session is a bearer URL: uploading needs no account token, and callers must not forward it.
+  if (requestHeader(request, "authorization")) { sendJson(response, 400, { error: "unexpected_authorization" }); return; }
+  if (request.method === "DELETE") { state.driveSessions.delete(url.searchParams.get("upload_id") ?? ""); sendJson(response, 200, {}); return; }
+  if (session.file) { sendJson(response, 200, session.file); return; }
+  const content = await requestBuffer(request);
+  const range = requestHeader(request, "content-range");
+  if (range !== `bytes */${session.size}`) {
+    const match = /^bytes (\d+)-(\d+)\/(\d+)$/.exec(range);
+    if (!match || Number(match[1]) !== session.received || Number(match[2]) - Number(match[1]) + 1 !== content.byteLength || Number(match[3]) !== session.size) { sendJson(response, 400, { error: "bad_range" }); return; }
+    session.chunks.push(content); session.received += content.byteLength;
+  }
+  if (session.received !== session.size) { response.writeHead(308, session.received ? { range: `bytes=0-${session.received - 1}` } : {}); response.end(); return; }
+  const at = new Date().toISOString();
+  const recorded = { filename: session.filename, mimeType: session.mimeType, size: session.size, dataBase64: Buffer.concat(session.chunks).toString("base64"), tokenId: session.tokenId, at };
+  const uploads = state.driveUploads.get(session.email) ?? []; uploads.push(recorded); state.driveUploads.set(session.email, uploads);
+  session.file = { id: `drive-${randomUUID()}`, name: session.filename, mimeType: session.mimeType, modifiedTime: at, webViewLink: "https://drive.google.test/completed", size: String(session.size) };
+  sendJson(response, 200, session.file);
+}
+
 function pendingAuthorizations(state: MockGoogleState): unknown {
   return {
     pending: Array.from(state.pending.values()).map((entry) => ({
@@ -649,6 +699,14 @@ async function handleRequest(state: MockGoogleState, request: IncomingMessage, r
   }
   if (requestMethod === "GET" && url.pathname === "/requests") {
     sendJson(response, 200, { requests: state.requests });
+    return;
+  }
+  if (requestMethod === "POST" && url.pathname === "/__mock-google/revoke") {
+    // Models a member removing the app's access: every grant for the account stops working.
+    const email = (url.searchParams.get("email") ?? "").toLowerCase();
+    for (const [value, credential] of state.refreshTokens) if (credential.account.email === email) state.refreshTokens.delete(value);
+    for (const [value, account] of state.accessTokens) if (account.email === email) state.accessTokens.delete(value);
+    sendJson(response, 200, { ok: true });
     return;
   }
   if (requestMethod === "GET" && url.pathname === "/__mock-google/actions") {
@@ -721,6 +779,10 @@ async function handleRequest(state: MockGoogleState, request: IncomingMessage, r
     await createDraft(state, request, response);
     return;
   }
+  if (url.pathname === "/upload/drive/v3/files" && url.searchParams.get("uploadType") === "resumable") {
+    await driveResumable(state, request, response, url);
+    return;
+  }
   if (requestMethod === "POST" && url.pathname === "/upload/drive/v3/files") {
     await createDriveUpload(state, request, response);
     return;
@@ -760,6 +822,7 @@ export async function startMockGoogleServer(options: MockGoogleServerOptions): P
   const state: MockGoogleState = {
     accounts: normalizeAccounts(options.accounts),
     autoApprove: options.autoApprove,
+    accessTokenTtlSeconds: options.accessTokenTtlSeconds ?? 3600,
     baseUrl: options.baseUrl ?? "http://127.0.0.1",
     requests: [],
     pending: new Map(),
@@ -769,6 +832,7 @@ export async function startMockGoogleServer(options: MockGoogleServerOptions): P
     drafts: new Map(),
     threads: options.threads ?? {},
     driveUploads: new Map(),
+    driveSessions: new Map(),
     keys: createSigningKeys(),
     actions: serviceActionsWitness(),
   };

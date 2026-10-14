@@ -2,7 +2,7 @@ import { browserScript } from "@openwork/testkit";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createAndSelectWorkspace, evalIn, go, waitFor } from "@openwork/behaviors";
+import { clickText, createAndSelectWorkspace, evalIn, go, waitFor } from "@openwork/behaviors";
 import { desktop } from "@openwork/hosts";
 import { needs, test } from "@openwork/testkit";
 import { expect } from "vitest";
@@ -206,15 +206,30 @@ test.skipIf(!enabled)(title, async ({ evidence, place }) => {
     const pid0 = runningStatus.pid;
     if (pid0 === undefined) throw new Error("Running OpenCode v2 status did not contain a pid");
     expect(runningStatus.chatRouting).toBe(true);
-    await waitFor(app, () => (document.body.innerText.includes("Running v")), {
+    if (!runningStatus.version) throw new Error("Running OpenCode v2 status did not contain a version");
+    // Runtime details are collapsed by default; reveal them before asserting
+    // the running sidecar's version rather than the removed "Running v" copy.
+    await clickText(app, "Engine details", { selector: "#advanced-experimental-engine details > summary" });
+    await waitFor(app, browserScript((version) => {
+      const details = document.querySelector<HTMLDetailsElement>("#advanced-experimental-engine details");
+      if (!details?.open) return false;
+      const prefix = `OpenCode ${version} · `;
+      return Array.from(details.querySelectorAll<HTMLParagraphElement>("p")).some((line) => {
+        const text = line.innerText.trim();
+        const rect = line.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0
+          && text.startsWith(prefix)
+          && /^\d+ providers · \d+ models$/.test(text.slice(prefix.length));
+      });
+    }, [runningStatus.version]), {
       timeoutMs: 30_000,
-      label: "OpenCode v2 running status line",
+      label: "visible OpenCode v2 running version and catalog counts in Engine details",
     });
     const healthResponse = await serverFetchJson(app, "/health");
     expect(healthResponse.status).toBe(200);
     evidence.recordAssertionEvidence(
       "F2 enabling starts the parallel sidecar without replacing v1",
-      `The UI showed a running OpenCode v2 sidecar at pid ${pid0}, while the existing server health endpoint continued returning 200.`,
+      `Engine details visibly showed OpenCode ${runningStatus.version} with provider/model counts, matching the running sidecar's API version at pid ${pid0}, while the existing server health endpoint continued returning 200.`,
       true,
     );
 
@@ -227,7 +242,11 @@ test.skipIf(!enabled)(title, async ({ evidence, place }) => {
               npm: "@ai-sdk/openai-compatible",
               name: "Witness E2E",
               options: { baseURL: "http://127.0.0.1:65533/v1", apiKey: "witness-key-e2e" },
-              models: { "witness-model-e2e": { name: "Witness Model E2E" } },
+              models: {
+                "witness-model-e2e": { name: "Witness Model E2E" },
+                // models.dev marks retired models deprecated; the engine hides them.
+                "witness-deprecated-e2e": { name: "Witness Deprecated E2E", status: "deprecated" },
+              },
             },
             "openwork-skip-e2e": { name: "Skip E2E", options: {} },
             "openwork-untrusted-api-e2e": {
@@ -250,11 +269,22 @@ test.skipIf(!enabled)(title, async ({ evidence, place }) => {
     const mirrorLatencyMs = Date.now() - patchCompletedAt;
     const catalogStatus = await untilStatus(
       app,
-      (status) => status.catalogModelIds.includes("witness-model-e2e"),
+      (status) => status.catalogModelIds.includes("witness-model-e2e") && status.lastError === undefined,
       120_000,
       "the witness model to appear in the catalog",
     );
     const catalogLatencyMs = Date.now() - patchCompletedAt;
+    const catalogResponse = await serverFetchJson(app, `/workspace/${workspaceId}/opencode2/api/model`);
+    expect(catalogResponse.status).toBe(200);
+    const catalogModels = isRecord(catalogResponse.json) && Array.isArray(catalogResponse.json.data)
+      ? catalogResponse.json.data : [];
+    expect(catalogModels).toEqual(expect.arrayContaining([
+      expect.objectContaining({ providerID: "openwork-witness-e2e", id: "witness-model-e2e" }),
+    ]));
+    expect(catalogModels.some((model) => isRecord(model)
+      && (model.providerID === "openwork-skip-e2e" || model.providerID === "openwork-untrusted-api-e2e"))).toBe(false);
+    expect(catalogModels.some((model) => isRecord(model) && model.id === "witness-deprecated-e2e")).toBe(false);
+    expect(catalogStatus.catalogModelIds).not.toContain("witness-deprecated-e2e");
     console.info(`[engine-v2-preview-flag] mirror latency after PATCH 200: ${mirrorLatencyMs}ms; catalog latency: ${catalogLatencyMs}ms`);
     expect(mirroredStatus.skippedProviderIds).toContain("openwork-skip-e2e");
     expect(mirroredStatus.mirroredProviderIds).not.toContain("openwork-skip-e2e");
@@ -264,7 +294,7 @@ test.skipIf(!enabled)(title, async ({ evidence, place }) => {
     evidence.recordAssertionEvidence("untrusted catalog API endpoints are rejected before credential delivery", "The native provider with baseURL: null, an internal catalog API URL, and a synthetic credential was reported skipped, never mirrored, and absent from the live model catalog.", true);
     expect(catalogStatus.pid).toBe(pid0);
     expect(mirroredStatus.running).toBe(true);
-    for (const configPath of ["/api/config", "/api/config/", "/api/%63onfig"]) {
+    for (const configPath of ["/api/config", "/api/config/", "/api/%63onfig", "/api/experimental/config", "/api/experimental/%63onfig"]) {
       const privateConfig = await serverFetchJson(app, `/workspace/${workspaceId}/opencode2${configPath}`);
       expect(privateConfig.status).toBe(403);
       expect(JSON.stringify(privateConfig.json)).not.toContain("witness-key-e2e");
@@ -276,7 +306,7 @@ test.skipIf(!enabled)(title, async ({ evidence, place }) => {
     );
     evidence.recordAssertionEvidence(
       "F3 provider changes hot-mirror without restarting the sidecar",
-      `The witness provider mirrored after ${mirrorLatencyMs}ms and its model appeared in the catalog after ${catalogLatencyMs}ms, the invalid provider was skipped and never mirrored, and the sidecar remained running at pid ${pid0}.`,
+      `The witness provider mirrored after ${mirrorLatencyMs}ms and its exact provider/model pair appeared in the live catalog without a readiness error after ${catalogLatencyMs}ms; its deprecated model stayed hidden without being reported missing, skipped providers were absent, and the sidecar remained running at pid ${pid0}.`,
       true,
     );
 

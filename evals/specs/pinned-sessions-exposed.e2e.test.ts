@@ -2,7 +2,7 @@ import { expect } from "vitest";
 import { spec } from "@openwork/testkit";
 import { pinnedSessions } from "../worlds/session-shell.ts";
 
-const test = spec.world(pinnedSessions);
+const test = spec.world(pinnedSessions, { resources: { surfaces: ["appWeb"], services: [] } });
 
 type ListedSession = {
   sessionId: string;

@@ -124,6 +124,9 @@ export async function denLibraryManage(seed: Seed, ctx: { place: Place }, option
   const web = options.asAdmin
     ? await seed.web({ den, signedInAs: den.admin, startPath: options.adminStartPath ?? "/dashboard/mcp-connections", headless: true, viewport })
     : await seed.web({ den, signedInAs: den.members.sam, startPath: "/dashboard/library", headless: true, viewport });
+  const memberWeb = options.adminStartPath === "/dashboard/plugins"
+    ? await seed.web({ den, signedInAs: den.members.omar, startPath: "/dashboard/library", headless: true, viewport })
+    : null;
   const denWebOrigin = new URL(den.ref.webUrl).origin;
 
   async function library(session: DenSession): Promise<{ type: string; name: string }[]> {
@@ -135,6 +138,7 @@ export async function denLibraryManage(seed: Seed, ctx: { place: Place }, option
   return Object.assign({
     den,
     web,
+    memberWeb,
     proxy,
     slack,
     custom: den.mocks.custom,
@@ -143,6 +147,8 @@ export async function denLibraryManage(seed: Seed, ctx: { place: Place }, option
     people,
     memberIds,
     teamIds,
+    organizationId: stringField(isRecord(org.body) ? org.body.organization : null, "id"),
+    organizationSlug: stringField(isRecord(org.body) ? org.body.organization : null, "slug"),
     teamSize: (name: keyof typeof teams) => teams[name].length,
     /** True once the browser has been served the pinned catalog and discovery answers, never Den's real ones. */
     async servedPinnedCatalog(): Promise<boolean> {
@@ -197,3 +203,34 @@ export const denManageAsAdmin = (seed: Seed, ctx: { place: Place }) => denLibrar
 
 /** The same organization, with the admin signed in on Manage › Plugins. */
 export const denManagePluginsAsAdmin = (seed: Seed, ctx: { place: Place }) => denLibraryManage(seed, ctx, { asAdmin: true, adminStartPath: "/dashboard/plugins" });
+
+/** Existing connectors for a member. All providers and accounts are test data. */
+export async function denLibraryRowSignIn(seed: Seed, ctx: { place: Place }) {
+  const world = await denLibraryManage(seed, ctx);
+  const access = { orgWide: false, memberIds: [world.memberIds.sam] };
+  const ready = await seed.orgConnection(world.den.admin, {
+    name: "Slack", url: world.custom.mcpUrl, authType: "none", credentialMode: "shared", access,
+  });
+  const oauth = await seed.orgConnection(world.den.admin, {
+    name: "Stripe", url: world.slack.mcpUrl, authType: "oauth", credentialMode: "per_member", access,
+  });
+  const keyed = await seed.orgConnection(world.den.admin, {
+    name: "Keyed Docs", url: world.keyed.mcpUrl, authType: "apikey", credentialMode: "per_member", access,
+  });
+  const native = await seed.api(world.den.admin, "/v1/mcp-connections", {
+    method: "POST",
+    body: JSON.stringify({
+      kind: "native_provider", nativeProviderKey: "google-workspace", name: "Google Workspace",
+      oauthClient: { clientId: "eng-743-test-client", clientSecret: "eng-743-test-secret", features: ["calendarRead"] },
+      access,
+    }),
+  });
+  if (!native.response.ok) throw new Error(`Could not create the native test connection: HTTP ${native.response.status}`);
+  const nativeId = stringField(native.body, "id");
+  if (!nativeId) throw new Error("The native test connection has no ID.");
+  const startPath = `/v1/mcp-connections/${oauth.id}/connect/start`;
+  await world.proxy.faults.status(startPath, 503, { times: 1, body: { error: "test_sign_in_unavailable" } });
+  await world.proxy.faults.latency(startPath, 4_000, { times: 1 });
+  return Object.assign(world, { connections: { ready, oauth, keyed, nativeId }, startPath });
+}
+

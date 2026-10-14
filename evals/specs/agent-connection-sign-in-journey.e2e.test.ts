@@ -10,9 +10,11 @@ const test = spec.world(engineConnectorNeedsSignIn, {
 
 const PROMPT = "Find our roadmap page in Notion.";
 const REPLY = "Notion needs you to connect it first.";
+const CONTINUE = "I've connected it. Go ahead.";
+const FOUND = "Your roadmap page is in Notion.";
 const CARD = '[data-testid="desktop-connection-card"]';
 
-test(`AGENT-VIS-06 ${resolveEvalEngine()}: a person asks for something in a service they haven't connected and gets a Connect card`, async ({ world, user, probe, step, evidence }) => {
+test(`AGENT-VIS-06 ${resolveEvalEngine()}: a person asks for something in a service they haven't connected, gets a Connect card, and the chat carries on once they sign in`, async ({ world, user, probe, step, evidence }) => {
   await step("the person asks for their Notion roadmap page", async () => {
     await world.prepareNeedsSignIn(PROMPT, REPLY);
     await user.type("composer", PROMPT);
@@ -33,6 +35,20 @@ test(`AGENT-VIS-06 ${resolveEvalEngine()}: a person asks for something in a serv
     expect(text).toMatch(/Notion/);
     await user.see({ role: "button", label: /Connect/ });
     await user.notSee({ text: /needs_connection|connectionStatus|openwork-cloud_/ });
+    await user.screenshot();
+  });
+
+  await step("after: the person signs in to Notion from the card and the chat carries on without them typing", async () => {
+    await world.prepareTurn(CONTINUE, FOUND);
+    await user.click({ role: "button", label: /Connect/ });
+    const connected = await probe.eventually(() => world.notionSignedIn(),
+      { within: 90_000, intervalMs: 1_000, label: "Den reports Notion connected for the person", until: (value) => value });
+    await world.returnToOpenWork();
+    await user.see({ text: CONTINUE }, { timeoutMs: 60_000 });
+    await user.see({ text: FOUND }, { timeoutMs: 90_000 });
+    evidence.recordAssertionEvidence("Signing in from the card carries the chat on",
+      `Den connectedForMe=${connected}; the chat sent "${CONTINUE}" by itself and the agent answered "${FOUND}"`, connected);
+    expect(connected).toBe(true);
     await user.screenshot();
   });
 });

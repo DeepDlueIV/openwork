@@ -1,33 +1,16 @@
 import { serve } from "@hono/node-server"
-import { createApp } from "./app.js"
 import { loadConfig } from "./config.js"
-import { FILE_TOOL_NAMES } from "./files.js"
-import { remoteMcpConnector } from "./mcp.js"
-import { anthropicModel, openAIModel } from "./model.js"
-import { Runner } from "./runner.js"
 import { Store } from "./store.js"
+import { nodeSqlite } from "./node-sqlite.js"
+import { createRuntime } from "./runtime.js"
 
 const config = loadConfig()
-const store = new Store(config.dbPath)
-const recovered = store.recoverInterruptedTurns()
-
-const runner = new Runner({
-  store,
-  model:
-    config.model.protocol === "anthropic"
-      ? anthropicModel({ baseUrl: config.model.baseUrl, maxOutputTokens: config.model.maxOutputTokens })
-      : openAIModel({ baseUrl: config.model.baseUrl, maxOutputTokens: config.model.maxOutputTokens }),
-  defaultModel: config.model.model,
-  defaultModelApiKey: config.model.defaultApiKey,
-  mcp: config.mcp
-    ? remoteMcpConnector({ url: config.mcp.url, allowlist: config.mcp.toolAllowlist, reservedNames: FILE_TOOL_NAMES })
-    : undefined,
-  limits: config.limits,
-  systemPrompt: config.systemPrompt,
-})
-
-const server = serve({ fetch: createApp({ store, runner, apiToken: config.apiToken }).fetch, port: config.port }, (info) => {
-  console.log(`[headless-runner] listening on :${info.port} (${recovered} interrupted turn(s) recovered)`)
+const store = new Store(nodeSqlite(config.dbPath))
+const { app, runner, recovered, blobKind, computer } = await createRuntime(config, store)
+const server = serve({ fetch: app.fetch, port: config.port }, (info) => {
+  console.log(
+    `[headless-runner] listening on :${info.port} (${recovered} interrupted turn(s) recovered, files: ${blobKind}, computer: ${computer ? `${config.computer?.kind} ${computer.image}` : "off"})`,
+  )
 })
 
 let stopping = false

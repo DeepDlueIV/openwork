@@ -83,6 +83,7 @@ export const idTypesMapNameToPrefix = {
   automationRunEvent: "ate",
   automationThread: "ath",
   remoteSessionCommand: "rsc",
+  remoteSessionRequest: "rsr",
   codemodeRun: "cmr",
   workflowRun: "wfr",
   artifactView: "arv",
@@ -101,8 +102,6 @@ export const idTypesMapNameToPrefix = {
 
 
   tempFile: "tmpf",
-  dashboard: "dsb",
-  dashboardAccessGrant: "dsg",
   inferenceProvider: "ipr",
   inferenceProviderModel: "ipm",
   inferenceProviderCredential: "ipc",
@@ -120,6 +119,15 @@ export const idTypesMapNameToPrefix = {
   auditOperation: "aop",
   auditEventResource: "aer",
   auditUsageFact: "auf",
+  platformAuditEvent: "pae",
+  permissionSet: "pms",
+  permissionSetPermission: "psp",
+  permissionSetTeam: "pst",
+  capabilityUsageEvent: "cue",
+  capabilityUsageRollup: "cur",
+  agentPermissionPolicy: "agp",
+  agentPermissionSetting: "aps",
+  orgDefaultModel: "odm",
 } as const
 
 export const denTypeIdPrefixes = idTypesMapNameToPrefix

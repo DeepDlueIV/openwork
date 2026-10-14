@@ -105,12 +105,19 @@ type MaterializationLogger = {
   error: (message: string, metadata?: JsonRecord) => void
 }
 
+/** A per-member provider left off the worker because its owner has no active key for it. */
+export type MissingMemberCredentialProvider = {
+  id: string
+  name: string
+}
+
 export type CloudProviderMaterializationResult =
   | {
       ok: true
       status: "applied" | "noop" | "cached"
       fingerprint: string
       providers: number
+      missingMemberCredentials: MissingMemberCredentialProvider[]
     }
   | {
       ok: false
@@ -499,6 +506,13 @@ function buildProviderConfig(provider: CloudProviderMaterializationProvider) {
     models[model.modelId] = buildModelConfig(model, provider.providerConfig.npm)
   }
 
+  // Same runtime names and SDK option bindings the desktop receives.
+  const runtime = toRuntimeProviderEnv({
+    id: provider.id,
+    source: provider.source,
+    providerConfig: provider.providerConfig,
+    apiKeys: decodeProviderCredential(provider.apiKey).apiKeys,
+  })
   const config: JsonRecord = {
     id: provider.providerId,
     name: provider.name,
@@ -519,13 +533,13 @@ function buildProviderConfig(provider: CloudProviderMaterializationProvider) {
     config.api = api
   }
 
-  const options = provider.providerConfig.options
+  const options = runtime.providerConfig.options
   if (isRecord(options)) {
     config.options = options
   }
 
   const whitelist = readStringList(provider.providerConfig.whitelist)
-  if (whitelist.length > 0) {
+  if (Array.isArray(provider.providerConfig.whitelist)) {
     config.whitelist = whitelist
   }
 
@@ -603,6 +617,12 @@ function prepareMaterialization(providers: CloudProviderMaterializationProvider[
     supersededEntries,
     skipped,
   }
+}
+
+function missingMemberCredentials(prepared: PreparedMaterialization): MissingMemberCredentialProvider[] {
+  return prepared.skipped
+    .filter((provider) => provider.credentialMode === "per_member")
+    .map((provider) => ({ id: provider.id, name: provider.name }))
 }
 
 function staleSupersededKeys(supersededEntries: EnvEntry[], snapshot: EnvSnapshot) {
@@ -1191,7 +1211,7 @@ export async function materializeCloudWorkerProviders(input: {
 
     if (!input.force && materializedFingerprintByWorkerInstance.get(cacheKey) === fingerprint) {
       materializationFailureByWorkerInstance.delete(cacheKey)
-      return { ok: true, status: "cached", fingerprint, providers: providerCount }
+      return { ok: true, status: "cached", fingerprint, providers: providerCount, missingMemberCredentials: missingMemberCredentials(prepared) }
     }
 
     logSkippedProviders({
@@ -1236,7 +1256,7 @@ export async function materializeCloudWorkerProviders(input: {
     ) {
       materializedFingerprintByWorkerInstance.set(cacheKey, fingerprint)
       materializationFailureByWorkerInstance.delete(cacheKey)
-      return { ok: true, status: "noop", fingerprint, providers: providerCount }
+      return { ok: true, status: "noop", fingerprint, providers: providerCount, missingMemberCredentials: missingMemberCredentials(prepared) }
     }
 
     let envWritten = false
@@ -1339,7 +1359,7 @@ export async function materializeCloudWorkerProviders(input: {
 
     materializedFingerprintByWorkerInstance.set(cacheKey, fingerprint)
     materializationFailureByWorkerInstance.delete(cacheKey)
-    return { ok: true, status: "applied", fingerprint, providers: providerCount }
+    return { ok: true, status: "applied", fingerprint, providers: providerCount, missingMemberCredentials: missingMemberCredentials(prepared) }
   } catch (error) {
     const result = failureResult({
       reason: error instanceof Error ? error.message : "provider_materialization_failed",

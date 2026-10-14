@@ -16,6 +16,9 @@ export interface HeadlessThreadModel {
   variant?: string;
 }
 
+/** The OpenCode engine a thread runs on. */
+export type HeadlessThreadEngine = "v1" | "v2";
+
 export type HeadlessThreadStatus =
   | { type: "idle" }
   | { type: "busy" }
@@ -34,6 +37,12 @@ export interface HeadlessThreadMessagePart {
   tool?: string;
   callId?: string;
   toolStatus?: string;
+  /** The tool call's input, as the engine recorded it. */
+  toolInput?: unknown;
+  /** The tool call's output text, once it completed. */
+  toolOutput?: string;
+  /** The tool call's error text, when it failed. */
+  toolError?: string;
   synthetic?: boolean;
   ignored?: boolean;
 }
@@ -66,6 +75,10 @@ export interface HeadlessThreadUsage {
 
 export interface CreateThreadInput {
   title: string;
+  /** Native V2 creation identity. V1 rejects this before creating a session. */
+  id?: string;
+  /** Native V2 metadata, verified on the creation receipt before any prompt. */
+  metadata?: Record<string, unknown>;
   /** Optional first turn. When present the thread starts running immediately. */
   prompt?: string;
   model?: HeadlessThreadModel;
@@ -84,12 +97,16 @@ export interface HeadlessThread {
   createdAt: number | null;
   /** True when `createThread` was given a prompt and the engine accepted it. */
   started: boolean;
+  /** The engine that owns this thread. */
+  engine?: HeadlessThreadEngine;
+  /** The model the thread was started with, when one was resolved. */
+  model?: HeadlessThreadModel;
 }
 
 export interface HeadlessThreadTurnInput {
   prompt: string;
   model?: HeadlessThreadModel;
-  /** Stable engine message id used to make prompt admission idempotent. */
+  /** Stable message identity. V2 deduplicates admission atomically; V1 only checks history before submitting. */
   messageId?: string;
   signal?: AbortSignal;
 }
@@ -204,8 +221,17 @@ export interface HeadlessThreadClientOptions {
   token: string;
   /** Host credential for server-to-server execution against the resolved Cloud runtime. */
   hostToken?: string;
-  /** Model used when a call does not name one. */
+  /**
+   * Model used when a call does not name one. Without it, the client asks the
+   * server for the workspace's default model.
+   */
   defaultModel?: HeadlessThreadModel;
+  /**
+   * The engine to drive. `auto` (the default) asks the server once which
+   * engine its chats use, so headless threads land where the app reads them.
+   */
+  engine?: HeadlessThreadEngine | "auto";
+  requireModelAvailability?: boolean;
   /** Default `waitForThread` poll interval. Defaults to 500ms. */
   pollIntervalMs?: number;
   /** Bounds every individual HTTP request. Defaults to 15 seconds; use 0 to disable. */

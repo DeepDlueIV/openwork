@@ -10,10 +10,9 @@ import {
   resolveProviderScopes,
   type NativeOAuthProviderConfig,
 } from "./provider-registry.js"
-import { getConnectedAccount, getOrgOAuthClient } from "./oauth-credentials.js"
+import { getConnectedAccountForListing, getOrgOAuthClient } from "./oauth-credentials.js"
 import { readProviderTenantId } from "./oauth-tenant.js"
 import { listExternalMcpConnections, listUsableNativeProviderConnections } from "./external-mcp-connections.js"
-import { memberFacingMcpConnectionsEnabled } from "./external-mcp-rollout.js"
 
 /**
  * Native providers (google-workspace, ...) surface in the SAME member-facing
@@ -33,6 +32,8 @@ export type NativeProviderConnectionEntry = {
   credentialMode: "per_member"
   /** Native providers are implemented by Den itself and never have a standard MCP catalog to expose. */
   exposeDirectly: false
+  /** Absent for legacy synthetic entries without a stored connector row. */
+  createdAt?: string
   connected: boolean
   connectedAt: string | null
   connectedForMe: boolean
@@ -78,6 +79,7 @@ export function buildNativeProviderEntry(
     clientConfigured: boolean
     connectedForMe: boolean
     connectedAt?: Date
+    createdAt?: Date
     externalAccountId?: string | null
     grantedScopes?: string[] | null
     reconnect?: NativeProviderReconnectState
@@ -97,6 +99,7 @@ export function buildNativeProviderEntry(
     credentialMode: "per_member",
     exposeDirectly: false,
     nativeProviderKey: provider.providerId,
+    ...(state.createdAt ? { createdAt: state.createdAt.toISOString() } : {}),
     connected: true,
     connectedAt: state.connectedForMe && state.connectedAt ? state.connectedAt.toISOString() : null,
     connectedForMe: state.connectedForMe,
@@ -112,20 +115,24 @@ export function buildNativeProviderEntry(
 
 export type NativeProviderPolicyError = { kind: "policy_blocked"; message: string }
 
+/**
+ * Connect is generally available: the per-organization `mcpConnections` opt-out
+ * was retired on purpose (product decision, 2026-10), so a stored `false`
+ * override no longer blocks native actions. Access is limited per connection
+ * (team grants) and by each member's own credentials, both enforced where the
+ * connection is resolved. Only a missing organization is refused here.
+ */
+
 export async function nativeProviderConnectionPolicyError(organizationId: DenTypeId<"organization">): Promise<NativeProviderPolicyError | null> {
   const [organization] = await db
-    .select({ metadata: OrganizationTable.metadata })
+    .select({ id: OrganizationTable.id })
     .from(OrganizationTable)
     .where(eq(OrganizationTable.id, organizationId))
     .limit(1)
-  if (organization && memberFacingMcpConnectionsEnabled(organization.metadata, {
-    gatingEnabled: env.mcpConnectionsGatingEnabled,
-  })) return null
+  if (organization) return null
   return {
     kind: "policy_blocked",
-    message: organization
-      ? "Connect is disabled for this organization. Ask your administrator to have it re-enabled."
-      : "This organization is unavailable. Ask your administrator to check your organization access.",
+    message: "This organization is unavailable. Ask your administrator to check your organization access.",
   }
 }
 
@@ -148,7 +155,7 @@ export async function listNativeProviderUsableEntries(input: {
     if (!provider) continue
     const client = await getOrgOAuthClient(input.organizationId, connection.id)
     if (!client) continue
-    const account = await getConnectedAccount({
+    const account = await getConnectedAccountForListing({
       organizationId: input.organizationId,
       orgMembershipId: input.orgMembershipId,
       providerId: connection.id,
@@ -158,6 +165,7 @@ export async function listNativeProviderUsableEntries(input: {
       connectedForMe: Boolean(account?.accessToken),
       connectedAt: account?.connectedAt,
       credentialProviderId: connection.id,
+      createdAt: connection.createdAt,
       name: connection.name,
       ...(account?.externalAccountId ? { externalAccountId: account.externalAccountId } : {}),
       ...(account?.scopes ? { grantedScopes: account.scopes } : {}),
@@ -177,7 +185,7 @@ export async function listNativeProviderUsableEntries(input: {
   for (const provider of Object.values(NATIVE_OAUTH_PROVIDERS)) {
     const client = await getOrgOAuthClient(input.organizationId, provider.providerId)
     if (!client) continue
-    const account = await getConnectedAccount({
+    const account = await getConnectedAccountForListing({
       organizationId: input.organizationId,
       orgMembershipId: input.orgMembershipId,
       providerId: provider.providerId,

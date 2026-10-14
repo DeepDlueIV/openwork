@@ -806,6 +806,216 @@
       "when": 1790785674344,
       "tag": "0115_slack_assistant",
       "breakpoints": true
+    },
+    {
+      "idx": 116,
+      "version": "5",
+      "when": 1790791135950,
+      "tag": "0116_free_auto_and_provider_pins",
+      "breakpoints": true
+    },
+    {
+      "idx": 117,
+      "version": "5",
+      "when": 1790803693966,
+      "tag": "0117_slack_assistant_model",
+      "breakpoints": true
+    },
+    {
+      "idx": 118,
+      "version": "5",
+      "when": 1790968115525,
+      "tag": "0118_slack_assistant_progress_updates",
+      "breakpoints": true
+    },
+    {
+      "idx": 119,
+      "version": "5",
+      "when": 1790975539582,
+      "tag": "0119_remote_session_progress",
+      "breakpoints": true
+    },
+    {
+      "idx": 120,
+      "version": "5",
+      "when": 1790977843475,
+      "tag": "0120_remote_session_requests",
+      "breakpoints": true
+    },
+    {
+      "idx": 121,
+      "version": "5",
+      "when": 1790980102568,
+      "tag": "0121_slack_desktop_handoff",
+      "breakpoints": true
+    },
+    {
+      "idx": 122,
+      "version": "5",
+      "when": 1791004073865,
+      "tag": "0122_remote_session_targets",
+      "breakpoints": true
+    },
+    {
+      "idx": 123,
+      "version": "5",
+      "when": 1791054298411,
+      "tag": "0123_lifecycle_emails",
+      "breakpoints": true
+    },
+    {
+      "idx": 124,
+      "version": "5",
+      "when": 1791231249951,
+      "tag": "0124_account_provider_id_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 125,
+      "version": "5",
+      "when": 1791234067820,
+      "tag": "0125_gateway_usage_route_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 126,
+      "version": "5",
+      "when": 1791236866859,
+      "tag": "0126_telemetry_event_org_window_index",
+      "breakpoints": true
+    },
+    {
+      "idx": 127,
+      "version": "5",
+      "when": 1791239110693,
+      "tag": "0127_glossy_joystick",
+      "breakpoints": true
+    },
+    {
+      "idx": 128,
+      "version": "5",
+      "when": 1791246307322,
+      "tag": "0128_remove_legacy_analytics",
+      "breakpoints": true
+    },
+    {
+      "idx": 129,
+      "version": "5",
+      "when": 1791266169752,
+      "tag": "0129_organization_features",
+      "breakpoints": true
+    },
+    {
+      "idx": 130,
+      "version": "5",
+      "when": 1791304695594,
+      "tag": "0130_gateway_litellm_issued_keys",
+      "breakpoints": true
+    },
+    {
+      "idx": 131,
+      "version": "5",
+      "when": 1791313243548,
+      "tag": "0131_platform_audit_event",
+      "breakpoints": true
+    },
+    {
+      "idx": 132,
+      "version": "5",
+      "when": 1791407326379,
+      "tag": "0132_gateway_cloud_sign_in",
+      "breakpoints": true
+    },
+    {
+      "idx": 133,
+      "version": "5",
+      "when": 1791492698722,
+      "tag": "0133_free_auto_cached_input_tokens",
+      "breakpoints": true
+    },
+    {
+      "idx": 134,
+      "version": "5",
+      "when": 1791507341644,
+      "tag": "0134_managed_deployments",
+      "breakpoints": true
+    },
+    {
+      "idx": 135,
+      "version": "5",
+      "when": 1791528001798,
+      "tag": "0135_restore_legacy_analytics",
+      "breakpoints": true
+    },
+    {
+      "idx": 136,
+      "version": "5",
+      "when": 1791528391963,
+      "tag": "0136_capability_usage",
+      "breakpoints": true
+    },
+    {
+      "idx": 137,
+      "version": "5",
+      "when": 1791533354128,
+      "tag": "0137_permissions",
+      "breakpoints": true
+    },
+    {
+      "idx": 138,
+      "version": "5",
+      "when": 1791533359673,
+      "tag": "0138_deprecate_super_admin",
+      "breakpoints": true
+    },
+    {
+      "idx": 139,
+      "version": "5",
+      "when": 1791567943380,
+      "tag": "0139_library_usage",
+      "breakpoints": true
+    },
+    {
+      "idx": 140,
+      "version": "5",
+      "when": 1791677020888,
+      "tag": "0140_blushing_thanos",
+      "breakpoints": true
+    },
+    {
+      "idx": 141,
+      "version": "5",
+      "when": 1791686356530,
+      "tag": "0141_salty_captain_midlands",
+      "breakpoints": true
+    },
+    {
+      "idx": 142,
+      "version": "5",
+      "when": 1791850844830,
+      "tag": "0142_secret_bruce_banner",
+      "breakpoints": true
+    },
+    {
+      "idx": 143,
+      "version": "5",
+      "when": 1791920764226,
+      "tag": "0143_library_usage_rollups",
+      "breakpoints": true
+    },
+    {
+      "idx": 144,
+      "version": "5",
+      "when": 1791933660565,
+      "tag": "0144_agent_permissions",
+      "breakpoints": true
+    },
+    {
+      "idx": 145,
+      "version": "5",
+      "when": 1791943155627,
+      "tag": "0145_org_default_model",
+      "breakpoints": true
     }
   ]
 }

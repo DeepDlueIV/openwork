@@ -15,7 +15,7 @@ import {
 } from "@openwork/hosts";
 import type { SandboxRepoSourceReceipt } from "@openwork/hosts";
 import { startLocalRuntime, startRemoteRuntime } from "./app-web-runtime.ts";
-import type { AppWebRuntime } from "./app-web-runtime.ts";
+import type { AppWebRuntime, AppWebRuntimeOptions } from "./app-web-runtime.ts";
 import type { MockBoot, MockHandle } from "./mock.ts";
 import type { Place } from "./place.ts";
 import { observeAppWebNetwork } from "./app-web-network.ts";
@@ -30,6 +30,9 @@ const MOCK_SCRIPT_PATH = join(REPO_ROOT, "scripts", "mock-oauth-mcp-server.mjs")
 
 export interface SeedAppWebOptions {
   workspacePath: string;
+  engine?: AppWebRuntimeOptions["engine"];
+  den?: AppWebRuntimeOptions["den"];
+  webPort?: number;
   emptyWorkspace?: boolean;
   /** Explicit fixture runtime settings; the normal isolated environment is retained. */
   env?: Record<string, string>;
@@ -37,6 +40,8 @@ export interface SeedAppWebOptions {
   name?: string;
   mocks?: Record<string, MockBoot>;
   headless?: boolean;
+  /** Report a hover-capable mouse even where headless Chrome finds no pointer device. See `ChromeSurfaceOptions.mouse`. */
+  mouse?: boolean;
 }
 
 /** A test-owned real app-web stack. This is distinct from seed.web(), which drives Den. */
@@ -224,6 +229,7 @@ export async function appWeb(options: SeedAppWebOptions & { place: Place }): Pro
         host: options.place.host(),
         startUrl: "about:blank",
         headless: options.headless ?? true,
+        mouse: options.mouse,
       });
       if (browser.handle.kind !== "chrome") throw new Error("App-web requires a chrome handle.");
       const sandbox = browser.handle.sandboxId;
@@ -245,7 +251,7 @@ export async function appWeb(options: SeedAppWebOptions & { place: Place }): Pro
         sourcePreparedFingerprint: source.preparedFingerprint,
       };
       mocks = await bootRemoteMocks(sandbox, options.mocks ?? {});
-      runtime = await startRemoteRuntime(sandbox, worldName, workspaceRoot, source, { syntheticPreactivatedDenOrigin: options.syntheticPreactivatedDenOrigin, env: options.env, emptyWorkspace: options.emptyWorkspace });
+      runtime = await startRemoteRuntime(sandbox, worldName, workspaceRoot, source, { engine: options.engine, den: options.den, webPort: options.webPort, syntheticPreactivatedDenOrigin: options.syntheticPreactivatedDenOrigin, env: options.env, emptyWorkspace: options.emptyWorkspace });
     } else {
       // Capture only the commit identity, before mocks or app processes launch.
       // Do not expose git stderr, checkout paths, or environment in evidence.
@@ -263,16 +269,21 @@ export async function appWeb(options: SeedAppWebOptions & { place: Place }): Pro
         throw new Error("Invalid local app-web source SHA receipt.");
       }
       mocks = await bootLocalMocks(options.place, options.mocks ?? {});
-      runtime = await startLocalRuntime(worldName, workspaceRoot, { syntheticPreactivatedDenOrigin: options.syntheticPreactivatedDenOrigin, env: options.env, emptyWorkspace: options.emptyWorkspace });
+      runtime = await startLocalRuntime(worldName, workspaceRoot, { engine: options.engine, den: options.den, webPort: options.webPort, syntheticPreactivatedDenOrigin: options.syntheticPreactivatedDenOrigin, env: options.env, emptyWorkspace: options.emptyWorkspace });
       browser = await chrome({
         name: worldName,
         host: options.place.host(),
         startUrl: "about:blank",
         headless: options.headless ?? true,
+        mouse: options.mouse,
       });
       if (browser.handle.kind !== "chrome") throw new Error("App-web requires a chrome handle.");
       browser.handle.meta = { ...browser.handle.meta, actualSourceSha: localSourceSha };
     }
+    // A person's app window has focus. Headless Chrome otherwise reports an
+    // unfocused page, and keyboard shortcuts pressed before any click are lost.
+    await browser.client.send("Emulation.setFocusEmulationEnabled", { enabled: true });
+    await browser.client.send("Page.bringToFront");
     // Observe entry-bundle failures before navigation. The static startup page
     // survives a broken module load, so a DOM timeout alone hides the cause.
     await addInitScript(browser.client, () => {

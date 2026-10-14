@@ -4,7 +4,7 @@ import type { DenSession } from "@openwork/behaviors";
 import { spec } from "@openwork/testkit";
 import { orgModelAnalyticsWorld } from "../worlds/org-model-analytics.ts";
 
-const test = spec.world(orgModelAnalyticsWorld, { timeout: 900_000, needs: {} });
+const test = spec.world(orgModelAnalyticsWorld, { timeout: 900_000, needs: {}, resources: { surfaces: ["web"], services: ["den"] } });
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -65,7 +65,7 @@ async function readAnalytics(session: DenSession, orgId: string): Promise<Record
   return requireRecord(requireRecord(result.body, "analytics response").models, "analytics models");
 }
 
-test("organization model analytics aggregate session dimensions without cross-org leakage", { timeout: 600_000 }, async ({ evidence, world, user }) => {
+test("organization model analytics aggregate session dimensions without cross-org leakage", { timeout: 600_000 }, async ({ evidence, world, user, probe, step }) => {
   const { den } = world;
   const primaryOrgId = await organizationIdByName(den.admin, "Analytics team");
   const otherOrg = await provisionOrg(den.ref, {});
@@ -113,31 +113,51 @@ test("organization model analytics aggregate session dimensions without cross-or
     JSON.stringify(otherModels),
     Array.isArray(otherModels.usage30d) && otherModels.usage30d.length === 0,
   );
-  await user.see({ text: "Understand how your team works in OpenWork" }, { timeoutMs: 60_000 });
+  await user.see({ role: "heading", label: "Usage & adoption" }, { timeoutMs: 60_000 });
   await user.click({ role: "button", label: "Refresh analytics" });
   await user.see({ text: /^prov\/model-a\s+1$/ }, { timeoutMs: 30_000 });
   await user.see({ text: /^prov\/model-b\s+1$/ });
   await user.notSee({ text: "No model usage yet" });
-  await user.screenshot();
   evidence.recordAssertionEvidence("Usage and adoption shows the same model usage returned by the organization API", "Both model rows show exactly one session, matching the API totals, and the empty-state message is absent", true);
 
-  await world.analyticsStoreUnavailable(true);
-  const unavailable = await denFetch(den.admin, "/v1/telemetry/analytics", { headers: auth(den.admin, primaryOrgId) });
-  expect(unavailable.response.status).toBe(500);
-  await user.reload();
-  await user.see({ text: "Could not load analytics." }, { timeoutMs: 60_000 });
-  await user.notSee({ text: "No model usage yet" });
-  await user.notSee({ text: "No usage events yet" });
-  await world.analyticsStoreUnavailable(false);
-  await user.click({ role: "button", label: "Refresh analytics" });
-  await user.see({ text: "prov/model-a" }, { timeoutMs: 30_000 });
-  await user.notSee({ text: "Could not load analytics." });
-  evidence.recordAssertionEvidence("An analytics outage is shown as an error and can recover without inventing zero usage", "An analytics storage outage returned HTTP 500 and produced the error state with no empty charts; Refresh restored the previously ingested models after recovery", true);
+  await step("adoption uses neutral statistics for the same model sessions", async () => {
+    const stats = (await probe.dom('[data-analytics-stat]')).elements;
+    expect(stats.length).toBeGreaterThan(0);
+    expect((await probe.dom('[data-analytics-stat] svg')).elements).toHaveLength(0);
+    expect(await readAnalytics(den.admin, primaryOrgId)).toEqual(primaryModels);
+    evidence.recordAssertionEvidence("statistics stay neutral", `${stats.length} neutral statistics, zero decorative icons; the same two sessions and selection totals remain.`, true);
+    await user.screenshot();
+    await user.click({ role: "link", label: "Models & usage" });
+    await user.see({ role: "heading", label: "Models & usage" });
+    await user.screenshot();
+    await user.click({ role: "link", label: /^Usage & adoption$/ });
+    await user.see({ text: "prov/model-b" });
+  });
+
+  await step("an outage keeps the error distinct from empty usage and a retry restores counts", async () => {
+    await world.analyticsStoreUnavailable(true);
+    const unavailable = await denFetch(den.admin, "/v1/telemetry/analytics", { headers: auth(den.admin, primaryOrgId) });
+    expect(unavailable.response.status).toBe(500);
+    await user.reload();
+    await user.see({ text: "Couldn't load analytics" }, { timeoutMs: 60_000 });
+    await user.notSee({ text: "No model usage yet" });
+    await user.notSee({ text: "No usage events yet" });
+    await user.notSee({ role: "button", label: "Refresh analytics" });
+    await user.see({ role: "button", label: "Try again" });
+    await user.notSee({ text: "Your data is safe. This is usually a short connection problem." });
+    await user.screenshot();
+    await world.analyticsStoreUnavailable(false);
+    await user.click({ role: "button", label: "Try again" });
+    await user.see({ text: "prov/model-a" }, { timeoutMs: 30_000 });
+    await user.notSee({ text: "Couldn't load analytics" });
+    evidence.recordAssertionEvidence("An analytics outage is shown as an error and can recover without inventing zero usage", "An analytics storage outage returned HTTP 500 and produced the error state with no empty charts; Refresh restored the previously ingested models after recovery", true);
+    await user.screenshot();
+  });
   await user.click({ role: "link", label: "Models & usage" });
-  await user.see({ text: "Understand your team’s OpenWork Models activity, consumption, and shared limits." });
+  await user.see({ role: "heading", label: "Models & usage" });
   await user.notSee({ role: "button", label: "Subscribe" });
   await user.click({ role: "link", label: /^Usage & adoption$/ });
-  await user.see({ text: "Understand how your team works in OpenWork" });
+  await user.see({ role: "heading", label: "Usage & adoption" });
   await user.see({ text: "prov/model-b" });
   evidence.recordAssertionEvidence("Shared navigation connects adoption and Models analytics", "Both views are reachable through the shared navigation and returning preserves access to the same organization’s model analytics", true);
 });

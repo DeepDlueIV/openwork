@@ -21,12 +21,25 @@ export function LinkButton({ variant = "secondary", size = "md", className = "",
  * The one list used by My Library and Manage: a white panel of rows with a
  * 32px logo lane, name and description, a status lane, and an action lane.
  */
-export function ItemSection({ title, meta, children, testId }: {
+export function ItemSection({ title, meta, children, testId, variant = "default" }: {
   title: string;
   meta?: ReactNode;
   children: ReactNode;
   testId?: string;
+  /** "rule": a hairline header over a flat list, as the Library reads. */
+  variant?: "default" | "rule";
 }) {
+  if (variant === "rule") {
+    return (
+      <section className="flex flex-col" data-testid={testId}>
+        <div className="flex items-center justify-between gap-4 border-b border-gray-200 pb-1.5">
+          <h2 className="text-[12px] font-medium leading-4 text-gray-700">{title}</h2>
+          {meta ? <p className="text-[12px] leading-4 text-gray-500">{meta}</p> : null}
+        </div>
+        {children}
+      </section>
+    );
+  }
   return (
     <section className="flex flex-col gap-2.5" data-testid={testId}>
       <div className="flex items-center justify-between gap-4">
@@ -38,9 +51,14 @@ export function ItemSection({ title, meta, children, testId }: {
   );
 }
 
-export function ItemPanel({ children, className = "" }: { children: ReactNode; className?: string }) {
+export function ItemPanel({ children, className = "", variant = "divided" }: {
+  children: ReactNode;
+  className?: string;
+  /** Inset lists use padded, rounded rows instead of edge-to-edge dividers. */
+  variant?: "divided" | "inset";
+}) {
   return (
-    <div className={`flex flex-col divide-y divide-gray-100 rounded-2xl border border-gray-100 bg-white py-1 ${className}`}>
+    <div className={`flex flex-col rounded-2xl border border-gray-100 bg-white ${variant === "inset" ? "p-1.5" : "divide-y divide-gray-100 py-1"} ${className}`}>
       {children}
     </div>
   );
@@ -78,10 +96,20 @@ export function ItemRow({
   title,
   description,
   status,
+  statusOnNarrow,
+  wideAction,
+  wrapDescription,
   action,
   href,
   testId,
+  comparison,
+  compact = false,
 }: {
+  statusOnNarrow?: boolean;
+  wideAction?: boolean;
+  wrapDescription?: boolean;
+  /** Numeric comparisons stay next to the name instead of using the status lane. */
+  comparison?: ReactNode;
   logo?: ReactNode;
   title: ReactNode;
   description?: ReactNode;
@@ -89,18 +117,21 @@ export function ItemRow({
   action?: ReactNode;
   href?: string;
   testId?: string;
+  /** Compact state lane remains visible in a narrow Library window. */
+  compact?: boolean;
 }) {
   const body = (
     <>
       {logo ? <span className="flex shrink-0 items-center">{logo}</span> : null}
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
         <span className="truncate text-[14px] font-medium leading-5 text-gray-900">{title}</span>
-        {description ? <span className="truncate text-[13px] leading-[18px] text-gray-500">{description}</span> : null}
+        {statusOnNarrow && status ? <span className="whitespace-nowrap text-[12px] leading-4 text-muted-foreground sm:hidden">{status}</span> : null}
+        {description ? <span className={wrapDescription ? "break-words text-[13px] leading-[18px] text-gray-500" : "truncate text-[13px] leading-[18px] text-gray-500"}>{description}</span> : null}
       </span>
     </>
   );
   return (
-    <div className="flex items-center gap-3.5 px-5 py-3" data-testid={testId}>
+    <div className={compact ? "flex items-center gap-3 px-3 py-3" : statusOnNarrow ? "flex items-center gap-2 px-3 py-3 sm:gap-3.5 sm:px-5" : "flex items-center gap-3.5 px-5 py-3"} data-testid={testId} data-library-integrated-row={compact || undefined}>
       {href ? (
         <Link href={href} className="flex min-w-0 flex-1 items-center gap-3.5 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-gray-300">
           {body}
@@ -108,12 +139,13 @@ export function ItemRow({
       ) : (
         <span className="flex min-w-0 flex-1 items-center gap-3.5">{body}</span>
       )}
+      {comparison}
       {status !== undefined ? (
-        <span className="hidden w-[220px] shrink-0 truncate text-right text-[12px] leading-4 text-gray-500 sm:block" data-item-status>
+        <span className={compact ? "w-14 shrink-0 truncate text-right text-[13px] text-[var(--dls-text-secondary)] sm:w-28" : "hidden w-[220px] shrink-0 truncate text-right text-[12px] leading-4 text-gray-500 sm:block"} data-item-status>
           {status}
         </span>
       ) : null}
-      {action !== undefined ? <span className="flex w-[72px] shrink-0 justify-end">{action}</span> : null}
+      {action !== undefined ? <span className={wideAction ? "flex w-[96px] shrink-0 justify-end" : compact ? "flex w-7 shrink-0 justify-end sm:w-[72px]" : "flex w-[72px] shrink-0 justify-end"} data-item-action>{action}</span> : null}
     </div>
   );
 }
@@ -244,13 +276,13 @@ export function ItemMenu({ label, entries, size = "sm" }: { label: string; entri
 }
 
 /** Label and value rows under Details. */
-export function DetailRows({ rows }: { rows: { label: string; value: ReactNode }[] }) {
+export function DetailRows({ rows }: { rows: { label: string; value: ReactNode; wrap?: boolean }[] }) {
   return (
     <div className="flex flex-col divide-y divide-gray-100 rounded-2xl border border-gray-100 bg-white">
       {rows.map((row) => (
         <div key={row.label} className="flex items-center justify-between gap-4 px-5 py-3 text-[13px] leading-[18px]">
           <span className="text-gray-500">{row.label}</span>
-          <span className="min-w-0 truncate text-right font-medium text-gray-900">{row.value}</span>
+          <span className={row.wrap ? "min-w-0 break-words text-right font-medium text-[var(--dls-text-primary)]" : "min-w-0 truncate text-right font-medium text-gray-900"}>{row.value}</span>
         </div>
       ))}
     </div>

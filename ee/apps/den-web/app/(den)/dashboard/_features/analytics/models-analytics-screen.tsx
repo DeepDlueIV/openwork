@@ -9,7 +9,7 @@ import { parseInferencePayload } from "../../../_lib/inference-status";
 import { useDenFlow } from "../../../_providers/den-flow-provider";
 import { ModelsAnalyticsPanel } from "../../_components/models-analytics-panel";
 import { useOrgDashboard } from "../../_providers/org-dashboard-provider";
-import { AnalyticsEmptyState, AnalyticsPageHeader, analyticsPageClass, analyticsSurfaceClass } from "./analytics-layout";
+import { AnalyticsEmptyState, AnalyticsErrorState, AnalyticsLoading, AnalyticsPageHeader, analyticsPageClass, analyticsSurfaceClass } from "./analytics-layout";
 import { UsageLimitsCard } from "./usage-limits-card";
 
 export function ModelsAnalyticsScreen() {
@@ -30,24 +30,20 @@ export function ModelsAnalyticsScreen() {
   });
 
   return <div className={analyticsPageClass}>
-    <AnalyticsPageHeader orgSlug={activeOrg?.slug} active="models" title="Models & usage"
-      description="Understand your team’s OpenWork Models activity, consumption, and shared limits."
-      caption="Included with OpenWork Models · Task analytics requires your team’s opt-in" />
-    {!runtimeConfigLoaded ? <p role="status">Loading model usage…</p> : !hosted ? (
+    <AnalyticsPageHeader orgSlug={activeOrg?.slug} active="models" title="Models & usage" />
+    {!runtimeConfigLoaded ? <AnalyticsLoading label="Loading model usage" /> : !hosted ? (
       <div className={analyticsSurfaceClass}><AnalyticsEmptyState title="OpenWork Models is available on OpenWork Cloud">
         Usage &amp; adoption covers activity across your connected providers.
       </AnalyticsEmptyState></div>
     ) : <>
-      {status.isError ? <DenNotice tone="error" message="Could not load model usage. Refresh this page to try again." /> : null}
-      {status.isPending ? <p role="status" className="text-sm text-[#637291]">Loading model usage…</p> : null}
+      {status.isError ? !status.data ? <AnalyticsErrorState title="Couldn't load model usage" onRetry={() => void status.refetch()} retrying={status.isFetching} /> : <DenNotice tone="neutral" presentation="inline" message="Couldn't refresh. Showing the last usage." action={<DenButton variant="secondary" size="sm" disabled={status.isFetching} onClick={() => void status.refetch()}>Retry</DenButton>} /> : null}
+      {status.isPending ? <AnalyticsLoading label="Loading model usage" /> : null}
       {status.data?.enabled && status.data.subscribed ? <>
         <UsageLimitsCard buckets={status.data.buckets} />
         <ModelsAnalyticsPanel key={orgContext?.organization.id} />
       </> : status.data ? <div className={analyticsSurfaceClass}>
         <AnalyticsEmptyState title="Model insights are included with OpenWork Models"
-          action={<DenButton href={getInferenceRoute(activeOrg?.slug)}>Set up OpenWork Models</DenButton>}>
-          Enable OpenWork Models for your workspace to see shared limits and choose whether to collect task analytics.
-        </AnalyticsEmptyState>
+          action={<DenButton href={getInferenceRoute(activeOrg?.slug)}>Set up OpenWork Models</DenButton>} />
       </div> : null}
     </>}
   </div>;

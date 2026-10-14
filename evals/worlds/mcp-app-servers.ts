@@ -5,12 +5,11 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import { chrome, defaultDaytonaExec, execInSandbox } from "@openwork/hosts";
-import { browserScript, connect, debuggerUrlFor, evaluate, listTargets, type Surface } from "@openwork/cdp";
-import type { Place, Seed } from "@openwork/env";
+import { browserScript, connect, debuggerUrlFor, evaluate, listTargets, locate, type Surface } from "@openwork/cdp";
+import { queryDenDatabase, type EvalEngine, type Place, type Seed } from "@openwork/env";
 import type { MockMcpTool } from "@openwork/labs";
 import { reconcileDraftHost } from "../fixtures/cloud-draft-host.ts";
 import { configureProvider } from "./chat.ts";
-import { enableOrganizationCapabilities } from "./dashboards.ts";
 
 export const appTitle = "Order calculator";
 export const procedureTitle = "Quantity times unit price";
@@ -77,7 +76,7 @@ export function appSource(revision: string, options: { title?: string; sampleOrd
       if (!text) throw new Error("Tool returned no JSON result");
       return JSON.parse(text.text);
     }
-    export default function Calculator({ app, input: launch }) {
+    export default function Calculator({ app, input: launch, hostContext }) {
       const input = ${order};
       const [today, setToday] = React.useState(null);
       const [price, setPrice] = React.useState(null);
@@ -123,6 +122,7 @@ export function appSource(revision: string, options: { title?: string; sampleOrd
       });
       return <main>
         <header><h1>${title}</h1><span>Ready — ${revision}</span></header>
+        <p data-testid="host-context">Theme {hostContext?.theme ?? "unknown"} · fits {hostContext?.containerDimensions?.maxHeight ?? "?"} px</p>
         {!toolsAvailable && <p role="status">Server tools unavailable. Reopen in a host that enables server tools.</p>}
         <p data-testid="pricing-date">{today ? "Prices as of " + today : "Loading pricing date"}</p>
         <p data-testid="order-line">{input.quantity ?? 0} × {input.sku ?? "no product"}{price !== null ? " at " + price : ""}</p>
@@ -360,11 +360,10 @@ export async function mcpAppServers(seed: Seed, context: { place: Place }) {
     return result;
   }
   const call = (persona: Persona, name: string, args: Record<string, unknown>) => rpc(persona, "connect", "tools/call", { name, arguments: args });
-  // Building your own Apps and org dashboards are default-off per organization:
-  // Connect offers no App builder until a platform admin turns it on in /admin.
-  const builderToolsBefore = rows((await rpc("owner", "connect", "tools/list", {})).tools)
+  // Building your own Apps is on for every organization, so Connect offers the
+  // App builder before any platform admin changes a capability.
+  const builderToolsByDefault = rows((await rpc("owner", "connect", "tools/list", {})).tools)
     .map(tool => field(tool, "name")).filter(name => ["create_app", "update_app", "read_app"].includes(name));
-  await enableOrganizationCapabilities(seed, den.admin, { appMcpServers: true, orgManagedDashboards: true }, organizationId);
   const membership = rows(org.members).find(entry => field(entry.user, "email") === member.email);
   if (!membership) throw new Error("Synthetic member grant target missing");
   const memberId = field(membership, "id");
@@ -375,11 +374,6 @@ export async function mcpAppServers(seed: Seed, context: { place: Place }) {
 
   const { procedure, capabilities, tools, created } = await composeOrderCalculator(seed, den.admin, connection.id, (name, args) => call("owner", name, args));
   appServerPath = created.serverPath;
-  // An empty organization dashboard, for the owner to add the App to from Den's picker.
-  const dashboardName = `Pricing board ${Date.now()}`;
-  const dashboard = await seed.api(den.admin, "/v1/dashboards", { method: "POST", body: JSON.stringify({ name: dashboardName, elements: [] }) });
-  if (dashboard.response.status !== 201) throw new Error(`Creating the dashboard failed: ${dashboard.response.status}`);
-  const dashboardId = field(record(dashboard.body).item, "id");
 
   const built = await buildStandardMcpAppHost();
   let origin = "";
@@ -427,28 +421,22 @@ export async function mcpAppServers(seed: Seed, context: { place: Place }) {
   if (context.place.kind !== "local") resources.use(await forwardLoopback(app, origin, created.toolName));
   await app.client.send("Emulation.setDeviceMetricsOverride", { width: 1100, height: 900, deviceScaleFactor: 1, mobile: false });
   const pluginWeb = await seed.web({ den, signedInAs: member, startPath: "/dashboard/library", headless: true, viewport: { width: 1280, height: 900 } });
-  const adminWeb = await seed.web({ den, signedInAs: den.admin, startPath: `/dashboard/dashboards/${dashboardId}`, headless: true, viewport: { width: 1280, height: 900 } });
   const url = (persona: Persona) => `${origin}/${persona}/?tool=${encodeURIComponent(created.toolName)}`;
   const retained = resources.move();
-  const elementsOf = (body: unknown) => rows(record(body).elements ?? []);
   return {
-    app, pluginWeb, adminWeb, dashboardId, dashboardName, den, created, capabilities, tools, url, requests, rpc, call,
-    /** The App builder tools Connect offered before a platform admin turned the capability on. */
-    builderToolsBefore,
-    /** The dashboard's tiles as its admin sees them. */
-    async dashboardElements() {
-      const read = await seed.api(den.admin, `/v1/dashboards/${dashboardId}`);
-      return elementsOf(record(read.body).item);
-    },
-    /** Grants the dashboard to the teammate and returns their tiles as their desktop reads them. */
-    async teammateDashboardElements() {
-      const granted = await seed.api(den.admin, `/v1/dashboards/${dashboardId}/access`, { method: "POST", body: JSON.stringify({ orgMembershipId: memberId, role: "viewer" }) });
-      if (granted.response.status !== 201) throw new Error(`Granting the dashboard failed: ${granted.response.status}`);
-      const mine = rows(record((await seed.api(member, "/v1/me/dashboards")).body).items);
-      return elementsOf(mine.find(item => item.id === dashboardId) ?? {});
+    app, pluginWeb, den, organizationId, created, capabilities, tools, url, requests, rpc, call,
+    /** The App builder tools Connect offered a new organization before any /admin change. */
+    builderToolsByDefault,
+    /** This person's `GET /v1/mcp-apps` entries for the App, as their desktop reads them. */
+    async catalogEntries(persona: "owner" | "member") {
+      const catalog = await seed.api(persona === "owner" ? den.admin : member, "/v1/mcp-apps");
+      if (!catalog.response.ok) throw new Error(`Reading the App catalog failed: ${catalog.response.status}`);
+      return rows(record(catalog.body).apps).filter(item => item.connectionId === created.appId);
     },
     inventoryCalls: (options: { sinceIso?: string; atLeast?: number } = {}) => den.mocks.inventory.toolCalls({ name: toolNames.connection, atLeast: 0, ...options }),
     reservations: (options: { sinceIso?: string; atLeast?: number } = {}) => den.mocks.inventory.toolCalls({ name: toolNames.reserve, atLeast: 0, ...options }),
+    /** MCP sessions Den opened to Inventory (one initialize each). */
+    inventorySessions: (sinceIso: string) => den.mocks.inventory.handshakes({ sinceIso }),
     /** Shares only the App's own Plugin, which carries the Workflows its tools run. */
     async share() {
       await grant(`/v1/plugins/${created.pluginId}/access`);
@@ -507,24 +495,50 @@ export const reopenReply = "Here it is again, below.";
 export const pricerTitle = "Quick order pricer";
 export const buildPrompt = "Build me an App that looks up a product's unit price in Inventory and multiplies it by the quantity.";
 export const buildReply = "The Quick order pricer is ready in this conversation.";
+export const guidedTitle = "Inventory price board";
+export const guidedReply = "The Inventory price board is ready.";
+export const signInPrompt = "I need the Order calculator once more for 6 of WIDGET-7.";
+export const signInReply = "Here is the Order calculator.";
 
 /**
  * Apps prompted from an OpenWork chat: the model builds a new App with
  * create_app and opens an existing one with launch input, both through
  * Connect, and each App's own tools run in the conversation.
  */
-export async function mcpAppServersChat(seed: Seed, benchmark = false) {
+export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place: Place } = false, options: { engine?: EvalEngine; lifecycle?: boolean; ownSignIn?: boolean } = {}) {
+  const measured = benchmark === true;
+  const engine = options.engine ?? "v1";
+  const toolStep = (tool: string, args: Record<string, unknown>) => engine === "v2" ? { tool: "execute", arguments: { code: `return await tools["openwork-cloud"].${tool}(${JSON.stringify(args)});` } } : { tool, arguments: args };
+  // Den's numeric App timings (never payloads) let the journey count requests to an App's own server.
   const den = await seed.den({
-    env: { DEN_GENERATED_ARTIFACT_VIEWS_ENABLED: "true", DEN_APP_MCP_SERVERS_ENABLED: "true", ...(benchmark ? { OPENWORK_MCP_APP_TIMINGS: "1" } : {}) },
+    env: { DEN_GENERATED_ARTIFACT_VIEWS_ENABLED: "true", DEN_APP_MCP_SERVERS_ENABLED: "true", DEN_DASHBOARDS_ENABLED: "true", OPENWORK_MCP_APP_TIMINGS: "1" },
     org: { name: `App servers chat ${Date.now()}` },
     mocks: { inventory: seed.mock({ allowUnauthenticatedMcp: true, tools: [inventoryTool, reserveTool] }) },
   });
+  // With ownSignIn, each person signs in to Inventory with their own account, as with a real provider.
   const connection = await seed.orgConnection(den.admin, {
     name: `Inventory ${Date.now()}`, url: den.mocks.inventory.mcpUrl,
-    authType: "none", credentialMode: "shared", access: { orgWide: true },
+    ...(options.ownSignIn ? { authType: "oauth", credentialMode: "per_member" } : { authType: "none", credentialMode: "shared" }),
+    access: { orgWide: true },
   });
   const organizationId = field(record((await seed.api(den.admin, "/v1/org")).body).organization, "id");
-  await enableOrganizationCapabilities(seed, den.admin, { appMcpServers: true }, organizationId);
+  // Credential expiry writes only to this run's own loopback scratch database.
+  const cloudCredentialDatabase = () => {
+    const url = den.database?.url;
+    const database = url ? new URL(url) : null;
+    if (den.placement?.kind !== "local" || !database || !["127.0.0.1", "localhost", "[::1]"].includes(database.hostname)
+      || !database.pathname.startsWith("/openwork_eval_")) throw new Error("Cloud credential expiry needs the run's local scratch Den database");
+    return database.toString();
+  };
+  if (options.ownSignIn) {
+    // The owner signs in once, through the provider's real OAuth, before building with Inventory's tools.
+    const started = record((await seed.api(den.admin, `/v1/mcp-connections/${connection.id}/connect/start`)).body);
+    if (typeof started.authorizeUrl !== "string") throw new Error(`Inventory sign-in did not start: ${JSON.stringify(started)}`);
+    const callback = (await fetch(started.authorizeUrl, { redirect: "manual", signal: AbortSignal.timeout(15_000) })).headers.get("location");
+    if (!callback) throw new Error("Inventory sign-in did not redirect back to Den");
+    const completed = await fetch(callback, { redirect: "manual", signal: AbortSignal.timeout(30_000) });
+    if (!completed.ok) throw new Error(`Inventory sign-in callback failed: HTTP ${completed.status}`);
+  }
   const minted = await seed.api(den.admin, "/v1/mcp/token", {
     method: "POST", headers: { "x-openwork-org-id": organizationId }, body: JSON.stringify({ scopes: ["mcp:read", "mcp:write"] }),
   });
@@ -545,7 +559,7 @@ export async function mcpAppServersChat(seed: Seed, benchmark = false) {
   };
   const { created, tools } = await composeOrderCalculator(seed, den.admin, connection.id, call);
   const performanceApps = [];
-  if (benchmark) for (let i = 0; i < 10; i++) performanceApps.push(appSummary(await call("create_app", {
+  if (measured) for (let i = 0; i < 10; i++) performanceApps.push(appSummary(await call("create_app", {
     ...appSource("revision one", { title: `Performance App ${i}`, sampleOrder: true }), tools,
   })));
   // Each prompt is matched on its own turn, since they share one conversation.
@@ -553,12 +567,17 @@ export async function mcpAppServersChat(seed: Seed, benchmark = false) {
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ workloads: [
       { promptMarker: buildPrompt, finalReply: buildReply, latestUserTurn: true, steps: [
-        { tool: "create_app", arguments: { ...appSource("revision one", { title: pricerTitle, sampleOrder: true }), tools } },
+        ...(options.lifecycle ? [toolStep("search_capabilities", { query: "Inventory lookup unit price", type: "mcp", limit: 2 })] : []),
+        toolStep("prepare_app", { title: pricerTitle, tools }),
+        { ...toolStep("create_app", { ...appSource("revision one", { title: pricerTitle, sampleOrder: true }), tools, ...(engine === "v2" ? { preparationId: "__APP_PREPARATION_ID__" } : {}) }), argumentsFrom: "app-preparation", holdUntilReleased: true },
       ] },
       { promptMarker: chatPrompt, finalReply: chatReply, latestUserTurn: true, steps: [
         { tool: "execute_capability", arguments: { name: `plugin:${created.pluginId}:${created.appId}`, body: launchInput } },
       ] },
       { promptMarker: reopenPrompt, finalReply: reopenReply, latestUserTurn: true, steps: [
+        { tool: "execute_capability", arguments: { name: `plugin:${created.pluginId}:${created.appId}`, body: launchInput } },
+      ] },
+      { promptMarker: signInPrompt, finalReply: signInReply, latestUserTurn: true, steps: [
         { tool: "execute_capability", arguments: { name: `plugin:${created.pluginId}:${created.appId}`, body: launchInput } },
       ] },
     ] }),
@@ -567,9 +586,16 @@ export async function mcpAppServersChat(seed: Seed, benchmark = false) {
   if (!configured.ok) throw new Error(`Chat model setup failed: ${configured.status}`);
   const workspacePath = seed.tmpPath("mcp-app-servers-chat");
   const denOrigin = new URL(den.ref.apiUrl);
-  const app = await seed.appWeb({ name: "mcp-app-servers-chat", workspacePath, headless: true,
-    ...(benchmark ? { env: { OPENWORK_MCP_APP_TIMINGS: "1" } } : {}),
+  // The creation journeys open a step's hover-only technical details; an owner on a computer has a mouse even when the runner's headless Chrome finds none.
+  const app = await seed.appWeb({ name: `mcp-app-servers-chat-${engine}`, workspacePath, headless: true, mouse: options.lifecycle, engine,
+    env: {
+      OPENWORK_DEV_HEADLESS_WEB_DEN_PROXY: "1", OPENWORK_DEV_DEN_PROXY_TARGET: den.ref.webUrl,
+      OPENWORK_DEV_HEADLESS_DEN_API_TARGET: den.ref.apiUrl,
+      VITE_DEN_BASE_URL: den.ref.webUrl, VITE_DEN_API_BASE_URL: "/api/den",
+      ...(measured ? { OPENWORK_MCP_APP_TIMINGS: "1" } : {}),
+    },
     ...(denOrigin.protocol === "https:" ? { syntheticPreactivatedDenOrigin: denOrigin.origin } : {}) });
+  await seed.signIn(app, den.admin, "App owner");
   const workspace = await seed.workspace(app, workspacePath);
   await configureProvider(seed, app, workspace.workspaceId, "app-chat-model", "app-chat-model", {
     provider: { "app-chat-model": {
@@ -578,21 +604,91 @@ export async function mcpAppServersChat(seed: Seed, benchmark = false) {
       models: { "app-chat-model": { name: "App chat model fixture", tool_call: true } },
     } },
     mcp: { "openwork-cloud": { type: "remote", url: `${den.ref.apiUrl}/mcp/agent`, enabled: true, oauth: false, headers: { Authorization: `Bearer ${token}` } } },
-  });
+  }, engine);
   const session = await seed.session(app, { title: appTitle });
   // The private App host reads the Connect server index, which lists the App as its own server.
+  if ("openworkUrl" in app) {
   const hostSetup = {
-    name: app.handle.name, openworkUrl: app.openworkUrl, workspaceRoot: app.workspaceRoot,
-    workspaceId: workspace.workspaceId, cloudUrl: `${den.ref.apiUrl}/mcp/agent`, token, appHostToken: field(minted.body, "appHostToken"),
-  };
-  const reconciled = record(app.handle.sandboxId
-    ? JSON.parse((await execInSandbox(defaultDaytonaExec, app.handle.sandboxId,
-      `node /workspace/evals/fixtures/cloud-draft-host.ts ${Buffer.from(JSON.stringify(hostSetup)).toString("base64url")}`,
-      { context: "Reconcile the App chat host", timeoutMs: 150_000 })).stdout.trim())
-    : await reconcileDraftHost(hostSetup));
-  if (reconciled.status !== 200 || reconciled.phase !== "ready" || reconciled.diagnostic !== "ready") throw new Error(`Cloud reconcile failed: ${JSON.stringify(reconciled)}`);
+      name: app.handle.name, openworkUrl: app.openworkUrl, workspaceRoot: app.workspaceRoot,
+      workspaceId: workspace.workspaceId, cloudUrl: `${den.ref.apiUrl}/mcp/agent`, token, appHostToken: field(minted.body, "appHostToken"),
+    };
+    const reconciled = record(app.handle.sandboxId
+      ? JSON.parse((await execInSandbox(defaultDaytonaExec, app.handle.sandboxId,
+        `node /workspace/evals/fixtures/cloud-draft-host.ts ${Buffer.from(JSON.stringify(hostSetup)).toString("base64url")}`,
+        { context: "Reconcile the App chat host", timeoutMs: 150_000 })).stdout.trim())
+      : await reconcileDraftHost(hostSetup));
+    if (reconciled.status !== 200 || reconciled.phase !== "ready" || reconciled.diagnostic !== "ready") throw new Error(`Cloud reconcile failed: ${JSON.stringify(reconciled)}`);
+  } else {
+    const status = await seed.evalIn(app, browserScript(async (workspaceId, url, mcpToken, appHostToken) => {
+      const port = localStorage.getItem("openwork.server.port");
+      const credential = localStorage.getItem("openwork.server.token");
+      const response = await fetch(`http://127.0.0.1:${port}/workspace/${encodeURIComponent(workspaceId)}/mcp/openwork-cloud/reconcile`, {
+        method: "POST", headers: { Authorization: `Bearer ${credential}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ config: { type: "remote", url, enabled: true, oauth: false, headers: { Authorization: `Bearer ${mcpToken}` } }, appHostAuthorization: `Bearer ${appHostToken}`, trigger: "app-creation-world" }),
+      });
+      return response.status;
+    }, [workspace.workspaceId, `${den.ref.apiUrl}/mcp/agent`, token, field(minted.body, "appHostToken")]), { awaitPromise: true, timeoutMs: 150_000 });
+    if (status !== 200) throw new Error(`Desktop App host reconciliation failed: ${status}`);
+  }
   return {
-    app, session, den, created, performanceApps, workspace,
+    app, session, den, created, performanceApps, workspace, engine,
+    /** Switch the system light/dark setting, which OpenWork follows by default, and wait until it has. */
+    async setColorScheme(theme: "light" | "dark") {
+      await app.client.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: theme }] });
+      for (let attempt = 0; attempt < 50; attempt++) {
+        if (await evaluate(app.client, () => document.documentElement.classList.contains("dark")) === (theme === "dark")) return;
+        await delay(100);
+      }
+      throw new Error(`OpenWork did not switch to ${theme}`);
+    },
+    /** Den's log so far; pass its length to appServerRequests. */
+    denLog: () => den.apiLog(),
+    /** Requests Den's App servers handled since a denLog() snapshot, by MCP method, once at least `atLeast` tools/call requests finished. */
+    async appServerRequests(since: string, atLeast = 1) {
+      const methods = async () => (await den.apiLog()).slice(since.length).split("\n").flatMap(line => {
+        const marker = line.indexOf("MCP_APP_TIMING ");
+        if (marker < 0) return [];
+        const stage = record(JSON.parse(line.slice(marker + 15))).stage;
+        return typeof stage === "string" && stage.startsWith("den.app-server.") ? [stage.slice("den.app-server.".length)] : [];
+      });
+      const deadline = Date.now() + 30_000;
+      let seen = await methods();
+      while (seen.filter(method => method === "tools/call").length < atLeast && Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 250));
+        seen = await methods();
+      }
+      return seen;
+    },
+    async prepareLifecycleTurn(prompt: string, kind: "edit" | "failure" | "interrupt" | "search" | "guided") {
+      const catalog = rows(record((await seed.api(den.admin, "/v1/mcp-apps")).body).apps);
+      const built = catalog.find(app => app.title === pricerTitle);
+      if (!built) throw new Error("Created App is missing from the accessible catalog");
+      const lookup = tools.filter(tool => tool.name === toolNames.connection);
+      const steps = kind === "search"
+        ? [toolStep("search_capabilities", { query: "Inventory lookup unit price", type: "mcp", limit: 2 })]
+        : kind === "guided"
+        // The agent reads the guide, finds the tool, prepares, and publishes prepare_app's starter unchanged.
+        ? [toolStep("get_skill", { name: "build-an-app" }), toolStep("search_capabilities", { query: "Inventory lookup unit price", type: "mcp", limit: 2 }),
+          { ...toolStep("prepare_app", { title: guidedTitle, description: "Look up a product's unit price in Inventory.", tools: lookup }), holdUntilReleased: true },
+          { ...(engine === "v2"
+            ? { tool: "execute", arguments: { code: `return await tools["openwork-cloud"].create_app({ ...${JSON.stringify({ title: guidedTitle, tools: lookup, textFallback: "Looks up a product's unit price in Inventory." })}, ..."__APP_STARTER__" });` } }
+            : toolStep("create_app", { title: guidedTitle, tools: lookup, textFallback: "Looks up a product's unit price in Inventory." })), argumentsFrom: "app-starter" }]
+        : kind === "edit"
+        ? [toolStep("read_app", { appId: field(built, "connectionId") }), { ...toolStep("update_app", { ...appSource("revision two", { title: pricerTitle, sampleOrder: true }), appId: field(built, "connectionId"), ...(engine === "v2" ? { expectedRevisionId: "__APP_REVISION_ID__" } : {}) }), argumentsFrom: "app-read", holdUntilReleased: true }]
+        : kind === "failure"
+          ? [toolStep("create_app", { title: "Broken App", reactSource: "export default function App( {", tools, textFallback: "The App is unavailable." })]
+          : [toolStep("prepare_app", { title: "Interrupted App", tools }), { ...toolStep("create_app", { ...appSource("interrupted", { title: "Interrupted App", sampleOrder: true }), tools, ...(engine === "v2" ? { preparationId: "__APP_PREPARATION_ID__" } : {}) }), argumentsFrom: "app-preparation", holdUntilReleased: true }];
+      const response = await fetch(`${den.mocks.inventory.url}/admin/agent-workloads`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ workloads: [{ promptMarker: prompt, finalReply: kind === "edit" ? "The App has been updated." : kind === "search" ? "Inventory can look up unit prices." : kind === "guided" ? guidedReply : "The App could not be created.", latestUserTurn: true, steps }] }) });
+      if (!response.ok) throw new Error("Could not prepare the lifecycle turn");
+      return field(built, "connectionId");
+    },
+    /** Hold the model before a held step (preparation, build or edit) so the person can inspect real writing progress. */
+    async holdCreation(held: boolean) {
+      const response = await fetch(`${den.mocks.inventory.url}/admin/agent-hold`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ held }),
+      });
+      if (!response.ok) throw new Error("Could not change the creation fixture gate");
+    },
     async profileIndex() {
       const response = await fetch(`${den.ref.apiUrl}/mcp/agent`, {
         method: "POST", headers: { authorization: `Bearer ${field(minted.body, "appHostToken")}`, "content-type": "application/json",
@@ -607,6 +703,47 @@ export async function mcpAppServersChat(seed: Seed, benchmark = false) {
     },
     inventoryCalls: (options: { sinceIso?: string; atLeast?: number } = {}) => den.mocks.inventory.toolCalls({ name: toolNames.connection, atLeast: 0, ...options }),
     reservations: (options: { sinceIso?: string; atLeast?: number } = {}) => den.mocks.inventory.toolCalls({ name: toolNames.reserve, atLeast: 0, ...options }),
+    inventoryName: connection.name,
+    /** The owner removes their own Inventory account, as a teammate who never signed in would be. */
+    async disconnectInventory() {
+      const removed = await seed.api(den.admin, `/v1/mcp-connections/${connection.id}/disconnect-my-account`, { method: "POST" });
+      if (!removed.response.ok) throw new Error(`Disconnecting Inventory failed: HTTP ${removed.response.status}`);
+    },
+    /** Whether the owner is signed in to Inventory, from the connection list the desktop reads. */
+    async inventorySignedIn() {
+      const listed = rows(record((await seed.api(den.admin, "/v1/mcp-connections?scope=usable")).body).connections);
+      return listed.find(entry => entry.id === connection.id)?.connectedForMe === true;
+    },
+    /**
+     * The owner's first-party Cloud credentials in Den: the engine's MCP token and the private App
+     * host's token, minted together. `live` counts those not yet expired.
+     */
+    async cloudCredentials() {
+      const [counts] = rows(await queryDenDatabase(cloudCredentialDatabase(), `SELECT COUNT(*) AS total,
+        CAST(COALESCE(SUM(expires_at > '2001-01-01'), 0) AS SIGNED) AS live,
+        CAST(COALESCE(SUM(expires_at > '2001-01-01' AND scopes LIKE '%"mcp:app-host"%'), 0) AS SIGNED) AS liveAppHost
+        FROM oauthAccessToken WHERE client_id = 'openwork-desktop' AND reference_id = ?`, [organizationId]));
+      return { total: Number(counts?.total ?? 0), live: Number(counts?.live ?? 0), liveAppHost: Number(counts?.liveAppHost ?? 0) };
+    },
+    /**
+     * Expires the owner's Cloud credentials in Den, as time would: only the private App host's
+     * token, or every first-party token the owner holds for this organization.
+     */
+    async expireCloudCredentials(which: "app-host" | "all") {
+      await queryDenDatabase(cloudCredentialDatabase(), `UPDATE oauthAccessToken SET expires_at = '2000-01-01 00:00:00.000'
+        WHERE client_id = 'openwork-desktop' AND reference_id = ? AND expires_at > '2001-01-01'${which === "app-host" ? ` AND scopes LIKE '%"mcp:app-host"%'` : ""}`, [organizationId]);
+    },
+    /** The owner comes back to the OpenWork window, which runs the desktop's background Cloud check. */
+    async returnToWindow() {
+      await evaluate(app.client, () => { window.dispatchEvent(new Event("focus")); });
+    },
+    /**
+     * Back to OpenWork after signing in. The provider's sign-in opens in a new tab in front of
+     * OpenWork, and a background tab does not lay out the App frames it creates.
+     */
+    async returnToOpenWork() {
+      await app.client.send("Page.bringToFront");
+    },
     /** Clicks a button from the App's own script: a click the host does not trust as user input. */
     async scriptedClick(frame: Surface, label: string) {
       const clicked = await evaluate(frame.client, browserScript((text: string) => {
@@ -615,6 +752,31 @@ export async function mcpAppServersChat(seed: Seed, benchmark = false) {
         return Boolean(button);
       }, [label]));
       if (!clicked) throw new Error(`The App has no ${label} button`);
+    },
+    /**
+     * The App frame, by title, where a person sees the given text. A reloaded App replaces a frame
+     * the browser may still list, and a closed or hidden frame keeps its text without rendering it.
+     */
+    async appFrameShowing(title: string, text: string): Promise<Surface & AsyncDisposable> {
+      const deadline = Date.now() + 90_000;
+      while (Date.now() < deadline) {
+        for (const target of (await listTargets(app.handle.cdpUrl)).filter(entry => entry.type === "iframe" && entry.url === "about:srcdoc")) {
+          const frame = { handle: app.handle, client: await connect(debuggerUrlFor(app.handle.cdpUrl, target)) };
+          const shown = await evaluate(frame.client, () => document.title).catch(() => "") === title
+            && await locate(frame, { text }).then(found => found.visible && found.hitTestOk, () => false);
+          if (shown) return { ...frame, [Symbol.asyncDispose]: async () => frame.client.close() };
+          frame.client.close();
+        }
+        await delay(500);
+      }
+      const seen: string[] = [];
+      for (const target of (await listTargets(app.handle.cdpUrl)).filter(entry => entry.type === "iframe")) {
+        const client = await connect(debuggerUrlFor(app.handle.cdpUrl, target));
+        seen.push(String(await evaluate(client, () => `${document.body?.getClientRects().length ? "" : "[not rendered] "}${document.title} | ${(document.body?.innerText ?? "").slice(0, 200)}`).catch(() => "unreadable")));
+        client.close();
+      }
+      const host = await evaluate(app.client, () => Array.from(document.querySelectorAll("[data-mcp-app-resource], [role=alert], [role=status]")).map(node => `${node.tagName} ${node.getAttribute("role") ?? ""} ${(node.textContent ?? "").slice(0, 160)}`)).catch(() => []);
+      throw new Error(`No ${title} frame visibly showed "${text}". Frames: ${JSON.stringify(seen)} Host: ${JSON.stringify(host)}`);
     },
     /** An App's isolated frame in the conversation, by its title, for trusted input. */
     async appFrame(title: string): Promise<Surface & AsyncDisposable> {
@@ -629,7 +791,12 @@ export async function mcpAppServersChat(seed: Seed, benchmark = false) {
         }
         await delay(250);
       }
-      throw new Error(`${title} did not open in the conversation`);
+      const statuses = await evaluate(app.client, () => Array.from(document.querySelectorAll('[data-dashboard-tile] [role="status"], [data-dashboard-tile] [role="alert"]')).map(node => node.textContent?.trim()).filter(Boolean)).catch(() => []);
+      throw new Error(`${title} did not open. Dashboard status: ${JSON.stringify(statuses)}`);
     },
   };
 }
+
+export const mcpAppServersChatOwnSignIn = (seed: Seed) => mcpAppServersChat(seed, false, { ownSignIn: true });
+export const mcpAppCreationV1 = (seed: Seed) => mcpAppServersChat(seed, false, { engine: "v1", lifecycle: true });
+export const mcpAppCreationV2 = (seed: Seed) => mcpAppServersChat(seed, false, { engine: "v2", lifecycle: true });

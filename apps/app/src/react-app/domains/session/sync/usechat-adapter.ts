@@ -1,5 +1,6 @@
 /** @jsxImportSource react */
 import type { UIMessage } from "ai";
+import { replyModelFromInfo } from "./reply-model";
 import type { FilePart, Part, TextPart, ToolPart } from "@opencode-ai/sdk/v2/client";
 
 import type { OpenworkSessionSnapshot } from "../../../../app/lib/openwork-server";
@@ -10,6 +11,7 @@ import {
   STRUCTURED_OUTPUT_TOOL,
 } from "./parse-tool-parts";
 import { readComposerPill } from "../surface/composer/composer-pills";
+import { BACKGROUND_SHELL_NOTICE_KEY, readBackgroundShellNotice } from "../../../../app/lib/background-shell-tasks";
 import {
   presentOpencodeSessionError,
   type OpencodeSessionErrorPresentation,
@@ -147,6 +149,7 @@ export function textPartToUIPart(part: TextPart): UIMessage["parts"][number] | n
   if (part.synthetic || part.ignored) return null;
   const composerToken = part.metadata?.openworkComposerToken;
   const composerPill = readComposerPill(part.metadata?.openworkComposerPill);
+  const backgroundShell = readBackgroundShellNotice(part.metadata?.[BACKGROUND_SHELL_NOTICE_KEY]);
   return {
     type: "text",
     text: part.text,
@@ -155,6 +158,7 @@ export function textPartToUIPart(part: TextPart): UIMessage["parts"][number] | n
       partId: part.id,
       ...(typeof composerToken === "string" ? { composerToken } : {}),
       ...(composerPill ? { composerPill } : {}),
+      ...(backgroundShell ? { backgroundShell } : {}),
       ...(part.metadata?.openworkPastedText === true ? { pastedText: true } : {}),
     } },
   };
@@ -180,9 +184,12 @@ export function snapshotToUIMessages(snapshot: Pick<OpenworkSessionSnapshot, "me
     const uiMessage = {
       id: message.info.id,
       role: message.info.role,
-      ...(typeof created === "number" || typeof parentID === "string"
-        ? { metadata: { opencode: { ...(typeof created === "number" ? { created } : {}), ...(typeof completed === "number" ? { completed } : {}), ...(typeof parentID === "string" ? { parentID } : {}) } } }
-        : {}),
+      metadata: { opencode: {
+        ...(typeof created === "number" ? { created } : {}),
+        ...(typeof completed === "number" ? { completed } : {}),
+        ...(typeof parentID === "string" ? { parentID } : {}),
+        ...(replyModelFromInfo(message.info) ? { replyModel: replyModelFromInfo(message.info) } : {}),
+      } },
       parts: message.parts.flatMap<UIMessage["parts"][number]>((part) => {
         if (part.type === "text") {
           const mapped = textPartToUIPart(part);

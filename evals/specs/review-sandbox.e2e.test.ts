@@ -11,7 +11,7 @@ const picker = { role: "combobox", label: "Preview world" } satisfies Target;
 test("sandbox controls preserve a launched environment and recover from failures and expiry", async ({ world, user, probe, step, evidence }) => {
   const url = `https://ow-${"a".repeat(32)}.preview.openwork.software/__openwork_launch?token=synthetic`;
   function ready(expiresAt: string) {
-    return { url, world: "app-web", expiresAt, outputs: {
+    return { url, provider: "freestyle", world: "app-web", expiresAt, outputs: {
       webUrl: { value: url, group: "Services", secret: true },
       alexEmail: { value: "reviewer@example.test" },
       alexPassword: { value: "synthetic-password", secret: true },
@@ -35,14 +35,14 @@ test("sandbox controls preserve a launched environment and recover from failures
     await user.click({ role: "button", text: "Hide credentials" });
     await user.click({ role: "button", text: "Hide sandbox" });
     await user.click({ role: "button", text: "Show sandbox" });
+    await user.click(picker);
+    await user.press("Escape");
+    await user.press("d");
     await user.press("Tab");
-    await user.press("Space");
-    await user.press("ArrowDown");
-    await user.press("Enter");
     await user.see(picker, { value: "desktop", timeoutMs: 2000 });
     await user.see({ role: "link", text: "Open sandbox" });
     await user.notSee({ role: "link", text: "Open desktop" });
-    expect(world.requests.map((request) => JSON.parse(request))).toEqual([{ world: "app-web" }, { world: "app-web" }]);
+    expect(world.requests.map((request) => JSON.parse(request))).toEqual([{ world: "app-web", provider: "freestyle" }, { world: "app-web", provider: "freestyle" }]);
     await user.click({ role: "button", text: "Hide sandbox" });
     await user.click({ role: "button", text: "Show sandbox" });
     await user.see({ role: "link", text: "Open sandbox" });
@@ -52,10 +52,10 @@ test("sandbox controls preserve a launched environment and recover from failures
   await step("expired sessions lose their links and offer a fresh launch", async () => {
     await user.click({ role: "button", text: "Hide sandbox" });
     await user.click({ role: "button", text: "Show sandbox" });
+    await user.click(picker);
+    await user.press("Escape");
+    await user.press("o");
     await user.press("Tab");
-    await user.press("Space");
-    await user.press("ArrowUp");
-    await user.press("Enter");
     world.respond(201, ready(new Date(Date.now() + 2500).toISOString()));
     await user.click({ role: "button", text: "Launch another" });
     await user.see({ role: "button", text: "Launch again" });

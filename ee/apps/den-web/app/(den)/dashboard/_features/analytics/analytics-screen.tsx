@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Activity, CheckCircle2, Clock, MousePointerClick, RefreshCw, Users, Zap } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { useOrgDashboard } from "../../_providers/org-dashboard-provider";
 import { EnterprisePlanNotice } from "../../_components/enterprise-plan-notice";
 import { ModelUsageList } from "./model-usage-list";
@@ -9,7 +9,8 @@ import { ProjectFilter } from "./project-filter";
 import { StatCard } from "./stat-card";
 import { TrendChart } from "./trend-chart";
 import { useAnalytics, useProjectOptions } from "./use-analytics";
-import { AnalyticsPageHeader, analyticsPageClass } from "./analytics-layout";
+import { AnalyticsEmptyState, AnalyticsErrorState, AnalyticsLoading, AnalyticsPageHeader, analyticsPageClass, analyticsSurfaceClass } from "./analytics-layout";
+import { getMembersRoute } from "../../../_lib/den-org";
 import { DenButton } from "../../../_components/ui/button";
 import { DenNotice } from "../../../_components/ui/notice";
 
@@ -52,6 +53,11 @@ export function AnalyticsScreen() {
   const { data, isLoading, isFetching, isError, refetch } = useAnalytics(!locked, projectValue);
 
   const projectScoped = projectValue.length > 0;
+  // A workspace nobody has used yet gets one clear empty state, not a page of zeros.
+  const noActivity = Boolean(data) && !projectScoped && !isError
+    && (data?.activeMembers30d ?? 0) === 0 && (data?.sessions30d ?? 0) === 0
+    && (data?.tasksCompleted30d ?? 0) + (data?.tasksFailed30d ?? 0) === 0
+    && (data?.weekly ?? []).every((week) => week.activeMembers === 0 && week.sessions === 0);
   const weekly = data?.weekly ?? [];
   const tasks7d = (data?.tasksCompleted7d ?? 0) + (data?.tasksFailed7d ?? 0);
   const modelUsage = data?.models.usage30d ?? [];
@@ -61,51 +67,48 @@ export function AnalyticsScreen() {
   return (
     <div className={analyticsPageClass}>
       <AnalyticsPageHeader orgSlug={activeOrg?.slug} active="adoption"
-        title="Usage & adoption" description="Understand how your team works in OpenWork, across models and providers."
-        caption="Enterprise analytics · Activity metadata only"
-        action={!locked ? <DenButton variant="secondary" disabled={isFetching} onClick={() => void refetch()}><RefreshCw className={`mr-2 h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} aria-hidden="true" />Refresh analytics</DenButton> : null} />
+        title="Usage & adoption"
+        action={!locked && !isError ? <DenButton variant="secondary" disabled={isFetching} onClick={() => void refetch()}><RefreshCw className={`mr-2 h-3.5 w-3.5 ${isFetching ? "animate-spin" : ""}`} aria-hidden="true" />Refresh analytics</DenButton> : null} />
 
       {locked ? (
-        <div className="mt-5">
-          <EnterprisePlanNotice feature="Usage analytics" />
+        <EnterprisePlanNotice feature="Usage analytics" detail="Team usage is unavailable on this plan." />
+      ) : isError && !data ? <AnalyticsErrorState title="Couldn't load analytics" onRetry={() => void refetch()} retrying={isFetching} />
+      : isLoading ? <AnalyticsLoading label="Loading analytics" /> : noActivity ? (
+        <div className={analyticsSurfaceClass} data-testid="analytics-no-activity">
+          <AnalyticsEmptyState title="No activity yet"
+            action={<DenButton variant="secondary" href={getMembersRoute(activeOrg?.slug)}>Invite your team</DenButton>}>
+            Usage appears here once members sign in to the OpenWork app and run their first task. It never includes prompts, code, or file contents.
+          </AnalyticsEmptyState>
         </div>
-      ) : isError && !data ? <DenNotice tone="error" message="Could not load analytics. Use Refresh analytics to try again." /> : (
+      ) : (
       <>
-      {isError ? <DenNotice tone="error" message="Could not refresh analytics. Showing the last available data." /> : null}
+      {isError ? <DenNotice tone="neutral" presentation="inline" message="Could not refresh analytics. Showing the last available data." action={<DenButton variant="secondary" size="sm" disabled={isFetching} onClick={() => void refetch()}>Retry</DenButton>} /> : null}
       <div className="flex flex-wrap items-center justify-between gap-3">
       <ProjectFilter options={projectOptions} value={projectValue} onValueChange={setProjectValue} />
-      <span className="text-xs text-[#637291]">Updates automatically · Trends over 12 weeks</span>
+      <span className="text-xs text-[#637291]">Trends over 12 weeks</span>
       </div>
 
       {/* Summary cards */}
       <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
-          icon={<Users className="h-5 w-5 text-[#6F3DFF]" />}
           title="OpenWork users"
           value={isLoading ? "…" : `${data?.members ?? 0}`}
           sub={projectScoped ? "Org total, not project-scoped" : `${data?.pendingInvites ?? 0} pending invites`}
-          tone="violet"
         />
         <StatCard
-          icon={<Activity className="h-5 w-5 text-[#1D63FF]" />}
           title="Active this week"
           value={isLoading ? "…" : `${data?.activeMembers7d ?? 0}`}
           sub={`${data?.activeMembers30d ?? 0} active in last 30 days`}
-          tone="blue"
         />
         <StatCard
-          icon={<Zap className="h-5 w-5 text-[#B7791F]" />}
           title="Sessions this week"
           value={isLoading ? "…" : `${data?.sessions7d ?? 0}`}
           sub={`${data?.sessions30d ?? 0} in last 30 days`}
-          tone="amber"
         />
         <StatCard
-          icon={<CheckCircle2 className="h-5 w-5 text-[#18A34A]" />}
           title="Tasks this week"
           value={isLoading ? "…" : `${tasks7d}`}
           sub={`${successRate(data?.tasksCompleted7d ?? 0, data?.tasksFailed7d ?? 0)} success rate`}
-          tone="green"
         />
       </div>
 
@@ -115,13 +118,13 @@ export function AnalyticsScreen() {
           title="Weekly active users"
           subtitle={projectScoped ? "Members with project-matched events, last 12 weeks" : "Members with at least one event, last 12 weeks"}
           weeks={weekly}
-          series={[{ label: "Active users", color: "#6F3DFF", values: weekly.map((w) => w.activeMembers) }]}
+          series={[{ label: "Active users", values: weekly.map((w) => w.activeMembers) }]}
         />
         <TrendChart isLoading={isLoading}
           title="Sessions per week"
           subtitle="Distinct sessions, last 12 weeks"
           weeks={weekly}
-          series={[{ label: "Sessions", color: "#1D63FF", values: weekly.map((w) => w.sessions) }]}
+          series={[{ label: "Sessions", values: weekly.map((w) => w.sessions) }]}
         />
       </div>
 
@@ -131,8 +134,8 @@ export function AnalyticsScreen() {
           subtitle="Completed and failed task runs, last 12 weeks"
           weeks={weekly}
           series={[
-            { label: "Completed", color: "#18A34A", values: weekly.map((w) => w.tasksCompleted) },
-            { label: "Failed", color: "#E5484D", values: weekly.map((w) => w.tasksFailed) },
+            { label: "Completed", values: weekly.map((w) => w.tasksCompleted) },
+            { label: "Failed", values: weekly.map((w) => w.tasksFailed) },
           ]}
         />
       </div>
@@ -140,23 +143,18 @@ export function AnalyticsScreen() {
       {/* Model usage */}
       <div>
         <h2 className="text-[16px] font-semibold tracking-[-0.02em] text-[#07192C]">Models</h2>
-        <p className="mt-0.5 text-[12px] text-[#637291]">See which models your team uses and how they are selected.</p>
         <div className="mt-3 grid gap-3.5 lg:grid-cols-[minmax(0,2fr)_minmax(280px,1fr)]">
           <ModelUsageList models={modelUsage} isLoading={isLoading} />
           <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-1">
             <StatCard
-              icon={<Zap className="h-5 w-5 text-[#B7791F]" />}
               title="Default model"
               value={isLoading ? "…" : `${defaultModelSessions}`}
               sub={selectionShare(defaultModelSessions, defaultModelSessions, manualModelSessions)}
-              tone="amber"
             />
             <StatCard
-              icon={<MousePointerClick className="h-5 w-5 text-[#6F3DFF]" />}
               title="Manually selected"
               value={isLoading ? "…" : `${manualModelSessions}`}
               sub={selectionShare(manualModelSessions, defaultModelSessions, manualModelSessions)}
-              tone="violet"
             />
           </div>
         </div>
@@ -165,25 +163,20 @@ export function AnalyticsScreen() {
       {/* 30-day detail */}
       <div className="grid gap-3.5 sm:grid-cols-3">
         <StatCard
-          icon={<Clock className="h-5 w-5 text-[#1D63FF]" />}
           title="Avg task duration"
           value={isLoading ? "…" : formatDuration(data?.avgTaskDurationMs30d ?? null)}
           sub="Completed tasks, last 30 days"
-          tone="blue"
         />
         <StatCard
-          icon={<CheckCircle2 className="h-5 w-5 text-[#18A34A]" />}
           title="Tasks completed"
           value={isLoading ? "…" : `${data?.tasksCompleted30d ?? 0}`}
           sub="Last 30 days"
-          tone="green"
         />
         <StatCard
-          icon={<Activity className="h-5 w-5 text-[#E5484D]" />}
           title="Tasks failed"
+          attention={(data?.tasksFailed30d ?? 0) > 0}
           value={isLoading ? "…" : `${data?.tasksFailed30d ?? 0}`}
           sub={`${successRate(data?.tasksCompleted30d ?? 0, data?.tasksFailed30d ?? 0)} success rate over 30 days`}
-          tone="amber"
         />
       </div>
 

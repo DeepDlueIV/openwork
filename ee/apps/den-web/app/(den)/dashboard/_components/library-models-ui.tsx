@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronRight, LoaderCircle, LockKeyhole } from "lucide-react";
+import { ChevronRight, LoaderCircle, LogIn } from "lucide-react";
 import { DenBrandMark } from "../../_components/ui/brand-mark";
 import { DenButton } from "../../_components/ui/button";
 import { getLibraryModelRoute, getLibraryRoute } from "../../_lib/den-org";
@@ -28,41 +28,19 @@ export function ProviderLogo({ provider, size = "sm" }: { provider: Pick<Library
   );
 }
 
-function WaitingOnAdmin() {
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      <LockKeyhole className="h-3.5 w-3.5" aria-hidden />
-      Waiting on your admin
-    </span>
-  );
-}
-
 /** One provider in My Library, with the one thing the person can do about it on the right. */
 export function LibraryModelRow({ provider, signIn }: { provider: LibraryModelProvider; signIn: ModelSignIn }) {
   const { orgSlug } = useOrgDashboard();
   const waiting = signIn.waitingFor === provider.id;
   const failure = signIn.failureFor(provider.id);
-  const status = provider.state === "blocked"
-    ? <WaitingOnAdmin />
-    : waiting ? "Finish signing in in your browser"
-      : failure ?? modelCount(provider.models.length);
   const action = provider.state === "blocked" ? null
     : waiting ? <DenButton variant="ghost" size="xs" onClick={signIn.cancel}>Cancel</DenButton>
       : provider.state === "needs_signin" ? (
-        <DenButton variant="secondary" size="xs" onClick={() => void signIn.signIn(provider)}>
-          {failure ? "Try again" : "Sign in"}
-        </DenButton>
+        <DenButton variant="secondary" size="xs" icon={LogIn} aria-label={failure ? "Try again" : "Sign in"} className="size-7 p-0" onClick={() => void signIn.signIn(provider)} />
       ) : <ChevronRight className="h-4 w-4 text-gray-400" aria-hidden />;
   return (
-    <div data-library-item={provider.name} data-library-kind="model" data-model-state={provider.state}>
-      <ItemRow
-        href={getLibraryModelRoute(orgSlug, provider.id)}
-        logo={<ProviderLogo provider={provider} />}
-        title={provider.name}
-        description={modelNamesSummary(provider.models)}
-        status={status}
-        action={action ?? <span />}
-      />
+    <div data-library-item={provider.name} data-library-kind="model" data-model-state={provider.state} title={modelNamesSummary(provider.models)}>
+      <ItemRow compact href={getLibraryModelRoute(orgSlug, provider.id)} logo={<ProviderLogo provider={provider} />} title={provider.name} description={provider.state === "blocked" ? "Your admin needs to finish setup" : waiting ? "Finish signing in in your browser" : failure ?? modelNamesSummary(provider.models)} status={provider.state === "blocked" ? "Set up" : provider.state === "needs_signin" || waiting ? "Sign in" : "Ready"} action={action ?? <span />} />
     </div>
   );
 }

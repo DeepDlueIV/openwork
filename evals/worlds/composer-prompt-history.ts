@@ -5,7 +5,7 @@ import { longHistory } from "./chat.ts";
 
 export async function composerPromptHistory(seed: Seed) {
   if (resolveEvalEngine() !== "v1") throw new SkipError("native v1 stored history (OPENWORK_EVAL_ENGINE=v1)");
-  const base = await longHistory(seed);
+  const base = await longHistory(seed, { surface: "electron" });
   return {
     ...base,
     async restart() {

@@ -78,8 +78,9 @@ test("an admin adds a listed connector for two teams", async ({ world, user, pro
     await user.click({ role: "button", label: "Add Slack" });
     await user.see({ testId: "den-toast" }, { text: /Slack is ready/, timeoutMs: 60_000 });
     await user.see({ testId: "den-toast" }, { text: new RegExp(`${reach} people will find it in My Library\\.`) });
-    await user.see({ testId: "admin-connectors" }, { text: /Sales and Support/, timeoutMs: 60_000 });
-    evidence.recordAssertionEvidence("the list shows Slack with Sales and Support", `Toast "Slack is ready"; list row reads Sales and Support`, true);
+    // List rows carry the connection's readiness; who can use it is on Slack's own page (next step).
+    await user.see({ testId: "admin-connectors" }, { text: /Slack[\s\S]*Ready/, timeoutMs: 60_000 });
+    evidence.recordAssertionEvidence("the list shows Slack ready", `Toast "Slack is ready"; the Connectors list shows Slack as Ready`, true);
     await user.screenshot();
   });
 
@@ -116,21 +117,21 @@ test("an admin: I want to add an MCP that isn't in the catalog", async ({ world,
   const host = new URL(address).host;
   const name = "Team Notes";
 
-  await step("before: the add page lists known connectors with Google Workspace and Microsoft 365, and a quiet Add any MCP", async () => {
+  await step("before: the add page lists known connectors with Google Workspace and Microsoft 365, and a quiet Add another MCP", async () => {
     await user.navigate(`${world.den.ref.webUrl}${addPath}`);
     await user.see({ role: "heading", label: "Add a connector" }, { timeoutMs: 60_000 });
     await user.see({ role: "link", label: "Add HubSpot" }, { timeoutMs: 60_000 });
     await user.see({ role: "link", label: "Add Google Workspace" });
     await user.see({ role: "link", label: "Add Microsoft 365" });
-    await user.see({ testId: "add-any-mcp" }, { text: "Add any MCP" });
+    await user.see({ role: "button", label: "Add another MCP" });
     await user.notSee({ text: /Advanced setup/ });
-    await user.see({ placeholder: "Filter by name, or paste an MCP URL" });
-    evidence.recordAssertionEvidence("the catalog offers the native suites and Add any MCP without an advanced editor", "Rows: HubSpot, Google Workspace, Microsoft 365; header action \"Add any MCP\"; no \"Advanced setup\" link", true);
+    await user.see({ placeholder: "Filter by name" });
+    evidence.recordAssertionEvidence("the catalog offers the native suites and Add another MCP without an advanced editor", "Rows: HubSpot, Google Workspace, Microsoft 365; action \"Add another MCP\" beside the filter; no \"Advanced setup\" link", true);
     await user.screenshot();
   });
 
   await step("when I paste an address into the filter, it shows up as an MCP server to add", async () => {
-    await user.type({ placeholder: "Filter by name, or paste an MCP URL" }, address);
+    await user.type({ placeholder: "Filter by name" }, address);
     await user.see({ testId: "connector-picker-url-row" }, { text: new RegExp(host.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")) });
     await user.see({ testId: "connector-picker-url-row" }, { text: /MCP server/ });
     await user.see({ testId: "connector-picker-url-add" }, { text: "Add MCP" });
@@ -138,11 +139,11 @@ test("an admin: I want to add an MCP that isn't in the catalog", async ({ world,
     await user.notSee({ testId: "connector-picker-no-match" });
     evidence.recordAssertionEvidence("a pasted address becomes the top row with Add MCP", `Filter "${address}" shows "${host} · MCP server" with Add MCP, and "No catalog connectors match this address."`, true);
     await user.screenshot();
-    await user.type({ placeholder: "Filter by name, or paste an MCP URL" }, "", { replace: true });
+    await user.type({ placeholder: "Filter by name" }, "", { replace: true });
   });
 
-  await step("Add any MCP opens the address form on the same page", async () => {
-    await user.click({ testId: "add-any-mcp" });
+  await step("Add another MCP opens the address form on the same page", async () => {
+    await user.click({ role: "button", label: "Add another MCP" });
     await user.see({ testId: "connector-picker-custom" }, { timeoutMs: 30_000 });
     await user.notSee({ testId: "add-mcp-connection-dialog" });
     const location = await world.location();
@@ -175,8 +176,8 @@ test("an admin: I want to add an MCP that isn't in the catalog", async ({ world,
     await user.see({ testId: "step-footer-note" }, { text: `${world.teamSize("Support")} people will find ${name} in My Library.` });
     await user.click({ role: "button", label: `Add ${name}` });
     await user.see({ testId: "den-toast" }, { text: new RegExp(`${name} is ready`), timeoutMs: 60_000 });
-    await user.see({ testId: "admin-connectors" }, { text: /Support/, timeoutMs: 60_000 });
-    evidence.recordAssertionEvidence("the MCP is added for Support", `Toast "${name} is ready"; the list shows it with Support`, true);
+    await user.see({ testId: "admin-connectors" }, { text: new RegExp(name), timeoutMs: 60_000 });
+    evidence.recordAssertionEvidence("the MCP is added for Support", `Toast "${name} is ready"; the Connectors list shows it`, true);
     await user.screenshot();
   });
 
@@ -228,13 +229,13 @@ test("an admin adds a connector that takes an API key, and a member sees that on
     await user.type({ label: "API key" }, key);
     await user.click({ role: "button", label: "Save key" });
     await user.see({ role: "heading", label: "Keyed Docs passed all 4 checks" }, { timeoutMs: 120_000 });
-    await user.see({ text: "A key cannot sign people in one by one" });
+    await user.see({ text: "Everyone uses the Keyed Docs API key you added." });
     const shared = await probe.dom('input[name="sign-in-mode"][value="shared"]:checked:disabled');
     expect(shared.elements).toHaveLength(1);
     const manageable = await probe.api(world.den.admin, "/v1/mcp-connections?scope=manageable");
     const saved = isRecord(manageable.body) ? records(manageable.body.connections).find((entry) => entry.name === "Keyed Docs") : undefined;
     expect(saved).toMatchObject({ authType: "apikey", credentialMode: "shared" });
-    evidence.recordAssertionEvidence("the key is saved for everyone and per-person sign-in is off with a reason", `Saved Keyed Docs as authType=${String(saved?.authType)}, credentialMode=${String(saved?.credentialMode)}; "One account for everyone" is checked and locked`, true);
+    evidence.recordAssertionEvidence("the key is saved for everyone and the choice is locked", `Saved Keyed Docs as authType=${String(saved?.authType)}, credentialMode=${String(saved?.credentialMode)}; "One key for everyone" is checked and locked`, true);
     await user.screenshot();
   });
 

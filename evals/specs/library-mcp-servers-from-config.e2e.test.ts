@@ -3,11 +3,7 @@ import { spec } from "@openwork/testkit";
 import { libraryMcpServersFromConfig } from "../worlds/desktop.ts";
 
 const test = spec.world(libraryMcpServersFromConfig, {
-  resources: {
-    surfaces: ["desktop"],
-    services: ["den", "mock"],
-    nativeReason: "Read hand-written workspace MCP configuration through the Electron desktop bridge.",
-  },
+  resources: { surfaces: ["appWeb"], services: ["den", "mock"] },
 });
 
 // People paste MCP servers into opencode.json from Claude Desktop or Cursor,
@@ -49,8 +45,8 @@ test("the Library lists MCP servers written by hand into opencode.json, whicheve
     const servers = ["ready-helper", "docs-helper", "files-helper", "remote-helper"];
     const ready = await probe.eventually(
       async () => {
-        const rows = (await probe.dom('[data-library-section="mac"] [data-library-row]:has([data-library-ready])')).elements;
-        return servers.filter((name) => rows.some((row) => row.text.startsWith(name)));
+        const states = await Promise.all(servers.map(async (name) => (await probe.dom(`[data-library-section="mac"] [data-library-row="${name}"] + [data-library-status]`)).elements[0]?.text.trim() ?? ""));
+        return servers.filter((_, index) => states[index] === "Ready");
       },
       { within: 60_000, label: "the connected mock reads as ready", until: (names) => names.includes("ready-helper") },
     );
@@ -58,12 +54,14 @@ test("the Library lists MCP servers written by hand into opencode.json, whicheve
     // Advanced still owns creation only; the inventory does not live there.
     await user.click({ role: "button", label: /^Advanced\b/ });
     await user.see({ role: "button", label: "Add workspace MCP" });
+    // Plugins arrive through the organization, never as files imported here.
+    await user.notSee({ role: "button", label: "From GitHub" });
     expect((await probe.dom('button[aria-expanded="true"]')).elements.filter((element) => /^Advanced\b/.test(element.text))).toHaveLength(1);
     await user.click({ role: "button", label: /^Advanced\b/ });
     await user.screenshot();
     evidence.recordAssertionEvidence(
       "Library readiness follows a real MCP connection",
-      `The fixture wrote ready-helper into opencode.json before opening the workspace, without an MCP registration API call. It completed MCP initialize and the workspace engine reported connected. On this computer lists all four servers; ready: ${ready.join(", ")}; the three disabled entries carry no ready mark.`,
+      `The fixture wrote ready-helper into opencode.json before opening the workspace, without an MCP registration API call. It completed MCP initialize and the workspace engine reported connected. On this computer lists all four servers; ready: ${ready.join(", ")}; the three disabled entries do not read Ready. Advanced offers Add workspace MCP and no "From GitHub" plugin import.`,
       ready.includes("ready-helper"),
     );
   });
@@ -82,8 +80,12 @@ test("the Library lists MCP servers written by hand into opencode.json, whicheve
 
   await step("opening the string-command server shows its command line", async () => {
     await user.click({ text: "docs-helper" });
-    await user.see({ text: "Local · this workspace" });
+    await user.see({ text: "Local (runs on this device)" });
+    // The page keeps where the server came from under its first Technical
+    // details; the server card's own Technical details holds the command.
     await user.click({ text: "Technical details" });
+    await user.see({ text: "Local · this workspace" });
+    await user.click({ text: "Technical details", nth: 1 });
     await user.see({ text: "python3 -m http.server 8321" });
     await user.notSee({ text: "python3,-m" });
     await user.screenshot();

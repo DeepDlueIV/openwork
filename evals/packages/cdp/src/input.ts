@@ -35,24 +35,32 @@ export interface Located {
   covering: { tag: string; text: string; role: string } | null;
 }
 
-/** Read-only DOM geometry and focus; deliberately excludes input values and attributes. */
+/** Read-only DOM geometry, focus and fixed layout styles; excludes input values and attributes. */
 export async function readDom(surface: Surface, selector: string) {
   const snapshot = await callFunctionOnSurface(surface, (selector) => ({
     viewportWidth: document.documentElement.clientWidth,
     documentWidth: document.documentElement.scrollWidth,
     elements: Array.from(document.querySelectorAll(selector), (element) => {
       const { left, right, top, bottom, width, height } = element.getBoundingClientRect();
+      const style = getComputedStyle(element);
       return {
         tag: element.tagName.toLowerCase(),
         text: element.textContent?.trim() ?? "",
         focused: element === document.activeElement,
         rect: { left, right, top, bottom, width, height },
+        style: {
+          colorScheme: style.colorScheme,
+          borderTopWidth: style.borderTopWidth,
+          borderBottomWidth: style.borderBottomWidth,
+          borderTopLeftRadius: style.borderTopLeftRadius,
+        },
       };
     }),
   }), [selector]);
   if (!snapshot || !Number.isFinite(snapshot.viewportWidth) || !Number.isFinite(snapshot.documentWidth)
     || !Array.isArray(snapshot.elements) || !snapshot.elements.every((element) => element
       && typeof element.tag === "string" && typeof element.text === "string" && typeof element.focused === "boolean"
+      && element.style && [element.style.colorScheme, element.style.borderTopWidth, element.style.borderBottomWidth, element.style.borderTopLeftRadius].every(value => typeof value === "string")
       && element.rect && [element.rect.left, element.rect.right, element.rect.top, element.rect.bottom, element.rect.width, element.rect.height].every(Number.isFinite))) {
     throw new Error("DOM inspection returned an invalid snapshot.");
   }
@@ -410,7 +418,11 @@ export async function locate(surface: Surface, target: Target): Promise<Located>
         matches = starts.length === 1 ? starts : [];
       }
     }
-    const element = matches[target.nth];
+    // Retained conversations leave hidden controls in DOM order. A person's
+    // target is the rendered control; a hidden earlier composer must not steal
+    // clicks or draft verification from the selected conversation.
+    const visibleMatches = matches.filter(rendered);
+    const element = visibleMatches[target.nth] ?? (visibleMatches.length === 0 ? matches[target.nth] : undefined);
     if (!element) {
       // Miss diagnostics: every rendered element of the requested role (or every rendered
       // button/link for role-less targets), so a miss shows the page's real controls rather
@@ -532,6 +544,13 @@ export async function clickAt(
 ): Promise<void> {
   const button = options.button ?? "left";
   const clickCount = options.clickCount ?? 1;
+  // A person activates the window they click. Electron can leave an admin or
+  // OAuth window foregrounded; synthetic input alone does not activate this
+  // target, and subsequent insertText can otherwise be silently discarded.
+  // An isolated frame (an MCP App) has no window of its own to activate.
+  await surface.client.send("Page.bringToFront").catch((cause: unknown) => {
+    if (!String(cause).includes("only be executed on top-level targets")) throw cause;
+  });
   await surface.client.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: point.x, y: point.y, button: "none" });
   await surface.client.send("Input.dispatchMouseEvent", { type: "mousePressed", x: point.x, y: point.y, button, clickCount });
   await surface.client.send("Input.dispatchMouseEvent", { type: "mouseReleased", x: point.x, y: point.y, button, clickCount });

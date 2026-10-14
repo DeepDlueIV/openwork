@@ -31,6 +31,8 @@ import {
 } from "../../capability-sources/google-workspace-api.js"
 import { getOrgOAuthClient, type ConnectedAccountRow } from "../../capability-sources/oauth-credentials.js"
 import { clientSelectedFeatures, getNativeOAuthProvider, providerScopesSatisfy, resolveProviderScopes } from "../../capability-sources/provider-registry.js"
+import { registerGoogleDriveUploadRoutes } from "./google-drive-uploads.js"
+import { isGoogleAuthorizationFailure, parseGoogleError } from "./google-workspace-actions.js"
 import { registerGmailManagementRoutes } from "./gmail-management.js"
 import { registerGoogleProductivityManagementRoutes } from "./google-productivity-management.js"
 import { listTeamsForMember } from "../../orgs.js"
@@ -414,12 +416,17 @@ async function googleWorkspaceToken(input: {
       ?? { kind: "needs_connection", message: CONNECT_GOOGLE_ACCOUNT_MESSAGE }
   }
 
-  const token = await getValidAccessToken({
-    provider,
-    credentialProviderId,
-    organizationId: input.organizationId,
-    orgMembershipId: input.orgMembershipId,
-  })
+  let token: Awaited<ReturnType<typeof getValidAccessToken>>
+  try {
+    token = await getValidAccessToken({
+      provider,
+      credentialProviderId,
+      organizationId: input.organizationId,
+      orgMembershipId: input.orgMembershipId,
+    })
+  } catch (error) {
+    return { kind: "google_api_error", message: error instanceof Error ? error.message : "Google OAuth token refresh failed." }
+  }
   if ("error" in token) {
     return { kind: "needs_connection", message: CONNECT_GOOGLE_ACCOUNT_MESSAGE }
   }
@@ -439,29 +446,13 @@ function isRecordValue(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
-function googleAuthorizationReasons(text: string): Set<string> {
-  const reasons = new Set<string>()
+function googleErrorReasons(text: string): Set<string> {
   try {
-    const payload: unknown = JSON.parse(text)
-    if (!isRecordValue(payload) || !isRecordValue(payload.error)) return reasons
-    const errors = Array.isArray(payload.error.errors) ? payload.error.errors : []
-    const details = Array.isArray(payload.error.details) ? payload.error.details : []
-    for (const value of [...errors, ...details]) {
-      if (isRecordValue(value) && typeof value.reason === "string") reasons.add(value.reason)
-    }
+    return parseGoogleError(JSON.parse(text)).reasons
   } catch {
     // Non-JSON provider errors retain the ordinary upstream-error path.
+    return new Set()
   }
-  return reasons
-}
-
-function isGoogleAuthorizationFailure(status: number, text: string): boolean {
-  if (status === 401) return true
-  if (status !== 403) return false
-  const reasons = googleAuthorizationReasons(text)
-  return reasons.has("authError")
-    || reasons.has("insufficientPermissions")
-    || reasons.has("ACCESS_TOKEN_SCOPE_INSUFFICIENT")
 }
 
 async function googleDriveApiError(
@@ -484,7 +475,7 @@ async function googleDriveApiError(
       },
     }
   }
-  if (!isGoogleAuthorizationFailure(response.status, text)) return { status: 502, body: error }
+  if (!isGoogleAuthorizationFailure(response.status, googleErrorReasons(text))) return { status: 502, body: error }
   return {
     status: 409,
     body: {
@@ -748,6 +739,7 @@ export function registerGoogleWorkspaceRoutes<T extends { Variables: OrgRouteVar
   app.use("/v1/capabilities/google-workspace/*", contextStorage())
   app.use("/v1/direct-uploads/google-workspace/*", contextStorage())
   const actionDependencies = { token: googleWorkspaceToken, fetch: googleWorkspaceApiFetch }
+  registerGoogleDriveUploadRoutes(app, actionDependencies)
   registerGmailManagementRoutes(app, actionDependencies)
   registerGoogleProductivityManagementRoutes(app, actionDependencies)
 
@@ -757,7 +749,7 @@ export function registerGoogleWorkspaceRoutes<T extends { Variables: OrgRouteVar
       tags: ["Direct uploads"],
       security: [{ mcpAccessToken: [] }],
       summary: "Upload one multipart workspace file directly to Google Drive",
-      description: "Authenticated host transport for openwork-cloud-uploads. The route immediately forwards the file to Google and does not persist it or expose its bytes to the model.",
+      description: "Authenticated host transport for openwork-cloud-uploads. Uploads one non-empty file up to 4 MiB. Optional multipart connectionId selects a native Google Workspace connection (google-workspace or emc_...); unavailable selections never fall back to the default. The route immediately forwards the file to Google and does not persist it or expose its bytes to the model. Larger files use drive-upload-sessions when enabled.",
       responses: {
         200: jsonResponse("Google Drive file uploaded.", uploadDriveFileResponseSchema),
         400: jsonResponse("The multipart upload was invalid.", invalidRequestSchema),
@@ -777,10 +769,15 @@ export function registerGoogleWorkspaceRoutes<T extends { Variables: OrgRouteVar
       if (!files || files.length !== 1) {
         return c.json({ error: "invalid_request", message: "Upload exactly one non-empty file up to 4 MiB." }, 400)
       }
+      const connectionId = form.get("connectionId")
+      if (connectionId !== null && (typeof connectionId !== "string" || !/^(google-workspace|emc_[A-Za-z0-9]+)$/.test(connectionId))) {
+        return c.json({ error: "invalid_request", message: "connectionId must identify a native Google Workspace connection." }, 400)
+      }
       const payload = c.get("organizationContext")
       const token = await googleWorkspaceToken({
         organizationId: payload.organization.id,
         orgMembershipId: payload.currentMember.id,
+        connectionId: connectionId ?? undefined,
       })
       if (token.kind === "google_api_error") {
         return c.json({ error: "google_api_error", message: token.message }, 502)

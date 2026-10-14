@@ -1,3 +1,5 @@
+import type { CapabilityUsageSource } from "@openwork-ee/den-db/schema"
+import { recordConnectorCall, toolCallFailed } from "../capability-usage.js"
 import type { DenTypeId } from "@openwork-ee/utils/typeid"
 import type { Hono } from "hono"
 import { listNativeProviderUsableEntries, nativeProviderConnectionPolicyError, type NativeProviderConnectionEntry } from "../capability-sources/native-provider-connections.js"
@@ -136,10 +138,11 @@ export async function searchNativeCapabilities(input: {
     orgMembershipId: input.member.orgMembershipId,
     teamIds: input.member.teamIds,
   })
+  const catalog = input.catalog
   const queryTokens = tokenize(input.query)
   const matches: NativeCapabilityMatch[] = []
   for (const connection of connections) {
-    const operations = nativeOperations(input.catalog, connection.nativeProviderKey)
+    const operations = nativeOperations(catalog, connection.nativeProviderKey)
     if (!connection.connectedForMe) {
       const score = Math.max(0, ...operations.map((operation) => operationScore(connection, operation, queryTokens)))
       if (score > 0) matches.push(connectionStatusMatch(connection, score))
@@ -198,6 +201,8 @@ export async function executeNativeCapability(input: {
   query?: unknown
   body?: unknown
   includePayload?: boolean
+  /** What started this call, recorded with its Library usage event. */
+  usageSource: CapabilityUsageSource
 }): Promise<NativeCapabilityToolResult | null> {
   const parsed = parseNativeCapabilityName(input.name)
   if (!parsed) return null
@@ -224,7 +229,7 @@ export async function executeNativeCapability(input: {
       }],
     }
   }
-  return invokeMcpOperation({
+  const call = invokeMcpOperation({
     app: input.app,
     env: input.env,
     operation: resolved.operation,
@@ -237,4 +242,14 @@ export async function executeNativeCapability(input: {
       body: normalizeToolBody(input.body),
     },
   })
+  // Library usage: one row per Google Workspace / Microsoft 365 call, ok or error.
+  if (input.member) {
+    recordConnectorCall(call, {
+      organizationId: input.organizationId,
+      orgMembershipId: input.member.orgMembershipId,
+      connectionId: resolved.connection.id,
+      source: input.usageSource,
+    }, toolCallFailed)
+  }
+  return call
 }

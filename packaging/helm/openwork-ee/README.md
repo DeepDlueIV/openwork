@@ -378,6 +378,7 @@ OpenWork Cloud. Don't change it on a customer install.
 | `backgroundShellTasks` | `DEN_FEATURE_BACKGROUND_SHELL_TASKS` | default off | The desktop chat shows how many commands the agent left running in the background, and adds a short row when each one finishes. |
 | `orgDefaultModel` | `DEN_FEATURE_ORG_DEFAULT_MODEL` | default off | Organization admins choose the model new desktop chats start with, for everyone or per team. Applies to the OpenCode v2 engine only; members can still change the model in each chat. |
 | `gatewayProviderUsageLimits` | `DEN_FEATURE_GATEWAY_PROVIDER_USAGE_LIMITS` | default off | Admins can attach a spend limit to one AI provider. Spend on that provider counts toward its own limit instead of the default limit, and members see which provider ran out. |
+| `stableInstallLinks` | `DEN_FEATURE_STABLE_INSTALL_LINKS` | default off | Download and Copy install link share the normal install page address instead of a one-off link. Teammates sign in to download; links shared earlier keep working. |
 <!-- END GENERATED features -->
 
 The table and the `config.features` block are generated: run `pnpm features:sync`

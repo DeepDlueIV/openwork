@@ -1,10 +1,11 @@
 import { expect } from "vitest";
 import { spec } from "@openwork/testkit";
-import { denDownloadAdmin, denDownloadFailures, denDownloadMember } from "../worlds/den-download-openwork.ts";
+import { denDownloadAdmin, denDownloadFailures, denDownloadMember, denDownloadStable } from "../worlds/den-download-openwork.ts";
 
 const admin = spec.world(denDownloadAdmin, { resources: { surfaces: ["web"], services: ["den"] }, timeout: 420_000 });
 const failures = spec.world(denDownloadFailures, { resources: { surfaces: ["web"], services: ["den"] }, timeout: 420_000 });
 const member = spec.world(denDownloadMember, { resources: { surfaces: ["web"], services: ["den"] }, timeout: 420_000 });
+const stable = spec.world(denDownloadStable, { resources: { surfaces: ["web"], services: ["den"] }, timeout: 420_000 });
 const download = { testId: "den-download-openwork" };
 const popover = { testId: "workspace-install-popover" };
 const copy = { testId: "workspace-install-copy" };
@@ -222,5 +223,54 @@ member("a member keeps both download actions and uses the header to go straight 
     expect(await world.mintRequests()).toHaveLength(0);
     evidence.recordAssertionEvidence("The original member download action is unchanged", `path=${location}; no minted share link`, location === "/install");
     await user.screenshot();
+  });
+});
+
+stable("an admin shares the normal install page instead of a one-off install link", async ({ world, user, probe, evidence, step }) => {
+  const installPage = new URL("/install", world.den.ref.webUrl).toString();
+
+  await step("before: Copy install link puts a one-off token in the shared address", async () => {
+    await user.see({ ...download, role: "button", label: "Download OpenWork" }, { timeoutMs: 90_000 });
+    await user.click(download);
+    await user.click(copy);
+    await user.see(copy, { text: "Copied" });
+    const copied = new URL(await world.readClipboard());
+    expect(copied.pathname).toBe("/install");
+    expect(copied.searchParams.has("token")).toBe(true);
+    const resolved = await world.resolveInstallLink(copied.toString());
+    expect(resolved.status).toBe(200);
+    evidence.recordAssertionEvidence("Without plain install links the copy is a minted, token-bearing link", `path=${copied.pathname}; token present; resolve=${resolved.status}`, true);
+    await user.screenshot();
+    await user.press("Escape");
+    await closes(probe, '[data-testid="workspace-install-popover"]', "Escape closes the install panel");
+  });
+
+  await world.useStableInstallLinks();
+
+  await step("after: Copy install link shares the normal install page with no token", async () => {
+    await user.click(download);
+    await user.see(popover);
+    await user.click(copy);
+    await user.see(copy, { text: "Copied" });
+    await user.see(popover);
+    const copied = await world.readClipboard();
+    expect(copied).toBe(installPage);
+    const requests = await world.mintRequests();
+    expect(requests.map((request) => request.status)).toEqual([200, 200]);
+    evidence.recordAssertionEvidence("The clipboard holds exactly the workspace's normal install page", `copied=${new URL(copied).pathname}${new URL(copied).search}; requests=${requests.length}; no token`, copied === installPage);
+    await user.screenshot();
+  });
+
+  await step("after: Open install page shows the signed-in install guide at the same address", async () => {
+    await user.click(open);
+    const popup = await probe.eventually(() => world.installPopup(), {
+      within: 30_000, label: "workspace install tab", until: (value) => value !== null,
+    });
+    if (!popup) throw new Error("The install action did not open a browser tab.");
+    expect(popup.url).toBe(installPage);
+    await user.on(popup.surface).see({ role: "heading", label: "Download OpenWork" }, { timeoutMs: 60_000 });
+    await user.on(popup.surface).see({ role: "link", label: "I already installed OpenWork" });
+    evidence.recordAssertionEvidence("The opened tab is the plain install page and renders the install guide", `url=${new URL(popup.url).pathname}; guide visible`, popup.url === installPage);
+    await user.on(popup.surface).screenshot();
   });
 });

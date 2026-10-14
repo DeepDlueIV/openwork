@@ -22,7 +22,8 @@ import {
   previewDesktopConnectGrant,
 } from "../../desktop-connect-grants.js"
 import { env } from "../../env.js"
-import { hashInstallLinkToken, mintOrganizationInstallLink } from "../../install-links.js"
+import { organizationFeatureEnabled } from "../../features.js"
+import { hashInstallLinkToken, mintOrganizationInstallLink, revokeOrganizationInstallLinks, stableInstallPageUrl } from "../../install-links.js"
 import { jsonValidator, orgMemberRoute, publicRoute, queryValidator } from "../../middleware/index.js"
 import { denTypeIdSchema, emptyResponse, forbiddenSchema, invalidRequestSchema, jsonResponse, notFoundSchema, textResponse, unauthorizedSchema } from "../../openapi.js"
 import { normalizeOrganizationMetadata } from "../../organization-limits.js"
@@ -49,10 +50,10 @@ const createInstallLinkBodySchema = z.object({
 }).meta({ ref: "CreateInstallLinkRequest" })
 
 const createInstallLinkResponseSchema = z.object({
-  token: z.string(),
-  installPageUrl: z.string().url().describe("Share this page: it downloads the OpenWork desktop app for this organization."),
-  connectUrl: z.string().describe("Open on a computer that already has OpenWork installed to point the desktop app at this organization. Short-lived; mint a new link when it expires."),
-  connectExpiresAt: z.string().datetime(),
+  token: z.string().optional().describe("Absent when the organization shares the normal install page instead of one-off links."),
+  installPageUrl: z.string().url().describe("Share this page: it downloads the OpenWork desktop app for this organization. People who open the normal install page sign in first."),
+  connectUrl: z.string().optional().describe("Open on a computer that already has OpenWork installed to point the desktop app at this organization. Short-lived; mint a new link when it expires. Absent with the normal install page: the desktop app signs in instead."),
+  connectExpiresAt: z.string().datetime().optional(),
 }).meta({ ref: "CreateInstallLinkResponse" })
 
 const installLinkQuerySchema = z.object({
@@ -382,7 +383,7 @@ export function registerOrgInstallLinkRoutes<T extends { Variables: OrgRouteVari
     describeRoute({
       tags: ["Organizations"],
       summary: "Create organization install link (download desktop app, install OpenWork)",
-      description: "Download the desktop app and install OpenWork pointed at this organization. Returns installPageUrl, a shareable page that downloads OpenWork for this organization, and connectUrl, a short-lived link that opens an already-installed desktop app signed in to this organization. Any member can mint one. Older active links remain valid unless an owner or admin explicitly requests rotation.",
+      description: "Download the desktop app and install OpenWork pointed at this organization. Returns installPageUrl, a shareable page that downloads OpenWork for this organization, and connectUrl, a short-lived link that opens an already-installed desktop app signed in to this organization. Any member can mint one. Older active links remain valid unless an owner or admin explicitly requests rotation. When the organization uses plain install links, returns only installPageUrl, the normal install page where people sign in, and creates no link.",
       responses: {
         200: jsonResponse("Install link created successfully.", createInstallLinkResponseSchema),
         400: jsonResponse("The install-link request was invalid.", invalidRequestSchema),
@@ -404,6 +405,13 @@ export function registerOrgInstallLinkRoutes<T extends { Variables: OrgRouteVari
         if (!permission.ok) {
           return c.json(permission.response, orgAccessFailureStatus(permission.response), permissionFailureHeaders(permission.response))
         }
+      }
+
+      if (await organizationFeatureEnabled(payload.organization.id, "stableInstallLinks")) {
+        if (input.rotate) {
+          await revokeOrganizationInstallLinks(payload.organization.id)
+        }
+        return c.json({ installPageUrl: stableInstallPageUrl() })
       }
 
       const retryAfter = await checkRateLimit(

@@ -178,6 +178,16 @@
               ],
               "description": "AI Gateway: usage limits per provider: Admins can attach a spend limit to one AI provider. Spend on that provider counts toward its own limit instead of the default limit, and members see which provider ran out. Renders DEN_FEATURE_GATEWAY_PROVIDER_USAGE_LIMITS."
             },
+            "stableInstallLinks": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Plain install links: Download and Copy install link share the normal install page address instead of a one-off link. Teammates sign in to download; links shared earlier keep working. Renders DEN_FEATURE_STABLE_INSTALL_LINKS."
+            },
             "gatewayDashboard": {
               "enum": [
                 "",

@@ -178,7 +178,8 @@ export type AdminFeature = {
     | "remoteSessionEvents"
     | "backgroundShellTasks"
     | "orgDefaultModel"
-    | "gatewayProviderUsageLimits";
+    | "gatewayProviderUsageLimits"
+    | "stableInstallLinks";
   label: string;
   description: string;
   since: string;
@@ -233,6 +234,7 @@ export type AdminOrganizationsPageResponse = {
       backgroundShellTasks: boolean;
       orgDefaultModel: boolean;
       gatewayProviderUsageLimits: boolean;
+      stableInstallLinks: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -380,6 +382,15 @@ export type AdminOrganizationsPageResponse = {
         overrideApplies: boolean;
       };
       gatewayProviderUsageLimits: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      stableInstallLinks: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -467,6 +478,7 @@ export type AdminOverviewResponse = {
       backgroundShellTasks: boolean;
       orgDefaultModel: boolean;
       gatewayProviderUsageLimits: boolean;
+      stableInstallLinks: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -614,6 +626,15 @@ export type AdminOverviewResponse = {
         overrideApplies: boolean;
       };
       gatewayProviderUsageLimits: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      stableInstallLinks: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -1946,16 +1967,19 @@ export type InvitationNotPendingError = {
 };
 
 export type CreateInstallLinkResponse = {
-  token: string;
   /**
-   * Share this page: it downloads the OpenWork desktop app for this organization.
+   * Absent when the organization shares the normal install page instead of one-off links.
+   */
+  token?: string;
+  /**
+   * Share this page: it downloads the OpenWork desktop app for this organization. People who open the normal install page sign in first.
    */
   installPageUrl: string;
   /**
-   * Open on a computer that already has OpenWork installed to point the desktop app at this organization. Short-lived; mint a new link when it expires.
+   * Open on a computer that already has OpenWork installed to point the desktop app at this organization. Short-lived; mint a new link when it expires. Absent with the normal install page: the desktop app signs in instead.
    */
-  connectUrl: string;
-  connectExpiresAt: string;
+  connectUrl?: string;
+  connectExpiresAt?: string;
 };
 
 export type CreateInstallLinkRequest = {
@@ -6420,6 +6444,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       backgroundShellTasks: boolean;
       orgDefaultModel: boolean;
       gatewayProviderUsageLimits: boolean;
+      stableInstallLinks: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -6567,6 +6592,15 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       gatewayProviderUsageLimits: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      stableInstallLinks: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6642,6 +6676,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       backgroundShellTasks: boolean;
       orgDefaultModel: boolean;
       gatewayProviderUsageLimits: boolean;
+      stableInstallLinks: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -6789,6 +6824,15 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       gatewayProviderUsageLimits: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      stableInstallLinks: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;

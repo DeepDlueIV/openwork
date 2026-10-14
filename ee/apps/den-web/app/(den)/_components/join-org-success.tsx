@@ -10,7 +10,7 @@ import {
 import { getErrorMessage, requestJson } from "../_lib/den-flow";
 import { getInstallConfigErrorMessage } from "../_lib/install-errors";
 import {
-  buildInstallDownloadHref,
+  buildBrowserInstallDownloadHref,
   detectedInstallPlatform,
   downloadCtaLabel,
   installerApiUrlFromConfig,
@@ -149,13 +149,12 @@ export function JoinOrgSuccess({
 
     try {
       const installPageUrl = await createOrganizationInstallLink(organizationId, false);
+      // Plain install links carry no token: joining made this organization
+      // active, so the signed-in install routes serve its setup.
       const token = installTokenFromPageUrl(installPageUrl);
-      if (!token) {
-        throw new Error("The install link response was incomplete.");
-      }
 
       const { response, payload } = await requestJson(
-        `/v1/install-config?token=${encodeURIComponent(token)}`,
+        token ? `/v1/install-config?token=${encodeURIComponent(token)}` : "/v1/me/install-config",
         { method: "GET" },
         12000,
       );
@@ -169,7 +168,7 @@ export function JoinOrgSuccess({
       }
 
       const platform = detectedInstallPlatform(detected) ?? "mac-arm64";
-      const href = buildInstallDownloadHref(apiUrl, platform, token);
+      const href = buildBrowserInstallDownloadHref(apiUrl, platform, token);
       setDownloadHref(href);
       startInstallerDownload(href);
     } catch (error) {

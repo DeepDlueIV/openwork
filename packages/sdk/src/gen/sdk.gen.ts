@@ -5556,7 +5556,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Create organization install link (download desktop app, install OpenWork)
    *
-   * Download the desktop app and install OpenWork pointed at this organization. Returns installPageUrl, a shareable page that downloads OpenWork for this organization, and connectUrl, a short-lived link that opens an already-installed desktop app signed in to this organization. Any member can mint one. Older active links remain valid unless an owner or admin explicitly requests rotation.
+   * Download the desktop app and install OpenWork pointed at this organization. Returns installPageUrl, a shareable page that downloads OpenWork for this organization, and connectUrl, a short-lived link that opens an already-installed desktop app signed in to this organization. Any member can mint one. Older active links remain valid unless an owner or admin explicitly requests rotation. When the organization uses plain install links, returns only installPageUrl, the normal install page where people sign in, and creates no link.
    */
   public postV1OrgsByOrganizationIdInstallLinks<ThrowOnError extends boolean = false>(
     parameters: {

@@ -27,21 +27,31 @@ function installPageUrl(token: string) {
   return new URL(`/install?token=${encodeURIComponent(token)}`, env.betterAuthUrl).toString()
 }
 
+/** The normal install page: signed-in members get their active organization's setup. */
+export function stableInstallPageUrl() {
+  return new URL("/install", env.betterAuthUrl).toString()
+}
+
+/** Revokes every active install link of the organization; links already shared stop working. */
+export async function revokeOrganizationInstallLinks(organizationId: InstallLinkInsert["organizationId"]) {
+  const now = new Date()
+  await db
+    .update(InstallLinkTable)
+    .set({ revokedAt: now })
+    .where(
+      and(
+        eq(InstallLinkTable.organizationId, organizationId),
+        isNull(InstallLinkTable.revokedAt),
+        or(isNull(InstallLinkTable.expiresAt), gt(InstallLinkTable.expiresAt, now)),
+      ),
+    )
+}
+
 export async function mintOrganizationInstallLink(input: MintOrganizationInstallLinkInput) {
   const token = randomBytes(32).toString("base64url")
 
   if (input.rotate) {
-    const now = new Date()
-    await db
-      .update(InstallLinkTable)
-      .set({ revokedAt: now })
-      .where(
-        and(
-          eq(InstallLinkTable.organizationId, input.organizationId),
-          isNull(InstallLinkTable.revokedAt),
-          or(isNull(InstallLinkTable.expiresAt), gt(InstallLinkTable.expiresAt, now)),
-        ),
-      )
+    await revokeOrganizationInstallLinks(input.organizationId)
   }
 
   const installLinkId = createDenTypeId("installLink")

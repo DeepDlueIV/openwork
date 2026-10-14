@@ -3,8 +3,9 @@ import type { Surface } from "@openwork/cdp";
 import { faultProxy } from "@openwork/env";
 import type { Place, Seed } from "@openwork/env";
 import { isRecord, stringField } from "./library.ts";
+import { enableOrganizationCapabilities } from "./organization-capabilities.ts";
 
-type DownloadScenario = "admin" | "failures" | "member";
+type DownloadScenario = "admin" | "failures" | "member" | "stable";
 
 /** Real Den minting and real Chromium clipboard/popups; only the first failed mint is synthetic. */
 async function downloadWorkspace(seed: Seed, ctx: { place: Place }, scenario: DownloadScenario) {
@@ -59,6 +60,10 @@ async function downloadWorkspace(seed: Seed, ctx: { place: Place }, scenario: Do
 
   return {
     den, web, organizationName, organizationId, allowClipboard,
+    /** Turns the plain install links rollout on for this workspace through the /admin route. */
+    async useStableInstallLinks() {
+      await enableOrganizationCapabilities(seed, den.admin, { stableInstallLinks: true }, organizationId);
+    },
     async mintRequests() {
       return (await proxy.requestLog()).filter((entry) => entry.method === "POST" && entry.path === mintPath);
     },
@@ -88,7 +93,7 @@ async function downloadWorkspace(seed: Seed, ctx: { place: Place }, scenario: Do
     /** Observe the real tab opened by the trusted click; never replace window.open. */
     async installPopup(): Promise<{ surface: Surface; url: string } | null> {
       const target = (await listTargets(web.handle.cdpUrl)).find((entry) => (
-        entry.type === "page" && entry.id !== web.client.targetId && entry.url.startsWith(`${origin}/install?token=`)
+        entry.type === "page" && entry.id !== web.client.targetId && (entry.url === `${origin}/install` || entry.url.startsWith(`${origin}/install?token=`))
       ));
       if (!target) return null;
       const client = await connect(debuggerUrlFor(web.handle.cdpUrl, target));
@@ -105,3 +110,4 @@ async function downloadWorkspace(seed: Seed, ctx: { place: Place }, scenario: Do
 export const denDownloadAdmin = (seed: Seed, ctx: { place: Place }) => downloadWorkspace(seed, ctx, "admin");
 export const denDownloadFailures = (seed: Seed, ctx: { place: Place }) => downloadWorkspace(seed, ctx, "failures");
 export const denDownloadMember = (seed: Seed, ctx: { place: Place }) => downloadWorkspace(seed, ctx, "member");
+export const denDownloadStable = (seed: Seed, ctx: { place: Place }) => downloadWorkspace(seed, ctx, "stable");

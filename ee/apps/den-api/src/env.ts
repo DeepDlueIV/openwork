@@ -160,9 +160,6 @@ const EnvSchema = z.object({
   VERCEL_TEAM_SLUG: z.string().optional(),
   VERCEL_DNS_DOMAIN: z.string().optional(),
   DEN_PLAN_GATING_ENABLED: z.string().optional(),
-  DEN_CONNECT_LINK_MODE: z.enum(["exchange", "signed"]).optional(),
-  DEN_CONNECT_LINK_PRIVATE_KEY: z.string().optional(),
-  DEN_CONNECT_LINK_KEY_ID: z.string().max(64).optional(),
   DEN_GENERATED_ARTIFACT_VIEWS_ENABLED: z.string().optional(),
   DEN_APP_MCP_SERVERS_ENABLED: z.string().optional(),
   SCIM_MAINTENANCE_INTERVAL_MS: z.string().optional(),
@@ -508,22 +505,8 @@ const mcpAdditionalResources = normalizeAbsoluteUrlCsv(
 const planGatingEnabled =
   (parsed.DEN_PLAN_GATING_ENABLED ?? "false").toLowerCase() === "true"
 
-// Exchange mode is the zero-config default. Signed mode is an explicit v2
-// opt-in because its public key must already be trusted by the desktop build.
-const connectLinkMode = parsed.DEN_CONNECT_LINK_MODE ?? "exchange"
-const connectLinkPrivateKeyPem = optionalString(parsed.DEN_CONNECT_LINK_PRIVATE_KEY)
-const connectLinkKid = optionalString(parsed.DEN_CONNECT_LINK_KEY_ID)
-if (connectLinkMode === "signed" && (!connectLinkPrivateKeyPem || !connectLinkKid)) {
-  throw new Error(
-    "DEN_CONNECT_LINK_MODE=signed requires DEN_CONNECT_LINK_PRIVATE_KEY and DEN_CONNECT_LINK_KEY_ID.",
-  )
-}
 const initialAdminBootstrapCode = optionalString(parsed.DEN_INITIAL_ADMIN_BOOTSTRAP_CODE)
   ?? readOptionalSecretFile("DEN_INITIAL_ADMIN_BOOTSTRAP_CODE_FILE", parsed.DEN_INITIAL_ADMIN_BOOTSTRAP_CODE_FILE)
-const connectLink = connectLinkMode === "signed" && connectLinkPrivateKeyPem && connectLinkKid
-  ? { privateKeyPem: connectLinkPrivateKeyPem, kid: connectLinkKid }
-  : null
-
 // Generated custom views require the matching desktop MCP Apps host release.
 // Keep the Den capability fail-closed so a Den deployment cannot advertise
 // bridge-dependent resources to older published desktop builds.
@@ -712,7 +695,6 @@ export const env = {
   gatewayKey: optionalString(parsed.DEN_GATEWAY_KEY),
   gatewayOrigin: normalizeOptionalHttpsOrigin("DEN_GATEWAY_ORIGIN", parsed.DEN_GATEWAY_ORIGIN),
   planGatingEnabled,
-  connectLink,
   generatedArtifactViewsEnabled,
   appMcpServersEnabled,
   scimMaintenanceIntervalMs: Number(parsed.SCIM_MAINTENANCE_INTERVAL_MS ?? "300000"),

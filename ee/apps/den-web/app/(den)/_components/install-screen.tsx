@@ -7,7 +7,7 @@ import { useSearchParams } from "next/navigation";
 import { requestJson } from "../_lib/den-flow";
 import { getInstallConfigErrorMessage } from "../_lib/install-errors";
 import { LINK_STEP, parseGuideStep, type GuideStep } from "../_lib/install-guide";
-import { buildBrowserInstallDownloadHref, type InstallPlatform, installerFileName } from "../_lib/install-download";
+import { installDownloadHref, type InstallPlatform, installerFileName } from "../_lib/install-download";
 import { isMobileUserAgent } from "../_lib/platform";
 import { InstallVisual } from "./install-visual";
 import { OnboardingShell } from "./onboarding-shell";
@@ -153,15 +153,14 @@ function parseInstallConfig(value: unknown): InstallConfig | null {
   };
 }
 
-async function fetchInstallConfig(token: string | null) {
-  const path = token ? `/v1/install-config?token=${encodeURIComponent(token)}` : "/v1/me/install-config";
+async function fetchInstallConfig() {
   const { response, payload } = await requestJson(
-    path,
+    "/v1/me/install-config",
     { method: "GET" },
     12000,
   );
   if (!response.ok) {
-    if (!token && response.status === 401) {
+    if (response.status === 401) {
       throw new Error("Sign in to your Den portal to install OpenWork.");
     }
     throw new Error(getInstallConfigErrorMessage(payload, response.status));
@@ -171,10 +170,6 @@ async function fetchInstallConfig(token: string | null) {
     throw new Error("This install link returned incomplete setup details.");
   }
   return parsed;
-}
-
-function installHref(config: InstallConfig, platform: InstallPlatform, token: string | null) {
-  return buildBrowserInstallDownloadHref(config.apiUrl, platform, token);
 }
 
 type StepState = "complete" | "active" | "pending";
@@ -224,7 +219,6 @@ function InstallStep({
 
 export function InstallScreen() {
   const searchParams = useSearchParams();
-  const token = searchParams.get("token")?.trim() ?? "";
   const [config, setConfig] = useState<InstallConfig | null>(null);
   const [busy, setBusy] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -245,7 +239,14 @@ export function InstallScreen() {
 
   useEffect(() => {
     setIsMobile(isMobileUserAgent());
-    setCurrentLink(window.location.href);
+    // Install pages once carried a one-off token; it is ignored now, so drop
+    // it from the address before anyone copies and shares it again.
+    const url = new URL(window.location.href);
+    if (url.searchParams.has("token")) {
+      url.searchParams.delete("token");
+      window.history.replaceState(null, "", url);
+    }
+    setCurrentLink(url.toString());
     let cancelled = false;
     void detectPlatform().then((platform) => {
       if (!cancelled) setDetected(platform);
@@ -262,7 +263,7 @@ export function InstallScreen() {
       setBusy(true);
       setError(null);
       try {
-        const parsed = await fetchInstallConfig(token || null);
+        const parsed = await fetchInstallConfig();
         if (cancelled) {
           return;
         }
@@ -283,7 +284,7 @@ export function InstallScreen() {
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, []);
 
   useEffect(() => () => {
     if (downloadStartedTimer.current !== null) {
@@ -301,34 +302,34 @@ export function InstallScreen() {
         os: "macos",
         title: "macOS",
         options: [
-          { href: installHref(config, "mac-arm64", token), label: "Apple Silicon (M1+)", arch: "arm64" },
-          { href: installHref(config, "mac-x64", token), label: "Intel", arch: "x64" },
+          { href: installDownloadHref("mac-arm64"), label: "Apple Silicon (M1+)", arch: "arm64" },
+          { href: installDownloadHref("mac-x64"), label: "Intel", arch: "x64" },
         ],
       },
       {
         os: "windows",
         title: "Windows",
         options: [
-          { href: installHref(config, "win-x64", token), label: "x64 app", arch: "x64" },
+          { href: installDownloadHref("win-x64"), label: "x64 app", arch: "x64" },
         ],
       },
       {
         os: "linux",
         title: "Linux",
         options: [
-          { href: installHref(config, "linux-x64", token), label: "AppImage (x64)", arch: "x64" },
-          { href: installHref(config, "linux-arm64", token), label: "AppImage (ARM64)", arch: "arm64" },
+          { href: installDownloadHref("linux-x64"), label: "AppImage (x64)", arch: "x64" },
+          { href: installDownloadHref("linux-arm64"), label: "AppImage (ARM64)", arch: "arm64" },
         ],
       },
     ];
-  }, [config, token]);
+  }, [config]);
 
   const platformByHref = useMemo<Record<string, InstallPlatform>>(() => {
     if (!config) {
       return {};
     }
-    return Object.fromEntries(INSTALL_PLATFORMS.map((platform) => [installHref(config, platform, token), platform]));
-  }, [config, token]);
+    return Object.fromEntries(INSTALL_PLATFORMS.map((platform) => [installDownloadHref(platform), platform]));
+  }, [config]);
 
 
 
@@ -365,11 +366,7 @@ export function InstallScreen() {
     setGuideStep(nextStep);
     setExpandedStep(nextStep);
     const url = new URL(window.location.href);
-    if (token) {
-      url.searchParams.set("step", String(nextStep));
-    } else {
-      url.search = "";
-    }
+    url.search = "";
     window.history.replaceState(null, "", url);
   }
 
@@ -438,7 +435,7 @@ export function InstallScreen() {
               <div className="grid gap-5 text-left">
                 <DownloadPlatformGrid groups={downloadGroups} />
                 {/* Reload so the auth provider reads the desktop handoff parameters on mount. */}
-                <a className="den-button-secondary w-fit" href={token ? new URL(DESKTOP_SIGN_IN_PATH, config.webUrl).toString() : DESKTOP_SIGN_IN_PATH}>
+                <a className="den-button-secondary w-fit" href={DESKTOP_SIGN_IN_PATH}>
                   I already installed OpenWork
                 </a>
               </div>

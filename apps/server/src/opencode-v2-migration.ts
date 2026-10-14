@@ -190,6 +190,24 @@ export async function readMigrationSessions(database: string): Promise<Migration
   } finally { db.close(); }
 }
 
+/**
+ * Whether v1 has a chat created at or after `since` (ms): one that no finished
+ * migration copied, so v2 cannot open it. A missing or unreadable database has none.
+ */
+export async function hasV1ChatsSince(database: string, since: number): Promise<boolean> {
+  try {
+    await access(database);
+    const db = typeof process.versions.bun === "string"
+      ? new (await import("bun:sqlite")).Database(database, { readonly: true })
+      : new (await importNodeSqlite()).DatabaseSync(database, { readOnly: true });
+    try {
+      return isRecord(db.prepare("SELECT 1 AS found FROM session WHERE time_created >= ? LIMIT 1").get(since));
+    } finally { db.close(); }
+  } catch {
+    return false;
+  }
+}
+
 /** The calls a trimmed snapshot needs, from bun:sqlite or node:sqlite. */
 interface SnapshotDatabase {
   exec(sql: string): void;

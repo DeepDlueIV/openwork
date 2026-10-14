@@ -3359,6 +3359,8 @@ function createRoutes(
     if (body.chatRouting !== undefined && typeof body.chatRouting !== "boolean") {
       throw new ApiError(400, "invalid_payload", "chatRouting must be a boolean");
     }
+    // Check before starting the v2 process, so a refused switch changes nothing.
+    if (body.chatRouting === true) await engineV2Preview.requireV1HistoryCopied();
     let status = engineV2Preview.status();
     // Stop routing before stopping the v2 process; enable the process before routing to it.
     if (body.chatRouting === false) status = await engineV2Preview.setChatRouting(false);

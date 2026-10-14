@@ -303,6 +303,11 @@ export async function requestEngineSwitch(
     updateProgress({ selected: selectedChatEngine(next) });
     return next;
   } catch (cause) {
+    // v1 chats not yet in v2 would stop opening: copy them first, then switch.
+    if (cause instanceof OpenworkServerError && cause.code === "engine_migration_required") {
+      requestEngineMigration(client, "upgrade");
+      return null;
+    }
     toast.error(messageOf(cause, t("engine_migration.switch_failed")));
     return null;
   } finally {

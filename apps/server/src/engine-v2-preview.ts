@@ -1,6 +1,6 @@
 import { createV2ContextBridge } from "./opencode-v2-context-bridge.js";
 import { ApiError } from "./errors.js";
-import { opencodeV1DatabasePath, runOpencodeV1HistoryMigration, type EngineV2MigrationStatus } from "./opencode-v2-migration.js";
+import { hasV1ChatsSince, opencodeV1DatabasePath, runOpencodeV1HistoryMigration, type EngineV2MigrationStatus } from "./opencode-v2-migration.js";
 import { executionRules } from "./managed-policy-rules.js";
 import { agentPermissionEngineMcpDenial, agentPermissionRulesOf } from "./agent-permission-engine.js";
 import { registeredOrganizationMcpServers } from "./connect-mcp-server-catalog.js";
@@ -113,6 +113,8 @@ export interface EngineV2Preview {
   status(): EngineV2PreviewStatus;
   setEnabled(enabled: boolean): Promise<EngineV2PreviewStatus>;
   setChatRouting(chatRouting: boolean): Promise<EngineV2PreviewStatus>;
+  /** Refuse (409 engine_migration_required) while v1 has chats no finished migration copied. */
+  requireV1HistoryCopied(): Promise<void>;
   connection(): { url: string; username: string; password: string } | undefined;
   ensureWorkspaceReady(directory: string): Promise<void>;
   refreshProviders(): Promise<void>;
@@ -137,6 +139,11 @@ export interface EngineV2Preview {
 export interface EngineV2PreviewState {
   enabled: boolean;
   chatRouting?: boolean;
+  /**
+   * When the last finished migration started (ms). v1 chats created before it
+   * are in v2. Kept on disk so a restart tells a finished migration from a partial one.
+   */
+  v1HistoryCopiedAt?: number;
 }
 
 export function resolveInitialEngineV2PreviewState(
@@ -144,8 +151,8 @@ export function resolveInitialEngineV2PreviewState(
   persisted: EngineV2PreviewState,
 ): EngineV2PreviewState {
   const override = env.OPENWORK_ENGINE_V2_PREVIEW;
-  if (override === "1" || override === "chat") return { enabled: true, chatRouting: true };
-  if (override === "sidecar") return { enabled: true, chatRouting: false };
+  if (override === "1" || override === "chat") return { ...persisted, enabled: true, chatRouting: true };
+  if (override === "sidecar") return { ...persisted, enabled: true, chatRouting: false };
   return persisted;
 }
 
@@ -176,7 +183,11 @@ export function readEngineV2PreviewState(config: ServerConfig): EngineV2PreviewS
     ) {
       return { enabled: false, chatRouting: false };
     }
-    return { enabled: parsed.enabled, chatRouting: parsed.chatRouting === true };
+    return {
+      enabled: parsed.enabled,
+      chatRouting: parsed.chatRouting === true,
+      ...(typeof parsed.v1HistoryCopiedAt === "number" ? { v1HistoryCopiedAt: parsed.v1HistoryCopiedAt } : {}),
+    };
   } catch {
     return { enabled: false, chatRouting: false };
   }
@@ -431,6 +442,10 @@ export function createEngineV2Preview(options: {
   let migrationJob: Promise<void> | undefined;
   let enabled = initialState.enabled;
   let chatRouting = initialState.chatRouting === true;
+  let v1HistoryCopiedAt = initialState.v1HistoryCopiedAt;
+  const persistState = () => writeEngineV2PreviewState(config, {
+    enabled, chatRouting, ...(v1HistoryCopiedAt === undefined ? {} : { v1HistoryCopiedAt }),
+  });
   let allowRunning = true;
   let running = false;
   let version: string | undefined;
@@ -828,8 +843,8 @@ export function createEngineV2Preview(options: {
   async function setEnabled(nextEnabled: boolean): Promise<EngineV2PreviewStatus> {
     requireNoMigration();
     if (nextEnabled && enabled && running) return status();
-    await writeEngineV2PreviewState(config, { enabled: nextEnabled, chatRouting });
     enabled = nextEnabled;
+    await persistState();
     if (!enabled) {
       await stopRuntime();
       return status();
@@ -843,10 +858,23 @@ export function createEngineV2Preview(options: {
     return status();
   }
 
-  async function setChatRouting(nextChatRouting: boolean): Promise<EngineV2PreviewStatus> {
+  // v2 opens a v1 chat only once a migration has copied it. Routing to v2
+  // before that leaves every such chat unreadable, so it waits for a copy.
+  async function requireV1HistoryCopied(): Promise<void> {
     requireNoMigration();
-    await writeEngineV2PreviewState(config, { enabled, chatRouting: nextChatRouting });
+    if (chatRouting) return;
+    let source: string;
+    try { source = opencodeV1DatabasePath(); } catch { return; }
+    if (await hasV1ChatsSince(source, v1HistoryCopiedAt ?? 0)) {
+      throw new ApiError(409, "engine_migration_required", "Migrate your OpenCode v1 chats before switching to v2, so they stay readable.");
+    }
+  }
+
+  async function setChatRouting(nextChatRouting: boolean): Promise<EngineV2PreviewStatus> {
+    if (nextChatRouting) await requireV1HistoryCopied();
+    else requireNoMigration();
     chatRouting = nextChatRouting;
+    await persistState();
     warmActiveWorkspace();
     return status();
   }
@@ -909,7 +937,7 @@ export function createEngineV2Preview(options: {
         const resolved = await resolveBinary(config);
         enabled = true;
         allowRunning = true;
-        await writeEngineV2PreviewState(config, { enabled, chatRouting });
+        await persistState();
         await start();
         if (!sidecar) throw new Error("OpenCode v2 could not start. Retry migration.");
         const storageDir = join(runtimeStorageDir(config), "opencode-v2");
@@ -917,6 +945,10 @@ export function createEngineV2Preview(options: {
           bin: resolved.bin, target: sidecar,
           backup: { database: join(rootDir, "opencode.db"), directory: join(storageDir, "backups") },
           progress: (next) => { migration = { ...next, startedAt }; } });
+        if (migration.state === "completed") {
+          v1HistoryCopiedAt = Date.parse(startedAt);
+          await persistState();
+        }
       } catch (error) {
         migration = { ...migration, state: "error", error: errorMessage(error) };
       }
@@ -933,5 +965,5 @@ export function createEngineV2Preview(options: {
     if (enabled) void start().catch(recordStartError);
   }
   if (!options.deferStart) startWhenReady();
-  return { start: startWhenReady, migrateHistory, status, setEnabled, setChatRouting, connection, ensureWorkspaceReady, refreshProviders, syncWorkspaceMcp, settleWorkspaceMcp, warmWorkspace, settleWorkspaceSkills, stop };
+  return { start: startWhenReady, migrateHistory, status, setEnabled, setChatRouting, requireV1HistoryCopied, connection, ensureWorkspaceReady, refreshProviders, syncWorkspaceMcp, settleWorkspaceMcp, warmWorkspace, settleWorkspaceSkills, stop };
 }

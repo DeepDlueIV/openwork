@@ -156,6 +156,7 @@ import {
   isChatMcpReconnectScopeCurrent,
   isCurrentChatConnectionDecision,
   isLatestTurnToolCall,
+  CHAT_CONNECTION_CONTINUE_PROMPT,
   nativeChatConnectionDecision,
   composerQuestionForConnectionDecision,
   type ChatConnectionDecisionBinding,
@@ -3229,10 +3230,10 @@ export function SessionSurface(props: SessionSurfaceProps) {
   // A turn that ended on a Connect card picks up once its sign-in lands, as if the person said so.
   const continueAfterConnectionRef = useRef({ status, messages: baseRenderedMessages, asking: Boolean(props.activeQuestion) });
   continueAfterConnectionRef.current = { status, messages: baseRenderedMessages, asking: Boolean(props.activeQuestion) };
-  const continueAfterConnection = useCallback((toolCallId: string, connectionName: string) => {
+  const continueAfterConnection = useCallback((toolCallId: string) => {
     const context = continueAfterConnectionRef.current;
     if (context.status !== "ready" || context.asking || !isLatestTurnToolCall(context.messages, toolCallId)) return;
-    void handleResumeInterrupted(`${connectionName} is connected. Go ahead.`);
+    void handleResumeInterrupted(CHAT_CONNECTION_CONTINUE_PROMPT);
   }, [handleResumeInterrupted]);
 
   const handleRevertToUserMessage = useCallback((messageId: string) => {

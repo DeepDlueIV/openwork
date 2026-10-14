@@ -10,7 +10,7 @@ const test = spec.world(engineConnectorNeedsSignIn, {
 
 const PROMPT = "Find our roadmap page in Notion.";
 const REPLY = "Notion needs you to connect it first.";
-const CONTINUE = "Notion is connected. Go ahead.";
+const CONTINUE = "I've connected it. Go ahead.";
 const FOUND = "Your roadmap page is in Notion.";
 const CARD = '[data-testid="desktop-connection-card"]';
 
@@ -41,10 +41,9 @@ test(`AGENT-VIS-06 ${resolveEvalEngine()}: a person asks for something in a serv
   await step("after: the person signs in to Notion from the card and the chat carries on without them typing", async () => {
     await world.prepareTurn(CONTINUE, FOUND);
     await user.click({ role: "button", label: /Connect/ });
-    const connected = await probe.eventually(async () => {
-      const response = await probe.api(world.den.admin, "/v1/mcp-connections?scope=usable");
-      return JSON.stringify(response.body).includes('"connectedForMe":true');
-    }, { within: 90_000, intervalMs: 1_000, label: "Den reports Notion connected for the person", until: (value) => value });
+    const connected = await probe.eventually(() => world.notionSignedIn(),
+      { within: 90_000, intervalMs: 1_000, label: "Den reports Notion connected for the person", until: (value) => value });
+    await world.returnToOpenWork();
     await user.see({ text: CONTINUE }, { timeoutMs: 60_000 });
     await user.see({ text: FOUND }, { timeoutMs: 90_000 });
     evidence.recordAssertionEvidence("Signing in from the card carries the chat on",

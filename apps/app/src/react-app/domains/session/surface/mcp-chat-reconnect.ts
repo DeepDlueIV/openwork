@@ -175,6 +175,9 @@ export async function authenticateChatConnection(input: {
   return "connected"
 }
 
+/** Sent for the person once a Connect card's sign-in lands. Fixed text: a connection's name is org-supplied and must not reach the agent as their words. */
+export const CHAT_CONNECTION_CONTINUE_PROMPT = "I've connected it. Go ahead."
+
 export const CHAT_MCP_RECONNECT_POLL_INTERVAL_MS = 2_000
 export const CHAT_MCP_RECONNECT_TIMEOUT_MS = 3 * 60_000
 

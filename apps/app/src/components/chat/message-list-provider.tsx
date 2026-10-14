@@ -21,7 +21,7 @@ interface MessageListContextValue {
   uiStateOwner?: string | null
   getConnectionDecision?: (toolCallId: string) => ChatConnectionDecisionBinding | null
   /** A Connect card's sign-in landed with no question waiting on it: carry the latest turn on. */
-  continueAfterConnection?: (toolCallId: string, connectionName: string) => void
+  continueAfterConnection?: (toolCallId: string) => void
   connectionQuestionToolCallId?: string | null
   showThinking: boolean
   highlightQuery?: string
@@ -65,7 +65,7 @@ interface MessageListProviderProps {
   sessionId: string
   uiStateOwner?: string | null
   getConnectionDecision?: (toolCallId: string) => ChatConnectionDecisionBinding | null
-  continueAfterConnection?: (toolCallId: string, connectionName: string) => void
+  continueAfterConnection?: (toolCallId: string) => void
   connectionQuestionToolCallId?: string | null
   showThinking: boolean
   highlightQuery?: string

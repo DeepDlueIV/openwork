@@ -99,7 +99,7 @@ export function useChatToolReconnect(
         })
       } else if (isCurrent() && result === "connected" && !candidateDecision) {
         // The turn ended on this card rather than waiting on a question: carry it on.
-        messageList?.continueAfterConnection?.(toolPart.toolCallId, reconnectAction.connectionName)
+        messageList?.continueAfterConnection?.(toolPart.toolCallId)
       }
     } catch (error) {
       if (epoch !== lifecycle.current || current.current.scope !== scope || chatMcpReconnectRecord(reconnectKey).phase === "skipped") return

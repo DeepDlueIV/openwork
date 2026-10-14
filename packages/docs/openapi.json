@@ -840,6 +840,7 @@
           "key": {
             "type": "string",
             "enum": [
+              "reviewerDaytonaPreviews",
               "teamMembershipCache",
               "managedDeploymentsGcp",
               "managedDeployments",
@@ -1028,6 +1029,9 @@
                 "capabilities": {
                   "type": "object",
                   "properties": {
+                    "reviewerDaytonaPreviews": {
+                      "type": "boolean"
+                    },
                     "teamMembershipCache": {
                       "type": "boolean"
                     },
@@ -1078,6 +1082,7 @@
                     }
                   },
                   "required": [
+                    "reviewerDaytonaPreviews",
                     "teamMembershipCache",
                     "managedDeploymentsGcp",
                     "managedDeployments",
@@ -1098,6 +1103,62 @@
                 "featureStates": {
                   "type": "object",
                   "properties": {
+                    "reviewerDaytonaPreviews": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "teamMembershipCache": {
                       "type": "object",
                       "properties": {
@@ -1884,6 +1945,7 @@
                     }
                   },
                   "required": [
+                    "reviewerDaytonaPreviews",
                     "teamMembershipCache",
                     "managedDeploymentsGcp",
                     "managedDeployments",
@@ -2271,6 +2333,9 @@
                 "capabilities": {
                   "type": "object",
                   "properties": {
+                    "reviewerDaytonaPreviews": {
+                      "type": "boolean"
+                    },
                     "teamMembershipCache": {
                       "type": "boolean"
                     },
@@ -2321,6 +2386,7 @@
                     }
                   },
                   "required": [
+                    "reviewerDaytonaPreviews",
                     "teamMembershipCache",
                     "managedDeploymentsGcp",
                     "managedDeployments",
@@ -2341,6 +2407,62 @@
                 "featureStates": {
                   "type": "object",
                   "properties": {
+                    "reviewerDaytonaPreviews": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "teamMembershipCache": {
                       "type": "object",
                       "properties": {
@@ -3127,6 +3249,7 @@
                     }
                   },
                   "required": [
+                    "reviewerDaytonaPreviews",
                     "teamMembershipCache",
                     "managedDeploymentsGcp",
                     "managedDeployments",
@@ -25586,6 +25709,9 @@
                     "capabilities": {
                       "type": "object",
                       "properties": {
+                        "reviewerDaytonaPreviews": {
+                          "type": "boolean"
+                        },
                         "teamMembershipCache": {
                           "type": "boolean"
                         },
@@ -25636,6 +25762,7 @@
                         }
                       },
                       "required": [
+                        "reviewerDaytonaPreviews",
                         "teamMembershipCache",
                         "managedDeploymentsGcp",
                         "managedDeployments",
@@ -25656,6 +25783,62 @@
                     "featureStates": {
                       "type": "object",
                       "properties": {
+                        "reviewerDaytonaPreviews": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "teamMembershipCache": {
                           "type": "object",
                           "properties": {
@@ -26442,6 +26625,7 @@
                         }
                       },
                       "required": [
+                        "reviewerDaytonaPreviews",
                         "teamMembershipCache",
                         "managedDeploymentsGcp",
                         "managedDeployments",
@@ -26574,6 +26758,9 @@
                     "capabilities": {
                       "type": "object",
                       "properties": {
+                        "reviewerDaytonaPreviews": {
+                          "type": "boolean"
+                        },
                         "teamMembershipCache": {
                           "type": "boolean"
                         },
@@ -26624,6 +26811,7 @@
                         }
                       },
                       "required": [
+                        "reviewerDaytonaPreviews",
                         "teamMembershipCache",
                         "managedDeploymentsGcp",
                         "managedDeployments",
@@ -26644,6 +26832,62 @@
                     "featureStates": {
                       "type": "object",
                       "properties": {
+                        "reviewerDaytonaPreviews": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "teamMembershipCache": {
                           "type": "object",
                           "properties": {
@@ -27430,6 +27674,7 @@
                         }
                       },
                       "required": [
+                        "reviewerDaytonaPreviews",
                         "teamMembershipCache",
                         "managedDeploymentsGcp",
                         "managedDeployments",

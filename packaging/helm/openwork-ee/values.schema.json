@@ -18,6 +18,16 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "reviewerDaytonaPreviews": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Reviewer: Daytona previews: Reviewers can launch a fresh sandbox of a report's commit on a configured Daytona provider, alongside Freestyle. Renders DEN_FEATURE_REVIEWER_DAYTONA_PREVIEWS."
+            },
             "teamMembershipCache": {
               "enum": [
                 "",

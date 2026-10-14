@@ -56,7 +56,7 @@ for (const { label, state, expected } of [
     const api = fakeApi({ execChecked: async () => { events.push("inspect"); return JSON.stringify(state); },
       deleteSandbox: async (id) => { assert.equal(id, "owned"); events.push("delete"); } });
     await assert.rejects(launchDaytonaEvidenceWorld({ sandbox, runtimeFingerprint: fingerprint }, sha, api, {
-      attempts: 1, pauseMs: 0, probe: async () => new Response("Sandbox unavailable. Launch a fresh sandbox from the review.", { status: 502 }),
+      attempts: 1, pauseMs: 0, probe: async () => new Response("Provider bad gateway", { status: 502 }),
       diagnostic: async (summary) => { assert.equal(JSON.parse(summary).layer, expected); events.push("report"); },
     }), /HTTP 502/);
     assert.deepEqual(events, ["inspect", "report", "delete"]);
@@ -179,6 +179,13 @@ test("valid-looking trace IDs cannot echo the API key, preview token or access c
   }), /HTTP 502/);
   const result = safeExternalResponse(502, new Headers({ "x-request-id": cookie }), "private body", [cookie]);
   assert.deepEqual(result.headers, {});
+});
+
+test("a guest upstream 502 is not blamed on the provider if internal probes subsequently recover", async () => {
+  await assert.rejects(launchDaytonaEvidenceWorld({ sandbox, runtimeFingerprint: fingerprint }, sha, fakeApi(), {
+    attempts: 1, probe: async () => new Response("Sandbox unavailable. Launch a fresh sandbox from the review.", { status: 502 }),
+    diagnostic: async (summary) => { const data = JSON.parse(summary); assert.equal(data.health.chrome.status, 200); assert.equal(data.health.gateway.status, 200); assert.equal(data.layer, "guest-upstream-at-external-probe"); },
+  }), /HTTP 502/);
 });
 
 test("source validation failures without an external probe do not imply routing failure", async () => {

@@ -146,9 +146,12 @@ loop, quota eviction, or weakened assertion is part of this diagnostic run.
 
 A live Chrome probe failure points to browser startup/crash; live Chrome with a
 bad gateway probe or mismatched known ports points to the guest gateway/stale
-port. Healthy internal CDP with external 502 suggests the provider route. 401/403
-are access failures. Missing ports/probes or unavailable toolbox data are
-unresolved. Preserve the safe provider request ID for provider-side correlation.
+port. Healthy internal CDP with an otherwise unexplained external 502 suggests
+the provider route. A fixed `Sandbox unavailable. Launch a fresh sandbox from the
+review.` body identifies a guest upstream error at the external probe; recovered
+internal probes do not turn it into a provider failure. 401/403 are access
+failures. Missing ports/probes or unavailable toolbox data are unresolved.
+Preserve the safe provider request ID for provider-side correlation.
 
 Guest probes happen **after** the last external failure: recovery can occur
 between them. Journal categories are bounded hints without raw prose/timestamps,

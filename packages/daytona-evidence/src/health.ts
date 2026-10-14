@@ -44,7 +44,9 @@ export async function requireLocalEvidenceReady(api: DaytonaApi, sandbox: Sandbo
   throw new Error(`Daytona evidence local readiness failed: ${JSON.stringify(health)}`);
 }
 
-export function failureLayer(health: GuestHealth | undefined, externalStatus: number) {
+export const GATEWAY_UNAVAILABLE_BODY = "Sandbox unavailable. Launch a fresh sandbox from the review.";
+
+export function failureLayer(health: GuestHealth | undefined, externalStatus: number, externalBody?: string) {
   if ([401, 403].includes(externalStatus)) return "external-access";
   if (!health || health.chrome.status < 0 || health.chromePort <= 0) return "unresolved";
   if (health.chrome.status !== 200 || !health.chrome.cdp) return "chrome-startup-or-crash";
@@ -52,13 +54,16 @@ export function failureLayer(health: GuestHealth | undefined, externalStatus: nu
   if (health.gateway.status !== 200 || !health.gateway.cdp) return "guest-gateway-or-stale-port";
   if (health.upstreamPort <= 0) return "unresolved";
   if (health.chromePort !== health.upstreamPort) return "guest-gateway-or-stale-port";
+  // A fixed guest error body contradicts blaming the provider merely because
+  // the internal endpoints recovered before this post-failure inspection.
+  if (externalStatus === 502 && externalBody === GATEWAY_UNAVAILABLE_BODY) return "guest-upstream-at-external-probe";
   return externalStatus === 502 ? "provider-preview-route" : "external-preview-route";
 }
 
 /** Fixed bodies only. Unknown private prose is represented by size, never a redacted guess. */
 export function safeExternalResponse(status: number, headers: Headers, body: string, secrets: readonly string[] = []) {
   const containsSecret = (value: string) => secrets.some((secret) => secret.length > 0 && value.toLowerCase().includes(secret.toLowerCase()));
-  const known = ["Sandbox unavailable. Launch a fresh sandbox from the review.",
+  const known = [GATEWAY_UNAVAILABLE_BODY,
     "Open this sandbox from your review launch link. If it has expired, launch a fresh sandbox.", "Use this sandbox's own service URLs."];
   const selected: Record<string, string> = {};
   for (const name of ["content-type", "server", "via", "cf-ray", "x-request-id"]) {

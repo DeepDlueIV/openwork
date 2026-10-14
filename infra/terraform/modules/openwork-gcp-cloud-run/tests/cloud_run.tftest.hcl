@@ -95,6 +95,13 @@ run "env_matches_cloud_run_runbook" {
     error_message = "den-api must read exactly the four generated secrets from Secret Manager."
   }
   assert {
+    condition = alltrue([
+      for c in [google_cloud_run_v2_service.api.template[0].containers[0], google_cloud_run_v2_service.web.template[0].containers[0], google_cloud_run_v2_job.migrate.template[0].template[0].containers[0]] :
+      length([for e in c.env : e.name if contains(["DATABASE_URL", "BETTER_AUTH_SECRET", "DEN_DB_ENCRYPTION_KEY", "DEN_INITIAL_ADMIN_BOOTSTRAP_CODE"], e.name) && length(e.value_source) == 0]) == 0
+    ])
+    error_message = "No secret may be passed as a plain environment variable."
+  }
+  assert {
     condition     = google_cloud_run_v2_service.api.template[0].containers[0].ports[0].container_port == 8788 && google_cloud_run_v2_service.web.template[0].containers[0].ports[0].container_port == 3005
     error_message = "Container ports must match the images (8788 den-api, 3005 den-web)."
   }
@@ -245,22 +252,5 @@ run "iam_granted_elsewhere" {
   assert {
     condition     = length(google_secret_manager_secret.app) == 4
     error_message = "Secrets are still created in Secret Manager."
-  }
-}
-
-run "without_secret_manager" {
-  command = apply
-
-  variables {
-    secret_manager_enabled = false
-  }
-
-  assert {
-    condition     = length(google_secret_manager_secret.app) == 0 && length(google_secret_manager_secret_iam_member.app) == 0
-    error_message = "No Secret Manager secrets when secret_manager_enabled = false."
-  }
-  assert {
-    condition     = length([for e in google_cloud_run_v2_service.api.template[0].containers[0].env : e.name if e.name == "DATABASE_URL" && length(e.value_source) == 0]) == 1
-    error_message = "DATABASE_URL must then be a plain env var."
   }
 }

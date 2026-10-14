@@ -56,12 +56,6 @@ variable "grant_iam_roles" {
   default     = true
 }
 
-variable "secret_manager_enabled" {
-  description = "false only for a test project where nobody can grant Secret Manager access."
-  type        = bool
-  default     = true
-}
-
 variable "public_access" {
   description = "Let browsers reach the services without Google IAM (needs run.services.setIamPolicy)."
   type        = bool

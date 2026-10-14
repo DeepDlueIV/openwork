@@ -63,10 +63,9 @@ module "openwork" {
   org_name         = var.org_name
   labels           = { stack = var.name }
 
-  service_account_email  = var.service_account_email
-  grant_iam_roles        = var.grant_iam_roles
-  secret_manager_enabled = var.secret_manager_enabled
-  public_access          = var.public_access
+  service_account_email = var.service_account_email
+  grant_iam_roles       = var.grant_iam_roles
+  public_access         = var.public_access
 
   network    = one(google_compute_network.this[*].id)
   subnetwork = one(google_compute_subnetwork.this[*].id)

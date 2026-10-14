@@ -49,13 +49,6 @@ resource "google_cloud_run_v2_job" "migrate" {
           }
         }
 
-        dynamic "env" {
-          for_each = local.secret_environment
-          content {
-            name  = env.key
-            value = env.value
-          }
-        }
 
         dynamic "env" {
           for_each = local.secret_refs
@@ -176,13 +169,6 @@ resource "google_cloud_run_v2_service" "api" {
         }
       }
 
-      dynamic "env" {
-        for_each = local.secret_environment
-        content {
-          name  = env.key
-          value = env.value
-        }
-      }
 
       dynamic "env" {
         for_each = local.secret_refs
@@ -283,13 +269,6 @@ resource "google_cloud_run_v2_service" "web" {
         }
       }
 
-      dynamic "env" {
-        for_each = local.secret_environment
-        content {
-          name  = env.key
-          value = env.value
-        }
-      }
 
       dynamic "env" {
         for_each = local.secret_refs

@@ -79,12 +79,6 @@ variable "grant_iam_roles" {
   default     = true
 }
 
-variable "secret_manager_enabled" {
-  description = "Store DATABASE_URL, BETTER_AUTH_SECRET, DEN_DB_ENCRYPTION_KEY, the setup code and the email credentials in Secret Manager (recommended). false puts them directly in the Cloud Run environment, readable by anyone with run.services.get or run.jobs.get: only for a disposable test project where nobody can grant Secret Manager access."
-  type        = bool
-  default     = true
-}
-
 variable "deletion_protection" {
   description = "Protect the Cloud Run services and migration job from terraform destroy. Set false for disposable test stacks."
   type        = bool
@@ -276,7 +270,7 @@ variable "cloud_sql_connection_name" {
 }
 
 variable "database" {
-  description = "Cloud SQL settings. By default den-api reaches the instance through Cloud Run's Cloud SQL connector (IAM-authorized, TLS verified by the connector). private_network (a VPC self link with private services access already configured) gives the instance a private IP only; den-api then connects over TCP, needs network/subnetwork, and you must choose tls_query yourself (see the README: Den cannot verify the Cloud SQL server CA on that path yet)."
+  description = "Cloud SQL settings. den-api reaches the instance through Cloud Run's Cloud SQL connector (IAM-authorized, verified TLS). For a private-IP instance or another database, set create_database = false and pass database_url."
   type = object({
     tier                = optional(string, "db-f1-micro")
     edition             = optional(string, "ENTERPRISE")
@@ -285,8 +279,6 @@ variable "database" {
     availability_type   = optional(string, "ZONAL")
     backup_enabled      = optional(bool, true)
     deletion_protection = optional(bool, true)
-    private_network     = optional(string, "")
-    tls_query           = optional(string, "")
   })
   default = {}
 }

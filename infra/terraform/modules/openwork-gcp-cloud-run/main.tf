@@ -88,14 +88,9 @@ locals {
 
   bootstrap_code = var.initial_admin_bootstrap_code != "" ? var.initial_admin_bootstrap_code : random_password.bootstrap_code.result
 
-  managed_secret_keys = var.secret_manager_enabled ? local.secret_keys : toset([])
-
-  # Without Secret Manager the generated values become plain env vars.
-  secret_environment = var.secret_manager_enabled ? {} : { for k in local.secret_keys : k => local.secret_values[k] }
-
   # env var name => { secret, version } for every container.
   secret_refs = merge(
-    { for k in local.managed_secret_keys : k => { secret = google_secret_manager_secret.app[k].secret_id, version = google_secret_manager_secret_version.app[k].version } },
+    { for k in local.secret_keys : k => { secret = google_secret_manager_secret.app[k].secret_id, version = google_secret_manager_secret_version.app[k].version } },
     { for k, id in var.extra_secrets : k => { secret = id, version = "latest" } },
   )
 
@@ -120,7 +115,7 @@ resource "random_password" "bootstrap_code" {
 # Secret Manager -------------------------------------------------------------
 
 resource "google_secret_manager_secret" "app" {
-  for_each = local.managed_secret_keys
+  for_each = local.secret_keys
 
   project   = var.project_id
   secret_id = "${var.name}-den-${replace(lower(each.key), "_", "-")}"
@@ -132,7 +127,7 @@ resource "google_secret_manager_secret" "app" {
 }
 
 resource "google_secret_manager_secret_version" "app" {
-  for_each = local.managed_secret_keys
+  for_each = local.secret_keys
 
   secret      = google_secret_manager_secret.app[each.key].id
   secret_data = local.secret_values[each.key]
@@ -157,7 +152,7 @@ resource "google_project_iam_member" "cloudsql_client" {
 }
 
 resource "google_secret_manager_secret_iam_member" "app" {
-  for_each = var.grant_iam_roles ? local.managed_secret_keys : toset([])
+  for_each = var.grant_iam_roles ? local.secret_keys : toset([])
 
   project   = var.project_id
   secret_id = google_secret_manager_secret.app[each.key].secret_id

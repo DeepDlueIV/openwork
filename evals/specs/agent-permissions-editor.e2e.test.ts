@@ -4,10 +4,14 @@ import {
   agentPermissionsAdminView,
   agentPermissionsEditor,
   agentPermissionsFeatureOff,
+  agentPermissionsSales,
+  agentPermissionsTeamTab,
   agentPermissionsTwoTeams,
 } from "../worlds/agent-permissions.ts";
 
 const editorTest = spec.world(agentPermissionsEditor, { timeout: 600_000, resources: { surfaces: ["web"], services: ["den"] } });
+const teamTabTest = spec.world(agentPermissionsTeamTab, { timeout: 600_000, resources: { surfaces: ["web"], services: ["den"] } });
+const salesTest = spec.world(agentPermissionsSales, { timeout: 600_000, resources: { surfaces: ["web"], services: ["den"] } });
 const twoTeamsTest = spec.world(agentPermissionsTwoTeams, { timeout: 600_000, resources: { surfaces: ["web"], services: ["den"] } });
 const adminViewTest = spec.world(agentPermissionsAdminView, { timeout: 600_000, resources: { surfaces: ["web"], services: ["den"] } });
 const featureOffTest = spec.world(agentPermissionsFeatureOff, { timeout: 600_000, resources: { surfaces: ["web"], services: ["den"] } });
@@ -20,23 +24,91 @@ function describeRules(rules: Record<string, unknown>[] | null): string {
   return rules.map((entry) => `${String(entry.action)} ${String(entry.resource)} → ${String(entry.effect)} (${String(entry.source)})`).join("; ") || "none";
 }
 
-editorTest("an owner creates agent permissions for the Contractors team in Den, and only that team's members receive the rule", async ({ world, user, probe, step, evidence }) => {
-  const owner = user.on(world.web);
+salesTest("an admin makes Sales agents ask before running commands, and undoes it later", async ({ world, user, probe, step, evidence }) => {
+  const admin = user.on(world.web);
+  const status = async (key: string) => (await probe.dom(`[data-testid="agent-permission-${key}-source"]`)).elements.map((element) => element.text).join(" ").trim();
+  const askRules = [rule("shell", "*", "ask", "Sales")];
 
-  await step("before: there are no team agent permissions and Riley's app receives no rules", async () => {
-    await owner.see({ testId: "agent-permissions-teams-empty" }, { timeoutMs: 90_000 });
+  await step("before: on Sales' Agents tab, Run commands follows Everyone and Riley's app receives no rules", async () => {
+    await admin.click({ role: "link", label: "Sales" });
+    await admin.click({ role: "tab", label: "Agents" });
+    await admin.see({ testId: "agent-permissions-intro" }, { text: "What agents can do on the computers of people in Sales. Rows you don't change follow Everyone.", timeoutMs: 90_000 });
+    await admin.see({ testId: "agent-permission-commands-source" }, { text: "From Everyone" });
+    const received = await world.receivedRules("riley");
+    evidence.recordAssertionEvidence("Run commands for Sales, and Riley's rules", `${await status("commands")}; Riley: ${describeRules(received)}`, received?.length === 0);
+    expect(received).toEqual([]);
+    await admin.screenshot();
+  });
+
+  await step("the admin sets Run commands to Ask first: the row says it changed for Sales and the save bar counts one change", async () => {
+    await admin.click({ role: "button", label: "Run commands" });
+    await admin.click({ role: "option", label: "Ask first" });
+    await admin.see({ testId: "agent-permission-commands-source" }, { text: /Changed for Sales/ });
+    await admin.see({ testId: "agent-permissions-save-bar" }, { text: "1 change for Sales. Members' apps pick them up the next time they refresh." });
+    evidence.recordAssertionEvidence("Run commands' status", await status("commands"), (await status("commands")).startsWith("Changed for Sales"));
+    await admin.screenshot();
+  });
+
+  await step("after saving: Riley, in Sales, is asked before commands run, and Morgan, in no team, is not", async () => {
+    await admin.click({ role: "button", label: "Save changes" });
+    await admin.see({ text: "Agent permissions saved" }, { timeoutMs: 30_000 });
+    const riley = await world.receivedRules("riley");
+    const morgan = await world.receivedRules("morgan");
+    evidence.recordAssertionEvidence("rules after saving", `Riley: ${describeRules(riley)}; Morgan: ${describeRules(morgan)}`,
+      JSON.stringify(riley) === JSON.stringify(askRules) && morgan?.length === 0);
+    expect(riley).toEqual(askRules);
+    expect(morgan).toEqual([]);
+    await admin.screenshot();
+  });
+
+  await step("later, Reset to Everyone asks first and names what Sales loses", async () => {
+    await admin.reload();
+    await admin.see({ testId: "agent-permission-commands-source" }, { text: /Changed for Sales/, timeoutMs: 60_000 });
+    await admin.click({ testId: "agent-permissions-reset" });
+    await admin.see({ text: "Reset Sales to Everyone's agent permissions?" });
+    await admin.see({ text: "Sales loses its 1 change: Run commands. People in Sales get Everyone's rules the next time their apps refresh." });
+    const stillAsks = await world.receivedRules("riley");
+    evidence.recordAssertionEvidence("nothing changes until the admin confirms", `Riley: ${describeRules(stillAsks)}`, JSON.stringify(stillAsks) === JSON.stringify(askRules));
+    expect(stillAsks).toEqual(askRules);
+    await admin.screenshot();
+  });
+
+  await step("after the reset: Run commands follows Everyone again and Riley's app receives no rules", async () => {
+    await admin.click({ role: "button", label: "Reset to Everyone" });
+    await admin.see({ text: "Sales reset to Everyone" }, { timeoutMs: 30_000 });
+    await admin.see({ testId: "agent-permission-commands-source" }, { text: "From Everyone", timeoutMs: 30_000 });
+    await admin.notSee({ testId: "agent-permissions-reset" });
+    const received = await world.receivedRules("riley");
+    evidence.recordAssertionEvidence("Riley's rules after the reset", describeRules(received), received?.length === 0);
+    expect(received).toEqual([]);
+    await admin.screenshot();
+  });
+
+  await step("Undo on the confirmation puts Sales' change back", async () => {
+    await admin.click({ role: "button", label: "Undo" });
+    await admin.see({ text: "Changes for Sales restored" }, { timeoutMs: 30_000 });
+    await admin.see({ testId: "agent-permission-commands-source" }, { text: /Changed for Sales/, timeoutMs: 30_000 });
+    const received = await world.receivedRules("riley");
+    evidence.recordAssertionEvidence("Riley's rules after Undo", describeRules(received), JSON.stringify(received) === JSON.stringify(askRules));
+    expect(received).toEqual(askRules);
+    await admin.screenshot();
+  });
+});
+
+teamTabTest("an owner changes Contractors' agent permissions on the team's Agents tab, and only that team's members receive the rule", async ({ world, user, probe, step, evidence }) => {
+  const owner = user.on(world.web);
+  const tryResult = async () => (await probe.dom('[data-testid="agent-permission-try-result"]')).elements.map((element) => element.text).join(" ").trim();
+
+  await step("before: every row on Contractors' Agents tab follows Everyone and Riley's app receives no rules", async () => {
+    await owner.see({ testId: "agent-permission-commands-source" }, { text: "From Everyone", timeoutMs: 90_000 });
+    await owner.notSee({ testId: "agent-permissions-reset" });
     const received = await world.receivedRules("riley");
     evidence.recordAssertionEvidence("Riley's desktop config", describeRules(received), received?.length === 0);
     expect(received).toEqual([]);
     await owner.screenshot();
   });
 
-  await step("the owner creates Contractors' agent permissions: commands blocked except echo, and trying rm -rf build shows it would be blocked", async () => {
-    const tryResult = async () => (await probe.dom('[data-testid="agent-permission-try-result"]')).elements.map((element) => element.text).join(" ").trim();
-    await owner.click({ testId: "new-team-agent-permissions" });
-    await owner.see({ role: "button", label: "Team" }, { timeoutMs: 30_000 });
-    await owner.click({ role: "button", label: "Team" });
-    await owner.click({ role: "option", label: "Contractors" });
+  await step("the owner blocks commands for Contractors except echo, and trying rm -rf build shows it would be blocked", async () => {
     await owner.click({ role: "button", label: "Run commands" });
     await owner.click({ role: "option", label: "Block" });
     await owner.click({ testId: "agent-permission-commands-allow-add" });
@@ -48,16 +120,16 @@ editorTest("an owner creates agent permissions for the Contractors team in Den, 
     await owner.type({ testId: "agent-permission-try-input" }, "echo done", { replace: true });
     await owner.see({ testId: "agent-permission-try-result" }, { text: /^Allowed/ });
     const allowed = await tryResult();
-    evidence.recordAssertionEvidence("trying requests before creating", `rm -rf build → ${blocked}; echo done → ${allowed}`, blocked.startsWith("Blocked") && allowed.startsWith("Allowed"));
+    evidence.recordAssertionEvidence("trying requests before saving", `rm -rf build → ${blocked}; echo done → ${allowed}`, blocked.startsWith("Blocked") && allowed.startsWith("Allowed"));
     expect(blocked).toContain("Run commands is set to Block for Contractors");
     expect(allowed).toContain('Matches "echo *" for Contractors');
+    await owner.see({ testId: "agent-permissions-save-bar" }, { text: /^1 change for Contractors/ });
     await owner.screenshot();
   });
 
-  await step("after: the owner creates them, lands on Contractors' agent permissions, and Riley's app receives the rules in order", async () => {
-    await owner.click({ role: "button", label: "Create team agent permissions" });
-    await owner.see({ text: "Created agent permissions for Contractors" }, { timeoutMs: 30_000 });
-    await owner.see({ testId: "agent-permissions-scope-state" }, { text: /Contractors team, 1 member · 1 override/ });
+  await step("after: the owner saves, and Riley's app receives the rules in order", async () => {
+    await owner.click({ role: "button", label: "Save changes" });
+    await owner.see({ text: "Agent permissions saved" }, { timeoutMs: 30_000 });
     const received = await world.receivedRules("riley");
     const expected = [rule("shell", "*", "deny", "Contractors"), rule("shell", "echo *", "allow", "Contractors")];
     evidence.recordAssertionEvidence("Riley's rules", describeRules(received), JSON.stringify(received) === JSON.stringify(expected));
@@ -65,9 +137,9 @@ editorTest("an owner creates agent permissions for the Contractors team in Den, 
     await owner.screenshot();
   });
 
-  await step("the list shows Contractors' record, a member outside the team receives no rules, and a member cannot change the permissions", async () => {
-    await owner.click({ role: "link", label: "Agent permissions" });
-    await owner.see({ testId: `agent-permissions-row-${world.teamId}` }, { text: /1 override/ });
+  await step("Everyone's tab shows the row changed for Contractors, a member outside the team receives no rules, and a member cannot change the permissions", async () => {
+    await owner.click({ testId: "agent-permissions-open-everyone" });
+    await owner.see({ testId: "agent-permission-commands-source" }, { text: "Changed for Contractors", timeoutMs: 30_000 });
     const outside = await world.receivedRules("morgan");
     const status = await world.memberSaveStatus();
     evidence.recordAssertionEvidence("boundaries", `Morgan: ${describeRules(outside)}; Riley saving everyone's permissions → HTTP ${status}`, outside?.length === 0 && status === 403);
@@ -88,16 +160,14 @@ editorTest("Everyone's permissions reach every member, and a team's own choice r
   ];
 
   await step("before: nobody has agent permissions yet", async () => {
-    await owner.see({ testId: "agent-permissions-row-everyone" }, { timeoutMs: 90_000 });
-    await owner.click({ testId: "agent-permissions-row-everyone" });
-    await owner.see({ testId: "agent-permissions-scope-state" }, { text: /^Everyone in the organization, 3 members/ });
+    await owner.see({ testId: "agent-permissions-intro" }, { text: "What agents can do on every member's computer. A team can change any row on its own Agents tab.", timeoutMs: 90_000 });
     const [riley, morgan] = [await world.receivedRules("riley"), await world.receivedRules("morgan")];
     evidence.recordAssertionEvidence("rules before", `Riley: ${describeRules(riley)}; Morgan: ${describeRules(morgan)}`, riley?.length === 0 && morgan?.length === 0);
     expect([riley, morgan]).toEqual([[], []]);
     await owner.screenshot();
   });
 
-  await step("the owner asks first before any command and blocks rm, blocks websites except the docs site, turns web search off for everyone, and saves, told desktop apps can take up to 5 minutes to pick it up", async () => {
+  await step("the owner asks first before any command and blocks rm, blocks websites except the docs site, turns web search off for everyone, and saves", async () => {
     await owner.click({ role: "button", label: "Run commands" });
     await owner.click({ role: "option", label: "Ask first" });
     await owner.click({ testId: "agent-permission-commands-block-add" });
@@ -109,37 +179,31 @@ editorTest("Everyone's permissions reach every member, and a team's own choice r
     await owner.type({ testId: "agent-permission-websites-allow-input" }, "docs.example.com");
     await owner.press("Enter");
     await owner.click({ role: "switch", label: "Search the web" });
-    await owner.see({ testId: "agent-permission-webSearch" }, { text: /Blocked/ });
-    await owner.see({ testId: "agent-permissions-save-bar" }, { text: /Unsaved changes for Everyone/ });
-    await owner.see({ testId: "agent-permissions-propagation-note" }, { text: "Members' desktop apps can take up to 5 minutes to pick up changes." });
-    await owner.screenshot();
+    await owner.see({ testId: "agent-permissions-save-bar" }, { text: /^3 changes for Everyone/ });
     await owner.click({ role: "button", label: "Save changes" });
     await owner.see({ text: "Agent permissions saved" }, { timeoutMs: 30_000 });
+    await owner.screenshot();
   });
 
-  await step("creating Contractors' agent permissions, Everyone's blocked command shows as locked and the team blocks commands except echo", async () => {
-    await owner.click({ role: "link", label: "Agent permissions" });
-    await owner.click({ testId: "new-team-agent-permissions" });
-    await owner.see({ role: "button", label: "Team" }, { timeoutMs: 30_000 });
-    await owner.click({ role: "button", label: "Team" });
-    await owner.click({ role: "option", label: "Contractors" });
-    await owner.see({ testId: "agent-permission-commands-source" }, { text: "From Everyone" });
-    await owner.click({ testId: "agent-permission-commands-block-add" });
-    await owner.see({ testId: "agent-permission-commands-block" }, { text: /rm \*/ });
+  await step("on Contractors' Agents tab, Everyone's blocked command shows as locked and the team blocks commands except echo", async () => {
+    await owner.click({ role: "link", label: "Back" });
+    await owner.click({ role: "link", label: "Contractors" });
+    await owner.click({ role: "tab", label: "Agents" });
+    await owner.see({ testId: "agent-permission-commands-source" }, { text: "From Everyone", timeoutMs: 30_000 });
     await owner.see({ label: "rm *, set for Everyone" });
     await owner.click({ role: "button", label: "Run commands" });
     await owner.click({ role: "option", label: "Block" });
-    await owner.see({ testId: "agent-permission-commands-source" }, { text: "Overridden" });
+    await owner.see({ testId: "agent-permission-commands-source" }, { text: /Changed for Contractors/ });
     await owner.click({ testId: "agent-permission-commands-allow-add" });
     await owner.type({ testId: "agent-permission-commands-allow-input" }, "echo *");
     await owner.press("Enter");
-    await owner.see({ testId: "new-team-agent-permissions-save-bar" }, { text: /1 override for Contractors/ });
+    await owner.see({ testId: "agent-permissions-save-bar" }, { text: /^1 change for Contractors/ });
     await owner.screenshot();
   });
 
   await step("after: Morgan receives Everyone's rules and Riley the team's choice with Everyone's blocked list last", async () => {
-    await owner.click({ role: "button", label: "Create team agent permissions" });
-    await owner.see({ text: "Created agent permissions for Contractors" }, { timeoutMs: 30_000 });
+    await owner.click({ role: "button", label: "Save changes" });
+    await owner.see({ text: "Agent permissions saved" }, { timeoutMs: 30_000 });
     const morgan = await world.receivedRules("morgan");
     const riley = await world.receivedRules("riley");
     const rileyRules = [
@@ -152,7 +216,6 @@ editorTest("Everyone's permissions reach every member, and a team's own choice r
     evidence.recordAssertionEvidence("Riley's rules (Contractors)", describeRules(riley), JSON.stringify(riley) === JSON.stringify(rileyRules));
     expect(morgan).toEqual(everyoneRules);
     expect(riley).toEqual(rileyRules);
-    await owner.see({ testId: "agent-permissions-scope-state" }, { text: /Contractors team, 1 member · 1 override/ });
     await owner.screenshot();
   });
 });
@@ -163,7 +226,7 @@ twoTeamsTest("a member in two teams gets the strictest decision of the two, and 
 
   await step("before: Contractors blocks commands except echo, and Riley, also in Engineering, receives that", async () => {
     await owner.reload();
-    await owner.see({ testId: `agent-permissions-row-${world.teamId}` }, { timeoutMs: 90_000 });
+    await owner.see({ testId: "agent-permission-commands-source" }, { text: "From Everyone", timeoutMs: 90_000 });
     const received = await world.receivedRules("riley");
     const expected = [rule("shell", "*", "deny", "Contractors"), rule("shell", "echo *", "allow", "Contractors")];
     evidence.recordAssertionEvidence("Riley's rules", describeRules(received), JSON.stringify(received) === JSON.stringify(expected));
@@ -171,7 +234,7 @@ twoTeamsTest("a member in two teams gets the strictest decision of the two, and 
     await owner.screenshot();
   });
 
-  await step("Everyone turns web search off and Contractors turns it on: Engineering has no agent permissions of its own, so Riley keeps Everyone's block", async () => {
+  await step("Everyone turns web search off and Contractors turns it on: Engineering changes nothing of its own, so Riley keeps Everyone's block", async () => {
     await world.save({ webSearch: { decision: "deny" } });
     await world.saveContractors({ commands: { decision: "deny", allow: ["echo *"] }, webSearch: { decision: "allow" } });
     const received = await world.receivedRules("riley");
@@ -182,18 +245,14 @@ twoTeamsTest("a member in two teams gets the strictest decision of the two, and 
     await world.saveContractors({ commands: { decision: "deny", allow: ["echo *"] } });
   });
 
-  await step("the owner creates Engineering's agent permissions: commands allowed, but git push always blocked", async () => {
-    await owner.click({ testId: "new-team-agent-permissions" });
-    await owner.see({ role: "button", label: "Team" }, { timeoutMs: 30_000 });
-    await owner.click({ role: "button", label: "Team" });
-    await owner.click({ role: "option", label: "Engineering" });
+  await step("on Engineering's Agents tab the owner allows commands, but always blocks git push", async () => {
     await owner.click({ role: "button", label: "Run commands" });
     await owner.click({ role: "option", label: "Allow" });
     await owner.click({ testId: "agent-permission-commands-block-add" });
     await owner.type({ testId: "agent-permission-commands-block-input" }, "git push *");
     await owner.press("Enter");
-    await owner.click({ role: "button", label: "Create team agent permissions" });
-    await owner.see({ text: "Created agent permissions for Engineering" }, { timeoutMs: 30_000 });
+    await owner.click({ role: "button", label: "Save changes" });
+    await owner.see({ text: "Agent permissions saved" }, { timeoutMs: 30_000 });
     await owner.screenshot();
   });
 
@@ -209,16 +268,14 @@ twoTeamsTest("a member in two teams gets the strictest decision of the two, and 
   });
 });
 
-editorTest("an owner undoes a save, then removes a team's agent permissions so it follows Everyone's", async ({ world, user, step, evidence }) => {
+teamTabTest("an owner undoes a save, and Use Everyone's puts one row back without touching the rest", async ({ world, user, step, evidence }) => {
   const owner = user.on(world.web);
   const contractorRules = [rule("shell", "*", "deny", "Contractors"), rule("shell", "echo *", "allow", "Contractors")];
   await world.saveContractors({ commands: { decision: "deny", allow: ["echo *"] } });
 
   await step("before: Contractors blocks commands except echo", async () => {
     await owner.reload();
-    await owner.see({ testId: `agent-permissions-row-${world.teamId}` }, { timeoutMs: 90_000 });
-    await owner.click({ testId: `agent-permissions-row-${world.teamId}` });
-    await owner.see({ testId: "agent-permissions-scope-state" }, { text: /Contractors team, 1 member · 1 override/ });
+    await owner.see({ testId: "agent-permission-commands-source" }, { text: /Changed for Contractors/, timeoutMs: 90_000 });
     const received = await world.receivedRules("riley");
     evidence.recordAssertionEvidence("Riley's rules", describeRules(received), JSON.stringify(received) === JSON.stringify(contractorRules));
     expect(received).toEqual(contractorRules);
@@ -240,12 +297,12 @@ editorTest("an owner undoes a save, then removes a team's agent permissions so i
     await owner.screenshot();
   });
 
-  await step("after: the owner removes Contractors' agent permissions, the list has none, and Riley receives no rules", async () => {
-    await owner.click({ testId: "remove-team-agent-permissions" });
-    await owner.see({ text: "Remove agent permissions for Contractors?" });
-    await owner.click({ role: "button", label: "Remove permissions" });
-    await owner.see({ text: "Removed agent permissions for Contractors" }, { timeoutMs: 30_000 });
-    await owner.see({ testId: "agent-permissions-teams-empty" }, { timeoutMs: 30_000 });
+  await step("after: Use Everyone's on Run commands puts that row back, and once saved Riley receives no rules", async () => {
+    await owner.see({ testId: "agent-permission-commands-source" }, { text: /Changed for Contractors/, timeoutMs: 30_000 });
+    await owner.click({ role: "button", label: "Use Everyone's setting for Run commands" });
+    await owner.see({ testId: "agent-permission-commands-source" }, { text: "From Everyone" });
+    await owner.click({ role: "button", label: "Save changes" });
+    await owner.see({ text: "Agent permissions saved" }, { timeoutMs: 30_000 });
     const received = await world.receivedRules("riley");
     evidence.recordAssertionEvidence("Riley's rules", describeRules(received), received?.length === 0);
     expect(received).toEqual([]);
@@ -258,9 +315,7 @@ editorTest("the editor refuses a website it cannot match, and discarding keeps w
   const tryResult = async () => (await probe.dom('[data-testid="agent-permission-try-result"]')).elements.map((element) => element.text).join(" ").trim();
 
   await step("before: websites are allowed for everyone", async () => {
-    await owner.see({ testId: "agent-permissions-row-everyone" }, { timeoutMs: 90_000 });
-    await owner.click({ testId: "agent-permissions-row-everyone" });
-    await owner.see({ testId: "agent-permission-websites" }, { text: /Allow/ });
+    await owner.see({ testId: "agent-permission-websites" }, { text: /Allow/, timeoutMs: 90_000 });
     await owner.screenshot();
   });
   await step("the owner blocks websites, and an address with a query is refused with what to enter instead", async () => {
@@ -307,8 +362,7 @@ editorTest("blocking file edits blocks every command too, and the editor says wh
   const tryResult = async () => (await probe.dom('[data-testid="agent-permission-try-result"]')).elements.map((element) => element.text).join(" ").trim();
 
   await step("before: commands and file edits are allowed for everyone, and echo would run", async () => {
-    await owner.see({ testId: "agent-permissions-row-everyone" }, { timeoutMs: 90_000 });
-    await owner.click({ testId: "agent-permissions-row-everyone" });
+    await owner.see({ testId: "agent-permission-try-input" }, { timeoutMs: 90_000 });
     await owner.type({ testId: "agent-permission-try-input" }, "echo done");
     await owner.see({ testId: "agent-permission-try-result" }, { text: /^Allowed/ });
     await owner.notSee({ testId: "agent-permission-commands-blocked-by-edits" });
@@ -332,93 +386,14 @@ editorTest("blocking file edits blocks every command too, and the editor says wh
   });
 });
 
-editorTest("local skills and local MCP servers are Allowed or Blocked switches, and a team can override Everyone's and go back", async ({ world, user, probe, step, evidence }) => {
-  const owner = user.on(world.web);
-  /** Each row's text, how many switches and picklists it has, and whether it has pattern lists. */
-  const row = async (key: string) => {
-    const [text, switches, picklists, lists] = await Promise.all([
-      probe.dom(`[data-testid="agent-permission-${key}"]`),
-      probe.dom(`[data-testid="agent-permission-${key}"] [role="switch"]`),
-      probe.dom(`[data-testid="agent-permission-${key}"] [aria-labelledby]`),
-      probe.dom(`[data-testid="agent-permission-${key}-lists"]`),
-    ]);
-    return { text: text.elements.map((element) => element.text).join(" "), switches: switches.elements.length, picklists: picklists.elements.length, lists: lists.elements.length };
-  };
-
-  await step("before: Everyone's local skills and local MCP servers are allowed, each one switch with no lists and no Ask first", async () => {
-    await owner.see({ testId: "agent-permissions-row-everyone" }, { timeoutMs: 90_000 });
-    await owner.click({ testId: "agent-permissions-row-everyone" });
-    await owner.see({ testId: "agent-permission-localSkills" }, { text: /Use local skills/ });
-    await owner.see({ testId: "agent-permission-localMcpServers" }, { text: /Use local MCP servers/ });
-    const [skills, servers] = [await row("localSkills"), await row("localMcpServers")];
-    evidence.recordAssertionEvidence("the two rows", `skills: ${JSON.stringify(skills)}; MCP servers: ${JSON.stringify(servers)}`,
-      [skills, servers].every((entry) => entry.switches === 1 && entry.picklists === 0 && entry.lists === 0 && /Allowed/.test(entry.text) && !/Always|Ask first/.test(entry.text)));
-    for (const entry of [skills, servers]) {
-      expect(entry).toMatchObject({ switches: 1, picklists: 0, lists: 0 });
-      expect(entry.text).toContain("Allowed");
-      expect(entry.text).not.toMatch(/Always|Ask first/);
-    }
-    await owner.screenshot();
-  });
-
-  await step("the owner blocks local skills and local MCP servers for everyone, and members receive one rule for each", async () => {
-    await owner.click({ role: "switch", label: "Use local skills" });
-    await owner.click({ role: "switch", label: "Use local MCP servers" });
-    await owner.see({ testId: "agent-permission-localSkills" }, { text: /Blocked/ });
-    await owner.see({ testId: "agent-permission-localMcpServers" }, { text: /Blocked/ });
-    await owner.notSee({ testId: "agent-permission-localSkills-lists" });
-    await owner.click({ role: "button", label: "Save changes" });
-    await owner.see({ text: "Agent permissions saved" }, { timeoutMs: 30_000 });
-    const received = await world.receivedRules("morgan");
-    const expected = [rule("skill", "*", "deny", "Everyone"), rule("mcp", "*", "deny", "Everyone")];
-    evidence.recordAssertionEvidence("Morgan's rules", describeRules(received), JSON.stringify(received) === JSON.stringify(expected));
-    expect(received).toEqual(expected);
-    await owner.screenshot();
-  });
-
-  await step("Contractors turn local MCP servers back on: the row shows Overridden and Riley's MCP servers are allowed", async () => {
-    await owner.click({ role: "link", label: "Agent permissions" });
-    await owner.click({ testId: "new-team-agent-permissions" });
-    await owner.see({ role: "button", label: "Team" }, { timeoutMs: 30_000 });
-    await owner.click({ role: "button", label: "Team" });
-    await owner.click({ role: "option", label: "Contractors" });
-    await owner.see({ testId: "agent-permission-localMcpServers-source" }, { text: "From Everyone" });
-    await owner.see({ testId: "agent-permission-localMcpServers" }, { text: /Blocked/ });
-    await owner.click({ role: "switch", label: "Use local MCP servers" });
-    await owner.see({ testId: "agent-permission-localMcpServers-source" }, { text: "Overridden" });
-    await owner.see({ testId: "agent-permission-localMcpServers" }, { text: /Allowed/ });
-    await owner.click({ role: "button", label: "Create team agent permissions" });
-    await owner.see({ text: "Created agent permissions for Contractors" }, { timeoutMs: 30_000 });
-    const received = await world.receivedRules("riley");
-    // A team's Allow adds no rule: Everyone's block on local MCP servers no longer applies to Riley.
-    const expected = [rule("skill", "*", "deny", "Everyone")];
-    evidence.recordAssertionEvidence("Riley's rules (Contractors)", describeRules(received), JSON.stringify(received) === JSON.stringify(expected));
-    expect(received).toEqual(expected);
-    await owner.screenshot();
-  });
-
-  await step("after: the reset shows Everyone's Blocked again, and discarding keeps the team's override", async () => {
-    await owner.click({ role: "button", label: "Use Everyone's setting for Use local MCP servers" });
-    await owner.see({ testId: "agent-permission-localMcpServers-source" }, { text: "From Everyone" });
-    await owner.see({ testId: "agent-permission-localMcpServers" }, { text: /Blocked/ });
-    await owner.screenshot();
-    await owner.click({ role: "button", label: "Discard" });
-    await owner.see({ testId: "agent-permission-localMcpServers-source" }, { text: "Overridden" });
-    const received = await world.receivedRules("riley");
-    evidence.recordAssertionEvidence("Riley's rules after discarding", describeRules(received), JSON.stringify(received) === JSON.stringify([rule("skill", "*", "deny", "Everyone")]));
-    expect(received).toEqual([rule("skill", "*", "deny", "Everyone")]);
-  });
-});
-
-adminViewTest("an admin who is not an owner can read the permissions but not change them, and a member cannot open them", async ({ world, user, step, evidence }) => {
+adminViewTest("an admin who is not an owner can read a team's agent permissions but not change them, and a member cannot open them", async ({ world, user, step, evidence }) => {
   const admin = user.on(world.web);
 
-  await step("Morgan, an admin, sees Contractors' permissions with every control locked", async () => {
+  await step("Morgan, an admin, sees Contractors' Agents tab with every control locked and no reset", async () => {
     await admin.see({ text: "Read only. Needs the “Manage agent permissions” permission. Ask the organization owner." }, { timeoutMs: 90_000 });
-    await admin.see({ role: "button", label: "Create team agent permissions" });
-    await admin.click({ testId: `agent-permissions-row-${world.teamId}` });
-    await admin.see({ testId: "agent-permissions-scope-state" }, { text: /Contractors team, 1 member · 1 override/ });
-    await admin.notSee({ testId: "remove-team-agent-permissions" });
+    await admin.see({ testId: "agent-permission-commands-source" }, { text: "Changed for Contractors" });
+    await admin.notSee({ testId: "agent-permissions-reset" });
+    await admin.notSee({ role: "button", label: "Use Everyone's setting for Run commands" });
     const controls = await world.permissionControls();
     evidence.recordAssertionEvidence("the permission controls for an admin", `${controls.disabled} of ${controls.count} disabled`, controls.count === 6 && controls.disabled === 6);
     expect(controls).toEqual({ count: 6, disabled: 6 });
@@ -438,9 +413,10 @@ adminViewTest("an admin who is not an owner can read the permissions but not cha
 featureOffTest("agent permissions stay off until a platform admin turns them on for the organization", async ({ world, user, step, evidence }) => {
   const owner = user.on(world.web);
 
-  await step("before: the owner sees Agent permissions locked as an Enterprise feature, and the API and members' apps have none", async () => {
+  await step("before: the team's Agents tab shows Agent permissions as an Enterprise feature, and the API and members' apps have none", async () => {
     await owner.see({ testId: "agent-permissions-feature-off" }, { timeoutMs: 90_000 });
-    await owner.see({ text: "Agent permissions is an Enterprise feature. Contact us to turn it on for your organization." });
+    await owner.see({ text: "Agent permissions is an Enterprise feature" });
+    await owner.see({ text: "Contact us to turn it on for your organization." });
     const read = await world.readStatus("owner");
     const received = await world.receivedRules("riley");
     evidence.recordAssertionEvidence("while off", `GET /v1/agent-permissions → HTTP ${read}; Riley: ${describeRules(received)}`, read === 404 && received === null);
@@ -452,7 +428,7 @@ featureOffTest("agent permissions stay off until a platform admin turns them on 
   await step("after: once it is on, the owner sees the editor, and members' apps receive empty rules", async () => {
     await world.enableFeature();
     await owner.reload();
-    await owner.see({ testId: "agent-permissions-row-everyone" }, { timeoutMs: 60_000 });
+    await owner.see({ testId: "agent-permissions-editor" }, { timeoutMs: 60_000 });
     const read = await world.readStatus("owner");
     const received = await world.receivedRules("riley");
     evidence.recordAssertionEvidence("once on", `GET /v1/agent-permissions → HTTP ${read}; Riley: ${describeRules(received)}`, read === 200 && received?.length === 0);

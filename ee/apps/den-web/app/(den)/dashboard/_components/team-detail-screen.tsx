@@ -2,13 +2,14 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { ArrowLeft, KeyRound, ShieldCheck, Users } from "lucide-react";
+import { ArrowLeft, KeyRound, ShieldCheck, SquareTerminal, Users } from "lucide-react";
 import { DenBadge } from "../../_components/ui/badge";
 import { DenButton } from "../../_components/ui/button";
 import { DenNotice } from "../../_components/ui/notice";
 import { type TabItem, UnderlineTabs } from "../../_components/ui/tabs";
 import { getMarketplaceRoute, getMembersRoute, getOrgAccessFlags, orgFeatureEnabled } from "../../_lib/den-org";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
+import { AgentsPanel, agentsTabVisible } from "./agent-permissions-editor";
 import { TeamPermissionsPanel } from "./team-permissions-panel";
 import { TeamDefaultModelSection } from "./default-model-section";
 import { useDefaultModelFeatureOn } from "./default-model-data";
@@ -24,7 +25,7 @@ import {
   useTeamPluginAccess,
 } from "./team-access-data";
 
-type TeamDetailTab = "role" | "overview" | "access";
+type TeamDetailTab = "role" | "overview" | "access" | "agents";
 
 function formatGrantedDate(value: string): string {
   const date = new Date(value);
@@ -64,7 +65,7 @@ function RoleBadge({ role }: { role: TeamPluginAccessItem["role"] }) {
   );
 }
 
-export function TeamDetailScreen({ teamId }: { teamId: string }) {
+export function TeamDetailScreen({ teamId, initialTab = null }: { teamId: string; initialTab?: "agents" | null }) {
   const { orgContext, orgId, orgSlug } = useOrgDashboard();
   const viewerAccess = orgContext
     ? getOrgAccessFlags(orgContext.currentMember.role, orgContext.currentMember.isOwner, orgContext.currentMember.permissions)
@@ -79,8 +80,10 @@ export function TeamDetailScreen({ teamId }: { teamId: string }) {
   const customRoles = useCustomRoleTeams(orgId, teamRoles && Boolean(orgContext && orgFeatureEnabled(orgContext, "permissions")) && (viewerAccess?.canViewPermissions ?? false));
   // orgDefaultModel: the Access tab lets admins override the model new desktop chats start with.
   const defaultModelOn = useDefaultModelFeatureOn();
-  const [chosenTab, setActiveTab] = useState<TeamDetailTab | null>(null);
-  const activeTab: TeamDetailTab = chosenTab && (teamRoles || chosenTab !== "role") ? chosenTab : teamRoles ? "role" : "access";
+  // agentPermissions: the team's Agents tab holds what it changes from Everyone.
+  const showAgents = agentsTabVisible(orgContext);
+  const [chosenTab, setActiveTab] = useState<TeamDetailTab | null>(initialTab);
+  const activeTab: TeamDetailTab = chosenTab && (teamRoles || chosenTab !== "role") && (showAgents || chosenTab !== "agents") ? chosenTab : teamRoles ? "role" : "access";
   const accessQuery = useTeamPluginAccess(teamId);
   const revokeAccess = useRevokeTeamPluginAccess();
   const team = orgContext?.teams.find((entry) => entry.id === teamId);
@@ -90,15 +93,18 @@ export function TeamDetailScreen({ teamId }: { teamId: string }) {
     return member ? [member] : [];
   });
   const memberCount = team?.memberIds.length ?? 0;
+  const agentsTab: readonly TabItem<TeamDetailTab>[] = showAgents ? [{ value: "agents", label: "Agents", icon: SquareTerminal }] : [];
   const tabs: readonly TabItem<TeamDetailTab>[] = teamRoles
     ? [
       { value: "role", label: "Role", icon: ShieldCheck },
       { value: "overview", label: "Members", icon: Users },
       { value: "access", label: "Access", icon: KeyRound },
+      ...agentsTab,
     ]
     : [
       { value: "overview", label: "Overview", icon: Users },
       { value: "access", label: "Access", icon: ShieldCheck },
+      ...agentsTab,
     ];
 
   return (
@@ -265,6 +271,12 @@ export function TeamDetailScreen({ teamId }: { teamId: string }) {
             <p className="mt-4 text-[12px] text-gray-500">
               direct = revocable here; via catalog = manage in the catalog; org-wide = org setting.
             </p>
+          </div>
+        ) : null}
+
+        {activeTab === "agents" && team ? (
+          <div role="tabpanel" aria-label="Agents">
+            <AgentsPanel team={{ id: team.id, name: team.name }} />
           </div>
         ) : null}
       </div>

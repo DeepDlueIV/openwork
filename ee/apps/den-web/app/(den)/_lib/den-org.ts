@@ -703,6 +703,24 @@ export function getTeamRoute(orgSlug: string | null | undefined, teamId: string)
   return `${getMembersRoute(orgSlug)}/teams/${encodeURIComponent(teamId)}`;
 }
 
+/** A team's Agents tab: what agents can do for people in the team. */
+export function getTeamAgentsRoute(orgSlug: string | null | undefined, teamId: string): string {
+  return `${getTeamRoute(orgSlug, teamId)}?tab=agents`;
+}
+
+/** Members › Teams › Everyone: every member, including people in no team. */
+export function getEveryoneRoute(orgSlug?: string | null): string {
+  return `${getMembersRoute(orgSlug)}/teams/everyone`;
+}
+
+export function getEveryoneAgentsRoute(orgSlug?: string | null): string {
+  return `${getEveryoneRoute(orgSlug)}?tab=agents`;
+}
+
+export function getMembersTeamsRoute(orgSlug?: string | null): string {
+  return `${getMembersRoute(orgSlug)}?tab=teams`;
+}
+
 export function getNewRoleRoute(orgSlug?: string | null): string {
   return `${getMembersRoute(orgSlug)}/roles/new`;
 }
@@ -733,15 +751,6 @@ export function getLlmProvidersRoute(orgSlug?: string | null): string {
 
 export function getAgentPermissionsRoute(orgSlug?: string | null): string {
   return `${getOrgDashboardRoute(orgSlug)}/agent-permissions`;
-}
-
-export function getNewTeamAgentPermissionsRoute(orgSlug?: string | null): string {
-  return `${getAgentPermissionsRoute(orgSlug)}/new`;
-}
-
-/** One record: "everyone" or a team's id. */
-export function getAgentPermissionsScopeRoute(orgSlug: string | null | undefined, scopeId: string): string {
-  return `${getAgentPermissionsRoute(orgSlug)}/${encodeURIComponent(scopeId)}`;
 }
 
 export function getDesktopPoliciesRoute(orgSlug?: string | null): string {

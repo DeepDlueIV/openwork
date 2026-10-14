@@ -112,40 +112,45 @@ async function agentPermissionsOrganization(seed: Seed, options: OrganizationOpt
   };
 }
 
-/** The owner on Den's Agent permissions page, with nothing set yet. */
+const EVERYONE_AGENTS = "/dashboard/members/teams/everyone?tab=agents";
+const teamAgents = (teamId: string | undefined) => `/dashboard/members/teams/${encodeURIComponent(teamId ?? "")}?tab=agents`;
+
+async function ownerOn(seed: Seed, world: Awaited<ReturnType<typeof agentPermissionsOrganization>>, startPath: string, height = 1400) {
+  return seed.web({ den: world.den, signedInAs: world.den.admin, startPath, headless: true, viewport: { width: 1440, height } });
+}
+
+/** The owner on Members › Teams › Everyone's Agents tab, with nothing set yet. */
 export async function agentPermissionsEditor(seed: Seed) {
   const world = await agentPermissionsOrganization(seed, { web: true });
-  const web = await seed.web({
-    den: world.den,
-    signedInAs: world.den.admin,
-    startPath: "/dashboard/agent-permissions",
-    headless: true,
-    viewport: { width: 1440, height: 1400 },
-  });
-  return { ...world, web };
+  return { ...world, web: await ownerOn(seed, world, EVERYONE_AGENTS) };
 }
 
-/** The owner on the page, with Riley in both Contractors and Engineering. */
+/** The owner on the Contractors team's Agents tab, with nothing set yet. */
+export async function agentPermissionsTeamTab(seed: Seed) {
+  const world = await agentPermissionsOrganization(seed, { web: true });
+  return { ...world, web: await ownerOn(seed, world, teamAgents(world.teamId)) };
+}
+
+/** The owner on Members › Teams, with Riley in Sales and Morgan in no team. */
+export async function agentPermissionsSales(seed: Seed) {
+  const world = await agentPermissionsOrganization(seed, { web: true, teams: { Sales: ["riley"] } });
+  return { ...world, salesId: world.teamIds.Sales ?? "", saveSales: (settings: AgentPermissionSettings) => world.save(settings, "Sales"), web: await ownerOn(seed, world, "/dashboard/members?tab=teams") };
+}
+
+/** The owner on Engineering's Agents tab, with Riley in both Contractors and Engineering. */
 export async function agentPermissionsTwoTeams(seed: Seed) {
   const world = await agentPermissionsOrganization(seed, { web: true, teams: { Contractors: ["riley"], Engineering: ["riley"] } });
-  const web = await seed.web({
-    den: world.den,
-    signedInAs: world.den.admin,
-    startPath: "/dashboard/agent-permissions",
-    headless: true,
-    viewport: { width: 1440, height: 1400 },
-  });
-  return { ...world, web };
+  return { ...world, web: await ownerOn(seed, world, teamAgents(world.teamIds.Engineering)) };
 }
 
-/** Morgan, an admin who is not an owner, on the page after Avery blocked commands for Contractors. */
+/** Morgan, an admin who is not an owner, on Contractors' Agents tab after Avery blocked commands for Contractors. */
 export async function agentPermissionsAdminView(seed: Seed) {
   const world = await agentPermissionsOrganization(seed, { web: true, morganAdmin: true });
   await world.saveContractors({ commands: { decision: "deny", allow: ["echo *"] } });
   const web = await seed.web({
     den: world.den,
     signedInAs: world.den.members.morgan ?? world.den.admin,
-    startPath: "/dashboard/agent-permissions",
+    startPath: teamAgents(world.teamId),
     headless: true,
     viewport: { width: 1440, height: 1400 },
   });
@@ -167,17 +172,10 @@ export async function agentPermissionsAdminView(seed: Seed) {
   };
 }
 
-/** The owner on the page of an organization that does not have agent permissions yet. */
+/** The owner on Contractors' Agents tab in an organization that does not have agent permissions yet. */
 export async function agentPermissionsFeatureOff(seed: Seed) {
   const world = await agentPermissionsOrganization(seed, { web: true, feature: false });
-  const web = await seed.web({
-    den: world.den,
-    signedInAs: world.den.admin,
-    startPath: "/dashboard/agent-permissions",
-    headless: true,
-    viewport: { width: 1440, height: 1100 },
-  });
-  return { ...world, web };
+  return { ...world, web: await ownerOn(seed, world, teamAgents(world.teamId), 1100) };
 }
 
 /** A request to the desktop app's own OpenWork server, with the app's token. */

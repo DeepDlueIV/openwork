@@ -126,3 +126,16 @@ export async function rememberMcpAppResult(
     // Storage is a convenience; the call's result is unaffected.
   }
 }
+
+/** Drops a kept result, e.g. when its call is no longer allowed. */
+export async function forgetMcpAppResult(
+  origin: McpAppOrigin, app: OpenworkMcpAppResource, name: string, args: Record<string, unknown>,
+): Promise<void> {
+  try {
+    const entry = await entryKey(origin, app, name, args);
+    const entries = entry ? store.read(STORAGE_KEY) : null;
+    if (entry && entries?.delete(entry.key)) store.schedule(STORAGE_KEY);
+  } catch {
+    // Storage is a convenience.
+  }
+}

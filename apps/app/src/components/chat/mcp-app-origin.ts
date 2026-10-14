@@ -36,6 +36,22 @@ export function createMcpAppActions(
   return {
     dispose: () => { active = false; },
     assertActive,
+    /** Whether a call that needs no approval is allowed now, checked without running the tool. */
+    checkRead: async (name: string, args?: Record<string, unknown>) => {
+      assertActive();
+      const result = await origin.client.callMcpAppTool(origin.workspaceId, {
+        launchId: app.launchId,
+        sessionId: origin.sessionId,
+        ...(origin.engine ? { engine: origin.engine } : {}),
+        serverName: app.serverName,
+        resourceUri: app.resourceUri,
+        name,
+        arguments: snapshotMcpAppArguments(args),
+        checkOnly: true,
+      });
+      assertActive();
+      return result._meta?.["openwork/readOnly"] === true && result.isError !== true;
+    },
     callTool: async (name: string, args?: Record<string, unknown>, userInteraction = false) => {
       assertActive();
       const request = {

@@ -2103,6 +2103,7 @@ export function createOpenworkServerClient(options: { baseUrl: string; token?: s
         expectedResourceDigest?: string;
         arguments?: Record<string, unknown>;
         approved?: boolean;
+        checkOnly?: boolean;
       },
     ) => requestJson<OpenworkMcpAppToolResult>(
       baseUrl,

@@ -15,7 +15,7 @@ import { createConnectionActionController, hasHostConnectionActions, standardMcp
 import { openDesktopUrl } from "@/app/lib/desktop"
 import { mcpAppDiscoverySignature } from "@/app/lib/mcp-app-discovery-scheduler"
 import { scheduleCachedMcpAppDiscovery } from "@/app/lib/mcp-app-presentation-cache"
-import { cachedMcpAppResult, MCP_APP_CACHE_REQUEST_META, MCP_APP_CACHED_RESULT_META, rememberMcpAppResult } from "@/app/lib/mcp-app-result-cache"
+import { cachedMcpAppResult, forgetMcpAppResult, MCP_APP_CACHE_REQUEST_META, MCP_APP_CACHED_RESULT_META, rememberMcpAppResult } from "@/app/lib/mcp-app-result-cache"
 import { onCloudCredentialRefreshed, readCloudCredentialRevision } from "@/react-app/domains/connections/cloud-credential-revision"
 import {
   OpenworkServerError,
@@ -526,13 +526,6 @@ export function McpAppSandboxView({ origin, app, resolveLiveActions, toolName, i
     }
     if (!readOnly || resolveLiveActions) bridge.oncalltool = async ({ name, arguments: args, _meta }) => {
       const cacheRequest = _meta?.[MCP_APP_CACHE_REQUEST_META]
-      // The App's last read-only result for this call, straight from storage:
-      // no tool runs, so it is shown at once and the App refreshes it itself.
-      if (cacheRequest === "read") {
-        if (disposed || failed) throw new Error("This artifact view has closed or changed.")
-        return await cachedMcpAppResult(origin, app, name, args ?? {})
-          ?? { content: [], isError: true, _meta: { [MCP_APP_CACHED_RESULT_META]: false } }
-      }
       try {
         if (resolveLiveActions) {
           liveActions ??= resolveLiveActions().then(live => {
@@ -546,6 +539,21 @@ export function McpAppSandboxView({ origin, app, resolveLiveActions, toolName, i
           })
           await liveActions
           if (disposed || failed) throw new Error("This artifact view has closed or changed.")
+        }
+        // The App's last read-only result for this call, from storage. The host
+        // first rechecks that the call is allowed now without approval (lease,
+        // visibility, workspace denies, read-only label); the tool never runs.
+        if (cacheRequest === "read") {
+          const miss = { content: [], isError: true, _meta: { [MCP_APP_CACHED_RESULT_META]: false } }
+          const cached = await cachedMcpAppResult(origin, app, name, args ?? {})
+          if (!cached) return miss
+          const allowed = await actions.checkRead(name, args ?? {}).catch(() => false)
+          if (disposed || failed) throw new Error("This artifact view has closed or changed.")
+          if (!allowed) {
+            void forgetMcpAppResult(origin, app, name, args ?? {})
+            return miss
+          }
+          return cached
         }
         const userInteraction = _meta?.["openwork/userInteraction"] === true
         const toolResult = connectionController

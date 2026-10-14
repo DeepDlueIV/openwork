@@ -1078,6 +1078,8 @@ export async function callMcpAppTool(input: {
   expectedResourceDigest?: string;
   arguments?: Record<string, unknown>;
   approved?: boolean;
+  /** Run every check for a call that needs no approval, then return without calling the tool. */
+  checkOnly?: boolean;
   /** Required for conversation leases; the HTTP host checks current ownership/archive state. */
   assertSessionActive?: () => Promise<void>;
 }): Promise<McpAppToolResult> {
@@ -1176,6 +1178,14 @@ export async function callMcpAppTool(input: {
     }
     await currentConfig();
     assertLive();
+    // For a cached read: the call would be allowed now without approval, so
+    // the host may show the result it kept. Nothing reaches the tool.
+    if (input.checkOnly) {
+      if (input.approved === true || toolRequiresApproval(tool) || hostConnectionAction) {
+        throw new McpAppHostError("tool_requires_approval", "Only a read-only App tool's kept result can be shown.");
+      }
+      return { content: [], _meta: { [MCP_APP_READ_ONLY_RESULT_META]: true } };
+    }
     // A provider that rejects the call (for example JSON-RPC -32602 for a
     // missing required argument) must reach the member as that rejection,
     // not as an unhandled 500 "Unexpected server error". The text is

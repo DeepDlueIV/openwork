@@ -118,7 +118,7 @@ test("build reuses private base/layer machinery and saves a hot exact-source wor
   const appScript = [...fixture.files.entries()].find(([path]) => path.endsWith("/review-app.sh"))?.[1] ?? "";
   assert.ok(appScript.includes(`git fetch --depth=1 origin ${sha}`));
   assert.ok(appScript.includes(`test "$(git rev-parse HEAD)" = "${sha}"`));
-  assert.ok(script.includes("--property=User=openwork-preview --property=Group=openwork-preview --property=NoNewPrivileges=yes --property=CapabilityBoundingSet="));
+  assert.ok(script.includes("setpriv --reuid=openwork-preview --regid=openwork-preview --init-groups --no-new-privs --bounding-set=-all"));
   assert.ok(script.includes("/bin/bash /opt/openwork-preview/review-app.sh"));
   assert.equal(script.includes("pnpm install"), false);
   const unit = [...fixture.files.entries()].find(([path]) => path.endsWith("/openwork-review-runtime.service"))?.[1] ?? "";

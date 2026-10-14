@@ -92,7 +92,7 @@ export async function buildDaytonaPreview(sha: string, world: PreviewWorld, api 
       await api.writeFile(sandbox, `${ROOT}/review-app.sh`, `#!/bin/bash\nset -euo pipefail\nexport HOME=/home/openwork-preview\nexport pnpm_config_verify_deps_before_run=false\n${checkoutRecipe(sha)}\n${descriptor.dependencies}\n${descriptor.compile}\n`);
       await runScript(api, sandbox, "review-world", `useradd --create-home --shell /usr/sbin/nologin openwork-preview
 install -d -o openwork-preview -g openwork-preview /workspace ${ROOT}/state
-systemd-run --wait --pipe --collect --unit=openwork-review-app --property=User=openwork-preview --property=Group=openwork-preview --property=NoNewPrivileges=yes --property=CapabilityBoundingSet= /bin/bash ${ROOT}/review-app.sh
+setpriv --reuid=openwork-preview --regid=openwork-preview --init-groups --no-new-privs --bounding-set=-all /bin/bash ${ROOT}/review-app.sh
 systemctl daemon-reload
 systemctl start openwork-review-runtime
 node ${ROOT}/health.mjs

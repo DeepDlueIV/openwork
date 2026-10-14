@@ -2371,3 +2371,31 @@ export async function skillLifecycle(seed: Seed) {
     throw error;
   }
 }
+
+export const emojiShortcodesMarker = "EMOJI_SHORTCODES_ANSWER";
+/** Real GitHub shortcodes next to plain words that only look like shortcodes. */
+export const emojiShortcodesAnswer = "Shipped :rocket: :fire: :white_check_mark:\n\nBack :home: for a :test: run.";
+export const emojiShortcodesRendered = "Shipped 🚀 🔥 ✅";
+export const emojiShortcodesPlainLine = "Back :home: for a :test: run.";
+
+/** An answer that mixes emoji shortcodes with words wrapped in colons. */
+export async function emojiShortcodesChat(seed: Seed) {
+  const providerId = "emoji-shortcodes-mock";
+  const modelId = "emoji-shortcodes-model";
+  const mock = seed.mock({
+    agentWorkloads: [{ promptMarker: emojiShortcodesMarker, latestUserTurn: true, finalReply: emojiShortcodesAnswer, steps: [] }],
+  });
+  const workspacePath = seed.tmpPath("emoji-shortcodes");
+  const app = await seed.appWeb({ name: "emoji-shortcodes", workspacePath, mocks: { agent: mock } });
+  const agentMock = app.mocks.agent;
+  if (!agentMock) throw new Error("The app-web fixture did not boot its emoji-shortcodes model.");
+  const workspace = await seed.workspace(app, workspacePath);
+  await configureProvider(seed, app, workspace.workspaceId, providerId, modelId, { provider: {
+    [providerId]: {
+      npm: "@ai-sdk/openai-compatible", name: "Emoji shortcodes mock",
+      options: { baseURL: `${agentMock.url}/v1`, apiKey: "sk-emoji-shortcodes" },
+      models: { [modelId]: { name: "Emoji shortcodes model" } },
+    },
+  } });
+  return { app, workspace };
+}

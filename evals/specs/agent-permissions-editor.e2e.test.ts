@@ -1,5 +1,5 @@
 import { expect } from "vitest";
-import { spec } from "@openwork/testkit";
+import { spec, type Probe } from "@openwork/testkit";
 import {
   agentPermissionsAdminView,
   agentPermissionsEditor,
@@ -15,6 +15,16 @@ const salesTest = spec.world(agentPermissionsSales, { timeout: 600_000, resource
 const twoTeamsTest = spec.world(agentPermissionsTwoTeams, { timeout: 600_000, resources: { surfaces: ["web"], services: ["den"] } });
 const adminViewTest = spec.world(agentPermissionsAdminView, { timeout: 600_000, resources: { surfaces: ["web"], services: ["den"] } });
 const featureOffTest = spec.world(agentPermissionsFeatureOff, { timeout: 600_000, resources: { surfaces: ["web"], services: ["den"] } });
+
+
+/** Waits until the save bar closes, which happens only once the save has landed. */
+async function saveLanded(probe: Probe) {
+  await probe.eventually(() => probe.dom('[data-testid="agent-permissions-save-bar"]'), {
+    within: 30_000,
+    label: "the save lands and the save bar closes",
+    until: (bar) => bar.elements.length === 0,
+  });
+}
 
 type Rule = { action: string; resource: string; effect: string; source: string };
 const rule = (action: string, resource: string, effect: string, source: string): Rule => ({ action, resource, effect, source });
@@ -52,7 +62,7 @@ salesTest("an admin makes Sales agents ask before running commands, and undoes i
   await step("after saving: Riley, in Sales, is asked before commands run, and Morgan, in no team, is not", async () => {
     await admin.click({ role: "button", label: "Save changes" });
     // The save bar closes once the save lands; an earlier "saved" toast may still be showing.
-    await admin.notSee({ testId: "agent-permissions-save-bar" }, { timeoutMs: 30_000 });
+    await saveLanded(probe);
     await admin.see({ text: "Agent permissions saved" }, { timeoutMs: 30_000 });
     const riley = await world.receivedRules("riley");
     const morgan = await world.receivedRules("morgan");
@@ -132,7 +142,7 @@ teamTabTest("an owner changes Contractors' agent permissions on the team's Agent
   await step("after: the owner saves, and Riley's app receives the rules in order", async () => {
     await owner.click({ role: "button", label: "Save changes" });
     // The save bar closes once the save lands; an earlier "saved" toast may still be showing.
-    await owner.notSee({ testId: "agent-permissions-save-bar" }, { timeoutMs: 30_000 });
+    await saveLanded(probe);
     await owner.see({ text: "Agent permissions saved" }, { timeoutMs: 30_000 });
     const received = await world.receivedRules("riley");
     const expected = [rule("shell", "*", "deny", "Contractors"), rule("shell", "echo *", "allow", "Contractors")];
@@ -153,7 +163,7 @@ teamTabTest("an owner changes Contractors' agent permissions on the team's Agent
   });
 });
 
-editorTest("Everyone's permissions reach every member, and a team's own choice replaces Everyone's while the blocked lists still apply", async ({ world, user, step, evidence }) => {
+editorTest("Everyone's permissions reach every member, and a team's own choice replaces Everyone's while the blocked lists still apply", async ({ world, user, step, evidence, probe }) => {
   const owner = user.on(world.web);
   const everyoneRules = [
     rule("shell", "*", "ask", "Everyone"),
@@ -188,7 +198,7 @@ editorTest("Everyone's permissions reach every member, and a team's own choice r
     await owner.screenshot();
     await owner.click({ role: "button", label: "Save changes" });
     // The save bar closes once the save lands; an earlier "saved" toast may still be showing.
-    await owner.notSee({ testId: "agent-permissions-save-bar" }, { timeoutMs: 30_000 });
+    await saveLanded(probe);
     await owner.see({ text: "Agent permissions saved" }, { timeoutMs: 30_000 });
   });
 
@@ -211,7 +221,7 @@ editorTest("Everyone's permissions reach every member, and a team's own choice r
   await step("after: Morgan receives Everyone's rules and Riley the team's choice with Everyone's blocked list last", async () => {
     await owner.click({ role: "button", label: "Save changes" });
     // The save bar closes once the save lands; an earlier "saved" toast may still be showing.
-    await owner.notSee({ testId: "agent-permissions-save-bar" }, { timeoutMs: 30_000 });
+    await saveLanded(probe);
     await owner.see({ text: "Agent permissions saved" }, { timeoutMs: 30_000 });
     const morgan = await world.receivedRules("morgan");
     const riley = await world.receivedRules("riley");
@@ -229,7 +239,7 @@ editorTest("Everyone's permissions reach every member, and a team's own choice r
   });
 });
 
-twoTeamsTest("a member in two teams gets the strictest decision of the two, and both teams' lists", async ({ world, user, step, evidence }) => {
+twoTeamsTest("a member in two teams gets the strictest decision of the two, and both teams' lists", async ({ world, user, step, evidence, probe }) => {
   const owner = user.on(world.web);
   await world.saveContractors({ commands: { decision: "deny", allow: ["echo *"] } });
 
@@ -262,7 +272,7 @@ twoTeamsTest("a member in two teams gets the strictest decision of the two, and 
     await owner.press("Enter");
     await owner.click({ role: "button", label: "Save changes" });
     // The save bar closes once the save lands; an earlier "saved" toast may still be showing.
-    await owner.notSee({ testId: "agent-permissions-save-bar" }, { timeoutMs: 30_000 });
+    await saveLanded(probe);
     await owner.see({ text: "Agent permissions saved" }, { timeoutMs: 30_000 });
     await owner.screenshot();
   });
@@ -279,7 +289,7 @@ twoTeamsTest("a member in two teams gets the strictest decision of the two, and 
   });
 });
 
-teamTabTest("an owner undoes a save, and Use Everyone's puts one row back without touching the rest", async ({ world, user, step, evidence }) => {
+teamTabTest("an owner undoes a save, and Use Everyone's puts one row back without touching the rest", async ({ world, user, step, evidence, probe }) => {
   const owner = user.on(world.web);
   const contractorRules = [rule("shell", "*", "deny", "Contractors"), rule("shell", "echo *", "allow", "Contractors")];
   await world.saveContractors({ commands: { decision: "deny", allow: ["echo *"] } });
@@ -297,7 +307,7 @@ teamTabTest("an owner undoes a save, and Use Everyone's puts one row back withou
     await owner.click({ role: "switch", label: "Search the web" });
     await owner.click({ role: "button", label: "Save changes" });
     // The save bar closes once the save lands; an earlier "saved" toast may still be showing.
-    await owner.notSee({ testId: "agent-permissions-save-bar" }, { timeoutMs: 30_000 });
+    await saveLanded(probe);
     await owner.see({ text: "Agent permissions saved" }, { timeoutMs: 30_000 });
     const saved = await world.receivedRules("riley");
     await owner.click({ role: "button", label: "Undo" });
@@ -316,7 +326,7 @@ teamTabTest("an owner undoes a save, and Use Everyone's puts one row back withou
     await owner.see({ testId: "agent-permission-commands-source" }, { text: "From Everyone" });
     await owner.click({ role: "button", label: "Save changes" });
     // The save bar closes once the save lands; an earlier "saved" toast may still be showing.
-    await owner.notSee({ testId: "agent-permissions-save-bar" }, { timeoutMs: 30_000 });
+    await saveLanded(probe);
     await owner.see({ text: "Agent permissions saved" }, { timeoutMs: 30_000 });
     const received = await world.receivedRules("riley");
     evidence.recordAssertionEvidence("Riley's rules", describeRules(received), received?.length === 0);
@@ -392,7 +402,7 @@ editorTest("blocking file edits blocks every command too, and the editor says wh
     const blocked = await tryResult();
     await owner.click({ role: "button", label: "Save changes" });
     // The save bar closes once the save lands; an earlier "saved" toast may still be showing.
-    await owner.notSee({ testId: "agent-permissions-save-bar" }, { timeoutMs: 30_000 });
+    await saveLanded(probe);
     await owner.see({ text: "Agent permissions saved" }, { timeoutMs: 30_000 });
     const received = await world.receivedRules("morgan");
     const expected = [rule("edit", "*", "deny", "Everyone"), rule("shell", "*", "deny", "Everyone")];

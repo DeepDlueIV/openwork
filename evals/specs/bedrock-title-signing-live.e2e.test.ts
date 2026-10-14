@@ -14,7 +14,7 @@ test("an isolated fixed Electron build signs a real Bedrock session-title reques
   const config = await agent.on(world.app).desktopApi(`/workspace/${world.workspace.workspaceId}/opencode/config`, { method: "GET" });
   expect(config.status).toBe(200);
   expect(JSON.stringify(config.body)).toContain("observer.ts");
-  await person.type("composer", "Tell me one thing about a kite in a meadow.", { verify: true });
+  await person.type("composer", "Tell me one thing about a kite in a meadow.", { replace: true, verify: true });
   await person.click({ role: "button", label: "Run task" });
   await eventually(async () => {
     const state = await probe.on(world.app).composer();

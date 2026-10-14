@@ -5,7 +5,8 @@ import { daytonaFreshPreviewMethods } from "./previews.ts";
 
 /**
  * Fresh direct app-web previews and unchanged saved-checkpoint access.
- * The review app owns the feature gate and exposes only DAYTONA_PREVIEW_WORLDS.
+ * The review server checks its provider credentials and supported preview worlds;
+ * no product feature authority is involved in infrastructure availability.
  */
 export const daytonaReviewProvider: ReviewPreviewProvider = {
   ...notReadyReviewProvider("daytona"),

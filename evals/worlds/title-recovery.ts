@@ -33,11 +33,13 @@ export async function titleRecovery(seed: Seed) {
       if (responses !== ["gpt-6-astra", "gpt-6-default-effort"].includes(body.model) || request.url !== (responses ? "/v1/responses" : "/v1/chat/completions")) return sendJson(response, 404, {});
       if (request.headers.authorization !== `Bearer title-witness-${provider}`) return sendJson(response, 401, {});
       // No recognized effort list: only omission of the rejected field succeeds.
-      // Include the provider URL to make diagnostic redaction observable too.
+      // Title errors include the provider URL to make diagnostic redaction observable.
+      // Normal-chat rejection must stay non-transient: the engine also retries
+      // status-like digits anywhere in error text, including an ephemeral port.
       if (effort !== undefined && ((title && ["default-effort", "gpt-6-default-effort"].includes(body.model))
         || (!title && body.model === "main-rejected"))) return sendJson(response, 400, { error: {
         code: "unsupported_value", param: responses ? "reasoning.effort" : "reasoning_effort",
-        message: `Unsupported reasoning effort. ${PRIVATE_ERROR_MARKER} http://${request.headers.host}${request.url}`,
+        message: `Unsupported reasoning effort. ${PRIVATE_ERROR_MARKER}${title ? ` http://${request.headers.host}${request.url}` : ""}`,
       } });
       if (title) {
         if (body.model === "denied") return sendJson(response, 403, { error: { message: PRIVATE_ERROR_MARKER } });

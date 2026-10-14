@@ -93,7 +93,13 @@ test("automatic titles recover rejected model parameters once and report other f
       parts: [{ type: "text", text: "Tell me one thing about a kite in a meadow." }],
     });
     expect(record(result) && record(result.info) && result.info.error).toMatchObject({
-      name: "APIError", data: { statusCode: 400 },
+      name: "APIError", data: {
+        statusCode: 400, isRetryable: false,
+        responseBody: JSON.stringify({ error: {
+          code: "unsupported_value", param: "reasoning_effort",
+          message: `Unsupported reasoning effort. ${PRIVATE_ERROR_MARKER}`,
+        } }),
+      },
     });
     expect(record(result) && Array.isArray(result.parts) && result.parts.filter(record).some((part) => part.text === REPLY)).toBe(false);
     expect(world.requests.filter((request) => request.model === "main-rejected")).toEqual([

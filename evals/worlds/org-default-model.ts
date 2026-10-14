@@ -29,10 +29,10 @@ function call(result: DenFetchResult): DefaultModelCall {
   return { status: result.response.status, body: result.body, text: result.text };
 }
 
-export async function orgDefaultModelWorld(seed: Seed) {
+export async function createOrgDefaultModelWorld(seed: Seed, options: { web?: boolean } = {}) {
   const stamp = Date.now().toString(36);
   const den = await seed.den({
-    web: false,
+    web: options.web ?? false,
     schema: "migrate",
     env: { DEN_PLAN_GATING_ENABLED: "false", RESEND_API_KEY: "", STRIPE_SECRET_KEY: "" },
     org: {
@@ -126,5 +126,7 @@ export async function orgDefaultModelWorld(seed: Seed) {
     },
   };
 }
+
+export function orgDefaultModelWorld(seed: Seed) { return createOrgDefaultModelWorld(seed); }
 
 export type OrgDefaultModelWorld = Awaited<ReturnType<typeof orgDefaultModelWorld>>;

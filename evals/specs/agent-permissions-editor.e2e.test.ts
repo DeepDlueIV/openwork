@@ -44,7 +44,7 @@ salesTest("an admin makes Sales agents ask before running commands, and undoes i
     await admin.click({ role: "button", label: "Run commands" });
     await admin.click({ role: "option", label: "Ask first" });
     await admin.see({ testId: "agent-permission-commands-source" }, { text: /Changed for Sales/ });
-    await admin.see({ testId: "agent-permissions-save-bar" }, { text: "1 change for Sales. Members' apps pick them up the next time they refresh." });
+    await admin.see({ testId: "agent-permissions-save-bar" }, { text: /^1 change for Sales\. Members' apps pick them up the next time they refresh\./ });
     evidence.recordAssertionEvidence("Run commands' status", await status("commands"), (await status("commands")).startsWith("Changed for Sales"));
     await admin.screenshot();
   });

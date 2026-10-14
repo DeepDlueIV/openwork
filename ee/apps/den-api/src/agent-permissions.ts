@@ -280,7 +280,8 @@ export function organizationConnectionAgentPermissionDenial(rules: readonly Agen
   if (rules.length === 0) return null
   let host: string
   try {
-    host = new URL(url).hostname
+    // `mcp.example.com.` is the same server as `mcp.example.com`.
+    host = new URL(url).hostname.replace(/\.+$/, "")
   } catch {
     // An address Den cannot read matches only a rule for every server.
     host = ""

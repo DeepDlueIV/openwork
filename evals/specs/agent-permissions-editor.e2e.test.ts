@@ -74,7 +74,7 @@ salesTest("an admin makes Sales agents ask before running commands, and undoes i
   });
 
   await step("after the reset: Run commands follows Everyone again and Riley's app receives no rules", async () => {
-    await admin.click({ role: "button", label: "Reset to Everyone" });
+    await admin.click({ testId: "agent-permissions-reset-confirm" });
     await admin.see({ text: "Sales reset to Everyone" }, { timeoutMs: 30_000 });
     await admin.see({ testId: "agent-permission-commands-source" }, { text: "From Everyone", timeoutMs: 30_000 });
     await admin.notSee({ testId: "agent-permissions-reset" });

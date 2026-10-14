@@ -352,7 +352,7 @@ function ResetToEveryone({ team, changes, previous, remove, removeError, removin
           {removeError ? <DenNotice tone="error" className="mt-3" message={removeError.message} /> : null}
           <div className="mt-5 flex justify-end gap-2">
             <AlertDialog.Close ref={cancelRef} disabled={removing} className={buttonVariants({ variant: "secondary" })}>Cancel</AlertDialog.Close>
-            <DenButton variant="destructive" loading={removing} onClick={() => void confirm()}>Reset to Everyone</DenButton>
+            <DenButton variant="destructive" loading={removing} onClick={() => void confirm()} data-testid="agent-permissions-reset-confirm">Reset to Everyone</DenButton>
           </div>
         </AlertDialog.Popup>
       </AlertDialog.Portal>

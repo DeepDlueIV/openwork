@@ -280,12 +280,16 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
         // Every request follows the website rules; only a page may ask first.
         const page = details.resourceType === "mainFrame";
         await checkWebsiteRules(details.url, { page });
+        const checkedRules = websiteRules;
         await checkPolicy?.(request);
+        let validate;
         if (guard) {
-          const validate = await guard(details.url);
+          validate = await guard(details.url);
           await checkPolicy?.(request);
-          return validate;
         }
+        // Rules that changed during those checks apply to this request too.
+        if (websiteRules !== checkedRules) await checkWebsiteRules(details.url, { page });
+        return validate;
       })
         .then((validate) => {
           try {

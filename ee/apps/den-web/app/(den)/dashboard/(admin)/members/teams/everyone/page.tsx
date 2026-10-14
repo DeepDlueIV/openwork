@@ -1,4 +1,6 @@
-import { EveryoneScreen } from "../../../../_components/everyone-screen";
+import { EveryoneScreen, type EveryoneTab } from "../../../../_components/everyone-screen";
+
+const TABS: readonly EveryoneTab[] = ["role", "agents", "browser", "models"];
 
 export default async function EveryonePage({
   searchParams,
@@ -6,5 +8,5 @@ export default async function EveryonePage({
   searchParams: Promise<{ tab?: string | string[] }>;
 }) {
   const { tab } = await searchParams;
-  return <EveryoneScreen initialTab={tab === "agents" ? "agents" : tab === "role" ? "role" : null} />;
+  return <EveryoneScreen initialTab={TABS.find((entry) => entry === tab) ?? null} />;
 }

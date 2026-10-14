@@ -35,6 +35,7 @@ import { DenSwitch } from "../../_components/ui/switch";
 import { Tooltip, TooltipContent, TooltipTrigger } from "../../_components/ui/tooltip";
 import {
   getEveryoneAgentsRoute,
+  getEveryoneBrowserRoute,
   getOrgAccessFlags,
   orgFeatureEnabled,
   permissionLockReason,
@@ -171,28 +172,44 @@ const PROPAGATION_NOTE = "Members' desktop apps can take up to 5 minutes to pick
 // One scope's Agents panel: Everyone's, or a team's changes from Everyone
 // ---------------------------------------------------------------------------
 
-/** Everyone's Agents tab, or a team's. Loads, checks access, then edits. */
-export function AgentsPanel({ team }: { team: { id: string; name: string } | null }) {
+/**
+ * Which rows a panel edits. "all" is the single Agents tab; with the Browser
+ * tab (teamPageTabs) the Agents tab is "agents" and Open websites moves to "browser".
+ */
+export type AgentPermissionsArea = "all" | "agents" | "browser";
+
+/** The rows on the Browser tab: what the built-in browser (and the agent's page fetches) may open. */
+const BROWSER_KEYS: readonly string[] = ["websites"];
+
+function inArea(area: AgentPermissionsArea, key: string): boolean {
+  if (area === "all") return true;
+  return area === "browser" ? BROWSER_KEYS.includes(key) : !BROWSER_KEYS.includes(key);
+}
+
+/** Everyone's Agents or Browser tab, or a team's. Loads, checks access, then edits. */
+export function AgentsPanel({ team, area = "all" }: { team: { id: string; name: string } | null; area?: AgentPermissionsArea }) {
   const access = useAgentPermissionsAccess();
-  if (access.state !== "ready") return <div data-testid="agent-permissions-agents"><AgentPermissionsAccessState access={access} /></div>;
+  const testId = area === "browser" ? "agent-permissions-browser" : "agent-permissions-agents";
+  if (access.state !== "ready") return <div data-testid={testId}><AgentPermissionsAccessState access={access} /></div>;
   return (
     <WithPolicies orgId={access.orgId}>
       {(data) => {
         const policy: AgentPermissionPolicy = team
           ? data.teams.find((entry) => entry.scopeId === team.id) ?? { scopeId: team.id, teamId: team.id, name: team.name, memberCount: null, settings: {}, updatedAt: null }
           : data.everyone;
-        return <ScopeAgents key={`${policy.scopeId}-${policy.updatedAt ?? ""}`} access={access} data={data} policy={policy} team={team ? policy.name : null} />;
+        return <ScopeAgents key={`${policy.scopeId}-${policy.updatedAt ?? ""}`} access={access} data={data} policy={policy} team={team ? policy.name : null} area={area} />;
       }}
     </WithPolicies>
   );
 }
 
-function ScopeAgents({ access, data, policy, team }: {
+function ScopeAgents({ access, data, policy, team, area }: {
   access: Extract<AgentPermissionsAccess, { state: "ready" }>;
   data: AgentPermissionPolicies;
   policy: AgentPermissionPolicy;
   /** The team's name, or null for Everyone. */
   team: string | null;
+  area: AgentPermissionsArea;
 }) {
   const save = useSaveAgentPermissions(access.orgId);
   const remove = useRemoveTeamAgentPermissions(access.orgId, policy.scopeId);
@@ -249,24 +266,29 @@ function ScopeAgents({ access, data, policy, team }: {
     });
   }
 
-  const intro = team
-    ? `What agents can do on the computers of people in ${team}. Rows you don't change follow Everyone.`
-    : "What agents can do on every member's computer. A team can change any row on its own Agents tab.";
+  const intro = area === "browser"
+    ? team
+      ? `Which pages agents and the built-in browser can open for people in ${team}. Rows you don't change follow Everyone.`
+      : "Which pages agents and the built-in browser can open on every member's computer. A team can change this on its own Browser tab."
+    : team
+      ? `What agents can do on the computers of people in ${team}. Rows you don't change follow Everyone.`
+      : "What agents can do on every member's computer. A team can change any row on its own Agents tab.";
 
   return (
-    <div className="flex flex-col gap-4" data-testid="agent-permissions-agents" data-scope={policy.scopeId}>
+    <div className="flex flex-col gap-4" data-testid={area === "browser" ? "agent-permissions-browser" : "agent-permissions-agents"} data-scope={policy.scopeId}>
       <div className="flex min-h-8 flex-wrap items-center justify-between gap-3">
         <p className="min-w-0 flex-1 text-[13px] text-gray-500" data-testid="agent-permissions-intro">{intro}</p>
         {team ? (
           <div className="flex shrink-0 items-center gap-4">
             <Link
-              href={getEveryoneAgentsRoute(access.orgSlug)}
+              href={area === "browser" ? getEveryoneBrowserRoute(access.orgSlug) : getEveryoneAgentsRoute(access.orgSlug)}
               className="rounded text-[13px] font-medium text-gray-700 underline-offset-2 hover:text-gray-900 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400"
               data-testid="agent-permissions-open-everyone"
             >
               Open Everyone
             </Link>
-            {access.canManage && editable && savedChanges.length > 0 ? (
+            {/* Reset removes every change the team made, so it lives on the Agents tab only. */}
+            {access.canManage && editable && savedChanges.length > 0 && area !== "browser" ? (
               <ResetToEveryone
                 team={team}
                 changes={savedChanges}
@@ -289,6 +311,7 @@ function ScopeAgents({ access, data, policy, team }: {
         settings={settings}
         everyone={data.everyone.settings}
         teams={team ? [] : data.teams.filter(hasTeamRecord)}
+        area={area}
         editable={editable}
         onChange={(next) => { setSaveError(null); setDraft(next); }}
       />
@@ -382,11 +405,15 @@ const EDITOR_GROUPS: readonly { label: string; sections: readonly AgentPermissio
   { label: "Skills and MCP servers", sections: ["extensions"] },
 ];
 
+const BROWSER_GROUPS: readonly { label: string; sections: readonly AgentPermissionSection[] }[] = [
+  { label: "Websites", sections: ["web"] },
+];
+
 /** One line per row, in the words people use (DESIGN.md C3); the full detail stays in the type's description. */
 const ROW_COPY: Record<string, string> = {
   commands: "Commands the agent runs in the terminal, like npm test",
   fileEdits: "Create, change and delete files in the member's folders",
-  websites: "Pages the agent opens while it works",
+  websites: "Pages the agent fetches and the built-in browser opens",
   webSearch: "Look things up with a web search",
   localSkills: "Skills installed on the member's computer",
   localMcpServers: "MCP servers the member added themselves",
@@ -394,7 +421,7 @@ const ROW_COPY: Record<string, string> = {
 
 const PATTERN_NOUN: Record<string, string> = { website: "site" };
 
-export function AgentPermissionsEditor({ scopeId, team, settings, everyone, teams, editable, onChange }: {
+export function AgentPermissionsEditor({ scopeId, team, settings, everyone, teams, area = "all", editable, onChange }: {
   scopeId: AgentPermissionScopeId;
   /** The team's name, or null when editing Everyone's. */
   team: string | null;
@@ -402,6 +429,7 @@ export function AgentPermissionsEditor({ scopeId, team, settings, everyone, team
   everyone: AgentPermissionSettings;
   /** Teams with their own saved changes, for Everyone's status lane. */
   teams: AgentPermissionPolicy[];
+  area?: AgentPermissionsArea;
   editable: boolean;
   onChange: (settings: AgentPermissionSettings) => void;
 }) {
@@ -410,10 +438,13 @@ export function AgentPermissionsEditor({ scopeId, team, settings, everyone, team
   return (
     <div className="min-w-0" data-testid="agent-permissions-editor" data-scope={scopeId}>
       <div className="divide-y divide-gray-100 rounded-2xl border border-gray-100 bg-white">
-        {EDITOR_GROUPS.map((group) => (
+        {(area === "browser" ? BROWSER_GROUPS : EDITOR_GROUPS).map((group) => ({
+          label: group.label,
+          definitions: agentPermissionDefinitions.filter((definition) => group.sections.includes(definition.section) && inArea(area, definition.key)),
+        })).filter((group) => group.definitions.length > 0).map((group) => (
           <div key={group.label} className="pb-1">
             <h3 className="px-5 pb-1 pt-3 text-[12px] font-medium text-gray-500">{group.label}</h3>
-            {agentPermissionDefinitions.filter((definition) => group.sections.includes(definition.section)).map((definition) => {
+            {group.definitions.map((definition) => {
               const changedBy = teams.filter((policy) => normalizeAgentPermissionSettings(policy.settings)[definition.key] !== undefined);
               return (
                 <PermissionRow
@@ -432,7 +463,7 @@ export function AgentPermissionsEditor({ scopeId, team, settings, everyone, team
           </div>
         ))}
       </div>
-      <TryRequest everyone={team === null ? settings : everyone} team={team === null ? null : { name: team, settings }} />
+      <TryRequest area={area} everyone={team === null ? settings : everyone} team={team === null ? null : { name: team, settings }} />
     </div>
   );
 }
@@ -704,10 +735,14 @@ const TRY_KINDS: readonly { action: AgentPermissionAction; label: string; placeh
   { action: "mcp", label: "Local MCP server", placeholder: "issue-tracker" },
 ];
 
-function TryRequest({ everyone, team }: { everyone: AgentPermissionSettings; team: { name: string; settings: AgentPermissionSettings } | null }) {
-  const [action, setAction] = useState<AgentPermissionAction>("shell");
+function TryRequest({ area, everyone, team }: { area: AgentPermissionsArea; everyone: AgentPermissionSettings; team: { name: string; settings: AgentPermissionSettings } | null }) {
+  const kinds = TRY_KINDS.filter((entry) => {
+    const key = agentPermissionDefinitions.find((definition) => definition.action === entry.action)?.key;
+    return key === undefined || inArea(area, key);
+  });
+  const [action, setAction] = useState<AgentPermissionAction>(kinds[0]?.action ?? "shell");
   const [value, setValue] = useState("");
-  const kind = TRY_KINDS.find((entry) => entry.action === action);
+  const kind = kinds.find((entry) => entry.action === action);
   const resource = action === "webfetch" && value.trim() && !/^[a-z][a-z0-9+.-]*:\/\//i.test(value.trim()) ? `https://${value.trim()}` : value.trim();
   const result = resource
     ? decideAgentPermission(resolveAgentPermissionRules({
@@ -726,11 +761,13 @@ function TryRequest({ everyone, team }: { everyone: AgentPermissionSettings; tea
     <div className="mt-4 rounded-xl border border-gray-200 bg-white px-4 py-3" data-testid="agent-permission-try">
       <div className="flex flex-wrap items-center gap-2">
         <span className="mr-1 text-[13px] font-medium text-gray-900">Try a request</span>
-        <div className="w-[170px]">
-          <DenSelect aria-label="Request type" value={action} onChange={(event) => setAction(TRY_KINDS.find((entry) => entry.action === event.target.value)?.action ?? "shell")}>
-            {TRY_KINDS.map((entry) => <option key={entry.action} value={entry.action}>{entry.label}</option>)}
-          </DenSelect>
-        </div>
+        {kinds.length > 1 ? (
+          <div className="w-[170px]">
+            <DenSelect aria-label="Request type" value={action} onChange={(event) => setAction(kinds.find((entry) => entry.action === event.target.value)?.action ?? "shell")}>
+              {kinds.map((entry) => <option key={entry.action} value={entry.action}>{entry.label}</option>)}
+            </DenSelect>
+          </div>
+        ) : null}
         <DenInput
           aria-label="Request to try"
           data-testid="agent-permission-try-input"

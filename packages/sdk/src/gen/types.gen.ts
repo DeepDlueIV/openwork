@@ -180,7 +180,8 @@ export type AdminFeature = {
     | "backgroundShellTasks"
     | "orgDefaultModel"
     | "gatewayProviderUsageLimits"
-    | "stableInstallLinks";
+    | "stableInstallLinks"
+    | "teamPageTabs";
   label: string;
   description: string;
   since: string;
@@ -237,6 +238,7 @@ export type AdminOrganizationsPageResponse = {
       orgDefaultModel: boolean;
       gatewayProviderUsageLimits: boolean;
       stableInstallLinks: boolean;
+      teamPageTabs: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -402,6 +404,15 @@ export type AdminOrganizationsPageResponse = {
         overrideApplies: boolean;
       };
       stableInstallLinks: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      teamPageTabs: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -491,6 +502,7 @@ export type AdminOverviewResponse = {
       orgDefaultModel: boolean;
       gatewayProviderUsageLimits: boolean;
       stableInstallLinks: boolean;
+      teamPageTabs: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -656,6 +668,15 @@ export type AdminOverviewResponse = {
         overrideApplies: boolean;
       };
       stableInstallLinks: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      teamPageTabs: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6467,6 +6488,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       orgDefaultModel: boolean;
       gatewayProviderUsageLimits: boolean;
       stableInstallLinks: boolean;
+      teamPageTabs: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -6632,6 +6654,15 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       stableInstallLinks: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      teamPageTabs: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6709,6 +6740,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       orgDefaultModel: boolean;
       gatewayProviderUsageLimits: boolean;
       stableInstallLinks: boolean;
+      teamPageTabs: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -6874,6 +6906,15 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       stableInstallLinks: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      teamPageTabs: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;

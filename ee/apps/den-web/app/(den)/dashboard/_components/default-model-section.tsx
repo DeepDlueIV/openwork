@@ -244,12 +244,12 @@ function teamCountLabel(count: number): string {
 }
 
 /** Org settings › Default model: the model new desktop chats start with, for everyone. */
-export function OrgDefaultModelSection({ canManage }: { canManage: boolean }) {
+export function OrgDefaultModelSection({ canManage, embedded = false }: { canManage: boolean; /** Inside a page section that has its own spacing (Everyone › Models). */ embedded?: boolean }) {
   const orgId = useOrgDashboard().orgId ?? "";
   const settings = useDefaultModelSettings(orgId, true);
   const overriding = settings.data?.teams.filter((team) => team.model !== null).length ?? 0;
   return (
-    <section className="mt-6 grid gap-3" aria-label="Default model" data-testid="org-default-model-section">
+    <section className={embedded ? "grid gap-3" : "mt-6 grid gap-3"} aria-label="Default model" data-testid="org-default-model-section">
       <DefaultModelPicker
         scope={{ kind: "organization" }}
         label="Default model"
@@ -272,7 +272,7 @@ function conflictLine(count: number): string {
 }
 
 /** A team's Access tab › Default model: use the organization default or pick the team's own. */
-export function TeamDefaultModelSection({ teamId, canManage }: { teamId: string; canManage: boolean }) {
+export function TeamDefaultModelSection({ teamId, canManage, embedded = false }: { teamId: string; canManage: boolean; /** Under a section title of the page's own (the team's Models tab). */ embedded?: boolean }) {
   const orgId = useOrgDashboard().orgId ?? "";
   const settings = useDefaultModelSettings(orgId, true);
   const options = useDefaultModelOptions(orgId, true);
@@ -281,8 +281,8 @@ export function TeamDefaultModelSection({ teamId, canManage }: { teamId: string;
   const orgDefaultOption = findOption(options.data, orgDefault);
   const overridden = Boolean(team?.model);
   return (
-    <section className="mb-8 grid gap-3" aria-labelledby="team-default-model-heading" data-testid="team-default-model-section">
-      <h2 id="team-default-model-heading" className="text-lg font-semibold text-gray-950">Default model</h2>
+    <section className={embedded ? "grid gap-3" : "mb-8 grid gap-3"} aria-label={embedded ? "Default model" : undefined} aria-labelledby={embedded ? undefined : "team-default-model-heading"} data-testid="team-default-model-section">
+      {embedded ? null : <h2 id="team-default-model-heading" className="text-lg font-semibold text-gray-950">Default model</h2>}
       <DefaultModelPicker
         scope={{ kind: "team", teamId }}
         label="New desktop chats start on"

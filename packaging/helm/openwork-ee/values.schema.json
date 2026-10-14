@@ -198,6 +198,16 @@
               ],
               "description": "Plain install links: Download and Copy install link share the normal install page address instead of a one-off link. Teammates sign in to download; links shared earlier keep working. Renders DEN_FEATURE_STABLE_INSTALL_LINKS."
             },
+            "teamPageTabs": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Team page: Browser and Models tabs: Each team's page, and Everyone's, gets a Browser tab for the pages agents and the built-in browser can open, and a Models tab with the AI providers the team can use, its spend limits and its default model. Renders DEN_FEATURE_TEAM_PAGE_TABS."
+            },
             "gatewayDashboard": {
               "enum": [
                 "",

@@ -2,16 +2,17 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { ArrowLeft, ShieldCheck, SquareTerminal } from "lucide-react";
+import { ArrowLeft, Compass, Layers, ShieldCheck, SquareTerminal } from "lucide-react";
 import { type TabItem, UnderlineTabs } from "../../_components/ui/tabs";
 import { getMembersTeamsRoute, getOrgAccessFlags, getPermissionSetRoute, orgFeatureEnabled } from "../../_lib/den-org";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
 import { IconTile } from "./access-rows";
 import { AgentsPanel, agentsTabVisible } from "./agent-permissions-editor";
 import { ItemPanel, ItemRow } from "./item-list";
+import { ModelsPanel, modelsTabVisible } from "./team-models-panel";
 import { usePermissionSets } from "./permissions-data";
 
-export type EveryoneTab = "role" | "agents";
+export type EveryoneTab = "role" | "agents" | "browser" | "models";
 
 /**
  * Members › Teams › Everyone: every member, including people in no team.
@@ -23,6 +24,10 @@ export function EveryoneScreen({ initialTab }: { initialTab: EveryoneTab | null 
     ? getOrgAccessFlags(orgContext.currentMember.role, orgContext.currentMember.isOwner, orgContext.currentMember.permissions)
     : null;
   const showAgents = agentsTabVisible(orgContext);
+  // teamPageTabs: Browser and Models hold the organization's defaults, as each team's page does.
+  const pageTabs = orgContext ? orgFeatureEnabled(orgContext, "teamPageTabs") : false;
+  const showBrowser = pageTabs && showAgents;
+  const showModels = modelsTabVisible(orgContext);
   const [chosenTab, setChosenTab] = useState<EveryoneTab | null>(initialTab);
   // The tab is in the address, so a reload or a shared link opens it again.
   const chooseTab = (tab: EveryoneTab) => {
@@ -31,7 +36,10 @@ export function EveryoneScreen({ initialTab }: { initialTab: EveryoneTab | null 
     url.searchParams.set("tab", tab);
     window.history.replaceState(null, "", url);
   };
-  const activeTab: EveryoneTab = chosenTab === "agents" && showAgents ? "agents" : "role";
+  const activeTab: EveryoneTab = chosenTab === "agents" && showAgents ? "agents"
+    : chosenTab === "browser" && showBrowser ? "browser"
+      : chosenTab === "models" && showModels ? "models"
+        : "role";
   const memberCount = orgContext?.members.length ?? 0;
   const canViewSets = Boolean(orgContext && orgFeatureEnabled(orgContext, "permissions") && access?.canViewPermissions);
   const setsQuery = usePermissionSets(orgId, canViewSets);
@@ -39,6 +47,8 @@ export function EveryoneScreen({ initialTab }: { initialTab: EveryoneTab | null 
   const tabs: readonly TabItem<EveryoneTab>[] = [
     { value: "role", label: "Role", icon: ShieldCheck },
     ...(showAgents ? [{ value: "agents" as const, label: "Agents", icon: SquareTerminal }] : []),
+    ...(showBrowser ? [{ value: "browser" as const, label: "Browser", icon: Compass }] : []),
+    ...(showModels ? [{ value: "models" as const, label: "Models", icon: Layers }] : []),
   ];
 
   return (
@@ -76,9 +86,17 @@ export function EveryoneScreen({ initialTab }: { initialTab: EveryoneTab | null 
               />
             </ItemPanel>
           </div>
+        ) : activeTab === "browser" ? (
+          <div role="tabpanel" aria-label="Browser">
+            <AgentsPanel team={null} area="browser" />
+          </div>
+        ) : activeTab === "models" ? (
+          <div role="tabpanel" aria-label="Models">
+            <ModelsPanel team={null} />
+          </div>
         ) : (
           <div role="tabpanel" aria-label="Agents">
-            <AgentsPanel team={null} />
+            <AgentsPanel team={null} area={showBrowser ? "agents" : "all"} />
           </div>
         )}
       </div>

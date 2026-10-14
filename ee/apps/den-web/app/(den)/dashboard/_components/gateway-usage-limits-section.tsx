@@ -244,6 +244,36 @@ export function providerLimitLabel(providerId: string | null | undefined, provid
   return providers.find((provider) => provider.id === providerId)?.name ?? "Removed provider";
 }
 
+/** One spend limit: who it applies to, its provider, amounts, what happens at the limit, and Edit. */
+export function GatewayLimitRow({ policy, orgSlug, teams, members, providerColumn, providerLimits, providers, canEdit = true }: {
+  policy: GatewayUsageLimitPolicy;
+  orgSlug: OrgSlug;
+  providerColumn: boolean;
+  providerLimits: boolean;
+  providers: { id: string; name: string }[] | undefined;
+  canEdit?: boolean;
+} & Directory) {
+  const who = policyWho(policy, teams, members);
+  return (
+    <li className="flex items-center gap-3 px-4 py-3" data-testid="gateway-limit-row" data-policy-id={policy.id}>
+      <LimitIcon policy={policy} />
+      <span className="flex min-w-0 flex-[1.2] flex-col">
+        <span className="truncate text-[13px] font-medium text-gray-900">{policy.name}</span>
+        <span className="truncate text-[12px] text-gray-500">{!who ? "Not applied to anyone yet" : who === policy.name ? targetKind(policy) : who}</span>
+      </span>
+      {providerColumn ? (
+        <span className="flex w-36 shrink-0 flex-col" data-testid="gateway-limit-provider-label">
+          <span className="truncate text-[12px] text-gray-700">{providerLimitLabel(policy.providerId, providers)}</span>
+          {policy.providerId && !providerLimits ? <span className="text-[11px] text-gray-500">Not enforced while off</span> : null}
+        </span>
+      ) : null}
+      <span className="min-w-0 flex-1 text-[13px] tabular-nums text-gray-700">{describeLimitAmounts(policy)} each</span>
+      <span className="w-28 shrink-0 text-[12px] text-gray-600">{policy.hardLimit ? "Pauses them" : "Only warns"}</span>
+      {canEdit ? <Link href={getAiGatewayLimitRoute(orgSlug, policy.id)} aria-label={`Edit ${policy.name}`} data-testid="gateway-limit-edit" className={buttonVariants({ variant: "secondary", size: "sm" })}>Edit</Link> : null}
+    </li>
+  );
+}
+
 export function GatewayUsageLimitsSection({ orgId, orgSlug, teams, members, providerLimits = false }: { orgId: string; orgSlug: OrgSlug; providerLimits?: boolean } & Directory) {
   const policies = useGatewayPolicies(orgId);
   const searchParams = useSearchParams();
@@ -278,27 +308,9 @@ export function GatewayUsageLimitsSection({ orgId, orgSlug, teams, members, prov
             <Link href={getNewAiGatewayLimitRoute(orgSlug)} className={buttonVariants({ variant: "primary", size: "sm" })} data-testid="gateway-limit-new">New limit</Link>
           </div>
           <ul className="divide-y divide-gray-100 overflow-hidden rounded-[12px] border border-gray-100 bg-white" aria-label="Spend limits">
-            {active.map((policy) => {
-              const who = policyWho(policy, teams, members);
-              return (
-                <li key={policy.id} className="flex items-center gap-3 px-4 py-3" data-testid="gateway-limit-row" data-policy-id={policy.id}>
-                  <LimitIcon policy={policy} />
-                  <span className="flex min-w-0 flex-[1.2] flex-col">
-                    <span className="truncate text-[13px] font-medium text-gray-900">{policy.name}</span>
-                    <span className="truncate text-[12px] text-gray-500">{!who ? "Not applied to anyone yet" : who === policy.name ? targetKind(policy) : who}</span>
-                  </span>
-                  {hasProviderLimits ? (
-                    <span className="flex w-36 shrink-0 flex-col" data-testid="gateway-limit-provider-label">
-                      <span className="truncate text-[12px] text-gray-700">{providerLimitLabel(policy.providerId, providers.data)}</span>
-                      {policy.providerId && !providerLimits ? <span className="text-[11px] text-gray-500">Not enforced while off</span> : null}
-                    </span>
-                  ) : null}
-                  <span className="min-w-0 flex-1 text-[13px] tabular-nums text-gray-700">{describeLimitAmounts(policy)} each</span>
-                  <span className="w-28 shrink-0 text-[12px] text-gray-600">{policy.hardLimit ? "Pauses them" : "Only warns"}</span>
-                  <Link href={getAiGatewayLimitRoute(orgSlug, policy.id)} aria-label={`Edit ${policy.name}`} data-testid="gateway-limit-edit" className={buttonVariants({ variant: "secondary", size: "sm" })}>Edit</Link>
-                </li>
-              );
-            })}
+            {active.map((policy) => (
+              <GatewayLimitRow key={policy.id} policy={policy} orgSlug={orgSlug} teams={teams} members={members} providerColumn={hasProviderLimits} providerLimits={providerLimits} providers={providers.data} />
+            ))}
           </ul>
           <PersonLookup orgId={orgId} orgSlug={orgSlug} />
         </>

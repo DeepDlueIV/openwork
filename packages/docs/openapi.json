@@ -857,7 +857,8 @@
               "backgroundShellTasks",
               "orgDefaultModel",
               "gatewayProviderUsageLimits",
-              "stableInstallLinks"
+              "stableInstallLinks",
+              "teamPageTabs"
             ]
           },
           "label": {
@@ -1086,6 +1087,9 @@
                     "stableInstallLinks": {
                       "type": "boolean"
                     },
+                    "teamPageTabs": {
+                      "type": "boolean"
+                    },
                     "gatewayDashboard": {
                       "type": "boolean",
                       "const": true,
@@ -1112,6 +1116,7 @@
                     "orgDefaultModel",
                     "gatewayProviderUsageLimits",
                     "stableInstallLinks",
+                    "teamPageTabs",
                     "gatewayDashboard"
                   ]
                 },
@@ -2125,6 +2130,62 @@
                         "override",
                         "overrideApplies"
                       ]
+                    },
+                    "teamPageTabs": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
                     }
                   },
                   "required": [
@@ -2145,7 +2206,8 @@
                     "backgroundShellTasks",
                     "orgDefaultModel",
                     "gatewayProviderUsageLimits",
-                    "stableInstallLinks"
+                    "stableInstallLinks",
+                    "teamPageTabs"
                   ],
                   "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
                 }
@@ -2573,6 +2635,9 @@
                     "stableInstallLinks": {
                       "type": "boolean"
                     },
+                    "teamPageTabs": {
+                      "type": "boolean"
+                    },
                     "gatewayDashboard": {
                       "type": "boolean",
                       "const": true,
@@ -2599,6 +2664,7 @@
                     "orgDefaultModel",
                     "gatewayProviderUsageLimits",
                     "stableInstallLinks",
+                    "teamPageTabs",
                     "gatewayDashboard"
                   ]
                 },
@@ -3612,6 +3678,62 @@
                         "override",
                         "overrideApplies"
                       ]
+                    },
+                    "teamPageTabs": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
                     }
                   },
                   "required": [
@@ -3632,7 +3754,8 @@
                     "backgroundShellTasks",
                     "orgDefaultModel",
                     "gatewayProviderUsageLimits",
-                    "stableInstallLinks"
+                    "stableInstallLinks",
+                    "teamPageTabs"
                   ],
                   "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
                 }
@@ -26620,6 +26743,9 @@
                         "stableInstallLinks": {
                           "type": "boolean"
                         },
+                        "teamPageTabs": {
+                          "type": "boolean"
+                        },
                         "gatewayDashboard": {
                           "type": "boolean",
                           "const": true,
@@ -26646,6 +26772,7 @@
                         "orgDefaultModel",
                         "gatewayProviderUsageLimits",
                         "stableInstallLinks",
+                        "teamPageTabs",
                         "gatewayDashboard"
                       ]
                     },
@@ -27659,6 +27786,62 @@
                             "override",
                             "overrideApplies"
                           ]
+                        },
+                        "teamPageTabs": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
                         }
                       },
                       "required": [
@@ -27679,7 +27862,8 @@
                         "backgroundShellTasks",
                         "orgDefaultModel",
                         "gatewayProviderUsageLimits",
-                        "stableInstallLinks"
+                        "stableInstallLinks",
+                        "teamPageTabs"
                       ],
                       "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
                     }
@@ -27852,6 +28036,9 @@
                         "stableInstallLinks": {
                           "type": "boolean"
                         },
+                        "teamPageTabs": {
+                          "type": "boolean"
+                        },
                         "gatewayDashboard": {
                           "type": "boolean",
                           "const": true,
@@ -27878,6 +28065,7 @@
                         "orgDefaultModel",
                         "gatewayProviderUsageLimits",
                         "stableInstallLinks",
+                        "teamPageTabs",
                         "gatewayDashboard"
                       ]
                     },
@@ -28891,6 +29079,62 @@
                             "override",
                             "overrideApplies"
                           ]
+                        },
+                        "teamPageTabs": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
                         }
                       },
                       "required": [
@@ -28911,7 +29155,8 @@
                         "backgroundShellTasks",
                         "orgDefaultModel",
                         "gatewayProviderUsageLimits",
-                        "stableInstallLinks"
+                        "stableInstallLinks",
+                        "teamPageTabs"
                       ],
                       "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
                     }

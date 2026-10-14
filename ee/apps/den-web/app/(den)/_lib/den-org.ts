@@ -717,6 +717,11 @@ export function getEveryoneAgentsRoute(orgSlug?: string | null): string {
   return `${getEveryoneRoute(orgSlug)}?tab=agents`;
 }
 
+/** Everyone's Browser tab: the pages agents and the built-in browser can open, for every member. */
+export function getEveryoneBrowserRoute(orgSlug?: string | null): string {
+  return `${getEveryoneRoute(orgSlug)}?tab=browser`;
+}
+
 export function getMembersTeamsRoute(orgSlug?: string | null): string {
   return `${getMembersRoute(orgSlug)}?tab=teams`;
 }

@@ -5,3 +5,5 @@ terraform.tfvars
 .terraform.lock.hcl
 *.tfplan
 tfplan
+*.auto.tfvars
+*.auto.tfvars.json

@@ -26,13 +26,13 @@ The OpenWork chart manages Deployments, Services, ConfigMaps, Secret references,
 
 For exact CLI commands, values, DNS/TLS choices, migration troubleshooting, verification, and cleanup, follow the [AWS EKS operator runbook](https://github.com/different-ai/openwork/blob/dev/docs/aws-eks-helm.md).
 
-## ECS Fargate with Terraform (draft)
+## ECS Fargate with Terraform
 
-If you run containers on ECS Fargate rather than Kubernetes, a draft Terraform module deploys the same two services without a cluster: Den API and Den web as Fargate services behind an HTTPS Application Load Balancer (a new one, or your existing ALB or HTTPS listener), RDS for MySQL, optional ElastiCache for Redis, and secrets in AWS Secrets Manager. Database migrations run before Den API starts on each deploy.
+If you run containers on ECS Fargate rather than Kubernetes, a Terraform module deploys the same two services without a cluster: Den API and Den web as Fargate services behind an HTTPS Application Load Balancer (a new one, or your existing ALB or HTTPS listener), RDS for MySQL, optional ElastiCache for Redis, and secrets in AWS Secrets Manager. Database migrations run before Den API starts on each deploy.
 
-<Warning>
-  The module is an early draft. It has been applied end to end in a test account, but inputs may change. Pin it to a commit, and open an issue or pull request for anything that fails in your environment.
-</Warning>
+<Note>
+  The core deployment is tested end to end in an AWS test account on releases 0.18.57 and 0.18.58: tasks in private subnets behind a NAT gateway, two Den API tasks, an upgrade from one release to the next with data kept, and OpenWork Desktop signing in and running a chat. Member invites were delivered through Amazon SES SMTP. The headless runner, Workbot and Slack options, and a certificate created through Route 53, have not been applied live yet and are still a draft. The [module README](https://github.com/different-ai/openwork/tree/dev/infra/terraform/modules/openwork-aws-ecs) lists each tested scenario. Pin the module to a commit, and open an issue or pull request for anything that fails in your environment.
+</Note>
 
 You provide a VPC, two hostnames (the web host and `api.` plus the web host), and an ACM certificate or a Route 53 zone the module can use to create one. HTTPS is required: Den API does not start with a plain-HTTP public URL. Email is optional for setup and sign-in, but member invites and password reset need SMTP or Resend.
 

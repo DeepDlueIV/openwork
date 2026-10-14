@@ -54,3 +54,34 @@ variable "wait_for_steady_state" {
   type        = bool
   default     = false
 }
+
+variable "private_subnets" {
+  description = "Run the tasks in private subnets behind a NAT gateway (about $1/day more) instead of public subnets with public IPs."
+  type        = bool
+  default     = false
+}
+
+variable "den_api_desired_count" {
+  description = "Number of den-api tasks."
+  type        = number
+  default     = 1
+}
+
+variable "email_from" {
+  description = "From address for invites and password resets, for example \"OpenWork <no-reply@example.com>\"."
+  type        = string
+  default     = ""
+}
+
+variable "smtp" {
+  description = "SMTP relay such as Amazon SES (host, port, username, password). Empty host disables email."
+  type = object({
+    host     = optional(string, "")
+    port     = optional(number, 587)
+    username = optional(string, "")
+    password = optional(string, "")
+    secure   = optional(bool, false)
+  })
+  default   = {}
+  sensitive = true
+}

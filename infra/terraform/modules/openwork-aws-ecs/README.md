@@ -1,4 +1,4 @@
-# openwork-aws-ecs (Terraform, draft)
+# openwork-aws-ecs (Terraform)
 
 Runs a private, single-organization OpenWork control plane (Den) on AWS
 **ECS Fargate**, without Kubernetes:
@@ -22,13 +22,26 @@ It sets the same environment the [`openwork-ee` Helm chart](../../../../packagin
 sets on Kubernetes, so the chart's README and `ee/apps/den-api/.env.example`
 document every setting you can add through `extra_environment`.
 
-> **Status: draft.** Applied end to end in an AWS test account with
-> `examples/complete` (release 0.18.54): HTTPS on both hosts, migrations,
-> the one-time `/setup` administrator flow, sign-in, and the optional Redis.
-> OpenWork Web was applied end to end the same way: sign-in through the
-> gateway, a Daytona sandbox per member, and a chat that edits files.
-> Not yet exercised: private subnets behind NAT, multiple den-api replicas,
-> SMTP/SES delivery, upgrades across releases.
+> **Status: tested for the core deployment (Den API, Den web, RDS, ALB);
+> the headless runner, Workbot and Slack are still draft.** Pin the module
+> to a commit and report anything that fails in your environment.
+
+What has been applied end to end in an AWS test account with
+`examples/complete`, and what has not:
+
+| Scenario | Result | Release | Date |
+| --- | --- | --- | --- |
+| HTTPS on both hosts, migrations, `/setup` first administrator, sign-in, optional Redis | Passed | 0.18.54 | 2026-09 |
+| OpenWork Web: sign-in through the gateway, a Daytona sandbox per member, a chat that edits files | Passed | 0.18.54 | 2026-09 |
+| Tasks in private subnets behind a NAT gateway (`private_subnets = true` in the example) | Passed | 0.18.57 | 2026-10-13 |
+| Two den-api tasks (`den_api.desired_count = 2`): both healthy, one session served by both, no Redis | Passed | 0.18.57, 0.18.58 | 2026-10-13 |
+| Upgrade 0.18.57 → 0.18.58 with two den-api tasks: migrations ran, users and sessions kept | Passed | 0.18.57 → 0.18.58 | 2026-10-13 |
+| OpenWork Desktop signs in to the deployment and runs a chat | Passed | 0.18.58 | 2026-10-13 |
+| Email through Amazon SES SMTP (member invite delivered) | Passed | 0.18.58 | 2026-10-13 |
+| Certificate created and validated by the module in a Route 53 zone (`route53_zone_id`) | Not run live (offline tests only) | | |
+| Existing ECS cluster, ALB or HTTPS listener | Not run live (offline tests only) | | |
+| Headless runner, Workbot, Slack assistant | Not run live | | |
+| Upgrades across more than one release, rollback | Not run | | |
 
 ## Before you start
 
@@ -89,7 +102,14 @@ After `terraform apply`:
    finds the API from there.
 
 `examples/complete` is a disposable end-to-end stack that creates its own VPC
-(no NAT gateway) and uses a certificate you provide.
+and uses a certificate you provide. By default the tasks run in public
+subnets with public IPs; set `private_subnets = true` to run them in private
+subnets behind a NAT gateway, as in production. `den_api_desired_count`,
+`email_from` and `smtp` are passed through to the module.
+
+Without a Route 53 zone, import or request an ACM certificate for both
+hostnames yourself, pass it as `certificate_arn`, and point both hostnames
+at the `alb_dns_name` output (CNAME) at your DNS provider.
 
 ## Notes
 
@@ -124,9 +144,11 @@ After `terraform apply`:
   ones drain, so a crash or failed migration fails the apply. The default
   (`false`) returns as soon as ECS accepts the update.
 - **Migrations** run in each den-api task before the app starts, like the Helm
-  chart's pre-upgrade Job. They are idempotent but not locked, so keep
-  `den_api.desired_count = 1` until you need more, and scale after a deploy
-  settles.
+  chart's pre-upgrade Job. They are idempotent but not locked: every new task
+  runs them, so with `den_api.desired_count = 2` two tasks run them at the
+  same time. A fresh install and the 0.18.57 → 0.18.58 upgrade both
+  succeeded this way. For an upgrade with large data migrations, scale to one
+  task first, apply, then scale back.
 - **Secrets** (`DATABASE_URL`, `BETTER_AUTH_SECRET`, `DEN_DB_ENCRYPTION_KEY`,
   the setup code, SMTP/Resend/Redis) live in Secrets Manager and in Terraform
   state. Use an encrypted remote backend. Losing `DEN_DB_ENCRYPTION_KEY` makes

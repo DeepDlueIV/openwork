@@ -106,7 +106,11 @@ After `terraform apply`:
    screen) to `web_url`. The desktop reads `web_url/api/runtime-config` and
    finds the API from there.
 
-`examples/complete` is a disposable stack on run.app URLs. It can also create
+`examples/complete` is a disposable stack on run.app URLs. It commits a
+Terraform `.terraform.lock.hcl` (google 8.7.0, random 3.9.1, with checksums),
+so `terraform init` installs exactly those provider builds; commit your own
+lockfile in your root module too. (OpenTofu records its own registry's
+entries: run `tofu init` once and commit the result.) It can also create
 a VPC and pass it in as an existing network (`create_network = true`) and test
 the load balancer without a domain of your own (`sslip_domain = true`).
 

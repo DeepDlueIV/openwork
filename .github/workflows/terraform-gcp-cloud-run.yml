@@ -24,7 +24,7 @@ jobs:
         working-directory: infra/terraform/modules/openwork-gcp-cloud-run
         run: |
           terraform fmt -check -recursive
-          terraform init -backend=false -input=false
+          terraform init -backend=false -input=false -lockfile=readonly
           terraform validate
           terraform test
-          (cd examples/complete && terraform init -backend=false -input=false && terraform validate)
+          (cd examples/complete && terraform init -backend=false -input=false -lockfile=readonly && terraform validate)

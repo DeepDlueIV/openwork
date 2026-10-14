@@ -641,23 +641,31 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
       }
       throw new Error(`OpenWork did not switch to ${theme}`);
     },
-    /** Den's log so far; pass its length to appServerRequests. */
+    /** Den's log so far; pass it to denStages or appServerRequests. */
     denLog: () => den.apiLog(),
-    /** Requests Den's App servers handled since a denLog() snapshot, by MCP method, once at least `atLeast` tools/call requests finished. */
-    async appServerRequests(since: string, atLeast = 1) {
-      const methods = async () => (await den.apiLog()).slice(since.length).split("\n").flatMap(line => {
+    /**
+     * Den's numeric App timing stages since a denLog() snapshot (for example
+     * "den.app-server.tools/call"), once at least `atLeast` App-server tools/call requests finished.
+     */
+    async denStages(since: string, atLeast = 1) {
+      const stages = async () => (await den.apiLog()).slice(since.length).split("\n").flatMap(line => {
         const marker = line.indexOf("MCP_APP_TIMING ");
         if (marker < 0) return [];
         const stage = record(JSON.parse(line.slice(marker + 15))).stage;
-        return typeof stage === "string" && stage.startsWith("den.app-server.") ? [stage.slice("den.app-server.".length)] : [];
+        // Den logs each measure under the shared "openwork.mcp-app." prefix.
+        return typeof stage === "string" ? [stage.replace(/^openwork\.mcp-app\./, "")] : [];
       });
       const deadline = Date.now() + 30_000;
-      let seen = await methods();
-      while (seen.filter(method => method === "tools/call").length < atLeast && Date.now() < deadline) {
+      let seen = await stages();
+      while (seen.filter(stage => stage === "den.app-server.tools/call").length < atLeast && Date.now() < deadline) {
         await new Promise(resolve => setTimeout(resolve, 250));
-        seen = await methods();
+        seen = await stages();
       }
       return seen;
+    },
+    /** Requests Den's App servers handled since a denLog() snapshot, by MCP method. */
+    async appServerRequests(since: string, atLeast = 1) {
+      return (await this.denStages(since, atLeast)).flatMap(stage => stage.startsWith("den.app-server.") ? [stage.slice("den.app-server.".length)] : []);
     },
     async prepareLifecycleTurn(prompt: string, kind: "edit" | "failure" | "interrupt" | "search" | "guided") {
       const catalog = rows(record((await seed.api(den.admin, "/v1/mcp-apps")).body).apps);

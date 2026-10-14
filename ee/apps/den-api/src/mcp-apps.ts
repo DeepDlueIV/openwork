@@ -28,7 +28,7 @@ import {
 import { db } from "./db.js"
 import { buildGeneratedMcpApp, type GeneratedArtifactViewBuildResult } from "./generated-artifact-view-builder.js"
 import type { McpMemberIdentity } from "./mcp/external-capabilities.js"
-import { buildMarketplaceCapabilityName, listAccessibleMarketplaceCapabilityReferences, parseMarketplaceCapabilityName } from "./mcp/marketplace-capabilities.js"
+import { buildMarketplaceCapabilityName, listAccessibleMarketplaceCapabilityReferences, listAccessibleMarketplaceCapabilityReferencesFor, parseMarketplaceCapabilityName } from "./mcp/marketplace-capabilities.js"
 import {
   PluginArchAuthorizationError,
   requirePluginArchResourceRole,
@@ -408,6 +408,12 @@ async function accessibleAppPlugins(input: McpAppAccessInput): Promise<Map<strin
   return apps
 }
 
+/** The Plugin through which the member reaches one App, checked for that App only. */
+async function accessibleAppPlugin(input: McpAppAccessInput & { appId: string }): Promise<string | undefined> {
+  const references = await timeMcpApp("den.app-access-check", () => listAccessibleMarketplaceCapabilityReferencesFor({ ...input, configObjectId: input.appId }))
+  return references.find((reference) => reference.objectType === "app")?.pluginId
+}
+
 /**
  * Apps the member may use, read without their compiled revisions: every
  * catalog, index, and search lookup would otherwise load each App's HTML.
@@ -482,12 +488,11 @@ async function accessibleRevisionUncached(input: McpAppAccessInput & { appId: st
   const organizationId = normalizeDenTypeId("organization", input.organizationId)
   // Read together: each is a database round trip on every App request. Nothing
   // from the App or its revision is used unless the member can reach its Plugin.
-  const [plugins, active, current] = await Promise.all([
-    accessibleAppPlugins(input),
+  const [pluginId, active, current] = await Promise.all([
+    accessibleAppPlugin(input),
     activeApp(organizationId, id),
     latestRevision(organizationId, id),
   ])
-  const pluginId = plugins.get(id)
   if (!pluginId) return notFound()
   if (!active) return notFound()
   const payload = current && compiledRevision(current)

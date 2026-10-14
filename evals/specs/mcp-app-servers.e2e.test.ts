@@ -440,6 +440,23 @@ chatTest("an owner follows App creation progress and opens the finished App besi
     evidence.recordAssertionEvidence("A follow-up App call reuses the open App's connection", `The second Calculate total click made ${requests.length} requests to ${appTitle}'s own MCP server (${requests.join(", ")}) and showed 42; before, every App tool call made 4 (initialize, its notification, tools/list, tools/call).`, requests.length === 2);
   });
 
+  await step("after: each request to an App's server checks access to that App alone, not the whole library", async () => {
+    if (!calculator) throw new Error(`${appTitle} is not open`);
+    const log = await world.denLog();
+    await calculator.click({ role: "button", label: "Calculate total" });
+    await calculator.see({ testId: "total" }, { text: "42", timeoutMs: 90_000 });
+    const stages = await world.denStages(log);
+    const requests = stages.filter(stage => stage.startsWith("den.app-server."));
+    const appChecks = stages.filter(stage => stage === "den.app-access-check").length;
+    const libraryScans = stages.filter(stage => stage === "den.marketplace-access-scan").length;
+    // Witness: the click reached the App's server, and each request checked access.
+    expect(requests).toContain("den.app-server.tools/call");
+    expect(appChecks).toBeGreaterThanOrEqual(1);
+    expect(libraryScans).toBe(0);
+    await user.screenshot();
+    evidence.recordAssertionEvidence("App requests check one App's access", `The Calculate total click made ${requests.length} requests to ${appTitle}'s server; Den checked access ${appChecks} times for this App alone and scanned the organization's whole library ${libraryScans} times. Before, every App request scanned the whole library.`, libraryScans === 0 && appChecks >= 1);
+  });
+
   await step("asked for the calculator again, the chat keeps one live copy and the earlier card points to it", async () => {
     await frame?.[Symbol.asyncDispose]();
     frame = undefined;

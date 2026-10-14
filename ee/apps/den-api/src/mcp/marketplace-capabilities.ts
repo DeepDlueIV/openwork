@@ -420,7 +420,8 @@ async function getActiveMember(organizationId: OrganizationId, member: McpMember
   return rows[0] ?? null
 }
 
-async function listActiveMarketplaceRows(organizationId: OrganizationId): Promise<MarketplaceCapabilityRow[]> {
+/** With configObjectId, the same rows for that one config object only. */
+async function listActiveMarketplaceRows(organizationId: OrganizationId, configObjectId?: ConfigObjectId): Promise<MarketplaceCapabilityRow[]> {
   const rows = await db
     .select({
       configObject: ConfigObjectTable,
@@ -445,6 +446,7 @@ async function listActiveMarketplaceRows(organizationId: OrganizationId): Promis
       eq(MarketplaceTable.id, MarketplacePluginTable.marketplaceId),
     )
     .where(and(
+      ...(configObjectId ? [eq(ConfigObjectTable.id, configObjectId)] : []),
       eq(ConfigObjectTable.organizationId, organizationId),
       eq(ConfigObjectTable.status, "active"),
       isNull(ConfigObjectTable.deletedAt),
@@ -463,7 +465,7 @@ async function listActiveMarketplaceRows(organizationId: OrganizationId): Promis
   return rows
 }
 
-async function listGrantOnlyRows(organizationId: OrganizationId): Promise<MarketplaceCapabilityRow[]> {
+async function listGrantOnlyRows(organizationId: OrganizationId, configObjectId?: ConfigObjectId): Promise<MarketplaceCapabilityRow[]> {
   const rows = await db
     .select({
       configObject: ConfigObjectTable,
@@ -479,6 +481,7 @@ async function listGrantOnlyRows(organizationId: OrganizationId): Promise<Market
       eq(PluginTable.id, PluginConfigObjectTable.pluginId),
     )
     .where(and(
+      ...(configObjectId ? [eq(ConfigObjectTable.id, configObjectId)] : []),
       eq(ConfigObjectTable.organizationId, organizationId),
       eq(ConfigObjectTable.status, "active"),
       isNull(ConfigObjectTable.deletedAt),
@@ -512,8 +515,10 @@ async function listGrantOnlyRows(organizationId: OrganizationId): Promise<Market
 /** Read once per request (search, skills and Apps all list them); each caller gets its own array. */
 async function listActiveCapabilityRows(organizationId: OrganizationId): Promise<MarketplaceCapabilityRow[]> {
   const rows = await requestRead(`active-capability-rows:${organizationId}`, async () => {
-    const marketplaceRows = await listActiveMarketplaceRows(organizationId)
-    const grantOnlyRows = await listGrantOnlyRows(organizationId)
+    const [marketplaceRows, grantOnlyRows] = await Promise.all([
+      listActiveMarketplaceRows(organizationId),
+      listGrantOnlyRows(organizationId),
+    ])
     return [...marketplaceRows, ...grantOnlyRows]
   })
   return [...rows]
@@ -673,18 +678,12 @@ async function filterVisibleRows(input: {
   organizationId: OrganizationId
   rows: MarketplaceCapabilityRow[]
 }): Promise<MarketplaceCapabilityRow[]> {
-  const configObjectGrantRows = await listConfigObjectGrants(
-    input.organizationId,
-    unique(input.rows.map((row) => row.configObject.id)),
-  )
-  const pluginGrantRows = await listPluginGrants(
-    input.organizationId,
-    unique(input.rows.map((row) => row.plugin.id)),
-  )
-  const marketplaceGrantRows = await listMarketplaceGrants(
-    input.organizationId,
-    unique(input.rows.flatMap((row) => row.marketplace ? [row.marketplace.id] : [])),
-  )
+  // Independent reads, so they run together.
+  const [configObjectGrantRows, pluginGrantRows, marketplaceGrantRows] = await Promise.all([
+    listConfigObjectGrants(input.organizationId, unique(input.rows.map((row) => row.configObject.id))),
+    listPluginGrants(input.organizationId, unique(input.rows.map((row) => row.plugin.id))),
+    listMarketplaceGrants(input.organizationId, unique(input.rows.flatMap((row) => row.marketplace ? [row.marketplace.id] : []))),
+  ])
   const configObjectGrants = groupGrants(configObjectGrantRows)
   const pluginGrants = groupGrants(pluginGrantRows)
   const marketplaceGrants = groupGrants(marketplaceGrantRows)
@@ -710,11 +709,45 @@ export async function listAccessibleMarketplaceCapabilityReferences(input: {
   const organizationId = normalizeDenTypeId("organization", input.organizationId)
   if (!(await getActiveMember(organizationId, input.member))) return []
 
-  const rows = await filterVisibleRows({
+  return accessibleReferences(await filterVisibleRows({
     organizationId,
     member: input.member,
     rows: await listActiveCapabilityRows(organizationId),
-  })
+  }))
+}
+
+/**
+ * The same references for one config object, such as one App: the same rows
+ * and visibility rules as the full list, read for that object only, so a
+ * request about one App does not scan the whole organization's library.
+ */
+export async function listAccessibleMarketplaceCapabilityReferencesFor(input: {
+  member: McpMemberIdentity | null
+  organizationId: string
+  configObjectId: string
+}): Promise<AccessibleMarketplaceCapabilityReference[]> {
+  if (!input.member) return []
+  const organizationId = normalizeDenTypeId("organization", input.organizationId)
+  let configObjectId: ConfigObjectId
+  try {
+    configObjectId = normalizeDenTypeId("configObject", input.configObjectId)
+  } catch {
+    return []
+  }
+  const [member, marketplaceRows, grantOnlyRows] = await Promise.all([
+    getActiveMember(organizationId, input.member),
+    listActiveMarketplaceRows(organizationId, configObjectId),
+    listGrantOnlyRows(organizationId, configObjectId),
+  ])
+  if (!member) return []
+  return accessibleReferences(await filterVisibleRows({
+    organizationId,
+    member: input.member,
+    rows: [...marketplaceRows, ...grantOnlyRows],
+  }))
+}
+
+function accessibleReferences(rows: MarketplaceCapabilityRow[]): AccessibleMarketplaceCapabilityReference[] {
   const references = new Map<string, AccessibleMarketplaceCapabilityReference>()
   for (const row of rows) {
     const marketplaceId = row.marketplace ? row.marketplace.id : null

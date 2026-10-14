@@ -117,7 +117,7 @@ test("a reviewer can choose a signed-out desktop without mistaking it for an ACM
       });
       expect(disconnected.status).toBe(503);
       expect(disconnected.headers.get("cache-control")).toContain("no-store");
-      expect(await disconnected.json()).toEqual({ error: "Freestyle is not connected. The review app owner can configure it." });
+      expect(await disconnected.json()).toEqual({ error: "Freestyle is not connected. The review app owner can connect it." });
       const crossSite = await fetch(endpoint, {
         method: "POST",
         headers: { origin: "https://unrelated.example", "content-type": "application/json" },

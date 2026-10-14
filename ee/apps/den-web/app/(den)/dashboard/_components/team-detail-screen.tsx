@@ -82,7 +82,15 @@ export function TeamDetailScreen({ teamId, initialTab = null }: { teamId: string
   const defaultModelOn = useDefaultModelFeatureOn();
   // agentPermissions: the team's Agents tab holds what it changes from Everyone.
   const showAgents = agentsTabVisible(orgContext);
-  const [chosenTab, setActiveTab] = useState<TeamDetailTab | null>(initialTab);
+  const [chosenTab, setChosenTab] = useState<TeamDetailTab | null>(initialTab);
+  // The Agents tab is in the address (?tab=agents), so a reload or a shared link opens it again.
+  const setActiveTab = (tab: TeamDetailTab) => {
+    setChosenTab(tab);
+    const url = new URL(window.location.href);
+    if (tab === "agents") url.searchParams.set("tab", "agents");
+    else url.searchParams.delete("tab");
+    window.history.replaceState(null, "", url);
+  };
   const activeTab: TeamDetailTab = chosenTab && (teamRoles || chosenTab !== "role") && (showAgents || chosenTab !== "agents") ? chosenTab : teamRoles ? "role" : "access";
   const accessQuery = useTeamPluginAccess(teamId);
   const revokeAccess = useRevokeTeamPluginAccess();

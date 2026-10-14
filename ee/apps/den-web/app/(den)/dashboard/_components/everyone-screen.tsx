@@ -24,6 +24,13 @@ export function EveryoneScreen({ initialTab }: { initialTab: EveryoneTab | null 
     : null;
   const showAgents = agentsTabVisible(orgContext);
   const [chosenTab, setChosenTab] = useState<EveryoneTab | null>(initialTab);
+  // The tab is in the address, so a reload or a shared link opens it again.
+  const chooseTab = (tab: EveryoneTab) => {
+    setChosenTab(tab);
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", tab);
+    window.history.replaceState(null, "", url);
+  };
   const activeTab: EveryoneTab = chosenTab === "agents" && showAgents ? "agents" : "role";
   const memberCount = orgContext?.members.length ?? 0;
   const canViewSets = Boolean(orgContext && orgFeatureEnabled(orgContext, "permissions") && access?.canViewPermissions);
@@ -53,7 +60,7 @@ export function EveryoneScreen({ initialTab }: { initialTab: EveryoneTab | null 
         </span>
       </header>
 
-      <UnderlineTabs className="mt-6" tabs={tabs} activeTab={activeTab} onChange={setChosenTab} />
+      <UnderlineTabs className="mt-6" tabs={tabs} activeTab={activeTab} onChange={chooseTab} />
 
       <div className="mt-6">
         {activeTab === "role" ? (

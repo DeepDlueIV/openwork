@@ -60,6 +60,13 @@ export const FEATURES = defineFeatures({
     deployments: everywhere,
     default: false,
   },
+  managedDeploymentsGcp: {
+    label: "GCP managed deployments",
+    description: "Organization admins approve OpenWork installations in their own Google Cloud project and track health and updates.",
+    since: "2026-10",
+    deployments: ["cloud"],
+    default: false,
+  },
   managedDeployments: {
     label: "Managed deployments",
     description: "Organization admins install OpenWork in their own cloud account (AWS first) and see its health and updates in OpenWork.",
@@ -112,6 +119,13 @@ export const FEATURES = defineFeatures({
   sharedRoles: {
     label: "Shared roles",
     description: "A custom role can be given to more than one team: Change role lists every role, each role's page lists its teams, and a role can be created before any team has it. Needs Team roles and Permissions.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
+  agentPermissions: {
+    label: "Agent permissions",
+    description: "Organization admins choose what agents can do on members' computers: run commands, edit files, open websites and use local skills and MCP servers, for everyone or per team.",
     since: "2026-10",
     deployments: everywhere,
     default: false,

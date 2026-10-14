@@ -95,10 +95,18 @@ async function titleState(app: Surface, title: string): Promise<TitleState> {
 describe.sequential("sidebar expansion and title continuity", () => {
 let selectedMode: SidebarMode = "overflow";
 // Register one fixture: repeated extensions accumulate worlds in Vitest 3.
+// "Show more" runs on the app in headless Chrome; the title-overflow case stays
+// on the desktop because it also checks the macOS titlebar inset.
 const test = spec.world(async seed => {
   const mode = selectedMode;
   if (mode === "overflow") return { mode, ...await sidebarOverflow(seed) };
   return { mode, ...await sidebarExpansion(seed, mode) };
+}, {
+  resources: {
+    surfaces: ["desktop", "appWeb"],
+    services: [],
+    nativeReason: "Collapsing the sidebar must line the pane up with the macOS window controls in the desktop titlebar.",
+  },
 });
 
 describe("title overflow", () => {
@@ -114,7 +122,7 @@ test("the sidebar title fade follows only the edges with hidden text", async ({ 
   expect(resting.maskImage).not.toBe("none");
   const observations: Record<string, unknown> = { resting };
 
-  await step("collapsing the macOS sidebar aligns the pane with the window controls, and reopening restores its inset", async () => {
+  await step("collapsing the macOS sidebar keeps its toggle clear of the window controls in the titlebar, and reopening restores the pane", async () => {
     await user.see({ text: world.longTitle });
     // Exercise the macOS titlebar layout even when the desktop host is Linux.
     const platformClasses = await seed.evalIn(world.app, () => (document.documentElement.className));
@@ -123,48 +131,58 @@ test("the sidebar title fade follows only the edges with hidden text", async ({ 
       document.documentElement.classList.remove('openwork-platform-linux', 'openwork-platform-windows');
       document.documentElement.classList.add('openwork-electron', 'openwork-platform-mac');
     });
+    // The session titlebar sits above the pane. While the sidebar is open its
+    // own titlebar holds the toggle; once collapsed, the session titlebar does.
     // TODO(primitive): probe.geometry should compare a pane and its visible titlebar trigger.
     const geometry = () => probe.eval(() => {
       const pane = document.querySelector<HTMLElement>('[data-session-pane]');
-      const header = pane?.querySelector('header');
-      const trigger = [...document.querySelectorAll<HTMLElement>('[data-sidebar="trigger"]')]
-        .find((element) => element.getBoundingClientRect().width > 0);
+      const header = document.querySelector<HTMLElement>('[data-session-header]');
       const sidebar = document.querySelector<HTMLElement>('[data-slot="sidebar"][data-state]');
-      if (!pane || !header || !trigger || !sidebar) return null;
+      if (!pane || !header || !sidebar) return null;
       const box = pane.getBoundingClientRect();
       const headerBox = header.getBoundingClientRect();
-      const triggerBox = trigger.getBoundingClientRect();
+      const trigger = header.querySelector<HTMLElement>('[data-sidebar-toggle="main"]');
+      const triggerBox = trigger && trigger.getBoundingClientRect().width > 0 ? trigger.getBoundingClientRect() : null;
       return {
-        isMac: document.documentElement.classList.contains('openwork-platform-mac'),
         state: sidebar.getAttribute('data-state'),
+        // The space the inline sidebar reserves; it animates to 0 when collapsed.
+        gap: document.querySelector('[data-slot="sidebar-gap"]')?.getBoundingClientRect().width ?? null,
         top: box.top,
         left: box.left,
-        centerOffset: Math.abs(headerBox.top + headerBox.height / 2 - triggerBox.top - triggerBox.height / 2),
+        headerBottom: headerBox.bottom,
+        windowControls: Number.parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--window-controls-left')) || 0,
+        triggerLeft: triggerBox ? triggerBox.left : null,
+        centerOffset: triggerBox ? Math.abs(headerBox.top + headerBox.height / 2 - triggerBox.top - triggerBox.height / 2) : null,
       };
     });
     const expanded = await geometry();
-    expect(expanded).toMatchObject({ state: "expanded", top: 8 });
-    if (!isRecord(expanded) || typeof expanded.isMac !== "boolean") throw new Error("Pane geometry was not readable.");
+    expect(expanded).toMatchObject({ state: "expanded", triggerLeft: null });
+    if (!isRecord(expanded) || typeof expanded.top !== "number" || typeof expanded.left !== "number"
+      || typeof expanded.headerBottom !== "number" || typeof expanded.windowControls !== "number") throw new Error("Pane geometry was not readable.");
+    // The pane starts directly below the session titlebar, and the macOS controls take room in it.
+    expect(Math.abs(expanded.top - expanded.headerBottom)).toBeLessThanOrEqual(1);
+    expect(expanded.windowControls).toBeGreaterThan(0);
     await user.press("Meta+b");
     const collapsed = await probe.eventually(geometry, {
       within: 10_000,
-      label: "collapsed pane settles against the macOS window edge",
-      until: (value) => isRecord(value) && value.state === "collapsed" && value.left === (expanded.isMac ? 0 : 8),
+      label: "collapsed sidebar hands its toggle to the session titlebar and the pane settles",
+      until: (value) => isRecord(value) && value.state === "collapsed" && value.gap === 0 && typeof value.triggerLeft === "number",
     });
-    expect(collapsed).toMatchObject({ top: expanded.isMac ? 0 : 8, left: expanded.isMac ? 0 : 8 });
-    if (expanded.isMac) {
-      if (!isRecord(collapsed) || typeof collapsed.centerOffset !== "number") throw new Error("Titlebar geometry was not readable.");
-      expect(collapsed.centerOffset).toBeLessThanOrEqual(1);
-    }
+    if (!isRecord(collapsed) || typeof collapsed.left !== "number" || typeof collapsed.triggerLeft !== "number"
+      || typeof collapsed.centerOffset !== "number") throw new Error("Titlebar geometry was not readable.");
+    expect(collapsed.top).toBe(expanded.top);
+    expect(collapsed.left).toBeLessThan(expanded.left);
+    expect(collapsed.triggerLeft).toBeGreaterThanOrEqual(expanded.windowControls);
+    expect(collapsed.centerOffset).toBeLessThanOrEqual(1);
     await user.screenshot();
     await user.press("Meta+b");
     await probe.eventually(geometry, {
       within: 10_000,
       label: "reopened sidebar restores the original pane inset",
-      until: (value) => isRecord(value) && value.state === "expanded" && value.left === expanded.left,
+      until: (value) => isRecord(value) && value.state === "expanded" && value.gap === expanded.gap && value.left === expanded.left,
     });
     const reopened = await geometry();
-    expect(reopened).toMatchObject({ top: expanded.top, left: expanded.left });
+    expect(reopened).toMatchObject({ top: expanded.top, left: expanded.left, triggerLeft: null });
     observations.chrome = { expanded, collapsed, reopened };
     await seed.evalIn(world.app, browserScript((classes) => { document.documentElement.className = classes; }, [platformClasses]));
   });
@@ -238,10 +256,16 @@ test("the sidebar title fade follows only the edges with hidden text", async ({ 
     // The responsive sidebar changes from a desktop panel to a mobile sheet.
     // Wait for that render before opening it; an immediate keyboard toggle can
     // still target the old desktop state and leave the mobile sheet closed.
-    await user.see({ role: "button", label: "Open sidebar" });
+    // The app in a browser shows a mobile "Open sidebar" bar; the desktop keeps
+    // its titlebar and puts the sidebar toggle there.
+    const shown = async (selector: string) => (await probe.dom(selector)).elements.some((element) => element.rect.width > 0);
+    const opener = await probe.eventually(async () => (
+      await shown('button[aria-label="Open sidebar"]') ? "web" : await shown('[data-session-header] [data-sidebar-toggle="main"]') ? "desktop" : null
+    ), { within: 30_000, label: "narrow layout offers a control that opens the sidebar", until: (value) => value === "web" || value === "desktop" });
+    const openSidebar = opener === "web" ? { role: "button" as const, label: "Open sidebar" } : { testId: "main-sidebar-toggle" };
     const mobileSidebar = await probe.dom('[data-sidebar="sidebar"][data-mobile="true"]');
     if (!mobileSidebar.elements.some((element) => element.rect.width > 0 && element.rect.height > 0)) {
-      await user.click({ role: "button", label: "Open sidebar" });
+      await user.click(openSidebar);
     }
     const rows = await probe.eventually(() => rowStates(world.app), {
       within: 15_000,

@@ -1,4 +1,5 @@
 import { Tool, toolError } from "@openwork/codemode"
+import { memberAgentPermissionRules, organizationAgentPermissionDenial } from "../agent-permissions.js"
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js"
 import type { DenTypeId } from "@openwork-ee/utils/typeid"
 import type { CapabilityUsageSource } from "@openwork-ee/den-db/schema"
@@ -705,6 +706,16 @@ const marketplaceSource: CapabilitySource = {
   },
 }
 
+/** Checks built-in skills against the member's agent permissions, reading the rules once. */
+async function builtinSkillBlocker(ctx: CapabilityRegistryContext): Promise<(capability: string) => string | null> {
+  const rules = ctx.member ? await memberAgentPermissionRules(ctx.organizationId, ctx.member.orgMembershipId) : []
+  const skills = listBuiltinSkillDescriptors()
+  return (capability) => {
+    const skill = skills.find((entry) => entry.capability === capability)
+    return skill ? organizationAgentPermissionDenial(rules, "skill", [skill.name, skill.title]) : null
+  }
+}
+
 const builtinSkillSource: CapabilitySource = {
   kind: "builtinSkill",
   parseName: (name) => name.startsWith("skill:") && name.length > "skill:".length
@@ -712,9 +723,12 @@ const builtinSkillSource: CapabilitySource = {
     : null,
   search: async (ctx, query, limit) => {
     if (!ctx.sourceFilter.skills) return []
-    return searchBuiltinSkillCapabilities(query, limit).map((match) => ({ ...match, scriptPath: codemodeScriptPath("skills", match.name) }))
+    const blocked = await builtinSkillBlocker(ctx)
+    return searchBuiltinSkillCapabilities(query, limit).filter((match) => !blocked(match.name)).map((match) => ({ ...match, scriptPath: codemodeScriptPath("skills", match.name) }))
   },
-  enumerate: (ctx) => Promise.resolve(listBuiltinSkillDescriptors().map((skill) => contentLeaf({
+  enumerate: async (ctx) => {
+    const blocked = await builtinSkillBlocker(ctx)
+    return listBuiltinSkillDescriptors().filter((skill) => !blocked(skill.capability)).map((skill) => contentLeaf({
     namespace: "skills",
     toolName: skill.capability,
     capabilityName: skill.capability,
@@ -722,9 +736,12 @@ const builtinSkillSource: CapabilitySource = {
     readOnly: true,
     authority: "den",
     run: async () => executeBuiltinSkillCapability(skill.capability)?.content ?? "",
-  }))),
-  execute: async (_ctx, parsed, input) => {
+    }))
+  },
+  execute: async (ctx, parsed, input) => {
     if (!parsedForKind(parsed, "builtinSkill")) return unknownCapabilityResult(input.name)
+    const blocked = (await builtinSkillBlocker(ctx))(parsed.name)
+    if (blocked) return { isError: true, content: textContent(blocked) }
     const result = executeBuiltinSkillCapability(parsed.name)
     return result
       ? { content: textContent(JSON.stringify(result, null, 2)) }

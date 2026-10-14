@@ -8,6 +8,7 @@ import { connect, debuggerUrlFor, evaluate, listTargets } from "@openwork/cdp";
 import { configureProvider } from "./chat.ts";
 import { defaultDaytonaExec, execInSandbox } from "@openwork/hosts";
 import { reconcileDraftHost } from "../fixtures/cloud-draft-host.ts";
+import { denForAppWeb, signedInAppWeb } from "./signed-in-app-web.ts";
 
 export const creationPrompt = "Create a reusable app for my dashboard that shows a weekly briefing using my existing Weekly briefing workflow.";
 export const creationReply = "Your briefing app draft is ready. Try the preview, then choose Save.";
@@ -421,7 +422,7 @@ export async function cloudDraftRouting(seed: Seed) {
 }
 
 export async function savedAppCreation(seed: Seed) {
-  const den = await seed.den({
+  const { den, webPort } = await denForAppWeb(seed, {
     env: { DEN_GENERATED_ARTIFACT_VIEWS_ENABLED: "true", DEN_DASHBOARDS_ENABLED: "true" },
     org: { name: `Saved Apps ${Date.now()}`, members: { colleague: { name: "Colleague" }, browserRecipient: { name: "Browser recipient" } } },
     mocks: {
@@ -475,7 +476,7 @@ export async function savedAppCreation(seed: Seed) {
   });
   const firstRun = await run(firstInput.topic);
   const source = (heading: string) => `export default function Briefing({ data }) { const [expanded, setExpanded] = React.useState(false); return <article><h1>${heading}</h1><p>{data.topic}</p><button onClick={() => setExpanded(!expanded)}>{expanded ? "Hide details" : "Show details"}</button>{expanded && <p>Workers: {data.total}</p>}</article> }`;
-  // Only the existing workflow is arranged. The desktop conversation must
+  // Only the existing workflow is arranged. The app conversation must
   // execute the model tool call to create and display the first app draft.
   const configured = await fetch(`${den.mocks.tracker.url}/admin/agent-workloads`, {
     method: "POST", headers: { "content-type": "application/json" },
@@ -497,8 +498,7 @@ export async function savedAppCreation(seed: Seed) {
     await proxy.faults.status("/api/runtime-config", 200, { times: 1000, body: { denApiUrl: proxy.ref.apiUrl } });
   };
   await resetProxy();
-  const app = await seed.desktop({ den: { ...den, ref: proxy.ref }, name: "saved-app-creation", model: `${providerId}/${modelId}` });
-  const workspace = await seed.workspace(app, seed.tmpPath("saved-app-creation"));
+  const { app, workspace } = await signedInAppWeb(seed, { den: { ...den, ref: proxy.ref }, webPort, name: "saved-app-creation", workspacePath: seed.tmpPath("saved-app-creation") });
   await configureProvider(seed, app, workspace.workspaceId, providerId, modelId, {
     provider: { [providerId]: {
       npm: "@ai-sdk/openai-compatible", name: "App creation model fixture",

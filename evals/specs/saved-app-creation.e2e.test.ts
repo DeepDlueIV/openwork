@@ -3,7 +3,10 @@ import { saveWorkflow, runWorkflow } from "@openwork/behaviors";
 import { spec } from "@openwork/testkit";
 import { creationPrompt, creationReply, field, record, savedAppCreation, isolatedMcpApps, isolationPrompt, isolationReply, cloudDraftRouting, draftRoutingPrompt, draftRoutingReply } from "../worlds/saved-apps.ts";
 
-const test = spec.world(savedAppCreation, { timeout: 900_000 });
+const test = spec.world(savedAppCreation, {
+  timeout: 900_000,
+  resources: { surfaces: ["appWeb"], services: ["den", "mock"] },
+});
 
 const draftTest = spec.world(cloudDraftRouting, {
   resources: { surfaces: ["appWeb"], services: ["den", "mock"] },

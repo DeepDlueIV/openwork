@@ -8,9 +8,10 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * Real Den on the cloud deployment with a published (fixture) AWS installer
- * release, one workspace with deployments turned on, one with them off, and a
- * member. No AWS account is touched: the release URLs are never fetched by Den.
+ * Real Den with UI-only fixture AWS and GCP release metadata. These fixture
+ * URLs and checksums do not represent deployable releases. One workspace has
+ * deployments on, one off, and GCP starts off until the test explicitly opts in.
+ * No cloud account is touched and no installation is claimed or performed.
  */
 export async function managedDeployments(seed: Seed) {
   const stamp = Date.now();
@@ -22,6 +23,11 @@ export async function managedDeployments(seed: Seed) {
       DEN_MANAGED_DEPLOYMENT_AWS_BUNDLE_URL: "https://releases.example.test/aws/0.18.57/bundle.tar.gz",
       DEN_MANAGED_DEPLOYMENT_AWS_BUNDLE_SHA256: "a".repeat(64),
       DEN_MANAGED_DEPLOYMENT_AWS_VERSION: "0.18.57",
+      // UI-only: commands must never be run or mistaken for installer evidence.
+      DEN_MANAGED_DEPLOYMENT_GCP_TEMPLATE_URL: "https://storage.googleapis.com/openwork-ui-only-fixture/gcp/0.18.57/tutorial.md?generation=1",
+      DEN_MANAGED_DEPLOYMENT_GCP_BUNDLE_URL: "https://storage.googleapis.com/openwork-ui-only-fixture/gcp/0.18.57/bundle.tar.gz?generation=1",
+      DEN_MANAGED_DEPLOYMENT_GCP_BUNDLE_SHA256: "b".repeat(64),
+      DEN_MANAGED_DEPLOYMENT_GCP_VERSION: "0.18.57",
     },
     org: { name: names.enabled, admin: { name: "Deployment Owner" }, members: { member: { name: "Deployment Member" } } },
   });
@@ -58,6 +64,7 @@ export async function managedDeployments(seed: Seed) {
   const web = await signedInBrowser(den.admin, disabledOrg.id, "/dashboard/deployments");
   return {
     den, web, names, enabledOrgId, disabledOrgId: disabledOrg.id, baseUrl: den.ref.webUrl,
+    enableGcp: () => enableOrganizationCapabilities(seed, den.admin, { managedDeployments: true, managedDeploymentsGcp: true }, enabledOrgId),
     // Fixed, read-only text observations: probe.dom() has bounds, but does not
     // expose computed text/background colors or React text-node fragmentation.
     deploymentTextReadability: () => callFunctionOnSurface(web, () => {

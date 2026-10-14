@@ -2,6 +2,8 @@ import { createV2ContextBridge } from "./opencode-v2-context-bridge.js";
 import { ApiError } from "./errors.js";
 import { opencodeV1DatabasePath, runOpencodeV1HistoryMigration, type EngineV2MigrationStatus } from "./opencode-v2-migration.js";
 import { executionRules } from "./managed-policy-rules.js";
+import { agentPermissionEngineMcpDenial, agentPermissionRulesOf } from "./agent-permission-engine.js";
+import { registeredOrganizationMcpServers } from "./connect-mcp-server-catalog.js";
 import { waitForEngineSkillChanges } from "./opencode-v2-skill-settle.js";
 import { MCP_READINESS_RPC_ID } from "./opencode-v2-mcp-readiness.js";
 import { execFile } from "node:child_process";
@@ -22,6 +24,7 @@ import { resolveOpencodeModelsUrl } from "./opencode-models-url.js";
 import { runtimeStorageDir } from "./runtime-db.js";
 import {
   isEngineGlobalRuntimeConfigId,
+  listRuntimeOpencodeConfigRows,
   onRuntimeOpencodeConfigWrite,
   readGlobalRuntimeOpencodeConfig,
   readEffectiveRuntimeOpencodeConfig,
@@ -495,8 +498,18 @@ export function createEngineV2Preview(options: {
   async function reconcileWorkspaceMcp(directory: string, location: McpLocation, reconnect: ReadonlySet<string>): Promise<void> {
     const active = sidecar;
     if (!active) throw new Error("OpenCode v2 is not running");
-    const runtime = runtimeMcpMap(await readEffectiveRuntimeOpencodeConfig(config, location.workspaceId));
+    const effective = await readEffectiveRuntimeOpencodeConfig(config, location.workspaceId);
+    const runtime = runtimeMcpMap(effective);
+    const agentPermissionRules = agentPermissionRulesOf(effective.managedPolicy);
+    // Local servers the member's agent permissions block are not registered,
+    // and an earlier registration is removed below like any other unwanted entry.
+    // The agent permissions plugin learns of new organization servers first,
+    // so it does not disable them as they are registered.
+    const mcpRules = agentPermissionRules.some((rule) => rule.action === "mcp");
+    if (mcpRules) await active.refreshConfig();
+    const organizationMcp = mcpRules ? await registeredOrganizationMcpServers(config, [location.workspaceId]) : {};
     const desired = new Map(Object.entries(runtime).flatMap(([name, value]) => {
+      if (agentPermissionEngineMcpDenial(agentPermissionRules, name, value, organizationMcp)) return [];
       const mapped = mapRuntimeMcpToV2(value);
       return mapped ? [[name, { config: mapped, fingerprint: JSON.stringify(mapped) }] as const] : [];
     }));
@@ -729,6 +742,12 @@ export function createEngineV2Preview(options: {
       // config folder is OpenWork's own, so it never sees these two global
       // folders the skill picker lists, and a picked skill there can't be sent.
       skills: [globalSkills.openwork, globalSkills.agentLegacy],
+      agentPermissions: async () => {
+        const rules = agentPermissionRulesOf((await readGlobalRuntimeOpencodeConfig(config)).managedPolicy);
+        if (rules.length === 0) return { rules, organizationMcp: {} };
+        const workspaceIds = (await listRuntimeOpencodeConfigRows(config)).map((row) => row.workspaceId);
+        return { rules, organizationMcp: await registeredOrganizationMcpServers(config, workspaceIds) };
+      },
     });
     sidecar = managed;
     if (!enabled || !allowRunning) {

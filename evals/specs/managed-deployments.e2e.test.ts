@@ -192,9 +192,9 @@ test("an owner prepares AWS installs without claiming they are running and can c
       await owner.see({ role: "heading", label: target.name }, { timeoutMs: 60_000 });
     }
     const sandbox = (await deployments()).find((item) => item.name === "Sandbox");
-    expect(sandbox?.target.network).toEqual({ mode: "existing", ...existingNetwork });
+    expect(sandbox?.provider === "aws" ? sandbox.target.network : null).toEqual({ mode: "existing", ...existingNetwork });
     await owner.see({ text: `${existingNetwork.vpcId} · cluster platform` });
-    expect((await deployments()).filter((item) => item.target.network.mode === "dedicated")).toHaveLength(2);
+    expect((await deployments()).filter((item) => item.provider === "aws" && item.target.network.mode === "dedicated")).toHaveLength(2);
     const before = await deployments();
     expect(before).toHaveLength(3);
     expect(new Set(before.map((item) => item.id)).size).toBe(3);
@@ -403,6 +403,125 @@ test("an owner prepares AWS installs without claiming they are running and can c
       expect(preserved?.run?.state).toBe("awaiting_approval");
     }
     evidence.recordAssertionEvidence("only the confirmed deployment is gone after reload", `${stagingName} is absent from the page and Den's list. Production and Sandbox remain, with their original AWS targets and pending approvals; the count is 2, not 0.`, true);
+    await owner.screenshot();
+  });
+});
+
+test("Google Cloud stays locked until rollout, then hands approval to the customer's Cloud Shell without installing", async ({ world, user, probe, step, evidence }) => {
+  const owner = user.on(world.web);
+  const page = probe.on(world.web);
+  const headers = { "x-openwork-org-id": world.enabledOrgId };
+  async function listed() {
+    const result = await probe.api(world.den.admin, "/v1/managed-deployments", { headers });
+    expect(result.response.ok).toBe(true);
+    return managedDeploymentListSchema.parse(result.body).deployments;
+  }
+
+  await step("before: Google Cloud is visible but locked with a named remediation owner", async () => {
+    await eventually(async () => await page.has("Deployments aren't turned on for this workspace") || await page.has("Choose an organization"), { within: 90_000, label: "workspace selection or deployments lock" });
+    if (await page.has("Choose an organization")) {
+      await owner.click({ role: "button", label: new RegExp(`^${world.names.enabled}`) });
+      await eventually(async () => !(await page.has("Choose an organization")), { within: 60_000, label: "the workspace choice is saved" });
+      await owner.navigate(`${world.baseUrl}/dashboard/deployments`);
+    } else {
+      await owner.click({ testId: "workspace-switcher-trigger" });
+      await owner.click({ role: "button", label: new RegExp(`^${world.names.enabled}`) });
+      await owner.click({ role: "link", label: "Deployments" });
+    }
+    await owner.see({ testId: "deployment-provider-lock-gcp" }, { text: /Ask your OpenWork operator to enable them/, timeoutMs: 90_000 });
+    await owner.click({ role: "button", label: "Create deployment" });
+    await owner.click({ label: "Cloud" });
+    await owner.see({ role: "option", label: "Google Cloud (locked)" });
+    const lockedOptions = (await page.dom('[role="option"][disabled]')).elements;
+    expect(lockedOptions.some((entry) => entry.text === "Google Cloud (locked)")).toBe(true);
+    await owner.press("Escape");
+    await owner.click({ role: "button", label: "Close" });
+    evidence.recordAssertionEvidence("GCP rollout defaults to off without hiding the cloud", "The real configuration endpoint keeps Google Cloud locked; the page names the OpenWork operator and the create form leaves a disabled Google Cloud choice visible.", true);
+    await owner.screenshot();
+  });
+
+  await step("an opted-in owner enters a Google Cloud project and explicitly consents to command-run costs", async () => {
+    await world.enableGcp();
+    await owner.reload();
+    await owner.see({ text: /No deployments yet/ }, { timeoutMs: 60_000 });
+    await owner.click({ role: "button", label: "Create deployment" });
+    await owner.click({ role: "checkbox", label: /^I control this AWS account/ });
+    await owner.click({ label: "Cloud" });
+    await owner.click({ role: "option", label: "Google Cloud" });
+    await owner.see({ role: "heading", label: "Create deployment" });
+    await owner.see({ label: "Google Cloud project ID" });
+    expect((await page.dom('[data-testid="create-deployment-dialog"] input[type="checkbox"]:checked')).elements).toHaveLength(0);
+    await owner.notSee({ label: "AWS account ID" });
+    await owner.notSee({ testId: "deployment-network-options" });
+    await owner.type({ label: "Name" }, "Google Cloud rehearsal", { replace: true });
+    await owner.type({ label: "Google Cloud project ID" }, "openwork-rehearsal");
+    await owner.type({ label: "Google Cloud project number" }, "123456789015");
+    await owner.type({ label: "Address" }, "gcp.example.test");
+    await owner.type({ label: "Cloud DNS managed zone name for that address" }, "example-test");
+    await owner.type({ label: "First administrator email" }, "admin@example.test");
+    await owner.see({ testId: "deployment-cost-consent" }, { text: /Only running the command creates or changes billable/ });
+    const { consent } = await world.deploymentTextReadability();
+    expect(consent?.text).toContain("Removing this record does not delete those resources or stop charges.");
+    expect(consent?.textNodeCount).toBe(1);
+    expect(consent?.fits).toBe(true);
+    await owner.screenshot();
+    await owner.click({ role: "checkbox", label: /^I control this Google Cloud project/ });
+    // Shared validation rejects malformed project identifiers before any record exists.
+    await owner.type({ label: "Google Cloud project ID" }, "INVALID_PROJECT", { replace: true });
+    await owner.click({ testId: "create-deployment-submit" });
+    await owner.see({ role: "alert" }, { text: /Enter a Google Cloud project ID/ });
+    expect(await listed()).toHaveLength(0);
+    await owner.type({ label: "Google Cloud project ID" }, "openwork-rehearsal", { replace: true });
+    await owner.click({ testId: "create-deployment-submit" });
+    await owner.see({ testId: "managed-deployment-status" }, { text: "Not launched", timeoutMs: 60_000 });
+    const [item] = await listed();
+    expect(item.provider).toBe("gcp");
+    expect(item.target).toEqual({ projectId: "openwork-rehearsal", projectNumber: "123456789015", region: "us-central1", dnsZoneName: "example-test" });
+    expect(item.run).toBeNull();
+    expect(item.installedVersion).toBeNull();
+    evidence.recordAssertionEvidence("a validated Google Cloud record is not an installation", "The GCP-only form rejects an invalid project ID, records project ID/number, region and public DNS zone after consent, and reports Not launched with no installed version or run.", true);
+    await owner.screenshot();
+  });
+
+  let runId = "";
+  await step("after: preparation provides a Cloud Shell command, not a second prepare action or an installed state", async () => {
+    await owner.click({ role: "button", label: "Prepare Google Cloud approval" });
+    await owner.see({ role: "button", label: "Copy command" }, { timeoutMs: 30_000 });
+    await owner.see({ role: "link", label: "Open Google Cloud Shell" });
+    await owner.see({ text: /OpenWork does not run it for you/ });
+    await owner.see({ testId: "managed-deployment-status" }, { text: "Awaiting Google Cloud approval" });
+    await owner.notSee({ role: "button", label: "Prepare Google Cloud approval" });
+    await owner.notSee({ role: "link", label: "Review and approve in AWS" });
+    await owner.notSee({ text: "Operational" });
+    const [item] = await listed();
+    expect(item.run?.state).toBe("awaiting_approval");
+    expect(item.run?.events).toHaveLength(0);
+    expect(item.installedVersion).toBeNull();
+    runId = item.run?.id ?? "";
+    evidence.recordAssertionEvidence("Google Cloud Shell is the customer-owned approval boundary", `Run ${runId} awaits approval with zero events and no installed version. The UI provides Copy command / Open Google Cloud Shell and does not repeatedly offer Prepare or claim Operational. The UI-only fixture command is never executed.`, true);
+    await owner.screenshot();
+  });
+
+  await step("first sign-in directs the owner to their Secret Manager without exposing the code", async () => {
+    await owner.click({ testId: "deployment-technical-details-toggle" });
+    await owner.see({ testId: "deployment-setup-directions" }, { text: /Google Cloud Secret Manager.*DEN_INITIAL_ADMIN_BOOTSTRAP_CODE.*OpenWork never receives it/ });
+    await owner.see({ text: /Installer output is in Google Cloud Shell/ });
+    await owner.notSee({ text: /AWS Secrets Manager/ });
+    evidence.recordAssertionEvidence("provider-specific bootstrap and logging directions", "Technical details name Google Cloud Secret Manager, the bootstrap-code field, Google Cloud Shell installer output and Cloud Logging, without reading or exposing a bootstrap secret.", true);
+    await owner.screenshot();
+  });
+
+  await step("reloading and reopening the command keeps the same unapproved run", async () => {
+    await owner.reload();
+    await owner.see({ testId: "managed-deployment-status" }, { text: "Awaiting Google Cloud approval", timeoutMs: 60_000 });
+    await owner.click({ role: "button", label: "Prepare Google Cloud approval" });
+    await owner.see({ role: "button", label: "Copy command" }, { timeoutMs: 30_000 });
+    const [item] = await listed();
+    expect(item.run?.id).toBe(runId);
+    expect(item.run?.events).toHaveLength(0);
+    expect(item.installedVersion).toBeNull();
+    await owner.notSee({ role: "button", label: "Prepare Google Cloud approval" });
+    evidence.recordAssertionEvidence("reload does not duplicate the installer or approve Google Cloud resources", `After reload, preparing the command reuses run ${runId}; zero events and no installed version remain. This journey proves only UI/record/approval behavior, not an actual Google Cloud installation.`, true);
     await owner.screenshot();
   });
 });

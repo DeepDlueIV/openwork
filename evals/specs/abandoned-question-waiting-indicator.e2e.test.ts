@@ -8,7 +8,7 @@ import { abandonedQuestion } from "../worlds/chat.ts";
 // GET /question. The app must stop asking the user for an answer nobody can
 // consume, and Archive must not treat that leftover as open work.
 
-const test = spec.world(abandonedQuestion, { timeout: 600_000 });
+const test = spec.world(abandonedQuestion, { resources: { surfaces: ["appWeb"], services: ["mock"] }, timeout: 600_000 });
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);

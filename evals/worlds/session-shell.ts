@@ -1,16 +1,11 @@
-import { allocateFreePort, browserScript, clickAt, evaluate, hoverAt, reload, type Point, type Surface, typeText, waitForLocated } from "@openwork/cdp";
-import { createServer, type Server, type ServerResponse } from "node:http";
-import { mkdir, realpath, rm, symlink } from "node:fs/promises";
+import { browserScript, evaluate, type Surface } from "@openwork/cdp";
+import { mkdir, realpath, symlink } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { engineSessionProbe, observeSidebarExpansion, readAvailableModels, selectModel, waitFor } from "@openwork/behaviors";
+import { engineSessionProbe, observeSidebarExpansion, readAvailableModels, waitFor } from "@openwork/behaviors";
 import { resolveEvalEngine, SkipError } from "@openwork/env";
 import type { Place, Seed } from "@openwork/env";
-import { daytonaSandbox, defaultDaytonaExec, desktop as launchDesktop, execInSandbox, startMockOnSandbox } from "@openwork/hosts";
-import { startMockMcp } from "@openwork/labs";
+import { daytonaSandbox, defaultDaytonaExec, execInSandbox, startMockOnSandbox } from "@openwork/hosts";
 import { configureProvider } from "./chat.ts";
-
-const stormProviderId = "active-session-storm-mock";
-const stormModelId = "mock-agent-workload-model";
 
 export interface ShellSession {
   sessionId: string;
@@ -33,8 +28,6 @@ export interface StormPlan extends ShellSession, ShellWorkspace {
 }
 
 type InstantMetricKind = "new-task" | "hero-preparing" | "user-row";
-type InstantBoundaryKind = "creation" | "prompt";
-type InstantBoundaryStage = "request" | "response";
 
 type InstantRendererState = {
   kind: InstantMetricKind;
@@ -51,447 +44,6 @@ declare global {
   interface Window {
     __instantSendMetric?: { state: InstantRendererState; stop(): void };
   }
-}
-
-function instantDeferred() {
-  let resolve!: () => void;
-  let reject!: (error: Error) => void;
-  const promise = new Promise<void>((resolvePromise, rejectPromise) => {
-    resolve = resolvePromise;
-    reject = rejectPromise;
-  });
-  return { promise, resolve, reject };
-}
-
-/** Renderer-only timing: trusted input capture through two consecutive animation-frame samples. */
-async function observeInstantRenderer(
-  seed: Seed,
-  app: Surface,
-  workspaceId: string,
-  kind: InstantMetricKind,
-  marker = "",
-  requireStarting = false,
-) {
-  await seed.evalIn(app, browserScript((workspaceId, kind, marker, requireStarting) => {
-    if (window.__instantSendMetric) throw new Error("An instant-send renderer observer is already active");
-    const state: InstantRendererState = {
-      kind, started: false, trusted: false, elapsedMs: null, frames: 0,
-      mutations: 0, consecutiveFrames: 0, expired: false,
-    };
-    let startedAt = 0;
-    let frame = 0;
-    let submittedHero: HTMLElement | null = null;
-    let submittedEditor: HTMLElement | null = null;
-    let submittedEditorRect: DOMRect | null = null;
-
-    const visibleInViewport = (node: HTMLElement) => {
-      const rect = node.getBoundingClientRect();
-      const style = getComputedStyle(node);
-      return node.getClientRects().length > 0 && rect.width > 0 && rect.height > 0
-        && rect.right > 0 && rect.bottom > 0 && rect.left < innerWidth && rect.top < innerHeight
-        && style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity) > 0;
-    };
-    const surfaceRoot = () => {
-      if ((localStorage.getItem("openwork.react.activeWorkspace") ?? "") !== workspaceId) return null;
-      const sessionlessRoute = `#/workspace/${workspaceId}/session`;
-      if (location.hash === sessionlessRoute) {
-        const heading = [...document.querySelectorAll<HTMLElement>("h2")]
-          .find((candidate) => candidate.textContent?.trim() === "What do you need done?" && visibleInViewport(candidate));
-        const headingMain = heading?.closest<HTMLElement>("main") ?? null;
-        const main = headingMain && visibleInViewport(headingMain) ? headingMain
-          : [...document.querySelectorAll<HTMLElement>("main")].filter(visibleInViewport)
-              .find((candidate) => [...candidate.querySelectorAll<HTMLElement>('[contenteditable="true"][data-lexical-editor="true"], [data-message-role]')]
-                .some(visibleInViewport)) ?? null;
-        const persistedSurfaceVisible = [...document.querySelectorAll<HTMLElement>("[data-session-surface-id]")]
-          .some(visibleInViewport);
-        return main && !persistedSurfaceVisible
-          ? { kind: "new-task", root: main, headingVisible: Boolean(heading && main.contains(heading)) }
-          : null;
-      }
-      const persistedPrefix = `#/workspace/${workspaceId}/session/`;
-      if (!location.hash.startsWith(persistedPrefix)) return null;
-      const sessionId = location.hash.slice(persistedPrefix.length);
-      if (!sessionId.startsWith("ses_") || /[/?#]/.test(sessionId)) return null;
-      const pane = [...document.querySelectorAll<HTMLElement>('[data-workbench-pane="primary"]')]
-        .find(visibleInViewport);
-      const surface = [...(pane?.querySelectorAll<HTMLElement>("[data-session-surface-id]") ?? [])]
-        .find((candidate) => candidate.dataset.sessionSurfaceId === sessionId && visibleInViewport(candidate));
-      return pane && surface ? { kind: "persisted", root: pane, headingVisible: false } : null;
-    };
-    const editor = () => surfaceRoot()?.root.querySelector<HTMLElement>('[contenteditable="true"][data-lexical-editor="true"]') ?? null;
-    const ready = () => {
-      const surface = surfaceRoot();
-      if (!surface) return false;
-      if (kind === "new-task") {
-        if (surface.kind !== "new-task" || !surface.headingVisible) return false;
-        const node = editor();
-        if (!node || !node.isContentEditable || !visibleInViewport(node)
-          || !(document.activeElement === node || node.contains(document.activeElement))) return false;
-        const rect = node.getBoundingClientRect();
-        const x = Math.min(innerWidth - 1, Math.max(0, rect.left + rect.width / 2));
-        const y = Math.min(innerHeight - 1, Math.max(0, rect.top + Math.min(rect.height / 2, 24)));
-        const hit = document.elementFromPoint(x, y);
-        return hit instanceof Node && node.contains(hit);
-      }
-      if (kind === "hero-preparing") {
-        const composer = editor();
-        const heading = [...surface.root.querySelectorAll<HTMLElement>("h2")]
-          .find((node) => node.textContent?.trim() === "What do you need done?" && visibleInViewport(node));
-        const hero = heading?.parentElement?.parentElement;
-        if (surface.kind !== "new-task" || !surface.headingVisible || !hero || hero !== submittedHero
-          || !composer || composer !== submittedEditor || !submittedEditorRect
-          || !hero.contains(composer) || !visibleInViewport(composer)
-          || surface.root.querySelector('[data-message-role="user"]')) return false;
-        const rect = composer.getBoundingClientRect();
-        if (rect.x !== submittedEditorRect.x || rect.y !== submittedEditorRect.y
-          || rect.width !== submittedEditorRect.width || rect.height !== submittedEditorRect.height) return false;
-        return !surface.root.querySelector('[data-loading-message="starting"], [data-loading-message="working"]')
-          && [...hero.querySelectorAll<HTMLElement>('button[aria-label="Creating conversation..."][aria-busy="true"]')]
-            .some((node) => visibleInViewport(node) && Boolean(node.querySelector('.animate-spin')));
-      }
-      if (requireStarting) {
-        const starting = [...surface.root.querySelectorAll<HTMLElement>('[data-loading-message="starting"]')].filter(visibleInViewport);
-        if (starting.length !== 1 || starting[0]?.getAttribute("role") !== "status" || starting[0]?.innerText.trim() !== "Starting…"
-          || [...surface.root.querySelectorAll<HTMLElement>('[data-loading-message="working"]')].some(visibleInViewport)) return false;
-      }
-      const composer = editor();
-      return [...surface.root.querySelectorAll<HTMLElement>('[data-message-role="user"]')]
-        .some((row) => visibleInViewport(row) && row.innerText.includes(marker)
-          && !(composer?.contains(row) || row.contains(composer)));
-    };
-    const sample = () => {
-      if (!state.started || state.elapsedMs !== null) return;
-      state.frames += 1;
-      state.consecutiveFrames = ready() ? state.consecutiveFrames + 1 : 0;
-      if (state.consecutiveFrames >= 2) state.elapsedMs = performance.now() - startedAt;
-    };
-    const paint = () => { sample(); frame = requestAnimationFrame(paint); };
-    const capture = (event: Event) => {
-      if (state.started || !event.isTrusted) return;
-      if (kind === "new-task") {
-        const target = event.target;
-        if (event.type !== "click" || !(target instanceof Element)
-          || !target.closest(`[data-sidebar-workspace-id="${workspaceId}"] [data-workspace-new-task]`)) return;
-      } else {
-        if (!(event instanceof KeyboardEvent) || event.key !== "Enter") return;
-        const node = editor();
-        if (!node || !(event.target instanceof Node) || !(event.target === node || node.contains(event.target))) return;
-        if (kind === "hero-preparing") {
-          if (event.shiftKey || event.ctrlKey || event.altKey || event.metaKey || event.isComposing || event.repeat) return;
-          const surface = surfaceRoot();
-          const heading = [...(surface?.root.querySelectorAll<HTMLElement>("h2") ?? [])]
-            .find((candidate) => candidate.textContent?.trim() === "What do you need done?" && visibleInViewport(candidate));
-          const hero = heading?.parentElement?.parentElement;
-          if (surface?.kind !== "new-task" || !hero || !hero.contains(node) || !visibleInViewport(node)
-            || !node.innerText.includes(marker) || !node.innerText.trim()) return;
-          submittedHero = hero;
-          submittedEditor = node;
-          submittedEditorRect = node.getBoundingClientRect();
-        }
-      }
-      state.started = true;
-      state.trusted = true;
-      startedAt = performance.now();
-    };
-    const eventName = kind === "new-task" ? "click" : "keydown";
-    window.addEventListener(eventName, capture, true);
-    const observer = new MutationObserver(() => { state.mutations += 1; });
-    observer.observe(document.documentElement, { subtree: true, childList: true, characterData: true, attributes: true });
-    frame = requestAnimationFrame(paint);
-    const timer = setTimeout(() => { state.expired = true; stop(); }, 10_000);
-    function stop() {
-      clearTimeout(timer);
-      observer.disconnect();
-      cancelAnimationFrame(frame);
-      window.removeEventListener(eventName, capture, true);
-    }
-    window.__instantSendMetric = { state, stop };
-  }, [workspaceId, kind, marker, requireStarting]));
-  let disposed = false;
-  return {
-    async read(): Promise<InstantRendererState> {
-      const value = await seed.evalIn(app, () => window.__instantSendMetric?.state ?? null);
-      if (!isRecord(value) || (value.kind !== "new-task" && value.kind !== "hero-preparing" && value.kind !== "user-row")
-        || typeof value.started !== "boolean" || typeof value.trusted !== "boolean"
-        || !(value.elapsedMs === null || typeof value.elapsedMs === "number")
-        || typeof value.frames !== "number" || typeof value.mutations !== "number"
-        || typeof value.consecutiveFrames !== "number" || typeof value.expired !== "boolean") {
-        throw new Error(`Instant renderer timing state was malformed: ${JSON.stringify(value)}`);
-      }
-      return {
-        kind: value.kind,
-        started: value.started,
-        trusted: value.trusted,
-        elapsedMs: value.elapsedMs,
-        frames: value.frames,
-        mutations: value.mutations,
-        consecutiveFrames: value.consecutiveFrames,
-        expired: value.expired,
-      };
-    },
-    async [Symbol.asyncDispose]() {
-      if (disposed) return;
-      disposed = true;
-      await seed.evalIn(app, () => {
-        window.__instantSendMetric?.stop();
-        delete window.__instantSendMetric;
-      });
-    },
-  };
-}
-
-type InstantGateState = {
-  kind: InstantBoundaryKind;
-  stage: InstantBoundaryStage;
-  requestIds: Set<string>;
-  heldAt: number | null;
-  released: boolean;
-  failed: boolean;
-  expired: boolean;
-  timer: ReturnType<typeof setTimeout> | null;
-};
-
-const INSTANT_BOUNDARY_REJECTION_MESSAGE = "The request was rejected before admission.";
-
-/** Disposable CDP Fetch gate. It reports only compact counts and never request headers or bodies. */
-async function instantBoundaryController(app: Surface, workspaceId: string) {
-  const endpoint = app.client.webSocketDebuggerUrl;
-  if (!endpoint) throw new Error("Instant-send boundary observer requires the desktop CDP endpoint");
-  const runtime = await evaluate(app.client, async () => {
-    const info = await window.__OPENWORK_ELECTRON__?.invokeDesktop?.("openworkServerInfo");
-    return {
-      baseUrl: info?.running && info.baseUrl ? String(info.baseUrl) : "",
-      rendererOrigin: window.location.origin,
-    };
-  }, { awaitPromise: true });
-  const { baseUrl, rendererOrigin } = runtime;
-  if (typeof baseUrl !== "string" || !baseUrl) throw new Error("OpenWork server URL was unavailable to the boundary observer");
-  const origin = new URL(baseUrl).origin;
-  const encodedWorkspaceId = encodeURIComponent(workspaceId);
-  const sessionBases = ["workspace", "w"].map((mount) => `/${mount}/${encodedWorkspaceId}/opencode/session`);
-  const fetchPatterns = sessionBases.map((path) => ({ urlPattern: `${origin}${path}*`, requestStage: "Request" }));
-  const socket = new WebSocket(endpoint);
-  const ready = instantDeferred();
-  const commands = new Map<number, ReturnType<typeof instantDeferred>>();
-  const gates: InstantGateState[] = [];
-  const counts = { creation: 0, prompt: 0 };
-  let nextId = 1;
-  let disposed = false;
-  let fetchEnabled = false;
-  let cleanupPromise: Promise<void> | null = null;
-  let failure: Error | undefined;
-
-  const command = async (method: string, params: Record<string, unknown> = {}) => {
-    const id = nextId++;
-    const result = instantDeferred();
-    commands.set(id, result);
-    const timer = setTimeout(() => result.reject(new Error(`Instant-send boundary command timed out: ${method}`)), 15_000);
-    try {
-      socket.send(JSON.stringify({ id, method, params }));
-      await result.promise;
-    } finally {
-      clearTimeout(timer);
-      commands.delete(id);
-    }
-  };
-  const loseConnection = () => {
-    if (disposed) return;
-    failure = new Error("Instant-send boundary observer lost its CDP connection");
-    ready.reject(failure);
-    for (const result of commands.values()) result.reject(failure);
-  };
-  const classify = (method: string, url: string): InstantBoundaryKind | null => {
-    if (method.toUpperCase() !== "POST") return null;
-    const path = new URL(url).pathname;
-    if (sessionBases.includes(path)) return "creation";
-    return sessionBases.some((base) => path.startsWith(`${base}/`) && path.endsWith("/prompt_async")) ? "prompt" : null;
-  };
-  const finishGate = async (gate: InstantGateState, fail: boolean) => {
-    if (gate.released) return;
-    gate.released = true;
-    gate.failed = fail;
-    if (gate.timer) clearTimeout(gate.timer);
-    gate.timer = null;
-    const method = fail ? "Fetch.fulfillRequest" : gate.stage === "response" ? "Fetch.continueResponse" : "Fetch.continueRequest";
-    const interceptResponse = !fail && gate.stage === "request"
-      && gates.some((candidate) => candidate.kind === gate.kind && candidate.stage === "response" && !candidate.released);
-    await Promise.all([...gate.requestIds].map((requestId) => command(method, fail
-      ? {
-          requestId,
-          responseCode: 400,
-          responsePhrase: "Bad Request",
-          responseHeaders: [
-            { name: "Content-Type", value: "application/json" },
-            { name: "Access-Control-Allow-Origin", value: rendererOrigin },
-            { name: "Access-Control-Allow-Credentials", value: "true" },
-            { name: "Vary", value: "Origin" },
-          ],
-          body: Buffer.from(JSON.stringify(INSTANT_BOUNDARY_REJECTION_MESSAGE), "utf8").toString("base64"),
-        }
-      : { requestId, ...(interceptResponse ? { interceptResponse: true } : {}) })));
-  };
-
-  socket.addEventListener("open", () => ready.resolve());
-  socket.addEventListener("error", loseConnection);
-  socket.addEventListener("close", loseConnection);
-  socket.addEventListener("message", (event) => {
-    const message: unknown = JSON.parse(String(event.data));
-    if (!isRecord(message)) return;
-    if (typeof message.id === "number") {
-      const result = commands.get(message.id);
-      if ("error" in message) result?.reject(new Error("Instant-send boundary CDP command failed"));
-      else result?.resolve();
-    }
-    if (message.method !== "Fetch.requestPaused" || !isRecord(message.params)) return;
-    const params = message.params;
-    if (typeof params.requestId !== "string" || !isRecord(params.request)
-      || typeof params.request.method !== "string" || typeof params.request.url !== "string") return;
-    const stage: InstantBoundaryStage = typeof params.responseStatusCode === "number" || typeof params.responseErrorReason === "string"
-      ? "response" : "request";
-    const continueMethod = stage === "response" ? "Fetch.continueResponse" : "Fetch.continueRequest";
-    const kind = classify(params.request.method, params.request.url);
-    if (!kind) {
-      void command(continueMethod, { requestId: params.requestId }).catch((error: Error) => { failure = error; });
-      return;
-    }
-    if (stage === "request") counts[kind] += 1;
-    const gate = gates.find((candidate) => candidate.kind === kind && candidate.stage === stage && !candidate.released);
-    if (!gate) {
-      const interceptResponse = stage === "request"
-        && gates.some((candidate) => candidate.kind === kind && candidate.stage === "response" && !candidate.released);
-      void command(continueMethod, {
-        requestId: params.requestId,
-        ...(interceptResponse ? { interceptResponse: true } : {}),
-      }).catch((error: Error) => { failure = error; });
-      return;
-    }
-    gate.requestIds.add(params.requestId);
-    if (gate.heldAt === null) {
-      gate.heldAt = performance.now();
-      gate.timer = setTimeout(() => {
-        gate.expired = true;
-        void finishGate(gate, false).catch((error: Error) => { failure = error; });
-      }, 30_000);
-    }
-  });
-  const connectionTimer = setTimeout(() => ready.reject(new Error("Instant-send boundary observer could not connect")), 15_000);
-  try {
-    await ready.promise;
-    await command("Network.enable");
-    await command("Fetch.enable", { patterns: fetchPatterns });
-    fetchEnabled = true;
-  } catch (error) {
-    disposed = true;
-    socket.close();
-    throw error;
-  } finally {
-    clearTimeout(connectionTimer);
-  }
-
-  const arm = (kind: InstantBoundaryKind, stage: InstantBoundaryStage) => {
-    if (disposed) throw new Error("Instant-send boundary observer is disposed");
-    const state: InstantGateState = {
-      kind, stage, requestIds: new Set(), heldAt: null, released: false,
-      failed: false, expired: false, timer: null,
-    };
-    gates.push(state);
-    let gateDisposed = false;
-    const read = () => {
-      if (failure) throw failure;
-      return {
-        kind, stage, held: state.requestIds.size,
-        elapsedMs: state.heldAt === null ? 0 : performance.now() - state.heldAt,
-        released: state.released, failed: state.failed, expired: state.expired,
-      };
-    };
-    return {
-      read,
-      release: () => finishGate(state, false),
-      fail: () => finishGate(state, true),
-      async [Symbol.asyncDispose]() {
-        if (gateDisposed) return;
-        gateDisposed = true;
-        await finishGate(state, false);
-      },
-    };
-  };
-  return {
-    holdNext: arm,
-    read() {
-      if (failure) throw failure;
-      const activelyHeld = gates.filter((gate) => !gate.released && gate.requestIds.size > 0);
-      return {
-        creation: counts.creation,
-        prompt: counts.prompt,
-        enabled: fetchEnabled,
-        activeGateCount: activelyHeld.length,
-        activeHeldRequestCount: activelyHeld.reduce((total, gate) => total + gate.requestIds.size, 0),
-      };
-    },
-    async suspend() {
-      if (disposed) throw new Error("Instant-send boundary observer is disposed");
-      if (failure) throw failure;
-      const activelyHeld = gates.filter((gate) => !gate.released && gate.requestIds.size > 0);
-      if (activelyHeld.length > 0) {
-        throw new Error(`Instant-send boundary observer cannot suspend with ${activelyHeld.length} actively held gate(s)`);
-      }
-      if (!fetchEnabled) return;
-      await command("Fetch.disable");
-      fetchEnabled = false;
-    },
-    async resume() {
-      if (disposed) throw new Error("Instant-send boundary observer is disposed");
-      if (failure) throw failure;
-      if (fetchEnabled) return;
-      await command("Fetch.enable", { patterns: fetchPatterns });
-      fetchEnabled = true;
-    },
-    async [Symbol.asyncDispose]() {
-      if (cleanupPromise) return cleanupPromise;
-      cleanupPromise = (async () => {
-        if (disposed) return;
-        try {
-          for (const gate of gates) await finishGate(gate, false);
-          if (fetchEnabled) await command("Fetch.disable");
-        } finally {
-          fetchEnabled = false;
-          disposed = true;
-          socket.close();
-        }
-      })();
-      return cleanupPromise;
-    },
-  };
-}
-
-function closeServer(server: Server): Promise<void> {
-  return new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
-}
-
-async function listen(server: Server): Promise<string> {
-  await new Promise<void>((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", resolve);
-  });
-  const address = server.address();
-  if (!address || typeof address === "string") throw new Error("Mock provider did not bind a TCP port.");
-  return `http://127.0.0.1:${address.port}/v1`;
-}
-
-function streamReply(response: ServerResponse, id: string, reply: string): void {
-  const chunks = [
-    { id, object: "chat.completion.chunk", choices: [{ index: 0, delta: { role: "assistant" }, finish_reason: null }] },
-    { id, object: "chat.completion.chunk", choices: [{ index: 0, delta: { content: reply }, finish_reason: null }] },
-    { id, object: "chat.completion.chunk", choices: [{ index: 0, delta: {}, finish_reason: "stop" }] },
-  ];
-  response.writeHead(200, {
-    "content-type": "text/event-stream",
-    "cache-control": "no-cache",
-    connection: "keep-alive",
-  });
-  for (const chunk of chunks) response.write(`data: ${JSON.stringify(chunk)}\n\n`);
-  response.write("data: [DONE]\n\n");
-  response.end();
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -613,20 +165,18 @@ async function configureWorkspaceProvider(
   if (failures.length > 0) throw new Error(`Workspace provider configuration failed: ${JSON.stringify(failures)}`);
 }
 
-async function oneWorkspace(seed: Seed, name: string, titles: readonly string[] = []) {
-  const app = await seed.desktop({ name });
+/** The app in headless Chrome by default; "electron" only for the native titlebar. */
+async function oneWorkspace(seed: Seed, name: string, titles: readonly string[] = [], surface: "electron" | "web" = "web") {
   const workspacePath = seed.tmpPath(name);
+  const app = surface === "electron" ? await seed.desktop({ name }) : await seed.appWeb({ name, workspacePath, mouse: true });
   const workspace = await seed.workspace(app, workspacePath);
   const sessions = titles.length > 0 ? await seed.sessions(app, titles) : [];
   return { app, workspace, workspacePath, sessions };
 }
 
-export async function sidebarPrimaryActions(seed: Seed) {
-  return oneWorkspace(seed, "sidebar-primary-actions");
-}
-
 export async function sidebarOverflow(seed: Seed) {
   const longTitle = "Reading Google Drive documents for the quarterly workspace review";
+  // Desktop: the journey also checks the macOS titlebar inset when the sidebar collapses.
   const app = await seed.desktop({ name: "sidebar-title-overflow-fade" });
   const workspacePath = "/tmp/Yonder";
   // The desktop already owns its default first-launch workspace; the title under test is this folder's name.
@@ -636,9 +186,10 @@ export async function sidebarOverflow(seed: Seed) {
 }
 
 export async function sidebarExpansion(seed: Seed, mode: "workspace" | "group" | "ungrouped") {
-  const app = await seed.desktop({ name: `sidebar-${mode}-expansion` });
+  const workspacePath = seed.tmpPath(`sidebar-${mode}`);
+  const app = await seed.appWeb({ name: `sidebar-${mode}-expansion`, workspacePath, mouse: true });
   await app.client.send("Emulation.setDeviceMetricsOverride", { width: 1280, height: 600, deviceScaleFactor: 1, mobile: false });
-  const workspace = await seed.workspace(app, seed.tmpPath(`sidebar-${mode}`));
+  const workspace = await seed.workspace(app, workspacePath);
   const sessions = await seed.sessions(app, Array.from({ length: 20 }, (_, index) => `Expansion task ${String(index + 1).padStart(2, "0")}`));
   const [neighbor] = await seed.sessions(app, ["Neighbor task"]);
   if (!neighbor) throw new Error("Sidebar expansion neighbor was not created");
@@ -652,10 +203,10 @@ export async function sidebarExpansion(seed: Seed, mode: "workspace" | "group" |
   ]);
   // Persist real group state and manual order before reload; no component/store imports.
   await seed.evalIn(app, browserScript(async (workspaceId, groups, assignments, ids) => {
-    const info = await window.__OPENWORK_ELECTRON__.invokeDesktop("openworkServerInfo");
-    if (!info?.baseUrl) throw new Error("Sidebar seed needs the local server");
-    const response = await fetch(`${info.baseUrl.replace(/\/+$/, "")}/workspace/${encodeURIComponent(workspaceId)}/session-groups`, {
-      method: "PUT", headers: { Authorization: `Bearer ${info.ownerToken ?? info.clientToken}`, "Content-Type": "application/json" },
+    const port = localStorage.getItem("openwork.server.port");
+    if (!port) throw new Error("Sidebar seed needs the local server");
+    const response = await fetch(`http://127.0.0.1:${port}/workspace/${encodeURIComponent(workspaceId)}/session-groups`, {
+      method: "PUT", headers: { Authorization: `Bearer ${localStorage.getItem("openwork.server.token")}`, "Content-Type": "application/json" },
       body: JSON.stringify({ state: { groups, assignments } }), signal: AbortSignal.timeout(30_000),
     });
     if (!response.ok) throw new Error(`Sidebar group seed failed: ${response.status}`);
@@ -672,18 +223,9 @@ export async function sidebarExpansion(seed: Seed, mode: "workspace" | "group" |
   return { app, workspace, sessions, neighbor, observation, [Symbol.asyncDispose]: () => observation[Symbol.asyncDispose]() };
 }
 
-export async function sidebarWorkspaceTitles(seed: Seed) {
-  const runId = Date.now().toString(36);
-  const shortName = `Yonder-${runId}`;
-  const longName = `openwork-workspace-title-that-keeps-going-past-the-sidebar-${runId}`;
-  const app = await seed.desktop({ name: "sidebar-workspace-title-fit" });
-  const shortWorkspace = await seed.workspace(app, `/tmp/${shortName}`);
-  return { app, shortName, longName, shortWorkspace };
-}
-
 export async function pinnedSessions(seed: Seed) {
-  const app = await seed.desktop({ name: "pinned-sessions-exposed" });
   const workspacePath = seed.tmpPath("pinned-sessions-exposed");
+  const app = await seed.appWeb({ name: "pinned-sessions-exposed", workspacePath, mouse: true });
   const workspace = await seed.workspace(app, workspacePath);
   const [candidate, neighbor] = await seed.sessions(app, ["Candidate session", "Neighbor session"]);
   if (!candidate || !neighbor) throw new Error("Pinned world did not create both sessions.");
@@ -735,7 +277,7 @@ export async function commandPaletteSearch(seed: Seed) {
   const workspacePath = seed.tmpPath(name);
   const longModelId = "gwm_01m292tscteantqy79spgyvbcs_01m292tsbxehmvrpjxfn7m4n86_01m292tsbgey6s6q4hbnvd6a8h";
   const providerId = "palette-model-witness";
-  const app = await seed.appWeb({ name, workspacePath });
+  const app = await seed.appWeb({ name, workspacePath, mouse: true });
   const workspace = await seed.workspace(app, workspacePath);
   await configureProvider(seed, app, workspace.workspaceId, providerId, longModelId, {
     model: `${providerId}/${longModelId}`,
@@ -1329,9 +871,22 @@ export async function archiveActiveSessions(seed: Seed, { place }: { place: Plac
   };
 }
 
+/** Two sessions ready to archive, on the desktop: session-archive-undo asserts the native context menu. */
 export async function archiveSessions(seed: Seed) {
-  const app = await seed.desktop({ name: "session-archive-undo" });
-  return archiveWorld(seed, app, seed.tmpPath("session-archive-undo"), ["Archive candidate", "Archive neighbor"]);
+  return archiveSessionsOn(seed, "electron");
+}
+
+/** Two sessions ready to archive, on the app in headless Chrome. */
+export async function archiveSessionsWeb(seed: Seed) {
+  return archiveSessionsOn(seed, "web");
+}
+
+async function archiveSessionsOn(seed: Seed, surface: "electron" | "web") {
+  const workspacePath = seed.tmpPath("session-archive-undo");
+  const app = surface === "electron"
+    ? await seed.desktop({ name: "session-archive-undo" })
+    : await seed.appWeb({ name: "session-archive", workspacePath, mouse: true });
+  return archiveWorld(seed, app, workspacePath, ["Archive candidate", "Archive neighbor"]);
 }
 
 /**
@@ -1428,12 +983,16 @@ async function archiveWorld(seed: Seed, app: Surface, workspacePath: string, tit
   // TODO(primitive): probe.sessions should expose the workspace's native session list.
   async function archivedAt(): Promise<Record<string, number>> {
     const value = await seed.evalIn(app, browserScript(async (workspaceId, engine) => {
+      // Desktop bridge first; the app in a browser keeps the address in localStorage.
       const info = await window.__OPENWORK_ELECTRON__?.invokeDesktop?.("openworkServerInfo");
-      if (!info?.running || !info.baseUrl) throw new Error("OpenWork server is unavailable");
+      const port = localStorage.getItem("openwork.server.port");
+      const baseUrl = info?.running && info.baseUrl ? String(info.baseUrl) : port ? "http://127.0.0.1:" + port : "";
+      const token = info?.running && info.baseUrl ? String(info.ownerToken ?? info.clientToken ?? "") : localStorage.getItem("openwork.server.token") ?? "";
+      if (!baseUrl) throw new Error("OpenWork server is unavailable");
       const response = await fetch(
-        String(info.baseUrl).replace(/\/+$/, "") + "/workspace/" + encodeURIComponent(workspaceId) + (engine === "v2" ? "/opencode2/api/session?limit=200" : "/opencode/session?limit=200"),
+        baseUrl.replace(/\/+$/, "") + "/workspace/" + encodeURIComponent(workspaceId) + (engine === "v2" ? "/opencode2/api/session?limit=200" : "/opencode/session?limit=200"),
         {
-          headers: { Authorization: "Bearer " + String(info.ownerToken ?? info.clientToken ?? "") },
+          headers: { Authorization: "Bearer " + token },
           signal: AbortSignal.timeout(15000),
         },
       );
@@ -1495,11 +1054,15 @@ async function archiveWorld(seed: Seed, app: Surface, workspacePath: string, tit
   return { app, engine, workspace, workspacePath, candidate, neighbor, archivedAt, sidebar, undoToastSettled,
     // The rename UI rejects blank input; arrange persisted legacy titles through the native API.
     setCandidateTitle: (title: string) => seed.evalIn(app, browserScript(async (workspaceId, sessionId, title) => {
+      // Desktop bridge first; the app in a browser keeps the address in localStorage.
       const info = await window.__OPENWORK_ELECTRON__?.invokeDesktop?.("openworkServerInfo");
-      if (!info?.running || !info.baseUrl) throw new Error("OpenWork server is unavailable");
-      const response = await fetch(`${info.baseUrl.replace(/\/+$/, "")}/workspace/${encodeURIComponent(workspaceId)}/opencode/session/${encodeURIComponent(sessionId)}`, {
+      const port = localStorage.getItem("openwork.server.port");
+      const baseUrl = info?.running && info.baseUrl ? String(info.baseUrl) : port ? "http://127.0.0.1:" + port : "";
+      const token = info?.running && info.baseUrl ? String(info.ownerToken ?? info.clientToken ?? "") : localStorage.getItem("openwork.server.token") ?? "";
+      if (!baseUrl) throw new Error("OpenWork server is unavailable");
+      const response = await fetch(`${baseUrl.replace(/\/+$/, "")}/workspace/${encodeURIComponent(workspaceId)}/opencode/session/${encodeURIComponent(sessionId)}`, {
         method: "PATCH",
-        headers: { Authorization: `Bearer ${info.ownerToken ?? info.clientToken ?? ""}`, "Content-Type": "application/json" },
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({ title }),
         signal: AbortSignal.timeout(15_000),
       });
@@ -1528,21 +1091,6 @@ async function archiveWorld(seed: Seed, app: Surface, workspacePath: string, tit
     dismissMenu: () => seed.evalIn(app, () => window.__OPENWORK_ELECTRON__.contextMenu.dismiss(), { awaitPromise: true }),
     mutationRequests: () => seed.evalIn(app, () => window.__archiveAvailabilityRequests),
   };
-}
-
-export async function responsiveSessions(seed: Seed) {
-  const titles = ["Responsive primary chat", "Responsive split chat"];
-  const world = await oneWorkspace(seed, "responsive-session-layout", titles);
-  const [primary, secondary] = world.sessions;
-  if (!primary || !secondary) throw new Error("Responsive world did not create both sessions.");
-  // TODO(primitive): seed.desktop should accept an initial viewport for Electron surfaces.
-  await world.app.client.send("Emulation.setDeviceMetricsOverride", {
-    width: 390,
-    height: 844,
-    deviceScaleFactor: 1,
-    mobile: false,
-  });
-  return { ...world, primary, secondary };
 }
 
 export type SidebarRouteWorkspace = { id: string; name: string; loading: boolean; error: string | null };
@@ -1909,46 +1457,8 @@ export async function externalSessionVisibility(seed: Seed) {
   };
 }
 
-export async function crossWorkspaceSessions(seed: Seed) {
-  const runId = `${Date.now().toString(36)}-${process.pid}`;
-  const app = await seed.desktop({ name: "cross-workspace-split-view" });
-  const workspaceA = await seed.workspace(app, `/tmp/openwork-cross-workspace-split-${runId}-a`);
-  const [primary, sameWorkspacePeer] = await seed.sessions(app, [
-    `Primary workspace anchor ${runId}`,
-    `Primary workspace peer ${runId}`,
-  ]);
-  const workspaceB = await additionalWorkspace(seed, app, `/tmp/openwork-cross-workspace-split-${runId}-b`);
-  const [crossWorkspacePeer] = await seed.sessions(app, [`Secondary workspace peer ${runId}`]);
-  if (!primary || !sameWorkspacePeer || !crossWorkspacePeer) throw new Error("Split world did not create all sessions.");
-  return {
-    app,
-    workspaceA,
-    workspaceB,
-    primary: { ...primary, workspaceId: workspaceA.workspaceId },
-    sameWorkspacePeer: { ...sameWorkspacePeer, workspaceId: workspaceA.workspaceId },
-    crossWorkspacePeer: { ...crossWorkspacePeer, workspaceId: workspaceB.workspaceId },
-  };
-}
-
-export async function settingsRuntime(seed: Seed) {
-  const stamp = Date.now();
-  const firstName = `openwork-session-settings-a-${stamp}`;
-  const secondName = `openwork-session-settings-b-${stamp}`;
-  const app = await seed.desktop({ name: "session-switch-settings-runtime" });
-  const firstWorkspace = await seed.workspace(app, `/tmp/${firstName}`);
-  const secondWorkspace = await additionalWorkspace(seed, app, `/tmp/${secondName}`);
-  // TODO(primitive): seed.runtimeErrorCapture should install a scoped renderer error witness.
-  await seed.evalIn(app, () => {
-    window.__sessionSettingsRuntimeErrors = [];
-    window.addEventListener("error", (event) => window.__sessionSettingsRuntimeErrors.push(String(event.error?.message ?? event.message ?? "window error")));
-    window.addEventListener("unhandledrejection", (event) => window.__sessionSettingsRuntimeErrors.push(String(event.reason?.message ?? event.reason ?? "unhandled rejection")));
-    return true;
-  });
-  return { app, firstWorkspace, secondWorkspace, firstName, secondName };
-}
-
 export async function macSidebar(seed: Seed) {
-  const world = await oneWorkspace(seed, "mac-sidebar-toggle-clearance", ["Mac sidebar clearance"]);
+  const world = await oneWorkspace(seed, "mac-sidebar-toggle-clearance", ["Mac sidebar clearance"], "electron");
   return {
     ...world,
     clearViewport: () => world.app.client.send("Emulation.clearDeviceMetricsOverride"),
@@ -1961,243 +1471,4 @@ export async function macSidebar(seed: Seed) {
         : () => document.exitFullscreen());
     },
   };
-}
-
-export async function rendererCrash(seed: Seed) {
-  const app = await seed.desktop({ name: "desktop-renderer-crash-recovery" });
-  return { app };
-}
-
-export async function renderCycle(seed: Seed, { place }: { place: import("@openwork/env").Place }) {
-  // TODO(primitive): seed.desktop should accept environment overrides for instrumented renderer launches.
-  const app = await launchDesktop({
-    name: "desktop-render-cycle-stability",
-    host: place.host(),
-    env: { VITE_OPENWORK_PROFILER: "1" },
-  });
-  const workspacePath = seed.tmpPath("desktop-render-cycle");
-  await mkdir(workspacePath, { recursive: true });
-  // TODO(primitive): seed.storage should arrange persisted renderer preferences without raw evaluation.
-  await seed.evalIn(app, () => {
-    localStorage.setItem("openwork.debug.profilerOverlay", "1");
-    location.reload();
-    return true;
-  }).catch(() => undefined);
-  return {
-    app,
-    workspacePath,
-    async [Symbol.asyncDispose]() {
-      try {
-        await app[Symbol.asyncDispose]();
-      } finally {
-        await rm(workspacePath, { recursive: true, force: true });
-      }
-    },
-  };
-}
-
-export async function loadingIdle(seed: Seed) {
-  const providerId = "session-loading-idle-mock";
-  const modelId = "session-loading-idle-model";
-  const reply = "session loading idle proof";
-  const server = createServer((request, response) => {
-    const url = request.url ?? "";
-    if (request.method === "GET" && url.startsWith("/v1/models")) {
-      response.writeHead(200, { "content-type": "application/json" });
-      response.end(JSON.stringify({ object: "list", data: [{ id: modelId, object: "model" }] }));
-      return;
-    }
-    if (request.method === "POST" && (url === "/v1/chat/completions" || url === "/chat/completions")) {
-      request.resume();
-      request.on("end", () => setTimeout(() => streamReply(response, "chatcmpl-session-loading-idle", reply), 8_000));
-      return;
-    }
-    response.writeHead(404).end();
-  });
-  const baseUrl = await listen(server);
-  try {
-    const world = await oneWorkspace(seed, "session-loading-idle");
-    await configureWorkspaceProvider(seed, world.app, [world.workspace.workspaceId], {
-      providerId,
-      modelId,
-      modelName: "Session loading idle model",
-      baseUrl,
-    });
-    const parking = await seed.session(world.app, { title: "Parking session" });
-    const main = await seed.session(world.app, { title: "Main loading session" });
-    return {
-      ...world,
-      parking,
-      main,
-      reply,
-      renamedTitle: "Session loading stays idle",
-      async [Symbol.asyncDispose]() {
-        await closeServer(server);
-      },
-    };
-  } catch (error) {
-    await closeServer(server);
-    throw error;
-  }
-}
-
-export async function titleFailure(seed: Seed) {
-  const providerId = "session-title-failure-mock";
-  const modelId = "session-title-main-model";
-  const inaccessibleTitleModelId = "session-title-inaccessible-model";
-  const reply = "the conversation completes safely";
-  const server = createServer((request, response) => {
-    const url = request.url ?? "";
-    if (request.method === "GET" && url.startsWith("/v1/models")) {
-      response.writeHead(200, { "content-type": "application/json" });
-      response.end(JSON.stringify({ object: "list", data: [{ id: modelId, object: "model" }] }));
-      return;
-    }
-    if (request.method === "POST" && (url === "/v1/chat/completions" || url === "/chat/completions")) {
-      let body = "";
-      request.setEncoding("utf8");
-      request.on("data", (chunk: string) => { body += chunk; });
-      request.on("end", () => {
-        if (body.includes(`\"model\":\"${inaccessibleTitleModelId}\"`)) {
-          response.writeHead(403, { "content-type": "application/json" });
-          response.end(JSON.stringify({ error: { message: "model is not accessible to this user" } }));
-          return;
-        }
-        streamReply(response, "chatcmpl-session-title-failure", reply);
-      });
-      return;
-    }
-    response.writeHead(404).end();
-  });
-  const baseUrl = await listen(server);
-  try {
-    const world = await oneWorkspace(seed, "session-title-failure-warning");
-    await configureWorkspaceProvider(seed, world.app, [world.workspace.workspaceId], {
-      providerId,
-      modelId,
-      modelName: "Session title main model",
-      baseUrl,
-      smallModel: `${providerId}/${inaccessibleTitleModelId}`,
-    });
-    const session = await seed.session(world.app);
-    return {
-      ...world,
-      session,
-      reply,
-      warningTitle: "Automatic task title did not complete",
-      warningBody: "Your conversation is safe.",
-      async [Symbol.asyncDispose]() {
-        await closeServer(server);
-      },
-    };
-  } catch (error) {
-    await closeServer(server);
-    throw error;
-  }
-}
-
-function stormMinutes(): number {
-  const value = Number(process.env.OPENWORK_EVAL_ACTIVE_SESSION_STORM_MINUTES ?? "2");
-  if (!Number.isFinite(value) || value < 1 || value > 5) {
-    throw new Error("OPENWORK_EVAL_ACTIVE_SESSION_STORM_MINUTES must be a number from 1 through 5.");
-  }
-  return value;
-}
-
-function shellValue(value: string): string {
-  if (!/^[A-Za-z0-9._/-]+$/.test(value)) throw new Error(`Unsafe workload shell value: ${value}`);
-  return value;
-}
-
-export async function activeSessionStorm(seed: Seed) {
-  const runId = `${Date.now().toString(36)}-${process.pid}`;
-  const slowToolMs = Math.round(stormMinutes() * 60_000);
-  const plans = Array.from({ length: 3 }, (_, offset) => {
-    const index = offset + 1;
-    const path = `/tmp/openwork-active-session-storm-${runId}-w${index}`;
-    const marker = `STORM-W${index}-${runId}`;
-    return {
-      index,
-      path,
-      filePath: `${path}/storm-output-w${index}.txt`,
-      marker,
-      slowMarker: `SLOW-${marker}`,
-      easyMarker: `EASY-${marker}`,
-      finalReply: `COMPLETE-${marker}`,
-    };
-  });
-  const mock = seed.mock({
-    agentWorkloads: plans.map((plan) => ({
-      promptMarker: plan.marker,
-      finalReply: plan.finalReply,
-      steps: [
-        { tool: "bash", arguments: { command: `printf '%s\\n' 'INITIAL-${shellValue(plan.marker)}' > '${shellValue(plan.filePath)}'`, timeout: 30_000, workdir: plan.path, description: `Create workspace ${plan.index} output` } },
-        { tool: "bash", arguments: { command: `cat '${shellValue(plan.filePath)}'`, timeout: 30_000, workdir: plan.path, description: `Read workspace ${plan.index} initial output` } },
-        { tool: "bash", arguments: { command: `sleep ${Math.ceil(slowToolMs / 1_000)} && printf '%s\\n' '${shellValue(plan.slowMarker)}' >> '${shellValue(plan.filePath)}'`, timeout: slowToolMs + 30_000, workdir: plan.path, description: `Hold workspace ${plan.index} live` } },
-        { tool: "bash", arguments: { command: `cat '${shellValue(plan.filePath)}'`, timeout: 30_000, workdir: plan.path, description: `Read workspace ${plan.index} slow output` } },
-        { tool: "bash", arguments: { command: `printf '%s\\n' '${shellValue(plan.easyMarker)}' >> '${shellValue(plan.filePath)}'`, timeout: 30_000, workdir: plan.path, description: `Append workspace ${plan.index} easy marker` } },
-        { tool: "bash", arguments: { command: `cat '${shellValue(plan.filePath)}'`, timeout: 30_000, workdir: plan.path, description: `Read workspace ${plan.index} completed output` } },
-      ],
-    })),
-  });
-  const den = await seed.den({
-    mocks: { agent: mock },
-    org: {
-      name: "Active Session Workspace Storm",
-      admin: { name: "Storm Admin" },
-      members: { member: { name: "Storm Member" } },
-    },
-  });
-  const app = await seed.desktop({
-    den,
-    as: "member",
-    profileDir: process.env.OPENWORK_EVAL_ACTIVE_SESSION_STORM_PROFILE_DIR?.trim(),
-  });
-  const seededPlans: StormPlan[] = [];
-  for (const plan of plans) {
-    const workspace = seededPlans.length === 0
-      ? await seed.workspace(app, plan.path)
-      : await additionalWorkspace(seed, app, plan.path);
-    const session = await seed.session(app, { title: `Active storm workspace ${plan.index}` });
-    seededPlans.push({ ...plan, ...workspace, ...session });
-  }
-  await configureWorkspaceProvider(seed, app, seededPlans.map((plan) => plan.workspaceId), {
-    providerId: stormProviderId,
-    modelId: stormModelId,
-    modelName: "Active session storm model",
-    baseUrl: `${den.mocks.agent.url}/v1`,
-    allowTools: true,
-  });
-  await seed.evalIn(app, () => { location.reload(); return true; }).catch(() => undefined);
-  const reloadDeadline = Date.now() + 60_000;
-  while (Date.now() < reloadDeadline) {
-    const ready = await seed.evalIn(app, () => (Boolean(window.__openworkControl)
-      && Boolean((localStorage.getItem("openwork.den.authToken") ?? "").trim())))
-      .catch(() => false);
-    if (ready === true) break;
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-  return {
-    app,
-    den,
-    mock: den.mocks.agent,
-    plans: seededPlans,
-    slowToolMs,
-    routeStormMs: Math.min(60_000, Math.max(35_000, slowToolMs - 25_000)),
-  };
-}
-
-export async function workspaceOrder(seed: Seed) {
-  const profileDir = seed.tmpPath("workspace-sidebar-order-profile");
-  const seededApp = await seed.desktop({ name: "workspace-order-seed", profileDir });
-  const seededWorkspaceIds: string[] = [];
-  for (const label of ["alpha", "beta", "gamma"]) {
-    const workspace = seededWorkspaceIds.length === 0
-      ? await seed.workspace(seededApp, `${profileDir}/${label}`)
-      : await additionalWorkspace(seed, seededApp, `${profileDir}/${label}`);
-    seededWorkspaceIds.push(workspace.workspaceId);
-  }
-  await seededApp[Symbol.asyncDispose]();
-  const app = await seed.desktop({ name: "workspace-sidebar-order", profileDir });
-  return { app, profileDir, seededWorkspaceIds };
 }

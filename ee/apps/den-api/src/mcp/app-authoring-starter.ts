@@ -204,8 +204,8 @@ const MAX_ROWS = 8;
 const MAX_COLUMNS = 4;
 const numberFormat = new Intl.NumberFormat();
 
-// The host sends its colors and fonts; applying them at the root keeps the App
-// readable in light and dark themes.
+// The host sends its colors and fonts, and sends them again when the person
+// switches light or dark; applying them at the root keeps the App in step.
 function useTheme(hostContext) {
   const variables = hostContext?.styles?.variables;
   const scheme = hostContext?.theme ?? "light dark";
@@ -651,7 +651,7 @@ export default function App({ input, hostContext }) {
 `
 
 const STARTER_CSS = `body { margin: 0; }
-.app { box-sizing: border-box; display: grid; gap: 12px; padding: 12px 14px; color: var(--color-text-primary, CanvasText); font: 13px/1.5 var(--font-sans, system-ui, sans-serif); }
+.app { box-sizing: border-box; container-type: inline-size; display: grid; gap: 12px; min-width: 0; padding: 12px 14px; color: var(--color-text-primary, CanvasText); font: 13px/1.5 var(--font-sans, system-ui, sans-serif); }
 .app *, .app *::before, .app *::after { box-sizing: border-box; }
 .controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
 .field { display: grid; flex: 1 1 140px; gap: 4px; min-width: 0; }
@@ -680,7 +680,14 @@ td { padding: 6px 8px 6px 0; border-top: 1px solid var(--color-border-primary, r
 .facts dd { margin: 0; overflow-wrap: anywhere; }
 .skeleton { display: grid; gap: 8px; }
 .skeleton-row { height: 14px; border-radius: 4px; background: var(--color-background-tertiary, rgba(128, 128, 128, 0.15)); }
-@media (prefers-reduced-motion: no-preference) { button { transition: opacity 150ms ease-out, background-color 150ms ease-out; } }`
+@media (prefers-reduced-motion: no-preference) { button { transition: opacity 150ms ease-out, background-color 150ms ease-out; } }
+@container (max-width: 380px) {
+  .controls { flex-direction: column; align-items: stretch; }
+  .field { flex-basis: auto; }
+  .controls button.primary { width: 100%; }
+  .facts { grid-template-columns: 1fr; gap: 0; }
+  .facts dd { margin-bottom: 6px; }
+}`
 
 const SAMPLE_CAPABILITY = "<exact capability from search_capabilities>"
 

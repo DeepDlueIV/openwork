@@ -17,6 +17,23 @@ OpenWork's primary private-cloud shape uses the published Helm chart, a managed 
   </Card>
 </CardGroup>
 
+## Managed installation from hosted OpenWork
+
+The default-off **Deployments** rollout lets workspace owners approve an AWS
+installer in their own account and track health and approved updates. The GCP
+implementation additionally uses the default-off `managedDeploymentsGcp`
+rollout and customer-approved Google Cloud Shell. It requires a dedicated
+billing-enabled project, public Cloud DNS, and an operator-published immutable
+installer release. Local tests are not a live deployment receipt; the GCP
+rollout must stay off until a real release and approved installation are verified.
+Azure is not supported by the managed installer yet.
+
+A locked installer message is server-side publication/configuration—not a
+request for your cloud keys. Signing in to AWS or Google Cloud on your Mac
+cannot publish the installer. Operators follow
+[the managed-deployment runbook](https://github.com/different-ai/openwork/blob/dev/docs/managed-deployments.md);
+manual deployments below remain independent of the rollout.
+
 ## Common architecture
 
 Every provider guide uses the same OpenWork boundaries:

@@ -3,11 +3,7 @@ import { spec } from "@openwork/testkit";
 import { libraryMcpServersFromConfig } from "../worlds/desktop.ts";
 
 const test = spec.world(libraryMcpServersFromConfig, {
-  resources: {
-    surfaces: ["desktop"],
-    services: ["den", "mock"],
-    nativeReason: "Read hand-written workspace MCP configuration through the Electron desktop bridge.",
-  },
+  resources: { surfaces: ["appWeb"], services: ["den", "mock"] },
 });
 
 // People paste MCP servers into opencode.json from Claude Desktop or Cursor,

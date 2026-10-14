@@ -176,7 +176,8 @@ export type AdminFeature = {
     | "agentPermissions"
     | "engineV2Upgrade"
     | "remoteSessionEvents"
-    | "backgroundShellTasks";
+    | "backgroundShellTasks"
+    | "orgDefaultModel";
   label: string;
   description: string;
   since: string;
@@ -229,6 +230,7 @@ export type AdminOrganizationsPageResponse = {
       engineV2Upgrade: boolean;
       remoteSessionEvents: boolean;
       backgroundShellTasks: boolean;
+      orgDefaultModel: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -358,6 +360,15 @@ export type AdminOrganizationsPageResponse = {
         overrideApplies: boolean;
       };
       backgroundShellTasks: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      orgDefaultModel: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -443,6 +454,7 @@ export type AdminOverviewResponse = {
       engineV2Upgrade: boolean;
       remoteSessionEvents: boolean;
       backgroundShellTasks: boolean;
+      orgDefaultModel: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -572,6 +584,15 @@ export type AdminOverviewResponse = {
         overrideApplies: boolean;
       };
       backgroundShellTasks: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      orgDefaultModel: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -737,6 +758,13 @@ export type DenDesktopAgentPermissions = {
   }>;
 };
 
+export type DenDesktopConfigDefaultModel = {
+  providerID: string;
+  modelID: string;
+  source: "team" | "organization";
+  teamName?: string;
+};
+
 export type CurrentUserDesktopConfigResponse = {
   allowCustomProviders?: boolean;
   allowZenModel?: boolean;
@@ -785,6 +813,7 @@ export type CurrentUserDesktopConfigResponse = {
   onboardingPrompts?: Array<string>;
   onboardingPromptDescriptions?: Array<string>;
   agentPermissions?: DenDesktopAgentPermissions;
+  defaultModel?: DenDesktopConfigDefaultModel;
 };
 
 export type AutomationRunnerTokenResponse = {
@@ -5475,6 +5504,53 @@ export type WorkbotSettingsInput = {
   model: string | null;
 };
 
+export type DefaultModelChoice = {
+  providerId: string;
+  modelId: string;
+};
+
+export type DefaultModelTeam = {
+  teamId: string;
+  name: string;
+  memberCount: number;
+  model: DefaultModelChoice | null;
+  conflictingMemberCount: number;
+};
+
+export type DefaultModelSettings = {
+  everyone: DefaultModelChoice | null;
+  teams: Array<DefaultModelTeam>;
+  canEdit: boolean;
+};
+
+export type DefaultModelOption = {
+  providerId: string;
+  modelId: string;
+  providerName: string;
+  modelName: string;
+  logoProviderId: string;
+  source: "openwork" | "gateway" | "provider";
+};
+
+export type DefaultModelOptions = {
+  options: Array<DefaultModelOption>;
+  unavailableSources: Array<"openwork" | "gateway" | "provider">;
+};
+
+export type DefaultModelUnknownModelError = {
+  error: "unknown_model";
+  message: string;
+};
+
+export type DefaultModelSourceUnavailableError = {
+  error: "model_source_unavailable";
+  message: string;
+};
+
+export type DefaultModelWrite = {
+  model: DefaultModelChoice | null;
+};
+
 export type WorkbotSession = {
   user: {
     id: string;
@@ -6255,6 +6331,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       engineV2Upgrade: boolean;
       remoteSessionEvents: boolean;
       backgroundShellTasks: boolean;
+      orgDefaultModel: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -6384,6 +6461,15 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       backgroundShellTasks: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      orgDefaultModel: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6457,6 +6543,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       engineV2Upgrade: boolean;
       remoteSessionEvents: boolean;
       backgroundShellTasks: boolean;
+      orgDefaultModel: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -6586,6 +6673,15 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       backgroundShellTasks: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      orgDefaultModel: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -30350,6 +30446,165 @@ export type PutV1OrgWorkbotSettingsResponses = {
 };
 
 export type PutV1OrgWorkbotSettingsResponse = PutV1OrgWorkbotSettingsResponses[keyof PutV1OrgWorkbotSettingsResponses];
+
+export type GetV1OrgDefaultModelData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/org/default-model";
+};
+
+export type GetV1OrgDefaultModelErrors = {
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller lacks the View OpenWork Models settings permission.
+   */
+  403: ForbiddenError;
+  /**
+   * The organization or team was not found, or the organization default model is off.
+   */
+  404: NotFoundError;
+};
+
+export type GetV1OrgDefaultModelError = GetV1OrgDefaultModelErrors[keyof GetV1OrgDefaultModelErrors];
+
+export type GetV1OrgDefaultModelResponses = {
+  /**
+   * Default models returned.
+   */
+  200: DefaultModelSettings;
+};
+
+export type GetV1OrgDefaultModelResponse = GetV1OrgDefaultModelResponses[keyof GetV1OrgDefaultModelResponses];
+
+export type GetV1OrgDefaultModelOptionsData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/org/default-model/options";
+};
+
+export type GetV1OrgDefaultModelOptionsErrors = {
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller lacks the View OpenWork Models settings permission.
+   */
+  403: ForbiddenError;
+  /**
+   * The organization or team was not found, or the organization default model is off.
+   */
+  404: NotFoundError;
+};
+
+export type GetV1OrgDefaultModelOptionsError =
+  GetV1OrgDefaultModelOptionsErrors[keyof GetV1OrgDefaultModelOptionsErrors];
+
+export type GetV1OrgDefaultModelOptionsResponses = {
+  /**
+   * Models returned.
+   */
+  200: DefaultModelOptions;
+};
+
+export type GetV1OrgDefaultModelOptionsResponse =
+  GetV1OrgDefaultModelOptionsResponses[keyof GetV1OrgDefaultModelOptionsResponses];
+
+export type PutV1OrgDefaultModelEveryoneData = {
+  body: DefaultModelWrite;
+  path?: never;
+  query?: never;
+  url: "/v1/org/default-model/everyone";
+};
+
+export type PutV1OrgDefaultModelEveryoneErrors = {
+  /**
+   * The model is not one the organization has, or the request was invalid.
+   */
+  400: DefaultModelUnknownModelError | InvalidRequestError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller lacks the Manage OpenWork Models permission or needs to sign in again.
+   */
+  403: ForbiddenError;
+  /**
+   * The organization or team was not found, or the organization default model is off.
+   */
+  404: NotFoundError;
+  /**
+   * The model's provider could not be read to check the model.
+   */
+  503: DefaultModelSourceUnavailableError;
+};
+
+export type PutV1OrgDefaultModelEveryoneError =
+  PutV1OrgDefaultModelEveryoneErrors[keyof PutV1OrgDefaultModelEveryoneErrors];
+
+export type PutV1OrgDefaultModelEveryoneResponses = {
+  /**
+   * Default models saved.
+   */
+  200: DefaultModelSettings;
+};
+
+export type PutV1OrgDefaultModelEveryoneResponse =
+  PutV1OrgDefaultModelEveryoneResponses[keyof PutV1OrgDefaultModelEveryoneResponses];
+
+export type PutV1OrgDefaultModelTeamsByTeamIdData = {
+  body: DefaultModelWrite;
+  path: {
+    /**
+     * Den TypeID with 'tem_' prefix and a 26-character base32 suffix.
+     */
+    teamId: string;
+  };
+  query?: never;
+  url: "/v1/org/default-model/teams/{teamId}";
+};
+
+export type PutV1OrgDefaultModelTeamsByTeamIdErrors = {
+  /**
+   * The model is not one the organization has, or the request was invalid.
+   */
+  400: DefaultModelUnknownModelError | InvalidRequestError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller lacks the Manage OpenWork Models permission or needs to sign in again.
+   */
+  403: ForbiddenError;
+  /**
+   * The organization or team was not found, or the organization default model is off.
+   */
+  404: NotFoundError;
+  /**
+   * The model's provider could not be read to check the model.
+   */
+  503: DefaultModelSourceUnavailableError;
+};
+
+export type PutV1OrgDefaultModelTeamsByTeamIdError =
+  PutV1OrgDefaultModelTeamsByTeamIdErrors[keyof PutV1OrgDefaultModelTeamsByTeamIdErrors];
+
+export type PutV1OrgDefaultModelTeamsByTeamIdResponses = {
+  /**
+   * Default models saved.
+   */
+  200: DefaultModelSettings;
+};
+
+export type PutV1OrgDefaultModelTeamsByTeamIdResponse =
+  PutV1OrgDefaultModelTeamsByTeamIdResponses[keyof PutV1OrgDefaultModelTeamsByTeamIdResponses];
 
 export type GetV1McpConnectionsByConnectionIdSlackAssistantData = {
   body?: never;

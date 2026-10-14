@@ -151,6 +151,13 @@ export const FEATURES = defineFeatures({
     deployments: everywhere,
     default: false,
   },
+  orgDefaultModel: {
+    label: "Desktop: organization default model",
+    description: "Organization admins choose the model new desktop chats start with, for everyone or per team. Applies to the OpenCode v2 engine only; members can still change the model in each chat.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
 })
 
 export type FeatureKey = keyof typeof FEATURES

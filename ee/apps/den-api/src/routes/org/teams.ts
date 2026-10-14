@@ -20,6 +20,7 @@ import type { Hono } from "hono"
 import { describeRoute } from "hono-openapi"
 import { z } from "zod"
 import { deleteTeamAgentPermissionPolicy } from "../../agent-permissions.js"
+import { deleteTeamDefaultModel } from "../../default-model.js"
 import { db } from "../../db.js"
 import { invalidateTeamInferenceOAuth } from "../../llm/inference-provider-lifecycle.js"
 import { isScimManagedTeam } from "../../scim-groups.js"
@@ -446,6 +447,7 @@ async function deleteTeam(c: ResourceActionContext, payload: ResourceOrganizatio
 
     await tx.delete(DesktopPolicyMemberTable).where(eq(DesktopPolicyMemberTable.teamId, team.id))
     await deleteTeamAgentPermissionPolicy(tx, team.id)
+    await deleteTeamDefaultModel(tx, team.id)
     await tx.delete(ExternalMcpConnectionAccessGrantTable).where(eq(ExternalMcpConnectionAccessGrantTable.teamId, team.id))
     await tx.delete(LlmProviderAccessTable).where(eq(LlmProviderAccessTable.teamId, team.id))
     // Usage-limit assignments have no removed_at; unassigning deletes them. This

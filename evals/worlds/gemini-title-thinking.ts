@@ -4,12 +4,11 @@ import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { eventually } from "@openwork/testkit";
 import { SkipError, type Seed } from "@openwork/env";
 import { catalogModelVariants, CLOUD_MODEL_CONFIG_VERSION } from "@openwork/types/cloud-model-fast";
 import { buildCloudProviderConfig, isCloudProviderOutOfSync } from "../../apps/app/src/react-app/domains/connections/provider-auth/cloud-provider-config";
 import versions from "../../constants.json";
-import { engineBinary } from "./openwork-server-cli.ts";
+import { engineBinary, stopChild } from "./openwork-server-cli.ts";
 
 const exec = promisify(execFile);
 export const record = (value: unknown): value is Record<string, unknown> =>
@@ -129,16 +128,19 @@ export async function geminiTitleThinking(_seed: Seed) {
   child.stdout.on("data", chunk => { output += String(chunk); });
   child.stderr.on("data", () => undefined);
   const dispose = async () => {
-    child.kill("SIGTERM");
-    await eventually(() => child.exitCode !== null || child.signalCode !== null, {
-      within: 10_000, intervalMs: 100, until: value => value,
-    }).catch(() => { child.kill("SIGKILL"); });
+    await stopChild(child);
     witness.closeAllConnections();
     await new Promise<void>(resolve => witness.close(() => resolve()));
     await rm(root, { recursive: true, force: true });
   };
   try {
-    const base = await eventually(() => /opencode server listening on (http:\/\/[^\s]+)/.exec(output)?.[1], { within: 30_000, intervalMs: 100, until: value => Boolean(value) });
+    const deadline = Date.now() + 30_000;
+    let base = /opencode server listening on (http:\/\/[^\s]+)/.exec(output)?.[1];
+    while (!base && Date.now() < deadline && child.exitCode === null && child.signalCode === null) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      base = /opencode server listening on (http:\/\/[^\s]+)/.exec(output)?.[1];
+    }
+    if (!base) throw new Error("Isolated engine did not start within 30s");
     const engine = async (path: string, body?: unknown): Promise<unknown> => {
       const reply = await fetch(`${base}${path}?directory=${encodeURIComponent(directory)}`, {
         method: body === undefined ? "GET" : "POST", headers: { "content-type": "application/json" },

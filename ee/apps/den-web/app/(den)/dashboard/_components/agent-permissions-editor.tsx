@@ -440,7 +440,7 @@ function PermissionRow({ definition, team, setting, everyoneSetting, everyoneSta
   const ownDecision = setting?.decision;
   const effective = team ? ownDecision ?? inheritedDecision : ownDecision ?? AGENT_PERMISSION_DEFAULT_DECISION;
   // A team's row is changed while it has anything of its own; otherwise it follows Everyone.
-  const changed = team !== null && normalizeAgentPermissionSetting(definition, setting) !== undefined;
+  const changed = team !== null && normalizeAgentPermissionSetting(definition, setting) !== null;
   // Everyone's default already allows, so choosing Allow there stores nothing;
   // a team's Allow is kept because it overrides everyone's decision.
   const setDecision = (decision: AgentPermissionDecision | undefined) =>

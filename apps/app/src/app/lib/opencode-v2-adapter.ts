@@ -2471,7 +2471,7 @@ export function createClientV2(
         { model: {
           providerID: parameters.model.providerID,
           id: parameters.model.modelID,
-          ...(parameters.variant === undefined ? {} : { variant: parameters.variant }),
+          ...(parameters.variant === undefined ? {} : { variant: parameters.variant ?? "default" }),
         } },
         options?.signal,
       );
@@ -2838,9 +2838,8 @@ export function createClientV2(
     replySessionQuestion: (parameters: SessionParameters & { requestID: string; answers: string[][] }, options?: RequestOptions) =>
       settleQuestion(parameters, options),
   });
-  v2Clients.add(client);
-  // Object.assign above installs the v2-only method on the SDK's readonly
-  // session object; reflect that runtime augmentation in the returned type.
+  // The SDK exposes session through a getter; its object is augmented above,
+  // not reassigned. Reflect that runtime augmentation in the returned type.
   return client as typeof client & {
     session: typeof client.session & Pick<typeof adapter.session, "setModel">;
   };

@@ -262,14 +262,22 @@ function RolePicker({ team, state, customSets, abilities, disabled, newRoleHref 
             </div>
             {error ? <DenNotice tone="error" className="mt-2" message={error} /> : null}
             <div className="mt-1 flex items-center justify-between gap-2 border-t border-gray-100 px-1 pt-2">
-              <Link href={newRoleHref} className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-[12px] font-medium text-gray-700 transition-colors hover:bg-gray-50">
+              <Link href={newRoleHref} className="inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-2 py-1.5 text-[12px] font-medium text-gray-700 transition-colors hover:bg-gray-50">
                 <Plus className="h-3.5 w-3.5" aria-hidden />
                 Create role
               </Link>
-              <span className="flex gap-2">
-                <DenButton size="sm" variant="secondary" onClick={close}>Cancel</DenButton>
-                <DenButton size="sm" disabled={!changed} loading={busy} onClick={() => void save()} data-testid="team-role-save">
-                  {changed ? `Change to ${chosenTitle}` : "Change role"}
+              <span className="flex min-w-0 gap-2">
+                <DenButton size="sm" variant="secondary" className="shrink-0" onClick={close}>Cancel</DenButton>
+                <DenButton
+                  size="sm"
+                  disabled={!changed}
+                  loading={busy}
+                  onClick={() => void save()}
+                  className="min-w-0"
+                  title={changed ? `Change to ${chosenTitle}` : undefined}
+                  data-testid="team-role-save"
+                >
+                  <span className="truncate">{changed ? `Change to ${chosenTitle}` : "Change role"}</span>
                 </DenButton>
               </span>
             </div>

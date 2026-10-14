@@ -637,11 +637,13 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
       const appView = user.on(frame!);
       await appView.see({ testId: "host-context" }, { text: /^Theme light · fits 800 px$/ });
       await world.setColorScheme("dark");
+      // OpenWork marks dark mode with data-theme, not a class; the App must follow that.
+      expect((await probe.dom('html[data-theme="dark"]')).elements).toHaveLength(1);
       // Witness: the same frame, never reopened, now reports the dark theme.
       await appView.see({ testId: "host-context" }, { text: /^Theme dark · fits 800 px$/, timeoutMs: 10_000 });
       expect((await probe.dom("[data-built-app-preview] iframe")).elements).toHaveLength(1);
       await user.screenshot();
-      evidence.recordAssertionEvidence("An open App follows the host theme", `${name}: with ${pricerTitle} open, the system switched to dark; the same App frame re-rendered with theme dark and a height budget of 800 px, with 1 frame and no reopen. Before, an open App kept the theme it opened with.`, true);
+      evidence.recordAssertionEvidence("An open App follows the host theme", `${name}: with ${pricerTitle} open, the system switched to dark and OpenWork set data-theme="dark"; the same App frame re-rendered with theme dark and a height budget of 800 px, with 1 frame and no reopen. Before, an open App kept the theme it opened with.`, true);
       await world.setColorScheme("light");
       await appView.see({ testId: "host-context" }, { text: /^Theme light/, timeoutMs: 10_000 });
     });

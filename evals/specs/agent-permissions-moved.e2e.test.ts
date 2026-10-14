@@ -35,7 +35,7 @@ test("an owner finds agent permissions under Members › Teams, and old Agent pe
     const created = await landsOn("/dashboard/members");
     evidence.recordAssertionEvidence("old team and create links", `team → ${team}; new → ${created}`, team === `/dashboard/members/teams/${world.teamId}` && created === "/dashboard/members");
     expect([team, created]).toEqual([`/dashboard/members/teams/${world.teamId}`, "/dashboard/members"]);
-    await owner.see({ role: "tab", label: "Teams" });
+    await owner.see({ role: "tab", label: /^Teams/ });
     await owner.screenshot();
   });
 });

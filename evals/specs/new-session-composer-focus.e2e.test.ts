@@ -16,7 +16,7 @@ test("a person who sends the first message of a new session can type the next on
   let sessionId = "";
 
   await step("before: a new session opens on an empty composer", async () => {
-    await user.click({ role: "button", label: "New task" });
+    await user.click({ role: "button", label: "New session" });
     await user.see("composer", { editable: true, text: "" });
     await probe.eventually(() => probe.composer(), {
       within: 60_000, label: "the composer's model is ready", until: (state) => !state.modelUnavailable,

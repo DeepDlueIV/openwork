@@ -65,7 +65,7 @@ function ModelMark({ option }: { option: Pick<DefaultModelOption, "providerName"
 function comboboxOptions(input: {
   options: DefaultModelOptions;
   saved: DefaultModelChoice | null;
-  inherit: { label: string; description?: string };
+  inherit: { label: string; description?: string; icon?: ReactNode };
 }): DenComboboxOption[] {
   const listed: DenComboboxOption[] = input.options.options.map((option) => ({
     value: valueOf(option),
@@ -79,7 +79,7 @@ function comboboxOptions(input: {
   const missing = input.saved && !findOption(input.options, input.saved)
     ? [{ value: valueOf(input.saved), label: input.saved.modelId, description: "No longer available" }]
     : [];
-  return [{ value: INHERIT_VALUE, label: input.inherit.label, description: input.inherit.description }, ...missing, ...listed];
+  return [{ value: INHERIT_VALUE, label: input.inherit.label, description: input.inherit.description, icon: input.inherit.icon }, ...missing, ...listed];
 }
 
 function SettingRow({ label, labelId, aside, children }: { label: string; labelId: string; aside?: ReactNode; children: ReactNode }) {
@@ -101,7 +101,7 @@ type PickerProps = {
   settings: DefaultModelSettings | undefined;
   /** The scope's saved model: the organization default, or the team's override. */
   saved: DefaultModelChoice | null;
-  inherit: { label: string; description?: string };
+  inherit: { label: string; description?: string; icon?: ReactNode };
   aside?: ReactNode;
   /** One line of state under the row (counts, conflicts). */
   stateLine?: ReactNode;
@@ -278,7 +278,7 @@ export function TeamDefaultModelSection({ teamId, canManage }: { teamId: string;
   const options = useDefaultModelOptions(orgId, true);
   const team = settings.data?.teams.find((entry) => entry.teamId === teamId);
   const orgDefault = settings.data?.everyone ?? null;
-  const orgDefaultName = defaultModelName(options.data, orgDefault);
+  const orgDefaultOption = findOption(options.data, orgDefault);
   const overridden = Boolean(team?.model);
   return (
     <section className="mb-8 grid gap-3" aria-labelledby="team-default-model-heading" data-testid="team-default-model-section">
@@ -289,10 +289,12 @@ export function TeamDefaultModelSection({ teamId, canManage }: { teamId: string;
         canManage={canManage && (settings.data?.canEdit ?? true)}
         settings={settings.data}
         saved={team?.model ?? null}
-        inherit={{
-          label: "Use organization default",
-          description: orgDefaultName ?? "No organization default",
-        }}
+        inherit={orgDefault ? {
+          // Inheriting shows which model that is; the chip beside the label says it is inherited.
+          label: orgDefaultOption?.modelName ?? orgDefault.modelId,
+          description: orgDefaultOption ? `Organization default, ${orgDefaultOption.providerName}` : "Organization default",
+          icon: orgDefaultOption ? <ModelMark option={orgDefaultOption} /> : undefined,
+        } : { label: "Use organization default", description: "No organization default" }}
         aside={settings.data ? (
           overridden ? <DenChip tone="info">Overridden</DenChip> : <DenChip>From organization</DenChip>
         ) : null}

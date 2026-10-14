@@ -61,10 +61,11 @@ function serialize(entries: Map<string, Entry>, now: number): string | null {
 
 const store = createDashboardTileCacheStore(parse, serialize);
 
-function canonical(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(canonical);
+/** Arguments with their keys sorted, so the same call has one key however the App spells it. */
+export function canonicalMcpAppArguments(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonicalMcpAppArguments);
   if (!isRecord(value)) return value;
-  return Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical(value[key])]));
+  return Object.fromEntries(Object.keys(value).sort().map(key => [key, canonicalMcpAppArguments(value[key])]));
 }
 
 async function digest(value: string): Promise<string> {
@@ -79,7 +80,7 @@ async function digest(value: string): Promise<string> {
 async function entryKey(origin: McpAppOrigin, app: OpenworkMcpAppResource, name: string, args: Record<string, unknown>) {
   const scope = await mcpAppPresentationScope(origin);
   if (!scope) return null;
-  const key = await digest(JSON.stringify([scope.key, origin.workspaceId, app.serverName, app.resourceUri, name, canonical(args)]));
+  const key = await digest(JSON.stringify([scope.key, origin.workspaceId, app.serverName, app.resourceUri, name, canonicalMcpAppArguments(args)]));
   return { key, current: scope.current };
 }
 
@@ -109,18 +110,26 @@ export async function cachedMcpAppResult(
   }
 }
 
-/** Keeps a successful result only when the OpenWork server marked its tool read-only. */
+/**
+ * Keeps a successful result only when the OpenWork server marked its tool
+ * read-only. With keepOnFailure, a read-only tool that failed keeps its last
+ * value, which the App shows as stale.
+ */
 export async function rememberMcpAppResult(
   origin: McpAppOrigin, app: OpenworkMcpAppResource, name: string, args: Record<string, unknown>, result: CallToolResult,
+  options: { keepOnFailure?: boolean } = {},
 ): Promise<void> {
   try {
     const entry = await entryKey(origin, app, name, args);
     if (!entry) return;
     const entries = store.read(STORAGE_KEY);
     if (!entries) return;
+    const readOnly = result._meta?.[READ_ONLY_RESULT_META] === true;
     const providerIdentity = result._meta?.[PROVIDER_IDENTITY_META];
-    if (result.isError || result._meta?.[READ_ONLY_RESULT_META] !== true || typeof providerIdentity !== "string") {
-      // A failed or non-read-only answer must not leave an older value behind.
+    if (result.isError || !readOnly || typeof providerIdentity !== "string") {
+      // A non-read-only answer, or a failure the caller must not paper over
+      // (such as a sign-in the person has to finish), leaves no older value behind.
+      if (options.keepOnFailure && result.isError && readOnly) return;
       if (entries.delete(entry.key)) store.schedule(STORAGE_KEY);
       return;
     }

@@ -1,6 +1,6 @@
 import { expect } from "vitest";
 import { spec, type SpecBodyContext } from "@openwork/testkit";
-import { appSource, appTitle, buildPrompt, buildReply, chatPrompt, chatReply, guidedReply, guidedTitle, launchInput, mcpAppServers, mcpAppServersChat, mcpAppServersChatOwnSignIn, mcpAppCreationV1, mcpAppCreationV2, payload, pricerTitle, record, reopenPrompt, reopenReply, reservationId, rows, signInPrompt, signInReply, toolNames } from "../worlds/mcp-app-servers.ts";
+import { appSource, appTitle, boardAgainPrompt, boardAgainReply, boardPrompt, boardReply, boardTitle, buildPrompt, buildReply, chatPrompt, chatReply, guidedReply, guidedTitle, launchInput, mcpAppServers, mcpAppServersChat, mcpAppServersChatOwnSignIn, mcpAppCreationV1, mcpAppCreationV2, payload, pricerTitle, record, reopenPrompt, reopenReply, reservationId, rows, signInPrompt, signInReply, toolNames } from "../worlds/mcp-app-servers.ts";
 
 const test = spec.world(mcpAppServers, {
   resources: { surfaces: ["web"], services: ["den", "mock"] },
@@ -454,6 +454,71 @@ chatTest("an owner follows App creation progress and opens the finished App besi
     evidence.recordAssertionEvidence("Only an App's newest card stays live", `For "${reopenPrompt}" the model opened ${appTitle} a second time. The conversation shows one live ${appTitle}, the new card, and the earlier card now reads "${newerNote}", so the App is not loaded twice.`, true);
   });
 
+  // A price board published from prepare_app's lookup starter unchanged, opened by the chat for one SKU.
+  const sku = { sku: launchInput.sku };
+  const boardCard = () => probe.dom(`[data-mcp-app-resource="${world.board?.resourceUri}"] iframe`);
+  let board: ReturnType<typeof user.on> | undefined;
+
+  await step("before: the price board built from the lookup starter is not open, and nothing has looked up its price", async () => {
+    if (!world.board) throw new Error(`${boardTitle} was not built`);
+    await frame?.[Symbol.asyncDispose]();
+    frame = undefined;
+    expect((await boardCard()).elements).toHaveLength(0);
+    await user.screenshot();
+  });
+
+  await step("after: opening the price board for a SKU from the chat shows its price with one Inventory lookup and no click", async () => {
+    const openedBoardAt = new Date().toISOString();
+    await agent.send(boardPrompt);
+    await user.see({ text: boardReply }, { timeoutMs: 120_000 });
+    expect((await modelTool(boardPrompt))?.toolName).toMatch(/execute_capability$/);
+    // Nothing is clicked: the starter loads its read-only lookup as the App opens.
+    frame = await world.appFrameShowing(boardTitle, "Unit price");
+    board = user.on(frame);
+    await board.notSee({ text: /Refreshing/ }, { timeoutMs: 30_000 });
+    const calls = await lookups(openedBoardAt);
+    expect(calls).toEqual([sku]);
+    await user.screenshot();
+    evidence.recordAssertionEvidence("Opening an App loads its read-only data with no click", `For "${boardPrompt}" the model opened ${boardTitle}, published from prepare_app's lookup starter unchanged, with the launch input { sku: "${launchInput.sku}" }. With no click it shows the unit price, and Inventory recorded ${calls.length} lookup. Before, the starter showed nothing until its button was clicked.`, calls.length === 1);
+  });
+
+  await step("after: leaving the conversation and coming back shows the board again without another lookup", async () => {
+    await frame?.[Symbol.asyncDispose]();
+    frame = undefined;
+    const leftAt = new Date().toISOString();
+    await user.click({ role: "button", label: "Dashboard" });
+    await user.see({ role: "heading", label: emptyDashboardHeading });
+    // Witness: the card and its App document are gone while the conversation is closed.
+    expect((await boardCard()).elements).toHaveLength(0);
+    await world.goBack();
+    frame = await world.appFrameShowing(boardTitle, "Unit price");
+    board = user.on(frame);
+    await board.notSee({ text: /Refreshing/ }, { timeoutMs: 30_000 });
+    // The remounted card asks for its load again; OpenWork answers it for this open, so nothing reaches Inventory.
+    const calls = await world.inventoryCalls({ sinceIso: leftAt, atLeast: 1, timeoutMs: 8_000 });
+    expect(calls).toEqual([]);
+    await user.screenshot();
+    evidence.recordAssertionEvidence("A card that renders again does not load again", `After the owner went to the Dashboard, which removed the ${boardTitle} card, and came back, the card mounted a new App document that showed the unit price. Inventory recorded ${calls.length} lookups in the 8 seconds after it showed.`, calls.length === 0);
+  });
+
+  await step("after: opening the board again shows the kept price at once, then refreshes it with one lookup", async () => {
+    await frame?.[Symbol.asyncDispose]();
+    frame = undefined;
+    const againAt = new Date().toISOString();
+    await agent.send(boardAgainPrompt);
+    await user.see({ text: boardAgainReply }, { timeoutMs: 120_000 });
+    frame = await world.appFrameShowing(boardTitle, "Unit price");
+    board = user.on(frame);
+    // The kept price is on screen while the new open's lookup is still running.
+    await board.see({ text: /Refreshing/ }, { timeoutMs: 10_000 });
+    await user.screenshot();
+    await board.notSee({ text: /Refreshing/ }, { timeoutMs: 30_000 });
+    await board.see({ text: "Unit price" });
+    const calls = await lookups(againAt);
+    expect(calls).toEqual([sku]);
+    evidence.recordAssertionEvidence("A reopened App shows its last data at once, then refreshes", `For "${boardAgainPrompt}" a new ${boardTitle} card showed the price kept from the first open while it read "Refreshing…", then finished its own lookup: Inventory recorded ${calls.length} lookup since the reopen.`, calls.length === 1);
+  });
+
   await step("before: building an App does not place it on the owner’s dashboard", async () => {
     await frame?.[Symbol.asyncDispose]();
     frame = undefined;
@@ -706,7 +771,8 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
       expect(steps[0]?.text).toContain("Inventory lookup unit price");
       // The guide the agent read, shown in the step's details, is OpenWork Cloud's built-in skill.
       expect(steps[0]?.text).toContain("# Build an App");
-      // prepare_app's starter, published unchanged, asks for the tool's input and loads it on one click.
+      // prepare_app's starter, published unchanged, asks for the input it needs before it can load.
+      await user.on(frame).see({ text: "Enter Sku to see results." });
       await user.on(frame).type({ role: "textbox", label: "Sku" }, launchInput.sku);
       await user.on(frame).click({ role: "button", label: "Show unit price" });
       await user.on(frame).see({ text: "Unit price" }, { timeoutMs: 60_000 });

@@ -1214,6 +1214,33 @@ export async function quotedDraftChat(seed: Seed) {
   };
 }
 
+export const plainTimestampsMarker = "PLAIN_TIMESTAMPS_ANSWER";
+/** Times whose ":18:" is also an emoji name (🔞), next to a real shortcode. */
+export const plainTimestampsLine = "I'll correlate the crash at 14:18:07 PDT (21:18:07Z).";
+export const plainTimestampsAnswer = [plainTimestampsLine, "", "Found it :tada:"].join("\n");
+
+/** An answer that quotes clock times and ends with one emoji shortcode. */
+export async function plainTimestampsChat(seed: Seed) {
+  const providerId = "plain-timestamps-mock";
+  const modelId = "plain-timestamps-model";
+  const mock = seed.mock({
+    agentWorkloads: [{ promptMarker: plainTimestampsMarker, latestUserTurn: true, finalReply: plainTimestampsAnswer, steps: [] }],
+  });
+  const workspacePath = seed.tmpPath("plain-timestamps");
+  const app = await seed.appWeb({ name: "plain-timestamps", workspacePath, mocks: { agent: mock } });
+  const agentMock = app.mocks.agent;
+  if (!agentMock) throw new Error("The app-web fixture did not boot its plain-timestamps model.");
+  const workspace = await seed.workspace(app, workspacePath);
+  await configureProvider(seed, app, workspace.workspaceId, providerId, modelId, { provider: {
+    [providerId]: {
+      npm: "@ai-sdk/openai-compatible", name: "Plain timestamps mock",
+      options: { baseURL: `${agentMock.url}/v1`, apiKey: "sk-plain-timestamps" },
+      models: { [modelId]: { name: "Plain timestamps model" } },
+    },
+  } });
+  return { app, workspace };
+}
+
 /**
  * The answer arrives in small content deltas from the shared agent mock, which
  * the placement boots next to Den so the engine can reach it on Daytona too.

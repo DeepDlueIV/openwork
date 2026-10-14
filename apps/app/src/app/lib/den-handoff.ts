@@ -209,10 +209,13 @@ export async function exchangeHandoffAndSignIn(
     const previousBootstrap = readDenBootstrapConfig();
     const bootstrapChangesOrigin =
       denOriginComparisonKey(previousBootstrap.baseUrl) !== destinationKey;
+    const previousOrganizationId = storedSettings.activeOrgId
+      ?? previousBootstrap.prepared?.orgId
+      ?? previousBootstrap.handoff?.orgId;
     const changesOrganization = plan.kind !== "await-user-selection"
       && plan.organization !== null
-      && Boolean(storedSettings.activeOrgId)
-      && plan.organization.id !== storedSettings.activeOrgId;
+      && Boolean(previousOrganizationId)
+      && plan.organization.id !== previousOrganizationId;
     const needsBootstrapCommit = bootstrapChangesOrigin || changesOrganization || options.bootstrap !== undefined;
     if (needsBootstrapCommit) {
       // Claim links and prepared-workspace state belong to the
@@ -243,7 +246,10 @@ export async function exchangeHandoffAndSignIn(
             : carryOriginScopedFields && previousBootstrap.enterpriseActivation
               ? previousBootstrap.enterpriseActivation
               : null,
-        }, { clearDormantBranding: changesOrganization });
+        }, {
+          clearDormantBranding: changesOrganization,
+          ...(changesOrganization && plan.organization ? { organizationId: plan.organization.id } : {}),
+        });
       } catch (error) {
         // Nothing was activated: the previous enrollment (origin, token, and
         // organization) is still complete and authoritative.

@@ -29,7 +29,9 @@ OFF projects stock OpenWork identity and blocks branding mutations without delet
 
 Install/connect payloads remain valid for older desktops: custom values when enabled, stock values when disabled, and an explicit `whiteLabelEnabled` projection for updated clients. Signature verification, issuer binding, HTTPS checks, expiry, and one-use exchange protection remain intact.
 
-Updated desktops preserve and target-scope local rollback data before organization/control-plane switches. Shell-issued snapshot receipts protect transaction rollback. See the [desktop rollback storage contract](../apps/desktop/electron/desktop-brand-rollback.md).
+Updated desktops preserve and target-scope local rollback data before organization/control-plane switches. Shell-issued snapshot receipts protect transaction rollback. Appearance persistence is serialized and bound to the originating refresh, Den/API target, organization, and session; delayed ON responses cannot override newer OFF decisions or enrollment changes. Confirmed organization switches retire stale prepared/handoff records from the live bootstrap while retaining their rollback snapshots.
+
+If renderer rollback storage is unavailable, appearance-only OFF can still be persisted without changing source branding or enrollment. Destructive replacements, target switches, and snapshot restores still require successful preservation. See the [desktop rollback storage contract](../apps/desktop/electron/desktop-brand-rollback.md).
 
 No database schema migration or destructive cleanup is included. Grandfathering writes only the existing feature-control tables.
 

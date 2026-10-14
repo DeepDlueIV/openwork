@@ -41,7 +41,11 @@ For a **confirmed same-origin organization switch**, the renderer sends all thre
 brand fields explicitly as `null`. The shell archives the original settings and
 cache first, then clears the active dormant fields. While the flag is off, a
 stock wire payload cannot replace originals; it is not the explicit all-null
-organization-switch request.
+organization-switch request. The live bootstrap also retires prepared/handoff
+records tied to the previous organization; a later branding refresh cannot
+reintroduce those records or associate the new branding with the old org. The
+previous enrollment remains available only through its trusted transaction
+snapshot, not the new organization's active configuration.
 
 Bootstrap reads return an opaque process-local `rollbackSnapshotId`. During a
 failed handoff transaction the renderer forwards the previously read ID as

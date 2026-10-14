@@ -66,6 +66,7 @@ test("Cloud OFF branding preserves rollback data and interoperates with frozen o
     const stored = await world.stored();
     expect(stored.metadata).toMatchObject(world.dormant);
     expect(stored.assets).toEqual(world.initial.assets);
+    evidence.recordAssertionEvidence("Cloud OFF blocks branding changes without deleting their sources", "Organization branding PATCH and asset POST both return 404 feature_disabled; saved branding and binary assets remain unchanged", true);
   });
 
   await step("an ordinary organization edit and metadata normalization retain dormant configuration and asset bytes", async () => {

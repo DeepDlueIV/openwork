@@ -27,6 +27,24 @@ owned-world cleanup cover abandoned runs. Reviewer checkpoints are unchanged.
 Dev warm-up and other callers still save reusable running templates with the
 existing layer locks. No fork-during-snapshot behavior is assumed.
 
+Preparation now verifies live Chrome `/json/version` and the authenticated
+loopback gateway on port 8081, including the gateway's configured upstream port,
+after full builds and fast refreshes. Ready files alone are not health checks.
+Launch requires a CDP-shaped response through the private provider route; 401/403
+fail immediately as access errors rather than being retried as startup delays.
+
+Before failed preparation or launch deletes its owned VM, bounded diagnostics
+record local Chrome/gateway status, service states, selected listener ports,
+bounded journal/browser/kernel event categories and the cgroup OOM count.
+Launch also records the last eight external responses (status, selected safe
+headers, known fixed error bodies; unknown bodies are omitted). Raw private
+journals, service environments, cookies, credentials and preview URLs/tokens
+never enter these diagnostics. Diagnostic failure cannot replace the original
+error or delay cleanup beyond its 15-second budget. Healthy internal endpoints
+with external 502 identify the provider preview route; Chrome failures and guest
+gateway/stale-port failures remain distinct. This classification does not itself
+prove a provider incident or justify restarting services or allocating retries.
+
 - Needs `DAYTONA_API_KEY` for an organization with Linux VMs in
   `OPENWORK_DAYTONA_EVIDENCE_REGION` (default `us-west-3`).
 - Builds: `node scripts/prepare-evidence-web.ts` with the provider set.

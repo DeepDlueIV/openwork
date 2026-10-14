@@ -9,6 +9,7 @@ import {
   EVIDENCE_CONTROLLER_FILES, EVIDENCE_DEPENDENCIES_RECIPE, EVIDENCE_TOOLS_RECIPE,
 } from "@openwork/freestyle/evidence-builder";
 import { DaytonaApi, DaytonaApiError, type Sandbox } from "./api.ts";
+import { boundedDiagnostic, inspectGuest, requireLocalEvidenceReady } from "./health.ts";
 
 /**
  * Daytona builds the same evidence world as Freestyle, with the same steps inside
@@ -154,6 +155,9 @@ export async function ensureLayer(api: DaytonaApi, input: LayerInput): Promise<s
       input.observe({ stage: `${input.stage}-snapshot`, durationMs: Math.round(performance.now() - snapshotStart) });
       input.observe({ stage: input.stage, durationMs: Math.round(performance.now() - start), cacheHit: false });
       return input.name;
+    } catch (error) {
+      if (input.stage === "daytona-world") await diagnoseGuestFailure(api, created, input.stage);
+      throw error;
     } finally {
       // Awaited: a failing CI step exits right after, and a builder left running holds the lock.
       await api.deleteSandbox(created.id).catch(() => undefined);
@@ -258,6 +262,7 @@ node ${ROOT}/evidence-control.mjs refresh ${state.restart.join(" ")}
 printf %s ${runtimeFingerprint} > ${ROOT}/runtime-fingerprint
 printf %s ${sha} > ${ROOT}/built-from-sha
 `, options, 4 * 60_000);
+        await requireLocalEvidenceReady(api, sandbox);
         return;
       }
       for (const [index, name] of EVIDENCE_CONTROLLER_FILES.entries()) await api.writeFile(sandbox, `${ROOT}/${name}`, controller[index]);
@@ -282,6 +287,7 @@ ${GATEWAY_UNITS}
 df -h /
 free -m
 `, options);
+      await requireLocalEvidenceReady(api, sandbox);
     },
   });
   let result: Result;
@@ -338,7 +344,15 @@ export async function prepareWorldLayer(api: DaytonaApi, input: LayerInput, sour
       reason: "ephemeral PR world; template save omitted" });
     return { sandbox };
   } catch (error) {
+    await diagnoseGuestFailure(api, created, "daytona-world-prepare");
     await api.deleteSandbox(created.id).catch(() => undefined);
     throw error;
   }
+}
+
+async function diagnoseGuestFailure(api: DaytonaApi, sandbox: Sandbox, stage: string) {
+  await boundedDiagnostic(async () => {
+    const health = await inspectGuest(api, sandbox).catch(() => undefined);
+    console.error(JSON.stringify({ stage, health: health ?? "unavailable" }));
+  });
 }

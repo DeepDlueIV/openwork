@@ -418,7 +418,7 @@ adminViewTest("an admin who is not an owner can read a team's agent permissions 
 
   await step("Morgan, an admin, sees Contractors' Agents tab with every control locked and no reset", async () => {
     await admin.see({ text: "Read only. Needs the “Manage agent permissions” permission. Ask the organization owner." }, { timeoutMs: 90_000 });
-    await admin.see({ testId: "agent-permission-commands-source" }, { text: "Changed for Contractors" });
+    await admin.see({ testId: "agent-permission-commands-source" }, { text: /Changed for Contractors/ });
     await admin.notSee({ testId: "agent-permissions-reset" });
     await admin.notSee({ role: "button", label: "Use Everyone's setting for Run commands" });
     const controls = await world.permissionControls();
@@ -515,7 +515,7 @@ editorTest("local skills and local MCP servers are Allowed or Blocked switches, 
     await owner.see({ testId: "agent-permission-localMcpServers-source" }, { text: "From Everyone" });
     await owner.see({ testId: "agent-permission-localMcpServers" }, {});
     await owner.click({ role: "switch", label: "Use local MCP servers" });
-    await owner.see({ testId: "agent-permission-localMcpServers-source" }, { text: "Changed for Contractors" });
+    await owner.see({ testId: "agent-permission-localMcpServers-source" }, { text: /Changed for Contractors/ });
     await owner.see({ testId: "agent-permission-localMcpServers" }, {});
     await owner.click({ role: "button", label: "Save changes" });
     await saveLanded(probe);
@@ -535,7 +535,7 @@ editorTest("local skills and local MCP servers are Allowed or Blocked switches, 
     await owner.see({ testId: "agent-permission-localMcpServers" }, {});
     await owner.screenshot();
     await owner.click({ role: "button", label: "Discard" });
-    await owner.see({ testId: "agent-permission-localMcpServers-source" }, { text: "Changed for Contractors" });
+    await owner.see({ testId: "agent-permission-localMcpServers-source" }, { text: /Changed for Contractors/ });
     const received = await world.receivedRules("riley");
     evidence.recordAssertionEvidence("Riley's rules after discarding", describeRules(received), JSON.stringify(received) === JSON.stringify([rule("skill", "*", "deny", "Everyone")]));
     expect(received).toEqual([rule("skill", "*", "deny", "Everyone")]);

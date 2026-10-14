@@ -186,7 +186,7 @@ export function ManageMembersScreen() {
   const agentPermissionsColumn = Boolean(orgContext && orgFeatureEnabled(orgContext, "agentPermissions") && access.canViewAgentPermissions);
   const agentPolicies = useAgentPermissions(orgContext?.organization.id ?? "", agentPermissionsColumn && Boolean(orgContext?.organization.id));
   const teamListColumns = agentPermissionsColumn
-    ? teamRoles ? "lg:grid-cols-[minmax(0,1fr)_120px_170px_120px_200px]" : "lg:grid-cols-[minmax(0,1fr)_170px_140px_200px]"
+    ? teamRoles ? "lg:grid-cols-[minmax(0,1fr)_100px_170px_90px_180px]" : "lg:grid-cols-[minmax(0,1fr)_170px_100px_180px]"
     : teamRoles ? "lg:grid-cols-[minmax(0,1fr)_120px_140px_200px]" : "lg:grid-cols-[minmax(0,1fr)_160px_200px]";
   const tabCounts: Record<Exclude<MembersTab, "roles">, number> = {
     members: orgContext?.members.length ?? 0,
@@ -1103,7 +1103,7 @@ export function ManageMembersScreen() {
                   <IconTile icon={Globe} />
                   <span className="min-w-0">
                     <span className="block text-[13px] font-medium text-gray-900 group-hover:underline">Everyone</span>
-                    <span className="mt-0.5 block truncate text-[12px] text-gray-500">Every member, including people in no team</span>
+                    <span className="mt-0.5 block text-[12px] text-gray-500">Every member, including people in no team</span>
                   </span>
                 </Link>
                 {teamRoles ? <span className="text-[13px] text-gray-700" data-testid="team-row-role">Member</span> : null}

@@ -100,7 +100,7 @@ import { modelRefKey } from "../models/model-collections-store";
 import { useLocal } from "@/react-app/kernel/local-provider";
 import { useGatewayUsage, useGatewayUsageErrorHandled } from "../../cloud/use-gateway-usage";
 import { GatewayUsageApprovalNotice, GatewayUsageNotice } from "../../cloud/gateway-usage-panel";
-import { gatewayUsageNoticeState, gatewayUsageRefreshKey, isGatewayUsageModel } from "../../cloud/gateway-usage-state";
+import { gatewayUsageCanSwitchProvider, gatewayUsageForProvider, gatewayUsageNoticeState, gatewayUsageRefreshKey, isGatewayUsageModel } from "../../cloud/gateway-usage-state";
 import { resolveAttachmentFileMetadata } from "@/react-app/domains/session/sync/attachment-file-part";
 import { deriveSessionRenderModel } from "@/react-app/domains/session/sync/transition-controller";
 import { clearQueuedSendContext, setQueuedSendContext } from "@/react-app/domains/session/sync/queued-send-context";
@@ -622,6 +622,8 @@ export type SessionSurfaceProps = {
   /** providerID → modelID → provider model, for per-session variant options. */
   providerCatalog?: ProviderCatalog;
   gatewayProviderIds?: ReadonlySet<string>;
+  /** OpenCode provider id → organization Gateway provider id, to pick the usage limit that governs the model. */
+  gatewayCloudProviderIds?: ReadonlyMap<string, string>;
   gatewayUsageProviderScope?: number | null;
   /** Den/import includes OpenWork Models for this org member (not just local sync). */
   openWorkModelsEntitled?: boolean;
@@ -1626,13 +1628,20 @@ export function SessionSurface(props: SessionSurfaceProps) {
     latestMessageId: latestUsageMessage?.id,
     errorKey: JSON.stringify([error?.message ?? null, error?.presentation?.gatewayUsage ?? null, latestUsageEvidence]),
   }), liveStatus.type === "idle", props.gatewayUsageProviderScope ?? null);
-  const gatewayNotice = gatewayUsageNoticeState({ gatewaySelected: gatewayUsage.active, status: gatewayUsage.data });
+  // A provider limit for the selected model's provider replaces the default limits.
+  const gatewayCloudProviderId = props.gatewayCloudProviderIds?.get(sessionModel.selectedModel.providerID) ?? null;
+  const gatewayScope = useMemo(
+    () => gatewayUsage.data ? gatewayUsageForProvider(gatewayUsage.data, gatewayCloudProviderId) : null,
+    [gatewayUsage.data, gatewayCloudProviderId],
+  );
+  const gatewayCanSwitchProvider = gatewayUsageCanSwitchProvider(gatewayUsage.data, gatewayCloudProviderId, props.gatewayCloudProviderIds?.values());
+  const gatewayNotice = gatewayUsageNoticeState({ gatewaySelected: gatewayUsage.active, status: gatewayScope?.status });
   const hideGatewayError = useGatewayUsageErrorHandled({
-    scopeKey: gatewayUsage.scopeKey, sessionOwner, gatewaySelected: gatewayUsage.active, status: gatewayUsage.data,
+    scopeKey: gatewayUsage.scopeKey, sessionOwner, gatewaySelected: gatewayUsage.active, status: gatewayScope?.status,
     errorKey: usageError?.message.id ?? null, evidence: latestUsageEvidence, rateLimited: usageError?.presentation.kind === "rate-limited",
   });
   const hideDirectGatewayError = useGatewayUsageErrorHandled({
-    scopeKey: gatewayUsage.scopeKey, sessionOwner, gatewaySelected: gatewayUsage.active, status: gatewayUsage.data,
+    scopeKey: gatewayUsage.scopeKey, sessionOwner, gatewaySelected: gatewayUsage.active, status: gatewayScope?.status,
     errorKey: error?.message ?? null, evidence: error?.presentation?.gatewayUsage ?? null, rateLimited: error?.presentation?.kind === "rate-limited",
   });
   const visibleMessages = useMemo(() => {
@@ -3546,7 +3555,8 @@ export function SessionSurface(props: SessionSurfaceProps) {
 
       <div ref={composerShellRef} className="shrink-0 px-0 pb-2 pt-2 max-lg:pb-0">
         <GatewayUsageApprovalNotice />
-        {gatewayNotice && gatewayUsage.data ? <GatewayUsageNotice key={`${gatewayUsage.scopeKey}:${sessionOwner}`} state={gatewayNotice} status={gatewayUsage.data} stale={gatewayUsage.query.isError} /> : null}
+        {gatewayNotice && gatewayScope ? <GatewayUsageNotice key={`${gatewayUsage.scopeKey}:${sessionOwner}:${gatewayCloudProviderId ?? ""}`} state={gatewayNotice} status={gatewayScope.status} stale={gatewayUsage.query.isError}
+          providerName={gatewayScope.providerName} canSwitchProvider={gatewayCanSwitchProvider} /> : null}
         {(props.providerConnectedCount ?? 0) === 0 ? (
           <button
             type="button"

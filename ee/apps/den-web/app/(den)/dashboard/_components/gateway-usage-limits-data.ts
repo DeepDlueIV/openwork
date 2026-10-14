@@ -184,11 +184,11 @@ export const timeframeLabels = { day: "1 day", week: "1 week", month: "1 month" 
 export const timeframePeriods = { day: "a day", week: "a week", month: "a month" };
 
 export function newGatewayPolicy(): GatewayUsagePolicyWrite {
-  return { name: "", hardLimit: true, allowRequestReset: true, limits: [{ timeframe: "month", costUsd: "" }] };
+  return { name: "", providerId: null, hardLimit: true, allowRequestReset: true, limits: [{ timeframe: "month", costUsd: "" }] };
 }
 
 export function editGatewayPolicy(policy: GatewayUsageLimitPolicy): GatewayUsagePolicyWrite {
-  return { name: policy.name, hardLimit: policy.hardLimit, allowRequestReset: policy.allowRequestReset,
+  return { name: policy.name, providerId: policy.providerId ?? null, hardLimit: policy.hardLimit, allowRequestReset: policy.allowRequestReset,
     limits: policy.limits.map((limit) => ({ timeframe: limit.timeframe, costUsd: microUsdDecimal(limit.costLimitMicroUsd) })),
   };
 }

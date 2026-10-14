@@ -171,6 +171,7 @@ import {
   type GatewayConnectProvider,
   isCloudManagedProviderKey,
   resolveGatewayConnectProviders,
+  resolveGatewayCloudProviderIds,
   resolveGatewayProviderIds,
 } from "@/react-app/domains/connections/provider-auth/cloud-provider-config";
 import { assignedModelOptions } from "@/react-app/domains/connections/provider-auth/assigned-model-options";
@@ -1071,6 +1072,10 @@ export function SessionRoute() {
     () => resolveGatewayProviderIds(sessionProviderAuthSnapshot.importedCloudProviders),
     [sessionProviderAuthSnapshot.importedCloudProviders],
   );
+  const gatewayCloudProviderIds = useMemo(
+    () => resolveGatewayCloudProviderIds(sessionProviderAuthSnapshot.importedCloudProviders),
+    [sessionProviderAuthSnapshot.importedCloudProviders],
+  );
   const gatewayConnectProviders = useMemo(
     () => denAuth.isSignedIn ? resolveGatewayConnectProviders(sessionProviderAuthSnapshot.cloudProviderServerSync?.skippedProviders) : [],
     [denAuth.isSignedIn, sessionProviderAuthSnapshot.cloudProviderServerSync?.skippedProviders],
@@ -1560,6 +1565,7 @@ export function SessionRoute() {
       },
       providerCatalog,
       gatewayProviderIds,
+      gatewayCloudProviderIds,
       gatewayUsageProviderScope: sessionProviderAuthSnapshot.gatewayUsageProviderScope ?? null,
       modelPickerOpen: modelPicker.compactOpen,
       modelOptions: modelPicker.options,
@@ -1865,6 +1871,7 @@ export function SessionRoute() {
     navigate,
     providerCatalog,
     gatewayProviderIds,
+    gatewayCloudProviderIds,
     sessionProviderAuthSnapshot.gatewayUsageProviderScope,
     openWorkModelsEntitled,
     openWorkModelsSyncing,

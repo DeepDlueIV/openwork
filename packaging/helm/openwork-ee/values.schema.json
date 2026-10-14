@@ -168,6 +168,16 @@
               ],
               "description": "Desktop: organization default model: Organization admins choose the model new desktop chats start with, for everyone or per team. Applies to the OpenCode v2 engine only; members can still change the model in each chat. Renders DEN_FEATURE_ORG_DEFAULT_MODEL."
             },
+            "gatewayProviderUsageLimits": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "AI Gateway: usage limits per provider: Admins can attach a spend limit to one AI provider. Spend on that provider counts toward its own limit instead of the default limit, and members see which provider ran out. Renders DEN_FEATURE_GATEWAY_PROVIDER_USAGE_LIMITS."
+            },
             "gatewayDashboard": {
               "enum": [
                 "",

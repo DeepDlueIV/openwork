@@ -255,6 +255,16 @@ export const resolveGatewayProviderIds = (
   );
 
 
+/** OpenCode provider id → the organization's Gateway provider id, for per-provider usage limits. */
+export const resolveGatewayCloudProviderIds = (
+  importedCloudProviders: Record<string, Pick<CloudImportedProvider, "providerId" | "source" | "cloudProviderId">> | undefined,
+): Map<string, string> =>
+  new Map(
+    Object.values(importedCloudProviders ?? {})
+      .filter((provider) => provider.source === OPENWORK_GATEWAY_PROVIDER_SOURCE)
+      .map((provider) => [provider.providerId, provider.cloudProviderId]),
+  );
+
 export const getProviderModelIds = (
   provider: Pick<DenOrgLlmProvider, "models">,
 ) =>

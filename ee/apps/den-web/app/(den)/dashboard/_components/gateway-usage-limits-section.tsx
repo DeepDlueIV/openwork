@@ -12,6 +12,7 @@ import { DenCombobox } from "../../_components/ui/combobox";
 import { DenNotice } from "../../_components/ui/notice";
 import { DenTable } from "../../_components/ui/table";
 import { getAiGatewayLimitRoute, getAiGatewayLimitsRoute, getAiGatewayPersonRoute, getNewAiGatewayLimitRoute, type DenOrgMember, type DenOrgTeam } from "../../_lib/den-org";
+import { useGatewayAccessProviders } from "./gateway-subject-access-data";
 import { describeWho } from "./gateway-limit-editor-screen";
 import { formatLimitMoney, timeframeLabels, timeframePeriods, useGatewayLimitsMutation, useGatewayMembers, useGatewayPolicies, type GatewayUsageMember } from "./gateway-usage-limits-data";
 
@@ -236,11 +237,24 @@ function PersonLookup({ orgId, orgSlug }: { orgId: string; orgSlug: OrgSlug }) {
   );
 }
 
-export function GatewayUsageLimitsSection({ orgId, orgSlug, teams, members }: { orgId: string; orgSlug: OrgSlug } & Directory) {
+/** Name of the provider a limit is for, or "All providers" for a default limit. */
+export function providerLimitLabel(providerId: string | null | undefined, providers: { id: string; name: string }[] | undefined): string {
+  if (!providerId) return "All providers";
+  if (!providers) return "One provider";
+  return providers.find((provider) => provider.id === providerId)?.name ?? "Removed provider";
+}
+
+export function GatewayUsageLimitsSection({ orgId, orgSlug, teams, members, providerLimits = false }: { orgId: string; orgSlug: OrgSlug; providerLimits?: boolean } & Directory) {
   const policies = useGatewayPolicies(orgId);
   const searchParams = useSearchParams();
   const deletedId = searchParams?.get("deleted") ?? null;
-  const active = policies.data?.policies.filter((policy) => !policy.archivedAt) ?? [];
+  // Default limits first, then each provider's limits together.
+  const active = (policies.data?.policies.filter((policy) => !policy.archivedAt) ?? [])
+    .map((policy, index) => ({ policy, index }))
+    .sort((a, b) => (a.policy.providerId ?? "").localeCompare(b.policy.providerId ?? "") || a.index - b.index)
+    .map(({ policy }) => policy);
+  const hasProviderLimits = providerLimits || active.some((policy) => policy.providerId);
+  const providers = useGatewayAccessProviders(orgId, hasProviderLimits);
   const deleted = deletedId ? policies.data?.policies.find((policy) => policy.id === deletedId) : undefined;
   return (
     <section aria-labelledby="gateway-usage-limits-heading" className="flex flex-col gap-5" data-testid="gateway-limits">
@@ -273,6 +287,12 @@ export function GatewayUsageLimitsSection({ orgId, orgSlug, teams, members }: { 
                     <span className="truncate text-[13px] font-medium text-gray-900">{policy.name}</span>
                     <span className="truncate text-[12px] text-gray-500">{!who ? "Not applied to anyone yet" : who === policy.name ? targetKind(policy) : who}</span>
                   </span>
+                  {hasProviderLimits ? (
+                    <span className="flex w-36 shrink-0 flex-col" data-testid="gateway-limit-provider-label">
+                      <span className="truncate text-[12px] text-gray-700">{providerLimitLabel(policy.providerId, providers.data)}</span>
+                      {policy.providerId && !providerLimits ? <span className="text-[11px] text-gray-500">Not enforced while off</span> : null}
+                    </span>
+                  ) : null}
                   <span className="min-w-0 flex-1 text-[13px] tabular-nums text-gray-700">{describeLimitAmounts(policy)} each</span>
                   <span className="w-28 shrink-0 text-[12px] text-gray-600">{policy.hardLimit ? "Pauses them" : "Only warns"}</span>
                   <Link href={getAiGatewayLimitRoute(orgSlug, policy.id)} aria-label={`Edit ${policy.name}`} data-testid="gateway-limit-edit" className={buttonVariants({ variant: "secondary", size: "sm" })}>Edit</Link>

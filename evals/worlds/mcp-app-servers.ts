@@ -603,8 +603,8 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
       options: { baseURL: `${den.mocks.inventory.url}/v1`, apiKey: "sk-app-chat-fixture" },
       models: { "app-chat-model": { name: "App chat model fixture", tool_call: true } },
     } },
-    mcp: { "openwork-cloud": { type: "remote", url: `${den.ref.apiUrl}/mcp/agent`, enabled: true, oauth: false, headers: { Authorization: `Bearer ${token}` } } },
   }, engine);
+  // openwork-cloud is reserved in workspace config; the reconcile below connects it, as the desktop does.
   const session = await seed.session(app, { title: appTitle });
   // The private App host reads the Connect server index, which lists the App as its own server.
   if ("openworkUrl" in app) {

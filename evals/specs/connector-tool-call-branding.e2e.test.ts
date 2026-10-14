@@ -57,7 +57,10 @@ test("connector-backed tool calls show first-class branding and human-readable l
     await user.screenshot();
     await user.reload();
     await user.see({ text: /^Listed channels(?: · Slack)?$/ }, { timeoutMs: 30_000 });
-    expect(await inspect()).toMatchObject({ count: 1, connector: "Slack" });
+    // The restored transcript can paint the step's label before its saved row settles.
+    const restored = await probe.eventually(inspect, { within: 15_000, label: "one restored Slack row after reload",
+      until: (value) => isRecord(value) && value.count === 1 });
+    expect(restored).toMatchObject({ count: 1, connector: "Slack" });
     await user.notSee({ text: /openwork-cloud_execute_capability/ });
     // The details toggle appears when the row is hovered.
     await user.hover({ text: /^Listed channels(?: · Slack)?$/ });

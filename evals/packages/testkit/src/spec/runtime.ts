@@ -267,7 +267,10 @@ async function createSessionWhenReady(surface: Surface): Promise<string> {
       if (attempt === 1) throw new Error("session.create_task returned no session ID after one retry.");
     } catch (error) {
       const emptyResult = /did not return a session ID|returned no session ID|invalid session ID/i.test(messageText(error));
-      if (attempt === 1 || !emptyResult) throw error;
+      // The action can turn disabled again between the readiness check and the
+      // call (the previous task is still being selected); nothing ran, so retry.
+      const disabledMeanwhile = /Action is disabled/i.test(messageText(error));
+      if (attempt === 1 || !(emptyResult || disabledMeanwhile)) throw error;
     }
     await new Promise((resolve) => setTimeout(resolve, CONTROL_POLL_INTERVAL_MS));
   }

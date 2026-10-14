@@ -256,10 +256,16 @@ test("the sidebar title fade follows only the edges with hidden text", async ({ 
     // The responsive sidebar changes from a desktop panel to a mobile sheet.
     // Wait for that render before opening it; an immediate keyboard toggle can
     // still target the old desktop state and leave the mobile sheet closed.
-    await user.see({ role: "button", label: "Open sidebar" });
+    // The app in a browser shows a mobile "Open sidebar" bar; the desktop keeps
+    // its titlebar and puts the sidebar toggle there.
+    const shown = async (selector: string) => (await probe.dom(selector)).elements.some((element) => element.rect.width > 0);
+    const opener = await probe.eventually(async () => (
+      await shown('button[aria-label="Open sidebar"]') ? "web" : await shown('[data-session-header] [data-sidebar-toggle="main"]') ? "desktop" : null
+    ), { within: 30_000, label: "narrow layout offers a control that opens the sidebar", until: (value) => value === "web" || value === "desktop" });
+    const openSidebar = opener === "web" ? { role: "button" as const, label: "Open sidebar" } : { testId: "main-sidebar-toggle" };
     const mobileSidebar = await probe.dom('[data-sidebar="sidebar"][data-mobile="true"]');
     if (!mobileSidebar.elements.some((element) => element.rect.width > 0 && element.rect.height > 0)) {
-      await user.click({ role: "button", label: "Open sidebar" });
+      await user.click(openSidebar);
     }
     const rows = await probe.eventually(() => rowStates(world.app), {
       within: 15_000,

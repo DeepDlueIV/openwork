@@ -53740,7 +53740,7 @@
         ],
         "security": [],
         "summary": "Get public install configuration",
-        "description": "Returns this deployment's public desktop setup: server addresses, sign-in requirement, branding of a single-org deployment, and the desktop version. Older desktop builds call it with the token from a pasted install link; the token is ignored.",
+        "description": "Returns this deployment's public desktop setup: server addresses, sign-in requirement, and the default desktop version. Identifies no organization. Older desktop builds call it with the token from a pasted install link; the token is ignored.",
         "responses": {
           "200": {
             "description": "Install configuration resolved successfully.",

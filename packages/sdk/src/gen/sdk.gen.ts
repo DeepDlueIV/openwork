@@ -5623,7 +5623,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Get public install configuration
    *
-   * Returns this deployment's public desktop setup: server addresses, sign-in requirement, branding of a single-org deployment, and the desktop version. Older desktop builds call it with the token from a pasted install link; the token is ignored.
+   * Returns this deployment's public desktop setup: server addresses, sign-in requirement, and the default desktop version. Identifies no organization. Older desktop builds call it with the token from a pasted install link; the token is ignored.
    */
   public getV1InstallConfig<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
     return (options?.client ?? this.client).get<GetV1InstallConfigResponses, GetV1InstallConfigErrors, ThrowOnError>({

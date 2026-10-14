@@ -26,9 +26,9 @@ Earlier versions shared one-off `/install?token=…` links and a short-lived
 - `/install?token=…` opens the normal install page; the token is ignored and
   removed from the address.
 - `GET /v1/install-config` stays public for desktop builds that resolve a
-  pasted install link there. It ignores the token and returns the deployment's
-  public setup: server addresses, sign-in requirement, and on a single-org Den
-  that organization's name, logo and approved version.
+  pasted install link there. It ignores the token and returns only the
+  deployment's public setup: server addresses and that sign-in is required. It
+  names no organization; people see their organization after signing in.
 - `GET /v1/install/:platform?token=…` redirects to the install page.
 - Connection codes expired five minutes after they were issued, so none remain.
 

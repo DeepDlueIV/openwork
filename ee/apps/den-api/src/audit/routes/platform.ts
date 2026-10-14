@@ -96,7 +96,7 @@ export const platformAuditRoutes: readonly AuditRouteDeclaration[] = [
   readOnly("/v1/orgs/sso/singleton", "auth.sso_singleton.read", "platform.discovery", "deployment", null),
   readOnly("/v1/auth/bootstrap/status", "auth.bootstrap.status.read", "platform.discovery", "deployment", null),
   readOnly("/v1/features", "feature.deployment.list", "platform.discovery", "feature", null, "Public deployment-wide feature state (kill switch and operator locks, never organization overrides) for people without an organization; side-effect free."),
-  readOnly("/v1/install-config", "install_config.public.read", "install.distribution", "install_config", null, "Public deployment setup for desktop builds resolving pasted install links; any token is ignored and no organization is identified beyond a single-org deployment's own branding. Side-effect free."),
+  readOnly("/v1/install-config", "install_config.public.read", "install.distribution", "install_config", null, "Public deployment setup for desktop builds resolving pasted install links; any token is ignored and no organization is identified. Side-effect free."),
   readOnly("/v1/install/:platform", "install_page.redirect", "install.distribution", "install_artifact", "platform", "Redirects older token download links to the normal install page; side-effect free."),
 
   // OAuth authorization server (better-auth endpoints registered by Den)

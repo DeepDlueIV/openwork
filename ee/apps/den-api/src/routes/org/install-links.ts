@@ -12,7 +12,6 @@ import { resolveInstallerReleaseTag } from "../../desktop-releases.js"
 import { env } from "../../env.js"
 import { jsonValidator, orgMemberRoute, publicRoute } from "../../middleware/index.js"
 import { denTypeIdSchema, emptyResponse, invalidRequestSchema, jsonResponse, notFoundSchema, textResponse, unauthorizedSchema } from "../../openapi.js"
-import { getSingletonOrganization } from "../../orgs.js"
 import { normalizeOrganizationMetadata } from "../../organization-limits.js"
 import {
   cloudDesktopReleaseAssetName,
@@ -218,15 +217,12 @@ function installPageUrl() {
 
 /**
  * Public deployment setup for desktop builds that still resolve pasted
- * `/install?token=…` links here. The token is ignored: a single-org Den answers
- * with its one organization, a multi-org Den with generic Cloud details. The
- * desktop then signs in normally.
+ * `/install?token=…` links here. The token is ignored and nothing about any
+ * organization is returned (not even a single-org deployment's name, logo or
+ * version policy): only the server addresses and that sign-in is required.
+ * The desktop then signs in normally.
  */
 async function resolvePublicInstallConfig(request: Request) {
-  const organization = env.orgMode === "multi_org" ? null : await getSingletonOrganization()
-  if (organization) {
-    return resolveInstallConfigForOrganization({ organization, request })
-  }
   return {
     config: buildInstallConfig({
       organization: { name: env.orgMode === "multi_org" ? "OpenWork Cloud" : "OpenWork", logo: null, metadata: null },
@@ -378,7 +374,7 @@ export function registerOrgInstallLinkRoutes<T extends { Variables: OrgRouteVari
       tags: ["Organizations"],
       security: [],
       summary: "Get public install configuration",
-      description: "Returns this deployment's public desktop setup: server addresses, sign-in requirement, branding of a single-org deployment, and the desktop version. Older desktop builds call it with the token from a pasted install link; the token is ignored.",
+      description: "Returns this deployment's public desktop setup: server addresses, sign-in requirement, and the default desktop version. Identifies no organization. Older desktop builds call it with the token from a pasted install link; the token is ignored.",
       responses: {
         200: jsonResponse("Install configuration resolved successfully.", authenticatedInstallConfigSchema),
         429: jsonResponse("Too many install configuration requests.", rateLimitedSchema),

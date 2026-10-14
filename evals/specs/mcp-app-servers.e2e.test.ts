@@ -616,6 +616,19 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
       await user.screenshot();
     });
     let appId = "";
+    await step("after: switching OpenWork to dark restyles the open App without reopening it", async () => {
+      await revision("revision one");
+      const appView = user.on(frame!);
+      await appView.see({ testId: "host-context" }, { text: /^Theme light · fits 800 px$/ });
+      await world.setColorScheme("dark");
+      // Witness: the same frame, never reopened, now reports the dark theme.
+      await appView.see({ testId: "host-context" }, { text: /^Theme dark · fits 800 px$/, timeoutMs: 10_000 });
+      expect((await probe.dom("[data-built-app-preview] iframe")).elements).toHaveLength(1);
+      await user.screenshot();
+      evidence.recordAssertionEvidence("An open App follows the host theme", `${name}: with ${pricerTitle} open, the system switched to dark; the same App frame re-rendered with theme dark and a height budget of 800 px, with 1 frame and no reopen. Before, an open App kept the theme it opened with.`, true);
+      await world.setColorScheme("light");
+      await appView.see({ testId: "host-context" }, { text: /^Theme light/, timeoutMs: 10_000 });
+    });
     await step("after: an edit shows its step and marks the open App Updating while the agent is still writing", async () => {
       expect((await probe.dom("[data-built-app-preview]")).elements).toHaveLength(1);
       const prompt = "Update this App to revision two.";

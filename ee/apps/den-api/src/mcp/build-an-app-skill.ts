@@ -49,10 +49,12 @@ prepare_app picks one from the tools you declare. Each is also a resource you ca
 
 ## What a good App looks like
 
-- It fits in one scroll of the reply: no internal scrolling, no automatic navigation, and at most two primary actions. Show the top rows and a count rather than everything.
+- Its height is its content: the host grows the frame to fit, up to hostContext.containerDimensions.maxHeight. Never set a height, 100vh or 100% on the root, and add no scrolling areas inside; show the top rows and a count rather than everything. No automatic navigation.
+- It reads well at every width it opens in: the chat, the side panel and narrow dashboard tiles. Keep the starter's root container (container-type: inline-size) and adapt with @container rules, never viewport units or fixed widths.
+- At most two primary actions. The main one sits right after the inputs it uses and spans the width when narrow; anything else is a quiet link.
 - The host already shows the App's title, so do not repeat it as a heading or add a paragraph explaining the App. Report state instead: "12 open issues · updated 9:41".
 - Every state is designed. Loading keeps the layout with placeholder rows instead of "Loading…". Empty says what to try. An error says what happened and what to do next. Blocked is neutral and says why.
 - Buttons name their outcome ("Create invoice", "Find orders") in sentence case. No tool names, ids, or JSON on screen.
-- Colors come from the host theme the starter applies, such as var(--color-text-primary) and var(--color-border-primary). No hard-coded black or white, gradients, emoji, or decorative badges.
+- Colors and fonts come from the host theme the starter applies, such as var(--color-text-primary) and var(--color-border-primary), with system colors (CanvasText, Canvas) as fallbacks, so it follows light and dark by itself. No hard-coded colors, gradients, emoji, or decorative badges.
 - The launch input fills the App's inputs, so the chat can open it on a specific record.
 `

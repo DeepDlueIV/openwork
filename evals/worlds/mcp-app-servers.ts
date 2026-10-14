@@ -76,7 +76,7 @@ export function appSource(revision: string, options: { title?: string; sampleOrd
       if (!text) throw new Error("Tool returned no JSON result");
       return JSON.parse(text.text);
     }
-    export default function Calculator({ app, input: launch }) {
+    export default function Calculator({ app, input: launch, hostContext }) {
       const input = ${order};
       const [today, setToday] = React.useState(null);
       const [price, setPrice] = React.useState(null);
@@ -122,6 +122,7 @@ export function appSource(revision: string, options: { title?: string; sampleOrd
       });
       return <main>
         <header><h1>${title}</h1><span>Ready — ${revision}</span></header>
+        <p data-testid="host-context">Theme {hostContext?.theme ?? "unknown"} · fits {hostContext?.containerDimensions?.maxHeight ?? "?"} px</p>
         {!toolsAvailable && <p role="status">Server tools unavailable. Reopen in a host that enables server tools.</p>}
         <p data-testid="pricing-date">{today ? "Prices as of " + today : "Loading pricing date"}</p>
         <p data-testid="order-line">{input.quantity ?? 0} × {input.sku ?? "no product"}{price !== null ? " at " + price : ""}</p>
@@ -631,6 +632,15 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
   }
   return {
     app, session, den, created, performanceApps, workspace, engine,
+    /** Switch the system light/dark setting, which OpenWork follows by default, and wait until it has. */
+    async setColorScheme(theme: "light" | "dark") {
+      await app.client.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: theme }] });
+      for (let attempt = 0; attempt < 50; attempt++) {
+        if (await evaluate(app.client, () => document.documentElement.classList.contains("dark")) === (theme === "dark")) return;
+        await delay(100);
+      }
+      throw new Error(`OpenWork did not switch to ${theme}`);
+    },
     /** Den's log so far; pass its length to appServerRequests. */
     denLog: () => den.apiLog(),
     /** Requests Den's App servers handled since a denLog() snapshot, by MCP method, once at least `atLeast` tools/call requests finished. */

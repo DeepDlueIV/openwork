@@ -401,6 +401,7 @@ export function McpAppSandboxView({ origin, app, resolveLiveActions, toolName, i
     let sandboxDocument: McpAppDiagnostic["sandboxDocument"]
     let failed = false
     let stopSandbox: (() => void) | undefined
+    let stopHostContextSync: (() => void) | undefined
     const checkpoint = (name: string) => checkpoints.push(`${name}+${Math.round(performance.now() - startedAt)}ms`)
     const fail = (
       code: string,
@@ -445,20 +446,22 @@ export function McpAppSandboxView({ origin, app, resolveLiveActions, toolName, i
       )
       return
     }
+    // The theme, colors and space the App has now. Sent again whenever they
+    // change, so an open App follows a light/dark switch and a resized pane.
+    const currentHostContext = () => ({
+      theme: document.documentElement.classList.contains("dark") ? "dark" as const : "light" as const,
+      displayMode: "inline" as const,
+      availableDisplayModes: ["inline" as const],
+      styles: { variables: hostStyleVariables() },
+      containerDimensions: { maxHeight: MAX_HEIGHT, width: Math.round(iframe.getBoundingClientRect().width) },
+      ...(!readOnly && connectionController && hasHostConnectionActions(app)
+        ? { experimental: { "openwork/connection-actions": true } } : {}),
+    })
     const bridge = new AppBridge(
       null,
       { name: "OpenWork", version: "1.0.0" },
       readOnly ? (resolveLiveActions ? { serverTools: {} } : {}) : { serverTools: {}, openLinks: {} },
-      {
-        hostContext: {
-          theme: document.documentElement.classList.contains("dark") ? "dark" : "light",
-          displayMode: "inline",
-          availableDisplayModes: ["inline"],
-          styles: { variables: hostStyleVariables() },
-          ...(!readOnly && connectionController && hasHostConnectionActions(app)
-            ? { experimental: { "openwork/connection-actions": true } } : {}),
-        },
-      },
+      { hostContext: currentHostContext() },
     )
     // Unregistered requests use the SDK's MethodNotFound response. Its default
     // display-mode handler returns our current inline mode without changing it.
@@ -595,9 +598,22 @@ export function McpAppSandboxView({ origin, app, resolveLiveActions, toolName, i
       }
     }
     deliverToolDataRef.current = deliverToolData
+    // Only an initialized App can receive host-context notifications.
+    const syncHostContext = () => {
+      if (!disposed && !failed && initialized) bridge.setHostContext(currentHostContext())
+    }
+    const themeObserver = new MutationObserver(syncHostContext)
+    themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "data-theme", "style"] })
+    const sizeObserver = typeof ResizeObserver === "function" ? new ResizeObserver(syncHostContext) : null
+    sizeObserver?.observe(iframe)
+    stopHostContextSync = () => {
+      themeObserver.disconnect()
+      sizeObserver?.disconnect()
+    }
     bridge.oninitialized = () => {
       if (disposed || failed || initialized) return
       initialized = true
+      syncHostContext()
       releaseStartup?.()
       checkpoint("app-initialized")
       performance.measure("openwork.mcp-app.sandbox-ready", { start: startedAt, duration: performance.now() - startedAt })
@@ -770,6 +786,7 @@ export function McpAppSandboxView({ origin, app, resolveLiveActions, toolName, i
 
     return () => {
       disposed = true
+      stopHostContextSync?.()
       stopSandbox?.()
     }
   }, [app, replacementInput, openworkServerClient, replacementResult, toolName, workspaceId, readOnly, origin, origin.sessionId, origin.engine, presentation, updateMode, connectionController, retryAttempt, resolveLiveActions])

@@ -251,19 +251,22 @@ function messageOf(response) {
 function useToolCall(app, name) {
   const [state, setState] = React.useState({ status: "idle" });
   const latest = React.useRef(0);
+  const latestPeek = React.useRef(0);
   const available = Boolean(name) && Boolean(app?.getHostCapabilities()?.serverTools);
   // Only OpenWork answers a cached read from storage; elsewhere it would run the tool.
   const cacheable = app?.getHostContext()?.experimental?.["openwork/result-cache"] === true;
   const peek = React.useCallback(async (args) => {
     if (!available || !cacheable) return;
     const id = latest.current;
+    // A slower earlier peek never overwrites a newer one, and any call wins over both.
+    const peekId = ++latestPeek.current;
     let response;
     try {
       response = await app.callServerTool({ name, arguments: args, _meta: { "openwork/cache": "read" } });
     } catch {
       return;
     }
-    if (id !== latest.current) return;
+    if (id !== latest.current || peekId !== latestPeek.current) return;
     const meta = response?._meta;
     // A kept result replaces nothing newer; with none kept, an earlier kept
     // result for other inputs is cleared rather than shown under these.

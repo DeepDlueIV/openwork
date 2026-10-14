@@ -120,7 +120,7 @@ export function TeamDetailScreen({ teamId, initialTab = null }: { teamId: string
       <div className="mb-6 flex items-center justify-between gap-4">
         <Link
           href={getMembersRoute(orgSlug)}
-          className="inline-flex items-center gap-1.5 text-[13px] text-gray-400 transition hover:text-gray-700"
+          className="inline-flex items-center gap-1.5 text-[13px] text-gray-500 transition hover:text-gray-700"
         >
           <ArrowLeft className="h-4 w-4" />
           Back

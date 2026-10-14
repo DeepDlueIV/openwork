@@ -73,13 +73,19 @@ export async function geminiTitleThinking(_seed: Seed) {
       const title = raw.includes("Generate a title for this conversation");
       const level = record(body.generationConfig) && record(body.generationConfig.thinkingConfig)
         ? body.generationConfig.thinkingConfig.thinkingLevel : undefined;
-      const path = request.url ?? "";
-      const requestedModel = /models\/([^:]+):/.exec(path)?.[1] ?? "";
-      if (requestedModel !== modelID || request.headers["x-goog-api-key"] !== "fixture-only") throw new Error("Provider identity changed");
+      const streaming = request.url === `/models/${modelID}:streamGenerateContent?alt=sse`;
+      if ((!streaming && request.url !== `/models/${modelID}:generateContent`)
+        || request.headers["x-goog-api-key"] !== "fixture-only") throw new Error("Provider identity changed");
+      const requestedModel = modelID;
       if (live) {
         // ADC token exists only in process memory, never config, args or evidence.
         const { stdout } = await exec("gcloud", ["auth", "application-default", "print-access-token"], { timeout: 30_000 });
-        const upstream = await fetch(`https://aiplatform.googleapis.com/v1/projects/${project}/locations/global/publishers/google/${path.replace(/^\//, "")}`, {
+        if (!project) throw new Error("Missing selected Vertex project");
+        const operation = streaming ? "streamGenerateContent?alt=sse" : "generateContent";
+        // Never forward the inbound URL. The destination host, model and two
+        // allowed operations are fixed; the operator's project is one segment.
+        const destination = new URL(`/v1/projects/${encodeURIComponent(project)}/locations/global/publishers/google/models/${modelID}:${operation}`, "https://aiplatform.googleapis.com");
+        const upstream = await fetch(destination, {
           method: "POST", headers: { authorization: `Bearer ${stdout.trim()}`, "content-type": "application/json" },
           body: raw, signal: AbortSignal.timeout(60_000),
         });
@@ -96,7 +102,7 @@ export async function geminiTitleThinking(_seed: Seed) {
       }
       const data = { candidates: [{ index: 0, content: { role: "model", parts: [{ text: title ? "Kites in a meadow" : "A kite catches the breeze." }] }, finishReason: "STOP" }],
         usageMetadata: { promptTokenCount: 10, candidatesTokenCount: 5, totalTokenCount: 15 } };
-      if (path.includes("streamGenerateContent")) response.writeHead(200, { "content-type": "text/event-stream" }).end(`data: ${JSON.stringify(data)}\n\n`);
+      if (streaming) response.writeHead(200, { "content-type": "text/event-stream" }).end(`data: ${JSON.stringify(data)}\n\n`);
       else response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(data));
     })().catch(() => {
       errors.push("witness failed (details withheld)");

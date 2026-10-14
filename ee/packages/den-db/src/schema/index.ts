@@ -1,4 +1,5 @@
 export * from "./agent-permissions"
+export * from "./default-models"
 export * from "./auth"
 export * from "./managed-deployments"
 export * from "./audit"

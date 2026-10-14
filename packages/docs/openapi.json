@@ -854,7 +854,8 @@
               "agentPermissions",
               "engineV2Upgrade",
               "remoteSessionEvents",
-              "backgroundShellTasks"
+              "backgroundShellTasks",
+              "orgDefaultModel"
             ]
           },
           "label": {
@@ -1074,6 +1075,9 @@
                     "backgroundShellTasks": {
                       "type": "boolean"
                     },
+                    "orgDefaultModel": {
+                      "type": "boolean"
+                    },
                     "gatewayDashboard": {
                       "type": "boolean",
                       "const": true,
@@ -1097,6 +1101,7 @@
                     "engineV2Upgrade",
                     "remoteSessionEvents",
                     "backgroundShellTasks",
+                    "orgDefaultModel",
                     "gatewayDashboard"
                   ]
                 },
@@ -1942,6 +1947,62 @@
                         "override",
                         "overrideApplies"
                       ]
+                    },
+                    "orgDefaultModel": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
                     }
                   },
                   "required": [
@@ -1959,7 +2020,8 @@
                     "agentPermissions",
                     "engineV2Upgrade",
                     "remoteSessionEvents",
-                    "backgroundShellTasks"
+                    "backgroundShellTasks",
+                    "orgDefaultModel"
                   ],
                   "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
                 }
@@ -2378,6 +2440,9 @@
                     "backgroundShellTasks": {
                       "type": "boolean"
                     },
+                    "orgDefaultModel": {
+                      "type": "boolean"
+                    },
                     "gatewayDashboard": {
                       "type": "boolean",
                       "const": true,
@@ -2401,6 +2466,7 @@
                     "engineV2Upgrade",
                     "remoteSessionEvents",
                     "backgroundShellTasks",
+                    "orgDefaultModel",
                     "gatewayDashboard"
                   ]
                 },
@@ -3246,6 +3312,62 @@
                         "override",
                         "overrideApplies"
                       ]
+                    },
+                    "orgDefaultModel": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
                     }
                   },
                   "required": [
@@ -3263,7 +3385,8 @@
                     "agentPermissions",
                     "engineV2Upgrade",
                     "remoteSessionEvents",
-                    "backgroundShellTasks"
+                    "backgroundShellTasks",
+                    "orgDefaultModel"
                   ],
                   "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
                 }
@@ -3921,6 +4044,37 @@
           "rules"
         ]
       },
+      "DenDesktopConfigDefaultModel": {
+        "type": "object",
+        "properties": {
+          "providerID": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "modelID": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "team",
+              "organization"
+            ]
+          },
+          "teamName": {
+            "type": "string",
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "providerID",
+          "modelID",
+          "source"
+        ]
+      },
       "CurrentUserDesktopConfigResponse": {
         "type": "object",
         "properties": {
@@ -4064,6 +4218,9 @@
           },
           "agentPermissions": {
             "$ref": "#/components/schemas/DenDesktopAgentPermissions"
+          },
+          "defaultModel": {
+            "$ref": "#/components/schemas/DenDesktopConfigDefaultModel"
           }
         }
       },
@@ -23621,6 +23778,206 @@
         ],
         "additionalProperties": false
       },
+      "DefaultModelChoice": {
+        "type": "object",
+        "properties": {
+          "providerId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "modelId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "providerId",
+          "modelId"
+        ],
+        "additionalProperties": false
+      },
+      "DefaultModelTeam": {
+        "type": "object",
+        "properties": {
+          "teamId": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "memberCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          },
+          "model": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DefaultModelChoice"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "conflictingMemberCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 9007199254740991
+          }
+        },
+        "required": [
+          "teamId",
+          "name",
+          "memberCount",
+          "model",
+          "conflictingMemberCount"
+        ]
+      },
+      "DefaultModelSettings": {
+        "type": "object",
+        "properties": {
+          "everyone": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DefaultModelChoice"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "teams": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DefaultModelTeam"
+            }
+          },
+          "canEdit": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "everyone",
+          "teams",
+          "canEdit"
+        ]
+      },
+      "DefaultModelOption": {
+        "type": "object",
+        "properties": {
+          "providerId": {
+            "type": "string"
+          },
+          "modelId": {
+            "type": "string"
+          },
+          "providerName": {
+            "type": "string"
+          },
+          "modelName": {
+            "type": "string"
+          },
+          "logoProviderId": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "openwork",
+              "gateway",
+              "provider"
+            ]
+          }
+        },
+        "required": [
+          "providerId",
+          "modelId",
+          "providerName",
+          "modelName",
+          "logoProviderId",
+          "source"
+        ]
+      },
+      "DefaultModelOptions": {
+        "type": "object",
+        "properties": {
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DefaultModelOption"
+            }
+          },
+          "unavailableSources": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "openwork",
+                "gateway",
+                "provider"
+              ]
+            }
+          }
+        },
+        "required": [
+          "options",
+          "unavailableSources"
+        ]
+      },
+      "DefaultModelUnknownModelError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "const": "unknown_model"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "message"
+        ]
+      },
+      "DefaultModelSourceUnavailableError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "const": "model_source_unavailable"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "message"
+        ]
+      },
+      "DefaultModelWrite": {
+        "type": "object",
+        "properties": {
+          "model": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DefaultModelChoice"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "model"
+        ],
+        "additionalProperties": false
+      },
       "WorkbotSession": {
         "type": "object",
         "properties": {
@@ -25754,6 +26111,9 @@
                         "backgroundShellTasks": {
                           "type": "boolean"
                         },
+                        "orgDefaultModel": {
+                          "type": "boolean"
+                        },
                         "gatewayDashboard": {
                           "type": "boolean",
                           "const": true,
@@ -25777,6 +26137,7 @@
                         "engineV2Upgrade",
                         "remoteSessionEvents",
                         "backgroundShellTasks",
+                        "orgDefaultModel",
                         "gatewayDashboard"
                       ]
                     },
@@ -26622,6 +26983,62 @@
                             "override",
                             "overrideApplies"
                           ]
+                        },
+                        "orgDefaultModel": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
                         }
                       },
                       "required": [
@@ -26639,7 +27056,8 @@
                         "agentPermissions",
                         "engineV2Upgrade",
                         "remoteSessionEvents",
-                        "backgroundShellTasks"
+                        "backgroundShellTasks",
+                        "orgDefaultModel"
                       ],
                       "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
                     }
@@ -26803,6 +27221,9 @@
                         "backgroundShellTasks": {
                           "type": "boolean"
                         },
+                        "orgDefaultModel": {
+                          "type": "boolean"
+                        },
                         "gatewayDashboard": {
                           "type": "boolean",
                           "const": true,
@@ -26826,6 +27247,7 @@
                         "engineV2Upgrade",
                         "remoteSessionEvents",
                         "backgroundShellTasks",
+                        "orgDefaultModel",
                         "gatewayDashboard"
                       ]
                     },
@@ -27671,6 +28093,62 @@
                             "override",
                             "overrideApplies"
                           ]
+                        },
+                        "orgDefaultModel": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
                         }
                       },
                       "required": [
@@ -27688,7 +28166,8 @@
                         "agentPermissions",
                         "engineV2Upgrade",
                         "remoteSessionEvents",
-                        "backgroundShellTasks"
+                        "backgroundShellTasks",
+                        "orgDefaultModel"
                       ],
                       "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
                     }
@@ -30812,7 +31291,7 @@
           "Users"
         ],
         "summary": "Get current user's desktop config",
-        "description": "Returns the authenticated desktop app restrictions for the caller's active organization, including the caller's agent permissions as ordered OpenCode permission rules when the organization has agent permissions on.",
+        "description": "Returns the authenticated desktop app restrictions for the caller's active organization, including the caller's agent permissions as ordered OpenCode permission rules when the organization has agent permissions on, and the model new chats start with (defaultModel, applied by OpenCode v2 desktops only) when the organization has the default model feature on and has chosen one the caller can use.",
         "responses": {
           "200": {
             "description": "Current user desktop config returned successfully.",
@@ -91799,6 +92278,334 @@
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/WorkbotSettingsInput"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "denApiKey": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/org/default-model": {
+      "get": {
+        "operationId": "getV1OrgDefaultModel",
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "Get default models",
+        "description": "Returns the model new desktop chats start with on the OpenCode v2 engine: the organization default (null for none) and each team's override (null when the team uses the organization default), teams by name. A member on several teams whose overrides differ starts on the organization default; conflictingMemberCount counts them per team. Members can still change the model in each chat. Requires the View OpenWork Models settings permission and the Organization default model feature.",
+        "responses": {
+          "200": {
+            "description": "Default models returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DefaultModelSettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller lacks the View OpenWork Models settings permission.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForbiddenError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The organization or team was not found, or the organization default model is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "denApiKey": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/org/default-model/options": {
+      "get": {
+        "operationId": "getV1OrgDefaultModelOptions",
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "List models for the default model",
+        "description": "Lists every model the organization can choose as a default, read live from what it has set up: OpenWork Models, the AI Gateway's providers and models, and the organization's own providers. A source that cannot be read is named in unavailableSources and its models are left out. Requires the View OpenWork Models settings permission and the Organization default model feature.",
+        "responses": {
+          "200": {
+            "description": "Models returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DefaultModelOptions"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller lacks the View OpenWork Models settings permission.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForbiddenError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The organization or team was not found, or the organization default model is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "denApiKey": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/org/default-model/everyone": {
+      "put": {
+        "operationId": "putV1OrgDefaultModelEveryone",
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "Set the organization default model",
+        "description": "Sets the model new desktop chats start with for every member whose teams do not override it; null removes the organization default. Only models the organization has are accepted. Desktops pick it up the next time they refresh their organization's settings. Requires the Manage OpenWork Models permission, a recent sign-in and the Organization default model feature.",
+        "responses": {
+          "200": {
+            "description": "Default models saved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DefaultModelSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The model is not one the organization has, or the request was invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/DefaultModelUnknownModelError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller lacks the Manage OpenWork Models permission or needs to sign in again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForbiddenError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The organization or team was not found, or the organization default model is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The model's provider could not be read to check the model.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DefaultModelSourceUnavailableError"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DefaultModelWrite"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "denApiKey": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/org/default-model/teams/{teamId}": {
+      "put": {
+        "operationId": "putV1OrgDefaultModelTeamsByTeamId",
+        "tags": [
+          "Organizations"
+        ],
+        "summary": "Set a team's default model",
+        "description": "Overrides the model new desktop chats start with for one team's members; null makes the team use the organization default again. A member on several teams whose overrides differ starts on the organization default. Only models the organization has are accepted. Requires the Manage OpenWork Models permission, a recent sign-in and the Organization default model feature.",
+        "responses": {
+          "200": {
+            "description": "Default models saved.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DefaultModelSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The model is not one the organization has, or the request was invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/DefaultModelUnknownModelError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller lacks the Manage OpenWork Models permission or needs to sign in again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForbiddenError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The organization or team was not found, or the organization default model is off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The model's provider could not be read to check the model.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DefaultModelSourceUnavailableError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "teamId",
+            "schema": {
+              "format": "typeid",
+              "type": "string",
+              "minLength": 30,
+              "maxLength": 30
+            },
+            "required": true,
+            "description": "Den TypeID with 'tem_' prefix and a 26-character base32 suffix."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DefaultModelWrite"
               }
             }
           }

@@ -120,6 +120,10 @@ export const orgAuditRoutes: readonly AuditRouteDeclaration[] = [
   member("GET", "/v1/org/activity", "tenant_read", "organization.activity.read", "organization.activity", "organization", null, { notes: "Admin dashboard Activity (dashboardActivity feature): the five newest stored additions and skill versions across connections, providers, marketplaces and plugins; titles and ids only, no member identities." }),
   member("GET", "/v1/org/workbot-settings", "tenant_read", "workbot.settings.read", "organization.settings", "organization", null),
   member("PUT", "/v1/org/workbot-settings", "tenant_change", "workbot.settings.update", "organization.settings", "organization", null, { notes: "Sets organization metadata workbot.model (the default model for Workbot, the Slack assistant and cloud-default Automations); the headless runner model catalog read is incidental." }),
+  member("GET", "/v1/org/default-model", "tenant_read", "default_model.read", "organization.settings", "organization", null),
+  member("GET", "/v1/org/default-model/options", "tenant_read", "default_model.options.list", "organization.settings", "organization", null, { notes: "Reads the organization's OpenWork Models, AI Gateway and provider model catalogs; no write." }),
+  member("PUT", "/v1/org/default-model/everyone", "tenant_change", "default_model.everyone.update", "organization.settings", "organization", null, { notes: "Sets or clears org_default_model for everyone (the model new OpenCode v2 desktop chats start with)." }),
+  member("PUT", "/v1/org/default-model/teams/:teamId", "tenant_change", "default_model.team.update", "organization.settings", "team", "teamId", { notes: "Sets or clears one team's org_default_model override; null returns the team to the organization default." }),
 
   // SCIM management
   member("GET", "/v1/scim", "tenant_read", "scim.connection.read", "scim.configuration", "scim_connection", null),

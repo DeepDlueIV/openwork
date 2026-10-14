@@ -10,6 +10,8 @@ import { type TabItem, UnderlineTabs } from "../../_components/ui/tabs";
 import { getMarketplaceRoute, getMembersRoute, getOrgAccessFlags, orgFeatureEnabled } from "../../_lib/den-org";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
 import { TeamPermissionsPanel } from "./team-permissions-panel";
+import { TeamDefaultModelSection } from "./default-model-section";
+import { useDefaultModelFeatureOn } from "./default-model-data";
 import { OrgMemberIdentity } from "./org-member-identity";
 import { TeamAdminCheckbox } from "./team-admin-checkbox";
 import { TeamRolePanel } from "./team-role-panel";
@@ -75,6 +77,8 @@ export function TeamDetailScreen({ teamId }: { teamId: string }) {
   const sharedRoles = useSharedRolesOn();
   // Members list each person's team roles the same way the Members page does.
   const customRoles = useCustomRoleTeams(orgId, teamRoles && Boolean(orgContext && orgFeatureEnabled(orgContext, "permissions")) && (viewerAccess?.canViewPermissions ?? false));
+  // orgDefaultModel: the Access tab lets admins override the model new desktop chats start with.
+  const defaultModelOn = useDefaultModelFeatureOn();
   const [chosenTab, setActiveTab] = useState<TeamDetailTab | null>(null);
   const activeTab: TeamDetailTab = chosenTab && (teamRoles || chosenTab !== "role") ? chosenTab : teamRoles ? "role" : "access";
   const accessQuery = useTeamPluginAccess(teamId);
@@ -158,6 +162,9 @@ export function TeamDetailScreen({ teamId }: { teamId: string }) {
 
         {activeTab === "access" ? (
           <div role="tabpanel" aria-label="Access">
+            {defaultModelOn && viewerAccess?.canViewModelsSettings ? (
+              <TeamDefaultModelSection teamId={teamId} canManage={viewerAccess.canManageModelsSettings} />
+            ) : null}
             {sharedRoles ? null : <TeamPermissionsPanel teamId={teamId} heading={teamRoles ? "In the desktop app" : undefined} />}
             <h2 className="mb-2 text-lg font-semibold text-gray-950">Plugins & connections</h2>
             {sharedRoles ? null : <p className="mb-4 text-sm text-gray-500">Review what this team can use and where access comes from.</p>}

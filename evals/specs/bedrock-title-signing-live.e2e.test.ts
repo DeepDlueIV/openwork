@@ -20,11 +20,11 @@ test("an isolated fixed Electron build signs a real Bedrock session-title reques
   const session = await actor.desktopApi(`${mounted}/session`, { method: "POST", body: {} });
   expect(session.status).toBe(200);
   if (!isRecord(session.body) || typeof session.body.id !== "string") throw new Error("Missing session id");
-  const reply = await actor.desktopApi(`${mounted}/session/${session.body.id}/message`, {
+  const reply = await actor.desktopApi(`${mounted}/session/${session.body.id}/prompt_async`, {
     method: "POST", body: { model: { providerID: "amazon-bedrock", modelID: "amazon.nova-micro-v1:0" },
       parts: [{ type: "text", text: "Tell me one thing about a kite in a meadow." }] },
   });
-  expect(reply.status).toBe(200);
+  expect(reply.status).toBe(204);
   const receipts = await eventually(world.receipts, {
     within: 120_000, until: (values) => values.some((value) => value.title === true) && values.some((value) => value.outcome === "rate_or_quota_limited"),
   });

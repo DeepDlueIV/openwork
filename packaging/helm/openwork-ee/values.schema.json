@@ -98,6 +98,16 @@
               ],
               "description": "Team roles: Members › Teams shows each team's role (Member, Admin or Custom) with one Change role action, and Members gets a Roles tab to see and create roles. Renders DEN_FEATURE_TEAM_ROLES."
             },
+            "sharedRoles": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Shared roles: A custom role can be given to more than one team: Change role lists every role, each role's page lists its teams, and a role can be created before any team has it. Needs Team roles and Permissions. Renders DEN_FEATURE_SHARED_ROLES."
+            },
             "engineV2Upgrade": {
               "enum": [
                 "",

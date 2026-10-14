@@ -844,6 +844,7 @@
               "automationCalendar",
               "permissions",
               "teamRoles",
+              "sharedRoles",
               "engineV2Upgrade",
               "remoteSessionEvents",
               "backgroundShellTasks"
@@ -1045,6 +1046,9 @@
                     "teamRoles": {
                       "type": "boolean"
                     },
+                    "sharedRoles": {
+                      "type": "boolean"
+                    },
                     "engineV2Upgrade": {
                       "type": "boolean"
                     },
@@ -1070,6 +1074,7 @@
                     "automationCalendar",
                     "permissions",
                     "teamRoles",
+                    "sharedRoles",
                     "engineV2Upgrade",
                     "remoteSessionEvents",
                     "backgroundShellTasks",
@@ -1527,6 +1532,62 @@
                         "overrideApplies"
                       ]
                     },
+                    "sharedRoles": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "engineV2Upgrade": {
                       "type": "object",
                       "properties": {
@@ -1705,6 +1766,7 @@
                     "automationCalendar",
                     "permissions",
                     "teamRoles",
+                    "sharedRoles",
                     "engineV2Upgrade",
                     "remoteSessionEvents",
                     "backgroundShellTasks"
@@ -2105,6 +2167,9 @@
                     "teamRoles": {
                       "type": "boolean"
                     },
+                    "sharedRoles": {
+                      "type": "boolean"
+                    },
                     "engineV2Upgrade": {
                       "type": "boolean"
                     },
@@ -2130,6 +2195,7 @@
                     "automationCalendar",
                     "permissions",
                     "teamRoles",
+                    "sharedRoles",
                     "engineV2Upgrade",
                     "remoteSessionEvents",
                     "backgroundShellTasks",
@@ -2587,6 +2653,62 @@
                         "overrideApplies"
                       ]
                     },
+                    "sharedRoles": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "engineV2Upgrade": {
                       "type": "object",
                       "properties": {
@@ -2765,6 +2887,7 @@
                     "automationCalendar",
                     "permissions",
                     "teamRoles",
+                    "sharedRoles",
                     "engineV2Upgrade",
                     "remoteSessionEvents",
                     "backgroundShellTasks"
@@ -10417,15 +10540,23 @@
                   }
                 ]
               },
+              "teams": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/PermissionSetTeam"
+                }
+              },
               "memberCount": {
                 "type": "integer",
                 "minimum": -9007199254740991,
-                "maximum": 9007199254740991
+                "maximum": 9007199254740991,
+                "description": "People in any of the set's teams, each counted once."
               }
             },
             "required": [
               "kind",
               "team",
+              "teams",
               "memberCount"
             ]
           }
@@ -10456,7 +10587,15 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "The first team the set applies to. Kept for older clients; see teams."
+          },
+          "teams": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PermissionSetTeam"
+            },
+            "description": "Every team the set applies to now. More than one only with Shared roles."
           },
           "allowedCount": {
             "type": "integer",
@@ -10477,6 +10616,7 @@
           "name",
           "kind",
           "team",
+          "teams",
           "allowedCount",
           "createdAt",
           "appliesTo"
@@ -10728,10 +10868,17 @@
                   }
                 ]
               },
+              "teams": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/PermissionSetTeam"
+                }
+              },
               "memberCount": {
                 "type": "integer",
                 "minimum": -9007199254740991,
-                "maximum": 9007199254740991
+                "maximum": 9007199254740991,
+                "description": "People in any of the set's teams, each counted once."
               },
               "members": {
                 "anyOf": [
@@ -10745,12 +10892,13 @@
                     "type": "null"
                   }
                 ],
-                "description": "Names and emails of the team's members. Null unless the caller holds teams.view; memberCount is always returned."
+                "description": "Names and emails of the people in the set's teams. Null unless the caller holds teams.view; memberCount is always returned."
               }
             },
             "required": [
               "kind",
               "team",
+              "teams",
               "memberCount",
               "members"
             ]
@@ -10782,7 +10930,15 @@
               {
                 "type": "null"
               }
-            ]
+            ],
+            "description": "The first team the set applies to. Kept for older clients; see teams."
+          },
+          "teams": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PermissionSetTeam"
+            },
+            "description": "Every team the set applies to now. More than one only with Shared roles."
           },
           "allowedCount": {
             "type": "integer",
@@ -10821,6 +10977,7 @@
           "name",
           "kind",
           "team",
+          "teams",
           "allowedCount",
           "createdAt",
           "archivedAt",
@@ -10894,11 +11051,29 @@
         "type": "object",
         "properties": {
           "teamId": {
-            "description": "The team this set applies to. A team can have one active permission set; it can't be changed later.",
+            "description": "The one team this set applies to, named \"<team name> Permissions\". A team can have one active permission set. Required unless Shared roles is on and name is given.",
             "format": "typeid",
             "type": "string",
             "minLength": 30,
             "maxLength": 30
+          },
+          "name": {
+            "description": "Shared roles: the role's name. Required when teamId is left out.",
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "teamIds": {
+            "description": "Shared roles: teams that get this role now. Each team's current custom role is replaced. Left out or empty, the role starts with no team.",
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "description": "Den TypeID with 'tem_' prefix and a 26-character base32 suffix.",
+              "format": "typeid",
+              "type": "string",
+              "minLength": 30,
+              "maxLength": 30
+            }
           },
           "permissions": {
             "maxItems": 500,
@@ -10929,8 +11104,78 @@
           }
         },
         "required": [
-          "teamId",
           "permissions"
+        ]
+      },
+      "DefaultPermissionSetError": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string",
+            "const": "default_permission_set"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "message"
+        ]
+      },
+      "RenamePermissionSetBody": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120,
+            "description": "The role's new name."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "TeamPermissionSetResponse": {
+        "type": "object",
+        "properties": {
+          "set": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/PermissionSetDetail"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "set"
+        ]
+      },
+      "TeamPermissionSetBody": {
+        "type": "object",
+        "properties": {
+          "permissionSetId": {
+            "anyOf": [
+              {
+                "description": "Den TypeID with 'pms_' prefix and a 26-character base32 suffix.",
+                "format": "typeid",
+                "type": "string",
+                "minLength": 30,
+                "maxLength": 30
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "The custom role (team permission set) the team gets, replacing its current one. Null leaves the team with no custom role."
+          }
+        },
+        "required": [
+          "permissionSetId"
         ]
       },
       "UpdatePermissionSetPermissionsBody": {
@@ -11057,22 +11302,6 @@
           "nextCursor"
         ]
       },
-      "DefaultPermissionSetError": {
-        "type": "object",
-        "properties": {
-          "error": {
-            "type": "string",
-            "const": "default_permission_set"
-          },
-          "message": {
-            "type": "string"
-          }
-        },
-        "required": [
-          "error",
-          "message"
-        ]
-      },
       "PermissionKeyStatus": {
         "type": "object",
         "properties": {
@@ -11108,6 +11337,12 @@
                     }
                   ]
                 },
+                "teams": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/PermissionSetTeam"
+                  }
+                },
                 "status": {
                   "type": "string",
                   "enum": [
@@ -11124,6 +11359,7 @@
                 "name",
                 "kind",
                 "team",
+                "teams",
                 "status",
                 "locked"
               ]
@@ -24922,6 +25158,9 @@
                         "teamRoles": {
                           "type": "boolean"
                         },
+                        "sharedRoles": {
+                          "type": "boolean"
+                        },
                         "engineV2Upgrade": {
                           "type": "boolean"
                         },
@@ -24947,6 +25186,7 @@
                         "automationCalendar",
                         "permissions",
                         "teamRoles",
+                        "sharedRoles",
                         "engineV2Upgrade",
                         "remoteSessionEvents",
                         "backgroundShellTasks",
@@ -25404,6 +25644,62 @@
                             "overrideApplies"
                           ]
                         },
+                        "sharedRoles": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "engineV2Upgrade": {
                           "type": "object",
                           "properties": {
@@ -25582,6 +25878,7 @@
                         "automationCalendar",
                         "permissions",
                         "teamRoles",
+                        "sharedRoles",
                         "engineV2Upgrade",
                         "remoteSessionEvents",
                         "backgroundShellTasks"
@@ -25727,6 +26024,9 @@
                         "teamRoles": {
                           "type": "boolean"
                         },
+                        "sharedRoles": {
+                          "type": "boolean"
+                        },
                         "engineV2Upgrade": {
                           "type": "boolean"
                         },
@@ -25752,6 +26052,7 @@
                         "automationCalendar",
                         "permissions",
                         "teamRoles",
+                        "sharedRoles",
                         "engineV2Upgrade",
                         "remoteSessionEvents",
                         "backgroundShellTasks",
@@ -26209,6 +26510,62 @@
                             "overrideApplies"
                           ]
                         },
+                        "sharedRoles": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "engineV2Upgrade": {
                           "type": "object",
                           "properties": {
@@ -26387,6 +26744,7 @@
                         "automationCalendar",
                         "permissions",
                         "teamRoles",
+                        "sharedRoles",
                         "engineV2Upgrade",
                         "remoteSessionEvents",
                         "backgroundShellTasks"
@@ -67169,7 +67527,7 @@
         ],
         "x-mcp": false,
         "summary": "Create team permissions",
-        "description": "Creates the permission set for one team, named \"<team name> Permissions\" (fixed from then on), links it to the team and stores its initial permissions. A team can have one active set, and the team can't be changed later. You can only turn on permissions you have yourself. Requires permissions.manage (only the owner has it by default), a recent sign-in, and the Permissions feature.",
+        "description": "Creates the permission set for one team, named \"<team name> Permissions\" (fixed from then on), links it to the team and stores its initial permissions. A team can have one active set. With Shared roles on, send name (and optionally teamIds) instead of teamId to create a named role that can be given to any number of teams; each listed team's current custom role is replaced. You can only turn on permissions you have yourself. Requires permissions.manage (only the owner has it by default), a recent sign-in, and the Permissions feature.",
         "responses": {
           "201": {
             "description": "Team permission set created.",
@@ -67359,6 +67717,123 @@
           }
         ]
       },
+      "patch": {
+        "operationId": "patchV1PermissionsSetsByPermissionSetId",
+        "tags": [
+          "Permissions"
+        ],
+        "x-mcp": false,
+        "summary": "Rename a role",
+        "description": "Renames a team permission set (a custom role). Member and Admin permissions keep their names, and archived sets can't be changed. Requires permissions.manage (only the owner has it by default), a recent sign-in, and the Permissions and Shared roles features.",
+        "responses": {
+          "200": {
+            "description": "Role renamed; its current state is returned.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionSetResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body or id was invalid, or the set is Member or Admin permissions.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/DefaultPermissionSetError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The caller must be signed in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller lacks permissions.manage or needs a recent sign-in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ForbiddenError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/PermissionDeniedError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The permission set or organization was not found, or Permissions or Shared roles is turned off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionsNotFoundError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The permission set is archived.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionSetConflictError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "permissionSetId",
+            "schema": {
+              "format": "typeid",
+              "type": "string",
+              "minLength": 30,
+              "maxLength": 30
+            },
+            "required": true,
+            "description": "Den TypeID with 'pms_' prefix and a 26-character base32 suffix."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RenamePermissionSetBody"
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "denApiKey": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      },
       "delete": {
         "operationId": "deleteV1PermissionsSetsByPermissionSetId",
         "tags": [
@@ -67450,6 +67925,128 @@
             "description": "Den TypeID with 'pms_' prefix and a 26-character base32 suffix."
           }
         ],
+        "security": [
+          {
+            "denApiKey": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/teams/{teamId}/permission-set": {
+      "put": {
+        "operationId": "putV1TeamsByTeamIdPermissionSet",
+        "tags": [
+          "Permissions"
+        ],
+        "x-mcp": false,
+        "summary": "Set a team's custom role",
+        "description": "Gives a team one custom role (a team permission set), replacing its current one, or none with permissionSetId null. The same role can be given to any number of teams; a role left with no team is kept until it is deleted. You can only give a role whose permissions you all have yourself. Whether the team is an Admin team is changed separately (PATCH /v1/teams/:teamId). Requires permissions.manage (only the owner has it by default), a recent sign-in, and the Permissions and Shared roles features.",
+        "responses": {
+          "200": {
+            "description": "The team's custom role was set; the role's current state is returned, or null when the team has none.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TeamPermissionSetResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The body or id was invalid, or the set is Member or Admin permissions.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/DefaultPermissionSetError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The caller must be signed in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller lacks permissions.manage, needs a recent sign-in, tried to turn on a permission they don't have, or tried to change Admin permissions without being the owner or an admin.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/ForbiddenError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/PermissionDeniedError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/PermissionEditError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The team, permission set or organization was not found, or Permissions or Shared roles is turned off.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionsNotFoundError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The permission set is archived.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PermissionSetConflictError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "teamId",
+            "schema": {
+              "format": "typeid",
+              "type": "string",
+              "minLength": 30,
+              "maxLength": 30
+            },
+            "required": true,
+            "description": "Den TypeID with 'tem_' prefix and a 26-character base32 suffix."
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TeamPermissionSetBody"
+              }
+            }
+          }
+        },
         "security": [
           {
             "denApiKey": []

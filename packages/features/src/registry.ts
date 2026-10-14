@@ -109,6 +109,13 @@ export const FEATURES = defineFeatures({
     deployments: everywhere,
     default: false,
   },
+  sharedRoles: {
+    label: "Shared roles",
+    description: "A custom role can be given to more than one team: Change role lists every role, each role's page lists its teams, and a role can be created before any team has it. Needs Team roles and Permissions.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
   engineV2Upgrade: {
     label: "Desktop: upgrade prompt to OpenCode v2",
     description: "Desktop members still on OpenCode v1 see a short notice offering to upgrade: their chats are copied to v2 with a backup, then OpenWork switches engines.",

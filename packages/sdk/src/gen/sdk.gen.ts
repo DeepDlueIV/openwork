@@ -588,6 +588,8 @@ import type {
   PatchV1MeProfileResponses,
   PatchV1OrgErrors,
   PatchV1OrgResponses,
+  PatchV1PermissionsSetsByPermissionSetIdErrors,
+  PatchV1PermissionsSetsByPermissionSetIdResponses,
   PatchV1PluginsByPluginIdErrors,
   PatchV1PluginsByPluginIdResponses,
   PatchV1ScimErrors,
@@ -933,6 +935,9 @@ import type {
   PutV1PermissionsSetsByPermissionSetIdPermissionsResponses,
   PutV1TeamsByKeyByExternalKeyErrors,
   PutV1TeamsByKeyByExternalKeyResponses,
+  PutV1TeamsByTeamIdPermissionSetErrors,
+  PutV1TeamsByTeamIdPermissionSetResponses,
+  RenamePermissionSetBody,
   RunAutomationNowErrors,
   RunAutomationNowResponses,
   SaveWorkflowErrors,
@@ -941,6 +946,7 @@ import type {
   SendGmailDraftResponses,
   SendMicrosoft365MailDraftErrors,
   SendMicrosoft365MailDraftResponses,
+  TeamPermissionSetBody,
   TrashGmailMessageErrors,
   TrashGmailMessageResponses,
   UntrashGmailMessageErrors,
@@ -8319,7 +8325,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Create team permissions
    *
-   * Creates the permission set for one team, named "<team name> Permissions" (fixed from then on), links it to the team and stores its initial permissions. A team can have one active set, and the team can't be changed later. You can only turn on permissions you have yourself. Requires permissions.manage (only the owner has it by default), a recent sign-in, and the Permissions feature.
+   * Creates the permission set for one team, named "<team name> Permissions" (fixed from then on), links it to the team and stores its initial permissions. A team can have one active set. With Shared roles on, send name (and optionally teamIds) instead of teamId to create a named role that can be given to any number of teams; each listed team's current custom role is replaced. You can only turn on permissions you have yourself. Requires permissions.manage (only the owner has it by default), a recent sign-in, and the Permissions feature.
    */
   public postV1PermissionsSets<ThrowOnError extends boolean = false>(
     parameters: {
@@ -8387,6 +8393,84 @@ export class DenClient extends HeyApiClient {
       url: "/v1/permissions/sets/{permissionSetId}",
       ...options,
       ...params,
+    });
+  }
+
+  /**
+   * Rename a role
+   *
+   * Renames a team permission set (a custom role). Member and Admin permissions keep their names, and archived sets can't be changed. Requires permissions.manage (only the owner has it by default), a recent sign-in, and the Permissions and Shared roles features.
+   */
+  public patchV1PermissionsSetsByPermissionSetId<ThrowOnError extends boolean = false>(
+    parameters: {
+      permissionSetId: string;
+      renamePermissionSetBody: RenamePermissionSetBody;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "permissionSetId" },
+            { key: "renamePermissionSetBody", map: "body" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).patch<
+      PatchV1PermissionsSetsByPermissionSetIdResponses,
+      PatchV1PermissionsSetsByPermissionSetIdErrors,
+      ThrowOnError
+    >({
+      url: "/v1/permissions/sets/{permissionSetId}",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    });
+  }
+
+  /**
+   * Set a team's custom role
+   *
+   * Gives a team one custom role (a team permission set), replacing its current one, or none with permissionSetId null. The same role can be given to any number of teams; a role left with no team is kept until it is deleted. You can only give a role whose permissions you all have yourself. Whether the team is an Admin team is changed separately (PATCH /v1/teams/:teamId). Requires permissions.manage (only the owner has it by default), a recent sign-in, and the Permissions and Shared roles features.
+   */
+  public putV1TeamsByTeamIdPermissionSet<ThrowOnError extends boolean = false>(
+    parameters: {
+      teamId: string;
+      teamPermissionSetBody: TeamPermissionSetBody;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "teamId" },
+            { key: "teamPermissionSetBody", map: "body" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).put<
+      PutV1TeamsByTeamIdPermissionSetResponses,
+      PutV1TeamsByTeamIdPermissionSetErrors,
+      ThrowOnError
+    >({
+      url: "/v1/teams/{teamId}/permission-set",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
     });
   }
 

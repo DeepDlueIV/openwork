@@ -13,8 +13,9 @@ import { TeamPermissionsPanel } from "./team-permissions-panel";
 import { OrgMemberIdentity } from "./org-member-identity";
 import { TeamAdminCheckbox } from "./team-admin-checkbox";
 import { TeamRolePanel } from "./team-role-panel";
+import { SharedTeamRolePanel } from "./shared-team-role-panel";
 import { MemberTeamRoles } from "./member-team-roles";
-import { useCustomRoleTeams } from "./permissions-data";
+import { useCustomRoleTeams, useSharedRolesOn } from "./permissions-data";
 import {
   type TeamPluginAccessItem,
   useRevokeTeamPluginAccess,
@@ -70,6 +71,8 @@ export function TeamDetailScreen({ teamId }: { teamId: string }) {
   const canRevokeAccess = viewerAccess?.canManageAllShared ?? false;
   // teamRoles: the team page opens on its one role (Member, Admin or Custom).
   const teamRoles = orgContext ? orgFeatureEnabled(orgContext, "teamRoles") : false;
+  // sharedRoles: the role is picked from every custom role, and the unused desktop-policy editor leaves Access.
+  const sharedRoles = useSharedRolesOn();
   // Members list each person's team roles the same way the Members page does.
   const customRoles = useCustomRoleTeams(orgId, teamRoles && Boolean(orgContext && orgFeatureEnabled(orgContext, "permissions")) && (viewerAccess?.canViewPermissions ?? false));
   const [chosenTab, setActiveTab] = useState<TeamDetailTab | null>(null);
@@ -126,7 +129,7 @@ export function TeamDetailScreen({ teamId }: { teamId: string }) {
       <div className="mt-6">
         {activeTab === "role" && team ? (
           <div role="tabpanel" aria-label="Role">
-            <TeamRolePanel team={team} />
+            {sharedRoles ? <SharedTeamRolePanel team={team} /> : <TeamRolePanel team={team} />}
           </div>
         ) : null}
 
@@ -142,7 +145,7 @@ export function TeamDetailScreen({ teamId }: { teamId: string }) {
                   <div key={member.id} className="px-6 py-4">
                     <OrgMemberIdentity member={member} />
                     {teamRoles && orgContext ? (
-                      <MemberTeamRoles member={member} teams={orgContext.teams} customTeamIds={customRoles.teamIds} exceptTeamId={teamId} />
+                      <MemberTeamRoles member={member} teams={orgContext.teams} customTeamIds={customRoles.teamIds} customRoleNameByTeam={sharedRoles ? customRoles.nameByTeam : undefined} exceptTeamId={teamId} />
                     ) : member.adminTeams.length > 0 ? (
                       <p className="mt-2 text-[12px] text-gray-500">Admin via {member.adminTeams.map((entry) => entry.name).join(", ")}</p>
                     ) : null}
@@ -155,9 +158,9 @@ export function TeamDetailScreen({ teamId }: { teamId: string }) {
 
         {activeTab === "access" ? (
           <div role="tabpanel" aria-label="Access">
-            <TeamPermissionsPanel teamId={teamId} heading={teamRoles ? "In the desktop app" : undefined} />
+            {sharedRoles ? null : <TeamPermissionsPanel teamId={teamId} heading={teamRoles ? "In the desktop app" : undefined} />}
             <h2 className="mb-2 text-lg font-semibold text-gray-950">Plugins & connections</h2>
-            <p className="mb-4 text-sm text-gray-500">Review what this team can use and where access comes from.</p>
+            {sharedRoles ? null : <p className="mb-4 text-sm text-gray-500">Review what this team can use and where access comes from.</p>}
             {accessQuery.isLoading ? (
               <div className="rounded-2xl border border-gray-100 bg-white px-6 py-8 text-[13px] text-gray-400">
                 Loading team access…

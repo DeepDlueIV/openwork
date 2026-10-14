@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { AlertDialog } from "@base-ui/react/alert-dialog";
-import { ChevronRight, History, LockKeyhole, ShieldCheck } from "lucide-react";
+import { ChevronRight, History, LockKeyhole, ShieldCheck, Users } from "lucide-react";
 import { PERMISSION_KEYS, getPermissionDefinition, isPermissionKey, type PermissionKey } from "@openwork/types/den/permissions";
 import { DenButton, buttonVariants } from "../../_components/ui/button";
 import { DenNotice } from "../../_components/ui/notice";
@@ -18,6 +18,7 @@ import {
   usePermissionSet,
   usePermissionSetHistory,
   useRemoveTeamPermissions,
+  useSharedRolesOn,
   useUpdatePermissionSet,
   type PermissionChange,
   type PermissionHistoryItem,
@@ -35,9 +36,10 @@ import {
   type PermissionsAccess,
 } from "./permissions-ui";
 import { TEAM_ROLE_LABELS, roleKindLabel, roleName } from "./team-roles";
+import { RoleNameField, SharedRoleTeams } from "./shared-role-teams";
 
 type ReadyAccess = Extract<PermissionsAccess, { state: "ready" }>;
-type SetTab = "permissions" | "history";
+type SetTab = "teams" | "permissions" | "history";
 
 function plural(count: number, one: string, many = `${one}s`) {
   return `${count} ${count === 1 ? one : many}`;
@@ -62,7 +64,9 @@ function PermissionSetContent({ ready, permissionSetId, teamRoles }: { ready: Re
   const query = usePermissionSet(ready.orgId, permissionSetId);
   // Lives above the editor, which remounts after each save, so Undo and errors survive it.
   const update = useUpdatePermissionSet(ready.orgId, permissionSetId);
-  const [tab, setTab] = useState<SetTab>("permissions");
+  // sharedRoles: a custom role's page opens on its teams, and the role has its own name.
+  const sharedRoles = useSharedRolesOn();
+  const [chosenTab, setTab] = useState<SetTab | null>(null);
   const rolesBack = { href: `${getMembersRoute(ready.orgSlug)}?tab=roles`, label: "Roles" };
   const listBack = teamRoles ? rolesBack : { href: getPermissionsRoute(ready.orgSlug), label: "Permissions" };
   const loadingTitle = teamRoles ? "Role" : "Permissions";
@@ -84,31 +88,43 @@ function PermissionSetContent({ ready, permissionSetId, teamRoles }: { ready: Re
   }
 
   const set = query.data;
-  // A custom role goes back to its team, where it is shown and changed.
-  const back = teamRoles && set.kind === "team" && set.team?.name
+  const sharedCustom = sharedRoles && set.kind === "team";
+  // A custom role goes back to its team, where it is shown and changed (with sharedRoles, to Roles).
+  const back = teamRoles && !sharedCustom && set.kind === "team" && set.team?.name
     ? { href: getTeamRoute(ready.orgSlug, set.team.id), label: set.team.name }
     : listBack;
   const allowedLabel = `${set.allowedCount} of ${PERMISSION_KEYS.length} allowed`;
   const tabs: readonly TabItem<SetTab>[] = [
+    ...(sharedCustom && set.archivedAt === null ? [{ value: "teams" as const, label: "Teams", icon: Users }] : []),
     { value: "permissions", label: "Permissions", icon: ShieldCheck },
     { value: "history", label: "History", icon: History },
   ];
+  const tab: SetTab = chosenTab && tabs.some((entry) => entry.value === chosenTab) ? chosenTab : tabs[0].value;
+  const setTeamNames = set.teams.map((team) => team.name ?? "A deleted team");
+  const impact = sharedCustom && setTeamNames.length > 0
+    ? `Updates ${setTeamNames.length > 2 ? `${setTeamNames.slice(0, -1).join(", ")} and ${setTeamNames[setTeamNames.length - 1]}` : setTeamNames.join(" and ")}, ${plural(set.appliesTo.kind === "team" ? set.appliesTo.memberCount : 0, "person", "people")}`
+    : undefined;
   const removable = set.kind === "team" && set.archivedAt === null && ready.access.canManagePermissions;
 
   return (
     <PermissionsPage
-      title={teamRoles ? roleName(set) : set.name}
+      title={teamRoles ? roleName(set, { shared: sharedRoles }) : set.name}
       back={back}
       caption={teamRoles ? `${roleKindLabel(set)}, ${allowedLabel}` : allowedLabel}
-      action={removable ? <RemoveTeamPermissions ready={ready} set={set} teamRoles={teamRoles} /> : undefined}
+      action={removable ? <RemoveTeamPermissions ready={ready} set={set} teamRoles={teamRoles} sharedRoles={sharedRoles} /> : undefined}
       testId="permission-set"
     >
-      <AppliesTo ready={ready} set={set} teamRoles={teamRoles} />
+      {sharedCustom && set.archivedAt === null ? null : <AppliesTo ready={ready} set={set} teamRoles={teamRoles} />}
       <UnderlineTabs tabs={tabs} activeTab={tab} onChange={setTab} />
-      {tab === "permissions" ? (
-        <div role="tabpanel" aria-label="Permissions">
+      {tab === "teams" ? (
+        <div role="tabpanel" aria-label="Teams">
+          <SharedRoleTeams ready={ready} set={set} />
+        </div>
+      ) : tab === "permissions" ? (
+        <div role="tabpanel" aria-label="Permissions" className="flex flex-col gap-6">
+          {sharedCustom && set.archivedAt === null ? <RoleNameField ready={ready} set={set} /> : null}
           {/* Remount when the saved state changes so the draft starts from it. */}
-          <PermissionSetEditor key={set.permissions.map((state) => state.status).join("")} ready={ready} set={set} update={update} />
+          <PermissionSetEditor key={set.permissions.map((state) => state.status).join("")} ready={ready} set={set} update={update} impact={impact} />
         </div>
       ) : (
         <div role="tabpanel" aria-label="History">
@@ -189,7 +205,13 @@ function setReadOnlyReason(ready: ReadyAccess, set: PermissionSetDetail): string
   return null;
 }
 
-function PermissionSetEditor({ ready, set, update }: { ready: ReadyAccess; set: PermissionSetDetail; update: ReturnType<typeof useUpdatePermissionSet> }) {
+function PermissionSetEditor({ ready, set, update, impact }: {
+  ready: ReadyAccess;
+  set: PermissionSetDetail;
+  update: ReturnType<typeof useUpdatePermissionSet>;
+  /** sharedRoles: who a save changes, e.g. "Updates Sales and Engineering, 9 people". */
+  impact?: string;
+}) {
   const [draft, setDraft] = useState<ReadonlyMap<string, PermissionStatus>>(new Map());
   const toast = useDenToast();
   const readOnlyReason = setReadOnlyReason(ready, set);
@@ -247,7 +269,10 @@ function PermissionSetEditor({ ready, set, update }: { ready: ReadyAccess; set: 
       />
       {update.error ? <DenNotice tone="error" message={update.error.message} /> : null}
       {changes.length > 0 ? (
-        <DenStickyActionBar testId="permission-set-save-bar" summary={<span>{plural(changes.length, "unsaved change")}</span>}>
+        <DenStickyActionBar
+          testId="permission-set-save-bar"
+          summary={impact ? <span className="flex flex-col"><span className="font-medium text-gray-900">{impact}</span><span>{plural(changes.length, "unsaved change")}</span></span> : <span>{plural(changes.length, "unsaved change")}</span>}
+        >
           <DenButton variant="secondary" disabled={update.isPending} onClick={() => { update.reset(); setDraft(new Map()); }}>Discard</DenButton>
           <DenButton loading={update.isPending} onClick={() => void save(changes, true).catch(() => undefined)}>Save changes</DenButton>
         </DenStickyActionBar>
@@ -300,15 +325,26 @@ function PermissionSetHistory({ ready, setId }: { ready: ReadyAccess; setId: str
   );
 }
 
-function RemoveTeamPermissions({ ready, set, teamRoles }: { ready: ReadyAccess; set: PermissionSetDetail; teamRoles: boolean }) {
+function RemoveTeamPermissions({ ready, set, teamRoles, sharedRoles }: { ready: ReadyAccess; set: PermissionSetDetail; teamRoles: boolean; sharedRoles: boolean }) {
   const router = useRouter();
   const toast = useDenToast();
   const cancelRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const remove = useRemoveTeamPermissions(ready.orgId, set.id);
   const teamName = set.team?.name ?? "this team";
-  // teamRoles: removing a custom role leaves the team with the Member role.
-  const words = teamRoles
+  const sharedTeams = set.teams.map((team) => team.name ?? "A deleted team");
+  // sharedRoles: deleting a role takes it off every team; teamRoles: removing it leaves the team with Member.
+  const words = sharedRoles
+    ? {
+        trigger: "Delete role",
+        title: `Delete ${set.name}?`,
+        description: sharedTeams.length > 0
+          ? `${sharedTeams.join(", ")} lose${sharedTeams.length === 1 ? "s" : ""} these permissions now. The history is kept. This can't be undone.`
+          : "Nobody has this role. The history is kept. This can't be undone.",
+        confirm: "Delete role",
+        done: `Deleted ${set.name}`,
+      }
+    : teamRoles
     ? {
         trigger: "Remove role",
         title: `Remove the ${teamName} role?`,
@@ -329,7 +365,7 @@ function RemoveTeamPermissions({ ready, set, teamRoles }: { ready: ReadyAccess; 
       await remove.mutateAsync();
       setOpen(false);
       toast({ title: words.done });
-      router.push(teamRoles && set.team ? getTeamRoute(ready.orgSlug, set.team.id) : getPermissionsRoute(ready.orgSlug));
+      router.push(sharedRoles ? `${getMembersRoute(ready.orgSlug)}?tab=roles` : teamRoles && set.team ? getTeamRoute(ready.orgSlug, set.team.id) : getPermissionsRoute(ready.orgSlug));
     } catch {
       return;
     }

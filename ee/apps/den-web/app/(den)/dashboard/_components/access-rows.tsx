@@ -1,7 +1,7 @@
 "use client";
 
 import { Popover } from "@base-ui/react/popover";
-import { Check, Plus, Search, type LucideIcon } from "lucide-react";
+import { Check, Plus, Search, Users, type LucideIcon } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { DenButton } from "../../_components/ui/button";
 import { ItemPanel } from "./item-list";
@@ -100,6 +100,36 @@ export function PeopleField({ people, chosenIds, onChange, rowTestId }: {
       ))}
       <div className="flex px-5 py-3">
         <AddPicker kind="person" options={addable} onAdd={(ids) => onChange([...chosenIds, ...ids])} />
+      </div>
+    </ItemPanel>
+  );
+}
+
+export type TeamChoice = { id: string; name: string; detail: string };
+
+/** The teams a role goes to: one row each with Remove, then Add team (sharedRoles Create role). */
+export function TeamsField({ teams, chosenIds, onChange, rowTestId }: {
+  teams: readonly TeamChoice[];
+  chosenIds: readonly string[];
+  onChange: (ids: string[]) => void;
+  rowTestId?: string;
+}) {
+  const chosen = chosenIds.flatMap((id) => teams.find((team) => team.id === id) ?? []);
+  const addable = teams.filter((team) => !chosenIds.includes(team.id));
+  return (
+    <ItemPanel>
+      {chosen.map((team) => (
+        <AccessRow
+          key={team.id}
+          lead={<IconTile icon={Users} />}
+          title={team.name}
+          description={team.detail}
+          trailing={<RemoveButton label={`Remove ${team.name}`} onClick={() => onChange(chosenIds.filter((id) => id !== team.id))} />}
+          testId={rowTestId}
+        />
+      ))}
+      <div className="flex px-5 py-3">
+        <AddPicker kind="team" options={addable} onAdd={(ids) => onChange([...chosenIds, ...ids])} />
       </div>
     </ItemPanel>
   );

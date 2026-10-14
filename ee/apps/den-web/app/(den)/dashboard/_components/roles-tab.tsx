@@ -14,7 +14,7 @@ import {
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
 import { IconTile } from "./access-rows";
 import { ItemPanel, ItemRow, ItemRowsSkeleton, ItemSection, LinkButton } from "./item-list";
-import { usePermissionSets } from "./permissions-data";
+import { usePermissionSets, useSharedRolesOn } from "./permissions-data";
 import { ADMIN_ROLE_SUMMARY } from "./team-roles";
 
 
@@ -49,11 +49,13 @@ function RolesTabContent({ orgId, orgSlug, permissionsFeature, canViewSets, acti
 }) {
   const { orgContext } = useOrgDashboard();
   const setsQuery = usePermissionSets(orgId, canViewSets);
+  // sharedRoles: a custom role has its own name and can be on several teams.
+  const sharedRoles = useSharedRolesOn();
   if (!orgContext) return null;
   const sets = setsQuery.data ?? [];
   const memberSet = sets.find((set) => set.kind === "member_default");
   const adminSet = sets.find((set) => set.kind === "admin_default");
-  const teamSets = sets.filter((set) => set.kind === "team" && set.team);
+  const teamSets = sets.filter((set) => set.kind === "team" && (set.team || set.teams.length > 0 || sharedRoles));
 
   const owner = orgContext.members.find((member) => member.isOwner);
   const directAdmins = orgContext.members.filter((member) => !member.isOwner && member.userId !== null && member.role === "admin").length;
@@ -109,6 +111,20 @@ function RolesTabContent({ orgId, orgSlug, permissionsFeature, canViewSets, acti
         ) : (
           <ItemPanel>
             {teamSets.map((set) => {
+              if (sharedRoles) {
+                const teams = set.teams.length > 0 ? set.teams : set.team ? [set.team] : [];
+                return (
+                  <ItemRow
+                    key={set.id}
+                    logo={<IconTile icon={Users} />}
+                    title={set.name}
+                    description={`${set.allowedCount} ${set.allowedCount === 1 ? "permission" : "permissions"}`}
+                    status={teams.length > 0 ? teams.map((entry) => entry.name ?? "A deleted team").join(", ") : "No teams yet"}
+                    href={getPermissionSetRoute(orgSlug, set.id)}
+                    testId="role-row-custom"
+                  />
+                );
+              }
               const team = orgContext.teams.find((entry) => entry.id === set.team?.id);
               const memberCount = team?.memberIds.length ?? (set.appliesTo.kind === "team" ? set.appliesTo.memberCount : 0);
               return (

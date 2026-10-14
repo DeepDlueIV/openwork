@@ -15,6 +15,7 @@ import { createConnectionActionController, hasHostConnectionActions, standardMcp
 import { openDesktopUrl } from "@/app/lib/desktop"
 import { mcpAppDiscoverySignature } from "@/app/lib/mcp-app-discovery-scheduler"
 import { scheduleCachedMcpAppDiscovery } from "@/app/lib/mcp-app-presentation-cache"
+import { cachedMcpAppResult, MCP_APP_CACHE_REQUEST_META, MCP_APP_CACHED_RESULT_META, rememberMcpAppResult } from "@/app/lib/mcp-app-result-cache"
 import { onCloudCredentialRefreshed, readCloudCredentialRevision } from "@/react-app/domains/connections/cloud-credential-revision"
 import {
   OpenworkServerError,
@@ -455,8 +456,11 @@ export function McpAppSandboxView({ origin, app, resolveLiveActions, toolName, i
           displayMode: "inline",
           availableDisplayModes: ["inline"],
           styles: { variables: hostStyleVariables() },
-          ...(!readOnly && connectionController && hasHostConnectionActions(app)
-            ? { experimental: { "openwork/connection-actions": true } } : {}),
+          ...(!readOnly ? { experimental: {
+            // The App may ask for its last read-only results; see the cache-read branch of oncalltool.
+            "openwork/result-cache": true,
+            ...(connectionController && hasHostConnectionActions(app) ? { "openwork/connection-actions": true } : {}),
+          } } : {}),
         },
       },
     )
@@ -521,6 +525,14 @@ export function McpAppSandboxView({ origin, app, resolveLiveActions, toolName, i
       teardownRef.current?.()
     }
     if (!readOnly || resolveLiveActions) bridge.oncalltool = async ({ name, arguments: args, _meta }) => {
+      const cacheRequest = _meta?.[MCP_APP_CACHE_REQUEST_META]
+      // The App's last read-only result for this call, straight from storage:
+      // no tool runs, so it is shown at once and the App refreshes it itself.
+      if (cacheRequest === "read") {
+        if (disposed || failed) throw new Error("This artifact view has closed or changed.")
+        return await cachedMcpAppResult(origin, app, name, args ?? {})
+          ?? { content: [], isError: true, _meta: { [MCP_APP_CACHED_RESULT_META]: false } }
+      }
       try {
         if (resolveLiveActions) {
           liveActions ??= resolveLiveActions().then(live => {
@@ -539,6 +551,7 @@ export function McpAppSandboxView({ origin, app, resolveLiveActions, toolName, i
         const toolResult = connectionController
           ? await connectionController.callTool(actions, app, name, args, userInteraction)
           : standardMcpToolResult(await actions.callTool(name, args, userInteraction))
+        if (cacheRequest === "store") void rememberMcpAppResult(origin, app, name, args ?? {}, toolResult)
         // A sign-in the viewer can finish gets the row above the App; any
         // other connection failure goes to the host's connection card.
         if (!disposed && !failed) {

@@ -196,6 +196,11 @@ export function createMcpAppServer(input: {
     }
     const binding = tools.find((tool) => tool.name === request.params.name)
     if (!binding) throw new McpError(ErrorCode.InvalidParams, `Tool ${request.params.name} is not available on ${app.title}.`)
+    // OpenWork's host answers a cached read from its own storage. One that
+    // reaches this server came from another host and must not run the tool.
+    if (request.params._meta?.["openwork/cache"] === "read") {
+      return { isError: true, content: [{ type: "text", text: "No kept result is available from this host." }], _meta: { "openwork/cached": false } }
+    }
     const scope = requiredScope(binding)
     if (!input.scopes.has(scope)) return scopeError(binding.name, scope)
     return input.callTool(binding, args)

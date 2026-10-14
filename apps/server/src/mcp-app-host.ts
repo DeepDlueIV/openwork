@@ -58,6 +58,9 @@ type McpAppCsp = {
 
 export type McpAppToolResult = CallToolResult & { hostAction?: ConnectionActionIntent };
 
+/** Result _meta key the host trusts to decide whether a result may be kept. */
+export const MCP_APP_READ_ONLY_RESULT_META = "openwork/readOnly";
+
 export async function supportsHostConnectionActions(serverName: string, config: Record<string, unknown>, toolName: string, resourceUri: string): Promise<boolean> {
   if (serverName !== "openwork-cloud" && serverName !== "openwork") return false;
   if (toolName !== "connection_action" || resourceUri !== connectionActionAppResourceUri) return false;
@@ -1183,7 +1186,11 @@ export async function callMcpAppTool(input: {
     if (new TextEncoder().encode(JSON.stringify(result)).byteLength > MAX_RESULT_BYTES) {
       throw new McpAppHostError("result_too_large", "The MCP App tool result exceeds the 1 MiB host limit.");
     }
-    const sanitized = CallToolResultSchema.parse(stripProviderHostActions(result));
+    const parsed = CallToolResultSchema.parse(stripProviderHostActions(result));
+    // Whether the tool ran without needing approval: read-only and not
+    // destructive. The host keeps only such results for instant reopening.
+    // Set here, never taken from the provider.
+    const sanitized = { ...parsed, _meta: { ...parsed._meta, [MCP_APP_READ_ONLY_RESULT_META]: !toolRequiresApproval(tool) } };
     if (!hostConnectionAction || sanitized.isError) return sanitized;
     await currentConfig();
     await input.assertSessionActive?.();

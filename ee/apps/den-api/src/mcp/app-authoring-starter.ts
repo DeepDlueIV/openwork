@@ -246,17 +246,43 @@ function messageOf(response) {
 
 // One declared tool, with every state the person can see. Only the latest
 // call updates the view, so a slow earlier answer never replaces a newer one.
+// OpenWork keeps read-only results, so peek shows the last one at once
+// without running the tool, and the next call replaces it.
 function useToolCall(app, name) {
   const [state, setState] = React.useState({ status: "idle" });
   const latest = React.useRef(0);
   const available = Boolean(name) && Boolean(app?.getHostCapabilities()?.serverTools);
+  // Only OpenWork answers a cached read from storage; elsewhere it would run the tool.
+  const cacheable = app?.getHostContext()?.experimental?.["openwork/result-cache"] === true;
+  const peek = React.useCallback(async (args) => {
+    if (!available || !cacheable) return;
+    const id = latest.current;
+    let response;
+    try {
+      response = await app.callServerTool({ name, arguments: args, _meta: { "openwork/cache": "read" } });
+    } catch {
+      return;
+    }
+    if (id !== latest.current) return;
+    const meta = response?._meta;
+    // A kept result replaces nothing newer; with none kept, an earlier kept
+    // result for other inputs is cleared rather than shown under these.
+    if (response?.isError || meta?.["openwork/cached"] !== true) {
+      setState((previous) => previous.cached ? { status: "idle" } : previous);
+      return;
+    }
+    const cachedAt = new Date(meta["openwork/cachedAt"]);
+    setState((previous) => previous.status === "idle" || previous.cached
+      ? { status: "ready", value: valueOf(response), updatedAt: Number.isNaN(cachedAt.getTime()) ? new Date() : cachedAt, cached: true }
+      : previous);
+  }, [app, name, available, cacheable]);
   const call = React.useCallback(async (args) => {
     if (!available) return false;
     const id = ++latest.current;
     setState((previous) => ({ ...previous, status: "loading" }));
     let response;
     try {
-      response = await app.callServerTool({ name, arguments: args });
+      response = await app.callServerTool({ name, arguments: args, _meta: { "openwork/cache": "store" } });
     } catch (reason) {
       response = { isError: true, content: [{ type: "text", text: reason instanceof Error ? reason.message : String(reason) }] };
     }
@@ -269,7 +295,7 @@ function useToolCall(app, name) {
     setState({ status: "ready", value: valueOf(response), updatedAt: new Date() });
     return true;
   }, [app, name, available]);
-  return { ...state, available, call };
+  return { ...state, available, call, peek };
 }
 
 function humanize(key) {
@@ -479,6 +505,11 @@ export default function App({ app, input, hostContext }) {
   React.useEffect(() => {
     setValues(initialValues(LOAD.fields, input));
   }, [launch]);
+  // The last result for these inputs shows at once, from OpenWork's storage.
+  const query = JSON.stringify(values);
+  React.useEffect(() => {
+    if (isReady(LOAD.fields, values)) load.peek(argumentsFor(LOAD, values));
+  }, [query]);
   const ready = isReady(LOAD.fields, values);
   const find = () => {
     if (ready) load.call(argumentsFor(LOAD, values));
@@ -517,6 +548,10 @@ export default function App({ app, input, hostContext }) {
   React.useEffect(() => {
     setValues(initialValues(CHANGE.fields, input));
   }, [launch]);
+  // The last loaded view shows at once; it reloads only from its button.
+  React.useEffect(() => {
+    if (LOAD) load.peek(argumentsFor(LOAD, {}));
+  }, []);
   const reload = () => {
     if (LOAD) load.call(argumentsFor(LOAD, {}));
   };

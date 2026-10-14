@@ -716,6 +716,23 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
       await closeFrame();
       await user.click({ role: "button", label: "Close panel" });
     });
+    await step("after: reopening the price board shows the last unit price for a SKU before any Inventory call", async () => {
+      // The price board is the newest App in the conversation, so its creation step has the last Open preview.
+      const openButtons = (await probe.dom('button[aria-label="Open preview"]')).elements.length;
+      await user.click({ role: "button", label: "Open preview", nth: openButtons - 1 });
+      frame = await world.appFrameShowing(guidedTitle, "Show unit price");
+      const reopenedAt = new Date().toISOString();
+      // Typing the SKU looked up before shows its kept price; nothing is clicked, so no tool runs.
+      await user.on(frame).type({ role: "textbox", label: "Sku" }, launchInput.sku);
+      await user.on(frame).see({ text: "Unit price" }, { timeoutMs: 15_000 });
+      await user.on(frame).see({ text: /Updated / });
+      const calls = await world.inventoryCalls({ sinceIso: reopenedAt });
+      expect(calls).toHaveLength(0);
+      await user.screenshot();
+      evidence.recordAssertionEvidence("A reopened App shows its last read at once", `${name}: after reopening ${guidedTitle} and typing ${launchInput.sku}, its last unit price showed without a click, and Inventory recorded ${calls.length} lookups since the reopen; before, the price appeared only after a click and a full Inventory round trip.`, calls.length === 0);
+      await closeFrame();
+      await user.click({ role: "button", label: "Close panel" });
+    });
     await step("after: stopping creation pauses its step without opening an App", async () => {
       const prompt = "Create an App and hold while writing so I can stop it.";
       await world.prepareLifecycleTurn(prompt, "interrupt");

@@ -43,9 +43,17 @@ To change an App, keep its purpose and tools unless the person asks otherwise, a
 
 prepare_app picks one from the tools you declare. Each is also a resource you can read before you start:
 
-- lookup (${appStarterResourceUri("lookup")}): every tool only reads. It loads on its button, with inputs filled from the launch input. For dashboards, lists, status boards, and search.
+- lookup (${appStarterResourceUri("lookup")}): every tool only reads. It shows the last result for its inputs at once and loads on its button, with inputs filled from the launch input. For dashboards, lists, status boards, and search.
 - action (${appStarterResourceUri("action")}): at least one tool changes data. Inputs, one primary button that makes one call, the outcome, and a read on its own button.
 - standalone (${appStarterResourceUri("standalone")}): no tools. Its logic runs on the inputs and the launch input. For calculators, converters, and planners.
+
+## Make it fast
+
+- Load what the focal view needs in one call: one tool, or one live Workflow that combines the sources, rather than several calls or a call that waits on another.
+- Start independent reads together, never one after another.
+- Keep the starter's cached read: on open the App shows the last result for its inputs at once and refreshes from its button. Show its "Updated" time.
+- Let the launch input carry the record or filter, so the chat opens the App on it without a lookup first.
+- Return only what the view shows: the top rows and a count, not full records.
 
 ## What a good App looks like
 

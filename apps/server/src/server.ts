@@ -3938,6 +3938,9 @@ function createRoutes(
       ? body.arguments as Record<string, unknown>
       : {};
     const approved = body.approved === true;
+    // A cached read asks only whether this call is allowed now; it never runs the tool.
+    const checkOnly = body.checkOnly === true;
+    if (checkOnly && approved) throw new ApiError(400, "invalid_payload", "A check-only call cannot be approved.");
     const launchId = typeof body.launchId === "string" ? body.launchId : undefined;
     const sessionId = typeof body.sessionId === "string" || body.sessionId === null ? body.sessionId : undefined;
     if (body.engine !== undefined && body.engine !== "v1" && body.engine !== "v2") throw new ApiError(400, "invalid_launch_context", "Unknown App session engine.");
@@ -3958,6 +3961,7 @@ function createRoutes(
         expectedResourceDigest,
         arguments: args,
         approved,
+        checkOnly,
         assertSessionActive: async () => {
           if (!sessionId) return;
           if (engine === "v2") {

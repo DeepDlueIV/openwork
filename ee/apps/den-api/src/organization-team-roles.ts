@@ -49,7 +49,7 @@ export function effectiveOrganizationRole(directRole: string, adminTeams: readon
     : directRole
 }
 
-export async function invitationHasAdminTeam(tx: TeamMutationTransaction, invitation: Pick<typeof InvitationTable.$inferSelect, "id" | "organizationId" | "teamId">) {
+export async function invitationHasAdminTeam(tx: typeof db | TeamMutationTransaction, invitation: Pick<typeof InvitationTable.$inferSelect, "id" | "organizationId" | "teamId">) {
   const teams = await tx.select({ id: TeamTable.id }).from(TeamTable)
     .leftJoin(TeamMemberTable, eq(TeamMemberTable.teamId, TeamTable.id))
     .leftJoin(MemberTable, and(eq(MemberTable.id, TeamMemberTable.orgMembershipId), isNull(MemberTable.removedAt)))

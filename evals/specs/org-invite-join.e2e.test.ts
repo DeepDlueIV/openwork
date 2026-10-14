@@ -1,8 +1,57 @@
 import { expect } from "vitest";
 import { spec } from "@openwork/testkit";
-import { invitationWitnesses, invitationsFor, membersFor, orgInvite, rows, text } from "../worlds/org-invite.ts";
+import { invitationWitnesses, invitationsFor, membersFor, orgInvite, orgInviteLink, record, rows, text } from "../worlds/org-invite.ts";
 
 const test = spec.world(orgInvite, { resources: { surfaces: ["web"], services: ["den"] }, timeout: 900_000 });
+const linkTest = spec.world(orgInviteLink, { resources: { surfaces: ["web"], services: ["den"] }, timeout: 420_000 });
+
+linkTest("an owner copies a pending invite's link, and a plain member cannot read anyone's join token", async ({ world, user, probe, step, evidence }) => {
+  const { invitation, teammate } = world;
+  const scoped = { headers: { "x-openwork-org-id": world.organizationId } };
+
+  await step("the owner sees the pending invitation in the member list", async () => {
+    await user.see({ text: invitation.email }, { timeoutMs: 90_000 });
+    await user.see({ text: "Pending" });
+    await user.screenshot();
+  });
+
+  await step("the owner copies the invite link from the pending row's actions", async () => {
+    await user.click({ role: "button", label: `Open actions for ${world.pendingName}` });
+    await user.click({ role: "button", label: "Copy invite link" });
+    await user.notSee({ role: "button", label: "Copy invite link" }, { timeoutMs: 10_000 });
+    await user.screenshot();
+  });
+
+  await step("after: the clipboard holds a working join link for that invitation", async () => {
+    const copied = await probe.eventually(() => world.readClipboard(), {
+      within: 15_000, label: "the invite link reached the clipboard", until: (value) => value.includes("/join-org?invite="),
+    });
+    const token = new URL(copied).searchParams.get("invite") ?? "";
+    const preview = await probe.api(world.den.admin, `/v1/orgs/invitations/preview?id=${encodeURIComponent(token)}`);
+    const previewed = record(record(preview.body).invitation);
+    const works = token === invitation.token && preview.response.ok && previewed.id === invitation.id && previewed.status === "pending";
+    evidence.recordAssertionEvidence("the copied link opens this pending invitation", `link path=${new URL(copied).pathname}; token matches the issued one=${token === invitation.token}; preview ${preview.response.status} status=${String(previewed.status)}`, works);
+    expect(works).toBe(true);
+  });
+
+  await step("a plain member's view of the workspace carries no join tokens", async () => {
+    const asTeammate = await probe.api(teammate, "/v1/org", scoped);
+    expect(asTeammate.response.ok, asTeammate.text).toBe(true);
+    const pendingRows = invitationsFor(record(asTeammate.body), invitation.email);
+    const leaked = asTeammate.text.includes(invitation.token) || pendingRows.some((row) => "inviteToken" in row);
+    evidence.recordAssertionEvidence("the member list still shows the invitation, without its token", `invitations listed for the pending email=${pendingRows.length}; token in the response=${leaked}`, pendingRows.length === 1 && !leaked);
+    expect(pendingRows).toHaveLength(1);
+    expect(leaked).toBe(false);
+  });
+
+  await step("a plain member is refused the invite link", async () => {
+    const refused = await probe.api(teammate, `/v1/invitations/${invitation.id}/link`, scoped);
+    const leaked = refused.text.includes(invitation.token);
+    evidence.recordAssertionEvidence("asking for the link as a member is forbidden", `HTTP ${refused.response.status}; error=${String(record(refused.body).error)}; token in the response=${leaked}`, refused.response.status === 403 && !leaked);
+    expect(refused.response.status).toBe(403);
+    expect(leaked).toBe(false);
+  });
+});
 
 test("OPE-82: cloud invitations retain identity and organization through authentication", async ({ world, user, probe, seed, step }) => {
   const { witnesses, identity } = world;

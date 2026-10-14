@@ -2008,6 +2008,15 @@ export type InvitationNotPendingError = {
   status: string;
 };
 
+export type InvitationLinkResponse = {
+  /**
+   * Den TypeID with 'inv_' prefix and a 26-character base32 suffix.
+   */
+  invitationId: string;
+  inviteLink: string;
+  expiresAt: string;
+};
+
 export type CreateInstallLinkResponse = {
   /**
    * Absent when the organization shares the normal install page instead of one-off links.
@@ -15270,6 +15279,54 @@ export type PostV1InvitationsByInvitationIdCancelResponses = {
 
 export type PostV1InvitationsByInvitationIdCancelResponse =
   PostV1InvitationsByInvitationIdCancelResponses[keyof PostV1InvitationsByInvitationIdCancelResponses];
+
+export type GetV1InvitationsByInvitationIdLinkData = {
+  body?: never;
+  path: {
+    /**
+     * Den TypeID with 'inv_' prefix and a 26-character base32 suffix.
+     */
+    invitationId: string;
+  };
+  query?: never;
+  url: "/v1/invitations/{invitationId}/link";
+};
+
+export type GetV1InvitationsByInvitationIdLinkErrors = {
+  /**
+   * The invitation link path parameters were invalid.
+   */
+  400: InvalidRequestError;
+  /**
+   * The caller must be signed in to read invitation links.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller needs the permissions required to resend this invitation and a recent sign-in.
+   */
+  403: ForbiddenError;
+  /**
+   * The invitation or organization could not be found.
+   */
+  404: NotFoundError;
+  /**
+   * The invitation is no longer pending or has expired; resend it to issue a new link.
+   */
+  409: InvitationNotPendingError;
+};
+
+export type GetV1InvitationsByInvitationIdLinkError =
+  GetV1InvitationsByInvitationIdLinkErrors[keyof GetV1InvitationsByInvitationIdLinkErrors];
+
+export type GetV1InvitationsByInvitationIdLinkResponses = {
+  /**
+   * Invitation link returned successfully.
+   */
+  200: InvitationLinkResponse;
+};
+
+export type GetV1InvitationsByInvitationIdLinkResponse =
+  GetV1InvitationsByInvitationIdLinkResponses[keyof GetV1InvitationsByInvitationIdLinkResponses];
 
 export type PostV1OrgsByOrganizationIdInstallLinksData = {
   body: CreateInstallLinkRequest;

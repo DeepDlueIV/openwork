@@ -82,6 +82,37 @@ export function invitationsFor(org: Record<string, unknown>, email: string) {
   return rows(org.invitations).filter((invitation) => invitation.email === email);
 }
 
+/** An owner on Members with one pending invitation, and a teammate who joined as a plain member. */
+export async function orgInviteLink(seed: Seed) {
+  const runId = `${Date.now().toString(36)}${process.pid.toString(36)}`;
+  const den = await seed.den({
+    org: { name: `Invite Link Lab ${runId}`, admin: { name: "Link Owner" }, members: { teammate: { name: "Link Teammate" } } },
+  });
+  const teammate = den.members.teammate;
+  if (!teammate) throw new Error("The teammate was not provisioned");
+  const email = `pending-link+${runId}@openwork.test`;
+  const created = await seed.api(den.admin, "/v1/invitations", { method: "POST", body: JSON.stringify({ email, role: "member" }) });
+  if (!created.response.ok) throw new Error(`Create invitation: HTTP ${created.response.status} ${created.text.slice(0, 500)}`);
+  const issued = record(created.body);
+  const invitation = { id: text(issued.invitationId), token: text(issued.inviteToken), email };
+  const context = await seed.api(den.admin, "/v1/org");
+  if (!context.response.ok) throw new Error(`Organization: HTTP ${context.response.status}`);
+  const organizationId = text(record(record(context.body).organization).id);
+  const pendingMember = rows(record(context.body).members).find((member) => member.inviteId === invitation.id);
+  const pendingName = text(record(pendingMember?.user).name);
+  const web = await seed.web({ den, signedInAs: den.admin, startPath: "/dashboard/members", headless: true, viewport: { width: 1440, height: 1000 } });
+  // TODO(primitive): seed needs a browser-permission helper (as in den-download-openwork).
+  // Grant the real permission so a successful copy is the browser's own clipboard.
+  await web.client.send("Browser.grantPermissions", {
+    origin: new URL(den.ref.webUrl).origin, permissions: ["clipboardReadWrite", "clipboardSanitizedWrite"],
+  });
+  return {
+    den, web, teammate, invitation, organizationId, pendingName,
+    // TODO(primitive): probe.clipboard should expose this read-only witness without browser evaluation.
+    readClipboard: () => seed.evalIn(web, () => navigator.clipboard.readText(), { awaitPromise: true }),
+  };
+}
+
 export async function orgInvite(seed: Seed, { place }: { place: { kind: "local" | "daytona" } }) {
   const runId = `${Date.now().toString(36)}${process.pid.toString(36)}`;
   const identity = (key: string) => personDefaults(key, undefined, runId);

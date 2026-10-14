@@ -53,6 +53,12 @@ const invitationResponseSchema = z.object({
   inviteToken: z.string(),
 }).meta({ ref: "InvitationResponse" })
 
+const invitationLinkResponseSchema = z.object({
+  invitationId: denTypeIdSchema("invitation"),
+  inviteLink: z.string().url(),
+  expiresAt: z.string().datetime(),
+}).meta({ ref: "InvitationLinkResponse" })
+
 const invitationEmailFailedSchema = z.object({
   error: z.literal("invitation_email_failed"),
   reason: z.enum(["email_not_configured", "resend_rejected", "resend_network", "nodemailer_rejected"]),
@@ -647,6 +653,93 @@ export function registerOrgInvitationRoutes<T extends { Variables: OrgRouteVaria
     }, cancellation.auditEventIds)
 
     return c.json({ success: true })
+    },
+  )
+
+  app.get(
+    "/v1/invitations/:invitationId/link",
+    describeRoute({
+      tags: ["Invitations"],
+      summary: "Get organization invitation link",
+      description: "Returns the join link of a pending invitation so it can be shared directly. The link contains a bearer join token, so it needs the same permissions as resending the invitation: Invite people, Change member roles for a non-member role, and Manage Admin teams when the invitation carries Admin team access.",
+      responses: {
+        200: jsonResponse("Invitation link returned successfully.", invitationLinkResponseSchema),
+        400: jsonResponse("The invitation link path parameters were invalid.", invalidRequestSchema),
+        401: jsonResponse("The caller must be signed in to read invitation links.", unauthorizedSchema),
+        403: jsonResponse("The caller needs the permissions required to resend this invitation and a recent sign-in.", forbiddenSchema),
+        404: jsonResponse("The invitation or organization could not be found.", notFoundSchema),
+        409: jsonResponse("The invitation is no longer pending or has expired; resend it to issue a new link.", invitationNotPendingSchema),
+      },
+    }),
+    orgPermissionRoute("invitations.manage"),
+    paramValidator(orgInvitationParamsSchema),
+    async (c) => {
+    const payload = c.get("organizationContext")
+    const params = c.req.valid("param")
+    let invitationId: InvitationId
+    try {
+      invitationId = normalizeDenTypeId("invitation", params.invitationId)
+    } catch {
+      return c.json({ error: "invitation_not_found" }, 404)
+    }
+
+    const invitationRows = await db
+      .select({
+        id: InvitationTable.id,
+        organizationId: InvitationTable.organizationId,
+        teamId: InvitationTable.teamId,
+        role: InvitationTable.role,
+        status: InvitationTable.status,
+        expiresAt: InvitationTable.expiresAt,
+        inviteToken: InvitationTable.inviteToken,
+      })
+      .from(InvitationTable)
+      .where(and(eq(InvitationTable.id, invitationId), eq(InvitationTable.organizationId, payload.organization.id)))
+      .limit(1)
+    const invitation = invitationRows[0] ?? null
+    if (!invitation) {
+      return c.json({ error: "invitation_not_found" }, 404)
+    }
+    addAuditRequestResource(c, { type: "invitation", id: invitation.id })
+
+    // Resending returns the token to the caller, so reading the link needs exactly what a resend needs.
+    if (await invitationHasAdminTeam(db, invitation)) {
+      const permission = await requirePermission(c, "teams.manage_admin")
+      if (!permission.ok) {
+        return c.json(permission.response, orgAccessFailureStatus(permission.response), permissionFailureHeaders(permission.response))
+      }
+    }
+    const roleCheck = await validateInvitationRole(c, {
+      role: normalizeRoleName(invitation.role),
+      availableRoles: await listAssignableRoles(payload.organization.id),
+      adminCheck: adminInvitationCheck(c),
+      database: db,
+    })
+    if (!roleCheck.ok) {
+      if (roleCheck.error === "permission") {
+        return c.json(roleCheck.response, orgAccessFailureStatus(roleCheck.response), permissionFailureHeaders(roleCheck.response))
+      }
+      if (roleCheck.error === "role_assignment") {
+        return c.json(roleAssignmentDeniedResponse(roleCheck.denial), 403, roleAssignmentDeniedHeaders(roleCheck.denial))
+      }
+      return c.json({ error: "forbidden", message: roleCheck.message }, 403)
+    }
+
+    const expired = invitation.expiresAt <= new Date()
+    if (invitation.status !== "pending" || expired || !invitation.inviteToken) {
+      return c.json({
+        error: "invitation_not_pending",
+        message: "This invitation can no longer be used. Resend it to create a new link.",
+        status: invitation.status === "pending" && expired ? "expired" : invitation.status,
+      }, 409)
+    }
+
+    c.header("Cache-Control", "private, no-store")
+    return c.json({
+      invitationId: invitation.id,
+      inviteLink: buildInvitationLink(invitation.inviteToken),
+      expiresAt: invitation.expiresAt.toISOString(),
+    })
     },
   )
 }

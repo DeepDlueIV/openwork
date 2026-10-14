@@ -438,3 +438,60 @@ export async function agentPermissionsMoved(seed: Seed) {
   });
   return { ...world, web, webUrl: world.den.ref.webUrl };
 }
+
+/** A team name longer than any Teams list lane, to show that rows stay one line. */
+export const LONG_TEAM_NAME = "Customer Success and Implementation Partners for Europe and the Middle East";
+
+/**
+ * The owner on Members › Teams with agent permissions, team roles and shared
+ * roles on, and names longer than the list's lanes: Sales Team has three
+ * people with long names and its own "Sales Team Permissions" role, a second
+ * team has a very long name, and Engineering asks before commands.
+ */
+export async function teamsListLongNames(seed: Seed) {
+  const den = await seed.den({
+    web: true,
+    org: {
+      name: `Teams List ${Date.now()}`,
+      admin: { name: "Avery Owner" },
+      members: {
+        alexandra: { name: "Alexandra Montgomery-Whitfield" },
+        bartholomew: { name: "Bartholomew Okonkwo-Lindqvist" },
+        guillermina: { name: "Guillermina Castellanos" },
+        riley: { name: "Riley Contractor" },
+      },
+    },
+  });
+  const context = await seed.api(den.admin, "/v1/org");
+  const organization = isRecord(context.body) && isRecord(context.body.organization) ? context.body.organization : null;
+  if (!context.response.ok || typeof organization?.id !== "string") throw new Error(`Reading the organization failed: ${context.text.slice(0, 500)}`);
+  const organizationId = organization.id;
+  const scope = { "x-openwork-org-id": organizationId };
+  await enableOrganizationCapabilities(seed, den.admin, { agentPermissions: true, permissions: true, teamRoles: true, sharedRoles: true }, organizationId);
+  const members = isRecord(context.body) ? records(context.body.members) : [];
+  const memberId = (name: string) => {
+    const id = members.find((member) => isRecord(member.user) && member.user.name === name)?.id;
+    if (typeof id !== "string") throw new Error(`${name} is not a member of the organization`);
+    return id;
+  };
+  const createTeam = async (name: string, people: string[]) => {
+    const team = await seed.api(den.admin, "/v1/teams", { method: "POST", headers: scope, body: JSON.stringify({ name, memberIds: people.map(memberId) }) });
+    const teamId = isRecord(team.body) && isRecord(team.body.team) ? team.body.team.id : null;
+    if (!team.response.ok || typeof teamId !== "string") throw new Error(`Setting up ${name} failed: ${team.text.slice(0, 500)}`);
+    return teamId;
+  };
+  const sales = await createTeam("Sales Team", ["Alexandra Montgomery-Whitfield", "Bartholomew Okonkwo-Lindqvist", "Guillermina Castellanos"]);
+  await createTeam(LONG_TEAM_NAME, ["Riley Contractor", "Guillermina Castellanos"]);
+  const engineering = await createTeam("Engineering", ["Riley Contractor"]);
+  const role = await seed.api(den.admin, "/v1/permissions/sets", {
+    method: "POST", headers: scope,
+    body: JSON.stringify({ teamId: sales, permissions: [{ key: "plugins.import", status: "allow" }] }),
+  });
+  if (role.response.status !== 201) throw new Error(`Giving Sales Team its role failed: HTTP ${role.response.status} ${role.text.slice(0, 300)}`);
+  const saved = await seed.api(den.admin, `/v1/agent-permissions/teams/${encodeURIComponent(engineering)}`, {
+    method: "PUT", headers: scope, body: JSON.stringify({ settings: { commands: { decision: "ask" } } }),
+  });
+  if (!saved.response.ok) throw new Error(`Saving Engineering's permissions failed: HTTP ${saved.response.status} ${saved.text.slice(0, 300)}`);
+  const web = await seed.web({ den, signedInAs: den.admin, startPath: "/dashboard/members?tab=teams", headless: true, viewport: { width: 1440, height: 900 } });
+  return { den, organizationId, web };
+}

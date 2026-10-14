@@ -10,7 +10,6 @@ import {
   Link as LinkIcon,
   Lock,
   MoreHorizontal,
-  Pencil,
   Plus,
   Send,
   Settings,
@@ -51,7 +50,9 @@ import { createOrganizationInstallLink } from "../../_lib/install-link-data";
 import { OrgMemberIdentity } from "./org-member-identity";
 import { MemberEffectivePermissions, canViewMemberPermissions } from "./member-effective-permissions";
 import { RolesTab, canCreateRole } from "./roles-tab";
-import { IconTile, PeopleField } from "./access-rows";
+import { PeopleField } from "./access-rows";
+import { ItemMenu } from "./item-list";
+import { TeamsListHeader, TeamsListLane, TeamsListLocked, TeamsListOpenLink, TeamsListRow, teamsListColumns } from "./teams-list-row";
 import { teamOverrideSummary, useAgentPermissions } from "./agent-permissions-data";
 import { useCustomRoleTeams, useSharedRolesOn } from "./permissions-data";
 import { MemberTeamRoles } from "./member-team-roles";
@@ -185,9 +186,7 @@ export function ManageMembersScreen() {
   // agentPermissions: Teams lists Everyone first, and what each team changes from it.
   const agentPermissionsColumn = Boolean(orgContext && orgFeatureEnabled(orgContext, "agentPermissions") && access.canViewAgentPermissions);
   const agentPolicies = useAgentPermissions(orgContext?.organization.id ?? "", agentPermissionsColumn && Boolean(orgContext?.organization.id));
-  const teamListColumns = agentPermissionsColumn
-    ? teamRoles ? "lg:grid-cols-[minmax(0,1fr)_100px_170px_90px_180px]" : "lg:grid-cols-[minmax(0,1fr)_170px_100px_180px]"
-    : teamRoles ? "lg:grid-cols-[minmax(0,1fr)_120px_140px_200px]" : "lg:grid-cols-[minmax(0,1fr)_160px_200px]";
+  const teamListColumns = teamsListColumns({ role: teamRoles, agentPermissions: agentPermissionsColumn });
   const tabCounts: Record<Exclude<MembersTab, "roles">, number> = {
     members: orgContext?.members.length ?? 0,
     teams: orgContext?.teams.length ?? 0,
@@ -624,7 +623,7 @@ export function ManageMembersScreen() {
     }
     if (activeTab === "teams" && access.canManageTeams) {
       return {
-        label: "Create Team",
+        label: "Create team",
         onClick: () => {
           resetTeamEditor();
           setShowTeamForm((current) => !current);
@@ -1077,7 +1076,7 @@ export function ManageMembersScreen() {
       {activeTab === "teams" ? (
         <div>
           <div className="mb-6 flex items-center justify-between gap-4">
-            <p className="text-[15px] text-gray-400">Manage teams and their members.</p>
+            <p className="text-[14px] text-gray-500">Manage teams and their members.</p>
             {toolbarAction ? (
               <DenButton icon={Plus} onClick={toolbarAction.onClick}>
                 {toolbarAction.label}
@@ -1085,135 +1084,105 @@ export function ManageMembersScreen() {
             ) : null}
           </div>
 
-          <div className="overflow-x-auto overflow-y-visible rounded-2xl border border-gray-100 bg-white">
-            <div className={`grid grid-cols-[minmax(0,1fr)_auto] gap-4 border-b border-gray-100 px-4 py-3 text-[12px] font-medium text-gray-500 lg:px-6 ${teamListColumns}`}>
-              <span>Team</span>
-              {teamRoles ? <span className="hidden lg:block">Role</span> : null}
-              {agentPermissionsColumn ? <span className="hidden lg:block">Agent permissions</span> : null}
-              <span className="hidden lg:block">Members</span>
-              <span />
-            </div>
+          <div className="rounded-2xl border border-gray-100 bg-white" data-testid="teams-list">
+            <TeamsListHeader columns={teamListColumns} role={teamRoles} agentPermissions={agentPermissionsColumn} />
 
             {agentPermissionsColumn ? (
-              <div
-                data-testid="team-row-everyone"
-                className={`flex flex-col gap-3 border-b border-gray-100 px-4 py-3.5 transition hover:bg-gray-50/60 lg:grid lg:items-center lg:gap-4 lg:px-6 ${teamListColumns}`}
-              >
-                <Link href={getEveryoneRoute(orgSlug)} className="group flex min-w-0 items-center gap-3 rounded-lg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400">
-                  <IconTile icon={Globe} />
-                  <span className="min-w-0">
-                    <span className="block text-[13px] font-medium text-gray-900 group-hover:underline">Everyone</span>
-                    <span className="mt-0.5 block text-[12px] text-gray-500">Every member, including people in no team</span>
-                  </span>
-                </Link>
-                {teamRoles ? <span className="text-[13px] text-gray-700" data-testid="team-row-role">Member</span> : null}
-                <span className="text-[13px] text-gray-700" data-testid="team-row-agent-permissions">Base for every team</span>
-                <span className="text-[13px] text-gray-500">{`${orgContext.members.length} ${orgContext.members.length === 1 ? "member" : "members"}`}</span>
-                <span />
-              </div>
+              <TeamsListRow
+                testId="team-row-everyone"
+                columns={teamListColumns}
+                icon={Globe}
+                name="Everyone"
+                href={getEveryoneRoute(orgSlug)}
+                subtitle="Every member, including people in no team"
+                lanes={(
+                  <>
+                    {teamRoles ? <TeamsListLane testId="team-row-role">Member</TeamsListLane> : null}
+                    <TeamsListLane testId="team-row-agent-permissions">Base for every team</TeamsListLane>
+                    <TeamsListLane testId="team-row-members" tone="muted">{peopleCount(orgContext.members.length)}</TeamsListLane>
+                  </>
+                )}
+                action={<TeamsListOpenLink href={getEveryoneRoute(orgSlug)} name="Everyone" />}
+              />
             ) : null}
 
             {orgContext.teams.length === 0 ? (
-              <div className="px-6 py-8 text-center text-[13px] text-gray-400">
+              <div className="px-5 py-6 text-[13px] text-gray-500">
                 No teams yet.
               </div>
             ) : (
-              orgContext.teams.map((team) => (
-                <div
-                  key={team.id}
-                  data-testid="team-row"
-                  className={`flex flex-col gap-3 border-b border-gray-100 px-4 py-3.5 transition hover:bg-gray-50/60 last:border-b-0 lg:grid lg:items-center lg:gap-4 lg:px-6 ${teamListColumns}`}
-                >
-                  <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {access.canViewTeams ? (
-                        <Link
-                          href={getTeamRoute(orgSlug, team.id)}
-                          className="text-[13px] font-medium text-gray-900 hover:underline"
-                        >
-                          {team.name}
-                        </Link>
-                      ) : (
-                        <span className="text-[13px] font-medium text-gray-900">{team.name}</span>
-                      )}
-                      {team.managedByScim ? (
-                        <span className="rounded-full bg-cyan-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-cyan-700">
-                          Managed by SCIM
-                        </span>
-                      ) : null}
-                    </div>
-                    <p className="mt-0.5 text-[12px] text-gray-500">
-                      {teamMemberNames.get(team.id)?.slice(0, 3).join(", ") ||
-                        "No members assigned yet"}
-                      {(teamMemberNames.get(team.id)?.length ?? 0) > 3
-                        ? ` +${(teamMemberNames.get(team.id)?.length ?? 0) - 3}`
-                        : ""}
-                    </p>
-                    {/* teamRoles: Admin is the team's role (Role tab), so the old checkbox goes away. */}
-                    {teamRoles ? null : <TeamAdminCheckbox team={team} />}
-                  </div>
-                  {teamRoles ? (
-                    <span className="text-[13px] text-gray-700" data-testid="team-row-role">
-                      {/* Without permissions.view a custom role can't be told from Member, so only Admin is named. */}
-                      {team.grantsOrganizationAdmin || !permissionsFeature || access.canViewPermissions
-                        ? team.grantsOrganizationAdmin || !sharedRoles || !customRoles.setByTeam.get(team.id)
-                          ? TEAM_ROLE_LABELS[teamRole({ admin: team.grantsOrganizationAdmin, customSetId: customRoles.setByTeam.get(team.id)?.id ?? null })]
-                          : customRoles.setByTeam.get(team.id)?.name
-                        : "—"}
-                    </span>
-                  ) : null}
-                  {agentPermissionsColumn ? <TeamAgentPermissionsCell summary={agentPolicies.isSuccess ? teamOverrideSummary(agentPolicies.data.teams.find((policy) => policy.scopeId === team.id)) : undefined} failed={agentPolicies.isError} /> : null}
-                  <span className="text-[13px] text-gray-500">{`${team.memberIds.length} ${team.memberIds.length === 1 ? "member" : "members"}`}</span>
-                  <div className="flex items-center justify-end gap-3">
-                    {team.managedByScim ? (
-                      <span className="text-[12px] font-medium text-cyan-700">Managed by identity provider</span>
-                    ) : access.canManageTeams && (!team.grantsOrganizationAdmin || access.canManageAdminTeams) ? (
+              orgContext.teams.map((team) => {
+                const names = teamMemberNames.get(team.id) ?? [];
+                const role = teamRoles
+                  // Without permissions.view a custom role can't be told from Member, so only Admin is named.
+                  ? team.grantsOrganizationAdmin || !permissionsFeature || access.canViewPermissions
+                    ? team.grantsOrganizationAdmin || !sharedRoles || !customRoles.setByTeam.get(team.id)
+                      ? TEAM_ROLE_LABELS[teamRole({ admin: team.grantsOrganizationAdmin, customSetId: customRoles.setByTeam.get(team.id)?.id ?? null })]
+                      : customRoles.setByTeam.get(team.id)?.name ?? ""
+                    : "—"
+                  : "";
+                const canEdit = !team.managedByScim && access.canManageTeams && (!team.grantsOrganizationAdmin || access.canManageAdminTeams);
+                return (
+                  <TeamsListRow
+                    key={team.id}
+                    testId="team-row"
+                    columns={teamListColumns}
+                    icon={Users}
+                    name={team.name}
+                    href={access.canViewTeams ? getTeamRoute(orgSlug, team.id) : undefined}
+                    badge={team.managedByScim ? (
+                      <span className="shrink-0 rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-600">Managed by SCIM</span>
+                    ) : null}
+                    subtitle={names.length > 0 ? names.join(", ") : team.memberIds.length > 0 ? peopleCount(team.memberIds.length) : "No members yet"}
+                    // teamRoles: Admin is the team's role (Role tab), so the old checkbox goes away.
+                    extra={teamRoles ? null : <TeamAdminCheckbox team={team} />}
+                    lanes={(
                       <>
-                        <ActionButton
-                          icon={Pencil}
-                          onClick={() => {
-                            setShowTeamForm(false);
-                            setEditingTeamId(team.id);
-                            setTeamNameDraft(team.name);
-                            setTeamMemberDraft(team.memberIds);
-                          }}
-                        >
-                          Edit
-                        </ActionButton>
-                        <ActionButton
-                          tone="danger"
-                          icon={Trash2}
-                          disabled={mutationBusy === "delete-team"}
-                          onClick={async () => {
-                            setPageError(null);
-                            try {
-                              await deleteTeam(team.id);
-                              if (editingTeamId === team.id) {
-                                resetTeamEditor();
-                              }
-                            } catch (error) {
-                              setPageError(
-                                error instanceof Error
-                                  ? error.message
-                                  : "Could not delete team.",
-                              );
-                            }
-                          }}
-                        >
-                          {mutationBusy === "delete-team" ? "Deleting..." : "Delete"}
-                        </ActionButton>
+                        {teamRoles ? <TeamsListLane testId="team-row-role" title={role}>{role}</TeamsListLane> : null}
+                        {agentPermissionsColumn ? <TeamAgentPermissionsCell summary={agentPolicies.isSuccess ? teamOverrideSummary(agentPolicies.data.teams.find((policy) => policy.scopeId === team.id)) : undefined} failed={agentPolicies.isError} /> : null}
+                        <TeamsListLane testId="team-row-members" tone="muted">{peopleCount(team.memberIds.length)}</TeamsListLane>
                       </>
-                    ) : (
-                      <span
-                        className="text-[13px] text-gray-400"
-                        title={access.canManageTeams ? permissionLockReason("teams.manage_admin") : permissionLockReason("teams.manage")}
-                      >
-                        Read only
-                      </span>
                     )}
-                  </div>
-                </div>
-              ))
+                    action={canEdit ? (
+                      <ItemMenu
+                        label={`Actions for ${team.name}`}
+                        entries={[
+                          {
+                            label: "Edit",
+                            onSelect: () => {
+                              setShowTeamForm(false);
+                              setEditingTeamId(team.id);
+                              setTeamNameDraft(team.name);
+                              setTeamMemberDraft(team.memberIds);
+                            },
+                          },
+                          {
+                            label: "Delete",
+                            destructive: true,
+                            disabled: mutationBusy === "delete-team",
+                            confirm: {
+                              title: `Delete ${team.name}?`,
+                              description: `${team.memberIds.length > 0 ? `${peopleCount(team.memberIds.length)} ${team.memberIds.length === 1 ? "loses" : "lose"}` : "Nobody loses"} this team's ${teamLosses({ role: teamRoles, agentPermissions: agentPermissionsColumn })}. This cannot be undone.`,
+                              action: "Delete team",
+                            },
+                            onSelect: async () => {
+                              setPageError(null);
+                              await deleteTeam(team.id);
+                              if (editingTeamId === team.id) resetTeamEditor();
+                            },
+                          },
+                        ]}
+                      />
+                    ) : (
+                      <TeamsListLocked
+                        reason={team.managedByScim
+                          ? "Managed by your identity provider"
+                          : access.canManageTeams ? permissionLockReason("teams.manage_admin") : permissionLockReason("teams.manage")}
+                      />
+                    )}
+                  />
+                );
+              })
             )}
           </div>
         </div>
@@ -1225,9 +1194,19 @@ export function ManageMembersScreen() {
 
 /** A team's agent permissions in the Teams list: its own overrides, or that it follows Everyone. */
 function TeamAgentPermissionsCell({ summary, failed }: { summary: string | null | undefined; failed: boolean }) {
-  if (failed) return <span className="text-[13px] text-gray-500" data-testid="team-row-agent-permissions" title="Couldn't load agent permissions">—</span>;
-  if (summary === undefined) return <span role="status" aria-label="Loading agent permissions" data-testid="team-row-agent-permissions"><DenSkeleton className="h-3 w-24" /></span>;
+  if (failed) return <TeamsListLane testId="team-row-agent-permissions" title="Couldn't load agent permissions" tone="muted">—</TeamsListLane>;
+  if (summary === undefined) return <span role="status" aria-label="Loading agent permissions" data-testid="team-row-agent-permissions" className="hidden lg:block"><DenSkeleton className="h-3 w-24" /></span>;
   return summary === null
-    ? <span className="text-[13px] text-gray-500" data-testid="team-row-agent-permissions">Follows Everyone</span>
-    : <span className="text-[13px] text-gray-900" data-testid="team-row-agent-permissions">{summary}</span>;
+    ? <TeamsListLane testId="team-row-agent-permissions" tone="muted">Follows Everyone</TeamsListLane>
+    : <TeamsListLane testId="team-row-agent-permissions" title={summary}>{summary}</TeamsListLane>;
+}
+
+function peopleCount(count: number): string {
+  return `${count} ${count === 1 ? "member" : "members"}`;
+}
+
+/** What a team's members stop getting when it is deleted, for the confirmation (DESIGN.md P9). */
+function teamLosses({ role, agentPermissions }: { role: boolean; agentPermissions: boolean }): string {
+  const parts = [role ? "role" : null, "access", agentPermissions ? "agent permissions" : null].filter((part): part is string => part !== null);
+  return parts.length === 1 ? parts[0] ?? "" : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
 }

@@ -1466,6 +1466,48 @@ export function setDenBootstrapConfig(
   return write;
 }
 
+/** Remove only the captured one-time grant, never replay its enrollment snapshot. */
+export function clearDenBootstrapHandoff(snapshot: DenBootstrapConfig): Promise<DenBootstrapConfig> {
+  // Capture scalar identity now: callers may keep/mutate the snapshot while
+  // retirement, enrollment or a fresh config write is waiting in the queue.
+  const baseUrl = snapshot.baseUrl;
+  const apiBaseUrl = snapshot.apiBaseUrl;
+  const grant = snapshot.handoff?.grant;
+  const cleanup = bootstrapWriteQueue.then(async () => {
+    const latest = readDenBootstrapConfig();
+    if (!grant || latest.baseUrl !== baseUrl || latest.apiBaseUrl !== apiBaseUrl
+      || latest.handoff?.grant !== grant) return latest;
+
+    const updated = resolveDenBootstrapConfig({ ...latest, handoff: null });
+    if (isDesktopRuntime()) {
+      // No origin discovery or settings/session publication: grant cleanup is
+      // not enrollment, and must preserve the latest target and auth session.
+      const generation = ++desktopBootstrapGeneration;
+      const persisted = await setDesktopBootstrapConfigInShell({
+        baseUrl: updated.baseUrl,
+        apiBaseUrl: updated.apiBaseUrl,
+        requireSignin: updated.requireSignin,
+        ...(typeof updated.requireActivation === "boolean" ? { requireActivation: updated.requireActivation } : {}),
+        ...(typeof updated.whiteLabelEnabled === "boolean" ? { whiteLabelEnabled: updated.whiteLabelEnabled } : {}),
+        ...(updated.claimLinks ? { claimLinks: updated.claimLinks } : {}),
+        ...(updated.prepared ? { prepared: updated.prepared } : {}),
+        ...(updated.enterpriseActivation ? { enterpriseActivation: updated.enterpriseActivation } : {}),
+        handoff: null,
+        // Ordinary same-target shell writes retain brand sources. Do not send
+        // an all-null brand tuple: that is the org-switch archival protocol.
+      });
+      if (generation === desktopBootstrapGeneration) {
+        applyDesktopBootstrapConfig(resolveDenBootstrapConfig({ ...persisted, source: "file" }));
+      }
+    } else {
+      applyDesktopBootstrapConfig(updated);
+    }
+    return readDenBootstrapConfig();
+  });
+  bootstrapWriteQueue = cleanup.catch(() => undefined);
+  return cleanup;
+}
+
 async function persistDenBootstrapConfig(
   next: ShellDesktopBootstrapConfig,
   options: BootstrapWriteOptions | undefined,

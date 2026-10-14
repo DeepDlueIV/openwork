@@ -368,8 +368,8 @@ export function DesktopConfigProvider({ children }: DesktopConfigProviderProps) 
       const nextConfig = desktopCapabilityConfig(devRefreshDesktopConfigRef.current);
       applyDesktopConfigActions(nextConfig);
       setDesktopConfigState((current) => ({ ...current, freshConfigStatus: "ready", known: true }));
-      void reconcileShellBranding(nextConfig, () => currentRun === refreshRunRef.current).catch(() => undefined);
-      return nextConfig;
+      await reconcileShellBranding(nextConfig, () => currentRun === refreshRunRef.current).catch(() => undefined);
+      return currentRun === refreshRunRef.current ? nextConfig : currentDesktopConfigRef.current;
     }
 
     const settings = readDenSettings();
@@ -419,8 +419,8 @@ export function DesktopConfigProvider({ children }: DesktopConfigProviderProps) 
       rememberCachedConfigMember(cacheKey, userId);
       applyDesktopConfigActions(nextConfig);
       setDesktopConfigState((current) => ({ ...current, freshConfigStatus: "ready", known: true }));
-      void reconcileShellBranding(nextConfig, brandingIsCurrent).catch(() => undefined);
-      return nextConfig;
+      await reconcileShellBranding(nextConfig, brandingIsCurrent).catch(() => undefined);
+      return brandingIsCurrent() ? nextConfig : currentDesktopConfigRef.current;
     } catch (error) {
       if (currentRun !== refreshRunRef.current) {
         if (requireFresh) throw error;

@@ -6,6 +6,7 @@ import path from "node:path";
 import { createWorkspaceStore } from "../../desktop/electron/workspace-store.mjs";
 import * as desktop from "../src/app/lib/desktop";
 import {
+  clearDenBootstrapHandoff,
   initializeDenBootstrapConfig,
   readDenBootstrapConfig,
   readDenSettings,
@@ -14,6 +15,7 @@ import {
   writeDenSettings,
 } from "../src/app/lib/den";
 import { exchangeHandoffAndSignIn } from "../src/app/lib/den-handoff";
+import { denSessionUpdatedEvent, denSettingsChangedEvent } from "../src/app/lib/den-session-events";
 import { reconcileShellBranding } from "../src/react-app/domains/cloud/desktop-config-provider";
 
 const target = { baseUrl: "https://den.example.test", apiBaseUrl: "https://api.example.test" };
@@ -29,6 +31,7 @@ let previousOverride: string | undefined;
 let receipt: string | undefined;
 let writes: Array<Record<string, unknown>>;
 let runtimeProbe: ((url: string) => Promise<void>) | null;
+let runtimeApiOverride: string | null;
 let shellWriteProbe: (() => Promise<void>) | null;
 let nativeCommands: string[];
 
@@ -48,6 +51,7 @@ beforeEach(async () => {
   process.env.OPENWORK_DESKTOP_BOOTSTRAP_PATH = bootstrapPath;
   writes = [];
   runtimeProbe = null;
+  runtimeApiOverride = null;
   shellWriteProbe = null;
   nativeCommands = [];
   await writeFile(bootstrapPath, JSON.stringify({ ...target, ...branding, requireSignin: true }));
@@ -87,7 +91,7 @@ beforeEach(async () => {
         const url = String(args[0]);
         if (url.endsWith("/api/runtime-config")) await runtimeProbe?.(url);
         const payload = url.endsWith("/api/runtime-config")
-          ? { denApiUrl: url.startsWith(other.baseUrl) ? other.apiBaseUrl : target.apiBaseUrl }
+          ? { denApiUrl: runtimeApiOverride ?? (url.startsWith(other.baseUrl) ? other.apiBaseUrl : target.apiBaseUrl) }
           : { token: "new-session", organization: { id: "org-a", slug: "org-a", name: "Workspace" }, connectEnabled: false };
         return { status: 200, statusText: "OK", headers: { "content-type": "application/json" }, body: JSON.stringify(payload) };
       }
@@ -327,6 +331,129 @@ test("handoff retires prepared identity only on a confirmed different org, not c
   expect(readDenSettings().activeOrgId).toBe("org-b");
   expect(await diskBootstrap()).toMatchObject({ whiteLabelEnabled: false, brandAppName: null });
   expect(await diskBootstrap()).not.toHaveProperty("prepared");
+});
+
+function bootstrapEnrollment(orgId: string, grant: string) {
+  const identity = {
+    orgId, orgName: "Test workspace", orgSlug: orgId,
+    skillId: "test-skill", skillTitle: "Prepared skill",
+  };
+  return {
+    prepared: {
+      ...identity, skillsDir: "/unused", skillPath: "/unused/SKILL.md",
+      preparedAt: "2026-10-13T00:00:00Z",
+    },
+    handoff: { ...identity, grant, denBaseUrl: target.baseUrl, createdAt: "2026-10-13T00:00:00Z" },
+    claimLinks: [{
+      id: `${orgId}-claim`, role: "owner", token: `synthetic-${orgId}-claim`,
+      url: `${target.baseUrl}/claim/${orgId}`, expiresAt: "2026-10-14T00:00:00Z",
+    }],
+  };
+}
+
+test("signed-in cleanup queued by the switch event cannot revive retired enrollment", async () => {
+  const enrollment = bootstrapEnrollment("org-a", "synthetic-old-grant");
+  await setDenBootstrapConfig({ ...target, ...branding, ...enrollment, whiteLabelEnabled: true, requireSignin: true });
+  const icon = Buffer.from("archived original org icon");
+  await writeFile(path.join(root, "brand-icon.png"), icon);
+  const cleanups: Array<ReturnType<typeof clearDenBootstrapHandoff>> = [];
+  const observedGrants: Array<string | undefined> = [];
+  const consumeWhileSignedIn = () => {
+    const captured = readDenBootstrapConfig();
+    observedGrants.push(captured.handoff?.grant);
+    cleanups.push(clearDenBootstrapHandoff(captured));
+  };
+  window.addEventListener(denSettingsChangedEvent, consumeWhileSignedIn);
+  try {
+    writeDenSettings({ ...readDenSettings(), activeOrgId: "org-b", authToken: "synthetic-session-b" }, { persistBootstrap: false });
+  } finally {
+    window.removeEventListener(denSettingsChangedEvent, consumeWhileSignedIn);
+  }
+  // The event observes A synchronously, but retirement is ahead of cleanup.
+  expect(observedGrants).toEqual([enrollment.handoff.grant]);
+  await Promise.all(cleanups);
+  expect(writes).toHaveLength(2); // initial enrollment + retirement; cleanup is a no-op
+  const current = await diskBootstrap();
+  expect(current).toMatchObject({ whiteLabelEnabled: false, brandAppName: null, brandLogoUrl: null, brandIconUrl: null });
+  expect(current).not.toHaveProperty("prepared");
+  expect(current).not.toHaveProperty("handoff");
+  expect(current).not.toHaveProperty("claimLinks");
+  expect(readDenSettings()).toMatchObject({ activeOrgId: "org-b", authToken: "synthetic-session-b" });
+  const archiveRoot = path.join(root, "desktop-brand-rollback");
+  const settingsFile = (await readdir(archiveRoot, { recursive: true })).find((name) => name.endsWith("settings.json"));
+  if (!settingsFile) throw new Error("Missing original org archive");
+  expect(JSON.parse(await readFile(path.join(archiveRoot, settingsFile), "utf8"))).toMatchObject({ ...branding, organizationId: "org-a" });
+  expect(await readFile(path.join(archiveRoot, path.dirname(settingsFile), "brand-icon.png"))).toEqual(icon);
+});
+
+for (const replacement of ["web target", "API target", "new grant"]) {
+  test(`late authentication cleanup leaves a replacement ${replacement} untouched`, async () => {
+    const enrollment = bootstrapEnrollment("org-a", "synthetic-original-grant");
+    await setDenBootstrapConfig({ ...target, ...branding, ...enrollment, whiteLabelEnabled: true });
+    const captured = readDenBootstrapConfig();
+    const replacementTarget = replacement === "web target" ? other
+      : replacement === "API target" ? { ...target, apiBaseUrl: other.apiBaseUrl } : target;
+    if (replacement === "API target") runtimeApiOverride = other.apiBaseUrl;
+    const replacementEnrollment = bootstrapEnrollment("org-b",
+      replacement === "new grant" ? "synthetic-replacement-grant" : enrollment.handoff.grant);
+    // Queue cleanup before the replacement has finished committing, just as
+    // an earlier authentication promise may settle during an enrollment write.
+    const committing = setDenBootstrapConfig({
+      ...replacementTarget, ...replacementEnrollment, whiteLabelEnabled: true,
+      brandAppName: "Current workspace", brandLogoUrl: null, brandIconUrl: null, requireSignin: false,
+    });
+    const cleanup = clearDenBootstrapHandoff(captured);
+    await committing;
+    const before = await readFile(bootstrapPath);
+    const beforeWrites = writes.length;
+    await cleanup;
+    expect(writes).toHaveLength(beforeWrites);
+    expect(await readFile(bootstrapPath)).toEqual(before);
+    expect(readDenBootstrapConfig().handoff?.grant).toBe(replacementEnrollment.handoff.grant);
+  });
+}
+
+test("matching grant cleanup rebases onto the latest fields without publishing or restoring the originating auth session", async () => {
+  const originalEnrollment = bootstrapEnrollment("org-a", "synthetic-consumed-grant");
+  await setDenBootstrapConfig({ ...target, ...branding, ...originalEnrollment, whiteLabelEnabled: true, requireSignin: true });
+  const captured = readDenBootstrapConfig();
+  const latestEnrollment = bootstrapEnrollment("org-b", originalEnrollment.handoff.grant);
+  await setDenBootstrapConfig({
+    ...target, ...latestEnrollment, whiteLabelEnabled: true, brandAppName: "Latest workspace",
+    brandLogoUrl: "https://assets.example.test/latest-logo.svg", brandIconUrl: null,
+    requireSignin: false, requireActivation: false,
+    enterpriseActivation: { activatedAt: "2026-10-13T01:00:00Z", denBaseUrl: target.baseUrl },
+  });
+  writeDenSettings({ ...readDenSettings(), authToken: "synthetic-latest-session", activeOrgId: "org-b" }, { persistBootstrap: false });
+  const session = readDenSettings();
+  const cachedIcon = Buffer.from("retained latest workspace icon");
+  await writeFile(path.join(root, "brand-icon.png"), cachedIcon);
+  const expected = { ...await diskBootstrap() };
+  delete expected.handoff;
+  delete expected.writtenAt;
+  const publications: string[] = [];
+  const settingsPublished = () => publications.push("settings");
+  const sessionPublished = () => publications.push("session");
+  window.addEventListener(denSettingsChangedEvent, settingsPublished);
+  window.addEventListener(denSessionUpdatedEvent, sessionPublished);
+  try {
+    let discoveries = 0;
+    runtimeProbe = async () => { discoveries += 1; };
+    await clearDenBootstrapHandoff(captured);
+    expect(discoveries).toBe(0);
+    expect(await diskBootstrap()).toMatchObject(expected);
+    expect(await diskBootstrap()).not.toHaveProperty("handoff");
+    expect(writes.at(-1)).not.toHaveProperty("brandAppName");
+    expect(await readFile(path.join(root, "brand-icon.png"))).toEqual(cachedIcon);
+    expect(readDenSettings()).toEqual(session);
+    expect(publications).toEqual([]);
+    const beforeWrites = writes.length;
+    await clearDenBootstrapHandoff(captured); // already absent: no write/retry
+    expect(writes).toHaveLength(beforeWrites);
+  } finally {
+    window.removeEventListener(denSettingsChangedEvent, settingsPublished);
+    window.removeEventListener(denSessionUpdatedEvent, sessionPublished);
+  }
 });
 
 test("unchanged scoped OFF rechecks authority in queue without writing or discarding enrollment", async () => {

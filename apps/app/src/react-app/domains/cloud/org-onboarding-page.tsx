@@ -20,14 +20,13 @@ import {
   readDenBootstrapConfig,
   readDenSettings,
   resolveDenBaseUrls,
-  setDenBootstrapConfig,
   writeDenSettings,
   type DenDesktopConfig,
   type DenOrgLlmProvider,
   type DenOrgMarketplace,
   type DenOrgSummary,
 } from "@/app/lib/den";
-import { applyBrandAppName, applyBrandIcon, relaunchDesktopApp } from "@/app/lib/desktop";
+import { getBrandIconState, relaunchDesktopApp } from "@/app/lib/desktop";
 import {
   isAlphaChannelAllowedByDesktopConfig,
   isAlphaUpdateAllowed,
@@ -708,21 +707,13 @@ export function ResourceSelectionPage({ autoContinue = false }: { autoContinue?:
         return;
       }
 
-      const bootstrap = readDenBootstrapConfig();
-      await setDenBootstrapConfig({
-        ...bootstrap,
-        whiteLabelEnabled: desktopConfig.whiteLabelEnabled === true,
-        brandAppName: desktopConfig.brandAppName ?? "OpenWork",
-        brandLogoUrl: desktopConfig.brandLogoUrl ?? null,
-        brandIconUrl: desktopConfig.brandIconUrl ?? null,
-      });
-      const [, iconResult] = await Promise.all([
-        applyBrandAppName(desktopConfig.brandAppName ?? null),
-        applyBrandIcon(desktopConfig.brandIconUrl ?? null),
-      ]);
+      // refreshFresh waits for the provider's revision-scoped reconciliation.
+      // Do not persist or reapply this captured response here: a newer OFF or
+      // enrollment switch may have superseded it while onboarding was waiting.
+      const iconState = await getBrandIconState();
 
       let updateReady = false;
-      let warning = desktopConfig.brandIconUrl && !iconResult.ok
+      let warning = desktopConfig.brandIconUrl && !iconState?.applied
         ? "The workspace app icon could not be prepared."
         : null;
       try {

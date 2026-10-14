@@ -60,6 +60,7 @@ test("sidebar brand painted bounds align with the action rail without changing c
             rowHeight: row.height,
             clipped: box.x < view.x || box.y < view.y || box.x + box.width > view.x + view.width || box.y + box.height > view.y + view.height,
             labelClipped: label.scrollWidth > label.clientWidth,
+            labelScrollWidth: label.scrollWidth, labelClientWidth: label.clientWidth,
             contained: left >= slot.left && top >= slot.top && left + width <= slot.right && top + height <= slot.bottom,
             filter: getComputedStyle(image).filter, fit: getComputedStyle(image).objectFit,
             objectPosition: getComputedStyle(image).objectPosition,

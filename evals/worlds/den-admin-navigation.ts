@@ -34,10 +34,10 @@ async function dashboardWeb(seed: Seed, deployment: "cloud" | "self_hosted") {
       if (typeof value !== "string") throw new Error("Expected the web location to be a string.");
       return value;
     },
-    /** The accessible link names in the organization sidebar. */
+    /** The primary link labels in the organization sidebar, excluding status badges. */
     // TODO(primitive): probe should list accessible link names inside a container by testId.
     async sidebarLinks(): Promise<string[]> {
-      return strings(await seed.evalIn(web, () => (Array.from(document.querySelectorAll<HTMLElement>('[data-testid="den-org-sidebar"] a')).map((a) => (a.textContent ?? '').trim()))));
+      return strings(await seed.evalIn(web, () => (Array.from(document.querySelectorAll<HTMLElement>('[data-testid="den-org-sidebar"] a')).map((a) => (a.querySelector('span.truncate')?.textContent ?? a.textContent ?? '').trim()))));
     },
     /** The direct text labels of selected tabs. */
     // TODO(primitive): user.see({ role: "tab" }) cannot assert aria-selected today.

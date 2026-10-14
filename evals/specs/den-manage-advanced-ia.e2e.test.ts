@@ -6,8 +6,8 @@ import { adminDashboardWeb, selfHostedAdminDashboardWeb } from "../worlds/den-ad
 // for admins. Collections lives in Settings › Advanced,
 // Desktop policies is its own Manage entry, and Plugins lists plugins without
 // GitHub sources while the legacy integrations URL still opens its old tab.
-const test = spec.world(adminDashboardWeb, { timeout: 420_000 });
-const selfHostedTest = spec.world(selfHostedAdminDashboardWeb, { timeout: 420_000 });
+const test = spec.world(adminDashboardWeb, { timeout: 420_000, resources: { surfaces: ["web"], services: ["den"] } });
+const selfHostedTest = spec.world(selfHostedAdminDashboardWeb, { timeout: 420_000, resources: { surfaces: ["web"], services: ["den"] } });
 
 selfHostedTest("self-hosted organizations keep Brand appearance in Settings › Advanced", async ({ world, user, probe, evidence, step }) => {
   await step("a self-hosted admin opens Settings › Advanced", async () => {

@@ -127,13 +127,22 @@ run "web_on" {
 }
 
 run "web_certificate_covers_gateway" {
+  # Validation records are keyed by hostname, so planning works whether the
+  # mock leaves ACM's validation options unknown (Terraform) or uses these
+  # values (OpenTofu, which has no override_during).
   command = plan
 
-  # The real provider knows validation records at plan time; the mock does not.
   override_resource {
-    target          = aws_acm_certificate.this
-    override_during = plan
-    values          = { arn = "arn:aws:acm:us-east-1:123456789012:certificate/new", domain_validation_options = [] }
+    target = aws_acm_certificate.this
+    values = {
+      arn = "arn:aws:acm:us-east-1:123456789012:certificate/new"
+      domain_validation_options = [for h in ["openwork.example.com", "api.openwork.example.com", "chat.example.com"] : {
+        domain_name           = h
+        resource_record_name  = "_x.${h}."
+        resource_record_type  = "CNAME"
+        resource_record_value = "_y.acm-validations.aws."
+      }]
+    }
   }
 
   variables {
@@ -150,6 +159,10 @@ run "web_certificate_covers_gateway" {
   assert {
     condition     = contains(aws_acm_certificate.this[0].subject_alternative_names, "chat.example.com")
     error_message = "A module-created certificate must cover the gateway host."
+  }
+  assert {
+    condition     = toset(keys(aws_route53_record.certificate_validation)) == toset(["openwork.example.com", "api.openwork.example.com", "chat.example.com"])
+    error_message = "Each certificate hostname gets one validation record, keyed by hostname."
   }
   assert {
     condition     = local.environment.DAYTONA_SANDBOX_NAME_PREFIX == "acme-worker"

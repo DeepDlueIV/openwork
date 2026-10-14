@@ -125,6 +125,78 @@ for (const failing of ["inspect", "hanging-inspect", "report", "hanging-report",
   });
 }
 
+test("external facts reach stderr before a stalled toolbox or diagnostic sink can discard them", async () => {
+  for (const stalled of ["toolbox", "sink"]) {
+    const lines: string[] = [];
+    const original = console.error;
+    console.error = (line: unknown) => { lines.push(String(line)); };
+    let deleted = false;
+    try {
+      const api = fakeApi({ execChecked: async () => { assert.ok(lines.length > 0); if (stalled === "toolbox") await new Promise(() => {}); return JSON.stringify(healthy); },
+        deleteSandbox: async () => { deleted = true; } });
+      await assert.rejects(launchDaytonaEvidenceWorld({ sandbox, runtimeFingerprint: fingerprint }, sha, api, {
+        attempts: 1, diagnosticTimeoutMs: 5, probe: async () => new Response("private body", { status: 502 }),
+        diagnostic: async () => { await new Promise(() => {}); },
+      }), /HTTP 502/);
+      assert.equal(deleted, true);
+      const external = JSON.parse(lines[0] ?? "null");
+      assert.equal(external.stage, "daytona-evidence-external"); assert.equal(external.sourceSha, sha);
+      assert.equal(external.external[0].status, 502); assert.equal(external.external[0].body, "[private body omitted]");
+      assert.ok(!lines.join("\n").includes("private-cookie")); assert.ok(!lines.join("\n").includes("private-preview-token"));
+    } finally { console.error = original; }
+  }
+});
+
+test("a broken stderr sink cannot replace the original failure or prevent deletion", async () => {
+  const original = console.error;
+  let deleted = false;
+  console.error = () => { throw new Error("stderr sink failed"); };
+  try {
+    const api = fakeApi({ deleteSandbox: async () => { deleted = true; } });
+    await assert.rejects(launchDaytonaEvidenceWorld({ sandbox, runtimeFingerprint: fingerprint }, sha, api, {
+      attempts: 1, probe: async () => new Response("private body", { status: 502 }),
+    }), /HTTP 502/);
+    assert.equal(deleted, true);
+  } finally { console.error = original; }
+});
+
+test("missing guest observations do not implicate Chrome, gateway, or provider", () => {
+  for (const data of [{}, { ...healthy, chrome: {} }, { ...healthy, gateway: {} },
+    { ...healthy, chromePort: 0 }, { ...healthy, upstreamPort: 0 }]) {
+    assert.equal(failureLayer(parseGuestHealth(JSON.stringify(data)), 502), "unresolved");
+  }
+});
+
+test("valid-looking trace IDs cannot echo the API key, preview token or access cookie", async () => {
+  const key = "12345678-1234-1234-1234-123456789abc";
+  const preview = "abcdefab-abcd-abcd-abcd-abcdefabcdef";
+  const cookie = "0123456789abcdef0123456789abcdef";
+  const api = fakeApi({ previewUrl: async () => ({ url: session.cdp.url, token: preview }) });
+  api.config.apiKey = key;
+  await assert.rejects(launchDaytonaEvidenceWorld({ sandbox, runtimeFingerprint: fingerprint }, sha, api, {
+    attempts: 1, probe: async () => new Response("private body", { status: 502, headers: { "x-request-id": key, "cf-ray": preview } }),
+    diagnostic: async (summary) => { assert.ok(!summary.includes(key)); assert.ok(!summary.includes(preview)); },
+  }), /HTTP 502/);
+  const result = safeExternalResponse(502, new Headers({ "x-request-id": cookie }), "private body", [cookie]);
+  assert.deepEqual(result.headers, {});
+});
+
+test("provider correlation retains only safe owned resource identifiers", async () => {
+  const id = "87654321-4321-4321-4321-cba987654321";
+  const parent = `ow-dy-evidence-image-v1-${"c".repeat(40)}`;
+  const vm = { ...sandbox, id, snapshot: parent };
+  const api = fakeApi({ waitForSandbox: async () => vm });
+  await assert.rejects(launchDaytonaEvidenceWorld({ sandbox: vm, runtimeFingerprint: fingerprint }, sha, api, {
+    attempts: 1, probe: async () => new Response("bad gateway", { status: 502 }),
+    diagnostic: async (summary) => { const data = JSON.parse(summary); assert.equal(data.sandboxId, id); assert.equal(data.parentSnapshot, parent); },
+  }), /HTTP 502/);
+  api.config.apiKey = id;
+  await assert.rejects(launchDaytonaEvidenceWorld({ sandbox: vm, runtimeFingerprint: fingerprint }, sha, api, {
+    attempts: 1, probe: async () => new Response("bad gateway", { status: 502 }),
+    diagnostic: async (summary) => { assert.ok(!summary.includes(id)); },
+  }), /HTTP 502/);
+});
+
 test("builder diagnostics classify bounded private tails without printing their contents", async () => {
   const api = fakeApi({ exec: async (_vm, command) => ({ exitCode: 0, output: command.startsWith("if test") ? "failed" : "fixture-secret https://signed.example/?token=fixture-secret ERR_PNPM_OUTDATED_LOCKFILE ECONNREFUSED" }) });
   let reported = false;

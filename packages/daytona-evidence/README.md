@@ -40,10 +40,13 @@ Launch also records the last eight external responses (status, selected safe
 headers, known fixed error bodies; unknown bodies are omitted). Raw private
 journals, service environments, cookies, credentials and preview URLs/tokens
 never enter these diagnostics. Diagnostic failure cannot replace the original
-error or delay cleanup beyond its 15-second budget. Healthy internal endpoints
-with external 502 identify the provider preview route; Chrome failures and guest
-gateway/stale-port failures remain distinct. This classification does not itself
-prove a provider incident or justify restarting services or allocating retries.
+error or delay cleanup beyond its 15-second budget. External facts reach stderr
+before toolbox inspection, even if the toolbox or diagnostic sink stalls. Known
+credentials are suppressed even when echoed as otherwise valid trace headers.
+Healthy internal endpoints with external 502 suggest the provider preview route;
+Chrome failures and guest gateway/stale-port failures remain distinct. Missing
+observations remain unresolved. These are post-failure layer hints, not proof of
+an incident or grounds to restart services or allocate retries.
 
 - Needs `DAYTONA_API_KEY` for an organization with Linux VMs in
   `OPENWORK_DAYTONA_EVIDENCE_REGION` (default `us-west-3`).
@@ -72,3 +75,91 @@ prove a provider incident or justify restarting services or allocating retries.
   can still fill the account. There is no aggressive headroom eviction or
   distributed lease in this change. A full account with no safe candidates
   fails with a quota-specific diagnostic after the bounded wait.
+
+## Capture the next real Core 502
+
+This instrumentation is diagnostics and readiness hardening, **not a fix or root
+cause for the historical 502**. Clean-dev and failing-source fresh-build controls
+both answered 200 internally and externally. Keep the causal investigation open
+until a real failure is captured on an instrumented head.
+
+### Rollout and run
+
+1. Use a trusted, pushed commit containing these changes. Core CI checks out the
+   PR **head SHA**, not the latest base branch. Re-running an old failing run uses
+   its old code and cannot retroactively add diagnostics. After normal review and
+   integration, branch owners must update their failing branches, or explicitly
+   apply the diagnostic commits in isolated investigation branches. Do not change
+   another agent's branch or bypass the existing trusted-PR/environment approvals.
+2. No product feature flag enables this code: it runs on Daytona evidence-world
+   paths. `OPENWORK_EVIDENCE_PROVIDER=daytona` selects it;
+   `OPENWORK_DAYTONA_EPHEMERAL_WORLD=1` retains the disposable Core behavior.
+   Require an authorized key for the intended organization and Linux VM region.
+   A blocked secret/environment approval is a prerequisite, not a passing test.
+3. In a clean worktree, use Node 24+ and the pinned pnpm/evals dependencies. Pin
+   `OPENWORK_EVIDENCE_SOURCE_SHA` to the pushed commit and, for comparisons, pin
+   `OPENWORK_EVIDENCE_IMAGE_SHA` to the same full dev SHA on both sides. Record the
+   intended account privately, region, image SHA, command, run/job/attempt and
+   exact source SHA. Never print the key, cookies, preview tokens or signed URLs.
+
+```bash
+# Supply DAYTONA_API_KEY securely to this process (see the daytona skill).
+export OPENWORK_EVIDENCE_PROVIDER=daytona
+export OPENWORK_DAYTONA_EPHEMERAL_WORLD=1
+export OPENWORK_DAYTONA_EVIDENCE_REGION=us-west-3
+export OPENWORK_EVIDENCE_SOURCE_SHA="$(git rev-parse HEAD)"
+# Optional comparison pin: export OPENWORK_EVIDENCE_IMAGE_SHA=<full-dev-SHA>
+node scripts/prepare-evidence-web.ts && \
+  node evals/bin/evals.mjs specs/core-chat.e2e.test.ts --local --engine v1 --surface web --checkpoints
+```
+
+Do not proceed after failed preparation. `--local` places the test tools on the
+runner; the selected Core world still runs on Daytona. No restart/reallocation
+loop, quota eviction, or weakened assertion is part of this diagnostic run.
+
+### What to retain immediately
+
+- Open the failing **Core journey** job's log. Look for
+  `stage=daytona-evidence-external` (last eight responses, captured UTC times,
+  selected safe trace/header facts) and `stage=daytona-evidence-launch`
+  (post-failure guest snapshot and layer hint). The records include the source
+  SHA and, when available and safe, the owned sandbox UUID and parent snapshot.
+  An external record without a guest record can mean toolbox/diagnostic timeout;
+  it is not evidence that the browser or provider is faulty.
+- Preparation failures use `daytona-world` / `daytona-world-prepare` health records
+  and sanitized builder failure categories. The private builder path is named,
+  but the raw private log is never uploaded by these diagnostics.
+- Download the job log promptly: Actions-log retention follows repository/org
+  settings and is **not pinned by this package**. Diagnostic JSON currently lives
+  in console/job logs, **not a dedicated diagnostic artifact**. A testkit record
+  alone may contain only the original HTTP error and cannot replace those logs.
+- `.github/workflows/pr-proof.yml` always uploads native records from
+  `evals/results/test-runs/` and `evals/results/.testkit/cli-run-*.json` as
+  `pr-proof-<attempt>-<matrix-key>` with **7-day retention**. Preserve them too,
+  even when there are zero assertions/screenshots. VM logs at
+  `/opt/openwork-preview/*.log`, service journals and browser `chrome.log` files
+  disappear with owned cleanup; do not rely on inspecting the VM afterward.
+- Unit tests intentionally emit synthetic 502 diagnostics. Only a real Core job,
+  its matching source SHA, and its actual failing command count as a recurrence.
+
+### Interpret conservatively
+
+A live Chrome probe failure points to browser startup/crash; live Chrome with a
+bad gateway probe or mismatched known ports points to the guest gateway/stale
+port. Healthy internal CDP with external 502 suggests the provider route. 401/403
+are access failures. Missing ports/probes or unavailable toolbox data are
+unresolved. Preserve the safe provider request ID for provider-side correlation.
+
+Guest probes happen **after** the last external failure: recovery can occur
+between them. Journal categories are bounded hints without raw prose/timestamps,
+not a full crash dump; an OOM count of `-1` means unavailable, not zero. Unknown
+external bodies are omitted and `bodyBytes` is only the bounded sample size
+(maximum 8 KiB). The guest also bounds CDP bodies to 8 KiB. Runner SIGKILL/OOM,
+workflow cancellation, or a failure before the launcher catch may prevent guest
+collection. A broken stderr transport may lose even the external record, but must
+not replace the original failure or skip cleanup. Cleanup/TTL remains enabled;
+there is no keep-failed-VM escape hatch.
+
+Classify the next failure from this captured evidence and equivalent controls;
+do not call it flaky, pre-existing or a provider incident from healthy controls
+alone. Keep raw private logs/credentials out of issues and PR comments.

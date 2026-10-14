@@ -46,27 +46,31 @@ export async function requireLocalEvidenceReady(api: DaytonaApi, sandbox: Sandbo
 
 export function failureLayer(health: GuestHealth | undefined, externalStatus: number) {
   if ([401, 403].includes(externalStatus)) return "external-access";
-  if (!health) return "unresolved";
+  if (!health || health.chrome.status < 0 || health.chromePort <= 0) return "unresolved";
   if (health.chrome.status !== 200 || !health.chrome.cdp) return "chrome-startup-or-crash";
-  if (health.gateway.status !== 200 || !health.gateway.cdp || health.chromePort !== health.upstreamPort) return "guest-gateway-or-stale-port";
+  if (health.gateway.status < 0) return "unresolved";
+  if (health.gateway.status !== 200 || !health.gateway.cdp) return "guest-gateway-or-stale-port";
+  if (health.upstreamPort <= 0) return "unresolved";
+  if (health.chromePort !== health.upstreamPort) return "guest-gateway-or-stale-port";
   return externalStatus === 502 ? "provider-preview-route" : "external-preview-route";
 }
 
 /** Fixed bodies only. Unknown private prose is represented by size, never a redacted guess. */
-export function safeExternalResponse(status: number, headers: Headers, body: string) {
+export function safeExternalResponse(status: number, headers: Headers, body: string, secrets: readonly string[] = []) {
+  const containsSecret = (value: string) => secrets.some((secret) => secret.length > 0 && value.toLowerCase().includes(secret.toLowerCase()));
   const known = ["Sandbox unavailable. Launch a fresh sandbox from the review.",
     "Open this sandbox from your review launch link. If it has expired, launch a fresh sandbox.", "Use this sandbox's own service URLs."];
   const selected: Record<string, string> = {};
   for (const name of ["content-type", "server", "via", "cf-ray", "x-request-id"]) {
     const value = headers.get(name);
-    if (!value) continue;
+    if (!value || containsSecret(value)) continue;
     // Only known header grammars/values, not cookies, redirects or arbitrary echoed text.
     if (name === "content-type" && /^(application\/json|text\/(plain|html))(; charset=utf-8)?$/i.test(value)) selected[name] = value.toLowerCase();
     if (name === "server" && /^(nginx|envoy|cloudflare|daytona)$/i.test(value)) selected[name] = value.toLowerCase();
     if (["cf-ray", "x-request-id"].includes(name) && /^[a-f0-9-]{8,64}(?:-[A-Z]{3})?$/.test(value)) selected[name] = value;
     if (name === "via" && /^[12](?:\.\d)? (envoy|nginx)$/.test(value)) selected[name] = value;
   }
-  return { status, headers: selected, body: known.includes(body.trim()) ? body.trim() : "[private body omitted]", bodyBytes: Buffer.byteLength(body) };
+  return { status, at: new Date().toISOString(), headers: selected, body: known.includes(body.trim()) && !containsSecret(body) ? body.trim() : "[private body omitted]", bodyBytes: Buffer.byteLength(body) };
 }
 
 /** Bounds diagnostics even if the toolbox or a diagnostic sink stops answering. */

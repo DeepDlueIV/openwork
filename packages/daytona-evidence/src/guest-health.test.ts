@@ -22,7 +22,8 @@ test("real guest script probes CDP with private cookie and emits only bounded al
   const secret = "fixture-private-cookie";
   let cookie = "";
   let chromeAlive = true;
-  const chrome = createServer((_req, res) => { res.writeHead(chromeAlive ? 200 : 503, { "content-type": "application/json" }); res.end(JSON.stringify(chromeAlive ? { Browser: "Chrome/123", webSocketDebuggerUrl: "ws://127.0.0.1/private-browser" } : { private: secret })); });
+  let oversized = false;
+  const chrome = createServer((_req, res) => { res.writeHead(chromeAlive ? 200 : 503, { "content-type": "application/json" }); res.end(JSON.stringify(chromeAlive ? { Browser: "Chrome/123", webSocketDebuggerUrl: "ws://127.0.0.1/private-browser", ...(oversized ? { padding: "x".repeat(100_000) } : {}) } : { private: secret })); });
   const gateway = createServer((req, res) => { cookie = req.headers.cookie ?? ""; res.setHeader("content-type", "application/json"); res.end(JSON.stringify({ Browser: "Chrome/123", webSocketDebuggerUrl: "ws://127.0.0.1/private-browser" })); });
   try {
     const chromePort = await listen(chrome);
@@ -30,7 +31,7 @@ test("real guest script probes CDP with private cookie and emits only bounded al
     await writeFile(join(dir, "services.json"), JSON.stringify({ cdp: `http://127.0.0.1:${chromePort}`, private: secret }));
     await writeFile(join(dir, "access.json"), JSON.stringify({ token: secret, expiresAt: new Date(Date.now() + 60_000).toISOString() }));
     await mkdir(join(dir, "bin"));
-    await writeFile(join(dir, "bin", "systemctl"), `#!/bin/sh\ncase "$*" in\n*Environment*) printf '%s\\n' 'Environment=PRIVATE=${secret} OPENWORK_PREVIEW_UPSTREAM_PORT=${chromePort}';;\n*) printf '%s\\n' 'ActiveState=active' 'SubState=running' 'Result=success' 'ExecMainStatus=0';;\nesac\n`, { mode: 0o700 });
+    await writeFile(join(dir, "bin", "systemctl"), `#!/bin/sh\ncase "$*" in\n*Environment*) printf '%s\\n' 'Environment=OPENWORK_PREVIEW_UPSTREAM_PORT=${chromePort} PRIVATE=${secret}';;\n*) printf '%s\\n' 'ActiveState=active' 'SubState=running' 'Result=success' 'ExecMainStatus=0';;\nesac\n`, { mode: 0o700 });
     await writeFile(join(dir, "bin", "journalctl"), `#!/bin/sh\nprintf '%s\\n' 'private=${secret} https://signed.example/?token=${secret}' 'ECONNREFUSED' 'segfault'\n`, { mode: 0o700 });
     await writeFile(join(dir, "bin", "ss"), `#!/bin/sh\nprintf '%s\\n' 'LISTEN 0 511 127.0.0.1:${chromePort} 0.0.0.0:*'\n`, { mode: 0o700 });
     await mkdir(join(dir, "surfaces", "123", "evidence-web-123"), { recursive: true });
@@ -50,9 +51,17 @@ test("real guest script probes CDP with private cookie and emits only bounded al
     assert.deepEqual(healthy.journals[0]?.events, ["refused", "crash"]);
     assert.deepEqual(healthy.browserEvents, ["crash"]);
     assert.deepEqual(healthy.listeners, [chromePort]);
+    oversized = true;
+    const largeBody = await run();
+    assert.equal(largeBody.chrome.status, 200); assert.equal(largeBody.chrome.cdp, false);
+    assert.equal(localEvidenceReady(largeBody), false);
+    oversized = false;
     chromeAlive = false;
     const deadChrome = await run();
     assert.equal(deadChrome.chrome.status, 503); assert.equal(localEvidenceReady(deadChrome), false);
+    await writeFile(join(dir, "services.json"), "null");
+    const missingServices = await run();
+    assert.equal(missingServices.chromePort, 0); assert.equal(missingServices.units[0]?.active, "active");
     await close(gateway);
     const deadGateway = await run();
     assert.equal(deadGateway.gateway.status, 0); assert.equal(localEvidenceReady(deadGateway), false);

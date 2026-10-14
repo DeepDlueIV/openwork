@@ -36,6 +36,8 @@ export interface CdpWaitOptions {
   pauseMs?: number;
   diagnostic?: (summary: string) => Promise<void>;
   diagnosticTimeoutMs?: number;
+  /** Known credentials to suppress even if echoed as an otherwise valid trace ID. */
+  secrets?: readonly string[];
 }
 
 /** Starts an isolated template copy, or takes ownership of this run's freshly prepared VM. */
@@ -48,6 +50,7 @@ export async function launchDaytonaEvidenceWorld(template: DaytonaEvidenceLaunch
     labels: { kind: EVIDENCE_KIND, sourceSha }, autoStopMinutes: IDLE_STOP_MINUTES, autoDeleteMinutes: 0 });
   let owned = true;
   let diagnosticSandbox = created;
+  const credentials = new Set([api.config.apiKey, ...(options.secrets ?? [])]);
   try {
     const sandbox = await api.waitForSandbox(created.id, ["started"]);
     if (sandbox.id !== created.id || ("sandbox" in template && (sandbox.labels.kind !== EVIDENCE_KIND || sandbox.labels.sourceSha !== sourceSha))) {
@@ -60,23 +63,34 @@ export async function launchDaytonaEvidenceWorld(template: DaytonaEvidenceLaunch
     if ((await api.readFile(sandbox, `${ROOT}/evidence-ready`))?.trim() !== "web-v1"
       || (await api.readFile(sandbox, `${ROOT}/runtime-fingerprint`))?.trim() !== template.runtimeFingerprint) throw new Error("Evidence world source mismatch");
     const [viewer, cdp] = await Promise.all([api.previewUrl(sandbox.id, 8080), api.previewUrl(sandbox.id, 8081)]);
+    credentials.add(viewer.token); credentials.add(cdp.token);
     const token = randomBytes(32).toString("base64url");
+    credentials.add(token);
     const expiresAt = new Date(Date.now() + WORLD_MINUTES * 60_000).toISOString();
     // No origins: each gateway forwards to its one pinned service (see GATEWAY_UNITS).
     await api.writeFile(sandbox, ACCESS_FILE, JSON.stringify({ sandboxId: sandbox.id, sourceSha, token, expiresAt }), 0o600);
     const session: DaytonaEvidenceSession = { id: sandbox.id, sourceSha, cookie: `__Host-openwork-preview=${token}`, expiresAt,
       viewer: { url: viewer.url, previewToken: viewer.token }, cdp: { url: cdp.url, previewToken: cdp.token } };
-    await waitForCdp(session, options);
+    await waitForCdp(session, { ...options, secrets: [...credentials] });
     return session;
   } catch (error) {
     if (!owned) throw error;
+    // Persist the safe external facts before a toolbox call can stall. This
+    // synchronous fallback also survives failure of a caller's diagnostic sink.
+    const external = error instanceof CdpReadinessError ? error.history : [];
+    const publicResource = (value: string | undefined, pattern: RegExp) => value && pattern.test(value)
+      && ![...credentials].some((secret) => secret.length > 0 && value.toLowerCase().includes(secret.toLowerCase())) ? value : undefined;
+    const context = { sourceSha,
+      sandboxId: publicResource(created.id, /^[a-f0-9]{8}-(?:[a-f0-9]{4}-){3}[a-f0-9]{12}$/),
+      parentSnapshot: publicResource(diagnosticSandbox.snapshot, /^ow-dy-evidence-(?:image|web)-v1-[a-f0-9]{40}$/) };
+    try { console.error(JSON.stringify({ stage: "daytona-evidence-external", ...context, external })); }
+    catch { /* A broken log sink must not mask the original failure or skip teardown. */ }
     // Collect while the owned VM still exists. Never publish the error text,
     // URLs, access file, service environment, or unfiltered guest logs.
     await boundedDiagnostic(async () => {
       const health = await inspectGuest(api, diagnosticSandbox).catch(() => undefined);
-      const external = error instanceof CdpReadinessError ? error.history : [];
       const status = external.at(-1)?.status ?? 0;
-      const summary = JSON.stringify({ stage: "daytona-evidence-launch", layer: failureLayer(health, status), external, health: health ?? "unavailable" });
+      const summary = JSON.stringify({ stage: "daytona-evidence-launch", ...context, at: new Date().toISOString(), layer: failureLayer(health, status), external, health: health ?? "unavailable" });
       if (options.diagnostic) await options.diagnostic(summary);
       else console.error(summary);
     }, options.diagnosticTimeoutMs);
@@ -113,6 +127,7 @@ async function boundedBody(response: Response) {
 export async function waitForCdp(session: DaytonaEvidenceSession, options: CdpWaitOptions = {}) {
   const history: ReturnType<typeof safeExternalResponse>[] = [];
   const probe = options.probe ?? fetch;
+  const secrets = [...(options.secrets ?? []), session.cdp.previewToken, session.cookie, session.cookie.slice(session.cookie.indexOf("=") + 1)];
   const attempts = options.attempts ?? 60;
   const deadline = Date.now() + 70_000;
   for (let attempt = 0; attempt < attempts && Date.now() < deadline; attempt++) {
@@ -121,7 +136,7 @@ export async function waitForCdp(session: DaytonaEvidenceSession, options: CdpWa
       const response = await probe(`${session.cdp.url}/json/version`, { headers: { cookie: session.cookie, "x-daytona-preview-token": session.cdp.previewToken, "x-daytona-skip-preview-warning": "true" }, signal: AbortSignal.timeout(Math.min(10_000, deadline - Date.now())) });
       status = response.status;
       const body = await boundedBody(response).catch(() => "");
-      history.push(safeExternalResponse(status, response.headers, body));
+      history.push(safeExternalResponse(status, response.headers, body, secrets));
       if (response.ok) {
         try {
           const version: unknown = JSON.parse(body);

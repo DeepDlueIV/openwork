@@ -10,7 +10,7 @@ const command = (name, args) => {
   catch { return ""; }
 };
 const read = (path) => readFile(path, "utf8").catch(() => "");
-const parse = (value) => { try { return JSON.parse(value); } catch { return {}; } };
+const parse = (value) => { try { const data = JSON.parse(value); return data && typeof data === "object" && !Array.isArray(data) ? data : {}; } catch { return {}; } };
 const port = (value) => {
   try { const url = new URL(value); return url.protocol === "http:" && url.hostname === "127.0.0.1" ? Number(url.port) : 0; }
   catch { return 0; }
@@ -26,7 +26,20 @@ async function probe(url, cookie = false) {
   try {
     const response = await fetch(url, { headers: cookie ? { cookie: `__Host-openwork-preview=${access.token}` } : {}, signal: AbortSignal.timeout(2_000) });
     // A 200 HTML provider page is not a CDP endpoint. Do not return its private body.
-    const body = await response.json().catch(() => null);
+    const chunks = [];
+    let bytes = 0;
+    const reader = response.body?.getReader();
+    if (reader) {
+      try {
+        while (bytes < 8_192) {
+          const next = await reader.read();
+          if (next.done) break;
+          const chunk = next.value.subarray(0, 8_192 - bytes);
+          chunks.push(chunk); bytes += chunk.length;
+        }
+      } finally { await reader.cancel().catch(() => {}); }
+    }
+    const body = parse(Buffer.concat(chunks).toString("utf8"));
     return { status: response.status, cdp: typeof body?.webSocketDebuggerUrl === "string" && typeof body?.Browser === "string" };
   } catch { return { status: 0, cdp: false }; }
 }
@@ -43,7 +56,7 @@ const units = ["openwork-evidence", "openwork-evidence-cdp", "openwork-evidence-
     exit: Number(state.match(/^ExecMainStatus=([0-9]+)$/m)?.[1] ?? -1) };
 });
 const environment = command("systemctl", ["show", "openwork-evidence-cdp", "--property=Environment"]);
-const upstreamPort = Number(environment.match(/(?:^|\s)OPENWORK_PREVIEW_UPSTREAM_PORT=([0-9]+)/)?.[1] ?? 0);
+const upstreamPort = Number(environment.match(/(?:^|[\s=])OPENWORK_PREVIEW_UPSTREAM_PORT=([0-9]+)/)?.[1] ?? 0);
 const selectedPorts = [chromePort, upstreamPort, 8080, 8081];
 const listeners = command("ss", ["-H", "-ltn"]).split("\n").flatMap((line) => {
   const value = Number(line.trim().split(/\s+/)[3]?.match(/:([0-9]+)$/)?.[1]);

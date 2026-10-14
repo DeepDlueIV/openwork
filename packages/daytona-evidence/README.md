@@ -76,6 +76,50 @@ an incident or grounds to restart services or allocate retries.
   distributed lease in this change. A full account with no safe candidates
   fails with a quota-specific diagnostic after the bounded wait.
 
+## Fresh review previews
+
+`daytonaReviewProvider` also implements fresh previews behind the review app's
+`reviewerDaytonaPreviews` feature gate. `DAYTONA_PREVIEW_WORLDS`, exported from
+`@openwork/daytona-evidence/previews`, currently contains only **`app-web`**.
+Desktop and ACME previews are refused before allocation; the evidence noVNC
+browser is never substituted for those worlds. Saved-checkpoint behavior is
+unchanged.
+
+The provider uses the same REST `DaytonaApi`, private sandbox creation,
+`ensureBase` / `ensureLayer` locks and guest script runner as evidence worlds.
+It reuses Freestyle's app tools/dependency/compile recipes, runtime, gateway and
+health assets; the runtime's browser-domain suffix is adapted to Daytona with a
+checked substitution. No local Daytona executable, saved CLI profile, host Git
+checkout, or host execution of PR code is needed. Only the isolated guest fetches
+and executes the exact pushed report SHA. Production uses `DAYTONA_API_KEY` and
+the evidence region/API settings described above.
+
+Fresh snapshot names (`ow-dy-review-v1-*`) include the full report SHA, world and
+controller/recipe digest in their immutable key. Tools alone are shared by recipe.
+A launch verifies restored HEAD, the exact source marker and controller digest,
+then checks the guest engine plus real app HTML and the same-origin backend
+through a signed private host and gateway-cookie handshake. Each launch creates
+its own VM, access token and deadline; it never reuses a report's live VM. The
+server returns only the browser launch link, not provider credentials or CDP.
+
+Access lasts at most two hours from allocation. A guest systemd timer powers off
+the clone at the deadline, independent of the invoking function. Daytona's
+30-minute idle stop and immediate deletion-after-stop also bound abandoned VMs.
+The existing cleanup independently deletes expired owned review VMs **even when
+still active**, after rechecking their expiry labels. Fresh world snapshots idle
+for two days and tool snapshots idle for seven days are cleanup candidates;
+references and in-flight builders remain protected. Guest poweroff/provider
+state transitions need live validation; the cleanup is the independent backstop,
+not a claim of instantaneous provider deletion at the deadline.
+
+Snapshot preparation is asynchronous under the existing review 202/poll/launch
+contract. Progress is read from provider-owned builder names, not process memory.
+Cold base/install/snapshot operations can exceed the review route's 800-second
+budget: prewarming is appropriate, and Next `after()` is not a durable job queue.
+A killed controller's systemd build does not automatically resume snapshot saving;
+its idle/cleanup policy still owns teardown. Unit tests use fake REST witnesses;
+they do not prove a deployed preview or real provider deadline enforcement.
+
 ## Capture the next real Core 502
 
 This instrumentation is diagnostics and readiness hardening, **not a fix or root

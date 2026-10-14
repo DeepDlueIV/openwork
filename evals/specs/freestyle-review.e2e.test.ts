@@ -48,9 +48,9 @@ test("a reviewer can choose a signed-out desktop without mistaking it for an ACM
 
   await step("the reviewer chooses Desktop only (signed out) with the existing world selector", async () => {
     await user.click(picker);
-    await user.press("Home");
-    await user.press("ArrowDown");
-    await user.press("Enter");
+    await user.press("Escape");
+    await user.press("d");
+    await user.press("Tab");
     await user.see(picker, { value: "desktop" });
     await user.see({ text: disconnectedMessage });
     expect((await probe.dom(".preview-launch a, .preview-launch section[aria-label='Your connection details']")).elements).toHaveLength(0);

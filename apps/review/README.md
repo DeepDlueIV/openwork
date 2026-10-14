@@ -130,6 +130,18 @@ links to the private report; no raw trace or public screenshots are used as a
 fallback. Signed-in project members should verify the report commit and sources.
 Anonymous report, JSON, and image requests must redirect to Vercel Authentication.
 
+## Sandbox providers and rollout
+
+The reviewer derives launch choices **on the server** from its own provider credentials and the feature authority. Local Daytona CLI authentication proves nothing about a hosted reviewer. When both providers are available, the existing native-selector pattern offers **Provider**; one available provider is selected automatically. `OPENWORK_EVIDENCE_PROVIDER` is the preferred provider, not an enable switch. Unknown configuration fails closed. Missing credentials show an unavailable control and name the review app owner who can configure it.
+
+Freestyle keeps its existing preview worlds. Fresh Daytona previews currently support **OpenWork web only**: a new private Linux VM running the web app and local engine from the report's exact fetchable product commit. Desktop and ACME choices remain visible but unavailable for Daytona; saved browser checkpoints are not passed off as fresh app previews. **Launch** opens an environment for manual review; it does not run verification tests or the enterprise `verify-openwork` skill.
+
+Daytona needs server-only `DAYTONA_API_KEY` and a Linux-VM region (`OPENWORK_DAYTONA_EVIDENCE_REGION`, default `us-west-3`). It reuses the existing Daytona REST client/layer builder and shared app-web guest recipes, not CLI subprocesses or another provisioning service. Report SHA and association come from immutable server storage, never browser input. The gateway uses a signed provider hostname, a per-instance HttpOnly access cookie, two-hour access expiry and a guest shutdown timer; provider auto-deletion and the existing evidence cleanup backstop reclaim owned expired VMs. Failed launches remove only their owned VM. No provider credential enters a guest, report response or browser.
+
+**Rollout:** `reviewerDaytonaPreviews` is registered **cloud-only, off by default**. Deploy the Den feature authority and reviewer changes before enabling it. The reviewer reads deployment-wide `GET /v1/features` using trusted `DEN_API_BASE` (default cloud API), requests `Cache-Control: no-cache`, and requires a `no-store` response. Den keeps its canonical revision-aware rollout cache, with no header-controlled database bypass. Successful admin invalidation propagates the kill; if shared invalidation fails, that cache's fallback TTL is 60 seconds. Older/unreachable/malformed authorities and missing keys mean off. The reviewer has Vercel identity, not a Den organization: organization-only overrides do not enable it. A platform administrator may explicitly enable it in `/admin` → Features for a controlled deployment; this PR does not change any rollout. **Turn off everywhere** prevents subsequent POSTs, readiness polling and not-yet-started deferred builds, but does not revoke existing access links, stop running previews or change checkpoint opening. This is not an atomic transaction with an already-started provider operation.
+
+Cold Daytona preparation can exceed the review function's 800-second budget. Operators can prewarm an exact pushed commit with the exported `buildDaytonaPreview(sha, "app-web")` in `@openwork/daytona-evidence/previews` using a scoped server credential; the same builder is used by the UI. Do not claim a ready preview until snapshot storage and authenticated app/backend probes pass. `OPENWORK_EVIDENCE_PROVIDER=daytona` alone neither enables the rollout nor proves live availability.
+
 ## Interactive Freestyle previews
 
 When the evidence report for a PR push is published, the **Evidence review** workflow
@@ -164,11 +176,11 @@ from here** starts the reviewer's own VM from the snapshot and returns a signed
 Daytona host plus the in-VM gateway's one-hour access link. Set `DAYTONA_API_KEY`
 (an organization with Linux VMs in `us-west-3`) in the protected Vercel Preview
 environment; without it Daytona checkpoints show "Checkpoint access is not
-configured". **Launch in …** fresh previews stay on Freestyle for now. The hourly
-**Evidence world cleanup** reclaims Daytona checkpoints after 14 hours.
+configured". Checkpoint access remains independent of the fresh-preview rollout.
+The hourly **Evidence world cleanup** reclaims Daytona checkpoints after 14 hours.
 
-Set `FREESTYLE_API_KEY` in the protected Vercel Preview environment. Every report
-offers **Launch in Freestyle**. The server reads the commit from the stored report;
+Set `FREESTYLE_API_KEY` in the protected Vercel Preview environment to offer
+**Launch in Freestyle**. The server reads the commit from the stored report;
 the browser cannot select another revision. On the first launch it checks out that
 exact public commit in an isolated builder, installs OpenWork, starts the web app
 and local engine, and saves a private running snapshot. Later launches clone it.

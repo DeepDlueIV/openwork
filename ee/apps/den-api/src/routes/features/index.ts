@@ -33,7 +33,10 @@ export function registerFeatureRoutes<T extends Env>(app: Hono<T>) {
     }),
     publicRoute,
     async (c) => {
-      c.header("Cache-Control", "public, max-age=60, stale-if-error=86400")
+      // Do not let HTTP intermediaries extend stale-enabled rollout state after
+      // a kill. Keep the canonical revision-aware cache; anonymous callers must
+      // never gain a header-controlled direct database read.
+      c.header("Cache-Control", "private, no-store")
       const rollouts = await cache.features.rollouts()
       const features: Record<string, boolean> = {}
       for (const key of FEATURE_KEYS) {

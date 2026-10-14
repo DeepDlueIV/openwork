@@ -1,30 +1,47 @@
 import { EVIDENCE_PROVIDER_LABELS, EVIDENCE_PROVIDERS, evidenceProviderFromEnv, type EvidenceProviderId } from "@openwork/evidence-provider";
-import { daytonaConfigured } from "@openwork/daytona-evidence/credentials";
+import { daytonaConfigured, DAYTONA_PREVIEW_WORLDS } from "@openwork/daytona-evidence/credentials";
 import { freestyleConfigured } from "@openwork/freestyle/credentials";
+import { reviewerDaytonaAuthorization } from "./features.ts";
+import type { PreviewProviderOption } from "./preview-options.ts";
 
-/**
- * Credential checks only, so the report page does not load provider SDKs or
- * builders. Must agree with each provider's `configured()` in providers.ts.
- */
+/** Credential presence is checked on the review server, never against a local CLI profile. */
 export const PROVIDER_CONFIGURED: Record<EvidenceProviderId, () => boolean> = {
   freestyle: freestyleConfigured,
   daytona: daytonaConfigured,
 };
-/** Must agree with each provider's `supportsPreviews`. Daytona opens checkpoints only, for now. */
-const SUPPORTS_PREVIEWS: Record<EvidenceProviderId, boolean> = { freestyle: true, daytona: false };
 
-/** The provider for new previews. A misconfigured setting shows as "not connected" instead of breaking the report. */
-export function previewProviderStatus(): { label: string; connected: boolean } {
+interface StatusDependencies {
+  configured: Record<EvidenceProviderId, () => boolean>;
+  daytonaAccess: () => Promise<{ enabled: boolean; reason?: string }>;
+  preferred: () => EvidenceProviderId;
+}
+
+/** Both choices are safe to serialize: no keys, tokens or provider responses. */
+export async function previewProviderOptions(deps: StatusDependencies = {
+  configured: PROVIDER_CONFIGURED,
+  daytonaAccess: reviewerDaytonaAuthorization,
+  preferred: evidenceProviderFromEnv,
+}): Promise<PreviewProviderOption[]> {
+  const access = deps.configured.daytona() ? await deps.daytonaAccess() : { enabled: false };
+  const options: PreviewProviderOption[] = EVIDENCE_PROVIDERS.map((id) => {
+    const configured = deps.configured[id]();
+    return {
+      id, label: EVIDENCE_PROVIDER_LABELS[id],
+      connected: configured && (id !== "daytona" || access.enabled),
+      worlds: id === "freestyle" ? ["app-web", "desktop", "acme-web", "workbot"] : DAYTONA_PREVIEW_WORLDS,
+      ...(!configured ? { reason: `${EVIDENCE_PROVIDER_LABELS[id]} is not connected. The review app owner can connect it.` }
+        : id === "daytona" && !access.enabled ? { reason: access.reason ?? "Daytona previews are not enabled. The review app owner can ask a platform admin to enable the rollout." } : {}),
+    };
+  });
   try {
-    const id = evidenceProviderFromEnv();
-    return { label: EVIDENCE_PROVIDER_LABELS[id], connected: SUPPORTS_PREVIEWS[id] && PROVIDER_CONFIGURED[id]() };
-  } catch (error) {
-    console.error("Review preview provider is misconfigured", { error: error instanceof Error ? error.message : "UnknownError" });
-    return { label: "The preview provider", connected: false };
+    const preferred = deps.preferred();
+    return options.sort((a, b) => Number(b.id === preferred) - Number(a.id === preferred));
+  } catch {
+    return options.map((option) => ({ ...option, connected: false, reason: "The preview provider is misconfigured. The review app owner can check OPENWORK_EVIDENCE_PROVIDER." }));
   }
 }
 
-/** Providers whose saved checkpoints this server can open. */
+/** Checkpoints keep the provider recorded with the screenshot, independently of fresh-launch rollout. */
 export function connectedCheckpointProviders(): EvidenceProviderId[] {
   return EVIDENCE_PROVIDERS.filter((id) => PROVIDER_CONFIGURED[id]());
 }

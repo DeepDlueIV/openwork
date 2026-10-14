@@ -130,6 +130,7 @@ jobs:
           pnpm --filter @openwork/evidence-provider test
           pnpm --filter @openwork/daytona-evidence typecheck
           pnpm --filter @openwork/daytona-evidence test
+          pnpm --filter @openwork/review-app test
       - name: Test shared Workbot world transports (no cloud resources)
         run: |
           pnpm --filter @openwork/sandbox-freestyle build

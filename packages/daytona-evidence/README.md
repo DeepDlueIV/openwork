@@ -94,9 +94,16 @@ checkout, or host execution of PR code is needed. Only the isolated guest fetche
 and executes the exact pushed report SHA. Production uses `DAYTONA_API_KEY` and
 the evidence region/API settings described above.
 
+Report checkout, dependency rebuilds, compilation and runtime run as the dedicated
+unprivileged `openwork-preview` user with no new privileges or capabilities.
+Only `/workspace`, the user's home and `/opt/openwork-preview/state` are writable
+at runtime. Trusted controller/gateway files stay root-owned, and the gateway's
+root-only access file is outside that state directory. Build code therefore cannot
+plant a privileged process before a later clone receives its access credential.
+
 Fresh snapshot names (`ow-dy-review-v1-*`) include the full report SHA, world and
 controller/recipe digest in their immutable key. Tools alone are shared by recipe.
-Checkout, installation/rebuilds and compilation run as the unprivileged `openwork-preview` user with a clean environment and no-new-privileges. Runtime uses the same user with a constrained systemd filesystem. Only trusted controller/gateway files remain root-owned; the app cannot read `access.json` or replace the controller. A root-owned socket is reserved before report code executes and remains held across gateway restarts, preventing port squatting. Launch verifies both the gateway's root PID/listener ownership and the app user's inability to read the gateway credential. Security generation 2 changes the immutable descriptor: old root-runtime snapshots are never reused.
+A root-owned socket is reserved before report code executes and remains held across gateway restarts, preventing port squatting. Launch verifies both the gateway's root PID/listener ownership and the app user's inability to read the gateway credential. Security generation 2 includes the actual build/runtime confinement policy in the immutable descriptor: old root-runtime snapshots are never reused.
 
 A launch verifies restored HEAD as the app user, the exact source marker and controller digest,
 then checks the guest engine plus real app HTML and the same-origin backend

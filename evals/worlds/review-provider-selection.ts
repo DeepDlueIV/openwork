@@ -1,15 +1,15 @@
 import { createServer } from "node:http";
-import { createServer as createSecureServer } from "node:https";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { createServer as createTlsServer } from "node:https";
+import { execFileSync } from "node:child_process";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { spawnSync } from "node:child_process";
 import { chrome, localHost } from "@openwork/hosts";
 import { setViewport } from "@openwork/cdp";
 import type { Place, Seed } from "@openwork/env";
 import { reviewWorld } from "./evidence-review.ts";
 
-/** Real production reviewer; provider effects terminate at local HTTP witnesses. */
+/** Real production reviewer; provider effects terminate at local TLS witnesses. */
 async function providerWorld(_seed: Seed, { place }: { place: Place }, credentials: "both" | "daytona" | "neither") {
   if (place.kind !== "local") throw new Error("Reviewer provider UI proof requires isolated local placement.");
   const resources = new AsyncDisposableStack();
@@ -17,15 +17,16 @@ async function providerWorld(_seed: Seed, { place }: { place: Place }, credentia
     let enabled = true;
     let unavailable = false;
     const providerCalls: string[] = [];
-    // Fresh, disposable test CA: only the owned review child trusts it. TLS verification stays on.
-    const tls = await mkdtemp(join(tmpdir(), "openwork-review-authority-"));
-    resources.defer(() => rm(tls, { recursive: true, force: true }));
-    const certPath = join(tls, "certificate.pem");
-    const keyPath = join(tls, "key.pem");
-    const certificate = spawnSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-keyout", keyPath,
-      "-out", certPath, "-subj", "/CN=127.0.0.1", "-addext", "subjectAltName=IP:127.0.0.1", "-days", "1"], { stdio: "ignore" });
-    if (certificate.status !== 0) throw new Error("Could not prepare the local HTTPS feature authority fixture");
-    const authority = createSecureServer({ key: await readFile(keyPath), cert: await readFile(certPath) }, (request, response) => {
+    // Exercise the production HTTPS requirement with a per-run local CA. Trust
+    // it only in this review child; never disable certificate verification.
+    const tlsDir = await mkdtemp(join(tmpdir(), "openwork-review-authority-"));
+    resources.defer(() => rm(tlsDir, { recursive: true, force: true }));
+    const keyPath = join(tlsDir, "key.pem");
+    const certPath = join(tlsDir, "cert.pem");
+    const configPath = join(tlsDir, "openssl.cnf");
+    await writeFile(configPath, "[req]\nprompt=no\ndistinguished_name=dn\nx509_extensions=ext\n[dn]\nCN=localhost\n[ext]\nsubjectAltName=IP:127.0.0.1,DNS:localhost\nbasicConstraints=critical,CA:TRUE\nkeyUsage=critical,digitalSignature,keyEncipherment,keyCertSign\n");
+    execFileSync("openssl", ["req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-config", configPath, "-keyout", keyPath, "-out", certPath], { stdio: "ignore", timeout: 15_000 });
+    const authority = createTlsServer({ key: await readFile(keyPath), cert: await readFile(certPath) }, (request, response) => {
       response.setHeader("cache-control", "private, no-store");
       response.setHeader("content-type", "application/json");
       if (request.url === "/v1/features") {
@@ -44,7 +45,8 @@ async function providerWorld(_seed: Seed, { place }: { place: Place }, credentia
     const review = resources.use(await reviewWorld("preview", false, false, {
       FREESTYLE_API_KEY: credentials === "both" ? "synthetic-freestyle-fixture" : "",
       DAYTONA_API_KEY: credentials === "neither" ? "" : "synthetic-daytona-fixture",
-      OPENWORK_EVIDENCE_PROVIDER: "freestyle", DEN_API_BASE: authorityUrl, DAYTONA_API_URL: authorityUrl, NODE_EXTRA_CA_CERTS: certPath,
+      OPENWORK_EVIDENCE_PROVIDER: "freestyle", DEN_API_BASE: authorityUrl, DAYTONA_API_URL: authorityUrl,
+      NODE_EXTRA_CA_CERTS: certPath,
     }));
     let mode: "success" | "failure" | "building" | "real" = "success";
     const polls: string[] = [];

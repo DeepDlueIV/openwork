@@ -22,6 +22,11 @@ const APP_PATH = `${ROOT}/tools/node_modules/.bin:/usr/local/sbin:/usr/local/bin
 const SECURITY_VERSION = 2;
 const LIFETIME_SECONDS = 2 * 3600;
 const BUILDER_KIND = "openwork-daytona-builder-v1";
+const RUNTIME_ISOLATION = `User=${APP_USER}
+Group=${APP_USER}
+NoNewPrivileges=yes
+CapabilityBoundingSet=`;
+const BUILD_ISOLATION = "setpriv --reuid=openwork-preview --regid=openwork-preview --init-groups --no-new-privs --bounding-set=-all";
 
 function validate(sha: string, world: PreviewWorld) {
   if (!/^[a-f0-9]{40}$/.test(sha)) throw new Error("A full pushed source SHA is required");
@@ -43,11 +48,13 @@ export function previewOrigin(value: string): { origin: string; suffix: string }
 function daytonaRuntime(source: string): string {
   const original = 'browserHostSuffix: ".preview.openwork.software"';
   if (source.split(original).length !== 2) throw new Error("Shared app preview runtime has changed");
-  return source.replace(original, "browserHostSuffix: process.env.OPENWORK_DAYTONA_PREVIEW_HOST_SUFFIX");
+  return source.replace(original, "browserHostSuffix: process.env.OPENWORK_DAYTONA_PREVIEW_HOST_SUFFIX")
+    .replaceAll('"/opt/openwork-preview/services.json"', '"/opt/openwork-preview/state/services.json"')
+    .replaceAll('"/opt/openwork-preview/outputs.json"', '"/opt/openwork-preview/state/outputs.json"');
 }
 
 function unprivilegedCommand(command: string): string {
-  return `runuser -u ${APP_USER} -- setpriv --no-new-privs env -i HOME=${APP_HOME} USER=${APP_USER} LOGNAME=${APP_USER} PATH=${APP_PATH} /bin/bash -c '${command.replaceAll("'", "'\\''")}'`;
+  return `${BUILD_ISOLATION} env -i HOME=${APP_HOME} USER=${APP_USER} LOGNAME=${APP_USER} PATH=${APP_PATH} /bin/bash -c '${command.replaceAll("'", "'\\''")}'`;
 }
 
 /** These paths are created before report code runs. Never make ROOT app-writable. */
@@ -55,8 +62,6 @@ const APP_SETUP = `id -u ${APP_USER} >/dev/null 2>&1 || useradd --system --user-
 test "$(id -u ${APP_USER})" -ne 0
 install -d -o root -g root -m 0755 ${ROOT}
 install -d -o ${APP_USER} -g ${APP_USER} -m 0700 ${APP_HOME} ${APP_BUILD} /workspace ${ROOT}/state
-install -o ${APP_USER} -g ${APP_USER} -m 0600 /dev/null ${ROOT}/services.json
-install -o ${APP_USER} -g ${APP_USER} -m 0600 /dev/null ${ROOT}/outputs.json
 install -o root -g root -m 0600 /dev/null ${ROOT}/access.json`;
 
 function runtimeUnit(suffix: string): string {
@@ -65,10 +70,7 @@ Description=OpenWork fresh web preview
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-User=${APP_USER}
-Group=${APP_USER}
-NoNewPrivileges=yes
-CapabilityBoundingSet=
+${RUNTIME_ISOLATION}
 RestrictSUIDSGID=yes
 ProtectSystem=strict
 ProtectHome=read-only
@@ -77,7 +79,7 @@ ProtectKernelModules=yes
 ProtectControlGroups=yes
 PrivateTmp=yes
 UMask=0077
-ReadWritePaths=/workspace ${APP_HOME} ${ROOT}/state ${ROOT}/services.json ${ROOT}/outputs.json
+ReadWritePaths=/workspace ${APP_HOME} ${ROOT}/state
 InaccessiblePaths=${ROOT}/access.json /root
 WorkingDirectory=/workspace
 Environment=HOME=${APP_HOME} USER=${APP_USER} LOGNAME=${APP_USER}
@@ -154,7 +156,9 @@ export async function previewDescriptor(sha: string, world: PreviewWorld) {
   const [runtime, gateway, origins, health] = await Promise.all([
     readAsset("runtime.mjs"), readAsset("gateway.mjs"), readAsset("origins.mjs"), readAsset("health.mjs"),
   ]);
-  const scripts = { runtime: daytonaRuntime(runtime), gateway: socketActivatedGateway(gateway), origins, health, "gateway-owner": GATEWAY_OWNER };
+  const scripts = { runtime: daytonaRuntime(runtime), gateway: socketActivatedGateway(gateway), origins,
+    health: health.replaceAll('"/opt/openwork-preview/services.json"', '"/opt/openwork-preview/state/services.json"')
+      .replaceAll('"/opt/openwork-preview/outputs.json"', '"/opt/openwork-preview/state/outputs.json"'), "gateway-owner": GATEWAY_OWNER };
   const tools = toolsRecipe(world);
   const dependencies = dependencyRecipe(world);
   const compile = unprivilegedCompile(compiledRecipe(world));
@@ -192,6 +196,8 @@ export async function buildDaytonaPreview(sha: string, world: PreviewWorld, api 
         // gateway, health controller and its imports remain root-only.
         await api.writeFile(sandbox, `${ROOT}/${name}.mjs`, source, name === "runtime" ? 0o644 : 0o600);
       }
+      // Report checkout, installation and builds execute only behind the same
+      // unprivileged boundary; the controller and reserved gateway stay root-owned.
       await api.writeFile(sandbox, `${ROOT}/review-app-build.sh`, `#!/bin/bash\nset -euo pipefail\n${checkoutRecipe(sha)}\n${descriptor.dependencies}\n${descriptor.compile}\n`, 0o644);
       await api.writeFile(sandbox, "/etc/systemd/system/openwork-review-runtime.service", runtimeUnit(suffix), 0o600);
       await api.writeFile(sandbox, "/etc/systemd/system/openwork-review-gateway.service", GATEWAY_SERVICE, 0o600);

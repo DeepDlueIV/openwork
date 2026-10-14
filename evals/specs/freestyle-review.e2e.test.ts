@@ -48,6 +48,8 @@ test("a reviewer can choose a signed-out desktop without mistaking it for an ACM
 
   await step("the reviewer chooses Desktop only (signed out) with the existing world selector", async () => {
     await user.click(picker);
+    // Home/End are OS popup commands on macOS, not portable option selection.
+    // Dismiss the popup and use the native select's typeahead, then commit on blur.
     await user.press("Escape");
     await user.press("d");
     await user.press("Tab");
@@ -86,12 +88,12 @@ test("a reviewer can choose a signed-out desktop without mistaking it for an ACM
   await step("the reviewer can still choose either ACME full-stack preview", async () => {
     await user.click(picker);
     await user.press("Escape");
-    await user.press("a");
+    for (const key of "acme w") await user.press(key === " " ? "Space" : key);
     await user.press("Tab");
     await user.see(picker, { value: "acme-web" });
     await user.click(picker);
     await user.press("Escape");
-    await user.press("a");
+    for (const key of "acme d") await user.press(key === " " ? "Space" : key);
     await user.press("Tab");
     await user.see(picker, { value: "acme-desktop" });
     await user.see({ text: disconnectedMessage });

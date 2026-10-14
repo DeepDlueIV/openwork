@@ -121,6 +121,14 @@ test("build reuses private base/layer machinery and saves a hot exact-source wor
   const appBuild = [...fixture.files.entries()].find(([path]) => path.endsWith("/review-app-build.sh"))?.[1] ?? "";
   assert.ok(appBuild.includes(`git fetch --depth=1 origin ${sha}`));
   assert.ok(appBuild.includes(`test "$(git rev-parse HEAD)" = "${sha}"`));
+  assert.ok(script.includes("setpriv --reuid=openwork-preview --regid=openwork-preview --init-groups --no-new-privs --bounding-set=-all"));
+  assert.equal(script.includes("pnpm install"), false);
+  const unit = [...fixture.files.entries()].find(([path]) => path.endsWith("/openwork-review-runtime.service"))?.[1] ?? "";
+  assert.ok(unit.includes("User=openwork-preview\nGroup=openwork-preview\nNoNewPrivileges=yes\nCapabilityBoundingSet="));
+  assert.ok(unit.includes("ProtectSystem=strict") && unit.includes("PrivateTmp=yes"));
+  assert.equal(unit.includes("ReadWritePaths=/opt/openwork-preview\n"), false);
+  assert.ok(fixture.descriptor.scripts.runtime.includes('"/opt/openwork-preview/state/services.json"'));
+  assert.ok(fixture.descriptor.scripts.health.includes('"/opt/openwork-preview/state/outputs.json"'));
   assert.ok(script.includes("node /opt/openwork-preview/health.mjs"));
   assert.ok(appBuild.includes("pnpm install --frozen-lockfile --ignore-scripts --ignore-pnpmfile"));
   assert.equal(script.includes("host-only-key"), false);
@@ -141,7 +149,7 @@ test("report checkout, install and compile run only behind the unprivileged no-n
   const file = (name: string) => [...fixture.files.entries()].find(([path]) => path.endsWith(name))?.[1] ?? "";
   const controller = file("/review-world.sh");
   const appBuild = file("/review-app-build.sh");
-  const boundary = "runuser -u openwork-preview -- setpriv --no-new-privs env -i HOME=/home/openwork-preview USER=openwork-preview LOGNAME=openwork-preview PATH=/opt/openwork-preview/tools/node_modules/.bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /bin/bash -c '/bin/bash /opt/openwork-preview/review-app-build.sh'";
+  const boundary = "setpriv --reuid=openwork-preview --regid=openwork-preview --init-groups --no-new-privs --bounding-set=-all env -i HOME=/home/openwork-preview USER=openwork-preview LOGNAME=openwork-preview PATH=/opt/openwork-preview/tools/node_modules/.bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin /bin/bash -c '/bin/bash /opt/openwork-preview/review-app-build.sh'";
   assert.ok(controller.includes(boundary));
   assert.ok(controller.indexOf("install -o root -g root -m 0600 /dev/null /opt/openwork-preview/access.json") < controller.indexOf(boundary));
   const socketStart = controller.indexOf("systemctl start openwork-review-gateway.socket");
@@ -158,7 +166,10 @@ test("report checkout, install and compile run only behind the unprivileged no-n
   assert.ok(appBuild.includes("tar --null -T /home/openwork-preview/build/compiled-files -cf /home/openwork-preview/build/compiled.tar"));
   assert.ok(controller.includes("install -d -o root -g root -m 0755 /opt/openwork-preview"));
   assert.ok(controller.includes("install -d -o openwork-preview -g openwork-preview -m 0700 /home/openwork-preview /home/openwork-preview/build /workspace /opt/openwork-preview/state"));
-  for (const name of ["services.json", "outputs.json"]) assert.ok(controller.includes(`install -o openwork-preview -g openwork-preview -m 0600 /dev/null /opt/openwork-preview/${name}`));
+  for (const name of ["services.json", "outputs.json"]) {
+    assert.ok(fixture.descriptor.scripts.runtime.includes(`/opt/openwork-preview/state/${name}`));
+    assert.equal(controller.includes(`install -o openwork-preview -g openwork-preview -m 0600 /dev/null /opt/openwork-preview/${name}`), false);
+  }
   assert.equal(/chown\s+-R|chmod\s+(?:-R\s+)?(?:777|0777)|install -d -o openwork-preview[^\n]*\/opt\/openwork-preview(?:\s|$)/.test(controller), false, "controller parent must never be writable by report code");
   for (const name of ["gateway", "origins", "health", "gateway-owner"]) assert.ok(fixture.commands.includes(`chmod 600 '/opt/openwork-preview/${name}.mjs'`));
   assert.ok(fixture.commands.includes("chmod 644 '/opt/openwork-preview/runtime.mjs'"));
@@ -170,11 +181,11 @@ test("runtime is an unprivileged confined service with only exact app-owned outp
   await buildDaytonaPreview(sha, "app-web", fixture.api, { sourceFetch: async () => Response.json({ tree: [], truncated: false }) });
   const unit = [...fixture.files.entries()].find(([path]) => path.endsWith("/openwork-review-runtime.service"))?.[1] ?? "";
   for (const directive of ["User=openwork-preview", "Group=openwork-preview", "NoNewPrivileges=yes", "CapabilityBoundingSet=", "RestrictSUIDSGID=yes", "ProtectSystem=strict", "ProtectHome=read-only", "PrivateTmp=yes", "UMask=0077", "InaccessiblePaths=/opt/openwork-preview/access.json /root"]) assert.ok(unit.split("\n").includes(directive), directive);
-  assert.equal(unit.split("\n").find((line) => line.startsWith("ReadWritePaths=")), "ReadWritePaths=/workspace /home/openwork-preview /opt/openwork-preview/state /opt/openwork-preview/services.json /opt/openwork-preview/outputs.json");
+  assert.equal(unit.split("\n").find((line) => line.startsWith("ReadWritePaths=")), "ReadWritePaths=/workspace /home/openwork-preview /opt/openwork-preview/state");
   ready(fixture);
   await launchDaytonaPreview({ gitSha: sha, reportId, world: "app-web" }, fixture.api, fixture.probe);
   const git = fixture.commands.find((command) => command.includes("git rev-parse HEAD"));
-  assert.ok(git?.startsWith("runuser -u openwork-preview -- setpriv --no-new-privs env -i HOME=/home/openwork-preview "));
+  assert.ok(git?.startsWith("setpriv --reuid=openwork-preview --regid=openwork-preview --init-groups --no-new-privs --bounding-set=-all env -i HOME=/home/openwork-preview "));
 });
 
 test("the root socket cannot be squatted across gateway restarts and launch verifies kernel ownership", async () => {
@@ -196,7 +207,7 @@ test("the root socket cannot be squatted across gateway restarts and launch veri
   await launchDaytonaPreview({ gitSha: sha, reportId, world: "app-web" }, fixture.api, fixture.probe);
   const checks = fixture.commands.filter((command) => command.includes("systemctl is-active --quiet openwork-review-gateway.socket openwork-review-gateway.service"));
   assert.equal(checks.length, 2, "check ownership both before issuing credentials and immediately before the handshake");
-  assert.ok(fixture.commands.some((command) => command.startsWith("runuser -u openwork-preview -- setpriv --no-new-privs") && command.includes('test "$(id -u)" -ne 0 && test ! -r /opt/openwork-preview/access.json')));
+  assert.ok(fixture.commands.some((command) => command.startsWith("setpriv --reuid=openwork-preview --regid=openwork-preview --init-groups --no-new-privs --bounding-set=-all") && command.includes('test "$(id -u)" -ne 0 && test ! -r /opt/openwork-preview/access.json')));
 });
 
 test("production review factory rejects unsafe credential authorities without any HTTP request", async (context) => {

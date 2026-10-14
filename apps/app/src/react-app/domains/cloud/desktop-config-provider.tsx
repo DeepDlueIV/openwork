@@ -77,7 +77,9 @@ const DesktopConfigContext = createContext<DesktopConfigStore | undefined>(
 );
 
 const DEFAULT_DESKTOP_CONFIG: DenDesktopConfig = {};
-const DESKTOP_CONFIG_REFRESH_MS = 60 * 60 * 1000;
+// Like cloud provider sync: every 5 minutes, and when the member comes back to
+// the app or the network, so changed agent permissions arrive within minutes.
+const DESKTOP_CONFIG_REFRESH_MS = 5 * 60 * 1000;
 const DESKTOP_CONFIG_ITEMS = [
   ...desktopPolicyKeys,
   "allowedDesktopVersions",
@@ -260,7 +262,8 @@ type DesktopConfigState = {
  * localStorage. The runtime projection omits desktop restrictions while
  * enforcement is suspended; Cloud entitlements, branding and the
  * organization's allowed desktop versions stay intact.
- * Re-fetches on Den session / settings events and on a one-hour interval.
+ * Re-fetches on Den session / settings events, when the member returns to
+ * the app or the network, and on a five-minute interval.
  */
 export function DesktopConfigProvider({ children }: DesktopConfigProviderProps) {
   const denAuth = useDenAuth();
@@ -513,14 +516,24 @@ export function DesktopConfigProvider({ children }: DesktopConfigProviderProps) 
       bumpSettingsVersion();
     };
 
+    const handleAppResume = () => {
+      if (isSignedIn) void desktopConfigHandler();
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") handleAppResume();
+    };
+
     window.addEventListener(denSessionUpdatedEvent, handleSettingsChanged);
     window.addEventListener(denSettingsChangedEvent, handleSettingsChanged);
+    window.addEventListener("focus", handleAppResume);
+    window.addEventListener("online", handleAppResume);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
 
     const interval = window.setInterval(() => {
       if (!isSignedIn) return;
       void desktopConfigHandler();
       // Level-based safety net behind the event-driven reconciler: if a
-      // runtime-generation observation was ever missed, the hourly tick
+      // runtime-generation observation was ever missed, the periodic tick
       // re-checks convergence (one target resolution; no request when the
       // recorded tuple already matches).
       connectPolicyReconcilerRef.current?.notifyTargetChanged();
@@ -529,6 +542,9 @@ export function DesktopConfigProvider({ children }: DesktopConfigProviderProps) 
     return () => {
       window.removeEventListener(denSessionUpdatedEvent, handleSettingsChanged);
       window.removeEventListener(denSettingsChangedEvent, handleSettingsChanged);
+      window.removeEventListener("focus", handleAppResume);
+      window.removeEventListener("online", handleAppResume);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.clearInterval(interval);
     };
   }, [desktopConfigHandler, isSignedIn]);

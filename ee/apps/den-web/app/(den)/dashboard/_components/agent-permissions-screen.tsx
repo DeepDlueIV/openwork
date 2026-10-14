@@ -21,10 +21,10 @@ import {
   type AgentPermissionSetting,
   type AgentPermissionSettings,
 } from "@openwork/types/den/agent-permissions";
-import { Check, ChevronRight, CircleHelp, Lock, LockKeyhole, Plus, RotateCcw, X } from "lucide-react";
+import { Check, ChevronRight, CircleHelp, Info, Lock, LockKeyhole, Plus, RotateCcw, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useId, useRef, useState, type FormEvent } from "react";
+import { useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { DenButton, buttonVariants } from "../../_components/ui/button";
 import { DenChip } from "../../_components/ui/chip";
 import { DenInput } from "../../_components/ui/input";
@@ -287,11 +287,27 @@ function NewTeamAgentPermissions({ access, data }: { access: Extract<AgentPermis
         editable
         onChange={(next) => { setError(null); setSettings(next); }}
       />
-      <DenStickyActionBar testId="new-team-agent-permissions-save-bar" summary={<span>{team ? `${plural(count, "override", "overrides")} for ${team.name}` : "Choose a team to save"}</span>}>
+      <DenStickyActionBar testId="new-team-agent-permissions-save-bar" summary={<SaveSummary>{team ? `${plural(count, "override", "overrides")} for ${team.name}` : "Choose a team to save"}</SaveSummary>}>
         <LinkButton variant="secondary" href={getAgentPermissionsRoute(access.orgSlug)}>Cancel</LinkButton>
         <DenButton disabled={!team || count === 0} loading={save.isPending} onClick={() => void create()}>Create team agent permissions</DenButton>
       </DenStickyActionBar>
     </>
+  );
+}
+
+// Desktop apps re-read their organization's config every 5 minutes and when
+// the member returns to the app (DesktopConfigProvider in apps/app).
+const PROPAGATION_NOTE = "Members' desktop apps can take up to 5 minutes to pick up changes.";
+
+function SaveSummary({ children }: { children: ReactNode }) {
+  return (
+    <span className="flex min-w-0 flex-col gap-0.5">
+      <span>{children}</span>
+      <span className="flex items-center gap-1 text-[12px] text-gray-500" data-testid="agent-permissions-propagation-note">
+        <Info className="size-3.5 shrink-0" aria-hidden="true" strokeWidth={1.5} />
+        {PROPAGATION_NOTE}
+      </span>
+    </span>
   );
 }
 
@@ -355,7 +371,7 @@ function ScopeEditor({ access, data, policy, back }: {
     setDraft(null);
     toast({
       title: "Agent permissions saved",
-      description: "Members' apps apply them the next time they refresh.",
+      description: PROPAGATION_NOTE,
       action: {
         label: "Undo",
         onClick: async () => {
@@ -385,7 +401,7 @@ function ScopeEditor({ access, data, policy, back }: {
       />
       {saveError ? <DenNotice tone="error" message={saveError} /> : null}
       {dirty ? (
-        <DenStickyActionBar testId="agent-permissions-save-bar" summary={<span>Unsaved changes for {policy.name}</span>}>
+        <DenStickyActionBar testId="agent-permissions-save-bar" summary={<SaveSummary>Unsaved changes for {policy.name}</SaveSummary>}>
           <DenButton variant="ghost" size="sm" disabled={save.isPending} onClick={() => { setDraft(null); setSaveError(null); }}>Discard</DenButton>
           <DenButton variant="primary" size="sm" loading={save.isPending} disabled={!editable} onClick={() => void handleSave()}>Save changes</DenButton>
         </DenStickyActionBar>

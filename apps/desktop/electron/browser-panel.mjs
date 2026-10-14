@@ -43,15 +43,16 @@ const BROWSER_SECURITY_PREFERENCES = Object.freeze({
   webviewTag: false,
 });
 
-export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, checkPolicy, readWebsiteRules, showNativeContextMenu, closeNativeContextMenu }) {
+export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, checkPolicy, readWebsiteRules, websiteRulesWereInForce = false, onWebsiteRulesInForce, showNativeContextMenu, closeNativeContextMenu }) {
   // The member's agent permission rules for websites, from their desktop
   // config. They apply to every page, frame and request the built-in browser
   // makes, whoever opens it, as the engines apply them to the agent's web fetches.
   // Empty, so every page opens, unless the app reports that the member's
   // organization uses agent permissions; null while those are not yet verified
   // for this sign-in: no page opens meanwhile, and the pages kept closed reload
-  // once they arrive.
-  let websiteRules = [];
+  // once they arrive. On a computer where website rules were ever in force it
+  // starts null, so no page opens before the first verified answer.
+  let websiteRules = websiteRulesWereInForce ? null : [];
   // The rules the open pages were last checked against: pages stay open while
   // new rules load, and are checked against them once they arrive.
   let checkedWebsiteRules = [];
@@ -217,6 +218,7 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
     if (JSON.stringify(rules) === JSON.stringify(websiteRules)) return;
     websiteRules = rules;
     if (rules === null) return;
+    if (rules.length > 0) onWebsiteRulesInForce?.();
     websiteRulesArrival?.arrive();
     websiteRulesArrival = null;
     const previousRules = checkedWebsiteRules;

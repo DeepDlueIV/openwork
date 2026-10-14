@@ -3,7 +3,7 @@ import { DESKTOP_POLICY_ENFORCEMENT_ENABLED } from "@openwork/types/den/desktop-
 import { execFile, execFileSync, spawn } from "node:child_process";
 import { createServer } from "node:http";
 import net from "node:net";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import {
   cp,
   mkdir,
@@ -466,6 +466,10 @@ function scheduleBlankSlateProfileCleanup() {
 }
 let brandIconApplySequence = 0;
 let brandIconRuntimeState = { applied: false, sourceUrl: null, reason: null };
+
+function websiteRulesInForcePath() {
+  return path.join(app.getPath("userData"), "agent-permissions-website-rules-in-force");
+}
 
 function brandIconCachePath() {
   return path.join(app.getPath("userData"), "brand-icon.png");
@@ -1101,6 +1105,17 @@ browserPanel = createBrowserPanel({
   remoteDebugPort,
   getWindow: () => mainWindow,
   onDeepLink: (urls) => queueDeepLinks(urls),
+  // Whether website rules were ever in force on this computer. Kept across
+  // restarts and sign-outs, so the browser opens no page before the first
+  // verified answer; computers that never had them see no change.
+  websiteRulesWereInForce: existsSync(websiteRulesInForcePath()),
+  onWebsiteRulesInForce: () => {
+    try {
+      writeFileSync(websiteRulesInForcePath(), "1", { mode: 0o600 });
+    } catch {
+      // Without the record the next start opens pages until rules arrive, as before.
+    }
+  },
   // The member's website rules, read from the local OpenWork server (which
   // verifies them with Den), never taken from the app window.
   readWebsiteRules: async () => {

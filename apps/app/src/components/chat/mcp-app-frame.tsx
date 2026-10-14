@@ -539,6 +539,7 @@ export function McpAppSandboxView({ origin, app, resolveLiveActions, toolName, i
     }
     if (!readOnly || resolveLiveActions) bridge.oncalltool = async ({ name, arguments: args, _meta }) => {
       const cacheRequest = _meta?.[MCP_APP_CACHE_REQUEST_META]
+      const call = { serverName: app.serverName, resourceUri: app.resourceUri, name, args: args ?? {} }
       try {
         if (resolveLiveActions) {
           liveActions ??= resolveLiveActions().then(live => {
@@ -573,7 +574,6 @@ export function McpAppSandboxView({ origin, app, resolveLiveActions, toolName, i
         const callNow = async () => connectionController
           ? await connectionController.callTool(actions, app, name, args, userInteraction)
           : standardMcpToolResult(await actions.callTool(name, args, userInteraction))
-        const call = { serverName: app.serverName, resourceUri: app.resourceUri, name, args: args ?? {} }
         let toolResult: CallToolResult
         let reused = false
         if (userInteraction) {
@@ -590,11 +590,10 @@ export function McpAppSandboxView({ origin, app, resolveLiveActions, toolName, i
           toolResult = loaded.result
           reused = loaded.reused
         }
-        // A read-only tool that failed keeps its last value, shown as stale,
-        // unless the person has to sign in again to see it.
-        if (cacheRequest === "store" && !reused) {
-          void rememberMcpAppResult(origin, app, name, args ?? {}, toolResult, { keepOnFailure: !signInPromptFromToolResult(toolResult) })
-        }
+        // A failed answer also clears the kept one: it may mean the provider
+        // no longer allows this person to read it. The open App keeps showing
+        // what it already has, marked stale, but a later open starts empty.
+        if (cacheRequest === "store" && !reused) void rememberMcpAppResult(origin, app, name, args ?? {}, toolResult)
         // A sign-in the viewer can finish gets the row above the App; any
         // other connection failure goes to the host's connection card.
         if (!disposed && !failed) {
@@ -603,6 +602,8 @@ export function McpAppSandboxView({ origin, app, resolveLiveActions, toolName, i
         }
         return toolResult
       } catch (cause) {
+        if (cacheRequest === "store") void forgetMcpAppResult(origin, app, name, args ?? {})
+        if (cacheRequest !== "read") loads.failed(call)
         if (cause instanceof OpenworkServerError && ["missing_launch_context", "stale_launch_context", "inactive_session"].includes(cause.code)) {
           fail("MCP_APP_LAUNCH_CONTEXT_STALE", "resource-resolution", cause, "Reopen the artifact in its original conversation before trying again.")
         }

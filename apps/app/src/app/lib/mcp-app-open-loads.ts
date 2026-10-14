@@ -50,18 +50,28 @@ export function createMcpAppOpenLoads(openKey: string | undefined) {
         }
         const result = await run();
         if (reuseKey && !result.isError && result._meta?.[READ_ONLY_RESULT_META] === true) keep(reuseKey, result);
+        else if (reuseKey) kept.delete(reuseKey);
         return { result, reused: false };
       })();
       current.set(key, pending);
       return await pending;
     },
-    /** A clicked call's answer replaces the open's earlier one, so a later load or mount shows it. */
+    /**
+     * A clicked call's answer replaces the open's earlier one, so a later load
+     * or mount shows it. A failed one drops it: the provider may no longer
+     * allow this person to read it.
+     */
     clicked(call: Call, result: CallToolResult) {
-      if (result.isError || result._meta?.[READ_ONLY_RESULT_META] !== true) return;
       const key = callKey(call);
+      if (result.isError || result._meta?.[READ_ONLY_RESULT_META] !== true) return this.failed(call);
       current.set(key, Promise.resolve({ result, reused: false }));
       const reuseKey = keptKey(key);
       if (reuseKey) keep(reuseKey, result);
+    },
+    /** A call that threw or failed; a later mount of this open calls again. */
+    failed(call: Call) {
+      const reuseKey = keptKey(callKey(call));
+      if (reuseKey) kept.delete(reuseKey);
     },
   };
 }

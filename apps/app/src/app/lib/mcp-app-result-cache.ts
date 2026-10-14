@@ -110,26 +110,18 @@ export async function cachedMcpAppResult(
   }
 }
 
-/**
- * Keeps a successful result only when the OpenWork server marked its tool
- * read-only. With keepOnFailure, a read-only tool that failed keeps its last
- * value, which the App shows as stale.
- */
+/** Keeps a successful result only when the OpenWork server marked its tool read-only. */
 export async function rememberMcpAppResult(
   origin: McpAppOrigin, app: OpenworkMcpAppResource, name: string, args: Record<string, unknown>, result: CallToolResult,
-  options: { keepOnFailure?: boolean } = {},
 ): Promise<void> {
   try {
     const entry = await entryKey(origin, app, name, args);
     if (!entry) return;
     const entries = store.read(STORAGE_KEY);
     if (!entries) return;
-    const readOnly = result._meta?.[READ_ONLY_RESULT_META] === true;
     const providerIdentity = result._meta?.[PROVIDER_IDENTITY_META];
-    if (result.isError || !readOnly || typeof providerIdentity !== "string") {
-      // A non-read-only answer, or a failure the caller must not paper over
-      // (such as a sign-in the person has to finish), leaves no older value behind.
-      if (options.keepOnFailure && result.isError && readOnly) return;
+    if (result.isError || result._meta?.[READ_ONLY_RESULT_META] !== true || typeof providerIdentity !== "string") {
+      // A failed or non-read-only answer must not leave an older value behind.
       if (entries.delete(entry.key)) store.schedule(STORAGE_KEY);
       return;
     }

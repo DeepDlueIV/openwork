@@ -171,7 +171,8 @@ test("artifact editor renders code with Pierre and browses workspace files", asy
 });
 
 test("a person clicks a link inside a PDF in the side panel and OpenWork stays open", async ({ world, user, probe, step, evidence }) => {
-  const linkTab = { role: "button", label: /^Select tab: .*example\.com/ } as const;
+  // A browser tab is labelled with the page title once it loads, or its URL before.
+  const linkTab = { role: "button", label: /^Select tab: (.*example\.com|Example Domain)/ } as const;
   let route = "";
 
   await step("given a PDF with a link is open in the side panel", async () => {
@@ -209,7 +210,7 @@ test("a person clicks a link inside a PDF in the side panel and OpenWork stays o
   await step("after: OpenWork is still open on the same chat, with the link in one browser tab", async () => {
     await user.see("composer");
     await user.see("Select tab: release-notes.pdf");
-    const [tabs, now] = await Promise.all([probe.dom('[role="button"][aria-label^="Select tab: "][aria-label*="example.com"]'), probe.hash()]);
+    const [tabs, now] = await Promise.all([probe.dom('[aria-label^="Select tab: "][aria-label*="example.com"], [aria-label="Select tab: Example Domain"]'), probe.hash()]);
     expect(now).toBe(route);
     expect(tabs.elements).toHaveLength(1);
     evidence.recordAssertionEvidence("OpenWork kept the chat and opened the link once", `Route still ${now}; ${tabs.elements.length} browser tab for example.com; composer and the PDF tab are visible.`, true);

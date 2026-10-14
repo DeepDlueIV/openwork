@@ -453,16 +453,16 @@ export async function scopedPermissionRefreshWorld(seed: Seed) {
   }
 }
 
-/** A one-page text-only PDF whose whole page is a link to `url`. */
+/** A one-page text-only PDF whose whole page is a link to `url`; the tall page covers the viewer's center at any zoom. */
 function linkedPdf(url: string) {
-  const text = "BT /F1 28 Tf 72 700 Td (Open the release notes) Tj ET";
+  const text = "BT /F1 28 Tf 72 2300 Td (Open the release notes) Tj ET";
   const objects = [
     "<< /Type /Catalog /Pages 2 0 R >>",
     "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> /Annots [6 0 R] >>",
+    "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 2400] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> /Annots [6 0 R] >>",
     `<< /Length ${text.length} >>\nstream\n${text}\nendstream`,
     "<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-    `<< /Type /Annot /Subtype /Link /Rect [0 0 612 792] /Border [0 0 0] /A << /S /URI /URI (${url}) >> >>`,
+    `<< /Type /Annot /Subtype /Link /Rect [0 0 612 2400] /Border [0 0 0] /A << /S /URI /URI (${url}) >> >>`,
   ];
   let pdf = "%PDF-1.4\n";
   const offsets = objects.map((object, index) => {

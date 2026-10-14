@@ -62,14 +62,14 @@ You don't need a domain to start: by default the services use their HTTPS `run.a
 
 The account that runs `terraform apply` must be able to set IAM policies: the module grants its service account Cloud SQL access and access to each secret, and lets browsers reach the services without Google sign-in (Den does its own sign-in). Project Editor alone is not enough; add Project IAM Admin and Cloud Run Admin, or let your platform team grant `roles/cloudsql.client` and `roles/secretmanager.secretAccessor` and set `grant_iam_roles = false`.
 
-**What was tested.** Applied in a Google Cloud test project with the module's `examples/complete` and release 0.18.58, using Direct VPC egress into a separately created VPC:
+**What was tested.** The module was applied with its defaults (Secret Manager, IAM grants, public access) in a Google Cloud test project, using `examples/complete` and release 0.18.58:
 
 - the migration job ran during the apply on an empty Cloud SQL for MySQL 8.4 database;
-- Den API and Den web answered over HTTPS on their `run.app` URLs, and Den API's readiness check reached the database;
-- the one-time setup created the first administrator, setup then reported complete and refused a second use, and that administrator signed in as owner of the organization;
-- with `domain_name` set to a test hostname, the Google-managed certificate became active for both hostnames in about 7 minutes, the load balancer sent each hostname to the right service over HTTPS, and plain HTTP redirected to HTTPS.
+- Den API and Den web answered over HTTPS on their `run.app` URLs, and both readiness checks passed;
+- in a browser, the one-time setup page on Den web created the first administrator, and a new browser session signed in to the dashboard;
+- an isolated OpenWork desktop app signed in to the deployment, and the deployment's API accepted its session as the administrator.
 
-The test account could not set IAM policies, so these checks called Den API directly with a Google identity token, and an earlier revision of the module passed secrets as environment variables instead of Secret Manager (that option has since been removed). Not yet tested: signing in through Den web in a browser, the desktop app, the Secret Manager and IAM bindings, an existing database, several Den API instances, email delivery, and upgrades between releases. OpenWork Web, the Slack assistant, headless Automations and Workbot are not in this module yet; use the ECS module or the Helm chart for those.
+Earlier runs also checked Direct VPC egress into an existing VPC, and the load balancer with a custom hostname. In that run, the Google-managed certificate became active for both hostnames in about 7 minutes, each hostname reached the right service, and HTTP redirected to HTTPS. Not yet tested: an existing database, several Den API instances, email delivery, and upgrades between releases. OpenWork Web, the Slack assistant, headless Automations and Workbot are not in this module yet; use the ECS module or the Helm chart for those.
 
 See the [module README](https://github.com/different-ai/openwork/tree/dev/infra/terraform/modules/openwork-gcp-cloud-run) for inputs, a complete example, and cost notes.
 

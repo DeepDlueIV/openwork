@@ -22,19 +22,16 @@ It sets the same environment as `packaging/cloud-run` and the
 chart's README and `ee/apps/den-api/.env.example` document every setting you
 can add through `extra_environment`.
 
-> **Status: draft.** Applied in a Google Cloud test project with
-> `examples/complete` (release 0.18.58, Direct VPC egress into a separately
-> created VPC): the migration job during apply, HTTPS on both run.app URLs and
-> on both load balancer hostnames (managed certificate), database readiness,
-> the one-time `/setup` administrator and sign-in. The test account had only
-> Project Editor, so it ran with `grant_iam_roles = false` and
-> `public_access = false`, called den-api with a Google identity token, and
-> used an earlier revision of the module that could pass secrets as plain
-> environment variables (since removed; Secret Manager is now always used).
-> Not yet exercised live: the IAM and Secret Manager bindings, sign-in through
-> den-web in a browser, the desktop app, an existing database, more than one den-api instance,
-> SMTP/Resend delivery, upgrades across releases. OpenWork Web, Slack,
-> headless Automations and Workbot are not part of this module yet.
+> **Status: draft.** Applied with its defaults (Secret Manager, IAM grants,
+> public access) in a Google Cloud test project with `examples/complete`
+> (release 0.18.58): the migration job during apply, HTTPS and readiness on
+> both run.app URLs, the one-time `/setup` administrator and sign-in in a
+> browser through den-web, and an isolated desktop app signing in. Earlier
+> runs covered Direct VPC egress into an existing VPC and the load balancer
+> with a managed certificate on both hostnames. Not yet exercised live: an
+> existing database, more than one den-api instance, SMTP/Resend delivery,
+> upgrades across releases. OpenWork Web, Slack, headless Automations and
+> Workbot are not part of this module yet.
 
 ## Before you start
 

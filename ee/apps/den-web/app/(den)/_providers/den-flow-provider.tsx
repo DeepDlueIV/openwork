@@ -122,6 +122,16 @@ type DenFlowContextValue = {
 
 const DenFlowContext = createContext<DenFlowContextValue | null>(null);
 
+function isEmailNotVerifiedError(payload: unknown) {
+  return typeof payload === "object" && payload !== null && "code" in payload && payload.code === "EMAIL_NOT_VERIFIED";
+}
+
+function signUpReturnedVerifiedUser(payload: unknown) {
+  if (typeof payload !== "object" || payload === null || !("user" in payload)) return false;
+  const user = payload.user;
+  return typeof user === "object" && user !== null && "emailVerified" in user && user.emailVerified === true;
+}
+
 function getPendingOrgInvitationId() {
   if (typeof window === "undefined") {
     return null;
@@ -749,7 +759,9 @@ export function DenFlowProvider({ children }: { children: ReactNode }) {
       });
 
       if (!response.ok) {
-        if (response.status === 403 && !isSingleOrgMode) {
+        // Only better-auth's unverified-email refusal means a code was sent;
+        // any other 403 (SSO-managed, sign-up policy) is a plain error.
+        if (response.status === 403 && !isSingleOrgMode && isEmailNotVerifiedError(payload)) {
           openVerificationStep(trimmedEmail, `Enter the 6-digit code we sent to ${trimmedEmail} to finish verifying your email.`);
         }
         const message = getErrorMessage(payload, `Authentication failed with ${response.status}.`);
@@ -768,6 +780,13 @@ export function DenFlowProvider({ children }: { children: ReactNode }) {
       }
 
       const token = getToken(payload);
+
+      // Signing up from an invitation link can verify the email right away
+      // (inviteLinkVerifiesEmail). Den still answers without a session, so
+      // exchange the password for one instead of asking for an emailed code.
+      if (submitMode === "sign-up" && !token && signUpReturnedVerifiedUser(payload)) {
+        return await finalizeEmailPasswordSignIn(submitMode, trimmedEmail, payload);
+      }
 
       if (submitMode === "sign-up" && !token) {
         setUser(null);

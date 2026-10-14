@@ -53,7 +53,7 @@ test("an admin gives a member their own Provider A limit: Provider A keeps worki
     await admin.see({ testId: "gateway-limit-row" }, { text: /\$1\.00 a month each/, timeoutMs: 90_000 });
     await admin.see({ testId: "gateway-limit-provider-label" }, { text: "All providers" });
     const observed = used(await own());
-    evidence.recordAssertionEvidence("member's limits before the provider limit", JSON.stringify(observed), observed.providerName === null);
+    evidence.recordAssertionEvidence("member's limits before the provider limit", `${JSON.stringify(observed)} (Den and Gateway placement: ${world.placement})`, observed.providerName === null);
     expect(observed).toEqual({ defaultUsed: 0, defaultState: "within_limit", providerName: null, providerUsed: null, providerState: null });
     await admin.screenshot();
   });
@@ -98,22 +98,25 @@ test("an admin gives a member their own Provider A limit: Provider A keeps worki
   });
 
   await step("when the member uses Provider B, its $1 counts toward the default limit only", async () => {
+    const before = await world.upstreamCount();
     const response = await world.generate(world.providerB);
     expect(response.status).toBe(200);
+    // Witness: the request really reached the upstream that reports the $1.
+    expect(await world.upstreamCount()).toBe(before + 1);
     const status = await settledTo({ defaultUsed: DOLLAR, providerUsed: 0 }, "Provider B spend settles into the default limit");
     evidence.recordAssertionEvidence("after one Provider B request", JSON.stringify(used(status)), used(status).providerUsed === 0);
     expect(used(status)).toMatchObject({ defaultState: "blocked", providerState: "within_limit" });
   });
 
   await step("then Provider B is paused by the default limit, without reaching the provider", async () => {
-    const before = world.upstreamCount();
+    const before = await world.upstreamCount();
     const response = await world.generate(world.providerB);
     const error = errorDetails(response.body);
     evidence.recordAssertionEvidence("second Provider B request", `HTTP ${response.status} ${String(error.code)}; provider detail ${JSON.stringify(error.details.provider ?? null)}`, response.status === 429);
     expect(response.status).toBe(429);
     expect(error.code).toBe("openwork_gateway_usage_limit_exceeded");
     expect(error.details.provider).toBeUndefined();
-    expect(world.upstreamCount()).toBe(before);
+    expect(await world.upstreamCount()).toBe(before);
   });
 
   await step("after: Provider A still works with the default used up, and its cost counts only toward Provider A", async () => {
@@ -127,14 +130,14 @@ test("an admin gives a member their own Provider A limit: Provider A keeps worki
   await step("when Provider A reaches its own limit, the next request is paused and names Provider A", async () => {
     expect((await world.generate(world.providerA)).status).toBe(200);
     await settledTo({ providerUsed: 2 * DOLLAR, providerState: "blocked" }, "second Provider A request settles");
-    const before = world.upstreamCount();
+    const before = await world.upstreamCount();
     const response = await world.generate(world.providerA);
     const error = errorDetails(response.body);
     evidence.recordAssertionEvidence("third Provider A request", `HTTP ${response.status}: ${String(error.message)}`, response.status === 429);
     expect(response.status).toBe(429);
     expect(error.details.provider).toEqual({ id: world.providerA.id, name: "Provider A" });
     expect(String(error.message)).toContain("Provider A");
-    expect(world.upstreamCount()).toBe(before);
+    expect(await world.upstreamCount()).toBe(before);
     expect(used(await own()).defaultUsed).toBe(DOLLAR);
   });
 

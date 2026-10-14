@@ -501,6 +501,9 @@ type RawJsonResponse<T> = {
   json: T | null;
 };
 
+/** Den serves GET /v1/resolved-plugins for at most this many plugins per request. */
+const RESOLVED_PLUGINS_BATCH_SIZE = 100;
+
 export class DenApiError extends Error {
   status: number;
   code: string;
@@ -2860,6 +2863,41 @@ export function createDenClient(options: {
     }
   }
 
+  function pluginResolvedFrom(plugin: DenOrgPlugin, payload: unknown): DenOrgPluginResolved {
+    const resolved = getOrgPluginResolved(plugin, payload);
+    verifyInventory(
+      payload,
+      "items",
+      resolved.memberships.filter((item) => item.configObject).length,
+      (item) => !isRecord(item) || hasModeledObjectType(item.configObject),
+    );
+    return resolved;
+  }
+
+  async function getPluginResolved(orgId: string, plugin: DenOrgPlugin): Promise<DenOrgPluginResolved> {
+    const payload = await requestJson<unknown>(
+      baseUrls,
+      `/v1/plugins/${encodeURIComponent(plugin.id)}/resolved`,
+      { method: "GET", token, organizationId: orgId },
+    );
+    return pluginResolvedFrom(plugin, payload);
+  }
+
+  /** One plugin out of GET /v1/resolved-plugins, failing the way its own `/resolved` request would. */
+  function pluginResolvedFromBatch(plugin: DenOrgPlugin, payload: unknown): DenOrgPluginResolved {
+    const failure = isRecord(payload) && isRecord(payload.failures) ? payload.failures[plugin.id] : null;
+    if (isRecord(failure)) {
+      const status = typeof failure.status === "number" ? failure.status : 500;
+      const code = typeof failure.error === "string" ? failure.error : "request_failed";
+      throw new DenApiError(status, code, getErrorMessage(failure, `Request failed with ${status}.`));
+    }
+    const body = isRecord(payload) && isRecord(payload.plugins) ? payload.plugins[plugin.id] : null;
+    if (!isRecord(body)) {
+      throw new DenApiError(502, "incomplete_inventory", "The resource inventory could not be verified.");
+    }
+    return pluginResolvedFrom(plugin, body);
+  }
+
   return {
     /** The resolved web base URL and API base URL. */
     baseUrls,
@@ -3549,20 +3587,30 @@ export function createDenClient(options: {
       return resolved;
     },
 
-    async getOrgPluginResolved(orgId: string, plugin: DenOrgPlugin): Promise<DenOrgPluginResolved> {
-      const payload = await requestJson<unknown>(
-        baseUrls,
-        `/v1/plugins/${encodeURIComponent(plugin.id)}/resolved`,
-        { method: "GET", token, organizationId: orgId },
-      );
-      const resolved = getOrgPluginResolved(plugin, payload);
-      verifyInventory(
-        payload,
-        "items",
-        resolved.memberships.filter((item) => item.configObject).length,
-        (item) => !isRecord(item) || hasModeledObjectType(item.configObject),
-      );
-      return resolved;
+    getOrgPluginResolved: getPluginResolved,
+
+    /**
+     * Every plugin's contents in one request per 100 plugins. A Den without the
+     * batched route (404) gets the one-request-per-plugin route instead.
+     */
+    async getOrgPluginsResolved(orgId: string, plugins: DenOrgPlugin[]): Promise<DenOrgPluginResolved[]> {
+      const batches: DenOrgPlugin[][] = [];
+      for (let start = 0; start < plugins.length; start += RESOLVED_PLUGINS_BATCH_SIZE) {
+        batches.push(plugins.slice(start, start + RESOLVED_PLUGINS_BATCH_SIZE));
+      }
+      try {
+        return (await Promise.all(batches.map(async (batch) => {
+          const payload = await requestJson<unknown>(
+            baseUrls,
+            `/v1/resolved-plugins?pluginIds=${batch.map((plugin) => encodeURIComponent(plugin.id)).join(",")}`,
+            { method: "GET", token, organizationId: orgId },
+          );
+          return batch.map((plugin) => pluginResolvedFromBatch(plugin, payload));
+        }))).flat();
+      } catch (error) {
+        if (!(error instanceof DenApiError) || error.status !== 404) throw error;
+        return Promise.all(plugins.map((plugin) => getPluginResolved(orgId, plugin)));
+      }
     },
 
     async createOrgPlugin(

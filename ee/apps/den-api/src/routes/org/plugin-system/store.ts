@@ -3095,10 +3095,49 @@ export async function listPluginMemberships(input: { context: PluginArchActorCon
     .select()
     .from(PluginConfigObjectTable)
     .where(input.onlyActive ? and(eq(PluginConfigObjectTable.pluginId, input.pluginId), isNull(PluginConfigObjectTable.removedAt)) : eq(PluginConfigObjectTable.pluginId, input.pluginId))
-    .orderBy(desc(PluginConfigObjectTable.createdAt))
+    .orderBy(desc(PluginConfigObjectTable.createdAt), desc(PluginConfigObjectTable.id))
 
+  return { items: await serializePluginMemberships(memberships, input), nextCursor: null }
+}
+
+/**
+ * GET /v1/plugins/:pluginId/resolved for many plugins in one request: the same
+ * viewer check and the same body per plugin, read with one query per table
+ * instead of one set of queries per plugin.
+ */
+export async function listResolvedPlugins(input: { context: PluginArchActorContext; pluginIds: PluginId[] }) {
+  const pluginIds = [...new Set(input.pluginIds)]
+  const roles = await resolvePluginArchPluginRoles(input.context, pluginIds)
+  const visibleIds = pluginIds.filter((pluginId) => roles.has(pluginId))
+  const hiddenIds = pluginIds.filter((pluginId) => !roles.has(pluginId))
+  const existingHiddenIds = new Set(hiddenIds.length === 0 ? [] : (await db
+    .select({ id: PluginTable.id })
+    .from(PluginTable)
+    .where(and(eq(PluginTable.organizationId, input.context.organizationContext.organization.id), inArray(PluginTable.id, hiddenIds))))
+    .map((row) => row.id))
+
+  const memberships = visibleIds.length === 0 ? [] : await db
+    .select()
+    .from(PluginConfigObjectTable)
+    .where(and(inArray(PluginConfigObjectTable.pluginId, visibleIds), isNull(PluginConfigObjectTable.removedAt)))
+    .orderBy(desc(PluginConfigObjectTable.createdAt), desc(PluginConfigObjectTable.id))
+  const items = await serializePluginMemberships(memberships, { includeConfigObjects: true, legacyWorkflowObjectType: true, onlyActive: true })
+
+  const plugins: Record<string, { items: typeof items; nextCursor: null }> = {}
+  for (const pluginId of visibleIds) plugins[pluginId] = { items: [], nextCursor: null }
+  for (const item of items) plugins[item.pluginId]?.items.push(item)
+  const failures: Record<string, { status: 403 | 404; error: string; message: string }> = {}
+  for (const pluginId of hiddenIds) {
+    failures[pluginId] = existingHiddenIds.has(pluginId)
+      ? { status: 403, error: "forbidden", message: "Missing viewer access for plugin." }
+      : { status: 404, error: "plugin_not_found", message: "Plugin not found." }
+  }
+  return { plugins, failures }
+}
+
+async function serializePluginMemberships(memberships: PluginMembershipRow[], input: { includeConfigObjects?: boolean; legacyWorkflowObjectType?: boolean; onlyActive?: boolean }) {
   if (!input.includeConfigObjects) {
-    return { items: memberships.map((membership) => serializeMembership(membership)), nextCursor: null }
+    return memberships.map((membership) => serializeMembership(membership))
   }
 
   const configObjects = await db.select().from(ConfigObjectTable).where(inArray(ConfigObjectTable.id, memberships.map((membership) => membership.configObjectId)))
@@ -3116,7 +3155,7 @@ export async function listPluginMemberships(input: { context: PluginArchActorCon
       ? { ...serialized, objectType: "script" }
       : serialized]
   }))
-  return { items: resolvedMemberships.map((membership) => serializeMembership(membership, byId.get(membership.configObjectId))), nextCursor: null }
+  return resolvedMemberships.map((membership) => serializeMembership(membership, byId.get(membership.configObjectId)))
 }
 
 export async function addPluginMembership(input: { configObjectId: ConfigObjectId; context: PluginArchActorContext; membershipSource?: PluginMembershipRow["membershipSource"]; pluginId: PluginId }) {

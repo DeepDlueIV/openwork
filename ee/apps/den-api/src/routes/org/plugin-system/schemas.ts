@@ -990,6 +990,20 @@ export const pluginListResponseSchema = pluginArchListResponseSchema("PluginArch
 export const pluginDetailResponseSchema = pluginArchDetailResponseSchema("PluginArchPluginDetailResponse", pluginSchema)
 export const pluginMutationResponseSchema = pluginArchMutationResponseSchema("PluginArchPluginMutationResponse", pluginSchema)
 export const pluginMembershipListResponseSchema = pluginArchListResponseSchema("PluginArchPluginMembershipListResponse", pluginMembershipSchema)
+export const resolvedPluginsQuerySchema = z.object({
+  pluginIds: z.string()
+    .transform((value) => [...new Set(value.split(",").map((id) => id.trim()).filter(Boolean))])
+    .pipe(z.array(pluginIdSchema).min(1).max(100))
+    .describe("Comma-separated plugin ids, at most 100."),
+})
+export const resolvedPluginsResponseSchema = z.object({
+  plugins: z.record(z.string(), pluginMembershipListResponseSchema).describe("Each visible plugin's resolved contents, keyed by plugin id: the body GET /v1/plugins/:pluginId/resolved returns."),
+  failures: z.record(z.string(), z.object({
+    status: z.union([z.literal(403), z.literal(404)]),
+    error: z.string(),
+    message: z.string(),
+  })).describe("Requested plugins the caller cannot view (403) or that do not exist (404), keyed by plugin id, with the error GET /v1/plugins/:pluginId/resolved returns."),
+}).meta({ ref: "PluginArchResolvedPluginsResponse" })
 export const pluginMembershipDetailResponseSchema = pluginArchDetailResponseSchema("PluginArchPluginMembershipDetailResponse", pluginMembershipSchema)
 export const pluginMembershipMutationResponseSchema = pluginArchMutationResponseSchema("PluginArchPluginMembershipMutationResponse", pluginMembershipSchema)
 export const marketplaceListResponseSchema = pluginArchListResponseSchema("PluginArchMarketplaceListResponse", marketplaceSchema)

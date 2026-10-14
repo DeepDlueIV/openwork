@@ -4280,6 +4280,25 @@ export type PluginArchPluginDetailResponse = {
   item: PluginArchPlugin;
 };
 
+export type PluginArchResolvedPluginsResponse = {
+  /**
+   * Each visible plugin's resolved contents, keyed by plugin id: the body GET /v1/plugins/:pluginId/resolved returns.
+   */
+  plugins: {
+    [key: string]: PluginArchPluginMembershipListResponse;
+  };
+  /**
+   * Requested plugins the caller cannot view (403) or that do not exist (404), keyed by plugin id, with the error GET /v1/plugins/:pluginId/resolved returns.
+   */
+  failures: {
+    [key: string]: {
+      status: 403 | 404;
+      error: string;
+      message: string;
+    };
+  };
+};
+
 export type PluginArchPluginMcpRequirementConfigureResponse = {
   ok: true;
   item: {
@@ -27099,6 +27118,40 @@ export type GetV1PluginsByPluginIdResolvedResponses = {
 
 export type GetV1PluginsByPluginIdResolvedResponse =
   GetV1PluginsByPluginIdResolvedResponses[keyof GetV1PluginsByPluginIdResolvedResponses];
+
+export type GetV1ResolvedPluginsData = {
+  body?: never;
+  path?: never;
+  query: {
+    /**
+     * Comma-separated plugin ids, at most 100.
+     */
+    pluginIds: string;
+  };
+  url: "/v1/resolved-plugins";
+};
+
+export type GetV1ResolvedPluginsErrors = {
+  /**
+   * The plugin ids were invalid.
+   */
+  400: InvalidRequestError;
+  /**
+   * The caller must be signed in to view resolved plugins.
+   */
+  401: UnauthorizedError;
+};
+
+export type GetV1ResolvedPluginsError = GetV1ResolvedPluginsErrors[keyof GetV1ResolvedPluginsErrors];
+
+export type GetV1ResolvedPluginsResponses = {
+  /**
+   * Resolved plugins returned successfully.
+   */
+  200: PluginArchResolvedPluginsResponse;
+};
+
+export type GetV1ResolvedPluginsResponse = GetV1ResolvedPluginsResponses[keyof GetV1ResolvedPluginsResponses];
 
 export type PostV1PluginsByPluginIdMcpConnectionsData = {
   body: {

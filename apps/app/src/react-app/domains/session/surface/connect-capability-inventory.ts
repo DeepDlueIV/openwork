@@ -21,10 +21,10 @@ export type ConnectCapabilityClient = {
     organizationId: string,
     marketplaceId: string,
   ) => Promise<DenOrgMarketplaceResolved>;
-  getOrgPluginResolved: (
+  getOrgPluginsResolved: (
     organizationId: string,
-    plugin: DenOrgPlugin,
-  ) => Promise<DenOrgPluginResolved>;
+    plugins: DenOrgPlugin[],
+  ) => Promise<DenOrgPluginResolved[]>;
 };
 
 export type ConnectPluginFile = {
@@ -291,12 +291,11 @@ export async function listAssignedConnectCapabilities(input: {
   }
   if (plugins.size === 0) return EMPTY_CONNECT_CAPABILITY_INVENTORY;
 
-  const resolvedPlugins = await Promise.all(
-    [...plugins.values()].map(async ({ marketplace, plugin }) => ({
-      marketplace,
-      resolved: await input.client.getOrgPluginResolved(input.organizationId, plugin),
-    })),
-  );
+  const pluginEntries = [...plugins.values()];
+  const resolvedPlugins = (await input.client.getOrgPluginsResolved(
+    input.organizationId,
+    pluginEntries.map(({ plugin }) => plugin),
+  )).map((resolved, index) => ({ marketplace: pluginEntries[index]!.marketplace, resolved }));
 
   const skills: SkillCard[] = [];
   const pluginsById = new Map<string, ConnectPluginCard>();

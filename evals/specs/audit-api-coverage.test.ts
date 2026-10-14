@@ -688,6 +688,59 @@ test.skipIf(skip)(name("5d. GET /v1/plugins/:pluginId/resolved is not audited (h
   );
 });
 
+test.skipIf(skip)(name("5e. GET /v1/resolved-plugins returns each plugin's /resolved body in one request and is not audited"), STEP, async ({ evidence, place }) => {
+  const w = await world(place);
+  const adminHeaders = orgHeaders(w.admin, w.orgId);
+  const readerHeaders = orgHeaders(w.reader, w.orgId);
+  async function createPlugin(label: string, orgWide: boolean): Promise<string> {
+    const skillName = `batch-${label}-${w.stamp}`;
+    const rawSourceText = `---\nname: ${skillName}\ndescription: Batched resolve proof.\n---\n\nReturn the ${label} proof phrase.`;
+    const created = await call(w.den, "/v1/plugins", { method: "POST", headers: adminHeaders, body: { name: skillName, orgWide, components: [{ type: "skill", input: { rawSourceText } }] } });
+    expect(created.response.status, created.text).toBe(201);
+    return text(record(record(created.body, "plugin response").item, "plugin").id, "plugin.id");
+  }
+  const shared = await createPlugin("shared", true);
+  const hidden = await createPlugin("hidden", false);
+  const missing = "plg_01m4bmd960e2c9d0nfxf5c339y";
+  const tenantBefore = await totalTenantRows(w, w.orgId);
+  const platformBefore = count(await sql(w, "SELECT COUNT(*) AS n FROM platform_audit_event WHERE route = ?", ["/v1/resolved-plugins"]));
+
+  // Per member, every plugin's entry is exactly what its own /resolved request returns.
+  const compared: string[] = [];
+  for (const [who, headers] of [["admin", adminHeaders], ["reader", readerHeaders]] as const) {
+    const batch = await call(w.den, `/v1/resolved-plugins?pluginIds=${[shared, hidden, missing].join(",")}`, { headers });
+    expect(batch.response.status, batch.text).toBe(200);
+    const body = record(batch.body, "resolved plugins");
+    const plugins = record(body.plugins, "resolved plugins.plugins");
+    const failures = record(body.failures, "resolved plugins.failures");
+    for (const pluginId of [shared, hidden, missing]) {
+      const single = await call(w.den, `/v1/plugins/${encodeURIComponent(pluginId)}/resolved`, { headers });
+      if (single.response.status === 200) {
+        expect(JSON.stringify(plugins[pluginId]), `${who} ${pluginId}`).toBe(single.text);
+        expect(failures[pluginId]).toBeUndefined();
+      } else {
+        const error = record(single.body, "single error");
+        expect(failures[pluginId], `${who} ${pluginId}`).toEqual({ status: single.response.status, error: error.error, message: error.message });
+        expect(plugins[pluginId]).toBeUndefined();
+      }
+      compared.push(`${who}:${pluginId === shared ? "shared" : pluginId === hidden ? "hidden" : "missing"}=${single.response.status}`);
+    }
+  }
+  expect(compared).toEqual(["admin:shared=200", "admin:hidden=200", "admin:missing=404", "reader:shared=200", "reader:hidden=403", "reader:missing=404"]);
+
+  const tenantAfter = await totalTenantRows(w, w.orgId);
+  const batchEvents = count(await sql(w, "SELECT COUNT(*) AS n FROM audit_event WHERE org_id = ? AND action LIKE 'plugin.resolved.%'", [w.orgId]));
+  const platformAfter = count(await sql(w, "SELECT COUNT(*) AS n FROM platform_audit_event WHERE route = ?", ["/v1/resolved-plugins"]));
+  expect(tenantAfter, "batched and single /resolved reads add no tenant audit rows").toBe(tenantBefore);
+  expect(batchEvents).toBe(0);
+  expect(platformAfter).toBe(platformBefore);
+  evidence.recordAssertionEvidence(
+    "For the admin and a plain member, GET /v1/resolved-plugins returns byte-for-byte each plugin's GET /v1/plugins/:pluginId/resolved body, lists the plugins that route refuses (403) or cannot find (404) with the same error, and records no audit row",
+    `${compared.join(", ")}; tenant rows ${tenantBefore} → ${tenantAfter}; plugin.resolved.* events=${batchEvents}; platform rows for the route ${platformBefore} → ${platformAfter}`,
+    true,
+  );
+});
+
 test.skipIf(skip)(name("6. capture OFF stops recording but keeps history readable, stays OFF, and ON resumes"), STEP, async ({ evidence, place }) => {
   const w = await world(place);
   const headers = orgHeaders(w.admin, w.orgId);

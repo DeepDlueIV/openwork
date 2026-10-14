@@ -111,6 +111,8 @@ import {
   pluginMutationResponseSchema,
   pluginParamsSchema,
   pluginUpdateSchema,
+  resolvedPluginsQuerySchema,
+  resolvedPluginsResponseSchema,
   resourceAccessGrantWriteSchema,
   teamParamsSchema,
   teamPluginAccessListResponseSchema,
@@ -165,6 +167,7 @@ import {
   listMeLibraryPluginItems,
   listMeEffectivePluginAccess,
   listPluginMemberships,
+  listResolvedPlugins,
   listPlugins,
   listResourceAccess,
   listTeamEffectivePluginAccess,
@@ -945,6 +948,23 @@ export function registerPluginArchRoutes<T extends { Variables: OrgRouteVariable
       } catch (error) {
         return routeErrorResponse(c, error)
       }
+    })
+
+  withPluginArchOrgContext(app, "get", pluginArchRoutePaths.resolvedPlugins,
+    queryValidator(resolvedPluginsQuerySchema),
+    describeRoute({
+      tags: ["Plugins"],
+      summary: "Get resolved plugins",
+      description: "Returns GET /v1/plugins/:pluginId/resolved for up to 100 plugins in one request, so a client loading every plugin's contents makes one call instead of one per plugin. Each visible plugin's body is the one the single-plugin route returns; plugins the caller cannot view or that do not exist are listed under failures with that route's error. Not recorded in organization audit logs, like the single-plugin route.",
+      responses: {
+        200: jsonResponse("Resolved plugins returned successfully.", resolvedPluginsResponseSchema),
+        400: jsonResponse("The plugin ids were invalid.", invalidRequestSchema),
+        401: jsonResponse("The caller must be signed in to view resolved plugins.", unauthorizedSchema),
+      },
+    }),
+    async (c: OrgContext) => {
+      const query = validQuery<z.infer<typeof resolvedPluginsQuerySchema>>(c)
+      return c.json(await listResolvedPlugins({ context: actorContext(c), pluginIds: query.pluginIds }))
     })
 
   withPluginArchOrgContext(app, "post", pluginArchRoutePaths.pluginMcpConnections,

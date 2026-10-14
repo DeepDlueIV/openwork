@@ -469,6 +469,8 @@ import type {
   GetV1PluginsByPluginIdResponses,
   GetV1PluginsErrors,
   GetV1PluginsResponses,
+  GetV1ResolvedPluginsErrors,
+  GetV1ResolvedPluginsResponses,
   GetV1ResourcesErrors,
   GetV1ResourcesMarketplaceCapabilitiesErrors,
   GetV1ResourcesMarketplaceCapabilitiesResponses,
@@ -12567,6 +12569,29 @@ export class DenClient extends HeyApiClient {
       ThrowOnError
     >({
       url: "/v1/plugins/{pluginId}/resolved",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
+   * Get resolved plugins
+   *
+   * Returns GET /v1/plugins/:pluginId/resolved for up to 100 plugins in one request, so a client loading every plugin's contents makes one call instead of one per plugin. Each visible plugin's body is the one the single-plugin route returns; plugins the caller cannot view or that do not exist are listed under failures with that route's error. Not recorded in organization audit logs, like the single-plugin route.
+   */
+  public getV1ResolvedPlugins<ThrowOnError extends boolean = false>(
+    parameters: {
+      pluginIds: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "pluginIds" }] }]);
+    return (options?.client ?? this.client).get<
+      GetV1ResolvedPluginsResponses,
+      GetV1ResolvedPluginsErrors,
+      ThrowOnError
+    >({
+      url: "/v1/resolved-plugins",
       ...options,
       ...params,
     });

@@ -373,15 +373,13 @@ export function useSessionControlActions(input: UseSessionControlActionsInput) {
         ok: true,
         sessionId,
         workspaceId: targetWorkspace.id,
-        model: rebound.model
-          ? {
-              providerId: rebound.model.providerID,
-              modelId: rebound.model.id,
-               variant: reboundVariant,
-              displayName: match.displayName,
-              providerName: match.providerName,
-            }
-          : null,
+        model: {
+          providerId: rebound.model.providerID,
+          modelId: rebound.model.id,
+          variant: reboundVariant,
+          displayName: match.displayName,
+          providerName: match.providerName,
+        },
       };
     },
   }), [checkDesktopRestriction, endpointForWorkspace, isSignedIn, sessionsByWorkspaceId, workspaceModels, workspaces]);

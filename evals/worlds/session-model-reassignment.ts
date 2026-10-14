@@ -21,7 +21,7 @@ async function buildSessionModelReassignment(seed: Seed, engine: "v1" | "v2") {
     promptMarker: "hold model reassignment", finalReply: "Finished", steps: [{
       tool: "shell", arguments: { command: "python3 -c 'import threading; threading.Event().wait()'", description: "Wait for input", timeout: 120_000 },
     }],
-  }] });
+  }, { promptMarker: "Verify recovered model", finalReply: "Recovered model answered", steps: [] }] });
   const app = await seed.appWeb({ name: "model-reassignment", engine, workspacePath: path, mocks: { agent: mock } });
   const witness = app.mocks.agent;
   if (!witness) throw new Error("Missing model witness");

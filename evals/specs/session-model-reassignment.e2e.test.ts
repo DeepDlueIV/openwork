@@ -91,4 +91,19 @@ test("a member recovers a conversation by id without opening it or starting infe
     evidence.recordAssertionEvidence("The composer keeps the recovered choice", "Reopened conversation shows Model B and session.read still reports Model B", true);
     await user.screenshot();
   });
+  await step("then: the next real prompt uses the recovered model instead of the old choice", async () => {
+    await user.type("composer", "Verify recovered model", { replace: true });
+    await probe.eventually(() => probe.composer(), { within: 30_000, label: "recovered composer ready", until: value => value.runTaskEnabled });
+    await user.press("Enter");
+    await probe.eventually(() => world.requests(), {
+      within: 30_000, label: "replacement model receives the next prompt",
+      until: requests => requests.some(request => request.matchedMarkers.includes("Verify recovered model") && request.model === "model-b"),
+    });
+    await user.see({ text: "Recovered model answered" });
+    expect(result(await world.read(target)).model).toMatchObject({ providerId: "rebind", modelId: "model-b" });
+    const calls = (await world.requests()).filter(request => request.matchedMarkers.includes("Verify recovered model"));
+    expect(calls.every(request => request.model === "model-b")).toBe(true);
+    evidence.recordAssertionEvidence("The next turn uses Model B", `Provider witness recorded ${calls.length} requests on model-b and none on model-a; reply visible`, true);
+    await user.screenshot();
+  });
 });

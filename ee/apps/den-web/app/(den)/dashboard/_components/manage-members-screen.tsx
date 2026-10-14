@@ -20,7 +20,6 @@ import {
   Users,
 } from "lucide-react";
 import {
-  ASSIGNABLE_ORG_ROLES,
   canRefreshInvitationRole,
   formatRoleLabel,
   assignableOrgRole,
@@ -52,7 +51,8 @@ import { RolesTab, canCreateRole } from "./roles-tab";
 import { PeopleField } from "./access-rows";
 import { useCustomRoleTeams, useSharedRolesOn } from "./permissions-data";
 import { MemberTeamRoles } from "./member-team-roles";
-import { TEAM_ROLE_LABELS, customRoleChoice, parseRoleChoice, teamRole } from "./team-roles";
+import { TEAM_ROLE_LABELS, memberRoleOptions, parseRoleChoice, teamRole, teamRoleLabels } from "./team-roles";
+import { MemberRoleEditor, MemberRoleSelect } from "./member-role-select";
 
 type MembersTab = "members" | "teams" | "roles";
 
@@ -175,6 +175,7 @@ export function ManageMembersScreen() {
   const customRoleTeams = teamRoles ? (orgContext?.teams ?? []).filter((team) => customRoles.teamIds.has(team.id)) : [];
   // sharedRoles: invite with Member or Admin and a team (which carries its role).
   const sharedRoles = useSharedRolesOn();
+  const memberRoles = memberRoleOptions({ sharedRoles, customRoleTeams, canManageTeams: access.canManageTeams });
   const inviteTeamPicker = sharedRoles && access.canManageTeams && (orgContext?.teams.length ?? 0) > 0;
   const [inviteTeamId, setInviteTeamId] = useState("");
   const teamListColumns = teamRoles ? "lg:grid-cols-[minmax(0,1fr)_120px_140px_200px]" : "lg:grid-cols-[minmax(0,1fr)_160px_200px]";
@@ -389,19 +390,7 @@ export function ManageMembersScreen() {
           {access.canManageRoles ? (
             <label className="grid gap-3">
               <span className="text-[14px] font-medium text-gray-700">Role</span>
-              <DenSelect aria-label="Role" value={inviteRole} onChange={(event) => setInviteRole(event.target.value)}>
-                {ASSIGNABLE_ORG_ROLES.map((role) => (
-                  <option key={role} value={role}>
-                    {formatRoleLabel(role)}
-                  </option>
-                ))}
-                {(sharedRoles ? [] : customRoleTeams).map((team) => (
-                  <option key={team.id} value={customRoleChoice(team.id)} disabled={!access.canManageTeams}>
-                    {team.name}
-                    <span className="ml-1.5 text-gray-500">Custom role</span>
-                  </option>
-                ))}
-              </DenSelect>
+              <MemberRoleSelect value={inviteRole} onChange={setInviteRole} options={memberRoles} />
             </label>
           ) : (
             <div className="grid gap-3">
@@ -413,12 +402,12 @@ export function ManageMembersScreen() {
             <label className="grid gap-3">
               <span className="text-[14px] font-medium text-gray-700">Team</span>
               {/* sharedRoles: each team shows its role, so picking a team decides the custom role. */}
-              <DenSelect aria-label="Team" value={inviteTeamId} onChange={(event) => setInviteTeamId(event.target.value)}>
+              <DenSelect aria-label="Team" value={inviteTeamId} onChange={(event) => setInviteTeamId(event.target.value)} menuWidth="trigger">
                 <option value="">No team</option>
                 {orgContext.teams.filter((team) => !team.managedByScim && (!team.grantsOrganizationAdmin || access.canManageAdminTeams)).map((team) => (
-                  <option key={team.id} value={team.id}>
+                  <option key={team.id} value={team.id} title={team.name}>
                     {team.name}
-                    <span className="ml-1.5 text-gray-500">{team.grantsOrganizationAdmin ? "Admin" : customRoles.nameByTeam.get(team.id) ?? "Member"}</span>
+                    <span className="ml-1.5 font-normal text-gray-500">{team.grantsOrganizationAdmin ? "Admin" : customRoles.nameByTeam.get(team.id) ?? "Member"}</span>
                   </option>
                 ))}
               </DenSelect>
@@ -446,44 +435,68 @@ export function ManageMembersScreen() {
       </DenCard>
     ) : null;
 
+  const editingMember = editingMemberId ? orgContext.members.find((member) => member.id === editingMemberId) ?? null : null;
+  // sharedRoles: custom roles come from the person's teams, so show those next to their own role.
+  const editingMemberTeamRoles = editingMember && sharedRoles
+    ? teamRoleLabels({
+        memberId: editingMember.id,
+        ownRole: getOrgAccessFlags(editingMember.role, false).isAdmin ? "admin" : "member",
+        teams: orgContext.teams,
+        customTeamIds: customRoles.teamIds,
+        customRoleNameByTeam: customRoles.nameByTeam,
+      })
+    : [];
+
+  async function saveMemberRole(member: DenOrgMember) {
+    setPageError(null);
+    try {
+      // A custom role (teamRoles) makes the person a Member of that role's team, the same as Invite.
+      // Join the team first so they never have less access mid-way than at either end.
+      const choice = parseRoleChoice(memberRoleDraft);
+      const team = choice.teamId ? orgContext?.teams.find((entry) => entry.id === choice.teamId) : null;
+      if (team && !team.memberIds.includes(member.id)) {
+        await updateTeam(team.id, { memberIds: [...team.memberIds, member.id] });
+      }
+      if (choice.role !== assignableOrgRole(member.role)) {
+        await updateMemberRole(member.id, choice.role);
+      }
+      resetMemberEditor();
+    } catch (error) {
+      setPageError(error instanceof Error ? error.message : "Could not update member role.");
+    }
+  }
+
   const editMemberForm =
-    editingMemberId && access.canManageRoles ? (
-      <DenCard className="mb-6">
-        <form
-          className="grid gap-4 lg:grid-cols-[240px_auto] lg:items-end"
-          onSubmit={async (event) => {
-            event.preventDefault();
-            setPageError(null);
-            try {
-              await updateMemberRole(editingMemberId, memberRoleDraft);
-              resetMemberEditor();
-            } catch (error) {
-              setPageError(
-                error instanceof Error
-                  ? error.message
-                  : "Could not update member role.",
-              );
-            }
-          }}
-        >
-          <label className="grid gap-3">
-            <span className="text-[14px] font-medium text-gray-700">Role</span>
-            <DenSelect value={memberRoleDraft} onChange={(event) => setMemberRoleDraft(event.target.value)}>
-              {ASSIGNABLE_ORG_ROLES.map((role) => (
-                <option key={role} value={role}>
-                  {formatRoleLabel(role)}
-                </option>
-              ))}
-            </DenSelect>
-          </label>
-          <div className="flex gap-2 lg:justify-end">
-            <ActionButton size="md" onClick={resetMemberEditor}>Cancel</ActionButton>
-            <DenButton type="submit" loading={mutationBusy === "update-member-role"}>
-              Save member
-            </DenButton>
-          </div>
-        </form>
-      </DenCard>
+    editingMember && access.canManageRoles ? (
+      <MemberRoleEditor
+        memberName={editingMember.user.name || editingMember.user.email}
+        value={memberRoleDraft}
+        onChange={setMemberRoleDraft}
+        options={memberRoles}
+        saving={mutationBusy === "update-member-role" || mutationBusy === "update-team"}
+        onCancel={resetMemberEditor}
+        onSave={() => saveMemberRole(editingMember)}
+        teamRoles={sharedRoles ? (
+          <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1" data-testid="member-role-editor-team-roles">
+            <span className="min-w-0 truncate" title={editingMemberTeamRoles.join(", ")}>
+              {editingMemberTeamRoles.length > 0 ? `From teams: ${editingMemberTeamRoles.join(", ")}` : "No roles from teams"}
+            </span>
+            {access.canManageTeams ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingMemberTeamsId(editingMember.id);
+                  setMemberTeamsDraft(new Set(orgContext.teams.filter((team) => team.memberIds.includes(editingMember.id)).map((team) => team.id)));
+                  resetMemberEditor();
+                }}
+                className="shrink-0 rounded font-medium text-gray-700 underline-offset-2 transition hover:text-gray-900 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gray-400"
+              >
+                Manage teams
+              </button>
+            ) : null}
+          </span>
+        ) : undefined}
+      />
     ) : null;
 
   const teamForm =

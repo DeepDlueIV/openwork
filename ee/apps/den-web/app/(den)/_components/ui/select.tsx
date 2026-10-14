@@ -26,12 +26,14 @@ import {
   denDropdownRowIdleClass,
   denDropdownRowSelectedClass,
 } from "./dropdown-styles";
-import { DenDropdownPopup, DenDropdownRoot, DenDropdownTrigger } from "./dropdown-popup";
+import { DenDropdownPopup, DenDropdownRoot, DenDropdownTrigger, type DenDropdownWidth } from "./dropdown-popup";
 
 type DenSelectOption = {
   value: string;
   disabled: boolean;
   content: ReactNode;
+  /** Full text for the hover tooltip when the option truncates. */
+  title: string;
 };
 
 export type DenSelectProps = Omit<SelectHTMLAttributes<HTMLSelectElement>, "disabled"> & {
@@ -39,6 +41,12 @@ export type DenSelectProps = Omit<SelectHTMLAttributes<HTMLSelectElement>, "disa
   /** Adds a filter field above long option lists. The trigger stays a button. */
   searchLabel?: string;
   searchEmptyLabel?: string;
+  /**
+   * "trigger" keeps the menu exactly as wide as the field, with one-line rows
+   * that truncate and show their full text on hover. Give an `<option title>`
+   * when its content holds more than the name.
+   */
+  menuWidth?: DenDropdownWidth;
 };
 
 function getOptionText(node: ReactNode): string {
@@ -89,7 +97,9 @@ export function DenSelect({
   "aria-labelledby": ariaLabelledBy,
   searchLabel,
   searchEmptyLabel = "No options match this search.",
+  menuWidth = "content",
 }: DenSelectProps) {
+  const fitTrigger = menuWidth === "trigger";
   const [open, setOpen] = useState(false);
   const [activeValue, setActiveValue] = useState<string | null>(null);
   const [uncontrolledValue, setUncontrolledValue] = useState<string | null>(defaultValue !== undefined ? String(defaultValue) : null);
@@ -110,6 +120,7 @@ export function DenSelect({
       const option = child as ReactElement<{
         value?: string | number;
         disabled?: boolean;
+        title?: string;
         children?: ReactNode;
       }>;
 
@@ -118,6 +129,7 @@ export function DenSelect({
           value: option.props.value !== undefined ? String(option.props.value) : getOptionText(option.props.children),
           disabled: option.props.disabled === true,
           content: option.props.children,
+          title: option.props.title ?? getOptionText(option.props.children),
         } satisfies DenSelectOption,
       ];
     });
@@ -367,14 +379,14 @@ export function DenSelect({
           .filter(Boolean)
           .join(" ")}
       >
-        <span className="truncate">{selectedOption?.content ?? null}</span>
+        <span className="truncate" title={fitTrigger ? selectedOption?.title : undefined}>{selectedOption?.content ?? null}</span>
         <span className={denDropdownChevronSlotClass}>
           <ChevronDown size={16} className={disabled ? "text-gray-300" : "text-gray-400"} aria-hidden="true" />
         </span>
       </DenDropdownTrigger>
 
       {open ? (
-        <DenDropdownPopup anchor={triggerRef} popupRef={popupRef} initialFocus={searchLabel ? searchRef : false}>
+        <DenDropdownPopup anchor={triggerRef} popupRef={popupRef} initialFocus={searchLabel ? searchRef : false} width={menuWidth}>
           {searchLabel ? (
             <div className="relative shrink-0 border-b border-gray-200">
               <Search size={16} strokeWidth={1.5} className="pointer-events-none absolute inset-y-0 left-3 my-auto text-gray-400" aria-hidden="true" />
@@ -435,6 +447,7 @@ export function DenSelect({
                     if (event.pointerType !== "touch") event.preventDefault();
                   }}
                   onClick={() => commitValue(option.value)}
+                  title={fitTrigger ? option.title : undefined}
                   className={[
                     denDropdownRowBaseClass,
                     "min-h-10 items-center",
@@ -449,7 +462,7 @@ export function DenSelect({
                     .filter(Boolean)
                     .join(" ")}
                 >
-                  <span className="line-clamp-2 min-w-0 flex-1 break-words whitespace-normal text-[14px] font-medium text-gray-900">
+                  <span className={`min-w-0 flex-1 text-[14px] font-medium text-gray-900 ${fitTrigger ? "truncate" : "line-clamp-2 break-words whitespace-normal"}`}>
                     {option.content}
                   </span>
                   {selected ? <Check className="h-4 w-4 shrink-0 text-gray-900" aria-hidden="true" /> : null}

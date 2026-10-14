@@ -181,6 +181,13 @@ test("valid-looking trace IDs cannot echo the API key, preview token or access c
   assert.deepEqual(result.headers, {});
 });
 
+test("source validation failures without an external probe do not imply routing failure", async () => {
+  const api = fakeApi({ readFile: async () => "mismatched-source" });
+  await assert.rejects(launchDaytonaEvidenceWorld({ sandbox, runtimeFingerprint: fingerprint }, sha, api, {
+    diagnostic: async (summary) => { const data = JSON.parse(summary); assert.deepEqual(data.external, []); assert.equal(data.layer, "unresolved"); },
+  }), /Prepared world source mismatch/);
+});
+
 test("provider correlation retains only safe owned resource identifiers", async () => {
   const id = "87654321-4321-4321-4321-cba987654321";
   const parent = `ow-dy-evidence-image-v1-${"c".repeat(40)}`;

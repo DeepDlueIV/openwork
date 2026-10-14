@@ -90,7 +90,7 @@ export async function launchDaytonaEvidenceWorld(template: DaytonaEvidenceLaunch
     await boundedDiagnostic(async () => {
       const health = await inspectGuest(api, diagnosticSandbox).catch(() => undefined);
       const status = external.at(-1)?.status ?? 0;
-      const summary = JSON.stringify({ stage: "daytona-evidence-launch", ...context, at: new Date().toISOString(), layer: failureLayer(health, status), external, health: health ?? "unavailable" });
+      const summary = JSON.stringify({ stage: "daytona-evidence-launch", ...context, at: new Date().toISOString(), layer: external.length > 0 ? failureLayer(health, status) : "unresolved", external, health: health ?? "unavailable" });
       if (options.diagnostic) await options.diagnostic(summary);
       else console.error(summary);
     }, options.diagnosticTimeoutMs);

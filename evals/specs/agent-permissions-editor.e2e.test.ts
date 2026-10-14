@@ -167,7 +167,7 @@ editorTest("Everyone's permissions reach every member, and a team's own choice r
     await owner.screenshot();
   });
 
-  await step("the owner asks first before any command and blocks rm, blocks websites except the docs site, turns web search off for everyone, and saves", async () => {
+  await step("the owner asks first before any command and blocks rm, blocks websites except the docs site, turns web search off for everyone, and saves, told desktop apps can take up to 5 minutes to pick it up", async () => {
     await owner.click({ role: "button", label: "Run commands" });
     await owner.click({ role: "option", label: "Ask first" });
     await owner.click({ testId: "agent-permission-commands-block-add" });
@@ -180,9 +180,10 @@ editorTest("Everyone's permissions reach every member, and a team's own choice r
     await owner.press("Enter");
     await owner.click({ role: "switch", label: "Search the web" });
     await owner.see({ testId: "agent-permissions-save-bar" }, { text: /^3 changes for Everyone/ });
+    await owner.see({ testId: "agent-permissions-propagation-note" }, { text: "Members' desktop apps can take up to 5 minutes to pick up changes." });
+    await owner.screenshot();
     await owner.click({ role: "button", label: "Save changes" });
     await owner.see({ text: "Agent permissions saved" }, { timeoutMs: 30_000 });
-    await owner.screenshot();
   });
 
   await step("on Contractors' Agents tab, Everyone's blocked command shows as locked and the team blocks commands except echo", async () => {

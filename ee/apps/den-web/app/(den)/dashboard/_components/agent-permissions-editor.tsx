@@ -21,7 +21,7 @@ import {
   type AgentPermissionSetting,
   type AgentPermissionSettings,
 } from "@openwork/types/den/agent-permissions";
-import { Check, Lock, LockKeyhole, Plus, X } from "lucide-react";
+import { Check, Info, Lock, LockKeyhole, Plus, X } from "lucide-react";
 import Link from "next/link";
 import { useId, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { DenButton, buttonVariants } from "../../_components/ui/button";
@@ -163,6 +163,10 @@ export function ReadOnlyNotice() {
   return <DenNotice tone="neutral" icon={LockKeyhole} message={<span id="agent-permissions-read-only">Read only. {permissionLockReason("agent_permissions.manage")}</span>} />;
 }
 
+// Desktop apps re-read their organization's config every 5 minutes and when
+// the member returns to the app (DesktopConfigProvider in apps/app).
+const PROPAGATION_NOTE = "Members' desktop apps can take up to 5 minutes to pick up changes.";
+
 // ---------------------------------------------------------------------------
 // One scope's Agents panel: Everyone's, or a team's changes from Everyone
 // ---------------------------------------------------------------------------
@@ -235,7 +239,7 @@ function ScopeAgents({ access, data, policy, team }: {
     setDraft(null);
     toast({
       title: "Agent permissions saved",
-      description: "Members' apps apply them the next time they refresh.",
+      description: PROPAGATION_NOTE,
       action: {
         label: "Undo",
         onClick: async () => {
@@ -292,7 +296,15 @@ function ScopeAgents({ access, data, policy, team }: {
       {dirty ? (
         <DenStickyActionBar
           testId="agent-permissions-save-bar"
-          summary={<span>{plural(changes, "change", "changes")} for {name}. Members&apos; apps pick them up the next time they refresh.</span>}
+          summary={(
+            <span className="flex min-w-0 flex-col gap-0.5">
+              <span>{plural(changes, "change", "changes")} for {name}. Members&apos; apps pick them up the next time they refresh.</span>
+              <span className="flex items-center gap-1 text-[12px] text-gray-500" data-testid="agent-permissions-propagation-note">
+                <Info className="size-3.5 shrink-0" aria-hidden="true" strokeWidth={1.5} />
+                {PROPAGATION_NOTE}
+              </span>
+            </span>
+          )}
         >
           <DenButton variant="ghost" size="sm" disabled={save.isPending} onClick={() => { setDraft(null); setSaveError(null); }}>Discard</DenButton>
           <DenButton variant="primary" size="sm" loading={save.isPending} disabled={!editable} onClick={() => void handleSave()}>Save changes</DenButton>
@@ -329,7 +341,7 @@ function ResetToEveryone({ team, changes, previous, remove, removeError, removin
     onReset();
     toast({
       title: `${team} reset to Everyone`,
-      description: "Members' apps apply it the next time they refresh.",
+      description: PROPAGATION_NOTE,
       action: {
         label: "Undo",
         onClick: async () => {

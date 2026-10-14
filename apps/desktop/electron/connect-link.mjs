@@ -128,6 +128,9 @@ function normalizeClaims(payload) {
     jti,
     v: CONNECT_LINK_VERSION,
     org: { name: orgName },
+    // Older desktops require this wire field. Never inspect incoming custom
+    // values: the current desktop always uses its packaged stock identity.
+    brand: { appName: "OpenWork", logoUrl: null, iconUrl: null },
     den: { baseUrl: denBaseUrl, ...(denApiBaseUrl !== null ? { apiBaseUrl: denApiBaseUrl } : {}) },
     requireSignin: record.requireSignin,
   };

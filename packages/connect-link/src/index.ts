@@ -16,6 +16,7 @@ export {
   CONNECT_LINK_VERSION,
 } from "@openwork/types/connect-link"
 export type {
+  ConnectLinkBrand,
   ConnectLinkClaims,
   ConnectLinkDenTarget,
   ConnectLinkOrg,
@@ -25,6 +26,15 @@ export type {
   ConnectLinkVerifyResult,
   ConnectLinkVerifySuccess,
 } from "@openwork/types/connect-link"
+
+// Compatibility output for older desktops. Legacy values are deliberately
+// ignored, including their URLs: only Den targets are used by this transport.
+const stockBrand = { appName: "OpenWork", logoUrl: null, iconUrl: null } satisfies ConnectLinkClaims["brand"]
+const compatibilityBrandSchema = z.preprocess(() => ({ ...stockBrand }), z.object({
+  appName: z.literal("OpenWork"),
+  logoUrl: z.null(),
+  iconUrl: z.null(),
+}))
 
 export const connectLinkClaimsSchema = z.object({
   iss: z.string().trim().url(),
@@ -40,6 +50,8 @@ export const connectLinkClaimsSchema = z.object({
     baseUrl: z.string().trim().url(),
     apiBaseUrl: z.string().trim().url().nullish(),
   }),
+  /** @deprecated Wire compatibility only; never organization configuration. */
+  brand: compatibilityBrandSchema,
   requireSignin: z.boolean(),
 }).meta({ ref: "ConnectLinkClaims" }) satisfies z.ZodType<ConnectLinkClaims>
 

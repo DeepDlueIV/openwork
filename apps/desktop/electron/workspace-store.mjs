@@ -1,7 +1,7 @@
 // Desktop workspace persistence and bootstrap configuration. This module owns
 // on-disk workspace state, per-workspace openwork.json files, and the
 // workspace-facing command operations.
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { mkdir, readFile, realpath, rename, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
@@ -14,6 +14,8 @@ import {
 } from "@openwork/paths";
 
 import { exportWorkspaceConfig, importWorkspaceConfig } from "./workspace-archive.mjs";
+import { dormantDesktopBrandSettings, sameDesktopDenOrigin } from "./dormant-desktop-brand.mjs";
+import { archiveDesktopBrandForTargetSwitch, restoreDesktopBrandArchive } from "./desktop-brand-rollback-archive.mjs";
 
 const EMPTY_WORKSPACE_LIST = Object.freeze({
   selectedId: "",
@@ -132,12 +134,45 @@ function isHostedDesktopBootstrapConfig(config) {
   return baseUrlOrigin === HOSTED_DESKTOP_WEB_URL || baseUrlOrigin === HOSTED_DESKTOP_API_URL;
 }
 
+function knownBootstrapOrganizationIds(config) {
+  return new Set([config?.prepared?.orgId, config?.handoff?.orgId]
+    .filter((id) => typeof id === "string" && id.trim())
+    .map((id) => id.trim()));
+}
+
+function sameBootstrapRollbackSource(left, right) {
+  return sameDesktopDenOrigin(left, right)
+    // Receipt cache association requires an exact known target, not the
+    // omitted-API compatibility allowance used by ordinary cloud writes.
+    && bootstrapUrlOrigin(left.apiBaseUrl) === bootstrapUrlOrigin(right.apiBaseUrl)
+    && JSON.stringify([...knownBootstrapOrganizationIds(left)].sort())
+      === JSON.stringify([...knownBootstrapOrganizationIds(right)].sort())
+    && JSON.stringify(dormantDesktopBrandSettings(left)) === JSON.stringify(dormantDesktopBrandSettings(right));
+}
+
 export function createWorkspaceStore({
   app,
   defaultDenBaseUrl,
   defaultRequireSignin,
   forceRequireSignin,
 }) {
+  // Opaque, process-local rollback receipts. Renderer-supplied branding strings
+  // are never trusted; a transaction may only restore data the shell read.
+  const rollbackSnapshots = new Map();
+  let bootstrapWriteQueue = Promise.resolve();
+
+  function withRollbackSnapshot(config) {
+    const key = JSON.stringify(config);
+    for (const [id, snapshot] of rollbackSnapshots) {
+      if (snapshot.key === key) return { ...config, rollbackSnapshotId: id };
+    }
+    const id = randomUUID();
+    rollbackSnapshots.set(id, { key, config: structuredClone(config), archivePath: null });
+    // Bound receipt memory; archives remain on disk for manual rollback.
+    if (rollbackSnapshots.size > 64) rollbackSnapshots.delete(rollbackSnapshots.keys().next().value);
+    return { ...config, rollbackSnapshotId: id };
+  }
+
   function desktopBootstrapPath() {
     if (process.env.OPENWORK_DESKTOP_BOOTSTRAP_PATH?.trim()) {
       return resolveDesktopBootstrapPath({ env: process.env, homeDir: os.homedir(), userDataDir: app.getPath("userData") });
@@ -278,6 +313,7 @@ export function createWorkspaceStore({
     return {
       baseUrl,
       ...(apiBaseUrl ? { apiBaseUrl } : {}),
+      ...dormantDesktopBrandSettings(input),
       requireSignin: forceRequireSignin || input?.requireSignin === true,
       // Only an explicit policy is carried. The artifact default is never
       // materialized here: desktop-bootstrap.json is shared by both flavors
@@ -397,6 +433,10 @@ export function createWorkspaceStore({
   }
 
   async function getDesktopBootstrapConfig() {
+    return withRollbackSnapshot(await readNormalizedDesktopBootstrapConfig());
+  }
+
+  async function readNormalizedDesktopBootstrapConfig() {
     const configPath = desktopBootstrapPath();
     const primary = await readDesktopBootstrapCandidate(configPath);
     const legacyPath = legacyDesktopBootstrapPath();
@@ -429,6 +469,10 @@ export function createWorkspaceStore({
   }
 
   function readDesktopBootstrapConfigSync() {
+    return withRollbackSnapshot(readNormalizedDesktopBootstrapConfigSync());
+  }
+
+  function readNormalizedDesktopBootstrapConfigSync() {
     const configPath = desktopBootstrapPath();
     const primary = readDesktopBootstrapCandidateSync(configPath);
     const legacyPath = legacyDesktopBootstrapPath();
@@ -480,11 +524,68 @@ export function createWorkspaceStore({
   }
 
   async function setDesktopBootstrapConfig(config) {
-    const normalized = normalizeDesktopBootstrapConfig(config);
+    const write = bootstrapWriteQueue.then(() => writeDesktopBootstrapConfig(config));
+    bootstrapWriteQueue = write.then(() => undefined, () => undefined);
+    return write;
+  }
+
+  async function writeDesktopBootstrapConfig(config) {
+    const previous = readDesktopBootstrapConfigSync();
+    const { brandAppName, brandLogoUrl, brandIconUrl, restoreSnapshotId, rollbackSnapshotId, ...activeConfig } = config;
+    const restore = restoreSnapshotId ? rollbackSnapshots.get(restoreSnapshotId) : null;
+    if (restoreSnapshotId && (!restore || !sameDesktopDenOrigin(restore.config, activeConfig))) {
+      throw new Error("Desktop bootstrap rollback snapshot is unavailable or belongs to a different Den target.");
+    }
+    if (restore) {
+      const snapshotOrgs = knownBootstrapOrganizationIds(restore.config);
+      const destinationOrgs = knownBootstrapOrganizationIds(activeConfig);
+      // MDM/unscoped data has no inferred owner. Only reject explicit known-org
+      // conflicts; never derive ownership from a brand URL or delete its source.
+      if (snapshotOrgs.size && destinationOrgs.size
+        && new Set([...snapshotOrgs, ...destinationOrgs]).size !== 1) {
+        throw new Error("Desktop bootstrap rollback snapshot belongs to a different organization.");
+      }
+    }
+    // All-null is an explicit, confirmed organization switch, not a cloud
+    // compatibility payload (whose app name is always OpenWork). Preserve the
+    // originals in a scoped archive rather than erasing another org's settings.
+    const clearDormant = brandAppName === null && brandLogoUrl === null && brandIconUrl === null;
+    const switching = !sameDesktopDenOrigin(previous, activeConfig) || clearDormant || Boolean(restore);
+    const dormant = restore
+      ? dormantDesktopBrandSettings(restore.config)
+      : clearDormant ? { brandAppName: null, brandLogoUrl: null, brandIconUrl: null }
+        : switching ? {} : dormantDesktopBrandSettings(previous);
+    // Validate before moving any source files. Restore receipts affect only
+    // dormant data: activation/security fields still use the guarded input.
+    const normalized = normalizeDesktopBootstrapConfig({ ...activeConfig, ...dormant });
+    const archivePath = switching
+      ? await archiveDesktopBrandForTargetSwitch({ userDataPath: app.getPath("userData"), previous })
+      : null;
+    if (archivePath) {
+      // An unrelated same-target write may have stamped a newer receipt after
+      // the renderer captured its transaction snapshot. Link that source cache
+      // to every eligible receipt, but never rebind a historical archive to a
+      // newer org or branding version (including exact-config receipt aliases).
+      for (const snapshot of rollbackSnapshots.values()) {
+        if (!snapshot.archivePath && sameBootstrapRollbackSource(snapshot.config, previous)) {
+          snapshot.archivePath = archivePath;
+        }
+      }
+    }
     const outputPath = desktopBootstrapPath();
     const stamped = { ...normalized, writtenAt: new Date().toISOString() };
-    await writeJsonFileAtomic(outputPath, stamped);
-    return stamped;
+    let restoredFiles = [];
+    try {
+      if (restore) restoredFiles = await restoreDesktopBrandArchive({ userDataPath: app.getPath("userData"), archivePath: restore.archivePath });
+      await writeJsonFileAtomic(outputPath, stamped);
+    } catch (error) {
+      // These are copies of retained archive sources, not the original files.
+      await Promise.all(restoredFiles.map((name) => rm(path.join(app.getPath("userData"), name), { force: true })));
+      // A failed connection must leave the old target rollback-compatible.
+      await restoreDesktopBrandArchive({ userDataPath: app.getPath("userData"), archivePath });
+      throw error;
+    }
+    return withRollbackSnapshot({ ...stamped, fromFile: true });
   }
 
   async function clearDesktopBootstrapFiles() {

@@ -210,7 +210,24 @@ export type DenEnterpriseActivation = {
   denBaseUrl: string;
 };
 
-export type DenBootstrapConfig = DenBaseUrls & {
+/** Retained only for rollback to older clients; never render or apply these fields. */
+type DormantBootstrapBranding = {
+  brandAppName?: string | null;
+  brandLogoUrl?: string | null;
+  brandIconUrl?: string | null;
+};
+
+function dormantBootstrapBranding(input: DormantBootstrapBranding): DormantBootstrapBranding {
+  return {
+    ...(input.brandAppName !== undefined ? { brandAppName: input.brandAppName } : {}),
+    ...(input.brandLogoUrl !== undefined ? { brandLogoUrl: input.brandLogoUrl } : {}),
+    ...(input.brandIconUrl !== undefined ? { brandIconUrl: input.brandIconUrl } : {}),
+  };
+}
+
+export type DenBootstrapConfig = DenBaseUrls & DormantBootstrapBranding & {
+  /** Opaque process-local shell receipt; never persisted in rollback archives. */
+  rollbackSnapshotId?: string;
   source: DenBootstrapSource;
   requireSignin: boolean;
   requireActivation?: boolean;
@@ -225,6 +242,15 @@ export type DenBootstrapConfig = DenBaseUrls & {
   prepared?: DenBootstrapPrepared | null;
   enterpriseActivation?: DenEnterpriseActivation | null;
 };
+
+// Only object identities returned by the trusted read path can be restored.
+// Capture values once, so mutating a returned object cannot manufacture new
+// custom branding through the internal transaction rollback option.
+const trustedBootstrapSnapshots = new WeakMap<DenBootstrapConfig, DenBootstrapConfig>();
+function trustBootstrapSnapshot(config: DenBootstrapConfig): DenBootstrapConfig {
+  if (!trustedBootstrapSnapshots.has(config)) trustedBootstrapSnapshots.set(config, Object.freeze({ ...config }));
+  return config;
+}
 
 export type DenDesktopConfig = SharedDesktopConfig;
 
@@ -912,12 +938,13 @@ export function resolveCloudMcpResourceUrl(resource: string | null | undefined):
 }
 
 function resolveDenBootstrapConfig(
-  input: {
+  input: DormantBootstrapBranding & {
     baseUrl: string;
     apiBaseUrl?: string | null;
     requireSignin?: boolean | null;
     requireActivation?: boolean | null;
     fromFile?: boolean | null;
+    rollbackSnapshotId?: string;
     source?: DenBootstrapSource | null;
     claimLinks?: DenBootstrapConfig["claimLinks"];
     handoff?: DenBootstrapHandoff | null;
@@ -927,6 +954,8 @@ function resolveDenBootstrapConfig(
 ): DenBootstrapConfig {
   return {
     ...resolveDenBaseUrls(input),
+    ...dormantBootstrapBranding(input),
+    ...(input.rollbackSnapshotId ? { rollbackSnapshotId: input.rollbackSnapshotId } : {}),
     source: input.source === "file" || input.fromFile === true ? "file" : "default",
     requireSignin: input.requireSignin === true,
     ...(typeof input.requireActivation === "boolean"
@@ -1082,6 +1111,9 @@ function getPendingBootstrapConfig(next: DenSettings): DenBootstrapConfig | null
 
   const previous = readDenBootstrapConfig();
   return resolveDenBootstrapConfig({
+    ...(denOriginComparisonKey(next.baseUrl ?? previous.baseUrl) === denOriginComparisonKey(previous.baseUrl)
+      ? dormantBootstrapBranding(previous)
+      : {}),
     baseUrl: next.baseUrl ?? previous.baseUrl,
     apiBaseUrl: next.apiBaseUrl ?? previous.apiBaseUrl,
     requireSignin: previous.requireSignin,
@@ -1094,7 +1126,67 @@ function getPendingBootstrapConfig(next: DenSettings): DenBootstrapConfig | null
   });
 }
 
+const DORMANT_BOOTSTRAP_ARCHIVE_PREFIX = "openwork.den.dormantBootstrap.v1::";
+const DORMANT_BOOTSTRAP_OWNER_KEY = "openwork.den.dormantBootstrapOwner.v1";
+
+// This archive is rollback data only, never an input to UI, native identity, or
+// new settings. In particular it contains no auth tokens or one-time grants.
+function archiveDormantBootstrap(config: DenBootstrapConfig, organizationId: string | null) {
+  const branding = dormantBootstrapBranding(config);
+  if (!Object.values(branding).some((value) => typeof value === "string")) return;
+  const baseOrigin = denOriginComparisonKey(config.baseUrl);
+  const apiOrigin = denOriginComparisonKey(config.apiBaseUrl);
+  const key = `${DORMANT_BOOTSTRAP_ARCHIVE_PREFIX}${JSON.stringify([baseOrigin, apiOrigin, organizationId])}`;
+  const raw = window.localStorage.getItem(key);
+  const previous: unknown = raw ? JSON.parse(raw) : null;
+  const snapshots = isRecord(previous) && Array.isArray(previous.snapshots) ? previous.snapshots : [];
+  const encoded = JSON.stringify(branding);
+  if (!snapshots.some((snapshot) => JSON.stringify(snapshot) === encoded)) {
+    window.localStorage.setItem(key, JSON.stringify({
+      baseOrigin, apiOrigin, organizationId, snapshots: [...snapshots, branding],
+    }));
+  }
+  window.localStorage.setItem(DORMANT_BOOTSTRAP_OWNER_KEY, JSON.stringify({
+    baseOrigin, apiOrigin, organizationId, branding,
+  }));
+}
+
+function readDormantBootstrapOwner(config: DenBootstrapConfig): string | null {
+  try {
+    const raw = window.localStorage.getItem(DORMANT_BOOTSTRAP_OWNER_KEY);
+    const owner: unknown = raw ? JSON.parse(raw) : null;
+    return isRecord(owner)
+      && owner.baseOrigin === denOriginComparisonKey(config.baseUrl)
+      && owner.apiOrigin === denOriginComparisonKey(config.apiBaseUrl)
+      && JSON.stringify(owner.branding) === JSON.stringify(dormantBootstrapBranding(config))
+      && typeof owner.organizationId === "string"
+      ? owner.organizationId : null;
+  } catch { return null; }
+}
+
+// Keep the last selected org through the chooser's temporary null org, including
+// a renderer reload. Bootstrap-only/MDM identity without an org is archived in
+// its own origin-scoped namespace until an organization can be established.
+let dormantBootstrapOrganizationId: string | null = null;
+
 function applyDesktopBootstrapConfig(config: DenBootstrapConfig) {
+  const hasDormantBranding = Object.values(dormantBootstrapBranding(config)).some((value) => typeof value === "string");
+  const changesOrigin = denOriginComparisonKey(config.baseUrl) !== denOriginComparisonKey(desktopBootstrapConfig.baseUrl);
+  if (changesOrigin) dormantBootstrapOrganizationId = null;
+  if (!hasDormantBranding) {
+    dormantBootstrapOrganizationId = null;
+  } else if (typeof window !== "undefined") {
+    dormantBootstrapOrganizationId = config.prepared?.orgId
+      ?? config.handoff?.orgId
+      ?? readDormantBootstrapOwner(config)
+      ?? window.localStorage.getItem(STORAGE_ACTIVE_ORG_ID);
+  }
+  if (hasDormantBranding && typeof window !== "undefined") {
+    try { archiveDormantBootstrap(config, dormantBootstrapOrganizationId); } catch {
+      // Boot is read-only. A destructive write below must archive successfully
+      // before it can clear or replace the source bootstrap.
+    }
+  }
   desktopBootstrapConfig = config;
   desktopBootstrapResolution = "resolved";
 }
@@ -1170,7 +1262,7 @@ export function readDenBootstrapConfig(): DenBootstrapConfig {
       gatewayBootstrapConfigOrigin === gatewayOrigin &&
       gatewayBootstrapConfigSource === desktopBootstrapConfig
     ) {
-      return gatewayBootstrapConfig;
+      return trustBootstrapSnapshot(gatewayBootstrapConfig);
     }
 
     gatewayBootstrapConfig = {
@@ -1182,10 +1274,10 @@ export function readDenBootstrapConfig(): DenBootstrapConfig {
     };
     gatewayBootstrapConfigOrigin = gatewayOrigin;
     gatewayBootstrapConfigSource = desktopBootstrapConfig;
-    return gatewayBootstrapConfig;
+    return trustBootstrapSnapshot(gatewayBootstrapConfig);
   }
 
-  return desktopBootstrapConfig;
+  return trustBootstrapSnapshot(desktopBootstrapConfig);
 }
 
 export async function initializeDenBootstrapConfig(): Promise<DenBootstrapConfig> {
@@ -1310,11 +1402,36 @@ export async function refreshDenBootstrapConfigFromShell(): Promise<DenBootstrap
 
 export async function setDenBootstrapConfig(
   next: ShellDesktopBootstrapConfig,
-  options?: { dispatchSettingsChanged?: boolean },
+  options?: {
+    dispatchSettingsChanged?: boolean;
+    clearDormantBranding?: boolean;
+    /** Only a previously read snapshot, for transaction rollback. Not new settings input. */
+    restoreSnapshot?: DenBootstrapConfig;
+  },
 ): Promise<DenBootstrapConfig> {
   const previous = readDenBootstrapConfig();
+  if (typeof window !== "undefined") {
+    // Archive first, including before any asynchronous origin resolution. If
+    // storage is unavailable, fail closed instead of erasing the only copy.
+    archiveDormantBootstrap(previous, dormantBootstrapOrganizationId);
+  }
+  const sameOrigin = denOriginComparisonKey(next.baseUrl) === denOriginComparisonKey(previous.baseUrl)
+    && (!next.apiBaseUrl || denOriginComparisonKey(next.apiBaseUrl) === denOriginComparisonKey(previous.apiBaseUrl));
+  const restore = options?.restoreSnapshot ? trustedBootstrapSnapshots.get(options.restoreSnapshot) : undefined;
+  if (options?.restoreSnapshot && !restore) throw new Error("Bootstrap rollback requires a previously read snapshot.");
+  const brandingSource = restore && denOriginComparisonKey(restore.baseUrl) === denOriginComparisonKey(next.baseUrl)
+    ? restore
+    : sameOrigin ? previous : {};
   const normalized = await resolveDenBootstrapConfigWithRuntimeApi({
     ...next,
+    // Branding is no longer an editable input. Only copy an existing snapshot
+    // within its origin; a new control plane must never receive old private URLs.
+    brandAppName: undefined,
+    brandLogoUrl: undefined,
+    brandIconUrl: undefined,
+    ...(options?.clearDormantBranding
+      ? { brandAppName: null, brandLogoUrl: null, brandIconUrl: null }
+      : dormantBootstrapBranding(brandingSource)),
     // An omitted stamp retains the previous one; an explicit null clears it.
     // Cross-origin handoffs rely on the explicit clear: the old control
     // plane's activation must never mark a new control plane as activated.
@@ -1335,6 +1452,8 @@ export async function setDenBootstrapConfig(
       ...(typeof normalized.requireActivation === "boolean"
         ? { requireActivation: normalized.requireActivation }
         : {}),
+      ...dormantBootstrapBranding(normalized),
+      ...(restore?.rollbackSnapshotId ? { restoreSnapshotId: restore.rollbackSnapshotId } : {}),
       ...(normalized.handoff ? { handoff: normalized.handoff } : {}),
       ...(normalized.prepared ? { prepared: normalized.prepared } : {}),
       ...(normalized.enterpriseActivation ? { enterpriseActivation: normalized.enterpriseActivation } : {}),
@@ -1473,9 +1592,18 @@ export function readCachedDenDesktopConfig(key: string): DenDesktopConfig | null
 export function writeCachedDenDesktopConfig(key: string, config: DenDesktopConfig) {
   if (typeof window === "undefined" || !key) return;
   try {
+    // Cache namespaces already include Den + org. Retain only existing legacy
+    // identity data for rollback; never adopt identity from fresh wire config.
+    const raw = window.localStorage.getItem(key);
+    let previous: unknown = null;
+    try { previous = raw ? JSON.parse(raw) : null; } catch {}
+    const dormant = isRecord(previous)
+      ? Object.fromEntries(Object.entries(previous).filter(([field]) =>
+          ["brandAppName", "brandLogoUrl", "brandIconUrl", "brandAccentColor"].includes(field)))
+      : {};
     window.localStorage.setItem(
       key,
-      JSON.stringify(normalizeDenDesktopConfig(config)),
+      JSON.stringify({ ...normalizeDenDesktopConfig(config), ...dormant }),
     );
   } catch {
     // Quota / private-browsing failures are non-fatal — we just miss the cache next boot.
@@ -1567,6 +1695,8 @@ export function writeDenSettings(
   const activeOrgId = next.activeOrgId?.trim() ?? "";
   const activeOrgSlug = next.activeOrgSlug?.trim() ?? "";
   const activeOrgName = next.activeOrgName?.trim() ?? "";
+  const dormantOrg = dormantBootstrapOrganizationId ?? previous.activeOrgId;
+  const changesDormantOrganization = Boolean(activeOrgId && dormantOrg && activeOrgId !== dormantOrg);
 
   if (
     previous.baseUrl === baseUrl &&
@@ -1636,6 +1766,14 @@ export function writeDenSettings(
       window.localStorage.setItem(STORAGE_ACTIVE_ORG_NAME, activeOrgName);
     } else {
       window.localStorage.removeItem(STORAGE_ACTIVE_ORG_NAME);
+    }
+  }
+
+  if (changesDormantOrganization) {
+    const bootstrap = readDenBootstrapConfig();
+    if (denOriginComparisonKey(baseUrl) === denOriginComparisonKey(bootstrap.baseUrl)
+      && Object.keys(dormantBootstrapBranding(bootstrap)).length > 0) {
+      void setDenBootstrapConfig(bootstrap, { clearDormantBranding: true }).catch(() => undefined);
     }
   }
 

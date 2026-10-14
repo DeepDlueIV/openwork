@@ -52,6 +52,7 @@ import {
   DEFAULT_ORGANIZATION_LIMITS,
   normalizeOrganizationMetadata,
   serializeOrganizationMetadata,
+  withoutRetiredSettings,
 } from "./organization-limits.js"
 import { ensureDefaultDesktopPolicyForOrganization } from "./desktop-policies.js"
 import {
@@ -401,13 +402,11 @@ function parseMetadataRecord(input: OrganizationMetadataInput): Record<string, u
  * Organization metadata as members see it. Feature overrides are platform
  * administration data (still mirrored into metadata.capabilities for one
  * release, for rollback) and are never sent; clients read the effective
- * `features` from GET /v1/org instead.
+ * `features` from GET /v1/org instead. Dormant branding and asset references
+ * likewise stay in storage for rollback, never in this member-facing projection.
  */
 export function serializeMemberFacingOrganizationMetadata(input: OrganizationMetadataInput) {
-  const metadata = parseMetadataRecord(input)
-  if (!("capabilities" in metadata)) {
-    return serializeOrganizationMetadata(input)
-  }
+  const metadata = withoutRetiredSettings(parseMetadataRecord(input))
   const { capabilities: _platformOnly, ...memberFacing } = metadata
   return serializeOrganizationMetadata(memberFacing)
 }

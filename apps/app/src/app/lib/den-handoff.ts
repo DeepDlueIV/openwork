@@ -209,7 +209,11 @@ export async function exchangeHandoffAndSignIn(
     const previousBootstrap = readDenBootstrapConfig();
     const bootstrapChangesOrigin =
       denOriginComparisonKey(previousBootstrap.baseUrl) !== destinationKey;
-    const needsBootstrapCommit = bootstrapChangesOrigin || options.bootstrap !== undefined;
+    const changesOrganization = plan.kind !== "await-user-selection"
+      && plan.organization !== null
+      && Boolean(storedSettings.activeOrgId)
+      && plan.organization.id !== storedSettings.activeOrgId;
+    const needsBootstrapCommit = bootstrapChangesOrigin || changesOrganization || options.bootstrap !== undefined;
     if (needsBootstrapCommit) {
       // Claim links and prepared-workspace state belong to the
       // origin that wrote them; they carry through same-origin commits only.
@@ -239,7 +243,7 @@ export async function exchangeHandoffAndSignIn(
             : carryOriginScopedFields && previousBootstrap.enterpriseActivation
               ? previousBootstrap.enterpriseActivation
               : null,
-        });
+        }, { clearDormantBranding: changesOrganization });
       } catch (error) {
         // Nothing was activated: the previous enrollment (origin, token, and
         // organization) is still complete and authoritative.
@@ -251,7 +255,7 @@ export async function exchangeHandoffAndSignIn(
       // promoting the credential. A divergent read-back means the durable
       // state is not what this transaction validated.
       if (denOriginComparisonKey(readDenBootstrapConfig().baseUrl) !== destinationKey) {
-        await setDenBootstrapConfig(bootstrapRestorePayload(previousBootstrap)).catch(() => undefined);
+        await setDenBootstrapConfig(bootstrapRestorePayload(previousBootstrap), { restoreSnapshot: previousBootstrap }).catch(() => undefined);
         return fail(fallback, { grantConsumed: true });
       }
     }
@@ -310,7 +314,7 @@ export async function exchangeHandoffAndSignIn(
       }
     } catch (error) {
       if (needsBootstrapCommit) {
-        await setDenBootstrapConfig(bootstrapRestorePayload(previousBootstrap)).catch(() => undefined);
+        await setDenBootstrapConfig(bootstrapRestorePayload(previousBootstrap), { restoreSnapshot: previousBootstrap }).catch(() => undefined);
       }
       const message = error instanceof Error ? error.message : fallback;
       return fail(message, { grantConsumed: true });

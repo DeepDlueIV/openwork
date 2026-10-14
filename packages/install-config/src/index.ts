@@ -7,6 +7,11 @@ export const installConfigSchema = z.object({
   webUrl: z.string().trim().url(),
   apiUrl: z.string().trim().url(),
   requireSignin: z.boolean(),
+  // Deprecated wire fields required by older installers. Ignore legacy custom
+  // input and always emit stock values; these are not branding configuration.
+  appName: z.preprocess(() => "OpenWork", z.literal("OpenWork")),
+  logoUrl: z.preprocess(() => null, z.null()),
+  iconUrl: z.preprocess(() => null, z.null()),
 }).meta({ ref: "InstallConfig" })
 
 export type InstallConfig = z.infer<typeof installConfigSchema>
@@ -27,6 +32,11 @@ export const desktopBootstrapConfigSchema = z.object({
   apiBaseUrl: z.string().trim().url().optional(),
   requireSignin: z.boolean(),
   requireActivation: z.boolean().optional(),
+  // Dormant legacy settings retained on disk for rollback, never applied by the
+  // current desktop. Remove only with the deferred data-cleanup migration.
+  brandAppName: z.string().trim().min(1).max(64).optional(),
+  brandLogoUrl: z.string().trim().url().optional(),
+  brandIconUrl: z.string().trim().url().optional(),
   writtenAt: z.string().datetime(),
 }).meta({ ref: "DesktopBootstrapConfig" })
 

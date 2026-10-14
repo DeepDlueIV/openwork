@@ -20,6 +20,13 @@ export type ConnectLinkDenTarget = {
   apiBaseUrl?: string | null;
 };
 
+/** @deprecated Wire compatibility only; custom branding is never applied. */
+export type ConnectLinkBrand = {
+  appName: "OpenWork";
+  logoUrl: null;
+  iconUrl: null;
+};
+
 export type ConnectLinkClaims = {
   iss: string;
   aud: typeof CONNECT_LINK_AUDIENCE;
@@ -28,6 +35,8 @@ export type ConnectLinkClaims = {
   jti: string;
   v: typeof CONNECT_LINK_VERSION;
   org: ConnectLinkOrg;
+  /** @deprecated Required by older desktops; always stock OpenWork values. */
+  brand: ConnectLinkBrand;
   den: ConnectLinkDenTarget;
   requireSignin: boolean;
 };

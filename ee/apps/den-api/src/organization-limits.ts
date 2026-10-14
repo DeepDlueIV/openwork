@@ -27,8 +27,9 @@ export type OrganizationMetadata = {
 
 type OrganizationMetadataInput = Record<string, unknown> | string | null | undefined
 
-// Retired white-label settings must not leak back to clients from older rows.
-function withoutRetiredSettings(metadata: Record<string, unknown>) {
+// Read projection only: retain dormant settings and asset references in storage
+// so restoring the feature does not require reconstructing customer data.
+export function withoutRetiredSettings(metadata: Record<string, unknown>) {
   const result = { ...metadata }
   for (const key of ["brandAppName", "brandLogoUrl", "brandIconUrl", "brandLogoAsset", "brandIconAsset", "brandAccentColor"]) {
     delete result[key]
@@ -98,7 +99,7 @@ export function normalizeOrganizationMetadata(input: OrganizationMetadataInput):
   const workers = normalizePositiveInteger(rawLimits?.workers ?? rawLimits?.Workers, DEFAULT_ORGANIZATION_LIMITS.workers)
 
   const metadata: OrganizationMetadata = {
-    ...withoutRetiredSettings(parsed),
+    ...parsed,
     limits: {
       ...rawLimits,
       members,
@@ -116,7 +117,6 @@ export function normalizeOrganizationMetadata(input: OrganizationMetadataInput):
     : null
 
   const changed =
-    Object.keys(withoutRetiredSettings(parsed)).length !== Object.keys(parsed).length ||
     !isRecord(parsed.limits) ||
     Object.keys(parsed).length === 0 ||
     rawLimits?.members !== members ||
@@ -127,7 +127,7 @@ export function normalizeOrganizationMetadata(input: OrganizationMetadataInput):
 }
 
 export function serializeOrganizationMetadata(metadata: OrganizationMetadataInput) {
-  const parsed = withoutRetiredSettings(readOrganizationMetadata(metadata))
+  const parsed = readOrganizationMetadata(metadata)
   return Object.keys(parsed).length > 0 ? JSON.stringify(parsed) : null
 }
 

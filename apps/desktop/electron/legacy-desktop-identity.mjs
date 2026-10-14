@@ -1,5 +1,6 @@
-// Migration only: discard old organization icon caches and remove the shortcut
-// recorded by older desktop builds. No organization identity is read or applied.
+// Migration only: restore stock shortcuts without applying custom identity.
+// Keep dormant icon files/metadata intact so an older desktop can roll back.
+import { existsSync } from "node:fs";
 import { readFile, rm } from "node:fs/promises";
 import path from "node:path";
 
@@ -45,6 +46,10 @@ export async function cleanupLegacyDesktopIdentity({
     if (isLegacyShortcut) {
       const stockShortcutPath = path.join(programsPath, `${appName}.lnk`);
       if (restoreStockShortcut) {
+        if (existsSync(stockShortcutPath)
+          && !isOwnedLegacyShortcut(shell, stockShortcutPath, appIdentifier, executablePath)) {
+          throw new Error("Could not restore the OpenWork shortcut: existing shortcut is not owned by OpenWork.");
+        }
         // Older builds replaced the installer's stock shortcut too. Restore it
         // before removing the old one; failures leave the marker for next boot.
         const written = shell.writeShortcutLink(stockShortcutPath, "create", {
@@ -63,11 +68,8 @@ export async function cleanupLegacyDesktopIdentity({
     }
   }
 
-  await Promise.all([
-    "brand-icon.png",
-    "brand-icon.json",
-    "brand-icon.ico",
-    "openwork-stock.ico",
-    "windows-brand-shortcut.txt",
-  ].map((name) => rm(path.join(userDataPath, name), { force: true })));
+  // This derived shortcut marker is not a source setting. Removing it makes
+  // subsequent boots inert; retain the image cache and its source URL/hash
+  // sidecar unchanged for the older native code's automatic cache restore.
+  await rm(markerPath, { force: true });
 }

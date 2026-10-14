@@ -32,7 +32,7 @@ test("accepts signed unbranded claims and ignores legacy branding entirely", () 
   for (const payload of [claims, { ...claims, brand: { appName: "Legacy desktop", iconUrl: "http://unused.invalid/icon.png" } }, { ...claims, brand: "obsolete" }]) {
     const result = verify(payload);
     assert.equal(result.ok, true);
-    assert.deepEqual(result.claims, claims);
+    assert.deepEqual(result.claims, { ...claims, brand: { appName: "OpenWork", logoUrl: null, iconUrl: null } });
     assert.deepEqual(desktopBootstrapFromConnectClaims(result.claims), {
       ...claims.den,
       requireSignin: true,
@@ -68,7 +68,7 @@ test("exchange transport accepts new claims without weakening HTTPS or replay ha
     },
   });
   assert.equal(result.ok, true);
-  assert.deepEqual(result.claims, exchangeClaims);
+  assert.deepEqual(result.claims, { ...exchangeClaims, brand: { appName: "OpenWork", logoUrl: null, iconUrl: null } });
   const mismatchedIssuer = await resolveConnectExchangeUrl(rawUrl, {
     mode: "exchange", nowEpochSeconds: now, fetcher: async () => Response.json({ claims }),
   });
@@ -82,13 +82,19 @@ test("exchange transport accepts new claims without weakening HTTPS or replay ha
   assert.equal(insecure.code, "insecure_url");
 });
 
-test("nuke bootstrap preservation drops legacy branding but preserves the target and sign-in", () => {
-  const config = sanitizeDesktopBootstrapConfig({
-    ...claims.den,
-    requireSignin: true,
+test("nuke preserves dormant rollback branding but removes credentials and prepared state", () => {
+  const dormant = {
     brandAppName: "Legacy desktop",
     brandLogoUrl: "https://unused.invalid/logo.png",
     brandIconUrl: "https://unused.invalid/icon.png",
+  };
+  const config = sanitizeDesktopBootstrapConfig({
+    ...claims.den,
+    ...dormant,
+    requireSignin: true,
+    handoff: { grant: "one-time-secret" },
+    claimLinks: [{ token: "secret" }],
+    prepared: { orgId: "old-org" },
   }, "test-time");
-  assert.deepEqual(config, { ...claims.den, requireSignin: true, writtenAt: "test-time" });
+  assert.deepEqual(config, { ...claims.den, ...dormant, requireSignin: true, writtenAt: "test-time" });
 });

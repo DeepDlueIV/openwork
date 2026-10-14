@@ -5,6 +5,7 @@ import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises"
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { dormantDesktopBrandSettings } from "./dormant-desktop-brand.mjs";
 import {
   desktopBootstrapPath as resolveDesktopBootstrapPath,
   globalOpencodeConfigDir,
@@ -482,6 +483,7 @@ export function sanitizeDesktopBootstrapConfig(input, writtenAt = new Date().toI
     baseUrl,
     ...(apiBaseUrl ? { apiBaseUrl } : {}),
     requireSignin: input.requireSignin === true,
+    ...dormantDesktopBrandSettings(input),
     writtenAt,
   };
 }

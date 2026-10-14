@@ -1707,6 +1707,9 @@ export type AuthenticatedInstallConfig = {
   webUrl: string;
   apiUrl: string;
   requireSignin: boolean;
+  appName: "OpenWork";
+  logoUrl: null;
+  iconUrl: null;
   desktopVersion: string;
   distribution: "cloud" | "enterprise";
 };
@@ -1716,6 +1719,9 @@ export type InstallExperienceConfig = {
   webUrl: string;
   apiUrl: string;
   requireSignin: boolean;
+  appName: "OpenWork";
+  logoUrl: null;
+  iconUrl: null;
   connectUrl: string;
   connectExpiresAt: string;
   activationUrl: string;
@@ -1741,6 +1747,11 @@ export type ConnectLinkClaims = {
   den: {
     baseUrl: string;
     apiBaseUrl?: string | null;
+  };
+  brand: {
+    appName: "OpenWork";
+    logoUrl: null;
+    iconUrl: null;
   };
   requireSignin: boolean;
 };

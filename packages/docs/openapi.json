@@ -7882,6 +7882,16 @@
           "requireSignin": {
             "type": "boolean"
           },
+          "appName": {
+            "type": "string",
+            "const": "OpenWork"
+          },
+          "logoUrl": {
+            "type": "null"
+          },
+          "iconUrl": {
+            "type": "null"
+          },
           "desktopVersion": {
             "type": "string",
             "minLength": 1
@@ -7899,6 +7909,9 @@
           "webUrl",
           "apiUrl",
           "requireSignin",
+          "appName",
+          "logoUrl",
+          "iconUrl",
           "desktopVersion",
           "distribution"
         ]
@@ -7920,6 +7933,16 @@
           },
           "requireSignin": {
             "type": "boolean"
+          },
+          "appName": {
+            "type": "string",
+            "const": "OpenWork"
+          },
+          "logoUrl": {
+            "type": "null"
+          },
+          "iconUrl": {
+            "type": "null"
           },
           "connectUrl": {
             "type": "string",
@@ -7956,6 +7979,9 @@
           "webUrl",
           "apiUrl",
           "requireSignin",
+          "appName",
+          "logoUrl",
+          "iconUrl",
           "connectUrl",
           "connectExpiresAt",
           "activationUrl",
@@ -8041,6 +8067,26 @@
               "baseUrl"
             ]
           },
+          "brand": {
+            "type": "object",
+            "properties": {
+              "appName": {
+                "type": "string",
+                "const": "OpenWork"
+              },
+              "logoUrl": {
+                "type": "null"
+              },
+              "iconUrl": {
+                "type": "null"
+              }
+            },
+            "required": [
+              "appName",
+              "logoUrl",
+              "iconUrl"
+            ]
+          },
           "requireSignin": {
             "type": "boolean"
           }
@@ -8054,6 +8100,7 @@
           "v",
           "org",
           "den",
+          "brand",
           "requireSignin"
         ]
       },

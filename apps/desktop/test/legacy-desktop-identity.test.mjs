@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, readFile, writeFile, access, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile, access, rm, stat } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -25,13 +25,21 @@ async function fixture(t) {
 const missing = (file) => assert.rejects(access(file), { code: "ENOENT" });
 const ownedShortcut = (input) => ({ target: input.executablePath, appUserModelId: input.appIdentifier });
 
-test("removes legacy caches and shortcut, restoring only stock OpenWork identity", async (t) => {
+test("upgrade and restart keep rollback assets untouched, restoring only stock OpenWork identity", async (t) => {
   const input = await fixture(t);
   const legacyShortcut = path.join(input.programsPath, "Legacy desktop.lnk");
   await writeFile(legacyShortcut, "legacy");
   await writeFile(path.join(input.userDataPath, "windows-brand-shortcut.txt"), legacyShortcut);
-  const caches = ["brand-icon.png", "brand-icon.json", "brand-icon.ico", "openwork-stock.ico"];
-  await Promise.all(caches.map((name) => writeFile(path.join(input.userDataPath, name), "legacy")));
+  const caches = {
+    "brand-icon.png": Buffer.from([137, 80, 78, 71, 1, 2, 3]),
+    "brand-icon.json": Buffer.from(JSON.stringify({ url: "https://unused.invalid/icon.png", hash: "original-hash" })),
+    "brand-icon.ico": Buffer.from([0, 0, 1, 0, 255, 128]),
+    "openwork-stock.ico": Buffer.from([0, 0, 1, 0, 127]),
+  };
+  await Promise.all(Object.entries(caches).map(([name, bytes]) => writeFile(path.join(input.userDataPath, name), bytes)));
+  const originalStats = Object.fromEntries(await Promise.all(Object.keys(caches).map(async (name) => [
+    name, await stat(path.join(input.userDataPath, name)),
+  ])));
   const calls = [];
   await cleanupLegacyDesktopIdentity({ ...input, shell: {
     readShortcutLink: (shortcutPath) => {
@@ -49,7 +57,18 @@ test("removes legacy caches and shortcut, restoring only stock OpenWork identity
     appUserModelId: input.appIdentifier,
   }]]);
   await missing(legacyShortcut);
-  for (const name of [...caches, "windows-brand-shortcut.txt"]) await missing(path.join(input.userDataPath, name));
+  await missing(path.join(input.userDataPath, "windows-brand-shortcut.txt"));
+  await cleanupLegacyDesktopIdentity({ ...input, shell: {
+    readShortcutLink() { assert.fail("restart has no legacy marker"); },
+    writeShortcutLink() { assert.fail("restart must not apply cached identity"); },
+  } });
+  // A rollback can still read the original cache URL/hash and exact image bytes.
+  for (const [name, bytes] of Object.entries(caches)) {
+    assert.deepEqual(await readFile(path.join(input.userDataPath, name)), bytes);
+    const after = await stat(path.join(input.userDataPath, name));
+    assert.equal(after.mtimeMs, originalStats[name].mtimeMs);
+    assert.equal(after.ino, originalStats[name].ino);
+  }
 });
 
 test("does not delete arbitrary paths from a corrupt legacy marker", async (t) => {
@@ -114,6 +133,25 @@ test("discards a missing shortcut marker without restoring a stock shortcut", as
   } });
   await missing(marker);
   await missing(absent);
+});
+
+test("never overwrites an unrelated shortcut at the stock destination", async (t) => {
+  const input = await fixture(t);
+  const legacyShortcut = path.join(input.programsPath, "Legacy desktop.lnk");
+  const stockShortcut = path.join(input.programsPath, "OpenWork.lnk");
+  const marker = path.join(input.userDataPath, "windows-brand-shortcut.txt");
+  await writeFile(legacyShortcut, "legacy");
+  await writeFile(stockShortcut, "unrelated");
+  await writeFile(marker, legacyShortcut);
+  await assert.rejects(cleanupLegacyDesktopIdentity({ ...input, shell: {
+    readShortcutLink: (shortcutPath) => shortcutPath === legacyShortcut
+      ? ownedShortcut(input)
+      : { target: path.join(input.programsPath, "Other.exe"), appUserModelId: "com.example.other" },
+    writeShortcutLink() { assert.fail("unowned stock destination must not be overwritten"); },
+  } }), /not owned/);
+  assert.equal(await readFile(stockShortcut, "utf8"), "unrelated");
+  assert.equal(await readFile(legacyShortcut, "utf8"), "legacy");
+  assert.equal(await readFile(marker, "utf8"), legacyShortcut);
 });
 
 test("is idempotent on a clean profile and never creates a shortcut", async (t) => {

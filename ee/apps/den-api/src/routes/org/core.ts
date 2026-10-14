@@ -517,7 +517,12 @@ export function registerOrgCoreRoutes<T extends { Variables: OrgRouteVariables }
         return c.json({ error: "organization_not_found" }, 404)
       }
 
-      return c.json({ organization: updated })
+      return c.json({
+        organization: {
+          ...updated,
+          metadata: serializeMemberFacingOrganizationMetadata(updated.metadata),
+        },
+      })
     },
   )
 

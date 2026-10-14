@@ -190,6 +190,12 @@ export type DesktopBootstrapOrgSkill = {
 };
 
 export type DesktopBootstrapConfig = {
+  /** Dormant on-disk rollback settings. Never apply to UI or native identity. */
+  brandAppName?: string | null;
+  brandLogoUrl?: string | null;
+  brandIconUrl?: string | null;
+  /** Opaque process-local receipt for restoring previously read dormant data. Never persisted. */
+  rollbackSnapshotId?: string;
   baseUrl: string;
   apiBaseUrl?: string | null;
   requireSignin: boolean;
@@ -390,7 +396,7 @@ export type DesktopCommandMap = {
   debugDesktopBootstrapConfig: { args: []; result: unknown };
   clearDesktopBootstrapConfig: { args: []; result: unknown };
   setDesktopBootstrapConfig: {
-    args: [config: Partial<DesktopBootstrapConfig>];
+    args: [config: Partial<DesktopBootstrapConfig> & { restoreSnapshotId?: string }];
     result: DesktopBootstrapConfig;
   };
 

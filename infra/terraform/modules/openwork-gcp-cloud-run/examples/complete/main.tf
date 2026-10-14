@@ -59,6 +59,7 @@ module "openwork" {
   region           = var.region
   name             = var.name
   openwork_version = var.openwork_version
+  image_digests    = var.image_digests
   owner_emails     = var.owner_emails
   org_name         = var.org_name
   labels           = { stack = var.name }

@@ -101,6 +101,10 @@ resource "google_cloud_run_v2_job" "migrate" {
       error_message = "Set database_url when create_database = false."
     }
     precondition {
+      condition     = local.images_pinned
+      error_message = "Pin the published images: set image_digests (see the README for how to read them), or set den_api_image / den_web_image, or allow_mutable_image_tags = true."
+    }
+    precondition {
       condition     = var.network == "" || var.subnetwork != ""
       error_message = "network needs subnetwork for Direct VPC egress."
     }

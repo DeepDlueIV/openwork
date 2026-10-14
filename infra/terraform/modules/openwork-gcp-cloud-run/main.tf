@@ -19,8 +19,14 @@ locals {
 
   mirror_enabled = var.create_image_mirror && (var.den_api_image == "" || var.den_web_image == "")
   mirror_path    = "${var.region}-docker.pkg.dev/${var.project_id}/${var.name}-ghcr/different-ai"
-  den_api_image  = var.den_api_image != "" ? var.den_api_image : "${local.mirror_path}/openwork-den-api:${var.openwork_version}"
-  den_web_image  = var.den_web_image != "" ? var.den_web_image : "${local.mirror_path}/openwork-den-web:${var.openwork_version}"
+  # Published images are pinned by digest: a tag can be moved upstream.
+  den_api_ref   = var.image_digests.den_api != "" ? "@${var.image_digests.den_api}" : ":${var.openwork_version}"
+  den_web_ref   = var.image_digests.den_web != "" ? "@${var.image_digests.den_web}" : ":${var.openwork_version}"
+  den_api_image = var.den_api_image != "" ? var.den_api_image : "${local.mirror_path}/openwork-den-api${local.den_api_ref}"
+  den_web_image = var.den_web_image != "" ? var.den_web_image : "${local.mirror_path}/openwork-den-web${local.den_web_ref}"
+
+  # Unpinned published images need an explicit opt-in.
+  images_pinned = var.allow_mutable_image_tags || ((var.den_api_image != "" || var.image_digests.den_api != "") && (var.den_web_image != "" || var.image_digests.den_web != ""))
 
   bool = { true = "true", false = "false" }
 

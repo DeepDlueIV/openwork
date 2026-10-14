@@ -30,6 +30,7 @@ variables {
   project_id       = "test-project"
   openwork_version = "0.0.0-test"
   owner_emails     = ["admin@example.com"]
+  image_digests    = { den_api = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", den_web = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }
 }
 
 run "creates_cloud_sql_mysql_84" {

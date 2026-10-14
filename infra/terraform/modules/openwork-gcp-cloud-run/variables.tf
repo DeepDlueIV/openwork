@@ -62,6 +62,27 @@ variable "den_api_image" {
   nullable    = false
 }
 
+variable "image_digests" {
+  description = "Digests (sha256:...) of the published den-api and den-web images for openwork_version, so Cloud Run runs exactly that build even if a tag is moved upstream. Required unless you set den_api_image / den_web_image or allow_mutable_image_tags. The README shows how to read them."
+  type = object({
+    den_api = optional(string, "")
+    den_web = optional(string, "")
+  })
+  default  = {}
+  nullable = false
+
+  validation {
+    condition     = alltrue([for d in [var.image_digests.den_api, var.image_digests.den_web] : d == "" || can(regex("^sha256:[a-f0-9]{64}$", d))])
+    error_message = "image_digests values must be sha256:<64 hex characters>."
+  }
+}
+
+variable "allow_mutable_image_tags" {
+  description = "Run the published images by tag (openwork_version) without image_digests. Not recommended: whoever can move the tag upstream decides what code runs with this deployment's secrets."
+  type        = bool
+  default     = false
+}
+
 variable "den_web_image" {
   description = "Full den-web image reference. Empty uses the ghcr.io mirror, like den_api_image."
   type        = string

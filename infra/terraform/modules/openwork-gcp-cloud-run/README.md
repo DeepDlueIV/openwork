@@ -68,6 +68,10 @@ module "openwork" {
   project_id       = "my-project"
   region           = "us-central1"
   openwork_version = "0.18.58"
+  image_digests = { # the release's images, pinned (see Notes)
+    den_api = "sha256:0942e02a8e2033151e982f51b24926fe5090807b7f7480d77f2c4fc5b806737e"
+    den_web = "sha256:b1543b2bb36df0a7c75d7dc18cdd773eb2e87df268169dcb1e284439299ada3f"
+  }
   owner_emails     = ["admin@example.com"]
   org_name         = "Example Co"
 
@@ -108,6 +112,21 @@ the load balancer without a domain of your own (`sslip_domain = true`).
 
 ## Notes
 
+- **Images are pinned by digest.** Cloud Run runs the release's images by
+  digest, so moving a tag upstream cannot change what runs with your
+  secrets. Set `image_digests` for `openwork_version` and update both with
+  every upgrade. `den_api_image` / `den_web_image` (your own mirror) or
+  `allow_mutable_image_tags = true` lift the requirement. To read a digest
+  (`docker buildx imagetools inspect <image>:<version>` also shows it):
+
+  ```bash
+  for img in openwork-den-api openwork-den-web; do
+    t=$(curl -s "https://ghcr.io/token?scope=repository:different-ai/$img:pull" | jq -r .token)
+    curl -sI -H "Authorization: Bearer $t" \
+      -H "Accept: application/vnd.oci.image.index.v1+json" \
+      "https://ghcr.io/v2/different-ai/$img/manifests/0.18.58" | grep -i docker-content-digest
+  done
+  ```
 - **Migrations.** The `<name>-den-migrate` job runs the same script as the Helm
   chart's pre-install/pre-upgrade Job. `terraform apply` executes it whenever
   the den-api image changes (or `migration_run_id` changes) and waits for it to

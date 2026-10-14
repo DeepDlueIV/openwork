@@ -17,6 +17,15 @@ variable "openwork_version" {
   default = "0.18.58"
 }
 
+variable "image_digests" {
+  description = "Digests of ghcr.io/different-ai/openwork-den-api and -den-web for openwork_version (defaults: 0.18.58)."
+  type        = object({ den_api = string, den_web = string })
+  default = {
+    den_api = "sha256:0942e02a8e2033151e982f51b24926fe5090807b7f7480d77f2c4fc5b806737e"
+    den_web = "sha256:b1543b2bb36df0a7c75d7dc18cdd773eb2e87df268169dcb1e284439299ada3f"
+  }
+}
+
 variable "owner_emails" {
   type = list(string)
 }

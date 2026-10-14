@@ -30,6 +30,7 @@ variables {
   project_id       = "test-project"
   openwork_version = "0.0.0-test"
   owner_emails     = ["admin@example.com"]
+  image_digests    = { den_api = "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", den_web = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }
 }
 
 run "defaults_use_run_app_urls" {
@@ -132,12 +133,12 @@ run "migration_reruns_on_new_version" {
   command = plan
 
   variables {
-    openwork_version = "0.0.1-test"
+    image_digests = { den_api = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", den_web = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" }
   }
 
   assert {
-    condition     = google_cloud_run_v2_job.migrate.run_execution_token != substr(sha256("us-central1-docker.pkg.dev/test-project/openwork-ghcr/different-ai/openwork-den-api:0.0.0-test|1"), 0, 12)
-    error_message = "A new den-api image must change the migration token."
+    condition     = google_cloud_run_v2_job.migrate.run_execution_token != substr(sha256("us-central1-docker.pkg.dev/test-project/openwork-ghcr/different-ai/openwork-den-api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa|1"), 0, 12)
+    error_message = "A new den-api image digest must change the migration token."
   }
 }
 
@@ -149,8 +150,8 @@ run "images_default_to_ghcr_mirror" {
     error_message = "A ghcr.io remote repository must be created by default."
   }
   assert {
-    condition     = output.images.den_api == "us-central1-docker.pkg.dev/test-project/openwork-ghcr/different-ai/openwork-den-api:0.0.0-test"
-    error_message = "den-api must be pulled through the mirror."
+    condition     = output.images.den_api == "us-central1-docker.pkg.dev/test-project/openwork-ghcr/different-ai/openwork-den-api@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    error_message = "den-api must be pulled through the mirror, pinned by digest."
   }
 }
 
@@ -270,4 +271,38 @@ run "null_optional_inputs_mean_unset" {
     condition     = length(google_cloud_run_v2_job.migrate.template[0].template[0].vpc_access) == 0 && length(google_cloud_run_v2_service.api.template[0].vpc_access) == 0
     error_message = "A null network must not add Direct VPC egress."
   }
+}
+
+run "unpinned_published_images_are_refused" {
+  command = plan
+
+  variables {
+    image_digests = {}
+  }
+
+  expect_failures = [google_cloud_run_v2_job.migrate]
+}
+
+run "mutable_tags_need_explicit_opt_in" {
+  command = apply
+
+  variables {
+    image_digests            = {}
+    allow_mutable_image_tags = true
+  }
+
+  assert {
+    condition     = output.images.den_web == "us-central1-docker.pkg.dev/test-project/openwork-ghcr/different-ai/openwork-den-web:0.0.0-test"
+    error_message = "With the opt-in, the tag is used."
+  }
+}
+
+run "invalid_digest_is_rejected" {
+  command = plan
+
+  variables {
+    image_digests = { den_api = "latest" }
+  }
+
+  expect_failures = [var.image_digests]
 }

@@ -12,7 +12,7 @@ for (const authorization of ["AWS4-HMAC-SHA256 Credential=dummy, SignedHeaders=x
       return new Response("{}", { status: 200 });
     }, original);
     vi.resetModules();
-    const { OpenWorkTitleRecovery } = await import("../../apps/server/src/opencode-plugins/openwork-title-recovery.ts");
+    const { OpenWorkTitleRecovery } = await import("../src/opencode-plugins/openwork-title-recovery.ts");
     const plugin = await OpenWorkTitleRecovery({ client: { app: { log: async () => undefined } } });
     try {
       const headers: Record<string, string> = { authorization, "x-api-key": "dummy-api-key" };
@@ -48,7 +48,7 @@ for (const { status, body, outcome } of failures) {
     globalThis.fetch = Object.assign(async () => new Response(raw, { status }), original);
     vi.resetModules();
     const diagnostics: string[] = [];
-    const { OpenWorkTitleRecovery } = await import("../../apps/server/src/opencode-plugins/openwork-title-recovery.ts");
+    const { OpenWorkTitleRecovery } = await import("../src/opencode-plugins/openwork-title-recovery.ts");
     const plugin = await OpenWorkTitleRecovery({ client: { app: { log: async ({ body }) => { diagnostics.push(body.extra.outcome); } } } });
     try {
       const headers: Record<string, string> = {};

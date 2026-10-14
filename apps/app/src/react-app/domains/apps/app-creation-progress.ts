@@ -14,6 +14,11 @@ export type AppCreationRun = {
   builds: DynamicToolUIPart[];
   /** Earlier attempts at this App that were rejected before a retry succeeded. */
   attempts?: DynamicToolUIPart[];
+  /**
+   * Live only: the agent read the build-an-app guide (create) or an App
+   * (edit) and is still writing, before any builder call exists.
+   */
+  intent?: { kind: "create" | "edit"; part: DynamicToolUIPart };
 };
 export type AppCreationStage = "needs" | "writing" | "checking" | "ready";
 
@@ -68,13 +73,7 @@ function isAppGuideCall(tool: string, input: unknown): boolean {
   return typeof name === "string" && BUILD_AN_APP_SKILL.test(name);
 }
 
-/**
- * Calls that lead into an App step: finding capabilities, reading the
- * build-an-app guide, or reading an App to edit. They join the step the agent
- * opens next; on their own they stay ordinary steps.
- */
-function isAppLeadInPart(part: DynamicToolUIPart): boolean {
-  if (/(?:^|_)(?:search_capabilities|read_app)$/.test(part.toolName)) return true;
+function isAppGuidePart(part: DynamicToolUIPart): boolean {
   if (isAppGuideCall(part.toolName, part.input)) return true;
   const calls = field(part.callProviderMetadata?.openwork?.codeMode, "calls");
   return Array.isArray(calls) && calls.length > 0 && calls.every((call) => {
@@ -83,13 +82,49 @@ function isAppLeadInPart(part: DynamicToolUIPart): boolean {
   });
 }
 
+function isAppReadPart(part: DynamicToolUIPart): boolean {
+  return /(?:^|_)read_app$/.test(part.toolName);
+}
+
+/**
+ * Calls that lead into an App step: finding capabilities, reading the
+ * build-an-app guide, or reading an App to edit. They join the step the agent
+ * opens next; on their own they stay ordinary steps.
+ */
+function isAppLeadInPart(part: DynamicToolUIPart): boolean {
+  return /(?:^|_)search_capabilities$/.test(part.toolName) || isAppReadPart(part) || isAppGuidePart(part);
+}
+
+/** The App a read_app call names, with its title once the read returns. */
+export function appRead(part: DynamicToolUIPart | undefined): { appId: string; title: string | null } | null {
+  if (!part || !isAppReadPart(part)) return null;
+  const appId = field(part.input, "appId");
+  if (typeof appId !== "string" || !appId) return null;
+  let output: unknown = part.state === "output-available" ? part.output : undefined;
+  if (typeof output === "string") {
+    try {
+      output = JSON.parse(output);
+    } catch {
+      output = undefined;
+    }
+  }
+  const structured = field(field(part.callProviderMetadata?.openwork, "mcpResult"), "structuredContent");
+  const title = field(field(structured, "app"), "title") ?? field(field(output, "app"), "title");
+  return { appId, title: typeof title === "string" && title.trim() ? title : null };
+}
+
 /**
  * App steps start only where the agent itself starts one: prepare_app, or a
  * create_app or update_app without a preparation. The lookups just before it
  * in the same turn join that step. Builds correlate by the server-issued
  * preparation id, keeping separate Apps and retries separate.
+ *
+ * While the turn is `live`, reading the build-an-app guide or an App starts
+ * the step early, because writing the App's source can take a minute before
+ * any builder call appears. Like the lookups, it ends at other work or with
+ * the turn if no builder call follows.
  */
-export function appCreationRuns(messages: UIMessage[]): AppCreationRun[] {
+export function appCreationRuns(messages: UIMessage[], live = false): AppCreationRun[] {
   const runs: AppCreationRun[] = [];
   const byPreparation = new Map<string, AppCreationRun>();
   const parts = new Map<string, DynamicToolUIPart>();
@@ -152,6 +187,16 @@ export function appCreationRuns(messages: UIMessage[]): AppCreationRun[] {
       leadIn = [];
     }
   }
+  const intent = live ? leadIn.findLast((part) => isAppGuidePart(part) || isAppReadPart(part)) : undefined;
+  // Keyed like the run the builder call will open, so the step stays in place.
+  if (intent) {
+    runs.push({
+      id: leadIn[0]!.toolCallId,
+      discoveries: leadIn,
+      builds: [],
+      intent: { kind: isAppReadPart(intent) ? "edit" : "create", part: intent },
+    });
+  }
   // A preparation Den rejected, followed by another preparation, is the same
   // App being retried: fold it into the next run instead of a card of its own.
   for (let index = runs.length - 2; index >= 0; index -= 1) {
@@ -185,14 +230,15 @@ export function appCreationProgress(run: AppCreationRun, active: boolean) {
     ? "ready"
     : checking || (build && failed)
       ? "checking"
-      : prepared || build
+      : prepared || build || run.intent?.kind === "edit"
         ? "writing"
         : "needs";
   const title =
     app?.title ??
     field(build?.input, "title") ??
     preparation?.title ??
-    field(run.preparation?.input, "title");
+    field(run.preparation?.input, "title") ??
+    run.discoveries?.map(appRead).find(read => read?.title)?.title;
   const detail = field(run.preparation?.input, "description");
   // Completion without a verified launch is not success (e.g. catalog capacity).
   const unavailable = Boolean(
@@ -204,7 +250,7 @@ export function appCreationProgress(run: AppCreationRun, active: boolean) {
   const running = active && !failed && !unavailable && !app && !builtUnrecorded;
   return {
     stage,
-    title: typeof title === "string" ? title : "App",
+    title: typeof title === "string" && title ? title : null,
     prepared,
     detail: typeof detail === "string" ? detail.slice(0, 140) : null,
     preparation,

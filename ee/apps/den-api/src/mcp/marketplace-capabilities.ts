@@ -12,7 +12,7 @@ import {
   PluginTable,
 } from "@openwork-ee/den-db/schema"
 import { normalizeDenTypeId, type DenTypeId } from "@openwork-ee/utils/typeid"
-import type { CapabilityUsageVia } from "@openwork-ee/den-db/schema"
+import type { CapabilityUsageSource } from "@openwork-ee/den-db/schema"
 import { isAuthoredMcpAppVersion, MCP_APP_LAUNCH_TOOL_NAME, mcpAppServerPath } from "@openwork/types/mcp-app"
 import {
   listExternalMcpConnections,
@@ -1589,8 +1589,8 @@ export async function executeMarketplaceCapability(input: {
   liveRuntime?: { timeZone?: string }
   /** MCP callers record the run as workflow.execute; route and Automation callers omit it. */
   auditWorkflowExecution?: MarketplaceWorkflowAudit
-  /** Agent-facing callers name how a served skill reached the agent so it counts in Skill usage; others omit it. */
-  usageVia?: CapabilityUsageVia
+  /** Callers that serve a skill to someone name what started the use so it counts in Library usage; others omit it. */
+  usageSource?: CapabilityUsageSource
   /** Names the connection to fix when a required capability is missing. */
   describeUnavailable?: (missing: readonly { capabilityName: string }[]) => Promise<{
     connectionStatus: Record<string, unknown>
@@ -1777,13 +1777,13 @@ export async function executeMarketplaceCapability(input: {
     || row.configObject.objectType === "custom"
     || row.configObject.objectType === "agent"
   ) {
-    if (input.usageVia && row.configObject.objectType === "skill") {
+    if (input.usageSource && row.configObject.objectType === "skill") {
       recordSkillUse({
         organizationId,
         orgMembershipId: input.member.orgMembershipId,
         pluginId: row.plugin.id,
         configObjectId: row.configObject.id,
-        via: input.usageVia,
+        source: input.usageSource,
       })
     }
     return {

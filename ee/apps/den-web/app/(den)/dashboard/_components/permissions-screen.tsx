@@ -6,12 +6,16 @@ import { PERMISSION_KEYS } from "@openwork/types/den/permissions";
 import { DenButton } from "../../_components/ui/button";
 import { DenNotice } from "../../_components/ui/notice";
 import {
+  getNewRoleRoute,
   getNewTeamPermissionsRoute,
   getPermissionKeysRoute,
   getPermissionSetRoute,
+  orgFeatureEnabled,
   permissionLockReason,
 } from "../../_lib/den-org";
+import { useOrgDashboard } from "../_providers/org-dashboard-provider";
 import { LinkButton } from "./item-list";
+import { RolesTab, canCreateRole } from "./roles-tab";
 import { usePermissionSets, type PermissionSetSummary } from "./permissions-data";
 import {
   PermissionAreaSection,
@@ -59,9 +63,20 @@ function PermissionSetRow({ set, href }: { set: PermissionSetSummary; href: stri
 }
 
 export function PermissionsScreen() {
+  const { orgContext } = useOrgDashboard();
   const permissions = usePermissionsAccess();
   const ready = permissions.state === "ready" ? permissions : null;
-  const setsQuery = usePermissionSets(ready?.orgId ?? null, ready !== null);
+  // teamRoles: this page is the Roles list, in the same words as Members › Roles.
+  const teamRoles = orgContext ? orgFeatureEnabled(orgContext, "teamRoles") : false;
+  const setsQuery = usePermissionSets(ready?.orgId ?? null, ready !== null && !teamRoles);
+
+  if (teamRoles) {
+    if (!ready) return <PermissionsPage title="Roles" testId="permissions-landing"><PermissionsAccessState access={permissions} /></PermissionsPage>;
+    const create = canCreateRole({ permissionsFeature: true, canManageTeams: ready.access.canManageTeams, canManagePermissions: ready.access.canManagePermissions })
+      ? <DenButton icon={Plus} href={getNewRoleRoute(ready.orgSlug)} data-testid="roles-create">Create role</DenButton>
+      : undefined;
+    return <PermissionsPage title="Roles" testId="permissions-landing"><RolesTab action={create} /></PermissionsPage>;
+  }
   const byPermission = ready ? <LinkButton href={getPermissionKeysRoute(ready.orgSlug)} variant="secondary" size="sm">By permission</LinkButton> : undefined;
 
   if (!ready) {

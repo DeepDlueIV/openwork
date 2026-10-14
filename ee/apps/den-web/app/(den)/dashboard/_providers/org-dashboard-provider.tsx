@@ -45,7 +45,8 @@ type OrgDashboardContextValue = {
   updateOrganizationSettings: (input: { name?: string; allowedEmailDomains?: string[] | null; allowedDesktopVersions?: string[] | null; requireSso?: boolean; brandAppName?: string | null; brandLogoUrl?: string | null; brandIconUrl?: string | null; brandAccentColor?: string | null }) => Promise<void>;
   deleteOrganization: () => Promise<void>;
   switchOrganization: (slug: string) => void;
-  inviteMember: (input: { email: string; role: string }) => Promise<void>;
+  /** teamId (teamRoles): invite into a custom role by adding the pending member to its team. */
+  inviteMember: (input: { email: string; role: string; teamId?: string | null }) => Promise<void>;
   startSeatCheckout: () => Promise<void>;
   cancelInvitation: (invitationId: string) => Promise<void>;
   updateMemberRole: (memberId: string, role: string) => Promise<void>;
@@ -672,13 +673,16 @@ export function OrgDashboardProvider({
     });
   }
 
-  async function inviteMember(input: { email: string; role: string }) {
+  async function inviteMember(input: { email: string; role: string; teamId?: string | null }) {
     const access = getCurrentAccess();
     if (!access.canInviteMembers) {
       throw new Error("You don't have permission to invite members.");
     }
     const invitationRole = access.canManageRoles ? input.role : "member";
     ensureRoleCanBeAssigned(invitationRole);
+    if (input.teamId && !access.canManageTeams) {
+      throw new Error(permissionLockReason("teams.manage"));
+    }
 
     await runMutation("invite-member", async () => {
       ensureActiveOrganizationSelected();
@@ -702,6 +706,32 @@ export function OrgDashboardProvider({
           throw limitError;
         }
         throw getRequestError(payload, response, `Failed to invite member (${response.status}).`);
+      }
+
+      // A custom role (teamRoles): put the invitation's pending member in that
+      // role's team. The pending member becomes the person when they join, so
+      // they arrive with the role. The invitation itself is already sent.
+      const invitationId = payload && typeof payload === "object" && "invitationId" in payload && typeof payload.invitationId === "string"
+        ? payload.invitationId
+        : null;
+      if (input.teamId && invitationId && activeOrgId) {
+        const fresh = await loadOrgContext(activeOrgId);
+        const pending = fresh.members.find((member) => member.inviteId === invitationId);
+        const team = fresh.teams.find((entry) => entry.id === input.teamId);
+        if (!pending || !team) {
+          throw new Error(`Invited ${input.email}, but couldn't give them that role. Add them to the team from Members › Teams.`);
+        }
+        if (!team.memberIds.includes(pending.id)) {
+          const added = await requestJson(
+            `/v1/teams/${encodeURIComponent(team.id)}`,
+            { method: "PATCH", body: JSON.stringify({ memberIds: [...team.memberIds, pending.id] }) },
+            12000,
+          );
+          if (!added.response.ok) {
+            const reason = getErrorMessage(added.payload, `HTTP ${added.response.status}`);
+            throw new Error(`Invited ${input.email}, but couldn't add them to ${team.name}: ${reason}`);
+          }
+        }
       }
     });
   }

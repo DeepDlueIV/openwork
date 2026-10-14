@@ -434,6 +434,8 @@ export async function mcpAppServers(seed: Seed, context: { place: Place }) {
     },
     inventoryCalls: (options: { sinceIso?: string; atLeast?: number } = {}) => den.mocks.inventory.toolCalls({ name: toolNames.connection, atLeast: 0, ...options }),
     reservations: (options: { sinceIso?: string; atLeast?: number } = {}) => den.mocks.inventory.toolCalls({ name: toolNames.reserve, atLeast: 0, ...options }),
+    /** MCP sessions Den opened to Inventory (one initialize each). */
+    inventorySessions: (sinceIso: string) => den.mocks.inventory.handshakes({ sinceIso }),
     /** Shares only the App's own Plugin, which carries the Workflows its tools run. */
     async share() {
       await grant(`/v1/plugins/${created.pluginId}/access`);
@@ -506,8 +508,9 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
   const measured = benchmark === true;
   const engine = options.engine ?? "v1";
   const toolStep = (tool: string, args: Record<string, unknown>) => engine === "v2" ? { tool: "execute", arguments: { code: `return await tools["openwork-cloud"].${tool}(${JSON.stringify(args)});` } } : { tool, arguments: args };
+  // Den's numeric App timings (never payloads) let the journey count requests to an App's own server.
   const den = await seed.den({
-    env: { DEN_GENERATED_ARTIFACT_VIEWS_ENABLED: "true", DEN_APP_MCP_SERVERS_ENABLED: "true", DEN_DASHBOARDS_ENABLED: "true", ...(measured ? { OPENWORK_MCP_APP_TIMINGS: "1" } : {}) },
+    env: { DEN_GENERATED_ARTIFACT_VIEWS_ENABLED: "true", DEN_APP_MCP_SERVERS_ENABLED: "true", DEN_DASHBOARDS_ENABLED: "true", OPENWORK_MCP_APP_TIMINGS: "1" },
     org: { name: `App servers chat ${Date.now()}` },
     mocks: { inventory: seed.mock({ allowUnauthenticatedMcp: true, tools: [inventoryTool, reserveTool] }) },
   });
@@ -628,6 +631,24 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
   }
   return {
     app, session, den, created, performanceApps, workspace, engine,
+    /** Den's log so far; pass its length to appServerRequests. */
+    denLog: () => den.apiLog(),
+    /** Requests Den's App servers handled since a denLog() snapshot, by MCP method, once at least `atLeast` tools/call requests finished. */
+    async appServerRequests(since: string, atLeast = 1) {
+      const methods = async () => (await den.apiLog()).slice(since.length).split("\n").flatMap(line => {
+        const marker = line.indexOf("MCP_APP_TIMING ");
+        if (marker < 0) return [];
+        const stage = record(JSON.parse(line.slice(marker + 15))).stage;
+        return typeof stage === "string" && stage.startsWith("den.app-server.") ? [stage.slice("den.app-server.".length)] : [];
+      });
+      const deadline = Date.now() + 30_000;
+      let seen = await methods();
+      while (seen.filter(method => method === "tools/call").length < atLeast && Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 250));
+        seen = await methods();
+      }
+      return seen;
+    },
     async prepareLifecycleTurn(prompt: string, kind: "edit" | "failure" | "interrupt" | "search" | "guided") {
       const catalog = rows(record((await seed.api(den.admin, "/v1/mcp-apps")).body).apps);
       const built = catalog.find(app => app.title === pricerTitle);
@@ -638,12 +659,12 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
         : kind === "guided"
         // The agent reads the guide, finds the tool, prepares, and publishes prepare_app's starter unchanged.
         ? [toolStep("get_skill", { name: "build-an-app" }), toolStep("search_capabilities", { query: "Inventory lookup unit price", type: "mcp", limit: 2 }),
-          toolStep("prepare_app", { title: guidedTitle, description: "Look up a product's unit price in Inventory.", tools: lookup }),
+          { ...toolStep("prepare_app", { title: guidedTitle, description: "Look up a product's unit price in Inventory.", tools: lookup }), holdUntilReleased: true },
           { ...(engine === "v2"
             ? { tool: "execute", arguments: { code: `return await tools["openwork-cloud"].create_app({ ...${JSON.stringify({ title: guidedTitle, tools: lookup, textFallback: "Looks up a product's unit price in Inventory." })}, ..."__APP_STARTER__" });` } }
             : toolStep("create_app", { title: guidedTitle, tools: lookup, textFallback: "Looks up a product's unit price in Inventory." })), argumentsFrom: "app-starter" }]
         : kind === "edit"
-        ? [toolStep("read_app", { appId: field(built, "connectionId") }), { ...toolStep("update_app", { ...appSource("revision two", { title: pricerTitle, sampleOrder: true }), appId: field(built, "connectionId"), ...(engine === "v2" ? { expectedRevisionId: "__APP_REVISION_ID__" } : {}) }), argumentsFrom: "app-read" }]
+        ? [toolStep("read_app", { appId: field(built, "connectionId") }), { ...toolStep("update_app", { ...appSource("revision two", { title: pricerTitle, sampleOrder: true }), appId: field(built, "connectionId"), ...(engine === "v2" ? { expectedRevisionId: "__APP_REVISION_ID__" } : {}) }), argumentsFrom: "app-read", holdUntilReleased: true }]
         : kind === "failure"
           ? [toolStep("create_app", { title: "Broken App", reactSource: "export default function App( {", tools, textFallback: "The App is unavailable." })]
           : [toolStep("prepare_app", { title: "Interrupted App", tools }), { ...toolStep("create_app", { ...appSource("interrupted", { title: "Interrupted App", sampleOrder: true }), tools, ...(engine === "v2" ? { preparationId: "__APP_PREPARATION_ID__" } : {}) }), argumentsFrom: "app-preparation", holdUntilReleased: true }];
@@ -651,7 +672,7 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
       if (!response.ok) throw new Error("Could not prepare the lifecycle turn");
       return field(built, "connectionId");
     },
-    /** Hold the model after preparation so the person can inspect real writing progress. */
+    /** Hold the model before a held step (preparation, build or edit) so the person can inspect real writing progress. */
     async holdCreation(held: boolean) {
       const response = await fetch(`${den.mocks.inventory.url}/admin/agent-hold`, {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ held }),

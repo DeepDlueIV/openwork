@@ -68,6 +68,16 @@ export interface OpencodeV2RequestInit {
   body?: unknown;
   directory?: string;
   timeoutMs?: number;
+  /** Stop reading a larger response body and throw OpencodeV2ResponseTooLargeError instead. */
+  maxResponseBytes?: number;
+}
+
+/** A response body was larger than the caller's `maxResponseBytes`; it was not read into memory. */
+export class OpencodeV2ResponseTooLargeError extends Error {
+  constructor(readonly limitBytes: number) {
+    super(`OpenCode v2 response is larger than ${limitBytes} bytes`);
+    this.name = "OpencodeV2ResponseTooLargeError";
+  }
 }
 
 /** Where a running OpenCode v2 server listens, with its generated Basic credentials. */
@@ -123,7 +133,9 @@ export async function fetchOpencodeV2Json(
     body: init.body === undefined ? undefined : JSON.stringify(init.body),
     signal: init.timeoutMs === undefined ? undefined : AbortSignal.timeout(init.timeoutMs),
   });
-  const text = await response.text();
+  const text = init.maxResponseBytes === undefined
+    ? await response.text()
+    : await readBoundedText(response, init.maxResponseBytes);
   let json: unknown = text;
   try {
     json = JSON.parse(text);
@@ -131,6 +143,29 @@ export async function fetchOpencodeV2Json(
     // Non-JSON engine responses remain observable as raw text.
   }
   return { status: response.status, json };
+}
+
+/** Read a body as UTF-8 only while it stays within `limit` bytes; chunks stay off the JS heap until decoded. */
+async function readBoundedText(response: Response, limit: number): Promise<string> {
+  if (Number(response.headers.get("content-length")) > limit) {
+    await response.body?.cancel();
+    throw new OpencodeV2ResponseTooLargeError(limit);
+  }
+  const reader = response.body?.getReader();
+  if (!reader) return "";
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    bytes += value.byteLength;
+    if (bytes > limit) {
+      await reader.cancel();
+      throw new OpencodeV2ResponseTooLargeError(limit);
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks, bytes).toString("utf8");
 }
 
 function diagnostics(exitCode: number | null, stdout: string, stderr: string): Error {

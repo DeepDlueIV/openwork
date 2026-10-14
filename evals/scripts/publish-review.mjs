@@ -6,7 +6,7 @@ import { pathToFileURL } from "node:url";
 import { publishReviewPr } from "../packages/test-artifacts/src/publish-pr.ts";
 import { readTestRunDirectory } from "../packages/test-artifacts/src/scan.ts";
 import { designDigest } from "../packages/test-artifacts/src/review.ts";
-import { changedFiles, proofArtifact, selectProof } from "../../.github/scripts/pr-proof.mjs";
+import { changedFiles, proofArtifactsForAttempt, selectProof } from "../../.github/scripts/pr-proof.mjs";
 
 // The only producer: the PR change proof run on the PR head.
 const producers = [
@@ -89,13 +89,11 @@ export async function publishCompletedEvidence({ repo, runId, runAttempt }, depe
   const artifacts = await api(`repos/${repo}/actions/runs/${source.id}/artifacts?per_page=100`);
   if (!Array.isArray(artifacts.artifacts) || artifacts.total_count !== artifacts.artifacts.length)
     return skip("proof artifact listing is incomplete");
-  const expected = new Map(selection.specs.map(spec => [proofArtifact(spec, source.run_attempt), spec]));
   if (artifacts.artifacts.some(artifact => artifact.expired)) return skip("proof artifacts expired");
-  if (artifacts.artifacts.some(artifact => artifact.name?.startsWith("pr-proof-") && !expected.has(artifact.name)))
-    return skip("unexpected proof artifact is present");
-  for (const name of expected.keys())
-    if (artifacts.artifacts.filter(artifact => artifact.name === name).length !== 1)
-      return skip("required proof artifact is missing or duplicated");
+  // After "Re-run failed jobs", specs that passed keep their earlier attempt's records.
+  const chosen = proofArtifactsForAttempt(artifacts.artifacts, selection.specs, source.run_attempt);
+  if (chosen.reason) return skip(chosen.reason);
+  const expected = chosen.expected;
   const directory = await mkdtemp(join(tmpdir(), "openwork-pr-proof-"));
   try {
     const testRunDirs = [];

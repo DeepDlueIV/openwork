@@ -17,9 +17,40 @@ snapshot was taken. The runner drives Chrome through Daytona's private URL for
 port 8081 (Daytona token + the in-VM gateway's access cookie). Port 8080 is the
 viewer.
 
+Core PR CI sets `OPENWORK_DAYTONA_EPHEMERAL_WORLD=1`: preparation warms only
+base/image dependencies, then the journey reuses an active commit template or
+builds a unique, private evidence VM and runs it directly. It does not save a
+new commit template or wait on another run's template save. The launcher checks
+its source SHA and runtime fingerprint before issuing access. Failed preparation
+and normal teardown delete that run's VM; idle auto-stop/auto-delete and existing
+owned-world cleanup cover abandoned runs. Reviewer checkpoints are unchanged.
+Dev warm-up and other callers still save reusable running templates with the
+existing layer locks. No fork-during-snapshot behavior is assumed.
+
 - Needs `DAYTONA_API_KEY` for an organization with Linux VMs in
   `OPENWORK_DAYTONA_EVIDENCE_REGION` (default `us-west-3`).
 - Builds: `node scripts/prepare-evidence-web.ts` with the provider set.
+- Required snapshot saves retry only a definite `Snapshot quota exceeded` rejection,
+  for at most 17 attempts over 16 minutes (including provider call time). Jittered
+  waits give the 15-minute cleanup job and other jobs' teardown time to free
+  capacity; a call already in flight can finish after the retry deadline.
+  Diagnostics distinguish exhausted capacity from guest build/test failures.
+  The provider enforces the current key's account quota; no fixed quota of 100
+  is assumed and retries never delete dev/release snapshots to make room.
+- Optional checkpoint saves do not wait for quota recovery. Their rejected save
+  promise remains a checkpoint failure, not a successful save or test verdict.
 - Cleanup: `node scripts/cleanup-daytona-evidence.ts [--dry-run]`, every 15 minutes in CI.
-  Commit worlds go after two unused hours and only the newest 30 checkpoints are
-  kept, so CI stays under the organization's snapshot quota.
+  Candidates include commit worlds unused for two hours and checkpoints beyond
+  the newest 30 or older than 14 hours. The current base and newest warm image
+  and world (including the newest active fallback) are retained. Active
+  sandboxes, pending snapshots, and snapshots referenced by any sandbox are
+  protected. Builders/capture forks protect both parent and labelled target, even
+  when stopped (cold saves stop their builder before snapshotting). An unknown
+  target blocks snapshot reclamation entirely. Cleanup never deletes those
+  builders/forks; their controller/provider TTL owns teardown.
+  Only owned terminal worlds/copies idle for two hours are deleted, after rechecking.
+  Invalid/incomplete inventory aborts cleanup before deletion.
+- This is backpressure, not an atomic quota reservation: concurrent producers
+  can still fill the account. There is no aggressive headroom eviction or
+  distributed lease in this change. A full account with no safe candidates
+  fails with a quota-specific diagnostic after the bounded wait.

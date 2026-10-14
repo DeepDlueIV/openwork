@@ -14,6 +14,16 @@ function send(message: MigrationProcessMessage): Promise<void> {
   });
 }
 
+let converterPid: number | undefined;
+// OpenWork quit or crashed: stop rather than keep copying unseen. The next
+// migration removes the snapshot folder this leaves behind.
+process.once("disconnect", () => {
+  if (converterPid) {
+    try { process.kill(converterPid); } catch { /* already gone */ }
+  }
+  process.exit(1);
+});
+
 process.once("message", async (message: unknown) => {
   if (!isRequest(message)) throw new Error("Invalid migration request");
   const { target, ...migration } = message;
@@ -22,7 +32,12 @@ process.once("message", async (message: unknown) => {
     ...migration,
     target: { fetchJson: (path, init) => fetchOpencodeV2Json(target, path, init) },
     progress: (status) => { reported = send({ type: "progress", status }); },
-    scratch: (scratch) => { void send({ type: "scratch", scratch }); },
+    scratch: (scratch) => {
+      converterPid = scratch.converterPid;
+      void send({ type: "scratch", scratch });
+    },
+    // Delivered before the export starts, so a crash on this chat is attributed to it.
+    copying: (chat, trimmed) => send({ type: "copying", chat, trimmed }),
   });
   // The migration has cleaned up; exit once its final status is delivered.
   await reported;

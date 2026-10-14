@@ -7,13 +7,13 @@ import { PERMISSION_KEYS, type PermissionKey } from "@openwork/types/den/permiss
 import { DenButton } from "../../_components/ui/button";
 import { DenInput } from "../../_components/ui/input";
 import { DenNotice } from "../../_components/ui/notice";
-import { DenSegmented } from "../../_components/ui/segmented";
+import { DenOptionCard } from "../../_components/ui/option-card";
 import { DenStickyActionBar } from "../../_components/ui/sticky-action-bar";
 import { getMembersRoute, getTeamRoute, orgFeatureEnabled } from "../../_lib/den-org";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
 import { useDenToast } from "./den-toast";
-import { AccessRow, AddPicker, Avatar, RemoveButton } from "./access-rows";
-import { ItemPanel, LinkButton } from "./item-list";
+import { PeopleField } from "./access-rows";
+import { LinkButton } from "./item-list";
 import { RolePermissionsNotSavedError, useCreateRole, type PermissionStatus } from "./permissions-data";
 import {
   PermissionEditor,
@@ -23,7 +23,7 @@ import {
   type PermissionEditorRow,
   type PermissionsAccess,
 } from "./permissions-ui";
-import { ROLE_START_LABELS, roleStartKeys, type RoleStart } from "./team-roles";
+import { ROLE_START_DESCRIPTIONS, ROLE_START_LABELS, roleStartKeys, type RoleStart } from "./team-roles";
 
 type ReadyAccess = Extract<PermissionsAccess, { state: "ready" }>;
 
@@ -56,11 +56,9 @@ function RoleNewContent({ ready }: { ready: ReadyAccess }) {
   const allowed = new Set(PERMISSION_KEYS.filter((key) => (overrides.get(key) ?? (base.has(key) ? "allow" : "deny")) === "allow"));
   const back = { href: `${getMembersRoute(ready.orgSlug)}?tab=roles`, label: "Roles" };
 
-  const people = (orgContext?.members ?? []).filter((member) => member.userId !== null);
-  const chosen = memberIds.flatMap((id) => people.find((member) => member.id === id) ?? []);
-  const addable = people
-    .filter((member) => !memberIds.includes(member.id))
-    .map((member) => ({ id: member.id, name: member.user.name || member.user.email, detail: member.user.email }));
+  const people = (orgContext?.members ?? [])
+    .filter((member) => member.userId !== null)
+    .map((member) => ({ id: member.id, name: member.user.name || member.user.email, email: member.user.email }));
   const trimmed = name.trim();
 
   const rows: PermissionEditorRow[] = PERMISSION_KEYS.map((key) => {
@@ -104,35 +102,27 @@ function RoleNewContent({ ready }: { ready: ReadyAccess }) {
 
       <div className="flex flex-col gap-1.5">
         <span className="text-[13px] font-medium text-gray-700">People</span>
-        <ItemPanel>
-          {chosen.map((member) => {
-            const label = member.user.name || member.user.email;
-            return (
-              <AccessRow
-                key={member.id}
-                lead={<Avatar name={label} />}
-                title={label}
-                description={member.user.email}
-                trailing={<RemoveButton label={`Remove ${label}`} onClick={() => setMemberIds((current) => current.filter((id) => id !== member.id))} />}
-                testId="role-new-person"
-              />
-            );
-          })}
-          <div className="flex px-5 py-3">
-            <AddPicker kind="person" options={addable} onAdd={(ids) => setMemberIds((current) => [...current, ...ids])} />
-          </div>
-        </ItemPanel>
+        <PeopleField people={people} chosenIds={memberIds} onChange={setMemberIds} rowTestId="role-new-person" />
       </div>
 
-      <div className="flex flex-col gap-1.5">
-        <span className="text-[13px] font-medium text-gray-700">Start from</span>
-        <DenSegmented
-          aria-label="Start from"
-          value={start}
-          onChange={chooseStart}
-          options={START_OPTIONS.map((option) => ({ value: option, label: ROLE_START_LABELS[option] }))}
-        />
-      </div>
+      {/* Same native radio cards as Change role on a team page. */}
+      <fieldset className="flex flex-col gap-1.5">
+        <legend className="mb-1.5 text-[13px] font-medium text-gray-700">Start from</legend>
+        <div className="grid gap-2 sm:grid-cols-3">
+          {START_OPTIONS.map((option) => (
+            <DenOptionCard
+              key={option}
+              type="radio"
+              name="role-new-start"
+              checked={start === option}
+              onChange={(checked) => { if (checked) chooseStart(option); }}
+              title={ROLE_START_LABELS[option]}
+              description={ROLE_START_DESCRIPTIONS[option]}
+              testId={`role-new-start-${option}`}
+            />
+          ))}
+        </div>
+      </fieldset>
 
       {halfMade ? (
         <DenNotice

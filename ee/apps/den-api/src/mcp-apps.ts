@@ -479,11 +479,17 @@ export async function isActiveMcpApp(input: { organizationId: string; appId: str
 
 async function accessibleRevisionUncached(input: McpAppAccessInput & { appId: string }) {
   const id = appId(input.appId)
-  const pluginId = (await accessibleAppPlugins(input)).get(id)
-  if (!pluginId) return notFound()
   const organizationId = normalizeDenTypeId("organization", input.organizationId)
-  if (!await activeApp(organizationId, id)) return notFound()
-  const current = await latestRevision(organizationId, id)
+  // Read together: each is a database round trip on every App request. Nothing
+  // from the App or its revision is used unless the member can reach its Plugin.
+  const [plugins, active, current] = await Promise.all([
+    accessibleAppPlugins(input),
+    activeApp(organizationId, id),
+    latestRevision(organizationId, id),
+  ])
+  const pluginId = plugins.get(id)
+  if (!pluginId) return notFound()
+  if (!active) return notFound()
   const payload = current && compiledRevision(current)
   if (!current || !payload) return notFound()
   return { id, pluginId, organizationId, current, payload }

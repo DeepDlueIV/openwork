@@ -150,6 +150,22 @@ test("an owner composes an App that is its own MCP server, and a teammate uses i
     evidence.recordAssertionEvidence("The App's button runs its Workflow as the owner", `Clicking Calculate total made one ${toolNames.workflow} call with { quantity: ${launchInput.quantity}, unitPrice: 7 }, and the Workflow returned 42. Every request from the reference host went to the App's own MCP URL, never to OpenWork Connect.`, true);
   });
 
+  await step("after: a follow-up Inventory lookup through the App opens one provider session instead of two", async () => {
+    const lookup = () => world.rpc("owner", "app", "tools/call", { name: toolNames.connection, arguments: { sku: launchInput.sku } });
+    // The lookup is bound read-only, so each call checks Inventory's current label: it lists and calls in one session.
+    expect((await lookup()).rpcError).toBeUndefined();
+    const followUpAt = new Date().toISOString();
+    const followUp = await lookup();
+    expect(followUp.rpcError).toBeUndefined();
+    expect(followUp.isError).not.toBe(true);
+    // Witness: the follow-up really reached Inventory.
+    expect((await world.inventoryCalls({ sinceIso: followUpAt, atLeast: 1 })).map(call => call.args)).toEqual([{ sku: launchInput.sku }]);
+    const sessions = await world.inventorySessions(followUpAt);
+    expect(sessions).toHaveLength(1);
+    await user.screenshot();
+    evidence.recordAssertionEvidence("A read-only App tool call lists and calls in one provider session", `The follow-up read-only ${toolNames.connection} call made 1 Inventory lookup and opened ${sessions.length} MCP session to Inventory, listing tools and calling in it; before, each call opened 2 (one to list tools, one to call).`, sessions.length === 1);
+  });
+
   await step("the owner's OpenWork Connect lists the App for its App host, opens it by launch reference, and refuses tools an App may not bind", async () => {
     const index = await world.index("owner");
     // Listed for the App host to open, never exposed to the model as a server of its own.
@@ -410,6 +426,20 @@ chatTest("an owner follows App creation progress and opens the finished App besi
     evidence.recordAssertionEvidence("Each trusted click runs its one tool", `Clicking Calculate total ran the ${toolNames.workflow} Workflow from the conversation, and ${appTitle} shows 42, with no extra approval prompt.`, true);
   });
 
+  await step("after: a second click on Calculate total sends two requests to the App's server instead of four", async () => {
+    if (!calculator) throw new Error(`${appTitle} is not open`);
+    const log = await world.denLog();
+    await calculator.click({ role: "button", label: "Calculate total" });
+    await calculator.see({ testId: "total" }, { text: "42", timeoutMs: 90_000 });
+    // Witness: the click reached the App's server and ran its tool.
+    const requests = await world.appServerRequests(log);
+    expect(requests.filter(method => method === "tools/call")).toHaveLength(1);
+    // The connection is reused; the tools are listed again because their annotations authorize the call.
+    expect([...requests].sort()).toEqual(["tools/call", "tools/list"]);
+    await user.screenshot();
+    evidence.recordAssertionEvidence("A follow-up App call reuses the open App's connection", `The second Calculate total click made ${requests.length} requests to ${appTitle}'s own MCP server (${requests.join(", ")}) and showed 42; before, every App tool call made 4 (initialize, its notification, tools/list, tools/call).`, requests.length === 2);
+  });
+
   await step("asked for the calculator again, the chat keeps one live copy and the earlier card points to it", async () => {
     await frame?.[Symbol.asyncDispose]();
     frame = undefined;
@@ -585,10 +615,24 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
       evidence.recordAssertionEvidence("Verified launch opens a usable App beside the composer", `${name}: one preview loads revision one; the rendered pane begins at ${pane.left}, beside the composer ending at ${composer.right}.`, true);
       await user.screenshot();
     });
-    await step("after: editing refreshes the same tab and closing it permits reopening from the creation step", async () => {
+    let appId = "";
+    await step("after: an edit shows its step and marks the open App Updating while the agent is still writing", async () => {
+      expect((await probe.dom("[data-built-app-preview]")).elements).toHaveLength(1);
       const prompt = "Update this App to revision two.";
-      const appId = await world.prepareLifecycleTurn(prompt, "edit");
+      appId = await world.prepareLifecycleTurn(prompt, "edit");
+      // The model reads the App, then is held before update_app, as while it writes a long change.
+      await world.holdCreation(true);
       await agent.send(prompt);
+      await user.see({ text: `Updating artifact “${pricerTitle}”` }, { timeoutMs: 120_000 });
+      expect(await probe.eventually(async () => (await probe.dom('[data-app-builder-step][data-app-creation-stage="writing"] .ow-text-shimmer')).elements, { within: 30_000, intervalMs: 200, label: "the edit step is live before update_app", until: elements => elements.length === 1 && elements[0].rect.height > 0 })).toHaveLength(1);
+      expect(await probe.eventually(async () => (await probe.dom(`[data-built-app-preview="${appId}"] [aria-busy="true"]`)).elements, { within: 30_000, intervalMs: 200, label: "the open App being changed is marked Updating", until: elements => elements.length === 1 })).toHaveLength(1);
+      // Witness: update_app has not run yet, so the open App still shows revision one.
+      await revision("revision one");
+      evidence.recordAssertionEvidence("An edit is visible before its update_app call", `${name}: after read_app, with the model held before update_app, the step reads Updating artifact “${pricerTitle}” and the open App beside the composer is marked Updating, still on revision one.`, true);
+      await user.screenshot();
+      await world.holdCreation(false);
+    });
+    await step("after: editing refreshes the same tab and closing it permits reopening from the creation step", async () => {
       await user.see({ text: "The App has been updated." }, { timeoutMs: 120_000 });
       expect((await probe.dom(`[data-built-app-preview="${appId}"]`)).elements).toHaveLength(1);
       expect((await probe.dom('[data-built-app-preview]')).elements).toHaveLength(1);
@@ -631,7 +675,12 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
       // No "app" in the request: the step comes from what the agent does, not from its wording.
       const prompt = "Make me a dashboard of Inventory unit prices.";
       await world.prepareLifecycleTurn(prompt, "guided");
+      // Held before prepare_app: reading the guide already starts the step while the agent writes.
+      await world.holdCreation(true);
       await agent.send(prompt);
+      expect(await probe.eventually(async () => (await probe.dom('[data-app-builder-step][data-app-creation-stage="needs"] .ow-text-shimmer')).elements, { within: 120_000, intervalMs: 200, label: "the guide starts the artifact step before prepare_app", until: elements => elements.length === 1 && elements[0].rect.height > 0 })).toHaveLength(1);
+      await user.see({ text: "Preparing artifact" });
+      await world.holdCreation(false);
       const sentence = `Created artifact “${guidedTitle}”`;
       await user.see({ text: sentence }, { timeoutMs: 120_000 });
       await user.see({ text: guidedReply }, { timeoutMs: 30_000 });
@@ -649,7 +698,7 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
       await user.on(frame).type({ role: "textbox", label: "Sku" }, launchInput.sku);
       await user.on(frame).click({ role: "button", label: "Show unit price" });
       await user.on(frame).see({ text: "Unit price" }, { timeoutMs: 60_000 });
-      evidence.recordAssertionEvidence("The agent's own calls make one artifact step, and the starter works as published", `${name}: a dashboard request without the word app read build-an-app, searched, prepared and built from prepare_app's starter. The guide and search sit inside the one Created artifact step, and the published starter loads the Inventory price on one click.`, true);
+      evidence.recordAssertionEvidence("The agent's own calls make one artifact step, and the starter works as published", `${name}: a dashboard request without the word app read build-an-app, searched, prepared and built from prepare_app's starter. While the model was held before prepare_app, the step already read Preparing artifact. The guide and search sit inside the one Created artifact step, and the published starter loads the Inventory price on one click.`, true);
       await user.screenshot();
       await closeFrame();
       await user.click({ role: "button", label: "Close panel" });

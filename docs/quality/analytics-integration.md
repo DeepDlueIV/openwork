@@ -24,8 +24,10 @@ The Library journey also records Members and Connectors in the same workspace.
 
 The integrated presentation changed presentation only: no counts, collection,
 consent, entitlements, permissions, API queries, or persisted history change.
-Rows keep their existing Library/Connectors destinations;
-one-off or inaccessible workflow receipts do not acquire fabricated links.
+Plugins & connectors rows open the item's usage (who uses it, uses per
+day, what started the uses), and a person there opens their own usage. Each
+item's usage page links to its existing Library or Connectors page; one-off or
+inaccessible workflow receipts do not acquire fabricated links.
 
 Compact page headings are the only heading presentation (the former
 `denFlatPageHeaders` flag is retired). This change does not remove

@@ -49,6 +49,10 @@ import { createOrganizationInstallLink } from "../../_lib/install-link-data";
 import { OrgMemberIdentity } from "./org-member-identity";
 import { MemberEffectivePermissions, canViewMemberPermissions } from "./member-effective-permissions";
 import { RolesTab, canCreateRole } from "./roles-tab";
+import { PeopleField } from "./access-rows";
+import { useCustomRoleTeams } from "./permissions-data";
+import { MemberTeamRoles } from "./member-team-roles";
+import { TEAM_ROLE_LABELS, customRoleChoice, parseRoleChoice, teamRole } from "./team-roles";
 
 type MembersTab = "members" | "teams" | "roles";
 
@@ -165,6 +169,11 @@ export function ManageMembersScreen() {
     if (tab === "roles" || tab === "teams") setActiveTab(tab);
   }, []);
   const shownTab: MembersTab = activeTab === "roles" && !teamRoles ? "members" : activeTab;
+  // teamRoles: custom roles show wherever roles do (people's rows, the invite picker, the Teams list).
+  const permissionsFeature = orgContext ? orgFeatureEnabled(orgContext, "permissions") : false;
+  const customRoles = useCustomRoleTeams(orgContext?.organization.id ?? null, teamRoles && permissionsFeature && access.canViewPermissions);
+  const customRoleTeams = teamRoles ? (orgContext?.teams ?? []).filter((team) => customRoles.teamIds.has(team.id)) : [];
+  const teamListColumns = teamRoles ? "lg:grid-cols-[minmax(0,1fr)_120px_140px_200px]" : "lg:grid-cols-[minmax(0,1fr)_160px_200px]";
   const tabCounts: Record<Exclude<MembersTab, "roles">, number> = {
     members: orgContext?.members.length ?? 0,
     teams: orgContext?.teams.length ?? 0,
@@ -336,7 +345,9 @@ export function ManageMembersScreen() {
             event.preventDefault();
             setPageError(null);
             try {
-              await inviteMember({ email: inviteEmail, role: access.canManageRoles ? inviteRole : "member" });
+              // A custom role invites a Member into that role's team.
+              const choice = parseRoleChoice(access.canManageRoles ? inviteRole : "member");
+              await inviteMember({ email: inviteEmail, role: choice.role, teamId: choice.teamId });
               resetInviteForm();
             } catch (error) {
               const paymentRequiredError = getOrgPaymentRequiredError(error);
@@ -363,6 +374,7 @@ export function ManageMembersScreen() {
             <span className="text-[14px] font-medium text-gray-700">Email</span>
             <DenInput
               type="email"
+              data-testid="invite-email"
               value={inviteEmail}
               onChange={(event) => setInviteEmail(event.target.value)}
               placeholder="teammate@example.com"
@@ -372,10 +384,16 @@ export function ManageMembersScreen() {
           {access.canManageRoles ? (
             <label className="grid gap-3">
               <span className="text-[14px] font-medium text-gray-700">Role</span>
-              <DenSelect value={inviteRole} onChange={(event) => setInviteRole(event.target.value)}>
+              <DenSelect aria-label="Role" value={inviteRole} onChange={(event) => setInviteRole(event.target.value)}>
                 {ASSIGNABLE_ORG_ROLES.map((role) => (
                   <option key={role} value={role}>
                     {formatRoleLabel(role)}
+                  </option>
+                ))}
+                {customRoleTeams.map((team) => (
+                  <option key={team.id} value={customRoleChoice(team.id)} disabled={!access.canManageTeams}>
+                    {team.name}
+                    <span className="ml-1.5 text-gray-500">Custom role</span>
                   </option>
                 ))}
               </DenSelect>
@@ -398,6 +416,12 @@ export function ManageMembersScreen() {
               {`Inviting someone as an admin is locked. ${permissionLockReason("members.update")}`}
             </p>
           )}
+          {access.canManageRoles && customRoleTeams.length > 0 && !access.canManageTeams ? (
+            <p className="flex items-center gap-1.5 text-[13px] text-gray-500 lg:col-span-3">
+              <Lock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              {`Inviting someone into a custom role is locked. ${permissionLockReason("teams.manage")}`}
+            </p>
+          ) : null}
         </form>
       </DenCard>
     ) : null;
@@ -491,6 +515,14 @@ export function ManageMembersScreen() {
               <div className="rounded-[24px] border border-dashed border-gray-200 bg-gray-50 px-5 py-6 text-[14px] text-gray-500">
                 Invite a member before assigning people to this team.
               </div>
+            ) : teamRoles ? (
+              // teamRoles: the same people rows and Add person picker as Create role.
+              <PeopleField
+                people={orgContext.members.map((member) => ({ id: member.id, name: member.user.name || member.user.email, email: member.user.email }))}
+                chosenIds={teamMemberDraft}
+                onChange={setTeamMemberDraft}
+                rowTestId="team-form-person"
+              />
             ) : (
               <div className="grid gap-3 md:grid-cols-2">
                 {orgContext.members.map((member) => {
@@ -719,9 +751,11 @@ export function ManageMembersScreen() {
                   className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 border-b border-gray-100 px-4 py-3.5 transition hover:bg-gray-50/60 last:border-b-0 lg:grid-cols-[minmax(0,1fr)_180px_140px_160px] lg:gap-4 lg:px-6"
                 >
                   <OrgMemberIdentity member={member} />
-                  <span className="col-start-1 row-start-2 pl-11 text-[13px] text-gray-500 lg:col-auto lg:row-auto lg:pl-0">
+                  <span className="col-start-1 row-start-2 pl-11 text-[13px] text-gray-500 lg:col-auto lg:row-auto lg:pl-0" data-testid="member-role">
                     {splitRoleString(member.role).map(formatRoleLabel).join(", ")}
-                    {member.adminTeams.length > 0 ? (
+                    {teamRoles ? (
+                      <MemberTeamRoles member={member} teams={orgContext.teams} customTeamIds={customRoles.teamIds} />
+                    ) : member.adminTeams.length > 0 ? (
                       <span className="mt-1 block text-[12px] text-cyan-700">Admin via {member.adminTeams.map((team) => team.name).join(", ")}</span>
                     ) : null}
                   </span>
@@ -1010,8 +1044,9 @@ export function ManageMembersScreen() {
           </div>
 
           <div className="overflow-x-auto overflow-y-visible rounded-2xl border border-gray-100 bg-white">
-            <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-4 border-b border-gray-100 px-4 py-3 text-[12px] font-medium text-gray-500 lg:grid-cols-[minmax(0,1fr)_160px_200px] lg:px-6">
+            <div className={`grid grid-cols-[minmax(0,1fr)_auto] gap-4 border-b border-gray-100 px-4 py-3 text-[12px] font-medium text-gray-500 lg:px-6 ${teamListColumns}`}>
               <span>Team</span>
+              {teamRoles ? <span className="hidden lg:block">Role</span> : null}
               <span className="hidden lg:block">Members</span>
               <span />
             </div>
@@ -1025,7 +1060,7 @@ export function ManageMembersScreen() {
                 <div
                   key={team.id}
                   data-testid="team-row"
-                  className="flex flex-col gap-3 border-b border-gray-100 px-4 py-3.5 transition hover:bg-gray-50/60 last:border-b-0 lg:grid lg:grid-cols-[minmax(0,1fr)_160px_200px] lg:items-center lg:gap-4 lg:px-6"
+                  className={`flex flex-col gap-3 border-b border-gray-100 px-4 py-3.5 transition hover:bg-gray-50/60 last:border-b-0 lg:grid lg:items-center lg:gap-4 lg:px-6 ${teamListColumns}`}
                 >
                   <div>
                     <div className="flex flex-wrap items-center gap-2">
@@ -1052,8 +1087,17 @@ export function ManageMembersScreen() {
                         ? ` +${(teamMemberNames.get(team.id)?.length ?? 0) - 3}`
                         : ""}
                     </p>
-                    <TeamAdminCheckbox team={team} />
+                    {/* teamRoles: Admin is the team's role (Role tab), so the old checkbox goes away. */}
+                    {teamRoles ? null : <TeamAdminCheckbox team={team} />}
                   </div>
+                  {teamRoles ? (
+                    <span className="text-[13px] text-gray-700" data-testid="team-row-role">
+                      {/* Without permissions.view a custom role can't be told from Member, so only Admin is named. */}
+                      {team.grantsOrganizationAdmin || !permissionsFeature || access.canViewPermissions
+                        ? TEAM_ROLE_LABELS[teamRole({ admin: team.grantsOrganizationAdmin, customSetId: customRoles.setByTeam.get(team.id)?.id ?? null })]
+                        : "—"}
+                    </span>
+                  ) : null}
                   <span className="text-[13px] text-gray-500">{`${team.memberIds.length} ${team.memberIds.length === 1 ? "member" : "members"}`}</span>
                   <div className="flex items-center justify-end gap-3">
                     {team.managedByScim ? (

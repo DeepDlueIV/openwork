@@ -1,6 +1,8 @@
+import { randomUUID } from "node:crypto";
 import type { DenSession } from "@openwork/behaviors";
 import { evaluateOnSurface } from "@openwork/cdp";
-import type { Seed } from "@openwork/env";
+import { SkipError, type Place, type Seed } from "@openwork/env";
+import { gatewayEnvironment, startAcmeGateway } from "../../worlds/lib/acme-gateway.ts";
 import type { MockMcpTool } from "@openwork/labs";
 import { activityTransportFaults } from "./den-dashboard-activity-faults.ts";
 import { seededOrganizationId } from "./organization-capabilities.ts";
@@ -31,9 +33,18 @@ const trackerTools: MockMcpTool[] = [
  * teammate's agent loads a skill or calls a connector tool through the real
  * OpenWork MCP gateway (`loadSkill`, `callConnector`), exactly as Codex or
  * Claude Code would.
+ *
+ * The real AI Gateway runs next to Den (in the Den sandbox on Daytona, as a
+ * local process on Den's database otherwise). Its rollup job
+ * (`POST /internal/rollups/run`, normally a nightly cron) folds Library usage
+ * older than two days into daily rows. `foldUsage` runs that job as if it were
+ * three days later, so today's uses move into the daily rollups.
  */
-export async function libraryUsage(seed: Seed) {
+export async function libraryUsage(seed: Seed, { place }: { place: Place }) {
+  const gatewayAdminToken = randomUUID();
+  const stack = new AsyncDisposableStack();
   const den = await seed.den({
+    ...(place.kind === "daytona" ? { env: { GATEWAY_ENABLED: "true", GATEWAY_ADMIN_TOKEN: gatewayAdminToken } } : {}),
     org: {
       name: "Support team",
       admin: { name: "Usage Owner" },
@@ -83,6 +94,15 @@ export async function libraryUsage(seed: Seed) {
     connectionIds[key] = field(created, "id");
   }
 
+  // Organization member ids, for reading the per-member usage breakdown.
+  const memberIds = {} as Record<"alice" | "blair", string>;
+  for (const person of ["alice", "blair"] as const) {
+    const session = den.members[person];
+    if (!session) throw new Error(`Missing ${person}.`);
+    const org = await seed.api(session, "/v1/org");
+    memberIds[person] = field(isRecord(org.body) ? org.body.currentMember : undefined, "id");
+  }
+
   const tokens = new Map<DenSession, string>();
   async function mcpToken(person: DenSession) {
     const known = tokens.get(person);
@@ -124,14 +144,43 @@ export async function libraryUsage(seed: Seed) {
     return callTool(person, "execute_capability", { name: `mcp:${connectionIds[key]}:${toolName}`, body: {} });
   }
 
+  // Locally the gateway is its own process on Den's scratch database; only its rollup route is used.
+  let gatewayUrl = den.gateway?.publicUrl ?? null;
+  if (!gatewayUrl && place.kind === "local" && den.database?.url) {
+    const settings = await gatewayEnvironment("http://127.0.0.1:9");
+    await startAcmeGateway(stack, den.database.url, { ...settings, env: { ...settings.env, GATEWAY_ADMIN_TOKEN: gatewayAdminToken } });
+    gatewayUrl = settings.baseUrl;
+  }
+
+  /** Runs the gateway's real rollup job three days from now, so every use recorded today is folded into daily rows. */
+  async function foldUsage() {
+    if (!gatewayUrl) throw new SkipError("an AI Gateway next to Den that folds Library usage (local or Daytona placement)");
+    const now = new Date(Date.now() + 3 * 86_400_000).toISOString();
+    const response = await fetch(`${gatewayUrl}/internal/rollups/run`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${gatewayAdminToken}`, "content-type": "application/json" },
+      body: JSON.stringify({ now }),
+    });
+    const body: unknown = await response.json().catch(() => null);
+    const count = (key: string) => (isRecord(body) && typeof body[key] === "number" ? body[key] : -1);
+    return { status: response.status, now, dayBuckets: count("capabilityUsageDayBuckets"), rowsDeleted: count("capabilityUsageRowsDeleted") };
+  }
+
   const viewport = { width: 1280, height: 1000 };
   const web = await seed.web({ den, signedInAs: den.admin, startPath: "/dashboard/analytics", headless: true, viewport });
   const memberWeb = await seed.web({ den, signedInAs: den.members.alice, startPath: "/dashboard", headless: true, viewport });
   const faults = await activityTransportFaults(web, new URL(den.ref.webUrl).origin, "/api/browser/v1/library-usage/");
+  // The drill-down breakdown reads (`/v1/library-usage?kind=…`); the report reads above use `/v1/library-usage/<kind>`.
+  const breakdownFaults = await activityTransportFaults(web, new URL(den.ref.webUrl).origin, "/api/browser/v1/library-usage?kind=");
   return {
     faults,
-    async [Symbol.asyncDispose]() { await faults[Symbol.asyncDispose](); },
-    den, web, memberWeb, orgId, skills: capabilities, connectors, loadSkill, callConnector, baseUrl: den.ref.webUrl,
+    breakdownFaults,
+    async [Symbol.asyncDispose]() {
+      await faults[Symbol.asyncDispose]();
+      await breakdownFaults[Symbol.asyncDispose]();
+      await stack.disposeAsync();
+    },
+    den, web, memberWeb, orgId, skills: capabilities, connectors, connectionIds, memberIds, loadSkill, callConnector, foldUsage, baseUrl: den.ref.webUrl,
     // Read-only layout witness: probe.dom reports document width and rectangles,
     // but not body scrollWidth or whether sideways scrolling stays in the table.
     usageLayout: () => evaluateOnSurface(web, () => {

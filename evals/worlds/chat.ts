@@ -1308,6 +1308,63 @@ export const streamedMarkdownAnswer = [
   "Closing paragraph epsilon.",
 ].join("\n");
 
+export const quotedDraftMarker = "QUOTED_DRAFT_ANSWER";
+/** The reply a person asked for, written one line each with "•" bullets. */
+export const quotedDraft = [
+  "Hi team,",
+  "Quick update on the launch:",
+  "• Docs are live",
+  "• Pricing page ships Friday",
+  "• Support macros updated",
+  "",
+  "Thanks!",
+].join("\n");
+export const quotedDraftCommand = "pnpm release --dry-run";
+export const quotedDraftAnswer = [
+  "Here is a reply you can send:",
+  "",
+  ...quotedDraft.split("\n").map((line) => (line ? `> ${line}` : ">")),
+  "",
+  "Then run:",
+  "",
+  "```sh",
+  quotedDraftCommand,
+  "```",
+].join("\n");
+
+/** An answer that quotes a draft to paste elsewhere, next to a code block. */
+export async function quotedDraftChat(seed: Seed) {
+  const providerId = "quoted-draft-mock";
+  const modelId = "quoted-draft-model";
+  const mock = seed.mock({
+    agentWorkloads: [{ promptMarker: quotedDraftMarker, latestUserTurn: true, finalReply: quotedDraftAnswer, steps: [] }],
+  });
+  const workspacePath = seed.tmpPath("quoted-draft");
+  const app = await seed.appWeb({ name: "quoted-draft", workspacePath, mocks: { agent: mock } });
+  const agentMock = app.mocks.agent;
+  if (!agentMock) throw new Error("The app-web fixture did not boot its quoted-draft model.");
+  const workspace = await seed.workspace(app, workspacePath);
+  await configureProvider(seed, app, workspace.workspaceId, providerId, modelId, { provider: {
+    [providerId]: {
+      npm: "@ai-sdk/openai-compatible", name: "Quoted draft mock",
+      options: { baseURL: `${agentMock.url}/v1`, apiKey: "sk-quoted-draft" },
+      models: { [modelId]: { name: "Quoted draft model" } },
+    },
+  } });
+  // Headless Chrome only lets the page write and read the clipboard once granted.
+  await app.client.send("Browser.grantPermissions", {
+    origin: new URL(app.webUrl).origin, permissions: ["clipboardReadWrite", "clipboardSanitizedWrite"],
+  });
+  return {
+    app,
+    workspace,
+    providerReplies: async () => (await agentMock.agentRequests({ promptMarker: quotedDraftMarker }))
+      .filter((request) => request.kind === "final").length,
+    // TODO(primitive): probe.clipboard should expose this read-only witness without browser evaluation.
+    readClipboard: () => seed.evalIn(app, () => navigator.clipboard.readText(), { awaitPromise: true }),
+  };
+}
+
 /**
  * The answer arrives in small content deltas from the shared agent mock, which
  * the placement boots next to Den so the engine can reach it on Daytona too.

@@ -130,6 +130,13 @@ export const FEATURES = defineFeatures({
     deployments: everywhere,
     default: false,
   },
+  backgroundShellTasks: {
+    label: "Desktop: running background tasks in chat",
+    description: "The desktop chat shows how many commands the agent left running in the background, and adds a short row when each one finishes.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
 })
 
 export type FeatureKey = keyof typeof FEATURES

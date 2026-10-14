@@ -40,8 +40,10 @@ test("an owner gives the Sales team the Admin role from its team page, and only 
     await owner.see({ role: "tab", label: /^Teams/ }, { timeoutMs: 60_000 });
     await owner.click({ role: "tab", label: /^Teams/ });
     await owner.see({ role: "link", label: "Sales" }, { timeoutMs: 30_000 });
+    await owner.notSee({ text: /Grant organisation Admin to all members of/ });
     await owner.click({ role: "link", label: "Sales" });
     await owner.see({ testId: "team-role-name" }, { text: "Member", timeoutMs: 60_000 });
+    await owner.notSee({ text: /Grant organisation Admin to all members of/ });
     await owner.see({ text: "Nothing beyond what everyone can do" });
     await owner.see({ testId: "team-role-everyone" }, { text: /Use skills, plugins and connections shared with them/ });
     evidence.recordAssertionEvidence("The team page opens on its one role", "Role tab shows Member and what everyone can do", true);
@@ -122,6 +124,49 @@ test("an owner creates a Skill publishers role from Members › Roles, and only 
     const ok = nora.includes("sharing.share_org_wide") && !maya.includes("sharing.share_org_wide");
     evidence.recordAssertionEvidence("Only people in the new role gain it", `Nora holds Share with everyone: ${nora.includes("sharing.share_org_wide")}; Maya: ${maya.includes("sharing.share_org_wide")}`, ok);
     expect(ok).toBe(true);
+  });
+});
+
+test("an owner invites someone straight into the Engineering custom role, and they show with it wherever people are listed", async ({ world, user, probe, step, evidence }) => {
+  const owner = user.on(world.ownerWeb);
+  const email = `team-roles-invitee+${Date.now().toString(36)}@example.test`;
+
+  await step("from the dashboard, the owner opens Members › Add member and sees custom roles in the Role picker", async () => {
+    await owner.navigate(world.url("/dashboard"));
+    await owner.see({ role: "link", label: "Members" }, { timeoutMs: 90_000 });
+    await owner.click({ role: "link", label: "Members" });
+    await owner.see({ role: "button", label: "Add member" }, { timeoutMs: 60_000 });
+    await owner.click({ role: "button", label: "Add member" });
+    await owner.type({ testId: "invite-email" }, email);
+    await owner.click({ role: "button", label: "Role" });
+    await owner.see({ role: "option", label: /^Engineering/ }, { timeoutMs: 15_000 });
+    await owner.see({ role: "option", label: /^Admin/ });
+    evidence.recordAssertionEvidence("The invite Role picker lists custom roles next to Member and Admin", "Engineering is offered as a role", true);
+    await owner.screenshot();
+  });
+
+  await step("after: the invite goes out with Engineering, and the pending person is already in its team", async () => {
+    await owner.click({ role: "option", label: /^Engineering/ });
+    await owner.click({ role: "button", label: "Send invite" });
+    await owner.see({ text: email }, { timeoutMs: 30_000 });
+    const roster = await probe.api(world.owner, "/v1/org", { headers: world.scope });
+    const members = isRecord(roster.body) && Array.isArray(roster.body.members) ? roster.body.members.filter(isRecord) : [];
+    const pending = members.find((member) => isRecord(member.user) && member.user.email === email);
+    const team = await probe.api(world.owner, `/v1/teams/${encodeURIComponent(world.teams.engineering)}`, { headers: world.scope });
+    const memberIds = isRecord(team.body) && isRecord(team.body.team) && Array.isArray(team.body.team.memberIds) ? team.body.team.memberIds : [];
+    const ok = Boolean(pending && typeof pending.id === "string" && memberIds.includes(pending.id) && pending.role === "member");
+    evidence.recordAssertionEvidence("A custom role invites a Member into that role's team", `pending member role ${String(pending?.role)}; in Engineering: ${ok}`, ok);
+    expect(ok).toBe(true);
+    await owner.screenshot();
+  });
+
+  await step("boundary: the Teams list names each team's role, Member for Sales and Custom for Engineering", async () => {
+    await owner.click({ role: "tab", label: /^Teams/ });
+    // Sales is listed first; Engineering's Custom is the only "Custom" on the tab.
+    await owner.see({ testId: "team-row-role" }, { text: "Member", timeoutMs: 30_000 });
+    await owner.see({ text: "Custom" });
+    evidence.recordAssertionEvidence("Teams list shows one role per team", "Sales Member, Engineering Custom", true);
+    await owner.screenshot();
   });
 });
 

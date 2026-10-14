@@ -28,10 +28,19 @@ try {
     const { ensureEvidenceSnapshot } = await import("../packages/freestyle/src/evidence-builder.ts");
     await ensureEvidenceSnapshot(sha, undefined, options);
   } else {
-    const { ensureEvidenceTemplate } = await import("../packages/daytona-evidence/src/builder.ts");
-    await ensureEvidenceTemplate(sha, undefined, options);
+    const { ensureEvidenceTemplate, ensureImage } = await import("../packages/daytona-evidence/src/builder.ts");
+    if (process.env.OPENWORK_DAYTONA_EPHEMERAL_WORLD === "1") {
+      // Prepare the expensive shared dependencies here. The journey builds its
+      // own running VM and consumes it in-process, without saving a PR template.
+      const { devHead } = await import("../packages/freestyle/src/evidence-builder.ts");
+      const { DaytonaApi } = await import("../packages/daytona-evidence/src/api.ts");
+      await ensureImage(new DaytonaApi(), imageSha ?? await devHead(), options);
+    } else {
+      await ensureEvidenceTemplate(sha, undefined, options);
+    }
   }
-  console.log(`${label} world ready for ${sha} in ${Math.round((performance.now() - started) / 1000)}s`);
+  const prepared = provider === "daytona" && process.env.OPENWORK_DAYTONA_EPHEMERAL_WORLD === "1" ? "dependencies ready; journey will prepare its ephemeral world" : "world ready";
+  console.log(`${label} ${prepared} for ${sha} in ${Math.round((performance.now() - started) / 1000)}s`);
 } catch (error) {
   console.error(`::error::${label} world preparation failed: ${error instanceof Error ? error.message : String(error)}. See the builder log group above.`);
   process.exitCode = 1;

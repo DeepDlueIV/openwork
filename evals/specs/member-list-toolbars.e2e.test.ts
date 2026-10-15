@@ -29,7 +29,7 @@ test("an owner filters members, teams and roles in the same toolbar, and a role 
   });
 
   await step("after: members have a small filter and same-height Add member, with one email and a quiet owner lock", async () => {
-    await world.enableToolbars();
+    await world.setToolbars(true);
     await owner.reload();
     await owner.see({ placeholder: "Filter members" }, { timeoutMs: 60_000 });
     await owner.see({ text: LONG_INVITE_EMAIL });
@@ -142,9 +142,9 @@ test("an owner filters members, teams and roles in the same toolbar, and a role 
   await step("deleting the reused role asks first, removes only the role and keeps Sales", async () => {
     await owner.click({ role: "tab", label: /^Permissions/ });
     await owner.click({ testId: "remove-team-permissions" });
-    await owner.see({ role: "alertdialog" });
+    await owner.see({ testId: "remove-team-permissions-dialog" });
     await owner.screenshot();
-    await owner.click({ role: "button", label: "Delete role" });
+    await owner.click({ testId: "remove-team-permissions-confirm" });
     await owner.see({ testId: "roles-custom-empty" }, { timeoutMs: 30_000 });
     await owner.click({ role: "tab", label: /^Teams/ });
     await owner.see({ role: "link", label: "Sales" });
@@ -160,7 +160,31 @@ test("an owner filters members, teams and roles in the same toolbar, and a role 
     // Native disabled controls are observed in the DOM, not bypassed through an API mutation.
     expect(actions.elements.some((element) => element.text.includes("Add member"))).toBe(true);
     await member.notSee({ testId: "invite-email" });
-    evidence.recordAssertionEvidence("member boundary", "locked Add member remains visible; invite form absent", true);
     await member.screenshot();
+    await member.click({ role: "tab", label: /^Teams/ });
+    await member.see({ placeholder: "Filter teams" });
+    expect((await probe.on(world.noraWeb).dom('[data-testid="teams-toolbar"] button:disabled')).elements.some((element) => element.text.includes("Create team"))).toBe(true);
+    await member.screenshot();
+    await member.click({ role: "tab", label: /^Roles/ });
+    await member.see({ placeholder: "Filter roles" });
+    expect((await probe.on(world.noraWeb).dom('[data-testid="roles-toolbar"] button:disabled')).elements.some((element) => element.text.includes("Create role"))).toBe(true);
+    const forbidden = await probe.api(world.nora, "/v1/permissions/sets", { headers: world.scope });
+    expect(forbidden.response.status).toBe(403);
+    evidence.recordAssertionEvidence("member boundary", `all three add controls remain locked; invite form absent; role API HTTP ${forbidden.response.status}`, forbidden.response.status === 403);
+    await member.screenshot();
+  });
+
+  await step("turning the rollout off restores the original toolbar without losing Sales or the member list", async () => {
+    await world.setToolbars(false);
+    await owner.navigate(world.url("/dashboard/members"));
+    await owner.reload();
+    await owner.see({ role: "button", label: "Add member" }, { timeoutMs: 60_000 });
+    await owner.notSee({ placeholder: "Filter members" });
+    await owner.see({ text: LONG_INVITE_EMAIL });
+    await owner.click({ role: "tab", label: /^Teams/ });
+    await owner.see({ role: "link", label: "Sales" });
+    await owner.notSee({ placeholder: "Filter teams" });
+    evidence.recordAssertionEvidence("rollout rollback preserves data", "original toolbars restored; Sales and members remain", true);
+    await owner.screenshot();
   });
 });

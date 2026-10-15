@@ -376,7 +376,7 @@ function RemoveTeamPermissions({ ready, set, teamRoles, sharedRoles }: { ready: 
       <AlertDialog.Trigger className={buttonVariants({ variant: "secondary", size: "sm" })} data-testid="remove-team-permissions">{words.trigger}</AlertDialog.Trigger>
       <AlertDialog.Portal>
         <AlertDialog.Backdrop className="fixed inset-0 z-50 bg-gray-950/45" />
-        <AlertDialog.Popup initialFocus={cancelRef} className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-[16px] border border-gray-200 bg-white p-5 outline-none">
+        <AlertDialog.Popup data-testid="remove-team-permissions-dialog" initialFocus={cancelRef} className="fixed left-1/2 top-1/2 z-50 w-[calc(100%-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-[16px] border border-gray-200 bg-white p-5 outline-none">
           <AlertDialog.Title className="text-[15px] font-medium text-gray-950">{words.title}</AlertDialog.Title>
           <AlertDialog.Description className="mt-2 text-[13px] leading-5 text-gray-600">
             {words.description}
@@ -384,7 +384,7 @@ function RemoveTeamPermissions({ ready, set, teamRoles, sharedRoles }: { ready: 
           {remove.error ? <DenNotice tone="error" className="mt-3" message={remove.error.message} /> : null}
           <div className="mt-5 flex justify-end gap-2">
             <AlertDialog.Close ref={cancelRef} disabled={remove.isPending} className={buttonVariants({ variant: "secondary" })}>Cancel</AlertDialog.Close>
-            <DenButton variant="destructive" loading={remove.isPending} onClick={() => void confirm()}>{words.confirm}</DenButton>
+            <DenButton data-testid="remove-team-permissions-confirm" variant="destructive" loading={remove.isPending} onClick={() => void confirm()}>{words.confirm}</DenButton>
           </div>
         </AlertDialog.Popup>
       </AlertDialog.Portal>

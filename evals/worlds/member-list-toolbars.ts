@@ -22,9 +22,9 @@ export async function memberListToolbarsWorld(seed: Seed) {
   if (!invited.response.ok) throw new Error(`Could not seed email-only member: ${invited.response.status} ${invited.text.slice(0, 300)}`);
   return {
     ...world,
-    async enableToolbars() {
+    async setToolbars(enabled: boolean) {
       const result = await seed.api(world.owner, `/v1/admin/organizations/${world.orgId}/capabilities`, {
-        method: "PUT", body: JSON.stringify({ capabilities: { memberListToolbars: true } }),
+        method: "PUT", body: JSON.stringify({ capabilities: { memberListToolbars: enabled } }),
       });
       if (!result.response.ok) throw new Error(`Could not enable list toolbars: ${result.response.status}`);
     },

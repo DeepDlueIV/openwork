@@ -31,6 +31,7 @@ for (const tool of ["terraform", "tofu"]) {
       const result = run(["test", "-no-color"]);
       expect(result).toMatch(/Success! \d+ passed, 0 failed/);
       expect(result).not.toContain("... skip");
+      expect(result).toContain('run "default_state_contains_no_secret_values"... pass');
       const example = join(module, "examples/complete");
       if (tool === "tofu") {
         // Explicit registry migration of a copied ROOT lock, never the shipped file.
@@ -39,7 +40,7 @@ for (const tool of ["terraform", "tofu"]) {
       }
       run(["init", "-backend=false", "-input=false", "-lockfile=readonly", "-no-color"], example);
       expect(run(["validate", "-no-color"], example)).toContain("valid");
-      evidence.recordAssertionEvidence(`${tool}: GCP module contract and root lock`, `${tool}: init, read-only init, validate and all mocked-Google contract tests passed without skips; complete example validates with its selected registry lock. No cloud operations.`, true);
+      evidence.recordAssertionEvidence(`${tool}: GCP module contract and root lock`, `${tool}: init, read-only init, validate and all mocked-Google contract tests passed without skips, including the default-state assertion (no persisted random/password/secret-data values); complete example validates with its selected registry lock. No cloud operations.`, true);
     } finally {
       await rm(root, { recursive: true, force: true });
     }

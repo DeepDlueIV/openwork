@@ -203,7 +203,7 @@ variable "org_slug" {
 }
 
 variable "initial_admin_bootstrap_code" {
-  description = "One-time /setup code. Empty generates one (see the bootstrap_code output)."
+  description = "One-time /setup code. Empty generates one in Secret Manager. bootstrap_code returns a value only in the explicit legacy mode."
   type        = string
   default     = ""
   sensitive   = true
@@ -234,9 +234,29 @@ variable "dashboards_enabled" {
 }
 
 variable "write_only_secrets" {
-  description = "Use ephemeral random passwords and provider write-only arguments so generated secrets never enter state. Recommended for NEW deployments. Defaults false solely to preserve existing random values: before opting in on an existing deployment, supply every existing value through preserved_secrets_wo (see upgrade notes). Never toggle this on a populated deployment without preserving its keys."
+  description = "Use ephemeral random passwords and provider write-only arguments so generated secrets never enter state (default). False is a not-recommended legacy compatibility mode. For an experimental deployment already using legacy mode, preserve its exact values before switching; see Secrets and later runs."
   type        = bool
-  default     = false
+  default     = true
+}
+
+variable "database_password_wo_version" {
+  description = "Write-only database password version. Keep unchanged on ordinary applies/upgrades. Increasing it rotates the password; coordinate DATABASE_URL's secret_data_wo_version in the same apply."
+  type        = number
+  default     = 1
+  validation {
+    condition     = var.database_password_wo_version >= 1 && floor(var.database_password_wo_version) == var.database_password_wo_version
+    error_message = "database_password_wo_version must be a positive integer."
+  }
+}
+
+variable "secret_data_wo_version" {
+  description = "Write-only version per secret env name; omitted names use 1. Increase only for deliberate rotation. Auth rotation signs everyone out. Never rotate DEN_DB_ENCRYPTION_KEY without a re-encryption procedure."
+  type        = map(number)
+  default     = {}
+  validation {
+    condition     = alltrue([for version in values(var.secret_data_wo_version) : version >= 1 && floor(version) == version])
+    error_message = "secret_data_wo_version values must be positive integers."
+  }
 }
 
 variable "preserved_secrets_wo" {

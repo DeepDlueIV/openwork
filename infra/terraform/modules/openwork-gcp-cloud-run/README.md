@@ -22,7 +22,7 @@ Uses the environment described in [the manual Cloud Run guide](../../../../docs/
 | Date | Tools | Images | Scenario / result |
 | --- | --- | --- | --- |
 | 2026-10-14 | Terraform 1.16.5 | 0.18.58 → dev b8efc5b (digests) | Earlier module: setup, browser, isolated desktop, same-database upgrade and destroy passed; one API instance |
-| 2026-10-15 | Terraform 1.16.5 / OpenTofu 1.11.14 | Mocked Google provider | Init, validate and 31 offline test runs per tool passed; write-only fields, protected DB, 2-instance singleton migration topology |
+| 2026-10-15 | Terraform 1.16.5 / OpenTofu 1.11.14 | Mocked Google provider | Init, validate and 32 offline test runs per tool passed; write-only fields, protected DB, 2-instance singleton migration topology |
 | 2026-10-15 | Terraform 1.16.5; local testkit | 0.18.58 → dev f450b1a (digests) | Two API instances observed in both revisions; one migrator/task per deployment, exit 0; setup, browser, exact admin/org preservation, isolated source Electron, no secret rotation/state values, 21-resource destroy and independent empty inventory passed |
 
 The live run used new-deployment write-only mode and db-g1-small, no VPC/load balancer. It does not certify legacy write-only adoption, an existing external database, concurrent deployment coordinators or production load. Job CPU/memory had no nonempty Monitoring samples; service memory distributions aggregate the two API instances, and no idle-instance memory sample was available.
@@ -53,7 +53,7 @@ module "openwork" {
   }
   owner_emails      = ["admin@example.com"]
   org_name          = "Example Co"
-  write_only_secrets = true # NEW deployments only; read upgrade notes first
+  # Secrets stay out of state by default; read Secrets and later runs.
 }
 ```
 
@@ -68,7 +68,7 @@ Get the setup code directly from Secret Manager, without logging it, using the `
 | `image_digests` | `{}`; set both published digests or supply pinned custom images |
 | `den_api_image`, `den_web_image` | Empty: use ghcr.io mirror; every final image must end in `@sha256:<64 hex>` |
 | `create_image_mirror` | `true` (not used when both custom images are supplied) |
-| `allow_mutable_image_tags` | `false`; deprecated unsafe compatibility escape hatch, not contract-conformant |
+| `allow_mutable_image_tags` | `false`: digest pinning is the only default; explicit tag opt-in is not recommended or contract-conformant |
 | `service_account_email`, `grant_iam_roles` | Empty creates an identity; grants default `true` |
 | `deletion_protection` | `true` for database, services and job; explicitly disable for disposable tests |
 | `domain_name`, `api_domain_name` | Empty: HTTPS run.app; custom API default `api.<domain_name>` |
@@ -89,7 +89,9 @@ Get the setup code directly from Secret Manager, without logging it, using the `
 | `den_api` | CPU `1`, memory `2Gi`, min `1`, max `3` |
 | `den_web` | CPU `1`, memory `1Gi`, min `1`, max `3` (Cloud Run request-driven service floor uses one CPU) |
 | `migration_run_id` | `"1"`; changing it deliberately runs another migration |
-| `write_only_secrets` | `false` for backwards compatibility; set `true` for new state-free generated secrets |
+| `write_only_secrets` | `true`; ephemeral generation and write-only provider arguments; false is a not-recommended legacy compatibility opt-out |
+| `database_password_wo_version` | `1`; deliberate database-password rotation counter, coordinate with the connection secret |
+| `secret_data_wo_version` | `{}`; per-secret counters default to `1`, change only for deliberate rotation |
 | `preserved_secrets_wo` | Ephemeral sensitive map `{}`; existing values for write-only adoption, never committed tfvars |
 
 ### Outputs
@@ -120,17 +122,27 @@ Existing `network`/`subnetwork` enable Direct VPC egress for services and job; `
 4. Update both image digests. Apply runs exactly one native job task (zero automatic retries) and waits for success before API rollout; API containers do not run bootstrap. A failed/unknown execution means no promotion: inspect the retained execution/logs before any manual rerun. Do not start another coordinator.
 5. Verify data, browser/desktop sign-in, then resume API-only scaling. Roll back application code only when schema-compatible; never re-enable old per-replica migration definitions or auto-rollback the database.
 
-**No silent secret rotation:** default upgrades keep legacy `random_password` values (explicit moved blocks preserve their addresses) and existing Secret Manager values. Changing the SQL tier may restart Cloud SQL; schedule maintenance. New `deletion_protection` controls SQL too; the old nested override retains precedence. Unverified existing database URLs now require an explicit correction to verified TLS.
+**Preview default change:** this module has not been merged or released; write-only secrets are now the default. An experimental stack created with the earlier legacy mode must explicitly keep `write_only_secrets = false` until its exact existing values are preserved using the adoption procedure below. Do not change modes on a populated experiment without that handover. Changing the SQL tier may restart Cloud SQL; schedule maintenance. New `deletion_protection` controls SQL too; the old nested override retains precedence. Unverified existing database URLs now require an explicit correction to verified TLS.
 
 **Write-only new deployments:** ephemeral random passwords feed `google_sql_user.password_wo` and `google_secret_manager_secret_version.secret_data_wo`. Stable version counters keep the stored values unchanged when ephemeral values are regenerated on later evaluations; image upgrades do not rotate keys. Do not bump these counters, taint/replace secret versions/users, change naming, or toggle modes as a rotation shortcut. Secrets the app needs on restart persist in Secret Manager, not Terraform state. Recover deleted secrets from backups, not regeneration.
 
 **Partial first-apply caution:** ephemeral values are deliberately unrecoverable from state. If the SQL user was created but its connection-secret write failed, stop and inspect before retrying: regenerated values are not proof of the password already installed. Recover the original password from an operator's secure source, or recreate only an empty disposable stack. Never recreate a populated database or rotate its encryption key as a recovery shortcut. Secret deletion/replacement likewise requires an explicit recovery procedure.
 
-**Existing deployments adopting write-only mode:** keep the default until an operator has retrieved the exact current values securely. Supply all current `DATABASE_PASSWORD`, `BETTER_AUTH_SECRET`, `DEN_DB_ENCRYPTION_KEY`, `DEN_INITIAL_ADMIN_BOOTSTRAP_CODE`, plus any configured `SMTP_PASS`/`RESEND_API_KEY` and external `DATABASE_URL` through ephemeral `preserved_secrets_wo`. Keep non-secret SMTP configuration unchanged. Review the plan in maintenance; then enable `write_only_secrets`. Switching fields can create a new Secret Manager version, so the supplied values must be identical. Do not toggle back. Historical state backups still contain legacy secrets and must follow your retention/security policy. This is an operator-assisted migration, not an automatic no-downtime adoption promise.
+**Earlier experimental stacks adopting write-only mode:** explicitly keep `write_only_secrets = false` until an operator has retrieved the exact current values securely. Supply all current `DATABASE_PASSWORD`, `BETTER_AUTH_SECRET`, `DEN_DB_ENCRYPTION_KEY`, `DEN_INITIAL_ADMIN_BOOTSTRAP_CODE`, plus any configured `SMTP_PASS`/`RESEND_API_KEY` and external `DATABASE_URL` through ephemeral `preserved_secrets_wo`. Keep non-secret SMTP configuration unchanged. Review the plan in maintenance; then enable `write_only_secrets`. Switching fields can create a new Secret Manager version, so the supplied values must be identical. Do not toggle back. Historical state backups still contain legacy secrets and must follow your retention/security policy. This is an operator-assisted migration, not an automatic no-downtime adoption promise.
+
+## Secrets and later runs
+
+- **Later applies and upgrades do not rotate secrets or sign anyone out.** In the default write-only mode, values are written once and tracked by a version number. Later evaluations may generate temporary candidate values, but unchanged version numbers keep the stored values unchanged. Today's live release-to-dev run already tested this exact mode; making it the default does not require another live deployment.
+- **Rotation is deliberate.** Increase the relevant `*_version` input only when you intend to rotate: `secret_data_wo_version` selects a secret by its environment-variable name, and `database_password_wo_version` controls the SQL password. A change that forces replacement of a secret version resource can also write a new value. Do not decrease or reset counters: any counter change can cause a write. Rotate the SQL password and its `DATABASE_URL` secret together, in the same apply; do not rotate just the URL with a newly generated password that the database did not adopt.
+- **Rotating `BETTER_AUTH_SECRET` signs everyone out. Rotating `DEN_DB_ENCRYPTION_KEY` makes stored credentials unreadable: never rotate it without a re-encryption procedure.** There is no automatic re-encryption procedure in this module.
+- **Secret Manager is now the only managed copy of generated values.** Terraform state cannot recover them. Protect the secret store from deletion, restrict access and include its values in your backup and disaster-recovery plan. Database backups alone are not a backup of the encryption key.
+- **Terraform and OpenTofu no longer detect manual edits of these values.** Write-only fields are not saved for comparison; an unchanged version number does not reconcile an out-of-band value change.
+- **Losing state or recreating the secret resources can regenerate values.** Restore state and secret backups or carefully import existing resources before applying; do not treat an empty state as permission to regenerate a populated installation's keys. Resource replacement is not a harmless refresh.
+- Both Terraform and OpenTofu need **version 1.11 or later** (and below 2.0 for this module).
 
 ## State guidance
 
-Use an encrypted, access-controlled remote backend (for example GCS with locking and least-privilege bucket access). Never commit state, plan files, secret tfvars, tokens or local logs. Legacy mode retains generated credentials in state deliberately to preserve existing installations; write-only mode removes generated values from new state. SMTP/Resend/legacy URL input paths remain ordinary sensitive inputs, so prefer ephemeral values where supported and protect state in either mode. Losing the DB encryption key makes stored credentials unreadable.
+Use an encrypted, access-controlled remote backend (for example GCS with locking and least-privilege bucket access). Never commit state, plan files, secret tfvars, tokens or local logs. Write-only mode is the default and keeps generated values out of new state. The explicit, not-recommended legacy mode retains generated credentials in state; historical state snapshots need protection even after adoption. SMTP/Resend/legacy URL input paths remain ordinary sensitive inputs, so prefer ephemeral values where supported and protect state in either mode. Losing the DB encryption key makes stored credentials unreadable.
 
 The reusable module does **not** ship a lockfile: Terraform and OpenTofu registry archives differ. `examples/complete/.terraform.lock.hcl` is a **Terraform** root lock. Terraform: `terraform init -lockfile=readonly`. To use OpenTofu, remove only the example lock in your own copied root and run `tofu init`, then `tofu init -lockfile=readonly`; commit that root's regenerated lock. When switching back, regenerate for Terraform. Do not combine both registries in one lock: both tools reject stale extra dependencies in read-only mode. CI checks both roots with this explicit regeneration, followed by read-only verification. Reusable provider constraints are bounded; production root modules own exact locked versions/checksums.
 

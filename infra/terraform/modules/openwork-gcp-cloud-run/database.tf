@@ -79,5 +79,5 @@ resource "google_sql_user" "openwork" {
   host                = "%"
   password            = var.write_only_secrets ? null : random_password.db[0].result
   password_wo         = var.write_only_secrets ? lookup(var.preserved_secrets_wo, "DATABASE_PASSWORD", ephemeral.random_password.app["DATABASE_PASSWORD"].result) : null
-  password_wo_version = var.write_only_secrets ? 1 : null
+  password_wo_version = var.write_only_secrets ? var.database_password_wo_version : null
 }

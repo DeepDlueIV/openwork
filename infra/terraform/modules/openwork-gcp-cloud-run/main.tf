@@ -179,7 +179,7 @@ resource "google_secret_manager_secret_version" "app" {
   secret                 = google_secret_manager_secret.app[each.key].id
   secret_data            = var.write_only_secrets ? null : local.secret_values[each.key]
   secret_data_wo         = var.write_only_secrets ? local.secret_values_wo[each.key] : null
-  secret_data_wo_version = var.write_only_secrets ? "1" : null
+  secret_data_wo_version = var.write_only_secrets ? tostring(lookup(var.secret_data_wo_version, each.key, 1)) : null
 }
 
 # Runtime identity -----------------------------------------------------------

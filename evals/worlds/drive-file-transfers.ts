@@ -42,7 +42,7 @@ export async function driveFileTransfers(seed: Seed) {
   const stack = new AsyncDisposableStack();
   try {
     const accounts = { member: "drive-member@test.example", other: "drive-other@test.example" };
-    const files = { supplier: "supplier-xlsx-1", inventory: "inventory-sheet-1", inventoryShortcut: "inventory-shortcut-1", folder: "suppliers-folder-1" };
+    const files = { supplier: "supplier-xlsx-1", inventory: "inventory-sheet-1", inventoryShortcut: "inventory-shortcut-1", folder: "suppliers-folder-1", quoted: "quoted-filename-1" };
     const google = stack.use(await startMockGoogle({
       accounts: Object.values(accounts), port: 0,
       driveFiles: {
@@ -51,6 +51,7 @@ export async function driveFileTransfers(seed: Seed) {
           { id: files.inventory, name: "Inventory", mimeType: SHEET, parents: ["inventory-folder"], exports: { [XLSX]: inventoryExport, "text/csv": Buffer.from("sku,qty\nwidget,17\n") } },
           { id: files.inventoryShortcut, name: "Inventory", mimeType: "application/vnd.google-apps.shortcut", parents: ["shared-folder"], shortcutTo: files.inventory },
           { id: files.folder, name: "Suppliers", mimeType: "application/vnd.google-apps.folder" },
+          { id: files.quoted, name: "x'; touch shell-injected; echo '", mimeType: "text/plain", content: Buffer.from("literal filename download") },
         ],
       },
     }));

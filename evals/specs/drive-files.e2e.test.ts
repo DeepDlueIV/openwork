@@ -268,6 +268,14 @@ test("an agent pulls a Drive file into the workspace, edits it with bash and sav
     const replaced = await driveFile(world.files.supplier);
     expect(replaced.bytes.equals(local)).toBe(true);
     expect(replaced.revision).not.toBe(revision);
-    evidence.recordAssertionEvidence("Shell clients use the same pull, edit and push path", "createGoogleDriveDownloadLink returned the current revision and a five-minute downloadUrl, also as a standard MCP resource_link, that curl saved byte for byte; a tampered link returned 404. A session with a stale baseRevision returned drive_conflict; with the current one, a single curl PUT replaced the same file with the edited bytes. No link or session URL appears in evidence.", true);
+    const quoted = world.objects(await world.mcp("execute_capability", { name: capability("createGoogleDriveDownloadLink"), body: { fileId: world.files.quoted } })).find((entry) => entry.ok === true && typeof entry.downloadUrl === "string");
+    if (!quoted || typeof quoted.downloadUrl !== "string" || typeof quoted.instructions !== "string") throw new Error("No quoted-name download returned");
+    const example = /example: (curl[^\n]+?)\. Choose/.exec(quoted.instructions)?.[1];
+    if (!example) throw new Error("No download example returned");
+    const safeDownload = await world.bash(example.replace("<downloadUrl>", quoted.downloadUrl));
+    expect(safeDownload.code).toBe(0);
+    expect((await world.read("drive-download")).equals((await driveFile(world.files.quoted)).bytes)).toBe(true);
+    expect((await world.bash("test ! -e shell-injected")).code).toBe(0);
+    evidence.recordAssertionEvidence("Shell clients use the same pull, edit and push path", "A five-minute downloadUrl and MCP resource_link downloaded byte for byte; a tampered link returned 404. Stale revisions were refused and a current-revision curl PUT saved the edit. A filename containing quotes and shell commands stayed data: executing the returned example downloaded the exact bytes and created no injected marker. No bearer URL appears in evidence.", true);
   });
 });

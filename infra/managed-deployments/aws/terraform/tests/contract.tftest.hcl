@@ -33,9 +33,17 @@ mock_provider "aws" {
   mock_resource "aws_ecs_cluster" {
     defaults = { arn = "arn:aws:ecs:us-east-1:123456789012:cluster/test" }
   }
+  mock_resource "aws_lambda_invocation" {
+    defaults = { result = "{\"exitCode\":0,\"image\":\"ghcr.io/different-ai/openwork-den-api@sha256:9a1d036b2f39c67544c9f78cb3e966ddcc1b0296aa61af7eebd04308afdad6d0\"}" }
+  }
 }
 mock_provider "random" {}
 mock_provider "archive" {}
+mock_provider "http" {
+  mock_data "http" {
+    defaults = { status_code = 200, response_body = "-----BEGIN CERTIFICATE-----fixture" }
+  }
+}
 
 variables {
   deployment_id        = "0cf7aa5c-4c1a-43dc-ac34-819509b527fa"

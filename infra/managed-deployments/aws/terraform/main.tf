@@ -124,6 +124,9 @@ module "network" {
 
 module "platform" {
   source = "../../../terraform/modules/openwork-aws-ecs"
+  # Preserve the existing managed installer's state-backed keys. A separate,
+  # reviewed secret migration must supply exact existing values before opt-in.
+  write_only_secrets = false
 
   name             = module.contract.name
   openwork_version = var.openwork_version

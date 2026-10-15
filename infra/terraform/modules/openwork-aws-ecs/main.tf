@@ -4,9 +4,19 @@ locals {
   web_url  = "https://${var.domain_name}"
   api_url  = "https://${local.api_host}"
   region   = split(":", aws_cloudwatch_log_group.api.arn)[3] # works on AWS provider v5 and v6
-  # Known release index digests; other versions require explicit immutable refs.
-  den_api_image = var.den_api_image != "" ? var.den_api_image : "ghcr.io/different-ai/openwork-den-api@sha256:0942e02a8e2033151e982f51b24926fe5090807b7f7480d77f2c4fc5b806737e"
-  den_web_image = var.den_web_image != "" ? var.den_web_image : "ghcr.io/different-ai/openwork-den-web@sha256:b1543b2bb36df0a7c75d7dc18cdd773eb2e87df268169dcb1e284439299ada3f"
+  # Preserve the managed installer's existing release input without floating tags.
+  release_images = {
+    "0.18.57" = {
+      api = "ghcr.io/different-ai/openwork-den-api@sha256:9a1d036b2f39c67544c9f78cb3e966ddcc1b0296aa61af7eebd04308afdad6d0"
+      web = "ghcr.io/different-ai/openwork-den-web@sha256:aadaae6fb1b96b8e87b63c15ab4a51f5ab8782969850911b134978d357bc4569"
+    }
+    "0.18.58" = {
+      api = "ghcr.io/different-ai/openwork-den-api@sha256:0942e02a8e2033151e982f51b24926fe5090807b7f7480d77f2c4fc5b806737e"
+      web = "ghcr.io/different-ai/openwork-den-web@sha256:b1543b2bb36df0a7c75d7dc18cdd773eb2e87df268169dcb1e284439299ada3f"
+    }
+  }
+  den_api_image = var.den_api_image != "" ? var.den_api_image : local.release_images[var.openwork_version].api
+  den_web_image = var.den_web_image != "" ? var.den_web_image : local.release_images[var.openwork_version].web
 
   # OpenWork Web: den-gateway serves the web app and proxies each member to
   # their Daytona sandbox; den-api provisions the sandboxes.

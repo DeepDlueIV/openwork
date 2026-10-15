@@ -224,8 +224,9 @@ This module does not invent the application-level database lock, interruption
 marker or schema-range protocol. If the legacy fence cannot be enforced, stay
 in maintenance rather than running a second migrator.
 
-**Digest migration:** `openwork_version = "0.18.58"` selects the built-in API/web
-index digests. All other releases require `den_api_image` and `den_web_image`
+**Digest migration:** `openwork_version = "0.18.57"` or `"0.18.58"` selects the
+corresponding built-in API/web index digests. The 0.18.57 pair preserves the
+managed installer's existing release input without floating tags. Other releases require `den_api_image` and `den_web_image`
 with `@sha256` digests. Tags are rejected, including custom optional service
 images when enabled. Existing image override names remain unchanged; pin their
 current digest before upgrading. Gateway, runner and Workbot runtime behavior
@@ -274,6 +275,17 @@ terraform {
 ```
 
 Require Terraform **>= 1.11, < 2.0** or OpenTofu **>= 1.11, < 2.0**.
+**Deliberate narrow C4 provider-range exception:** AWS uses
+`>= 5.100, < 7.0`, not one `~>` range, so existing managed deployments can keep
+their pinned AWS 5.100.0 while AWS 6.x remains live-tested. One pessimistic
+range cannot include both majors. Random uses `~> 3.7, >= 3.7.2`, preserving the
+managed root's 3.7.2 pin as well as the tested 3.9.1 path. The managed root
+explicitly keeps `write_only_secrets = false` so existing keys stay unchanged;
+this is not an automatic credential migration or a forced provider upgrade.
+Its new HTTP provider lock entry and mocks cover the CA download without real
+network calls in tests. The installer, runner, bootstrap and health agent are
+not changed. Changes to this consumer need its owner's review.
+
 No provider lock file is shipped in this reusable module. Generate your root
 or example lock with the tool you use (`terraform init` / `tofu init`), then
 commit it in that root. Registries differ; regenerate with `init -upgrade`
@@ -296,7 +308,7 @@ concepts use the common names below. AWS uses `tags` rather than GCP `labels`.
 
 | Input | Default / meaning |
 | --- | --- |
-| `openwork_version` | Required release label; built-in pins for 0.18.58 |
+| `openwork_version` | Required release label; built-in pins for 0.18.57/0.18.58 |
 | `den_api_image`, `den_web_image` | Empty selects built-in release pins; custom refs require digests |
 | `domain_name`, `api_domain_name` | Required web host; API defaults to `api.<domain_name>` |
 | `owner_emails`, `org_name`, `org_slug` | Required owners; `OpenWork`, `default` |

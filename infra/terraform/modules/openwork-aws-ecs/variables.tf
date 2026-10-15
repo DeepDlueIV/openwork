@@ -3,12 +3,12 @@
 # ---------------------------------------------------------------------------
 
 variable "openwork_version" {
-  description = "Release label. 0.18.58 has built-in digest pins; other releases require den_api_image and den_web_image digest overrides."
+  description = "Release label. 0.18.57 and 0.18.58 have built-in digest pins; other releases require den_api_image and den_web_image digest overrides."
   type        = string
 
   validation {
-    condition     = var.openwork_version == "0.18.58" || (var.den_api_image != "" && var.den_web_image != "")
-    error_message = "For versions other than 0.18.58, supply both den_api_image and den_web_image pinned by @sha256 digest."
+    condition     = contains(["0.18.57", "0.18.58"], var.openwork_version) || (var.den_api_image != "" && var.den_web_image != "")
+    error_message = "For versions other than 0.18.57/0.18.58, supply both den_api_image and den_web_image pinned by @sha256 digest."
   }
 }
 
@@ -116,7 +116,7 @@ variable "tags" {
 }
 
 variable "den_api_image" {
-  description = "Full den-api image pinned with @sha256 digest (including ECR mirrors). Empty uses the built-in 0.18.58 digest only."
+  description = "Full den-api image pinned with @sha256 digest (including ECR mirrors). Empty uses the built-in digest for 0.18.57/0.18.58."
   type        = string
   default     = ""
 }
@@ -128,7 +128,7 @@ variable "den_gateway_image" {
 }
 
 variable "den_web_image" {
-  description = "Full den-web image pinned with @sha256 digest. Empty uses the built-in 0.18.58 digest only."
+  description = "Full den-web image pinned with @sha256 digest. Empty uses the built-in digest for 0.18.57/0.18.58."
   type        = string
   default     = ""
 }

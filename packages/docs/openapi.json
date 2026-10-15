@@ -16475,6 +16475,7 @@
             ]
           },
           "manualOAuthEndpoints": {
+            "description": "Only returned with explicit connection-settings view permission; omitted from usable member listings, including for the connection creator.",
             "anyOf": [
               {
                 "type": "object",
@@ -17559,6 +17560,7 @@
             ]
           },
           "manualOAuthEndpoints": {
+            "description": "Only returned with explicit connection-settings view permission; omitted from usable member listings, including for the connection creator.",
             "anyOf": [
               {
                 "type": "object",
@@ -18010,6 +18012,7 @@
             ]
           },
           "manualOAuthEndpoints": {
+            "description": "Only returned with explicit connection-settings view permission; omitted from usable member listings, including for the connection creator.",
             "anyOf": [
               {
                 "type": "object",

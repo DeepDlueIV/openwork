@@ -162,4 +162,28 @@ test("an admin explicitly saves published sign-in addresses before a public clie
     expect(discoveryCount()).toBe(before);
     evidence.recordAssertionEvidence("Manual configuration is validated and declaratively round-trips", "Half-set, non-HTTPS, userinfo and fragment pairs return 400. By-key create/update/clear preserve exact settings without contacting metadata or token endpoints.", true);
   });
+  await step("a non-admin creator cannot read or overwrite administrator-configured sign-in addresses", async () => {
+    const memberBody = { name: "exp-mcpmanual-member-created", url: `${world.origin}/mcp/team`, authType: "oauth", credentialMode: "per_member", access: { orgWide: false, memberIds: [], teamIds: [] } };
+    const created = await world.memberApi("/v1/mcp-connections", { method: "POST", body: JSON.stringify(memberBody) });
+    expect(created.response.status, created.text).toBe(200);
+    if (!isRecord(created.body) || typeof created.body.id !== "string") throw new Error("Member-created connection missing");
+    const path = `/v1/mcp-connections/${created.body.id}`;
+    const addresses = { authorizationEndpoint: `${world.origin}/private-admin-authorize`, tokenEndpoint: `${world.origin}/private-admin-token` };
+    const saved = await world.api(path, { method: "PUT", body: JSON.stringify({ ...memberBody, expectedUpdatedAt: created.body.updatedAt, access: created.body.access, manualOAuthEndpoints: addresses, oauthClient: { clientId: "exp-mcpmanual-client" } }) });
+    expect(saved.response.status, saved.text).toBe(200);
+    expect(saved.body).toMatchObject({ manualOAuthEndpoints: addresses });
+    if (!isRecord(saved.body)) throw new Error("Admin configuration missing");
+    const listed = await probe.api(world.den.members.member, "/v1/mcp-connections?scope=usable");
+    expect(listed.text).not.toContain("manualOAuthEndpoints");
+    expect(listed.text).not.toContain("private-admin-");
+    const renamed = await world.memberApi(path, { method: "PUT", body: JSON.stringify({ ...memberBody, name: "exp-mcpmanual-member-renamed", access: saved.body.access, expectedUpdatedAt: saved.body.updatedAt }) });
+    expect(renamed.response.status, renamed.text).toBe(200);
+    expect(renamed.text).not.toContain("manualOAuthEndpoints");
+    expect(renamed.text).not.toContain("private-admin-");
+    if (!isRecord(renamed.body)) throw new Error("Renamed connection missing");
+    const denied = await world.memberApi(path, { method: "PUT", body: JSON.stringify({ ...memberBody, access: saved.body.access, expectedUpdatedAt: renamed.body.updatedAt, manualOAuthEndpoints: { ...addresses, tokenEndpoint: `${world.origin}/replacement` } }) });
+    expect(denied.response.status, denied.text).toBe(403);
+    expect((await world.api(path)).body).toMatchObject({ manualOAuthEndpoints: addresses });
+    evidence.recordAssertionEvidence("Creator status does not grant access to private OAuth settings", "After an administrator configures a member-created connection, its ordinary creator's listing and rename response omit manual addresses; replacing them is forbidden and the admin's saved pair stays unchanged.", true);
+  });
 });

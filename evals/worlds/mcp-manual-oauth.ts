@@ -72,6 +72,7 @@ export async function manualOAuth(seed: Seed) {
     return {
       den, web, requests, origin, connectionId, exchanges: () => exchanges,
       api: (path: string, init?: RequestInit) => seed.api(den.admin, path, init),
+      memberApi: (path: string, init?: RequestInit) => seed.api(den.members.member, path, init),
       async connection(scope = "manageable") { const result = await seed.api(den.admin, `/v1/mcp-connections?scope=${scope}`); const rows = isRecord(result.body) && Array.isArray(result.body.connections) ? result.body.connections : []; return rows.find(entry => isRecord(entry) && entry.id === connectionId); },
       async signInTab(): Promise<Surface | undefined> {
         const target = (await listTargets(web.handle.cdpUrl)).find(entry => {

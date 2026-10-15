@@ -508,7 +508,7 @@ const connectionResponseSchema = z.object({
   access: accessSummarySchema.nullable(),
   /** Public OAuth client id only. Client secrets and all other credentials are never returned. */
   oauthClientId: z.string().nullable().optional(),
-  manualOAuthEndpoints: manualOAuthEndpointsSchema.nullable().optional(),
+  manualOAuthEndpoints: manualOAuthEndpointsSchema.nullable().optional().describe("Only returned with explicit connection-settings view permission; omitted from usable member listings, including for the connection creator."),
   oauthCallbackUrl: z.string().nullable().optional(),
   oauthSharedCallbackUrl: z.string().nullable().optional(),
   oauthClientMetadataUrl: z.string().nullable().optional(),
@@ -1194,6 +1194,7 @@ async function toConnectionResponse(
     callerOrgMembershipId: DenTypeId<"member">
     createdByName?: string | null
     includeAccess: boolean
+    includeManualOAuthEndpoints?: boolean
     identityManagedBy: ConnectionRequiredBy[]
     requiredBy: ConnectionRequiredBy[]
     requiredAuthTypes: Set<"apikey" | "none" | "oauth">
@@ -1328,7 +1329,7 @@ async function toConnectionResponse(
       oauthClientMetadataUrl: row.kind === "external_mcp" && row.authType === "oauth" ? externalMcpClientMetadataUrl() : null,
       oauthCallbackMode: callbackMode,
       oauthRegistrationSource,
-      ...(options.includeAccess ? { manualOAuthEndpoints: row.oauthConfiguration?.manualOAuthEndpoints ?? null } : {}),
+      ...(options.includeManualOAuthEndpoints ? { manualOAuthEndpoints: row.oauthConfiguration?.manualOAuthEndpoints ?? null } : {}),
       authorizationServerIssuer: row.oauthConfiguration?.authorizationServerIssuer ?? null,
       requestedScopes: row.oauthConfiguration?.requestedScopes ?? [],
       grantedScopes,
@@ -1865,6 +1866,7 @@ async function createExternalConnectionResponse(
     callerOrgMembershipId: payload.currentMember.id,
     createdByName: resolveCreatorName(await organizationMembers(payload), (refreshed ?? created).createdByOrgMembershipId),
     includeAccess: true,
+    includeManualOAuthEndpoints: await callerHasPermission(payload, "connections.view"),
     requiredBy: [],
     identityManagedBy: [],
     requiredAuthTypes: new Set(),
@@ -2134,6 +2136,7 @@ async function replaceExternalConnectionResponse(
     callerOrgMembershipId: payload.currentMember.id,
     createdByName: resolveCreatorName(await organizationMembers(payload), result.connection.createdByOrgMembershipId),
     includeAccess: true,
+    includeManualOAuthEndpoints: await callerHasPermission(payload, "connections.view"),
     requiredBy: provenance.requiredBy.get(result.connection.id) ?? [],
     identityManagedBy: provenance.identityManagedBy.get(result.connection.id) ?? [],
     requiredAuthTypes: provenance.requiredAuthTypes.get(result.connection.id) ?? new Set(),
@@ -2480,6 +2483,7 @@ export function registerMcpConnectionRoutes<T extends { Variables: OrgRouteVaria
             callerOrgMembershipId: payload.currentMember.id,
             createdByName: resolveCreatorName(members, row.createdByOrgMembershipId),
             includeAccess: true,
+            includeManualOAuthEndpoints: true, // This branch requires connections.view above.
             requiredBy: provenance.requiredBy.get(row.id) ?? [],
             identityManagedBy: provenance.identityManagedBy.get(row.id) ?? [],
             requiredAuthTypes: provenance.requiredAuthTypes.get(row.id) ?? new Set(),
@@ -3218,6 +3222,7 @@ export function registerMcpConnectionRoutes<T extends { Variables: OrgRouteVaria
         callerOrgMembershipId: payload.currentMember.id,
         createdByName: resolveCreatorName(await organizationMembers(payload), connection.createdByOrgMembershipId),
         includeAccess: true,
+        includeManualOAuthEndpoints: await hasPermission(c, "connections.view"),
         requiredBy: provenance.requiredBy.get(connection.id) ?? [],
         identityManagedBy: provenance.identityManagedBy.get(connection.id) ?? [],
         requiredAuthTypes: provenance.requiredAuthTypes.get(connection.id) ?? new Set(),
@@ -3776,6 +3781,7 @@ export function registerMcpConnectionRoutes<T extends { Variables: OrgRouteVaria
         callerOrgMembershipId: payload.currentMember.id,
         createdByName: resolveCreatorName(await organizationMembers(payload), connection.createdByOrgMembershipId),
         includeAccess: true,
+        includeManualOAuthEndpoints: await hasPermission(c, "connections.view"),
         requiredBy: provenance.requiredBy.get(connection.id) ?? [],
         identityManagedBy: provenance.identityManagedBy.get(connection.id) ?? [],
         requiredAuthTypes: provenance.requiredAuthTypes.get(connection.id) ?? new Set(),

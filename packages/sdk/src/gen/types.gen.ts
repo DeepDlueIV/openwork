@@ -3762,6 +3762,9 @@ export type ExternalMcpConnectionResponse = {
   setupRequired?: boolean;
   access: ExternalMcpConnectionAccessSummary | null;
   oauthClientId?: string | null;
+  /**
+   * Only returned with explicit connection-settings view permission; omitted from usable member listings, including for the connection creator.
+   */
   manualOAuthEndpoints?: {
     authorizationEndpoint: string;
     tokenEndpoint: string;
@@ -4034,6 +4037,9 @@ export type ExternalMcpConnectionCreatedResponse = {
   setupRequired?: boolean;
   access: ExternalMcpConnectionAccessSummary | null;
   oauthClientId?: string | null;
+  /**
+   * Only returned with explicit connection-settings view permission; omitted from usable member listings, including for the connection creator.
+   */
   manualOAuthEndpoints?: {
     authorizationEndpoint: string;
     tokenEndpoint: string;
@@ -4113,6 +4119,9 @@ export type ExternalMcpConnectionUpdatedResponse = {
   setupRequired?: boolean;
   access: ExternalMcpConnectionAccessSummary | null;
   oauthClientId?: string | null;
+  /**
+   * Only returned with explicit connection-settings view permission; omitted from usable member listings, including for the connection creator.
+   */
   manualOAuthEndpoints?: {
     authorizationEndpoint: string;
     tokenEndpoint: string;

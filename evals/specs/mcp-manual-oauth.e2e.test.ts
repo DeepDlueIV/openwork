@@ -63,6 +63,11 @@ test("an admin explicitly saves published sign-in addresses before a public clie
     await user.see({ testId: "manual-oauth-authorization-endpoint" }, { value: `${world.origin}/authorize` });
     await user.wheelAt({ x: 1100, y: 800, deltaY: 900 });
     await screenshot(world.web, { caption: "Advanced sign-in settings — saved exact endpoint pair" });
+    await user.type({ testId: "manual-oauth-authorization-endpoint" }, "https://sign-in.example.test/authorize", { replace: true });
+    await user.see({ text: /The sign-in addresses use a different host/ });
+    expect(await world.saveEnabled()).toBe(true);
+    expect(await world.connection()).toMatchObject({ manualOAuthEndpoints: { authorizationEndpoint: `${world.origin}/authorize`, tokenEndpoint: `${world.origin}/token` } });
+    evidence.recordAssertionEvidence("A different sign-in host warns without blocking", "Typing a different HTTPS sign-in host shows the domain warning and leaves Save enabled, but an unsaved edit does not change the saved endpoint pair.", true);
     evidence.recordAssertionEvidence("Prefill never auto-applies", "Preview and form confirmation made no configuration/token change. Only Save persists the exact pair; usable desktop-facing listings omit it.", true);
   });
   const discoveryCount = () => world.requests.filter(request => request.path.includes(".well-known")).length;

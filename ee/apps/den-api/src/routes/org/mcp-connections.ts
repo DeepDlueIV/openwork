@@ -3584,7 +3584,7 @@ export function registerMcpConnectionRoutes<T extends { Variables: OrgRouteVaria
         } catch (error) {
           const diagnostic = externalMcpDiagnosticForResponse(error, c.get("requestId"), "AUTH_RESOURCE_DISCOVERY")
           const configuredIssuer = connection.oauthConfiguration?.authorizationServerIssuer
-          if (diagnostic.code !== "MCP_OAUTH_ISSUER_MISMATCH" || !configuredIssuer) throw error
+          if (diagnostic.code !== "MCP_OAUTH_ISSUER_MISMATCH" || !configuredIssuer || connection.oauthConfiguration?.manualOAuthEndpoints) throw error
 
           let requirements: Awaited<ReturnType<typeof discoverConnectionRequirements>>
           try {

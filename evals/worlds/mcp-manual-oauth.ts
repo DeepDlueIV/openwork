@@ -80,6 +80,7 @@ export async function manualOAuth(seed: Seed) {
         });
         return target ? { handle: web.handle, client: await connect(debuggerUrlFor(web.handle.cdpUrl, target)) } : undefined;
       },
+      async saveEnabled() { return evaluate(web.client, () => Array.from(document.querySelectorAll('button')).some(button => button.textContent?.trim() === "Save changes" && !button.disabled)); },
       async advancedHealthy() { return evaluate(web.client, () => { const panel = document.querySelector('[data-testid="manual-oauth-settings"]'); if (!panel) return false; const box = panel.getBoundingClientRect(); return box.top >= 52 && box.bottom <= innerHeight && box.left >= 0 && box.right <= innerWidth && !document.querySelector('[role="dialog"], [aria-modal="true"]'); }); },
       async healthy(tab: Surface) { return evaluate(tab.client, () => { const heading = document.querySelector("h1"); if (!heading) return false; const box = heading.getBoundingClientRect(); return box.width > 0 && box.height > 0 && box.left >= 0 && box.right <= innerWidth && document.documentElement.scrollWidth <= innerWidth && !document.querySelector('[role="dialog"], [aria-modal="true"]'); }); },
       async [Symbol.asyncDispose]() { provider.closeAllConnections(); await new Promise<void>((resolve, reject) => provider.close(error => error ? reject(error) : resolve())); },

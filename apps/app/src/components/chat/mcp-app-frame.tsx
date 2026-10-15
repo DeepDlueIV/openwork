@@ -328,6 +328,11 @@ export type McpAppSandboxViewProps = {
    * this person's saved data. Its tools still wait for the lease.
    */
   keptResultsBeforeLive?: boolean
+  /**
+   * The host has the lease resolveLiveActions hands out, so a saved view that
+   * went live in place takes input like any live App.
+   */
+  liveReady?: boolean
   /** Tool name used for host diagnostics and the iframe title. */
   toolName: string
   /** Arguments the host reports to the app as its launch input. */
@@ -364,7 +369,7 @@ export type McpAppSandboxViewProps = {
  * bridges it to the workspace MCP App host. Chat messages and dashboard tiles
  * share this exact pipeline so rendering and diagnostics stay identical.
  */
-export function McpAppSandboxView({ origin, app, resolveLiveActions, keptResultsBeforeLive = false, toolName, inputArguments, result, connectionController, updateMode = "replace", onReady, unavailableNotice, onRequestTeardown, initialHeight, onHeightChange, presentation = "inline", onError, onRetry, onAppToolResult, openKey }: McpAppSandboxViewProps) {
+export function McpAppSandboxView({ origin, app, resolveLiveActions, keptResultsBeforeLive = false, liveReady = false, toolName, inputArguments, result, connectionController, updateMode = "replace", onReady, unavailableNotice, onRequestTeardown, initialHeight, onHeightChange, presentation = "inline", onError, onRetry, onAppToolResult, openKey }: McpAppSandboxViewProps) {
   const openworkServerClient = origin.client
   const workspaceId = origin.workspaceId
   const readOnly = origin.readOnly
@@ -650,6 +655,9 @@ export function McpAppSandboxView({ origin, app, resolveLiveActions, keptResults
         while (!disposed && !failed) {
           const next = toolDeliveryRef.current
           if (!sameMcpAppValue(delivered, next)) {
+            // A new launch result for an open App is the host refreshing it:
+            // the loads it makes in reply run again instead of repeating.
+            if (delivered !== null) loads.refresh()
             await bridge.sendToolInput({ arguments: next.inputArguments })
             if (disposed || failed) return
             await bridge.sendToolResult({
@@ -918,8 +926,8 @@ export function McpAppSandboxView({ origin, app, resolveLiveActions, keptResults
           sandbox="allow-scripts"
           referrerPolicy="no-referrer"
           className="block w-full border-0 bg-transparent"
-          inert={readOnly && Boolean(resolveLiveActions) || undefined}
-          aria-busy={readOnly && Boolean(resolveLiveActions) || undefined}
+          inert={readOnly && Boolean(resolveLiveActions) && !liveReady || undefined}
+          aria-busy={readOnly && Boolean(resolveLiveActions) && !liveReady || undefined}
           style={{ height: normalizeMcpAppHeight(height, MIN_HEIGHT) }}
         />
       </div>

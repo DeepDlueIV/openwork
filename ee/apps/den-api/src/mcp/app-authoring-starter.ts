@@ -525,6 +525,14 @@ export default function App({ app, input, result, hostContext }) {
     setValues(next);
     if (delivered && isReady(LOAD.fields, next)) load.call(argumentsFor(LOAD, next));
   }, [launch, delivered]);
+  // A later launch result is the host refreshing the open App, as a dashboard
+  // does: load the same inputs again while the data stays on screen.
+  const refreshed = React.useRef(result);
+  React.useEffect(() => {
+    const previous = refreshed.current;
+    refreshed.current = result;
+    if (previous !== undefined && previous !== result && isReady(LOAD.fields, values)) load.call(argumentsFor(LOAD, values));
+  }, [result]);
   // The last result for these inputs shows at once, from OpenWork's storage.
   const query = JSON.stringify(values);
   React.useEffect(() => {
@@ -578,6 +586,14 @@ export default function App({ app, input, result, hostContext }) {
   React.useEffect(() => {
     if (LOAD && delivered) load.call(argumentsFor(LOAD, {}));
   }, [delivered]);
+  // A later launch result is the host refreshing the open App, as a dashboard
+  // does: load again while the data stays on screen.
+  const refreshed = React.useRef(result);
+  React.useEffect(() => {
+    const previous = refreshed.current;
+    refreshed.current = result;
+    if (LOAD && previous !== undefined && previous !== result) load.call(argumentsFor(LOAD, {}));
+  }, [result]);
   const reload = () => {
     if (LOAD) load.call(argumentsFor(LOAD, {}));
   };

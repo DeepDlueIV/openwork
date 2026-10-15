@@ -45,6 +45,9 @@ export type DashboardLaunchEndpoint = {
  */
 const EMPTY_ARGUMENTS: Record<string, unknown> = {};
 
+/** When the host obtained a tile's launch result; set by OpenWork, never by the App. */
+const MCP_APP_LAUNCHED_AT_META = "openwork/launchedAt";
+
 type TileDocument = { id: number; active: boolean; failed: boolean };
 
 type ReadyTileState = {
@@ -499,11 +502,13 @@ function McpAppTileContent({
               ? "This artifact could not start with the saved launch input. Remove the tile and add it again with corrected input."
               : "This artifact could not start without input, which this tile does not provide."),
         };
+        // Each launch is marked with its time, so an open App receives every
+        // refresh as a new launch result and can reload its data in the background.
         const preserved = {
           content: result.content,
           ...(typeof result.isError === "boolean" ? { isError: result.isError } : {}),
           ...(result.structuredContent ? { structuredContent: result.structuredContent } : {}),
-          ...(result._meta ? { _meta: result._meta } : {}),
+          _meta: { ...result._meta, [MCP_APP_LAUNCHED_AT_META]: new Date().toISOString() },
         };
         keepLaunch = true;
         if (reused) return { ...reused, result: preserved, cachedAt: Date.now() };
@@ -723,6 +728,7 @@ function McpAppTileContent({
                 origin={origin}
                 resolveLiveActions={origin.readOnly ? resolveLiveActions : undefined}
                 keptResultsBeforeLive={origin.readOnly}
+                liveReady={Boolean(state.live)}
                 key={state.lifetime.id}
                 app={state.app}
                 toolName={entry.projectedToolName}

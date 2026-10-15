@@ -177,7 +177,6 @@ test("an owner filters members, teams and roles in the same toolbar, and a role 
   await step("turning the rollout off restores the original toolbar without losing Sales or the member list", async () => {
     await world.setToolbars(false);
     await owner.navigate(world.url("/dashboard/members"));
-    await owner.reload();
     await owner.see({ role: "button", label: "Add member" }, { timeoutMs: 60_000 });
     await owner.notSee({ placeholder: "Filter members" });
     await owner.see({ text: LONG_INVITE_EMAIL });

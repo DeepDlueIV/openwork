@@ -32,7 +32,7 @@ export function normalizeExternalMcpIdentityUrl(value: string): string {
   }
 }
 
-function connectionIdentityFields(source: ExternalMcpOAuthStateIdentitySource): NonSecretExternalMcpOAuthStateIdentity {
+function legacyConnectionIdentityFields(source: Omit<ExternalMcpOAuthStateIdentitySource, "oauthConfiguration">): NonSecretExternalMcpOAuthStateIdentity {
   const url = normalizeExternalMcpIdentityUrl(source.url)
   const authType: ExternalMcpAuthType = source.authType === "oauth"
     ? "oauth"
@@ -43,10 +43,16 @@ function connectionIdentityFields(source: ExternalMcpOAuthStateIdentitySource): 
   if (source.kind === "native_provider") {
     return [source.id, url, authType, credentialMode]
   }
-  const manual = source.oauthConfiguration?.manualOAuthEndpoints
-  if (authType === "oauth" && manual) return [new URL(source.url).href, authType, credentialMode, manual.authorizationEndpoint, manual.tokenEndpoint]
   if (authType === "apikey") return [url, authType, credentialMode, source.apiKeyAuthScheme === "token" ? "token" : "bearer"]
   return [url, authType, credentialMode]
+}
+
+function connectionIdentityFields(source: ExternalMcpOAuthStateIdentitySource): NonSecretExternalMcpOAuthStateIdentity {
+  const manual = source.oauthConfiguration?.manualOAuthEndpoints
+  if (source.kind === "external_mcp" && source.authType === "oauth" && manual) {
+    return [new URL(source.url).href, "oauth", source.credentialMode, manual.authorizationEndpoint, manual.tokenEndpoint]
+  }
+  return legacyConnectionIdentityFields(source)
 }
 
 /**
@@ -75,7 +81,7 @@ export function matchesLegacyExternalMcpOAuthStateIdentityBinding(
   // Manual endpoint tuples did not exist in either legacy binding format.
   // They must use the keyed v2 binding, never the unkeyed compatibility hash.
   if (source.oauthConfiguration?.manualOAuthEndpoints) return false
-  const serializedIdentity = JSON.stringify(connectionIdentityFields({
+  const serializedIdentity = JSON.stringify(legacyConnectionIdentityFields({
     id: source.id,
     kind: source.kind,
     url: source.url,

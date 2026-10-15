@@ -40,7 +40,7 @@ export function ManualOAuthFields({ url, value, onChange, disabled = false, disc
   }
   return <details className="group" open={suggestions.length > 0 || Boolean(value.authorizationEndpoint || value.tokenEndpoint)} data-testid="manual-oauth-settings">
     <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[12px] font-medium text-gray-600 [&::-webkit-details-marker]:hidden">
-      <ChevronRight className="h-3.5 w-3.5 text-gray-400 transition-transform group-open:rotate-90" aria-hidden />
+      <ChevronRight className="h-3.5 w-3.5 text-gray-600 transition-transform group-open:rotate-90" aria-hidden />
       Advanced sign-in settings
     </summary>
     <div className="mt-3 flex min-w-0 flex-col gap-3">

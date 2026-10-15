@@ -72,7 +72,17 @@ export function matchesLegacyExternalMcpOAuthStateIdentityBinding(
   source: ExternalMcpOAuthStateIdentitySource,
   signedStateBinding: string,
 ): boolean {
-  const serializedIdentity = JSON.stringify(connectionIdentityFields(source))
+  // Manual endpoint tuples did not exist in either legacy binding format.
+  // They must use the keyed v2 binding, never the unkeyed compatibility hash.
+  if (source.oauthConfiguration?.manualOAuthEndpoints) return false
+  const serializedIdentity = JSON.stringify(connectionIdentityFields({
+    id: source.id,
+    kind: source.kind,
+    url: source.url,
+    authType: source.authType,
+    credentialMode: source.credentialMode,
+    apiKeyAuthScheme: source.apiKeyAuthScheme,
+  }))
   const previousDigest = createHash("sha256").update(serializedIdentity).digest("base64url")
   if (signedStateBinding === previousDigest) return true
 

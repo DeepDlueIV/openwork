@@ -2,7 +2,7 @@ import assert from "node:assert/strict"
 import { test } from "node:test"
 import { createEnterpriseMcpClient, discoverConnectionRequirements, manualOAuthEndpointsSchema, manualOAuthState, oauthIssuerMismatchMessage } from "@openwork/enterprise-mcp-client"
 import type { EnterpriseMcpOAuthPersistence } from "@openwork/enterprise-mcp-client"
-import { createExternalMcpIdentityBinding } from "../src/capability-sources/external-mcp-oauth-state-identity.js"
+import { createExternalMcpIdentityBinding, matchesLegacyExternalMcpOAuthStateIdentityBinding } from "../src/capability-sources/external-mcp-oauth-state-identity.js"
 
 const endpoints = { authorizationEndpoint: "https://identity.example/authorize?tenant=synthetic", tokenEndpoint: "https://identity.example/token" }
 const resource = "https://resource.example/mcp/team"
@@ -67,6 +67,10 @@ test("endpoint configuration is part of the state and in-flight credential bindi
   const base = { id: "exp-mcpmanual-identity", kind: "external_mcp", url: resource, authType: "oauth", credentialMode: "per_member" } satisfies Parameters<typeof createExternalMcpIdentityBinding>[0]
   const bound = createExternalMcpIdentityBinding({ ...base, oauthConfiguration: { manualOAuthEndpoints: endpoints } }, "synthetic-secret")
   assert.notEqual(bound, createExternalMcpIdentityBinding(base, "synthetic-secret"))
+  const legacy = Buffer.from(JSON.stringify([resource, "oauth", "per_member"])).toString("base64url")
+  assert.equal(matchesLegacyExternalMcpOAuthStateIdentityBinding(base, legacy), true)
+  assert.equal(matchesLegacyExternalMcpOAuthStateIdentityBinding({ ...base, oauthConfiguration: { manualOAuthEndpoints: endpoints } }, legacy), false)
+  assert.equal(matchesLegacyExternalMcpOAuthStateIdentityBinding({ ...base, oauthConfiguration: { manualOAuthEndpoints: endpoints } }, bound), false)
   assert.notEqual(bound, createExternalMcpIdentityBinding({ ...base, oauthConfiguration: { manualOAuthEndpoints: { ...endpoints, tokenEndpoint: `${endpoints.tokenEndpoint}?revision=2` } } }, "synthetic-secret"))
   assert.notEqual(bound, createExternalMcpIdentityBinding({ ...base, oauthConfiguration: { manualOAuthEndpoints: { ...endpoints, authorizationEndpoint: `${endpoints.authorizationEndpoint}&revision=2` } } }, "synthetic-secret"))
 })

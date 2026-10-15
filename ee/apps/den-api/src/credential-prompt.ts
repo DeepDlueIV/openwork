@@ -67,7 +67,7 @@ export function gatewayProviderKeyPrompt(input: { inferenceProviderId: string; c
 export function credentialPromptManageUrl(prompt: CredentialPrompt): string | null {
   const path = prompt.target.type === "mcp_connection_key"
     ? `/dashboard/mcp-connections/${encodeURIComponent(prompt.target.connectionId)}`
-    : "/dashboard/gateway-providers"
+    : "/dashboard/ai-gateway?tab=ai-providers"
   try {
     return new URL(path, env.betterAuthUrl).toString()
   } catch {

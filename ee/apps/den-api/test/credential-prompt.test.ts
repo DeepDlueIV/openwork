@@ -51,7 +51,7 @@ test("the agent is told to end its turn and never to ask for the key in chat", (
   assert.equal(fields.credentialPrompt, prompt)
   assert.match(fields.nextStep, /Never ask them to paste the key in chat/)
   assert.match(fields.nextStep, /End your turn/)
-  assert.match(fields.nextStep, /https:\/\/console\.example\.test\/dashboard\/gateway-providers/)
+  assert.match(fields.nextStep, /https:\/\/console\.example\.test\/dashboard\/ai-gateway\?tab=ai-providers/)
   assert.match(credentialPromptInstruction(prompt, null), /^A private field for the Team OpenAI API key/)
 })
 

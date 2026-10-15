@@ -6,6 +6,7 @@ import type { DynamicToolUIPart } from "ai"
 import { Check, KeyRound, Loader2, Lock } from "lucide-react"
 import type { CredentialPrompt } from "@openwork/types/den/credential-prompt"
 import { DenApiError, createDenClient, readDenSettings } from "@/app/lib/den"
+import { DEN_DASHBOARD_LINKS } from "@/app/lib/den-dashboard-links"
 import { SecretField, type SecretFieldHandle } from "@/components/secret-field"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { DenReauthNotice } from "@/react-app/domains/cloud/den-reauth-notice"
@@ -31,7 +32,7 @@ function denDashboardUrl(baseUrl: string, prompt: CredentialPrompt): string | nu
   try {
     const path = prompt.target.type === "mcp_connection_key"
       ? `/dashboard/mcp-connections/${encodeURIComponent(prompt.target.connectionId)}`
-      : "/dashboard/gateway-providers"
+      : DEN_DASHBOARD_LINKS.gatewayProviders
     const url = new URL(path, baseUrl)
     return url.protocol === "https:" || url.protocol === "http:" ? url.toString() : null
   } catch {

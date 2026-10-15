@@ -57,6 +57,20 @@ export function selectProof(files) {
   return { specs };
 }
 
+const PROOF_LIMIT = 32;
+const JOURNEY_SPEC = /^evals\/(?:core\/.+\.e2e|proofs\/.+\.proof)\.test\.ts$/;
+
+/**
+ * At most 32 changed specs run as PR proof. Over that, a change made only of
+ * core journeys and proofs keeps the core journeys and leaves the rest to the
+ * core-journeys workflow; any other oversized change must be split.
+ */
+export function boundedProofSelection(specs) {
+  if (specs.length <= PROOF_LIMIT) return specs;
+  if (specs.every(spec => JOURNEY_SPEC.test(spec))) return specs.filter(spec => CORE_SPECS.includes(spec));
+  throw new Error(`More than ${PROOF_LIMIT} changed E2E specs; bounded CI selection unavailable. Split the change.`);
+}
+
 export function proofLanes(allSpecs, { event, current, repo, actor, triggeringActor }, tagged = () => false) {
   // Forks and Dependabot cannot reach the Freestyle credential; they skip the
   // core journeys instead of failing selection. A changed checkpoint spec still fails below.

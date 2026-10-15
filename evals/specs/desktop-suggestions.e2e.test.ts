@@ -112,12 +112,8 @@ test("an owner manages desktop suggestions in Everyone and teams without losing 
     await owner.see({ text: "Inherit from Everyone" }, { timeoutMs: 30_000 });
     await owner.screenshot();
     await owner.click({ role: "button", label: "Change for team" });
-    await owner.click({ label: "Prompt 1" });
-    await owner.press("Meta+A");
-    await owner.type({ label: "Prompt 1" }, "Draft a writing outline");
-    await owner.click({ label: "Description 1" });
-    await owner.press("Meta+A");
-    await owner.type({ label: "Description 1" }, "Structure the first draft");
+    await owner.type({ label: "Prompt 1" }, "Draft a writing outline", { replace: true });
+    await owner.type({ label: "Description 1" }, "Structure the first draft", { replace: true });
     await owner.click({ role: "button", label: "Save suggestions" });
     await owner.see({ text: "Changed for team" }, { timeoutMs: 30_000 });
     expect(promptConfig(await config("riley"))).toEqual({ onboardingPrompts: ["Draft a writing outline", world.everyonePrompts[1]], onboardingPromptDescriptions: ["Structure the first draft", world.everyoneDescriptions[1]] });

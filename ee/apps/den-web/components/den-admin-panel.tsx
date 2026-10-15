@@ -2,22 +2,22 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Copy, Pencil, Trash2 } from "lucide-react";
-import { FEATURE_KEYS, FEATURES, mapFeatures, type FeatureKey } from "@openwork/features";
+import { FEATURE_KEYS, mapFeatures, type FeatureKey } from "@openwork/features";
 import { denApiCredentials, denBrowserEndpoint } from "../app/(den)/_lib/den-api-origin";
 import { withStoredBearer } from "./admin/admin-request";
+import { AdminDeferredContent } from "./admin/admin-deferred-content";
+import { AdminAccessScreen } from "./admin/admin-access-screen";
+import { AdminOrganizationFeatureControls, type AdminFeatureState, type AdminOrganizationFeatures } from "./admin/admin-organization-feature-controls";
 
-type AccessState = "loading" | "ready" | "signed-out" | "forbidden" | "error";
+type AccessState = "ready" | "signed-out" | "forbidden" | "error";
 type ViewMode = "users" | "companies" | "organizations";
 
 const DEFAULT_FREE_SEAT_COUNT = 5;
-const ADMIN_OVERVIEW_CACHE_KEY = "den-admin-overview-cache";
 const ADMIN_PAGE_SIZE = 50;
 const ADMIN_MAX_PAGE_OFFSET = 100_000;
 const ADMIN_SCALE_FIXTURE_USERS = 50_000;
 const ADMIN_SCALE_FIXTURE_ORGANIZATIONS = 60_000;
 const ADMIN_SEARCH_DEBOUNCE_MS = 75;
-
-let cachedAdminOverviewPayload: unknown = null;
 
 type AdminBillingStatus = {
   status: "paid" | "unpaid" | "unavailable";
@@ -132,20 +132,6 @@ type AdminUser = {
 
 const ADMIN_FEATURE_SOURCES = ["unavailable", "killed", "lock", "override", "everyone"] as const;
 
-/** One registry feature for one organization, as /v1/admin reports it (featureStates). */
-type AdminFeatureState = {
-  enabled: boolean;
-  source: (typeof ADMIN_FEATURE_SOURCES)[number];
-  /** The deployment-wide on/off state. */
-  everyone: boolean;
-  killed: boolean;
-  override: boolean | null;
-  /** An organization override would take effect (not killed or locked). */
-  overrideApplies: boolean;
-};
-
-type AdminOrganizationFeatures = Record<FeatureKey, AdminFeatureState>;
-
 function parseAdminFeatureSource(value: unknown): AdminFeatureState["source"] {
   return ADMIN_FEATURE_SOURCES.find((source) => source === value) ?? "everyone";
 }
@@ -169,21 +155,6 @@ function parseAdminOrganizationFeatures(featureStates: unknown, capabilities: un
       overrideApplies: state.overrideApplies === true,
     };
   });
-}
-
-function describeAdminFeatureSource(state: AdminFeatureState): string {
-  switch (state.source) {
-    case "everyone":
-      return state.everyone ? "On for everyone" : "Off for everyone";
-    case "override":
-      return "Set for this organization";
-    case "lock":
-      return "Set by deployment config";
-    case "killed":
-      return "Turned off everywhere";
-    case "unavailable":
-      return "Not part of this deployment";
-  }
 }
 
 type AdminOpenWorkWebAccess = {
@@ -626,79 +597,6 @@ function parseInferenceUsagePayload(payload: unknown): InferenceUsagePayload | n
   return { user: { id: payload.user.id, email: payload.user.email }, organizations };
 }
 
-function clearPersistedAdminOverviewCache() {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  try {
-    window.sessionStorage.removeItem(ADMIN_OVERVIEW_CACHE_KEY);
-  } catch {
-    // Ignore storage failures: the cache is only a best-effort fast path.
-  }
-}
-
-function clearAdminOverviewCache() {
-  cachedAdminOverviewPayload = null;
-  clearPersistedAdminOverviewCache();
-}
-
-function storeAdminOverviewCache(payload: unknown) {
-  cachedAdminOverviewPayload = payload;
-
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  try {
-    const serialized = JSON.stringify(payload);
-    if (serialized === undefined) {
-      window.sessionStorage.removeItem(ADMIN_OVERVIEW_CACHE_KEY);
-      return;
-    }
-
-    window.sessionStorage.setItem(ADMIN_OVERVIEW_CACHE_KEY, serialized);
-  } catch {
-    clearPersistedAdminOverviewCache();
-  }
-}
-
-function readAdminOverviewCache(): AdminPayload | null {
-  if (shouldClearAdminCacheFromUrl()) {
-    clearAdminOverviewCache();
-    return null;
-  }
-
-  const parsedCachedPayload = parseAdminPayload(cachedAdminOverviewPayload);
-  if (parsedCachedPayload) {
-    return parsedCachedPayload;
-  }
-
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  try {
-    const persistedPayload = window.sessionStorage.getItem(ADMIN_OVERVIEW_CACHE_KEY);
-    if (!persistedPayload) {
-      return null;
-    }
-
-    const storedPayload: unknown = JSON.parse(persistedPayload);
-    const parsedStoredPayload = parseAdminPayload(storedPayload);
-    if (!parsedStoredPayload) {
-      window.sessionStorage.removeItem(ADMIN_OVERVIEW_CACHE_KEY);
-      return null;
-    }
-
-    cachedAdminOverviewPayload = storedPayload;
-    return parsedStoredPayload;
-  } catch {
-    clearPersistedAdminOverviewCache();
-    return null;
-  }
-}
-
 function getFriendlyHtmlError(value: string): string | null {
   const normalized = value.replace(/\s+/g, " ").trim();
   const lower = normalized.toLowerCase();
@@ -752,14 +650,6 @@ function isAdminScaleFixtureEnabled(): boolean {
   }
 
   return new URLSearchParams(window.location.search).get("adminScaleFixture") === "1";
-}
-
-function shouldClearAdminCacheFromUrl(): boolean {
-  if (typeof window === "undefined") {
-    return false;
-  }
-
-  return new URLSearchParams(window.location.search).get("adminClearCache") === "1";
 }
 
 function fixturePageInfo(total: number, returned: number, offset: number, search: string, durationMs: number): AdminPageInfo {
@@ -959,7 +849,7 @@ function fixtureMetricsSummary(): AdminSummary {
   };
 }
 
-function adminScaleFixturePayload(path: string): unknown | null {
+export function adminScaleFixturePayload(path: string): unknown | null {
   if (!isAdminScaleFixtureEnabled()) {
     return null;
   }
@@ -1456,60 +1346,10 @@ function OpenWorkWebAccessPill({ access }: { access: AdminOpenWorkWebAccess }) {
   );
 }
 
-function DenAdminLoadingShell() {
-  return (
-    <section className="mx-auto w-full max-w-6xl rounded-3xl border border-slate-200 bg-white shadow-xs" aria-busy="true">
-      <div className="border-b border-slate-200 px-6 py-6 sm:px-8">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <p className="text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-slate-500">Den admin</p>
-            <h1 className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-slate-950">User backoffice</h1>
-            <p className="mt-2 max-w-3xl text-sm leading-7 text-slate-600">
-              Loading global totals and the first bounded user page.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3 animate-pulse">
-            <div className="h-10 w-48 rounded-full bg-slate-100" />
-            <div className="h-10 w-24 rounded-full border border-slate-200 bg-slate-50" />
-          </div>
-        </div>
-
-        <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-6 animate-pulse">
-          {[0, 1, 2, 3, 4, 5].map((index) => (
-            <div key={index} className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-              <div className="h-3 w-20 rounded-full bg-slate-200" />
-              <div className="mt-3 h-8 w-16 rounded-lg bg-slate-200" />
-              <div className="mt-3 h-3 w-full rounded-full bg-slate-200" />
-              <div className="mt-2 h-3 w-2/3 rounded-full bg-slate-200" />
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="px-6 py-6 sm:px-8">
-        <div className="flex flex-wrap items-center justify-between gap-3 animate-pulse">
-          <div className="h-11 w-80 rounded-full border border-slate-200 bg-slate-50" />
-          <div className="h-10 w-28 rounded-full border border-slate-200 bg-slate-50" />
-        </div>
-
-        <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-4 animate-pulse">
-          <div className="h-4 w-56 rounded-full bg-slate-200" />
-          <div className="mt-4 grid gap-3 md:grid-cols-2">
-            <div className="h-24 rounded-2xl bg-slate-100" />
-            <div className="h-24 rounded-2xl bg-slate-100" />
-          </div>
-          <div className="mt-4 h-3 w-full rounded-full bg-slate-200" />
-          <div className="mt-2 h-3 w-5/6 rounded-full bg-slate-200" />
-        </div>
-      </div>
-    </section>
-  );
-}
-
-export function DenAdminPanel() {
-  const [accessState, setAccessState] = useState<AccessState>("loading");
-  const [payload, setPayload] = useState<AdminPayload | null>(null);
+export function DenAdminPanel({ initialPayload }: { initialPayload: unknown }) {
+  const [initial] = useState(() => parseAdminPayload(initialPayload));
+  const [accessState, setAccessState] = useState<AccessState>(initial ? "ready" : "error");
+  const [payload, setPayload] = useState<AdminPayload | null>(initial);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
@@ -1543,7 +1383,9 @@ export function DenAdminPanel() {
   const overviewRequestIdRef = useRef(0);
   const userRequestIdRef = useRef(0);
   const organizationRequestIdRef = useRef(0);
-  const payloadRef = useRef<AdminPayload | null>(null);
+  const payloadRef = useRef<AdminPayload | null>(initial);
+  const usageRequestsRef = useRef(new Set<string>());
+  const overviewControllerRef = useRef<AbortController | null>(null);
   const includeBillingRef = useRef(includeBilling);
   const userSearchStartedAtRef = useRef<number | null>(null);
   const organizationSearchStartedAtRef = useRef<number | null>(null);
@@ -1566,24 +1408,25 @@ export function DenAdminPanel() {
   const loadOverview = useCallback(async () => {
     const requestId = overviewRequestIdRef.current + 1;
     overviewRequestIdRef.current = requestId;
+    overviewControllerRef.current?.abort();
+    const controller = new AbortController();
+    overviewControllerRef.current = controller;
     setRefreshing(true);
     setError(null);
 
     try {
-      const { response, payload: nextPayload } = await requestJson("/v1/admin/overview");
+      const { response, payload: nextPayload } = await requestJson("/v1/admin/overview", controller.signal);
       if (requestId !== overviewRequestIdRef.current) {
         return;
       }
 
       if (response.status === 401) {
-        clearAdminOverviewCache();
         setAccessState("signed-out");
         setPayload(null);
         return;
       }
 
       if (response.status === 403) {
-        clearAdminOverviewCache();
         setAccessState("forbidden");
         setPayload(null);
         return;
@@ -1604,13 +1447,12 @@ export function DenAdminPanel() {
         return;
       }
 
-      storeAdminOverviewCache(nextPayload);
       setIncludeBilling(parsed.summary.billingLoaded);
       payloadRef.current = parsed;
       setAccessState("ready");
       setPayload(parsed);
     } catch (nextError) {
-      if (requestId === overviewRequestIdRef.current) {
+      if (requestId === overviewRequestIdRef.current && !isAbortError(nextError)) {
         setAccessState("error");
         setPayload(null);
         setError(nextError instanceof Error ? nextError.message : "Unknown network error");
@@ -1646,13 +1488,11 @@ export function DenAdminPanel() {
         return;
       }
       if (response.status === 401) {
-        clearAdminOverviewCache();
         setAccessState("signed-out");
         setPayload(null);
         return;
       }
       if (response.status === 403) {
-        clearAdminOverviewCache();
         setAccessState("forbidden");
         setPayload(null);
         return;
@@ -1722,13 +1562,11 @@ export function DenAdminPanel() {
         return;
       }
       if (response.status === 401) {
-        clearAdminOverviewCache();
         setAccessState("signed-out");
         setPayload(null);
         return;
       }
       if (response.status === 403) {
-        clearAdminOverviewCache();
         setAccessState("forbidden");
         setPayload(null);
         return;
@@ -1776,13 +1614,11 @@ export function DenAdminPanel() {
     try {
       const { response, payload: nextPayload } = await requestJson("/v1/admin/metrics");
       if (response.status === 401) {
-        clearAdminOverviewCache();
         setAccessState("signed-out");
         setPayload(null);
         return;
       }
       if (response.status === 403) {
-        clearAdminOverviewCache();
         setAccessState("forbidden");
         setPayload(null);
         return;
@@ -1823,6 +1659,8 @@ export function DenAdminPanel() {
   }, []);
 
   const loadInferenceUsage = useCallback(async (userId: string) => {
+    if (usageRequestsRef.current.has(userId)) return;
+    usageRequestsRef.current.add(userId);
     setUsageByUserId((current) => ({ ...current, [userId]: { status: "loading" } }));
     try {
       const { response, payload: nextPayload } = await requestJson(`/v1/admin/users/${encodeURIComponent(userId)}/inference-usage`);
@@ -1840,6 +1678,8 @@ export function DenAdminPanel() {
     } catch (nextError) {
       const message = nextError instanceof Error ? nextError.message : "Unknown network error";
       setUsageByUserId((current) => ({ ...current, [userId]: { status: "error", message } }));
+    } finally {
+      usageRequestsRef.current.delete(userId);
     }
   }, []);
 
@@ -1919,18 +1759,10 @@ export function DenAdminPanel() {
     }
   }, [loadInferenceUsage, resetUsageDialog]);
 
-  useEffect(() => {
-    const cachedPayload = readAdminOverviewCache();
-    if (cachedPayload) {
-      payloadRef.current = cachedPayload;
-      setPayload(cachedPayload);
-      includeBillingRef.current = cachedPayload.summary.billingLoaded;
-      setIncludeBilling(cachedPayload.summary.billingLoaded);
-      setAccessState("ready");
-    }
-
-    void loadOverview();
-  }, [loadOverview]);
+  useEffect(() => () => {
+    overviewControllerRef.current?.abort();
+    overviewRequestIdRef.current += 1;
+  }, []);
 
   useEffect(() => {
     if (!copiedOrgId) {
@@ -2055,7 +1887,7 @@ export function DenAdminPanel() {
       drafts[org.id] = { tier: org.plan.tier, seatLimit: String(org.seatLimit) };
     }
     setOrgDrafts(drafts);
-  }, [payload]);
+  }, [payload?.organizations]);
 
   const saveOrganizationPlan = useCallback(async (org: AdminOrganization) => {
     const draft = orgDrafts[org.id];
@@ -2353,53 +2185,8 @@ export function DenAdminPanel() {
     return filteredUsers.find((user) => user.id === selectedUserId) ?? filteredUsers[0] ?? null;
   }, [filteredUsers, selectedUserId]);
 
-  useEffect(() => {
-    if (!selectedUser || usageByUserId[selectedUser.id]) {
-      return;
-    }
-    void loadInferenceUsage(selectedUser.id);
-  }, [loadInferenceUsage, selectedUser, usageByUserId]);
-
-  if (accessState === "loading") {
-    return <DenAdminLoadingShell />;
-  }
-
   if (accessState === "signed-out" || accessState === "forbidden" || accessState === "error") {
-    const title = accessState === "signed-out"
-      ? "Sign in required"
-      : accessState === "forbidden"
-        ? "Admin access required"
-        : "Backoffice unavailable";
-    const message = accessState === "signed-out"
-      ? "Use the main Den page to sign in, then return with a whitelisted admin account."
-      : accessState === "forbidden"
-        ? "Your session is valid, but the email on it is not present in the Den admin allowlist."
-        : error ?? "The backoffice request failed before the dashboard could load.";
-
-    return (
-      <section className="mx-auto w-full max-w-4xl rounded-3xl border border-slate-200 bg-white p-8 shadow-xs">
-        <p className="text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-slate-500">Den admin</p>
-        <h1 className="mt-3 text-3xl font-semibold tracking-[-0.04em] text-slate-950">{title}</h1>
-        <p className="mt-3 max-w-2xl text-sm leading-7 text-slate-600">{message}</p>
-        <div className="mt-6 flex flex-wrap gap-3">
-          <a
-            href="/"
-            className="inline-flex items-center justify-center rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white"
-          >
-            Open sign-in page
-          </a>
-          <button
-            type="button"
-            onClick={() => {
-              void loadOverview();
-            }}
-            className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
-          >
-            Retry
-          </button>
-        </div>
-      </section>
-    );
+    return <AdminAccessScreen state={accessState} message={error ?? undefined} onRetry={() => void loadOverview()} />;
   }
 
   if (!payload) {
@@ -2718,7 +2505,7 @@ export function DenAdminPanel() {
               const changed = draft.tier !== org.plan.tier || draft.seatLimit !== String(org.seatLimit);
 
               return (
-                <div key={org.id} data-testid={`admin-org-row-${org.slug}`} className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                <div key={org.id} data-testid={`admin-org-row-${org.slug}`} style={{ contentVisibility: "auto", containIntrinsicSize: "auto 900px" }} className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
@@ -2764,54 +2551,12 @@ export function DenAdminPanel() {
                     </div>
                   </div>
 
-                  <div className="mt-4 border-t border-slate-200 pt-4">
-                    <div className="flex items-baseline justify-between gap-3">
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">Features</p>
-                      <a href="/admin/features" className="text-xs font-medium text-slate-500 underline-offset-2 hover:underline">All features</a>
-                    </div>
-                    {/* Generated from packages/features/src/registry.ts; add features there, not here. */}
-                    <ul className="mt-2 grid gap-2">
-                      {FEATURE_KEYS.filter((key) => org.features[key].source !== "unavailable").map((key) => {
-                        const state = org.features[key];
-                        const definition = FEATURES[key];
-                        return (
-                          <li key={key} className="flex items-start gap-3">
-                            <label className="flex min-w-0 flex-1 items-start gap-2">
-                              <input
-                                type="checkbox"
-                                data-testid={`admin-capability-${key}`}
-                                checked={state.enabled}
-                                disabled={!state.overrideApplies || savingCapabilityOrgId === org.id}
-                                onChange={(event) => void saveOrganizationFeature(org, key, event.target.checked)}
-                                className="mt-0.5 h-4 w-4 shrink-0 rounded-sm border-slate-300"
-                              />
-                              <span className="min-w-0">
-                                <span className="text-sm text-slate-700">{definition.label}</span>
-                                <span className="ml-2 text-xs text-slate-400" data-testid={`admin-capability-source-${key}`}>{describeAdminFeatureSource(state)}</span>
-                                <span className="block text-xs leading-5 text-slate-400">{definition.description}</span>
-                              </span>
-                            </label>
-                            {state.source === "override" && state.overrideApplies ? (
-                              <button
-                                type="button"
-                                data-testid={`admin-capability-reset-${key}`}
-                                disabled={savingCapabilityOrgId === org.id}
-                                onClick={() => void saveOrganizationFeature(org, key, null)}
-                                className="shrink-0 text-xs font-medium text-slate-500 underline-offset-2 hover:underline disabled:opacity-50"
-                              >
-                                Use everyone&apos;s setting
-                              </button>
-                            ) : null}
-                          </li>
-                        );
-                      })}
-                    </ul>
-                    {capabilityError?.orgId === org.id ? (
-                      <p data-testid="admin-capability-error" className="mt-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs leading-5 text-red-700">
-                        Save failed — the change was reverted. {capabilityError.message}
-                      </p>
-                    ) : null}
-                  </div>
+                  <AdminOrganizationFeatureControls
+                    features={org.features}
+                    saving={savingCapabilityOrgId === org.id}
+                    error={capabilityError?.orgId === org.id ? capabilityError.message : null}
+                    onChange={(key, enabled) => void saveOrganizationFeature(org, key, enabled)}
+                  />
 
                   <div className="mt-4 border-t border-slate-200 pt-4" data-testid="admin-openwork-web-access">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -2859,7 +2604,7 @@ export function DenAdminPanel() {
                   </div>
 
                   <div className="mt-4 grid gap-3 border-t border-slate-200 pt-4 lg:grid-cols-[12rem_10rem_auto] lg:items-end">
-                    <label className="grid gap-2">
+                    <label className="grid min-w-0 gap-2">
                       <span className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">Plan</span>
                       <select
                         value={draft.tier}
@@ -2867,7 +2612,7 @@ export function DenAdminPanel() {
                           const tier = event.target.value === "enterprise" || event.target.value === "team" ? event.target.value : "free";
                           setOrgDrafts((current) => ({ ...current, [org.id]: { ...draft, tier } }));
                         }}
-                        className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-hidden transition focus:border-slate-400"
+                        className="w-full min-w-0 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-hidden transition focus:border-slate-400"
                       >
                         <option value="free">Free</option>
                         <option value="team">Team</option>
@@ -2875,14 +2620,14 @@ export function DenAdminPanel() {
                       </select>
                     </label>
 
-                    <label className="grid gap-2">
+                    <label className="grid min-w-0 gap-2">
                       <span className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">Seats</span>
                       <input
                         type="number"
                         min={1}
                         value={draft.seatLimit}
                         onChange={(event) => setOrgDrafts((current) => ({ ...current, [org.id]: { ...draft, seatLimit: event.target.value } }))}
-                        className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-hidden transition focus:border-slate-400"
+                        className="w-full min-w-0 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-hidden transition focus:border-slate-400"
                       />
                     </label>
 
@@ -2920,6 +2665,7 @@ export function DenAdminPanel() {
               <div
                 key={user.id}
                 data-testid={`admin-user-row-${user.id}`}
+                style={isSelected ? undefined : { contentVisibility: "auto", containIntrinsicSize: "auto 180px" }}
                 className={`rounded-2xl border px-4 py-4 transition ${isSelected ? "border-slate-900 bg-slate-50" : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/70"}`}
               >
                 <button type="button" onClick={() => setSelectedUserId(user.id)} className="block w-full text-left">
@@ -2995,65 +2741,75 @@ export function DenAdminPanel() {
                       )}
                     </div>
 
-                    <div data-testid="admin-usage-section" className="rounded-2xl border border-slate-200 bg-white px-4 py-4 lg:col-span-2">
-                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                        <div>
-                          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">OpenWork model consumption</p>
-                          <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">
-                            Limits are shared by everyone in each organization. Reset only forgives this user&apos;s consumption in the current windows; it does not change shared limits or other members&apos; usage.
-                          </p>
-                        </div>
-                        <button
-                          type="button"
-                          data-testid="admin-usage-reset-open"
-                          onClick={() => setResetUsageDialog(user)}
-                          disabled={usageEntry?.status !== "ready" || usageEntry.data.organizations.length === 0}
-                          className="shrink-0 rounded-full border border-amber-200 bg-white px-4 py-2 text-sm font-semibold text-amber-800 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          Reset consumption
-                        </button>
-                      </div>
-
-                      {resetSuccessByUserId[user.id] !== undefined ? (
-                        <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-                          Reset complete. Forgave {formatUsageAmount(resetSuccessByUserId[user.id])} units from this user&apos;s current windows.
-                        </p>
-                      ) : null}
-
-                      {!usageEntry || usageEntry.status === "loading" ? (
-                        <p className="mt-4 text-sm text-slate-500" aria-busy="true">Loading model consumption…</p>
-                      ) : usageEntry.status === "error" ? (
-                        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">
-                          <p>{usageEntry.message}</p>
-                          <button type="button" onClick={() => void loadInferenceUsage(user.id)} className="mt-2 font-semibold underline">Retry</button>
-                        </div>
-                      ) : usageEntry.data.organizations.length === 0 ? (
-                        <p className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-5 text-center text-sm text-slate-500">No organization consumption windows are available for this user.</p>
-                      ) : (
-                        <div className="mt-4 grid gap-3">
-                          {usageEntry.data.organizations.map((organization) => (
-                            <div key={organization.membershipId} className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
-                              <p className="text-sm font-semibold text-slate-950">{organization.name}</p>
-                              <p className="mt-0.5 truncate font-mono text-[0.68rem] text-slate-400">{organization.id}</p>
-                              {organization.windows.length === 0 ? (
-                                <p className="mt-3 text-sm text-slate-500">No current five-hour, weekly, or monthly windows.</p>
-                              ) : (
-                                <div className="mt-3 grid gap-2 md:grid-cols-3">
-                                  {organization.windows.map((window) => (
-                                    <div key={window.bucketId} className="rounded-xl border border-slate-200 bg-white p-3">
-                                      <p className="text-xs font-semibold text-slate-800">{formatWindowType(window.windowType)}</p>
-                                      <p className="mt-2 text-sm text-slate-700">User: <strong>{formatUsageAmount(window.userUsedAmount)}</strong></p>
-                                      <p className="mt-1 text-xs text-slate-500">Shared: {formatUsageAmount(window.organizationUsedAmount)} / {formatUsageAmount(window.limitAmount)}</p>
-                                      <p className="mt-2 text-xs leading-5 text-slate-400">Resets {formatDateTime(window.windowEndAt)}</p>
-                                    </div>
-                                  ))}
-                                </div>
-                              )}
+                    <AdminDeferredContent
+                      key={user.id}
+                      label={`Model consumption for ${user.email}`}
+                      className="lg:col-span-2"
+                      placeholderClassName="min-h-48"
+                      onVisible={() => { if (!usageEntry) void loadInferenceUsage(user.id); }}
+                    >
+                      {() => (
+                        <div data-testid="admin-usage-section" className="rounded-2xl border border-slate-200 bg-white px-4 py-4 lg:col-span-2">
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                            <div>
+                              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">OpenWork model consumption</p>
+                              <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">
+                                Limits are shared by everyone in each organization. Reset only forgives this user&apos;s consumption in the current windows; it does not change shared limits or other members&apos; usage.
+                              </p>
                             </div>
-                          ))}
+                            <button
+                              type="button"
+                              data-testid="admin-usage-reset-open"
+                              onClick={() => setResetUsageDialog(user)}
+                              disabled={usageEntry?.status !== "ready" || usageEntry.data.organizations.length === 0}
+                              className="shrink-0 rounded-full border border-amber-200 bg-white px-4 py-2 text-sm font-semibold text-amber-800 disabled:cursor-not-allowed disabled:opacity-60"
+                            >
+                              Reset consumption
+                            </button>
+                          </div>
+
+                          {resetSuccessByUserId[user.id] !== undefined ? (
+                            <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                              Reset complete. Forgave {formatUsageAmount(resetSuccessByUserId[user.id])} units from this user&apos;s current windows.
+                            </p>
+                          ) : null}
+
+                          {!usageEntry || usageEntry.status === "loading" ? (
+                            <p className="mt-4 text-sm text-slate-500" aria-busy="true">Loading model consumption…</p>
+                          ) : usageEntry.status === "error" ? (
+                            <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">
+                              <p>{usageEntry.message}</p>
+                              <button type="button" onClick={() => void loadInferenceUsage(user.id)} className="mt-2 font-semibold underline">Retry</button>
+                            </div>
+                          ) : usageEntry.data.organizations.length === 0 ? (
+                            <p className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-5 text-center text-sm text-slate-500">No organization consumption windows are available for this user.</p>
+                          ) : (
+                            <div className="mt-4 grid gap-3">
+                              {usageEntry.data.organizations.map((organization) => (
+                                <div key={organization.membershipId} className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+                                  <p className="text-sm font-semibold text-slate-950">{organization.name}</p>
+                                  <p className="mt-0.5 truncate font-mono text-[0.68rem] text-slate-400">{organization.id}</p>
+                                  {organization.windows.length === 0 ? (
+                                    <p className="mt-3 text-sm text-slate-500">No current five-hour, weekly, or monthly windows.</p>
+                                  ) : (
+                                    <div className="mt-3 grid gap-2 md:grid-cols-3">
+                                      {organization.windows.map((window) => (
+                                        <div key={window.bucketId} className="rounded-xl border border-slate-200 bg-white p-3">
+                                          <p className="text-xs font-semibold text-slate-800">{formatWindowType(window.windowType)}</p>
+                                          <p className="mt-2 text-sm text-slate-700">User: <strong>{formatUsageAmount(window.userUsedAmount)}</strong></p>
+                                          <p className="mt-1 text-xs text-slate-500">Shared: {formatUsageAmount(window.organizationUsedAmount)} / {formatUsageAmount(window.limitAmount)}</p>
+                                          <p className="mt-2 text-xs leading-5 text-slate-400">Resets {formatDateTime(window.windowEndAt)}</p>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       )}
-                    </div>
+                    </AdminDeferredContent>
 
                     <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 lg:col-span-2">
                       <div className="flex flex-wrap items-start justify-between gap-2">

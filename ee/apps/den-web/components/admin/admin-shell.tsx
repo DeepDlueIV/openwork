@@ -23,7 +23,7 @@ export function AdminShell({ active, children }: { active: AdminSection; childre
             <p className="text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-slate-500">OpenWork</p>
             <p className="mt-1 text-sm text-slate-600">Internal Den backoffice</p>
           </div>
-          <Link href="/" className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+          <Link prefetch={false} href="/" className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50">
             Back to cloud panel
           </Link>
           <nav aria-label="Backoffice sections" className="-mb-px flex w-full gap-6">
@@ -31,6 +31,7 @@ export function AdminShell({ active, children }: { active: AdminSection; childre
               <Link
                 key={section.id}
                 href={section.href}
+                prefetch={false}
                 aria-current={section.id === active ? "page" : undefined}
                 className={`border-b-2 pb-3 text-sm font-medium transition-colors ${section.id === active ? "border-gray-900 text-gray-900" : "border-transparent text-gray-500 hover:text-gray-800"}`}
               >

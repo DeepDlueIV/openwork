@@ -112,7 +112,7 @@ test("a redirected resource still rejects an RFC 8414 issuer mismatch", async ()
     assert.ok(error.cause instanceof Error)
     assert.match(error.cause.message, /Issuer mismatch in authorization server metadata \(RFC 8414/)
   }
-  assert.equal(mock.requests.some((r) => r.url.startsWith("https://login.example")), false)
+  assert.equal(mock.requests.some((r) => new URL(r.url).origin === "https://login.example"), false)
   assert.equal(mock.requests.some((r) => r.url.endsWith("/token")), false)
 })
 
@@ -125,6 +125,6 @@ for (const status of [302, 200, 401]) {
     if (result.status !== "needs_auth") throw new Error("OAuth did not start")
     assert.equal(new URL(result.authorizeUrl).pathname, "/authorize")
     assert.equal(new URL(result.authorizeUrl).searchParams.get("code_challenge_method"), "S256")
-    assert.equal(mock.requests.some((r) => r.url.startsWith("https://login.example")), false)
+    assert.equal(mock.requests.some((r) => new URL(r.url).origin === "https://login.example"), false)
   })
 }

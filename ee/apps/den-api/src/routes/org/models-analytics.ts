@@ -55,6 +55,8 @@ export function registerModelsAnalyticsRoutes<T extends { Variables: OrgRouteVar
     return c.json(await readModelsAnalyticsSettings(db, orgId))
   })
 
+  // Runtime collection is deliberately independent of the UI rollout. Hiding
+  // dashboards must not revoke consent or interrupt existing event exports.
   app.post("/v1/inference/analytics/events", describeRoute({
     tags: ["Inference"], summary: "Report task analytics events for the calling member's OpenWork Models calls",
     description: "Accepts runtime metadata for tasks the member actually ran through OpenWork Models; events for other members' tasks or BYOK calls are dropped. Answers 204 when the organization has not opted into task analytics.",

@@ -122,6 +122,7 @@ export function registerModelsAnalyticsExportRoutes<T extends { Variables: OrgRo
 
 // The event store is the outbox. Stable span IDs make retries idempotent;
 // failures never run on the chat request path. Recheck access on every batch.
+// UI rollout flags gate only the routes above, never an existing destination.
 export function startModelsAnalyticsExportLoop() {
   let running = false
   const timer = setInterval(async () => {

@@ -48,6 +48,7 @@ override_resource {
 
 variables {
   openwork_version      = "0.18.58"
+  write_only_secrets    = false # exercise preserved legacy state path
   database_ca_bundle    = "-----BEGIN CERTIFICATE-----test"
   headless_runner_image = "example.test/runner@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   workbot_image         = "example.test/workbot@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"

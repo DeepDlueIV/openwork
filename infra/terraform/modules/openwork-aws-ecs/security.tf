@@ -1,10 +1,10 @@
-# Compatibility mode is deliberate: changing generation on an existing state
-# must never silently replace the auth/encryption keys. New installs should use
-# write_only_secrets with ephemeral values supplied by their secret manager.
+# Existing installations must explicitly retain compatibility mode or supply
+# their exact existing values. Missing ephemeral values fail validation before
+# changing state; upgrading the module must never silently rotate keys.
 variable "write_only_secrets" {
   description = "Use ephemeral secret_values_wo and provider write-only fields. False preserves legacy random resources/state without rotating existing secrets; see the migration notes."
   type        = bool
-  default     = false
+  default     = true
 }
 
 variable "secret_values_wo" {

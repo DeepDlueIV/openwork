@@ -45,6 +45,7 @@ override_resource {
 
 variables {
   openwork_version    = "0.18.58"
+  write_only_secrets  = false # exercise preserved legacy state path
   database_ca_bundle  = "-----BEGIN CERTIFICATE-----test"
   den_gateway_image   = "example.test/gateway@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   vpc_id              = "vpc-123"

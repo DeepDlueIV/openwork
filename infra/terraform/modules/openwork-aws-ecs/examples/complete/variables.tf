@@ -8,7 +8,7 @@ variable "den_web_image" {
 }
 variable "write_only_secrets" {
   type    = bool
-  default = false
+  default = true
 }
 variable "secret_values_wo" {
   type = object({

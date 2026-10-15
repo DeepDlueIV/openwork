@@ -34,6 +34,7 @@ mock_provider "aws" {
 mock_provider "random" {}
 variables {
   openwork_version    = "0.18.58"
+  write_only_secrets  = false # fixture does not need live ephemeral credentials
   vpc_id              = "vpc-123"
   alb_subnet_ids      = ["subnet-a", "subnet-b"]
   service_subnet_ids  = ["subnet-a", "subnet-b"]

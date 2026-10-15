@@ -44,7 +44,7 @@ API defaults to 1 vCPU / 2 GiB and web to 0.5 vCPU / 1 GiB. Managed RDS deletion
 
 | Scenario | Tools / release | Result | Date |
 | --- | --- | --- | --- |
-| Offline module defaults, secrets, TLS and existing infrastructure | Terraform 1.16.5; OpenTofu 1.11.14 | Passed: 35 tests per tool | 2026-10-15 |
+| Offline module defaults, secrets, TLS and existing infrastructure | Terraform 1.16.5; OpenTofu 1.11.14 | Passed: 36 tests per tool | 2026-10-15 |
 | Controller single-task, timeout/rejection, and failed migration completion gate | Local testkit; both tools | Passed: 2 tests | 2026-10-15 |
 | Legacy per-task migrator, two API replicas, fresh install and release-to-dev upgrade | 0.18.58 → dev | Failed: concurrent peers; eventual ECS replacement masked failures | 2026-10-14 |
 | Contract-v1 live release-to-dev upgrade, two API tasks | 0.18.58 → dev | NotRun to completion yet | 2026-10-15 |
@@ -59,7 +59,7 @@ Existing inputs remain, including the deprecated nested `database.deletion_prote
 
 Use Terraform or OpenTofu **>= 1.11, < 2.0** with encrypted, access-controlled remote state. An S3 root backend should set `encrypt = true` and `use_lockfile = true`; do not create a new DynamoDB locking table. The reusable module configures neither a provider nor a backend and ships no cross-registry lock file. Generate and retain the root lock with your chosen tool.
 
-For new installs, use `write_only_secrets = true` with persistent core values supplied through the ephemeral `secret_values_wo` input: RDS and Secrets Manager write-only fields keep those values out of new state snapshots. Compatibility mode remains the default so upgrading existing users does not silently rotate auth/encryption keys. Before changing modes, securely preserve and supply the **exact existing** keys and DB password. Never regenerate an encryption key during an infrastructure upgrade. Optional integration secrets retain their state-backed compatibility path; restrict state history accordingly. Secret settings belong in `extra_secrets`, not plain `extra_environment`.
+For new installs, use `write_only_secrets = true` with persistent core values supplied through the ephemeral `secret_values_wo` input: RDS and Secrets Manager write-only fields keep those values out of new state snapshots. Write-only mode is the new default. Existing installations must explicitly set `write_only_secrets = false` before upgrading to retain their current keys/state, or securely preserve and supply the **exact existing** keys and DB password before converting. Missing ephemeral values fail validation before changes, rather than silently regenerating auth/encryption keys. Never regenerate an encryption key during an infrastructure upgrade. Optional integration secrets retain their state-backed compatibility path; restrict state history accordingly. Secret settings belong in `extra_secrets`, not plain `extra_environment`.
 
 ### Cost notes
 

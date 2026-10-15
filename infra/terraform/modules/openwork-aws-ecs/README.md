@@ -33,7 +33,7 @@ document every setting you can add through `extra_environment`.
 ## Tested scenarios
 
 Contract-v1 offline checks: Terraform 1.16.5 / AWS provider 6.69.1 and
-OpenTofu 1.11.14 / AWS provider 6.69.0, 2026-10-15, 35 tests each.
+OpenTofu 1.11.14 / AWS provider 6.69.0, 2026-10-15, 36 tests each.
 The live contract-v1 result must be recorded separately from historical runs.
 
 What has been applied end to end in an AWS test account with
@@ -231,9 +231,11 @@ images when enabled. Existing image override names remain unchanged; pin their
 current digest before upgrading. Gateway, runner and Workbot runtime behavior
 is otherwise unchanged and not included in the contract-v1 live run.
 
-**Secret migration:** `write_only_secrets = false` deliberately preserves the
-legacy random-resource addresses through `moved` blocks and does **not**
-regenerate auth/encryption keys. For new installations use `true` and supply
+**Secret migration:** the default is now `write_only_secrets = true`. For an
+existing installation, explicitly set **false before upgrading** to preserve the
+legacy random-resource addresses through `moved` blocks without regenerating
+auth/encryption keys. Missing ephemeral values fail validation before changes;
+there is no automatic key-generation conversion. For new installations supply
 `secret_values_wo` from your own secret manager on every apply. It contains
 `database_password`, `better_auth_secret`, `db_encryption_key`, `bootstrap_code`
 and, for an existing DB, `database_url`. These inputs are ephemeral; RDS uses
@@ -309,7 +311,7 @@ concepts use the common names below. AWS uses `tags` rather than GCP `labels`.
 | `den_web` | 512 CPU units / 1024 MiB / one task |
 | `cpu_architecture` | `X86_64`; also ARM64 |
 | `migration_run_id` | `initial`; intentional same-definition rerun only |
-| `write_only_secrets`, `secret_values_wo`, `secrets_version` | `false` compatibility; ephemeral core object; version `1` |
+| `write_only_secrets`, `secret_values_wo`, `secrets_version` | `true` write-only by default (existing deployments explicitly set false); ephemeral core object; version `1` |
 | `initial_admin_bootstrap_code` | Empty generates code in compatibility mode only |
 | `ecs_cluster_arn`, `service_name_prefix` | Empty creates cluster; empty service prefix |
 | `load_balancer_arn`, `alb_listener_arn`, `alb_security_group_id` | Empty creates resources; nonempty brings existing infrastructure |

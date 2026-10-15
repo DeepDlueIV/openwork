@@ -37,6 +37,7 @@ override_resource {
 }
 variables {
   openwork_version    = "0.18.58"
+  write_only_secrets  = false # exercise preserved legacy state path
   vpc_id              = "vpc-123"
   alb_subnet_ids      = ["subnet-a", "subnet-b"]
   service_subnet_ids  = ["subnet-a", "subnet-b"]
@@ -111,6 +112,12 @@ run "deletion_override_and_existing_db" {
     error_message = "Existing databases must remain supported without creating RDS."
   }
 }
+run "missing_existing_keys_fail_before_conversion" {
+  command = plan
+  variables { write_only_secrets = true }
+  expect_failures = [var.secret_values_wo]
+}
+
 run "write_only_core_secrets" {
   command = apply
   variables {

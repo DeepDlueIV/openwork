@@ -106,7 +106,7 @@ export function ManualOAuthFields({ url, draft, onChange, saved = EMPTY_OAUTH_AD
       <EndpointField field="authorizationEndpoint" label="Authorization endpoint URL" draft={draft} saved={saved} disabled={disabled} onChange={onChange} />
       <EndpointField field="tokenEndpoint" label="Token endpoint URL" draft={draft} saved={saved} disabled={disabled} onChange={onChange} />
       {pendingReview || destination.differentHost ? <div role="status" className="rounded-lg bg-[color-mix(in_srgb,var(--ow-warning)_8%,var(--dls-surface))] px-3 py-2.5 text-[13px] leading-5 text-[var(--ow-warning)]" data-testid="manual-oauth-trust-warning">
-        <p><TriangleAlert className="mr-1 inline size-3.5 align-text-bottom" aria-hidden /><span className="font-medium">{destination.message}</span></p>
+        <p><TriangleAlert className="mr-1 inline size-3.5 align-text-bottom" aria-hidden /><span className="font-medium">{destination.beforeHost}<strong className="font-semibold">{destination.host}</strong>{destination.afterHost}</span></p>
         {pendingReview ? <p className="mt-1">
           {draft.published?.inconsistent ? "OpenWork didn't verify these addresses because the server's information is inconsistent. Save only if the server owner confirms them." : "OpenWork hasn't verified these addresses. Save only if the server owner confirms them."}{" "}
           <DenButton type="button" variant="plain" size="inline" className="!inline-flex !h-auto !p-0 !text-[var(--ow-warning)] underline underline-offset-2" disabled={disabled} onClick={() => onChange(undoPublishedAddresses(draft))}>Undo</DenButton>

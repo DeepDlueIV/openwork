@@ -3575,7 +3575,7 @@ export type Microsoft365TeamsMessageBody = {
 
 export type ExternalMcpRequirementsDiscovery = {
   /**
-   * Unverified read-only suggestions; never applied until an administrator saves manual sign-in settings.
+   * Settings-view-only unverified suggestions; never applied until an administrator saves manual sign-in settings.
    */
   publishedSignInAddresses?: Array<{
     authorizationEndpoint: string;

@@ -58,9 +58,61 @@ test("issuer mismatch prefill is extracted read-only, never accepted as a truste
     return json({}, 404)
   } })
   assert.deepEqual(result.authentication.authorizationServers, [])
-  assert.deepEqual(result.publishedSignInAddresses, [{ ...endpoints, advertisedIssuer: resource, metadataIssuer: "https://resource.example" }])
+  assert.deepEqual(result.publishedSignInAddresses, [{ ...endpoints, advertisedIssuer: resource, metadataIssuer: "https://resource.example/" }])
   assert.ok(result.warnings.some(warning => warning.code === "oauth_issuer_mismatch" && warning.message.includes("OpenWork stopped for security")))
   assert.equal(requests.some(url => new URL(url).origin === "https://identity.example"), false)
+})
+
+test("manual endpoints reject credential-like query keys but preserve public routing parameters", () => {
+  const sensitive = ["client_secret", "access_token", "refresh_token", "id_token", "api_key", "X-API-Key", "password", "token", "code_verifier", "x-amz-signature", "client%5Fsecret", "%2563lient_secret", "client_secret_value", "api-key-value"]
+  for (const key of sensitive) {
+    for (const field of ["authorizationEndpoint", "tokenEndpoint"]) {
+      assert.equal(manualOAuthEndpointsSchema.safeParse({ ...endpoints, [field]: `https://identity.example/oauth?${key}=exp-mcpmanual-private-value` }).success, false, `${field}: ${key}`)
+    }
+  }
+  assert.ok(manualOAuthEndpointsSchema.safeParse({ ...endpoints, authorizationEndpoint: "https://identity.example/authorize?tenant=synthetic&client_id=public-client&country_code=GB" }).success)
+})
+
+test("issuer-mismatch prefill never returns credential-bearing endpoint queries", async () => {
+  for (const field of ["authorization_endpoint", "token_endpoint"]) {
+    const result = await discoverConnectionRequirements({ serverUrl: resource, fetch: async (url) => {
+      if (String(url) === resource) return new Response(null, { status: 401 })
+      if (String(url).includes("oauth-protected-resource")) return json({ resource, authorization_servers: [resource] })
+      if (String(url) === "https://resource.example/.well-known/oauth-authorization-server/mcp/team") return json({ issuer: "https://resource.example", authorization_endpoint: endpoints.authorizationEndpoint, token_endpoint: endpoints.tokenEndpoint, [field]: "https://identity.example/oauth?client_secret=exp-mcpmanual-metadata-private" , response_types_supported: ["code"] })
+      return json({}, 404)
+    } })
+    assert.equal(result.publishedSignInAddresses, undefined)
+    assert.deepEqual(result.authentication.authorizationServers, [])
+    assert.ok(result.warnings.some(warning => warning.code === "oauth_issuer_mismatch"))
+    assert.doesNotMatch(JSON.stringify(result), /exp-mcpmanual-metadata-private|client_secret=/)
+  }
+})
+
+test("unverified issuer labels omit credentials and queries without changing strict verification", async () => {
+  const result = await discoverConnectionRequirements({ serverUrl: resource, fetch: async (url) => {
+    if (String(url) === resource) return new Response(null, { status: 401 })
+    if (String(url).includes("oauth-protected-resource")) return json({ resource, authorization_servers: [resource] })
+    if (String(url) === "https://resource.example/.well-known/oauth-authorization-server/mcp/team") return json({ issuer: "https://resource.example?access_token=exp-mcpmanual-issuer-private", authorization_endpoint: endpoints.authorizationEndpoint, token_endpoint: endpoints.tokenEndpoint, response_types_supported: ["code"] })
+    return json({}, 404)
+  } })
+  assert.deepEqual(result.authentication.authorizationServers, [])
+  assert.equal(result.publishedSignInAddresses?.[0]?.metadataIssuer, "https://resource.example/")
+  assert.doesNotMatch(JSON.stringify(result), /exp-mcpmanual-issuer-private|access_token=/)
+})
+
+test("even issuer-consistent discovery omits credential-bearing service URLs", async () => {
+  for (const field of ["authorization_endpoint", "token_endpoint", "registration_endpoint"]) {
+    const result = await discoverConnectionRequirements({ serverUrl: resource, fetch: async (url) => {
+      if (String(url) === resource) return new Response(null, { status: 401 })
+      if (String(url).includes("oauth-protected-resource")) return json({ resource, authorization_servers: ["https://identity.example"] })
+      if (String(url) === "https://identity.example/.well-known/oauth-authorization-server") return json({ issuer: "https://identity.example", authorization_endpoint: endpoints.authorizationEndpoint, token_endpoint: endpoints.tokenEndpoint, [field]: "https://identity.example/oauth?access_token=exp-mcpmanual-consistent-private", response_types_supported: ["code"] })
+      return json({}, 404)
+    } })
+    assert.deepEqual(result.authentication.authorizationServers, [])
+    assert.equal(result.publishedSignInAddresses, undefined)
+    assert.doesNotMatch(JSON.stringify(result), /exp-mcpmanual-consistent-private|access_token=/)
+    assert.ok(result.warnings.some(warning => warning.code === "oauth_sign_in_addresses_unsafe"))
+  }
 })
 
 test("endpoint configuration is part of the state and in-flight credential binding", () => {

@@ -15587,7 +15587,7 @@
         "type": "object",
         "properties": {
           "publishedSignInAddresses": {
-            "description": "Unverified read-only suggestions; never applied until an administrator saves manual sign-in settings.",
+            "description": "Settings-view-only unverified suggestions; never applied until an administrator saves manual sign-in settings.",
             "type": "array",
             "items": {
               "type": "object",

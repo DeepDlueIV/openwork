@@ -38,10 +38,11 @@ test("a configured secret is named, and either differing endpoint host leads wit
   const confidential = manualOAuthDestination("https://mcp.example.test/mcp", published, true);
   assert.match(confidential.message, /sign-in codes and the client secret will go to mcp.example.test/);
   for (const field of ["authorizationEndpoint", "tokenEndpoint"] satisfies (keyof typeof published)[]) {
-    const crossHost = manualOAuthDestination("https://mcp.example.test/mcp", { ...published, [field]: "https://identity.example.test/oauth" }, true);
-    assert.equal(crossHost.differentHost, true);
-    assert.match(crossHost.message, /^A different host from the MCP server/);
-    assert.match(crossHost.message, /identity.example.test/);
-    assert.match(crossHost.message, /client secret/);
+    for (const hasSecret of [false, true]) {
+      const crossHost = manualOAuthDestination("https://mcp.example.test/mcp", { ...published, [field]: "https://identity.example.test/oauth" }, hasSecret);
+      assert.equal(crossHost.differentHost, true);
+      assert.equal(crossHost.message, `Different host: your users' sign-in codes${hasSecret ? " and the client secret" : ""} will go to identity.example.test, not the MCP server's host (mcp.example.test).`);
+      assert.equal(crossHost.beforeHost + crossHost.host + crossHost.afterHost, crossHost.message);
+    }
   }
 });

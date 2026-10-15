@@ -93,8 +93,8 @@ test("an admin explicitly saves published sign-in addresses before a public clie
     await openAddressSettings();
     await user.click({ role: "button", label: "Review published addresses" });
     await user.see({ role: "button", label: "Save and use these addresses" });
-    expect(await world.warningText()).toMatch(/^A different host from the MCP server/);
-    expect(await world.warningText()).toContain("localhost:");
+    expect(await world.warningText()).toContain(`Different host: your users' sign-in codes will go to localhost:${new URL(world.origin).port}, not the MCP server's host (${new URL(world.origin).host}).`);
+    expect(await world.warningHost()).toBe(`localhost:${new URL(world.origin).port}`);
     expect(await world.warningText()).not.toContain("client secret");
     expect(await world.saveEnabled()).toBe(true);
     expect(await world.connection()).toMatchObject({ manualOAuthEndpoints: null });
@@ -246,5 +246,27 @@ test("an admin explicitly saves published sign-in addresses before a public clie
     expect(denied.response.status, denied.text).toBe(403);
     expect((await world.api(path)).body).toMatchObject({ manualOAuthEndpoints: addresses });
     evidence.recordAssertionEvidence("Creator status does not grant access to private OAuth settings", "After an administrator configures a member-created connection, its ordinary creator's listing and rename response omit manual addresses; replacing them is forbidden and the admin's saved pair stays unchanged.", true);
+  });
+  await step("member discovery omits credential-bearing addresses from inconsistent metadata", async () => {
+    world.setPublishedCredentialQuery(true);
+    const discovered = await world.memberApi("/v1/mcp-connections/discover", { method: "POST", body: JSON.stringify({ url: `${world.origin}/mcp/team` }) });
+    expect(discovered.response.status, discovered.text).toBe(200);
+    expect(discovered.body).not.toHaveProperty("publishedSignInAddresses");
+    expect(discovered.body).toMatchObject({ authentication: { authorizationServers: [] } });
+    expect(discovered.text).toContain("oauth_issuer_mismatch");
+    expect(discovered.text).not.toContain("exp-mcpmanual-metadata-private");
+    expect(discovered.text).not.toContain("access_token=");
+    expect(discovered.text).not.toContain("client_secret=");
+    const admin = await world.api("/v1/mcp-connections/discover", { method: "POST", body: JSON.stringify({ url: `${world.origin}/mcp/team` }) });
+    expect(admin.response.status, admin.text).toBe(200);
+    expect(admin.body).not.toHaveProperty("publishedSignInAddresses");
+    expect(admin.text).not.toContain("exp-mcpmanual-metadata-private");
+    expect(world.exchanges()).toBe(2);
+    world.setPublishedCredentialQuery(false);
+    const safeAdmin = await world.api("/v1/mcp-connections/discover", { method: "POST", body: JSON.stringify({ url: `${world.origin}/mcp/team` }) });
+    expect(safeAdmin.body).toHaveProperty("publishedSignInAddresses");
+    const member = await world.memberApi("/v1/mcp-connections/discover", { method: "POST", body: JSON.stringify({ url: `${world.origin}/mcp/team` }) });
+    expect(member.body).not.toHaveProperty("publishedSignInAddresses");
+    evidence.recordAssertionEvidence("Unverified metadata cannot disclose URL-embedded credentials", "Credential-bearing authorization/token URLs from a mismatched issuer are omitted for both admin and member. With safe URLs, only the settings-view caller gets prefill suggestions; member discovery keeps the strict warning without private URLs. No token exchange occurs.", true);
   });
 });

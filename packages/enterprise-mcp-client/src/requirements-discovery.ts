@@ -15,7 +15,7 @@ import type {
 } from "./contracts.js"
 import { isEquivalentOAuthDiscoveryAlias } from "./oauth-resource-alias.js"
 import { OAuthMetadataSchema } from "@modelcontextprotocol/core"
-import { manualOAuthEndpointsSchema, oauthIssuerMismatchMessage } from "./manual-oauth.js"
+import { manualOAuthEndpointSchema, manualOAuthEndpointsSchema, oauthIssuerMismatchMessage, safeOAuthIssuerLabel } from "./manual-oauth.js"
 
 const DEFAULT_TIMEOUT_MS = 15_000
 const DEFAULT_MAX_AUTHORIZATION_SERVERS = 5
@@ -98,7 +98,11 @@ function scopedFetch(input: {
   }
 }
 
-function metadataRequirement(metadata: AuthorizationServerMetadata): EnterpriseMcpAuthorizationServerRequirement {
+function metadataRequirement(metadata: AuthorizationServerMetadata): EnterpriseMcpAuthorizationServerRequirement | undefined {
+  // Issuer verification is not permission to disclose credentials embedded in a
+  // published URL. Keep exact trusted identifiers only when all URLs are safe.
+  const urls = [metadata.issuer, metadata.authorization_endpoint, metadata.token_endpoint, metadata.registration_endpoint]
+  if (urls.some((url) => url !== undefined && !manualOAuthEndpointSchema.safeParse(url).success)) return undefined
   return {
     issuer: metadata.issuer,
     authorizationEndpoint: metadata.authorization_endpoint,
@@ -294,7 +298,7 @@ export async function discoverConnectionRequirements(
         const metadata = OAuthMetadataSchema.safeParse(await response.clone().json().catch(() => undefined))
         if (metadata.success) {
           const endpoints = manualOAuthEndpointsSchema.safeParse({ authorizationEndpoint: metadata.data.authorization_endpoint, tokenEndpoint: metadata.data.token_endpoint })
-          if (endpoints.success) candidates.push({ ...endpoints.data, metadataIssuer: metadata.data.issuer })
+          if (endpoints.success) candidates.push({ ...endpoints.data, metadataIssuer: safeOAuthIssuerLabel(metadata.data.issuer) })
         }
       }
       return response
@@ -309,7 +313,12 @@ export async function discoverConnectionRequirements(
         warnings.push({ code: "oauth_server_metadata_unavailable", message: `No OAuth metadata was found for issuer ${issuer}.` })
         continue
       }
-      authorizationServers.push(metadataRequirement(metadata))
+      const requirement = metadataRequirement(metadata)
+      if (!requirement) {
+        warnings.push({ code: "oauth_sign_in_addresses_unsafe", message: "The server published sign-in URLs with credentials or unsupported URL components. Ask the server owner for safe sign-in addresses." })
+        continue
+      }
+      authorizationServers.push(requirement)
     } catch (error) {
       warnings.push({
         code: error instanceof IssuerMismatchError ? "oauth_issuer_mismatch" : "oauth_server_metadata_unavailable",
@@ -318,7 +327,7 @@ export async function discoverConnectionRequirements(
           : error instanceof Error ? error.message : `OAuth metadata could not be loaded for issuer ${issuer}.`,
       })
     }
-    for (const candidate of candidates) publishedSignInAddresses.push({ ...candidate, advertisedIssuer: issuer })
+    for (const candidate of candidates) publishedSignInAddresses.push({ ...candidate, advertisedIssuer: safeOAuthIssuerLabel(issuer) })
   }
 
   const requiredScopes = uniqueScopes(challengeScope)

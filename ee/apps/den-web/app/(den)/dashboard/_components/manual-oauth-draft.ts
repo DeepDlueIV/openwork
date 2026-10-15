@@ -32,16 +32,14 @@ export function oauthAddressHost(value: string): string {
   try { return new URL(value).host; } catch { return "the entered address"; }
 }
 
-export function manualOAuthDestination(url: string, values: ManualOAuthAddresses, hasClientSecret: boolean): { differentHost: boolean; message: string } {
+export function manualOAuthDestination(url: string, values: ManualOAuthAddresses, hasClientSecret: boolean): { differentHost: boolean; message: string; beforeHost: string; host: string; afterHost: string } {
   const mcpHost = oauthAddressHost(url);
   const authorizationHost = oauthAddressHost(values.authorizationEndpoint);
   const tokenHost = oauthAddressHost(values.tokenEndpoint);
   const differentHost = [values.authorizationEndpoint, values.tokenEndpoint].filter(Boolean).some((value) => oauthAddressHost(value) !== mcpHost);
-  const recipient = `Your users' sign-in codes${hasClientSecret ? " and the client secret" : ""} will go to ${tokenHost}`;
-  return {
-    differentHost,
-    message: differentHost
-      ? `A different host from the MCP server (${mcpHost}): ${authorizationHost === tokenHost ? tokenHost : `${authorizationHost} (sign-in), ${tokenHost} (token)`}. ${recipient}.`
-      : `${recipient} (same host as the MCP server).`,
-  };
+  const host = tokenHost !== mcpHost ? tokenHost : authorizationHost;
+  const subject = `users' sign-in codes${hasClientSecret ? " and the client secret" : ""} will go to `;
+  const beforeHost = differentHost ? `Different host: your ${subject}` : `Your ${subject}`;
+  const afterHost = differentHost ? `, not the MCP server's host (${mcpHost}).` : " (same host as the MCP server).";
+  return { differentHost, beforeHost, host, afterHost, message: `${beforeHost}${host}${afterHost}` };
 }

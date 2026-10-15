@@ -260,7 +260,7 @@ const discoverConnectionBodySchema = z.object({
 }).meta({ ref: "ExternalMcpRequirementsDiscoveryInput" })
 
 const requirementsDiscoveryResponseSchema = z.object({
-  publishedSignInAddresses: z.array(manualOAuthEndpointsSchema.extend({ advertisedIssuer: z.string(), metadataIssuer: z.string() })).optional().describe("Unverified read-only suggestions; never applied until an administrator saves manual sign-in settings."),
+  publishedSignInAddresses: z.array(manualOAuthEndpointsSchema.extend({ advertisedIssuer: z.string(), metadataIssuer: z.string() })).optional().describe("Settings-view-only unverified suggestions; never applied until an administrator saves manual sign-in settings."),
   status: z.enum(["ready", "manual_action_required", "unsupported", "unreachable"]),
   server: z.object({
     url: z.string(),
@@ -306,6 +306,12 @@ const requirementsDiscoveryResponseSchema = z.object({
   })),
   warnings: z.array(z.object({ code: z.string(), message: z.string() })),
 }).meta({ ref: "ExternalMcpRequirementsDiscovery" })
+
+function requirementsForCaller(requirements: Awaited<ReturnType<typeof discoverConnectionRequirements>>, canViewSettings: boolean) {
+  if (canViewSettings) return requirements
+  const { publishedSignInAddresses: _published, ...memberRequirements } = requirements
+  return memberRequirements
+}
 
 const requirementsDiscoveryFailedSchema = z.object({
   error: z.literal("requirements_discovery_failed"),
@@ -2245,7 +2251,7 @@ export function registerMcpConnectionRoutes<T extends { Variables: OrgRouteVaria
           serverUrl: url,
           fetch: externalMcpDiscoveryFetch,
         })
-        return c.json(result)
+        return c.json(requirementsForCaller(result, await hasPermission(c, "connections.view")))
       } catch (error) {
         return c.json({
           error: "requirements_discovery_failed" as const,
@@ -2439,7 +2445,7 @@ export function registerMcpConnectionRoutes<T extends { Variables: OrgRouteVaria
       return c.json({
         resolution: "discovered" as const,
         attempted: candidates,
-        match: { url: match.url, suggestedName: suggestConnectionName(match.url), discovery: match.discovery },
+        match: { url: match.url, suggestedName: suggestConnectionName(match.url), discovery: requirementsForCaller(match.discovery, await hasPermission(c, "connections.view")) },
       })
     },
   )

@@ -310,9 +310,14 @@ import type {
   GetV1GatewayUsageLimitsMeResponses,
   GetV1InferenceAccessErrors,
   GetV1InferenceAccessResponses,
+  GetV1InferenceAnalyticsActivityErrors,
   GetV1InferenceAnalyticsActivityResponses,
+  GetV1InferenceAnalyticsConsumptionErrors,
   GetV1InferenceAnalyticsConsumptionResponses,
+  GetV1InferenceAnalyticsSettingsErrors,
   GetV1InferenceAnalyticsSettingsResponses,
+  GetV1InferenceAnalyticsUsageErrors,
+  GetV1InferenceAnalyticsUsageResponses,
   GetV1InferenceErrors,
   GetV1InferenceFreeProviderErrors,
   GetV1InferenceFreeProviderResponses,
@@ -583,6 +588,7 @@ import type {
   PatchV1DesktopPoliciesByDesktopPolicyIdResponses,
   PatchV1GatewayUsageLimitPoliciesByPolicyIdErrors,
   PatchV1GatewayUsageLimitPoliciesByPolicyIdResponses,
+  PatchV1InferenceAnalyticsSettingsErrors,
   PatchV1InferenceAnalyticsSettingsResponses,
   PatchV1InferenceErrors,
   PatchV1InferenceFreePinsErrors,
@@ -4794,6 +4800,19 @@ export class DenClient extends HeyApiClient {
   }
 
   /**
+   * Read Models analytics usage limits
+   *
+   * Returns Models usage limits for the analytics dashboard. Requires View OpenWork Models settings and the Models analytics surface feature.
+   */
+  public getV1InferenceAnalyticsUsage<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      GetV1InferenceAnalyticsUsageResponses,
+      GetV1InferenceAnalyticsUsageErrors,
+      ThrowOnError
+    >({ url: "/v1/inference/analytics/usage", ...options });
+  }
+
+  /**
    * Get organization Free provider summary
    *
    * Requires the View OpenWork Models settings permission. Returns the organization's Auto pin policy, joined-member allowance counts and recorded free usage attributed to this organization. Allowances are person-wide; usage totals exclude other organizations, anonymous devices and paid inference. No individual balances or identities are returned.
@@ -4913,10 +4932,11 @@ export class DenClient extends HeyApiClient {
    * Returns the organization's task analytics state for OpenWork Models: whether the feature is available and the organization has an active Models subscription, whether collection is enabled and when it was consented to, and whether export to a configured Langfuse host is on. Any member can read it.
    */
   public getV1InferenceAnalyticsSettings<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
-    return (options?.client ?? this.client).get<GetV1InferenceAnalyticsSettingsResponses, unknown, ThrowOnError>({
-      url: "/v1/inference/analytics/settings",
-      ...options,
-    });
+    return (options?.client ?? this.client).get<
+      GetV1InferenceAnalyticsSettingsResponses,
+      GetV1InferenceAnalyticsSettingsErrors,
+      ThrowOnError
+    >({ url: "/v1/inference/analytics/settings", ...options });
   }
 
   /**
@@ -4942,7 +4962,11 @@ export class DenClient extends HeyApiClient {
         },
       ],
     );
-    return (options?.client ?? this.client).patch<PatchV1InferenceAnalyticsSettingsResponses, unknown, ThrowOnError>({
+    return (options?.client ?? this.client).patch<
+      PatchV1InferenceAnalyticsSettingsResponses,
+      PatchV1InferenceAnalyticsSettingsErrors,
+      ThrowOnError
+    >({
       url: "/v1/inference/analytics/settings",
       ...options,
       ...params,
@@ -5044,7 +5068,11 @@ export class DenClient extends HeyApiClient {
         },
       ],
     );
-    return (options?.client ?? this.client).get<GetV1InferenceAnalyticsActivityResponses, unknown, ThrowOnError>({
+    return (options?.client ?? this.client).get<
+      GetV1InferenceAnalyticsActivityResponses,
+      GetV1InferenceAnalyticsActivityErrors,
+      ThrowOnError
+    >({
       url: "/v1/inference/analytics/activity",
       ...options,
       ...params,
@@ -5082,7 +5110,11 @@ export class DenClient extends HeyApiClient {
         },
       ],
     );
-    return (options?.client ?? this.client).get<GetV1InferenceAnalyticsConsumptionResponses, unknown, ThrowOnError>({
+    return (options?.client ?? this.client).get<
+      GetV1InferenceAnalyticsConsumptionResponses,
+      GetV1InferenceAnalyticsConsumptionErrors,
+      ThrowOnError
+    >({
       url: "/v1/inference/analytics/consumption",
       ...options,
       ...params,

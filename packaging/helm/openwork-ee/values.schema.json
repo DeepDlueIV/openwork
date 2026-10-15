@@ -28,6 +28,26 @@
               ],
               "description": "App build progress: While an agent creates or changes an MCP App, the chat shows each stage it goes through (finding and checking tools, writing the App, building and verifying it) as a checklist with a progress bar. Renders DEN_FEATURE_APP_BUILD_PROGRESS."
             },
+            "modelsAnalyticsUi": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Models analytics: Organization admins can view Models & usage analytics and configure analytics exports. Renders DEN_FEATURE_MODELS_ANALYTICS_UI."
+            },
+            "taskAnalyticsUi": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Task analytics: Members can view task activity and consumption, and admins can configure analytics integrations. Renders DEN_FEATURE_TASK_ANALYTICS_UI."
+            },
             "teamMembershipCache": {
               "enum": [
                 "",

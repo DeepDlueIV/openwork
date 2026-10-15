@@ -19,6 +19,7 @@ import { DenSectionHeader } from "../../_components/ui/section-header";
 import { DenTable } from "../../_components/ui/table";
 import { getErrorMessage, requestJson } from "../../_lib/den-flow";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
+import { orgFeatureEnabled } from "../../_lib/den-org";
 import { ItemRowsSkeleton } from "./item-list";
 
 type Activity = z.infer<typeof modelsAnalyticsActivitySchema>;
@@ -102,6 +103,12 @@ function Outcome({ events }: { events: Activity["events"] }) {
 }
 
 export function ModelsAnalyticsPanel() {
+  const { orgContext } = useOrgDashboard();
+  if (!orgFeatureEnabled(orgContext, "taskAnalyticsUi")) return null;
+  return <EnabledModelsAnalyticsPanel />;
+}
+
+function EnabledModelsAnalyticsPanel() {
   const { orgContext, activeOrg, runReauthableAction } = useOrgDashboard();
   const queryClient = useQueryClient();
   const key = ["models-analytics", orgContext?.organization.id];

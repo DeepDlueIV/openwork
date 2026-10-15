@@ -60,6 +60,20 @@ export const FEATURES = defineFeatures({
     deployments: everywhere,
     default: false,
   },
+  modelsAnalyticsUi: {
+    label: "Models analytics",
+    description: "Organization admins can view Models & usage analytics and configure analytics exports.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
+  taskAnalyticsUi: {
+    label: "Task analytics",
+    description: "Members can view task activity and consumption, and admins can configure analytics integrations.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
   teamMembershipCache: {
     label: "Team membership cache",
     description: "Reduce repeated team lookups while keeping access changes immediate. Enable only after every API instance runs revision-aware team writes.",

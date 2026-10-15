@@ -164,6 +164,8 @@ export type NotFoundError = {
 export type AdminFeature = {
   key:
     | "appBuildProgress"
+    | "modelsAnalyticsUi"
+    | "taskAnalyticsUi"
     | "teamMembershipCache"
     | "managedDeploymentsGcp"
     | "managedDeploymentsMcp"
@@ -223,6 +225,8 @@ export type AdminOrganizationsPageResponse = {
   organizations: Array<{
     capabilities: {
       appBuildProgress: boolean;
+      modelsAnalyticsUi: boolean;
+      taskAnalyticsUi: boolean;
       teamMembershipCache: boolean;
       managedDeploymentsGcp: boolean;
       managedDeploymentsMcp: boolean;
@@ -255,6 +259,24 @@ export type AdminOrganizationsPageResponse = {
      */
     featureStates: {
       appBuildProgress: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      modelsAnalyticsUi: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      taskAnalyticsUi: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -507,6 +529,8 @@ export type AdminOverviewResponse = {
   organizations: Array<{
     capabilities: {
       appBuildProgress: boolean;
+      modelsAnalyticsUi: boolean;
+      taskAnalyticsUi: boolean;
       teamMembershipCache: boolean;
       managedDeploymentsGcp: boolean;
       managedDeploymentsMcp: boolean;
@@ -539,6 +563,24 @@ export type AdminOverviewResponse = {
      */
     featureStates: {
       appBuildProgress: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      modelsAnalyticsUi: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      taskAnalyticsUi: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -1737,6 +1779,26 @@ export type AgentPermissionPolicyWrite = {
   settings: AgentPermissionSettings;
 };
 
+export type InferenceStatus = {
+  enabled: boolean;
+  tier: "tier1" | "tier2";
+  memberCount: number;
+  proxyBaseUrl: string;
+  upstreamProviderConfigured: boolean;
+  subscribed?: boolean;
+  buckets: Array<{
+    windowType: "five_hour" | "weekly" | "monthly";
+    windowStartAt: string;
+    windowEndAt: string;
+    limitAmount: number;
+    usedAmount: number;
+  }>;
+};
+
+export type InferenceStatusResponse = {
+  inference: InferenceStatus;
+};
+
 export type InferenceAccessResponse = {
   access: {
     kind: "free" | "paid" | "exhausted" | "unavailable";
@@ -1768,26 +1830,6 @@ export type InferenceAccessResponse = {
       capabilities: Array<string>;
     }>;
   };
-};
-
-export type InferenceStatus = {
-  enabled: boolean;
-  tier: "tier1" | "tier2";
-  memberCount: number;
-  proxyBaseUrl: string;
-  upstreamProviderConfigured: boolean;
-  subscribed?: boolean;
-  buckets: Array<{
-    windowType: "five_hour" | "weekly" | "monthly";
-    windowStartAt: string;
-    windowEndAt: string;
-    limitAmount: number;
-    usedAmount: number;
-  }>;
-};
-
-export type InferenceStatusResponse = {
-  inference: InferenceStatus;
 };
 
 export type InferenceProviderMissingError = {
@@ -6513,6 +6555,8 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
   200: {
     capabilities: {
       appBuildProgress: boolean;
+      modelsAnalyticsUi: boolean;
+      taskAnalyticsUi: boolean;
       teamMembershipCache: boolean;
       managedDeploymentsGcp: boolean;
       managedDeploymentsMcp: boolean;
@@ -6545,6 +6589,24 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
      */
     featureStates: {
       appBuildProgress: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      modelsAnalyticsUi: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      taskAnalyticsUi: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6785,6 +6847,8 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
     };
     capabilities: {
       appBuildProgress: boolean;
+      modelsAnalyticsUi: boolean;
+      taskAnalyticsUi: boolean;
       teamMembershipCache: boolean;
       managedDeploymentsGcp: boolean;
       managedDeploymentsMcp: boolean;
@@ -6817,6 +6881,24 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
      */
     featureStates: {
       appBuildProgress: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      modelsAnalyticsUi: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      taskAnalyticsUi: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -13950,6 +14032,33 @@ export type PutV1DiagnosticsEgressTokenResponses = {
 export type PutV1DiagnosticsEgressTokenResponse =
   PutV1DiagnosticsEgressTokenResponses[keyof PutV1DiagnosticsEgressTokenResponses];
 
+export type GetV1InferenceAnalyticsUsageData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/inference/analytics/usage";
+};
+
+export type GetV1InferenceAnalyticsUsageErrors = {
+  /**
+   * Models analytics surface is disabled.
+   */
+  404: NotFoundError;
+};
+
+export type GetV1InferenceAnalyticsUsageError =
+  GetV1InferenceAnalyticsUsageErrors[keyof GetV1InferenceAnalyticsUsageErrors];
+
+export type GetV1InferenceAnalyticsUsageResponses = {
+  /**
+   * Models usage limits.
+   */
+  200: InferenceStatusResponse;
+};
+
+export type GetV1InferenceAnalyticsUsageResponse =
+  GetV1InferenceAnalyticsUsageResponses[keyof GetV1InferenceAnalyticsUsageResponses];
+
 export type GetV1InferenceFreeProviderData = {
   body?: never;
   path?: never;
@@ -14229,6 +14338,16 @@ export type GetV1InferenceAnalyticsSettingsData = {
   url: "/v1/inference/analytics/settings";
 };
 
+export type GetV1InferenceAnalyticsSettingsErrors = {
+  /**
+   * Task analytics surface is disabled.
+   */
+  404: NotFoundError;
+};
+
+export type GetV1InferenceAnalyticsSettingsError =
+  GetV1InferenceAnalyticsSettingsErrors[keyof GetV1InferenceAnalyticsSettingsErrors];
+
 export type GetV1InferenceAnalyticsSettingsResponses = {
   /**
    * Task analytics settings
@@ -14258,6 +14377,16 @@ export type PatchV1InferenceAnalyticsSettingsData = {
   query?: never;
   url: "/v1/inference/analytics/settings";
 };
+
+export type PatchV1InferenceAnalyticsSettingsErrors = {
+  /**
+   * Task analytics surface is disabled.
+   */
+  404: NotFoundError;
+};
+
+export type PatchV1InferenceAnalyticsSettingsError =
+  PatchV1InferenceAnalyticsSettingsErrors[keyof PatchV1InferenceAnalyticsSettingsErrors];
 
 export type PatchV1InferenceAnalyticsSettingsResponses = {
   /**
@@ -14363,6 +14492,16 @@ export type GetV1InferenceAnalyticsActivityData = {
   url: "/v1/inference/analytics/activity";
 };
 
+export type GetV1InferenceAnalyticsActivityErrors = {
+  /**
+   * Task analytics surface is disabled.
+   */
+  404: NotFoundError;
+};
+
+export type GetV1InferenceAnalyticsActivityError =
+  GetV1InferenceAnalyticsActivityErrors[keyof GetV1InferenceAnalyticsActivityErrors];
+
 export type GetV1InferenceAnalyticsActivityResponses = {
   /**
    * Task activity
@@ -14425,6 +14564,16 @@ export type GetV1InferenceAnalyticsConsumptionData = {
   };
   url: "/v1/inference/analytics/consumption";
 };
+
+export type GetV1InferenceAnalyticsConsumptionErrors = {
+  /**
+   * Task analytics surface is disabled.
+   */
+  404: NotFoundError;
+};
+
+export type GetV1InferenceAnalyticsConsumptionError =
+  GetV1InferenceAnalyticsConsumptionErrors[keyof GetV1InferenceAnalyticsConsumptionErrors];
 
 export type GetV1InferenceAnalyticsConsumptionResponses = {
   /**
@@ -14548,6 +14697,10 @@ export type PostV1InferenceAnalyticsLangfuseTestErrors = {
     error: string;
     message?: string;
   };
+  /**
+   * Task analytics surface is disabled.
+   */
+  404: NotFoundError;
 };
 
 export type PostV1InferenceAnalyticsLangfuseTestError =
@@ -14592,6 +14745,10 @@ export type PostV1InferenceAnalyticsLangfuseConnectErrors = {
     error: string;
     message?: string;
   };
+  /**
+   * Task analytics surface is disabled.
+   */
+  404: NotFoundError;
 };
 
 export type PostV1InferenceAnalyticsLangfuseConnectError =
@@ -14625,6 +14782,10 @@ export type DeleteV1InferenceAnalyticsLangfuseErrors = {
    * The caller lacks the Manage task analytics permission.
    */
   403: ForbiddenError;
+  /**
+   * Task analytics surface is disabled.
+   */
+  404: NotFoundError;
 };
 
 export type DeleteV1InferenceAnalyticsLangfuseError =

@@ -841,6 +841,8 @@
             "type": "string",
             "enum": [
               "appBuildProgress",
+              "modelsAnalyticsUi",
+              "taskAnalyticsUi",
               "teamMembershipCache",
               "managedDeploymentsGcp",
               "managedDeploymentsMcp",
@@ -1038,6 +1040,12 @@
                     "appBuildProgress": {
                       "type": "boolean"
                     },
+                    "modelsAnalyticsUi": {
+                      "type": "boolean"
+                    },
+                    "taskAnalyticsUi": {
+                      "type": "boolean"
+                    },
                     "teamMembershipCache": {
                       "type": "boolean"
                     },
@@ -1107,6 +1115,8 @@
                   },
                   "required": [
                     "appBuildProgress",
+                    "modelsAnalyticsUi",
+                    "taskAnalyticsUi",
                     "teamMembershipCache",
                     "managedDeploymentsGcp",
                     "managedDeploymentsMcp",
@@ -1189,6 +1199,118 @@
                         "overrideApplies"
                       ]
                     },
+                    "modelsAnalyticsUi": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
+                    "taskAnalyticsUi": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "teamMembershipCache": {
                       "type": "object",
                       "properties": {
@@ -2312,6 +2434,8 @@
                   },
                   "required": [
                     "appBuildProgress",
+                    "modelsAnalyticsUi",
+                    "taskAnalyticsUi",
                     "teamMembershipCache",
                     "managedDeploymentsGcp",
                     "managedDeploymentsMcp",
@@ -2708,6 +2832,12 @@
                     "appBuildProgress": {
                       "type": "boolean"
                     },
+                    "modelsAnalyticsUi": {
+                      "type": "boolean"
+                    },
+                    "taskAnalyticsUi": {
+                      "type": "boolean"
+                    },
                     "teamMembershipCache": {
                       "type": "boolean"
                     },
@@ -2777,6 +2907,8 @@
                   },
                   "required": [
                     "appBuildProgress",
+                    "modelsAnalyticsUi",
+                    "taskAnalyticsUi",
                     "teamMembershipCache",
                     "managedDeploymentsGcp",
                     "managedDeploymentsMcp",
@@ -2859,6 +2991,118 @@
                         "overrideApplies"
                       ]
                     },
+                    "modelsAnalyticsUi": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
+                    "taskAnalyticsUi": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "teamMembershipCache": {
                       "type": "object",
                       "properties": {
@@ -3982,6 +4226,8 @@
                   },
                   "required": [
                     "appBuildProgress",
+                    "modelsAnalyticsUi",
+                    "taskAnalyticsUi",
                     "teamMembershipCache",
                     "managedDeploymentsGcp",
                     "managedDeploymentsMcp",
@@ -8209,6 +8455,91 @@
         ],
         "additionalProperties": false
       },
+      "InferenceStatus": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "tier": {
+            "type": "string",
+            "enum": [
+              "tier1",
+              "tier2"
+            ]
+          },
+          "memberCount": {
+            "type": "number"
+          },
+          "proxyBaseUrl": {
+            "type": "string"
+          },
+          "upstreamProviderConfigured": {
+            "type": "boolean"
+          },
+          "subscribed": {
+            "type": "boolean"
+          },
+          "buckets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "windowType": {
+                  "type": "string",
+                  "enum": [
+                    "five_hour",
+                    "weekly",
+                    "monthly"
+                  ]
+                },
+                "windowStartAt": {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                },
+                "windowEndAt": {
+                  "type": "string",
+                  "format": "date-time",
+                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+                },
+                "limitAmount": {
+                  "type": "number"
+                },
+                "usedAmount": {
+                  "type": "number"
+                }
+              },
+              "required": [
+                "windowType",
+                "windowStartAt",
+                "windowEndAt",
+                "limitAmount",
+                "usedAmount"
+              ]
+            }
+          }
+        },
+        "required": [
+          "enabled",
+          "tier",
+          "memberCount",
+          "proxyBaseUrl",
+          "upstreamProviderConfigured",
+          "buckets"
+        ]
+      },
+      "InferenceStatusResponse": {
+        "type": "object",
+        "properties": {
+          "inference": {
+            "$ref": "#/components/schemas/InferenceStatus"
+          }
+        },
+        "required": [
+          "inference"
+        ]
+      },
       "InferenceAccessResponse": {
         "type": "object",
         "properties": {
@@ -8358,91 +8689,6 @@
         },
         "required": [
           "access"
-        ]
-      },
-      "InferenceStatus": {
-        "type": "object",
-        "properties": {
-          "enabled": {
-            "type": "boolean"
-          },
-          "tier": {
-            "type": "string",
-            "enum": [
-              "tier1",
-              "tier2"
-            ]
-          },
-          "memberCount": {
-            "type": "number"
-          },
-          "proxyBaseUrl": {
-            "type": "string"
-          },
-          "upstreamProviderConfigured": {
-            "type": "boolean"
-          },
-          "subscribed": {
-            "type": "boolean"
-          },
-          "buckets": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "properties": {
-                "windowType": {
-                  "type": "string",
-                  "enum": [
-                    "five_hour",
-                    "weekly",
-                    "monthly"
-                  ]
-                },
-                "windowStartAt": {
-                  "type": "string",
-                  "format": "date-time",
-                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
-                },
-                "windowEndAt": {
-                  "type": "string",
-                  "format": "date-time",
-                  "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
-                },
-                "limitAmount": {
-                  "type": "number"
-                },
-                "usedAmount": {
-                  "type": "number"
-                }
-              },
-              "required": [
-                "windowType",
-                "windowStartAt",
-                "windowEndAt",
-                "limitAmount",
-                "usedAmount"
-              ]
-            }
-          }
-        },
-        "required": [
-          "enabled",
-          "tier",
-          "memberCount",
-          "proxyBaseUrl",
-          "upstreamProviderConfigured",
-          "buckets"
-        ]
-      },
-      "InferenceStatusResponse": {
-        "type": "object",
-        "properties": {
-          "inference": {
-            "$ref": "#/components/schemas/InferenceStatus"
-          }
-        },
-        "required": [
-          "inference"
         ]
       },
       "InferenceProviderMissingError": {
@@ -26938,6 +27184,12 @@
                         "appBuildProgress": {
                           "type": "boolean"
                         },
+                        "modelsAnalyticsUi": {
+                          "type": "boolean"
+                        },
+                        "taskAnalyticsUi": {
+                          "type": "boolean"
+                        },
                         "teamMembershipCache": {
                           "type": "boolean"
                         },
@@ -27007,6 +27259,8 @@
                       },
                       "required": [
                         "appBuildProgress",
+                        "modelsAnalyticsUi",
+                        "taskAnalyticsUi",
                         "teamMembershipCache",
                         "managedDeploymentsGcp",
                         "managedDeploymentsMcp",
@@ -27089,6 +27343,118 @@
                             "overrideApplies"
                           ]
                         },
+                        "modelsAnalyticsUi": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
+                        "taskAnalyticsUi": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "teamMembershipCache": {
                           "type": "object",
                           "properties": {
@@ -28212,6 +28578,8 @@
                       },
                       "required": [
                         "appBuildProgress",
+                        "modelsAnalyticsUi",
+                        "taskAnalyticsUi",
                         "teamMembershipCache",
                         "managedDeploymentsGcp",
                         "managedDeploymentsMcp",
@@ -28353,6 +28721,12 @@
                         "appBuildProgress": {
                           "type": "boolean"
                         },
+                        "modelsAnalyticsUi": {
+                          "type": "boolean"
+                        },
+                        "taskAnalyticsUi": {
+                          "type": "boolean"
+                        },
                         "teamMembershipCache": {
                           "type": "boolean"
                         },
@@ -28422,6 +28796,8 @@
                       },
                       "required": [
                         "appBuildProgress",
+                        "modelsAnalyticsUi",
+                        "taskAnalyticsUi",
                         "teamMembershipCache",
                         "managedDeploymentsGcp",
                         "managedDeploymentsMcp",
@@ -28504,6 +28880,118 @@
                             "overrideApplies"
                           ]
                         },
+                        "modelsAnalyticsUi": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
+                        "taskAnalyticsUi": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "teamMembershipCache": {
                           "type": "object",
                           "properties": {
@@ -29627,6 +30115,8 @@
                       },
                       "required": [
                         "appBuildProgress",
+                        "modelsAnalyticsUi",
+                        "taskAnalyticsUi",
                         "teamMembershipCache",
                         "managedDeploymentsGcp",
                         "managedDeploymentsMcp",
@@ -51758,6 +52248,46 @@
         ]
       }
     },
+    "/v1/inference/analytics/usage": {
+      "get": {
+        "operationId": "getV1InferenceAnalyticsUsage",
+        "tags": [
+          "Inference"
+        ],
+        "summary": "Read Models analytics usage limits",
+        "description": "Returns Models usage limits for the analytics dashboard. Requires View OpenWork Models settings and the Models analytics surface feature.",
+        "responses": {
+          "200": {
+            "description": "Models usage limits.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InferenceStatusResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Models analytics surface is disabled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "denApiKey": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
     "/v1/inference/free/provider": {
       "get": {
         "operationId": "getV1InferenceFreeProvider",
@@ -52545,6 +53075,16 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "Task analytics surface is disabled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
           }
         },
         "security": [
@@ -52633,6 +53173,16 @@
                     "langfuseHost",
                     "langfuseConfigured"
                   ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Task analytics surface is disabled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
                 }
               }
             }
@@ -53083,6 +53633,16 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "Task analytics surface is disabled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
           }
         },
         "parameters": [
@@ -53264,6 +53824,16 @@
                   "required": [
                     "groups"
                   ]
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Task analytics surface is disabled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
                 }
               }
             }
@@ -53615,6 +54185,16 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "Task analytics surface is disabled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
           }
         },
         "requestBody": {
@@ -53728,6 +54308,16 @@
                 }
               }
             }
+          },
+          "404": {
+            "description": "Task analytics surface is disabled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
           }
         },
         "requestBody": {
@@ -53817,6 +54407,16 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ForbiddenError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Task analytics surface is disabled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
                 }
               }
             }

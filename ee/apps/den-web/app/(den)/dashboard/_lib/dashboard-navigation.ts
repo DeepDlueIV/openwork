@@ -214,7 +214,7 @@ function permissionsNavChildren(orgSlug: string, access: DenOrgAccessFlags, enab
 const PAGE_KEYWORDS: Record<string, string[]> = {
   Advanced: ["marketplace", "collections", "branding", "brand appearance"],
   "AI Gateway": ["llm", "provider", "gateway", "inference", "usage"],
-  Analytics: ["usage", "stats", "consumption", "workflow runs", "history", "langfuse"],
+  Analytics: ["usage", "stats", "workflow runs", "history"],
   "Audit logs": ["audit", "history", "operations", "changes", "security"],
   "API Keys": ["token", "secret"],
   Billing: ["plan", "invoice", "payment"],

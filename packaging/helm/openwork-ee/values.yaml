@@ -27,6 +27,8 @@ config:
   # The /admin kill switch still turns a feature off, even when locked on.
   features:
     appBuildProgress: ""           # default off · While an agent creates or changes an MCP App, the chat shows each stage it goes through (finding and checking tools, writing the App, building and verifying it) as a checklist with a progress bar.
+    modelsAnalyticsUi: ""          # default off · Organization admins can view Models & usage analytics and configure analytics exports.
+    taskAnalyticsUi: ""            # default off · Members can view task activity and consumption, and admins can configure analytics integrations.
     teamMembershipCache: ""        # default off · Reduce repeated team lookups while keeping access changes immediate. Enable only after every API instance runs revision-aware team writes.
     managedDeploymentsGcp: ""      # default off (cloud only) · Organization admins approve OpenWork installations in their own Google Cloud project and track health and updates.
     managedDeploymentsMcp: ""      # default off (cloud only) · Agents connected to OpenWork can check deployment readiness, create deployments, prepare the cloud approval link or command, and follow progress until the deployment is ready.

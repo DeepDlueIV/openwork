@@ -142,7 +142,7 @@ test("catalog reconciliation attributes failures without leaking private auth or
       expect((await reconcile(endpoint)).connectCatalogDiagnostic).toBe("discovery_unavailable");
       const before = witness.requests.filter((entry) => entry.privateAuth && entry.method === "initialize").length;
       await expectResolveError(endpoint, "connect_catalog_discovery_unavailable");
-      expect(witness.requests.filter((entry) => entry.privateAuth && entry.method === "initialize").length - before).toBe(3);
+      expect(witness.requests.filter((entry) => entry.privateAuth && entry.method === "initialize").length - before).toBe(2);
     }
     expect(witness.registrations.filter((entry) => entry.name.startsWith("openwork-direct-"))).toHaveLength(projectedCount);
     expect(witness.registrations.every((entry) => !entry.privateAuth)).toBe(true);
@@ -153,16 +153,18 @@ test("catalog reconciliation attributes failures without leaking private auth or
     witness.catalog(index([descriptor]));
     witness.failNextCatalogReads(1);
     const beforeResolve = catalogReads();
+    const resolveStarted = performance.now();
     const resolved = await appRequest(endpoint, "resolve", {
       launch: { connectionId: descriptor.connectionId, toolName: "show", resourceUri: "ui://fixture/app" },
       context: { sessionId: null, readOnly: false },
     });
     expect(resolved.status).toBe(200);
+    expect(performance.now() - resolveStarted).toBeLessThan(1_000);
     expect(catalogReads() - beforeResolve).toBe(2);
     expect(witness.appCalls).toEqual([]);
     if (!isRecord(resolved.body) || !isRecord(resolved.body.app) || typeof resolved.body.app.launchId !== "string"
       || typeof resolved.body.app.serverName !== "string") throw new Error("Missing recovered App launch");
-    evidence.recordAssertionEvidence("An App opens after one temporary catalog failure", "The first private catalog read returned 503; the same resolve request recovered on its second read and returned the App without running a provider tool.", true);
+    evidence.recordAssertionEvidence("An App opens promptly after one temporary catalog failure", "The first private catalog read returned 503; the same resolve request recovered in under one second on its second read, without backoff or a provider tool call.", true);
 
     // A live App can encounter the same startup race after reconciliation
     // replaces its catalog. Its first data call must recover without a click.
@@ -171,14 +173,68 @@ test("catalog reconciliation attributes failures without leaking private auth or
     witness.catalog(index([descriptor]));
     witness.failNextCatalogReads(1);
     const beforeCall = catalogReads();
+    const callStarted = performance.now();
     const loaded = await appRequest(endpoint, "call", {
       launchId: resolved.body.app.launchId, serverName: resolved.body.app.serverName,
       sessionId: null, name: "show", resourceUri: "ui://fixture/app",
     });
     expect(loaded).toMatchObject({ status: 200, body: { content: [{ type: "text", text: "Catalog App data" }] } });
+    expect(performance.now() - callStarted).toBeLessThan(1_000);
     expect(catalogReads() - beforeCall).toBe(2);
     expect(witness.appCalls).toEqual(["show"]);
     evidence.recordAssertionEvidence("The first read recovers without replaying the App tool", "After the catalog was cleared, the first data call encountered one 503, retried discovery, and returned data with exactly one provider tool call. Invalid catalog responses still stop after one read.", true);
+
+    const beforeWarmRead = catalogReads();
+    const warmStarted = performance.now();
+    expect(await appRequest(endpoint, "call", {
+      launchId: resolved.body.app.launchId, serverName: resolved.body.app.serverName,
+      sessionId: null, name: "show", resourceUri: "ui://fixture/app",
+    })).toMatchObject({ status: 200 });
+    expect(performance.now() - warmStarted).toBeLessThan(1_000);
+    expect(catalogReads()).toBe(beforeWarmRead);
+    expect(witness.appCalls).toEqual(["show", "show"]);
+    evidence.recordAssertionEvidence("A healthy next read has no discovery or retry delay", "The next data request used the known connection, issued no catalog reads, completed in under one second, and ran its tool exactly once.", true);
+
+    witness.catalog(index([]));
+    await reconcile(endpoint);
+    witness.catalog(index([descriptor]));
+    const hold = witness.holdNextCatalogRead();
+    const beforeShared = catalogReads();
+    const syncing = reconcile(endpoint);
+    await hold.started;
+    const opening = appRequest(endpoint, "resolve", {
+      launch: { connectionId: descriptor.connectionId, toolName: "show", resourceUri: "ui://fixture/app" },
+      context: { sessionId: null, readOnly: false },
+    });
+    // Hold the startup read long enough for the App's concurrent request to
+    // join it. A second read would finish immediately and fail this witness.
+    try {
+      await new Promise<void>((resolve) => setTimeout(resolve, 100));
+      expect(catalogReads() - beforeShared).toBe(1);
+    } finally {
+      hold.release();
+    }
+    await syncing;
+    expect(await opening).toMatchObject({ status: 200 });
+    expect(catalogReads() - beforeShared).toBe(1);
+    evidence.recordAssertionEvidence("Opening an App shares startup discovery", "A startup reconciliation held the catalog response while the App opened. Both completed from one private catalog read, without competing lookups or a retry delay.", true);
+
+    witness.catalog(index([]));
+    await reconcile(endpoint);
+    witness.catalog(index([descriptor]));
+    witness.failNextCatalogReads(1);
+    const slowRecovery = witness.holdNextCatalogRead();
+    const beforeSlow = catalogReads();
+    const slowStarted = performance.now();
+    try {
+      await expectResolveError(endpoint, "connect_catalog_discovery_unavailable");
+      expect(performance.now() - slowStarted).toBeLessThan(2_000);
+      expect(catalogReads() - beforeSlow).toBe(2);
+    } finally {
+      slowRecovery.release();
+    }
+    expect(witness.appCalls).toEqual(["show", "show"]);
+    evidence.recordAssertionEvidence("A stalled recovery cannot add a long wait", "After one immediate 503, the recovery catalog read was held open. The host stopped within two seconds after its one-second recovery deadline, with two discovery attempts and no provider-tool execution.", true);
 
     // Same loopback origin without the explicit development trust exception is
     // unactivated: supplying private auth must not send it to that origin.

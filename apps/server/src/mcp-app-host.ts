@@ -33,6 +33,7 @@ import {
 import { diagnoseMcpToolDenies, listMcpFromRuntimeSnapshot } from "./mcp.js";
 import { readEffectiveRuntimeOpencodeConfig, readRuntimeMcpConfigRevisions } from "./runtime-opencode-config-store.js";
 import { localManagedMcpAppIdentity } from "./local-managed-mcp.js";
+import { externalFetch } from "./server-fetch.js";
 
 async function listMcp(serverConfig: ServerConfig, workspaceId: string, workspaceRoot: string) {
   // Account-scoped gateways live in the engine-global runtime layer. Resolve
@@ -580,7 +581,7 @@ function connectCatalogError(diagnostic: Exclude<ConnectMcpCatalogDiagnostic, "r
   return new McpAppHostError(`connect_catalog_${diagnostic}`, messages[diagnostic]);
 }
 
-const CONNECT_CATALOG_RETRY_DELAYS_MS = [1_000, 3_000];
+const CONNECT_CATALOG_RECOVERY_BUDGET_MS = 1_000;
 
 async function privateConnectMcpConfigUntimed(input: {
   serverConfig: ServerConfig;
@@ -595,19 +596,16 @@ async function privateConnectMcpConfigUntimed(input: {
     input.workspaceId,
     { connectionId: input.connectionId, serverName: input.serverName },
   );
-  for (let attempt = 0; !descriptor; attempt += 1) {
-    const refreshed = await refreshOpenWorkConnectMcpAppHostCatalog(input.serverConfig, input.workspaceId);
-    const delay = CONNECT_CATALOG_RETRY_DELAYS_MS[attempt];
-    if (refreshed.diagnostic === "discovery_unavailable" && delay !== undefined) {
-      // Connect may still be warming up on the App's first read. Retry only
-      // discovery, before any provider tool can run, never a tool's outcome.
-      await new Promise<void>((resolve) => setTimeout(resolve, delay));
-      descriptor = await findOpenWorkConnectMcpAppHostServer(
-        input.serverConfig,
-        input.workspaceId,
-        { connectionId: input.connectionId, serverName: input.serverName },
-      );
-      continue;
+  if (!descriptor) {
+    let refreshed = await refreshOpenWorkConnectMcpAppHostCatalog(input.serverConfig, input.workspaceId);
+    if (refreshed.diagnostic === "discovery_unavailable") {
+      // One immediate discovery-only recovery, with one shared deadline for
+      // its handshake and read. Never add backoff or replay a provider tool.
+      const deadline = AbortSignal.timeout(CONNECT_CATALOG_RECOVERY_BUDGET_MS);
+      refreshed = await refreshOpenWorkConnectMcpAppHostCatalog(input.serverConfig, input.workspaceId, (url, init) => externalFetch(url, {
+        ...init,
+        signal: init?.signal ? AbortSignal.any([init.signal, deadline]) : deadline,
+      }));
     }
     if (refreshed.diagnostic !== "ready" && refreshed.diagnostic !== "empty") {
       throw connectCatalogError(refreshed.diagnostic);
@@ -619,7 +617,6 @@ async function privateConnectMcpConfigUntimed(input: {
         { connectionId: input.connectionId, serverName: input.serverName },
       );
     }
-    break;
   }
   if (!descriptor) return null;
   const appHostAuthorization = await readOpenWorkConnectMcpAppHostAuthorization(

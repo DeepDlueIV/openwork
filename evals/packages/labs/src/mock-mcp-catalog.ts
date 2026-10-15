@@ -6,6 +6,7 @@ export async function startCatalogWitness(privateAuthorization: string) {
   let catalogText = JSON.stringify({ schemaVersion: "openwork.connect/mcp-servers/1", servers: [] });
   let catalogStatus = 200;
   let catalogFailures = 0;
+  let catalogHold: { entered: () => void; released: Promise<void> } | undefined;
   const appCalls: string[] = [];
   const requests: Array<{ method: string; privateAuth: boolean; appHostCapability: boolean }> = [];
   const registrations: Array<{ name: string; privateAuth: boolean }> = [];
@@ -24,6 +25,12 @@ export async function startCatalogWitness(privateAuthorization: string) {
       if (privateAuth && method === "resources/read" && catalogFailures > 0) {
         catalogFailures -= 1;
         return sendJson(response, 503, { error: "catalog warming up" });
+      }
+      if (privateAuth && method === "resources/read" && catalogHold) {
+        const hold = catalogHold;
+        catalogHold = undefined;
+        hold.entered();
+        await hold.released;
       }
       if (method === "notifications/initialized") {
         response.writeHead(202).end();
@@ -75,6 +82,14 @@ export async function startCatalogWitness(privateAuthorization: string) {
     url, requests, registrations, disconnects, appCalls,
     catalog(text: string, status = 200) { catalogText = text; catalogStatus = status; catalogFailures = 0; },
     failNextCatalogReads(count: number) { catalogFailures = count; },
+    holdNextCatalogRead() {
+      let entered = () => {};
+      let release = () => {};
+      const started = new Promise<void>((resolve) => { entered = resolve; });
+      const released = new Promise<void>((resolve) => { release = resolve; });
+      catalogHold = { entered, released };
+      return { started, release };
+    },
     stop: () => close(server),
   };
 }

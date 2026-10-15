@@ -191,6 +191,10 @@ import type {
   GetV1AdminMetricsResponses,
   GetV1AdminOrganizationsByOrganizationIdCapabilitiesErrors,
   GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses,
+  GetV1AdminOrganizationsByOrganizationIdErrors,
+  GetV1AdminOrganizationsByOrganizationIdResponses,
+  GetV1AdminOrganizationsByOrganizationIdUsageErrors,
+  GetV1AdminOrganizationsByOrganizationIdUsageResponses,
   GetV1AdminOrganizationsErrors,
   GetV1AdminOrganizationsResponses,
   GetV1AdminOverviewErrors,
@@ -1097,6 +1101,82 @@ export class DenClient extends HeyApiClient {
       ThrowOnError
     >({
       url: "/v1/admin/free-auto/usage",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
+   * Get an organization and a bounded member page
+   *
+   * Returns organization identity, plan, seats and active memberships. Members are searched and paginated on the server. Does not calculate usage or resolve feature maps.
+   */
+  public getV1AdminOrganizationsByOrganizationId<ThrowOnError extends boolean = false>(
+    parameters: {
+      organizationId: string;
+      search?: string;
+      limit?: string;
+      offset?: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "organizationId" },
+            { in: "query", key: "search" },
+            { in: "query", key: "limit" },
+            { in: "query", key: "offset" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).get<
+      GetV1AdminOrganizationsByOrganizationIdResponses,
+      GetV1AdminOrganizationsByOrganizationIdErrors,
+      ThrowOnError
+    >({
+      url: "/v1/admin/organizations/{organizationId}",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
+   * Get organization usage and a bounded member page
+   *
+   * Returns the organization's last 30 UTC days of gateway usage, with requests, reported tokens, recorded cost and accounting coverage. Member usage is bounded to the requested member page; organization totals include all members, including removed members. Raw and retained usage use the same accounting as the organization dashboard.
+   */
+  public getV1AdminOrganizationsByOrganizationIdUsage<ThrowOnError extends boolean = false>(
+    parameters: {
+      organizationId: string;
+      search?: string;
+      limit?: string;
+      offset?: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "organizationId" },
+            { in: "query", key: "search" },
+            { in: "query", key: "limit" },
+            { in: "query", key: "offset" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).get<
+      GetV1AdminOrganizationsByOrganizationIdUsageResponses,
+      GetV1AdminOrganizationsByOrganizationIdUsageErrors,
+      ThrowOnError
+    >({
+      url: "/v1/admin/organizations/{organizationId}/usage",
       ...options,
       ...params,
     });

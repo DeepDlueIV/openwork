@@ -156,9 +156,88 @@ export type ForbiddenError = {
   message?: string;
 };
 
+export type AdminOrganizationDetail = {
+  organization: {
+    id: string;
+    name: string;
+    slug: string | null;
+    createdAt: string;
+    planTier: string;
+    seatLimit: number;
+    memberCount: number;
+  };
+  members: Array<{
+    id: string;
+    userId: string | null;
+    name: string | null;
+    email: string | null;
+    role: string;
+    joinedAt: string | null;
+  }>;
+  page: {
+    limit: number;
+    offset: number;
+    search: string;
+    total: number;
+    returned: number;
+    hasMore: boolean;
+    durationMs: number;
+  };
+  generatedAt: string;
+};
+
 export type NotFoundError = {
   error: string;
   message?: string;
+};
+
+export type AdminOrganizationUsage = {
+  organization: {
+    id: string;
+    name: string;
+    slug: string | null;
+    createdAt: string;
+    planTier: string;
+    seatLimit: number;
+    memberCount: number;
+  };
+  members: Array<{
+    id: string;
+    userId: string | null;
+    name: string | null;
+    email: string | null;
+    role: string;
+    joinedAt: string | null;
+  }>;
+  page: {
+    limit: number;
+    offset: number;
+    search: string;
+    total: number;
+    returned: number;
+    hasMore: boolean;
+    durationMs: number;
+  };
+  generatedAt: string;
+  usage: {
+    from: string;
+    to: string;
+    totals: {
+      requests: number;
+      tokens: number;
+      costMicroUsd: number;
+      unreportedRequests: number | null;
+      unpricedRequests: number | null;
+    };
+    members: Array<{
+      requests: number;
+      tokens: number;
+      costMicroUsd: number;
+      unreportedRequests: number | null;
+      unpricedRequests: number | null;
+      memberId: string;
+    }>;
+  };
 };
 
 export type AdminFeature = {
@@ -6086,6 +6165,96 @@ export type GetV1AdminFreeAutoUsageResponses = {
 };
 
 export type GetV1AdminFreeAutoUsageResponse = GetV1AdminFreeAutoUsageResponses[keyof GetV1AdminFreeAutoUsageResponses];
+
+export type GetV1AdminOrganizationsByOrganizationIdData = {
+  body?: never;
+  path: {
+    organizationId: string;
+  };
+  query?: {
+    search?: string;
+    limit?: string;
+    offset?: string;
+  };
+  url: "/v1/admin/organizations/{organizationId}";
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdErrors = {
+  /**
+   * Invalid organization id or pagination query.
+   */
+  400: InvalidRequestError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Platform admin access required.
+   */
+  403: ForbiddenError;
+  /**
+   * Organization not found.
+   */
+  404: NotFoundError;
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdError =
+  GetV1AdminOrganizationsByOrganizationIdErrors[keyof GetV1AdminOrganizationsByOrganizationIdErrors];
+
+export type GetV1AdminOrganizationsByOrganizationIdResponses = {
+  /**
+   * Organization detail returned.
+   */
+  200: AdminOrganizationDetail;
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdResponse =
+  GetV1AdminOrganizationsByOrganizationIdResponses[keyof GetV1AdminOrganizationsByOrganizationIdResponses];
+
+export type GetV1AdminOrganizationsByOrganizationIdUsageData = {
+  body?: never;
+  path: {
+    organizationId: string;
+  };
+  query?: {
+    search?: string;
+    limit?: string;
+    offset?: string;
+  };
+  url: "/v1/admin/organizations/{organizationId}/usage";
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdUsageErrors = {
+  /**
+   * Invalid organization id or pagination query.
+   */
+  400: InvalidRequestError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Platform admin access required.
+   */
+  403: ForbiddenError;
+  /**
+   * Organization not found.
+   */
+  404: NotFoundError;
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdUsageError =
+  GetV1AdminOrganizationsByOrganizationIdUsageErrors[keyof GetV1AdminOrganizationsByOrganizationIdUsageErrors];
+
+export type GetV1AdminOrganizationsByOrganizationIdUsageResponses = {
+  /**
+   * Organization detail returned.
+   */
+  200: AdminOrganizationUsage;
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdUsageResponse =
+  GetV1AdminOrganizationsByOrganizationIdUsageResponses[keyof GetV1AdminOrganizationsByOrganizationIdUsageResponses];
 
 export type PostV1AdminAdminsData = {
   body?: never;

@@ -2496,7 +2496,7 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <p className="truncate text-base font-semibold text-slate-950">{org.name}</p>
+                        <Link href={`/admin/organizations/${encodeURIComponent(org.id)}`} prefetch={false} className="truncate text-base font-semibold text-slate-950 hover:underline">{org.name}</Link>
                         <PlanPill tier={org.plan.tier} />
                       </div>
                       <p className="mt-1 truncate text-sm text-slate-500">/{org.slug} · {org.id}</p>
@@ -2858,7 +2858,7 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                                     {copiedOrgId === org.id ? "Copied" : "Copy ID"}
                                   </button>
                                   <Link
-                                    href={`/admin/organizations?${new URLSearchParams({ search: org.id })}`}
+                                    href={`/admin/organizations/${encodeURIComponent(org.id)}`}
                                     prefetch={false}
                                     className="inline-flex items-center justify-center rounded-full bg-slate-950 px-3 py-1.5 text-xs font-semibold text-white"
                                   >

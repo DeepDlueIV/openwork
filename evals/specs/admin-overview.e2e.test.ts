@@ -7,7 +7,7 @@ const test = spec.world(adminOverviewWorld, {
   resources: { surfaces: ["web"], services: ["den"] },
 });
 
-test("an admin navigates routed lists while search, pagination and lazy details stay intact", async ({ world, user, probe, step, evidence }) => {
+test("an admin navigates organizations and member usage without loading every detail", async ({ world, user, probe, step, evidence }) => {
   const anonymous = user.on(world.anonymous);
   const anonymousProbe = probe.on(world.anonymous);
   const admin = user.on(world.admin);
@@ -169,10 +169,100 @@ test("an admin navigates routed lists while search, pagination and lazy details 
     await admin.screenshot();
   });
 
+  await step("after: opening an organization shows its bounded member page without loading usage", async () => {
+    await admin.resizeViewport({ width: 1280, height: 800, deviceScaleFactor: 1 });
+    await admin.navigate(world.url("/admin/organizations?search=Overview"));
+    await admin.click({ role: "link", label: "Overview workspace" });
+    await admin.see({ role: "heading", label: "Overview workspace" });
+    await admin.see({ role: "heading", label: "Members" });
+    const rows = await adminProbe.dom('[data-testid^="admin-organization-member-"]');
+    const traffic = await world.traffic("admin");
+    const detail = await world.organizationMembers();
+    const location = await world.location();
+    const ok = rows.elements.length === 50 && detail.page.total === 53 && detail.organization.memberCount === 53 && location.pathname === world.detailPath && location.active === "Organizations" && traffic.organizationUsage === 0;
+    evidence.recordAssertionEvidence("An organization has its own member page and usage remains deferred", `visible=${rows.elements.length}; total=${detail.page.total}; route=${location.pathname}; usage reads=${traffic.organizationUsage}`, ok);
+    expect(ok).toBe(true);
+    await admin.screenshot();
+  });
+
+  await step("organization member search and pagination survive refresh", async () => {
+    const secondPageMember = (await world.organizationMembers("offset=50")).members[0];
+    if (!secondPageMember) throw new Error("Expected an organization member on the second page.");
+    await admin.click({ role: "button", label: "Next" });
+    await admin.see({ testId: `admin-organization-member-${secondPageMember.id}` });
+    await admin.reload();
+    await admin.see({ testId: `admin-organization-member-${secondPageMember.id}` }, { timeoutMs: 60_000 });
+    await admin.type({ role: "textbox", label: "Search members" }, "Routing user 00", { replace: true });
+    await admin.see({ testId: `admin-organization-member-${world.memberId}` });
+    await admin.reload();
+    await admin.see({ role: "textbox", label: "Search members" }, { value: "Routing user 00" });
+    const location = await world.location();
+    const rows = await adminProbe.dom('[data-testid^="admin-organization-member-"]');
+    const ok = location.search === "Routing user 00" && location.page === 1 && rows.elements.length === 1;
+    evidence.recordAssertionEvidence("Member filtering is scoped to the organization and stored in the URL", `${JSON.stringify(location)}; visible=${rows.elements.length}`, ok);
+    expect(ok).toBe(true);
+    await admin.screenshot();
+  });
+
+  await step("the organization Usage route shows recorded and retained usage with a scoped member breakdown", async () => {
+    await admin.click({ role: "link", label: "Usage" });
+    await admin.see({ testId: "admin-organization-usage" });
+    await admin.see({ testId: `admin-organization-member-usage-${world.memberId}` }, { text: /\$1\.75/ });
+    const report = await world.organizationUsage("search=Routing%20user%2000");
+    const own = report.usage.members.find((row) => row.memberId === world.memberId);
+    const totals = report.usage.totals;
+    const location = await world.location();
+    const ok = totals.requests === 7 && totals.tokens === 270 && totals.costMicroUsd === 2_000_000 && totals.unreportedRequests === null && totals.unpricedRequests === null && own?.requests === 4 && own.tokens === 200 && own.costMicroUsd === 1_750_000 && report.members.length === 1 && location.pathname === `${world.detailPath}/usage` && location.search === "Routing user 00";
+    evidence.recordAssertionEvidence("Organization totals include removed members, exclude other organizations and retain unknown accounting", `totals=${JSON.stringify(totals)}; member=${JSON.stringify(own)}; rows=${report.members.length}; route=${location.pathname}`, ok);
+    expect(ok).toBe(true);
+    await admin.screenshot();
+  });
+
+  await step("unknown prices remain visible and the Usage deep link restores its second member page on mobile", async () => {
+    const secondPageMember = (await world.organizationMembers("offset=50")).members[0];
+    if (!secondPageMember) throw new Error("Expected a usage member on the second page.");
+    await admin.type({ role: "textbox", label: "Search members" }, "", { replace: true });
+    await admin.see({ testId: `admin-organization-member-usage-${world.unpricedMemberId}` }, { text: /Unknown/ });
+    await admin.click({ role: "button", label: "Next" });
+    await admin.see({ testId: `admin-organization-member-${secondPageMember.id}` });
+    await admin.reload();
+    await admin.see({ testId: `admin-organization-member-${secondPageMember.id}` }, { timeoutMs: 60_000 });
+    await admin.resizeViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
+    const layout = await adminProbe.dom("body");
+    const location = await world.location();
+    const ok = location.page === 2 && location.pathname === `${world.detailPath}/usage` && layout.documentWidth <= layout.viewportWidth;
+    evidence.recordAssertionEvidence("The routed Usage page preserves pagination and fits a narrow screen", `${JSON.stringify(location)}; document=${layout.documentWidth}; viewport=${layout.viewportWidth}`, ok);
+    expect(ok).toBe(true);
+    await admin.screenshot();
+  });
+
+  await step("an organization with no usage has an explicit empty state", async () => {
+    await admin.navigate(world.url(`${world.emptyDetailPath}/usage`));
+    await admin.see({ testId: "admin-organization-usage" }, { text: /No recorded gateway requests in this period\./ });
+    const usage = await adminProbe.dom('[data-testid="admin-organization-usage"]');
+    evidence.recordAssertionEvidence("A zero-usage organization has a usable destination and a clear empty state", usage.elements[0]?.text ?? "missing", usage.elements.length === 1);
+    expect(usage.elements.length).toBe(1);
+    await admin.screenshot();
+  });
+
+  await step("signed-out organization links show sign-in without fetching member or usage data", async () => {
+    await anonymous.navigate(world.url(`${world.detailPath}/usage`));
+    await anonymous.see({ role: "heading", label: "Sign in required" });
+    const traffic = await world.traffic("anonymous");
+    const busy = await anonymousProbe.dom('[aria-busy="true"]');
+    const ok = traffic.organizationDetail === 0 && traffic.organizationUsage === 0 && busy.elements.length === 0;
+    evidence.recordAssertionEvidence("Signed-out visitors cannot trigger organization data or usage aggregation", `detail=${traffic.organizationDetail}; usage=${traffic.organizationUsage}; skeletons=${busy.elements.length}`, ok);
+    expect(ok).toBe(true);
+    await anonymous.screenshot();
+  });
+
   await step("a signed-in member without platform access still sees a locked page", async () => {
+    await member.navigate(world.url(world.detailPath));
     await member.see({ role: "heading", label: "Admin access required" }, { timeoutMs: 60_000 });
+    const access = await world.organizationAccess();
+    expect(access).toEqual({ member: 403, memberUsage: 403, missing: 404, invalid: 400 });
     const controls = await probe.on(world.member).dom('[data-testid^="admin-user-row-"], [aria-busy="true"]');
-    evidence.recordAssertionEvidence("A non-admin session never mounts the dashboard", `dashboard rows and skeletons=${controls.elements.length}`, controls.elements.length === 0);
+    evidence.recordAssertionEvidence("A non-admin session never mounts the dashboard", `dashboard rows and skeletons=${controls.elements.length}; endpoint status=${JSON.stringify(access)}`, controls.elements.length === 0);
     expect(controls.elements.length).toBe(0);
     await member.screenshot();
   });

@@ -139,30 +139,9 @@ function disambiguateUsageLabels(labels: Map<string, string>, models = false) {
   }
 }
 
-export async function readGatewayUsage(organizationId: typeof GatewayProviderTable.$inferSelect.organization_id, query: z.infer<typeof querySchema>, now = new Date()): Promise<GatewayUsageResponse> {
-  const toMs = Math.floor(now.getTime() / DAY_MS) * DAY_MS
-  const fromMs = toMs - (query.days - 1) * DAY_MS
-  const endSeconds = (toMs + DAY_MS) / 1000
-  const fromSeconds = fromMs / 1000
+function gatewayUsageSources(organizationId: typeof GatewayProviderTable.$inferSelect.organization_id, query: z.infer<typeof querySchema>, fromSeconds: number, endSeconds: number) {
   const raw = GatewayRequestLogTable
   const rollup = GatewayUsageRollupTable
-  const teams: GatewayUsageOption[] = []
-  if (query.groupBy === "team") {
-    teams.push(...await db.select({ id: TeamTable.id, label: TeamTable.name }).from(TeamTable)
-      .where(eq(TeamTable.organizationId, organizationId)).limit(MAX_OPTIONS + 1))
-    checkCardinality(teams.length, MAX_OPTIONS)
-    // No team grouping exists yet. Do not query usage or imply
-    // that the organization's model/person usage is zero.
-    if (!teams.length) return { usage: {
-      groupBy: "team", days: query.days, timezone: "UTC", emptyReason: "no_teams",
-      from: new Date(fromMs).toISOString().slice(0, 10), to: new Date(toMs).toISOString().slice(0, 10),
-      requestCount: 0, uncountableRequests: { ok: 0, upstream_error: 0, upstream_unreachable: 0, client_aborted: 0, rejected: 0 }, totalTokens: 0, unreportedRequests: 0, totalCostMicroUsd: 0, unpricedRequests: 0, series: [], filterOptions: [],
-      daily: Array.from({ length: query.days }, (_, offset) => ({
-        date: new Date(fromMs + offset * DAY_MS).toISOString().slice(0, 10), totalTokens: 0, values: {}, totalCostMicroUsd: 0, costValues: {},
-      })),
-    } }
-  }
-
   function dimensions(table: typeof raw | typeof rollup, timestamp: typeof raw.started_at | typeof rollup.bucket_start) {
     // Epoch arithmetic gives UTC calendar dates even if a DB session is not UTC.
     const date = sql<string>`date_format(timestampadd(day, floor(unix_timestamp(${timestamp}) / 86400), '1970-01-01'), '%Y-%m-%d')`.as("usage_date")
@@ -231,6 +210,65 @@ export async function readGatewayUsage(organizationId: typeof GatewayProviderTab
     sql`${rollup.bucket_start} >= from_unixtime(${fromSeconds}) and ${rollup.bucket_start} < from_unixtime(${endSeconds})`,
     query.memberId === undefined ? undefined : sql`${rollup.org_membership_id} = ${query.memberId}`,
   )).groupBy(rollupDimensions.date, rollupDimensions.seriesId, rollupDimensions.filterId)))
+
+  return sources
+}
+
+/** The admin page gets one org total and at most one bounded member page.
+ * Reuse the same raw/retained accounting snapshot as the organization dashboard.
+ * Do not load every member option or build all daily chart series. */
+export async function readAdminOrganizationUsage(organizationId: typeof GatewayProviderTable.$inferSelect.organization_id, memberIds: string[], now = new Date()) {
+  const today = Math.floor(now.getTime() / DAY_MS) * DAY_MS
+  const from = today - 29 * DAY_MS
+  const sources = gatewayUsageSources(organizationId, { groupBy: "person", days: 30, filterIds: [] }, from / 1000, (today + DAY_MS) / 1000)
+  const totals = {
+    requests: sql<string>`coalesce(sum(${sources.requestCount}), 0)`.as("requests"),
+    tokens: sql<string>`coalesce(sum(${sources.totalTokens}), 0)`.as("tokens"),
+    costMicroUsd: sql<string>`coalesce(sum(${sources.totalCostMicroUsd}), 0)`.as("cost_micro_usd"),
+    unreportedRequests: sql<string | null>`case when count(${sources.unreportedRequests}) = count(*) then coalesce(sum(${sources.unreportedRequests}), 0) else null end`.as("unreported"),
+    unpricedRequests: sql<string | null>`case when count(${sources.unpricedRequests}) = count(*) then coalesce(sum(${sources.unpricedRequests}), 0) else null end`.as("unpriced"),
+  }
+  const members = db.select({ memberId: sql<string | null>`${sources.seriesId}`.as("member_id"), ...totals }).from(sources)
+    .where(memberIds.length ? inArray(sources.seriesId, memberIds) : sql`false`).groupBy(sources.seriesId)
+  const all = db.select({ memberId: sql<string | null>`null`.as("member_id"), ...totals }).from(sources)
+  const snapshot = members.unionAll(all).as("admin_usage")
+  const rows = await db.with(sources).select().from(snapshot)
+  const parse = (row: typeof rows[number]) => ({
+    requests: safeCount(row.requests), tokens: safeCount(row.tokens), costMicroUsd: safeCount(row.costMicroUsd),
+    unreportedRequests: row.unreportedRequests === null ? null : safeCount(row.unreportedRequests),
+    unpricedRequests: row.unpricedRequests === null ? null : safeCount(row.unpricedRequests),
+  })
+  const organization = rows.find((row) => row.memberId === null)
+  if (!organization) throw new Error("Organization usage totals were unavailable.")
+  return {
+    from: new Date(from).toISOString().slice(0, 10), to: new Date(today).toISOString().slice(0, 10),
+    totals: parse(organization), members: rows.flatMap((row) => row.memberId === null ? [] : [{ memberId: row.memberId, ...parse(row) }]),
+  }
+}
+
+export async function readGatewayUsage(organizationId: typeof GatewayProviderTable.$inferSelect.organization_id, query: z.infer<typeof querySchema>, now = new Date()): Promise<GatewayUsageResponse> {
+  const toMs = Math.floor(now.getTime() / DAY_MS) * DAY_MS
+  const fromMs = toMs - (query.days - 1) * DAY_MS
+  const endSeconds = (toMs + DAY_MS) / 1000
+  const fromSeconds = fromMs / 1000
+  const teams: GatewayUsageOption[] = []
+  if (query.groupBy === "team") {
+    teams.push(...await db.select({ id: TeamTable.id, label: TeamTable.name }).from(TeamTable)
+      .where(eq(TeamTable.organizationId, organizationId)).limit(MAX_OPTIONS + 1))
+    checkCardinality(teams.length, MAX_OPTIONS)
+    // No team grouping exists yet. Do not query usage or imply
+    // that the organization's model/person usage is zero.
+    if (!teams.length) return { usage: {
+      groupBy: "team", days: query.days, timezone: "UTC", emptyReason: "no_teams",
+      from: new Date(fromMs).toISOString().slice(0, 10), to: new Date(toMs).toISOString().slice(0, 10),
+      requestCount: 0, uncountableRequests: { ok: 0, upstream_error: 0, upstream_unreachable: 0, client_aborted: 0, rejected: 0 }, totalTokens: 0, unreportedRequests: 0, totalCostMicroUsd: 0, unpricedRequests: 0, series: [], filterOptions: [],
+      daily: Array.from({ length: query.days }, (_, offset) => ({
+        date: new Date(fromMs + offset * DAY_MS).toISOString().slice(0, 10), totalTokens: 0, values: {}, totalCostMicroUsd: 0, costValues: {},
+      })),
+    } }
+  }
+
+  const sources = gatewayUsageSources(organizationId, query, fromSeconds, endSeconds)
 
   const groupedUsage = db.select({
     date: sources.date, seriesId: sources.seriesId,

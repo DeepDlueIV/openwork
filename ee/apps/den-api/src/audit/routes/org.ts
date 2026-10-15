@@ -184,6 +184,8 @@ export const orgAuditRoutes: readonly AuditRouteDeclaration[] = [
   member("POST", "/v1/orgs/:organizationId/install-links", "tenant_change", "install_link.create", "install.distribution", "install_link", null, { notes: "Path organizationId only seeds context; attribute to organizationContext. Returns the normal install page address; creates nothing." }),
 
   // Platform admin acting on one org (actor = admin user, origin platform_admin)
+  admin("GET", "/v1/admin/organizations/:organizationId", "tenant_read", "organization.admin_detail.read"),
+  admin("GET", "/v1/admin/organizations/:organizationId/usage", "tenant_read", "organization.admin_usage.read"),
   admin("GET", "/v1/admin/organizations/:organizationId/capabilities", "tenant_read", "organization.capabilities.read"),
   admin("PUT", "/v1/admin/organizations/:organizationId/capabilities", "tenant_change", "organization.capabilities.update", { notes: "Sets or clears this organization's feature overrides (organization_feature, features registry). The admin MCP tool den_set_org_capability makes the same change (service action organization.capability.set)." }),
   admin("PATCH", "/v1/admin/organizations/:organizationId/plan", "tenant_change", "organization.plan.update"),

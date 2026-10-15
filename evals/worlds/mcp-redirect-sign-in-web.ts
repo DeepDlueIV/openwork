@@ -1,4 +1,4 @@
-import { connect, debuggerUrlFor, listTargets } from "@openwork/cdp";
+import { connect, debuggerUrlFor, evaluate, listTargets } from "@openwork/cdp";
 import type { Surface } from "@openwork/cdp";
 import type { Seed } from "@openwork/env";
 import { redirectDiscoveryMock } from "./mcp-redirect-discovery.ts";
@@ -26,15 +26,14 @@ export async function redirectSignInWeb(seed: Seed) {
       },
       async healthySignInLayout(tab: Surface): Promise<boolean> {
         // Read-only geometry: a screenshot must not silently capture a clipped or overlaid error.
-        const result = await tab.client.send("Runtime.evaluate", { returnByValue: true, expression: `(() => {
+        return evaluate(tab.client, () => {
           const heading = document.querySelector('h1');
           if (!heading) return false;
           const box = heading.getBoundingClientRect();
           return box.width > 0 && box.height > 0 && box.left >= 0 && box.right <= innerWidth
             && document.documentElement.scrollWidth <= innerWidth
             && !document.querySelector('[role="dialog"], [aria-modal="true"]');
-        })()` });
-        return result.result.value === true;
+        });
       },
       async [Symbol.asyncDispose]() { await mock.stop(); },
     };

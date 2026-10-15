@@ -1,5 +1,5 @@
 import { queryDenDatabase, type Seed } from "@openwork/env";
-import { adminOrganizationDetailSchema, adminOrganizationUsageSchema } from "@openwork/types/den/admin-organization";
+import { adminDashboardSchema, adminOrganizationDetailSchema, adminOrganizationUsageSchema } from "@openwork/types/den/admin-organization";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -79,6 +79,14 @@ export async function adminOverviewWorld(seed: Seed) {
       if (!result.response.ok) throw new Error(`Organization usage failed (${result.response.status}).`);
       return adminOrganizationUsageSchema.parse(result.body);
     },
+    async dashboard() {
+      const result = await seed.api(den.admin, "/v1/admin/dashboard");
+      if (!result.response.ok) throw new Error(`Dashboard failed (${result.response.status}).`);
+      return adminDashboardSchema.parse(result.body);
+    },
+    async dashboardAccess() {
+      return (await seed.api(den.members.member, "/v1/admin/dashboard")).response.status;
+    },
     async organizationAccess() {
       return {
         member: (await seed.api(den.members.member, `/v1/admin/organizations/${organizationId}`)).response.status,
@@ -128,6 +136,7 @@ export async function adminOverviewWorld(seed: Seed) {
           users: resources.filter((entry) => new URL(entry.name).pathname.endsWith("/admin/users")).length,
           overview: resources.filter((entry) => new URL(entry.name).pathname.endsWith("/admin/overview")).length,
           usage: resources.filter((entry) => new URL(entry.name).pathname.endsWith("/inference-usage")).length,
+          dashboard: resources.filter((entry) => new URL(entry.name).pathname.endsWith("/admin/dashboard")).length,
           metrics: resources.filter((entry) => new URL(entry.name).pathname.endsWith("/admin/metrics")).length,
           organizationUsage: resources.filter((entry) => /\/v1\/admin\/organizations\/[^/]+\/usage$/.test(new URL(entry.name).pathname)).length,
           organizationDetail: resources.filter((entry) => /\/v1\/admin\/organizations\/[^/]+$/.test(new URL(entry.name).pathname)).length,

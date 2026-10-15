@@ -240,6 +240,42 @@ export type AdminOrganizationUsage = {
   };
 };
 
+export type AdminDashboard = {
+  from: string;
+  to: string;
+  generatedAt: string;
+  activeUsers: {
+    today: number;
+    days7: number;
+    days30: number;
+  };
+  activeOrganizations: number;
+  totals: {
+    requests: number;
+    tokens: number;
+    costMicroUsd: number;
+    unreportedRequests: number | null;
+    unpricedRequests: number | null;
+  };
+  daily: Array<{
+    requests: number;
+    tokens: number;
+    costMicroUsd: number;
+    unreportedRequests: number | null;
+    unpricedRequests: number | null;
+    date: string;
+  }>;
+  organizations: Array<{
+    requests: number;
+    tokens: number;
+    costMicroUsd: number;
+    unreportedRequests: number | null;
+    unpricedRequests: number | null;
+    id: string;
+    name: string;
+  }>;
+};
+
 export type AdminFeature = {
   key:
     | "secureSecretFields"
@@ -6255,6 +6291,35 @@ export type GetV1AdminOrganizationsByOrganizationIdUsageResponses = {
 
 export type GetV1AdminOrganizationsByOrganizationIdUsageResponse =
   GetV1AdminOrganizationsByOrganizationIdUsageResponses[keyof GetV1AdminOrganizationsByOrganizationIdUsageResponses];
+
+export type GetV1AdminDashboardData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/admin/dashboard";
+};
+
+export type GetV1AdminDashboardErrors = {
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Platform admin access required.
+   */
+  403: ForbiddenError;
+};
+
+export type GetV1AdminDashboardError = GetV1AdminDashboardErrors[keyof GetV1AdminDashboardErrors];
+
+export type GetV1AdminDashboardResponses = {
+  /**
+   * Platform dashboard returned.
+   */
+  200: AdminDashboard;
+};
+
+export type GetV1AdminDashboardResponse = GetV1AdminDashboardResponses[keyof GetV1AdminDashboardResponses];
 
 export type PostV1AdminAdminsData = {
   body?: never;

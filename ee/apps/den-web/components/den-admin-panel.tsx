@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { DenButton } from "../app/(den)/_components/ui/button";
+import { AdminDashboard } from "./admin/admin-dashboard";
 import { DenSelect } from "../app/(den)/_components/ui/select";
 import { Copy, Pencil, Trash2 } from "lucide-react";
 import { FEATURE_KEYS, mapFeatures, type FeatureKey } from "@openwork/features";
@@ -1175,9 +1177,6 @@ function formatOptionalCount(value: number | null): string {
   return value === null ? "Deferred" : String(value);
 }
 
-function formatOptionalDetail(value: number | null, label: string): string {
-  return value === null ? "Load analytics to calculate" : `${value} ${label}`;
-}
 
 function formatUsageAmount(value: number): string {
   return new Intl.NumberFormat(undefined, {
@@ -1261,8 +1260,8 @@ function formatSubscriptionStatus(value: string | null): string {
 
 function StatCard({ label, value, detail }: { label: string; value: string; detail: string }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
-      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-slate-500">{label}</p>
+    <div className="py-2">
+      <p className="text-xs font-medium text-slate-500">{label}</p>
       <p className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-slate-950">{value}</p>
       <p className="mt-1 text-sm leading-6 text-slate-500">{detail}</p>
     </div>
@@ -1277,12 +1276,12 @@ function ActivityChart({ series }: { series: ActivityPoint[] }) {
   const maxActive = Math.max(1, ...series.map((point) => point.activeUsers));
 
   return (
-    <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+    <div className="mt-4 border-t border-slate-200 py-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-slate-500">Active users · last 30 days</p>
+        <p className="text-xs font-medium text-slate-500">Active users · last 30 days</p>
         <p className="text-xs text-slate-500">
-          <span className="mr-3 inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-slate-900/80" />Any activity</span>
-          <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-violet-500" />Real DAU (ran a task)</span>
+          <span className="mr-3 inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-md bg-slate-900/80" />Any activity</span>
+          <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-md bg-violet-500" />Real DAU (ran a task)</span>
         </p>
       </div>
       <div className="mt-3 flex h-16 items-end gap-[3px]">
@@ -1317,7 +1316,7 @@ function ActivityChart({ series }: { series: ActivityPoint[] }) {
 function MetaCell({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">{label}</p>
+      <p className="text-xs font-medium text-slate-500">{label}</p>
       <p className="mt-1 text-sm text-slate-700">{value}</p>
     </div>
   );
@@ -1326,7 +1325,7 @@ function MetaCell({ label, value }: { label: string; value: string }) {
 function BillingPill({ billing }: { billing: AdminBillingStatus | null }) {
   if (!billing) {
     return (
-      <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-100 px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-slate-500">
+      <span className="inline-flex items-center rounded-md border border-slate-200 bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-500">
         Not loaded
       </span>
     );
@@ -1340,7 +1339,7 @@ function BillingPill({ billing }: { billing: AdminBillingStatus | null }) {
         : "border-slate-200 bg-slate-100 text-slate-600";
 
   return (
-    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] ${palette}`}>
+    <span className={`inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-medium ${palette}`}>
       {formatBillingStatus(billing)}
     </span>
   );
@@ -1354,7 +1353,7 @@ function PlanPill({ tier }: { tier: AdminOrganization["plan"]["tier"] }) {
       : "border-slate-200 bg-slate-100 text-slate-600";
 
   return (
-    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] ${palette}`}>
+    <span className={`inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-medium ${palette}`}>
       {tier}
     </span>
   );
@@ -1373,7 +1372,7 @@ function OpenWorkWebAccessPill({ access }: { access: AdminOpenWorkWebAccess }) {
       : "border-slate-200 bg-slate-100 text-slate-600";
 
   return (
-    <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.16em] ${palette}`}>
+    <span className={`inline-flex items-center rounded-md border px-2.5 py-1 text-xs font-medium ${palette}`}>
       {label}
     </span>
   );
@@ -2207,6 +2206,11 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
     return filteredUsers.find((user) => user.id === selectedUserId) ?? filteredUsers[0] ?? null;
   }, [filteredUsers, selectedUserId]);
 
+  const handleDashboardAccessDenied = useCallback((access: "signed-out" | "forbidden") => {
+    setAccessState(access);
+    setPayload(null);
+  }, []);
+
   if (accessState === "signed-out" || accessState === "forbidden" || accessState === "error") {
     return <AdminAccessScreen state={accessState} message={error ?? undefined} onRetry={() => void refreshCurrentPage()} />;
   }
@@ -2215,23 +2219,12 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
     return null;
   }
 
-  const billingValue = payload.summary.billingLoaded
-    ? formatOptionalCount(payload.summary.paidUsers)
-    : "On demand";
-  const billingDetail = payload.summary.billingLoaded && payload.summary.paidUsers !== null && payload.summary.unpaidUsers !== null
-    ? `${payload.summary.paidUsers} paid / ${payload.summary.unpaidUsers} unpaid on current page`
-    : payload.summary.billingLoaded
-      ? "Billing counts unavailable for this page"
-      : "Load billing only when you need it";
-  const inviterDetail = payload.summary.medianHoursToFirstInvite === null
-    ? "Load analytics to calculate"
-    : `Median time to invite ${formatHours(payload.summary.medianHoursToFirstInvite)}`;
   const analyticsLoaded = payload.summary.verifiedUsers !== null || payload.summary.activitySeries.length > 0;
   const pageDurationLabel = isAdminScaleFixtureEnabled() ? "fixture computation" : "server";
 
   return (
-    <section data-testid="admin-data-page" className="mx-auto w-full max-w-6xl rounded-3xl border border-slate-200 bg-white shadow-xs">
-      <div className="border-b border-slate-200 px-6 py-6 sm:px-8">
+    <section data-testid="admin-data-page" className="mx-auto w-full max-w-6xl bg-white">
+      <div className="border-b border-slate-200 pb-5">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <h1 className="text-lg font-semibold text-slate-950">{section === "overview" ? "Overview" : section === "users" ? "Users" : "Organizations"}</h1>
@@ -2245,50 +2238,36 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                 void refreshCurrentPage();
               }}
               disabled={refreshing || usersLoading || organizationsLoading}
-              className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {refreshing ? "Refreshing..." : "Refresh"}
             </button>
-            {section === "overview" ? <button
-              type="button"
-              onClick={() => {
-                void loadAnalytics();
-              }}
-              disabled={analyticsLoading}
-              className="inline-flex items-center justify-center rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {analyticsLoading ? "Loading analytics..." : analyticsLoaded ? "Refresh analytics" : "Load analytics"}
-            </button> : null}
+
           </div>
         </div>
 
         {error ? (
-          <div role="alert" className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+          <div role="alert" className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
             {error}
           </div>
         ) : null}
 
         {section === "overview" ? <>
-        <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
-          <StatCard label="Users" value={String(payload.summary.totalUsers)} detail={formatOptionalDetail(payload.summary.recentUsers7d, "new in 7d")} />
-          <StatCard label="Active today" value={formatOptionalCount(payload.summary.activeUsers1d)} detail="Load analytics to calculate" />
-          <StatCard label="Real DAU" value={formatOptionalCount(payload.summary.realActiveUsers1d)} detail="Load analytics to calculate" />
-          <StatCard label="Recurring" value={formatOptionalCount(payload.summary.recurringUsers)} detail="Load analytics to calculate" />
-          <StatCard label="Inviters" value={formatOptionalCount(payload.summary.inviters)} detail={inviterDetail} />
-          <StatCard label="Verified" value={formatOptionalCount(payload.summary.verifiedUsers)} detail="Load analytics to calculate" />
-          <StatCard label="Worker creators" value={formatOptionalCount(payload.summary.usersWithWorkers)} detail={payload.summary.usersWithoutWorkers === null ? "Load analytics to calculate" : `${payload.summary.usersWithoutWorkers} without workers`} />
-          <StatCard label="Workers" value={formatOptionalCount(payload.summary.totalWorkers)} detail="Load analytics to calculate" />
-          <StatCard label="Billing" value={billingValue} detail={billingDetail} />
-          <StatCard label="Admins" value={String(payload.summary.adminCount)} detail="Whitelisted operator accounts" />
-        </div>
-
-        <ActivityChart series={payload.summary.activitySeries} />
-
-        <div className="mt-5 rounded-2xl border border-slate-200 bg-slate-50/70 p-4">
+        <AdminDashboard totalOrganizations={payload.summary.totalOrganizations} totalUsers={payload.summary.totalUsers} onAccessDenied={handleDashboardAccessDenied} />
+        <details className="border-t border-slate-200 py-4">
+          <summary className="w-fit cursor-pointer text-sm font-medium text-slate-700 focus-visible:outline-2 focus-visible:outline-slate-500">More analytics</summary>
+          <div className="mt-4"><DenButton size="sm" variant="secondary" loading={analyticsLoading} onClick={() => void loadAnalytics()}>{analyticsLoaded ? "Refresh analytics" : "Load analytics"}</DenButton></div>
+          {analyticsLoaded ? <><div className="mt-4 grid gap-4 sm:grid-cols-3">
+            <StatCard label="New users" value={formatOptionalCount(payload.summary.recentUsers7d)} detail="Last 7 days" />
+            <StatCard label="Task runners" value={formatOptionalCount(payload.summary.realActiveUsers30d)} detail="Last 30 days" />
+            <StatCard label="Worker creators" value={formatOptionalCount(payload.summary.usersWithWorkers)} detail={`${formatOptionalCount(payload.summary.totalWorkers)} workers`} />
+          </div><ActivityChart series={payload.summary.activitySeries} /></> : null}
+        </details>
+        <details className="border-t border-slate-200 py-4"><summary className="w-fit cursor-pointer text-sm font-medium text-slate-700 focus-visible:outline-2 focus-visible:outline-slate-500">Platform admins ({payload.summary.adminCount})</summary>
+        <div className="pt-4">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <p className="text-sm font-semibold text-slate-950">Platform admins</p>
-              <p className="mt-1 text-xs leading-5 text-slate-500">Manage operator access to this backoffice.</p>
+              <p className="text-sm font-medium text-slate-700">Operator access</p>
             </div>
             <div className="grid gap-2 sm:grid-cols-[minmax(12rem,1fr)_minmax(10rem,1fr)_auto]">
               <input
@@ -2298,7 +2277,7 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                 onChange={(event) => setAdminEmail(event.target.value)}
                 placeholder="Email"
                 aria-label="Admin email"
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-hidden focus:border-slate-400"
+                className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-hidden focus:border-slate-400"
               />
               <input
                 data-testid="admin-add-note"
@@ -2306,14 +2285,14 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                 onChange={(event) => setAdminNote(event.target.value)}
                 placeholder="Note (optional)"
                 aria-label="Admin note"
-                className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-hidden focus:border-slate-400"
+                className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-hidden focus:border-slate-400"
               />
               <button
                 type="button"
                 data-testid="admin-add-action"
                 onClick={() => void addAdmin()}
                 disabled={adminMutationId !== null || !adminEmail.trim()}
-                className="rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-md bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {adminMutationId === "add" ? "Adding..." : "Add admin"}
               </button>
@@ -2323,7 +2302,7 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
             {payload.admins.map((admin) => {
               const isViewer = admin.email.toLowerCase() === payload.viewer.email?.toLowerCase();
               return (
-                <div key={admin.id} className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2">
+                <div key={admin.id} className="flex items-center justify-between gap-3 rounded-md border border-slate-200 bg-white px-3 py-2">
                   <div className="min-w-0">
                     <p className="truncate text-sm font-medium text-slate-800">{admin.email}{isViewer ? " · You" : ""}</p>
                     <p className="truncate text-xs text-slate-500">{admin.note ?? `Added ${formatDateTime(admin.createdAt)}`}</p>
@@ -2334,7 +2313,7 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                       data-testid={`admin-remove-${admin.id}`}
                       onClick={() => void removeAdmin(admin)}
                       disabled={adminMutationId !== null}
-                      className="shrink-0 rounded-full border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="shrink-0 rounded-md border border-red-200 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {adminMutationId === admin.id ? "Removing..." : "Remove"}
                     </button>
@@ -2344,29 +2323,30 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
             })}
           </div>
         </div>
+        </details>
         </> : null}
       </div>
 
-      {section !== "overview" ? <div className="px-6 py-6 sm:px-8">
+      {section !== "overview" ? <div className="py-5">
         <div className="flex flex-wrap items-center justify-between gap-3">
             <button
               type="button"
               onClick={exportCsv}
               disabled={viewMode === "organizations" ? filteredOrganizations.length === 0 : filteredUsers.length === 0}
-              className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+              className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
               Export current page CSV
             </button>
         </div>
 
         {isAdminScaleFixtureEnabled() ? (
-          <div data-testid="admin-scale-eval-status" className="mt-4 rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm leading-6 text-violet-900">
+          <div data-testid="admin-scale-eval-status" className="mt-4 rounded-md border border-violet-200 bg-violet-50 px-4 py-3 text-sm leading-6 text-violet-900">
             Eval scale fixture active: 50,000 users · 60,000 organizations · first pages capped at 50. Browser usable {overviewUsableMs === null ? "measuring" : `${overviewUsableMs} ms`}. Real database budget command: pnpm benchmark:admin-scale:mysql (500 ms initial, 300 ms searches).
           </div>
         ) : null}
 
         {(viewMode === "users" && usersLoading) || (viewMode === "organizations" && organizationsLoading) ? (
-          <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600" aria-busy="true">
+          <div className="mt-4 rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-600" aria-busy="true">
             Loading the bounded page…
           </div>
         ) : null}
@@ -2375,7 +2355,7 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
           <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between" data-testid="admin-orgs-page">
             <div className="grid w-full max-w-xl gap-2">
               <label className="grid gap-2">
-                <span className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">Search organizations</span>
+                <span className="text-xs font-medium text-slate-500">Search organizations</span>
                 <input
                   maxLength={160}
                   aria-label="Search organizations"
@@ -2389,7 +2369,7 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                     setSearch(event.target.value);
                   }}
                   placeholder="Org name, slug, or id"
-                  className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-hidden transition focus:border-slate-400"
+                  className="rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-hidden transition focus:border-slate-400"
                 />
               </label>
               <p className="text-xs leading-5 text-slate-500">
@@ -2403,7 +2383,7 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                   setPage(Math.max(1, routePage - 1));
                 }}
                 disabled={organizationsLoading || payload.organizationPage.offset === 0}
-                className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Previous
               </button>
@@ -2413,7 +2393,7 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                   setPage(routePage + 1);
                 }}
                 disabled={organizationsLoading || !payload.organizationPage.hasMore}
-                className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Next
               </button>
@@ -2423,7 +2403,7 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
           <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
             <div className="grid w-full max-w-xl gap-2">
               <label className="grid gap-2">
-                <span className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">Search users</span>
+                <span className="text-xs font-medium text-slate-500">Search users</span>
                 <input
                   maxLength={160}
                   aria-label="Search users"
@@ -2437,7 +2417,7 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                     setSearch(event.target.value);
                   }}
                   placeholder="Email, name, user id, provider, organization"
-                  className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-hidden transition focus:border-slate-400"
+                  className="rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-hidden transition focus:border-slate-400"
                 />
               </label>
               <p className="text-xs leading-5 text-slate-500">
@@ -2453,7 +2433,7 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                     void loadUsers(userQuery, payload.userPage.offset, true);
                   }}
                   disabled={usersLoading}
-                  className="inline-flex items-center justify-center rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex items-center justify-center rounded-md bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   Load billing for page
                 </button>
@@ -2466,7 +2446,7 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                   setPage(Math.max(1, routePage - 1));
                 }}
                 disabled={usersLoading || payload.userPage.offset === 0}
-                className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Previous
               </button>
@@ -2476,7 +2456,7 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                   setPage(routePage + 1);
                 }}
                 disabled={usersLoading || !payload.userPage.hasMore}
-                className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Next
               </button>
@@ -2493,7 +2473,7 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
               const changed = draft.tier !== org.plan.tier || draft.seatLimit !== String(org.seatLimit);
 
               return (
-                <div key={org.id} data-testid={`admin-org-row-${org.slug}`} style={{ contentVisibility: "auto", containIntrinsicSize: "auto 900px" }} className="min-w-0 rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                <div key={org.id} data-testid={`admin-org-row-${org.slug}`} style={{ contentVisibility: "auto", containIntrinsicSize: "auto 900px" }} className="min-w-0 rounded-md border border-slate-200 bg-white px-4 py-4">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
@@ -2504,13 +2484,13 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                     </div>
 
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-600">
+                      <span className="inline-flex items-center rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600">
                         {org.memberCount} / {org.seatLimit} seats
                       </span>
-                      <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-emerald-700">
+                      <span className="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-xs font-medium text-emerald-700">
                         {org.freeSeatCount} free
                       </span>
-                      <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-amber-700">
+                      <span className="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700">
                         {org.billableSeatCount} chargeable
                       </span>
                     </div>
@@ -2521,14 +2501,14 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                     <MetaCell label="Plan source" value={formatProvider(org.plan.source)} />
                     <MetaCell label="Members" value={String(org.memberCount)} />
                     <div>
-                      <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">Free seats</p>
+                      <p className="text-xs font-medium text-slate-500">Free seats</p>
                       <div className="mt-1 flex items-center gap-2">
                         <p className="text-sm text-slate-700">{org.freeSeatCount}</p>
                         <button
                           type="button"
                           aria-label={`Edit free seats for ${org.name}`}
                           onClick={() => setFreeSeatsDialog({ org, totalFreeSeats: String(org.freeSeatCount) })}
-                          className="inline-flex h-7 w-7 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 transition hover:border-slate-300 hover:text-slate-900"
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-md border border-slate-200 bg-white text-slate-500 transition hover:border-slate-300 hover:text-slate-900"
                         >
                           <Pencil size={13} aria-hidden="true" />
                         </button>
@@ -2552,7 +2532,7 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div>
                         <div className="flex flex-wrap items-center gap-2">
-                          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">OpenWork Web billing access</p>
+                          <p className="text-xs font-medium text-slate-500">OpenWork Web billing access</p>
                           <OpenWorkWebAccessPill access={org.openworkWebAccess} />
                         </div>
                         <p className="mt-2 text-sm leading-6 text-slate-600">
@@ -2572,7 +2552,7 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                           reason: ""
                         })}
                         disabled={savingOpenWorkWebAccessOrgId === org.id || (!org.openworkWebAccess.complimentaryAccess && org.openworkWebAccess.hasOngoingSubscription)}
-                        className="inline-flex shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+                        className="inline-flex shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
                       >
                         {savingOpenWorkWebAccessOrgId === org.id
                           ? "Saving..."
@@ -2587,7 +2567,7 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                       </p>
                     ) : null}
                     {openworkWebAccessError?.orgId === org.id ? (
-                      <p data-testid="admin-openwork-web-access-error" className="mt-2 rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-xs leading-5 text-red-700">
+                      <p data-testid="admin-openwork-web-access-error" className="mt-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs leading-5 text-red-700">
                         {openworkWebAccessError.message}
                       </p>
                     ) : null}
@@ -2595,14 +2575,14 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
 
                   <div className="mt-4 grid gap-3 border-t border-slate-200 pt-4 lg:grid-cols-[12rem_10rem_auto] lg:items-end">
                     <label className="grid min-w-0 gap-2">
-                      <span className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">Plan</span>
+                      <span className="text-xs font-medium text-slate-500">Plan</span>
                       <DenSelect
                         value={draft.tier}
                         onChange={(event) => {
                           const tier = event.target.value === "enterprise" || event.target.value === "team" ? event.target.value : "free";
                           setOrgDrafts((current) => ({ ...current, [org.id]: { ...draft, tier } }));
                         }}
-                        className="w-full min-w-0 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-hidden transition focus:border-slate-400"
+                        className="w-full min-w-0 rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-hidden transition focus:border-slate-400"
                       >
                         <option value="free">Free</option>
                         <option value="team">Team</option>
@@ -2611,13 +2591,13 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                     </label>
 
                     <label className="grid min-w-0 gap-2">
-                      <span className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">Seats</span>
+                      <span className="text-xs font-medium text-slate-500">Seats</span>
                       <input
                         type="number"
                         min={1}
                         value={draft.seatLimit}
                         onChange={(event) => setOrgDrafts((current) => ({ ...current, [org.id]: { ...draft, seatLimit: event.target.value } }))}
-                        className="w-full min-w-0 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-hidden transition focus:border-slate-400"
+                        className="w-full min-w-0 rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-hidden transition focus:border-slate-400"
                       />
                     </label>
 
@@ -2627,7 +2607,7 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                         void saveOrganizationPlan(org);
                       }}
                       disabled={!changed || savingOrgId === org.id}
-                      className="inline-flex items-center justify-center rounded-full bg-slate-950 px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                      className="inline-flex items-center justify-center rounded-md bg-slate-950 px-4 py-3 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                     >
                       {savingOrgId === org.id ? "Saving..." : "Save access"}
                     </button>
@@ -2637,7 +2617,7 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                 })}
               </>
             ) : (
-              <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-10 text-center">
+              <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 px-5 py-10 text-center">
                 <p className="text-base font-semibold text-slate-950">No organizations match</p>
                 <p className="mt-2 text-sm leading-7 text-slate-500">Try a different search.</p>
               </div>
@@ -2651,7 +2631,7 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                 key={user.id}
                 data-testid={`admin-user-row-${user.id}`}
                 style={isSelected ? undefined : { contentVisibility: "auto", containIntrinsicSize: "auto 180px" }}
-                className={`min-w-0 rounded-2xl border px-4 py-4 transition ${isSelected ? "border-slate-900 bg-slate-50" : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/70"}`}
+                className={`min-w-0 rounded-md border px-4 py-4 transition ${isSelected ? "border-slate-900 bg-slate-50" : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/70"}`}
               >
                 <button type="button" onClick={() => setSelectedUserId(user.id)} className="block w-full text-left">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -2659,12 +2639,12 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                       <div className="flex flex-wrap items-center gap-2">
                         <p className="truncate text-base font-semibold text-slate-950">{user.name?.trim() || user.email}</p>
                         {user.emailVerified ? (
-                          <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-emerald-700">
+                          <span className="inline-flex items-center rounded-md border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[0.66rem] font-medium text-emerald-700">
                             Verified
                           </span>
                         ) : null}
                         {user.isRecurring ? (
-                          <span className="inline-flex items-center rounded-full border border-sky-200 bg-sky-50 px-2 py-0.5 text-[0.66rem] font-semibold uppercase tracking-[0.14em] text-sky-700">
+                          <span className="inline-flex items-center rounded-md border border-sky-200 bg-sky-50 px-2 py-0.5 text-[0.66rem] font-medium text-sky-700">
                             Recurring
                           </span>
                         ) : null}
@@ -2674,10 +2654,10 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
 
                     <div className="flex flex-wrap items-center gap-2">
                       <BillingPill billing={user.billing} />
-                      <span className="inline-flex items-center rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-600">
+                      <span className="inline-flex items-center rounded-md border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-600">
                         {user.workerCount} workers
                       </span>
-                      <span className="inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-violet-700">
+                      <span className="inline-flex items-center rounded-md border border-violet-200 bg-violet-50 px-2.5 py-1 text-xs font-medium text-violet-700">
                         {user.organizations.length} {user.organizations.length === 1 ? "org" : "orgs"}
                       </span>
                     </div>
@@ -2707,7 +2687,7 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                           <MetaCell label="Billing note" value={user.billing.note ?? "No billing note returned."} />
                         </>
                       ) : (
-                        <div className="rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4">
+                        <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-4">
                           <p className="text-sm leading-7 text-slate-600">
                             Billing is intentionally loaded on demand to keep the admin page fast.
                           </p>
@@ -2718,7 +2698,7 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                               void loadUsers(userQuery, payload.userPage.offset, true);
                             }}
                             disabled={usersLoading}
-                            className="mt-3 inline-flex items-center justify-center rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                            className="mt-3 inline-flex items-center justify-center rounded-md bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             Load billing for page
                           </button>
@@ -2734,10 +2714,10 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                       onVisible={() => { if (!usageEntry) void loadInferenceUsage(user.id); }}
                     >
                       {() => (
-                        <div data-testid="admin-usage-section" className="rounded-2xl border border-slate-200 bg-white px-4 py-4 lg:col-span-2">
+                        <div data-testid="admin-usage-section" className="rounded-md border border-slate-200 bg-white px-4 py-4 lg:col-span-2">
                           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                             <div>
-                              <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">OpenWork model consumption</p>
+                              <p className="text-xs font-medium text-slate-500">OpenWork model consumption</p>
                               <p className="mt-1 max-w-3xl text-sm leading-6 text-slate-600">
                                 Limits are shared by everyone in each organization. Reset only forgives this user&apos;s consumption in the current windows; it does not change shared limits or other members&apos; usage.
                               </p>
@@ -2747,14 +2727,14 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                               data-testid="admin-usage-reset-open"
                               onClick={() => setResetUsageDialog(user)}
                               disabled={usageEntry?.status !== "ready" || usageEntry.data.organizations.length === 0}
-                              className="shrink-0 rounded-full border border-amber-200 bg-white px-4 py-2 text-sm font-semibold text-amber-800 disabled:cursor-not-allowed disabled:opacity-60"
+                              className="shrink-0 rounded-md border border-amber-200 bg-white px-4 py-2 text-sm font-semibold text-amber-800 disabled:cursor-not-allowed disabled:opacity-60"
                             >
                               Reset consumption
                             </button>
                           </div>
 
                           {resetSuccessByUserId[user.id] !== undefined ? (
-                            <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                            <p className="mt-3 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
                               Reset complete. Forgave {formatUsageAmount(resetSuccessByUserId[user.id])} units from this user&apos;s current windows.
                             </p>
                           ) : null}
@@ -2762,24 +2742,24 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                           {!usageEntry || usageEntry.status === "loading" ? (
                             <p className="mt-4 text-sm text-slate-500" aria-busy="true">Loading model consumption…</p>
                           ) : usageEntry.status === "error" ? (
-                            <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">
+                            <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-900">
                               <p>{usageEntry.message}</p>
                               <button type="button" onClick={() => void loadInferenceUsage(user.id)} className="mt-2 font-semibold underline">Retry</button>
                             </div>
                           ) : usageEntry.data.organizations.length === 0 ? (
-                            <p className="mt-4 rounded-xl border border-dashed border-slate-300 bg-slate-50 px-3 py-5 text-center text-sm text-slate-500">No organization consumption windows are available for this user.</p>
+                            <p className="mt-4 rounded-md border border-dashed border-slate-300 bg-slate-50 px-3 py-5 text-center text-sm text-slate-500">No organization consumption windows are available for this user.</p>
                           ) : (
                             <div className="mt-4 grid gap-3">
                               {usageEntry.data.organizations.map((organization) => (
-                                <div key={organization.membershipId} className="rounded-xl border border-slate-200 bg-slate-50/70 p-3">
+                                <div key={organization.membershipId} className="rounded-md border border-slate-200 bg-slate-50/70 p-3">
                                   <p className="text-sm font-semibold text-slate-950">{organization.name}</p>
-                                  <p className="mt-0.5 truncate font-mono text-[0.68rem] text-slate-400">{organization.id}</p>
+                                  <p className="mt-0.5 truncate font-mono text-xs text-slate-400">{organization.id}</p>
                                   {organization.windows.length === 0 ? (
                                     <p className="mt-3 text-sm text-slate-500">No current five-hour, weekly, or monthly windows.</p>
                                   ) : (
                                     <div className="mt-3 grid gap-2 md:grid-cols-3">
                                       {organization.windows.map((window) => (
-                                        <div key={window.bucketId} className="rounded-xl border border-slate-200 bg-white p-3">
+                                        <div key={window.bucketId} className="rounded-md border border-slate-200 bg-white p-3">
                                           <p className="text-xs font-semibold text-slate-800">{formatWindowType(window.windowType)}</p>
                                           <p className="mt-2 text-sm text-slate-700">User: <strong>{formatUsageAmount(window.userUsedAmount)}</strong></p>
                                           <p className="mt-1 text-xs text-slate-500">Shared: {formatUsageAmount(window.organizationUsedAmount)} / {formatUsageAmount(window.limitAmount)}</p>
@@ -2796,10 +2776,10 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                       )}
                     </AdminDeferredContent>
 
-                    <div className="rounded-2xl border border-slate-200 bg-white px-4 py-4 lg:col-span-2">
+                    <div className="rounded-md border border-slate-200 bg-white px-4 py-4 lg:col-span-2">
                       <div className="flex flex-wrap items-start justify-between gap-2">
                         <div>
-                          <p className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">Organizations</p>
+                          <p className="text-xs font-medium text-slate-500">Organizations</p>
                           <p className="mt-1 text-sm text-slate-600">
                             {user.organizations.length > 0
                               ? `${user.email} is a member of ${user.organizations.length} organization${user.organizations.length === 1 ? "" : "s"}.`
@@ -2807,13 +2787,13 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                           </p>
                         </div>
                         {user.organizations.length > 0 ? (
-                          <span className="inline-flex items-center rounded-full border border-violet-200 bg-violet-50 px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-violet-700">
+                          <span className="inline-flex items-center rounded-md border border-violet-200 bg-violet-50 px-2.5 py-1 text-xs font-medium text-violet-700">
                             {user.organizations.length} total
                           </span>
                         ) : null}
                       </div>
 
-                      <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 px-4 py-4">
+                      <div className="mt-4 rounded-md border border-red-200 bg-red-50 px-4 py-4">
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                           <div>
                             <p className="text-sm font-semibold text-red-950">Delete user</p>
@@ -2823,7 +2803,7 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                             type="button"
                             onClick={() => setDeleteUserDialog(user)}
                             disabled={deletingUserId === user.id}
-                            className="inline-flex items-center justify-center gap-2 rounded-full border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-700 transition hover:border-red-300 disabled:cursor-not-allowed disabled:opacity-60"
+                            className="inline-flex items-center justify-center gap-2 rounded-md border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-700 transition hover:border-red-300 disabled:cursor-not-allowed disabled:opacity-60"
                           >
                             <Trash2 size={15} aria-hidden="true" />
                             {deletingUserId === user.id ? "Deleting..." : "Delete user"}
@@ -2834,7 +2814,7 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                       {user.organizations.length > 0 ? (
                         <div className="mt-3 grid gap-2">
                           {user.organizations.map((org) => (
-                            <div key={org.id} className="rounded-2xl border border-slate-200 bg-slate-50/70 px-3 py-3">
+                            <div key={org.id} className="rounded-md border border-slate-200 bg-slate-50/70 px-3 py-3">
                               <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
                                 <div className="min-w-0">
                                   <p className="truncate text-sm font-semibold text-slate-950">{org.name}</p>
@@ -2842,10 +2822,10 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                                 </div>
 
                                 <div className="flex flex-wrap items-center gap-2">
-                                  <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-600">
+                                  <span className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600">
                                     {formatProvider(org.role)}
                                   </span>
-                                  <span className="inline-flex items-center rounded-full border border-slate-200 bg-white px-2.5 py-1 text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-600">
+                                  <span className="inline-flex items-center rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-600">
                                     {org.memberCount} {org.memberCount === 1 ? "member" : "members"}
                                   </span>
                                   <button
@@ -2853,7 +2833,7 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                                     onClick={() => {
                                       void copyOrgId(org.id);
                                     }}
-                                    className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300"
+                                    className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:border-slate-300"
                                   >
                                     <Copy size={13} aria-hidden="true" />
                                     {copiedOrgId === org.id ? "Copied" : "Copy ID"}
@@ -2861,7 +2841,7 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                                   <Link
                                     href={`/admin/organizations/${encodeURIComponent(org.id)}`}
                                     prefetch={false}
-                                    className="inline-flex items-center justify-center rounded-full bg-slate-950 px-3 py-1.5 text-xs font-semibold text-white"
+                                    className="inline-flex items-center justify-center rounded-md bg-slate-950 px-3 py-1.5 text-xs font-semibold text-white"
                                   >
                                     View org
                                   </Link>
@@ -2877,7 +2857,7 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
               </div>
             );
           }) : (
-            <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-10 text-center">
+            <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 px-5 py-10 text-center">
               <p className="text-base font-semibold text-slate-950">No users match the current filters</p>
               <p className="mt-2 text-sm leading-7 text-slate-500">Try broadening search or relaxing the worker and billing filters.</p>
             </div>
@@ -2895,8 +2875,8 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
           aria-labelledby="openwork-web-access-dialog-title"
           onClick={() => setOpenWorkWebAccessDialog(null)}
         >
-          <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-xl" onClick={(event) => event.stopPropagation()}>
-            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500">Organization billing access</p>
+          <div className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-xl" onClick={(event) => event.stopPropagation()}>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Organization billing access</p>
             <h2 id="openwork-web-access-dialog-title" className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-slate-950">
               {openworkWebAccessDialog.enabled ? "Grant" : "Revoke"} complimentary OpenWork Web?
             </h2>
@@ -2907,7 +2887,7 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
             </p>
 
             <label className="mt-5 grid gap-2">
-              <span className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">Reason for audit log</span>
+              <span className="text-xs font-medium text-slate-500">Reason for audit log</span>
               <textarea
                 data-testid="admin-openwork-web-access-reason"
                 rows={3}
@@ -2915,12 +2895,12 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                 value={openworkWebAccessDialog.reason}
                 onChange={(event) => setOpenWorkWebAccessDialog({ ...openworkWebAccessDialog, reason: event.target.value })}
                 placeholder="For example: Internal OpenWork administration organization"
-                className="resize-none rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-hidden transition focus:border-slate-400"
+                className="resize-none rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-hidden transition focus:border-slate-400"
               />
             </label>
 
             {openworkWebAccessError?.orgId === openworkWebAccessDialog.org.id ? (
-              <p className="mt-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-xs leading-5 text-red-700">
+              <p className="mt-3 rounded-md border border-red-200 bg-red-50 px-4 py-3 text-xs leading-5 text-red-700">
                 {openworkWebAccessError.message}
               </p>
             ) : null}
@@ -2930,7 +2910,7 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                 type="button"
                 onClick={() => setOpenWorkWebAccessDialog(null)}
                 disabled={savingOpenWorkWebAccessOrgId === openworkWebAccessDialog.org.id}
-                className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Cancel
               </button>
@@ -2941,7 +2921,7 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                   void saveOpenWorkWebAccess();
                 }}
                 disabled={savingOpenWorkWebAccessOrgId === openworkWebAccessDialog.org.id || openworkWebAccessDialog.reason.trim().length < 3}
-                className="inline-flex items-center justify-center rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center justify-center rounded-md bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {savingOpenWorkWebAccessOrgId === openworkWebAccessDialog.org.id
                   ? "Saving..."
@@ -2962,8 +2942,8 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
           aria-labelledby="free-seats-dialog-title"
           onClick={() => setFreeSeatsDialog(null)}
         >
-          <div className="w-full max-w-md rounded-3xl border border-slate-200 bg-white p-6 shadow-xl" onClick={(event) => event.stopPropagation()}>
-            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-slate-500">Organization billing</p>
+          <div className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-xl" onClick={(event) => event.stopPropagation()}>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Organization billing</p>
             <h2 id="free-seats-dialog-title" className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-slate-950">
               Edit free seats
             </h2>
@@ -2972,17 +2952,17 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
             </p>
 
             <label className="mt-5 grid gap-2">
-              <span className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">Total free seats</span>
+              <span className="text-xs font-medium text-slate-500">Total free seats</span>
               <input
                 type="number"
                 min={DEFAULT_FREE_SEAT_COUNT}
                 value={freeSeatsDialog.totalFreeSeats}
                 onChange={(event) => setFreeSeatsDialog({ ...freeSeatsDialog, totalFreeSeats: event.target.value })}
-                className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-hidden transition focus:border-slate-400"
+                className="rounded-md border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-hidden transition focus:border-slate-400"
               />
             </label>
 
-            <p className="mt-3 rounded-2xl bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-500">
+            <p className="mt-3 rounded-md bg-slate-50 px-4 py-3 text-xs leading-5 text-slate-500">
               Additional metadata value to save: {Math.max(0, Number(freeSeatsDialog.totalFreeSeats) - DEFAULT_FREE_SEAT_COUNT) || 0}
             </p>
 
@@ -2990,7 +2970,7 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
               <button
                 type="button"
                 onClick={() => setFreeSeatsDialog(null)}
-                className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
+                className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700"
               >
                 Cancel
               </button>
@@ -3000,7 +2980,7 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                   void saveOrganizationFreeSeats();
                 }}
                 disabled={savingFreeSeatsOrgId === freeSeatsDialog.org.id}
-                className="inline-flex items-center justify-center rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center justify-center rounded-md bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {savingFreeSeatsOrgId === freeSeatsDialog.org.id ? "Saving..." : "Save"}
               </button>
@@ -3017,8 +2997,8 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
           aria-labelledby="delete-user-dialog-title"
           onClick={() => setDeleteUserDialog(null)}
         >
-          <div className="w-full max-w-md rounded-3xl border border-red-100 bg-white p-6 shadow-xl" onClick={(event) => event.stopPropagation()}>
-            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-red-500">Danger zone</p>
+          <div className="w-full max-w-md rounded-lg border border-red-100 bg-white p-6 shadow-xl" onClick={(event) => event.stopPropagation()}>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-red-500">Danger zone</p>
             <h2 id="delete-user-dialog-title" className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-slate-950">
               Delete {deleteUserDialog.email}?
             </h2>
@@ -3030,7 +3010,7 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                 type="button"
                 onClick={() => setDeleteUserDialog(null)}
                 disabled={deletingUserId === deleteUserDialog.id}
-                className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center justify-center rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 Cancel
               </button>
@@ -3040,7 +3020,7 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                   void deleteUser();
                 }}
                 disabled={deletingUserId === deleteUserDialog.id}
-                className="inline-flex items-center justify-center rounded-full bg-red-600 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                className="inline-flex items-center justify-center rounded-md bg-red-600 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {deletingUserId === deleteUserDialog.id ? "Deleting..." : "Delete user"}
               </button>
@@ -3058,8 +3038,8 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
           aria-labelledby="reset-usage-dialog-title"
           onClick={() => setResetUsageDialog(null)}
         >
-          <div className="w-full max-w-md rounded-3xl border border-amber-100 bg-white p-6 shadow-xl" onClick={(event) => event.stopPropagation()}>
-            <p className="text-[0.68rem] font-semibold uppercase tracking-[0.18em] text-amber-600">Model consumption</p>
+          <div className="w-full max-w-md rounded-lg border border-amber-100 bg-white p-6 shadow-xl" onClick={(event) => event.stopPropagation()}>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-600">Model consumption</p>
             <h2 id="reset-usage-dialog-title" className="mt-2 text-2xl font-semibold tracking-[-0.04em] text-slate-950">
               Reset {resetUsageDialog.email}?
             </h2>
@@ -3071,7 +3051,7 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                 type="button"
                 onClick={() => setResetUsageDialog(null)}
                 disabled={resettingUsageUserId === resetUsageDialog.id}
-                className="rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-60"
+                className="rounded-md border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:opacity-60"
               >
                 Cancel
               </button>
@@ -3080,7 +3060,7 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                 data-testid="admin-usage-reset-action"
                 onClick={() => void resetInferenceUsage()}
                 disabled={resettingUsageUserId === resetUsageDialog.id}
-                className="rounded-full bg-amber-600 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
+                className="rounded-md bg-amber-600 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {resettingUsageUserId === resetUsageDialog.id ? "Resetting..." : "Reset consumption"}
               </button>

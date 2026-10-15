@@ -1,5 +1,5 @@
-import { and, asc, eq, inArray, isNotNull, isNull, sql } from "@openwork-ee/den-db/drizzle"
-import { AuthUserTable, GatewayProviderModelTable, GatewayProviderTable, GatewayRequestLogTable, GatewayUsageRollupTable, MemberTable, TeamMemberTable, TeamTable } from "@openwork-ee/den-db/schema"
+import { and, asc, desc, eq, inArray, isNotNull, isNull, sql } from "@openwork-ee/den-db/drizzle"
+import { AuthUserTable, GatewayProviderModelTable, GatewayProviderTable, GatewayRequestLogTable, GatewayUsageRollupTable, MemberTable, OrganizationTable, TeamMemberTable, TeamTable } from "@openwork-ee/den-db/schema"
 import { isDenTypeId } from "@openwork-ee/utils/typeid"
 import type { GatewayUsageDay, GatewayUsageOption, GatewayUsageResponse } from "@openwork/types/den/gateway-usage"
 import { INFERENCE_MODEL_ALIASES } from "@openwork/types/den/inference"
@@ -139,19 +139,19 @@ function disambiguateUsageLabels(labels: Map<string, string>, models = false) {
   }
 }
 
-function gatewayUsageSources(organizationId: typeof GatewayProviderTable.$inferSelect.organization_id, query: z.infer<typeof querySchema>, fromSeconds: number, endSeconds: number) {
+function gatewayUsageSources(organizationId: typeof GatewayProviderTable.$inferSelect.organization_id | undefined, query: z.infer<typeof querySchema>, fromSeconds: number, endSeconds: number) {
   const raw = GatewayRequestLogTable
   const rollup = GatewayUsageRollupTable
   function dimensions(table: typeof raw | typeof rollup, timestamp: typeof raw.started_at | typeof rollup.bucket_start) {
     // Epoch arithmetic gives UTC calendar dates even if a DB session is not UTC.
     const date = sql<string>`date_format(timestampadd(day, floor(unix_timestamp(${timestamp}) / 86400), '1970-01-01'), '%Y-%m-%d')`.as("usage_date")
-    const filterId = (query.groupBy === "model" ? sql<string | null>`coalesce(${table.gateway_provider_id}, case when ${table.route} in ('openwork_openrouter', 'openwork_free') then ${OPENWORK_MODELS_OPTION_ID} end)`
+    const filterId = (organizationId === undefined ? sql<string>`${table.organization_id}` : query.groupBy === "model" ? sql<string | null>`coalesce(${table.gateway_provider_id}, case when ${table.route} in ('openwork_openrouter', 'openwork_free') then ${OPENWORK_MODELS_OPTION_ID} end)`
       : sql<string | null>`${table.org_membership_id}`).as("filter_id")
     // Hex encodes the exact family/model tuple, independent of DB collation,
     // configured instances, request aliases, model groups and credential sets.
     // OpenWork Models is its own family so it never merges with an organization's own providers.
     const family = sql<string>`case when ${table.route} in ('openwork_openrouter', 'openwork_free') then ${OPENWORK_MODELS_OPTION_ID} else ${table.upstream_provider_id} end`
-    const seriesId = (query.groupBy === "model"
+    const seriesId = (organizationId === undefined ? sql<string>`${table.organization_id}` : query.groupBy === "model"
       ? sql<string>`concat('model:', hex(${family}), ':', coalesce(hex(${table.upstream_model}), '~'))`
       : sql<string>`${table.org_membership_id}`).as("series_id")
     return { date, seriesId, filterId }
@@ -190,7 +190,7 @@ function gatewayUsageSources(organizationId: typeof GatewayProviderTable.$inferS
     totalCostMicroUsd: sql<string>`coalesce(sum(${raw.cost_micro_usd}), 0)`.as("total_cost_micro_usd"),
     unpricedRequests: sql<string | null>`count(*) - count(${raw.cost_micro_usd})`.as("unpriced_requests"),
   }).from(raw).where(and(
-    eq(raw.organization_id, organizationId), sql`${raw.route} in (${sql.join(USAGE_ROUTES.map((route) => sql`${route}`), sql`, `)})`, isNotNull(raw.completed_at),
+    organizationId === undefined ? undefined : eq(raw.organization_id, organizationId), sql`${raw.route} in (${sql.join(USAGE_ROUTES.map((route) => sql`${route}`), sql`, `)})`, isNotNull(raw.completed_at),
     sql`${raw.started_at} >= from_unixtime(${fromSeconds}) and ${raw.started_at} < from_unixtime(${endSeconds})`,
     query.memberId === undefined ? undefined : sql`${raw.org_membership_id} = ${query.memberId}`,
   )).groupBy(rawDimensions.date, rawDimensions.seriesId, rawDimensions.filterId).unionAll(db.select({
@@ -206,12 +206,54 @@ function gatewayUsageSources(organizationId: typeof GatewayProviderTable.$inferS
     totalCostMicroUsd: sql<string>`coalesce(sum(${rollup.cost_micro_usd}), 0)`.as("total_cost_micro_usd"),
     unpricedRequests: sql<string | null>`case when count(${rollup.cost_count}) = count(*) then sum(${rollup.request_count}) - sum(${rollup.cost_count}) else null end`.as("unpriced_requests"),
   }).from(rollup).where(and(
-    eq(rollup.organization_id, organizationId), sql`${rollup.route} in (${sql.join(USAGE_ROUTES.map((route) => sql`${route}`), sql`, `)})`, inArray(rollup.granularity, ["hour", "day"]),
+    organizationId === undefined ? undefined : eq(rollup.organization_id, organizationId), sql`${rollup.route} in (${sql.join(USAGE_ROUTES.map((route) => sql`${route}`), sql`, `)})`, inArray(rollup.granularity, ["hour", "day"]),
     sql`${rollup.bucket_start} >= from_unixtime(${fromSeconds}) and ${rollup.bucket_start} < from_unixtime(${endSeconds})`,
     query.memberId === undefined ? undefined : sql`${rollup.org_membership_id} = ${query.memberId}`,
   )).groupBy(rollupDimensions.date, rollupDimensions.seriesId, rollupDimensions.filterId)))
 
   return sources
+}
+
+/** Bounded platform dashboard: one accounting snapshot, 30 days and eight
+ * organization links. No per-organization requests or feature/member hydration. */
+export async function readAdminGatewayDashboard(now = new Date()) {
+  const today = Math.floor(now.getTime() / DAY_MS) * DAY_MS
+  const from = today - 29 * DAY_MS
+  const sources = gatewayUsageSources(undefined, { groupBy: "person", days: 30, filterIds: [] }, from / 1000, (today + DAY_MS) / 1000)
+  const totals = {
+    requests: sql<string>`coalesce(sum(${sources.requestCount}), 0)`.as("requests"),
+    tokens: sql<string>`coalesce(sum(${sources.totalTokens}), 0)`.as("tokens"),
+    costMicroUsd: sql<string>`coalesce(sum(${sources.totalCostMicroUsd}), 0)`.as("cost_micro_usd"),
+    unreportedRequests: sql<string | null>`case when count(${sources.unreportedRequests}) = count(*) then coalesce(sum(${sources.unreportedRequests}), 0) else null end`.as("unreported"),
+    unpricedRequests: sql<string | null>`case when count(${sources.unpricedRequests}) = count(*) then coalesce(sum(${sources.unpricedRequests}), 0) else null end`.as("unpriced"),
+    activeOrganizations: sql<string>`count(distinct case when ${sources.requestCount} > 0 then ${sources.seriesId} end)`.as("active_organizations"),
+  }
+  const all = db.select({ kind: sql<string>`'total'`.as("kind"), id: sql<string>`''`.as("id"), ...totals }).from(sources)
+  const daily = db.select({ kind: sql<string>`'day'`.as("kind"), id: sql<string>`${sources.date}`.as("id"), ...totals }).from(sources).groupBy(sources.date)
+  const leaders = db.select({ kind: sql<string>`'org'`.as("kind"), id: sql<string>`${sources.seriesId}`.as("id"), ...totals }).from(sources)
+    .groupBy(sources.seriesId).having(sql`sum(${sources.requestCount}) > 0`).orderBy(desc(sql`sum(${sources.requestCount})`), asc(sources.seriesId)).limit(8).as("leaders")
+  const snapshot = all.unionAll(daily).unionAll(db.select().from(leaders)).as("dashboard_usage")
+  const rows = await db.with(sources).select().from(snapshot)
+  const parse = (row: typeof rows[number]) => ({
+    requests: safeCount(row.requests), tokens: safeCount(row.tokens), costMicroUsd: safeCount(row.costMicroUsd),
+    unreportedRequests: row.unreportedRequests === null ? null : safeCount(row.unreportedRequests),
+    unpricedRequests: row.unpricedRequests === null ? null : safeCount(row.unpricedRequests),
+  })
+  const total = rows.find((row) => row.kind === "total")
+  if (!total) throw new Error("Dashboard usage totals were unavailable.")
+  const top = rows.filter((row) => row.kind === "org").sort((a, b) => safeCount(b.requests) - safeCount(a.requests) || a.id.localeCompare(b.id))
+  // Eight primary-key lookups, preserving retained usage for deleted organizations.
+  const names = top.length ? await db.select({ id: OrganizationTable.id, name: OrganizationTable.name }).from(OrganizationTable).where(sql`${OrganizationTable.id} in (${sql.join(top.map((row) => sql`${row.id}`), sql`, `)})`) : []
+  const dailyRows = new Map(rows.filter((row) => row.kind === "day").map((row) => [row.id, parse(row)]))
+  return {
+    from: new Date(from).toISOString().slice(0, 10), to: new Date(today).toISOString().slice(0, 10),
+    activeOrganizations: safeCount(total.activeOrganizations), totals: parse(total),
+    daily: Array.from({ length: 30 }, (_, index) => {
+      const date = new Date(from + index * DAY_MS).toISOString().slice(0, 10)
+      return { date, ...(dailyRows.get(date) ?? { requests: 0, tokens: 0, costMicroUsd: 0, unreportedRequests: 0, unpricedRequests: 0 }) }
+    }),
+    organizations: top.map((row) => ({ id: row.id, name: names.find((name) => name.id === row.id)?.name ?? "Deleted organization", ...parse(row) })),
+  }
 }
 
 /** The admin page gets one org total and at most one bounded member page.

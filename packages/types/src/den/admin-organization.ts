@@ -29,3 +29,13 @@ export const adminOrganizationUsageSchema = adminOrganizationDetailSchema.extend
 export type AdminOrganizationDetail = z.infer<typeof adminOrganizationDetailSchema>
 export type AdminOrganizationUsage = z.infer<typeof adminOrganizationUsageSchema>
 export type AdminOrganizationUsageTotals = z.infer<typeof adminOrganizationUsageTotalsSchema>
+
+export const adminDashboardSchema = z.object({
+  from: z.string(), to: z.string(), generatedAt: z.string().datetime(),
+  activeUsers: z.object({ today: count, days7: count, days30: count }),
+  activeOrganizations: count,
+  totals: adminOrganizationUsageTotalsSchema,
+  daily: z.array(adminOrganizationUsageTotalsSchema.extend({ date: z.string() })).max(30),
+  organizations: z.array(adminOrganizationUsageTotalsSchema.extend({ id: z.string(), name: z.string() })).max(8),
+}).meta({ ref: "AdminDashboard" })
+export type AdminDashboard = z.infer<typeof adminDashboardSchema>

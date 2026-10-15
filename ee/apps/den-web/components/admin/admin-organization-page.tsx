@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { adminOrganizationDetailSchema, adminOrganizationUsageSchema, type AdminOrganizationDetail, type AdminOrganizationUsage, type AdminOrganizationUsageTotals } from "@openwork/types/den/admin-organization";
-import { DenButton, buttonVariants } from "../../app/(den)/_components/ui/button";
+import { DenButton } from "../../app/(den)/_components/ui/button";
 import { DenInput } from "../../app/(den)/_components/ui/input";
 import { DenTable, type DenTableColumn } from "../../app/(den)/_components/ui/table";
 import { AdminAccessScreen } from "./admin-access-screen";
@@ -82,7 +82,7 @@ export function AdminOrganizationPage({ organizationId, section }: { organizatio
 
   if (state.access !== "ready") {
     if (state.access !== "checking") return <>{breadcrumbs}<AdminAccessScreen state={state.access} message={state.message} onRetry={() => setAttempt((value) => value + 1)} /></>;
-    return <>{breadcrumbs}<section aria-busy="true" aria-label="Loading organization" className="rounded-2xl bg-white p-6"><div className="h-6 w-56 rounded-sm bg-gray-100" /><div className="mt-6 h-10 rounded-sm bg-gray-100" /><div className="mt-6 h-56 rounded-sm bg-gray-100" /></section></>;
+    return <>{breadcrumbs}<section aria-busy="true" aria-label="Loading organization" className="bg-white p-6"><div className="h-6 w-56 rounded-sm bg-gray-100" /><div className="mt-6 h-10 rounded-sm bg-gray-100" /><div className="mt-6 h-56 rounded-sm bg-gray-100" /></section></>;
   }
 
   const data = state.data;
@@ -115,9 +115,9 @@ export function AdminOrganizationPage({ organizationId, section }: { organizatio
   return (
     <>
     {breadcrumbs}
-    <section data-testid="admin-organization-page" aria-busy={refreshing} className="min-w-0 rounded-2xl border border-gray-200 bg-white">
+    <section data-testid="admin-organization-page" aria-busy={refreshing} className="min-w-0 bg-white">
       {errorMessage ? <p role="alert" className="border-b border-gray-200 p-4 text-sm text-red-700">{errorMessage} Use Refresh to try again. Showing the last successful snapshot.</p> : null}
-      <header className="border-b border-gray-200 p-4 sm:p-6">
+      <header className="border-b border-gray-200 py-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <h1 className="min-w-0 break-words text-lg font-semibold text-gray-900">{organization.name}</h1>
           <DenButton size="sm" variant="secondary" loading={refreshing} onClick={() => setAttempt((value) => value + 1)}>Refresh</DenButton>
@@ -128,25 +128,25 @@ export function AdminOrganizationPage({ organizationId, section }: { organizatio
           <div><dt className="text-gray-500">Members</dt><dd className="mt-1 text-gray-900">{count(organization.memberCount)} / {count(organization.seatLimit)} seats</dd></div>
           <div><dt className="text-gray-500">Created</dt><dd className="mt-1 text-gray-900">{date(organization.createdAt)}</dd></div>
         </dl>
-        <nav aria-label="Organization sections" className="mt-5 flex gap-2">
-          <Link href={`${base}${suffix}`} prefetch={false} aria-current={section === "members" ? "page" : undefined} className={buttonVariants({ variant: section === "members" ? "secondary" : "ghost", size: "sm" })}>Members</Link>
-          <Link href={`${base}/usage${suffix}`} prefetch={false} aria-current={section === "usage" ? "page" : undefined} className={buttonVariants({ variant: section === "usage" ? "secondary" : "ghost", size: "sm" })}>Usage</Link>
+        <nav aria-label="Organization sections" className="mt-5 flex gap-5">
+          <Link href={`${base}${suffix}`} prefetch={false} aria-current={section === "members" ? "page" : undefined} className={`border-b-2 px-1 py-2 text-sm font-medium ${section === "members" ? "border-slate-900 text-slate-950" : "border-transparent text-slate-500 hover:text-slate-950"}`}>Members</Link>
+          <Link href={`${base}/usage${suffix}`} prefetch={false} aria-current={section === "usage" ? "page" : undefined} className={`border-b-2 px-1 py-2 text-sm font-medium ${section === "usage" ? "border-slate-900 text-slate-950" : "border-transparent text-slate-500 hover:text-slate-950"}`}>Usage</Link>
         </nav>
       </header>
 
-      {usage ? <section aria-label="Organization usage" data-testid="admin-organization-usage" className="border-b border-gray-200 p-4 sm:p-6">
+      {usage ? <section aria-label="Organization usage" data-testid="admin-organization-usage" className="border-b border-gray-200 py-5">
         <h2 className="text-sm font-semibold text-gray-900">Gateway usage</h2>
         <p className="mt-1 text-xs text-gray-500">{usage.from} – {usage.to} UTC</p>
         <dl className="mt-4 flex flex-wrap gap-x-8 gap-y-3 text-sm">
-          <div><dt className="text-gray-500">Requests</dt><dd className="mt-1 text-gray-900">{count(usage.totals.requests)}</dd></div>
-          <div><dt className="text-gray-500">Reported tokens</dt><dd className="mt-1 text-gray-900">{count(usage.totals.tokens)}</dd></div>
-          <div><dt className="text-gray-500">Recorded cost</dt><dd className="mt-1 text-gray-900">{usage.totals.costMicroUsd === 0 && usage.totals.unpricedRequests !== 0 ? "Unknown" : cost(usage.totals.costMicroUsd)}</dd></div>
+          <div><dt className="text-gray-500">Requests</dt><dd className="mt-1 text-2xl font-semibold tabular-nums text-gray-900">{count(usage.totals.requests)}</dd></div>
+          <div><dt className="text-gray-500">Reported tokens</dt><dd className="mt-1 text-2xl font-semibold tabular-nums text-gray-900">{count(usage.totals.tokens)}</dd></div>
+          <div><dt className="text-gray-500">Recorded cost</dt><dd className="mt-1 text-2xl font-semibold tabular-nums text-gray-900">{usage.totals.costMicroUsd === 0 && usage.totals.unpricedRequests !== 0 ? "Unknown" : cost(usage.totals.costMicroUsd)}</dd></div>
         </dl>
         <Coverage totals={usage.totals} />
         {usage.totals.requests === 0 ? <p className="mt-4 text-sm text-gray-500">No recorded gateway requests in this period.</p> : null}
       </section> : null}
 
-      <div className="p-4 sm:p-6">
+      <div className="py-5">
         <h2 className="text-sm font-semibold text-gray-900">{section === "usage" ? "Usage by member" : "Members"}</h2>
         <div className="mt-4 flex flex-wrap items-end justify-between gap-3">
           <label className="grid w-full max-w-md gap-2 text-sm text-gray-600">Search members<DenInput aria-label="Search members" maxLength={160} value={draftSearch} onChange={(event) => setSearch(event.target.value)} placeholder="Name, email, or role" /></label>

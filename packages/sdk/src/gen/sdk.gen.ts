@@ -183,6 +183,8 @@ import type {
   GetMcpWellKnownOauthProtectedResourceResponses,
   GetReadyErrors,
   GetReadyResponses,
+  GetV1AdminDashboardErrors,
+  GetV1AdminDashboardResponses,
   GetV1AdminFeaturesErrors,
   GetV1AdminFeaturesResponses,
   GetV1AdminFreeAutoUsageErrors,
@@ -1179,6 +1181,18 @@ export class DenClient extends HeyApiClient {
       url: "/v1/admin/organizations/{organizationId}/usage",
       ...options,
       ...params,
+    });
+  }
+
+  /**
+   * Get bounded platform activity and AI usage
+   *
+   * Returns 30 UTC calendar days of completed gateway usage across organizations, using the same raw and retained accounting as organization reports. Includes accounting coverage, 30 daily totals, at most eight organizations ranked by requests, and distinct users with sign-in or telemetry activity. Does not hydrate features, billing or members.
+   */
+  public getV1AdminDashboard<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<GetV1AdminDashboardResponses, GetV1AdminDashboardErrors, ThrowOnError>({
+      url: "/v1/admin/dashboard",
+      ...options,
     });
   }
 

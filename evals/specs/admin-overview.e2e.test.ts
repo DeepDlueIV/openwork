@@ -18,7 +18,7 @@ test("an admin navigates organizations and member usage without loading every de
     await anonymous.see({ role: "heading", label: "Sign in required" });
     const skeletons = await anonymousProbe.dom('[aria-busy="true"], .animate-pulse');
     const traffic = await world.traffic("anonymous");
-    const ok = skeletons.elements.length === 0 && traffic.overview === 0 && traffic.usage === 0;
+    const ok = skeletons.elements.length === 0 && traffic.overview === 0 && traffic.usage === 0 && traffic.dashboard === 0;
     evidence.recordAssertionEvidence("Signed-out visitors never start dashboard work", `skeletons=${skeletons.elements.length}; overview requests=${traffic.overview}; usage requests=${traffic.usage}`, ok);
     expect(ok).toBe(true);
     await anonymous.screenshot();
@@ -282,6 +282,34 @@ test("an admin navigates organizations and member usage without loading every de
     await admin.screenshot();
   });
 
+  await step("after: the overview shows bounded platform metrics, daily usage and organization links", async () => {
+    await admin.resizeViewport({ width: 1280, height: 900, deviceScaleFactor: 1 });
+    await admin.see({ testId: "admin-dashboard-requests" }, { text: /8/ });
+    await admin.see({ testId: "admin-dashboard-cost" }, { text: /101\.00/ });
+    await admin.see({ testId: "admin-dashboard-coverage" }, { text: /Price coverage unknown/ });
+    const report = await world.dashboard();
+    const traffic = await world.traffic("admin");
+    const ok = report.daily.length === 30 && report.organizations.length <= 8 && report.activeOrganizations === 2
+      && report.totals.requests === 8 && report.totals.tokens === 10269 && report.totals.costMicroUsd === 101000000
+      && report.totals.unpricedRequests === null && report.totals.unreportedRequests === null
+      && report.daily.reduce((total, day) => total + day.requests, 0) === report.totals.requests && traffic.metrics === 0;
+    evidence.recordAssertionEvidence("The dashboard counts both organizations, includes retained and removed-member usage, and defers extra analytics", `totals=${JSON.stringify(report.totals)}; daily=${report.daily.length}; leaders=${report.organizations.length}; extra analytics=${traffic.metrics}`, ok);
+    expect(ok).toBe(true);
+    expect(await world.dashboardAccess()).toBe(403);
+    await admin.screenshot();
+    await admin.click({ role: "combobox", label: "Chart metric" });
+    await admin.click({ role: "option", label: "Recorded cost" });
+    await admin.see({ testId: "admin-dashboard-chart-costMicroUsd" });
+    await admin.click({ role: "link", label: report.organizations[0].name });
+    await admin.see({ testId: "admin-organization-usage" });
+    await admin.click({ testId: "admin-breadcrumb-admin" });
+    await admin.resizeViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
+    await admin.see({ testId: "admin-dashboard-requests" }, { text: /8/ });
+    const layout = await adminProbe.dom("body");
+    expect(layout.documentWidth).toBeLessThanOrEqual(layout.viewportWidth);
+    await admin.screenshot();
+  });
+
   await step("signed-out organization links show sign-in without fetching member or usage data", async () => {
     await anonymous.navigate(world.url(`${world.detailPath}/usage`));
     await anonymous.see({ role: "heading", label: "Sign in required" });
@@ -290,6 +318,15 @@ test("an admin navigates organizations and member usage without loading every de
     const ok = traffic.organizationDetail === 0 && traffic.organizationUsage === 0 && busy.elements.length === 0;
     evidence.recordAssertionEvidence("Signed-out visitors cannot trigger organization data or usage aggregation", `detail=${traffic.organizationDetail}; usage=${traffic.organizationUsage}; skeletons=${busy.elements.length}`, ok);
     expect(ok).toBe(true);
+    await anonymous.screenshot();
+  });
+
+  await step("the signed-out overview never fetches platform analytics", async () => {
+    await anonymous.navigate(world.url("/admin"));
+    await anonymous.see({ role: "heading", label: "Sign in required" });
+    const traffic = await world.traffic("anonymous");
+    expect(traffic.dashboard).toBe(0);
+    expect(traffic.metrics).toBe(0);
     await anonymous.screenshot();
   });
 

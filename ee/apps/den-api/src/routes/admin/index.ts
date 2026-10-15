@@ -38,6 +38,7 @@ import { db } from "../../db.js"
 import { parseOrganizationPlan, type PlanTier } from "../../entitlements.js"
 import { adminRoute, jsonValidator, queryValidator } from "../../middleware/index.js"
 import { registerAdminFreeAutoUsageRoutes } from "./free-auto-usage.js"
+import { registerAdminDashboardRoute } from "./dashboard.js"
 import { registerAdminOrganizationDetailRoutes } from "./organization-detail.js"
 import { denTypeIdSchema, forbiddenSchema, invalidRequestSchema, jsonResponse, notFoundSchema, unauthorizedSchema } from "../../openapi.js"
 import { appLogger } from "../../observability/logger.js"
@@ -1393,6 +1394,7 @@ const adminRouteErrors = {
 export function registerAdminRoutes<T extends { Variables: AuthContextVariables }>(app: Hono<T>) {
   registerAdminFreeAutoUsageRoutes(app)
   registerAdminOrganizationDetailRoutes(app)
+  registerAdminDashboardRoute(app)
   app.post(
     "/v1/admin/admins",
     describeRoute({

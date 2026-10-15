@@ -9,6 +9,15 @@ Covers two execution targets behind the same gateway capabilities:
 `target: "desktop"` (session on one of the member's signed-in desktop apps,
 dispatched over the existing Desktop Automation runner channel).
 
+## Current isolation boundary
+
+Cloud native sessions share the member worker, its processes and its workspace
+storage. This document does not describe per-session sandbox isolation. The
+blocked #5914 migration and its history/routing requirements are recorded in
+[OpenWork Web session sandboxes](cloud-session-sandboxing.md). Registered and
+desktop offloading remain governed by
+[session offloading](session-offloading-architecture.md).
+
 ## Problem
 
 OpenWork Desktop and OpenWork Web are both live chat surfaces, but they cannot

@@ -485,6 +485,13 @@ purchase action becomes available. This separate billing-readiness check keeps
 a partially configured hosted rollout visible but non-purchasable instead of
 mistaking secrets for an availability signal.
 
+Web availability does not imply per-session sandbox isolation. The current
+native Web path uses a persistent member worker. Neither this chart nor a
+shorter provider auto-delete interval implements #5914; worker deprovision also
+erases persistent history/checkpoints. See the
+[session sandbox investigation](../../../docs/cloud-session-sandboxing.md)
+before changing lifecycle or advertising a clean-room guarantee.
+
 Provider-specific starter guides:
 
 - AWS EKS:

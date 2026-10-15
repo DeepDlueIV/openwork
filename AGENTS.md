@@ -22,6 +22,12 @@ The app consumes OpenWork server surfaces (self-hosted or hosted) rather than
 inventing parallel behavior. Anything OpenCode can do is available in OpenWork,
 even before a dedicated UI exists.
 
+OpenWork Web currently shares a persistent worker across a member's native
+sessions; workspace/session IDs are not isolated computers. See
+`docs/cloud-session-sandboxing.md` for #5914's current boundaries and unresolved
+archive/lifetime contract. Do not replace idle stop with deprovision: that
+primitive also erases persistent worker data, including history checkpoints.
+
 Customer-cloud managed installation architecture lives in
 `infra/managed-deployments/README.md` and `docs/managed-deployments.md`. AWS
 uses CloudFormation/CodeBuild; GCP uses customer-approved Cloud Shell and

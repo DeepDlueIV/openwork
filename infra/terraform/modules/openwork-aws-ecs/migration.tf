@@ -45,7 +45,10 @@ resource "aws_iam_role_policy" "migration" {
     Version = "2012-10-17"
     Statement = [
       {
-        Effect    = "Allow", Action = ["ecs:RunTask"], Resource = aws_ecs_task_definition.migrate.arn
+        # Stable family scope avoids IAM propagation races on each new revision.
+        # Account, region and cluster remain fixed; no application families match.
+        Effect    = "Allow", Action = ["ecs:RunTask"]
+        Resource  = replace(local.cluster_arn, "/:cluster/.*$/", ":task-definition/${var.name}-migrate:*")
         Condition = { ArnEquals = { "ecs:cluster" = local.cluster_arn } }
       },
       {

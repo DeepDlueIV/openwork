@@ -47,11 +47,17 @@ print(json.dumps({'scenarios':6,'singleTask':True,'ambiguousOutcomePromotes':Fal
 // Both tools fail a real apply at the completion gate. Their test-language
 // expect_failures differs for apply-time values, so the parent asserts exit 1
 // rather than using Terraform-only override_during or state_key options.
-test("Terraform and OpenTofu reject a failed migration before service rollout", { timeout: 600_000 }, async () => {
+test("Terraform and OpenTofu enforce the AWS contract and block failed migrations before rollout", { timeout: 600_000 }, async () => {
   needs({ commands: ["terraform", "tofu"] });
   for (const tool of ["terraform", "tofu"]) {
     const init = spawnSync(tool, ["init", "-backend=false", "-input=false", "-upgrade", "-no-color"], { cwd: moduleDir, encoding: "utf8", timeout: 240_000 });
     expect(init.status, init.stderr).toBe(0);
+    const validate = spawnSync(tool, ["validate", "-no-color"], { cwd: moduleDir, encoding: "utf8", timeout: 60_000 });
+    expect(validate.status, validate.stderr).toBe(0);
+    const positive = spawnSync(tool, ["test", "-no-color"], { cwd: moduleDir, encoding: "utf8", timeout: 120_000 });
+    expect(positive.status, positive.stderr).toBe(0);
+    expect(Number(positive.stdout.match(/Success! (\d+) passed, 0 failed/)?.[1])).toBeGreaterThanOrEqual(36);
+    expect(positive.stdout).not.toMatch(/[1-9]\d* skipped/);
     const negative = spawnSync(tool, ["test", "-no-color", "-test-directory=tests/negative"], { cwd: moduleDir, encoding: "utf8", timeout: 240_000 });
     expect(negative.status).toBe(1);
     expect((negative.stdout + negative.stderr).replace(/\s+/g, " ")).toContain("No service rollout is permitted");

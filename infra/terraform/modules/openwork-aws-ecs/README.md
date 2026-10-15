@@ -167,8 +167,10 @@ at the `alb_dns_name` output (CNAME) at your DNS provider.
 - **Native trigger vs provisioner.** ECS has no native Terraform RunTask-and-wait
   resource. A tiny Python Lambda plus `aws_lambda_invocation` avoids a
   workstation CLI, local credentials and `local-exec` portability exceptions.
-  Its IAM can run only this migration definition in this cluster and pass only
-  the two ECS roles. Describe/stop task APIs use a wildcard resource constrained
+  Its IAM can run only this deployment's migration task family in this cluster
+  and pass only the two ECS roles. The family permission is stable across task
+  revisions: changing IAM on every image upgrade can race policy propagation
+  and reject RunTask before any SQL starts. Describe/stop task APIs use a wildcard resource constrained
   to the cluster. A deterministic ECS client token deduplicates uncertain
   invocation retries within ECS's token lifetime; it is not cross-state locking.
   Change `migration_run_id` only after inspecting failed/unknown tasks. Refresh

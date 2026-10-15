@@ -66,6 +66,10 @@ run "singleton_api_only_security_and_defaults" {
     error_message = "Public endpoint changes must not rerun the migration task; only database/migration settings belong in its environment."
   }
   assert {
+    condition     = jsondecode(aws_iam_role_policy.migration.policy).Statement[0].Resource == "arn:aws:ecs:us-east-1:123456789012:task-definition/${var.name}-migrate:*" && jsondecode(aws_iam_role_policy.migration.policy).Statement[0].Condition.ArnEquals["ecs:cluster"] == local.cluster_arn
+    error_message = "RunTask must allow only the owned migration family and cluster, with stable permissions across revisions."
+  }
+  assert {
     condition     = aws_ecs_service.api.desired_count == 2 && aws_db_instance.this[0].deletion_protection && var.den_api.cpu >= 1024 && var.den_api.memory >= 2048 && var.den_web.cpu >= 512 && var.den_web.memory >= 1024
     error_message = "Protected database and sized defaults are required; singleton must not reduce API replicas."
   }

@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull, lte, or, sql } from "@openwork-ee/den-db/drizzle"
+import { and, desc, eq, isNotNull, or, sql } from "@openwork-ee/den-db/drizzle"
 import { WorkflowRunTable } from "@openwork-ee/den-db/schema"
 import type { DenTypeId } from "@openwork-ee/utils/typeid"
 import { db } from "./db.js"
@@ -34,7 +34,9 @@ export async function workflowSnapshotStateRows(
   const ids = [...new Set(configObjectIds)]
   for (let offset = 0; offset < ids.length; offset += SNAPSHOT_BATCH_SIZE) {
     const batch = ids.slice(offset, offset + SNAPSHOT_BATCH_SIZE)
-    const ranked = db.select({
+    // Keep an indexed, bounded lookup for each workflow. Ranking a whole batch
+    // scans every historical receipt before applying the per-workflow limit.
+    const queries = batch.map((configObjectId) => db.select({
       configObjectId: WorkflowRunTable.config_object_id,
       receiptId: WorkflowRunTable.id,
       pluginId: WorkflowRunTable.plugin_id,
@@ -43,16 +45,18 @@ export async function workflowSnapshotStateRows(
       finishedAt: WorkflowRunTable.finished_at,
       contentDeletedAt: WorkflowRunTable.artifact_content_deleted_at,
       hasMarkdown: sql<number>`${WorkflowRunTable.result_markdown} is not null`.mapWith(Number).as("has_markdown"),
-      rank: sql<number>`row_number() over (partition by ${WorkflowRunTable.config_object_id} order by ${WorkflowRunTable.finished_at} desc, ${WorkflowRunTable.id} desc)`.as("snapshot_rank"),
     }).from(WorkflowRunTable).where(and(
       eq(WorkflowRunTable.organization_id, organizationId),
       snapshotReadAccess(memberId),
-      inArray(WorkflowRunTable.config_object_id, batch),
+      eq(WorkflowRunTable.config_object_id, configObjectId),
       isNotNull(WorkflowRunTable.config_object_version_id),
-    )).as("ranked_workflow_snapshots")
-    const rows = await db.select().from(ranked)
-      .where(lte(ranked.rank, SNAPSHOTS_PER_WORKFLOW))
-      .orderBy(desc(ranked.finishedAt), desc(ranked.receiptId))
+    )).orderBy(desc(WorkflowRunTable.finished_at), desc(WorkflowRunTable.id)).limit(SNAPSHOTS_PER_WORKFLOW))
+    const query = queries[0]
+    if (!query) continue
+    for (const next of queries.slice(1)) query.unionAll(next)
+    const snapshots = query.as("workflow_snapshots")
+    const rows = await db.select().from(snapshots)
+      .orderBy(desc(snapshots.finishedAt), desc(snapshots.receiptId))
     for (const row of rows) {
       if (!row.configObjectId) continue
       const snapshots = states.get(row.configObjectId) ?? []

@@ -9,6 +9,9 @@ export const supersededMigrationHashes: Readonly<Record<number, readonly string[
   // 0128_remove_legacy_analytics: shipped in v0.18.57 dropping the legacy
   // analytics tables; now a no-op so installs that skipped it keep their data.
   1791246307322: ["4a23d428e3b5c4e23fe147a2fd73cfedd3d73384c0f41e11327d203a05e802dc"],
+  // 0129_organization_features: retry-safe table creation and portable JSON
+  // parsing; existing completed backfills do not need to run again.
+  1791266169752: ["b544db5666c0be53acbb68851818cb4d99a5089239f2afba9dace972772fd49d"],
   // 0145_org_default_model: originally two statements (CREATE TABLE, then
   // CREATE INDEX). PlanetScale applies DDL outside the transaction, so a failed
   // index left the table behind and every retry hit "table already exists".

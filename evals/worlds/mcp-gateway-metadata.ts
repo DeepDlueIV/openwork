@@ -1,8 +1,12 @@
 import type { Seed } from "@openwork/env";
 import { seededOrganizationId } from "./organization-capabilities.ts";
 
+function isMetadataRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 export function metadataRecord(value: unknown): Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error("Expected an MCP object");
+  if (!isMetadataRecord(value)) throw new Error("Expected an MCP object");
   return value;
 }
 

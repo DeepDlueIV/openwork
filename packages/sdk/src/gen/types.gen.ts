@@ -5726,6 +5726,10 @@ export type WorkbotSession = {
 export type WorkbotRunToken = {
   token: string;
   expiresAt: string;
+  /**
+   * The member's AI Gateway key for this turn, only where the headless runner calls this deployment's Gateway.
+   */
+  modelApiKey?: string;
 };
 
 export type DenAppVersionResponse = {

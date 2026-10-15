@@ -3,7 +3,7 @@ import { browserScript, callFunction, captureScreenshot, evaluate } from "@openw
 import type { Surface } from "@openwork/cdp";
 import { currentTestEvidence } from "./ambient.ts";
 import { collectLayout, LAYOUT_BOX_LIMIT, parseLayoutSnapshot, type LayoutSnapshot } from "@openwork/design-review";
-import type { EvidenceCheckpoint } from "@openwork/freestyle/checkpoint-schema";
+import type { EvidenceCheckpoint } from "@openwork/evidence-provider/checkpoint";
 import type { EvidenceBox } from "./screen-change.ts";
 
 export interface ScreenshotArtifact {

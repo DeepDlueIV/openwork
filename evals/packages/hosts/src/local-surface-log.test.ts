@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, test } from "vitest";
 import type { SurfaceHandle } from "@openwork/cdp";
-import { createLocalHost, preserveSurfaceLog, pruneStaleSurfaceProfiles } from "./local.ts";
+import { createLocalHost, electronProfilePaths, preserveSurfaceLog, pruneStaleSurfaceProfiles } from "./local.ts";
 
 const roots: string[] = [];
 const previousLogsDir = process.env.OPENWORK_EVAL_SURFACE_LOGS_DIR;
@@ -81,4 +81,24 @@ test("a surface without a log on disk is not an error", async () => {
 
   expect(await preserveSurfaceLog(handle, logsDir)).toBeNull();
   expect(await preserveSurfaceLog({ ...handle, meta: {} }, logsDir)).toBeNull();
+});
+
+test("disposal also keeps the engine's own logs, which say why engine requests failed", async () => {
+  const { root, surfacesDir, logsDir } = await workspace();
+  const { handle, profileRoot } = await hostOwnedProfile(surfacesDir, "app-smoke-1-4245", "GET /workspace/ws_1/opencode/config 499 10030ms (opencode)\n");
+  const engineLogs = join(electronProfilePaths(profileRoot).dataHome, "opencode", "log");
+  await mkdir(engineLogs, { recursive: true });
+  await writeFile(join(engineLogs, "2026-10-13T195327.log"), "ERROR service=mcp failed to connect\n");
+  await writeFile(join(engineLogs, "notes.txt"), "not a log");
+  process.env.OPENWORK_EVAL_SURFACE_LOGS_DIR = logsDir;
+  const messages: string[] = [];
+  const host = createLocalHost({ repoRoot: root, rootDir: surfacesDir, log: (message) => messages.push(message) });
+
+  await host.disposeSurface(handle);
+
+  await expect(access(profileRoot)).rejects.toThrow();
+  const kept = join(logsDir, "app-smoke-1-4245-opencode-2026-10-13T195327.log");
+  expect(await readFile(kept, "utf8")).toBe("ERROR service=mcp failed to connect\n");
+  await expect(access(join(logsDir, "app-smoke-1-4245-opencode-notes.txt"))).rejects.toThrow();
+  expect(messages).toContain(`Kept 1 packaged-desktop engine log(s) in ${logsDir}`);
 });

@@ -32,6 +32,7 @@ import {
 } from "@openwork-ee/den-db/schema"
 import { createDenTypeId, normalizeDenTypeId, type DenTypeId } from "@openwork-ee/utils/typeid"
 import { db } from "../db.js"
+import { requestRead } from "../request-reads.js"
 import { env } from "../env.js"
 import { memberApiKeyUsable, usesMemberApiKey, validMemberApiKey } from "./member-api-key.js"
 import { declaredPluginMcpAuthType, existingPluginMcpAuthTypeCompatible, requiredPluginMcpAuthType } from "./external-mcp-auth-policy.js"
@@ -163,19 +164,23 @@ async function directlyUsableExternalMcpConnections(input: {
   orgMembershipId: OrgMembershipId
   teamIds: TeamId[]
 }) {
-  const rows = await db
-    .selectDistinct({ connection: ExternalMcpConnectionTable })
-    .from(ExternalMcpConnectionTable)
-    .innerJoin(
-      ExternalMcpConnectionAccessGrantTable,
-      eq(ExternalMcpConnectionAccessGrantTable.externalMcpConnectionId, ExternalMcpConnectionTable.id),
-    )
-    .where(and(
-      eq(ExternalMcpConnectionTable.organizationId, input.organizationId),
-      isNull(ExternalMcpConnectionAccessGrantTable.pluginMcpRequirementBindingId),
-      grantFilter(input),
-    ))
-  return rows.map((row) => row.connection)
+  // The native list, the external list and the visible list each start here; read once per request.
+  const key = `usable-external-mcp-connections:${input.organizationId}:${input.orgMembershipId}:${[...input.teamIds].sort().join(",")}`
+  return requestRead(key, async () => {
+    const rows = await db
+      .selectDistinct({ connection: ExternalMcpConnectionTable })
+      .from(ExternalMcpConnectionTable)
+      .innerJoin(
+        ExternalMcpConnectionAccessGrantTable,
+        eq(ExternalMcpConnectionAccessGrantTable.externalMcpConnectionId, ExternalMcpConnectionTable.id),
+      )
+      .where(and(
+        eq(ExternalMcpConnectionTable.organizationId, input.organizationId),
+        isNull(ExternalMcpConnectionAccessGrantTable.pluginMcpRequirementBindingId),
+        grantFilter(input),
+      ))
+    return rows.map((row) => row.connection)
+  })
 }
 
 function resourceGrantFilters(input: { orgMembershipId: OrgMembershipId; teamIds: TeamId[] }) {
@@ -982,6 +987,48 @@ export type UpdateExternalMcpConnectionResult =
  * replacement have a deterministic winner. Direct grants are replaced without
  * touching marketplace-derived grants.
  */
+export type SetSharedApiKeyResult =
+  | { status: "saved"; connection: ExternalMcpConnectionRow; previousApiKey: string | null }
+  | { status: "not_found" | "not_shared_api_key" | "marketplace_managed" }
+
+/**
+ * Writes only the shared API key of an existing API-key connection. The URL,
+ * auth type, sharing and every other setting stay as saved, so a key entered
+ * for a connection is never sent anywhere its owner did not already choose.
+ */
+export async function setExternalMcpSharedApiKey(input: {
+  organizationId: OrganizationId
+  connectionId: ExternalMcpConnectionId
+  apiKey: string | null
+}): Promise<SetSharedApiKeyResult> {
+  return db.transaction(async (tx) => {
+    const [existing] = await tx.select().from(ExternalMcpConnectionTable)
+      .where(and(eq(ExternalMcpConnectionTable.organizationId, input.organizationId), eq(ExternalMcpConnectionTable.id, input.connectionId)))
+      .limit(1).for("update")
+    if (!existing) return { status: "not_found" }
+    if (existing.kind !== "external_mcp" || existing.authType !== "apikey" || existing.credentialMode !== "shared") return { status: "not_shared_api_key" }
+    const bindings = await tx.select({ id: PluginMcpRequirementBindingTable.id })
+      .from(PluginMcpRequirementBindingTable)
+      .innerJoin(PluginTable, eq(PluginMcpRequirementBindingTable.pluginId, PluginTable.id))
+      .where(and(
+        eq(PluginMcpRequirementBindingTable.organizationId, input.organizationId),
+        eq(PluginMcpRequirementBindingTable.externalMcpConnectionId, input.connectionId),
+        eq(PluginTable.status, "active"),
+        isNull(PluginTable.deletedAt),
+      ))
+      .limit(1)
+    if (bindings.length > 0) return { status: "marketplace_managed" }
+    const changes = {
+      apiKey: input.apiKey,
+      readinessCredentialBinding: input.apiKey ? randomUUID() : null,
+      readinessCheck: null,
+      updatedAt: new Date(Math.max(Date.now(), existing.updatedAt.getTime() + 1)),
+    }
+    await tx.update(ExternalMcpConnectionTable).set(changes).where(eq(ExternalMcpConnectionTable.id, existing.id))
+    return { status: "saved", connection: { ...existing, ...changes }, previousApiKey: existing.apiKey }
+  })
+}
+
 export async function updateExternalMcpConnection(
   input: UpdateExternalMcpConnectionInput,
 ): Promise<UpdateExternalMcpConnectionResult> {

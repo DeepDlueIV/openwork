@@ -10,7 +10,7 @@ import {
   resolveProviderScopes,
   type NativeOAuthProviderConfig,
 } from "./provider-registry.js"
-import { getConnectedAccount, getOrgOAuthClient } from "./oauth-credentials.js"
+import { getConnectedAccountForListing, getOrgOAuthClient } from "./oauth-credentials.js"
 import { readProviderTenantId } from "./oauth-tenant.js"
 import { listExternalMcpConnections, listUsableNativeProviderConnections } from "./external-mcp-connections.js"
 
@@ -51,6 +51,8 @@ export type NativeProviderConnectionEntry = {
 type NativeProviderReconnectState = {
   needsReconnect: boolean
   missingFeatures: string[]
+  /** Required scopes the stored grant does not cover; names only, safe to log. */
+  missingScopes: string[]
 }
 
 export function resolveNativeProviderReconnectState(
@@ -59,18 +61,20 @@ export function resolveNativeProviderReconnectState(
   grantedScopes: string[] | null,
 ): NativeProviderReconnectState {
   if (!grantedScopes || grantedScopes.length === 0) {
-    return { needsReconnect: false, missingFeatures: [] }
+    return { needsReconnect: false, missingFeatures: [], missingScopes: [] }
   }
 
   const selectedFeatures = clientSelectedFeatures(provider, clientExtra)
-  const expectedScopes = resolveProviderScopes(provider, selectedFeatures)
-  const needsReconnect = expectedScopes.some((scope) => !providerScopesSatisfy(provider, grantedScopes, scope))
+  const unreported = new Set((provider.unreportedScopes ?? []).map((scope) => scope.toLowerCase()))
+  const expectedScopes = resolveProviderScopes(provider, selectedFeatures).filter((scope) => !unreported.has(scope.toLowerCase()))
+  const missingScopes = expectedScopes.filter((scope) => !providerScopesSatisfy(provider, grantedScopes, scope))
+  const needsReconnect = missingScopes.length > 0
   const missingFeatures = selectedFeatures.filter((feature) => {
     const featureScopes = provider.optionalFeatures?.[feature] ?? []
     return featureScopes.some((scope) => !providerScopesSatisfy(provider, grantedScopes, scope))
   })
 
-  return { needsReconnect, missingFeatures }
+  return { needsReconnect, missingFeatures, missingScopes }
 }
 
 export function buildNativeProviderEntry(
@@ -155,7 +159,7 @@ export async function listNativeProviderUsableEntries(input: {
     if (!provider) continue
     const client = await getOrgOAuthClient(input.organizationId, connection.id)
     if (!client) continue
-    const account = await getConnectedAccount({
+    const account = await getConnectedAccountForListing({
       organizationId: input.organizationId,
       orgMembershipId: input.orgMembershipId,
       providerId: connection.id,
@@ -174,7 +178,7 @@ export async function listNativeProviderUsableEntries(input: {
         : {}),
       reconnect: account?.accessToken
         ? resolveNativeProviderReconnectState(provider, client.extra, account.scopes)
-        : { needsReconnect: false, missingFeatures: [] },
+        : { needsReconnect: false, missingFeatures: [], missingScopes: [] },
     })
     if (entry) entries.push(entry)
   }
@@ -185,7 +189,7 @@ export async function listNativeProviderUsableEntries(input: {
   for (const provider of Object.values(NATIVE_OAUTH_PROVIDERS)) {
     const client = await getOrgOAuthClient(input.organizationId, provider.providerId)
     if (!client) continue
-    const account = await getConnectedAccount({
+    const account = await getConnectedAccountForListing({
       organizationId: input.organizationId,
       orgMembershipId: input.orgMembershipId,
       providerId: provider.providerId,
@@ -201,7 +205,7 @@ export async function listNativeProviderUsableEntries(input: {
         : {}),
       reconnect: account?.accessToken
         ? resolveNativeProviderReconnectState(provider, client.extra, account.scopes)
-        : { needsReconnect: false, missingFeatures: [] },
+        : { needsReconnect: false, missingFeatures: [], missingScopes: [] },
     })
     if (entry) entries.push(entry)
   }

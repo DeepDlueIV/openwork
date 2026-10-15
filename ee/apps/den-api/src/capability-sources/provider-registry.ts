@@ -31,6 +31,12 @@ export type NativeOAuthProviderConfig = {
   tenantIdExtraKey?: string
   /** Higher provider scopes that satisfy a narrower required scope. */
   scopeImplications?: Record<string, string[]>
+  /**
+   * Requested scopes the provider may leave out of the token response `scope`
+   * even when granted. They are still requested, but never decide whether a
+   * member must reconnect.
+   */
+  unreportedScopes?: string[]
 }
 
 export const NATIVE_OAUTH_PROVIDERS: Record<string, NativeOAuthProviderConfig> = {
@@ -110,6 +116,9 @@ export const NATIVE_OAUTH_PROVIDERS: Record<string, NativeOAuthProviderConfig> =
     },
     usesPkce: true,
     tenantIdExtraKey: "tenantId",
+    // Entra never lists offline_access in the token response (it answers with a
+    // refresh token instead) and may omit the OpenID Connect scopes.
+    unreportedScopes: ["openid", "profile", "email", "offline_access"],
   },
 }
 

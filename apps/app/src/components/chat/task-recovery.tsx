@@ -68,7 +68,7 @@ export function TaskRecovery(props: {
         </div>
       </div>
       {hasDetails ? <CollapsibleContent data-testid="session-error-details"
-        className="overflow-hidden data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 duration-150 motion-reduce:animate-none">
+        className="overflow-hidden transition-opacity duration-150 data-starting-style:opacity-0 data-ending-style:opacity-0 motion-reduce:transition-none">
         <div className="mt-2 flex min-w-0 items-start justify-between gap-3 rounded-md bg-muted px-3 py-2 text-muted-foreground">
           <pre className="max-h-60 min-w-0 flex-1 overflow-auto whitespace-pre-wrap break-words font-mono text-xs leading-5">{details}</pre>
           <Button size="xs" variant="ghost" className="shrink-0" onClick={() => {

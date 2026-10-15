@@ -212,9 +212,6 @@ importers:
       ai:
         specifier: ^6.0.146
         version: 6.0.146(zod@4.3.6)
-      boring-avatars:
-        specifier: ^2.0.4
-        version: 2.0.4(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -224,12 +221,12 @@ importers:
       dompurify:
         specifier: ^3.4.16
         version: 3.4.16
-      emojilib:
-        specifier: ^4.0.3
-        version: 4.0.3
       fuzzysort:
         specifier: ^3.1.0
         version: 3.1.0
+      gemoji:
+        specifier: ^8.1.0
+        version: 8.1.0
       jsonc-parser:
         specifier: ^3.2.1
         version: 3.3.1
@@ -412,6 +409,12 @@ importers:
 
   apps/review:
     dependencies:
+      '@openwork/daytona-evidence':
+        specifier: workspace:*
+        version: link:../../packages/daytona-evidence
+      '@openwork/evidence-provider':
+        specifier: workspace:*
+        version: link:../../packages/evidence-provider
       '@openwork/freestyle':
         specifier: workspace:*
         version: link:../../packages/freestyle
@@ -1493,6 +1496,22 @@ importers:
         specifier: ^5.6.3
         version: 5.9.3
 
+  packages/daytona-evidence:
+    dependencies:
+      '@openwork/evidence-provider':
+        specifier: workspace:*
+        version: link:../evidence-provider
+      '@openwork/freestyle':
+        specifier: workspace:*
+        version: link:../freestyle
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   packages/email:
     dependencies:
       '@react-email/components':
@@ -1571,6 +1590,15 @@ importers:
         specifier: ^5.6.3
         version: 5.9.3
 
+  packages/evidence-provider:
+    devDependencies:
+      '@types/node':
+        specifier: ^24.0.0
+        version: 24.13.3
+      typescript:
+        specifier: ^5.9.3
+        version: 5.9.3
+
   packages/features:
     dependencies:
       zod:
@@ -1602,6 +1630,9 @@ importers:
 
   packages/freestyle:
     dependencies:
+      '@openwork/evidence-provider':
+        specifier: workspace:*
+        version: link:../evidence-provider
       '@openwork/sandbox':
         specifier: workspace:*
         version: link:../sandbox
@@ -1649,6 +1680,9 @@ importers:
       fast-xml-parser:
         specifier: 5.8.0
         version: 5.8.0
+      jose:
+        specifier: 6.2.8
+        version: 6.2.8
       zod:
         specifier: ^4.3.6
         version: 4.3.6
@@ -1739,9 +1773,9 @@ importers:
 
   packages/review:
     dependencies:
-      '@openwork/freestyle':
+      '@openwork/evidence-provider':
         specifier: workspace:*
-        version: link:../freestyle
+        version: link:../evidence-provider
       '@vercel/blob':
         specifier: ^2.3.0
         version: 2.8.0
@@ -6218,12 +6252,6 @@ packages:
     resolution: {integrity: sha512-d0II/GO9uf9lfUHH2BQsjxzRJZBdsjgsBiW4BvhWk/3qoKwQFjIDVN19PfX8F2D/r9PCMTtLWjYVCFrpeYUzsw==}
     deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
 
-  boring-avatars@2.0.4:
-    resolution: {integrity: sha512-xhZO/w/6aFmRfkaWohcl2NfyIy87gK5SBbys8kctZeTGF1Apjpv/10pfUuv+YEfVPkESU/h2Y6tt/Dwp+bIZPw==}
-    peerDependencies:
-      react: '>=18.0.0'
-      react-dom: '>=18.0.0'
-
   botid@1.5.11:
     resolution: {integrity: sha512-KOO1A3+/vFVJk5aFoG3sNwiogKFPVR+x4aw4gQ1b2e0XoE+i5xp48/EZn+WqR07jRHeDGwHWQUOtV5WVm7xiww==}
     peerDependencies:
@@ -7099,9 +7127,6 @@ packages:
   emoji-regex@8.0.0:
     resolution: {integrity: sha512-MSjYzcWNOA0ewAHpz0MxpYFvwg6yjy1NG3xteoqz644VCo/RPgnr1/GGt+ic3iJTzQ8Eu3TdM14SawnVUmGE6A==}
 
-  emojilib@4.0.3:
-    resolution: {integrity: sha512-KbWiYre9aRSaPbHrHZIz9zmoM+21LAsK1VFJtnTh1VCtWE/rNMDviGhQTmselFl95dhqtGlY22iH0leG5BuW0g==}
-
   encodeurl@2.0.0:
     resolution: {integrity: sha512-Q0n9HRi4m6JuGIV1eFlmvJB7ZEVxu93IrMyiMsGC0lrMJMWzRgx6WGquyfQgZVb31vhGgXnfmPNNXmxnOkRBrg==}
     engines: {node: '>= 0.8'}
@@ -7567,6 +7592,9 @@ packages:
 
   fuzzysort@3.1.0:
     resolution: {integrity: sha512-sR9BNCjBg6LNgwvxlBd0sBABvQitkLzoVY9MYYROQVX/FvfJ4Mai9LsGhDgd8qYdds0bY77VzYd5iuB+v5rwQQ==}
+
+  gemoji@8.1.0:
+    resolution: {integrity: sha512-HA4Gx59dw2+tn+UAa7XEV4ufUKI4fH1KgcbenVA9YKSj1QJTT0xh5Mwv5HMFNN3l2OtUe3ZIfuRwSyZS5pLIWw==}
 
   generate-function@2.3.1:
     resolution: {integrity: sha512-eeB5GfMNeevm/GRYq20ShmsaGcmI81kIX2K9XQx5miC8KdHaC6Jm0qQ8ZNeGOi7wYB8OsdxKs+Y2oVuTFuVwKQ==}
@@ -15579,11 +15607,6 @@ snapshots:
   boolean@3.2.0:
     optional: true
 
-  boring-avatars@2.0.4(react-dom@19.2.8(react@19.2.8))(react@19.2.8):
-    dependencies:
-      react: 19.2.8
-      react-dom: 19.2.8(react@19.2.8)
-
   botid@1.5.11(next@15.5.27(@opentelemetry/api@1.9.1)(@types/node@20.12.12)(babel-plugin-react-compiler@1.0.0)(react-dom@18.2.0(react@18.2.0))(react@18.2.0))(react@18.2.0):
     optionalDependencies:
       next: 15.5.27(@opentelemetry/api@1.9.1)(@types/node@20.12.12)(babel-plugin-react-compiler@1.0.0)(react-dom@18.2.0(react@18.2.0))(react@18.2.0)
@@ -16460,8 +16483,6 @@ snapshots:
 
   emoji-regex@8.0.0: {}
 
-  emojilib@4.0.3: {}
-
   encodeurl@2.0.0: {}
 
   end-of-stream@1.4.5:
@@ -17109,6 +17130,8 @@ snapshots:
   functions-have-names@1.2.3: {}
 
   fuzzysort@3.1.0: {}
+
+  gemoji@8.1.0: {}
 
   generate-function@2.3.1:
     dependencies:

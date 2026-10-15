@@ -26,6 +26,7 @@ function RequestBucketContext({ request }: { request: GatewayUsageResetRequest }
   const preview = extensionPreview(request);
   return <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1 text-xs text-[var(--ow-muted)]">
     <span>{request.policyName} - {timeframeLabels[request.timeframe]}</span>
+    {request.providerId ? <span data-testid="gateway-reset-provider">Only {request.providerName ?? "a removed provider"}</span> : null}
     <span>{formatLimitMoney(request.usedMicroUsd)} used / {formatLimitMoney(request.allowanceMicroUsd)} allowance</span>
     <span>Base: {formatLimitMoney(request.baseAllowanceMicroUsd)}</span>
     <span>Reset: <GatewayLimitTimestamp value={request.resetAt} /></span>

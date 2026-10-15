@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { formatOpenApiSnapshot } from "../../ee/apps/den-api/scripts/openapi-snapshot-format.ts";
 
-const flags = ["managedDeployments", "libraryUsage", "workbot", "calendarPolish", "permissions"];
+const flags = ["managedDeployments", "remoteSessionEvents", "workbot", "slackWorkbotReplies", "permissions"];
 
 function document(paths = {}, featureKeys = flags) {
   const featureKey = { type: "string", enum: featureKeys };
@@ -66,7 +66,7 @@ test("Git merges two PRs that each add a feature flag without a conflict", () =>
   const left = [...flags.slice(0, 2), "slackAssistant", ...flags.slice(2)];
   const right = [...flags.slice(0, 4), "automationCalendar", ...flags.slice(4)];
   const merged = merge(document({}), document({}, left), document({}, right));
-  const expected = ["managedDeployments", "libraryUsage", "slackAssistant", "workbot", "calendarPolish", "automationCalendar", "permissions"];
+  const expected = ["managedDeployments", "remoteSessionEvents", "slackAssistant", "workbot", "slackWorkbotReplies", "automationCalendar", "permissions"];
   assert.deepEqual(merged.components.schemas.AdminFeature.properties.key.enum, expected);
   assert.deepEqual(merged.components.schemas.CapabilityDisabledError.properties.feature.enum, expected);
 });

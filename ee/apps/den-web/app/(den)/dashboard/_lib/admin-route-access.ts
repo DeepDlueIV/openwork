@@ -13,6 +13,7 @@ import {
   getIntegrationsRoute,
   getMcpConnectionsRoute,
   getMembersRoute,
+  getNewRoleRoute,
   getOrgDashboardRoute,
   getPermissionsRoute,
   getPluginsRoute,
@@ -61,6 +62,8 @@ const ADMIN_ROUTE_RULES: readonly AdminRouteRule[] = [
     needs: MEMBERS_AREA_KEYS,
   },
   { prefix: `${getMembersRoute()}/teams`, allowed: (access) => access.canViewTeams, needs: ["teams.view"] },
+  // Creating a role makes a team and its permission set.
+  { prefix: getNewRoleRoute(), allowed: (access) => access.canManageTeams && access.canManagePermissions, needs: ["teams.manage", "permissions.manage"] },
   {
     prefix: `${getOrgDashboardRoute()}/manage-members`,
     allowed: (access) => access.canInviteMembers || access.canManageMembers || access.canRemoveMembers

@@ -20,7 +20,7 @@ import { getErrorMessage, requestJson } from "../../_lib/den-flow";
 import { permissionLockReason } from "../../_lib/den-org";
 import { DenButton, buttonVariants } from "../../_components/ui/button";
 import { DenCard } from "../../_components/ui/card";
-import { DenInput } from "../../_components/ui/input";
+import { DenSecretInput } from "../../_components/ui/secret-input";
 
 function statusStyles(status: EgressDiagnosticStep["status"]) {
   if (status === "passed") return "border-emerald-200 bg-emerald-50 text-emerald-800";
@@ -232,12 +232,11 @@ export function EgressDiagnosticsCard({ canView, canManage }: { canView: boolean
           <div className="mt-3 flex flex-wrap items-end gap-2">
             <label className="grid min-w-[280px] flex-1 gap-1">
               <span className="text-[12px] font-medium">Diagnostic bearer token</span>
-              <DenInput
+              <DenSecretInput
                 autoComplete="new-password"
                 minLength={24}
-                onChange={(event) => setBearerTokenDraft(event.target.value)}
+                onChange={setBearerTokenDraft}
                 placeholder="Paste the synthetic diagnostic token"
-                type="password"
                 value={bearerTokenDraft}
                 disabled={!canManage}
               />

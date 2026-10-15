@@ -15,6 +15,19 @@ function mcpAllowed(document: OpenApiDocument, method: string, path: string) {
   return isMcpOperationAllowed({ method, path, operation })
 }
 
+test("MCP agents can plan, prepare and follow managed deployments but never remove them or act as the installer", () => {
+  const document = readSnapshot()
+  assert.equal(mcpAllowed(document, "get", "/v1/managed-deployments/configuration"), true)
+  assert.equal(mcpAllowed(document, "get", "/v1/managed-deployments"), true)
+  assert.equal(mcpAllowed(document, "post", "/v1/managed-deployments"), true)
+  assert.equal(mcpAllowed(document, "post", "/v1/managed-deployments/{deploymentId}/launch"), true)
+
+  assert.equal(mcpAllowed(document, "delete", "/v1/managed-deployments/{deploymentId}"), false)
+  assert.equal(mcpAllowed(document, "post", "/v1/managed-deployments/{deploymentId}/runs/{runId}/enroll"), false)
+  assert.equal(mcpAllowed(document, "post", "/v1/managed-deployments/{deploymentId}/runs/{runId}/events"), false)
+  assert.equal(mcpAllowed(document, "post", "/v1/managed-deployments/{deploymentId}/heartbeat"), false)
+})
+
 test("MCP agents can read permission sets but never create, change or delete them", () => {
   const document = readSnapshot()
   assert.equal(mcpAllowed(document, "post", "/v1/permissions/sets"), false)

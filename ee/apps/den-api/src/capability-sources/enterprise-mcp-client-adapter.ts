@@ -177,7 +177,10 @@ function translateEnterpriseMcpError(
   if (toolResult instanceof EnterpriseMcpToolResultError) {
     return providerToolDiagnosticError({
       tracker,
-      result: toolResult.providerSignal ? { structuredContent: toolResult.providerSignal } : undefined,
+      result: {
+        content: toolResult.providerText.map((text) => ({ type: "text", text })),
+        ...(toolResult.providerSignal ? { structuredContent: toolResult.providerSignal } : {}),
+      },
     })
   }
   const enterpriseError = chain.find((cause) => cause instanceof EnterpriseMcpClientError)
@@ -388,6 +391,26 @@ function runExternalMcpToolCall(
 
 export function callExternalMcpTool(input: ExternalMcpToolCallInput) {
   return runExternalMcpToolCall(input)
+}
+
+/** Lists the provider's tools and calls one in a single session; beforeCall can refuse in between. */
+export function callListedExternalMcpTool(input: ExternalMcpToolCallInput & {
+  beforeCall: (tools: Awaited<ReturnType<typeof listExternalMcpTools>>) => void | Promise<void>
+}) {
+  return runEnterpriseMcpOperation({
+    connection: input.connection,
+    member: input.member,
+    diagnosticReferenceId: input.diagnosticReferenceId,
+    lifecycleDeadline: input.lifecycleDeadline,
+    operationTimeoutMs: EXTERNAL_MCP_TOOL_CALL_TIMEOUT_MS,
+    operation: (client, connection) => client.callListedTool({
+      connection,
+      redirectUri: input.redirectUri,
+      toolName: input.toolName,
+      arguments: input.args,
+      beforeCall: input.beforeCall,
+    }),
+  })
 }
 
 export function callExternalMcpToolRaw(input: ExternalMcpToolCallInput) {

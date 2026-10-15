@@ -35,7 +35,7 @@ import type { InferenceOrganizationMetadata, InferenceTier, InferenceWindowType 
 import { assertManagedModelsAllowed, ManagedModelsPolicyError } from "@openwork/types/den/managed-models-policy"
 import { db } from "./db.js"
 import { env } from "./env.js"
-import { assertOrganizationManagedModelsAllowed, updateOrganizationMetadata } from "./organization-metadata.js"
+import { assertOrganizationManagedModelsAllowed, readOrganizationMetadataColumn, updateOrganizationMetadata } from "./organization-metadata.js"
 import { ensureMemberGatewayKey } from "./gateway-keys.js"
 import { revokeMemberGatewayCredentials } from "./llm/inference-provider-lifecycle.js"
 import { freeInferenceDigest } from "@openwork-ee/utils/free-inference-digest"
@@ -476,11 +476,7 @@ export async function repairMemberInferenceAccessIfNeeded(input: {
   memberId: MemberId
 }): Promise<boolean> {
   if (!await organizationAllowsManagedModels(input.organizationId)) return false
-  const [organization] = await db
-    .select({ metadata: OrganizationTable.metadata })
-    .from(OrganizationTable)
-    .where(eq(OrganizationTable.id, input.organizationId))
-    .limit(1)
+  const organization = await readOrganizationMetadataColumn(input.organizationId)
 
   const inference = readInferenceMetadata(organization?.metadata ?? null)
   if (!inference) {

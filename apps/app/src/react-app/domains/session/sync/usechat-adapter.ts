@@ -11,6 +11,7 @@ import {
   STRUCTURED_OUTPUT_TOOL,
 } from "./parse-tool-parts";
 import { readComposerPill } from "../surface/composer/composer-pills";
+import { BACKGROUND_SHELL_NOTICE_KEY, readBackgroundShellNotice } from "../../../../app/lib/background-shell-tasks";
 import {
   presentOpencodeSessionError,
   type OpencodeSessionErrorPresentation,
@@ -148,6 +149,7 @@ export function textPartToUIPart(part: TextPart): UIMessage["parts"][number] | n
   if (part.synthetic || part.ignored) return null;
   const composerToken = part.metadata?.openworkComposerToken;
   const composerPill = readComposerPill(part.metadata?.openworkComposerPill);
+  const backgroundShell = readBackgroundShellNotice(part.metadata?.[BACKGROUND_SHELL_NOTICE_KEY]);
   return {
     type: "text",
     text: part.text,
@@ -156,6 +158,7 @@ export function textPartToUIPart(part: TextPart): UIMessage["parts"][number] | n
       partId: part.id,
       ...(typeof composerToken === "string" ? { composerToken } : {}),
       ...(composerPill ? { composerPill } : {}),
+      ...(backgroundShell ? { backgroundShell } : {}),
       ...(part.metadata?.openworkPastedText === true ? { pastedText: true } : {}),
     } },
   };

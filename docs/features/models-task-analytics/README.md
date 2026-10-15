@@ -1,16 +1,16 @@
 # OpenWork Models task analytics
 
 The API and migration land first in #4567. This desktop follow-up uses that
-existing API after its deployment is verified. The organization rollout capability
-remains off by default, and analytics still requires explicit admin consent.
+existing API after its deployment is verified. Analytics still requires
+explicit admin consent.
 
-Task analytics is included with a paid OpenWork Models subscription. An internal
-organization capability, `modelsAnalytics`, controls rollout and defaults to off.
-After rollout, workspace admins see **Unlock custom insights** on the Models page
+Task analytics is included with a paid OpenWork Models subscription and is
+available to every organization (the former `modelsAnalytics` rollout flag is
+retired). Workspace admins see **Unlock custom insights** on the Models page
 and can choose **Enable task analytics** or **Not now**. Purchasing or enabling
 Models does not grant analytics consent.
 
-All collection, reads and exports require the rollout capability, an active or
+All collection, reads and exports require an active or
 trialing Models subscription, Models enabled, and explicit versioned consent.
 Organization members can report their own tasks; only admins can read organization
 analytics and change its settings. Events are scoped to the authenticated member
@@ -48,7 +48,7 @@ this feature. Analytics errors are isolated from model responses.
 Turning analytics off stops new collection and disables export. Existing history
 is retained. Deleting the workspace erases its analytics and stored integration
 credentials. Re-enabling collects from the new consent time; there is no backfill
-of tasks performed while off. Downgrades and rollout removal deny analytics access
+of tasks performed while off. Downgrades deny analytics access
 without changing existing Models keys. A later eligible subscription restores
 access to retained history.
 
@@ -62,17 +62,14 @@ network calls off the inference request path. Turning analytics back on does not
 automatically restart export. Opt-out and disconnect wait for any already-authorized
 export to finish before confirming the change; no later batch can use revoked consent.
 
-## Rollout and upgrade proof
+## Upgrade proof
 
-Apply `0092_models_task_analytics.sql` before enabling the capability. The migration
-only adds two tables and their indexes. Organizations without rollout access do
-not read the new tables on the inference path, so Models continues working if the
-application is deployed before the migration.
+Apply `0092_models_task_analytics.sql` before deploying. The migration only adds
+two tables and their indexes.
 
-Deploy the Den routes before publishing the desktop integration, then enable the
-capability for selected organizations. A newer desktop receiving an unavailable
-settings route keeps analytics off and leaves chat running; failed checks are cached
-to avoid retrying on every streamed update.
+Deploy the Den routes before publishing the desktop integration. A newer desktop
+receiving an unavailable settings route keeps analytics off and leaves chat
+running; failed checks are cached to avoid retrying on every streamed update.
 
 The `models-analytics-upgrade` e2e journey was removed in October 2026: it could no
 longer pass after the model picker changed. There is no end-to-end coverage of the

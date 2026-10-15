@@ -16,6 +16,7 @@ import { createDenTypeId, normalizeDenTypeId } from "@openwork-ee/utils/typeid"
 import type { Hono } from "hono"
 import { describeRoute, type DescribeRouteOptions } from "hono-openapi"
 import { z } from "zod"
+import { refuseMachineSecrets } from "../../middleware/refuse-machine-secrets.js"
 import { db } from "../../db.js"
 import { CustomProviderConfigError, normalizeCustomProviderConfig } from "../../llm/custom-provider.js"
 import { probeEndpoint, verifyModels } from "../../llm/endpoint-probe.js"
@@ -1168,6 +1169,7 @@ export function registerOrgLlmProviderRoutes<T extends { Variables: OrgRouteVari
       responses: declarativeResponses(llmProviderResponseSchema),
     }),
     orgPermissionRoute("llm_providers.update"),
+    refuseMachineSecrets(["apiKey", "apiKeys"]),
     paramValidator(externalKeyParamsSchema),
     jsonValidator(llmProviderWriteSchema),
     async (c) => {
@@ -1246,6 +1248,7 @@ export function registerOrgLlmProviderRoutes<T extends { Variables: OrgRouteVari
       },
     }),
     orgMemberRoute(),
+    refuseMachineSecrets(["apiKey"]),
     jsonValidator(endpointProbeRequestSchema),
     async (c) => {
       const input = c.req.valid("json")
@@ -1535,6 +1538,7 @@ export function registerOrgLlmProviderRoutes<T extends { Variables: OrgRouteVari
       },
     }),
     orgMemberRoute(),
+    refuseMachineSecrets(["apiKey", "apiKeys"]),
     paramValidator(orgLlmProviderParamsSchema),
     jsonValidator(memberCredentialWriteSchema),
     resolveMemberTeamsMiddleware,
@@ -1721,6 +1725,7 @@ export function registerOrgLlmProviderRoutes<T extends { Variables: OrgRouteVari
       },
     }),
     orgPermissionRoute("llm_provider_credentials.manage"),
+    refuseMachineSecrets(["apiKey", "apiKeys"]),
     paramValidator(orgLlmProviderMemberCredentialParamsSchema),
     jsonValidator(adminMemberCredentialWriteSchema),
     async (c) => {
@@ -1838,6 +1843,7 @@ export function registerOrgLlmProviderRoutes<T extends { Variables: OrgRouteVari
       },
     }),
     orgMemberRoute(),
+    refuseMachineSecrets(["apiKey", "apiKeys"]),
     jsonValidator(llmProviderWriteSchema),
     async (c) => createLlmProvider(c, c.get("organizationContext"), c.req.valid("json")),
   )
@@ -1857,6 +1863,7 @@ export function registerOrgLlmProviderRoutes<T extends { Variables: OrgRouteVari
       },
     }),
     orgMemberRoute(),
+    refuseMachineSecrets(["apiKey", "apiKeys"]),
     paramValidator(orgLlmProviderParamsSchema),
     jsonValidator(llmProviderWriteSchema),
     async (c) => updateLlmProvider(c, c.get("organizationContext"), c.req.valid("param").llmProviderId, c.req.valid("json")),

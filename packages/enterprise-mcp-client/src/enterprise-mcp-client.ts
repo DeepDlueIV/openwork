@@ -9,6 +9,7 @@ import { z } from "zod"
 import type {
   EnterpriseMcpAuthorization,
   EnterpriseMcpAbandonAuthorizationInput,
+  EnterpriseMcpCallListedToolInput,
   EnterpriseMcpCallToolInput,
   EnterpriseMcpClient,
   EnterpriseMcpClientOptions,
@@ -29,6 +30,7 @@ import type {
 import { EnterpriseMcpClientError, EnterpriseMcpLifecycleDeadlineError, EnterpriseMcpToolResultError } from "./errors.js"
 import { ENTERPRISE_MCP_REQUESTED_SCOPES_LIMIT } from "./contracts.js"
 import { EnterpriseMcpOAuthProvider } from "./oauth-provider.js"
+import { createOAuthLoginDiscoveryFetch } from "./oauth-login-discovery.js"
 import { createEnterpriseMcpRequestObserver, type EnterpriseMcpRequestObserver } from "./request-observer.js"
 import { createEnterpriseMcpTokenResponseCompat } from "./token-response-compat.js"
 import { collectEnterpriseMcpTools } from "./tool-catalog.js"
@@ -247,7 +249,9 @@ export function createEnterpriseMcpClient(options: EnterpriseMcpClientOptions): 
     controller.signal.addEventListener("abort", () => clearTimeout(timeout), { once: true })
 
     const compatibleFetch = createEnterpriseMcpTokenResponseCompat({
-      fetch: configuredFetch,
+      fetch: input.connection.authorization.type === "oauth" && input.flow.kind === "connect"
+        ? createOAuthLoginDiscoveryFetch({ fetch: configuredFetch, serverUrl })
+        : configuredFetch,
       onTranslation: (translation) => emitDiagnostic({
         kind: "request",
         connectionId: input.connection.id,
@@ -679,6 +683,32 @@ export function createEnterpriseMcpClient(options: EnterpriseMcpClientOptions): 
         redirectUri: input.redirectUri,
         operationPhase: "tool-execution",
         operation: async (session) => {
+          const result = await session.client.callTool({
+            name: toolName,
+            arguments: input.arguments,
+          }, session.requestOptions)
+          if ("isError" in result && result.isError) throw new EnterpriseMcpToolResultError(result)
+          return result
+        },
+      })
+    },
+
+    async callListedTool(input: EnterpriseMcpCallListedToolInput) {
+      const toolName = configurationValue(() => toolNameSchema.parse(input.toolName))
+      configurationValue(() => assertEnterpriseMcpToolArguments(input.arguments))
+      return runConnectedOperation({
+        connection: input.connection,
+        redirectUri: input.redirectUri,
+        operationPhase: "tool-execution",
+        operation: async (session) => {
+          const tools = await collectEnterpriseMcpTools({
+            requestOptions: session.requestOptions,
+            listPage: (cursor, options) => session.client.listTools(
+              cursor ? { cursor } : undefined,
+              options,
+            ),
+          })
+          await input.beforeCall(tools)
           const result = await session.client.callTool({
             name: toolName,
             arguments: input.arguments,

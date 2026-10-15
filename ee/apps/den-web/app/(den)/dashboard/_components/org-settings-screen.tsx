@@ -18,6 +18,8 @@ import { DenNotice } from "../../_components/ui/notice";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
 import { EnterprisePlanNotice } from "./enterprise-plan-notice";
 import { OrgWebOriginsSection } from "./org-web-origins-section";
+import { OrgDefaultModelSection } from "./default-model-section";
+import { useDefaultModelFeatureOn } from "./default-model-data";
 import {
   allPublishedDesktopVersionsAllowed,
   compareDesktopVersions,
@@ -236,6 +238,8 @@ export function OrgSettingsScreen() {
     orgContext?.currentMember.permissions,
   );
   const canManageSettings = access.canManageSettings;
+  // orgDefaultModel: admins choose the model new desktop chats start with.
+  const defaultModelOn = useDefaultModelFeatureOn();
   const canManageDesktopVersions = access.canManageSettings;
   const canDeleteOrganization = access.canDeleteOrganization;
   const draftAllowedDomains = useMemo(
@@ -519,7 +523,6 @@ export function OrgSettingsScreen() {
           ) : null}
         </span>
       )}
-      colors={["#D9F99D", "#0F172A", "#0F766E", "#FDE68A"]}
     >
       {orgContext && !orgContext.entitlements.orgControls ? (
         <EnterprisePlanNotice feature="Enforced SSO and desktop version control" />
@@ -812,6 +815,10 @@ export function OrgSettingsScreen() {
           </DenButton>
         </div>
       </form>
+
+      {defaultModelOn && access.canViewModelsSettings ? (
+        <OrgDefaultModelSection canManage={access.canManageModelsSettings} />
+      ) : null}
 
       {access.canViewWebOrigins ? (
         <OrgWebOriginsSection orgId={organizationId} canManage={access.canManageWebOrigins} />

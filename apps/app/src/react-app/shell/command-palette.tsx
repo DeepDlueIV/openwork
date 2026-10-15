@@ -36,8 +36,7 @@ import { useCheckDesktopRestriction } from "../domains/cloud/desktop-config-prov
 import { usePlatform } from "../kernel/platform";
 import { formatChord, resolveShortcutOs } from "@/react-app/domains/shortcuts/shortcut-keys";
 import { ModelSourceIcon } from "@/react-app/domains/models/model-picker-list";
-import { ProviderIcon } from "../design-system/provider-icon";
-import { resolveExtensionIconSrc } from "../design-system/extension-icon-src";
+import { OpenWorkMark, ProviderIcon } from "../design-system/provider-icon";
 import { isAutoModel, modelTitle, publicModelTitle } from "@/react-app/domains/models/model-catalog";
 import { useModelCollectionsStore } from "../domains/session/models/model-collections-store";
 import {
@@ -656,7 +655,7 @@ export function CommandPalette(props: CommandPaletteProps) {
       }}
     >
       {model ? <span data-slot="model-provider-mark" className="flex size-4 shrink-0 items-center justify-center">
-        {isAutoModel(model) ? <img src={resolveExtensionIconSrc("/openwork-mark.svg")} alt="OpenWork" className="size-4" />
+        {isAutoModel(model) ? <OpenWorkMark className="size-4 text-dls-accent dark:text-foreground" />
           : <ProviderIcon providerId={model.providerID} providerName={model.description} size={16} />}
       </span> : null}
       <div className="min-w-0 flex-1">

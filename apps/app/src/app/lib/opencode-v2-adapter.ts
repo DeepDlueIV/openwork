@@ -25,6 +25,21 @@ import type { McpStatusMap, OpencodeEvent } from "../types";
 import { normalizeDirectoryPath } from "../utils";
 import { dispatchProviderCatalogChanged } from "./provider-events";
 import { attachmentMarker, attachmentNoteFilenames, composeV2Prompt, splitV2Prompt, wrapPastedText, type PromptAttachment } from "./v2-prompt-context";
+import {
+  BACKGROUND_SHELL_FINISHED_EVENT,
+  BACKGROUND_SHELL_NOTICE_KEY,
+  BACKGROUND_SHELL_STARTED_EVENT,
+  SHELL_CREATED_EVENT,
+  SHELL_DELETED_EVENT,
+  SHELL_EXITED_EVENT,
+  backgroundShellIdFromToolMetadata,
+  backgroundShellNoticeLabel,
+  backgroundShellTasksEnabled,
+  readBackgroundShellCompletion,
+  readEngineShell,
+  type BackgroundShellNotice,
+  type EngineShell,
+} from "./background-shell-tasks";
 
 type RequestOptions = {
   signal?: AbortSignal;
@@ -60,6 +75,31 @@ function selectedSkill(part: PromptPart): Record<string, unknown> | null {
   // their Connect instruction instead of resolving them in the local registry.
   const id = readString(selection, "id");
   return id && /^(?:skill|plugin):/.test(id) ? null : selection;
+}
+
+type SkillResolution = { ids: string[] } | { missing: string } | { ambiguous: string; candidates: string[] };
+
+/**
+ * The engine keys a skill by its folder, the name OpenWork lists and inserts,
+ * while its display name comes from frontmatter and need not be unique (a
+ * renamed copy keeps it). Match the folder first; fall back to a display name
+ * only when exactly one skill carries it.
+ */
+function resolveSelectedSkills(selections: readonly Record<string, unknown>[], registry: readonly unknown[]): SkillResolution {
+  const ids: string[] = [];
+  for (const selection of selections) {
+    const id = readString(selection, "id");
+    const name = readString(selection, "name");
+    const wanted = id ?? name;
+    let matches = wanted ? registry.filter((skill) => readString(skill, "id") === wanted) : [];
+    if (!id && name && matches.length === 0) matches = registry.filter((skill) => readString(skill, "name") === name);
+    const label = name ?? id ?? "(unknown)";
+    if (matches.length > 1) return { ambiguous: label, candidates: matches.flatMap((skill) => readString(skill, "id") ?? []) };
+    const resolved = readString(matches[0], "id");
+    if (!resolved) return { missing: label };
+    if (!ids.includes(resolved)) ids.push(resolved);
+  }
+  return { ids };
 }
 
 function isPastedText(part: PromptPart): boolean {
@@ -436,6 +476,10 @@ function mapV2Session(value: unknown, directory: string | undefined, eventCreate
   const updated = readNumber(time, "updated") ?? readNumber(source, "updated") ?? created;
   const archived = readNumber(time, "archived");
   const parentID = readString(source, "parentID");
+  const model = readRecord(source, "model");
+  const modelID = readString(model, "id") ?? readString(model, "modelID");
+  const providerID = readString(model, "providerID");
+  const variant = readString(model, "variant");
   const revert = readRecord(source, "revert");
   const revertMessageID = revert && readString(revert, "messageID");
   const mapped: Session = {
@@ -452,6 +496,9 @@ function mapV2Session(value: unknown, directory: string | undefined, eventCreate
       ...(archived === undefined ? {} : { archived }),
     },
     ...(parentID ? { parentID } : {}),
+    ...(providerID && modelID ? {
+      model: { providerID, id: modelID, ...(variant ? { variant } : {}) },
+    } : {}),
     ...(revertMessageID ? { revert: { messageID: revertMessageID } } : {}),
   };
   return mapped;
@@ -823,6 +870,25 @@ function mapV2UserPart(part: Part): Part[] {
   }];
 }
 
+/**
+ * A background command's completion notice as a compact transcript row. The
+ * engine's own text is `<shell …>output</shell>` for the model; the person
+ * sees one plain sentence, and the row keeps its details in part metadata.
+ */
+function backgroundShellNoticeMessage(id: string, sessionID: string, created: number, notice: BackgroundShellNotice): V2MappedMessage {
+  return {
+    info: { id, sessionID, role: "system", time: { created } },
+    parts: [{
+      id: `${id}:0`,
+      messageID: id,
+      sessionID,
+      type: "text",
+      text: backgroundShellNoticeLabel(notice),
+      metadata: { [BACKGROUND_SHELL_NOTICE_KEY]: notice },
+    }],
+  };
+}
+
 function mapV2Message(
   value: unknown,
   sessionID: string,
@@ -831,7 +897,15 @@ function mapV2Message(
   if (!isRecord(value)) return null;
   // Native instruction/catalog updates belong to the model context, not the
   // visible conversation. Filter by role so identical user text is preserved.
-  if (messageRole(value) === "system") return null;
+  // The one exception is a background command's completion notice, which the
+  // chat shows as a short row while `backgroundShellTasks` is on.
+  if (messageRole(value) === "system") {
+    const notice = backgroundShellTasksEnabled() ? readBackgroundShellCompletion(value) : null;
+    const id = readString(value, "id") ?? readString(value, "messageID");
+    if (!notice || !id) return null;
+    const created = readNumber(readRecord(value, "time"), "created") ?? readNumber(value, "timestamp") ?? 0;
+    return backgroundShellNoticeMessage(id, readString(value, "sessionID") ?? sessionID, created, notice);
+  }
   const id = readString(value, "id") ?? readString(value, "messageID");
   if (!id) return null;
   const time = readRecord(value, "time");
@@ -1333,10 +1407,39 @@ export function translateV2Event(
     } }] : null;
   }
 
+  if (type === SHELL_CREATED_EVENT) {
+    // Forward the engine's own Shell.Info; readers parse it with readEngineShell.
+    const info = readRecord(properties, "info");
+    return info && readEngineShell(info) ? [{ type: SHELL_CREATED_EVENT, properties: info }] : null;
+  }
+
+  if (type === SHELL_EXITED_EVENT || type === SHELL_DELETED_EVENT) {
+    const id = readString(properties, "id");
+    if (!id) return null;
+    return [{ type, properties: {
+      id,
+      ...(type === SHELL_EXITED_EVENT ? { status: readString(properties, "status"), exit: readNumber(properties, "exit") ?? null } : {}),
+    } }];
+  }
+
   if (type === "session.inbox.enqueued") {
     const messageID = readString(properties, "inboxID");
     const item = readRecord(properties, "item");
     const payload = readRecord(item, "payload");
+    const finished = readString(item, "type") === "synthetic" ? readBackgroundShellCompletion(payload) : null;
+    if (sessionID && finished) {
+      const created = readNumber(value, "created") ?? readNumber(properties, "timestamp") ?? Date.now();
+      const notice = messageID && backgroundShellTasksEnabled()
+        ? backgroundShellNoticeMessage(messageID, sessionID, created, finished)
+        : null;
+      return [
+        { type: BACKGROUND_SHELL_FINISHED_EVENT, properties: { sessionID, shellID: finished.shellId, outcome: finished.outcome, exit: finished.exit } },
+        ...(notice ? [
+          { type: "message.updated", properties: { info: notice.info } },
+          ...notice.parts.map((part): OpencodeEvent => ({ type: "message.part.updated", properties: { part } })),
+        ] : []),
+      ];
+    }
     if (!sessionID || !messageID || readString(item, "type") !== "user" || !payload) return null;
     // The inbox ID becomes the persisted user-message ID on delivery. Using
     // it here lets the live row reconcile with history without duplicating it.
@@ -1607,12 +1710,26 @@ export function translateV2Event(
 
   if (type === "session.tool.success" || type === "session.next.tool.success") {
     const stream = resolveToolStream(properties, state);
-    if (!stream) return null;
+    // A background shell call succeeds at once with its shell id. Report it
+    // even when this stream joined after the call began (no tool stream).
+    const shellID = backgroundShellIdFromToolMetadata(readRecord(properties, "metadata") ?? readRecord(properties, "structured"));
+    const background: OpencodeEvent[] = sessionID && shellID && (!stream || stream.tool === "shell" || stream.tool === "bash")
+      ? [{ type: BACKGROUND_SHELL_STARTED_EVENT, properties: {
+        sessionID,
+        shellID,
+        command: typeof stream?.input.command === "string" ? stream.input.command : null,
+        startedAt: stream?.start ?? toolEventTimestamp(value, properties),
+      } }]
+      : [];
+    if (!stream) return background.length ? background : null;
     updateToolStreamMetadata(stream, properties);
     const part = completedToolPart(stream, properties, toolEventTimestamp(value, properties), state.taskSessions);
     state.tools.set(toolStreamKey(stream.sessionID, stream.callID), null);
     clearV2SessionTranslation(state, stream.sessionID);
-    return [part, ...codeModeConnectionParts(part)].map((next) => ({ type: "message.part.updated", properties: { part: next } }));
+    return [
+      ...[part, ...codeModeConnectionParts(part)].map((next): OpencodeEvent => ({ type: "message.part.updated", properties: { part: next } })),
+      ...background,
+    ];
   }
 
   if (type === "session.tool.failed" || type === "session.next.tool.failed") {
@@ -1959,6 +2076,12 @@ export function isOpencodeV2Client(client: ReturnType<typeof createClient>): cli
   return v2Clients.has(client);
 }
 
+export type SetSessionModelParameters = {
+  sessionID: string;
+  model: { providerID: string; modelID: string };
+  variant?: string | null;
+};
+
 export function createClientV2(
   opencode2BaseUrl: string,
   directory: string | undefined,
@@ -2064,6 +2187,9 @@ export function createClientV2(
       "POST",
       `/api/session/${encodeURIComponent(parameters.sessionID)}/permission/${encodeURIComponent(parameters.requestID)}/reply`,
       {
+        // OpenCode v2 2.0.26 reads `decision` and refuses a body without it;
+        // earlier v2 builds read `reply`, and extra keys are ignored.
+        decision: parameters.reply ?? "once",
         reply: parameters.reply ?? "once",
         ...(parameters.message ? { message: parameters.message } : {}),
       },
@@ -2335,6 +2461,22 @@ export function createClientV2(
       }
       return successfulResult(result, statuses);
     },
+    setModel: async (
+      parameters: SetSessionModelParameters,
+      options?: RequestOptions,
+    ): Promise<FieldsResult<Record<string, never>>> => {
+      const modelResult = await request(
+        "POST",
+        `/api/session/${encodeURIComponent(parameters.sessionID)}/model`,
+        { model: {
+          providerID: parameters.model.providerID,
+          id: parameters.model.modelID,
+          ...(parameters.variant === undefined ? {} : { variant: parameters.variant ?? "default" }),
+        } },
+        options?.signal,
+      );
+      return modelResult.response.ok ? successfulResult(modelResult, {}) : failedResult(modelResult);
+    },
     promptAsync: async (
       parameters: PromptParameters,
       options?: RequestOptions,
@@ -2354,19 +2496,23 @@ export function createClientV2(
       if (selections.length) {
         // Resolve against the same workspace's live registry, never guess an ID
         // from prose or silently fall back to asking the model to load a skill.
-        const catalog = await request("GET", "/api/skill", undefined, options?.signal);
-        if (!catalog.response.ok) return failedResult(catalog);
-        for (const selection of selections) {
-          const id = readString(selection, "id");
-          const name = readString(selection, "name");
-          const matches = responseItems(catalog.payload).filter((skill) => id
-            ? readString(skill, "id") === id : Boolean(name) && readString(skill, "name") === name);
-          const resolvedID = matches.length === 1 ? readString(matches[0], "id") : undefined;
-          if (!resolvedID) {
-            return unsupportedResult(baseUrl, "skill.attachment", `Selected skill ${name ?? id ?? "(unknown)"} is unavailable or ambiguous in OpenCode v2. Nothing was sent.`);
-          }
-          if (!skills.some((skill) => skill.id === resolvedID)) skills.push({ id: resolvedID });
+        // A folder the engine has just opened, or a skill written a moment ago,
+        // can be missing from the first read, so look again briefly first.
+        let resolution: SkillResolution = { missing: "(unknown)" };
+        for (const delay of [0, 250, 750, 1_500]) {
+          if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+          const catalog = await request("GET", "/api/skill", undefined, options?.signal);
+          if (!catalog.response.ok) return failedResult(catalog);
+          resolution = resolveSelectedSkills(selections, responseItems(catalog.payload));
+          if (!("missing" in resolution)) break;
         }
+        if ("missing" in resolution) {
+          return unsupportedResult(baseUrl, "skill.attachment", `Selected skill ${resolution.missing} is not available in OpenCode v2. Nothing was sent.`);
+        }
+        if ("ambiguous" in resolution) {
+          return unsupportedResult(baseUrl, "skill.attachment", `Selected skill ${resolution.ambiguous} matches more than one skill in OpenCode v2 (${resolution.candidates.join(", ")}). Rename one, then send again. Nothing was sent.`);
+        }
+        skills.push(...resolution.ids.map((id) => ({ id })));
         // The pinned native prompt materializes attachments without running the
         // skill tool's permission check. Ask the engine (including its policy
         // hooks) rather than treating catalog membership as authorization.
@@ -2669,12 +2815,34 @@ export function createClientV2(
   Object.assign(compatibilityClient.mcp, adapter.mcp);
   Object.assign(compatibilityClient.event, adapter.event);
   v2Clients.add(compatibilityClient);
-  return Object.assign(compatibilityClient, {
+  /**
+   * Commands still running in this engine location, across conversations.
+   * Exited commands are not listed, so this is the truth to resync against
+   * after the volatile event stream may have dropped an exit.
+   */
+  const listRunningShells = async (options?: RequestOptions): Promise<FieldsResult<EngineShell[]>> => {
+    const query = directory ? `?${new URLSearchParams({ "location[directory]": directory }).toString()}` : "";
+    const result = await request("GET", `/api/shell${query}`, undefined, options?.signal);
+    if (!result.response.ok) return failedResult(result);
+    if (!Array.isArray(responseData(result.payload))) return failedResult({ ...result, payload: { name: "InvalidV2ShellListResponse" } });
+    return successfulResult(result, responseItems(result.payload).flatMap((item) => {
+      const shell = readEngineShell(item);
+      return shell && shell.status === "running" ? [shell] : [];
+    }));
+  };
+
+  const client = Object.assign(compatibilityClient, {
+    listRunningShells,
     listSessionsPage: session.list, listMessagesPage: session.messages,
     listSessionQuestions: (parameters: SessionParameters, options?: RequestOptions) => listQuestions(parameters, options),
     replySessionQuestion: (parameters: SessionParameters & { requestID: string; answers: string[][] }, options?: RequestOptions) =>
       settleQuestion(parameters, options),
   });
+  // The SDK exposes session through a getter; its object is augmented above,
+  // not reassigned. Reflect that runtime augmentation in the returned type.
+  return client as typeof client & {
+    session: typeof client.session & Pick<typeof adapter.session, "setModel">;
+  };
 }
 
 export type OpencodeV2Client = ReturnType<typeof createClientV2>;

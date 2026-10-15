@@ -1,3 +1,4 @@
+import type { CapabilityUsageSource } from "@openwork-ee/den-db/schema"
 import { recordConnectorCall, toolCallFailed } from "../capability-usage.js"
 import type { DenTypeId } from "@openwork-ee/utils/typeid"
 import type { Hono } from "hono"
@@ -200,6 +201,8 @@ export async function executeNativeCapability(input: {
   query?: unknown
   body?: unknown
   includePayload?: boolean
+  /** What started this call, recorded with its Library usage event. */
+  usageSource: CapabilityUsageSource
 }): Promise<NativeCapabilityToolResult | null> {
   const parsed = parseNativeCapabilityName(input.name)
   if (!parsed) return null
@@ -245,8 +248,7 @@ export async function executeNativeCapability(input: {
       organizationId: input.organizationId,
       orgMembershipId: input.member.orgMembershipId,
       connectionId: resolved.connection.id,
-      toolName: parsed.toolName,
-      via: "native",
+      source: input.usageSource,
     }, toolCallFailed)
   }
   return call

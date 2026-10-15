@@ -136,8 +136,3 @@ export async function createTeamWith(admin: DenSession, name: string, memberIds:
 export function setTeamMembers(admin: DenSession, teamId: string, memberIds: string[], options: ScopeOptions = {}): Promise<DenFetchResult> {
   return sessionCall(admin, `/v1/teams/${encodeURIComponent(teamId)}`, "PATCH", { memberIds }, options);
 }
-
-/** A person tries to give someone else access to a plugin. */
-export function sharePluginWithMember(session: DenSession, pluginId: string, orgMembershipId: string, options: ScopeOptions = {}): Promise<DenFetchResult> {
-  return sessionCall(session, `/v1/plugins/${encodeURIComponent(pluginId)}/access`, "POST", { orgMembershipId, role: "viewer" }, options);
-}

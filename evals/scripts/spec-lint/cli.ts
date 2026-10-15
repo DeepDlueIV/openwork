@@ -1,9 +1,9 @@
-// Lints evals/core and evals/proofs (and rejects anything in the retired
-// evals/specs), and checks evals/promises.ts against evals/core. Exits 1 on any error.
+// Lints evals/core, evals/proofs and the retired evals/specs, and checks that
+// every journey in evals/journeys.ts exists. Exits 1 on any error.
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 import { fileURLToPath } from "node:url";
-import { promises } from "../../promises.ts";
+import { journeys } from "../../journeys.ts";
 import { lintSource, type Violation } from "./lint.ts";
 
 const evalsRoot = fileURLToPath(new URL("../..", import.meta.url));
@@ -19,22 +19,10 @@ function filesIn(directory: string): string[] {
 
 const files = ["core", "proofs", "specs"].flatMap(filesIn);
 const errors: Violation[] = [];
-for (const file of files) {
-  const text = readFileSync(join(evalsRoot, file), "utf8");
-  errors.push(...lintSource(file, text));
-}
-
-const ids = new Set<string>();
-const listed = new Set<string>();
-for (const promise of promises) {
-  if (ids.has(promise.id)) errors.push({ rule: "promise-required", file: "promises.ts", line: 1, message: `Duplicate promise id ${promise.id}.` });
-  ids.add(promise.id);
-  for (const name of promise.core) {
-    const file = `core/${name}.e2e.test.ts`;
-    if (listed.has(name)) errors.push({ rule: "promise-required", file: "promises.ts", line: 1, message: `${file} is listed under two promises.` });
-    listed.add(name);
-    if (!files.includes(file)) errors.push({ rule: "promise-required", file: "promises.ts", line: 1, message: `${promise.id} lists ${file}, which does not exist. Restore the journey or change the promise in review.` });
-  }
+for (const file of files) errors.push(...lintSource(file, readFileSync(join(evalsRoot, file), "utf8")));
+for (const name of Object.keys(journeys)) {
+  const file = `core/${name}.e2e.test.ts`;
+  if (!files.includes(file)) errors.push({ rule: "allowed-files", file: "journeys.ts", line: 1, message: `${file} is listed in evals/journeys.ts but does not exist. Restore it or remove it from the list in review.` });
 }
 
 for (const violation of errors) console.error(`evals/${violation.file}:${violation.line} spec/${violation.rule}: ${violation.message}`);

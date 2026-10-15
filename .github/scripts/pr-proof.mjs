@@ -22,7 +22,8 @@ export function packagedJourney(spec) {
 }
 
 // Packaged journeys that need a signed macOS bundle; packaged-smoke-macos.mjs
-// builds and runs them. Every other packaged journey runs on Linux.
+// builds and runs them. Any other packaged-* journey would run through the
+// Linux packaged-smoke.mjs, which boots only app-smoke and rejects other names.
 const MACOS_PACKAGED_JOURNEYS = new Set(["packaged-update-install"]);
 
 /** Runner operating system a packaged proof spec needs: "macos" or "linux". */
@@ -55,20 +56,6 @@ export function selectProof(files) {
   const core = files.some(file => !docsOnlyFile(file.filename)) ? CORE_SPECS : [];
   const specs = [...new Set([...changed, ...core])].sort();
   return { specs };
-}
-
-const PROOF_LIMIT = 32;
-const JOURNEY_SPEC = /^evals\/(?:core\/.+\.e2e|proofs\/.+\.proof)\.test\.ts$/;
-
-/**
- * At most 32 changed specs run as PR proof. Over that, a change made only of
- * core journeys and proofs keeps the core journeys and leaves the rest to the
- * core-journeys workflow; any other oversized change must be split.
- */
-export function boundedProofSelection(specs) {
-  if (specs.length <= PROOF_LIMIT) return specs;
-  if (specs.every(spec => JOURNEY_SPEC.test(spec))) return specs.filter(spec => CORE_SPECS.includes(spec));
-  throw new Error(`More than ${PROOF_LIMIT} changed E2E specs; bounded CI selection unavailable. Split the change.`);
 }
 
 export function proofLanes(allSpecs, { event, current, repo, actor, triggeringActor }, tagged = () => false) {

@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { appendFile, readFile } from "node:fs/promises";
 import { internalProofContributor } from "./internal-proof-contributor.mjs";
-import { CORE_SPECS, boundedProofSelection, changedFiles, checkpointTagged, packagedJourney, packagedProofOs, proofKey, proofLanes, safePath, selectProof } from "./pr-proof.mjs";
+import { CORE_SPECS, changedFiles, checkpointTagged, packagedJourney, packagedProofOs, proofKey, proofLanes, safePath, selectProof } from "./pr-proof.mjs";
 
 const event = JSON.parse(await readFile(process.env.GITHUB_EVENT_PATH, "utf8"));
 if (!event.pull_request) throw new Error("Proof selection requires a pull request event.");
@@ -15,10 +15,8 @@ function api(path) {
 const current = api(`repos/${repo}/pulls/${pr}`);
 if (current.head.sha !== event.pull_request.head.sha) throw new Error("PR head changed; rerun proof selection on the current head.");
 const files = await changedFiles(api, repo, pr, current.changed_files);
-const selection = selectProof(files);
-// A PR that rewrites many core journeys at once is proven by the full
-// core-journeys workflow instead; PR proof keeps only the core chat journey.
-const specs = boundedProofSelection(selection.specs);
+const { specs } = selectProof(files);
+if (specs.length > 32) throw new Error("More than 32 changed E2E specs; bounded CI selection unavailable. Split the change.");
 const trust = { event, repo, actor: process.env.GITHUB_ACTOR, triggeringActor: process.env.GITHUB_TRIGGERING_ACTOR };
 // The checkout is the PR head; only spec sources are read, never executed here.
 const taggedSpecs = new Set();
@@ -45,9 +43,5 @@ const liveSummary = checkpointSpecs.length
     : "\nProof for this contributor requires reviewer approval of the `pr-slow-specs` environment.\n")
     + "Specs tagged `checkpoints` save reopenable checkpoints on Freestyle; ordinary proof remains unprotected and secret-free.\n"
   : "";
-const deferred = selection.specs.length - specs.length;
-const deferredSummary = deferred > 0
-  ? `\n${deferred} more changed core journey(s) or proof(s) exceed the 32-spec PR proof limit; the "Core journeys" workflow runs the full suite.\n`
-  : "";
-if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, summary + liveSummary + deferredSummary);
-console.log(summary + liveSummary + deferredSummary);
+if (process.env.GITHUB_STEP_SUMMARY) await appendFile(process.env.GITHUB_STEP_SUMMARY, summary + liveSummary);
+console.log(summary + liveSummary);

@@ -28,9 +28,8 @@ it decides the world you can build.
 
 | If the spec… | Name / tag | CI lane |
 | --- | --- | --- |
-| protects a promise in `evals/promises.ts` (default: add a step) | `evals/core/<journey>.e2e.test.ts` | PR change proof, unprotected |
-| proves one change and nothing else | `evals/proofs/<journey>.proof.test.ts` | PR change proof, unprotected |
-| must boot the packaged desktop binary | `evals/core/packaged-<journey>.e2e.test.ts` | packaged smoke runner |
+| proves your change (default) | `evals/proofs/<name>.proof.test.ts` | PR change proof, unprotected |
+| changes one of the nine core journeys in `evals/journeys.ts` | `evals/core/<journey>.e2e.test.ts` | PR change proof + core journeys |
 | needs a reviewer to reopen the *running* browser at a screenshot | add `{ tags: ["checkpoints"] }` to the `test(...)` options | protected checkpoint lane on Freestyle |
 
 Tag `checkpoints` only when a still image cannot show what the reviewer has to
@@ -45,9 +44,11 @@ reviewer would open, not every step. Run it locally with
 
 ## Do not write one when…
 
-- An existing journey covers the behaviour: extend it. One spec per user
-  journey, not per PR; bug fixes add a step to the journey they escaped from.
-- The change is a pure function: write a colocated unit test, not evidence.
+- A core journey covers the behaviour and the change broke or extends it: add a
+  step there instead.
+- The change is a pure function or a server rule (permissions, isolation,
+  validation): write a colocated unit or API test (`ee/apps/den-api/test/api`
+  for Den security rules), not an e2e proof.
 - You would import `../../apps|packages|ee`, read source files, or spawn another
   runner. That is a unit test in disguise; `pnpm --dir evals lint:specs`
   rejects it and names the core journey to extend instead.
@@ -56,10 +57,9 @@ No UI does not mean no spec. A server, proxy, or protocol bug gets a
 browser-less world whose steps are the requests a real client makes; the
 steps still read as one person's before → after.
 
-Core journey or proof? Read `evals/promises.ts`. If your change touches a
-promise, add a step to its core journey (`core/`, title `PROMISE-ID: ...`).
-Otherwise write a one-off proof in `evals/proofs/*.proof.test.ts`: it runs on
-your PR and expires.
+Core journey or proof? There are nine core journeys (`evals/journeys.ts`);
+adding a tenth is a review decision. Almost every PR writes a one-off proof in
+`evals/proofs/<name>.proof.test.ts`: it runs on your PR and is not maintained.
 
 ## The proof shape
 

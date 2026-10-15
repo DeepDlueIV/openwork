@@ -1,33 +1,18 @@
-// Lint for the eval tiers. Every rule is an error with no baseline, and every
-// message tells the author (usually an agent) what to do instead.
+// Three rules for e2e tests, no baseline. Every message says what to do instead.
 //
-//   evals/core/*.e2e.test.ts      core journeys: every rule
-//   evals/proofs/*.proof.test.ts  one-off agent evals: every rule except promise-required
-//   evals/specs/                  retired: any file there is rejected
+//   allowed-files  evals/core holds only the journeys in evals/journeys.ts;
+//                  evals/proofs holds one-off <name>.proof.test.ts proofs;
+//                  evals/specs is retired.
+//   real-product   drive the built product the way a user or client does: no
+//                  product-source imports, mocks, filesystem/process/database
+//                  access, or reaching into the app (evalIn, localStorage...).
+//   honest         no skips, sleeps or self-graded evidence, and every test
+//                  asserts something a person or client observes.
 import ts from "typescript";
-import { promises, sharedWorlds, type ProductPromise } from "../../promises.ts";
+import { journeys } from "../../journeys.ts";
 
-export type Tier = "core" | "proof" | "specs";
-
-export const leakageRules = [
-  "e2e-only",
-  "no-source-import",
-  "no-mocks",
-  "no-node-backdoor",
-  "no-silent-skip",
-  "assert-observable",
-] as const;
-
-export const qualityRules = [
-  "no-backdoor",
-  "no-sleep",
-  "no-self-graded-evidence",
-  "no-new-world",
-  "max-size",
-  "promise-required",
-] as const;
-
-export type Rule = (typeof leakageRules)[number] | (typeof qualityRules)[number];
+export type Rule = "allowed-files" | "real-product" | "honest";
+export const rules: readonly Rule[] = ["allowed-files", "real-product", "honest"];
 
 export interface Violation {
   rule: Rule;
@@ -36,8 +21,6 @@ export interface Violation {
   message: string;
 }
 
-export const MAX_LINES = 250;
-
 const ALLOWED_PACKAGES = new Set(["@openwork/testkit", "@openwork/behaviors", "@openwork/matchers", "vitest", "zod"]);
 // Public contract packages: the schemas and SDK a real client of the product uses.
 const PUBLIC_CONTRACT = /^@openwork\/(types|sdk)(\/|$)/;
@@ -45,78 +28,30 @@ const BANNED_NODE_MODULES = new Set(["fs", "fs/promises", "child_process", "net"
 const MOCK_CALLS = new Set(["vi.mock", "vi.doMock", "vi.fn", "vi.spyOn", "vi.stubGlobal", "vi.stubEnv", "vi.useFakeTimers"]);
 const SKIP_METHODS = new Set(["skip", "skipIf", "runIf", "only", "todo"]);
 const SLEEP_CALLS = new Set(["setTimeout", "setInterval", "sleep", "delay", "waitForTimeout"]);
-const BACKDOOR_CALLS = new Set(["evalIn", "denFetch", "executeJavaScript", "addInitScript"]);
-const BACKDOOR_METHODS = new Set(["evaluate", "evalIn", "eval"]);
-const DATABASE_CALL = /queryDenDatabase|denDatabase|createPool|createConnection/;
+const BACKDOOR_CALLS = new Set(["evalIn", "denFetch", "executeJavaScript", "addInitScript", "queryDenDatabase"]);
+const BACKDOOR_METHODS = new Set(["evaluate", "evalIn", "eval", "storage"]);
 const OBSERVE_METHODS = new Set(["see", "notSee", "looks", "eventually"]);
 const OBSERVE_IMPORT = /^(expect|assert|see|verify)/;
 
-export function tierOf(file: string): Tier | null {
-  if (file.startsWith("core/")) return "core";
-  if (file.startsWith("proofs/")) return "proof";
-  if (file.startsWith("specs/")) return "specs";
-  return null;
-}
-
-export function rulesFor(tier: Tier): ReadonlySet<Rule> {
-  if (tier === "specs") return new Set<Rule>(["e2e-only"]);
-  const rules = new Set<Rule>([...leakageRules, ...qualityRules]);
-  if (tier === "proof") rules.delete("promise-required");
-  return rules;
-}
-
-function words(text: string): Set<string> {
-  return new Set(text.toLowerCase().split(/[^a-z0-9]+/).filter((word) => word.length > 2));
-}
-
-/** The core journeys an author should extend instead of adding a test. */
-export function closestJourneys(text: string, limit = 2): ProductPromise[] {
-  const wanted = words(text);
-  return promises
-    .map((promise) => {
-      const vocabulary = words([promise.id, promise.promise, ...promise.core].join(" "));
-      let score = 0;
-      for (const word of wanted) if (vocabulary.has(word)) score += 1;
-      return { promise, score };
-    })
-    .filter((entry) => entry.score > 0)
-    .sort((left, right) => right.score - left.score)
-    .slice(0, limit)
-    .map((entry) => entry.promise);
-}
-
-function journeyHint(text: string): string {
-  const closest = closestJourneys(text);
-  if (closest.length === 0) return "No core journey matches; propose a promise in evals/promises.ts.";
-  return `Extend the closest core journey instead: ${closest.map((promise) => `${promise.id} (core/${promise.core[0]}.e2e.test.ts)`).join(" or ")}.`;
-}
+const JOURNEY_LIST = Object.entries(journeys).map(([name, purpose]) => `${name} (${purpose})`).join("; ");
 
 const MESSAGES = {
-  "e2e-only": (file: string) =>
-    `This is a unit or integration test. Put it next to the module it tests (apps/*/test, ee/apps/*/test, packages/*/src/*.test.ts). Evals only prove user-visible behavior through a real build. ${journeyHint(file)}`,
-  "no-source-import": (specifier: string) =>
-    `Imports "${specifier}". Drive the built app/server. If you need a capability, add a user.* or api.* behavior to @openwork/behaviors.`,
-  "no-mocks": (call: string) =>
-    `${call}: mocks prove nothing end to end. Use a world seed or a fault server (see the fake-model-faults skill).`,
-  "no-node-backdoor": (what: string) =>
-    `${what}: observe the result the way a user or client would (UI, public API, MCP). Infrastructure belongs in the world, not the spec.`,
-  "no-silent-skip": (call: string) =>
-    `${call}: a skip must be reported, not hidden. Declare what the test needs with spec.world(world, { needs }) so a missing requirement shows as Incomplete.`,
-  "assert-observable": (title: string) =>
-    `"${title}" never asserts what a person or client observes. Assert what the person sees (user.see / user.notSee), or what a client reads (expect on an API response, probe.eventually), not internal state.`,
-  "no-backdoor": (what: string) =>
-    `${what}: reaches around the product. Use a user.* or api.* behavior from @openwork/behaviors; if none exists, add one.`,
-  "no-sleep": (call: string) =>
-    `${call}: fixed waits make tests slow and flaky. Wait for an observable state with probe.eventually or user.see({ ... }, { timeoutMs }).`,
-  "no-self-graded-evidence": () =>
-    `recordAssertionEvidence(..., true) grades itself. Pass the result of a check you made, or replace it with expect/user.see.`,
-  "no-new-world": (specifier: string) =>
-    `Imports "${specifier}", which is not a shared world. Extend one of the shared worlds in evals/promises.ts (sharedWorlds) with a seed option instead of adding a world.`,
-  "max-size": (lines: number) =>
-    `${lines} lines (max ${MAX_LINES}). Move repeated steps into @openwork/behaviors so the spec reads as the journey.`,
-  "promise-required": (name: string) =>
-    `core/${name}.e2e.test.ts is not the core journey of any promise in evals/promises.ts. Add your steps to an existing core journey, write a one-off proof in evals/proofs/, or propose a promise in review.`,
-} as const;
+  unlisted: (file: string) =>
+    `${file} is not a core journey. Prove your change with a one-off evals/proofs/<name>.proof.test.ts, or add a step to one of the journeys: ${JOURNEY_LIST}`,
+  specs: () =>
+    `evals/specs is retired. Prove your change with evals/proofs/<name>.proof.test.ts, or add a step to a core journey in evals/core.`,
+  suffix: (file: string) =>
+    `${file}: only *.e2e.test.ts journeys (evals/core) and *.proof.test.ts proofs (evals/proofs) belong here. Unit and integration tests live next to the module they test (apps/*/test, ee/apps/*/test, packages/*/src/*.test.ts).`,
+  sourceImport: (specifier: string) =>
+    `Imports "${specifier}". Drive the built product; if you need a capability, add a user.* or api.* behavior to @openwork/behaviors.`,
+  mock: (call: string) => `${call}: mocks prove nothing end to end. Use a world option or a fault server (see the fake-model-faults skill).`,
+  node: (what: string) => `${what}: observe the result the way a user or client would (UI, public API, MCP). Setup belongs in the world.`,
+  backdoor: (what: string) => `${what}: reaches around the product. Use what a person sees (user.see, probe.dom) or a public-API behavior.`,
+  skip: (call: string) => `${call}: a skip must be reported, not hidden. Declare requirements with spec.world(world, { needs }).`,
+  sleep: (call: string) => `${call}: wait for an observable state with probe.eventually or user.see({ ... }, { timeoutMs }).`,
+  selfGraded: () => `recordAssertionEvidence(..., true) grades itself. Assert with expect or user.see instead.`,
+  unobserved: (title: string) => `"${title}" never asserts what a person or client observes (user.see/notSee, expect on a response, probe.eventually).`,
+};
 
 function calleeText(node: ts.Expression, source: ts.SourceFile): string {
   return node.getText(source).replace(/\s+/g, "");
@@ -133,71 +68,54 @@ function titleText(node: ts.Node, source: ts.SourceFile): string {
   return node.getText(source);
 }
 
-function moduleName(specifier: string): string {
-  return specifier.startsWith("node:") ? specifier.slice(5) : specifier;
-}
-
 function isSourceImport(specifier: string): boolean {
-  if (specifier.startsWith("@/")) return true;
-  if (/^(\.\.\/)+(apps|ee)\//.test(specifier)) return true;
-  if (/^(\.\.\/)*(\.\.\/)?packages\/[^/]+\/src(\/|$)/.test(specifier)) return true;
-  if (/^(\.\.\/){2,}packages\//.test(specifier)) return true;
-  if (/^(\.\.\/){2,}\.github\//.test(specifier)) return true;
-  if (specifier.startsWith("/")) return true;
+  if (specifier.startsWith("@/") || specifier.startsWith("/")) return true;
+  if (/^(\.\.\/){2,}(apps|ee|packages|\.github)\//.test(specifier)) return true;
+  if (/^(\.\.\/)?packages\/[^/]+\/src(\/|$)/.test(specifier)) return true;
   if (specifier.startsWith("@openwork/") && !ALLOWED_PACKAGES.has(specifier) && !PUBLIC_CONTRACT.test(specifier)) return true;
   return false;
 }
 
-function isWorldImport(specifier: string): boolean {
-  return /^(\.\.\/)+worlds\//.test(specifier);
-}
-
-function worldName(specifier: string): string {
-  return specifier.replace(/^(\.\.\/)+worlds\//, "").replace(/\.ts$/, "");
-}
-
 export function lintSource(file: string, text: string): Violation[] {
-  const tier = tierOf(file);
-  if (tier === null) return [];
-  const rules = rulesFor(tier);
   const violations: Violation[] = [];
+  const add = (rule: Rule, line: number, message: string) => violations.push({ rule, file, line, message });
+
+  if (file.startsWith("specs/")) {
+    add("allowed-files", 1, MESSAGES.specs());
+    return violations;
+  }
+  if (file.startsWith("core/")) {
+    const name = /^core\/([^/]+)\.e2e\.test\.ts$/.exec(file)?.[1];
+    if (!name) {
+      add("allowed-files", 1, MESSAGES.suffix(file));
+      return violations;
+    }
+    if (!Object.hasOwn(journeys, name)) add("allowed-files", 1, MESSAGES.unlisted(file));
+  } else if (file.startsWith("proofs/")) {
+    if (!/^proofs\/[^/]+\.proof\.test\.ts$/.test(file)) {
+      add("allowed-files", 1, MESSAGES.suffix(file));
+      return violations;
+    }
+  } else {
+    return violations;
+  }
+
   const source = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
-  const report = (rule: Rule, node: ts.Node | null, message: string) => {
-    if (!rules.has(rule)) return;
-    const line = node ? source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1 : 1;
-    violations.push({ rule, file, line, message });
-  };
-
-  if (tier === "specs") {
-    report("e2e-only", null, `evals/specs is retired. Add a step to a core journey in evals/core (see evals/promises.ts), or write a one-off proof in evals/proofs/*.proof.test.ts. ${journeyHint(`${file} ${text.slice(0, 2000)}`)}`);
-    return violations;
-  }
-  const expectedSuffix = tier === "proof" ? ".proof.test.ts" : ".e2e.test.ts";
-  if (!file.endsWith(expectedSuffix)) {
-    report("e2e-only", null, MESSAGES["e2e-only"](`${file} ${text.slice(0, 2000)}`));
-    return violations;
-  }
-
-  const lineCount = text.split("\n").length;
-  if (lineCount > MAX_LINES) report("max-size", null, MESSAGES["max-size"](lineCount));
+  const lineOf = (node: ts.Node) => source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1;
 
   const testBindings = new Set<string>();
   const observingImports = new Set<string>();
   const localFunctions = new Map<string, ts.Node>();
 
   const checkSpecifier = (specifier: string, node: ts.Node, typeOnly: boolean) => {
-    const name = moduleName(specifier);
-    if (BANNED_NODE_MODULES.has(name) || /^mysql/.test(name) || /mysql2/.test(specifier)) {
-      report("no-node-backdoor", node, MESSAGES["no-node-backdoor"](`import "${specifier}"`));
-      return;
-    }
-    if (isWorldImport(specifier)) {
-      if (!sharedWorlds.includes(worldName(specifier))) report("no-new-world", node, MESSAGES["no-new-world"](specifier));
+    const name = specifier.startsWith("node:") ? specifier.slice(5) : specifier;
+    if (BANNED_NODE_MODULES.has(name) || /mysql/.test(specifier)) {
+      add("real-product", lineOf(node), MESSAGES.node(`import "${specifier}"`));
       return;
     }
     // Type-only imports are erased; they cannot reach around the product.
     if (typeOnly && specifier.startsWith("@openwork/")) return;
-    if (isSourceImport(specifier)) report("no-source-import", node, MESSAGES["no-source-import"](specifier));
+    if (isSourceImport(specifier)) add("real-product", lineOf(node), MESSAGES.sourceImport(specifier));
   };
 
   for (const statement of source.statements) {
@@ -238,25 +156,22 @@ export function lintSource(file: string, text: string): Violation[] {
     if (ts.isCallExpression(node)) {
       const callee = calleeText(node.expression, source);
       const name = lastName(callee);
-      if (node.expression.kind === ts.SyntaxKind.ImportKeyword && node.arguments[0] && ts.isStringLiteral(node.arguments[0])) {
-        checkSpecifier(node.arguments[0].text, node, false);
+      const first = node.arguments[0];
+      if (node.expression.kind === ts.SyntaxKind.ImportKeyword && first && ts.isStringLiteral(first)) checkSpecifier(first.text, node, false);
+      if (callee === "require" && first && ts.isStringLiteral(first)) checkSpecifier(first.text, node, false);
+      if (MOCK_CALLS.has(callee)) add("real-product", lineOf(node), MESSAGES.mock(callee));
+      if (BACKDOOR_CALLS.has(name) || (callee.includes(".") && BACKDOOR_METHODS.has(name)) || callee === "client.send" || /^(window\.)?localStorage\./.test(callee)) {
+        add("real-product", lineOf(node), MESSAGES.backdoor(callee));
       }
-      if (callee === "require" && node.arguments[0] && ts.isStringLiteral(node.arguments[0])) checkSpecifier(node.arguments[0].text, node, false);
-      if (MOCK_CALLS.has(callee)) report("no-mocks", node, MESSAGES["no-mocks"](callee));
       if (SKIP_METHODS.has(name) && callee.includes(".") && !callee.startsWith("vi.")) {
         const owner = callee.split(".")[0] ?? "";
-        if (testBindings.has(owner) || owner === "describe" || owner === "ctx" || owner === "context") report("no-silent-skip", node, MESSAGES["no-silent-skip"](callee));
+        if (testBindings.has(owner) || owner === "describe" || owner === "ctx" || owner === "context") add("honest", lineOf(node), MESSAGES.skip(callee));
       }
-      if (SLEEP_CALLS.has(callee) || SLEEP_CALLS.has(name)) report("no-sleep", node, MESSAGES["no-sleep"](callee));
-      if (DATABASE_CALL.test(name)) report("no-node-backdoor", node, MESSAGES["no-node-backdoor"](callee));
-      if (BACKDOOR_CALLS.has(callee) || BACKDOOR_CALLS.has(name) || (callee.includes(".") && BACKDOOR_METHODS.has(name)) || callee === "client.send" || callee === "probe.eval" || /(^|\.)\w*[pP]robe\.storage$/.test(callee) || /^(window\.)?localStorage\./.test(callee)) {
-        report("no-backdoor", node, MESSAGES["no-backdoor"](callee));
-      }
+      if (SLEEP_CALLS.has(callee) || SLEEP_CALLS.has(name)) add("honest", lineOf(node), MESSAGES.sleep(callee));
       if (name === "recordAssertionEvidence") {
         const last = node.arguments[node.arguments.length - 1];
-        if (last && last.kind === ts.SyntaxKind.TrueKeyword) report("no-self-graded-evidence", node, MESSAGES["no-self-graded-evidence"]());
+        if (last && last.kind === ts.SyntaxKind.TrueKeyword) add("honest", lineOf(node), MESSAGES.selfGraded());
       }
-      const first = node.arguments[0];
       if (ts.isIdentifier(node.expression) && testBindings.has(node.expression.text) && first && !ts.isArrowFunction(first) && !ts.isFunctionExpression(first) && !ts.isObjectLiteralExpression(first)) {
         const last = node.arguments[node.arguments.length - 1];
         const body = last && (ts.isArrowFunction(last) || ts.isFunctionExpression(last)) ? last
@@ -267,13 +182,11 @@ export function lintSource(file: string, text: string): Violation[] {
     if (ts.isNewExpression(node) && calleeText(node.expression, source) === "URL") {
       const [first, base] = node.arguments ?? [];
       if (first && base && ts.isStringLiteral(first) && base.getText(source) === "import.meta.url" && /^(\.\.\/)+(apps|ee|packages|\.github)\//.test(first.text)) {
-        report("no-source-import", node, MESSAGES["no-source-import"](first.text));
+        add("real-product", lineOf(node), MESSAGES.sourceImport(first.text));
       }
     }
-    if ((ts.isIdentifier(node) || ts.isPrivateIdentifier(node)) && /__openwork|__OPENWORK/.test(node.text)) {
-      report("no-backdoor", node, MESSAGES["no-backdoor"](node.text));
-    }
-    if (ts.isStringLiteral(node) && /^(window\.)?__openwork/i.test(node.text)) report("no-backdoor", node, MESSAGES["no-backdoor"](node.text));
+    if (ts.isIdentifier(node) && /__openwork|__OPENWORK/.test(node.text)) add("real-product", lineOf(node), MESSAGES.backdoor(node.text));
+    if (ts.isStringLiteral(node) && /^(window\.)?__openwork/i.test(node.text)) add("real-product", lineOf(node), MESSAGES.backdoor(node.text));
     ts.forEachChild(node, visit);
   };
   visit(source);
@@ -307,14 +220,9 @@ export function lintSource(file: string, text: string): Violation[] {
     }
   }
 
-  if (tests.length === 0) report("assert-observable", null, MESSAGES["assert-observable"]("(no test found)"));
+  if (tests.length === 0) add("honest", 1, MESSAGES.unobserved("(no test found)"));
   for (const test of tests) {
-    if (!test.body || !observes(test.body, observingLocals)) report("assert-observable", test.node, MESSAGES["assert-observable"](test.title));
+    if (!test.body || !observes(test.body, observingLocals)) add("honest", lineOf(test.node), MESSAGES.unobserved(test.title));
   }
-  if (tier === "core") {
-    const name = file.replace(/^core\//, "").replace(/\.e2e\.test\.ts$/, "");
-    if (!promises.some((promise) => promise.core.some((core) => core === name))) report("promise-required", null, MESSAGES["promise-required"](name));
-  }
-
   return violations;
 }

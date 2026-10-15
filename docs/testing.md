@@ -1,7 +1,7 @@
 # Testing without blocking unrelated work
 
-OpenWork has no package-level unit tests. All executable coverage lives in the
-E2E journeys under `evals/core` (see `evals/promises.ts`) (see `evals/README.md`). Install both
+Unit and API tests live next to the code they test. End-to-end coverage is the
+nine journeys in `evals/core` (see `evals/README.md`). Install both
 workspaces with `pnpm install --frozen-lockfile` and
 `pnpm --dir evals install --frozen-lockfile` first. Use Node 24, Bun 1.3.14,
 pnpm 11.4.0, and the OpenCode version in `constants.json` on PATH, matching CI.

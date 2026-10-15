@@ -16,44 +16,11 @@ const definitions = {
   'agent-connection-journey.e2e.test.ts': {
     cases: [{ id: 'AGENT-VIS-04', engines: ['v1', 'v2'], optIns: ['OPENWORK_EVAL_E2E_TESTS'], example: { placement: '--local', engine: 'v1' } }],
   },
-  'agent-connection-sign-in-journey.e2e.test.ts': {
-    cases: [{ id: 'AGENT-VIS-06', engines: ['v1', 'v2'], optIns: ['OPENWORK_EVAL_E2E_TESTS'], example: { placement: '--local', engine: 'v2' } }],
-  },
-  'agent-visibility-journey.e2e.test.ts': {
-    cases: [
-      { id: 'AGENT-VIS-01', engines: ['v1', 'v2'], optIns: ['OPENWORK_EVAL_E2E_TESTS'], example: { placement: '--local', engine: 'v1' } },
-      { id: 'AGENT-VIS-02', engines: ['v1', 'v2'], optIns: ['OPENWORK_EVAL_E2E_TESTS'], example: { placement: '--local', engine: 'v1' } },
-      { id: 'AGENT-VIS-03', engines: ['v2'], optIns: ['OPENWORK_EVAL_E2E_TESTS'], example: { placement: '--local', engine: 'v2' } },
-    ],
-  },
   'app-smoke.e2e.test.ts': { name: 'Open a working desktop', critical: true },
-  // Boots the packaged cloud and enterprise artifacts; only packaged-smoke provides those binaries.
-  'packaged-first-launch.e2e.test.ts': { name: 'Open a fresh cloud or enterprise install', placement: 'local', needs: PACKAGED_BINARY },
-  // Boots the packaged enterprise artifact twice (fresh and pre-activated); only packaged-smoke provides that binary.
-  'packaged-preactivation-updater.e2e.test.ts': { name: 'Keep an unactivated enterprise install from updating itself', placement: 'local', needs: PACKAGED_BINARY },
-  // Boots the packaged enterprise artifact twice (fresh and pre-activated) behind a refusing proxy; only packaged-smoke provides that binary.
-  'packaged-preactivation-egress.e2e.test.ts': { name: 'Keep an unactivated enterprise install off the network', placement: 'local', needs: PACKAGED_BINARY },
-  'packaged-activated-launch.e2e.test.ts': { name: 'Open an already-activated enterprise install', placement: 'local', needs: PACKAGED_BINARY },
-  // Boots the packaged enterprise artifact and asks it to quit (SIGTERM and Browser.close); only packaged-smoke provides that binary.
-  // Its crash-report half is asserted on macOS, where packaged-smoke-macos runs it; Linux records that half as skipped.
-  'desktop-quit-path.e2e.test.ts': { name: 'Quit an enterprise install cleanly', placement: 'local', needs: PACKAGED_BINARY },
   // Installs a newer signed build from a loopback feed through Squirrel.Mac; only packaged-smoke-macos provides both builds.
   'packaged-update-install.e2e.test.ts': {
     name: 'Update an activated enterprise install in place', placement: 'local',
     needs: { platform: 'darwin', env: ['OPENWORK_EVAL_ELECTRON_BINARY', 'OPENWORK_EVAL_UPDATE_FEED_DIR'] },
-  },
-  // Boots an enterprise binary already activated against a real Den. Only its update case also needs
-  // OPENWORK_EVAL_RELEASED_BASELINE_BINARY (spec-level `needs`); that case skips on its own. The nightly
-  // packaged-upgrade-path job (ci-tests.yml) provides both: this commit's enterprise package and the latest
-  // public release as the baseline; release validation runs it against the release itself (#4848).
-  'released-enterprise-activated.e2e.test.ts': { name: 'Open and update an activated enterprise install against its Den', placement: 'local', needs: PACKAGED_BINARY },
-  // Flips sso_connection directly in the testkit database; Daytona Den exposes no database.
-  'scim-okta-lifecycle.e2e.test.ts': { name: 'Provision members from an Okta-shaped SCIM client', placement: 'local' },
-  'unfinished-tool-lifecycle.e2e.test.ts': {
-    cases: [
-      { id: 'STOP-01', engines: ['v1', 'v2'], optIns: ['OPENWORK_EVAL_E2E_TESTS'], example: { placement: '--local', engine: 'v1' } },
-      { id: 'EDIT-BUSY', engines: ['v1', 'v2'], optIns: ['OPENWORK_EVAL_E2E_TESTS'], example: { placement: '--local', engine: 'v2' } },
-    ],
   },
 };
 

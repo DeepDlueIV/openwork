@@ -1,7 +1,7 @@
 # OpenWork tests and test evidence
 
-E2E coverage lives in [`core/`](./core) (one or more journeys per promise in
-[`promises.ts`](./promises.ts)) and [`proofs/`](./proofs) (one-off PR proofs), and imports
+E2E coverage is nine core journeys in [`core/`](./core), listed in
+[`journeys.ts`](./journeys.ts), plus one-off PR proofs in [`proofs/`](./proofs). Specs import
 `test` from `@openwork/testkit`. Tests that drive Electron, Den, or another app
 surface use `.e2e.test.ts`. Unit tests of the eval packages themselves sit next
 to the module they test (`packages/*/src/**/*.test.ts`) and run in the same
@@ -199,20 +199,22 @@ spec from running, delete it; history keeps the removed test available.
 
 ## Authoring contract
 
-Two kinds of test live here (see `promises.ts`):
+Two kinds of e2e test live here:
 
-- **Core journeys** (`core/*.e2e.test.ts`): listed under a product promise in
-  `promises.ts`, maintained, and never weakened to make a PR green.
+- **Core journeys** (`core/*.e2e.test.ts`): the nine journeys in `journeys.ts`.
+  If one breaks, customers notice the same day. They run on every PR and nightly,
+  and are never weakened to make a PR green. Adding one is a review decision.
 - **Proofs** (`proofs/*.proof.test.ts`): one-off evals an agent writes to prove
   one change on one PR. They run on that PR and are not maintained; if one keeps
   mattering, fold its steps into a core journey.
 
-`evals/specs` is retired. Nothing else belongs in these folders: unit and
-integration tests live next to the module they test. `pnpm --dir evals lint:specs` (`scripts/spec-lint`) enforces this with
-no baseline; each error says what to do instead. Rules: `e2e-only`,
-`no-source-import`, `no-mocks`, `no-node-backdoor`, `no-silent-skip`,
-`assert-observable`, `no-backdoor`, `no-sleep`, `no-self-graded-evidence`,
-`no-new-world`, `max-size` and (core only) `promise-required`. 
+`evals/specs` is retired. Unit and integration tests live next to the module
+they test; security rules are API tests in `ee/apps/den-api/test/api`.
+`pnpm --dir evals lint:specs` (`scripts/spec-lint`) enforces three rules with no
+baseline, and each error says what to do instead: `allowed-files`,
+`real-product` (no product-source imports, mocks, filesystem/database access or
+reaching into the app) and `honest` (no skips, sleeps or self-graded evidence;
+every test asserts something a person or client observes).
 
 - Import `test` from `@openwork/testkit`.
 - Name core journeys `core/<slug>.e2e.test.ts` and proofs `proofs/<slug>.proof.test.ts`; app-less unit tests live next to their module.

@@ -37,6 +37,7 @@ import {
 import { type OrgLimitError, type OrgPaymentRequiredError, getOrgLimitError, getOrgPaymentRequiredError } from "../../_lib/den-flow";
 import { buildDenFeedbackUrl } from "../../_lib/feedback";
 import { OrgLimitDialog } from "../../_components/org-limit-dialog";
+import { desktopPolicyScreenRemoved } from "../_lib/desktop-policy-screen-rollout";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
 import { UnderlineTabs } from "../../_components/ui/tabs";
 import { DashboardPageTemplate } from "../../_components/ui/dashboard-page-template";
@@ -1116,7 +1117,7 @@ export function ManageMembersScreen() {
           <div className="rounded-2xl border border-gray-100 bg-white" data-testid="teams-list">
             <TeamsListHeader columns={teamListColumns} role={teamRoles} agentPermissions={agentPermissionsColumn} />
 
-            {agentPermissionsColumn && (!listToolbars || "everyone".includes(teamFilter.trim().toLocaleLowerCase())) ? (
+            {(agentPermissionsColumn || desktopPolicyScreenRemoved(orgContext)) && (!listToolbars || "everyone".includes(teamFilter.trim().toLocaleLowerCase())) ? (
               <TeamsListRow
                 testId="team-row-everyone"
                 columns={teamListColumns}
@@ -1127,7 +1128,7 @@ export function ManageMembersScreen() {
                 lanes={(
                   <>
                     {teamRoles ? <TeamsListLane testId="team-row-role">Member</TeamsListLane> : null}
-                    <TeamsListLane testId="team-row-agent-permissions">Base for every team</TeamsListLane>
+                    {agentPermissionsColumn ? <TeamsListLane testId="team-row-agent-permissions">Base for every team</TeamsListLane> : null}
                     <TeamsListLane testId="team-row-members" tone="muted">{peopleCount(orgContext.members.length)}</TeamsListLane>
                   </>
                 )}

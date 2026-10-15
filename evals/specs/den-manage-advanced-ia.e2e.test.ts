@@ -111,6 +111,15 @@ test("the Den admin sidebar groups Manage and moves Advanced into Settings", asy
     evidence.recordAssertionEvidence("Legacy policy links redirect", "List, new and detail all open /dashboard/members?tab=teams", true);
     await user.screenshot();
   });
+  await step("Everyone's Desktop tab remains reachable without the Agent permissions rollout", async () => {
+    await user.see({ testId: "team-row-everyone" }, { timeoutMs: 30_000 });
+    await user.click({ role: "link", label: /^Everyone$/ });
+    await user.see({ role: "tab", label: "Desktop" }, { timeoutMs: 30_000 });
+    await user.click({ role: "tab", label: "Desktop" });
+    await user.see({ testId: "desktop-suggestions" });
+    evidence.recordAssertionEvidence("The replacement editor is discoverable", "Members Teams → Everyone → Desktop, with Agent permissions off", true);
+    await user.screenshot();
+  });
   await step("turning the rollout off restores the legacy editor without changing policies", async () => {
     await world.setRemoval(false);
     await user.navigate(new URL("/dashboard/desktop-policies", world.den.ref.webUrl).toString());

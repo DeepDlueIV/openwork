@@ -67,6 +67,16 @@ test("an owner manages desktop suggestions in Everyone and teams without losing 
     await owner.screenshot();
   });
 
+  await step("existing member, team and shared suggestion lists remain readable under Everyone", async () => {
+    await owner.click({ text: "Other scoped suggestions (3)" });
+    await owner.see({ text: "Member suggestions" });
+    await owner.see({ text: "Reviewer suggestions" });
+    await owner.see({ text: "Shared suggestions" });
+    evidence.recordAssertionEvidence("Existing scoped suggestion lists remain visible", "Member, team and shared policy lists are retained read-only below Everyone's defaults", true);
+    await owner.screenshot();
+    await owner.click({ text: "Other scoped suggestions (3)" });
+  });
+
   await step("Everyone can add a third suggestion while AI Gateway's model access fields stay unchanged", async () => {
     await owner.click({ role: "button", label: "Add suggestion" });
     await owner.type({ label: "Prompt 3" }, "Prepare a daily briefing");

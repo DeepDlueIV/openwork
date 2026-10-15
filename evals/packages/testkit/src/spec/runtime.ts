@@ -857,12 +857,22 @@ export class UserChannel implements User {
       else await clickTarget(surface, target);
       if (options.sensitive) {
         // A password input, or a multi-line secret field (pasted key files) masked with text-security.
-        const masked = await callFunctionOnSurface(surface, () => {
+        const maskedFocus = () => callFunctionOnSurface(surface, () => {
           const active = document.activeElement;
-          if (active instanceof HTMLInputElement) return active.type === 'password';
-          return active instanceof HTMLTextAreaElement && !['', 'none'].includes(getComputedStyle(active).getPropertyValue('-webkit-text-security'));
+          if (active instanceof HTMLInputElement) return active.type === 'password' ? 'masked' : `input:${active.type}`;
+          if (!(active instanceof HTMLTextAreaElement)) return active ? active.tagName.toLowerCase() : 'nothing';
+          const style = getComputedStyle(active);
+          const security = style.getPropertyValue('-webkit-text-security') || style.getPropertyValue('text-security');
+          return security && security !== 'none' ? 'masked' : `textarea:${security || 'unmasked'}`;
         }, []);
-        if (masked !== true) throw new Error("Sensitive typing requires a masked password input");
+        let masked = await maskedFocus();
+        if (masked !== 'masked' && masked !== null && typeof masked === 'string' && !masked.startsWith('input:') && !masked.startsWith('textarea:')) {
+          // Focus moved (the page re-rendered under the click); click the target once more.
+          if (this.#runtime.adapters.user?.click) await this.#runtime.adapters.user.click(surface, target, 1);
+          else await clickTarget(surface, target);
+          masked = await maskedFocus();
+        }
+        if (masked !== 'masked') throw new Error(`Sensitive typing requires a masked password input (focused: ${String(masked)})`);
       }
       const mac = surface.handle.hostKind !== "daytona" && process.platform === "darwin";
       await pressKey(surface, options.replace ? (mac ? "Meta+A" : "Control+A") : (mac ? "Meta+ArrowDown" : "Control+End"));

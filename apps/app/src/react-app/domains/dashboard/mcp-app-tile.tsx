@@ -727,7 +727,7 @@ function McpAppTileContent({
               <McpAppSandboxView
                 origin={origin}
                 resolveLiveActions={origin.readOnly ? resolveLiveActions : undefined}
-                keptResultsBeforeLive={origin.readOnly}
+                goesLiveInPlace={origin.readOnly}
                 liveReady={Boolean(state.live)}
                 key={state.lifetime.id}
                 app={state.app}

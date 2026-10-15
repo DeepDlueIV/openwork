@@ -323,11 +323,11 @@ export type McpAppSandboxViewProps = {
    */
   resolveLiveActions?: () => Promise<{ origin: McpAppOrigin; app: OpenworkMcpAppResource }>
   /**
-   * With resolveLiveActions: the App may read its own kept read-only results
-   * before the lease arrives, as the saved view it is part of already shows
-   * this person's saved data. Its tools still wait for the lease.
+   * With resolveLiveActions: this saved view goes live in place, so the App
+   * may ask for its kept read-only results. Like every call, such a read
+   * waits for the lease and a current read check before anything is shown.
    */
-  keptResultsBeforeLive?: boolean
+  goesLiveInPlace?: boolean
   /**
    * The host has the lease resolveLiveActions hands out, so a saved view that
    * went live in place takes input like any live App.
@@ -369,12 +369,12 @@ export type McpAppSandboxViewProps = {
  * bridges it to the workspace MCP App host. Chat messages and dashboard tiles
  * share this exact pipeline so rendering and diagnostics stay identical.
  */
-export function McpAppSandboxView({ origin, app, resolveLiveActions, keptResultsBeforeLive = false, liveReady = false, toolName, inputArguments, result, connectionController, updateMode = "replace", onReady, unavailableNotice, onRequestTeardown, initialHeight, onHeightChange, presentation = "inline", onError, onRetry, onAppToolResult, openKey }: McpAppSandboxViewProps) {
+export function McpAppSandboxView({ origin, app, resolveLiveActions, goesLiveInPlace = false, liveReady = false, toolName, inputArguments, result, connectionController, updateMode = "replace", onReady, unavailableNotice, onRequestTeardown, initialHeight, onHeightChange, presentation = "inline", onError, onRetry, onAppToolResult, openKey }: McpAppSandboxViewProps) {
   const openworkServerClient = origin.client
   const workspaceId = origin.workspaceId
   const readOnly = origin.readOnly
   // A saved Dashboard view that becomes live in place once its lease arrives.
-  const savedLive = readOnly && Boolean(resolveLiveActions) && keptResultsBeforeLive
+  const savedLive = readOnly && Boolean(resolveLiveActions) && goesLiveInPlace
   const iframeRef = useRef<HTMLIFrameElement>(null)
   const [height, setHeightState] = useState(() => normalizeMcpAppHeight(initialHeight ?? DEFAULT_HEIGHT, MIN_HEIGHT))
   const heightRef = useRef(height)
@@ -576,15 +576,6 @@ export function McpAppSandboxView({ origin, app, resolveLiveActions, keptResults
       const cacheRequest = _meta?.[MCP_APP_CACHE_REQUEST_META]
       const call = { serverName: app.serverName, resourceUri: app.resourceUri, name, args: args ?? {} }
       try {
-        // Before its first lease, a saved Dashboard view answers from this
-        // person's kept results at once, so it shows the data the saved tile
-        // was showing instead of an empty App. Nothing runs; every call still
-        // waits for the lease, and a later read is checked as usual.
-        if (cacheRequest === "read" && savedLive && liveLaunchId === undefined) {
-          const cached = await cachedMcpAppResult(origin, app, name, args ?? {})
-          if (disposed || failed) throw new Error("This artifact view has closed or changed.")
-          return cached?.result ?? { content: [], isError: true, _meta: { [MCP_APP_CACHED_RESULT_META]: false } }
-        }
         await bindLiveActions()
         // The App's last read-only result for this call, from storage. The host
         // first rechecks that the call is allowed now without approval (lease,

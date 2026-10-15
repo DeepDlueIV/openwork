@@ -173,9 +173,10 @@ test("an admin sees the whole catalog, sets up Microsoft 365 on its own page, an
     const renamed = await probe.api(world.den.admin, "/v1/mcp-connections?scope=manageable");
     const row = isRecord(renamed.body) ? records(renamed.body.connections).find((entry) => entry.id === world.connection.id) : undefined;
     expect(row).toMatchObject({ name: "Catalog Notes Renamed", oauthClientId: "catalog-settings-client", requestedScopes: ["records.read", "records.write"] });
-    await admin.click({ role: "button", label: "Review sign-in server" });
-    await admin.see({ role: "button", label: "Save sign-in server" }, { timeoutMs: 60_000 });
-    evidence.recordAssertionEvidence("name, scopes and OAuth app save inline, and sign-in servers can be reviewed", `Den saved ${String(row?.name)}, client ${String(row?.oauthClientId)}, scopes ${JSON.stringify(row?.requestedScopes)}; the review offers Save sign-in server`, true);
+    await admin.click({ text: "Authorization server selection" });
+    await admin.click({ role: "button", label: "Choose authorization server" });
+    await admin.see({ role: "button", label: "Save authorization server" }, { timeoutMs: 60_000 });
+    evidence.recordAssertionEvidence("name, scopes and OAuth app save inline, and sign-in servers can be reviewed", `Den saved ${String(row?.name)}, client ${String(row?.oauthClientId)}, scopes ${JSON.stringify(row?.requestedScopes)}; the review offers Save authorization server`, true);
     await admin.screenshot();
   });
 

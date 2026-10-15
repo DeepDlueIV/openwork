@@ -42,5 +42,5 @@ export function oauthIssuerMismatchMessage(expected: string | undefined, receive
     if (!value) return "an unspecified address"
     try { const url = new URL(value); return `${url.origin}${url.pathname}` } catch { return "an invalid address" }
   }
-  return `This server's sign-in information is inconsistent: it names ${display(expected)} as its sign-in service, but that service identifies itself as ${display(received)}. OpenWork stopped for security. Ask the server owner to fix it, or enter the sign-in addresses manually under Advanced sign-in settings.`
+  return `This server's sign-in information is inconsistent: it names ${display(expected)} as its sign-in service, but that service identifies itself as ${display(received)}. OpenWork stopped for security. Ask the server owner to fix it, or enter the sign-in addresses manually under Sign-in addresses in the connection settings.`
 }

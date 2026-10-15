@@ -100,9 +100,10 @@ export async function denLibraryManage(seed: Seed, ctx: { place: Place }, option
     body: {
       status: "ready",
       server: { url: slack.mcpUrl, protocolVersion: "2025-06-18", initialize: "authentication_required" },
-      authentication: { kind: "oauth", availableRegistrationMethods: ["dynamic"], recommendedRegistrationMethod: "dynamic" },
+      authentication: { kind: "oauth", authorizationServers: [], requiredScopes: [], recommendedScopes: [], refreshSupport: "unknown", availableRegistrationMethods: ["dynamic"], recommendedRegistrationMethod: "dynamic" },
       tools: { visibility: "requires_auth" },
       manualRequirements: [],
+      warnings: [],
     },
   });
 

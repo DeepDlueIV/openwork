@@ -79,6 +79,6 @@ test("issuer diagnostics explain both identifiers without leaking URL credential
   const message = oauthIssuerMismatchMessage("https://user:secret@service.example/mcp?token=private", "https://service.example/#private")
   assert.match(message, /names https:\/\/service.example\/mcp/)
   assert.match(message, /identifies itself as https:\/\/service.example\//)
-  assert.match(message, /Advanced sign-in settings/)
+  assert.match(message, /Sign-in addresses/)
   assert.doesNotMatch(message, /secret|private|user:/)
 })

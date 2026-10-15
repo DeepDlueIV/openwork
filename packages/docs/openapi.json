@@ -16474,6 +16474,10 @@
               }
             ]
           },
+          "oauthClientHasSecret": {
+            "description": "Whether a client secret is configured. Only returned with explicit connection-settings view permission; never the secret itself.",
+            "type": "boolean"
+          },
           "manualOAuthEndpoints": {
             "description": "Only returned with explicit connection-settings view permission; omitted from usable member listings, including for the connection creator.",
             "anyOf": [
@@ -17559,6 +17563,10 @@
               }
             ]
           },
+          "oauthClientHasSecret": {
+            "description": "Whether a client secret is configured. Only returned with explicit connection-settings view permission; never the secret itself.",
+            "type": "boolean"
+          },
           "manualOAuthEndpoints": {
             "description": "Only returned with explicit connection-settings view permission; omitted from usable member listings, including for the connection creator.",
             "anyOf": [
@@ -18010,6 +18018,10 @@
                 "type": "null"
               }
             ]
+          },
+          "oauthClientHasSecret": {
+            "description": "Whether a client secret is configured. Only returned with explicit connection-settings view permission; never the secret itself.",
+            "type": "boolean"
           },
           "manualOAuthEndpoints": {
             "description": "Only returned with explicit connection-settings view permission; omitted from usable member listings, including for the connection creator.",

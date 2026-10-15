@@ -298,7 +298,7 @@ test("an admin adds a connector that needs their own OAuth app", async ({ world,
 
   await step("when I save the app, sign-in uses it and every check passes", async () => {
     await user.type({ label: "Client ID" }, clientId);
-    await user.click({ role: "button", label: "Save app" });
+    await user.click({ role: "button", label: "Save changes" });
     await user.see({ role: "button", label: "Sign in with Team Wiki" }, { timeoutMs: 60_000 });
     await user.click({ role: "button", label: "Sign in with Team Wiki" });
     await user.see({ role: "heading", label: "Team Wiki passed all 4 checks" }, { timeoutMs: 120_000 });

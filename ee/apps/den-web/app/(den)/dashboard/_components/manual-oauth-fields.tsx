@@ -1,72 +1,119 @@
 "use client";
 
-import { ChevronRight } from "lucide-react";
+import { ChevronRight, CircleAlert, TriangleAlert } from "lucide-react";
 import { useState } from "react";
+import { DenBadge } from "../../_components/ui/badge";
 import { DenButton } from "../../_components/ui/button";
 import { DenInput } from "../../_components/ui/input";
 import { type McpRequirementsDiscovery, useDiscoverMcpConnectionRequirements } from "./mcp-connections-data";
+import { EMPTY_OAUTH_ADDRESSES, manualOAuthDestination, publishedFieldUnsaved, reviewPublishedAddresses, undoPublishedAddresses, type ManualOAuthAddresses, type ManualOAuthDraft, type ManualOAuthField } from "./manual-oauth-draft";
 
-export type ManualOAuthAddresses = { authorizationEndpoint: string; tokenEndpoint: string };
-export const EMPTY_OAUTH_ADDRESSES: ManualOAuthAddresses = { authorizationEndpoint: "", tokenEndpoint: "" };
-
-function host(value: string): string {
-  try { return new URL(value).host; } catch { return "Invalid address"; }
+function EndpointField({ field, label, draft, saved, disabled, onChange }: {
+  field: ManualOAuthField;
+  label: string;
+  draft: ManualOAuthDraft;
+  saved: ManualOAuthAddresses;
+  disabled: boolean;
+  onChange: (draft: ManualOAuthDraft) => void;
+}) {
+  const testId = field === "authorizationEndpoint" ? "manual-oauth-authorization-endpoint" : "manual-oauth-token-endpoint";
+  return <label className="flex min-w-0 flex-col gap-1.5 text-[12px] font-medium text-[var(--dls-text-primary)]">
+    <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+      {label}
+      {publishedFieldUnsaved(draft, field, saved) ? <span data-testid={`${testId}-source`}>
+        <DenBadge className="border border-[var(--dls-border)] !bg-transparent !px-2 !py-0 !text-[11px] !font-normal !text-[var(--dls-text-secondary)]">From server · not verified · not saved</DenBadge>
+      </span> : null}
+    </span>
+    <DenInput type="url" value={draft.values[field]} disabled={disabled} className="font-mono !text-[13px] !font-normal" placeholder={field === "authorizationEndpoint" ? "https://sign-in.example.com/authorize" : "https://sign-in.example.com/token"} onChange={(event) => onChange({ ...draft, values: { ...draft.values, [field]: event.target.value } })} data-testid={testId} />
+  </label>;
 }
 
-/** Published addresses are suggestions only. Copying them still requires Save. */
-export function ManualOAuthFields({ url, value, onChange, disabled = false, discovery }: {
+/** Reviewing published addresses only edits this draft. Save remains the trust boundary. */
+export function ManualOAuthFields({ url, draft, onChange, saved = EMPTY_OAUTH_ADDRESSES, hasClientSecret = false, disabled = false, discovery }: {
   url: string;
-  value: ManualOAuthAddresses;
-  onChange: (value: ManualOAuthAddresses) => void;
+  draft: ManualOAuthDraft;
+  onChange: (draft: ManualOAuthDraft) => void;
+  saved?: ManualOAuthAddresses;
+  hasClientSecret?: boolean;
   disabled?: boolean;
   discovery?: McpRequirementsDiscovery | null;
 }) {
   const discover = useDiscoverMcpConnectionRequirements();
   const [preview, setPreview] = useState<McpRequirementsDiscovery | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [dismissed, setDismissed] = useState(false);
   const result = preview ?? discovery;
-  const suggestions = dismissed ? [] : result?.publishedSignInAddresses ?? [];
-  const mismatch = result?.warnings.find((warning) => warning.code === "oauth_issuer_mismatch");
-  const differentHosts = [value.authorizationEndpoint, value.tokenEndpoint].filter(Boolean).some((endpoint) => host(endpoint) !== host(url));
-  async function inspect() {
+  const mismatch = result?.warnings.some((warning) => warning.code === "oauth_issuer_mismatch") === true;
+  const manuallyConfigured = Boolean(saved.authorizationEndpoint && saved.tokenEndpoint);
+  const destination = manualOAuthDestination(url, draft.values, hasClientSecret);
+  const pendingReview = draft.published !== null;
+
+  async function inspect(): Promise<McpRequirementsDiscovery | null> {
     setError(null);
-    setDismissed(false);
     try {
       const result = await discover.mutateAsync(url);
       setPreview(result);
-      if (!result.publishedSignInAddresses?.length) setError("This server did not publish usable sign-in addresses. Ask the server owner for the authorization and token URLs.");
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "The sign-in addresses could not be read."); }
+      return result;
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "The sign-in addresses could not be read.");
+      return null;
+    }
   }
-  return <details className="group" open={suggestions.length > 0 || Boolean(value.authorizationEndpoint || value.tokenEndpoint)} data-testid="manual-oauth-settings">
-    <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[12px] font-medium text-gray-600 [&::-webkit-details-marker]:hidden">
-      <ChevronRight className="h-3.5 w-3.5 text-gray-600 transition-transform group-open:rotate-90" aria-hidden />
-      Advanced sign-in settings
+
+  async function review() {
+    const source = result ?? await inspect();
+    if (!source) return;
+    const addresses = (source.publishedSignInAddresses ?? []).filter((entry, index, all) => all.findIndex((candidate) => candidate.authorizationEndpoint === entry.authorizationEndpoint && candidate.tokenEndpoint === entry.tokenEndpoint) === index);
+    const address = addresses[0];
+    if (!address || addresses.length !== 1) {
+      setError(addresses.length > 1 ? "This server publishes more than one pair of sign-in addresses. Check with the server owner and enter the intended pair manually." : "This server did not publish usable sign-in addresses. Ask the server owner for the authorization and token URLs.");
+      return;
+    }
+    setError(null);
+    onChange(reviewPublishedAddresses(draft, { authorizationEndpoint: address.authorizationEndpoint, tokenEndpoint: address.tokenEndpoint }, source.warnings.some((warning) => warning.code === "oauth_issuer_mismatch")));
+  }
+
+  return <details className="group" open={Boolean(discovery?.warnings.some((warning) => warning.code === "oauth_issuer_mismatch")) || manuallyConfigured} data-testid="manual-oauth-settings" onToggle={(event) => {
+    // Opening unconfigured sign-in settings may inspect public metadata. Saved
+    // manual configurations never discover implicitly, even when this row opens.
+    if (event.currentTarget.open && !result && !manuallyConfigured && !discover.isPending && !disabled) void inspect();
+  }}>
+    <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[12px] font-medium text-[var(--dls-text-primary)] [&::-webkit-details-marker]:hidden">
+      <ChevronRight className="h-3.5 w-3.5 text-[var(--dls-text-secondary)] transition-transform group-open:rotate-90" aria-hidden />
+      Sign-in addresses
     </summary>
-    <div className="mt-3 flex min-w-0 flex-col gap-3">
-      {mismatch ? <p role="alert" className="break-words text-[13px] text-red-600">{mismatch.message}</p> : null}
-      <DenButton type="button" variant="secondary" size="sm" disabled={disabled || !url} loading={discover.isPending} onClick={() => void inspect()}>Use addresses published by this server</DenButton>
-      {suggestions.map((suggestion) => <div key={`${suggestion.authorizationEndpoint}\0${suggestion.tokenEndpoint}`} className="flex min-w-0 flex-col gap-2 border-y border-gray-100 py-3" data-testid="manual-oauth-prefill">
-        <p className="text-[13px] text-gray-700">These addresses are published by the server, not verified by OpenWork. Your sign-in code and any client secret will be sent to the token address. Nothing is used until you save.</p>
-        <dl className="grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-[12px] text-gray-600">
-          <dt>MCP host</dt><dd className="break-all">{host(url)}</dd>
-          <dt>Sign-in host</dt><dd className="break-all">{host(suggestion.authorizationEndpoint)}</dd>
-          <dt>Authorization URL</dt><dd className="break-all">{suggestion.authorizationEndpoint}</dd>
-          <dt>Token host</dt><dd className="break-all">{host(suggestion.tokenEndpoint)}</dd>
-          <dt>Token URL</dt><dd className="break-all">{suggestion.tokenEndpoint}</dd>
-        </dl>
-        <DenButton type="button" size="sm" disabled={disabled} onClick={() => { onChange({ authorizationEndpoint: suggestion.authorizationEndpoint, tokenEndpoint: suggestion.tokenEndpoint }); setDismissed(true); }}>Confirm addresses in form</DenButton>
-      </div>)}
-      <label className="flex min-w-0 flex-col gap-1.5 text-[12px] font-medium text-gray-700">Authorization endpoint URL
-        <DenInput type="url" value={value.authorizationEndpoint} disabled={disabled} placeholder="https://sign-in.example.com/authorize" onChange={(event) => onChange({ ...value, authorizationEndpoint: event.target.value })} data-testid="manual-oauth-authorization-endpoint" />
-      </label>
-      <label className="flex min-w-0 flex-col gap-1.5 text-[12px] font-medium text-gray-700">Token endpoint URL
-        <DenInput type="url" value={value.tokenEndpoint} disabled={disabled} placeholder="https://sign-in.example.com/token" onChange={(event) => onChange({ ...value, tokenEndpoint: event.target.value })} data-testid="manual-oauth-token-endpoint" />
-      </label>
-      {Boolean(value.authorizationEndpoint) !== Boolean(value.tokenEndpoint) ? <p role="alert" className="text-[12px] text-red-600">Enter both addresses, or clear both to use automatic discovery.</p> : null}
-      {differentHosts ? <p role="status" className="text-[12px] text-amber-700">The sign-in addresses use a different host from the MCP server ({host(url)}). Confirm that you trust {host(value.authorizationEndpoint)} and {host(value.tokenEndpoint)} before saving.</p> : null}
-      {value.authorizationEndpoint && value.tokenEndpoint ? <p className="text-[12px] text-gray-500">Saving pins these exact addresses, skips sign-in discovery and signs everyone out. PKCE S256 is required. An OAuth client ID is required; its secret is optional.</p> : null}
-      {error ? <p role="alert" className="text-[12px] text-red-600">{error}</p> : null}
+    <div className="mt-3 flex min-w-0 flex-col gap-4">
+      {!pendingReview ? <>
+        {mismatch ? <div className="flex flex-wrap items-start gap-3 border-y border-[var(--dls-border)] py-3" data-testid="manual-oauth-failure">
+          <CircleAlert className="mt-0.5 size-4 shrink-0 text-[var(--ow-danger)]" aria-hidden />
+          <div className="min-w-[230px] flex-1">
+            <p role="alert" className="text-[13px] font-medium text-[var(--ow-danger)]">Sign-in stopped: this server's sign-in information is inconsistent</p>
+            <p className="mt-1 text-[13px] leading-5 text-[var(--dls-text-secondary)]">OpenWork can't confirm which service should receive your users' sign-in codes, so it won't use the published addresses on its own. Check them with the server owner before using them.</p>
+          </div>
+          <DenButton type="button" variant="secondary" size="sm" disabled={disabled} loading={discover.isPending} onClick={() => void review()}>Review published addresses</DenButton>
+        </div> : <div className="flex justify-start"><DenButton type="button" variant="secondary" size="sm" disabled={disabled || !url} loading={discover.isPending} onClick={() => void review()}>Review published addresses</DenButton></div>}
+        {result?.publishedSignInAddresses?.length ? <details className="group/technical text-[12px] text-[var(--dls-text-secondary)]">
+          <summary className="flex cursor-pointer list-none items-center gap-1 [&::-webkit-details-marker]:hidden"><ChevronRight className="size-3.5 transition-transform group-open/technical:rotate-90" aria-hidden />Technical details</summary>
+          <dl className="mt-2 grid min-w-0 grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1">
+            {result.publishedSignInAddresses.map((address, index) => <div key={index} className="contents">
+              <dt>Named sign-in service</dt><dd className="break-all">{address.advertisedIssuer}</dd>
+              <dt>Published issuer</dt><dd className="break-all">{address.metadataIssuer}</dd>
+              <dt>Authorization URL</dt><dd className="break-all">{address.authorizationEndpoint}</dd>
+              <dt>Token URL</dt><dd className="break-all">{address.tokenEndpoint}</dd>
+            </div>)}
+          </dl>
+        </details> : null}
+      </> : null}
+      <EndpointField field="authorizationEndpoint" label="Authorization endpoint URL" draft={draft} saved={saved} disabled={disabled} onChange={onChange} />
+      <EndpointField field="tokenEndpoint" label="Token endpoint URL" draft={draft} saved={saved} disabled={disabled} onChange={onChange} />
+      {pendingReview || destination.differentHost ? <div role="status" className="rounded-lg bg-[color-mix(in_srgb,var(--ow-warning)_8%,var(--dls-surface))] px-3 py-2.5 text-[13px] leading-5 text-[var(--ow-warning)]" data-testid="manual-oauth-trust-warning">
+        <p><TriangleAlert className="mr-1 inline size-3.5 align-text-bottom" aria-hidden /><span className="font-medium">{destination.message}</span></p>
+        {pendingReview ? <p className="mt-1">
+          {draft.published?.inconsistent ? "OpenWork didn't verify these addresses because the server's information is inconsistent. Save only if the server owner confirms them." : "OpenWork hasn't verified these addresses. Save only if the server owner confirms them."}{" "}
+          <DenButton type="button" variant="plain" size="inline" className="!inline-flex !h-auto !p-0 !text-[var(--ow-warning)] underline underline-offset-2" disabled={disabled} onClick={() => onChange(undoPublishedAddresses(draft))}>Undo</DenButton>
+        </p> : null}
+      </div> : null}
+      {Boolean(draft.values.authorizationEndpoint) !== Boolean(draft.values.tokenEndpoint) ? <p role="alert" className="text-[12px] text-[var(--ow-danger)]">Enter both addresses, or clear both to use automatic discovery.</p> : null}
+      {error ? <p role="alert" className="text-[12px] text-[var(--ow-danger)]">{error}</p> : null}
     </div>
   </details>;
 }

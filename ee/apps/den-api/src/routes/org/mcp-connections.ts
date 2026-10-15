@@ -508,6 +508,7 @@ const connectionResponseSchema = z.object({
   access: accessSummarySchema.nullable(),
   /** Public OAuth client id only. Client secrets and all other credentials are never returned. */
   oauthClientId: z.string().nullable().optional(),
+  oauthClientHasSecret: z.boolean().optional().describe("Whether a client secret is configured. Only returned with explicit connection-settings view permission; never the secret itself."),
   manualOAuthEndpoints: manualOAuthEndpointsSchema.nullable().optional().describe("Only returned with explicit connection-settings view permission; omitted from usable member listings, including for the connection creator."),
   oauthCallbackUrl: z.string().nullable().optional(),
   oauthSharedCallbackUrl: z.string().nullable().optional(),
@@ -1329,7 +1330,7 @@ async function toConnectionResponse(
       oauthClientMetadataUrl: row.kind === "external_mcp" && row.authType === "oauth" ? externalMcpClientMetadataUrl() : null,
       oauthCallbackMode: callbackMode,
       oauthRegistrationSource,
-      ...(options.includeManualOAuthEndpoints ? { manualOAuthEndpoints: row.oauthConfiguration?.manualOAuthEndpoints ?? null } : {}),
+      ...(options.includeManualOAuthEndpoints ? { manualOAuthEndpoints: row.oauthConfiguration?.manualOAuthEndpoints ?? null, oauthClientHasSecret: Boolean(oauthClient?.clientSecret) } : {}),
       authorizationServerIssuer: row.oauthConfiguration?.authorizationServerIssuer ?? null,
       requestedScopes: row.oauthConfiguration?.requestedScopes ?? [],
       grantedScopes,

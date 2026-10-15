@@ -13,6 +13,7 @@ export async function manualOAuth(seed: Seed) {
   const accessToken = randomBytes(24).toString("hex");
   let origin = "";
   let exchanges = 0;
+  let differentPublishedHost = false;
   const provider = createServer(async (req, res) => {
     try {
       const url = new URL(req.url ?? "/", origin);
@@ -35,7 +36,7 @@ export async function manualOAuth(seed: Seed) {
       }
       if (url.pathname === "/login") { res.writeHead(200, { "content-type": "text/html" }).end("<!doctype html><title>exp-mcpmanual-login</title><h1>Sign in required</h1>"); return; }
       if (url.pathname === "/.well-known/oauth-protected-resource/mcp/team") { json({ resource: `${origin}/mcp/team`, authorization_servers: [`${origin}/mcp/team`] }); return; }
-      if (url.pathname === "/.well-known/oauth-authorization-server/mcp/team") { json({ issuer: origin, authorization_endpoint: `${origin}/authorize`, token_endpoint: `${origin}/token`, response_types_supported: ["code"], grant_types_supported: ["authorization_code"], code_challenge_methods_supported: ["S256"], token_endpoint_auth_methods_supported: ["none"] }); return; }
+      if (url.pathname === "/.well-known/oauth-authorization-server/mcp/team") { const published = new URL(origin); if (differentPublishedHost) published.hostname = "localhost"; json({ issuer: origin, authorization_endpoint: `${published.origin}/authorize`, token_endpoint: `${published.origin}/token`, response_types_supported: ["code"], grant_types_supported: ["authorization_code"], code_challenge_methods_supported: ["S256"], token_endpoint_auth_methods_supported: ["none"] }); return; }
       if (url.pathname === "/authorize") {
         if (url.searchParams.get("client_id") !== "exp-mcpmanual-client" || url.searchParams.get("code_challenge_method") !== "S256" || url.searchParams.get("resource") !== `${origin}/mcp/team`) { json({ error: "invalid_request" }, 400); return; }
         const approve = new URL(url); approve.pathname = "/approve";
@@ -71,6 +72,8 @@ export async function manualOAuth(seed: Seed) {
     await web.client.send("Network.setBlockedURLs", { urls: ["https://www.google.com/s2/favicons*"] });
     return {
       den, web, requests, origin, connectionId, exchanges: () => exchanges,
+      setPublishedDifferentHost: (value: boolean) => { differentPublishedHost = value; },
+      async warningText() { return evaluate(web.client, () => document.querySelector('[data-testid="manual-oauth-trust-warning"]')?.textContent ?? ""); },
       api: (path: string, init?: RequestInit) => seed.api(den.admin, path, init),
       memberApi: (path: string, init?: RequestInit) => seed.api(den.members.member, path, init),
       async connection(scope = "manageable") { const result = await seed.api(den.admin, `/v1/mcp-connections?scope=${scope}`); const rows = isRecord(result.body) && Array.isArray(result.body.connections) ? result.body.connections : []; return rows.find(entry => isRecord(entry) && entry.id === connectionId); },
@@ -81,7 +84,7 @@ export async function manualOAuth(seed: Seed) {
         });
         return target ? { handle: web.handle, client: await connect(debuggerUrlFor(web.handle.cdpUrl, target)) } : undefined;
       },
-      async saveEnabled() { return evaluate(web.client, () => Array.from(document.querySelectorAll('button')).some(button => button.textContent?.trim() === "Save changes" && !button.disabled)); },
+      async saveEnabled() { return evaluate(web.client, () => Array.from(document.querySelectorAll('button')).some(button => ["Save changes", "Save and use these addresses"].includes(button.textContent?.trim() ?? "") && !button.disabled)); },
       async advancedHealthy() { return evaluate(web.client, () => { const panel = document.querySelector('[data-testid="manual-oauth-settings"]'); if (!panel) return false; const box = panel.getBoundingClientRect(); return box.top >= 52 && box.bottom <= innerHeight && box.left >= 0 && box.right <= innerWidth && !document.querySelector('[role="dialog"], [aria-modal="true"]'); }); },
       async healthy(tab: Surface) { return evaluate(tab.client, () => { const heading = document.querySelector("h1"); if (!heading) return false; const box = heading.getBoundingClientRect(); return box.width > 0 && box.height > 0 && box.left >= 0 && box.right <= innerWidth && document.documentElement.scrollWidth <= innerWidth && !document.querySelector('[role="dialog"], [aria-modal="true"]'); }); },
       async [Symbol.asyncDispose]() { provider.closeAllConnections(); await new Promise<void>((resolve, reject) => provider.close(error => error ? reject(error) : resolve())); },

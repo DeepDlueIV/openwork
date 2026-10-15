@@ -1,6 +1,6 @@
 "use client";
 
-import { Lock } from "lucide-react";
+import { ChevronRight, Lock } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { DenButton } from "../../_components/ui/button";
 import { DenSelect } from "../../_components/ui/select";
@@ -9,7 +9,8 @@ import { ApiKeySchemeAdvanced } from "./connector-setup-fields";
 import { ConfirmDialog } from "./item-list";
 import { credentialModeForAuth } from "./member-api-key";
 import { McpCredentialInput } from "./mcp-credential-input";
-import { EMPTY_OAUTH_ADDRESSES, ManualOAuthFields } from "./manual-oauth-fields";
+import { ManualOAuthFields } from "./manual-oauth-fields";
+import { EMPTY_OAUTH_ADDRESSES, manualOAuthDraft, publishedAddressesUnsaved } from "./manual-oauth-draft";
 import { apiKeyAuthSchemeInput, type ExternalMcpApiKeyAuthScheme, type ExternalMcpAuthType, type ExternalMcpCredentialMode, type ExternalMcpConnection, type McpIssuerReview, type UpdateMcpConnectionInput, useReviewMcpIssuer, useUpdateMcpConnection } from "./mcp-connections-data";
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
@@ -36,7 +37,9 @@ export function ConnectorSettingsForm({ connection, onSaved, lockedReason = null
   const [apiKey, setApiKey] = useState("");
   const [clientId, setClientId] = useState(connection.oauthClientId ?? "");
   const [clientSecret, setClientSecret] = useState("");
-  const [manualAddresses, setManualAddresses] = useState(connection.manualOAuthEndpoints ?? EMPTY_OAUTH_ADDRESSES);
+  const [manualDraft, setManualDraft] = useState(() => manualOAuthDraft(connection.manualOAuthEndpoints ?? EMPTY_OAUTH_ADDRESSES));
+  const manualAddresses = manualDraft.values;
+  const usingPublishedAddresses = publishedAddressesUnsaved(manualDraft, connection.manualOAuthEndpoints ?? EMPTY_OAUTH_ADDRESSES);
   const manualChanged = manualAddresses.authorizationEndpoint.trim() !== (connection.manualOAuthEndpoints?.authorizationEndpoint ?? "") || manualAddresses.tokenEndpoint.trim() !== (connection.manualOAuthEndpoints?.tokenEndpoint ?? "");
   const halfSet = Boolean(manualAddresses.authorizationEndpoint.trim()) !== Boolean(manualAddresses.tokenEndpoint.trim());
   const [confirming, setConfirming] = useState(false);
@@ -54,6 +57,7 @@ export function ConnectorSettingsForm({ connection, onSaved, lockedReason = null
     || (usesKey && apiKeyAuthScheme !== connection.apiKeyAuthScheme);
   const requestedScopes = [...new Set(scopes.split(/[\s,]+/).filter(Boolean))];
   const scopesChanged = requestedScopes.join(" ") !== (connection.requestedScopes ?? []).join(" ");
+  const keepsSavedClientSecret = connection.oauthClientHasSecret === true && clientId.trim() === (connection.oauthClientId ?? "") && !identityChanged;
   const clientChanged = usesOAuthApp && (clientId.trim() !== (connection.oauthClientId ?? "") || Boolean(clientSecret.trim()) || ((manualChanged || identityChanged) && Boolean(manualAddresses.authorizationEndpoint.trim())));
   const changed = name.trim() !== connection.name || identityChanged || Boolean(usesSharedKey && normalizedApiKey) || clientChanged || scopesChanged || manualChanged || exposeDirectly !== connection.exposeDirectly;
   const keyRequired = usesSharedKey && identityChanged && !normalizedApiKey;
@@ -83,6 +87,7 @@ export function ConnectorSettingsForm({ connection, onSaved, lockedReason = null
       const updated = await updateConnection.mutateAsync(input);
       setApiKey("");
       setClientSecret("");
+      setManualDraft(manualOAuthDraft(updated.manualOAuthEndpoints ?? EMPTY_OAUTH_ADDRESSES));
       onSaved(usesPersonalKey
         ? `${updated.name} is ready. Each person can now add their own key in My Library.`
         : updated.reconnectionRequired ? `${updated.name} is saved. Sign in again to use it.` : `${updated.name} is saved.`);
@@ -147,11 +152,11 @@ export function ConnectorSettingsForm({ connection, onSaved, lockedReason = null
             <McpCredentialInput kind="identifier" name="connector-settings-client-id" value={clientId} onChange={(event) => setClientId(event.target.value)} placeholder="Client ID" />
           </Field>
           <Field label="New client secret (optional)">
-            <McpCredentialInput kind="secret" name="connector-settings-client-secret" value={clientSecret} onChange={setClientSecret} saved={connection.oauthClientConfigured === true} placeholder="Client secret" savedPlaceholder="Leave empty to keep the saved secret" />
+            <McpCredentialInput kind="secret" name="connector-settings-client-secret" value={clientSecret} onChange={setClientSecret} saved={keepsSavedClientSecret} placeholder="Client secret" savedPlaceholder="Leave empty to keep the saved secret" />
           </Field>
         </>
       ) : null}
-      {authType === "oauth" ? <ManualOAuthFields url={url} value={manualAddresses} onChange={(value) => { setManualAddresses(value); if (value.authorizationEndpoint) setShowOAuthApp(true); }} disabled={managedByPlugin} /> : null}
+      {authType === "oauth" ? <ManualOAuthFields url={url} draft={manualDraft} saved={connection.manualOAuthEndpoints ?? EMPTY_OAUTH_ADDRESSES} onChange={(value) => { setManualDraft(value); if (value.values.authorizationEndpoint) setShowOAuthApp(true); }} hasClientSecret={keepsSavedClientSecret || Boolean(clientSecret.trim())} disabled={managedByPlugin} /> : null}
       {authType === "oauth" ? (
         <Field label="Requested OAuth scopes">
           <DenInput value={scopes} disabled={managedByPlugin} onChange={(event) => setScopes(event.target.value)} placeholder="records.read records.write" data-testid="connector-settings-scopes" />
@@ -170,10 +175,10 @@ export function ConnectorSettingsForm({ connection, onSaved, lockedReason = null
             {lockedReason}
           </p>
         ) : null}
-        <DenButton type="submit" size="sm" loading={updateConnection.isPending} disabled={disabled || lockedReason !== null}>Save changes</DenButton>
+        <DenButton type="submit" size="sm" className="!bg-[var(--dls-accent)] hover:!bg-[var(--dls-accent-hover)]" loading={updateConnection.isPending} disabled={disabled || lockedReason !== null}>{usingPublishedAddresses ? "Save and use these addresses" : "Save changes"}</DenButton>
       </div>
     </form>
-    {connection.authType === "oauth" ? <ConnectorIssuerReview connection={connection} onSaved={onSaved} /> : null}
+    {connection.authType === "oauth" && !connection.manualOAuthEndpoints ? <ConnectorIssuerReview connection={connection} onSaved={onSaved} /> : null}
     <ConfirmDialog
         confirm={confirming ? {
           title: `Change how ${connection.name} connects?`,
@@ -214,9 +219,11 @@ function ConnectorIssuerReview({ connection, onSaved }: { connection: ExternalMc
   }
 
   return (
-    <div className="flex flex-col gap-3 border-t border-gray-100 px-5 py-4">
+    <details className="group/issuer border-t border-[var(--dls-border)] px-5 py-3" open={connection.issuerReviewRequired === true}>
+      <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[12px] font-medium text-[var(--dls-text-secondary)] [&::-webkit-details-marker]:hidden"><ChevronRight className="size-3.5 transition-transform group-open/issuer:rotate-90" aria-hidden />Authorization server selection</summary>
+      <div className="mt-3 flex flex-col gap-3">
       {connection.issuerReviewRequired ? <p className="text-[13px] text-gray-600">The sign-in server changed. An admin must review it.</p> : null}
-      <DenButton type="button" variant="secondary" size="sm" loading={review.isPending} onClick={() => void inspect()}>Review sign-in server</DenButton>
+      <DenButton type="button" variant="secondary" size="sm" loading={review.isPending} onClick={() => void inspect()}>Choose authorization server</DenButton>
       {preview ? <>
         <p className="text-[12px] text-gray-500">Saved server: {preview.currentIssuer ?? "None"}</p>
         <Field label="Sign-in server">
@@ -225,10 +232,11 @@ function ConnectorIssuerReview({ connection, onSaved }: { connection: ExternalMc
           </DenSelect>
         </Field>
         {preview.advertisedIssuers.length === 0 ? <p className="text-[12px] text-gray-500">No sign-in server was found. Check the address and try again.</p> : null}
-        <DenButton type="button" size="sm" disabled={!issuer || !connection.updatedAt || review.isPending} onClick={() => setConfirming(true)}>Save sign-in server</DenButton>
+        <DenButton type="button" size="sm" disabled={!issuer || !connection.updatedAt || review.isPending} onClick={() => setConfirming(true)}>Save authorization server</DenButton>
       </> : null}
       {error ? <p className="text-[12px] text-red-600" role="alert">{error}</p> : null}
-      <ConfirmDialog confirm={confirming ? { title: `Use this sign-in server for ${connection.name}?`, description: `${issuer}. Everyone signs in again; saved sign-ins and OAuth app credentials are cleared if the server changes.`, action: "Save sign-in server" } : null} onConfirm={confirm} onClose={() => setConfirming(false)} />
-    </div>
+      <ConfirmDialog confirm={confirming ? { title: `Use this sign-in server for ${connection.name}?`, description: `${issuer}. Everyone signs in again; saved sign-ins and OAuth app credentials are cleared if the server changes.`, action: "Save authorization server" } : null} onConfirm={confirm} onClose={() => setConfirming(false)} />
+      </div>
+    </details>
   );
 }

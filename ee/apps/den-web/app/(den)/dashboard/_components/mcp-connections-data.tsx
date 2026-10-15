@@ -111,6 +111,7 @@ export type ExternalMcpConnection = {
   setupRequired?: boolean;
   access: ExternalMcpAccessSummary | null;
   oauthClientId?: string | null;
+  oauthClientHasSecret?: boolean;
   oauthCallbackUrl?: string | null;
   oauthSharedCallbackUrl?: string | null;
   oauthClientMetadataUrl?: string | null;

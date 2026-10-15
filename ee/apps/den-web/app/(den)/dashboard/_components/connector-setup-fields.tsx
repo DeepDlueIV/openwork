@@ -6,7 +6,8 @@ import { DenButton } from "../../_components/ui/button";
 import { DenSelect } from "../../_components/ui/select";
 import type { OAuthAppInput } from "./connector-setup";
 import type { ExternalMcpApiKeyAuthScheme, McpRequirementsDiscovery } from "./mcp-connections-data";
-import { EMPTY_OAUTH_ADDRESSES, ManualOAuthFields } from "./manual-oauth-fields";
+import { ManualOAuthFields } from "./manual-oauth-fields";
+import { manualOAuthDraft, publishedAddressesUnsaved } from "./manual-oauth-draft";
 import { McpCredentialInput } from "./mcp-credential-input";
 
 /** Step two's one field for a server that takes a key. */
@@ -57,7 +58,9 @@ export function OAuthAppFields({ secretRequired, saving, error, onSave, url, dis
 }) {
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
-  const [manualAddresses, setManualAddresses] = useState(EMPTY_OAUTH_ADDRESSES);
+  const [manualDraft, setManualDraft] = useState(() => manualOAuthDraft());
+  const manualAddresses = manualDraft.values;
+  const usingPublishedAddresses = publishedAddressesUnsaved(manualDraft);
   const hasManual = Boolean(manualAddresses.authorizationEndpoint.trim() && manualAddresses.tokenEndpoint.trim());
   const halfSet = Boolean(manualAddresses.authorizationEndpoint.trim()) !== Boolean(manualAddresses.tokenEndpoint.trim());
   const ready = !halfSet && Boolean(clientId.trim()) && (hasManual || !secretRequired || Boolean(clientSecret.trim()));
@@ -90,10 +93,12 @@ export function OAuthAppFields({ secretRequired, saving, error, onSave, url, dis
           onChange={setClientSecret}
           disabled={saving}
         />
-        <DenButton type="submit" className="shrink-0" loading={saving} disabled={!ready}>Save app</DenButton>
       </div>
-      {url ? <ManualOAuthFields url={url} value={manualAddresses} onChange={setManualAddresses} disabled={saving} discovery={discovery} /> : null}
+      {url ? <ManualOAuthFields url={url} draft={manualDraft} onChange={setManualDraft} hasClientSecret={Boolean(clientSecret.trim())} disabled={saving} discovery={discovery} /> : null}
       {error ? <p className="text-[12px] text-red-600" role="alert">{error}</p> : null}
+      <div className="flex justify-end border-t border-[var(--dls-border)] pt-3">
+        <DenButton type="submit" className="!bg-[var(--dls-accent)] hover:!bg-[var(--dls-accent-hover)]" loading={saving} disabled={!ready}>{usingPublishedAddresses ? "Save and use these addresses" : "Save changes"}</DenButton>
+      </div>
     </form>
   );
 }

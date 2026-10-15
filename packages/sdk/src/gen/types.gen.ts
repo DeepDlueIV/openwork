@@ -3763,6 +3763,10 @@ export type ExternalMcpConnectionResponse = {
   access: ExternalMcpConnectionAccessSummary | null;
   oauthClientId?: string | null;
   /**
+   * Whether a client secret is configured. Only returned with explicit connection-settings view permission; never the secret itself.
+   */
+  oauthClientHasSecret?: boolean;
+  /**
    * Only returned with explicit connection-settings view permission; omitted from usable member listings, including for the connection creator.
    */
   manualOAuthEndpoints?: {
@@ -4038,6 +4042,10 @@ export type ExternalMcpConnectionCreatedResponse = {
   access: ExternalMcpConnectionAccessSummary | null;
   oauthClientId?: string | null;
   /**
+   * Whether a client secret is configured. Only returned with explicit connection-settings view permission; never the secret itself.
+   */
+  oauthClientHasSecret?: boolean;
+  /**
    * Only returned with explicit connection-settings view permission; omitted from usable member listings, including for the connection creator.
    */
   manualOAuthEndpoints?: {
@@ -4119,6 +4127,10 @@ export type ExternalMcpConnectionUpdatedResponse = {
   setupRequired?: boolean;
   access: ExternalMcpConnectionAccessSummary | null;
   oauthClientId?: string | null;
+  /**
+   * Whether a client secret is configured. Only returned with explicit connection-settings view permission; never the secret itself.
+   */
+  oauthClientHasSecret?: boolean;
   /**
    * Only returned with explicit connection-settings view permission; omitted from usable member listings, including for the connection creator.
    */

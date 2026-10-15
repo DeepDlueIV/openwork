@@ -121,6 +121,7 @@ jobs:
           pnpm --filter @openwork-ee/utils test
           pnpm --filter @openwork/automations test
           pnpm --filter @openwork-ee/den-api test
+          pnpm --filter @openwork-ee/den-api exec node --conditions=development --import tsx --test "../den-web/app/(den)/dashboard/_components/manual-oauth-draft.test.ts"
           pnpm --filter @openwork-ee/workbot test:model
       - name: Check sandbox contracts and adapters (no cloud resources)
         run: |

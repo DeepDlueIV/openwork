@@ -18,7 +18,7 @@ import {
   type CloudUploadDependencies,
 } from "./cloud-uploads.js";
 import { uploadDriveResumableFile } from "./drive-resumable-upload.js";
-import { openWorkspaceFileForWriting, proveHandleInPlace, WorkspaceFileError } from "../opencode-plugins/workspace-file-identity.js";
+import { openWorkspaceFileForWriting, proveHandleInPlace, WorkspaceFileError } from "../workspace-file-identity.js";
 
 const LINKS_FILE = "drive-links.json";
 const DEN_TIMEOUT_MS = 2 * 60 * 1000;

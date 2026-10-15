@@ -9,7 +9,7 @@ export async function adminDashboardWeb(seed: Seed) {
   const den = await seed.den({
     org: { name: `Admin navigation ${Date.now()}`, admin: { name: "Navigation Admin" } },
   });
-  const organizationId = await enableOrganizationCapabilities(seed, den.admin, { teamPageTabs: true });
+  const organizationId = await enableOrganizationCapabilities(seed, den.admin, { teamPageTabs: true, memberListToolbars: true });
   const setRemoval = async (enabled: boolean) => {
     const result = await seed.api(den.admin, `/v1/admin/organizations/${organizationId}/capabilities`, {
       method: "PUT", body: JSON.stringify({ capabilities: { desktopPolicyScreenRemoval: enabled } }),

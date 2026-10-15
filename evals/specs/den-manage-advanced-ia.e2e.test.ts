@@ -113,6 +113,11 @@ test("the Den admin sidebar groups Manage and moves Advanced into Settings", asy
   });
   await step("Everyone's Desktop tab remains reachable without the Agent permissions rollout", async () => {
     await user.see({ testId: "team-row-everyone" }, { timeoutMs: 30_000 });
+    await user.type({ placeholder: "Filter teams" }, "no matching team", { replace: true });
+    await probe.eventually(() => probe.dom('[data-testid="team-row-everyone"]'), { within: 10_000, label: "Everyone respects the team filter", until: (value) => value.elements.length === 0 });
+    await user.type({ placeholder: "Filter teams" }, "everyone", { replace: true });
+    await user.see({ testId: "team-row-everyone" });
+    await user.screenshot();
     await user.click({ role: "link", label: /^Everyone$/ });
     await user.see({ role: "tab", label: "Desktop" }, { timeoutMs: 30_000 });
     await user.click({ role: "tab", label: "Desktop" });

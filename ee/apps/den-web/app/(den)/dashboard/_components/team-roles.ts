@@ -181,7 +181,7 @@ export function teamRoleLabels(input: {
 }
 
 /** Invite and role pickers: a built-in role, or a custom role by its team. */
-export type RoleChoiceValue = "member" | "admin" | `team:${string}`;
+export type RoleChoiceValue = "member" | "admin" | `team:${string}` | `role:${string}`;
 
 export function customRoleChoice(teamId: string): RoleChoiceValue {
   return `team:${teamId}`;
@@ -198,27 +198,33 @@ export type MemberRoleOption = {
   /** "Custom role" next to a custom role's name, null for built-in roles. */
   caption: string | null;
   disabled: boolean;
+  lockReason?: string | null;
 };
 
 /**
  * The roles a person can be given directly, for both Invite and Edit role.
  *
- * Member and Admin always. With teamRoles (not sharedRoles) each custom role
- * is listed by its team: choosing it makes the person a Member of that team.
- * With sharedRoles a custom role belongs to teams, not to people, so it is
- * given through the person's teams and is not listed here (the same as
- * Change role on a team, which is where custom roles are chosen).
+ * Member and Admin always. With teamRoles each custom role is listed by its
+ * team. With sharedRoles it is listed once by permission-set name, including
+ * roles with no teams. The caller resolves its team choice before saving;
+ * custom roles always keep the person's organization role Member.
  */
 export function memberRoleOptions(input: {
   sharedRoles: boolean;
   customRoleTeams: readonly { id: string; name: string; managedByScim?: boolean }[];
   canManageTeams: boolean;
+  customRoles?: readonly { id: string; name: string; teams: readonly { id: string; name: string | null }[] }[];
+  lockReasons?: ReadonlyMap<string, string | null>;
+  adminLockReason?: string | null;
 }): MemberRoleOption[] {
   const builtIn: MemberRoleOption[] = [
     { value: "member", label: TEAM_ROLE_LABELS.member, caption: null, disabled: false },
-    { value: "admin", label: TEAM_ROLE_LABELS.admin, caption: null, disabled: false },
+    { value: "admin", label: TEAM_ROLE_LABELS.admin, caption: null, disabled: Boolean(input.adminLockReason), lockReason: input.adminLockReason },
   ];
-  if (input.sharedRoles) return builtIn;
+  if (input.sharedRoles) return [...builtIn, ...(input.customRoles ?? []).map((role): MemberRoleOption => {
+    const lockReason = !input.canManageTeams ? "Needs Manage teams. Ask the organization owner." : input.lockReasons?.get(role.id) ?? null;
+    return { value: `role:${role.id}`, label: role.name, caption: role.teams.length ? `On ${role.teams.map((team) => team.name ?? "A deleted team").join(", ")}` : "No teams yet", disabled: lockReason !== null, lockReason };
+  })];
   return [
     ...builtIn,
     ...input.customRoleTeams.map((team): MemberRoleOption => ({

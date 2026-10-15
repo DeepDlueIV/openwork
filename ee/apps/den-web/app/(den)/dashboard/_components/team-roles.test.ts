@@ -122,7 +122,23 @@ test("sharedRoles: custom roles read by their own name", () => {
   assert.deepEqual(teamRoleLabels({ memberId: "om_1", ownRole: "member", teams, customTeamIds: new Set(["tem_sales", "tem_eng"]), customRoleNameByTeam: names }), ["Skill publisher"]);
 });
 
-test("Invite and Edit role list the same roles: Member, Admin, and custom roles by team unless roles are shared", () => {
+test("Invite and Edit role list built-ins first, then every shared role by name, with grant locks", () => {
+  const customRoles = [
+    { id: "set_publisher", name: "Skill publisher", teams: [{ id: "tem_sales", name: "Sales" }, { id: "tem_eng", name: "Engineering" }] },
+    { id: "set_empty", name: "Unassigned", teams: [] },
+  ];
+  const options = memberRoleOptions({ sharedRoles: true, customRoleTeams: [], customRoles, canManageTeams: true, lockReasons: new Map([["set_publisher", "Ask the owner"]]) });
+  assert.deepEqual(options.map((option) => [option.value, option.label, option.caption, option.disabled]), [
+    ["member", "Member", null, false], ["admin", "Admin", null, false],
+    ["role:set_publisher", "Skill publisher", "On Sales, Engineering", true],
+    ["role:set_empty", "Unassigned", "No teams yet", false],
+  ]);
+  assert.equal(options[2]?.lockReason, "Ask the owner");
+  assert.deepEqual(parseRoleChoice("role:set_publisher"), { role: "member", teamId: null });
+  assert.ok(memberRoleOptions({ sharedRoles: true, customRoleTeams: [], customRoles, canManageTeams: false }).slice(2).every((option) => option.disabled));
+});
+
+test("Without shared roles, Invite and Edit role retain custom roles by team", () => {
   const customRoleTeams = [{ id: "tem_eng", name: "test Permissions" }, { id: "tem_scim", name: "Directory", managedByScim: true }];
   const shared = memberRoleOptions({ sharedRoles: true, customRoleTeams, canManageTeams: true });
   assert.deepEqual(shared.map((option) => option.value), ["member", "admin"]);

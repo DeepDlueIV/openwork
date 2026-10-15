@@ -28,6 +28,7 @@ import {
   getMembersRoute,
   getEveryoneRoute,
   getNewRoleRoute,
+  getPermissionSetRoute,
   getTeamRoute,
   orgFeatureEnabled,
   splitRoleString,
@@ -57,7 +58,7 @@ import { MemberListToolbar } from "./member-list-toolbar";
 import { formatAddedDate } from "./item-dates";
 import { TeamsListHeader, TeamsListLane, TeamsListLocked, TeamsListOpenLink, TeamsListRow, teamsListColumns } from "./teams-list-row";
 import { teamOverrideSummary, useAgentPermissions } from "./agent-permissions-data";
-import { useCustomRoleTeams, useSharedRolesOn } from "./permissions-data";
+import { useCustomRoleTeams, useSharedRolesOn, usePermissionSets, useRoleGrantLocks } from "./permissions-data";
 import { MemberTeamRoles } from "./member-team-roles";
 import { TEAM_ROLE_LABELS, memberRoleOptions, parseRoleChoice, teamRole, teamRoleLabels } from "./team-roles";
 import { MemberRoleEditor, MemberRoleSelect } from "./member-role-select";
@@ -186,11 +187,59 @@ export function ManageMembersScreen() {
   const permissionsFeature = orgContext ? orgFeatureEnabled(orgContext, "permissions") : false;
   const customRoles = useCustomRoleTeams(orgContext?.organization.id ?? null, teamRoles && permissionsFeature && access.canViewPermissions);
   const customRoleTeams = teamRoles ? (orgContext?.teams ?? []).filter((team) => customRoles.teamIds.has(team.id)) : [];
-  // sharedRoles: invite with Member or Admin and a team (which carries its role).
+  // sharedRoles: list permission sets by name; custom grants still come from teams.
   const sharedRoles = useSharedRolesOn();
-  const memberRoles = memberRoleOptions({ sharedRoles, customRoleTeams, canManageTeams: access.canManageTeams });
+  const canChooseInviteRole = access.canManageRoles || sharedRoles && access.canViewPermissions && access.canManageTeams;
+  const roleSets = usePermissionSets(orgContext?.organization.id ?? null, sharedRoles && teamRoles && permissionsFeature && access.canViewPermissions);
+  const customSets = (sharedRoles && teamRoles && permissionsFeature && access.canViewPermissions ? roleSets.data ?? [] : []).filter((set) => set.kind === "team");
+  const grantLocks = useRoleGrantLocks(orgContext?.organization.id ?? null, sharedRoles && teamRoles && permissionsFeature && access.canViewPermissions ? roleSets.data ?? [] : [], orgContext?.currentMember.permissions ?? [], orgContext?.currentMember.isOwner ?? false);
+  const roleTeams = (setId: string) => {
+    const set = customSets.find((entry) => entry.id === setId);
+    const ids = (set?.teams.length ? set.teams : set?.team ? [set.team] : []).map((team) => team.id);
+    return (orgContext?.teams ?? []).filter((team) => ids.includes(team.id));
+  };
+  const roleLocks = new Map(grantLocks);
+  for (const set of customSets) {
+    const teams = roleTeams(set.id);
+    if (teams.length && teams.every((team) => team.managedByScim || team.grantsOrganizationAdmin && !access.canManageAdminTeams)) roleLocks.set(set.id, "This role’s teams are managed by your identity provider or need Manage Admin teams. Ask the organization owner.");
+  }
+  const memberRoles = memberRoleOptions({ sharedRoles, customRoleTeams, canManageTeams: access.canManageTeams, customRoles: customSets.map((set) => ({ ...set, teams: set.teams.length ? set.teams : set.team ? [set.team] : [] })), lockReasons: roleLocks, adminLockReason: sharedRoles ? !access.canManageRoles ? permissionLockReason("members.update") : grantLocks.get(roleSets.data?.find((set) => set.kind === "admin_default")?.id ?? "") : null });
   const inviteTeamPicker = sharedRoles && access.canManageTeams && (orgContext?.teams.length ?? 0) > 0;
   const [inviteTeamId, setInviteTeamId] = useState("");
+  const [memberRoleTeamId, setMemberRoleTeamId] = useState("");
+  function chosenRole(value: string, teamId: string) {
+    const set = value.startsWith("role:") ? customSets.find((entry) => entry.id === value.slice(5)) : null;
+    const teams = set ? roleTeams(set.id) : [];
+    const grantable = teams.filter((team) => !team.managedByScim && (!team.grantsOrganizationAdmin || access.canManageAdminTeams));
+    const selected = grantable.find((team) => team.id === teamId) ?? (teams.length === 1 ? grantable[0] : undefined);
+    return { set, teams, grantable, selected, blocked: value.startsWith("role:") && (!set || !selected || Boolean(roleLocks.get(set.id)) || !access.canManageTeams) };
+  }
+  const inviteChoice = chosenRole(inviteRole, inviteTeamId);
+  const editChoice = chosenRole(memberRoleDraft, memberRoleTeamId);
+  function customTeamChoice(value: string, teamId: string, onChange: (id: string) => void) {
+    const choice = chosenRole(value, teamId);
+    if (!choice.set) return null;
+    if (!choice.teams.length) return (
+      <p className="col-span-full min-w-0 text-[13px] text-gray-500">
+        <Link href={getPermissionSetRoute(orgSlug, choice.set.id)} className="underline" title={choice.set.name}>{choice.set.name}</Link>
+        {" isn’t on a team yet. Add it to a team first."}
+      </p>
+    );
+    if (choice.teams.length === 1) return (
+      <p className="min-w-0 truncate text-[13px] text-gray-500" title={`Joins ${choice.teams[0]?.name}`}>Joins {choice.teams[0]?.name}</p>
+    );
+    return (
+      <label className="grid min-w-0 gap-3">
+        <span className="text-[14px] font-medium text-gray-700">Team</span>
+        <DenSelect aria-label="Team" value={choice.selected?.id ?? ""} onChange={(event) => onChange(event.target.value)} menuWidth="trigger">
+          <option value="">Choose a team</option>
+          {choice.teams.map((team) => (
+            <option key={team.id} value={team.id} disabled={!choice.grantable.includes(team)} title={team.name}>{team.name}</option>
+          ))}
+        </DenSelect>
+      </label>
+    );
+  }
   // agentPermissions: Teams lists Everyone first, and what each team changes from it.
   const agentPermissionsColumn = Boolean(orgContext && orgFeatureEnabled(orgContext, "agentPermissions") && access.canViewAgentPermissions);
   const agentPolicies = useAgentPermissions(orgContext?.organization.id ?? "", agentPermissionsColumn && Boolean(orgContext?.organization.id));
@@ -242,6 +291,7 @@ export function ManageMembersScreen() {
   function resetMemberEditor() {
     setEditingMemberId(null);
     setMemberRoleDraft("member");
+    setMemberRoleTeamId("");
   }
 
   function resetTeamEditor() {
@@ -368,7 +418,7 @@ export function ManageMembersScreen() {
             setPageError(null);
             try {
               // A custom role invites a Member into that role's team; with sharedRoles the team is picked directly.
-              const choice = parseRoleChoice(access.canManageRoles ? inviteRole : "member");
+              const choice = parseRoleChoice(canChooseInviteRole ? inviteRole : "member");
               await inviteMember({ email: inviteEmail, role: choice.role, teamId: inviteTeamPicker ? inviteTeamId || null : choice.teamId });
               resetInviteForm();
             } catch (error) {
@@ -403,10 +453,10 @@ export function ManageMembersScreen() {
               required
             />
           </label>
-          {access.canManageRoles ? (
+          {canChooseInviteRole ? (
             <label className="grid gap-3">
               <span className="text-[14px] font-medium text-gray-700">Role</span>
-              <MemberRoleSelect value={inviteRole} onChange={setInviteRole} options={memberRoles} />
+              <MemberRoleSelect value={inviteRole} onChange={(value) => { setInviteRole(value); setInviteTeamId(""); }} options={memberRoles} searchable={sharedRoles} />
             </label>
           ) : (
             <div className="grid gap-3">
@@ -414,7 +464,8 @@ export function ManageMembersScreen() {
               <DenInput value="Member" readOnly disabled aria-describedby="invite-role-locked" />
             </div>
           )}
-          {inviteTeamPicker ? (
+          {customTeamChoice(inviteRole, inviteTeamId, setInviteTeamId)}
+          {inviteTeamPicker && !inviteChoice.set ? (
             <label className="grid gap-3">
               <span className="text-[14px] font-medium text-gray-700">Team</span>
               {/* sharedRoles: each team shows its role, so picking a team decides the custom role. */}
@@ -423,7 +474,7 @@ export function ManageMembersScreen() {
                 {orgContext.teams.filter((team) => !team.managedByScim && (!team.grantsOrganizationAdmin || access.canManageAdminTeams)).map((team) => (
                   <option key={team.id} value={team.id} title={team.name}>
                     {team.name}
-                    <span className="ml-1.5 font-normal text-gray-500">{team.grantsOrganizationAdmin ? "Admin" : customRoles.nameByTeam.get(team.id) ?? "Member"}</span>
+                    <span className="ml-1.5 font-normal text-gray-500">{team.grantsOrganizationAdmin ? "Admin" : access.canViewPermissions ? customRoles.nameByTeam.get(team.id) ?? "Member" : ""}</span>
                   </option>
                 ))}
               </DenSelect>
@@ -431,11 +482,11 @@ export function ManageMembersScreen() {
           ) : null}
           <div className={`flex gap-2 lg:justify-end ${inviteTeamPicker ? "lg:col-span-3" : ""}`}>
             <ActionButton size="md" onClick={resetInviteForm}>Cancel</ActionButton>
-            <DenButton type="submit" loading={mutationBusy === "invite-member"}>
+            <DenButton type="submit" loading={mutationBusy === "invite-member"} disabled={inviteChoice.blocked}>
               Send invite
             </DenButton>
           </div>
-          {access.canManageRoles ? null : (
+          {canChooseInviteRole ? null : (
             <p id="invite-role-locked" className="flex items-center gap-1.5 text-[13px] text-gray-500 lg:col-span-3">
               <Lock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
               {`Inviting someone as an admin is locked. ${permissionLockReason("members.update")}`}
@@ -466,14 +517,18 @@ export function ManageMembersScreen() {
   async function saveMemberRole(member: DenOrgMember) {
     setPageError(null);
     try {
-      // A custom role (teamRoles) makes the person a Member of that role's team, the same as Invite.
-      // Join the team first so they never have less access mid-way than at either end.
+      // A custom role grants through a team, never through organization Admin.
+      // Remove direct Admin first: joining before demoting would temporarily
+      // combine the old Admin grant with the new custom permissions.
+      if (editChoice.blocked) return;
       const choice = parseRoleChoice(memberRoleDraft);
-      const team = choice.teamId ? orgContext?.teams.find((entry) => entry.id === choice.teamId) : null;
+      const team = editChoice.set ? editChoice.selected : choice.teamId ? orgContext?.teams.find((entry) => entry.id === choice.teamId) : null;
+      const demoteFirst = sharedRoles && choice.role === "member" && assignableOrgRole(member.role) === "admin";
+      if (demoteFirst) await updateMemberRole(member.id, "member");
       if (team && !team.memberIds.includes(member.id)) {
         await updateTeam(team.id, { memberIds: [...team.memberIds, member.id] });
       }
-      if (choice.role !== assignableOrgRole(member.role)) {
+      if (!demoteFirst && choice.role !== assignableOrgRole(member.role)) {
         await updateMemberRole(member.id, choice.role);
       }
       resetMemberEditor();
@@ -487,7 +542,10 @@ export function ManageMembersScreen() {
       <MemberRoleEditor
         memberName={editingMember.user.name || editingMember.user.email}
         value={memberRoleDraft}
-        onChange={setMemberRoleDraft}
+        onChange={(value) => { setMemberRoleDraft(value); setMemberRoleTeamId(""); }}
+        searchable={sharedRoles}
+        teamChoice={customTeamChoice(memberRoleDraft, memberRoleTeamId, setMemberRoleTeamId)}
+        blocked={editChoice.blocked}
         options={memberRoles}
         saving={mutationBusy === "update-member-role" || mutationBusy === "update-team"}
         onCancel={resetMemberEditor}

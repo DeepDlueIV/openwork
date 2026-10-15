@@ -1,6 +1,6 @@
 "use client";
 
-import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { getPermissionDefinition, isPermissionKey } from "@openwork/types/den/permissions";
 import { z } from "zod";
 import { getErrorMessage, getReauthRequiredError, requestJson } from "../../_lib/den-flow";
@@ -277,6 +277,24 @@ export function usePermissionSet(orgId: string | null, setId: string, enabled = 
       signal,
     })).set,
   });
+}
+
+export function useRoleGrantLocks(orgId: string | null, sets: readonly PermissionSetSummary[], permissions: readonly string[], isOwner: boolean) {
+  const details = useQueries({ queries: sets.map((set) => ({
+    queryKey: permissionsQueryKeys.set(orgId ?? "", set.id),
+    enabled: Boolean(orgId) && !isOwner,
+    retry: false,
+    queryFn: async ({ signal }: { signal: AbortSignal }) => required(await permissionsRequest({
+      orgId: orgId ?? "", path: `/v1/permissions/sets/${encodeURIComponent(set.id)}`,
+      schema: z.object({ set: setDetailSchema }), fallback: "Couldn't verify this role", signal,
+    })).set,
+  })) });
+  return new Map(sets.map((set, index) => {
+    const detail = details[index];
+    const missing = detail?.data?.permissions.find((entry) => entry.status === "allow" && !permissions.includes(entry.key));
+    const reason = isOwner ? null : !detail?.data ? "Couldn't verify this role's permissions yet." : missing ? "This role grants permissions you don’t have. Ask the organization owner." : null;
+    return [set.id, reason];
+  }));
 }
 
 const HISTORY_PAGE_SIZE = 50;

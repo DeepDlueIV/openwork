@@ -61,9 +61,11 @@ test("an owner can hide analytics without losing existing export consent or gran
     expect(settings.response.status).toBe(200);
     expect(settings.text).not.toContain("synthetic-secret-key");
     expect(settings.text).not.toContain("synthetic-public-key");
-    expect((await api("activity?days=30")).response.status).toBe(200);
+    const activity = await api("activity?days=30");
+    expect(activity.response.status).toBe(200);
+    expect(activity.body).toMatchObject({ events: [{ id: "retained-surface-event" }] });
     expect((await api("consumption?days=30")).response.status).toBe(200);
-    evidence.recordAssertionEvidence("opted-in analytics returns without exposing saved keys", "Settings, activity and consumption return 200; neither saved key appears in the response; all three task tabs are present.", true);
+    evidence.recordAssertionEvidence("opted-in analytics returns without exposing saved keys", "Settings, activity and consumption return 200; the existing task event is retained, neither saved key appears in the response, and all three task tabs are present.", true);
     await owner.screenshot();
   });
 
@@ -92,7 +94,7 @@ test("an owner can hide analytics without losing existing export consent or gran
     // Runtime event ingestion is not a user-facing configuration/read endpoint.
     const ingestion = await world.requestAnalytics("events", { method: "POST", body: JSON.stringify({ events: [] }) });
     expect(ingestion.response.status).not.toBe(404);
-    evidence.recordAssertionEvidence("hiding analytics is reversible and does not turn off collection", "The tabs disappear again, reads return 404, runtime ingestion is not feature-disabled, and the existing export configuration is unchanged.", true);
+    evidence.recordAssertionEvidence("hiding analytics is reversible and does not turn off collection", "The tabs disappear again, reads return 404, runtime ingestion is not feature-disabled, and task history, its export receipt, consent cutoff and encrypted export configuration are unchanged.", true);
     await owner.screenshot();
   });
 });

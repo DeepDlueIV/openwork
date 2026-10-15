@@ -25,7 +25,7 @@ export function AdminUsageChart({ daily, showActiveMembers = false }: { daily: P
         <option value="requests">Requests</option><option value="tokens">Reported tokens</option><option value="costMicroUsd">Recorded cost</option>{showActiveMembers ? <option value="activeMembers">Active members</option> : null}
       </DenSelect>
     </div>
-    <div data-testid={`admin-dashboard-chart-${metric}`} aria-label={`${label} over ${daily.length} UTC days`} className="h-60 min-w-0 text-xs">
+    <div data-testid={`admin-dashboard-chart-${metric}`} aria-label={`${label} over ${daily.length} UTC days`} className="h-60 min-w-0 max-w-full overflow-hidden text-xs">
       <ResponsiveContainer width="100%" height="100%" minWidth={0}>
         <AreaChart accessibilityLayer data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
           <CartesianGrid stroke={border} vertical={false} />
@@ -40,7 +40,7 @@ export function AdminUsageChart({ daily, showActiveMembers = false }: { daily: P
 }
 
 export function AdminRankingChart({ rows, label }: { rows: { name: string; requests: number }[]; label: string }) {
-  return <div aria-label={label} className="h-64 min-w-0 text-xs">
+  return <div aria-label={label} className="h-64 min-w-0 max-w-full overflow-hidden text-xs">
     <ResponsiveContainer width="100%" height="100%" minWidth={0}>
       <BarChart accessibilityLayer data={rows} layout="vertical" margin={{ top: 0, right: 20, bottom: 0, left: 0 }}>
         <CartesianGrid stroke={border} horizontal={false} />

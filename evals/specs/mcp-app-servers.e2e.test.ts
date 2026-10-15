@@ -780,11 +780,22 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
       await world.prepareLifecycleTurn(prompt, "guided");
       // Held before prepare_app: reading the guide already starts the step while the agent writes.
       await world.holdCreation(true);
+      await world.watchCreationProgress();
       await agent.send(prompt);
       expect(await probe.eventually(async () => (await probe.dom('[data-app-builder-step][data-app-creation-stage="needs"] .ow-text-shimmer')).elements, { within: 120_000, intervalMs: 200, label: "the guide starts the artifact step before prepare_app", until: elements => elements.length === 1 && elements[0].rect.height > 0 })).toHaveLength(1);
       await user.see({ text: /Creating MCP App/ });
       const guidedDone = (await probe.dom('[data-app-builder-checklist] [data-checklist-state="done"]')).elements.map(element => element.text.trim());
       expect(guidedDone).toEqual(expect.arrayContaining(["Searched your connections for “Inventory lookup unit price”"]));
+      // Witness the intervening shell call really finished before checking
+      // continuity; an App-only sequence never exercised the disappearing row.
+      const calls = await world.den.mocks.inventory.agentRequests({ promptMarker: prompt });
+      expect(JSON.stringify(calls)).toContain("App inputs checked");
+      const continuity = await world.creationProgressWitness();
+      expect(continuity).toEqual({ seen: true, missing: 0, replaced: 0, paused: 0 });
+      expect((await probe.dom('[data-app-builder-step] .bg-primary, [data-app-builder-step] .text-primary')).elements).toHaveLength(0);
+      expect((await probe.dom('[data-loading-message]')).elements).toHaveLength(0);
+      await user.notSee({ text: "Paused" });
+      await user.screenshot();
       await world.holdCreation(false);
       const sentence = `Created MCP App “${guidedTitle}”`;
       await user.see({ text: sentence }, { timeoutMs: 120_000 });
@@ -804,7 +815,7 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
       await user.on(frame).type({ role: "textbox", label: "Sku" }, launchInput.sku);
       await user.on(frame).click({ role: "button", label: "Show unit price" });
       await user.on(frame).see({ text: "Unit price" }, { timeoutMs: 60_000 });
-      evidence.recordAssertionEvidence("The agent's own calls make one artifact step, and the starter works as published", `${name}: a dashboard request without the word app read build-an-app, searched, prepared and built from prepare_app's starter. While the model was held before prepare_app, the step already read Creating MCP App with the search done. The guide and search sit inside the one Created MCP App step, and the published starter loads the Inventory price on one click.`, true);
+      evidence.recordAssertionEvidence("One neutral App checklist stays mounted across other tool calls", `${name}: after reading the guide, a real shell call finished before preparation. The checklist stayed present with ${continuity.missing} missing, ${continuity.replaced} replaced and ${continuity.paused} paused observations, no blue accents and no separate Working line. The same App then built from the starter and loaded the Inventory price on one click.`, true);
       await user.screenshot();
       await closeFrame();
       await user.click({ role: "button", label: "Close panel" });

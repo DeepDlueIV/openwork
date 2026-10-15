@@ -669,6 +669,46 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
       }
       throw new Error(`OpenWork did not switch to ${theme}`);
     },
+    /** Observe the real chat across tool handoffs, without changing its state. */
+    async watchCreationProgress() {
+      await evaluate(app.client, () => {
+        const witness = { seen: false, missing: 0, replaced: 0, paused: 0 };
+        let first: Element | null = null;
+        const observer = new MutationObserver(() => {
+          const panel = [...document.querySelectorAll('[data-app-builder-step]')].find(element =>
+            /^(Creating|Updating) MCP App/.test(element.getAttribute("aria-label") ?? "") && element.querySelector('[data-app-builder-checklist]'));
+          if (!witness.seen && panel) { witness.seen = true; first = panel; }
+          if (!witness.seen) return;
+          if (!panel) witness.missing++;
+          else {
+            if (panel !== first) witness.replaced++;
+            if (panel.textContent?.includes("Paused")) witness.paused++;
+          }
+        });
+        observer.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true });
+        Reflect.set(window, "__openworkAppProgressWitness", { witness, observer });
+      });
+    },
+    async creationProgressWitness() {
+      return await evaluate(app.client, () => {
+        const observed: unknown = Reflect.get(window, "__openworkAppProgressWitness");
+        if (!observed || typeof observed !== "object") throw new Error("App progress observation was not started");
+        const observer: unknown = Reflect.get(observed, "observer");
+        const witness: unknown = Reflect.get(observed, "witness");
+        if (!(observer instanceof MutationObserver) || !witness || typeof witness !== "object") throw new Error("App progress observation is missing");
+        observer.disconnect();
+        Reflect.deleteProperty(window, "__openworkAppProgressWitness");
+        const missing: unknown = Reflect.get(witness, "missing");
+        const replaced: unknown = Reflect.get(witness, "replaced");
+        const paused: unknown = Reflect.get(witness, "paused");
+        return {
+          seen: Reflect.get(witness, "seen") === true,
+          missing: typeof missing === "number" ? missing : -1,
+          replaced: typeof replaced === "number" ? replaced : -1,
+          paused: typeof paused === "number" ? paused : -1,
+        };
+      });
+    },
     /** Den's log so far; pass it to denStages or appServerRequests. */
     denLog: () => den.apiLog(),
     /**
@@ -704,7 +744,11 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
         ? [toolStep("search_capabilities", { query: "Inventory lookup unit price", type: "mcp", limit: 2 })]
         : kind === "guided"
         // The agent reads the guide, finds the tool, prepares, and publishes prepare_app's starter unchanged.
-        ? [toolStep("get_skill", { name: "build-an-app" }), toolStep("search_capabilities", { query: "Inventory lookup unit price", type: "mcp", limit: 2 }),
+        ? [toolStep("get_skill", { name: "build-an-app" }),
+          // A real non-App tool between the guide and preparation used to
+          // remove the checklist and expose ordinary tool rows instead.
+          { tool: "bash", arguments: { command: "sleep 1; printf 'App inputs checked\\n'", description: "Check app inputs" } },
+          toolStep("search_capabilities", { query: "Inventory lookup unit price", type: "mcp", limit: 2 }),
           { ...toolStep("prepare_app", { title: guidedTitle, description: "Look up a product's unit price in Inventory.", tools: lookup }), holdUntilReleased: true },
           { ...(engine === "v2"
             ? { tool: "execute", arguments: { code: `return await tools["openwork-cloud"].create_app({ ...${JSON.stringify({ title: guidedTitle, tools: lookup, textFallback: "Looks up a product's unit price in Inventory." })}, ..."__APP_STARTER__" });` } }

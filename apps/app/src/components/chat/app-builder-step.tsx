@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Blocks, Check, X } from "lucide-react";
+import { Blocks, CircleCheck, CircleDashed, CircleEllipsis, CircleX } from "lucide-react";
 import { formatToolCallDuration } from "@/lib/tool-call-duration";
 import { resolveExtensionIconSrc } from "@/react-app/design-system/extension-icon-src";
 import { useAppBuildProgressEnabled } from "@/react-app/domains/apps/use-app-build-progress-feature";
@@ -112,29 +112,17 @@ function appCreationStages(
   ];
 }
 
-function StageMark({ state, running }: { state: StageState; running: boolean }) {
+function StageMark({ state }: { state: StageState }) {
   if (state === "done") {
-    return (
-      <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground" aria-hidden="true">
-        <Check className="size-2.5" strokeWidth={3} />
-      </span>
-    );
+    return <CircleCheck className="size-4 shrink-0 text-muted-foreground" strokeWidth={1.5} aria-hidden="true" />;
   }
   if (state === "failed") {
-    return (
-      <span className="flex size-4 shrink-0 items-center justify-center rounded-full bg-destructive/15 text-destructive" aria-hidden="true">
-        <X className="size-2.5" strokeWidth={3} />
-      </span>
-    );
+    return <CircleX className="size-4 shrink-0 text-destructive" strokeWidth={1.5} aria-hidden="true" />;
   }
   if (state === "active") {
-    return (
-      <span className="relative flex size-4 shrink-0 items-center justify-center rounded-full border border-primary" aria-hidden="true">
-        <span className={`size-1.5 rounded-full bg-primary ${running ? "animate-pulse motion-reduce:animate-none" : ""}`} />
-      </span>
-    );
+    return <CircleEllipsis className="size-4 shrink-0 text-foreground" strokeWidth={1.5} aria-hidden="true" />;
   }
-  return <span className="size-4 shrink-0 rounded-full border border-border" aria-hidden="true" />;
+  return <CircleDashed className="size-4 shrink-0 text-muted-foreground/60" strokeWidth={1.5} aria-hidden="true" />;
 }
 
 export function AppBuilderStep({
@@ -153,11 +141,12 @@ export function AppBuilderStep({
   const lifecycle = latest
     ? resolveLifecycle(latest.toolCallId, isToolPartInFlight(latest))
     : null;
+  // The App spans many tools. A finished/superseded tool is not a pause
+  // while the parent turn is still active; Stop is reflected by active.
   const progress = appCreationProgress(
     run,
     active &&
       !context?.syncDegraded &&
-      lifecycle !== "interrupted" &&
       lifecycle !== "waiting",
   );
   const parts = [...(run.executions ?? []), ...(run.attempts ?? []), ...(run.discoveries ?? []), ...(run.preparation ? [run.preparation] : []), ...run.builds];
@@ -283,7 +272,7 @@ export function AppBuilderStep({
         aria-label={sentence}
       >
         <div className="flex min-h-6 min-w-0 items-center gap-2 text-sm text-muted-foreground">
-          <Blocks className="size-4 shrink-0 text-primary" aria-hidden="true" />
+          <Blocks className="size-4 shrink-0" aria-hidden="true" />
           <span className="shrink-0">{sentence}</span>
           {state ? <span className="min-w-0 truncate text-xs text-muted-foreground">{state}</span> : null}
           {shownElapsed ? <span className="shrink-0 text-xs tabular-nums text-muted-foreground/70">{shownElapsed}</span> : null}
@@ -297,16 +286,13 @@ export function AppBuilderStep({
 
   return (
     <section
-      className="group/step w-full min-w-0 max-w-md rounded-xl border border-border bg-muted/30 px-3 py-2.5"
+      className="group/step w-full min-w-0 max-w-lg rounded-xl border border-border px-4 py-3"
       data-app-builder-step
       data-app-creation-stage={progress.stage}
       aria-label={sentence}
     >
       <div className="flex min-w-0 items-center gap-2">
-        <span className={`flex size-6 shrink-0 items-center justify-center rounded-md ${progress.failed ? "bg-destructive/10 text-destructive" : "bg-primary/10 text-primary"}`} aria-hidden="true">
-          <Blocks className="size-3.5" />
-        </span>
-        <span className="min-w-0 truncate text-sm font-medium text-foreground">{sentence}</span>
+        <span className="min-w-0 truncate text-sm text-muted-foreground">{sentence}</span>
         {state ? <span className="shrink-0 text-xs text-muted-foreground">{state}</span> : null}
         <span className="ml-auto flex shrink-0 items-center gap-1">
           {shownElapsed ? <span className="text-xs tabular-nums text-muted-foreground/70">{shownElapsed}</span> : null}
@@ -314,23 +300,18 @@ export function AppBuilderStep({
         </span>
       </div>
       <div
-        className="mt-2 h-1 overflow-hidden rounded-full bg-border"
+        className="sr-only"
         role="progressbar"
         aria-label={`${sentence} progress`}
         aria-valuemin={0}
         aria-valuemax={stages.length}
         aria-valuenow={done}
-      >
-        <div
-          className={`h-full rounded-full transition-[width] duration-500 motion-reduce:transition-none ${progress.failed ? "bg-destructive" : "bg-primary"}`}
-          style={{ width: `${Math.max(6, (done / stages.length) * 100)}%` }}
-        />
-      </div>
-      <ol className="mt-2.5 flex flex-col gap-1.5 text-xs" aria-label={`Stages of ${sentence}`} data-app-builder-checklist>
+      />
+      <ol className="mt-2 flex flex-col gap-2 text-sm" aria-label={`Stages of ${sentence}`} data-app-builder-checklist>
         {stages.map((stage) => (
           <li key={stage.key} className="flex min-w-0 flex-col" data-checklist-state={stage.state}>
             <span className="flex min-w-0 items-center gap-2">
-              <StageMark state={stage.state} running={progress.running} />
+              <StageMark state={stage.state} />
               <span
                 className={`min-w-0 truncate ${
                   stage.state === "pending"
@@ -339,7 +320,7 @@ export function AppBuilderStep({
                       ? "text-destructive"
                       : stage.state === "active"
                         ? `text-foreground ${progress.running ? "ow-text-shimmer motion-reduce:animate-none" : ""}`
-                        : "text-muted-foreground"
+                        : "text-foreground"
                 }`}
               >
                 {stage.label}
@@ -349,7 +330,7 @@ export function AppBuilderStep({
               <span key={note} className="ml-6 truncate text-muted-foreground">{note}</span>
             ))}
             {stage.state === "active" && progress.running && activity ? (
-              <span key={activity} className="ml-6 truncate text-muted-foreground/80 animate-in fade-in duration-300 motion-reduce:animate-none" data-app-builder-activity>
+              <span className="ml-6 truncate text-xs text-muted-foreground" data-app-builder-activity>
                 {activity}
               </span>
             ) : null}

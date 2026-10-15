@@ -1441,9 +1441,9 @@ function MessageGroup({
   // silently corrupt fork/revert boundaries.
   const lastRealItem = items.findLast((item) => !isSessionErrorMessage(item.message))
   const parentActive = React.useContext(ParentRunActiveContext)
-  const creationLive = parentActive && isLastGroup && !readOnly
-  const creationRuns = React.useMemo(() => appCreationRuns(items.map(item => item.message), creationLive), [items, creationLive])
   const panelLive = React.useContext(AppPanelLiveContext) && isLastGroup
+  const creationLive = (parentActive || panelLive) && isLastGroup && !readOnly
+  const creationRuns = React.useMemo(() => appCreationRuns(items.map(item => item.message), creationLive), [items, creationLive])
   const creationParts = React.useMemo(() => new Set(creationRuns.flatMap(run => [...(run.executions ?? []).map(part => part.toolCallId), ...(run.discoveries ?? []).map(part => part.toolCallId), ...(run.attempts ?? []).map(part => part.toolCallId), ...(run.preparation ? [run.preparation.toolCallId] : []), ...run.builds.map(part => part.toolCallId)])), [creationRuns])
   const isLiveGroup = isStreaming && isLastGroup
   const panelActivity = React.useMemo(
@@ -1778,7 +1778,7 @@ export function MessageList({ messages: transcript, messageIdReplacements, statu
   const runActive = status === "streaming" || status === "retrying"
   const appBuildStaged = useAppBuildProgressEnabled()
   // The App panel replaces the Working line and the thinking rows while it builds.
-  const appPanelLive = React.useMemo(() => appBuildStaged && runActive && appBuildInProgress(messages), [appBuildStaged, runActive, messages])
+  const appPanelLive = React.useMemo(() => appBuildStaged && (runActive || status === "submitted") && appBuildInProgress(messages), [appBuildStaged, runActive, status, messages])
   const syncDegraded = syncHealth?.degraded === true
   const activityActive = runActive || tasks.length > 0
   const runStartedAtRef = React.useRef<number | null>(null)

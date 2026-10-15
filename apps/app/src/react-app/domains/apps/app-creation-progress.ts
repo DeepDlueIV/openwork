@@ -109,7 +109,9 @@ function codeOf(part: DynamicToolUIPart): string {
 /** The App call a Code Mode script being written will make, read from its streamed code. */
 export function appScriptKind(part: DynamicToolUIPart): AppScriptKind | null {
   if (!part.callProviderMetadata?.openwork?.codeMode) return null;
-  if (part.state !== "input-streaming" && part.state !== "input-available") return null;
+  // A script result can arrive before its nested App calls. Keep the same
+  // step through that handoff instead of briefly reverting to ordinary tools.
+  if (part.state === "output-error") return null;
   const code = codeOf(part);
   if (/\bupdate_app\s*\(/.test(code)) return "update";
   if (/\bcreate_app\s*\(/.test(code)) return "create";
@@ -249,8 +251,10 @@ export function appCreationRuns(messages: UIMessage[], live = false): AppCreatio
         runs.push(started);
       }
     } else if (!part.callProviderMetadata?.openwork?.codeMode) {
-      // Other work in between: the lookups before it were for something else.
-      leadIn = [];
+      // Once the agent reads the App guide or the App it is editing, an
+      // intervening lookup belongs to that work. Keep its identity until the
+      // builder arrives; searches alone still stay ordinary tool activity.
+      if (!live || !leadIn.some(lead => isAppGuidePart(lead) || isAppReadPart(lead))) leadIn = [];
     }
   }
   const intent = live ? leadIn.findLast((part) => isAppGuidePart(part) || isAppReadPart(part)) : undefined;
@@ -270,6 +274,7 @@ export function appCreationRuns(messages: UIMessage[], live = false): AppCreatio
     const next = runs[index + 1]!;
     const rejected = run.preparation && run.builds.length === 0 && appBuilderResultFailed(run.preparation);
     if (!rejected || !next.preparation || !run.preparation) continue;
+    next.id = run.id;
     next.attempts = [...(run.discoveries ?? []), run.preparation, ...(run.attempts ?? []), ...(next.attempts ?? [])];
     runs.splice(index, 1);
   }
@@ -332,13 +337,13 @@ export function appCreationProgress(run: AppCreationRun, active: boolean) {
   };
 }
 
-/** Whether the latest turn is building an App that is not yet built or failed. */
+/** Keep the App's home through retries; only readiness ends the live panel. */
 export function appBuildInProgress(messages: UIMessage[]): boolean {
   const turn = messages.slice(Math.max(0, messages.findLastIndex((message) => message.role === "user")));
   const run = appCreationRuns(turn, true).at(-1);
   if (!run) return false;
   const progress = appCreationProgress(run, true);
-  return !progress.app && !progress.builtUnrecorded && !progress.failed && !progress.unavailable;
+  return !progress.app && !progress.builtUnrecorded;
 }
 
 function lastLine(text: string): string | null {

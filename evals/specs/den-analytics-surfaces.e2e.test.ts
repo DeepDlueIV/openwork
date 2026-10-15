@@ -76,9 +76,9 @@ test("an owner can hide analytics without losing existing export consent or gran
     const forbidden = await denFetch(member, "/v1/inference/analytics/activity?days=30", { headers: { ...headers, authorization: `Bearer ${member.token}` } });
     expect(forbidden.response.status).toBe(403);
     const other = await denFetch(world.outsider.admin, "/v1/inference/analytics/settings", { headers: { ...headers, authorization: `Bearer ${world.outsider.admin.token}` } });
-    expect(other.response.status).toBe(403);
+    expect(other.response.status).toBe(404);
     await world.arrange("assert-surface-retained");
-    evidence.recordAssertionEvidence("surface rollout never grants analytics permissions or cross-organization access", "An ordinary member's activity and an outsider's settings requests return 403; saved export credentials and consent remain unchanged.", true);
+    evidence.recordAssertionEvidence("surface rollout never grants analytics permissions or cross-organization access", "An ordinary member's activity returns 403 and an outsider's settings request is masked as 404; saved export credentials and consent remain unchanged.", true);
     await owner.screenshot();
   });
 
@@ -105,6 +105,7 @@ setupTest("an owner sees Langfuse setup only after both analytics surfaces are e
     await owner.notSee({ role: "link", label: "Models & usage" });
     await owner.press("Meta+k");
     await owner.type({ placeholder: "Search or jump to…" }, "langfuse");
+    await owner.see({ text: "No matches for “langfuse”." });
     await owner.notSee({ role: "option", label: /Analytics/ });
     evidence.recordAssertionEvidence("hidden analytics does not leak a palette shortcut", "Searching Langfuse offers no Analytics result while the surface flags are off.", true);
     await owner.screenshot();

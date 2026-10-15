@@ -45,7 +45,7 @@ async function createModelsWorld(seed: Seed, analyticsUpgrade: boolean, usageSet
     MODELS_DPA_FIXTURE: "1", MODELS_EGRESS_FILE: egressFile,
     NODE_OPTIONS: `--import=data:text/javascript,${encodeURIComponent(preload)}`,
   };
-  const den = await seed.den({ web: analyticsUpgrade || analyticsSurface, org: { name: analyticsUpgrade ? "Models Analytics Upgrade" : "Models DPA Boundary", admin: { name: "Models Admin" }, members: { teammate: { name: "Models Member" } } },
+  const den = await seed.den({ web: analyticsUpgrade || analyticsSurface, org: { name: analyticsSurface ? "Analytics rollout rehearsal" : analyticsUpgrade ? "Models Analytics Upgrade" : "Models DPA Boundary", admin: { name: "Models Admin" }, members: { teammate: { name: "Models Member" } } },
     env: { ...isolatedEnv, ...fixtureSecrets, DEN_ORG_MODE: "multi_org", OPENROUTER_MANAGEMENT_API_KEY: "fixture-management-unused", DEN_PLAN_GATING_ENABLED: "true" },
   });
   if (!analyticsUpgrade) console.error(`placement: ${den.placement?.kind} (testkit resolvePlace; isolated app-less Den and inference)`);

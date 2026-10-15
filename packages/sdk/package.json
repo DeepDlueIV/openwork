@@ -11,7 +11,7 @@
         "default": "./src/index.ts"
       },
       "development": "./src/index.ts",
-      "browser": "./src/index.ts",
+      "bun": "./src/index.ts",
       "default": "./dist/index.js"
     },
     "./client": {
@@ -20,8 +20,12 @@
         "default": "./src/client.ts"
       },
       "development": "./src/client.ts",
-      "browser": "./src/client.ts",
+      "bun": "./src/client.ts",
       "default": "./dist/client.js"
+    },
+    "./browser": {
+      "types": "./src/index.ts",
+      "default": "./dist/index.js"
     }
   },
   "files": [

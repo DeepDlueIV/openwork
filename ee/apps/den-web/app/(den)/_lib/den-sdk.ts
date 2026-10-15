@@ -1,4 +1,4 @@
-import { createDenClient } from "@openwork/sdk";
+import { createDenClient } from "@openwork/sdk/browser";
 import { getRequestError, requestDenResponse } from "./den-flow";
 
 /** Generated routes over the dashboard's existing auth, organization and deadline transport. */

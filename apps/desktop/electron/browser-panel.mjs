@@ -15,7 +15,6 @@ import { runDetachedTask } from "./process-resilience.mjs";
 import { openExternalUrl } from "./open-external.mjs";
 import { BrowserTaskError, createBrowserTaskHost } from "./browser-task.mjs";
 import { agentPermissionDenialMessage, decideAgentPermission, stricterAgentPermissionDecision } from "@openwork/types/den/agent-permissions-runtime";
-import { createBrowserSessionAllows } from "./browser-session-allows.mjs";
 import { createWebMcpBroker } from "./webmcp-host.mjs";
 import { createWebMcpFramePolicy } from "./webmcp-policy.mjs";
 
@@ -44,7 +43,7 @@ const BROWSER_SECURITY_PREFERENCES = Object.freeze({
   webviewTag: false,
 });
 
-export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, checkPolicy, readWebsiteRules, websiteRulesWereInForce = false, onWebsiteRulesInForce, showNativeContextMenu, closeNativeContextMenu, sessionAllowsPath }) {
+export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, checkPolicy, readWebsiteRules, websiteRulesWereInForce = false, onWebsiteRulesInForce, showNativeContextMenu, closeNativeContextMenu }) {
   // The member's agent permission rules for websites, from their desktop
   // config. They apply to every page, frame and request the built-in browser
   // makes, whoever opens it, as the engines apply them to the agent's web fetches.
@@ -528,7 +527,6 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
       canGoBack: webContents.canGoBack(),
       canGoForward: webContents.canGoForward(),
       ownerSessionId: registry.ownerOf(tabId),
-      browserApproval: tab.browserApproval ?? null,
       loadError: tab.loadError,
       browserTask: tab.browserTask,
       siteToolCount: Number.isInteger(tab.webMcpToolCount) ? tab.webMcpToolCount : 0,
@@ -834,37 +832,10 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
     };
   }
 
-  const approvals = new Map();
   function browserTabVisible(tabId) {
     const tab = getBrowserTab(tabId);
     return !!tab && browserViewVisible && registry.onScreenTabId() === tabId
       && window()?.contentView.children.includes(tab.view) === true && tab.view.getVisible();
-  }
-  // Resolves true or false only for the person's explicit choice, and null when
-  // the request was dismissed (canceled, tab closed or owner changed), so a
-  // dismissal is never reported as a denial. It waits for as long as it takes.
-  function confirmBrowserAction({ tabId, title, message, detail, signal, approveLabel = "Allow once" }) {
-    const tab = getBrowserTab(tabId);
-    const owner = registry.ownerOf(tabId);
-    if (!tab || signal?.aborted) return Promise.resolve(null);
-    approvals.get(tabId)?.finish(null);
-    return new Promise((resolve) => {
-      const id = createBrowserTabId();
-      const finish = (allowed) => {
-        signal?.removeEventListener("abort", canceled);
-        if (approvals.get(tabId)?.id !== id) return;
-        approvals.delete(tabId); tab.browserApproval = null;
-        if (!tab.view.webContents.isDestroyed()) tab.view.setVisible(!showsErrorPage(tab));
-        sendBrowserState();
-        resolve(allowed !== null && !signal?.aborted && getBrowserTab(tabId) === tab && registry.ownerOf(tabId) === owner && browserTabVisible(tabId) ? allowed : null);
-      };
-      const canceled = () => finish(null);
-      approvals.set(tabId, { id, finish });
-      tab.browserApproval = { id, title, message, detail, approveLabel };
-      tab.view.setVisible(false);
-      signal?.addEventListener("abort", canceled, { once: true });
-      sendBrowserState();
-    });
   }
   const webMcpBroker = createWebMcpBroker({
     getTab: (tabId) => getBrowserTab(tabId),
@@ -897,7 +868,6 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
   });
 
 
-  const sessionAllows = createBrowserSessionAllows({ filePath: sessionAllowsPath });
   const taskHost = createBrowserTaskHost({
     getTab: getBrowserTab,
     tabsFor: (sessionId) => registry.tabsFor(sessionId).map((item) => getBrowserTab(item.tabId)).filter(Boolean),
@@ -908,11 +878,9 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
     allowed: browserTaskAllowed,
     openTab: openBrowserTab,
     navigate: (tab, url) => tab.view.webContents.loadURL(url),
-    confirm: confirmBrowserAction,
     changed: (tabId, activity) => { const tab = getBrowserTab(tabId); if (tab) { tab.browserTask = activity; sendBrowserState(); } },
     siteTools: (args) => webMcpBroker.listTools(args),
     runSiteTool: (args, options) => webMcpBroker.executeTool(args, options),
-    sessionAllows,
   });
 
   function scheduleWebMcpToolCountRefresh(tabId) {
@@ -1417,7 +1385,7 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
     const tab = getBrowserTab();
     if (!tab) { detachIdleBrowserViews(); return; }
     exitBackgroundMode(tab);
-    tab.view.setVisible(!approvals.has(tab.tabId) && !showsErrorPage(tab));
+    tab.view.setVisible(!showsErrorPage(tab));
     detachIdleBrowserViews(tab.view);
     // Size before attaching so a restored view never flashes at stale bounds.
     tab.view.setBounds(lastBrowserBounds);
@@ -1446,7 +1414,6 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
   function closeBrowserTab(tabId = registry.onScreenTabId(), preserve = false, reason = undefined) {
     const tab = getBrowserTab(tabId);
     if (!registry.has(tabId)) return null;
-    approvals.get(tabId)?.finish(null);
     taskHost.invalidate(tabId, { closed: true, reason });
     if (!preserve) suspendedTabs.delete(tabId);
     if (menuRequest?.tabId === tabId) hideContextMenu();
@@ -1718,8 +1685,6 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
     // tabs or the currently visible conversation.
     const ownerSessionId = normalizeSessionId(sessionId);
     if (!ownerSessionId) return [];
-    // The session is gone, so its browser allow is too.
-    sessionAllows.remove(ownerSessionId);
     closedTabs = closedTabs.filter((entry) => entry.ownerSessionId !== ownerSessionId);
     if (shortcutFocus?.ownerSessionId === ownerSessionId) shortcutFocus = null;
     const closedTabIds = registry.list()
@@ -1891,12 +1856,6 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
       return tab.tabId;
     });
     ipcMain.handle("openwork:browser:reorderTabs", (_event, tabIds) => reorderBrowserTabs(tabIds));
-    ipcMain.handle("openwork:browser:approve", (event, tabId, approvalId, allowed) => {
-      if (event.sender !== window()?.webContents || event.senderFrame !== window()?.webContents.mainFrame || registry.ownerOf(tabId) !== registry.visibleSessionId()) return false;
-      const pending = approvals.get(tabId);
-      if (!pending || pending.id !== approvalId) return false;
-      pending.finish(allowed === true); return true;
-    });
     ipcMain.handle("openwork:browser:taskControl", (event, tabId, action) => {
       if (event.sender !== window()?.webContents || event.senderFrame !== window()?.webContents.mainFrame || !getBrowserTab(tabId) || registry.ownerOf(tabId) !== registry.visibleSessionId()) throw new Error("Select this conversation first.");
       if (action === "resume") taskHost.resume(tabId);

@@ -1,7 +1,6 @@
 // The browser host owns task identity, the optional session allow, observations and dispatch.
 // No model-specific API, arbitrary script execution, cookies or raw CDP surface.
 import { createHash, randomUUID } from "node:crypto";
-import { createBrowserSessionAllows } from "./browser-session-allows.mjs";
 
 const WORLD = 1001;
 const TRUST = "untrusted-site-content";
@@ -105,15 +104,14 @@ async function isolated(webContents, fn, ...args) {
 }
 
 export function createBrowserTaskHost({ getTab, tabsFor, ownerOf, activeFor, isVisible, openTab, navigate,
-  allowed, enabled, confirm, changed, siteTools, runSiteTool, sessionAllows = createBrowserSessionAllows(),
-  askBeforeFirstUse = false }) {
+  allowed, enabled, changed, siteTools, runSiteTool }) {
   const states = new Map();
   const controls = new Map();
   const pausedSessions = new Set();
   const opening = new Map();
   const navigations = new Map();
   function controlFor(sessionId) {
-    if (!controls.has(sessionId)) controls.set(sessionId, { controller: new AbortController(), pending: null });
+    if (!controls.has(sessionId)) controls.set(sessionId, { controller: new AbortController() });
     return controls.get(sessionId);
   }
   function stopControl(sessionId, control = controls.get(sessionId), reason = new BrowserTaskError("canceled", "Browser control stopped. Retry the browser operation.")) {
@@ -159,10 +157,6 @@ export function createBrowserTaskHost({ getTab, tabsFor, ownerOf, activeFor, isV
     checkNavigation(scope);
     if (!await allowed(url.href)) fail("website_blocked", "Your organization does not allow this website.");
     checkNavigation(scope);
-    await access(scope);
-    checkNavigation(scope);
-    if (!await allowed(url.href)) fail("website_blocked", "Your organization does not allow this website.");
-    checkNavigation(scope);
     // The request hook rechecks the full managed policy (including uploads).
     // Give it a synchronous final ownership/cancellation check.
     return () => checkNavigation(scope);
@@ -201,29 +195,6 @@ export function createBrowserTaskHost({ getTab, tabsFor, ownerOf, activeFor, isV
     if (!allowBlocked && !await allowed(url)) fail("website_blocked", "Your organization does not allow this website.");
     if (tab.view.webContents.isDestroyed() || url !== tab.view.webContents.getURL()) fail("page_changed", "The page changed while checking policy. Observe again.");
     return tab;
-  }
-  async function access(scope) {
-    const { tab, sessionId, control } = scope;
-    // Browser use is allowed without asking for now. With askBeforeFirstUse,
-    // each session answers one "use the browser" question, kept across restarts;
-    // takeover, cancellation and closing tabs stop in-flight work but never ask again.
-    if (!askBeforeFirstUse || sessionAllows.has(sessionId)) return;
-    if (!control.pending) {
-      control.pending = (async () => {
-        publish(tab.tabId, "needs_attention", "Browser control");
-        const decision = await confirm({ tabId: tab.tabId, title: "Allow this agent to use the browser?",
-          message: "Let this session use the built-in browser?", approveLabel: "Allow for this session",
-          detail: "This session can open websites, read pages, click, type and run website tools in its own tabs without asking again. Organization restrictions still apply. Choose Take over at any time to pause it.",
-          signal: scope.signal });
-        checkNavigation(scope);
-        if (decision === false) fail("user_denied", "The user did not allow browser use for this session.");
-        if (decision !== true) fail("canceled", "The browser request was dismissed before a decision. Retry when the user is ready.");
-        sessionAllows.add(sessionId);
-      })();
-    }
-    const pending = control.pending;
-    try { await pending; }
-    finally { if (control.pending === pending) control.pending = null; }
   }
   function pause(tabId, reason = "Paused by you") {
     const owner = ownerOf(tabId);

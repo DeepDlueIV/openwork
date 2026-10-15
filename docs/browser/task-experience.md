@@ -8,13 +8,8 @@ it does not create a different website account for every conversation.
 ## User experience
 
 Browser use needs no permission prompt: there is no session, per-action or
-per-tool prompt and no operation time limit. Organization policy and takeover
-are the gates. The permission plumbing stays in place for a later, holistic
-permission design: the browser panel's approval prompt (`browserApproval`,
-`openwork:browser:approve`) and the task host's `askBeforeFirstUse` option, which
-restores one saved **Allow for this session** answer per session. With it on,
-denying returns `user_denied`; a prompt dismissed without a choice returns
-`canceled`.
+per-tool prompt and no operation time limit. Organization policy, the member's
+agent permissions and takeover are the gates.
 
 1. List the conversation's tabs and reuse a matching page, or open the requested
    URL in a new owned tab, using the built-in browser's signed-in account.

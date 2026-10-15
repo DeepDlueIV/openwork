@@ -1308,11 +1308,15 @@ async function postJson(path: string, body: ExtensionActionPayload | Record<stri
     throw new ApiError(409, "gmail_host_unavailable", "OpenWork host transport is unavailable. Run this tool from OpenWork.");
   }
   const { url, token } = requireOpenWorkServer();
+  const driveToken = path === "/experimental/drive-files/call" ? process.env.OPENWORK_DRIVE_FILE_TOOL_TOKEN : undefined;
+  if (path === "/experimental/drive-files/call" && !driveToken) {
+    throw new Error("Drive file tools require OpenWork's managed engine transport. Update OpenWork to transfer Drive files.");
+  }
   const response = await fetch(url + path, {
     signal,
     method: "POST",
     headers: {
-      Authorization: `Bearer ${token}`,
+      Authorization: `Bearer ${driveToken ?? token}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify(body),
@@ -1386,8 +1390,7 @@ export const OpenWorkExtensionsPreview = async (factoryInput?: unknown, _options
     );
   },
   tool: {
-    ...createDriveFileTools((action, args, context) => postJson("/experimental/extensions/call", {
-      extensionId: "openwork-cloud-uploads",
+    ...createDriveFileTools((action, args, context) => postJson("/experimental/drive-files/call", {
       action,
       args,
       context: contextPayload({ ...factoryContext, ...normalizeOpenCodeContext(context) }),

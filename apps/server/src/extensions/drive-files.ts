@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, createHmac, randomBytes } from "node:crypto";
 import { constants, realpathSync, type Stats } from "node:fs";
 import { lstat, mkdir, open, readFile, realpath, rename, rm, stat, writeFile, type FileHandle } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
@@ -13,7 +13,6 @@ import {
   cloudUploadEndpoint,
   isWithinRoot,
   mimeTypeForPath,
-  OPENWORK_CLOUD_UPLOADS_EXTENSION_ID,
   resolveAuthorizedFile,
   searchRoots,
   type CloudUploadDependencies,
@@ -32,15 +31,10 @@ const CONVERTIBLE_FORMATS: Record<string, string[]> = {
   "application/vnd.google-apps.presentation": ["pptx"],
 };
 
-/**
- * Host transport for the drive_pull_file, drive_file_status and drive_push_file engine tools, which hold the
- * model-facing descriptions and the approval prompt. Not listed in extension.actions, so agents cannot call it directly.
- */
-export const OPENWORK_DRIVE_FILE_ACTIONS = [
-  { extensionId: OPENWORK_CLOUD_UPLOADS_EXTENSION_ID, action: "drive_pull_file", title: "Pull a Google Drive file into the workspace" },
-  { extensionId: OPENWORK_CLOUD_UPLOADS_EXTENSION_ID, action: "drive_file_status", title: "Compare pulled Drive files with Drive" },
-  { extensionId: OPENWORK_CLOUD_UPLOADS_EXTENSION_ID, action: "drive_push_file", title: "Save a pulled file back to Google Drive" },
-];
+/** Separate from client bearer tokens; only the managed engine receives this scoped credential. */
+export function driveFileToolToken(config: Pick<ServerConfig, "hostToken">) {
+  return createHmac("sha256", config.hostToken).update("openwork-drive-file-tools-v1").digest("hex");
+}
 
 type DriveLink = {
   fileId: string;

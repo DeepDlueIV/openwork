@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process";
+import { createHmac } from "node:crypto";
 import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -48,16 +49,36 @@ export async function driveFiles(seed: Seed) {
     }, hostToken, workspace, () => {}, { configPath: config });
     stack.defer(() => stopChild(booted.child));
     const hostUrl = await booted.listening;
+    const engineToken = createHmac("sha256", `${hostToken}-host`).update("openwork-drive-file-tools-v1").digest("hex");
+    const clientTokens = new Map<string, string>();
+    for (const scope of ["owner", "collaborator", "viewer"]) {
+      const response = await fetch(`${hostUrl}/tokens`, {
+        method: "POST", headers: { "x-openwork-host-token": `${hostToken}-host`, "content-type": "application/json" },
+        body: JSON.stringify({ scope }), signal: AbortSignal.timeout(10_000),
+      });
+      const issued = object(await response.json());
+      if (!response.ok || typeof issued.token !== "string") throw new Error(`Could not create ${scope} test client`);
+      clientTokens.set(scope, issued.token);
+    }
 
     return {
       google: cloud.google, accounts: cloud.accounts, files: cloud.files, workspace,
       fullId: cloud.fullId, readOnlyId: cloud.readOnlyId, objects: cloud.objects, mcp: cloud.mcp,
       /** One host Drive action, as the drive_* tools send it after any approval. */
       async host(action: string, args: Record<string, unknown>) {
-        const response = await fetch(`${hostUrl}/experimental/extensions/call`, {
-          method: "POST", headers: { authorization: `Bearer ${hostToken}`, "content-type": "application/json" },
-          body: JSON.stringify({ extensionId: "openwork-cloud-uploads", action, args, context: { directory: workspace } }),
+        const response = await fetch(`${hostUrl}/experimental/drive-files/call`, {
+          method: "POST", headers: { authorization: `Bearer ${engineToken}`, "content-type": "application/json" },
+          body: JSON.stringify({ action, args, context: { directory: workspace } }),
           signal: AbortSignal.timeout(120_000),
+        });
+        return { status: response.status, body: object(await response.json()) };
+      },
+      /** Ordinary connected clients have no engine credential, even with owner scope. */
+      async direct(action: string, args: Record<string, unknown>, scope: "owner" | "collaborator" | "viewer", dedicated = false) {
+        const response = await fetch(`${hostUrl}/experimental/${dedicated ? "drive-files" : "extensions"}/call`, {
+          method: "POST", headers: { authorization: `Bearer ${clientTokens.get(scope)}`, "content-type": "application/json" },
+          body: JSON.stringify({ extensionId: "openwork-cloud-uploads", action, args, context: { directory: workspace }, approved: true }),
+          signal: AbortSignal.timeout(10_000),
         });
         return { status: response.status, body: object(await response.json()) };
       },

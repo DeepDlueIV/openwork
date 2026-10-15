@@ -13,6 +13,7 @@ import { EnvStoreReadError, InvalidEnvKeyError, isValidEnvKey, type EnvService }
 import { syncManagedProviderAuth, type ManagedProviderAuthResult } from "../managed-provider-auth.js";
 import { ApiError } from "../errors.js";
 import { callExperimentalExtensionAction, listExperimentalExtensionActions } from "../extensions/index.js";
+import { callDriveFileAction, driveFileToolToken } from "../extensions/drive-files.js";
 import type { TokenService } from "../tokens.js";
 import type { Capabilities, ServerConfig, WorkspaceInfo } from "../types.js";
 import { addRoute, type Route } from "./registry.js";
@@ -342,6 +343,22 @@ export function registerCoreRoutes(options: RegisterCoreRoutesOptions): void {
     }
     const body = await readJsonBody(ctx.request);
     return jsonResponse(await callExperimentalExtensionAction(config, env, body, await getConnectSnapshot(config, { ...connectSnapshotBaseOptions, ...connectSnapshotOptionsFromBody(body) }), ctx.request.signal));
+  });
+
+  // Engine tools ask through context.ask before reaching this transport. Client
+  // tokens (including owners) cannot bypass that prompt through extension.call.
+  addRoute(routes, "POST", "/experimental/drive-files/call", "none", async (ctx) => {
+    if (ctx.request.headers.get("authorization") !== `Bearer ${driveFileToolToken(config)}`) {
+      throw new ApiError(401, "unauthorized", "Drive transfers require the managed engine tool transport");
+    }
+    const body = await readJsonBody(ctx.request);
+    const action = typeof body.action === "string" ? body.action : "";
+    const args = isRecord(body.args) ? body.args : {};
+    const context = isRecord(body.context) ? body.context : {};
+    if (action === "drive_push_file" || (action === "drive_pull_file" && args.overwrite === true)) ensureWritable(config);
+    const result = await callDriveFileAction(config, action, args, context, { signal: ctx.request.signal });
+    if (!result) throw new ApiError(404, "extension_action_not_found", "Drive file action not found");
+    return jsonResponse(result);
   });
 
   addRoute(routes, "GET", "/workspaces", "client", async () => {

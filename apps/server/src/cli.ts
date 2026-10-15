@@ -44,6 +44,7 @@ import {
   updateHint,
 } from "./selfhost-web.js";
 import { readInstalledOpencodeVersion, setInstalledOpencodeVersion } from "./routes/core.js";
+import { driveFileToolToken } from "./extensions/drive-files.js";
 import pkg from "../package.json" with { type: "json" };
 import constants from "../../../constants.json" with { type: "json" };
 
@@ -154,6 +155,7 @@ if (manageEngine) {
     ...(process.env.OPENWORK_UI_CONTROL_DISCOVERY ? { OPENWORK_UI_CONTROL_DISCOVERY: process.env.OPENWORK_UI_CONTROL_DISCOVERY } : {}),
     OPENWORK_SERVER_URL: serverUrl,
     OPENWORK_SERVER_TOKEN: config.token,
+    OPENWORK_DRIVE_FILE_TOOL_TOKEN: driveFileToolToken(config),
     OPENCODE_CONFIG: runtimeConfigPath,
     OPENCODE_MODELS_URL: opencodeModelsUrl,
   };

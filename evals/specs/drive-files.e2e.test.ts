@@ -49,6 +49,25 @@ test("an agent pulls a Drive file into the workspace, edits it with bash and sav
     evidence.recordAssertionEvidence("Shell edits are tracked against the pulled revision", "A dd command changed bytes in place; drive_file_status reported local edited and Drive unchanged at rev-1.", true);
   });
 
+  await step("connected clients cannot bypass the save approval with a direct call", async () => {
+    const before = await driveFile(world.files.supplier);
+    const fileCount = (await world.google.driveFiles(world.accounts.member)).length;
+    const local = await world.read(supplierPath);
+    for (const scope of ["owner", "collaborator", "viewer"] as const) {
+      for (const mode of ["replace", "copy"]) {
+        const denied = await world.direct("drive_push_file", { path: supplierPath, mode }, scope);
+        expect(denied.status).toBe(scope === "viewer" ? 403 : 404);
+        expect((await world.direct("drive_push_file", { path: supplierPath, mode }, scope, true)).status).toBe(401);
+      }
+      expect((await world.direct("drive_pull_file", { fileId: world.files.supplier, path: supplierPath, overwrite: true }, scope)).status).toBe(scope === "viewer" ? 403 : 404);
+    }
+    const after = await driveFile(world.files.supplier);
+    expect([after.revision, after.bytes.equals(before.bytes)]).toEqual([before.revision, true]);
+    expect((await world.google.driveFiles(world.accounts.member)).length).toBe(fileCount);
+    expect((await world.read(supplierPath)).equals(local)).toBe(true);
+    evidence.recordAssertionEvidence("Client tokens cannot bypass Drive approval", "Owner and collaborator extension calls returned 404; viewer calls returned 403. All three scopes received 401 from the engine-only route, even with approved: true. Neither replace, copy nor an overwrite pull changed Drive or the edited local file.", true);
+  });
+
   await step("push replaces the Drive file in place as a new version", async () => {
     const local = await world.read(supplierPath);
     const pushed = await world.host("drive_push_file", { path: supplierPath });

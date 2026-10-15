@@ -351,6 +351,7 @@ export type RemoteThreadAttention = { kind: "permission" | "question"; title: st
  */
 export function useRemoteThreadAttentionKey(): string {
   return useRemoteThreadStore((state) => {
+    if (!state.enabled) return "[]"
     const rows: string[][] = []
     for (const entry of Object.values(state.threads)) {
       if (entry.status?.state !== "waiting") continue

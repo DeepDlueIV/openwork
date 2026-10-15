@@ -165,4 +165,36 @@ test("a member follows, answers and steers a task their agent started on another
     expect(result.status).toBe(200);
     expect(thread).toMatchObject({ state: "error", title: null, preview: null, computerLabel: null, error: { code: "unknown_command" } });
   });
+
+  await step("after: turning the feature off clears task attention and disables the open conversation", async () => {
+    await user.type({ placeholder: "Follow up" }, STEER_PROMPT);
+    await user.click({ role: "button", label: "Send" });
+    const send = await nextRequest("send");
+    expect((await world.completeRequest(send.requestId, { action: "send", result: {
+      messageId: string(object(send.assignment.input).messageId), alreadyPresent: false,
+    } })).status).toBe(200);
+    await user.see({ text: /^Working/ }, { timeoutMs: 30_000 });
+    expect((await world.report(commandId, { status: "waiting", waitingFor: "question", messageCount: 5 })).status).toBe(200);
+    await user.see({ label: new RegExp(`Waiting for your answer: ${TASK_TITLE}`) }, { timeoutMs: 30_000 });
+
+    await world.turnFeatureOff();
+    await user.see({ text: "Tasks on other computers are turned off." }, { timeoutMs: 45_000 });
+    const shown = await rows();
+    const attention = (await probe.dom('[aria-label*="Waiting for your answer:"]')).elements;
+    const blocked = await world.memberActionsWhenOff(commandId, SESSION_ID);
+    const since = await world.denLog();
+    await new Promise((resolve) => setTimeout(resolve, 4_000));
+    const calls = await world.statusCalls(since);
+    const routesBlocked = blocked.every((result) => result.status === 404 && object(result.body).error === "feature_disabled");
+    evidence.recordAssertionEvidence(
+      "Turning off remote tasks restores the plain chat and stops its task controls",
+      `task rows: ${shown.length}; sidebar attention: ${attention.length}; all four member routes disabled: ${routesBlocked}; status calls after disabling: ${calls.length}`,
+      shown.length === 0 && attention.length === 0 && routesBlocked && calls.length === 0,
+    );
+    expect(shown).toEqual([]);
+    expect(attention).toEqual([]);
+    expect(routesBlocked).toBe(true);
+    expect(calls).toEqual([]);
+    await user.screenshot();
+  });
 });

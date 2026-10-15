@@ -15,6 +15,7 @@ const FEATURE_STALE_MS = 5 * 60_000
  */
 export function useRemoteSessionSubagentsFeature(): void {
   const context = useAutomationsDenContext()
+  const followedInChat = useRemoteThreadStore((state) => state.enabled)
   const organization = useQuery({
     // Shares the cache with the other organization feature reads.
     queryKey: ["den", "org-features", context.organizationId],
@@ -28,6 +29,8 @@ export function useRemoteSessionSubagentsFeature(): void {
   const enabled = context.ready && organization.data === true
   useEffect(() => {
     useRemoteThreadStore.getState().setEnabled(enabled)
-    setComputerTasksFollowedInChat(enabled)
   }, [enabled])
+  useEffect(() => {
+    setComputerTasksFollowedInChat(followedInChat)
+  }, [followedInChat])
 }

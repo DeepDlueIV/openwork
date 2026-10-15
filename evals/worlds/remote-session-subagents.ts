@@ -120,6 +120,20 @@ export async function remoteSessionSubagents(seed: Seed) {
     app, den, session, engine, ask: ASK,
     /** The platform admin turns `remoteSessionSubagents` on for the member's organization, as /admin does. */
     turnFeatureOn: () => enableOrganizationCapabilities(seed, den.admin, { remoteSessionSubagents: true }, organizationId),
+    async turnFeatureOff() {
+      const result = await seed.api(den.admin, `/v1/admin/organizations/${organizationId}/capabilities`, {
+        method: "PUT",
+        body: JSON.stringify({ capabilities: { remoteSessionSubagents: false } }),
+      });
+      if (!result.response.ok) throw new Error(`Turning off remote tasks failed: HTTP ${result.response.status}`);
+    },
+    /** The member-facing route family must be disabled together. */
+    memberActionsWhenOff: (commandId: string, sessionId: string) => Promise.all([
+      gateway.api("owner", "/v1/remote-sessions/status", "POST", { threads: [{ commandId }] }),
+      gateway.api("owner", "/v1/remote-sessions/read", "POST", { sessionId }),
+      gateway.api("owner", "/v1/remote-sessions/send", "POST", { sessionId, prompt: STEER_PROMPT }),
+      gateway.api("owner", "/v1/remote-sessions/stop", "POST", { sessionId }),
+    ]),
     /** The build machine's own view of its work: queued tasks and requests for it. */
     async work() {
       const result = await runner("/v1/session-runners/work");

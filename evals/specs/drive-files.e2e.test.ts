@@ -41,6 +41,21 @@ test("an agent pulls a Drive file into the workspace, edits it with bash and sav
     evidence.recordAssertionEvidence("A pull saves the exact bytes and returns no content", "From a Sheets-style link, drive_pull_file saved all 9,437,201 bytes to drive/Supplier entry.xlsx in two ranged chunks (md5 checked) and returned under 1 KB of metadata: path, size, type, file ID and revision rev-1. Pulling again reported upToDate without another download. The Drive actions are not listed for direct calls; only the approval-gated drive_* tools use them.", true);
   });
 
+  await step("a read-only host refuses every pull before downloading or changing a file", async () => {
+    const downloads = await world.contentRequests(world.files.supplier);
+    const approvals = world.approvals().length;
+    for (const overwrite of [false, true]) {
+      const denied = await world.readOnlyHost("drive_pull_file", { fileId: world.files.supplier, connectionId: world.fullId, path: "read-only-blocked.xlsx", overwrite });
+      expect(denied.status).toBe(403);
+      expect(denied.body).toMatchObject({ code: "read_only" });
+    }
+    expect((await world.bash("test ! -e read-only-blocked.xlsx")).code).toBe(0);
+    expect(await world.contentRequests(world.files.supplier)).toBe(downloads);
+    expect(world.approvals().length).toBe(approvals);
+    expect((await world.readOnlyHost("drive_file_status", {})).body).toMatchObject({ ok: true, files: [] });
+    evidence.recordAssertionEvidence("Read-only hosts never write pulled files or link records", "Both ordinary and overwrite pulls returned read_only before any download, confirmation or file creation. Status still returned an empty link list.", true);
+  });
+
   await step("bash edits the local copy and status reports the unpushed edit", async () => {
     const edit = await world.bash(`printf 'row 12: Acme Supplies' | dd of='${supplierPath}' bs=1 seek=4096 conv=notrunc 2>/dev/null`);
     expect(edit.code, edit.stderr).toBe(0);

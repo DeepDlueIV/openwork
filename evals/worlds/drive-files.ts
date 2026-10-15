@@ -75,6 +75,15 @@ process.on("SIGTERM", async () => { await host.stop(); process.exit(0); });
     }, hostToken, workspace, () => {}, { configPath: config, entrypoint });
     stack.defer(() => stopChild(booted.child));
     const hostUrl = await booted.listening;
+    const readOnlyEntry = join(scratch, "read-only-host.mjs");
+    await writeFile(readOnlyEntry, (await readFile(entrypoint, "utf8")).replace('approvalMode: "auto"', 'readOnly: true, approvalMode: "auto"'));
+    const readOnlyHost = bootServer({
+      ...inherited, HOME: home, XDG_CONFIG_HOME: join(home, ".config"), XDG_DATA_HOME: join(home, ".local", "share"), XDG_CACHE_HOME: join(home, ".cache"),
+      OPENWORK_SERVER_CONFIG: config, OPENWORK_DATA_DIR: join(scratch, "read-only-data"), OPENWORK_RUNTIME_DB: join(scratch, "read-only-runtime", "runtime.sqlite"),
+      OPENWORK_DEV_MODE: "1", OPENWORK_GOOGLE_API_BASE_URL: cloud.google.apiUrl,
+    }, hostToken, workspace, () => {}, { configPath: config, entrypoint: readOnlyEntry });
+    stack.defer(() => stopChild(readOnlyHost.child));
+    const readOnlyUrl = await readOnlyHost.listening;
     const clientTokens = new Map<string, string>();
     for (const scope of ["owner", "collaborator", "viewer"]) {
       const response = await fetch(`${hostUrl}/tokens`, {
@@ -109,6 +118,13 @@ process.on("SIGTERM", async () => { await host.stop(); process.exit(0); });
       },
       setApproval(allowed: boolean) { allowWrites = allowed; },
       approvals: () => [...approvalRequests],
+      async readOnlyHost(action: string, args: Record<string, unknown>) {
+        const response = await fetch(`${readOnlyUrl}/experimental/drive-files/call`, {
+          method: "POST", headers: { authorization: `Bearer ${hostToken}`, "content-type": "application/json" },
+          body: JSON.stringify({ action, args, context: { directory: workspace } }), signal: AbortSignal.timeout(10_000),
+        });
+        return { status: response.status, body: object(await response.json()) };
+      },
       async actions() {
         const response = await fetch(`${hostUrl}/experimental/extensions/actions?extensionId=openwork-cloud-uploads`, { headers: { authorization: `Bearer ${hostToken}` }, signal: AbortSignal.timeout(10_000) });
         return object(await response.json());

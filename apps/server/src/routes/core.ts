@@ -355,7 +355,7 @@ export function registerCoreRoutes(options: RegisterCoreRoutesOptions): void {
     const action = typeof body.action === "string" ? body.action : "";
     const args = isRecord(body.args) ? body.args : {};
     const context = isRecord(body.context) ? body.context : {};
-    if (action === "drive_push_file" || (action === "drive_pull_file" && args.overwrite === true)) ensureWritable(config);
+    if (action === "drive_push_file" || action === "drive_pull_file") ensureWritable(config);
     const result = await callDriveFileAction(config, action, args, context, { signal: ctx.request.signal });
     if (!result) throw new ApiError(404, "extension_action_not_found", "Drive file action not found");
     return jsonResponse(result);

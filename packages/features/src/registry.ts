@@ -62,14 +62,14 @@ export const FEATURES = defineFeatures({
   },
   modelsAnalyticsUi: {
     label: "Models analytics",
-    description: "Organization admins can view Models & usage analytics and configure analytics exports.",
+    description: "Organization admins can view Models & usage analytics and shared model usage limits.",
     since: "2026-10",
     deployments: everywhere,
     default: false,
   },
   taskAnalyticsUi: {
     label: "Task analytics",
-    description: "Members can view task activity and consumption, and admins can configure analytics integrations.",
+    description: "Members with analytics access can view task activity and consumption, and admins can configure analytics integrations.",
     since: "2026-10",
     deployments: everywhere,
     default: false,

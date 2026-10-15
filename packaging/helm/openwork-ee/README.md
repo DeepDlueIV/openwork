@@ -363,8 +363,8 @@ OpenWork Cloud. Don't change it on a customer install.
 | `config.features.*` | Environment variable | Default | What it does |
 | --- | --- | --- | --- |
 | `appBuildProgress` | `DEN_FEATURE_APP_BUILD_PROGRESS` | default off | While an agent creates or changes an MCP App, the chat shows each stage it goes through (finding and checking tools, writing the App, building and verifying it) as a checklist with a progress bar. |
-| `modelsAnalyticsUi` | `DEN_FEATURE_MODELS_ANALYTICS_UI` | default off | Organization admins can view Models & usage analytics and configure analytics exports. |
-| `taskAnalyticsUi` | `DEN_FEATURE_TASK_ANALYTICS_UI` | default off | Members can view task activity and consumption, and admins can configure analytics integrations. |
+| `modelsAnalyticsUi` | `DEN_FEATURE_MODELS_ANALYTICS_UI` | default off | Organization admins can view Models & usage analytics and shared model usage limits. |
+| `taskAnalyticsUi` | `DEN_FEATURE_TASK_ANALYTICS_UI` | default off | Members with analytics access can view task activity and consumption, and admins can configure analytics integrations. |
 | `teamMembershipCache` | `DEN_FEATURE_TEAM_MEMBERSHIP_CACHE` | default off | Reduce repeated team lookups while keeping access changes immediate. Enable only after every API instance runs revision-aware team writes. |
 | `managedDeploymentsGcp` | `DEN_FEATURE_MANAGED_DEPLOYMENTS_GCP` | default off (cloud only) | Organization admins approve OpenWork installations in their own Google Cloud project and track health and updates. |
 | `managedDeploymentsMcp` | `DEN_FEATURE_MANAGED_DEPLOYMENTS_MCP` | default off (cloud only) | Agents connected to OpenWork can check deployment readiness, create deployments, prepare the cloud approval link or command, and follow progress until the deployment is ready. |

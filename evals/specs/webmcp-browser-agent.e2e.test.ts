@@ -82,7 +82,12 @@ test("a conversation uses the browser without a permission prompt, signs in, use
     const requests = (await witness()).pageRequests;
     const localhost = `http://localhost:${new URL(world.origin).port}`;
     const opened = await task("open", { url: `${world.origin}/redirect` });
-    expect(opened).toMatchObject({ ok: true, visible: true, url: `${localhost}/fallback` });
+    expect(opened).toMatchObject({ ok: true, url: `${localhost}/fallback` });
+    // The panel switches to the new tab just after it opens; no prompt holds it back.
+    await probe.eventually(() => task("tabs"), {
+      within: 10_000, label: "the agent's new tab comes on screen",
+      until: (value) => value.tabs?.some((item: { tabId?: string; visible?: boolean }) => item.tabId === opened.tabId && item.visible === true) === true,
+    });
     expect((await witness()).pageRequests).toEqual([...requests, { path: "/fallback", signedIn: false }]);
     expect((await probe.browserState()).tabs.find((tab) => tab.id === opened.tabId)?.ownerSessionId).toBe(sessionId);
     expect(await task("navigate", { tabId: opened.tabId, url: `${localhost}/localhost-approved` })).toMatchObject({ ok: true, tabId: opened.tabId });

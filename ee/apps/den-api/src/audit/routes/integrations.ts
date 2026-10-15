@@ -235,6 +235,7 @@ export const integrationsAuditRoutes: readonly AuditRouteDeclaration[] = [
   handlerRoute("tenant_external", "POST", "/v1/inference-providers/oauth/browser-litellm-check", "inference_provider.member_oauth.browser_litellm_check", IPO, res("provider_credential"), { external: LITELLM, notes: "Public route. Attributed like browser-litellm-key once the cookie user matches the entry and the provider/set binding and litellm feature are rechecked; before LiteLLM key creation for that member." }),
 
   // Models analytics
+  read("/v1/inference/analytics/usage", "models_analytics.usage.read", MA, res("inference_usage"), "Shared Models usage limits for the feature-gated analytics dashboard."),
   route("tenant_signal", "POST", "/v1/inference/analytics/events", "models_analytics.events.report", MA, res("models_analytics_event"), "org_context", { notes: "Desktop task metadata for the caller's own OpenWork Models calls; dropped unless the organization opted in. High volume." }),
   access("GET", "/v1/inference/analytics/activity", "models_analytics.activity.list", MA, res("models_analytics_event"), "Per-member task analytics payloads (tool/skill/model metadata)."),
   read("/v1/inference/analytics/consumption", "models_analytics.consumption.read", MA, res("models_analytics_event"), "Aggregates only."),

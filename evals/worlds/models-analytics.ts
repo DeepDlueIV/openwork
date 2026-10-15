@@ -181,11 +181,11 @@ async function createAnalyticsSurfaceWorld(seed: Seed, connected: boolean) {
   await models.arrange(connected ? "surface-settings" : "surface-settings-empty");
   const web = await seed.web({ den: models.den, signedInAs: models.den.admin,
     startPath: "/dashboard/analytics", headless: true, viewport: { width: 1440, height: 1100 } });
-  const outsider = await provisionOrg(models.den.ref, {}).catch(async (error) => {
-    console.error((await models.den.apiLog?.())?.slice(-6000));
-    throw error;
-  });
+  const outsider = await provisionOrg(models.den.ref, {});
   return { ...models, web, outsider,
+    requestAnalytics(path: string, init: RequestInit) {
+      return seed.api(models.den.admin, `/v1/inference/analytics/${path}`, { ...init, headers: { "x-openwork-org-id": models.orgId } });
+    },
     async flags(modelsAnalyticsUi: boolean, taskAnalyticsUi: boolean) {
       const response = await seed.api(models.den.admin, `/v1/admin/organizations/${models.orgId}/capabilities`, {
         method: "PUT", body: JSON.stringify({ capabilities: { modelsAnalyticsUi, taskAnalyticsUi } }),

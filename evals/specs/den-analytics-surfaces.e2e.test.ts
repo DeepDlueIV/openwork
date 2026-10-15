@@ -1,5 +1,4 @@
 import { expect } from "vitest";
-import { denFetch } from "@openwork/behaviors";
 import { spec } from "@openwork/testkit";
 import { analyticsSetupWorld, analyticsSurfaceWorld } from "../worlds/models-analytics.ts";
 
@@ -26,10 +25,10 @@ test("an owner can hide analytics without losing existing export consent or gran
       ["POST", "langfuse/connect", { host: "https://analytics.example.com", publicKey: "synthetic-public", secretKey: "synthetic-secret" }],
       ["DELETE", "langfuse", undefined],
     ] as const) {
-      const response = await denFetch(world.den.admin, `/v1/inference/analytics/${path}`, { method, headers, ...(body ? { body: JSON.stringify(body) } : {}) });
+      const response = await world.requestAnalytics(path, { method, ...(body ? { body: JSON.stringify(body) } : {}) });
       expect(response.response.status, `${method} ${path}`).toBe(404);
     }
-    const memberSettings = await denFetch(world.den.members.teammate, "/v1/inference/analytics/settings?taskAnalyticsUi=true", {
+    const memberSettings = await probe.api(world.den.members.teammate, "/v1/inference/analytics/settings?taskAnalyticsUi=true", {
       headers: { ...headers, authorization: `Bearer ${world.den.members.teammate.token}` },
     });
     expect(memberSettings.response.status).toBe(404);
@@ -73,9 +72,9 @@ test("an owner can hide analytics without losing existing export consent or gran
     await owner.see({ text: /^Connected$/ });
     await owner.see({ role: "button", label: "Disconnect Langfuse" });
     const member = world.den.members.teammate;
-    const forbidden = await denFetch(member, "/v1/inference/analytics/activity?days=30", { headers: { ...headers, authorization: `Bearer ${member.token}` } });
+    const forbidden = await probe.api(member, "/v1/inference/analytics/activity?days=30", { headers: { ...headers, authorization: `Bearer ${member.token}` } });
     expect(forbidden.response.status).toBe(403);
-    const other = await denFetch(world.outsider.admin, "/v1/inference/analytics/settings", { headers: { ...headers, authorization: `Bearer ${world.outsider.admin.token}` } });
+    const other = await probe.api(world.outsider.admin, "/v1/inference/analytics/settings", { headers: { ...headers, authorization: `Bearer ${world.outsider.admin.token}` } });
     expect(other.response.status).toBe(404);
     await world.arrange("assert-surface-retained");
     evidence.recordAssertionEvidence("surface rollout never grants analytics permissions or cross-organization access", "An ordinary member's activity returns 403 and an outsider's settings request is masked as 404; saved export credentials and consent remain unchanged.", true);
@@ -91,7 +90,7 @@ test("an owner can hide analytics without losing existing export consent or gran
     await world.arrange("assert-surface-retained");
     expect((await api("settings")).response.status).toBe(404);
     // Runtime event ingestion is not a user-facing configuration/read endpoint.
-    const ingestion = await denFetch(world.den.admin, "/v1/inference/analytics/events", { method: "POST", headers, body: JSON.stringify({ events: [] }) });
+    const ingestion = await world.requestAnalytics("events", { method: "POST", body: JSON.stringify({ events: [] }) });
     expect(ingestion.response.status).not.toBe(404);
     evidence.recordAssertionEvidence("hiding analytics is reversible and does not turn off collection", "The tabs disappear again, reads return 404, runtime ingestion is not feature-disabled, and the existing export configuration is unchanged.", true);
     await owner.screenshot();
@@ -103,11 +102,11 @@ setupTest("an owner sees Langfuse setup only after both analytics surfaces are e
   await step("before: the default-off workspace has no Models or Langfuse entry point", async () => {
     await owner.see({ role: "heading", label: "Usage & adoption" }, { timeoutMs: 90_000 });
     await owner.notSee({ role: "link", label: "Models & usage" });
-    await owner.press("Meta+k");
-    await owner.type({ placeholder: "Search or jump to…" }, "langfuse");
-    await owner.see({ text: "No matches for “langfuse”." });
-    await owner.notSee({ role: "option", label: /Analytics/ });
-    evidence.recordAssertionEvidence("hidden analytics does not leak a palette shortcut", "Searching Langfuse offers no Analytics result while the surface flags are off.", true);
+    await owner.click({ testId: "den-command-palette-trigger" });
+    await owner.see({ testId: "den-command-palette-input" });
+    await owner.see({ role: "option", label: /^Analytics/ });
+    await owner.notSee({ role: "option", label: /Models & usage|Task analytics|Langfuse/ });
+    evidence.recordAssertionEvidence("hidden analytics does not leak a palette shortcut", "The palette retains Analytics for Usage & adoption, with no Models & usage, Task analytics or Langfuse entry while the flags are off.", true);
     await owner.screenshot();
     await owner.press("Escape");
   });
@@ -121,7 +120,7 @@ setupTest("an owner sees Langfuse setup only after both analytics surfaces are e
     await owner.see({ label: "Public key" });
     await owner.see({ label: "Secret key" });
     await owner.type({ label: "Public key" }, "synthetic-public-unused");
-    await owner.type({ label: "Secret key" }, "synthetic-secret-unused");
+    await owner.type({ label: "Secret key" }, "synthetic-secret-unused", { sensitive: true });
     await owner.see({ role: "button", label: "Test connection" });
     await owner.see({ role: "button", label: "Connect Langfuse" });
     const secret = (await probe.on(world.web).dom('input[type="password"]')).elements;

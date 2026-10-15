@@ -4,9 +4,9 @@ export const BUILTIN_BUILD_AN_APP_CAPABILITY = "skill:build-an-app"
 
 /**
  * The one place agents learn how OpenWork builds Apps: when to build one, the
- * order of calls, and what a good App looks like. Server instructions only
- * route here, and create_app's description owns the source and tool-call
- * rules the compiler and host enforce, so neither is repeated below.
+ * order of calls, source and tool-call rules, and what a good App looks like.
+ * Server instructions and the concise builder tool descriptions route here
+ * for the detailed rules the compiler and host enforce.
  */
 export const BUILD_AN_APP_SKILL_SOURCE = `---
 name: build-an-app
@@ -37,7 +37,24 @@ An App is a small React view that OpenWork compiles and publishes as its own MCP
 4. Call create_app with the preparationId, the same tools, the complete React and CSS, and a textFallback of one or two sentences on what the App shows. If it fails, fix exactly what the error names and call create_app again with the same preparationId. Never fall back to a local HTML file, save_artifact_view, or config-object writes.
 5. Reply in one or two sentences: what the App shows and one thing to try in it. OpenWork shows the build as it happens and opens the App, so do not narrate the steps, claim stages in prose, or paste the source.
 
-To change an App, keep its purpose and tools unless the person asks otherwise, and follow update_app.
+To change an App, keep its purpose and tools unless the person asks otherwise. Call read_app first: it returns app (the latest summary), reactSource, and cssSource, not tool input schemas. Copy app.revisionId into update_app's expectedRevisionId. Supply complete replacement React source, title, and textFallback; omit cssSource, description, or tools to keep them, or pass complete replacements.
+
+## Source and tool rules
+
+- An App needs no Workflow, output schema, or Automation. Each declared tool has a unique snake_case name, a description, and one exact capability from search_capabilities: a saved Workflow, a connection tool, or an OpenWork action that reads (GET). OpenWork actions are read-only here: to change OpenWork data, bind a saved Workflow that makes the change. Use mode live for a Workflow that reads input.runtime. Tools run as the person using the App.
+- reactSource default-exports a component receiving { app, input, result, hostContext }: input is the launch input, and result is the launch CallToolResult (read result?.structuredContent), undefined until delivered. hostContext carries theme ("light" or "dark"), styles.variables (CSS variables such as --color-text-primary, --color-background-primary, --color-border-primary and --font-sans), and containerDimensions { maxHeight, width }. The component re-renders when the host sends them again after a change.
+- React is injected: use React.useState and other React APIs without imports. Do not use fetch, browser or host globals, timers, dynamic code, external resources, URL-bearing elements, or <form>, <svg>, <style>, or <math> elements; use labeled inputs and type=button controls.
+- Call only declared tools, with app.callServerTool({ name, arguments }): a Workflow or connection tool takes the capability's arguments, an OpenWork action { path, query, body }, and a live Workflow only an optional { timeZone }. Show a blocked state if app.getHostCapabilities()?.serverTools is absent.
+- Once the launch result arrives (result is no longer undefined), call the read-only tools the focal view needs with the launch input, with no click, and show the data. OpenWork runs a call without a click only for a tool that needs no approval, once per open and once the App is on screen.
+- A tool that changes something (send, create, update, delete) or needs approval runs only from its own button: OpenWork allows one such call per click. Never call a tool on every keystroke; load again on Enter or a button. If the host refuses a call because it needs approval (its error mentions approval), keep that button so the person can approve and try again.
+- To show data instantly, pass _meta { "openwork/cache": "store" } on a call so OpenWork keeps its result when the tool is read-only. When app.getHostContext()?.experimental?.["openwork/result-cache"] is true, call the same tool and arguments with _meta { "openwork/cache": "read" } as the App opens, then load it live. That read runs no tool: OpenWork answers from this person's own storage with the last result (_meta "openwork/cached": true and "openwork/cachedAt"), or isError when none is kept. If the live load fails, keep showing what the App already has, marked stale with its time; OpenWork drops the kept result, so the next open starts without it.
+
+## Publication and results
+
+- prepare_app verifies bindings without running tools or saving an App. It returns preparationId, title, tools with their input schemas and readOnly/kind/mode, starter { reactSource, cssSource }, and nextSteps. The starter wires an initial tool or tools, not necessarily every declaration; nextSteps names any remaining tools to wire.
+- Pass prepare_app's preparationId so OpenWork shows this build as the App it prepared. It grants no access and skips no validation: create_app still checks bindings, compiles source, and saves the App. Older clients may omit it.
+- A new App goes in a new private Plugin named after it unless the user names an existing pluginId. The Workflows its tools run join that Plugin, and sharing the Plugin shares the App and those Workflows. Updating publishes an immutable revision in that same Plugin and MCP server.
+- create_app and update_app return app (summary, not source), input (empty launch input), mcpUrl, and normally launch { connectionId, toolName, resourceUri, arguments }. When OpenWork's 100-connection/App catalog limit prevents opening it, launch is omitted; its MCP URL still works in MCP clients. OpenWork opens an available built App in a sidebar tab; other hosts receive its MCP URL and text fallback.
 
 ## Starters
 

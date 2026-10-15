@@ -44,7 +44,9 @@ import { scoreText, tokenize } from "./search.js"
 import type { McpMemberIdentity } from "./external-capabilities.js"
 import type { CapabilityMatch } from "./search.js"
 
-const MARKETPLACE_CAPABILITY_PREFIX = "plugin:"
+import { buildMarketplaceCapabilityName, MARKETPLACE_CAPABILITY_PREFIX } from "./marketplace-capability-name.js"
+
+export { buildMarketplaceCapabilityName } from "./marketplace-capability-name.js"
 const PROVENANCE_SUFFIX = "in your organization's library."
 const AGENT_SKILL_NAME_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
 
@@ -278,10 +280,6 @@ type MarketplacePluginMcpRequirement = {
   requiredAuthType: PluginMcpAuthType | null
   serverName: string
   url: string
-}
-
-export function buildMarketplaceCapabilityName(pluginId: string, configObjectId: string): string {
-  return `${MARKETPLACE_CAPABILITY_PREFIX}${pluginId}:${configObjectId}`
 }
 
 export function parseMarketplaceCapabilityName(name: string): { configObjectId: string; pluginId: string } | null {

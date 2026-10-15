@@ -1,6 +1,9 @@
 # Reuse of an existing network, environment and database (mocked azurerm provider).
 
 mock_provider "azurerm" {
+  mock_resource "azurerm_container_app_job" {
+    defaults = { id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test/providers/Microsoft.App/jobs/openwork-migrate" }
+  }
   mock_resource "azurerm_log_analytics_workspace" {
     defaults = { id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test/providers/Microsoft.OperationalInsights/workspaces/openwork-den-logs" }
   }
@@ -39,8 +42,19 @@ mock_provider "random" {
   }
 }
 
+mock_provider "azapi" {
+  mock_resource "azapi_resource_action" {
+    defaults = { output = { id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test/providers/Microsoft.App/jobs/openwork-migrate/executions/test" } }
+  }
+}
+mock_provider "external" {
+  mock_data "external" {
+    defaults = { result = { status = "Succeeded" } }
+  }
+}
+
 variables {
-  openwork_version    = "0.0.0-test"
+  openwork_version    = "0.18.58"
   resource_group_name = "rg-test"
   owner_emails        = ["admin@example.com"]
 }
@@ -158,8 +172,9 @@ run "existing_database" {
   command = apply
 
   variables {
-    create_database = false
-    database_url    = "mysql://openwork:secret@db.example.com:3306/openwork_den?sslaccept=accept"
+    create_database        = false
+    database_url           = "mysql://openwork:secret@db.example.com:3306/openwork_den?sslaccept=strict"
+    migration_database_url = "mysql://migrator:secret@db.example.com:3306/openwork_den?sslaccept=strict"
   }
 
   assert {
@@ -170,6 +185,24 @@ run "existing_database" {
     condition     = output.database_fqdn == null && contains([for s in azurerm_container_app.api.secret : s.name], "database-url")
     error_message = "The existing database_url must still reach den-api as a secret."
   }
+  assert {
+    condition     = terraform_data.migration_release.input.connection == sha256(var.migration_database_url)
+    error_message = "Changing the migration database target must invalidate the old migration receipt even if its display identifier stays unchanged."
+  }
+  assert {
+    condition     = anytrue([for secret in azurerm_container_app_job.migration.secret : secret.name == "database-url" && secret.value == var.migration_database_url]) && anytrue([for secret in azurerm_container_app.api.secret : secret.name == "database-url" && secret.value == var.database_url]) && !contains([for secret in azurerm_container_app_job.migration.secret : secret.name], "better-auth-secret")
+    error_message = "A separate DDL principal must reach only the Job; application auth secrets must not reach the Job."
+  }
+}
+
+run "rejects_migration_for_another_database" {
+  command = plan
+  variables {
+    create_database        = false
+    database_url           = "mysql://app:secret@db.example.com:3306/openwork_den?sslaccept=strict"
+    migration_database_url = "mysql://migrator:secret@other.example.com:3306/openwork_den?sslaccept=strict"
+  }
+  expect_failures = [azurerm_container_app_job.migration]
 }
 
 run "existing_database_needs_url" {

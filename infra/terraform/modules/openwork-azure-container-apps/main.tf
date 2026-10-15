@@ -4,8 +4,8 @@ data "azurerm_resource_group" "this" {
 
 locals {
   location      = var.location != "" ? var.location : data.azurerm_resource_group.this.location
-  den_api_image = var.den_api_image != "" ? var.den_api_image : "ghcr.io/different-ai/openwork-den-api:${var.openwork_version}"
-  den_web_image = var.den_web_image != "" ? var.den_web_image : "ghcr.io/different-ai/openwork-den-web:${var.openwork_version}"
+  den_api_image = var.den_api_image != "" ? var.den_api_image : "ghcr.io/different-ai/openwork-den-api@${var.den_api_image_digest}"
+  den_web_image = var.den_web_image != "" ? var.den_web_image : "ghcr.io/different-ai/openwork-den-web@${var.den_web_image_digest}"
   api_app_name  = "${var.app_name_prefix}${var.name}-den-api"
   web_app_name  = "${var.app_name_prefix}${var.name}-den-web"
 

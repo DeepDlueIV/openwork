@@ -1,174 +1,150 @@
-# openwork-azure-container-apps (Terraform, draft)
+# openwork-azure-container-apps
 
-Runs a private, single-organization OpenWork control plane (Den) on **Azure
-Container Apps**, without Kubernetes:
+## What it deploys
+
+A single-organization Den control plane, without Kubernetes:
 
 | Piece | Azure resource |
 | --- | --- |
-| Container Apps environment | `<name>-den` (workload profiles, Consumption), or your existing environment (`container_app_environment_id`) |
-| Den API (`ghcr.io/different-ai/openwork-den-api`, port 8788) | Container App `<name>-den-api` |
-| Den web (`ghcr.io/different-ai/openwork-den-web`, port 3005) | Container App `<name>-den-web` |
-| Database migrations | Init container in each den-api revision; den-api starts only if it succeeds |
-| MySQL 8.4 | Azure Database for MySQL Flexible Server, private in your delegated subnet (or bring your own `database_url`) |
-| HTTPS | Container Apps ingress: the default `https://<app>.<environment domain>` hostnames, or your `domain_name` and `api.<domain_name>` with your certificate |
-| Secrets | Container Apps secrets; optional Key Vault references (`extra_secrets`) |
-| Logs | Log Analytics workspace `<name>-den-logs` (or yours) |
+| API / web | Two HTTPS-only Container Apps, API-only application replicas |
+| Migration | Manual Container Apps Job, parallelism/completions 1, retries 0 |
+| Migration trigger | Native AzAPI `Microsoft.App/jobs/start`, once per API digest/database/deployment identity |
+| Completion gate | Read-only Azure CLI observer of that exact execution; only `Succeeded` permits app rollout |
+| Database | MySQL Flexible Server 8.4, private with supplied subnets, or an existing database |
+| Secrets | Container Apps managed secrets and optional existing Key Vault references |
+| Network / logs | New or existing Container Apps environment and Log Analytics workspace |
+| Deletion protection | Default `CanNotDelete` ARM lock on the managed database |
 
-It sets the same environment the [`openwork-ee` Helm chart](../../../../packaging/helm/openwork-ee)
-and the [`openwork-aws-ecs`](../openwork-aws-ecs) module set, so the chart's
-README and `ee/apps/den-api/.env.example` document every setting you can add
-through `extra_environment`.
+Workbot, runners, Slack and OpenWork Web are not deployed. Existing product flag inputs remain accepted.
 
-> **Status: draft.** Applied end to end in an Azure test subscription with
-> `examples/complete` (release 0.18.58, East US, private MySQL 8.4, a
-> resource-group-scoped Contributor role and no role assignments): HTTPS on
-> both default hostnames, migrations, the one-time `/setup` administrator
-> flow, sign-in in the browser and from an isolated OpenWork Desktop
-> profile, then `terraform destroy`. `terraform validate` and the mocked `terraform test`
-> suite pass with Terraform 1.16 and OpenTofu 1.11 on azurerm 5.0 and 5.9.
-> Not yet exercised: custom domains, Key Vault references, private
-> registries, existing environments or databases, public-access MySQL,
-> several den-api replicas, email delivery, upgrades across releases.
+## Tested scenarios
 
-The AWS module's optional pieces (OpenWork Web, the headless runner, Workbot,
-Slack, Redis) are not in this module yet.
+| Date | Tools / providers | Release / scenario | Result |
+| --- | --- | --- | --- |
+| 2026-10-13 | Terraform 1.16, OpenTofu 1.11; AzureRM 5.0 / 5.9 | Legacy init-container module, 0.18.58, private MySQL, setup/browser/isolated desktop, destroy | Passed; not proof of the new Job topology |
+| 2026-10-14 | Terraform 1.16.5 / OpenTofu 1.11.14; AzureRM 5.9 | Legacy module, 0.18.58 to dev, one API replica, retained administrator/org, browser/desktop, destroy | Passed; not a two-replica result |
+| 2026-10-15 | Terraform 1.16.5 / OpenTofu 1.11.14; AzureRM 5.10, AzAPI 2.13, external 2.4, random 3.9 | Contract mocked tests, 26 runs on each tool | Passed |
+| 2026-10-15 | Same providers | New Job module, two-replica release-to-dev live conformance | NotRun; do not infer live support from mock tests |
+
+## Support level
+
+**Experimental.** Pin the module to a reviewed commit. Custom domains, private registries, Key Vault references and bring-your-own infrastructure have mocked coverage, not new live certification. This module does not implement application migration locking, interruption markers or schema compatibility manifests.
+
+The migration **starts natively**, but terminal completion observation currently requires Python 3 and an already authenticated Azure CLI on the Terraform runner. AzAPI's ARM start long-running operation completes on acceptance, not migration success. A read-only `external` data source polls the returned execution's ARM status, bounded by the Job deadline plus 120 seconds, failing closed on errors. It never starts, retries or stops a Job. This is an explicit portability limitation, not a claim of a provider-native terminal waiter; replace it when AzureRM/AzAPI provides that waiter. Automation runners must support Azure CLI authentication as well as provider authentication.
+
+The database lock protects out-of-band deletions. **Terraform destroy removes its own lock**; this is not `prevent_destroy`. AzureRM does not expose a MySQL server deletion-protection field. Keep production database state separate from application rollout state where stronger lifecycle separation is needed.
 
 ## Before you start
 
-- An existing **resource group**. The module creates no resource group and
-  **no role assignments**, so `Contributor` on that resource group is enough.
-- **Resource providers** registered on the subscription (needs
-  subscription-level rights, once per subscription):
-
-  ```bash
-  for ns in Microsoft.App Microsoft.DBforMySQL Microsoft.Network Microsoft.OperationalInsights; do
-    az provider register --namespace "$ns"
-  done
-  ```
-
-- **Network** (recommended): a VNet with
-  - a subnet for the Container Apps environment (`infrastructure_subnet_id`),
-    `/27` or larger, delegated to `Microsoft.App/environments`;
-  - a subnet for MySQL (`database_network.subnet_id`), delegated to
-    `Microsoft.DBforMySQL/flexibleServers`, with nothing else in it.
-
-  The environment also gets an Azure-owned resource group named
-  `ME_<environment>_<resource group>_<region>`; Azure creates and deletes it,
-  and it needs no extra rights from you.
-
-  Without these subnets, Azure manages the app network and MySQL uses public access
-  limited to Azure services. That is fine for a disposable test, not for
-  production. Private access cannot be added to an existing server later.
-- The apps pull images from `ghcr.io` and call model providers, so they need
-  outbound internet access. To avoid `ghcr.io`, mirror the images to Azure
-  Container Registry and set `den_api_image`, `den_web_image` and `registry`.
-- **No domain needed to start.** Each app gets a default HTTPS hostname with a
-  Microsoft-managed certificate. HTTPS is required: Den refuses to start with
-  a plain-HTTP public URL outside dev mode.
+- Terraform or OpenTofu **>= 1.11, < 2.0**, Python 3 and authenticated Azure CLI.
+- An existing resource group. No role assignments or subscription registrations are created. Deployment needs resource creation plus `Microsoft.App/jobs/start/action` and Job execution read access. Default database protection additionally needs management-lock write/delete permission; a restricted Contributor role may need an administrator to manage that lock.
+- Grant Job start only to trusted deployment identities: Azure's start API can override the execution image/command and use configured secrets/managed identities. Prefer explicit Job read/start/execution-read permissions over a wildcard `jobs/*/action` grant, which also permits secret listing. See [Azure Job permissions](https://learn.microsoft.com/azure/container-apps/jobs#permissions).
+- Register `Microsoft.App`, `Microsoft.DBforMySQL`, `Microsoft.Network` and `Microsoft.OperationalInsights` once, using a subscription administrator.
+- Recommended: an existing VNet, a `/27` or larger Container Apps subnet delegated to `Microsoft.App/environments`, and a separate MySQL subnet delegated to `Microsoft.DBforMySQL/flexibleServers`. Private access cannot be added to an existing server later.
+- Azure creates its own `ME_...` infrastructure resource group; environment deletion owns its teardown.
+- Apps and Job need outbound image-registry access. Private mirrors must also use `image@sha266:digest` and `registry` credentials/identity.
+- No domain is required: default `azurecontainerapps.io` hostnames have trusted Microsoft HTTPS certificates. Custom domains require DNS verification and a PFX covering both hosts.
 
 ## Usage
 
 ```hcl
 module "openwork" {
-  source = "github.com/different-ai/openwork//infra/terraform/modules/openwork-azure-container-apps?ref=<commit>"
+  source = "github.com/different-ai/openwork//infra/terraform/modules/openwork-azure-container-apps?ref=<reviewed-commit>"
 
   openwork_version    = "0.18.58"
   owner_emails        = ["admin@example.com"]
-  org_name            = "Example Co"
+  org_name            = "Example Organization"
   resource_group_name = "openwork-prod"
-
   infrastructure_subnet_id = azurerm_subnet.apps.id
   database_network = {
     subnet_id          = azurerm_subnet.mysql.id
-    virtual_network_id = azurerm_virtual_network.this.id # links the private DNS zone
+    virtual_network_id = azurerm_virtual_network.this.id
   }
-
-  # Optional
-  container_app_environment_id = "" # empty creates <name>-den
-  email_from                   = "OpenWork <no-reply@example.com>"
-  smtp = {
-    host     = "smtp.azurecomm.net"
-    username = var.smtp_user
-    password = var.smtp_password
-  }
+  den_api = { replicas = 2 }
 }
 ```
 
-After `terraform apply`:
+The default image pair is pinned to 0.18.58 digests, not resolved from mutable tags. For another release provide **both** image digest overrides (or full digest-pinned image references) together with its `openwork_version` label. Tag-only legacy overrides are deliberately rejected; replace them with their verified manifest digest.
 
-1. `terraform output -raw bootstrap_code` (generated unless you set
-   `initial_admin_bootstrap_code`).
-2. Open the `setup_url` output, enter an owner email and that code, and
-   create the first administrator. `/setup` works once, while the database
-   has no users.
-3. In OpenWork Desktop, set **Cloud control plane URL** (on the sign-in
-   screen) to `web_url`. The desktop reads `web_url/api/runtime-config` and
-   finds the API from there.
+After apply, check API `/ready` and web `/api/ready`: migration completion is gated, but ARM app creation still precedes app health. Read the sensitive `bootstrap_code` locally, open `setup_url`, and create the first administrator with an allowed email. Set OpenWork Desktop's control plane URL to `web_url`; `/api/runtime-config` advertises the API origin.
 
-`examples/complete` is a disposable stack in an existing resource group: it
-creates a VNet with both subnets and serves the default hostnames.
+## Upgrade notes
 
-## Notes
+**Legacy init-container handover requires maintenance, not an ordinary rolling apply.** A new singleton Job cannot fence an old migration-capable replica:
 
-- **Default hostnames.** Without `domain_name`, Den web is
-  `https://<name>-den-web.<environment domain>` and Den API is
-  `https://<name>-den-api.<environment domain>`. Den would normally derive the
-  API as `api.<web host>`, so the module sets `DEN_API_PUBLIC_URL` on both apps.
-  Sign-in cookies stay on the web host (den-web forwards sign-in to den-api),
-  so the two sibling hostnames work.
-- **Custom domains.** Azure checks DNS before it binds a hostname. Apply once
-  without `domain_name`, create the records listed in the
-  `custom_domain_dns_records` output (a CNAME to each app's default hostname
-  and an `asuid.<host>` TXT record), then set `domain_name` and
-  `custom_domain_certificate` (a PFX covering both hostnames) and apply again.
-  Azure-managed certificates for custom domains are not supported by this
-  module yet.
-- **Existing environment.** Set `container_app_environment_id` to run the two
-  apps in an environment you already have; the module then creates no
-  environment or Log Analytics workspace. App names must be unique in the
-  resource group, so set `app_name_prefix` when another deployment shares it.
-  For a consumption-only (v1) environment, set `workload_profile_name = ""`.
-  The environment must be able to reach your database.
-- **Existing database.** Set `create_database = false` and `database_url`.
-  Azure MySQL requires TLS, so include `?sslaccept=accept` (or a stricter
-  value).
-- **Secrets** (`DATABASE_URL`, `BETTER_AUTH_SECRET`, `DEN_DB_ENCRYPTION_KEY`,
-  the setup code, SMTP/Resend) are Container Apps secrets and live in
-  Terraform state. Use an encrypted remote backend. Losing
-  `DEN_DB_ENCRYPTION_KEY` makes encrypted database values unreadable.
-- **Key Vault.** For secrets you keep in Key Vault (SSO, for example), pass
-  `extra_secrets` (env var name => versionless secret ID), a user-assigned
-  identity in `user_assigned_identity_ids` and `key_vault_identity_id`. Grant
-  that identity `Key Vault Secrets User` on the vault yourself; the module
-  never creates role assignments.
-- **Migrations** run in each den-api replica before the app starts, like the
-  Helm chart's pre-upgrade Job. They are idempotent but not locked, so keep
-  `den_api.replicas = 1` until you need more.
-- **Apply returns before the apps are healthy.** Azure accepts a new revision
-  in seconds and starts it afterwards (about two minutes on a first deploy,
-  including migrations). Check `https://<api host>/ready` and
-  `https://<web host>/api/ready`, or the revision's running state in the
-  portal, before you open `/setup`.
-- **MySQL TLS** defaults to `sslaccept=accept` (encrypted, certificate not
-  verified), the same as the AWS module and the AKS runbook. Set
-  `database.tls_query = "sslaccept=strict"` to verify the certificate.
-- **Email is optional to start.** Setup, sign-in and admin work without it.
-  Without `smtp` or `resend_api_key`, member invites and password reset are
-  unavailable. To add a second user during a test, configure email or set
-  `allow_public_signup = true` for a while.
-- **Anything else** (SSO, proxies, observability): add env vars with
-  `extra_environment` and secrets with `extra_secrets`.
+1. Inventory every owner sharing the physical database: old revisions, Jobs, manual migrators and other installations. Freeze deployments, autoscale/replacement, retries and manual schema changes. Back up and verify recovery access.
+2. Stop/drain every old migration-capable API revision and any other database consumer whose compatibility cannot be established. Scaling a min replica setting alone is not proof: disable replacement/activation sources, await terminal containers, and verify old DB sessions and in-flight DDL are gone.
+3. Fence stale migration credentials after sessions terminate. Prefer separate migration DDL and application DML users. The managed database currently shares its admin principal; automatic user provisioning remains a follow-up. With an existing database, supply a separately provisioned DDL principal in `migration_database_url` and an app DML principal in `database_url`; the module verifies that both target the same host/port/schema. The Job receives only database/encryption secrets, not app authentication or email credentials. **Do not start the new Job if exclusion cannot be established.**
+4. Apply the digest-pinned Job-only migration topology. One native start produces an execution ID; the exact execution must reach `Succeeded` before either app changes. Failure, unknown status or timeout blocks rollout. Inspect the retained execution before any manual retry; never blindly replace a failed start resource.
+5. Resume API-only replicas and verify data/readiness/sign-in. Never roll back to a migration-capable legacy definition or reactivate its credentials. This module does not certify mixed-version schema compatibility or automatic schema rollback.
+
+Fresh installs have no legacy migrators, but still need one coordinator per physical schema. API digest, database identifier or sensitive connection-URL hash changes replace the native start action; a receipt for a previous database is never reused just because its display identifier stayed the same. `migration_deployment_id` permits a deliberate same-image attempt after operator inspection; never set it to a timestamp. Scaling app replicas does not create another migration execution.
+
+**Secrets are preserved:** existing `random_password` resource addresses and values are unchanged. Adoption does not regenerate auth/encryption/bootstrap/database secrets. The admin password now uses AzureRM's write-only argument with the existing value; its random source and Container Apps secret copies still live in state. Do not remove/import/recreate random resources to adopt this change. Existing database URLs must change from unverified `sslaccept=accept` to `sslaccept=strict`; conflicting TLS parameters are rejected.
+
+## State guidance
+
+Use encrypted, access-controlled remote state and restrict state/plan/log access. Azure Blob state supports backend locking; configure the backend in the root, never inside this reusable module. If using an S3 backend, use `use_lockfile = true`, not DynamoDB locking.
+
+AzureRM's Container Apps app/Job secret fields are not write-only, so auth/encryption/database credentials remain in state. The MySQL `_wo` field avoids another provider copy but does not erase the preserved random source. No unreviewed generation change is made: losing the encryption key makes stored credentials unreadable. Extra Key Vault references keep their values outside Terraform; grant the supplied user-assigned identity vault access yourself.
+
+No module lock file is shipped. Generate locks in your root/example separately for the chosen tool: `terraform init` or `tofu init`. Their registry addresses and checksums can differ; do not reuse one tool's lock in read-only mode for the other without generating compatible entries. Commit the appropriate root lock; do not publish provider caches or state.
+
+## Inputs and defaults
+
+| Input | Default | Meaning |
+| --- | --- | --- |
+| `resource_group_name`, `owner_emails` | Required | Existing group; nonempty first-administrator email allowlist |
+| `openwork_version` | `0.18.58` | Release label; non-default requires both explicit pins |
+| `name`, `location`, `tags` | `openwork`, group region, `{}` | Resource prefix, region, Azure labels |
+| `den_api_image`, `den_web_image` | `""` | Full image@digest overrides, including mirrors |
+| `den_api_image_digest` | `sha266:0942e02a8e2033151e982f51b24926fe5090807b7f7480d77f2c4fc5b806737e` | 0.18.58 API / migration pin |
+| `den_web_image_digest` | `sha266:b1543b2bb36df0a7c75d7dc18cdd773eb2e87df268169dcb1e284439299ada3f` | 0.18.58 web pin |
+| `registry`, `registry_password` | `null`, sensitive `""` | Existing private registry identity or username/password |
+| `container_app_environment_id`, `infrastructure_subnet_id` | `""`, `""` | Existing environment or subnet for new environment |
+| `internal_load_balancer_enabled`, `workload_profile_name` | `false`, `Consumption` | Internal-only ingress; workload profile |
+| `create_log_analytics_workspace`, `log_analytics_workspace_id`, `log_retention_days` | `true`, `""`, `30` | New/existing log sink and retention |
+| `app_name_prefix`, `user_assigned_identity_ids` | `""`, `[]` | App name namespace; preauthorized identities |
+| `domain_name`, `api_domain_name`, `custom_domain_certificate` | `""`, `""`, `null` | Default HTTPS hosts or custom hostnames and sensitive PFX |
+| `allowed_ingress_cidrs` | `[]` | Empty permits all HTTPS ingress |
+| `org_name`, `org_slug` | `OpenWork`, `default` | Organization display name and slug |
+| `initial_admin_bootstrap_code` | Generated, preserved | Sensitive one-time setup code |
+| `allow_public_signup`, `require_email_verification` | `false`, `false` | Public enrollment and email requirement |
+| `automations_enabled`, `dashboards_enabled`, `openwork_web_url` | `false`, `false`, `""` | Preserved legacy product inputs |
+| `extra_environment`, `extra_secrets`, `key_vault_identity_id` | `{}`, `{}`, `""` | Non-secret env; env-to-Key-Vault-ID map; preauthorized identity |
+| `email_from`, `smtp`, `resend_api_key` | `""`, `{}`, sensitive `""` | Email optional; SMTP defaults port 587, secure false, other fields empty |
+| `create_database`, `database_url`, `database_network` | `true`, sensitive `""`, `null` | Managed or existing verified-TLS database; private network object |
+| `migration_database_url` | Sensitive `""` | Optional separately provisioned DDL principal for the same database; Job-only |
+| `database` | Schema `openwork_den`, B1ms, MySQL 8.4, 20 GiB, 7-day backups, zone unset, HA off, `sslaccept=strict` | Managed database settings; preserve `database.name` on upgrade because changing it replaces the schema |
+| `database_network` members | subnet required; VNet `""`; create DNS `true`; DNS ID `""` | Existing subnet/VNet, or an existing linked private DNS zone |
+| `deletion_protection` | `true` | Out-of-band database deletion lock; Terraform destroy caveat above |
+| `den_api`, `den_web` | 1 vCPU / 2 GiB / 1 replica; 0.5 vCPU / 1 GiB / 1 replica | App reservations and fixed min/max replicas |
+| `migration_timeout_seconds`, `migration_deployment_id` | `1800`, `""` | Bounded Job deadline (120–3600); deliberate release identity |
+| `existing_database_identifier` | `external` | Non-secret stable ID; change with existing database to rerun migration |
+
+## Outputs
+
+| Output | Meaning |
+| --- | --- |
+| `web_url`, `api_url` | Public HTTPS origins |
+| `database_identifier`, `migration_step_identifier`, `migration_job_id`, `migration_execution_id` | Shared contract database and exact migration identities |
+| `setup_url`, `bootstrap_code` | Setup page and sensitive one-time code |
+| `default_hostnames`, `custom_domain_dns_records` | App CNAME targets and Azure DNS verification records |
+| `container_app_environment_id`, `app_names`, `outbound_ip_addresses` | Runtime infrastructure and outbound allowlist |
+| `database_fqdn`, `database_server_name`, `log_analytics_workspace_id` | Preserved existing monitoring outputs |
 
 ## Tests
 
 ```bash
-terraform init -backend=false && terraform validate && terraform test   # or tofu
+terraform init -backend=false && terraform validate && terraform test
+# In a separate tool-specific root/cache, or regenerate the local lock:
+tofu init -backend=false && tofu validate && tofu test
 ```
 
-The tests mock the azurerm provider; they need no Azure account.
+Mocks never contact Azure. `evals/specs/azure-terraform-contract.test.ts` negative-controls the read-only completion observer without requiring Azure access. Run the module HCL suite with both CLI commands above; the normal application CI lane does not install Terraform/OpenTofu. Live attached-Den specs stay local because CI has no live deployment.
 
-## Rough cost (East US list prices, defaults; not measured)
+## Cost notes
 
-About $2-4/day: den-api (1 vCPU, 2 GiB) and den-web (0.5 vCPU, 1 GiB) kept at
-one replica each on the Consumption profile (less when idle), a Burstable
-B1ms MySQL server with 20 GB (about $0.50/day), and Log Analytics ingestion.
+The earlier one-replica test measured under USD 1 estimated for a short session, not a settled bill. Rough always-on East US defaults were estimated at USD 2–4/day before logs/traffic; these are not production quotes. Two API replicas increase consumption. The migration Job is short-lived; Azure may retain execution history. Use Azure pricing and your plan's actual reservations before committing spend.
+
+`examples/complete` explicitly supports disabling deletion protection for disposable runs. Run long applies/destroys detached and poll completion. Environment deletion previously took 25–28 minutes; Log Analytics must be permanently purged, not merely soft deleted. After destroy verify the resource inventory and deleted-workspace inventory, then remove local state and generated secrets.

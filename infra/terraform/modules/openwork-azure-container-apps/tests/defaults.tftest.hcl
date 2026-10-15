@@ -1,6 +1,9 @@
 # Offline checks (mocked azurerm provider): terraform init && terraform test
 
 mock_provider "azurerm" {
+  mock_resource "azurerm_container_app_job" {
+    defaults = { id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test/providers/Microsoft.App/jobs/openwork-migrate" }
+  }
   mock_resource "azurerm_container_app" {
     defaults = { id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test/providers/Microsoft.App/containerApps/app" }
   }
@@ -30,8 +33,19 @@ mock_provider "random" {
   }
 }
 
+mock_provider "azapi" {
+  mock_resource "azapi_resource_action" {
+    defaults = { output = { id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test/providers/Microsoft.App/jobs/openwork-migrate/executions/test" } }
+  }
+}
+mock_provider "external" {
+  mock_data "external" {
+    defaults = { result = { status = "Succeeded" } }
+  }
+}
+
 variables {
-  openwork_version    = "0.0.0-test"
+  openwork_version    = "0.18.58"
   resource_group_name = "rg-test"
   owner_emails        = ["admin@example.com"]
 }
@@ -114,20 +128,20 @@ run "migrations_run_before_den_api" {
   command = apply
 
   assert {
-    condition     = azurerm_container_app.api.template[0].init_container[0].command == tolist(["node", "/app/ee/packages/den-db/dist/scripts/bootstrap.js"])
-    error_message = "den-api must run the Helm chart's migration as an init container."
+    condition     = azurerm_container_app_job.migration.template[0].container[0].command == tolist(["node", "/app/ee/packages/den-db/dist/scripts/bootstrap.js"])
+    error_message = "The separate Job must run the packaged migration command."
   }
   assert {
-    condition     = azurerm_container_app.api.template[0].init_container[0].image == "ghcr.io/different-ai/openwork-den-api:0.0.0-test" && azurerm_container_app.web.template[0].container[0].image == "ghcr.io/different-ai/openwork-den-web:0.0.0-test"
-    error_message = "Images should default to ghcr.io tagged with openwork_version."
+    condition     = azurerm_container_app_job.migration.template[0].container[0].image == azurerm_container_app.api.template[0].container[0].image && endswith(azurerm_container_app.web.template[0].container[0].image, var.den_web_image_digest)
+    error_message = "Migration and API must use the same immutable digest; web must also be digest-pinned."
   }
   assert {
-    condition     = contains([for e in azurerm_container_app.api.template[0].init_container[0].env : e.name], "DATABASE_URL") && contains([for e in azurerm_container_app.api.template[0].init_container[0].env : e.name], "DEN_DB_ENCRYPTION_KEY")
+    condition     = contains([for e in azurerm_container_app_job.migration.template[0].container[0].env : e.name], "DATABASE_URL") && contains([for e in azurerm_container_app_job.migration.template[0].container[0].env : e.name], "DEN_DB_ENCRYPTION_KEY")
     error_message = "The migration needs DATABASE_URL and DEN_DB_ENCRYPTION_KEY."
   }
   assert {
-    condition     = length(azurerm_container_app.web.template[0].init_container) == 0
-    error_message = "Only den-api runs migrations."
+    condition     = length(azurerm_container_app.web.template[0].init_container) == 0 && length(azurerm_container_app.api.template[0].init_container) == 0 && azurerm_container_app_job.migration.replica_retry_limit == 0 && azurerm_container_app_job.migration.manual_trigger_config[0].parallelism == 1
+    error_message = "Application replicas never migrate; Job parallelism is one and automatic retries are zero."
   }
 }
 
@@ -154,6 +168,71 @@ run "public_database_by_default" {
     condition     = length(azurerm_private_dns_zone.db) == 0
     error_message = "No private DNS zone without database_network."
   }
+}
+
+run "protected_database_and_verified_tls" {
+  command = apply
+  assert {
+    condition     = var.deletion_protection && length(azurerm_management_lock.database) == 1 && azurerm_management_lock.database[0].lock_level == "CanNotDelete"
+    error_message = "The database must have an Azure deletion lock by default."
+  }
+  assert {
+    condition     = var.database.tls_query == "sslaccept=strict" && azurerm_mysql_flexible_server.this[0].administrator_password == null
+    error_message = "The database must use verified TLS and the write-only admin password field."
+  }
+}
+
+run "two_api_replicas_one_migrator" {
+  command = apply
+  variables {
+    den_api             = { replicas = 2 }
+    deletion_protection = false
+    database            = { name = "exp-ow-tf-c1-proof-db" }
+  }
+  assert {
+    condition     = azurerm_container_app.api.template[0].min_replicas == 2 && azurerm_container_app.api.template[0].max_replicas == 2 && azurerm_container_app_job.migration.manual_trigger_config[0].replica_completion_count == 1 && length(azurerm_management_lock.database) == 0
+    error_message = "Scaling API must not scale the migration owner; tests can explicitly disable the database lock."
+  }
+  assert {
+    condition     = azurerm_mysql_flexible_database.this[0].name == "exp-ow-tf-c1-proof-db"
+    error_message = "Disposable stacks must be able to prefix their database schema resource without changing production defaults."
+  }
+  assert {
+    condition     = alltrue(flatten([for envs in [azurerm_container_app.api.template[0].container[0].env, azurerm_container_app.web.template[0].container[0].env, azurerm_container_app_job.migration.template[0].container[0].env] : [for env in envs : env.value == null if contains(local.secret_env_names, env.name)]]))
+    error_message = "Secrets must never be passed as plain environment values to apps or the Job."
+  }
+}
+
+run "rejects_plain_secret" {
+  command = plan
+  variables { extra_environment = { DATABASE_URL = "not-a-secret" } }
+  expect_failures = [var.extra_environment]
+}
+
+run "rejects_mutable_image" {
+  command = plan
+  variables { den_api_image = "ghcr.io/different-ai/openwork-den-api:latest" }
+  expect_failures = [var.den_api_image]
+}
+
+run "rejects_unverified_tls" {
+  command = plan
+  variables { database = { tls_query = "sslaccept=accept" } }
+  expect_failures = [var.database]
+}
+
+run "failed_completion_blocks_rollout" {
+  command = plan
+  # Preserve the preceding applied fixture's target: replacing its schema
+  # would defer this read until apply and make a plan-time negative unknown.
+  variables {
+    database = { name = "exp-ow-tf-c1-proof-db" }
+  }
+  override_data {
+    target = data.external.migration_completion
+    values = { result = { status = "Failed" } }
+  }
+  expect_failures = [data.external.migration_completion]
 }
 
 run "restricts_ingress" {

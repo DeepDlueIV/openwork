@@ -4,11 +4,15 @@
 # For production, pass your own subnets and, optionally, domain_name.
 
 terraform {
-  required_version = ">= 1.5.0"
+  required_version = ">= 1.11, < 2.0"
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = ">= 5.0.0"
+      version = "~> 5.9"
+    }
+    azapi = {
+      source  = "Azure/azapi"
+      version = "~> 2.10"
     }
   }
 }
@@ -27,24 +31,29 @@ provider "azurerm" {
   resource_provider_registrations = "none"
 }
 
+provider "azapi" {
+  subscription_id = var.subscription_id
+}
+
 data "azurerm_resource_group" "this" {
   name = var.resource_group_name
 }
 
 locals {
-  tags = { project = "openwork", stack = var.name }
+  tags     = { project = "openwork", stack = var.name }
+  location = var.location != "" ? var.location : data.azurerm_resource_group.this.location
 }
 
 resource "azurerm_virtual_network" "this" {
   name                = "${var.name}-vnet"
   resource_group_name = var.resource_group_name
-  location            = data.azurerm_resource_group.this.location
+  location            = local.location
   address_space       = ["10.42.0.0/16"]
   tags                = local.tags
 }
 
 resource "azurerm_subnet" "apps" {
-  name                 = "container-apps"
+  name                 = "${var.name}-container-apps"
   resource_group_name  = var.resource_group_name
   virtual_network_name = azurerm_virtual_network.this.name
   address_prefixes     = ["10.42.0.0/23"]
@@ -61,7 +70,7 @@ resource "azurerm_subnet" "apps" {
 resource "azurerm_subnet" "database" {
   count = var.private_database ? 1 : 0
 
-  name                 = "mysql"
+  name                 = "${var.name}-mysql"
   resource_group_name  = var.resource_group_name
   virtual_network_name = azurerm_virtual_network.this.name
   address_prefixes     = ["10.42.16.0/24"]
@@ -80,7 +89,13 @@ module "openwork" {
 
   name                = var.name
   resource_group_name = var.resource_group_name
+  location            = local.location
   openwork_version    = var.openwork_version
+  den_api_image       = var.den_api_image
+  den_web_image       = var.den_web_image
+  den_api             = { replicas = var.den_api_replicas }
+  deletion_protection = var.deletion_protection
+  database            = { name = var.database_name }
   owner_emails        = var.owner_emails
   org_name            = var.org_name
   tags                = local.tags
@@ -105,4 +120,6 @@ output "bootstrap_code" {
 }
 output "app_names" { value = module.openwork.app_names }
 output "database_server_name" { value = module.openwork.database_server_name }
+output "migration_job_id" { value = module.openwork.migration_job_id }
+output "migration_execution_id" { value = module.openwork.migration_execution_id }
 output "log_analytics_workspace_id" { value = module.openwork.log_analytics_workspace_id }

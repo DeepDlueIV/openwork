@@ -51,6 +51,26 @@ output "outbound_ip_addresses" {
   value       = azurerm_container_app.api.outbound_ip_addresses
 }
 
+output "database_identifier" {
+  description = "Managed MySQL ARM resource ID, or the supplied non-secret existing database identifier."
+  value       = var.create_database ? azurerm_mysql_flexible_server.this[0].id : var.existing_database_identifier
+}
+
+output "migration_job_id" {
+  description = "Singleton migration Job ARM resource ID."
+  value       = azurerm_container_app_job.migration.id
+}
+
+output "migration_step_identifier" {
+  description = "Cross-cloud contract alias for the native migration Job identifier."
+  value       = azurerm_container_app_job.migration.id
+}
+
+output "migration_execution_id" {
+  description = "Exact execution observed before the API rollout; retained on migration failure."
+  value       = azapi_resource_action.migration_start.output.id
+}
+
 output "database_fqdn" {
   value = var.create_database ? azurerm_mysql_flexible_server.this[0].fqdn : null
 }

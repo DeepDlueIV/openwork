@@ -7,6 +7,12 @@ variable "resource_group_name" {
   type        = string
 }
 
+variable "location" {
+  description = "Region for new resources. Empty uses the existing resource group's location."
+  type        = string
+  default     = ""
+}
+
 variable "name" {
   type    = string
   default = "openwork-test"
@@ -24,6 +30,36 @@ variable "owner_emails" {
 variable "org_name" {
   type    = string
   default = "OpenWork"
+}
+
+variable "database_name" {
+  description = "Managed database schema name. Changing it replaces the schema; preserve the existing name on upgrades."
+  type        = string
+  default     = "openwork_den"
+}
+
+variable "den_api_image" {
+  description = "Optional full API image pinned with @sha256:digest."
+  type        = string
+  default     = ""
+}
+
+variable "den_web_image" {
+  description = "Optional full web image pinned with @sha256:digest."
+  type        = string
+  default     = ""
+}
+
+variable "den_api_replicas" {
+  description = "API-only replica count; migration remains singleton."
+  type        = number
+  default     = 1
+}
+
+variable "deletion_protection" {
+  description = "Azure deletion lock on MySQL. Disable explicitly for disposable tests."
+  type        = bool
+  default     = true
 }
 
 variable "private_database" {

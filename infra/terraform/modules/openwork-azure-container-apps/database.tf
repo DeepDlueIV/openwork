@@ -54,16 +54,20 @@ resource "azurerm_private_dns_zone_virtual_network_link" "db" {
 resource "azurerm_mysql_flexible_server" "this" {
   count = var.create_database ? 1 : 0
 
-  name                   = "${var.name}-den-${random_string.db_suffix[0].result}"
-  resource_group_name    = var.resource_group_name
-  location               = local.location
-  version                = var.database.version
-  sku_name               = var.database.sku_name
-  zone                   = var.database.zone
-  administrator_login    = "openwork"
-  administrator_password = random_password.db[0].result
-  backup_retention_days  = var.database.backup_retention_days
-  tags                   = var.tags
+  name                = "${var.name}-den-${random_string.db_suffix[0].result}"
+  resource_group_name = var.resource_group_name
+  location            = local.location
+  version             = var.database.version
+  sku_name            = var.database.sku_name
+  zone                = var.database.zone
+  administrator_login = "openwork"
+  # Keep the existing random resource address/value: contract adoption must not
+  # rotate the password. Container Apps secret values still require state; see
+  # the state guidance for this provider limitation.
+  administrator_password_wo         = random_password.db[0].result
+  administrator_password_wo_version = 1
+  backup_retention_days             = var.database.backup_retention_days
+  tags                              = var.tags
 
   # Private access (VNet integration) is chosen at creation and cannot change.
   delegated_subnet_id   = local.database_private ? var.database_network.subnet_id : null
@@ -94,10 +98,19 @@ resource "azurerm_mysql_flexible_server" "this" {
   }
 }
 
+resource "azurerm_management_lock" "database" {
+  count = var.create_database && var.deletion_protection ? 1 : 0
+
+  name       = "${var.name}-database-protection"
+  scope      = azurerm_mysql_flexible_server.this[0].id
+  lock_level = "CanNotDelete"
+  notes      = "Protects against out-of-band deletion. Terraform destroy can remove this Terraform-managed lock."
+}
+
 resource "azurerm_mysql_flexible_database" "this" {
   count = var.create_database ? 1 : 0
 
-  name                = "openwork_den"
+  name                = var.database.name
   resource_group_name = var.resource_group_name
   server_name         = azurerm_mysql_flexible_server.this[0].name
   charset             = "utf8mb4"

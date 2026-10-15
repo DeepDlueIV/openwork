@@ -3,8 +3,17 @@
 # ---------------------------------------------------------------------------
 
 variable "openwork_version" {
-  description = "Published OpenWork release, for example \"0.18.57\". Used as the tag for both images unless den_api_image / den_web_image are set."
+  description = "Release label. Defaults pins are 0.18.58; other releases require both explicit digest overrides. Never resolves a mutable tag."
   type        = string
+  default     = "0.18.58"
+
+  validation {
+    condition = var.openwork_version == "0.18.58" || (
+      (var.den_api_image != "" || var.den_api_image_digest != "sha256:0942e02a8e2033151e982f51b24926fe5090807b7f7480d77f2c4fc5b806737e") &&
+      (var.den_web_image != "" || var.den_web_image_digest != "sha256:b1543b2bb36df0a7c75d7dc18cdd773eb2e87df268169dcb1e284439299ada3f")
+    )
+    error_message = "For a release other than 0.18.58, supply both image references pinned by digest or both image digests."
+  }
 }
 
 variable "resource_group_name" {
@@ -50,15 +59,43 @@ variable "tags" {
 }
 
 variable "den_api_image" {
-  description = "Full den-api image reference. Empty uses ghcr.io/different-ai/openwork-den-api:<openwork_version>. Set this to an Azure Container Registry mirror if the apps cannot reach ghcr.io (and set registry)."
+  description = "Full den-api image@sha256:digest reference (including private mirrors). Empty uses den_api_image_digest. Mutable tags are rejected."
   type        = string
   default     = ""
+  validation {
+    condition     = var.den_api_image == "" || can(regex("^.+@sha256:[a-f0-9]{64}$", var.den_api_image))
+    error_message = "den_api_image must be empty or pinned with @sha256:<64 lowercase hex characters>."
+  }
 }
 
 variable "den_web_image" {
-  description = "Full den-web image reference. Empty uses ghcr.io/different-ai/openwork-den-web:<openwork_version>."
+  description = "Full den-web image@sha256:digest reference. Empty uses den_web_image_digest. Mutable tags are rejected."
   type        = string
   default     = ""
+  validation {
+    condition     = var.den_web_image == "" || can(regex("^.+@sha256:[a-f0-9]{64}$", var.den_web_image))
+    error_message = "den_web_image must be empty or pinned with @sha256:<64 lowercase hex characters>."
+  }
+}
+
+variable "den_api_image_digest" {
+  description = "Immutable den-api digest; default is release 0.18.58."
+  type        = string
+  default     = "sha256:0942e02a8e2033151e982f51b24926fe5090807b7f7480d77f2c4fc5b806737e"
+  validation {
+    condition     = can(regex("^sha256:[a-f0-9]{64}$", var.den_api_image_digest))
+    error_message = "den_api_image_digest must be sha256:<64 lowercase hex characters>."
+  }
+}
+
+variable "den_web_image_digest" {
+  description = "Immutable den-web digest; default is release 0.18.58."
+  type        = string
+  default     = "sha256:b1543b2bb36df0a7c75d7dc18cdd773eb2e87df268169dcb1e284439299ada3f"
+  validation {
+    condition     = can(regex("^sha256:[a-f0-9]{64}$", var.den_web_image_digest))
+    error_message = "den_web_image_digest must be sha256:<64 lowercase hex characters>."
+  }
 }
 
 variable "registry" {
@@ -237,15 +274,26 @@ variable "openwork_web_url" {
 }
 
 variable "extra_environment" {
-  description = "Additional plain env vars for both den-api and den-web. See ee/apps/den-api/.env.example."
+  description = "Additional non-secret env vars. Secret-like names and overrides of secret bindings are rejected; use extra_secrets with Key Vault references instead."
   type        = map(string)
   default     = {}
+  validation {
+    condition = alltrue([for name in keys(var.extra_environment) :
+      !can(regex("(?i)(secret|password|passwd|token|credential|private.key|api.key|encryption.key|database.url|smtp.pass|bootstrap.code)", name)) &&
+      !contains(keys(var.extra_secrets), name)
+    ])
+    error_message = "Secret environment variables must use extra_secrets, never extra_environment."
+  }
 }
 
 variable "extra_secrets" {
   description = "Additional secret env vars for both apps: env var name => versionless Key Vault secret ID (https://<vault>.vault.azure.net/secrets/<name>). Read with key_vault_identity_id, which must already have access to the vault."
   type        = map(string)
   default     = {}
+  validation {
+    condition     = length(var.extra_secrets) == 0 || var.key_vault_identity_id != ""
+    error_message = "extra_secrets requires key_vault_identity_id."
+  }
 }
 
 variable "key_vault_identity_id" {
@@ -295,10 +343,25 @@ variable "create_database" {
 }
 
 variable "database_url" {
-  description = "mysql:// URL of an existing database, including a TLS parameter such as ?sslaccept=accept (Azure MySQL requires TLS). Used only when create_database = false."
+  description = "Existing mysql:// URL with verified TLS (?sslaccept=strict). Used only when create_database = false; stored as a Container Apps secret."
   type        = string
   default     = ""
   sensitive   = true
+  validation {
+    condition     = var.database_url == "" || (can(regex("[?&]sslaccept=strict(&|$)", var.database_url)) && !can(regex("[?&](sslmode|ssl-mode)=", var.database_url)))
+    error_message = "database_url must use sslaccept=strict without conflicting SSL mode parameters."
+  }
+}
+
+variable "migration_database_url" {
+  description = "Optional verified-TLS URL for a separately provisioned DDL principal on the same database as database_url. Empty preserves the shared managed principal. Only the migration Job receives it."
+  type        = string
+  default     = ""
+  sensitive   = true
+  validation {
+    condition     = var.migration_database_url == "" || (can(regex("[?&]sslaccept=strict(&|$)", var.migration_database_url)) && !can(regex("[?&](sslmode|ssl-mode)=", var.migration_database_url)))
+    error_message = "migration_database_url must use sslaccept=strict without conflicting SSL mode parameters."
+  }
 }
 
 variable "database_network" {
@@ -324,13 +387,14 @@ variable "database_network" {
 variable "database" {
   description = "MySQL Flexible Server settings."
   type = object({
+    name                  = optional(string, "openwork_den")
     sku_name              = optional(string, "B_Standard_B1ms")
     version               = optional(string, "8.4")
     storage_gb            = optional(number, 20)
     backup_retention_days = optional(number, 7)
     zone                  = optional(string)
     high_availability     = optional(string, "") # SameZone or ZoneRedundant; needs a General Purpose SKU
-    tls_query             = optional(string, "sslaccept=accept")
+    tls_query             = optional(string, "sslaccept=strict")
   })
   default = {}
 
@@ -338,6 +402,38 @@ variable "database" {
     condition     = contains(["", "SameZone", "ZoneRedundant"], var.database.high_availability)
     error_message = "database.high_availability must be empty, SameZone or ZoneRedundant."
   }
+  validation {
+    condition     = var.database.tls_query == "sslaccept=strict"
+    error_message = "database.tls_query must be sslaccept=strict (verified TLS); insecure legacy settings are no longer accepted."
+  }
+}
+
+variable "deletion_protection" {
+  description = "Protect the managed database from out-of-band deletion with an Azure CanNotDelete lock. Terraform can remove its own lock during destroy; this is not a Terraform prevent_destroy guarantee."
+  type        = bool
+  default     = true
+}
+
+variable "migration_timeout_seconds" {
+  description = "Migration Job deadline, with zero automatic retries. Observer allows another 120 seconds for ARM status propagation."
+  type        = number
+  default     = 1800
+  validation {
+    condition     = var.migration_timeout_seconds >= 120 && var.migration_timeout_seconds <= 3600
+    error_message = "migration_timeout_seconds must be between 120 and 3600."
+  }
+}
+
+variable "migration_deployment_id" {
+  description = "Optional release identity to deliberately run a new migration with the same image. Inspect prior execution before changing; never use a timestamp."
+  type        = string
+  default     = ""
+}
+
+variable "existing_database_identifier" {
+  description = "Stable non-secret identifier for an existing database. Change with database_url to trigger its migration; never put credentials here."
+  type        = string
+  default     = "external"
 }
 
 # ---------------------------------------------------------------------------
@@ -345,7 +441,7 @@ variable "database" {
 # ---------------------------------------------------------------------------
 
 variable "den_api" {
-  description = "den-api size and replica count. cpu and memory must be a valid Container Apps combination (for example 1 and \"2Gi\"). Keep replicas = 1 until you have confirmed migrations: each replica runs them on start."
+  description = "den-api size and replica count. Default 1 vCPU / 2 GiB / 1 replica. Replicas are API-only; migration is a separate singleton Job."
   type = object({
     cpu      = optional(number, 1)
     memory   = optional(string, "2Gi")

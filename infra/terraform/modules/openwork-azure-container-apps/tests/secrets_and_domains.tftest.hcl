@@ -1,6 +1,9 @@
 # Key Vault references, email secrets and custom domains (mocked azurerm provider).
 
 mock_provider "azurerm" {
+  mock_resource "azurerm_container_app_job" {
+    defaults = { id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test/providers/Microsoft.App/jobs/openwork-migrate" }
+  }
   mock_resource "azurerm_log_analytics_workspace" {
     defaults = { id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test/providers/Microsoft.OperationalInsights/workspaces/openwork-den-logs" }
   }
@@ -33,8 +36,19 @@ mock_provider "random" {
   }
 }
 
+mock_provider "azapi" {
+  mock_resource "azapi_resource_action" {
+    defaults = { output = { id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test/providers/Microsoft.App/jobs/openwork-migrate/executions/test" } }
+  }
+}
+mock_provider "external" {
+  mock_data "external" {
+    defaults = { result = { status = "Succeeded" } }
+  }
+}
+
 variables {
-  openwork_version    = "0.0.0-test"
+  openwork_version    = "0.18.58"
   resource_group_name = "rg-test"
   owner_emails        = ["admin@example.com"]
 }
@@ -73,7 +87,7 @@ run "extra_secrets_need_identity" {
     extra_secrets = { DEN_SSO_CLIENT_SECRET = "https://corp-vault.vault.azure.net/secrets/openwork-sso" }
   }
 
-  expect_failures = [azurerm_container_app.api]
+  expect_failures = [var.extra_secrets]
 }
 
 run "email_secrets" {

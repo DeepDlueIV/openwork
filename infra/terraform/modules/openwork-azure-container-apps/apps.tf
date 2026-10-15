@@ -73,33 +73,6 @@ resource "azurerm_container_app" "api" {
     min_replicas = var.den_api.replicas
     max_replicas = var.den_api.replicas
 
-    # Same migration the Helm chart runs as a pre-install/pre-upgrade Job and
-    # the ECS module runs as an init container. Every new revision runs it;
-    # den-api starts only if it succeeded.
-    init_container {
-      name    = "migrate"
-      image   = local.den_api_image
-      command = ["node", "/app/ee/packages/den-db/dist/scripts/bootstrap.js"]
-      cpu     = 0.5
-      memory  = "1Gi"
-
-      dynamic "env" {
-        for_each = local.environment
-        content {
-          name  = env.key
-          value = env.value
-        }
-      }
-
-      dynamic "env" {
-        for_each = local.secret_env
-        content {
-          name        = env.key
-          secret_name = env.value
-        }
-      }
-    }
-
     container {
       name   = "den-api"
       image  = local.den_api_image
@@ -145,16 +118,12 @@ resource "azurerm_container_app" "api" {
     }
   }
 
-  depends_on = [azurerm_mysql_flexible_database.this, azurerm_mysql_flexible_server_firewall_rule.azure_services]
+  depends_on = [data.external.migration_completion]
 
   lifecycle {
     precondition {
       condition     = var.create_database || nonsensitive(var.database_url != "")
       error_message = "Set database_url when create_database = false."
-    }
-    precondition {
-      condition     = length(var.extra_secrets) == 0 || var.key_vault_identity_id != ""
-      error_message = "extra_secrets needs key_vault_identity_id, a user-assigned identity that can read those Key Vault secrets."
     }
     precondition {
       condition     = !local.custom_domains || var.custom_domain_certificate != null

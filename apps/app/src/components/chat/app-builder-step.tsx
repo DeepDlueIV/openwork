@@ -9,7 +9,6 @@ import { useCurrentToolLifecycleResolver } from "./current-tool-lifecycle-contex
 import {
   appCreationProgress,
   appRead,
-  appSourceLines,
   isAppGuidePart,
   type AppCreationRun,
 } from "@/react-app/domains/apps/app-creation-progress";
@@ -52,8 +51,6 @@ function appCreationStages(
   const searches = discoveries.filter((part) => /(?:^|_)search_capabilities$/.test(part.toolName));
   const query = Reflect.get(Object(searches.at(-1)?.input), "query");
   const build = progress.build;
-  const lines = appSourceLines(build ?? (run.script && run.script.kind !== "prepare" ? run.script.part : undefined));
-  const size = lines ? ` · ${lines} lines` : "";
   const built = Boolean(progress.app || progress.builtUnrecorded);
   const building = Boolean(build && build.state !== "input-streaming");
   const writing = progress.stage === "writing" || Boolean(build) || (run.script !== undefined && run.script.kind !== "prepare");
@@ -80,7 +77,7 @@ function appCreationStages(
     const read = discoveries.map(appRead).find(Boolean);
     return [
       { key: "read", state: "done", label: read?.title ? `Read “${read.title}”` : "Read the App" },
-      { key: "write", state: stateOf(2), label: current > 2 ? `Wrote the changes${size}` : current === 2 ? `Writing the changes${size}` : "Write the changes" },
+      { key: "write", state: stateOf(2), label: current > 2 ? "Wrote the changes" : current === 2 ? "Writing the changes" : "Write the changes" },
       buildStage,
       readyStage,
     ];
@@ -106,7 +103,7 @@ function appCreationStages(
           ? count === undefined ? "Tools ready" : count === 0 ? "No tools needed" : `Checked ${count} ${count === 1 ? "tool" : "tools"}`
           : current === 1 ? "Checking the tools" : "Check the tools",
     },
-    { key: "write", state: stateOf(2), label: current > 2 ? `Wrote the App${size}` : current === 2 ? `Writing the App${size}` : "Write the App" },
+    { key: "write", state: stateOf(2), label: current > 2 ? "Wrote the App" : current === 2 ? "Writing the App" : "Write the App" },
     buildStage,
     readyStage,
   ];

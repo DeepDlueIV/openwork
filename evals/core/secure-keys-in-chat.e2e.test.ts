@@ -5,7 +5,7 @@ import { BACKUP_PROMPT, CONNECT_PROMPT, GATEWAY_PROMPT, secureKeysInChat } from 
 
 const test = spec.world(secureKeysInChat, {
   timeout: 900_000,
-  resources: { surfaces: ["appWeb"], services: ["den", "mock"] },
+  resources: { surfaces: ["appWeb", "web"], services: ["den", "mock"] },
 });
 
 const card = '[data-testid="credential-prompt-card"]';

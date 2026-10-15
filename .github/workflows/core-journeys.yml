@@ -31,10 +31,11 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - id: list
-        # Packaged journeys need a packaged desktop binary; packaged smoke runs them.
+        # Packaged journeys need a packaged desktop binary (packaged smoke runs
+        # them); core-chat needs a Freestyle world (the PR proof Core journey runs it).
         run: |
           set -euo pipefail
-          specs=$(find evals/core -maxdepth 1 -name '*.e2e.test.ts' ! -name 'packaged-*' ! -name 'app-smoke.e2e.test.ts' | sort)
+          specs=$(find evals/core -maxdepth 1 -name '*.e2e.test.ts' ! -name 'packaged-*' ! -name 'app-smoke.e2e.test.ts' ! -name 'core-chat.e2e.test.ts' | sort)
           test -n "$specs"
           printf 'matrix=%s\n' "$(printf '%s\n' $specs | jq -Rsc 'split("\n") | map(select(length > 0)) | {include: map({spec: ., name: (split("/") | last | sub("\\.e2e\\.test\\.ts$"; ""))})}')" >> "$GITHUB_OUTPUT"
 

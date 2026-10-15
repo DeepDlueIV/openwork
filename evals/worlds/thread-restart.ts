@@ -1,4 +1,6 @@
+import { execFile } from "node:child_process";
 import { connect } from "node:net";
+import { promisify } from "node:util";
 import { evalIn, quitDesktop, readComposerState } from "@openwork/behaviors";
 import { addInitScript, browserScript } from "@openwork/cdp";
 import type { Surface } from "@openwork/cdp";
@@ -62,6 +64,24 @@ export async function waitUntil(label: string, predicate: () => Promise<boolean>
 export function pidIsAlive(pid: number): boolean {
   try { process.kill(pid, 0); return true; } catch { return false; }
 }
+
+/** Processes still in a process group after its leader exited (POSIX `ps`, same on macOS and Linux). */
+async function processGroupMembers(pgid: number): Promise<{ pid: number; args: string }[]> {
+  const { stdout } = await promisify(execFile)("ps", ["-A", "-o", "pid=,pgid=,args="], { encoding: "utf8", maxBuffer: 16 * 1024 * 1024 });
+  return stdout.split("\n").flatMap((line) => {
+    const match = /^\s*(\d+)\s+(\d+)\s+(.*)$/.exec(line);
+    return match && Number(match[2]) === pgid && Number(match[1]) !== process.pid ? [{ pid: Number(match[1]), args: match[3] ?? "" }] : [];
+  });
+}
+
+/**
+ * The dev desktop launches as `pnpm dev:electron`: one process group holding
+ * the Electron shell and the Vite server that serves the renderer origin. Vite
+ * is development tooling, not the product: a packaged app has none, and on
+ * Linux the dev launcher's teardown can leave it running after Electron quits.
+ * Anything else still alive after a quit is the product failing to stop.
+ */
+const RENDERER_DEV_TOOLING = /\bvite\b|dev:ui|@openwork\/app\b|\besbuild\b/;
 
 declare global {
   interface Window {
@@ -216,9 +236,22 @@ export async function restartedThreadWorld(seed: Seed, ctx: { place: Place }) {
       } else {
         try { process.kill(-pid, "SIGKILL"); } catch { process.kill(pid, "SIGKILL"); }
       }
-      await waitUntil("the desktop process group to exit", async () => !pidIsAlive(pid), 60_000);
-      await waitUntil(`renderer port ${vitePort} to be released`, async () => !(await portIsOpen(Number(vitePort))), 60_000);
+      // The launcher exits only after Electron itself has exited (and, for a
+      // quit, after the shell's own teardown ran).
+      await waitUntil("the desktop launcher to exit", async () => !pidIsAlive(pid), 60_000);
+      // Its children may still be finishing their own exit; only renderer dev
+      // tooling may outlive them.
+      let productLeftovers: { pid: number; args: string }[] = [];
+      await waitUntil("the desktop's own processes to exit", async () => {
+        productLeftovers = (await processGroupMembers(pid)).filter((member) => !RENDERER_DEV_TOOLING.test(member.args));
+        return productLeftovers.length === 0;
+      }, 30_000).catch(() => {
+        throw new Error(`The desktop ${mode === "quit" ? "quit" : "crash"} left processes running: ${productLeftovers.map((member) => `${member.pid} ${member.args.slice(0, 200)}`).join(" | ")}`);
+      });
+      // Stop the leftover renderer dev server, so the relaunch starts its own on
+      // the same origin, exactly as a fresh `pnpm dev:electron` would.
       await app.stop().catch(() => undefined);
+      await waitUntil(`renderer port ${vitePort} to be released`, async () => !(await portIsOpen(Number(vitePort))), 30_000);
       restarted = await launchDesktop({
         name: "thread-restart-relaunch",
         profileDir,

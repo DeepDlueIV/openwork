@@ -37,11 +37,13 @@ test(`AGENT-VIS-04 ${resolveEvalEngine()}: a person asks for a report from a con
   await step("the step reads in plain words, never as raw tool names", async () => {
     await user.see({ text: world.proof }, { timeoutMs: 60_000 });
     await user.see("Run task", { timeoutMs: 30_000 });
-    if (world.engine === "v2") await user.click({ role: "button", label: /Looked up.*Show steps/ });
+    // A finished one-call run shows its step rows directly; there is no folded group to open.
+    await user.see({ text: /current amber report/i });
     await user.notSee({ text: /openwork-cloud_execute_capability|execute_capability|search_capabilities/ });
     const rows = (await probe.dom("[data-capability-call]")).elements.map((element) => element.text);
-    evidence.recordAssertionEvidence("The connection step is readable", `${rows.length} step(s): ${rows.join(" | ").slice(0, 160)}; no raw tool names on screen`, rows.length >= 1);
-    expect(rows.length).toBeGreaterThanOrEqual(1);
+    const readable = rows.some((row) => /current amber report/i.test(row));
+    evidence.recordAssertionEvidence("The connection step is readable", `${rows.length} step(s): ${rows.join(" | ").slice(0, 160)}; no raw tool names on screen`, readable);
+    expect(rows.join(" | ")).toMatch(/current amber report/i);
     await user.screenshot();
   });
 

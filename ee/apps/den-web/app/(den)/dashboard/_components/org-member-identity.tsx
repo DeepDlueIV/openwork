@@ -35,7 +35,7 @@ export function OrgMemberIdentity({
         {getInitials(member.user.name || member.user.email)}
       </div>
       <div className="min-w-0">
-        <div className="flex min-w-0 items-center gap-1.5">
+        <div className={`flex min-w-0 items-center gap-1.5 ${compact ? "" : "flex-wrap"}`}>
           <p title={name} className={`${compact ? "text-[14px]" : "text-[13px]"} truncate font-medium ${inverted ? "text-white" : "text-gray-900"}`}>
             {name}
           </p>

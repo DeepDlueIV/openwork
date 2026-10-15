@@ -1,4 +1,5 @@
 import { and, asc, count, desc, eq, inArray, isNull } from "@openwork-ee/den-db/drizzle"
+import { currentTeam } from "../../permissions/current-team.js"
 import {
   allowedKeys,
   buildPermissionRows,
@@ -419,14 +420,6 @@ async function readTeamLinks(database: PermissionDatabase, organizationId: Organ
   return links
 }
 
-/** The set's current team: its oldest active link (the first of `teams`), else (archived sets) the most recent one. */
-function currentTeam(links: readonly TeamLink[] | undefined): { id: TeamId; name: string | null } | null {
-  if (!links || links.length === 0) return null
-  const active = links.filter((entry) => entry.removedAt === null)
-  const link = active[active.length - 1] ?? links[0]
-  return link ? { id: link.teamId, name: link.teamName } : null
-}
-
 /** Every team the set applies to now (active links), oldest link first. */
 function activeTeams(links: readonly TeamLink[] | undefined): { id: TeamId; name: string | null }[] {
   return [...(links ?? [])].filter((link) => link.removedAt === null).reverse().map((link) => ({ id: link.teamId, name: link.teamName }))
@@ -564,7 +557,7 @@ async function loadPermissionSetDetail(organizationId: OrganizationId, set: Perm
     readTeamLinks(db, organizationId, [set.id]),
   ])
   const states = permissionSetKeyStates({ defaultKey: set.defaultKey, rows })
-  const team = currentTeam(links.get(set.id))
+  const team = currentTeam(links.get(set.id), set.archivedAt !== null)
   const teams = set.archivedAt === null ? activeTeams(links.get(set.id)) : []
 
   let appliesTo: z.infer<typeof appliesToDetailSchema>

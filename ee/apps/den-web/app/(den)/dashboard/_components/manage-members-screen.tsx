@@ -774,7 +774,7 @@ export function ManageMembersScreen() {
           ) : null}
 
           <div className="overflow-visible rounded-2xl border border-gray-100 bg-white">
-            <div data-testid="members-column-header" className={`grid grid-cols-[minmax(0,1fr)_auto] gap-4 border-b border-gray-100 px-5 py-3 text-[12px] font-medium text-gray-500 ${listToolbars ? "lg:grid-cols-[minmax(0,1fr)_180px_140px_28px]" : "lg:grid-cols-[minmax(0,1fr)_180px_140px_160px] lg:px-6"}`}>
+            <div data-testid="members-column-header" className={`grid grid-cols-[minmax(0,1fr)_auto] gap-4 border-b border-gray-100 py-3 text-[12px] font-medium text-gray-500 ${listToolbars ? "px-5 lg:grid-cols-[minmax(0,1fr)_180px_140px_28px]" : "px-4 lg:grid-cols-[minmax(0,1fr)_180px_140px_160px] lg:px-6"}`}>
               <span>Member</span>
               <span className="hidden lg:block">Role</span>
               <span className="hidden lg:block">Joined</span>
@@ -816,7 +816,7 @@ export function ManageMembersScreen() {
                 <div key={member.id}>
                 <div
                   data-testid="member-row"
-                  className={`grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 border-b border-gray-100 px-5 py-3 transition hover:bg-gray-50/60 last:border-b-0 lg:gap-4 ${listToolbars ? "min-h-16 lg:grid-cols-[minmax(0,1fr)_180px_140px_28px]" : "lg:grid-cols-[minmax(0,1fr)_180px_140px_160px] lg:px-6"}`}
+                  className={`grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 border-b border-gray-100 transition hover:bg-gray-50/60 last:border-b-0 lg:gap-4 ${listToolbars ? "min-h-16 px-5 py-3 lg:grid-cols-[minmax(0,1fr)_180px_140px_28px]" : "px-4 py-3.5 lg:grid-cols-[minmax(0,1fr)_180px_140px_160px] lg:px-6"}`}
                 >
                   <OrgMemberIdentity member={member} compact={listToolbars} />
                   <span title={listToolbars ? roleLabel : undefined} className={`col-start-1 row-start-2 min-w-0 pl-11 text-[13px] text-gray-500 lg:col-auto lg:row-auto lg:pl-0 ${listToolbars ? "truncate" : ""}`} data-testid="member-role">

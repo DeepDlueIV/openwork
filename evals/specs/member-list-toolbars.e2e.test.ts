@@ -56,6 +56,7 @@ test("an owner filters members, teams and roles in the same toolbar, and a role 
     await owner.notSee({ role: "menuitem", label: "Copy install link" });
     await owner.click({ role: "button", label: "Add member" });
     await owner.see({ testId: "invite-email" });
+    await owner.screenshot();
     await owner.click({ role: "button", label: "Cancel" });
     evidence.recordAssertionEvidence("the add action retains its form", "Add member opens Email and Cancel closes the form", true);
     await owner.screenshot();

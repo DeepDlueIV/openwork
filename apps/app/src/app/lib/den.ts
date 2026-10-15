@@ -1,3 +1,5 @@
+import { createDenClient as createGeneratedDenClient } from "@openwork/sdk";
+import { automationDetailSchema, automationListSchema, automationRunRangeSchema, automationRunReceiptSchema, automationRunSchema } from "@openwork/types/automations";
 import { builtMcpAppCatalogSchema, type BuiltMcpAppCatalogEntry } from "./built-mcp-app-catalog";
 import {
   normalizeDesktopConfig,
@@ -2736,7 +2738,7 @@ type DenRequestOptions = {
   signal?: AbortSignal;
 };
 
-async function fetchWithTimeout(fetchImpl: FetchLike, url: string, init: RequestInit, timeoutMs: number, onTimeout?: () => void) {
+async function fetchWithTimeout(fetchImpl: FetchLike, url: RequestInfo | URL, init: RequestInit, timeoutMs: number, onTimeout?: () => void) {
   if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) {
     return fetchImpl(url, init);
   }
@@ -2865,6 +2867,37 @@ export function createDenClient(options: {
 }) {
   const baseUrls = resolveDenClientBaseUrls(options);
   const token = options.token?.trim() ?? null;
+
+  // Generated methods own the Automation wire contract; this adapter keeps the
+  // desktop transport, diagnostics, organization scope and capability header.
+  const automationClient = (orgId: string) => createGeneratedDenClient({
+    baseUrl: baseUrls.apiBaseUrl,
+    token: token ?? undefined,
+    orgId,
+    credentials: "include",
+    headers: {
+      Accept: "application/json",
+      [ORG_PROXY_HEADER]: orgId,
+      [AUTOMATION_MODEL_ATTENTION_CAPABILITY_HEADER]: AUTOMATION_MODEL_ATTENTION_CAPABILITY,
+    },
+    fetch: async (input, init) => {
+      const request = new Request(input, init);
+      return observeDenRequest((onTimeout) => fetchWithTimeout(resolveFetch(request.url), request, {
+        credentials: "include", signal: request.signal,
+      }, DEFAULT_DEN_TIMEOUT_MS, onTimeout));
+    },
+  });
+
+  async function automationData<T>(pending: Promise<{ data?: T; error?: unknown; response?: Response }>): Promise<T> {
+    const { data, error, response } = await pending;
+    if (!response) throw error ?? new Error("Den request failed.");
+    if (!response.ok) {
+      const code = isRecord(error) && typeof error.error === "string" ? error.error : "request_failed";
+      throw new DenApiError(response.status, code, getErrorMessage(error, `Request failed with ${response.status}.`), isRecord(error) ? error.details : undefined);
+    }
+    if (data === undefined) throw new DenApiError(502, "invalid_automation_payload", "Automation response was empty.");
+    return data;
+  }
 
   function verifyInventory(payload: unknown, key: string, parsedCount: number, accept?: (item: unknown) => boolean) {
     if (!options.requireCompleteInventory) return;
@@ -3208,16 +3241,7 @@ export function createDenClient(options: {
       orgId: string,
       options: { cursor?: string; limit?: number } = {},
     ): Promise<AutomationList> {
-      const params = new URLSearchParams();
-      if (options.cursor) params.set("cursor", options.cursor);
-      if (options.limit) params.set("limit", String(options.limit));
-      const query = params.size > 0 ? `?${params.toString()}` : "";
-      return requestJson<AutomationList>(baseUrls, `/v1/automations${query}`, {
-        method: "GET",
-        token,
-        organizationId: orgId,
-        automationModelAttentionCapable: true,
-      });
+      return automationListSchema.parse(await automationData(automationClient(orgId).listAutomations(options)));
     },
 
     /**
@@ -3227,12 +3251,7 @@ export function createDenClient(options: {
      */
     async getAutomationDesktopRunnerPresence(orgId: string): Promise<AutomationDesktopRunnerPresence | null> {
       try {
-        return await requestJson<AutomationDesktopRunnerPresence>(baseUrls, "/v1/automation-runners/presence", {
-          method: "GET",
-          token,
-          organizationId: orgId,
-          automationModelAttentionCapable: true,
-        });
+        return await automationData(automationClient(orgId).getAutomationDesktopRunnerPresence());
       } catch (error) {
         if (error instanceof DenApiError && error.status === 404) return null;
         throw error;
@@ -3246,12 +3265,7 @@ export function createDenClient(options: {
      */
     async listAutomationRunners(orgId: string): Promise<AutomationExecutionTargetList | null> {
       try {
-        return await requestJson<AutomationExecutionTargetList>(baseUrls, "/v1/automation-runners", {
-          method: "GET",
-          token,
-          organizationId: orgId,
-          automationModelAttentionCapable: true,
-        });
+        return await automationData(automationClient(orgId).listAutomationRunners());
       } catch (error) {
         if (error instanceof DenApiError && error.status === 404) return null;
         throw error;
@@ -3259,13 +3273,10 @@ export function createDenClient(options: {
     },
 
     async mintAutomationRunnerToken(orgId: string, registration: AutomationDesktopRunnerRegistration): Promise<AutomationRunnerTokenResponse> {
-      return requestJson<AutomationRunnerTokenResponse>(baseUrls, "/v1/automation-runners/token", {
-        method: "POST",
-        token,
-        organizationId: orgId,
-        body: registration,
-        automationModelAttentionCapable: true,
-      });
+      if (registration.supportedExecutionTargets.length !== 1) throw new Error("A desktop runner must support exactly the desktop execution target.");
+      return automationData(automationClient(orgId).mintAutomationRunnerToken({
+        ...registration, supportedExecutionTargets: [registration.supportedExecutionTargets[0]],
+      }));
     },
 
     async mintSessionRunnerToken(orgId: string, registration: AutomationDesktopRunnerRegistration): Promise<AutomationRunnerTokenResponse> {
@@ -3278,24 +3289,12 @@ export function createDenClient(options: {
     },
 
     async createAutomation(orgId: string, input: CreateAutomation): Promise<AutomationDetail> {
-      return requestJson<AutomationDetail>(baseUrls, "/v1/automations", {
-        method: "POST",
-        token,
-        organizationId: orgId,
-        body: input,
-        automationModelAttentionCapable: true,
-      });
+      return automationDetailSchema.parse(await automationData(automationClient(orgId).createAutomation({ body: input })));
     },
 
     /** Web creation surface: placement is fixed to OpenWork Cloud by the route. */
     async createCloudAutomation(orgId: string, input: CreateCloudAutomation): Promise<AutomationDetail> {
-      return requestJson<AutomationDetail>(baseUrls, "/v1/cloud-automations", {
-        method: "POST",
-        token,
-        organizationId: orgId,
-        body: input,
-        automationModelAttentionCapable: true,
-      });
+      return automationDetailSchema.parse(await automationData(automationClient(orgId).createCloudAutomation(input)));
     },
 
     async getWorkflow(orgId: string, configObjectId: string): Promise<WorkflowDetail> {
@@ -3308,11 +3307,7 @@ export function createDenClient(options: {
     },
 
     async getAutomation(orgId: string, automationId: string): Promise<AutomationDetail> {
-      return requestJson<AutomationDetail>(
-        baseUrls,
-        `/v1/automations/${encodeURIComponent(automationId)}`,
-        { method: "GET", token, organizationId: orgId, automationModelAttentionCapable: true },
-      );
+      return automationDetailSchema.parse(await automationData(automationClient(orgId).getAutomation({ id: automationId })));
     },
 
     async updateAutomation(
@@ -3320,51 +3315,24 @@ export function createDenClient(options: {
       automationId: string,
       input: UpdateAutomation,
     ): Promise<AutomationDetail> {
-      return requestJson<AutomationDetail>(
-        baseUrls,
-        `/v1/automations/${encodeURIComponent(automationId)}`,
-        { method: "PATCH", token, organizationId: orgId, body: input, automationModelAttentionCapable: true },
-      );
+      return automationDetailSchema.parse(await automationData(automationClient(orgId).updateAutomation({ id: automationId, ...input })));
     },
 
     async activateAutomation(orgId: string, automationId: string): Promise<AutomationDetail> {
-      return requestJson<AutomationDetail>(
-        baseUrls,
-        `/v1/automations/${encodeURIComponent(automationId)}/activate`,
-        { method: "POST", token, organizationId: orgId, body: {}, automationModelAttentionCapable: true },
-      );
+      return automationDetailSchema.parse(await automationData(automationClient(orgId).activateAutomation({ id: automationId })));
     },
 
     async deactivateAutomation(orgId: string, automationId: string): Promise<AutomationDetail> {
-      return requestJson<AutomationDetail>(
-        baseUrls,
-        `/v1/automations/${encodeURIComponent(automationId)}/deactivate`,
-        { method: "POST", token, organizationId: orgId, body: {}, automationModelAttentionCapable: true },
-      );
+      return automationDetailSchema.parse(await automationData(automationClient(orgId).deactivateAutomation({ id: automationId })));
     },
 
     async archiveAutomation(orgId: string, automationId: string): Promise<AutomationDetail> {
-      return requestJson<AutomationDetail>(
-        baseUrls,
-        `/v1/automations/${encodeURIComponent(automationId)}`,
-        { method: "DELETE", token, organizationId: orgId, automationModelAttentionCapable: true },
-      );
+      return automationDetailSchema.parse(await automationData(automationClient(orgId).archiveAutomation({ id: automationId })));
     },
 
     /** `executionTarget` runs this one occurrence there instead of on the Automation's own target. */
     async runAutomationNow(orgId: string, automationId: string, options: RunAutomationNow = {}): Promise<AutomationRun> {
-      const payload = await requestJson<{ run: AutomationRun }>(
-        baseUrls,
-        `/v1/automations/${encodeURIComponent(automationId)}/run`,
-        {
-          method: "POST",
-          token,
-          organizationId: orgId,
-          body: options.executionTarget ? { executionTarget: options.executionTarget } : {},
-          automationModelAttentionCapable: true,
-        },
-      );
-      return payload.run;
+      return automationRunSchema.parse((await automationData(automationClient(orgId).runAutomationNow({ id: automationId, ...options }))).run);
     },
 
     async listAutomationRuns(
@@ -3372,32 +3340,15 @@ export function createDenClient(options: {
       automationId: string,
       options: { cursor?: string; limit?: number } = {},
     ): Promise<{ items: AutomationRun[]; nextCursor: string | null }> {
-      const params = new URLSearchParams();
-      if (options.cursor) params.set("cursor", options.cursor);
-      if (options.limit) params.set("limit", String(options.limit));
-      const query = params.size > 0 ? `?${params.toString()}` : "";
-      return requestJson<{ items: AutomationRun[]; nextCursor: string | null }>(
-        baseUrls,
-        `/v1/automations/${encodeURIComponent(automationId)}/runs${query}`,
-        { method: "GET", token, organizationId: orgId, automationModelAttentionCapable: true },
-      );
+      return automationRunRangeSchema.parse(await automationData(automationClient(orgId).listAutomationRuns({ id: automationId, ...options })));
     },
 
     async getAutomationRun(orgId: string, runId: string): Promise<AutomationRunReceipt> {
-      return requestJson<AutomationRunReceipt>(
-        baseUrls,
-        `/v1/automation-runs/${encodeURIComponent(runId)}`,
-        { method: "GET", token, organizationId: orgId, automationModelAttentionCapable: true },
-      );
+      return automationRunReceiptSchema.parse(await automationData(automationClient(orgId).getAutomationRun({ id: runId })));
     },
 
     async cancelAutomationRun(orgId: string, runId: string): Promise<AutomationRun> {
-      const payload = await requestJson<{ run: AutomationRun }>(
-        baseUrls,
-        `/v1/automation-runs/${encodeURIComponent(runId)}/cancel`,
-        { method: "POST", token, organizationId: orgId, body: {}, automationModelAttentionCapable: true },
-      );
-      return payload.run;
+      return automationRunSchema.parse((await automationData(automationClient(orgId).cancelAutomationRun({ id: runId }))).run);
     },
 
     /**
@@ -3408,14 +3359,7 @@ export function createDenClient(options: {
       orgId: string,
       options: { from: number; to: number; cursor?: string; limit?: number },
     ): Promise<AutomationRunRange> {
-      const params = new URLSearchParams({ from: String(options.from), to: String(options.to) });
-      if (options.cursor) params.set("cursor", options.cursor);
-      if (options.limit) params.set("limit", String(options.limit));
-      return requestJson<AutomationRunRange>(
-        baseUrls,
-        `/v1/automation-runs?${params.toString()}`,
-        { method: "GET", token, organizationId: orgId, automationModelAttentionCapable: true },
-      );
+      return automationRunRangeSchema.parse(await automationData(automationClient(orgId).listAutomationRunsInRange(options)));
     },
 
     /**

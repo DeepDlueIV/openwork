@@ -2646,10 +2646,6 @@
                   "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
                 }
               },
-              "required": [
-                "capabilities",
-                "featureStates"
-              ],
               "additionalProperties": {}
             }
           },
@@ -31128,7 +31124,7 @@
           "Admin"
         ],
         "summary": "Get a bounded admin organization page",
-        "description": "Returns one bounded page of organizations plus required pagination metadata. Search runs across the global organization set without changing the global overview totals.",
+        "description": "Returns one bounded page of organizations plus required pagination metadata. Set includeFeatures=0 to skip feature resolution and omit capabilities and featureStates; read them per organization when needed. Search runs across the global organization set without changing the global overview totals.",
         "responses": {
           "200": {
             "description": "Admin organization page returned successfully.",
@@ -31199,6 +31195,18 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "in": "query",
+            "name": "includeFeatures",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "0",
+                "1"
+              ]
+            },
+            "description": "Set to 0 to omit capabilities and featureStates. Fetch one organization's features when its editor is opened. Defaults to 1 for existing clients."
           }
         ],
         "security": [

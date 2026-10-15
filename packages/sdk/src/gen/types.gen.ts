@@ -226,7 +226,7 @@ export type AdminUsersPageResponse = {
 
 export type AdminOrganizationsPageResponse = {
   organizations: Array<{
-    capabilities: {
+    capabilities?: {
       secureSecretFields: boolean;
       memberListToolbars: boolean;
       appBuildProgress: boolean;
@@ -263,7 +263,7 @@ export type AdminOrganizationsPageResponse = {
     /**
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
-    featureStates: {
+    featureStates?: {
       secureSecretFields: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -7313,6 +7313,10 @@ export type GetV1AdminOrganizationsData = {
     limit?: string;
     offset?: string;
     search?: string;
+    /**
+     * Set to 0 to omit capabilities and featureStates. Fetch one organization's features when its editor is opened. Defaults to 1 for existing clients.
+     */
+    includeFeatures?: "0" | "1";
   };
   url: "/v1/admin/organizations";
 };

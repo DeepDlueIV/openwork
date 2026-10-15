@@ -107,6 +107,12 @@ const adminPageQuerySchema = z.object({
   search: z.string().optional(),
 })
 
+const adminOrganizationPageQuerySchema = adminPageQuerySchema.extend({
+  includeFeatures: z.enum(["0", "1"]).optional().meta({
+    description: "Set to 0 to omit capabilities and featureStates. Fetch one organization's features when its editor is opened. Defaults to 1 for existing clients.",
+  }),
+})
+
 const updateOrganizationPlanSchema = z.object({
   tier: z.enum(["free", "team", "enterprise"]),
   seatLimit: z.number().int().min(1).max(100000),
@@ -260,7 +266,7 @@ const adminUsersPageResponseSchema = z.object({
 }).meta({ ref: "AdminUsersPageResponse" })
 
 const adminOrganizationsPageResponseSchema = z.object({
-  organizations: z.array(z.object({ capabilities: adminOrganizationCapabilitiesSchema, featureStates: adminFeatureStatesSchema }).passthrough()),
+  organizations: z.array(z.object({ capabilities: adminOrganizationCapabilitiesSchema.optional(), featureStates: adminFeatureStatesSchema.optional() }).passthrough()),
   page: adminPageInfoSchema,
   generatedAt: z.string().datetime(),
 }).meta({ ref: "AdminOrganizationsPageResponse" })
@@ -553,8 +559,8 @@ type AdminOrganizationRow = {
   freeSeatCount: number
   seatsFreeAdditional: number
   billableSeatCount: number
-  capabilities: ReturnType<typeof readAdminVisibleOrganizationCapabilities>
-  featureStates: ReturnType<typeof readAdminFeatureStates>
+  capabilities?: ReturnType<typeof readAdminVisibleOrganizationCapabilities>
+  featureStates?: ReturnType<typeof readAdminFeatureStates>
   openworkWebAccess: AdminOpenWorkWebAccess
 }
 
@@ -1015,10 +1021,10 @@ async function loadBillingForUsers(userIds: UserId[]) {
   return billingByUser
 }
 
-export async function loadAdminOrganizationsPage(request: AdminPageRequest) {
+export async function loadAdminOrganizationsPage(request: AdminPageRequest, includeFeatures = true) {
   const startedAt = Date.now()
   const { total, rows } = await selectOrganizationPage(request)
-  const organizations = await shapeAdminOrganizationRows(rows)
+  const organizations = await shapeAdminOrganizationRows(rows, includeFeatures)
   return {
     organizations,
     page: buildAdminPageInfo(request, total, organizations.length, elapsedMs(startedAt)),
@@ -1026,7 +1032,7 @@ export async function loadAdminOrganizationsPage(request: AdminPageRequest) {
   }
 }
 
-async function shapeAdminOrganizationRows(rows: Array<Pick<typeof OrganizationTable.$inferSelect, "id" | "name" | "slug" | "metadata" | "createdAt" | "updatedAt">>): Promise<AdminOrganizationRow[]> {
+async function shapeAdminOrganizationRows(rows: Array<Pick<typeof OrganizationTable.$inferSelect, "id" | "name" | "slug" | "metadata" | "createdAt" | "updatedAt">>, includeFeatures: boolean): Promise<AdminOrganizationRow[]> {
   if (rows.length === 0) {
     return []
   }
@@ -1050,8 +1056,8 @@ async function shapeAdminOrganizationRows(rows: Array<Pick<typeof OrganizationTa
         inArray(OrgSubscriptionTable.organization_id, organizationIds),
         eq(OrgSubscriptionTable.type, "web"),
       )),
-    readOrganizationFeatureOverridesForMany(db, organizationIds),
-    readFeatureRollouts(db),
+    includeFeatures ? readOrganizationFeatureOverridesForMany(db, organizationIds) : null,
+    includeFeatures ? readFeatureRollouts(db) : null,
   ])
   const memberCountByOrg = new Map<string, number>()
   for (const row of memberRows) {
@@ -1060,7 +1066,9 @@ async function shapeAdminOrganizationRows(rows: Array<Pick<typeof OrganizationTa
   const webSubscriptionByOrg = new Map(webSubscriptionRows.map((row) => [row.organizationId, row]))
 
   return rows.map((entry) => {
-    const described = describeOrganization(featureRollouts, featureOverridesByOrg.get(entry.id) ?? {})
+    const described = featureRollouts && featureOverridesByOrg
+      ? describeOrganization(featureRollouts, featureOverridesByOrg.get(entry.id) ?? {})
+      : null
     const metadata = normalizeOrganizationMetadata(entry.metadata).metadata
     const seatLimit = metadata.limits.members ?? DEFAULT_ORGANIZATION_LIMITS.members
     const seatCounts = calculateOrganizationSeatBillingCounts({ memberCount: memberCountByOrg.get(entry.id) ?? 0, metadata })
@@ -1076,8 +1084,10 @@ async function shapeAdminOrganizationRows(rows: Array<Pick<typeof OrganizationTa
       freeSeatCount: seatCounts.free,
       seatsFreeAdditional: seatCounts.additionalFree,
       billableSeatCount: seatCounts.chargeable,
-      capabilities: readAdminVisibleOrganizationCapabilities(described),
-      featureStates: readAdminFeatureStates(described),
+      ...(described ? {
+        capabilities: readAdminVisibleOrganizationCapabilities(described),
+        featureStates: readAdminFeatureStates(described),
+      } : {}),
       openworkWebAccess: readAdminOpenWorkWebAccess(metadata, webSubscriptionByOrg.get(entry.id) ?? null),
     }
   })
@@ -2265,7 +2275,7 @@ export function registerAdminRoutes<T extends { Variables: AuthContextVariables 
     describeRoute({
       tags: ["Admin"],
       summary: "Get a bounded admin organization page",
-      description: "Returns one bounded page of organizations plus required pagination metadata. Search runs across the global organization set without changing the global overview totals.",
+      description: "Returns one bounded page of organizations plus required pagination metadata. Set includeFeatures=0 to skip feature resolution and omit capabilities and featureStates; read them per organization when needed. Search runs across the global organization set without changing the global overview totals.",
       responses: {
         200: jsonResponse("Admin organization page returned successfully.", adminOrganizationsPageResponseSchema),
         400: jsonResponse("The admin organization page query parameters were invalid.", invalidRequestSchema),
@@ -2274,11 +2284,11 @@ export function registerAdminRoutes<T extends { Variables: AuthContextVariables 
       },
     }),
     adminRoute(),
-    queryValidator(adminPageQuerySchema),
+    queryValidator(adminOrganizationPageQuerySchema),
     async (c) => {
       const query = c.req.valid("query")
       const pageRequest = normalizeAdminPageRequest(query)
-      return c.json(await loadAdminOrganizationsPage(pageRequest))
+      return c.json(await loadAdminOrganizationsPage(pageRequest, query.includeFeatures !== "0"))
     },
   )
 

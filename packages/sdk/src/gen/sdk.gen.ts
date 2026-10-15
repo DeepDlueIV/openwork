@@ -1434,7 +1434,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Get a bounded admin organization page
    *
-   * Returns one bounded page of organizations plus required pagination metadata. Search runs across the global organization set without changing the global overview totals.
+   * Returns one bounded page of organizations plus required pagination metadata. Set includeFeatures=0 to skip feature resolution and omit capabilities and featureStates; read them per organization when needed. Search runs across the global organization set without changing the global overview totals.
    */
   public getV1AdminOrganizations<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -1442,6 +1442,7 @@ export class DenClient extends HeyApiClient {
       limit?: string;
       offset?: string;
       search?: string;
+      includeFeatures?: "0" | "1";
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -1454,6 +1455,7 @@ export class DenClient extends HeyApiClient {
             { in: "query", key: "limit" },
             { in: "query", key: "offset" },
             { in: "query", key: "search" },
+            { in: "query", key: "includeFeatures" },
           ],
         },
       ],

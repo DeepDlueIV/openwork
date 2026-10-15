@@ -52,9 +52,31 @@ test("an admin opens a lightweight overview while signed-out visitors see sign-i
     await admin.see({ testId: "admin-organization-features" });
     const before = await adminProbe.dom('[data-testid^="admin-capability-"]');
     expect(before.elements.length).toBe(0);
+    const initialTraffic = await world.traffic("admin");
+    expect(initialTraffic.features).toBe(0);
+    expect(initialTraffic.lightOrganizations).toBe(1);
+    const payloads = await world.organizationPayloads();
+    expect(payloads.fullCount).toBeGreaterThan(0);
+    expect(payloads.lightCount).toBe(payloads.fullCount);
+    expect(payloads.fullWithFeatures).toBe(payloads.fullCount);
+    expect(payloads.lightWithFeatures).toBe(0);
     await admin.click({ testId: "admin-organization-features-toggle", nth: 0 });
     const after = await adminProbe.eventually(() => adminProbe.dom('[data-testid^="admin-capability-"]'), { within: 10_000, until: (value) => value.elements.length > 0, label: "expanded feature controls" });
-    evidence.recordAssertionEvidence("Feature controls mount only for an opened editor", `before=${before.elements.length}; after=${after.elements.length}`, after.elements.length > 0);
+    const loadedTraffic = await world.traffic("admin");
+    const ok = loadedTraffic.features === 1 && after.elements.length > 0 && payloads.lightBytes < payloads.fullBytes;
+    evidence.recordAssertionEvidence("Only the expanded organization fetches features, and the list omits them", `feature reads ${initialTraffic.features} → ${loadedTraffic.features}; controls ${before.elements.length} → ${after.elements.length}; page payload ${payloads.fullBytes} → ${payloads.lightBytes} characters; existing clients retain feature data`, ok);
+    expect(ok).toBe(true);
+    await admin.screenshot();
+  });
+
+  await step("the admin reopens an organization's features without fetching them again", async () => {
+    await admin.click({ testId: "admin-organization-features-toggle", nth: 0 });
+    await adminProbe.eventually(() => adminProbe.dom('[data-testid^="admin-capability-"]'), { within: 10_000, until: (value) => value.elements.length === 0, label: "collapsed feature controls" });
+    await admin.click({ testId: "admin-organization-features-toggle", nth: 0 });
+    const controls = await adminProbe.eventually(() => adminProbe.dom('[data-testid^="admin-capability-"]'), { within: 10_000, until: (value) => value.elements.length > 0, label: "cached feature controls" });
+    const traffic = await world.traffic("admin");
+    evidence.recordAssertionEvidence("Reopening features reuses the loaded organization state", `feature reads=${traffic.features}; controls=${controls.elements.length}`, traffic.features === 1);
+    expect(traffic.features).toBe(1);
     await admin.screenshot();
   });
 

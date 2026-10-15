@@ -181,7 +181,7 @@ type AdminOrganization = {
   freeSeatCount: number;
   seatsFreeAdditional: number;
   billableSeatCount: number;
-  features: AdminOrganizationFeatures;
+  features: AdminOrganizationFeatures | null;
   openworkWebAccess: AdminOpenWorkWebAccess;
 };
 
@@ -472,7 +472,9 @@ function parseAdminPayload(payload: unknown): AdminPayload | null {
           freeSeatCount: toNumberValue(value.freeSeatCount) || DEFAULT_FREE_SEAT_COUNT,
           seatsFreeAdditional: toNumberValue(value.seatsFreeAdditional),
           billableSeatCount: toNumberValue(value.billableSeatCount),
-          features: parseAdminOrganizationFeatures(value.featureStates, value.capabilities),
+          features: isRecord(value.featureStates) || isRecord(value.capabilities)
+            ? parseAdminOrganizationFeatures(value.featureStates, value.capabilities)
+            : null,
           openworkWebAccess: parseAdminOpenWorkWebAccess(value.openworkWebAccess)
         };
       })
@@ -747,7 +749,7 @@ function fixtureUsers(search: string, offset: number, includeBilling: boolean) {
   return { rows, total };
 }
 
-function buildFixtureOrganization(index: number): AdminOrganization {
+function buildFixtureOrganization(index: number, includeFeatures = false): AdminOrganization {
   const target = index === ADMIN_SCALE_FIXTURE_ORGANIZATIONS - 11;
   return {
     id: `org_${String(index).padStart(5, "0")}`,
@@ -761,10 +763,10 @@ function buildFixtureOrganization(index: number): AdminOrganization {
     freeSeatCount: target ? 25 : DEFAULT_FREE_SEAT_COUNT,
     seatsFreeAdditional: target ? 20 : 0,
     billableSeatCount: target ? 103 : 0,
-    features: mapFeatures((key) => {
+    features: includeFeatures ? mapFeatures((key) => {
       const enabled = target && (key === "permissions" || key === "workbot");
       return { enabled, source: "everyone", everyone: enabled, killed: false, override: null, overrideApplies: true };
-    }),
+    }) : null,
     openworkWebAccess: {
       hasAccess: target,
       accessSource: target ? "complimentary" : null,
@@ -878,10 +880,15 @@ export function adminScaleFixturePayload(path: string): unknown | null {
     const organizations = fixtureOrganizations(search, offset);
     const durationMs = Math.round(performance.now() - startedAt);
     return {
-      organizations: organizations.rows,
+      organizations: organizations.rows.map(({ features: _features, ...organization }) => organization),
       page: fixturePageInfo(organizations.total, organizations.rows.length, offset, search, durationMs),
       generatedAt
     };
+  }
+
+  const featureOrganization = url.pathname.match(/^\/v1\/admin\/organizations\/org_(\d+)\/capabilities$/);
+  if (featureOrganization) {
+    return { featureStates: buildFixtureOrganization(Number(featureOrganization[1]), true).features };
   }
 
   if (url.pathname === "/v1/admin/overview") {
@@ -1365,6 +1372,7 @@ export function DenAdminPanel({ initialPayload }: { initialPayload: unknown }) {
   const [savingOrgId, setSavingOrgId] = useState<string | null>(null);
   const [freeSeatsDialog, setFreeSeatsDialog] = useState<{ org: AdminOrganization; totalFreeSeats: string } | null>(null);
   const [savingFreeSeatsOrgId, setSavingFreeSeatsOrgId] = useState<string | null>(null);
+  const [organizationFeatures, setOrganizationFeatures] = useState<Record<string, AdminOrganizationFeatures>>({});
   const [savingCapabilityOrgId, setSavingCapabilityOrgId] = useState<string | null>(null);
   const [capabilityError, setCapabilityError] = useState<{ orgId: string; message: string } | null>(null);
   const [openworkWebAccessDialog, setOpenWorkWebAccessDialog] = useState<{ org: AdminOrganization; enabled: boolean; reason: string } | null>(null);
@@ -1448,6 +1456,7 @@ export function DenAdminPanel({ initialPayload }: { initialPayload: unknown }) {
       }
 
       setIncludeBilling(parsed.summary.billingLoaded);
+      setOrganizationFeatures({});
       payloadRef.current = parsed;
       setAccessState("ready");
       setPayload(parsed);
@@ -1551,6 +1560,7 @@ export function DenAdminPanel({ initialPayload }: { initialPayload: unknown }) {
       const params = new URLSearchParams({
         limit: "50",
         offset: String(offset),
+        includeFeatures: "0",
       });
       const trimmed = search.trim();
       if (trimmed) {
@@ -1983,37 +1993,40 @@ export function DenAdminPanel({ initialPayload }: { initialPayload: unknown }) {
     }
   }, [freeSeatsDialog]);
 
-  const setOrganizationFeaturesLocally = useCallback((orgId: string, update: (features: AdminOrganizationFeatures) => AdminOrganizationFeatures) => {
-    setPayload((current) => {
-      if (!current) {
-        return current;
-      }
-
-      return {
-        ...current,
-        organizations: current.organizations.map((org) =>
-          org.id === orgId ? { ...org, features: update(org.features) } : org
-        )
-      };
-    });
+  const setOrganizationFeaturesLocally = useCallback((orgId: string, features: AdminOrganizationFeatures) => {
+    setOrganizationFeatures((current) => ({ ...current, [orgId]: features }));
   }, []);
+
+  const loadOrganizationFeatures = useCallback(async (orgId: string, signal: AbortSignal) => {
+    const { response, payload: nextPayload } = await requestJson(`/v1/admin/organizations/${encodeURIComponent(orgId)}/capabilities`, signal);
+    if (signal.aborted) return;
+    if (response.status === 401 || response.status === 403) {
+      setAccessState(response.status === 401 ? "signed-out" : "forbidden");
+      setPayload(null);
+      return;
+    }
+    if (!response.ok) throw new Error(getErrorMessage(nextPayload, `Could not load features (${response.status}).`));
+    if (!isRecord(nextPayload) || !isRecord(nextPayload.featureStates)) throw new Error("The server returned incomplete feature data. Retry to load features.");
+    setOrganizationFeaturesLocally(orgId, parseAdminOrganizationFeatures(nextPayload.featureStates, nextPayload.capabilities));
+  }, [setOrganizationFeaturesLocally]);
 
   // value: true/false sets an override for this organization; null makes it follow the deployment-wide state again.
   const saveOrganizationFeature = useCallback(async (org: AdminOrganization, key: FeatureKey, value: boolean | null) => {
-    const previous = org.features;
+    const previous = organizationFeatures[org.id] ?? org.features;
+    if (!previous) return;
     setSavingCapabilityOrgId(org.id);
     setError(null);
     setCapabilityError(null);
     // Optimistic: show the change immediately, roll back if the PUT fails.
-    setOrganizationFeaturesLocally(org.id, (features) => ({
-      ...features,
+    setOrganizationFeaturesLocally(org.id, {
+      ...previous,
       [key]: {
-        ...features[key],
-        enabled: value ?? features[key].everyone,
+        ...previous[key],
+        enabled: value ?? previous[key].everyone,
         override: value,
         source: value === null ? "everyone" : "override",
       },
-    }));
+    });
 
     try {
       const { response, payload: nextPayload } = await putJson(`/v1/admin/organizations/${org.id}/capabilities`, {
@@ -2021,7 +2034,7 @@ export function DenAdminPanel({ initialPayload }: { initialPayload: unknown }) {
       });
 
       if (!response.ok) {
-        setOrganizationFeaturesLocally(org.id, () => previous);
+        setOrganizationFeaturesLocally(org.id, previous);
         const message = getErrorMessage(nextPayload, `Could not update features for ${org.name}.`);
         setError(message);
         setCapabilityError({ orgId: org.id, message });
@@ -2030,17 +2043,17 @@ export function DenAdminPanel({ initialPayload }: { initialPayload: unknown }) {
       // The server's answer is the truth (locks, defaults), not the optimistic guess.
       if (isRecord(nextPayload) && isRecord(nextPayload.featureStates)) {
         const features = parseAdminOrganizationFeatures(nextPayload.featureStates, nextPayload.capabilities);
-        setOrganizationFeaturesLocally(org.id, () => features);
+        setOrganizationFeaturesLocally(org.id, features);
       }
     } catch (nextError) {
-      setOrganizationFeaturesLocally(org.id, () => previous);
+      setOrganizationFeaturesLocally(org.id, previous);
       const message = nextError instanceof Error ? nextError.message : "Unknown network error";
       setError(message);
       setCapabilityError({ orgId: org.id, message });
     } finally {
       setSavingCapabilityOrgId(null);
     }
-  }, [setOrganizationFeaturesLocally]);
+  }, [organizationFeatures, setOrganizationFeaturesLocally]);
 
   const saveOpenWorkWebAccess = useCallback(async () => {
     if (!openworkWebAccessDialog) {
@@ -2552,7 +2565,9 @@ export function DenAdminPanel({ initialPayload }: { initialPayload: unknown }) {
                   </div>
 
                   <AdminOrganizationFeatureControls
-                    features={org.features}
+                    organizationId={org.id}
+                    features={organizationFeatures[org.id] ?? org.features}
+                    loadFeatures={loadOrganizationFeatures}
                     saving={savingCapabilityOrgId === org.id}
                     error={capabilityError?.orgId === org.id ? capabilityError.message : null}
                     onChange={(key, enabled) => void saveOrganizationFeature(org, key, enabled)}

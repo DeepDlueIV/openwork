@@ -99,6 +99,13 @@ type SyncOptions = {
 
 type ListenerRegistry<Listener> = Map<Listener, number>;
 
+type MessageReconcile = {
+  sessionId: string;
+  controller: AbortController;
+  dirty: boolean;
+  timer: ReturnType<typeof setTimeout> | null;
+};
+
 type SyncEntry = {
   input: SyncOptions;
   openworkToken: string;
@@ -134,6 +141,7 @@ type SyncEntry = {
   nativeSequenceRevision: number;
   nativeTerminalSessions: Set<string>;
   permissionReconciles: Map<string, AbortController>;
+  messageReconciles: Map<string, MessageReconcile>;
   titleRecovery: SessionTitleRecovery | null;
   /** `shell.created` details, so a background call's start can name its command. */
   shellInfo: Map<string, EngineShell>;
@@ -595,6 +603,7 @@ function clearTrackedSession(input: SyncOptions, entry: SyncEntry, sessionId: st
   entry.runActiveObservedAt.delete(sessionId);
   entry.assistantMessageCompletedAt.delete(sessionId);
   entry.gatewayUsageRuns.delete(sessionId);
+  cancelMessageReconciles(entry, sessionId);
   for (const [key, pending] of entry.pendingDeltas) {
     if (pending.sessionId === sessionId) entry.pendingDeltas.delete(key);
   }
@@ -658,6 +667,7 @@ function disposeWorkspaceSync(key: string, entry: SyncEntry) {
   entry.statusReconcileAbort = null;
   for (const controller of entry.permissionReconciles.values()) controller.abort();
   entry.permissionReconciles.clear();
+  cancelMessageReconciles(entry);
   for (const controller of entry.backgroundShellReads) controller.abort();
   entry.backgroundShellReads.clear();
   entry.shellInfo.clear();
@@ -1161,6 +1171,20 @@ function applyEvent(entry: SyncEntry, workspaceId: string, event: OpencodeEvent)
   const queryClient = getReactQueryClient();
   const input = entry.input;
 
+  if (event.type === "openwork.message.refresh") {
+    const sessionId = sessionIdFromProperties(event.properties);
+    const props = event.properties;
+    const messageId = props && typeof props === "object" && "messageID" in props ? props.messageID : undefined;
+    const partId = props && typeof props === "object" && "partID" in props ? props.partID : undefined;
+    // Once the retained cache has this text declaration, addressed deltas can
+    // keep it current without racing history reads against every new token.
+    const declared = typeof partId === "string" && (queryClient.getQueryData<UIMessage[]>(transcriptKey(workspaceId, sessionId)) ?? [])
+      .some((message) => message.id === messageId && message.parts.some((part) =>
+        (part.type === "text" || part.type === "reasoning") && getPartMetadataId(part) === partId));
+    if (!declared && typeof messageId === "string" && messageId) reconcileSessionMessages(entry, sessionId, messageId);
+    return;
+  }
+
   if (isBackgroundShellEvent(event)) {
     applyBackgroundShellEvent(entry, workspaceId, event);
     return;
@@ -1252,6 +1276,7 @@ function applyEvent(entry: SyncEntry, workspaceId: string, event: OpencodeEvent)
     const props = (event.properties ?? {}) as { sessionID?: string; info?: { id?: string } };
     const sessionId = props.sessionID ?? props.info?.id ?? "";
     if (!sessionId) return;
+    cancelMessageReconciles(entry, sessionId);
     entry.permissionReconciles.get(sessionId)?.abort();
     entry.permissionReconciles.delete(sessionId);
     // Deletion settles known interactions, but their watermarks must outlive
@@ -1755,6 +1780,13 @@ function startSync(input: SyncOptions, entry: SyncEntry) {
     // cached idle: the server may have started or finished work while the
     // stream was down.
     onConnected: (signal) => {
+      // v2's event feed has no replay. Catch up messages even when the run
+      // stayed busy (or was already idle) across the missing interval.
+      if (isOpencodeV2BaseUrl(input.baseUrl)) {
+        for (const sessionId of new Set([...entry.trackedSessionRefs.keys(), ...entry.retainedSessionTimers.keys()])) {
+          reconcileSessionMessages(entry, sessionId);
+        }
+      }
       void reconcileSessionRunStatuses(entry, input, signal, "connect-reconcile");
     },
     onPhaseChange: (phase) => {
@@ -1892,6 +1924,58 @@ function clearSessionRetry(entry: SyncEntry, workspaceId: string, sessionId: str
   if (!isOpencodeV2BaseUrl(entry.input.baseUrl)) return;
   const status = getReactQueryClient().getQueryData<SessionStatus>(statusKey(workspaceId, sessionId));
   if (status?.type === "retry") applySessionRunStatus(entry, workspaceId, sessionId, { type: "busy" });
+}
+
+function cancelMessageReconciles(entry: SyncEntry, sessionId?: string) {
+  for (const [key, read] of entry.messageReconciles) {
+    if (sessionId !== undefined && read.sessionId !== sessionId) continue;
+    read.controller.abort();
+    if (read.timer) clearTimeout(read.timer);
+    entry.messageReconciles.delete(key);
+  }
+}
+
+/** Coalesce missed fragments into scoped native reads, never another prompt. */
+function reconcileSessionMessages(entry: SyncEntry, sessionId: string, messageId?: string) {
+  if (!isOpencodeV2BaseUrl(entry.input.baseUrl) || !isTrackedSession(entry, sessionId)) return;
+  const key = JSON.stringify([sessionId, messageId ?? null]);
+  const pending = entry.messageReconciles.get(key);
+  if (pending) { pending.dirty = true; return; }
+  const read: MessageReconcile = { sessionId, controller: new AbortController(), dirty: false, timer: null };
+  entry.messageReconciles.set(key, read);
+  const fetch = async () => {
+    read.dirty = false;
+    read.timer = null;
+    try {
+      const client = createSyncClient(entry.input.baseUrl, entry.openworkToken);
+      const options = { signal: AbortSignal.any([read.controller.signal, AbortSignal.timeout(10_000)]) };
+      const messages = messageId
+        ? [unwrap(await client.session.message({ sessionID: sessionId, messageID: messageId }, options))]
+        : unwrap(await client.session.messages({ sessionID: sessionId, limit: 24 }, options));
+      if (read.controller.signal.aborted || syncs.get(syncKey(entry.input)) !== entry) return;
+      if (messages.some(({ info, parts }) => info.sessionID !== sessionId || (messageId && info.id !== messageId)
+        || parts.some((part) => part.sessionID !== sessionId || part.messageID !== info.id))) return;
+      const workspaceId = entry.input.workspaceId;
+      const queryClient = getReactQueryClient();
+      flushSessionDeltas(entry, workspaceId, sessionId);
+      queryClient.setQueryData<UIMessage[]>(transcriptKey(workspaceId, sessionId), (current = []) => applyRevertCursor(
+        reconcileTranscriptMessages({ currentMessages: current, snapshotMessages: snapshotToUIMessages({ messages }) }),
+        queryClient.getQueryData<OpenworkSessionHistory>(snapshotKey(workspaceId, sessionId))?.session.revert?.messageID,
+      ));
+      settleOrphanedInteractions(workspaceId, sessionId, terminalToolCallIds(messages));
+    } catch {
+      // Unavailable history is not a completion. A later fragment retries.
+    } finally {
+      if (read.controller.signal.aborted) return;
+      // Keep one trailing read when a completion races an earlier snapshot.
+      // At most one request per message runs, with a 500ms gap between reads.
+      read.timer = setTimeout(() => {
+        if (read.dirty) void fetch();
+        else entry.messageReconciles.delete(key);
+      }, 500);
+    }
+  };
+  void fetch();
 }
 
 async function reconcileSessionPermissions(entry: SyncEntry, sessionId: string) {
@@ -2154,6 +2238,7 @@ export function ensureWorkspaceSessionSync(input: SyncOptions) {
     nativeSequenceRevision: 0,
     nativeTerminalSessions: new Set(),
     permissionReconciles: new Map(),
+    messageReconciles: new Map(),
     titleRecovery: null,
     shellInfo: new Map(),
     backgroundShellReads: new Set(),
@@ -2524,6 +2609,7 @@ export function __createWorkspaceSessionSyncForTest(input: SyncOptions) {
     nativeSequenceRevision: 0,
     nativeTerminalSessions: new Set(),
     permissionReconciles: new Map(),
+    messageReconciles: new Map(),
     titleRecovery: null,
     shellInfo: new Map(),
     backgroundShellReads: new Set(),
@@ -2535,6 +2621,7 @@ export function __createWorkspaceSessionSyncForTest(input: SyncOptions) {
       if (entry.statusReconcileTimer) clearTimeout(entry.statusReconcileTimer);
       entry.statusReconcileAbort?.abort();
       for (const controller of entry.permissionReconciles.values()) controller.abort();
+      cancelMessageReconciles(entry);
       for (const controller of entry.backgroundShellReads) controller.abort();
     }
     syncs.delete(key);

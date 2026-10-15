@@ -13,6 +13,7 @@ import { EnvStoreReadError, InvalidEnvKeyError, isValidEnvKey, type EnvService }
 import { syncManagedProviderAuth, type ManagedProviderAuthResult } from "../managed-provider-auth.js";
 import { ApiError } from "../errors.js";
 import { callExperimentalExtensionAction, listExperimentalExtensionActions } from "../extensions/index.js";
+import { callDriveFileAction } from "../extensions/drive-files.js";
 import type { TokenService } from "../tokens.js";
 import type { Capabilities, ServerConfig, WorkspaceInfo } from "../types.js";
 import { addRoute, type Route } from "./registry.js";
@@ -342,6 +343,22 @@ export function registerCoreRoutes(options: RegisterCoreRoutesOptions): void {
     }
     const body = await readJsonBody(ctx.request);
     return jsonResponse(await callExperimentalExtensionAction(config, env, body, await getConnectSnapshot(config, { ...connectSnapshotBaseOptions, ...connectSnapshotOptionsFromBody(body) }), ctx.request.signal));
+  });
+
+  // Drive writes additionally require the in-process Desktop confirmation in
+  // callDriveFileAction. Neither an engine credential nor a request flag grants approval.
+  addRoute(routes, "POST", "/experimental/drive-files/call", "client", async (ctx) => {
+    if (ctx.actor?.scope === "viewer") {
+      throw new ApiError(403, "forbidden", "Viewer tokens cannot call Drive file actions");
+    }
+    const body = await readJsonBody(ctx.request);
+    const action = typeof body.action === "string" ? body.action : "";
+    const args = isRecord(body.args) ? body.args : {};
+    const context = isRecord(body.context) ? body.context : {};
+    if (action === "drive_push_file" || action === "drive_pull_file") ensureWritable(config);
+    const result = await callDriveFileAction(config, action, args, context, { signal: ctx.request.signal });
+    if (!result) throw new ApiError(404, "extension_action_not_found", "Drive file action not found");
+    return jsonResponse(result);
   });
 
   addRoute(routes, "GET", "/workspaces", "client", async () => {

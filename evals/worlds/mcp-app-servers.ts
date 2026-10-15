@@ -672,8 +672,9 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
     /** Observe the real chat across tool handoffs, without changing its state. */
     async watchCreationProgress() {
       await evaluate(app.client, () => {
-        const witness = { seen: false, missing: 0, replaced: 0, paused: 0 };
+        const witness = { seen: false, missing: 0, replaced: 0, paused: 0, layoutShifts: 0, collapsedActivity: 0 };
         let first: Element | null = null;
+        let height: number | null = null;
         const observer = new MutationObserver(() => {
           const panel = [...document.querySelectorAll('[data-app-builder-step]')].find(element =>
             /^(Creating|Updating) MCP App/.test(element.getAttribute("aria-label") ?? "") && element.querySelector('[data-app-builder-checklist]'));
@@ -683,6 +684,11 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
           else {
             if (panel !== first) witness.replaced++;
             if (panel.textContent?.includes("Paused")) witness.paused++;
+            const nextHeight = panel.getBoundingClientRect().height;
+            if (height !== null && Math.abs(nextHeight - height) > 0.5) witness.layoutShifts++;
+            height = nextHeight;
+            const detail = panel.querySelector('[data-checklist-state="active"] [data-app-builder-activity]');
+            if (!detail || detail.getBoundingClientRect().height < 1) witness.collapsedActivity++;
           }
         });
         observer.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true });
@@ -701,11 +707,15 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
         const missing: unknown = Reflect.get(witness, "missing");
         const replaced: unknown = Reflect.get(witness, "replaced");
         const paused: unknown = Reflect.get(witness, "paused");
+        const layoutShifts: unknown = Reflect.get(witness, "layoutShifts");
+        const collapsedActivity: unknown = Reflect.get(witness, "collapsedActivity");
         return {
           seen: Reflect.get(witness, "seen") === true,
           missing: typeof missing === "number" ? missing : -1,
           replaced: typeof replaced === "number" ? replaced : -1,
           paused: typeof paused === "number" ? paused : -1,
+          layoutShifts: typeof layoutShifts === "number" ? layoutShifts : -1,
+          collapsedActivity: typeof collapsedActivity === "number" ? collapsedActivity : -1,
         };
       });
     },
@@ -745,11 +755,18 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
         : kind === "guided"
         // The agent reads the guide, finds the tool, prepares, and publishes prepare_app's starter unchanged.
         ? [toolStep("get_skill", { name: "build-an-app" }),
+          // A completed script with no nested tools is removed from the rail.
+          // Its removal must not turn every later visible message historical.
+          ...(engine === "v2" ? [{ tool: "execute", arguments: { code: 'return "App discovery ready";' } }] : []),
           // A real non-App tool between the guide and preparation used to
           // remove the checklist and expose ordinary tool rows instead.
           { tool: "bash", arguments: { command: "sleep 1; printf 'App inputs checked\\n'", description: "Check app inputs" } },
           toolStep("search_capabilities", { query: "Inventory lookup unit price", type: "mcp", limit: 2 }),
           { ...toolStep("prepare_app", { title: guidedTitle, description: "Look up a product's unit price in Inventory.", tools: lookup }), holdUntilReleased: true },
+          // Successful re-preparation of the same App used to leave a stale,
+          // paused checklist above the terminal result. Exercise both attempts.
+          { tool: "bash", arguments: { command: "printf 'App tools rechecked\\n'", description: "Recheck app tools" } },
+          toolStep("prepare_app", { title: guidedTitle, description: "Look up a product's unit price in Inventory.", tools: lookup }),
           { ...(engine === "v2"
             ? { tool: "execute", arguments: { code: `return await tools["openwork-cloud"].create_app({ ...${JSON.stringify({ title: guidedTitle, tools: lookup, textFallback: "Looks up a product's unit price in Inventory." })}, ..."__APP_STARTER__" });` } }
             : toolStep("create_app", { title: guidedTitle, tools: lookup, textFallback: "Looks up a product's unit price in Inventory." })), argumentsFrom: "app-starter" }]

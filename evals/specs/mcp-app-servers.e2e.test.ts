@@ -1,5 +1,6 @@
 import { expect } from "vitest";
 import { spec, type SpecBodyContext } from "@openwork/testkit";
+import { appProgressSpacing } from "../worlds/app-progress-spacing";
 import { appSource, appTitle, boardAgainPrompt, boardAgainReply, boardPrompt, boardReply, boardTitle, buildPrompt, buildReply, chatPrompt, chatReply, guidedReply, guidedTitle, launchInput, mcpAppServers, mcpAppServersChat, mcpAppServersChatOwnSignIn, mcpAppCreationV1, mcpAppCreationV2, payload, pricerTitle, record, reopenPrompt, reopenReply, reservationId, rows, signInPrompt, signInReply, toolNames } from "../worlds/mcp-app-servers.ts";
 
 const test = spec.world(mcpAppServers, {
@@ -790,16 +791,32 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
       // continuity; an App-only sequence never exercised the disappearing row.
       const calls = await world.den.mocks.inventory.agentRequests({ promptMarker: prompt });
       expect(JSON.stringify(calls)).toContain("App inputs checked");
+      if (name.includes("v2")) expect(JSON.stringify(calls)).toContain("App discovery ready");
+      // Silent execution was removed before rendering, but this is still the
+      // current turn: no completed-work rail may replace its live App panel.
+      expect((await probe.dom('[class~="group/message-group"]:has([data-app-builder-step][aria-label^="Creating"]) [data-testid="completed-work-rail"]')).elements).toHaveLength(0);
       const continuity = await world.creationProgressWitness();
-      expect(continuity).toEqual({ seen: true, missing: 0, replaced: 0, paused: 0 });
+      expect(continuity).toEqual({ seen: true, missing: 0, replaced: 0, paused: 0, layoutShifts: 0, collapsedActivity: 0 });
       expect((await probe.dom('[data-app-builder-step] .bg-primary, [data-app-builder-step] .text-primary')).elements).toHaveLength(0);
       expect((await probe.dom('[data-loading-message]')).elements).toHaveLength(0);
+      expect((await probe.dom('[data-app-builder-step] .ow-app-progress-dot')).elements).toHaveLength(3);
+      const timer = '[data-app-builder-step][aria-label^="Creating"] [data-app-builder-elapsed]';
+      const initialTime = (await probe.dom(timer)).elements[0]?.text;
+      expect(initialTime).toBeTruthy();
+      expect(await probe.eventually(async () => (await probe.dom(timer)).elements[0]?.text, {
+        within: 5_000, intervalMs: 250, label: "the same build timer keeps ticking between tools", until: text => Boolean(text && text !== initialTime),
+      })).not.toBe(initialTime);
       await user.notSee({ text: "Paused" });
       await user.screenshot();
       await world.holdCreation(false);
       const sentence = `Created MCP App “${guidedTitle}”`;
       await user.see({ text: sentence }, { timeoutMs: 120_000 });
       await user.see({ text: guidedReply }, { timeoutMs: 30_000 });
+      // The completed build consumes both preparations, not one terminal row
+      // plus an abandoned paused card for the first successful attempt.
+      expect((await probe.dom(`[data-app-builder-step][aria-label*="${guidedTitle}"]`)).elements).toHaveLength(1);
+      expect((await probe.dom(`[data-app-builder-step][aria-label*="${guidedTitle}"][data-app-creation-stage="ready"]`)).elements).toHaveLength(1);
+      await user.notSee({ text: `Creating MCP App “${guidedTitle}”` });
       frame = await world.appFrameShowing(guidedTitle, "Show unit price");
       // The details toggle shows only while a mouse hovers the step, so the web worlds report a mouse to headless Chrome.
       await user.hover({ text: sentence });
@@ -815,7 +832,7 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
       await user.on(frame).type({ role: "textbox", label: "Sku" }, launchInput.sku);
       await user.on(frame).click({ role: "button", label: "Show unit price" });
       await user.on(frame).see({ text: "Unit price" }, { timeoutMs: 60_000 });
-      evidence.recordAssertionEvidence("One neutral App checklist stays mounted across other tool calls", `${name}: after reading the guide, a real shell call finished before preparation. The checklist stayed present with ${continuity.missing} missing, ${continuity.replaced} replaced and ${continuity.paused} paused observations, no blue accents and no separate Working line. The same App then built from the starter and loaded the Inventory price on one click.`, true);
+      evidence.recordAssertionEvidence("One neutral App checklist stays mounted across other tool calls", `${name}: after reading the guide, a real shell call finished before preparation. A completed silent discovery script was also removed from the v2 rail without making the current turn historical. The checklist stayed present with ${continuity.missing} missing, ${continuity.replaced} replaced and ${continuity.paused} paused observations, ${continuity.layoutShifts} height changes and ${continuity.collapsedActivity} collapsed activity slots, no blue accents and no separate Working line. After a second successful preparation, the same App resolved to exactly one terminal row with no stale creating card, then loaded the Inventory price on one click.`, true);
       await user.screenshot();
       await closeFrame();
       await user.click({ role: "button", label: "Close panel" });
@@ -824,6 +841,11 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
       // The price board is the newest App in the conversation, so its creation step has the last Open preview.
       const openButtons = (await probe.dom('button[aria-label="Open preview"]')).elements.length;
       await user.click({ role: "button", label: "Open preview", nth: openButtons - 1 });
+      // The completed build consumes both preparations, not one terminal row
+      // plus an abandoned paused card for the first successful attempt.
+      expect((await probe.dom(`[data-app-builder-step][aria-label*="${guidedTitle}"]`)).elements).toHaveLength(1);
+      expect((await probe.dom(`[data-app-builder-step][aria-label*="${guidedTitle}"][data-app-creation-stage="ready"]`)).elements).toHaveLength(1);
+      await user.notSee({ text: `Creating MCP App “${guidedTitle}”` });
       frame = await world.appFrameShowing(guidedTitle, "Show unit price");
       const reopenedAt = new Date().toISOString();
       // Typing the SKU looked up before shows its kept price; nothing is clicked, so no tool runs.
@@ -876,3 +898,45 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
 
 creationV1Test("an owner creates, edits, reopens and stops an App on v1 web", creationJourney);
 creationV2Test("an owner creates, edits, reopens and stops an App on v2 web", creationJourney);
+
+const spacingTest = spec.world(appProgressSpacing, { resources: { surfaces: ["appWeb"], services: [] } });
+
+spacingTest("an owner sees App progress beside the request after earlier activity folds away", async ({ world, user, probe, step, evidence }) => {
+  await user.navigate(world.url);
+  const rail = '[data-live-steps]';
+  let originalHeight = 0;
+  await step("before: the owner can see the earlier tool activity", async () => {
+    await user.see({ text: "Make an App showing the deployment timeline." });
+    originalHeight = await probe.eventually(async () => (await probe.dom(rail)).elements[0]?.rect.height ?? 0, {
+      within: 30_000, intervalMs: 100, label: "the earlier activity occupies a tall block", until: height => height > 200,
+    });
+    expect(originalHeight).toBeGreaterThan(200);
+    expect((await probe.dom(`${rail} [data-capability-call]`)).elements).toHaveLength(10);
+    evidence.recordAssertionEvidence("Earlier activity occupies real space", `The live tool rail is ${originalHeight}px tall.`, true);
+    await user.screenshot();
+  });
+  await step("ordinary live activity keeps its space when earlier details fold", async () => {
+    await user.click({ role: "button", label: "Fold earlier activity" });
+    await user.notSee({ text: "Used status 10 · Deployment" });
+    expect((await probe.dom(`${rail} [data-capability-call]`)).elements).toHaveLength(2);
+    const foldedHeight = (await probe.dom(rail)).elements[0]?.rect.height ?? 0;
+    expect(foldedHeight).toBeGreaterThanOrEqual(originalHeight - 1);
+    evidence.recordAssertionEvidence("Ordinary tool runs retain their height", `Ten rows folded to two; the rail remains ${foldedHeight}px tall, from ${originalHeight}px.`, true);
+    await user.screenshot();
+  });
+  await step("after: the App checklist takes the place of hidden activity without a blank gap", async () => {
+    await user.click({ role: "button", label: "Start App build" });
+    await user.see({ text: "Creating MCP App" });
+    const hiddenHeight = (await probe.dom(rail)).elements[0]?.rect.height ?? 0;
+    const request = (await probe.dom('[data-message-role="user"]')).elements[0];
+    const panel = (await probe.dom('[data-app-builder-step]')).elements[0];
+    if (!request || !panel) throw new Error("Request or App checklist missing");
+    const gap = panel.rect.top - request.rect.bottom;
+    evidence.recordAssertionEvidence("App progress stays close to its request", `The hidden tool rail occupies ${hiddenHeight}px; the request-to-checklist gap is ${gap}px.`, hiddenHeight <= 1 && gap >= 0 && gap <= 48);
+    await user.screenshot();
+    expect(hiddenHeight).toBeLessThanOrEqual(1);
+    expect(gap).toBeGreaterThanOrEqual(0);
+    expect(gap).toBeLessThanOrEqual(48);
+    expect((await probe.dom('[data-loading-message]')).elements).toHaveLength(0);
+  });
+});

@@ -1,16 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import Link from "next/link";
 import { Copy, Pencil, Trash2 } from "lucide-react";
 import { FEATURE_KEYS, mapFeatures, type FeatureKey } from "@openwork/features";
 import { denApiCredentials, denBrowserEndpoint } from "../app/(den)/_lib/den-api-origin";
 import { withStoredBearer } from "./admin/admin-request";
+import { useAdminListLocation, type AdminDataSection } from "./admin/admin-list-location";
 import { AdminDeferredContent } from "./admin/admin-deferred-content";
 import { AdminAccessScreen } from "./admin/admin-access-screen";
 import { AdminOrganizationFeatureControls, type AdminFeatureState, type AdminOrganizationFeatures } from "./admin/admin-organization-feature-controls";
 
 type AccessState = "ready" | "signed-out" | "forbidden" | "error";
-type ViewMode = "users" | "companies" | "organizations";
 
 const DEFAULT_FREE_SEAT_COUNT = 5;
 const ADMIN_PAGE_SIZE = 50;
@@ -564,6 +565,30 @@ function parseAdminMetricsPayload(payload: unknown): AdminMetricsPayload | null 
   return {
     summary: parseAdminSummary(payload.summary, 0),
     generatedAt: toStringValue(payload.generatedAt)
+  };
+}
+
+function parseAdminInitialPayload(value: unknown, section: AdminDataSection): AdminPayload | null {
+  if (section === "overview") return parseAdminPayload(value);
+  const users = section === "users" ? parseAdminUsersPayload(value) : null;
+  const organizations = section === "organizations" ? parseAdminOrganizationsPayload(value) : null;
+  if (!users && !organizations) return null;
+  return {
+    viewer: { id: "", email: null, name: null },
+    admins: [],
+    summary: parseAdminSummary({
+      totalUsers: users?.page.total ?? 0,
+      totalOrganizations: organizations?.page.total ?? 0,
+      billingLoaded: users?.billing.loaded ?? false,
+      paidUsers: users?.billing.paidUsers,
+      unpaidUsers: users?.billing.unpaidUsers,
+      billingUnavailableUsers: users?.billing.billingUnavailableUsers,
+    }, 0),
+    users: users?.users ?? [],
+    organizations: organizations?.organizations ?? [],
+    userPage: users?.page ?? parseAdminPageInfo({}, 0, 0),
+    organizationPage: organizations?.page ?? parseAdminPageInfo({}, 0, 0),
+    generatedAt: users?.generatedAt ?? organizations?.generatedAt ?? null,
   };
 }
 
@@ -1353,16 +1378,17 @@ function OpenWorkWebAccessPill({ access }: { access: AdminOpenWorkWebAccess }) {
   );
 }
 
-export function DenAdminPanel({ initialPayload }: { initialPayload: unknown }) {
-  const [initial] = useState(() => parseAdminPayload(initialPayload));
+export function DenAdminPanel({ initialPayload, section }: { initialPayload: unknown; section: AdminDataSection }) {
+  const viewMode = section;
+  const { search: routeSearch, draftSearch, page: routePage, offset: routeOffset, setSearch, setPage } = useAdminListLocation();
+  const userQuery = draftSearch;
+  const organizationQuery = draftSearch;
+  const [initial] = useState(() => parseAdminInitialPayload(initialPayload, section));
   const [accessState, setAccessState] = useState<AccessState>(initial ? "ready" : "error");
   const [payload, setPayload] = useState<AdminPayload | null>(initial);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
-  const [userQuery, setUserQuery] = useState("");
-  const [organizationQuery, setOrganizationQuery] = useState("");
-  const [viewMode, setViewMode] = useState<ViewMode>("users");
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [copiedOrgId, setCopiedOrgId] = useState<string | null>(null);
   const [includeBilling, setIncludeBilling] = useState(false);
@@ -1423,7 +1449,7 @@ export function DenAdminPanel({ initialPayload }: { initialPayload: unknown }) {
     setError(null);
 
     try {
-      const { response, payload: nextPayload } = await requestJson("/v1/admin/overview", controller.signal);
+      const { response, payload: nextPayload } = await requestJson("/v1/admin/overview?limit=1", controller.signal);
       if (requestId !== overviewRequestIdRef.current) {
         return;
       }
@@ -1520,10 +1546,11 @@ export function DenAdminPanel({ initialPayload }: { initialPayload: unknown }) {
         return;
       }
 
+      setAccessState("ready");
       setIncludeBilling(parsed.billing.loaded);
       setPayload((current) => {
         if (!current) {
-          return current;
+          return parseAdminInitialPayload(nextPayload, "users");
         }
         return {
           ...current,
@@ -1595,9 +1622,10 @@ export function DenAdminPanel({ initialPayload }: { initialPayload: unknown }) {
         return;
       }
 
+      setAccessState("ready");
       setPayload((current) => {
         if (!current) {
-          return current;
+          return parseAdminInitialPayload(nextPayload, "organizations");
         }
         return {
           ...current,
@@ -1616,6 +1644,12 @@ export function DenAdminPanel({ initialPayload }: { initialPayload: unknown }) {
       }
     }
   }, []);
+
+  const refreshCurrentPage = useCallback(() => {
+    if (section === "users") return loadUsers(routeSearch, routeOffset, includeBillingRef.current);
+    if (section === "organizations") return loadOrganizations(routeSearch, routeOffset);
+    return loadOverview();
+  }, [section, routeSearch, routeOffset, loadUsers, loadOrganizations, loadOverview]);
 
   const loadAnalytics = useCallback(async () => {
     setAnalyticsLoading(true);
@@ -1796,64 +1830,38 @@ export function DenAdminPanel({ initialPayload }: { initialPayload: unknown }) {
   const filteredOrganizations = payload?.organizations ?? [];
 
   useEffect(() => {
-    if (accessState !== "ready" || viewMode !== "users") {
-      return;
-    }
-
-    const trimmedQuery = userQuery.trim();
-    const currentPayload = payloadRef.current;
-    if (currentPayload?.userPage.search === trimmedQuery) {
+    if (accessState !== "ready" || viewMode !== "users") return;
+    const trimmedQuery = routeSearch.trim();
+    const currentPage = payloadRef.current?.userPage;
+    if (currentPage?.search === trimmedQuery && currentPage.offset === routeOffset) {
       setUsersLoading(false);
       return;
     }
-
-    const requestId = userRequestIdRef.current + 1;
-    userRequestIdRef.current = requestId;
+    const requestId = ++userRequestIdRef.current;
     setUsersLoading(true);
     const controller = new AbortController();
     const timeout = window.setTimeout(() => {
-      void loadUsers(trimmedQuery, 0, includeBillingRef.current, controller.signal, requestId);
+      void loadUsers(trimmedQuery, routeOffset, includeBillingRef.current, controller.signal, requestId);
     }, ADMIN_SEARCH_DEBOUNCE_MS);
-
-    return () => {
-      controller.abort();
-      window.clearTimeout(timeout);
-    };
-  }, [accessState, loadUsers, userQuery, viewMode]);
+    return () => { controller.abort(); window.clearTimeout(timeout); };
+  }, [accessState, loadUsers, routeSearch, routeOffset, viewMode]);
 
   useEffect(() => {
-    if (accessState !== "ready" || viewMode !== "organizations") {
-      return;
-    }
-
-    const trimmedQuery = organizationQuery.trim();
-    const currentPayload = payloadRef.current;
-    if (currentPayload?.organizationPage.search === trimmedQuery && (currentPayload.organizations.length > 0 || currentPayload.organizationPage.total === 0 || currentPayload.organizationPage.offset > 0 || currentPayload.organizationPage.returned > 0)) {
+    if (accessState !== "ready" || viewMode !== "organizations") return;
+    const trimmedQuery = routeSearch.trim();
+    const currentPage = payloadRef.current?.organizationPage;
+    if (currentPage?.search === trimmedQuery && currentPage.offset === routeOffset) {
       setOrganizationsLoading(false);
       return;
     }
-
-    const requestId = organizationRequestIdRef.current + 1;
-    organizationRequestIdRef.current = requestId;
+    const requestId = ++organizationRequestIdRef.current;
     setOrganizationsLoading(true);
     const controller = new AbortController();
-
-    if (trimmedQuery === "") {
-      void loadOrganizations(trimmedQuery, 0, controller.signal, requestId);
-      return () => {
-        controller.abort();
-      };
-    }
-
     const timeout = window.setTimeout(() => {
-      void loadOrganizations(trimmedQuery, 0, controller.signal, requestId);
+      void loadOrganizations(trimmedQuery, routeOffset, controller.signal, requestId);
     }, ADMIN_SEARCH_DEBOUNCE_MS);
-
-    return () => {
-      controller.abort();
-      window.clearTimeout(timeout);
-    };
-  }, [accessState, loadOrganizations, organizationQuery, viewMode]);
+    return () => { controller.abort(); window.clearTimeout(timeout); };
+  }, [accessState, loadOrganizations, routeSearch, routeOffset, viewMode]);
 
   useEffect(() => {
     if (accessState !== "ready" || !payload || overviewUsableMs !== null || mountedAtRef.current === null) {
@@ -2127,13 +2135,13 @@ export function DenAdminPanel({ initialPayload }: { initialPayload: unknown }) {
 
       setDeleteUserDialog(null);
       setSelectedUserId(null);
-      await loadOverview();
+      await refreshCurrentPage();
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Unknown network error");
     } finally {
       setDeletingUserId(null);
     }
-  }, [deleteUserDialog, loadOverview]);
+  }, [deleteUserDialog, refreshCurrentPage]);
 
   const exportCsv = useCallback(() => {
     const date = new Date().toISOString().slice(0, 10);
@@ -2199,7 +2207,7 @@ export function DenAdminPanel({ initialPayload }: { initialPayload: unknown }) {
   }, [filteredUsers, selectedUserId]);
 
   if (accessState === "signed-out" || accessState === "forbidden" || accessState === "error") {
-    return <AdminAccessScreen state={accessState} message={error ?? undefined} onRetry={() => void loadOverview()} />;
+    return <AdminAccessScreen state={accessState} message={error ?? undefined} onRetry={() => void refreshCurrentPage()} />;
   }
 
   if (!payload) {
@@ -2221,32 +2229,26 @@ export function DenAdminPanel({ initialPayload }: { initialPayload: unknown }) {
   const pageDurationLabel = isAdminScaleFixtureEnabled() ? "fixture computation" : "server";
 
   return (
-    <section className="mx-auto w-full max-w-6xl rounded-3xl border border-slate-200 bg-white shadow-xs">
+    <section data-testid="admin-data-page" className="mx-auto w-full max-w-6xl rounded-3xl border border-slate-200 bg-white shadow-xs">
       <div className="border-b border-slate-200 px-6 py-6 sm:px-8">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="text-[0.7rem] font-semibold uppercase tracking-[0.18em] text-slate-500">Den admin</p>
-            <h1 className="mt-2 text-3xl font-semibold tracking-[-0.04em] text-slate-950">User backoffice</h1>
-            <p className="mt-2 max-w-3xl text-sm leading-7 text-slate-600">
-              Lightweight internal view for signups, worker creation, and on-demand billing checks.
-            </p>
+            <h1 className="text-lg font-semibold text-slate-950">{section === "overview" ? "Overview" : section === "users" ? "Users" : "Organizations"}</h1>
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            <div className="rounded-full border border-slate-200 bg-slate-50 px-4 py-2 text-sm text-slate-600">
-              {payload.viewer.email ?? payload.viewer.id}
-            </div>
+            {section === "overview" ? <p className="text-sm text-slate-600">{payload.viewer.email ?? payload.viewer.id}</p> : null}
             <button
               type="button"
               onClick={() => {
-                void loadOverview();
+                void refreshCurrentPage();
               }}
-              disabled={refreshing}
+              disabled={refreshing || usersLoading || organizationsLoading}
               className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
               {refreshing ? "Refreshing..." : "Refresh"}
             </button>
-            <button
+            {section === "overview" ? <button
               type="button"
               onClick={() => {
                 void loadAnalytics();
@@ -2255,10 +2257,17 @@ export function DenAdminPanel({ initialPayload }: { initialPayload: unknown }) {
               className="inline-flex items-center justify-center rounded-full bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-60"
             >
               {analyticsLoading ? "Loading analytics..." : analyticsLoaded ? "Refresh analytics" : "Load analytics"}
-            </button>
+            </button> : null}
           </div>
         </div>
 
+        {error ? (
+          <div role="alert" className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
+            {error}
+          </div>
+        ) : null}
+
+        {section === "overview" ? <>
         <div className="mt-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
           <StatCard label="Users" value={String(payload.summary.totalUsers)} detail={formatOptionalDetail(payload.summary.recentUsers7d, "new in 7d")} />
           <StatCard label="Active today" value={formatOptionalCount(payload.summary.activeUsers1d)} detail="Load analytics to calculate" />
@@ -2334,55 +2343,20 @@ export function DenAdminPanel({ initialPayload }: { initialPayload: unknown }) {
             })}
           </div>
         </div>
+        </> : null}
       </div>
 
-      <div className="px-6 py-6 sm:px-8">
+      {section !== "overview" ? <div className="px-6 py-6 sm:px-8">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 p-1">
-            <button
-              type="button"
-              onClick={() => setViewMode("users")}
-              className={`rounded-full px-4 py-1.5 text-sm font-semibold transition ${viewMode === "users" ? "bg-slate-950 text-white" : "text-slate-600 hover:text-slate-900"}`}
-            >
-              Users ({payload.summary.totalUsers})
-            </button>
-            <button
-              type="button"
-              onClick={() => setViewMode("companies")}
-              className={`rounded-full px-4 py-1.5 text-sm font-semibold transition ${viewMode === "companies" ? "bg-slate-950 text-white" : "text-slate-600 hover:text-slate-900"}`}
-            >
-              Companies (deferred)
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                if (viewMode !== "organizations") {
-                  organizationSearchStartedAtRef.current = performance.now();
-                  setOrganizationVisibleDurationMs(null);
-                }
-                setViewMode("organizations");
-              }}
-              className={`rounded-full px-4 py-1.5 text-sm font-semibold transition ${viewMode === "organizations" ? "bg-slate-950 text-white" : "text-slate-600 hover:text-slate-900"}`}
-            >
-              Organizations ({payload.summary.totalOrganizations})
-            </button>
-          </div>
-
             <button
               type="button"
               onClick={exportCsv}
-              disabled={viewMode === "companies" || (viewMode === "organizations" ? filteredOrganizations.length === 0 : filteredUsers.length === 0)}
+              disabled={viewMode === "organizations" ? filteredOrganizations.length === 0 : filteredUsers.length === 0}
               className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
             >
               Export current page CSV
             </button>
         </div>
-
-        {error ? (
-          <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm leading-6 text-amber-900">
-            {error}
-          </div>
-        ) : null}
 
         {isAdminScaleFixtureEnabled() ? (
           <div data-testid="admin-scale-eval-status" className="mt-4 rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3 text-sm leading-6 text-violet-900">
@@ -2402,6 +2376,8 @@ export function DenAdminPanel({ initialPayload }: { initialPayload: unknown }) {
               <label className="grid gap-2">
                 <span className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">Search organizations</span>
                 <input
+                  maxLength={160}
+                  aria-label="Search organizations"
                   value={organizationQuery}
                   onChange={(event) => {
                     overviewRequestIdRef.current += 1;
@@ -2409,21 +2385,21 @@ export function DenAdminPanel({ initialPayload }: { initialPayload: unknown }) {
                     organizationRequestIdRef.current += 1;
                     organizationSearchStartedAtRef.current = performance.now();
                     setOrganizationVisibleDurationMs(null);
-                    setOrganizationQuery(event.target.value);
+                    setSearch(event.target.value);
                   }}
                   placeholder="Org name, slug, or id"
                   className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-hidden transition focus:border-slate-400"
                 />
               </label>
               <p className="text-xs leading-5 text-slate-500">
-                Search across all {payload.summary.totalOrganizations} organizations · page {payload.organizationPage.offset + 1}-{payload.organizationPage.offset + payload.organizationPage.returned} of {payload.organizationPage.total} · {pageDurationLabel} {payload.organizationPage.durationMs} ms{organizationVisibleDurationMs === null ? "" : ` · browser visible ${organizationVisibleDurationMs} ms`}
+                Page {routePage} · {payload.organizationPage.total} matching organizations · {pageDurationLabel} {payload.organizationPage.durationMs} ms{organizationVisibleDurationMs === null ? "" : ` · browser visible ${organizationVisibleDurationMs} ms`}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <button
                 type="button"
                 onClick={() => {
-                  void loadOrganizations(organizationQuery, Math.max(0, payload.organizationPage.offset - payload.organizationPage.limit));
+                  setPage(Math.max(1, routePage - 1));
                 }}
                 disabled={organizationsLoading || payload.organizationPage.offset === 0}
                 className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
@@ -2433,7 +2409,7 @@ export function DenAdminPanel({ initialPayload }: { initialPayload: unknown }) {
               <button
                 type="button"
                 onClick={() => {
-                  void loadOrganizations(organizationQuery, payload.organizationPage.offset + payload.organizationPage.limit);
+                  setPage(routePage + 1);
                 }}
                 disabled={organizationsLoading || !payload.organizationPage.hasMore}
                 className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
@@ -2442,16 +2418,14 @@ export function DenAdminPanel({ initialPayload }: { initialPayload: unknown }) {
               </button>
             </div>
           </div>
-        ) : viewMode === "companies" ? (
-          <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 px-4 py-4 text-sm leading-6 text-slate-600">
-            Company-domain grouping is intentionally deferred at scale. It previously grouped only the loaded user list, which would be misleading now. Use server-side user search (for example, @acme.com) to find matching users across all {payload.summary.totalUsers} users.
-          </div>
         ) : (
           <div className="mt-4 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
             <div className="grid w-full max-w-xl gap-2">
               <label className="grid gap-2">
                 <span className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">Search users</span>
                 <input
+                  maxLength={160}
+                  aria-label="Search users"
                   value={userQuery}
                   onChange={(event) => {
                     overviewRequestIdRef.current += 1;
@@ -2459,14 +2433,14 @@ export function DenAdminPanel({ initialPayload }: { initialPayload: unknown }) {
                     userRequestIdRef.current += 1;
                     userSearchStartedAtRef.current = performance.now();
                     setUserVisibleDurationMs(null);
-                    setUserQuery(event.target.value);
+                    setSearch(event.target.value);
                   }}
                   placeholder="Email, name, user id, provider, organization"
                   className="rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 outline-hidden transition focus:border-slate-400"
                 />
               </label>
               <p className="text-xs leading-5 text-slate-500">
-                Search across all {payload.summary.totalUsers} users · page {payload.userPage.offset + 1}-{payload.userPage.offset + payload.userPage.returned} of {payload.userPage.total} · {pageDurationLabel} {payload.userPage.durationMs} ms{userVisibleDurationMs === null ? "" : ` · browser visible ${userVisibleDurationMs} ms`}
+                Page {routePage} · {payload.userPage.total} matching users · {pageDurationLabel} {payload.userPage.durationMs} ms{userVisibleDurationMs === null ? "" : ` · browser visible ${userVisibleDurationMs} ms`}
               </p>
             </div>
 
@@ -2488,7 +2462,7 @@ export function DenAdminPanel({ initialPayload }: { initialPayload: unknown }) {
               <button
                 type="button"
                 onClick={() => {
-                  void loadUsers(userQuery, Math.max(0, payload.userPage.offset - payload.userPage.limit), includeBilling);
+                  setPage(Math.max(1, routePage - 1));
                 }}
                 disabled={usersLoading || payload.userPage.offset === 0}
                 className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
@@ -2498,7 +2472,7 @@ export function DenAdminPanel({ initialPayload }: { initialPayload: unknown }) {
               <button
                 type="button"
                 onClick={() => {
-                  void loadUsers(userQuery, payload.userPage.offset + payload.userPage.limit, includeBilling);
+                  setPage(routePage + 1);
                 }}
                 disabled={usersLoading || !payload.userPage.hasMore}
                 className="inline-flex items-center justify-center rounded-full border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:opacity-60"
@@ -2518,7 +2492,7 @@ export function DenAdminPanel({ initialPayload }: { initialPayload: unknown }) {
               const changed = draft.tier !== org.plan.tier || draft.seatLimit !== String(org.seatLimit);
 
               return (
-                <div key={org.id} data-testid={`admin-org-row-${org.slug}`} style={{ contentVisibility: "auto", containIntrinsicSize: "auto 900px" }} className="rounded-2xl border border-slate-200 bg-white px-4 py-4">
+                <div key={org.id} data-testid={`admin-org-row-${org.slug}`} style={{ contentVisibility: "auto", containIntrinsicSize: "auto 900px" }} className="min-w-0 rounded-2xl border border-slate-200 bg-white px-4 py-4">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
@@ -2667,11 +2641,6 @@ export function DenAdminPanel({ initialPayload }: { initialPayload: unknown }) {
                 <p className="mt-2 text-sm leading-7 text-slate-500">Try a different search.</p>
               </div>
             )
-          ) : viewMode === "companies" ? (
-            <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 px-5 py-10 text-center">
-              <p className="text-base font-semibold text-slate-950">Company rollups are deferred at scale</p>
-              <p className="mt-2 text-sm leading-7 text-slate-500">This view no longer groups a partial user page. Search Users by domain to query the full user table server-side.</p>
-            </div>
           ) : filteredUsers.length > 0 ? filteredUsers.map((user) => {
             const isSelected = user.id === selectedUser?.id;
             const usageEntry = usageByUserId[user.id];
@@ -2681,7 +2650,7 @@ export function DenAdminPanel({ initialPayload }: { initialPayload: unknown }) {
                 key={user.id}
                 data-testid={`admin-user-row-${user.id}`}
                 style={isSelected ? undefined : { contentVisibility: "auto", containIntrinsicSize: "auto 180px" }}
-                className={`rounded-2xl border px-4 py-4 transition ${isSelected ? "border-slate-900 bg-slate-50" : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/70"}`}
+                className={`min-w-0 rounded-2xl border px-4 py-4 transition ${isSelected ? "border-slate-900 bg-slate-50" : "border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/70"}`}
               >
                 <button type="button" onClick={() => setSelectedUserId(user.id)} className="block w-full text-left">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
@@ -2888,21 +2857,13 @@ export function DenAdminPanel({ initialPayload }: { initialPayload: unknown }) {
                                     <Copy size={13} aria-hidden="true" />
                                     {copiedOrgId === org.id ? "Copied" : "Copy ID"}
                                   </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      overviewRequestIdRef.current += 1;
-                                      setRefreshing(false);
-                                      organizationRequestIdRef.current += 1;
-                                      organizationSearchStartedAtRef.current = performance.now();
-                                      setOrganizationVisibleDurationMs(null);
-                                      setOrganizationQuery(org.id);
-                                      setViewMode("organizations");
-                                    }}
+                                  <Link
+                                    href={`/admin/organizations?${new URLSearchParams({ search: org.id })}`}
+                                    prefetch={false}
                                     className="inline-flex items-center justify-center rounded-full bg-slate-950 px-3 py-1.5 text-xs font-semibold text-white"
                                   >
                                     View org
-                                  </button>
+                                  </Link>
                                 </div>
                               </div>
                             </div>
@@ -2923,7 +2884,7 @@ export function DenAdminPanel({ initialPayload }: { initialPayload: unknown }) {
         </div>
 
         <p className="mt-6 text-xs leading-6 text-slate-500">Snapshot generated {formatDateTime(payload.generatedAt)}.</p>
-      </div>
+      </div> : null}
 
       {openworkWebAccessDialog ? (
         <div

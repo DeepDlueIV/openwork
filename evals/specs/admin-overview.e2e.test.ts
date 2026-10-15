@@ -7,7 +7,7 @@ const test = spec.world(adminOverviewWorld, {
   resources: { surfaces: ["web"], services: ["den"] },
 });
 
-test("an admin opens a lightweight overview while signed-out visitors see sign-in immediately", async ({ world, user, probe, step, evidence }) => {
+test("an admin navigates routed lists while search, pagination and lazy details stay intact", async ({ world, user, probe, step, evidence }) => {
   const anonymous = user.on(world.anonymous);
   const anonymousProbe = probe.on(world.anonymous);
   const admin = user.on(world.admin);
@@ -25,16 +25,17 @@ test("an admin opens a lightweight overview while signed-out visitors see sign-i
   });
 
   await step("the admin reads the overview while model consumption remains below the viewport", async () => {
-    await admin.see({ text: "User backoffice" }, { timeoutMs: 60_000 });
+    await admin.see({ role: "heading", label: "Users" }, { timeoutMs: 60_000 });
     const deferred = await adminProbe.dom('[data-admin-deferred="pending"]');
     const traffic = await world.traffic("admin");
-    const ok = deferred.elements.length === 1 && deferred.elements[0].rect.top > 1100 && traffic.usage === 0 && traffic.metrics === 0;
-    evidence.recordAssertionEvidence("The consumption section is outside the viewport and its preload margin", `section top=${deferred.elements[0]?.rect.top}px; viewport=700px; margin=400px; usage=${traffic.usage}; analytics=${traffic.metrics}`, ok);
+    const ok = deferred.elements.length === 1 && deferred.elements[0].rect.top > 600 && traffic.usage === 0 && traffic.metrics === 0 && traffic.overview === 0;
+    evidence.recordAssertionEvidence("The Users route loads its own page while distant consumption waits", `section top=${deferred.elements[0]?.rect.top}px; viewport=200px; margin=400px; usage=${traffic.usage}; analytics=${traffic.metrics}; overview=${traffic.overview}`, ok);
     expect(ok).toBe(true);
     await admin.screenshot();
   });
 
   await step("after: scrolling to model consumption loads it once", async () => {
+    await admin.resizeViewport({ width: 1280, height: 700, deviceScaleFactor: 1 });
     await admin.wheelAt({ x: 1000, y: 500, deltaY: 1600 });
     await admin.see({ testId: "admin-usage-section" });
     const traffic = await adminProbe.eventually(() => world.traffic("admin"), { within: 15_000, until: (value) => value.usage === 1, label: "visible consumption read" });
@@ -48,7 +49,8 @@ test("an admin opens a lightweight overview while signed-out visitors see sign-i
   });
 
   await step("the admin opens one organization's feature editor on demand", async () => {
-    await admin.click({ role: "button", label: /^Organizations \(/ });
+    await admin.click({ role: "link", label: "Organizations" });
+    await admin.see({ role: "heading", label: "Organizations" });
     await admin.see({ testId: "admin-organization-features" });
     const before = await adminProbe.dom('[data-testid^="admin-capability-"]');
     expect(before.elements.length).toBe(0);
@@ -77,6 +79,93 @@ test("an admin opens a lightweight overview while signed-out visitors see sign-i
     const traffic = await world.traffic("admin");
     evidence.recordAssertionEvidence("Reopening features reuses the loaded organization state", `feature reads=${traffic.features}; controls=${controls.elements.length}`, traffic.features === 1);
     expect(traffic.features).toBe(1);
+    await admin.screenshot();
+  });
+
+  await step("a direct Users link and refresh restore its search and second page", async () => {
+    const first = await world.firstRow("users", "Routing", 2);
+    await admin.navigate(world.url("/admin/users?search=Routing&page=2"));
+    await admin.see({ testId: first });
+    await admin.see({ role: "textbox", label: "Search users" }, { value: "Routing" });
+    await admin.reload();
+    await admin.see({ testId: first }, { timeoutMs: 60_000 });
+    const location = await world.location();
+    const traffic = await world.traffic("admin");
+    const ok = location.pathname === "/admin/users" && location.search === "Routing" && location.page === 2 && location.active === "Users" && traffic.overview === 0 && traffic.lightOrganizations === 0;
+    evidence.recordAssertionEvidence("Users deep links survive refresh without fetching overview or organizations", `location=${JSON.stringify(location)}; overview=${traffic.overview}; organization reads=${traffic.lightOrganizations}`, ok);
+    expect(ok).toBe(true);
+    await admin.screenshot();
+  });
+
+  await step("browser Back and Forward restore the user's paginated results", async () => {
+    const firstPage = await world.firstRow("users", "Routing", 1);
+    const secondPage = await world.firstRow("users", "Routing", 2);
+    await admin.click({ role: "button", label: "Previous" });
+    await admin.see({ testId: firstPage });
+    await admin.click({ role: "button", label: "Next" });
+    await admin.see({ testId: secondPage });
+    await world.history("back");
+    await admin.see({ testId: firstPage });
+    const back = await world.location();
+    await world.history("forward");
+    await admin.see({ testId: secondPage });
+    const forward = await world.location();
+    const ok = back.page === 1 && forward.page === 2 && back.search === "Routing" && forward.search === "Routing";
+    evidence.recordAssertionEvidence("Browser history restores both the URL and matching user rows", `back=${JSON.stringify(back)}; forward=${JSON.stringify(forward)}`, ok);
+    expect(ok).toBe(true);
+    await admin.screenshot();
+  });
+
+  await step("changing user search resets the page and survives refresh", async () => {
+    const first = await world.firstRow("users", "Routing user 00", 1);
+    await admin.type({ role: "textbox", label: "Search users" }, "Routing user 00", { replace: true });
+    await admin.see({ testId: first });
+    await admin.reload();
+    await admin.see({ testId: first }, { timeoutMs: 60_000 });
+    await admin.see({ role: "textbox", label: "Search users" }, { value: "Routing user 00" });
+    const location = await world.location();
+    evidence.recordAssertionEvidence("User search and the reset to page one are kept in the URL", JSON.stringify(location), location.page === 1 && location.search === "Routing user 00");
+    expect(location.page).toBe(1);
+    expect(location.search).toBe("Routing user 00");
+    await admin.screenshot();
+  });
+
+  await step("an Organizations deep link restores search and pagination with the correct sidebar item", async () => {
+    const secondPage = await world.firstRow("organizations", "Routing", 2);
+    await admin.navigate(world.url("/admin/organizations?search=Routing&page=2"));
+    await admin.see({ testId: secondPage });
+    await admin.reload();
+    await admin.see({ testId: secondPage }, { timeoutMs: 60_000 });
+    await admin.click({ role: "button", label: "Previous" });
+    await admin.see({ testId: await world.firstRow("organizations", "Routing", 1) });
+    await admin.click({ role: "button", label: "Next" });
+    await admin.see({ testId: secondPage });
+    await world.history("back");
+    await admin.see({ testId: await world.firstRow("organizations", "Routing", 1) });
+    const back = await world.location();
+    await world.history("forward");
+    await admin.see({ testId: secondPage });
+    const location = await world.location();
+    const traffic = await world.traffic("admin");
+    const ok = back.page === 1 && back.search === "Routing" && location.pathname === "/admin/organizations" && location.page === 2 && location.search === "Routing" && location.active === "Organizations" && traffic.overview === 0 && traffic.users === 0 && traffic.features === 0;
+    evidence.recordAssertionEvidence("Organization routes restore their list and browser history without loading users or feature maps", `back=${JSON.stringify(back)}; forward=${JSON.stringify(location)}; overview=${traffic.overview}; users=${traffic.users}; feature reads=${traffic.features}`, ok);
+    expect(ok).toBe(true);
+    await admin.screenshot();
+  });
+
+  await step("organization search resets the page and navigation remains usable on a narrow screen", async () => {
+    const first = await world.firstRow("organizations", "Routing organization 00", 1);
+    await admin.type({ role: "textbox", label: "Search organizations" }, "Routing organization 00", { replace: true });
+    await admin.see({ testId: first });
+    await admin.reload();
+    await admin.see({ testId: first }, { timeoutMs: 60_000 });
+    await admin.resizeViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
+    await admin.see({ role: "textbox", label: "Search organizations" }, { value: "Routing organization 00" });
+    const location = await world.location();
+    const layout = await adminProbe.dom("body");
+    const ok = location.page === 1 && location.search === "Routing organization 00" && layout.documentWidth <= layout.viewportWidth;
+    evidence.recordAssertionEvidence("The filtered organization list and compact navigation fit a narrow screen", `${JSON.stringify(location)}; document=${layout.documentWidth}px; viewport=${layout.viewportWidth}px`, ok);
+    expect(ok).toBe(true);
     await admin.screenshot();
   });
 

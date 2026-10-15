@@ -2,6 +2,8 @@
 
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { AdminAccessScreen } from "./admin-access-screen";
+import { adminDataEndpoint, type AdminDataSection } from "./admin-list-location";
+import { useAdminSessionCookie } from "./admin-shell";
 import { requestAdmin, withStoredBearer, type AdminResult } from "./admin-request";
 
 // The signed-out path never downloads or mounts the dashboard and its controls.
@@ -9,7 +11,8 @@ const DenAdminPanel = lazy(() => import("../den-admin-panel").then((module) => (
 
 type OverviewState = AdminResult<unknown> | { access: "checking" };
 
-export function AdminOverviewPage({ hasSessionCookie }: { hasSessionCookie: boolean }) {
+export function AdminDataPage({ section }: { section: AdminDataSection }) {
+  const hasSessionCookie = useAdminSessionCookie();
   const [state, setState] = useState<OverviewState>(() => hasSessionCookie ? { access: "checking" } : { access: "signed-out", message: "" });
   const controllerRef = useRef<AbortController | null>(null);
   const load = useCallback(async (force = false) => {
@@ -26,14 +29,15 @@ export function AdminOverviewPage({ hasSessionCookie }: { hasSessionCookie: bool
     }
     setState({ access: "checking" });
     try {
+      const path = adminDataEndpoint(section, new URLSearchParams(window.location.search));
       const result = fixture
-        ? { access: "ready", data: (await import("../den-admin-panel")).adminScaleFixturePayload("/v1/admin/overview") } satisfies AdminResult<unknown>
-        : await requestAdmin("/v1/admin/overview", (payload) => payload, controller.signal);
+        ? { access: "ready", data: (await import("../den-admin-panel")).adminScaleFixturePayload(path) } satisfies AdminResult<unknown>
+        : await requestAdmin(path, (payload) => payload, controller.signal);
       if (!controller.signal.aborted) setState(result);
     } catch (error) {
       if (!controller.signal.aborted) setState({ access: "error", message: error instanceof Error ? error.message : "Could not check admin access." });
     }
-  }, [hasSessionCookie]);
+  }, [hasSessionCookie, section]);
 
   useEffect(() => {
     void load();
@@ -41,6 +45,6 @@ export function AdminOverviewPage({ hasSessionCookie }: { hasSessionCookie: bool
   }, [load]);
 
   return state.access === "ready"
-    ? <Suspense fallback={<AdminAccessScreen state="checking" />}><DenAdminPanel initialPayload={state.data} /></Suspense>
+    ? <Suspense fallback={<AdminAccessScreen state="checking" />}><DenAdminPanel key={section} section={section} initialPayload={state.data} /></Suspense>
     : <AdminAccessScreen state={state.access} message={"message" in state ? state.message : undefined} onRetry={() => void load(true)} />;
 }

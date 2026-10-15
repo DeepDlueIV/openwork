@@ -672,8 +672,9 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
     /** Observe the real chat across tool handoffs, without changing its state. */
     async watchCreationProgress() {
       await evaluate(app.client, () => {
-        const witness = { seen: false, missing: 0, replaced: 0, paused: 0 };
+        const witness = { seen: false, missing: 0, replaced: 0, paused: 0, layoutShifts: 0, collapsedActivity: 0 };
         let first: Element | null = null;
+        let height: number | null = null;
         const observer = new MutationObserver(() => {
           const panel = [...document.querySelectorAll('[data-app-builder-step]')].find(element =>
             /^(Creating|Updating) MCP App/.test(element.getAttribute("aria-label") ?? "") && element.querySelector('[data-app-builder-checklist]'));
@@ -683,6 +684,11 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
           else {
             if (panel !== first) witness.replaced++;
             if (panel.textContent?.includes("Paused")) witness.paused++;
+            const nextHeight = panel.getBoundingClientRect().height;
+            if (height !== null && Math.abs(nextHeight - height) > 0.5) witness.layoutShifts++;
+            height = nextHeight;
+            const detail = panel.querySelector('[data-checklist-state="active"] [data-app-builder-activity]');
+            if (!detail || detail.getBoundingClientRect().height < 1) witness.collapsedActivity++;
           }
         });
         observer.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true });
@@ -701,11 +707,15 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
         const missing: unknown = Reflect.get(witness, "missing");
         const replaced: unknown = Reflect.get(witness, "replaced");
         const paused: unknown = Reflect.get(witness, "paused");
+        const layoutShifts: unknown = Reflect.get(witness, "layoutShifts");
+        const collapsedActivity: unknown = Reflect.get(witness, "collapsedActivity");
         return {
           seen: Reflect.get(witness, "seen") === true,
           missing: typeof missing === "number" ? missing : -1,
           replaced: typeof replaced === "number" ? replaced : -1,
           paused: typeof paused === "number" ? paused : -1,
+          layoutShifts: typeof layoutShifts === "number" ? layoutShifts : -1,
+          collapsedActivity: typeof collapsedActivity === "number" ? collapsedActivity : -1,
         };
       });
     },

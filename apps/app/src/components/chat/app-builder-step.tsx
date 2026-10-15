@@ -328,9 +328,15 @@ export function AppBuilderStep({
             {stage.notes?.map((note) => (
               <span key={note} className="ml-6 truncate text-muted-foreground">{note}</span>
             ))}
-            {stage.state === "active" && progress.running && activity ? (
-              <span className="ml-6 truncate text-xs text-muted-foreground" data-app-builder-activity>
-                {activity}
+            {/* Reserve one line throughout the active step, including gaps
+                between thoughts and tool calls, so the checklist stays still. */}
+            {stage.state === "active" ? (
+              <span
+                className="ml-6 h-4 shrink-0 truncate text-xs text-muted-foreground"
+                data-app-builder-activity
+                aria-hidden={!progress.running || !activity}
+              >
+                {progress.running ? activity : null}
               </span>
             ) : null}
           </li>

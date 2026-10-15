@@ -5,7 +5,7 @@
     python3 fault-providers.py remove
     python3 fault-providers.py status
 
-After add/remove, run `node ../drive-desktop-cdp/scripts/cdp.mjs refresh-providers`
+After add/remove, run `node cdp.mjs refresh-providers`
 so the OpenWork server mirrors providers into the v2 engine.
 
 This edits your real local config (~/.config/openwork/runtime.sqlite).

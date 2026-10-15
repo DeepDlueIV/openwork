@@ -2,13 +2,13 @@
 // Measure layout jumps while a turn runs: samples the "Working" line's
 // position every 50ms and counts upward moves (content shrinking under it).
 //   CDP_URL=http://127.0.0.1:<cdp> node flicker.mjs arm
-//   … fire a turn (e.g. reproduce-chat-states sequential-commands) …
+//   … fire a turn (e.g. repro.mjs sequential-commands) …
 //   CDP_URL=… node flicker.mjs report
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-const cdp = join(dirname(fileURLToPath(import.meta.url)), "../../drive-desktop-cdp/scripts/cdp.mjs");
+const cdp = join(dirname(fileURLToPath(import.meta.url)), "cdp.mjs");
 const evaluate = (js) => execFileSync("node", [cdp, "eval", js]).toString().trim();
 
 const arm = `(() => {

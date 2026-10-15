@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 // Fire one known chat state in a NEW session of the running desktop window.
 //   CDP_URL=http://127.0.0.1:<cdp> node repro.mjs <state> [gateway model name]
-// States that use Fault Lab need the fake-model-faults setup first.
+// States that use Fault Lab need the fault server and providers set up first (see browser-automation).
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-const cdp = join(dirname(fileURLToPath(import.meta.url)), "../../drive-desktop-cdp/scripts/cdp.mjs");
+const cdp = join(dirname(fileURLToPath(import.meta.url)), "cdp.mjs");
 const gateway = process.argv[3] ?? process.env.GATEWAY_MODEL ?? "Claude Opus 5.5";
 const ask = "Summarize the Q3 planning doc and list open decisions.";
 

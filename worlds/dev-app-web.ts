@@ -63,7 +63,7 @@ export async function bootDevHeadless(
 
 /**
  * The app open in headless Chrome, for hands-on checks over CDP
- * (`.opencode/skills/drive-desktop-cdp/scripts/cdp.mjs --cdp <cdp>`).
+ * (`CDP_URL=<cdp> node .opencode/skills/browser-automation/scripts/cdp.mjs`).
  * The page reports focus the way a person's window does.
  */
 export async function openDevHeadlessBrowser(stack: AsyncDisposableStack, webUrl: string): Promise<string> {

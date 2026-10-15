@@ -1445,10 +1445,10 @@ function MessageGroup({
   const creationLive = (parentActive || panelLive) && isLastGroup && !readOnly
   const creationRuns = React.useMemo(() => appCreationRuns(items.map(item => item.message), creationLive), [items, creationLive])
   const creationParts = React.useMemo(() => new Set(creationRuns.flatMap(run => [...(run.executions ?? []).map(part => part.toolCallId), ...(run.discoveries ?? []).map(part => part.toolCallId), ...(run.attempts ?? []).map(part => part.toolCallId), ...(run.preparation ? [run.preparation.toolCallId] : []), ...run.builds.map(part => part.toolCallId)])), [creationRuns])
-  const isLiveGroup = isStreaming && isLastGroup
+  const isLiveGroup = (isStreaming || (creationLive && creationRuns.length > 0)) && isLastGroup
   const panelActivity = React.useMemo(
-    () => panelLive ? appBuildActivity(items.map(item => item.message), creationParts) : null,
-    [panelLive, items, creationParts],
+    () => panelLive ? appBuildActivity(items.map(item => item.message), creationParts, showThinking) : null,
+    [panelLive, items, creationParts, showThinking],
   )
 
   if (!lastItem || isMessageEmptyGroup(items)) {
@@ -1628,7 +1628,7 @@ function MessageGroup({
           </LiveSteps>
         )
       ) : null}
-      {creationRuns.map(run => <Message key={`creation-${run.id}`} className="mx-auto flex w-full max-w-3xl flex-col px-2 md:px-10"><AppBuilderStep run={run} activity={run === creationRuns.at(-1) ? panelActivity : null} active={creationLive && (run === creationRuns.at(-1) || Boolean(run.preparation && isToolPartInFlight(run.preparation)) || run.builds.some(isToolPartInFlight))} /></Message>)}
+      {creationRuns.map(run => <Message key={`creation-${run.id}`} className="mx-auto flex w-full max-w-3xl flex-col px-2 md:px-10"><AppBuilderStep run={run} startedAt={getMessageCreated(items[0]!.message)} completedAt={getMessageCompleted(lastItem.message)} activity={run === creationRuns.at(-1) ? panelActivity : null} active={creationLive && (run === creationRuns.at(-1) || Boolean(run.preparation && isToolPartInFlight(run.preparation)) || run.builds.some(isToolPartInFlight))} /></Message>)}
       {mcpAppParts.map(appFrame)}
       {renderItems(proseItems, stepItems.length, collapseSteps || panelLive)}
       {lastTextMessage && !isStreaming && (
@@ -1777,8 +1777,9 @@ export function MessageList({ messages: transcript, messageIdReplacements, statu
   const isStreaming = status === "streaming" || status === "retrying"
   const runActive = status === "streaming" || status === "retrying"
   const appBuildStaged = useAppBuildProgressEnabled()
+  const appRunActive = runActive || activityStatus === "thinking" || activityStatus === "responding" || activityStatus === "compacting" || activityStatus === "waiting"
   // The App panel replaces the Working line and the thinking rows while it builds.
-  const appPanelLive = React.useMemo(() => appBuildStaged && (runActive || status === "submitted") && appBuildInProgress(messages), [appBuildStaged, runActive, status, messages])
+  const appPanelLive = React.useMemo(() => appBuildStaged && (appRunActive || status === "submitted") && appBuildInProgress(messages), [appBuildStaged, appRunActive, status, messages])
   const syncDegraded = syncHealth?.degraded === true
   const activityActive = runActive || tasks.length > 0
   const runStartedAtRef = React.useRef<number | null>(null)
@@ -1848,7 +1849,7 @@ export function MessageList({ messages: transcript, messageIdReplacements, statu
   )
 
   return (
-    <ParentRunActiveContext.Provider value={runActive}>
+    <ParentRunActiveContext.Provider value={appRunActive}>
     <AppPanelLiveContext.Provider value={appPanelLive}>
     <BuiltAppPreviewSync key={sessionId} messages={messages} active={runActive}>
     <CurrentToolLifecycleProvider

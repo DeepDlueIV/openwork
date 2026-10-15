@@ -750,6 +750,10 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
           { tool: "bash", arguments: { command: "sleep 1; printf 'App inputs checked\\n'", description: "Check app inputs" } },
           toolStep("search_capabilities", { query: "Inventory lookup unit price", type: "mcp", limit: 2 }),
           { ...toolStep("prepare_app", { title: guidedTitle, description: "Look up a product's unit price in Inventory.", tools: lookup }), holdUntilReleased: true },
+          // Successful re-preparation of the same App used to leave a stale,
+          // paused checklist above the terminal result. Exercise both attempts.
+          { tool: "bash", arguments: { command: "printf 'App tools rechecked\\n'", description: "Recheck app tools" } },
+          toolStep("prepare_app", { title: guidedTitle, description: "Look up a product's unit price in Inventory.", tools: lookup }),
           { ...(engine === "v2"
             ? { tool: "execute", arguments: { code: `return await tools["openwork-cloud"].create_app({ ...${JSON.stringify({ title: guidedTitle, tools: lookup, textFallback: "Looks up a product's unit price in Inventory." })}, ..."__APP_STARTER__" });` } }
             : toolStep("create_app", { title: guidedTitle, tools: lookup, textFallback: "Looks up a product's unit price in Inventory." })), argumentsFrom: "app-starter" }]

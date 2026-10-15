@@ -794,12 +794,24 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
       expect(continuity).toEqual({ seen: true, missing: 0, replaced: 0, paused: 0 });
       expect((await probe.dom('[data-app-builder-step] .bg-primary, [data-app-builder-step] .text-primary')).elements).toHaveLength(0);
       expect((await probe.dom('[data-loading-message]')).elements).toHaveLength(0);
+      expect((await probe.dom('[data-app-builder-step] .ow-app-progress-dot')).elements).toHaveLength(3);
+      const timer = '[data-app-builder-step][aria-label^="Creating"] [data-app-builder-elapsed]';
+      const initialTime = (await probe.dom(timer)).elements[0]?.text;
+      expect(initialTime).toBeTruthy();
+      expect(await probe.eventually(async () => (await probe.dom(timer)).elements[0]?.text, {
+        within: 5_000, intervalMs: 250, label: "the same build timer keeps ticking between tools", until: text => Boolean(text && text !== initialTime),
+      })).not.toBe(initialTime);
       await user.notSee({ text: "Paused" });
       await user.screenshot();
       await world.holdCreation(false);
       const sentence = `Created MCP App “${guidedTitle}”`;
       await user.see({ text: sentence }, { timeoutMs: 120_000 });
       await user.see({ text: guidedReply }, { timeoutMs: 30_000 });
+      // The completed build consumes both preparations, not one terminal row
+      // plus an abandoned paused card for the first successful attempt.
+      expect((await probe.dom(`[data-app-builder-step][aria-label*="${guidedTitle}"]`)).elements).toHaveLength(1);
+      expect((await probe.dom(`[data-app-builder-step][aria-label*="${guidedTitle}"][data-app-creation-stage="ready"]`)).elements).toHaveLength(1);
+      await user.notSee({ text: `Creating MCP App “${guidedTitle}”` });
       frame = await world.appFrameShowing(guidedTitle, "Show unit price");
       // The details toggle shows only while a mouse hovers the step, so the web worlds report a mouse to headless Chrome.
       await user.hover({ text: sentence });
@@ -815,7 +827,7 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
       await user.on(frame).type({ role: "textbox", label: "Sku" }, launchInput.sku);
       await user.on(frame).click({ role: "button", label: "Show unit price" });
       await user.on(frame).see({ text: "Unit price" }, { timeoutMs: 60_000 });
-      evidence.recordAssertionEvidence("One neutral App checklist stays mounted across other tool calls", `${name}: after reading the guide, a real shell call finished before preparation. The checklist stayed present with ${continuity.missing} missing, ${continuity.replaced} replaced and ${continuity.paused} paused observations, no blue accents and no separate Working line. The same App then built from the starter and loaded the Inventory price on one click.`, true);
+      evidence.recordAssertionEvidence("One neutral App checklist stays mounted across other tool calls", `${name}: after reading the guide, a real shell call finished before preparation. The checklist stayed present with ${continuity.missing} missing, ${continuity.replaced} replaced and ${continuity.paused} paused observations, no blue accents and no separate Working line. After a second successful preparation, the same App resolved to exactly one terminal row with no stale creating card, then loaded the Inventory price on one click.`, true);
       await user.screenshot();
       await closeFrame();
       await user.click({ role: "button", label: "Close panel" });
@@ -824,6 +836,11 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
       // The price board is the newest App in the conversation, so its creation step has the last Open preview.
       const openButtons = (await probe.dom('button[aria-label="Open preview"]')).elements.length;
       await user.click({ role: "button", label: "Open preview", nth: openButtons - 1 });
+      // The completed build consumes both preparations, not one terminal row
+      // plus an abandoned paused card for the first successful attempt.
+      expect((await probe.dom(`[data-app-builder-step][aria-label*="${guidedTitle}"]`)).elements).toHaveLength(1);
+      expect((await probe.dom(`[data-app-builder-step][aria-label*="${guidedTitle}"][data-app-creation-stage="ready"]`)).elements).toHaveLength(1);
+      await user.notSee({ text: `Creating MCP App “${guidedTitle}”` });
       frame = await world.appFrameShowing(guidedTitle, "Show unit price");
       const reopenedAt = new Date().toISOString();
       // Typing the SKU looked up before shows its kept price; nothing is clicked, so no tool runs.

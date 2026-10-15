@@ -1,5 +1,6 @@
 import { expect } from "vitest";
 import { spec, type SpecBodyContext } from "@openwork/testkit";
+import { appProgressSpacing } from "../worlds/app-progress-spacing";
 import { appSource, appTitle, boardAgainPrompt, boardAgainReply, boardPrompt, boardReply, boardTitle, buildPrompt, buildReply, chatPrompt, chatReply, guidedReply, guidedTitle, launchInput, mcpAppServers, mcpAppServersChat, mcpAppServersChatOwnSignIn, mcpAppCreationV1, mcpAppCreationV2, payload, pricerTitle, record, reopenPrompt, reopenReply, reservationId, rows, signInPrompt, signInReply, toolNames } from "../worlds/mcp-app-servers.ts";
 
 const test = spec.world(mcpAppServers, {
@@ -897,3 +898,45 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
 
 creationV1Test("an owner creates, edits, reopens and stops an App on v1 web", creationJourney);
 creationV2Test("an owner creates, edits, reopens and stops an App on v2 web", creationJourney);
+
+const spacingTest = spec.world(appProgressSpacing, { resources: { surfaces: ["appWeb"], services: [] } });
+
+spacingTest("an owner sees App progress beside the request after earlier activity folds away", async ({ world, user, probe, step, evidence }) => {
+  await user.navigate(world.url);
+  const rail = '[data-live-steps]';
+  let originalHeight = 0;
+  await step("before: the owner can see the earlier tool activity", async () => {
+    await user.see({ text: "Make an App showing the deployment timeline." });
+    originalHeight = await probe.eventually(async () => (await probe.dom(rail)).elements[0]?.rect.height ?? 0, {
+      within: 30_000, intervalMs: 100, label: "the earlier activity occupies a tall block", until: height => height > 200,
+    });
+    expect(originalHeight).toBeGreaterThan(200);
+    expect((await probe.dom(`${rail} [data-capability-call]`)).elements).toHaveLength(10);
+    evidence.recordAssertionEvidence("Earlier activity occupies real space", `The live tool rail is ${originalHeight}px tall.`, true);
+    await user.screenshot();
+  });
+  await step("ordinary live activity keeps its space when earlier details fold", async () => {
+    await user.click({ role: "button", label: "Fold earlier activity" });
+    await user.notSee({ text: "Used status 10 · Deployment" });
+    expect((await probe.dom(`${rail} [data-capability-call]`)).elements).toHaveLength(2);
+    const foldedHeight = (await probe.dom(rail)).elements[0]?.rect.height ?? 0;
+    expect(foldedHeight).toBeGreaterThanOrEqual(originalHeight - 1);
+    evidence.recordAssertionEvidence("Ordinary tool runs retain their height", `Ten rows folded to two; the rail remains ${foldedHeight}px tall, from ${originalHeight}px.`, true);
+    await user.screenshot();
+  });
+  await step("after: the App checklist takes the place of hidden activity without a blank gap", async () => {
+    await user.click({ role: "button", label: "Start App build" });
+    await user.see({ text: "Creating MCP App" });
+    const hiddenHeight = (await probe.dom(rail)).elements[0]?.rect.height ?? 0;
+    const request = (await probe.dom('[data-message-role="user"]')).elements[0];
+    const panel = (await probe.dom('[data-app-builder-step]')).elements[0];
+    if (!request || !panel) throw new Error("Request or App checklist missing");
+    const gap = panel.rect.top - request.rect.bottom;
+    evidence.recordAssertionEvidence("App progress stays close to its request", `The hidden tool rail occupies ${hiddenHeight}px; the request-to-checklist gap is ${gap}px.`, hiddenHeight <= 1 && gap >= 0 && gap <= 48);
+    await user.screenshot();
+    expect(hiddenHeight).toBeLessThanOrEqual(1);
+    expect(gap).toBeGreaterThanOrEqual(0);
+    expect(gap).toBeLessThanOrEqual(48);
+    expect((await probe.dom('[data-loading-message]')).elements).toHaveLength(0);
+  });
+});

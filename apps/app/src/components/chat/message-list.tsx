@@ -1301,7 +1301,7 @@ function getRenderableMessage(message: UIMessage) {
  * Running steps only ever grow. When a finished step folds its live detail
  * before the next step's row arrives, the area briefly got shorter and the
  * chat jumped; holding the tallest height seen during the run keeps it still.
- * The hold ends when the turn folds (this element unmounts).
+ * The hold ends when the turn folds or the App panel replaces these steps.
  */
 function LiveSteps({ children, active }: { children: React.ReactNode; active: boolean }) {
   const ref = React.useRef<HTMLDivElement>(null)
@@ -1623,7 +1623,9 @@ function MessageGroup({
             </div>
           </CompletedStepRun>
         ) : (
-          <LiveSteps active={isLiveGroup}>
+          <LiveSteps active={isLiveGroup && !panelLive}>
+            {/* The App panel replaces ordinary steps. Release their held height
+                as they fold away, otherwise an empty rail pushes the panel down. */}
             {renderItems(stepItems, 0, panelLive)}
           </LiveSteps>
         )

@@ -297,7 +297,7 @@ test("an admin navigates organizations and member usage without loading every de
     expect(ok).toBe(true);
     expect(await world.dashboardAccess()).toBe(403);
     await admin.screenshot();
-    await admin.click({ role: "combobox", label: "Chart metric" });
+    await admin.click({ role: "button", label: "Chart metric" });
     await admin.click({ role: "option", label: "Recorded cost" });
     await admin.see({ testId: "admin-dashboard-chart-costMicroUsd" });
     await admin.click({ role: "link", label: report.organizations[0].name });

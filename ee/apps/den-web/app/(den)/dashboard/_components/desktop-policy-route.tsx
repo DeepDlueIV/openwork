@@ -11,9 +11,10 @@ const LegacyList = dynamic(() => import("./desktop-policies-screen").then((modul
 const LegacyEditor = dynamic(() => import("./desktop-policy-editor-screen").then((module) => module.DesktopPolicyEditorScreen));
 
 /** Retain legacy screens for an immediate, data-preserving rollback. */
-export function DesktopPolicyRoute({ editor = false, desktopPolicyId }: { editor?: boolean; desktopPolicyId?: string }) {
+export function DesktopPolicyRoute({ editor = false, desktopPolicyId, setupRestricted = false }: { editor?: boolean; desktopPolicyId?: string; setupRestricted?: boolean }) {
   const { orgContext, orgSlug } = useOrgDashboard();
   if (!orgContext) return <ItemPanel><ItemRowsSkeleton label="Loading desktop settings" /></ItemPanel>;
   if (desktopPolicyScreenRemoved(orgContext)) redirect(getMembersTeamsRoute(orgSlug));
+  if (setupRestricted) redirect("/dashboard/onboarding/people");
   return editor ? <LegacyEditor desktopPolicyId={desktopPolicyId} /> : <LegacyList />;
 }

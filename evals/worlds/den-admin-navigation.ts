@@ -1,4 +1,5 @@
 import type { Seed } from "@openwork/env";
+import { enableOrganizationCapabilities } from "./organization-capabilities.ts";
 
 function strings(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
@@ -8,6 +9,14 @@ export async function adminDashboardWeb(seed: Seed) {
   const den = await seed.den({
     org: { name: `Admin navigation ${Date.now()}`, admin: { name: "Navigation Admin" } },
   });
+  const organizationId = await enableOrganizationCapabilities(seed, den.admin, { teamPageTabs: true });
+  const setRemoval = async (enabled: boolean) => {
+    const result = await seed.api(den.admin, `/v1/admin/organizations/${organizationId}/capabilities`, {
+      method: "PUT", body: JSON.stringify({ capabilities: { desktopPolicyScreenRemoval: enabled } }),
+    });
+    if (!result.response.ok) throw new Error(`Setting desktop policy screen rollout failed: ${result.text}`);
+  };
+  await setRemoval(false);
   const web = await seed.web({
     den,
     signedInAs: den.admin,
@@ -18,6 +27,7 @@ export async function adminDashboardWeb(seed: Seed) {
   return {
     den,
     web,
+    setRemoval,
     /** The current web location's pathname and search. */
     // TODO(primitive): probe.location should expose pathname+search on web surfaces; probe.hash only covers the hash.
     async location(): Promise<string> {

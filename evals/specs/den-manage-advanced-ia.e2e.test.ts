@@ -8,7 +8,8 @@ import { adminDashboardWeb } from "../worlds/den-admin-navigation.ts";
 // GitHub sources while the legacy integrations URL still opens its old tab.
 const test = spec.world(adminDashboardWeb, { timeout: 420_000 });
 
-test("the Den admin sidebar groups Manage and moves Advanced into Settings", async ({ world, user, probe, evidence }) => {
+test("the Den admin sidebar groups Manage and moves Advanced into Settings", async ({ world, user, probe, evidence, step }) => {
+  await step("before: Desktop policies has a Manage entry and an Advanced tab while the rollout is off", async () => {
   await user.see({ testId: "den-org-sidebar" }, { timeoutMs: 90_000 });
   const manage = ["Plugins", "Connectors", "AI Gateway", "Desktop policies", "Analytics", "Members", "Settings"];
   const initialLabels = await probe.eventually(() => world.sidebarLinks(), {
@@ -81,4 +82,31 @@ test("the Den admin sidebar groups Manage and moves Advanced into Settings", asy
   const redirectOk = redirectPath === "/dashboard/plugins?view=sources" && redirectedTabs.length === 1 && redirectedTabs[0] === "Sources";
   expect(redirectOk).toBe(true);
   evidence.recordAssertionEvidence("The legacy integrations URL redirects only to Plugins Sources", `path=${redirectPath}; selected=${JSON.stringify(redirectedTabs)}`, redirectOk);
+  });
+  await step("after: Desktop policies leaves navigation and Advanced when Desktop tabs are available", async () => {
+    await world.setRemoval(true);
+    await user.navigate(new URL("/dashboard/marketplaces", world.den.ref.webUrl).toString());
+    await user.see({ testId: "advanced-tabs" }, { timeoutMs: 60_000 });
+    await user.notSee({ role: "tab", label: "Desktop policies" });
+    const labels = await world.sidebarLinks();
+    expect(labels).not.toContain("Desktop policies");
+    evidence.recordAssertionEvidence("Desktop policies has no navigation entry", JSON.stringify(labels), !labels.includes("Desktop policies"));
+    await user.screenshot();
+  });
+  await step("old list, new and detail links open Members Teams instead of the removed screen", async () => {
+    for (const path of ["/dashboard/desktop-policies", "/dashboard/desktop-policies/new", "/dashboard/desktop-policies/legacy-policy", "/dashboard/desktop-policies/legacy-policy?setup=restricted"]) {
+      await user.navigate(new URL(path, world.den.ref.webUrl).toString());
+      const destination = await probe.eventually(() => world.location(), { within: 30_000, label: "Members Teams redirect", until: (value) => value === "/dashboard/members?tab=teams" });
+      expect(destination).toBe("/dashboard/members?tab=teams");
+    }
+    evidence.recordAssertionEvidence("Legacy policy links redirect", "List, new and detail all open /dashboard/members?tab=teams", true);
+    await user.screenshot();
+  });
+  await step("turning the rollout off restores the legacy editor without changing policies", async () => {
+    await world.setRemoval(false);
+    await user.navigate(new URL("/dashboard/desktop-policies", world.den.ref.webUrl).toString());
+    await user.see({ role: "tab", label: "Desktop policies" }, { timeoutMs: 60_000 });
+    evidence.recordAssertionEvidence("The legacy policy screen is restored", "Desktop policies tab visible with rollout off", true);
+    await user.screenshot();
+  });
 });

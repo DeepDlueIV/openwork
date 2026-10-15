@@ -101,7 +101,7 @@ export function DesktopSuggestionsPanel({ team }: { team: { id: string; name: st
           {shown.length === 0 ? <div className="px-5 py-4 text-[13px] text-gray-500">Built-in desktop suggestions</div> : shown.map((entry, index) => (
             <ItemRow key={index} title={entry.prompt} description={entry.description} testId={`desktop-suggestion-${index}`} action={canManage && !inherited ? <ItemMenu label={`Actions for suggestion ${index + 1}`} entries={[
               { label: "Edit", onSelect: () => setDraft(shown) },
-              { label: "Remove", destructive: true, disabled: shown.length <= 2, confirm: { title: "Remove suggestion?", description: "This prompt will no longer appear for this audience. The remaining two suggestions stay.", action: "Remove" }, onSelect: () => save(shown.filter((_, position) => position !== index)) },
+              { label: shown.length <= 2 ? "Remove (minimum 2 suggestions)" : "Remove", destructive: true, disabled: shown.length <= 2, confirm: { title: "Remove suggestion?", description: "This prompt will no longer appear for this audience. The remaining two suggestions stay.", action: "Remove" }, onSelect: () => save(shown.filter((_, position) => position !== index)) },
             ]} /> : undefined} />
           ))}
         </ItemPanel>

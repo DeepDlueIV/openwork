@@ -21,7 +21,7 @@ const OPENWORK_EXPERIMENTAL_EXTENSION_ACTIONS = [
   ...OPENAI_IMAGE_GENERATION_EXTENSION_ACTIONS,
   ...OPENWORK_CLOUD_UPLOAD_ACTIONS,
 ];
-// Callable by OpenWork's own Drive tools, which ask before writes, but never listed for direct calls.
+// Called by the drive_* tools, which ask the person before writes. Like drive_upload_file, the host acts for its signed-in caller.
 const OPENWORK_CALLABLE_EXTENSION_ACTIONS = [...OPENWORK_EXPERIMENTAL_EXTENSION_ACTIONS, ...OPENWORK_DRIVE_FILE_ACTIONS];
 
 function isRecord(value: unknown): value is Record<string, unknown> {

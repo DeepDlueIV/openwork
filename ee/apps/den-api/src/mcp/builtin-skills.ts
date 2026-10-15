@@ -238,13 +238,16 @@ Work on a local copy with shell tools; never paste file bytes or base64 into a t
 
 ## Bash recipes
 
-- What is it: \`file <f>; ls -l <f>\`
-- Spreadsheet overview: \`python3 -c "import openpyxl,sys; wb=openpyxl.load_workbook(sys.argv[1], read_only=True); [print(ws.title, ws.max_row, ws.max_column) for ws in wb]" <f>\`
-- Read a sheet: pandas \`read_excel(f, sheet_name=..., nrows=20)\`; print only what you need.
-- Edit cells and keep formatting: openpyxl \`load_workbook(f)\`, set cells, \`save(f)\`. openpyxl drops charts, images and pivot tables from files it saves: check first, and use LibreOffice (\`soffice --headless --convert-to\`) or the Sheets values capabilities for those files.
-- CSV: \`head\`, \`wc -l\`, csvkit or pandas.
-- Word: \`python-docx\`, or \`pandoc <f> -t markdown\` to read.
-- PDF: \`pdftotext -layout <f> - | head -100\`, \`pdfinfo <f>\`.
+Drive file names can hold spaces, quotes and other shell characters. Put the path from \`drive_pull_file\` in a variable once, single-quoted (write a quote inside it as \`'\\''\`), then pass it only as \`"$f"\`. Never paste a file name into a command unquoted.
+
+- Set the path: \`f='drive/Supplier entry.xlsx'\`
+- What is it: \`file -- "$f"; ls -l -- "$f"\`
+- Spreadsheet overview: \`python3 -c "import openpyxl,sys; wb=openpyxl.load_workbook(sys.argv[1], read_only=True); [print(ws.title, ws.max_row, ws.max_column) for ws in wb]" "$f"\`
+- Read a sheet: pandas \`read_excel(sys.argv[1], sheet_name=..., nrows=20)\` with the path passed as \`"$f"\`; print only what you need.
+- Edit cells and keep formatting: openpyxl \`load_workbook(path)\`, set cells, \`save(path)\`, with the path from \`sys.argv\`. openpyxl drops charts, images and pivot tables from files it saves: check first, and use LibreOffice (\`soffice --headless --convert-to xlsx -- "$f"\`) or the Sheets values capabilities for those files.
+- CSV: \`head -- "$f"\`, \`wc -l -- "$f"\`, csvkit or pandas.
+- Word: \`python-docx\`, or \`pandoc -t markdown -- "$f"\` to read.
+- PDF: \`pdftotext -layout -- "$f" - | head -100\`, \`pdfinfo -- "$f"\`.
 - Install a missing tool with pip or apt when the computer allows it.
 
 Tell the user what changed and where it was saved, with the Drive link from the push result.

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-// The host performs these actions; the tools are the only way agents reach them, so the approval below cannot be skipped.
+// The host performs these actions for its signed-in caller, as with drive_upload_file. Agents use these tools, which ask before writes.
 export const DRIVE_FILE_ACTIONS = ["drive_pull_file", "drive_file_status", "drive_push_file"] as const;
 export type DriveFileAction = (typeof DRIVE_FILE_ACTIONS)[number];
 
@@ -36,7 +36,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 async function askPermission(context: unknown, permission: DriveFileAction, patterns: string[], metadata: Record<string, unknown>) {
   const ask = isRecord(context) && typeof context.ask === "function" ? context.ask : null;
   if (!ask) throw new Error("This OpenWork engine cannot ask for approval, so nothing was changed. Update OpenWork to save files to Drive.");
-  await ask.call(context, { permission, patterns, always: ["*"], metadata });
+  // "Always" covers only these patterns, so one approval never extends to other files.
+  await ask.call(context, { permission, patterns, always: patterns, metadata });
 }
 
 export function createDriveFileTools(call: CallDriveAction) {

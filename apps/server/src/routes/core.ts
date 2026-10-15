@@ -13,7 +13,7 @@ import { EnvStoreReadError, InvalidEnvKeyError, isValidEnvKey, type EnvService }
 import { syncManagedProviderAuth, type ManagedProviderAuthResult } from "../managed-provider-auth.js";
 import { ApiError } from "../errors.js";
 import { callExperimentalExtensionAction, listExperimentalExtensionActions } from "../extensions/index.js";
-import { callDriveFileAction, driveFileToolToken } from "../extensions/drive-files.js";
+import { callDriveFileAction } from "../extensions/drive-files.js";
 import type { TokenService } from "../tokens.js";
 import type { Capabilities, ServerConfig, WorkspaceInfo } from "../types.js";
 import { addRoute, type Route } from "./registry.js";
@@ -345,11 +345,11 @@ export function registerCoreRoutes(options: RegisterCoreRoutesOptions): void {
     return jsonResponse(await callExperimentalExtensionAction(config, env, body, await getConnectSnapshot(config, { ...connectSnapshotBaseOptions, ...connectSnapshotOptionsFromBody(body) }), ctx.request.signal));
   });
 
-  // Engine tools ask through context.ask before reaching this transport. Client
-  // tokens (including owners) cannot bypass that prompt through extension.call.
-  addRoute(routes, "POST", "/experimental/drive-files/call", "none", async (ctx) => {
-    if (ctx.request.headers.get("authorization") !== `Bearer ${driveFileToolToken(config)}`) {
-      throw new ApiError(401, "unauthorized", "Drive transfers require the managed engine tool transport");
+  // Drive writes additionally require the in-process Desktop confirmation in
+  // callDriveFileAction. Neither an engine credential nor a request flag grants approval.
+  addRoute(routes, "POST", "/experimental/drive-files/call", "client", async (ctx) => {
+    if (ctx.actor?.scope === "viewer") {
+      throw new ApiError(403, "forbidden", "Viewer tokens cannot call Drive file actions");
     }
     const body = await readJsonBody(ctx.request);
     const action = typeof body.action === "string" ? body.action : "";

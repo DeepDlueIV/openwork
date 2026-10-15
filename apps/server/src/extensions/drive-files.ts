@@ -1,4 +1,4 @@
-import { createHash, createHmac, randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { constants, realpathSync, type Stats } from "node:fs";
 import { lstat, mkdir, open, readFile, realpath, rename, rm, stat, writeFile, type FileHandle } from "node:fs/promises";
 import { basename, dirname, extname, isAbsolute, join, relative, resolve } from "node:path";
@@ -7,7 +7,7 @@ import { GOOGLE_DRIVE_PULL_CHUNK_BYTES, GOOGLE_DRIVE_PULL_MAX_BYTES, GOOGLE_DRIV
 import { ApiError } from "../errors.js";
 import { runtimeStorageDir } from "../runtime-db.js";
 import { externalFetch } from "../server-fetch.js";
-import type { ServerConfig } from "../types.js";
+import type { DriveFileApprovalRequest, ServerConfig } from "../types.js";
 import {
   allowedRoots,
   cloudUploadEndpoint,
@@ -31,9 +31,15 @@ const CONVERTIBLE_FORMATS: Record<string, string[]> = {
   "application/vnd.google-apps.presentation": ["pptx"],
 };
 
-/** Separate from client bearer tokens; only the managed engine receives this scoped credential. */
-export function driveFileToolToken(config: Pick<ServerConfig, "hostToken">) {
-  return createHmac("sha256", config.hostToken).update("openwork-drive-file-tools-v1").digest("hex");
+/** Only the embedding Desktop host can supply this callback; request payloads and shell credentials cannot approve a write. */
+async function confirmDriveWrite(config: ServerConfig, request: DriveFileApprovalRequest, signal?: AbortSignal) {
+  signal?.throwIfAborted();
+  if (!config.driveFileApproval) {
+    throw new ApiError(403, "drive_approval_unavailable", "OpenWork Desktop must confirm this Drive write. Open the desktop app and try again.");
+  }
+  const approved = await config.driveFileApproval(request);
+  signal?.throwIfAborted();
+  if (!approved) throw new ApiError(403, "drive_write_denied", "The Drive write was not approved. Nothing was changed.");
 }
 
 type DriveLink = {
@@ -452,6 +458,9 @@ async function pullDriveFile(config: ServerConfig, args: Record<string, unknown>
   }
 
   let saved: Awaited<ReturnType<typeof download>> | null = null;
+  if (before && overwrite) {
+    await confirmDriveWrite(config, { action: "overwrite", path: target, fileId: info.file.id, name: info.file.name }, dependencies.signal);
+  }
   for (let attempt = 1; attempt <= 2 && !saved; attempt += 1) {
     const temporary = join(dirname(target), `.${basename(target)}.${randomBytes(6).toString("hex")}.openwork-pull`);
     try {
@@ -601,6 +610,7 @@ async function pushOpenFile(config: ServerConfig, args: Record<string, unknown>,
     return { ok: true, unchanged: true, path: displayPath(config, context, path), file: { id: link.fileId, name: link.name, webViewLink: link.webViewLink, revision: link.revision } };
   }
   const convert = mode === "copy" && link.native && (CONVERTIBLE_FORMATS[link.driveMimeType] ?? []).includes(link.format ?? "");
+  await confirmDriveWrite(config, { action: "push", path, fileId: link.fileId, name: link.name, mode: mode === "copy" ? "copy" : "replace" }, dependencies.signal);
   const mimeType = link.localMimeType || mimeTypeForPath(path);
   const name = mode === "copy" ? copyName(link, readArgString(args, "name"), convert) : basename(path);
   const session = await denJson(config, dependencies, "/v1/direct-uploads/google-workspace/drive-upload-sessions", {

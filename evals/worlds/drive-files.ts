@@ -1,12 +1,13 @@
 import { execFile } from "node:child_process";
-import { createHmac } from "node:crypto";
+import { createServer } from "node:http";
 import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import type { Seed } from "@openwork/env";
 import { driveFileTransfers } from "./drive-file-transfers.ts";
-import { bootServer, stopChild } from "./openwork-server-cli.ts";
+import { bootServer, close, listen, readBody, sendJson, stopChild } from "./openwork-server-cli.ts";
 
 export { inventoryExport, supplierWorkbook } from "./drive-file-transfers.ts";
 
@@ -40,16 +41,40 @@ export async function driveFiles(seed: Seed) {
       cloudMcp: { type: "remote", enabled: true, oauth: false, url: `${cloud.denUrl}/mcp/agent`, headers: { Authorization: `Bearer ${cloud.memberToken}` } },
     }));
     const hostToken = "drive-files-client";
+    let allowWrites = true;
+    const approvalRequests: Record<string, unknown>[] = [];
+    // The embedding host owns approval, just as Electron's main process does.
+    // Neither an engine token nor an HTTP flag can supply this callback.
+    const approvalServer = createServer(async (request, response) => {
+      approvalRequests.push(object(JSON.parse(await readBody(request))));
+      sendJson(response, 200, { approved: allowWrites });
+    });
+    const approvalUrl = await listen(approvalServer);
+    stack.defer(() => close(approvalServer));
+    const entrypoint = join(scratch, "desktop-host.mjs");
+    const embedded = pathToFileURL(resolve(import.meta.dirname, "../../apps/server/src/embedded.ts")).href;
+    await writeFile(entrypoint, `
+import { startEmbeddedServer } from ${JSON.stringify(embedded)};
+const host = await startEmbeddedServer({
+  host: "127.0.0.1", port: 0, token: ${JSON.stringify(hostToken)}, hostToken: ${JSON.stringify(`${hostToken}-host`)},
+  approvalMode: "auto", corsOrigins: ["*"], workspaces: [${JSON.stringify(workspace)}], configPath: ${JSON.stringify(config)},
+  driveFileApproval: async (input) => {
+    const response = await fetch(${JSON.stringify(approvalUrl)}, { method: "POST", body: JSON.stringify(input) });
+    return (await response.json()).approved === true;
+  },
+});
+console.log("OpenWork server listening on " + host.url);
+process.on("SIGTERM", async () => { await host.stop(); process.exit(0); });
+`);
     const home = join(scratch, "home");
     const inherited = Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("OPENCODE") && !key.startsWith("OPENWORK_")));
     const booted = bootServer({
       ...inherited, HOME: home, XDG_CONFIG_HOME: join(home, ".config"), XDG_DATA_HOME: join(home, ".local", "share"), XDG_CACHE_HOME: join(home, ".cache"),
       OPENWORK_SERVER_CONFIG: config, OPENWORK_DATA_DIR: join(scratch, "data"), OPENWORK_RUNTIME_DB: join(scratch, "runtime.sqlite"),
       OPENWORK_DEV_MODE: "1", OPENWORK_GOOGLE_API_BASE_URL: cloud.google.apiUrl,
-    }, hostToken, workspace, () => {}, { configPath: config });
+    }, hostToken, workspace, () => {}, { configPath: config, entrypoint });
     stack.defer(() => stopChild(booted.child));
     const hostUrl = await booted.listening;
-    const engineToken = createHmac("sha256", `${hostToken}-host`).update("openwork-drive-file-tools-v1").digest("hex");
     const clientTokens = new Map<string, string>();
     for (const scope of ["owner", "collaborator", "viewer"]) {
       const response = await fetch(`${hostUrl}/tokens`, {
@@ -67,13 +92,13 @@ export async function driveFiles(seed: Seed) {
       /** One host Drive action, as the drive_* tools send it after any approval. */
       async host(action: string, args: Record<string, unknown>) {
         const response = await fetch(`${hostUrl}/experimental/drive-files/call`, {
-          method: "POST", headers: { authorization: `Bearer ${engineToken}`, "content-type": "application/json" },
+          method: "POST", headers: { authorization: `Bearer ${hostToken}`, "content-type": "application/json" },
           body: JSON.stringify({ action, args, context: { directory: workspace } }),
           signal: AbortSignal.timeout(120_000),
         });
         return { status: response.status, body: object(await response.json()) };
       },
-      /** Ordinary connected clients have no engine credential, even with owner scope. */
+      /** Ordinary connected clients cannot approve writes, even with owner scope. */
       async direct(action: string, args: Record<string, unknown>, scope: "owner" | "collaborator" | "viewer", dedicated = false) {
         const response = await fetch(`${hostUrl}/experimental/${dedicated ? "drive-files" : "extensions"}/call`, {
           method: "POST", headers: { authorization: `Bearer ${clientTokens.get(scope)}`, "content-type": "application/json" },
@@ -82,6 +107,8 @@ export async function driveFiles(seed: Seed) {
         });
         return { status: response.status, body: object(await response.json()) };
       },
+      setApproval(allowed: boolean) { allowWrites = allowed; },
+      approvals: () => [...approvalRequests],
       async actions() {
         const response = await fetch(`${hostUrl}/experimental/extensions/actions?extensionId=openwork-cloud-uploads`, { headers: { authorization: `Bearer ${hostToken}` }, signal: AbortSignal.timeout(10_000) });
         return object(await response.json());

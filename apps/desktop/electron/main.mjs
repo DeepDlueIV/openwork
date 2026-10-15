@@ -1297,6 +1297,22 @@ const runtimeManager = createRuntimeManager({
   app,
   desktopRoot: path.resolve(__dirname, ".."),
   listLocalWorkspacePaths: () => workspaceStore.listLocalWorkspacePaths(),
+  // This callback stays in Electron's main process. Engine tools and shell
+  // commands cannot approve a Drive write by replaying a token or HTTP reply.
+  driveFileApproval: async ({ action, path: filePath, name, mode }) => {
+    const win = await createMainWindow();
+    const saving = action === "push";
+    const label = saving ? (mode === "copy" ? "Save a copy" : "Save to Drive") : "Discard local edits";
+    const { response } = await dialog.showMessageBox(win, {
+      type: "question",
+      message: saving ? `${label}: ${name}` : `Replace the local copy of ${name}?`,
+      detail: saving
+        ? `${filePath}\n\n${mode === "copy" ? "Creates a new file next to the original in Google Drive." : "Replaces the file in Google Drive. People with access to it will see your changes."}`
+        : `${filePath}\n\nDiscards the local edits and downloads the current Google Drive file.`,
+      buttons: ["Cancel", label], defaultId: 0, cancelId: 0, noLink: true,
+    });
+    return response === 1;
+  },
   anonymousInference: {
     // Signed-out Auto has no device identity: like OpenCode Zen, the gateway limits it by IP.
     desktop: {

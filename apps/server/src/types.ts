@@ -71,6 +71,14 @@ export interface ApprovalConfig {
 
 export type LocalManagedMcpVaultKeyProvider = () => Promise<Uint8Array>;
 
+export type DriveFileApprovalRequest = {
+  action: "push" | "overwrite";
+  path: string;
+  fileId: string;
+  name: string;
+  mode?: "replace" | "copy";
+};
+
 /** What OpenWork Desktop tells the free Auto relay about this installation. */
 export type DesktopFreeHost = {
   currentVersion: string;
@@ -100,6 +108,8 @@ export interface ServerConfig {
   logRequests: boolean;
   /** In-memory secure key custody supplied by an embedding host such as OpenWork Desktop. */
   localManagedMcpVaultKey?: LocalManagedMcpVaultKeyProvider;
+  /** In-process Desktop confirmation; never configured through HTTP, files or the engine environment. */
+  driveFileApproval?: (request: DriveFileApprovalRequest) => Promise<boolean>;
   /** Desktop-owned managed engines only; never enabled by remote clients. */
   resumeInterruptedTasks?: boolean;
   anonymousInference?: { desktop: DesktopFreeHost };

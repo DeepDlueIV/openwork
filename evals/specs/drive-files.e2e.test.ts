@@ -50,6 +50,8 @@ test("an agent pulls a Drive file into the workspace, edits it with bash and sav
   });
 
   await step("connected clients cannot bypass the save approval with a direct call", async () => {
+    world.setApproval(false);
+    const approvalsBefore = world.approvals().length;
     const before = await driveFile(world.files.supplier);
     const fileCount = (await world.google.driveFiles(world.accounts.member)).length;
     const local = await world.read(supplierPath);
@@ -57,15 +59,27 @@ test("an agent pulls a Drive file into the workspace, edits it with bash and sav
       for (const mode of ["replace", "copy"]) {
         const denied = await world.direct("drive_push_file", { path: supplierPath, mode }, scope);
         expect(denied.status).toBe(scope === "viewer" ? 403 : 404);
-        expect((await world.direct("drive_push_file", { path: supplierPath, mode }, scope, true)).status).toBe(401);
+        const direct = await world.direct("drive_push_file", { path: supplierPath, mode }, scope, true);
+        expect(direct.status).toBe(403);
+        if (scope !== "viewer") expect(direct.body).toMatchObject({ code: "drive_write_denied" });
       }
       expect((await world.direct("drive_pull_file", { fileId: world.files.supplier, path: supplierPath, overwrite: true }, scope)).status).toBe(scope === "viewer" ? 403 : 404);
+      const overwrite = await world.direct("drive_pull_file", { fileId: world.files.supplier, connectionId: world.fullId, path: supplierPath, overwrite: true }, scope, true);
+      expect(overwrite.status).toBe(403);
+      if (scope !== "viewer") expect(overwrite.body).toMatchObject({ code: "drive_write_denied" });
     }
     const after = await driveFile(world.files.supplier);
     expect([after.revision, after.bytes.equals(before.bytes)]).toEqual([before.revision, true]);
     expect((await world.google.driveFiles(world.accounts.member)).length).toBe(fileCount);
     expect((await world.read(supplierPath)).equals(local)).toBe(true);
-    evidence.recordAssertionEvidence("Client tokens cannot bypass Drive approval", "Owner and collaborator extension calls returned 404; viewer calls returned 403. All three scopes received 401 from the engine-only route, even with approved: true. Neither replace, copy nor an overwrite pull changed Drive or the edited local file.", true);
+    expect(world.approvals().length - approvalsBefore).toBe(6);
+    expect(world.approvals().slice(approvalsBefore)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ action: "push", fileId: world.files.supplier, mode: "replace" }),
+      expect.objectContaining({ action: "push", fileId: world.files.supplier, mode: "copy" }),
+      expect.objectContaining({ action: "overwrite", fileId: world.files.supplier }),
+    ]));
+    world.setApproval(true);
+    evidence.recordAssertionEvidence("Client tokens cannot bypass Drive approval", "Owner and collaborator extension calls returned 404; viewer calls returned 403. Direct replace, copy and overwrite calls reached six host confirmations and were denied, even with approved: true. Neither Drive nor the edited local file changed; the next save succeeds only after the host allows it.", true);
   });
 
   await step("push replaces the Drive file in place as a new version", async () => {

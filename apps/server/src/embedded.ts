@@ -40,7 +40,6 @@ import { migrateOpenworkCloudMcpRuntimeConfig } from "./cloud-mcp-health.js";
 import { migrateWorkspaceRuntimeConfigToEngineGlobal } from "./runtime-opencode-config-store.js";
 import { resolveOpencodeModelsUrl } from "./opencode-models-url.js";
 import type { LocalManagedMcpVaultKeyProvider, ServerConfig } from "./types.js";
-import { driveFileToolToken } from "./extensions/drive-files.js";
 
 export type EmbeddedServerOptions = CliArgs & {
   /** When true, spawn a managed OpenCode child process. */
@@ -51,6 +50,7 @@ export type EmbeddedServerOptions = CliArgs & {
   opencodeCwd?: string;
   /** Secure key custody for the local managed MCP credential vault. */
   localManagedMcpVaultKey?: LocalManagedMcpVaultKeyProvider;
+  driveFileApproval?: ServerConfig["driveFileApproval"];
   resumeInterruptedTasks?: boolean;
   anonymousInference?: ServerConfig["anonymousInference"];
   /** Desktop marks a brand-new install so it starts on OpenCode v2. */
@@ -77,6 +77,7 @@ export type EmbeddedServerHandle = {
 export async function startEmbeddedServer(options: EmbeddedServerOptions): Promise<EmbeddedServerHandle> {
   const config = await resolveServerConfig(options);
   config.localManagedMcpVaultKey = options.localManagedMcpVaultKey;
+  config.driveFileApproval = options.driveFileApproval;
   config.anonymousInference = options.anonymousInference;
   config.freshInstallEngine = options.freshInstallEngine;
   config.resumeInterruptedTasks = options.resumeInterruptedTasks === true && options.manageOpencode === true && !config.opencodeBaseUrl;
@@ -228,7 +229,6 @@ export async function startEmbeddedServer(options: EmbeddedServerOptions): Promi
       ...(process.env.OPENWORK_UI_CONTROL_DISCOVERY ? { OPENWORK_UI_CONTROL_DISCOVERY: process.env.OPENWORK_UI_CONTROL_DISCOVERY } : {}),
       OPENWORK_SERVER_URL: serverUrl,
       OPENWORK_SERVER_TOKEN: config.token,
-      OPENWORK_DRIVE_FILE_TOOL_TOKEN: driveFileToolToken(config),
       OPENCODE_CONFIG: runtimeConfigPath,
       OPENCODE_MODELS_URL: opencodeModelsUrl,
     };

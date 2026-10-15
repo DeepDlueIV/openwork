@@ -98,10 +98,11 @@ function buildModelConfig(model: ManagedProviderModel, providerNpm: unknown): Ma
 
 /** Build the engine provider block shared by Desktop, server sync and cloud workers. */
 export function buildManagedProviderConfig(provider: ManagedProviderConfigInput): ManagedProviderConfig {
-  const models: Record<string, ManagedProviderModelConfig> = {};
-  for (const model of [...provider.models].sort((left, right) => left.id.localeCompare(right.id))) {
-    models[model.id] = buildModelConfig(model, provider.providerConfig.npm);
-  }
+  const models = Object.fromEntries(
+    [...provider.models]
+      .sort((left, right) => left.id.localeCompare(right.id))
+      .map((model): [string, ManagedProviderModelConfig] => [model.id, buildModelConfig(model, provider.providerConfig.npm)]),
+  );
   const config: ManagedProviderConfig = {
     id: provider.providerId,
     name: provider.name,

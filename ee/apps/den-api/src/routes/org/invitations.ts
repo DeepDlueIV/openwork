@@ -1,5 +1,5 @@
 import { and, desc, eq, isNull } from "@openwork-ee/den-db/drizzle"
-import { AuthUserTable, InvitationTable, MemberTable, OrganizationTable } from "@openwork-ee/den-db/schema"
+import { AuthUserTable, InvitationTable, MemberTable, OrganizationTable, TeamTable, TeamMemberTable } from "@openwork-ee/den-db/schema"
 import { createDenTypeId, normalizeDenTypeId } from "@openwork-ee/utils/typeid"
 import type { Hono } from "hono"
 import { describeRoute } from "hono-openapi"
@@ -8,6 +8,7 @@ import { ORGANIZATION_AUDIT_ACTIONS } from "../../audit-events.js"
 import { invitationCanceledEvent, invitationSavedEvent } from "../../audit/domain/invitations.js"
 import { appendDomainChanges, finishLegacyAuditAction } from "../../audit/domain/legacy.js"
 import { addAuditRequestResource, auditChangeCapture } from "../../audit/request-capture.js"
+import { getScimManagedTeamIds } from "../../scim-groups.js"
 import { db } from "../../db.js"
 import { invitationBillingUrl } from "../../agent-links.js"
 import { invitationHasAdminTeam, withOrganizationTeamMutation } from "../../organization-team-roles.js"
@@ -18,7 +19,7 @@ import { runPostOrganizationMemberChangeHooks } from "../../organization-member-
 import { ORGANIZATION_ADMIN_ROLE, ORGANIZATION_MEMBER_ROLE, ORGANIZATION_OWNER_ROLE } from "../../organization-role-hierarchy.js"
 import { isEmailAllowedForOrganization, listAssignableRoles, removeOrganizationMember } from "../../orgs.js"
 import type { PermissionDatabase } from "@openwork-ee/den-db/permissions"
-import { roleAssignmentDeniedHeaders, roleAssignmentDeniedResponse, roleAssignmentDenial, roleAssignmentDenialInTransaction, type RoleAssignmentDenial } from "../../permissions/team-grants.js"
+import { resolveTeamActorInTransaction, teamGrantDecisionInTransaction, teamGrantsForbiddenResponse, roleAssignmentDeniedHeaders, roleAssignmentDeniedResponse, roleAssignmentDenial, roleAssignmentDenialInTransaction, type RoleAssignmentDenial } from "../../permissions/team-grants.js"
 import { resolvePermissionsForMember } from "../../permissions/resolve.js"
 import { getOrganizationSeatAddEligibility } from "../../stripe-billing.js"
 import { DenEmailSendError, sendEmail } from "../../utils/email/send-email.js"
@@ -42,6 +43,7 @@ import {
 const inviteMemberSchema = z.object({
   email: z.string().email(),
   role: z.string().trim().min(1).max(64),
+  teamId: denTypeIdSchema("team").nullable().optional().describe("Team to join when the invitation is accepted. Requires Manage teams and every permission the team grants. Omit to preserve a refreshed invitation's team; null clears it."),
 })
 const logger = appLogger.child({ component: "invitations" })
 
@@ -318,6 +320,22 @@ export function registerOrgInvitationRoutes<T extends { Variables: OrgRouteVaria
       const writeRole = await validateInvitationRole(c, { role: assignedRole, availableRoles, adminCheck, database: tx })
       if (!writeRole.ok) return { status: "role_error" as const, validation: writeRole }
 
+      // Validate the complete grant before saving or sending the invitation. Omitted
+      // teamId preserves a pending invitation's team when it is resent.
+      const teamId = input.teamId === undefined ? existingInvitation?.teamId ?? null : input.teamId
+      if (existingInvitation?.teamId && existingInvitation.teamId !== teamId && (await getScimManagedTeamIds(payload.organization.id, tx)).has(existingInvitation.teamId)) return { status: "invalid_team" as const }
+      if (teamId || input.teamId !== undefined) {
+        const actor = await resolveTeamActorInTransaction(tx, payload.organization.id, payload.currentMember.id)
+        if (!actor.has("teams.manage")) return { status: "team_forbidden" as const, response: permissionDeniedResponse("teams.manage") }
+        if (teamId) {
+          const [team] = await tx.select().from(TeamTable).where(and(eq(TeamTable.id, teamId), eq(TeamTable.organizationId, payload.organization.id))).for("share")
+          if (!team || (await getScimManagedTeamIds(payload.organization.id, tx)).has(teamId)) return { status: "invalid_team" as const }
+          if (team.grantsOrganizationAdmin && !actor.has("teams.manage_admin")) return { status: "team_forbidden" as const, response: permissionDeniedResponse("teams.manage_admin") }
+          const grant = await teamGrantDecisionInTransaction({ tx, organizationId: payload.organization.id, actor, teamId, grantsOrganizationAdmin: team.grantsOrganizationAdmin })
+          if (!grant.ok) return { status: "team_forbidden" as const, response: grant.reason === "permission_missing" ? teamGrantsForbiddenResponse(grant.requiredPermission) : permissionDeniedResponse("teams.manage_admin") }
+        }
+      }
+
       const now = new Date()
       const expiresAt = new Date(now.getTime() + 1000 * 60 * 60 * 24 * 7)
       const invitationId = existingInvitation?.id ?? createInvitationId()
@@ -330,7 +348,7 @@ export function registerOrgInvitationRoutes<T extends { Variables: OrgRouteVaria
       if (existingInvitation) {
         await tx
           .update(InvitationTable)
-          .set({ role: assignedRole, inviterId: normalizeDenTypeId("user", user.id), orgMemberId: payload.currentMember.id, inviteToken, expiresAt })
+          .set({ teamId, role: assignedRole, inviterId: normalizeDenTypeId("user", user.id), orgMemberId: payload.currentMember.id, inviteToken, expiresAt })
           .where(and(eq(InvitationTable.id, existingInvitation.id), eq(InvitationTable.status, "pending")))
 
         const invitedMemberRows = await tx
@@ -364,6 +382,7 @@ export function registerOrgInvitationRoutes<T extends { Variables: OrgRouteVaria
           id: invitationId,
           organizationId: payload.organization.id,
           email,
+          teamId,
           role: assignedRole,
           status: "pending",
           inviterId: normalizeDenTypeId("user", user.id),
@@ -386,14 +405,26 @@ export function registerOrgInvitationRoutes<T extends { Variables: OrgRouteVaria
         invitationOrgMemberId = memberId
       }
 
+      // Preserve the existing pending-member experience, atomically with the
+      // invitation instead of a second browser request after the email is sent.
+      if (invitationOrgMemberId) {
+        if (existingInvitation?.teamId && existingInvitation.teamId !== teamId) {
+          await tx.delete(TeamMemberTable).where(and(eq(TeamMemberTable.teamId, existingInvitation.teamId), eq(TeamMemberTable.orgMembershipId, invitationOrgMemberId)))
+        }
+        if (teamId) {
+          const [membership] = await tx.select({ id: TeamMemberTable.id }).from(TeamMemberTable).where(and(eq(TeamMemberTable.teamId, teamId), eq(TeamMemberTable.orgMembershipId, invitationOrgMemberId))).limit(1)
+          if (!membership) await tx.insert(TeamMemberTable).values({ id: createDenTypeId("teamMember"), teamId, orgMembershipId: invitationOrgMemberId })
+        }
+      }
+
       // Organization row is already locked FOR UPDATE above; append last.
       const inviterId = normalizeDenTypeId("user", user.id)
       const auditEventIds = await appendDomainChanges(tx, capture, [invitationSavedEvent({
         organizationId: payload.organization.id,
         before: existingInvitation,
         after: existingInvitation
-          ? { ...existingInvitation, role: assignedRole, inviterId, orgMemberId: payload.currentMember.id, expiresAt }
-          : { id: invitationId, email, role: assignedRole, status: "pending", teamId: null, inviterId, orgMemberId: payload.currentMember.id, expiresAt },
+          ? { ...existingInvitation, teamId, role: assignedRole, inviterId, orgMemberId: payload.currentMember.id, expiresAt }
+          : { id: invitationId, email, role: assignedRole, status: "pending", teamId, inviterId, orgMemberId: payload.currentMember.id, expiresAt },
         placeholderMemberId: invitationOrgMemberId,
       })])
 
@@ -408,6 +439,8 @@ export function registerOrgInvitationRoutes<T extends { Variables: OrgRouteVaria
         refreshed: Boolean(existingInvitation),
       }
     })
+
+    if (invitationWrite.status === "invalid_team") return c.json({ error: "invalid_request", message: "Choose a team in this organization that is not managed by your identity provider." }, 400)
 
     if (invitationWrite.status === "member_exists") {
       return c.json({

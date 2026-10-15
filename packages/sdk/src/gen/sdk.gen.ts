@@ -5536,6 +5536,7 @@ export class DenClient extends HeyApiClient {
     parameters: {
       email: string;
       role: string;
+      teamId?: string | null;
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -5546,6 +5547,7 @@ export class DenClient extends HeyApiClient {
           args: [
             { in: "body", key: "email" },
             { in: "body", key: "role" },
+            { in: "body", key: "teamId" },
           ],
         },
       ],

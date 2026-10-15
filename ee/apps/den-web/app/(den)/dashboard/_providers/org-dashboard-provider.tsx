@@ -693,7 +693,7 @@ export function OrgDashboardProvider({
         "/v1/invitations",
         {
           method: "POST",
-          body: JSON.stringify({ email: input.email, role: invitationRole }),
+          body: JSON.stringify({ email: input.email, role: invitationRole, ...(input.teamId ? { teamId: input.teamId } : {}) }),
         },
         12000,
       );
@@ -711,31 +711,6 @@ export function OrgDashboardProvider({
         throw getRequestError(payload, response, `Failed to invite member (${response.status}).`);
       }
 
-      // A custom role (teamRoles): put the invitation's pending member in that
-      // role's team. The pending member becomes the person when they join, so
-      // they arrive with the role. The invitation itself is already sent.
-      const invitationId = payload && typeof payload === "object" && "invitationId" in payload && typeof payload.invitationId === "string"
-        ? payload.invitationId
-        : null;
-      if (input.teamId && invitationId && activeOrgId) {
-        const fresh = await loadOrgContext(activeOrgId);
-        const pending = fresh.members.find((member) => member.inviteId === invitationId);
-        const team = fresh.teams.find((entry) => entry.id === input.teamId);
-        if (!pending || !team) {
-          throw new Error(`Invited ${input.email}, but couldn't give them that role. Add them to the team from Members › Teams.`);
-        }
-        if (!team.memberIds.includes(pending.id)) {
-          const added = await requestJson(
-            `/v1/teams/${encodeURIComponent(team.id)}`,
-            { method: "PATCH", body: JSON.stringify({ memberIds: [...team.memberIds, pending.id] }) },
-            12000,
-          );
-          if (!added.response.ok) {
-            const reason = getErrorMessage(added.payload, `HTTP ${added.response.status}`);
-            throw new Error(`Invited ${input.email}, but couldn't add them to ${team.name}: ${reason}`);
-          }
-        }
-      }
     });
   }
 

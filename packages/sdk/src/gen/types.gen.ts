@@ -15496,6 +15496,10 @@ export type PostV1InvitationsData = {
   body: {
     email: string;
     role: string;
+    /**
+     * Team to join when the invitation is accepted. Requires Manage teams and every permission the team grants. Omit to preserve a refreshed invitation's team; null clears it.
+     */
+    teamId?: string | null;
   };
   path?: never;
   query?: never;

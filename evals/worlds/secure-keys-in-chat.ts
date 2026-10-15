@@ -87,8 +87,13 @@ export async function secureKeysInChat(seed: Seed, context: { place: Place }) {
   const issued = await seed.api(den.admin, "/v1/mcp/token", { method: "POST", headers: { "x-openwork-org-id": organizationId }, body: JSON.stringify({ scopes: ["mcp:read", "mcp:write"] }) });
   const token = field(issued.body, "token");
   if (!issued.response.ok || typeof token !== "string") throw new Error("Missing agent MCP token");
-  const workspace = /\/workspace\/([^/]+)\/session/.exec(await base.route())?.[1];
-  if (!workspace) throw new Error("Missing workspace");
+  // Sign-in finishes before the app lands on its workspace session; wait for it.
+  let workspace: string | undefined;
+  for (const deadline = Date.now() + 90_000; !workspace && Date.now() < deadline;) {
+    workspace = /\/workspace\/([^/]+)\/session/.exec(await base.route())?.[1];
+    if (!workspace) await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  if (!workspace) throw new Error(`Missing workspace after sign-in; route: ${await base.route()}`);
   const connected = await base.request(`/workspace/${workspace}/mcp/openwork-cloud/reconcile`, "POST", {
     config: { type: "remote", url: `${den.ref.apiUrl}/mcp/agent`, enabled: true, oauth: false, headers: { Authorization: `Bearer ${token}` } }, trigger: "secure-keys-fixture",
   });

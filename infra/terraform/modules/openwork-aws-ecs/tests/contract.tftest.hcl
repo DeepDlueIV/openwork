@@ -62,6 +62,10 @@ run "singleton_api_only_security_and_defaults" {
     error_message = "One standalone essential migrator must own bootstrap."
   }
   assert {
+    condition     = !strcontains(aws_ecs_task_definition.migrate.container_definitions, "openwork.example.com") && alltrue([for e in jsondecode(aws_ecs_task_definition.migrate.container_definitions)[0].environment : contains(["CI", "NODE_ENV", "DB_MODE", "DEN_DB_0097_WRITERS_STOPPED"], e.name)])
+    error_message = "Public endpoint changes must not rerun the migration task; only database/migration settings belong in its environment."
+  }
+  assert {
     condition     = aws_ecs_service.api.desired_count == 2 && aws_db_instance.this[0].deletion_protection && var.den_api.cpu >= 1024 && var.den_api.memory >= 2048 && var.den_web.cpu >= 512 && var.den_web.memory >= 1024
     error_message = "Protected database and sized defaults are required; singleton must not reduce API replicas."
   }

@@ -15,12 +15,13 @@ resource "aws_ecs_task_definition" "migrate" {
     cpu_architecture        = var.cpu_architecture
   }
   container_definitions = jsonencode([{
-    name        = "migrate"
-    image       = local.den_api_image
-    essential   = true
-    entryPoint  = ["/bin/sh", "-ec"]
-    command     = ["${local.tls_setup}exec node /app/ee/packages/den-db/dist/scripts/bootstrap.js"]
-    environment = local.environment_list
+    name       = "migrate"
+    image      = local.den_api_image
+    essential  = true
+    entryPoint = ["/bin/sh", "-ec"]
+    command    = ["${local.tls_setup}exec node /app/ee/packages/den-db/dist/scripts/bootstrap.js"]
+    # Public URL, org and mail changes must not rerun schema migrations.
+    environment = [for entry in local.environment_list : entry if contains(["CI", "NODE_ENV", "DB_MODE", "DEN_DB_0097_WRITERS_STOPPED"], entry.name)]
     secrets     = [for secret in local.secrets_list : secret if secret.name == "DATABASE_URL"]
     logConfiguration = {
       logDriver = "awslogs"

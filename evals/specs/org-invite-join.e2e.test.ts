@@ -53,7 +53,7 @@ linkTest("an owner copies a pending invite's link, and a plain member cannot rea
   });
 });
 
-test("OPE-82: cloud invitations retain identity and organization through authentication", async ({ world, user, probe, seed, step }) => {
+test("OPE-82: cloud invitations retain identity and organization through authentication", async ({ world, user, probe, seed, step, evidence }) => {
   const { witnesses, identity } = world;
   const orgId = text(world.organization.id);
   const otherId = text(world.otherOrg.id);
@@ -103,7 +103,14 @@ test("OPE-82: cloud invitations retain identity and organization through authent
     await user.reload();
     await joined(person.email);
     const session = await witnesses.sessionFor(person);
-    expect((await invitationWitnesses(session).orgs()).map((org) => org.id)).toEqual([orgId]);
+    const memberships = (await invitationWitnesses(session).orgs()).map((org) => org.id);
+    const verificationAfter = await witnesses.emails("verification", person.email);
+    expect(memberships).toEqual([orgId]);
+    evidence.recordAssertionEvidence(
+      "the invitee joined from the link without an emailed code",
+      `memberships=${memberships.length} (the invited workspace); verification emails ${verificationBefore.length} → ${verificationAfter.length}; code field shown=false`,
+      memberships.length === 1 && verificationAfter.length === verificationBefore.length,
+    );
   });
 
   await step("a different current account cannot consume an invite and can switch to the invited account", async () => {
@@ -129,8 +136,15 @@ test("OPE-82: cloud invitations retain identity and organization through authent
     await actor.see({ role: "button", label: `Join ${text(world.organization.name)}` }, { timeoutMs: 30_000 });
     await actor.click({ role: "button", label: `Join ${text(world.organization.name)}` });
     await joined(person.email, "admin");
-    expect(await witnesses.emails("verification", person.email)).toEqual(verificationBefore);
-    expect(membersFor(await witnesses.org(orgId), world.other.email).map((member) => member.id)).toEqual(wrongAccountMembershipIds);
+    const verificationAfter = await witnesses.emails("verification", person.email);
+    expect(verificationAfter).toEqual(verificationBefore);
+    const wrongAccountAfter = membersFor(await witnesses.org(orgId), world.other.email).map((member) => member.id);
+    expect(wrongAccountAfter).toEqual(wrongAccountMembershipIds);
+    evidence.recordAssertionEvidence(
+      "the wrong account could not accept; the invited account joined as admin",
+      `wrong-account accept HTTP ${denied.response.status}; its memberships unchanged=${wrongAccountAfter.length === wrongAccountMembershipIds.length}; invited account role=admin; verification emails ${verificationBefore.length} → ${verificationAfter.length}`,
+      !denied.response.ok && verificationAfter.length === verificationBefore.length,
+    );
   });
 
   await step("canceled and domain-blocked invites do not authenticate or add members", async () => {
@@ -154,10 +168,18 @@ test("OPE-82: cloud invitations retain identity and organization through authent
         await actor.notSee({ role: "textbox", label: /^verification code$/i });
         await actor.notSee({ role: "button", label: `Join ${text(world.organization.name)}` });
         const org = await witnesses.org(orgId);
-        expect(membersFor(org, person.email)).toHaveLength(0);
-        expect(invitationsFor(org, person.email).some((entry) => entry.status === "accepted")).toBe(false);
-        expect(await witnesses.emails("verification", person.email)).toEqual(before);
+        const members = membersFor(org, person.email).length;
+        const accepted = invitationsFor(org, person.email).some((entry) => entry.status === "accepted");
+        const after = await witnesses.emails("verification", person.email);
+        expect(members).toBe(0);
+        expect(accepted).toBe(false);
+        expect(after).toEqual(before);
         await noCrossOrg();
+        evidence.recordAssertionEvidence(
+          `a ${state} invite shows its reason and adds no one`,
+          `members for the invitee=${members}; invitation accepted=${accepted}; verification emails ${before.length} → ${after.length}`,
+          members === 0 && !accepted && after.length === before.length,
+        );
       } finally {
         if (state === "blocked") {
           const restored = await witnesses.api("/v1/org", { method: "PATCH", headers: { "x-openwork-org-id": orgId }, body: JSON.stringify({ allowedEmailDomains: [] }) });
@@ -178,11 +200,17 @@ test("OPE-82: cloud invitations retain identity and organization through authent
     await actor.type({ role: "textbox", label: /^name$/i }, person.name);
     await actor.type({ role: "textbox", label: /^password$/i }, person.password);
     await actor.click({ role: "button", label: "Create account" });
-    await probe.eventually(() => proxy.requestLog(), { within: 15_000, label: "the submitted form received the generic 403", until: (requests) => requests.some((request) => request.faulted && request.status === 403) });
+    const requests = await probe.eventually(() => proxy.requestLog(), { within: 15_000, label: "the submitted form received the generic 403", until: (log) => log.some((request) => request.faulted && request.status === 403) });
     await actor.see({ text: "Account registration is blocked by policy." });
     await actor.notSee({ role: "textbox", label: /^verification code$/i });
     await actor.notSee({ role: "button", label: "Resend code" });
-    expect(await witnesses.emails("verification", person.email)).toEqual(before);
+    const after = await witnesses.emails("verification", person.email);
+    expect(after).toEqual(before);
     await pending(person.email);
+    evidence.recordAssertionEvidence(
+      "a blocked sign-up shows its own error, not a code prompt",
+      `sign-up answered ${requests.filter((request) => request.faulted).map((request) => request.status).join(",")}; shown "Account registration is blocked by policy."; code field shown=false; verification emails ${before.length} → ${after.length}; invitation still pending`,
+      after.length === before.length,
+    );
   });
 });

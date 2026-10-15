@@ -790,6 +790,10 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
       // continuity; an App-only sequence never exercised the disappearing row.
       const calls = await world.den.mocks.inventory.agentRequests({ promptMarker: prompt });
       expect(JSON.stringify(calls)).toContain("App inputs checked");
+      if (name.includes("v2")) expect(JSON.stringify(calls)).toContain("App discovery ready");
+      // Silent execution was removed before rendering, but this is still the
+      // current turn: no completed-work rail may replace its live App panel.
+      expect((await probe.dom('[class~="group/message-group"]:has([data-app-builder-step][aria-label^="Creating"]) [data-testid="completed-work-rail"]')).elements).toHaveLength(0);
       const continuity = await world.creationProgressWitness();
       expect(continuity).toEqual({ seen: true, missing: 0, replaced: 0, paused: 0 });
       expect((await probe.dom('[data-app-builder-step] .bg-primary, [data-app-builder-step] .text-primary')).elements).toHaveLength(0);
@@ -827,7 +831,7 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
       await user.on(frame).type({ role: "textbox", label: "Sku" }, launchInput.sku);
       await user.on(frame).click({ role: "button", label: "Show unit price" });
       await user.on(frame).see({ text: "Unit price" }, { timeoutMs: 60_000 });
-      evidence.recordAssertionEvidence("One neutral App checklist stays mounted across other tool calls", `${name}: after reading the guide, a real shell call finished before preparation. The checklist stayed present with ${continuity.missing} missing, ${continuity.replaced} replaced and ${continuity.paused} paused observations, no blue accents and no separate Working line. After a second successful preparation, the same App resolved to exactly one terminal row with no stale creating card, then loaded the Inventory price on one click.`, true);
+      evidence.recordAssertionEvidence("One neutral App checklist stays mounted across other tool calls", `${name}: after reading the guide, a real shell call finished before preparation. A completed silent discovery script was also removed from the v2 rail without making the current turn historical. The checklist stayed present with ${continuity.missing} missing, ${continuity.replaced} replaced and ${continuity.paused} paused observations, no blue accents and no separate Working line. After a second successful preparation, the same App resolved to exactly one terminal row with no stale creating card, then loaded the Inventory price on one click.`, true);
       await user.screenshot();
       await closeFrame();
       await user.click({ role: "button", label: "Close panel" });

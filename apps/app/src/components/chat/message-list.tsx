@@ -1819,7 +1819,12 @@ export function MessageList({ messages: transcript, messageIdReplacements, statu
   }, [activityActive, runStartedAt, syncDegraded])
   const latestUserMessageId = React.useMemo(() => messages.findLast((message) => message.role === "user")?.id, [messages])
   // Steps that render nothing are removed before layout, so they leave no gap.
-  const items = React.useMemo(() => groupMessages(dedupeRenderedTurnErrors(withoutSilentSteps(messages)), status), [messages, status]);
+  const visibleMessages = React.useMemo(() => dedupeRenderedTurnErrors(withoutSilentSteps(messages)), [messages]);
+  const items = React.useMemo(() => groupMessages(visibleMessages, status), [visibleMessages, status]);
+  // groupMessages indexes the visible transcript. Comparing those positions
+  // with the unfiltered transcript marks the live turn historical as soon as
+  // a silent script or duplicate error is removed.
+  const lastVisibleIndex = visibleMessages.length - 1;
   const error = useSessionErrorMessage();
   const hasSessionErrorMessage = React.useMemo(() => messages.some(isSessionErrorMessage), [messages])
   const latestAssistantToolParts = React.useMemo(
@@ -1871,16 +1876,16 @@ export function MessageList({ messages: transcript, messageIdReplacements, statu
             <MemoizedMessageGroup
               key={item.messages[0]?.message.id ?? "empty-assistant-group"}
               items={item.messages}
-              isLastGroup={item.messages.at(-1)?.index === messages.length - 1}
-              isStreaming={isStreaming && item.messages.at(-1)?.index === messages.length - 1}
+              isLastGroup={item.messages.at(-1)?.index === lastVisibleIndex}
+              isStreaming={isStreaming && item.messages.at(-1)?.index === lastVisibleIndex}
               newestAppCallIds={newestAppCallIds}
             />
           )
         }
 
-        const isLastMessage = item.index === messages.length - 1
+        const isLastMessage = item.index === lastVisibleIndex
         const isLastStep =
-          !messages[item.index + 1] || messages[item.index + 1].role !== item.message.role
+          !visibleMessages[item.index + 1] || visibleMessages[item.index + 1].role !== item.message.role
 
         return (
           <StandaloneMessage

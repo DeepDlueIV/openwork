@@ -745,6 +745,9 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
         : kind === "guided"
         // The agent reads the guide, finds the tool, prepares, and publishes prepare_app's starter unchanged.
         ? [toolStep("get_skill", { name: "build-an-app" }),
+          // A completed script with no nested tools is removed from the rail.
+          // Its removal must not turn every later visible message historical.
+          ...(engine === "v2" ? [{ tool: "execute", arguments: { code: 'return "App discovery ready";' } }] : []),
           // A real non-App tool between the guide and preparation used to
           // remove the checklist and expose ordinary tool rows instead.
           { tool: "bash", arguments: { command: "sleep 1; printf 'App inputs checked\\n'", description: "Check app inputs" } },

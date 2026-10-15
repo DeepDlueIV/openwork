@@ -5,6 +5,8 @@ import {
   AuthApiKeyTable,
   AuthSessionTable,
   AuthUserTable,
+  FreeAutoLimitEventTable,
+  FreeAutoPurchaseTable,
   DesktopHandoffGrantTable,
   ExternalIdentityTable,
   MemberTable,
@@ -55,6 +57,8 @@ export async function deleteGlobalAuthUser(userId: UserId) {
     await tx.delete(ScimSyncEventTable).where(eq(ScimSyncEventTable.userId, userId))
     await tx.update(MemberTable).set({ userId: null }).where(eq(MemberTable.userId, userId))
     await tx.update(WorkerTable).set({ created_by_user_id: null }).where(eq(WorkerTable.created_by_user_id, userId))
+    await tx.delete(FreeAutoLimitEventTable).where(eq(FreeAutoLimitEventTable.user_id, userId))
+    await tx.delete(FreeAutoPurchaseTable).where(eq(FreeAutoPurchaseTable.user_id, userId))
     await tx.delete(AuthUserTable).where(eq(AuthUserTable.id, userId))
     return { oauthConsents: consentRows, gatewayCredentials: credentials }
   })

@@ -1,5 +1,8 @@
 "use client";
 
+import { useSearchParams } from "next/navigation";
+import { FreeAutoConversions } from "./conversions";
+import { AdminAccessScreen } from "../admin-access-screen";
 import { Download, RefreshCw, Search } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { DenBadge } from "../../../app/(den)/_components/ui/badge";
@@ -36,7 +39,7 @@ const SORTS: Array<{ value: OrganizationSort; label: string }> = [
 
 function Stat({ label, value, detail }: { label: string; value: ReactNode; detail?: ReactNode }) {
   return (
-    <DenCard className="flex min-w-0 flex-col gap-1 !rounded-[24px] !p-5">
+    <DenCard className="flex min-w-0 flex-col gap-1 !rounded-lg !p-5">
       <p className="text-[12px] font-medium uppercase tracking-[0.06em] text-gray-500">{label}</p>
       <p className="text-[26px] font-medium leading-8 tracking-[-0.5px] text-gray-900 tabular-nums">{value}</p>
       {detail ? <p className="text-[13px] leading-5 text-gray-500">{detail}</p> : null}
@@ -46,7 +49,7 @@ function Stat({ label, value, detail }: { label: string; value: ReactNode; detai
 
 function Section({ title, description, action, children }: { title: string; description?: ReactNode; action?: ReactNode; children: ReactNode }) {
   return (
-    <DenCard className="flex min-w-0 flex-col gap-5">
+    <DenCard className="flex min-w-0 flex-col gap-5 !rounded-lg">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
           <h2 className="text-[16px] font-medium text-gray-900">{title}</h2>
@@ -117,7 +120,7 @@ function organizationColumns(now: number): DenTableColumn<FreeAutoOrganizationUs
   ];
 }
 
-function Report({ report }: { report: FreeAutoUsageReport }) {
+function Report({ report, refreshKey }: { report: FreeAutoUsageReport; refreshKey: number }) {
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<OrganizationSort>("spend");
   const colors = useSeriesColors(SERIES.map((series) => series.id), "free-auto-usage");
@@ -141,6 +144,8 @@ function Report({ report }: { report: FreeAutoUsageReport }) {
         <Stat label="Active people" value={formatCount(members.activePeople)} detail={`Signed in, across ${formatCount(totals.activeOrganizations)} organizations`} />
         <Stat label="At weekly limit" value={formatCount(week.peopleAtWeeklyLimit)} detail={`of ${formatCount(week.activePeople)} active this week`} />
       </div>
+
+      <FreeAutoConversions days={report.range.days} refreshKey={refreshKey} />
 
       <Section title="Daily spend" description="What free Auto cost each UTC day, split between signed-in members and signed-out desktops.">
         <StackedDailyChart daily={daily} series={SERIES} colors={colors} valueLabel="Free Auto spend" valueFormat="usd" emptyLabel="No free Auto usage in this range." />
@@ -194,39 +199,36 @@ function Report({ report }: { report: FreeAutoUsageReport }) {
   );
 }
 
-function Skeleton() {
-  return (
-    <div className="flex flex-col gap-6" aria-busy="true" aria-label="Loading free Auto usage">
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {[0, 1, 2, 3].map((index) => <div key={index} className="h-[118px] animate-pulse rounded-[24px] bg-gray-100" />)}
-      </div>
-      <div className="h-72 animate-pulse rounded-[30px] bg-gray-100" />
-      <div className="h-96 animate-pulse rounded-[30px] bg-gray-100" />
-    </div>
-  );
-}
-
 export function FreeAutoUsagePage() {
-  const [days, setDays] = useState<FreeAutoRange>(30);
+  const params = useSearchParams();
+  const rawDays = params.get("days");
+  const days: FreeAutoRange = rawDays === "7" ? 7 : rawDays === "90" ? 90 : 30;
+  const [refreshKey, setRefreshKey] = useState(0);
+  const setDays = (value: string) => {
+    const query = new URLSearchParams(window.location.search);
+    query.set("days", value); query.delete("page");
+    window.history.pushState(null, "", `/admin/free-auto?${query}`);
+  };
   const { state, refresh } = useFreeAutoUsage(days);
   const report = state.report;
+  if (state.status === "signed-out" || state.status === "forbidden") return <AdminAccessScreen state={state.status} message={state.message} onRetry={refresh} />;
+  if (!report && state.status === "loading") return <AdminAccessScreen state="checking" />;
+  if (!report && state.status === "error") return <AdminAccessScreen state="error" message={state.message} onRetry={refresh} />;
 
   return (
     <div className="flex flex-col gap-8">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <DenPageHeader title="Free Auto usage" description="What free Auto costs and who uses it, across every organization and signed-out desktop." />
         <div className="flex flex-wrap items-center gap-2">
-          <DenSegmented aria-label="Date range" value={String(days)} onChange={(value) => setDays(Number(value) as FreeAutoRange)}
+          <DenSegmented aria-label="Date range" value={String(days)} onChange={setDays}
             options={FREE_AUTO_RANGES.map((range) => ({ value: String(range), label: `${range} days` }))} />
-          <DenButton variant="secondary" size="sm" icon={RefreshCw} loading={state.status === "loading" && report !== null} onClick={refresh}>Refresh</DenButton>
+          <DenButton variant="secondary" size="sm" icon={RefreshCw} loading={state.status === "loading" && report !== null} onClick={() => { refresh(); setRefreshKey((value) => value + 1); }}>Refresh</DenButton>
         </div>
       </div>
-      {state.status === "signed-out" || state.status === "forbidden" ? <DenNotice tone="warning" message={state.message} /> : null}
       {state.status === "error" ? (
         <DenNotice message={<span>{state.message} <button type="button" className="underline underline-offset-2" onClick={refresh}>Try again</button></span>} />
       ) : null}
-      {report && state.status !== "signed-out" && state.status !== "forbidden" ? <Report report={report} /> : null}
-      {!report && state.status === "loading" ? <Skeleton /> : null}
+      {report ? <Report report={report} refreshKey={refreshKey} /> : null}
     </div>
   );
 }

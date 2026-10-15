@@ -156,6 +156,45 @@ export type ForbiddenError = {
   message?: string;
 };
 
+export type AdminFreeAutoConversions = {
+  from: string;
+  to: string;
+  generatedAt: string;
+  attributionDays: 30;
+  firstRecordedAt: string | null;
+  totals: {
+    reachedLimit: number;
+    signedIn: number;
+    newAccounts: number;
+    subscribed: number;
+    unlinkedGuests: number;
+  };
+  daily: Array<{
+    date: string;
+    reachedLimit: number;
+    signedIn: number;
+    newAccounts: number;
+    subscribed: number;
+  }>;
+  rows: Array<{
+    id: string;
+    userId: string | null;
+    name: string | null;
+    email: string | null;
+    startedAsGuest: boolean;
+    exhaustedAt: string;
+    signedInAt: string | null;
+    signedUpAt: string | null;
+    subscribedAt: string | null;
+  }>;
+  page: {
+    page: number;
+    pageSize: 50;
+    total: number;
+    hasMore: boolean;
+  };
+};
+
 export type AdminOrganizationDetail = {
   organization: {
     id: string;
@@ -6616,6 +6655,46 @@ export type GetV1AdminFreeAutoUsageResponses = {
 };
 
 export type GetV1AdminFreeAutoUsageResponse = GetV1AdminFreeAutoUsageResponses[keyof GetV1AdminFreeAutoUsageResponses];
+
+export type GetV1AdminFreeAutoConversionsData = {
+  body?: never;
+  path?: never;
+  query?: {
+    days?: number;
+    page?: number;
+    search?: string;
+    stage?: "all" | "signed-in" | "new-account" | "subscribed" | "unlinked";
+  };
+  url: "/v1/admin/free-auto/conversions";
+};
+
+export type GetV1AdminFreeAutoConversionsErrors = {
+  /**
+   * Invalid query.
+   */
+  400: InvalidRequestError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Platform admin access required.
+   */
+  403: ForbiddenError;
+};
+
+export type GetV1AdminFreeAutoConversionsError =
+  GetV1AdminFreeAutoConversionsErrors[keyof GetV1AdminFreeAutoConversionsErrors];
+
+export type GetV1AdminFreeAutoConversionsResponses = {
+  /**
+   * Free Auto conversions returned.
+   */
+  200: AdminFreeAutoConversions;
+};
+
+export type GetV1AdminFreeAutoConversionsResponse =
+  GetV1AdminFreeAutoConversionsResponses[keyof GetV1AdminFreeAutoConversionsResponses];
 
 export type GetV1AdminOrganizationsByOrganizationIdData = {
   body?: never;

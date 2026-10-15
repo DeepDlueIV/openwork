@@ -11,6 +11,8 @@ type InferenceKeyRow = typeof InferenceKeyTable.$inferSelect
  * carries its IP hash, because its machine id is only self-reported: it is limited per IP as well.
  */
 export type GuestPrincipal = { kind: "installation"; id: string; untaggedIpHash?: string;
+  /** Client-reported random journey, used only for analytics; never allowance identity. */
+  journeyHash?: string;
   /** An open request (no desktop proof, like OpenCode Zen's "public" key): there is no machine, only the IP. */
   deviceless?: true }
 /** Signed-in, unsubscribed member using their OpenWork Models key. The allowance is per person. */

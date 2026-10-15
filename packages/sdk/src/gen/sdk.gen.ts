@@ -187,6 +187,8 @@ import type {
   GetV1AdminDashboardResponses,
   GetV1AdminFeaturesErrors,
   GetV1AdminFeaturesResponses,
+  GetV1AdminFreeAutoConversionsErrors,
+  GetV1AdminFreeAutoConversionsResponses,
   GetV1AdminFreeAutoUsageErrors,
   GetV1AdminFreeAutoUsageResponses,
   GetV1AdminMetricsErrors,
@@ -1105,6 +1107,44 @@ export class DenClient extends HeyApiClient {
       ThrowOnError
     >({
       url: "/v1/admin/free-auto/usage",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
+   * Get observed behavior after the free Auto limit
+   *
+   * Cohorts by personal-limit observation date, deduplicated by known account or anonymous client-reported journey. Counts subsequent sign-ins, new accounts, and positively paid subscriptions started within 30 days of a limit. Guest links use a random client correlation ID, never IP matching. Historical guest behavior is not backfilled. Search and stage affect the bounded 50-row list, not cohort totals.
+   */
+  public getV1AdminFreeAutoConversions<ThrowOnError extends boolean = false>(
+    parameters?: {
+      days?: number;
+      page?: number;
+      search?: string;
+      stage?: "all" | "signed-in" | "new-account" | "subscribed" | "unlinked";
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "days" },
+            { in: "query", key: "page" },
+            { in: "query", key: "search" },
+            { in: "query", key: "stage" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).get<
+      GetV1AdminFreeAutoConversionsResponses,
+      GetV1AdminFreeAutoConversionsErrors,
+      ThrowOnError
+    >({
+      url: "/v1/admin/free-auto/conversions",
       ...options,
       ...params,
     });

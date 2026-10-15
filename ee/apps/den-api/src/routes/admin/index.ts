@@ -7,6 +7,8 @@ import {
   AuthApiKeyTable,
   AuthSessionTable,
   AuthUserTable,
+  FreeAutoLimitEventTable,
+  FreeAutoPurchaseTable,
   ConnectedAccountTable,
   DesktopHandoffGrantTable,
   ExternalIdentityTable,
@@ -37,6 +39,7 @@ import { cache } from "../../cache.js"
 import { db } from "../../db.js"
 import { parseOrganizationPlan, type PlanTier } from "../../entitlements.js"
 import { adminRoute, jsonValidator, queryValidator } from "../../middleware/index.js"
+import { registerAdminFreeAutoConversionsRoutes } from "./free-auto-conversions.js"
 import { registerAdminFreeAutoUsageRoutes } from "./free-auto-usage.js"
 import { registerAdminDashboardRoute } from "./dashboard.js"
 import { registerAdminOrganizationDetailRoutes } from "./organization-detail.js"
@@ -1393,6 +1396,7 @@ const adminRouteErrors = {
 
 export function registerAdminRoutes<T extends { Variables: AuthContextVariables }>(app: Hono<T>) {
   registerAdminFreeAutoUsageRoutes(app)
+  registerAdminFreeAutoConversionsRoutes(app)
   registerAdminOrganizationDetailRoutes(app)
   registerAdminDashboardRoute(app)
   app.post(
@@ -1765,6 +1769,8 @@ export function registerAdminRoutes<T extends { Variables: AuthContextVariables 
         }
         await tx.update(MemberTable).set({ removedAt }).where(eq(MemberTable.userId, userId))
         await tx.update(WorkerTable).set({ created_by_user_id: null }).where(eq(WorkerTable.created_by_user_id, userId))
+        await tx.delete(FreeAutoLimitEventTable).where(eq(FreeAutoLimitEventTable.user_id, userId))
+        await tx.delete(FreeAutoPurchaseTable).where(eq(FreeAutoPurchaseTable.user_id, userId))
         await tx.delete(AuthUserTable).where(eq(AuthUserTable.id, userId))
         return { oauthConsentRows: consentRows, gatewayCredentials: credentials }
       })

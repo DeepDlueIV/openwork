@@ -1,5 +1,7 @@
 import type { DynamicToolUIPart, UIMessage } from "ai";
 import { prepareMcpAppOutputSchema } from "@openwork/types/mcp-app";
+import { getCapabilityCallSentence } from "@/lib/capability-call";
+import { isToolPartInFlight } from "@/lib/tool-activity";
 import {
   appBuilderResultFailed,
   builtAppSummary,
@@ -329,3 +331,42 @@ export function appCreationProgress(run: AppCreationRun, active: boolean) {
     running,
   };
 }
+
+/** Whether the latest turn is building an App that is not yet built or failed. */
+export function appBuildInProgress(messages: UIMessage[]): boolean {
+  const turn = messages.slice(Math.max(0, messages.findLastIndex((message) => message.role === "user")));
+  const run = appCreationRuns(turn, true).at(-1);
+  if (!run) return false;
+  const progress = appCreationProgress(run, true);
+  return !progress.app && !progress.builtUnrecorded && !progress.failed && !progress.unavailable;
+}
+
+function lastLine(text: string): string | null {
+  const lines = text.replace(/[*_`#>]+/g, "").split(/\n+/).map((line) => line.trim()).filter(Boolean);
+  const line = lines.at(-1);
+  return line ? (line.length > 140 ? `${line.slice(0, 139)}…` : line) : null;
+}
+
+/**
+ * What the agent is doing right now while it builds an App, in one line: its
+ * latest thought, or the latest call that is not part of the App step.
+ */
+export function appBuildActivity(messages: UIMessage[], appParts: ReadonlySet<string>): string | null {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index]!;
+    if (message.role === "user") return null;
+    if (message.role !== "assistant") continue;
+    for (let partIndex = message.parts.length - 1; partIndex >= 0; partIndex -= 1) {
+      const part = message.parts[partIndex]!;
+      if (part.type === "reasoning") {
+        const line = lastLine(part.text);
+        if (line) return line;
+      } else if (part.type === "dynamic-tool" && !appParts.has(part.toolCallId)) {
+        const sentence = getCapabilityCallSentence(part);
+        return isToolPartInFlight(part) ? sentence.present : sentence.past;
+      }
+    }
+  }
+  return null;
+}
+

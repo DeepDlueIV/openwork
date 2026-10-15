@@ -684,7 +684,9 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
       const active = (await probe.dom('[data-app-builder-checklist] [data-checklist-state="active"]')).elements.map(element => element.text.trim());
       expect(done.some(text => /^Checked \d+ tools?$/.test(text))).toBe(true);
       expect(active).toEqual([expect.stringMatching(/^Writing the App/)]);
-      evidence.recordAssertionEvidence("Discovery and preparation are real calls before any preview", `${name}: the model requested discovery and preparation before the held build. The actual preparation result completes that stage, writing is active, and the preview remains absent. The step's checklist reads ${[...done, ...active].map(text => `"${text}"`).join(", ")}.`, true);
+      // The panel is the one live thing: the turn's separate Working line is folded into it.
+      expect((await probe.dom("[data-loading-message]")).elements).toHaveLength(0);
+      evidence.recordAssertionEvidence("Discovery and preparation are real calls before any preview", `${name}: the model requested discovery and preparation before the held build. The actual preparation result completes that stage, writing is active, and the preview remains absent. The step's checklist reads ${[...done, ...active].map(text => `"${text}"`).join(", ")}, and no separate Working line shows.`, true);
       await user.screenshot();
       await world.holdCreation(false);
     });

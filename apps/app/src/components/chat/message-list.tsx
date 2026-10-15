@@ -1,6 +1,7 @@
 "use memo";
 
-import { appCreationRuns } from "@/react-app/domains/apps/app-creation-progress"
+import { appBuildActivity, appBuildInProgress, appCreationRuns } from "@/react-app/domains/apps/app-creation-progress"
+import { useAppBuildProgressEnabled } from "@/react-app/domains/apps/use-app-build-progress-feature"
 import { BuiltAppPreviewSync } from "@/react-app/domains/apps/built-app-chat-preview"
 import { builtAppSummary } from "@/react-app/domains/apps/built-mcp-app-model"
 import { AppBuilderStep } from "./app-builder-step"
@@ -153,6 +154,14 @@ const SEARCH_HIGHLIGHT_MARK_CLASS = "rounded px-0.5 bg-amber-4/70 text-current"
 const COLLAPSED_STEP_RUN_MIN_ROWS = 4
 
 const AppCreationPartsContext = React.createContext<ReadonlySet<string>>(new Set())
+/**
+ * While an App is being built (appBuildProgress), its panel is the one live
+ * thing in the chat: thinking and plain tool rows fold away and the panel
+ * shows the latest of them. Approvals, connection cards, questions and
+ * sub-agents still show.
+ */
+const AppPanelLiveContext = React.createContext(false)
+const AppPanelFoldContext = React.createContext(false)
 const ParentRunActiveContext = React.createContext(true)
 
 function MessageTimestamp({ message, className }: { message: UIMessage; className?: string }) {
@@ -244,8 +253,10 @@ const ToolMessageInner = ({ part }: ToolMessageProps) => {
   const lifecycle = resolveLifecycle(part.toolCallId, isToolPartInFlight(part))
   const connectionCardParts = React.useContext(ConnectionCardPartsContext)
   const appCreationParts = React.useContext(AppCreationPartsContext)
+  const appPanelFold = React.useContext(AppPanelFoldContext)
   if (appCreationParts.has(part.toolCallId)) return null
   if (part.toolCallId === connectionQuestionToolCallId || isReservedConnectionQuestionPart(part)) return null
+  if (appPanelFold && lifecycle !== "waiting" && !connectionCardParts.has(part.toolCallId) && !isTaskToolPart(part)) return null
 
   // Delegated work has its own lifecycle, even after a parent follow-up/error.
   if (isTaskToolPart(part)) return <SubagentRunLine part={part} parentActive={parentActive} />
@@ -1420,8 +1431,13 @@ function MessageGroup({
   const parentActive = React.useContext(ParentRunActiveContext)
   const creationLive = parentActive && isLastGroup && !readOnly
   const creationRuns = React.useMemo(() => appCreationRuns(items.map(item => item.message), creationLive), [items, creationLive])
+  const panelLive = React.useContext(AppPanelLiveContext) && isLastGroup
   const creationParts = React.useMemo(() => new Set(creationRuns.flatMap(run => [...(run.executions ?? []).map(part => part.toolCallId), ...(run.discoveries ?? []).map(part => part.toolCallId), ...(run.attempts ?? []).map(part => part.toolCallId), ...(run.preparation ? [run.preparation.toolCallId] : []), ...run.builds.map(part => part.toolCallId)])), [creationRuns])
   const isLiveGroup = isStreaming && isLastGroup
+  const panelActivity = React.useMemo(
+    () => panelLive ? appBuildActivity(items.map(item => item.message), creationParts) : null,
+    [panelLive, items, creationParts],
+  )
 
   if (!lastItem || isMessageEmptyGroup(items)) {
     return null;
@@ -1543,6 +1559,11 @@ function MessageGroup({
     let run: { parts: AnyToolPart[]; key: string } | null = null
     const flush = () => {
       if (!run) return
+      // Plain command, read and search runs fold into the App panel while it is live.
+      if (panelLive) {
+        run = null
+        return
+      }
       nodes.push(
         <div key={`aggregate-${run.key}`}>
           <Message className="mx-auto flex w-full max-w-3xl flex-col items-start gap-2 px-2 md:px-10">
@@ -1572,6 +1593,7 @@ function MessageGroup({
   return (
     <DevProfiler id={`MessageGroup:${lastItem.message.id}`}>
       <AppCreationPartsContext.Provider value={creationParts}>
+      <AppPanelFoldContext.Provider value={panelLive}>
       <ConnectionCardPartsContext.Provider value={connectionCardParts}>
       <div className="flex flex-col gap-2 group/message-group">
       {/* The scroll area keeps the same 8px rhythm the parts inside a single
@@ -1590,13 +1612,13 @@ function MessageGroup({
           </CompletedStepRun>
         ) : (
           <LiveSteps active={isLiveGroup}>
-            {renderItems(stepItems, 0)}
+            {renderItems(stepItems, 0, panelLive)}
           </LiveSteps>
         )
       ) : null}
-      {creationRuns.map(run => <Message key={`creation-${run.id}`} className="mx-auto flex w-full max-w-3xl flex-col px-2 md:px-10"><AppBuilderStep run={run} active={creationLive && (run === creationRuns.at(-1) || Boolean(run.preparation && isToolPartInFlight(run.preparation)) || run.builds.some(isToolPartInFlight))} /></Message>)}
+      {creationRuns.map(run => <Message key={`creation-${run.id}`} className="mx-auto flex w-full max-w-3xl flex-col px-2 md:px-10"><AppBuilderStep run={run} activity={run === creationRuns.at(-1) ? panelActivity : null} active={creationLive && (run === creationRuns.at(-1) || Boolean(run.preparation && isToolPartInFlight(run.preparation)) || run.builds.some(isToolPartInFlight))} /></Message>)}
       {mcpAppParts.map(appFrame)}
-      {renderItems(proseItems, stepItems.length, collapseSteps)}
+      {renderItems(proseItems, stepItems.length, collapseSteps || panelLive)}
       {lastTextMessage && !isStreaming && (
         <div className={cn("mx-auto flex w-full max-w-3xl flex-wrap items-center gap-2 px-2 transition-opacity duration-150 group-hover/message-group:opacity-100 max-lg:opacity-100 pointer-coarse:opacity-100 md:px-8", forkingMessageId && forkingMessageId === lastRealItem?.message.id ? "opacity-100" : "opacity-0")}>
           <MessageActions className="flex gap-0">
@@ -1636,6 +1658,7 @@ function MessageGroup({
       )}
       </div>
       </ConnectionCardPartsContext.Provider>
+      </AppPanelFoldContext.Provider>
       </AppCreationPartsContext.Provider>
     </DevProfiler>
   )
@@ -1741,6 +1764,9 @@ export function MessageList({ messages: transcript, messageIdReplacements, statu
   }))
   const isStreaming = status === "streaming" || status === "retrying"
   const runActive = status === "streaming" || status === "retrying"
+  const appBuildStaged = useAppBuildProgressEnabled()
+  // The App panel replaces the Working line and the thinking rows while it builds.
+  const appPanelLive = React.useMemo(() => appBuildStaged && runActive && appBuildInProgress(messages), [appBuildStaged, runActive, messages])
   const syncDegraded = syncHealth?.degraded === true
   const activityActive = runActive || tasks.length > 0
   const runStartedAtRef = React.useRef<number | null>(null)
@@ -1811,6 +1837,7 @@ export function MessageList({ messages: transcript, messageIdReplacements, statu
 
   return (
     <ParentRunActiveContext.Provider value={runActive}>
+    <AppPanelLiveContext.Provider value={appPanelLive}>
     <BuiltAppPreviewSync key={sessionId} messages={messages} active={runActive}>
     <CurrentToolLifecycleProvider
       activityStatus={activityStatus}
@@ -1877,7 +1904,7 @@ export function MessageList({ messages: transcript, messageIdReplacements, statu
             runs, the count joins its Working line; otherwise it takes that
             line's place on its own. One line either way, so the chat does not
             move when the turn ends and the count stays. */}
-        {showLoading && <LoadingMessage elapsedSeconds={runElapsedSeconds} starting={status === "submitted"} backgroundShells={backgroundShells} backgroundStale={syncDegraded} />}
+        {showLoading && !appPanelLive && <LoadingMessage elapsedSeconds={runElapsedSeconds} starting={status === "submitted"} backgroundShells={backgroundShells} backgroundStale={syncDegraded} />}
         {showReconnecting && <ReconnectingMessage lastConfirmedAt={syncHealth?.lastConfirmedAt ?? null} />}
         {!showLoading && backgroundShells.length > 0 && <BackgroundTasksMessage shells={backgroundShells} stale={syncDegraded} />}
         {retryStatus ? <RetryMessage status={retryStatus} /> : null}
@@ -1885,6 +1912,7 @@ export function MessageList({ messages: transcript, messageIdReplacements, statu
       </ProgressiveMessageList>
     </CurrentToolLifecycleProvider>
     </BuiltAppPreviewSync>
+    </AppPanelLiveContext.Provider>
     </ParentRunActiveContext.Provider>
   )
 }

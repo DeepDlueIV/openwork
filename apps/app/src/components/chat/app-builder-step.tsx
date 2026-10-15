@@ -140,9 +140,12 @@ function StageMark({ state, running }: { state: StageState; running: boolean }) 
 export function AppBuilderStep({
   run,
   active,
+  activity = null,
 }: {
   run: AppCreationRun;
   active: boolean;
+  /** While the panel is live: the agent's latest thought or call, shown under the active stage. */
+  activity?: string | null;
 }) {
   const context = useOptionalMessageList();
   const resolveLifecycle = useCurrentToolLifecycleResolver();
@@ -345,6 +348,11 @@ export function AppBuilderStep({
             {stage.notes?.map((note) => (
               <span key={note} className="ml-6 truncate text-muted-foreground">{note}</span>
             ))}
+            {stage.state === "active" && progress.running && activity ? (
+              <span key={activity} className="ml-6 truncate text-muted-foreground/80 animate-in fade-in duration-300 motion-reduce:animate-none" data-app-builder-activity>
+                {activity}
+              </span>
+            ) : null}
           </li>
         ))}
       </ol>

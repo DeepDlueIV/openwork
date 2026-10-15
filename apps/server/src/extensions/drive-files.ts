@@ -163,6 +163,38 @@ async function hashFile(path: string) {
   }
 }
 
+/** An unlinked host-owned copy keeps uploads on the exact bytes hashed before confirmation. */
+async function snapshotForPush(config: ServerConfig, source: FileHandle, expected: { sha256: string; size: number }, signal?: AbortSignal) {
+  const folder = runtimeStorageDir(config);
+  await mkdir(folder, { recursive: true });
+  const path = join(folder, `.drive-push-${randomBytes(16).toString("hex")}`);
+  const snapshot = await open(path, "wx+", 0o600);
+  try {
+    // Remove its pathname before copying any bytes; workspace processes never receive it.
+    await rm(path);
+    const buffer = new Uint8Array(1024 * 1024);
+    for (let offset = 0; offset < expected.size;) {
+      signal?.throwIfAborted();
+      const { bytesRead } = await source.read(buffer, 0, Math.min(buffer.length, expected.size - offset), offset);
+      if (!bytesRead) throw new ApiError(409, "local_changes", "The local file changed before confirmation. Nothing was uploaded; try again once it is saved.");
+      for (let written = 0; written < bytesRead;) {
+        const part = await snapshot.write(buffer, written, bytesRead - written, offset + written);
+        if (!part.bytesWritten) throw new ApiError(500, "snapshot_failed", "Could not prepare a private file copy. Nothing was uploaded.");
+        written += part.bytesWritten;
+      }
+      offset += bytesRead;
+    }
+    if ((await hashHandle(snapshot)).sha256 !== expected.sha256) {
+      throw new ApiError(409, "local_changes", "The local file changed before confirmation. Nothing was uploaded; try again once it is saved.");
+    }
+    return snapshot;
+  } catch (error) {
+    await snapshot.close();
+    await rm(path, { force: true });
+    throw error;
+  }
+}
+
 async function realRoots(config: ServerConfig) {
   const roots: string[] = [];
   for (const root of allowedRoots(config)) {
@@ -609,50 +641,60 @@ async function pushOpenFile(config: ServerConfig, args: Record<string, unknown>,
   if (mode === "replace" && local.sha256 === link.sha256) {
     return { ok: true, unchanged: true, path: displayPath(config, context, path), file: { id: link.fileId, name: link.name, webViewLink: link.webViewLink, revision: link.revision } };
   }
-  const convert = mode === "copy" && link.native && (CONVERTIBLE_FORMATS[link.driveMimeType] ?? []).includes(link.format ?? "");
-  await confirmDriveWrite(config, { action: "push", path, fileId: link.fileId, name: link.name, mode: mode === "copy" ? "copy" : "replace" }, dependencies.signal);
-  const mimeType = link.localMimeType || mimeTypeForPath(path);
-  const name = mode === "copy" ? copyName(link, readArgString(args, "name"), convert) : basename(path);
-  const session = await denJson(config, dependencies, "/v1/direct-uploads/google-workspace/drive-upload-sessions", {
-    method: "POST",
-    body: {
-      name, size: local.size, mimeType,
-      ...(link.connectionId ? { connectionId: link.connectionId } : {}),
-      ...(mode === "replace"
-        ? { fileId: link.fileId, baseRevision: link.revision }
-        : { ...(link.parents[0] ? { folderId: link.parents[0] } : {}), ...(convert ? { convertTo: link.driveMimeType } : {}) }),
-    },
-  });
-  if (typeof session.uploadUrl !== "string" || session.size !== local.size) throw new ApiError(502, "invalid_upload_session", "OpenWork Cloud returned an invalid upload session.");
-  const receipt = await uploadDriveResumableFile({ path, file: handle, size: local.size, mimeType, uploadUrl: session.uploadUrl, fetch: dependencies.fetchImpl ?? externalFetch, signal: dependencies.signal });
-  const file = receipt.file;
-  if (file.md5Checksum && !convert && file.md5Checksum !== local.md5) {
-    throw new ApiError(502, "drive_upload_unverified", "Drive saved different bytes than the local file. Check the file in Drive before trying again.", { fileId: file.id });
-  }
-  const revision = file.headRevisionId ?? file.version ?? null;
-  const driveMimeType = file.mimeType ?? (convert ? link.driveMimeType : mimeType);
-  await withLinks(config, (current) => {
-    current.links[path] = {
-      ...link,
-      fileId: file.id,
-      name: file.name ?? name,
-      driveMimeType,
-      native: driveMimeType.startsWith("application/vnd.google-apps."),
-      format: driveMimeType.startsWith("application/vnd.google-apps.") ? link.format : null,
-      revision,
-      md5Checksum: file.md5Checksum ?? null,
-      sha256: local.sha256,
-      size: local.size,
-      webViewLink: file.webViewLink ?? (mode === "replace" ? link.webViewLink : null),
-      pushedAt: new Date().toISOString(),
+  const snapshot = await snapshotForPush(config, handle, local, dependencies.signal);
+  try {
+    const convert = mode === "copy" && link.native && (CONVERTIBLE_FORMATS[link.driveMimeType] ?? []).includes(link.format ?? "");
+    await confirmDriveWrite(config, { action: "push", path, fileId: link.fileId, name: link.name, mode: mode === "copy" ? "copy" : "replace" }, dependencies.signal);
+    await assertStableFolder(config, dirname(path));
+    await assertSameFile(path, await handle.stat());
+    if ((await hashHandle(handle)).sha256 !== local.sha256) {
+      throw new ApiError(409, "local_changes", "The local file changed while confirmation was open. Nothing was uploaded; review the edits and save again.");
+    }
+    const mimeType = link.localMimeType || mimeTypeForPath(path);
+    const name = mode === "copy" ? copyName(link, readArgString(args, "name"), convert) : basename(path);
+    const session = await denJson(config, dependencies, "/v1/direct-uploads/google-workspace/drive-upload-sessions", {
+      method: "POST",
+      body: {
+        name, size: local.size, mimeType,
+        ...(link.connectionId ? { connectionId: link.connectionId } : {}),
+        ...(mode === "replace"
+          ? { fileId: link.fileId, baseRevision: link.revision }
+          : { ...(link.parents[0] ? { folderId: link.parents[0] } : {}), ...(convert ? { convertTo: link.driveMimeType } : {}) }),
+      },
+    });
+    if (typeof session.uploadUrl !== "string" || session.size !== local.size) throw new ApiError(502, "invalid_upload_session", "OpenWork Cloud returned an invalid upload session.");
+    const receipt = await uploadDriveResumableFile({ path, file: snapshot, size: local.size, mimeType, uploadUrl: session.uploadUrl, fetch: dependencies.fetchImpl ?? externalFetch, signal: dependencies.signal });
+    const file = receipt.file;
+    if (file.md5Checksum && !convert && file.md5Checksum !== local.md5) {
+      throw new ApiError(502, "drive_upload_unverified", "Drive saved different bytes than the local file. Check the file in Drive before trying again.", { fileId: file.id });
+    }
+    const revision = file.headRevisionId ?? file.version ?? null;
+    const driveMimeType = file.mimeType ?? (convert ? link.driveMimeType : mimeType);
+    await withLinks(config, (current) => {
+      current.links[path] = {
+        ...link,
+        fileId: file.id,
+        name: file.name ?? name,
+        driveMimeType,
+        native: driveMimeType.startsWith("application/vnd.google-apps."),
+        format: driveMimeType.startsWith("application/vnd.google-apps.") ? link.format : null,
+        revision,
+        md5Checksum: file.md5Checksum ?? null,
+        sha256: local.sha256,
+        size: local.size,
+        webViewLink: file.webViewLink ?? (mode === "replace" ? link.webViewLink : null),
+        pushedAt: new Date().toISOString(),
+      };
+    });
+    const replaces = isRecord(session.replaces) ? session.replaces : null;
+    return {
+      ok: true, mode, path: displayPath(config, context, path), size: local.size,
+      file: { id: file.id, name: file.name ?? name, mimeType: driveMimeType, webViewLink: file.webViewLink ?? null, revision },
+      ...(mode === "replace" ? { previousRevision: stringOrNull(replaces?.previousRevision) } : { copiedFrom: link.fileId }),
     };
-  });
-  const replaces = isRecord(session.replaces) ? session.replaces : null;
-  return {
-    ok: true, mode, path: displayPath(config, context, path), size: local.size,
-    file: { id: file.id, name: file.name ?? name, mimeType: driveMimeType, webViewLink: file.webViewLink ?? null, revision },
-    ...(mode === "replace" ? { previousRevision: stringOrNull(replaces?.previousRevision) } : { copiedFrom: link.fileId }),
-  };
+  } finally {
+    await snapshot.close();
+  }
 }
 
 export async function callDriveFileAction(

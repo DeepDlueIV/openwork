@@ -110,6 +110,25 @@ test("an agent pulls a Drive file into the workspace, edits it with bash and sav
     evidence.recordAssertionEvidence("Push keeps the same file and adds a version", "drive_push_file replaced the same file ID (rev-1 to rev-2) with the exact local bytes through a resumable upload; status was clean afterwards and a second push without changes sent nothing.", true);
   });
 
+  await step("edits made while confirmation is open stop the save before any Drive upload", async () => {
+    const before = await driveFile(world.files.supplier);
+    const uploads = await world.uploadRequests();
+    expect(uploads).toBeGreaterThan(0);
+    expect((await world.bash(`printf ' pending edit' >> '${supplierPath}'`)).code).toBe(0);
+    const local = await world.read(supplierPath);
+    world.editDuringApproval(supplierPath);
+    const refused = await world.host("drive_push_file", { path: supplierPath });
+    expect(refused.status).toBe(409);
+    expect(refused.body).toMatchObject({ code: "local_changes" });
+    const changed = await world.read(supplierPath);
+    expect(changed.length).toBeGreaterThan(local.length);
+    expect(changed.subarray(local.length).toString()).toBe("edited while confirmation was open");
+    expect(await world.uploadRequests()).toBe(uploads);
+    const after = await driveFile(world.files.supplier);
+    expect([after.revision, after.bytes.equals(before.bytes)]).toEqual([before.revision, true]);
+    evidence.recordAssertionEvidence("A file changed during confirmation is never uploaded", "The workspace file was appended to while the host confirmation waited. The save returned local_changes before creating a Google upload session or sending bytes; the Drive revision and content stayed unchanged.", true);
+  });
+
   await step("a Drive edit made after the pull is never overwritten silently", async () => {
     const theirs = Buffer.from("a collaborator's newer workbook");
     await world.google.editDriveFile(world.accounts.member, world.files.supplier, theirs);

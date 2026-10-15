@@ -42,11 +42,16 @@ export async function driveFiles(seed: Seed) {
     }));
     const hostToken = "drive-files-client";
     let allowWrites = true;
+    let editDuringApproval: string | null = null;
     const approvalRequests: Record<string, unknown>[] = [];
     // The embedding host owns approval, just as Electron's main process does.
     // Neither an engine token nor an HTTP flag can supply this callback.
     const approvalServer = createServer(async (request, response) => {
       approvalRequests.push(object(JSON.parse(await readBody(request))));
+      if (editDuringApproval) {
+        await writeFile(join(workspace, editDuringApproval), "edited while confirmation was open", { flag: "a" });
+        editDuringApproval = null;
+      }
       sendJson(response, 200, { approved: allowWrites });
     });
     const approvalUrl = await listen(approvalServer);
@@ -117,6 +122,7 @@ process.on("SIGTERM", async () => { await host.stop(); process.exit(0); });
         return { status: response.status, body: object(await response.json()) };
       },
       setApproval(allowed: boolean) { allowWrites = allowed; },
+      editDuringApproval(path: string) { editDuringApproval = path; },
       approvals: () => [...approvalRequests],
       async readOnlyHost(action: string, args: Record<string, unknown>) {
         const response = await fetch(`${readOnlyUrl}/experimental/drive-files/call`, {
@@ -151,6 +157,12 @@ process.on("SIGTERM", async () => { await host.stop(); process.exit(0); });
         const entries = object(await response.json()).requests;
         if (!Array.isArray(entries)) throw new Error("Missing provider witness");
         return entries.map(object).filter((entry) => String(entry.path) === `/drive/v3/files/${fileId}/export` || (String(entry.path) === `/drive/v3/files/${fileId}` && String(entry.url).includes("alt=media"))).length;
+      },
+      async uploadRequests() {
+        const response = await fetch(`${cloud.google.apiUrl}/requests`, { signal: AbortSignal.timeout(10_000) });
+        const entries = object(await response.json()).requests;
+        if (!Array.isArray(entries)) throw new Error("Missing provider witness");
+        return entries.map(object).filter((entry) => String(entry.path).startsWith("/upload/drive/v3/files")).length;
       },
       [Symbol.asyncDispose]: () => stack.disposeAsync(),
     };

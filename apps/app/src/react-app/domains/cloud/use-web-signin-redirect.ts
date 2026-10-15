@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { buildDenAuthUrl, createDenClient, readDenSettings } from "../../../app/lib/den";
 import { isDesktopRuntime } from "../../../app/utils";
@@ -27,6 +27,20 @@ export function useWebSigninRedirect(signedOut: boolean, requireSignin: boolean)
   const enabled = useWebSigninRedirectEnabled(signedOut && requireSignin);
   const entry = useRef(window.location.href);
   const callback = useRef(new URL(entry.current).searchParams.has("grant") || new URL(entry.current).searchParams.has("error"));
+  const captured = useRef(false);
+  // Capture before the sign-in page's effects consume a grant and before the
+  // gate replaces a bookmarked route with /signin. Refresh for a later logout.
+  useLayoutEffect(() => {
+    if (!signedOut) {
+      captured.current = false;
+      return;
+    }
+    if (captured.current) return;
+    captured.current = true;
+    entry.current = window.location.href;
+    const params = new URL(entry.current).searchParams;
+    callback.current = params.has("grant") || params.has("error");
+  }, [signedOut]);
   useEffect(() => {
     if (!enabled || !signedOut || !requireSignin || callback.current) return;
     const current = new URL(window.location.href);

@@ -39,6 +39,7 @@ export function beginWebSigninRedirect(storage: Storage, target: string, returnP
     if (storage.getItem(ATTEMPT_KEY) === denOrigin) return false;
     const path = safeWebSigninReturn(returnPath, origin);
     if (path) storage.setItem(RETURN_KEY, path);
+    else storage.removeItem(RETURN_KEY);
     storage.setItem(ATTEMPT_KEY, denOrigin);
     return true;
   } catch {

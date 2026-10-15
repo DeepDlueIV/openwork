@@ -163,6 +163,7 @@ export type NotFoundError = {
 
 export type AdminFeature = {
   key:
+    | "secureSecretFields"
     | "memberListToolbars"
     | "appBuildProgress"
     | "modelsAnalyticsUi"
@@ -225,6 +226,7 @@ export type AdminUsersPageResponse = {
 export type AdminOrganizationsPageResponse = {
   organizations: Array<{
     capabilities: {
+      secureSecretFields: boolean;
       memberListToolbars: boolean;
       appBuildProgress: boolean;
       modelsAnalyticsUi: boolean;
@@ -260,6 +262,15 @@ export type AdminOrganizationsPageResponse = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates: {
+      secureSecretFields: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       memberListToolbars: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -539,6 +550,7 @@ export type AdminOverviewResponse = {
   }>;
   organizations: Array<{
     capabilities: {
+      secureSecretFields: boolean;
       memberListToolbars: boolean;
       appBuildProgress: boolean;
       modelsAnalyticsUi: boolean;
@@ -574,6 +586,15 @@ export type AdminOverviewResponse = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates: {
+      secureSecretFields: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       memberListToolbars: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -6575,6 +6596,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
    */
   200: {
     capabilities: {
+      secureSecretFields: boolean;
       memberListToolbars: boolean;
       appBuildProgress: boolean;
       modelsAnalyticsUi: boolean;
@@ -6610,6 +6632,15 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates: {
+      secureSecretFields: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       memberListToolbars: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -6877,6 +6908,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       id: string;
     };
     capabilities: {
+      secureSecretFields: boolean;
       memberListToolbars: boolean;
       appBuildProgress: boolean;
       modelsAnalyticsUi: boolean;
@@ -6912,6 +6944,15 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates: {
+      secureSecretFields: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       memberListToolbars: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -18774,6 +18815,23 @@ export type PostV1InferenceProvidersResponses = {
    */
   201: {
     inferenceProvider: GatewayProviderDetails;
+    credentialPrompt?: {
+      schemaVersion: "1";
+      kind: "credential_prompt";
+      target:
+        | {
+            type: "mcp_connection_key";
+            connectionId: string;
+          }
+        | {
+            type: "gateway_provider_key";
+            inferenceProviderId: string;
+            credentialSetId: string;
+          };
+      name: string;
+      destination: string | null;
+    };
+    nextStep?: string;
   };
 };
 

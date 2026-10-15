@@ -84,6 +84,7 @@ const pendingRefreshResponses = new Map();
 const requests = [];
 const drafts = [];
 let agentWorkloads = [];
+let privateSentinels = [];
 let agentRequiredHeader = null;
 const agentReplyGates = new Map();
 const AGENT_REPLY_GATE_TIMEOUT_MS = 60_000;
@@ -637,7 +638,9 @@ async function handleAgentCompletion(req, res, entry) {
       hasDraftResult: value.includes("Draft ready for Test recipient"),
     };
   });
-  const baseRequest = { model, reasoningEffort: body.reasoning_effort ?? null, matchedMarkers, completedTools, advertisedToolNames, toolResultCodes };
+  const bodyText = privateSentinels.length ? JSON.stringify(body) : "";
+  const privateSentinelSeen = privateSentinels.some((value) => bodyText.includes(value));
+  const baseRequest = { model, reasoningEffort: body.reasoning_effort ?? null, matchedMarkers, completedTools, advertisedToolNames, toolResultCodes, privateSentinelSeen };
 
   if (!Array.isArray(body.tools) || body.tools.length === 0) {
     entry.agentCompletion = { ...baseRequest, kind: "utility", promptMarker: matchedMarkers[0] ?? null, toolName: null, arguments: {} };
@@ -1428,6 +1431,20 @@ const server = http.createServer(async (req, res) => {
       agentRepliesHeld = body.held;
       if (!agentRepliesHeld) for (const send of [...heldAgentReplies]) send();
       json(res, 200, { held: agentRepliesHeld, pending: heldAgentReplies.size });
+      return;
+    }
+
+    // Test hook: synthetic values the model must never receive. Each later
+    // completion records only whether any appeared, never the values.
+    if (url.pathname === "/admin/private-sentinels" && req.method === "POST") {
+      const body = await readJson(req);
+      const values = Array.isArray(body?.values) ? body.values : null;
+      if (!values || !values.every((value) => typeof value === "string" && value.length >= 12)) {
+        json(res, 400, { error: "values must be strings of at least 12 characters" });
+        return;
+      }
+      privateSentinels = values;
+      json(res, 200, { count: values.length });
       return;
     }
 

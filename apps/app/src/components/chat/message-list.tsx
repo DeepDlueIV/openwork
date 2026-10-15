@@ -103,6 +103,8 @@ import { Tool } from "@/components/ui/tool"
 import { CapabilityCallLine } from "@/components/chat/capability-call-line"
 import { CodeModeTool, isSilentCodeModePart } from "@/components/chat/code-mode-tool"
 import { ConnectionCard } from "@/components/chat/connection-card"
+import { CredentialPromptCard } from "@/components/chat/credential-prompt-card"
+import { credentialPromptCall } from "@/components/chat/credential-prompt"
 import { connectionFromChatToolPart } from "@/components/tools/error-attribution"
 import { isReservedConnectionQuestion, type ChatConnectionDecisionBinding } from "@/react-app/domains/session/surface/mcp-chat-reconnect"
 import { codeModeToolCalls } from "@/lib/code-mode-tools"
@@ -256,14 +258,19 @@ const ToolMessageInner = ({ part }: ToolMessageProps) => {
   const appPanelFold = React.useContext(AppPanelFoldContext)
   if (appCreationParts.has(part.toolCallId)) return null
   if (part.toolCallId === connectionQuestionToolCallId || isReservedConnectionQuestionPart(part)) return null
-  if (appPanelFold && lifecycle !== "waiting" && !connectionCardParts.has(part.toolCallId) && !isTaskToolPart(part)) return null
+  const promptCall = credentialPromptCall(part)
+  if (appPanelFold && lifecycle !== "waiting" && !connectionCardParts.has(part.toolCallId) && !promptCall && !isTaskToolPart(part)) return null
 
   // Delegated work has its own lifecycle, even after a parent follow-up/error.
   if (isTaskToolPart(part)) return <SubagentRunLine part={part} parentActive={parentActive} />
 
   if (part.type === "dynamic-tool") {
     const calls = codeModeToolCalls(part)
-    if (calls) return <CodeModeTool part={part} calls={calls} lifecycle={lifecycle} connectors={connectorIdentities} />
+    if (calls) {
+      const script = <CodeModeTool part={part} calls={calls} lifecycle={lifecycle} connectors={connectorIdentities} />
+      // A key the script's Den call asked for is entered in the host's private field.
+      return promptCall ? <>{script}<CredentialPromptCard part={promptCall} continueToolCallId={part.toolCallId} /></> : script
+    }
   }
 
   if (lifecycle === "waiting") {
@@ -353,6 +360,11 @@ const ToolMessageInner = ({ part }: ToolMessageProps) => {
   // the presentation; the Den App remains for external hosts.
   if (part.type === "dynamic-tool" && connectionCardParts.has(part.toolCallId)) {
     return <ConnectionCard part={part} allowDiscovery={Boolean(getConnectionDecision?.(part.toolCallId))} />
+  }
+
+  // A key an agent asked for is entered in the host's private field, never in chat.
+  if (part.type === "dynamic-tool" && promptCall) {
+    return <CredentialPromptCard part={promptCall} continueToolCallId={part.toolCallId} />
   }
 
   // Failed calls use the same sentence line with the "failures are

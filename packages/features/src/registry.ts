@@ -53,6 +53,13 @@ function defineFeatures<const T extends Record<string, FeatureDefinition>>(featu
 const everywhere = ["cloud", "self_hosted"] as const
 
 export const FEATURES = defineFeatures({
+  secureSecretFields: {
+    label: "Secure keys in chat",
+    description: "When an agent sets up a connection or AI Gateway provider that needs an API key, people enter the key in a private field in the chat; the agent never sees it and continues once it is saved.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
   memberListToolbars: {
     label: "Members: consistent list toolbars",
     description: "Filter members, teams and roles beside their add action, with compact member rows and secondary actions in the list menu.",

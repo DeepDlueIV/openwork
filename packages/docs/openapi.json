@@ -840,6 +840,7 @@
           "key": {
             "type": "string",
             "enum": [
+              "secureSecretFields",
               "memberListToolbars",
               "appBuildProgress",
               "modelsAnalyticsUi",
@@ -1038,6 +1039,9 @@
                 "capabilities": {
                   "type": "object",
                   "properties": {
+                    "secureSecretFields": {
+                      "type": "boolean"
+                    },
                     "memberListToolbars": {
                       "type": "boolean"
                     },
@@ -1118,6 +1122,7 @@
                     }
                   },
                   "required": [
+                    "secureSecretFields",
                     "memberListToolbars",
                     "appBuildProgress",
                     "modelsAnalyticsUi",
@@ -1148,6 +1153,62 @@
                 "featureStates": {
                   "type": "object",
                   "properties": {
+                    "secureSecretFields": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "memberListToolbars": {
                       "type": "object",
                       "properties": {
@@ -2494,6 +2555,7 @@
                     }
                   },
                   "required": [
+                    "secureSecretFields",
                     "memberListToolbars",
                     "appBuildProgress",
                     "modelsAnalyticsUi",
@@ -2891,6 +2953,9 @@
                 "capabilities": {
                   "type": "object",
                   "properties": {
+                    "secureSecretFields": {
+                      "type": "boolean"
+                    },
                     "memberListToolbars": {
                       "type": "boolean"
                     },
@@ -2971,6 +3036,7 @@
                     }
                   },
                   "required": [
+                    "secureSecretFields",
                     "memberListToolbars",
                     "appBuildProgress",
                     "modelsAnalyticsUi",
@@ -3001,6 +3067,62 @@
                 "featureStates": {
                   "type": "object",
                   "properties": {
+                    "secureSecretFields": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "memberListToolbars": {
                       "type": "object",
                       "properties": {
@@ -4347,6 +4469,7 @@
                     }
                   },
                   "required": [
+                    "secureSecretFields",
                     "memberListToolbars",
                     "appBuildProgress",
                     "modelsAnalyticsUi",
@@ -27304,6 +27427,9 @@
                     "capabilities": {
                       "type": "object",
                       "properties": {
+                        "secureSecretFields": {
+                          "type": "boolean"
+                        },
                         "memberListToolbars": {
                           "type": "boolean"
                         },
@@ -27384,6 +27510,7 @@
                         }
                       },
                       "required": [
+                        "secureSecretFields",
                         "memberListToolbars",
                         "appBuildProgress",
                         "modelsAnalyticsUi",
@@ -27414,6 +27541,62 @@
                     "featureStates": {
                       "type": "object",
                       "properties": {
+                        "secureSecretFields": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "memberListToolbars": {
                           "type": "object",
                           "properties": {
@@ -28760,6 +28943,7 @@
                         }
                       },
                       "required": [
+                        "secureSecretFields",
                         "memberListToolbars",
                         "appBuildProgress",
                         "modelsAnalyticsUi",
@@ -28902,6 +29086,9 @@
                     "capabilities": {
                       "type": "object",
                       "properties": {
+                        "secureSecretFields": {
+                          "type": "boolean"
+                        },
                         "memberListToolbars": {
                           "type": "boolean"
                         },
@@ -28982,6 +29169,7 @@
                         }
                       },
                       "required": [
+                        "secureSecretFields",
                         "memberListToolbars",
                         "appBuildProgress",
                         "modelsAnalyticsUi",
@@ -29012,6 +29200,62 @@
                     "featureStates": {
                       "type": "object",
                       "properties": {
+                        "secureSecretFields": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "memberListToolbars": {
                           "type": "object",
                           "properties": {
@@ -30358,6 +30602,7 @@
                         }
                       },
                       "required": [
+                        "secureSecretFields",
                         "memberListToolbars",
                         "appBuildProgress",
                         "modelsAnalyticsUi",
@@ -65523,11 +65768,17 @@
       },
       "post": {
         "operationId": "postV1InferenceProviders",
+        "x-mcp": true,
+        "x-mcp-search-aliases": [
+          "add AI gateway provider",
+          "connect our AI gateway",
+          "add OpenAI or Anthropic API provider"
+        ],
         "tags": [
           "Inference Providers"
         ],
         "summary": "Create inference gateway provider",
-        "description": "Creates an organization Gateway provider from the trusted catalog and returns its management details. Empty modelIds follows all supported catalog models; a nonempty list restricts the provider universe. Creates an initial model group; legacy credential and audience fields can also create a default credential set and grants. Requires the Manage Gateway providers permission and enabled Gateway management; session callers must recently reauthenticate.",
+        "description": "Creates an organization Gateway provider from the trusted catalog and returns its management details. Empty modelIds follows all supported catalog models; a nonempty list restricts the provider universe. Creates an initial model group; legacy credential and audience fields can also create a default credential set and grants. Agents never send keys: with secure keys in chat on, request access (allMembers, memberIds or teamIds) without a credential and the response carries credentialPrompt; a person then adds the shared API key in OpenWork. Requires the Manage Gateway providers permission and enabled Gateway management; session callers must recently reauthenticate.",
         "responses": {
           "201": {
             "description": "Create inference gateway provider",
@@ -65538,6 +65789,94 @@
                   "properties": {
                     "inferenceProvider": {
                       "$ref": "#/components/schemas/GatewayProviderDetails"
+                    },
+                    "credentialPrompt": {
+                      "type": "object",
+                      "properties": {
+                        "schemaVersion": {
+                          "type": "string",
+                          "const": "1"
+                        },
+                        "kind": {
+                          "type": "string",
+                          "const": "credential_prompt"
+                        },
+                        "target": {
+                          "oneOf": [
+                            {
+                              "type": "object",
+                              "properties": {
+                                "type": {
+                                  "type": "string",
+                                  "const": "mcp_connection_key"
+                                },
+                                "connectionId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 160
+                                }
+                              },
+                              "required": [
+                                "type",
+                                "connectionId"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "type": {
+                                  "type": "string",
+                                  "const": "gateway_provider_key"
+                                },
+                                "inferenceProviderId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 160
+                                },
+                                "credentialSetId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 160
+                                }
+                              },
+                              "required": [
+                                "type",
+                                "inferenceProviderId",
+                                "credentialSetId"
+                              ],
+                              "additionalProperties": false
+                            }
+                          ]
+                        },
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 255
+                        },
+                        "destination": {
+                          "anyOf": [
+                            {
+                              "type": "string",
+                              "maxLength": 2048
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        }
+                      },
+                      "required": [
+                        "schemaVersion",
+                        "kind",
+                        "target",
+                        "name",
+                        "destination"
+                      ],
+                      "additionalProperties": false
+                    },
+                    "nextStep": {
+                      "type": "string"
                     }
                   },
                   "required": [

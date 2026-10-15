@@ -3534,6 +3534,35 @@ export function createDenClient(options: {
       );
     },
 
+    /** Private field in chat: a person saves an organization connection's shared key. */
+    async saveMcpConnectionSharedKey(orgId: string, connectionId: string, apiKey: string): Promise<void> {
+      await requestJson<unknown>(
+        baseUrls,
+        `/v1/mcp-connections/${encodeURIComponent(connectionId)}/shared-credential`,
+        { method: "PUT", token, organizationId: orgId, body: { apiKey } },
+      );
+    },
+
+    /** Whether an AI Gateway provider's credential set already has a working shared key. Never reads the key. */
+    async gatewayCredentialSetReady(orgId: string, inferenceProviderId: string, credentialSetId: string): Promise<boolean> {
+      const payload = await requestJson<unknown>(
+        baseUrls,
+        `/v1/inference-providers/${encodeURIComponent(inferenceProviderId)}/credential-sets`,
+        { method: "GET", token, organizationId: orgId },
+      );
+      const sets = isRecord(payload) && Array.isArray(payload.credentialSets) ? payload.credentialSets : [];
+      return sets.some((set) => isRecord(set) && set.id === credentialSetId && set.credentialStatus === "ready");
+    },
+
+    /** Private field in chat: a person saves an AI Gateway provider's shared API key. */
+    async saveGatewayProviderKey(orgId: string, inferenceProviderId: string, credentialSetId: string, apiKey: string): Promise<void> {
+      await requestJson<unknown>(
+        baseUrls,
+        `/v1/inference-providers/${encodeURIComponent(inferenceProviderId)}/credential-sets/${encodeURIComponent(credentialSetId)}`,
+        { method: "PATCH", token, organizationId: orgId, body: { credential: { kind: "api_key", secret: apiKey } } },
+      );
+    },
+
     async disconnectMyMcpConnectionAccount(orgId: string, connectionId: string): Promise<void> {
       await requestJson<unknown>(
         baseUrls,

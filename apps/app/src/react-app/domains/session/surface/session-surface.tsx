@@ -3244,10 +3244,10 @@ export function SessionSurface(props: SessionSurfaceProps) {
   // A turn that ended on a Connect card picks up once its sign-in lands, as if the person said so.
   const continueAfterConnectionRef = useRef({ status, messages: baseRenderedMessages, asking: Boolean(props.activeQuestion) });
   continueAfterConnectionRef.current = { status, messages: baseRenderedMessages, asking: Boolean(props.activeQuestion) };
-  const continueAfterConnection = useCallback((toolCallId: string) => {
+  const continueAfterConnection = useCallback((toolCallId: string, prompt?: string) => {
     const context = continueAfterConnectionRef.current;
     if (context.status !== "ready" || context.asking || !isLatestTurnToolCall(context.messages, toolCallId)) return;
-    void handleResumeInterrupted(CHAT_CONNECTION_CONTINUE_PROMPT);
+    void handleResumeInterrupted(prompt ?? CHAT_CONNECTION_CONTINUE_PROMPT);
   }, [handleResumeInterrupted]);
 
   const handleRevertToUserMessage = useCallback((messageId: string) => {

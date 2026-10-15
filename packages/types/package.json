@@ -276,6 +276,14 @@
       "development": "./src/den/default-model.ts",
       "default": "./src/den/default-model.ts"
     },
+    "./den/credential-prompt": {
+      "types": {
+        "openwork-build": "./dist/types/src/den/credential-prompt.d.ts",
+        "default": "./src/den/credential-prompt.ts"
+      },
+      "development": "./src/den/credential-prompt.ts",
+      "default": "./src/den/credential-prompt.ts"
+    },
     "./den/mcp-connection-action": {
       "types": {
         "openwork-build": "./dist/types/src/den/mcp-connection-action.d.ts",

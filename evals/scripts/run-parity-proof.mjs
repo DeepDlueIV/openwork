@@ -25,6 +25,7 @@ const specs = new Set([
   "evals/specs/agent-connection-journey.e2e.test.ts",
   "evals/specs/sent-message-matches-composer.e2e.test.ts",
   "evals/specs/agent-connection-sign-in-journey.e2e.test.ts",
+  "evals/specs/secure-keys-in-chat.e2e.test.ts",
   "evals/specs/opencode-v2-built-in-browser.e2e.test.ts",
   "evals/specs/background-shell-tasks.e2e.test.ts",
   "evals/specs/agent-permissions.e2e.test.ts",

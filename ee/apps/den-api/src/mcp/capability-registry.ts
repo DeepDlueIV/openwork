@@ -130,6 +130,8 @@ export type CapabilityRegistryContext = {
   generatedArtifactViewsEnabled: boolean
   /** Managed deployment planning, launch preparation and status (both rollouts on). */
   managedDeploymentsMcpEnabled: boolean
+  /** Secure keys in chat: provider creation is offered to agents, never keys. */
+  secureSecretFieldsEnabled: boolean
   remoteSessionEventsEnabled: boolean
   resolvePlatformAdmin: () => Promise<boolean>
   resolveNamespaceContext: () => Promise<CodemodeConnectionNamespaceContext>
@@ -149,7 +151,7 @@ export type CapabilityRegistryContextInput = {
   redirectUriBase: string
   generatedArtifactViewsEnabled: boolean
   /** Effective features of the organization (see features.ts). */
-  organizationFeatures: Partial<Pick<FeatureMap, "remoteSessionEvents" | "managedDeployments" | "managedDeploymentsMcp">>
+  organizationFeatures: Partial<Pick<FeatureMap, "remoteSessionEvents" | "managedDeployments" | "managedDeploymentsMcp" | "secureSecretFields">>
   /** MCP transports pass the verified caller; route and Automation contexts omit it (their route records the request). */
   audit?: McpAuditPrincipal | null
   /**
@@ -185,6 +187,7 @@ export function createCapabilityRegistryContext(input: CapabilityRegistryContext
     generatedArtifactViewsEnabled: input.generatedArtifactViewsEnabled,
     managedDeploymentsMcpEnabled: input.organizationFeatures.managedDeployments === true
       && input.organizationFeatures.managedDeploymentsMcp === true,
+    secureSecretFieldsEnabled: input.organizationFeatures.secureSecretFields === true,
     remoteSessionEventsEnabled: input.organizationFeatures.remoteSessionEvents === true,
     resolvePlatformAdmin,
     resolveNamespaceContext,

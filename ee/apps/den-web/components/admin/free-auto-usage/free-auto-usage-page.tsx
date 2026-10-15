@@ -1,10 +1,10 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { FreeAutoConversions } from "./conversions";
 import { AdminAccessScreen } from "../admin-access-screen";
+import { AdminDeferredContent } from "../admin-deferred-content";
 import { Download, RefreshCw, Search } from "lucide-react";
-import { useMemo, useState, type ReactNode } from "react";
+import { lazy, Suspense, useMemo, useState, type ReactNode } from "react";
 import { DenBadge } from "../../../app/(den)/_components/ui/badge";
 import { DenButton } from "../../../app/(den)/_components/ui/button";
 import { DenCard } from "../../../app/(den)/_components/ui/card";
@@ -14,8 +14,6 @@ import { DenPageHeader } from "../../../app/(den)/_components/ui/page-header";
 import { DenSegmented } from "../../../app/(den)/_components/ui/segmented";
 import { DenSelect } from "../../../app/(den)/_components/ui/select";
 import { DenTable, type DenTableColumn } from "../../../app/(den)/_components/ui/table";
-import { StackedDailyChart } from "../../../app/(den)/dashboard/_features/analytics/stacked-daily-chart";
-import { useSeriesColors } from "../../../app/(den)/dashboard/_features/analytics/use-series-colors";
 import {
   FREE_AUTO_RANGES,
   organizationsCsv,
@@ -28,7 +26,8 @@ import {
 } from "./free-auto-usage-data";
 import { formatCount, formatRelative, formatShare, formatTokens, formatUsd } from "./format";
 
-const SERIES = [{ id: "members", label: "Members" }, { id: "guests", label: "Guests" }];
+const FreeAutoConversions = lazy(() => import("./conversions").then((module) => ({ default: module.FreeAutoConversions })));
+const FreeAutoSpendChart = lazy(() => import("./spend-chart"));
 const SORTS: Array<{ value: OrganizationSort; label: string }> = [
   { value: "spend", label: "Spend" },
   { value: "requests", label: "Requests" },
@@ -121,14 +120,11 @@ function organizationColumns(now: number): DenTableColumn<FreeAutoOrganizationUs
 }
 
 function Report({ report, refreshKey }: { report: FreeAutoUsageReport; refreshKey: number }) {
+  const params = useSearchParams();
   const [search, setSearch] = useState("");
   const [sort, setSort] = useState<OrganizationSort>("spend");
-  const colors = useSeriesColors(SERIES.map((series) => series.id), "free-auto-usage");
   const rows = useMemo(() => selectOrganizations(report.organizations, { search, sort }), [report.organizations, search, sort]);
   const now = Date.parse(report.generatedAt);
-  const daily = report.daily.map((day) => ({
-    date: day.date, total: day.membersMicroUsd + day.guestsMicroUsd, values: { members: day.membersMicroUsd, guests: day.guestsMicroUsd },
-  }));
   const { totals, members, guests, week, settings } = report;
 
   return (
@@ -145,13 +141,18 @@ function Report({ report, refreshKey }: { report: FreeAutoUsageReport; refreshKe
         <Stat label="At weekly limit" value={formatCount(week.peopleAtWeeklyLimit)} detail={`of ${formatCount(week.activePeople)} active this week`} />
       </div>
 
-      <FreeAutoConversions days={report.range.days} refreshKey={refreshKey} />
+      <AdminDeferredContent label="Show activity after the free limit" placeholderClassName="h-96" eager={params.has("conversionStage") || params.has("search") || params.has("page")}>
+        {() => <Suspense fallback={<div className="h-96 bg-slate-50" aria-busy="true" aria-label="Loading conversion activity" />}><FreeAutoConversions days={report.range.days} refreshKey={refreshKey} /></Suspense>}
+      </AdminDeferredContent>
 
       <Section title="Daily spend" description="What free Auto cost each UTC day, split between signed-in members and signed-out desktops.">
-        <StackedDailyChart daily={daily} series={SERIES} colors={colors} valueLabel="Free Auto spend" valueFormat="usd" emptyLabel="No free Auto usage in this range." />
+        <AdminDeferredContent label="Show daily free Auto spend" placeholderClassName="h-64">
+          {() => <Suspense fallback={<div className="h-64 bg-slate-50" aria-busy="true" aria-label="Loading daily spend chart" />}><FreeAutoSpendChart daily={report.daily} /></Suspense>}
+        </AdminDeferredContent>
       </Section>
 
-      <Section
+      <AdminDeferredContent label="Show organization usage" placeholderClassName="h-96">
+      {() => <Section
         title="Organizations"
         description="Signed-in members' usage by organization. The weekly allowance is per person, so someone at their limit counts in every organization they used this week."
         action={<DenButton variant="secondary" size="sm" icon={Download} onClick={() => downloadCsv(report)}>Export CSV</DenButton>}
@@ -172,7 +173,8 @@ function Report({ report, refreshKey }: { report: FreeAutoUsageReport; refreshKe
             and {formatUsd(report.otherOrganizations.costMicroUsd)} of spend.
           </p>
         ) : null}
-      </Section>
+      </Section>}
+      </AdminDeferredContent>
 
       <Section title="Signed-out desktops" description="Guests have no account or organization, so they are only shown as totals.">
         <dl className="grid gap-4 sm:grid-cols-5">

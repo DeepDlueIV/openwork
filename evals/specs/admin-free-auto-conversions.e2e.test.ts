@@ -8,6 +8,26 @@ test("a platform admin identifies accounts and paid customers who came back afte
   const admin = user.on(world.web), anonymous = user.on(world.anonymous);
   const newJourney = "1".repeat(64), returningJourney = "2".repeat(64);
 
+  await step("before: opening Free Auto leaves distant conversion analytics unloaded", async () => {
+    await admin.see({ role: "heading", label: "Free Auto usage" }, { timeoutMs: 60_000 });
+    const pending = await probe.on(world.web).dom('[data-admin-deferred="pending"]');
+    expect(pending.elements[0]?.rect.top).toBeGreaterThan(600);
+    expect(await world.conversionReads()).toBe(0);
+    evidence.recordAssertionEvidence("Off-screen conversion analytics do no work", `pending sections=${pending.elements.length}; first section=${pending.elements[0]?.rect.top}px; completed conversion reads=0`, true);
+    await admin.screenshot();
+  });
+
+  await step("after: approaching conversion activity loads it once and scrolling back reuses it", async () => {
+    await admin.resizeViewport({ width: 1280, height: 1000, deviceScaleFactor: 1 });
+    await admin.see({ text: "No tracked limit observations in this range. New activity will appear here after tracking is deployed." });
+    const first = await probe.eventually(() => world.conversionReads(), { within: 10_000, until: (reads) => reads === 1, label: "visible conversion read" });
+    await admin.wheelAt({ x: 1000, y: 700, deltaY: 1200 });
+    await admin.wheelAt({ x: 1000, y: 700, deltaY: -1200 });
+    expect(await world.conversionReads()).toBe(first);
+    evidence.recordAssertionEvidence("Conversion activity is reused after its first reveal", `first visit=${first}; after scrolling away and back=${await world.conversionReads()}`, true);
+    await admin.screenshot();
+  });
+
   await step("before: the admin sees no tracked conversions or invented historical guest identities", async () => {
     await admin.see({ role: "heading", label: "After the free limit" }, { timeoutMs: 60_000 });
     await admin.see({ text: "No tracked limit observations in this range. New activity will appear here after tracking is deployed." });

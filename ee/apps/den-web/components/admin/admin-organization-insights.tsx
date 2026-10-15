@@ -1,9 +1,13 @@
 "use client";
 
 import Link from "next/link";
+import { lazy, Suspense } from "react";
 import type { AdminOrganizationInsights as Report } from "@openwork/types/den/admin-organization";
 import { DenTable, type DenTableColumn } from "../../app/(den)/_components/ui/table";
-import { AdminRankingChart, AdminUsageChart } from "./admin-usage-chart";
+import { AdminDeferredContent } from "./admin-deferred-content";
+
+const AdminUsageChart = lazy(() => import("./admin-usage-chart").then((module) => ({ default: module.AdminUsageChart })));
+const AdminRankingChart = lazy(() => import("./admin-usage-chart").then((module) => ({ default: module.AdminRankingChart })));
 
 const count = (value: number) => new Intl.NumberFormat().format(value);
 const percent = (value: number) => new Intl.NumberFormat(undefined, { style: "percent", maximumFractionDigits: 1 }).format(value);
@@ -53,15 +57,23 @@ export function AdminOrganizationInsights({ organization, insights }: Pick<Repor
       <Stat label="Successful requests" value={current.requests > 0 ? percent(current.successfulRequests / current.requests) : "—"} detail={`${count(current.successfulRequests)} of ${count(current.requests)} requests`} />
     </dl>
     {current.requests === 0 ? <p className="border-b border-slate-200 py-5 text-sm text-slate-500">No recorded gateway requests in the current period.</p> : null}
-    <section aria-label="Organization activity over time" className="border-b border-slate-200 py-6"><AdminUsageChart daily={insights.daily} showActiveMembers /></section>
+    <section aria-label="Organization activity over time" className="border-b border-slate-200 py-6">
+      <AdminDeferredContent label="Show organization activity chart" placeholderClassName="h-72">
+        {() => <Suspense fallback={<div className="h-72" aria-busy="true" aria-label="Loading activity chart" />}><AdminUsageChart daily={insights.daily} showActiveMembers /></Suspense>}
+      </AdminDeferredContent>
+    </section>
     <section aria-label="Most active people" className="border-b border-slate-200 py-6">
       <h2 className="mb-4 text-sm font-semibold text-slate-950">Most active people</h2>
-      {insights.people.length ? <AdminRankingChart rows={insights.people.map((person) => ({ name: person.name || person.email || "Unavailable member", requests: person.requests }))} label="Top eight people by AI requests" /> : null}
+      {insights.people.length ? <AdminDeferredContent label="Show active people chart" placeholderClassName="h-64">
+        {() => <Suspense fallback={<div className="h-64" aria-busy="true" aria-label="Loading people chart" />}><AdminRankingChart rows={insights.people.map((person) => ({ name: person.name || person.email || "Unavailable member", requests: person.requests }))} label="Top eight people by AI requests" /></Suspense>}
+      </AdminDeferredContent> : null}
       <DenTable columns={people} rows={insights.people} getRowKey={(person) => person.memberId} density="compact" emptyLabel="No people have recorded AI usage in this period." />
     </section>
     <section aria-label="Most used models" className="border-b border-slate-200 py-6">
       <h2 className="mb-4 text-sm font-semibold text-slate-950">Most used models</h2>
-      {insights.models.length ? <AdminRankingChart rows={insights.models.map((model) => ({ name: model.name, requests: model.requests }))} label="Top eight models by AI requests" /> : null}
+      {insights.models.length ? <AdminDeferredContent label="Show model usage chart" placeholderClassName="h-64">
+        {() => <Suspense fallback={<div className="h-64" aria-busy="true" aria-label="Loading model chart" />}><AdminRankingChart rows={insights.models.map((model) => ({ name: model.name, requests: model.requests }))} label="Top eight models by AI requests" /></Suspense>}
+      </AdminDeferredContent> : null}
       <DenTable columns={models} rows={insights.models} getRowKey={(model) => model.id} density="compact" emptyLabel="No models have recorded usage in this period." />
     </section>
     <details className="py-4 text-xs leading-5 text-slate-500"><summary className="w-fit cursor-pointer font-medium text-slate-700 focus-visible:outline-2 focus-visible:outline-slate-500">Metric definitions</summary>

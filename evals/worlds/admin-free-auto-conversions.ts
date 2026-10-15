@@ -62,7 +62,7 @@ export async function adminFreeAutoConversionsWorld(seed: Seed, { place }: { pla
   const getMember = async (session: DenSession) => record(record((await seed.api(session, "/v1/org")).body).currentMember);
   const returningUserId = text((await getMember(returning)).userId);
   const controlUserId = text((await getMember(control)).userId);
-  const web = await seed.web({ den, signedInAs: den.admin, startPath: "/admin/free-auto", headless: true, viewport: { width: 1280, height: 1000 } });
+  const web = await seed.web({ den, signedInAs: den.admin, startPath: "/admin/free-auto", headless: true, viewport: { width: 375, height: 200 } });
   const anonymous = await seed.web({ den, startPath: "/admin/free-auto", headless: true });
   let newSession: DenSession | null = null;
   let newUserId = "", newMemberId = "", newOrganizationId = "";
@@ -82,6 +82,14 @@ export async function adminFreeAutoConversionsWorld(seed: Seed, { place }: { pla
   return {
     den, web, anonymous, returning, organizationId, adminMemberId,
     url: (path: string) => new URL(path, den.ref.webUrl).toString(),
+    async conversionReads() {
+      // TODO(primitive): probe needs a read-only resource timing projection to
+      // witness that below-fold analytics never started, without product mocks.
+      return seed.evalIn(web, () => performance.getEntriesByType("resource").filter((entry) =>
+        new URL(entry.name).pathname.endsWith("/admin/free-auto/conversions") &&
+        "responseStatus" in entry && typeof entry.responseStatus === "number" && entry.responseStatus > 0,
+      ).length);
+    },
     async anonymousAccess() { return (await fetch(new URL("/v1/admin/free-auto/conversions", den.ref.apiUrl))).status; },
     async report(query = "") {
       const result = await seed.api(den.admin, `/v1/admin/free-auto/conversions?${query}`);

@@ -6,6 +6,7 @@ import { adminDashboardSchema, type AdminDashboard as Dashboard, type AdminOrgan
 import { DenButton, buttonVariants } from "../../app/(den)/_components/ui/button";
 import { DenTable, type DenTableColumn } from "../../app/(den)/_components/ui/table";
 import { requestAdmin } from "./admin-request";
+import { AdminDeferredContent } from "./admin-deferred-content";
 
 const AdminUsageChart = lazy(() => import("./admin-usage-chart").then((module) => ({ default: module.AdminUsageChart })));
 
@@ -38,7 +39,9 @@ function UsageChart({ data }: { data: Dashboard }) {
     { key: "cost", header: "Recorded cost", align: "right", render: recordedCost },
   ];
   return <section aria-label="AI usage trend" className="min-w-0 border-b border-slate-200 py-6">
-    <Suspense fallback={<div className="h-72" aria-busy="true" aria-label="Loading usage chart" />}><AdminUsageChart daily={data.daily} /></Suspense>
+    <AdminDeferredContent label="Show activity chart" placeholderClassName="h-72">
+      {() => <Suspense fallback={<div className="h-72" aria-busy="true" aria-label="Loading usage chart" />}><AdminUsageChart daily={data.daily} /></Suspense>}
+    </AdminDeferredContent>
     {data.totals.requests === 0 ? <p className="text-sm text-slate-500">No recorded gateway requests in this period.</p> : null}
     <Coverage totals={data.totals} />
     <details className="mt-4 text-xs text-slate-600">

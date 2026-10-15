@@ -13,6 +13,7 @@ import { DenNotice } from "../../../app/(den)/_components/ui/notice";
 import { DenTable, type DenTableColumn } from "../../../app/(den)/_components/ui/table";
 import { useAdminListLocation } from "../admin-list-location";
 import { requestAdmin } from "../admin-request";
+import { AdminDeferredContent } from "../admin-deferred-content";
 import { formatCount, formatShare } from "./format";
 
 const Chart = dynamic(() => import("./conversion-chart"), { loading: () => <div className="h-64 bg-slate-50" aria-label="Loading conversion chart" /> });
@@ -90,7 +91,7 @@ export function FreeAutoConversions({ days, refreshKey }: { days: number; refres
         <span className="block text-xs text-slate-500">{metric.label}</span><span className="mt-2 block text-2xl font-medium tabular-nums text-slate-900">{formatCount(metric.value)}</span>
         <span className="mt-1 block text-xs text-slate-500">{metric.filter === "all" ? "Accounts and anonymous journeys" : `${formatShare(metric.value, report.totals.reachedLimit)} of the limit cohort`}</span>
       </button>)}</div>
-      {report.totals.reachedLimit ? <div><Chart daily={report.daily} /><p className="mt-2 text-xs text-slate-500">Grouped by the UTC day the limit was first observed in this range. Recent cohorts still have time to convert.</p></div>
+      {report.totals.reachedLimit ? <div><AdminDeferredContent label="Show conversion activity chart" placeholderClassName="h-64">{() => <Chart daily={report.daily} />}</AdminDeferredContent><p className="mt-2 text-xs text-slate-500">Grouped by the UTC day the limit was first observed in this range. Recent cohorts still have time to convert.</p></div>
         : <p className="rounded-md bg-slate-50 p-4 text-sm text-slate-500">No tracked limit observations in this range. New activity will appear here after tracking is deployed.</p>}
       <div className="flex flex-wrap gap-3"><div className="min-w-48 flex-1"><DenInput icon={Search} aria-label="Search conversion people" placeholder="Search people by name, email, or user ID" value={draftSearch} onChange={(event) => setSearch(event.target.value.slice(0, 160))} /></div>
         <DenSelect aria-label="Conversion outcome" value={stage} onChange={(event) => changeStage(event.target.value)}>{STAGES.map((item) => <option key={item.value} value={item.value}>{item.label}</option>)}</DenSelect></div>

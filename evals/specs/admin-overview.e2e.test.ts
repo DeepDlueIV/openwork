@@ -267,6 +267,9 @@ test("an admin navigates organizations and member usage without loading every de
     await admin.click({ role: "link", label: "Insights" });
     await admin.see({ testId: "admin-organization-insights" }, { text: /Active member adoption/ });
     await admin.see({ testId: "admin-breadcrumb-current" }, { text: "Insights" });
+    const deferredModels = await adminProbe.dom('[aria-label="Most used models"] [data-admin-deferred="pending"]');
+    expect(deferredModels.elements).toHaveLength(1);
+    expect((await adminProbe.dom('[aria-label="Top eight models by AI requests"]')).elements).toHaveLength(0);
     const report = await world.organizationInsights();
     const { current, previous, daily, people, models } = report.insights;
     const ok = current.requests === 7 && previous.requests === 3 && current.activeMembers === 2 && previous.activeMembers === 1
@@ -286,6 +289,8 @@ test("an admin navigates organizations and member usage without loading every de
     await admin.screenshot();
     await admin.wheelAt({ x: 1000, y: 700, deltaY: 700 });
     await admin.see({ role: "heading", label: "Most used models" });
+    const modelChart = await adminProbe.eventually(() => adminProbe.dom('[aria-label="Top eight models by AI requests"]'), { within: 10_000, until: (value) => value.elements.length === 1, label: "visible model chart" });
+    expect(modelChart.elements).toHaveLength(1);
     await admin.screenshot();
     await admin.resizeViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
     const layout = await adminProbe.dom("body");

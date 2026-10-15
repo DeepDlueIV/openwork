@@ -35,25 +35,28 @@ function observe(element: Element, reveal: () => void) {
   return () => unobserve(element);
 }
 
-export function AdminDeferredContent({ children, label, className, placeholderClassName, onVisible }: {
+export function AdminDeferredContent({ children, label, className, placeholderClassName, onVisible, eager = false }: {
   children: () => ReactNode;
   label: string;
   className?: string;
   placeholderClassName: string;
   onVisible?: () => void;
+  eager?: boolean;
 }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [visible, setVisible] = useState(false);
+  const [visible, setVisible] = useState(eager);
   useEffect(() => {
     if (visible || !ref.current) return;
+    // A filtered deep link explicitly asks for the section even below the fold.
+    if (eager) { setVisible(true); return; }
     return observe(ref.current, () => setVisible(true));
-  }, [visible]);
+  }, [visible, eager]);
   useEffect(() => { if (visible) onVisible?.(); }, [visible, onVisible]);
 
   return (
     <div ref={ref} className={className} data-admin-deferred={visible ? "ready" : "pending"}>
       {visible ? children() : (
-        <div className={`flex items-start rounded-2xl bg-gray-50 p-4 ${placeholderClassName}`}>
+        <div className={`flex items-start rounded-md bg-slate-50 p-4 ${placeholderClassName}`}>
           <DenButton variant="ghost" onClick={() => setVisible(true)}>{label}</DenButton>
         </div>
       )}

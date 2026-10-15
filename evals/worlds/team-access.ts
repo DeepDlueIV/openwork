@@ -13,7 +13,7 @@ export async function teamAccess(seed: Seed) {
   const members = isRecord(org.body) ? records(org.body.members) : [];
   const teammate = members.find((member) => isRecord(member.user) && member.user.name === "Riley Teammate");
   if (typeof organizationId !== "string" || typeof teammate?.id !== "string") throw new Error("Missing organization or teammate");
-  await enableOrganizationCapabilities(seed, den.admin, { teamRoles: true, sharedRoles: true }, organizationId);
+  await enableOrganizationCapabilities(seed, den.admin, { permissions: true, teamRoles: true, sharedRoles: true }, organizationId);
   const id = (body: unknown) => { const item = isRecord(body) ? (isRecord(body.item) ? body.item : isRecord(body.team) ? body.team : null) : null; if (typeof item?.id !== "string") throw new Error(`Missing ID: ${JSON.stringify(body)}`); return item.id; };
   const call = async (path: string, body: unknown) => { const result = await seed.api(den.admin, path, { method: "POST", body: JSON.stringify(body) }); if (!result.response.ok) throw new Error(`${path}: ${result.response.status} ${result.text}`); return result.body; };
   const teamId = id(await call("/v1/teams", { name: "Research", memberIds: [teammate.id] }));
@@ -32,7 +32,10 @@ export async function teamAccess(seed: Seed) {
   const web = await seed.web({ den, signedInAs: den.admin, startPath, headless: true, viewport: { width: 1440, height: 1000 } });
   const member = await seed.web({ den, signedInAs: outsider, startPath: "/dashboard/library", headless: true, viewport: { width: 1440, height: 1000 } });
   return { den, web, member, teamId, directId, grantId, teamUrl: new URL(startPath, den.ref.webUrl).toString(),
-    async setRows(enabled: boolean) { await enableOrganizationCapabilities(seed, den.admin, { teamAccessRows: enabled }, organizationId); },
+    async setRows(enabled: boolean) {
+      const result = await seed.api(den.admin, `/v1/admin/organizations/${organizationId}/capabilities`, { method: "PUT", body: JSON.stringify({ capabilities: { teamAccessRows: enabled } }) });
+      if (!result.response.ok) throw new Error(`Setting access rows: ${result.response.status} ${result.text}`);
+    },
     async outsiderRevoke() { return seed.api(outsider, `/v1/plugins/${directId}/access/${grantId}`, { method: "DELETE" }); },
     async access() { const result = await seed.api(den.admin, `/v1/teams/${teamId}/plugin-access`); return isRecord(result.body) ? records(result.body.items) : []; },
   };

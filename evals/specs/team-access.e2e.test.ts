@@ -1,4 +1,5 @@
-import { expect, spec } from "@openwork/testkit";
+import { expect } from "vitest";
+import { spec } from "@openwork/testkit";
 import { teamAccess } from "../worlds/team-access.ts";
 
 const test = spec.world(teamAccess, { timeout: 600_000, resources: { surfaces: ["web"], services: ["den"] } });
@@ -24,6 +25,10 @@ test("an owner reviews team plugin access and confirms a revoke without changing
     evidence.recordAssertionEvidence("three access paths have separate rows", `${rows.length} rows; ${statuses.join(" / ")}`, rows.length === 3 && statuses.join("|") === "Everyone|This team|Through Shared tools");
     expect(rows).toHaveLength(3);
     expect(statuses).toEqual(["Everyone", "This team", "Through Shared tools"]);
+    const nameLanes = (await probe.dom('[data-testid="team-plugin-access-row"] > span:first-child > span:last-child')).elements;
+    const accessLanes = (await probe.dom('[data-testid="team-plugin-access-row"] [data-item-status]')).elements;
+    expect(nameLanes.every((lane) => lane.rect.width >= 280)).toBe(true);
+    expect(new Set(accessLanes.map((lane) => Math.round(lane.rect.left))).size).toBe(1);
     await owner.screenshot();
   });
   await step("Revoke names the team, plugin and loss of access; Cancel leaves the grant unchanged", async () => {
@@ -39,7 +44,7 @@ test("an owner reviews team plugin access and confirms a revoke without changing
   });
   await step("a member outside Research cannot revoke its grant or see its private briefing", async () => {
     const outsider = user.on(world.member);
-    await outsider.see({ text: "My library" }, { timeoutMs: 90_000 });
+    await outsider.see({ text: "My Library" }, { timeoutMs: 90_000 });
     await outsider.notSee({ text: "Research briefing" });
     const denied = await world.outsiderRevoke();
     const remaining = await world.access();
@@ -51,8 +56,9 @@ test("an owner reviews team plugin access and confirms a revoke without changing
   await step("confirming Revoke removes only This team; Everyone and the catalog stay", async () => {
     await owner.click({ role: "button", label: "More for Research briefing, This team" });
     await owner.click({ role: "menuitem", label: "Revoke" });
-    await owner.click({ role: "button", label: "Revoke", exact: true });
-    await owner.notSee({ role: "button", label: "More for Research briefing, This team" }, { timeoutMs: 30_000 });
+    await owner.click({ role: "button", label: "Revoke" });
+    await probe.eventually(() => probe.dom('[data-testid="team-plugin-access-row"]'), { within: 30_000, label: "the direct grant leaves the list", until: (rows) => rows.elements.length === 2 });
+    await owner.notSee({ role: "button", label: "More for Research briefing, This team" });
     const remaining = await world.access();
     evidence.recordAssertionEvidence("only the direct team grant is removed", `${remaining.length} access paths: ${remaining.map((item) => item.edge).join(", ")}`, remaining.length === 2 && !remaining.some((item) => item.edge === "direct_team"));
     expect(remaining).toHaveLength(2);

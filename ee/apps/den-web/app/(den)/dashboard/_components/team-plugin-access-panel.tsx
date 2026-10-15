@@ -22,7 +22,8 @@ export function TeamPluginAccessPanel({ teamId, teamName, orgSlug, canRevoke }: 
 
   return <section aria-label="Plugins & connections" data-testid="team-plugin-access">
     <h2 className="mb-2 text-[13px] font-medium text-gray-700">Plugins & connections</h2>
-    {access.error ? <DenNotice tone="error" message="Could not load team access. Reload to try again." /> : <ItemPanel>
+    {access.error ? <DenNotice tone="error" message={access.data ? "Could not refresh team access. Showing the last loaded access; reload to try again." : "Could not load team access. Reload to try again."} /> : null}
+    {!access.error || access.data ? <ItemPanel>
       {access.isLoading ? <ItemRowsSkeleton label="Loading team access" /> : items.length ? items.map((item) => {
         const grantId = item.grantId;
         const accessSource = source(item);
@@ -30,7 +31,7 @@ export function TeamPluginAccessPanel({ teamId, teamName, orgSlug, canRevoke }: 
           key={`${item.plugin.id}-${item.edge}-${grantId ?? item.marketplace?.id ?? "org"}`}
           testId="team-plugin-access-row"
           logo={<PluginLogo name={item.plugin.name} />}
-          title={<span title={item.plugin.name}>{item.plugin.name}</span>}
+          title={item.plugin.name}
           description={`${item.plugin.componentCount} ${item.plugin.componentCount === 1 ? "component" : "components"}${rolesVary ? ` · ${item.role === "viewer" ? "Can use" : item.role === "editor" ? "Can edit" : "Can manage"}` : ""}`}
           statusOnNarrow
           status={<span title={accessSource}>{accessSource}</span>}
@@ -47,6 +48,6 @@ export function TeamPluginAccessPanel({ teamId, teamName, orgSlug, canRevoke }: 
           }] : item.edge === "via_catalog" && item.marketplace ? [{ label: "Open catalog", href: getMarketplaceRoute(orgSlug, item.marketplace.id) }] : []} />}
         />;
       }) : <p className="px-5 py-4 text-[13px] text-gray-500">No plugin access yet. An organization admin can share a plugin with this team.</p>}
-    </ItemPanel>}
+    </ItemPanel> : null}
   </section>;
 }

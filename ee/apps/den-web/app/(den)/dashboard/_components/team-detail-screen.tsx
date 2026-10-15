@@ -11,6 +11,7 @@ import { getMarketplaceRoute, getMembersRoute, getOrgAccessFlags, orgFeatureEnab
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
 import { AgentsPanel, agentsTabVisible } from "./agent-permissions-editor";
 import { TeamPermissionsPanel } from "./team-permissions-panel";
+import { TeamPluginAccessPanel } from "./team-plugin-access-panel";
 import { ModelsPanel, modelsTabVisible } from "./team-models-panel";
 import { TeamDefaultModelSection } from "./default-model-section";
 import { useDefaultModelFeatureOn } from "./default-model-data";
@@ -197,6 +198,9 @@ export function TeamDetailScreen({ teamId, initialTab = null }: { teamId: string
               <TeamDefaultModelSection teamId={teamId} canManage={viewerAccess.canManageModelsSettings} />
             ) : null}
             {sharedRoles ? null : <TeamPermissionsPanel teamId={teamId} heading={teamRoles ? "In the desktop app" : undefined} />}
+            {orgContext && orgFeatureEnabled(orgContext, "teamAccessRows") ? (
+              <TeamPluginAccessPanel teamId={teamId} teamName={team?.name ?? "This team"} orgSlug={orgSlug} canRevoke={canRevokeAccess} />
+            ) : <>
             <h2 className="mb-2 text-lg font-semibold text-gray-950">Plugins & connections</h2>
             {sharedRoles ? null : <p className="mb-4 text-sm text-gray-500">Review what this team can use and where access comes from.</p>}
             {accessQuery.isLoading ? (
@@ -296,6 +300,7 @@ export function TeamDetailScreen({ teamId, initialTab = null }: { teamId: string
             <p className="mt-4 text-[12px] text-gray-500">
               direct = revocable here; via catalog = manage in the catalog; org-wide = org setting.
             </p>
+            </>}
           </div>
         ) : null}
 

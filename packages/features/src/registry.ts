@@ -179,6 +179,13 @@ export const FEATURES = defineFeatures({
     deployments: everywhere,
     default: false,
   },
+  teamAccessRows: {
+    label: "Team access rows",
+    description: "Team plugin access shows compact rows with clear access sources and a confirmation before revoking a team grant.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
   teamPageTabs: {
     label: "Team page: Browser and Models tabs",
     description: "Each team's page, and Everyone's, gets a Browser tab for the pages agents and the built-in browser can open, and a Models tab with the AI providers the team can use, its spend limits and its default model.",

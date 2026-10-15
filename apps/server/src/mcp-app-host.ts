@@ -580,6 +580,8 @@ function connectCatalogError(diagnostic: Exclude<ConnectMcpCatalogDiagnostic, "r
   return new McpAppHostError(`connect_catalog_${diagnostic}`, messages[diagnostic]);
 }
 
+const CONNECT_CATALOG_RETRY_DELAYS_MS = [1_000, 3_000];
+
 async function privateConnectMcpConfigUntimed(input: {
   serverConfig: ServerConfig;
   workspaceId: string;
@@ -593,8 +595,20 @@ async function privateConnectMcpConfigUntimed(input: {
     input.workspaceId,
     { connectionId: input.connectionId, serverName: input.serverName },
   );
-  if (!descriptor) {
+  for (let attempt = 0; !descriptor; attempt += 1) {
     const refreshed = await refreshOpenWorkConnectMcpAppHostCatalog(input.serverConfig, input.workspaceId);
+    const delay = CONNECT_CATALOG_RETRY_DELAYS_MS[attempt];
+    if (refreshed.diagnostic === "discovery_unavailable" && delay !== undefined) {
+      // Connect may still be warming up on the App's first read. Retry only
+      // discovery, before any provider tool can run, never a tool's outcome.
+      await new Promise<void>((resolve) => setTimeout(resolve, delay));
+      descriptor = await findOpenWorkConnectMcpAppHostServer(
+        input.serverConfig,
+        input.workspaceId,
+        { connectionId: input.connectionId, serverName: input.serverName },
+      );
+      continue;
+    }
     if (refreshed.diagnostic !== "ready" && refreshed.diagnostic !== "empty") {
       throw connectCatalogError(refreshed.diagnostic);
     }
@@ -605,6 +619,7 @@ async function privateConnectMcpConfigUntimed(input: {
         { connectionId: input.connectionId, serverName: input.serverName },
       );
     }
+    break;
   }
   if (!descriptor) return null;
   const appHostAuthorization = await readOpenWorkConnectMcpAppHostAuthorization(

@@ -83,6 +83,17 @@ test("catalog reconciliation attributes failures without leaking private auth or
     expect(text).not.toContain(memberAuthorization.slice("Bearer ".length));
     expect(JSON.parse(text)).toMatchObject({ code });
   }
+  async function appRequest(endpoint: string, route: string, body: unknown) {
+    const response = await fetch(endpoint.replace("/mcp/openwork-cloud/reconcile", `/mcp-apps/${route}`), {
+      method: "POST", headers, signal: AbortSignal.timeout(20_000), body: JSON.stringify(body),
+    });
+    const text = await response.text();
+    expect(text).not.toContain(privateAuthorization.slice("Bearer ".length));
+    expect(text).not.toContain(memberAuthorization.slice("Bearer ".length));
+    const result: unknown = JSON.parse(text);
+    return { status: response.status, body: result };
+  }
+  const catalogReads = () => witness.requests.filter((entry) => entry.privateAuth && entry.method === "resources/read").length;
   try {
     const endpoint = await boot("trusted-dev", "1");
     expect((await health(endpoint)).appHostAuthorizationReady).toBeNull();
@@ -117,7 +128,9 @@ test("catalog reconciliation attributes failures without leaking private auth or
     for (const invalid of ["not-json", JSON.stringify({ schemaVersion: "unsupported", servers: [] })]) {
       witness.catalog(invalid);
       expect((await reconcile(endpoint)).connectCatalogDiagnostic).toBe("invalid_catalog");
+      const before = catalogReads();
       await expectResolveError(endpoint, "connect_catalog_invalid_catalog");
+      expect(catalogReads() - before).toBe(1);
     }
     expect(witness.disconnects).toContain(directName);
     const projectedCount = witness.registrations.filter((entry) => entry.name.startsWith("openwork-direct-")).length;
@@ -127,11 +140,45 @@ test("catalog reconciliation attributes failures without leaking private auth or
     for (const status of [401, 403, 404, 503]) {
       witness.catalog(index([]), status);
       expect((await reconcile(endpoint)).connectCatalogDiagnostic).toBe("discovery_unavailable");
+      const before = witness.requests.filter((entry) => entry.privateAuth && entry.method === "initialize").length;
       await expectResolveError(endpoint, "connect_catalog_discovery_unavailable");
+      expect(witness.requests.filter((entry) => entry.privateAuth && entry.method === "initialize").length - before).toBe(3);
     }
     expect(witness.registrations.filter((entry) => entry.name.startsWith("openwork-direct-"))).toHaveLength(projectedCount);
     expect(witness.registrations.every((entry) => !entry.privateAuth)).toBe(true);
     evidence.recordAssertionEvidence("Catalog failure attribution and fail-closed projection", "Real reconciliation HTTP responses distinguish missing auth, empty, ready, invalid JSON/schema, invalid proxy, and unavailable HTTP 401/403/404/503; revoked direct entry disconnected and no rejected catalog reprojected it. Engine registrations contain no private auth.", true);
+
+    witness.catalog(index([]));
+    await reconcile(endpoint);
+    witness.catalog(index([descriptor]));
+    witness.failNextCatalogReads(1);
+    const beforeResolve = catalogReads();
+    const resolved = await appRequest(endpoint, "resolve", {
+      launch: { connectionId: descriptor.connectionId, toolName: "show", resourceUri: "ui://fixture/app" },
+      context: { sessionId: null, readOnly: false },
+    });
+    expect(resolved.status).toBe(200);
+    expect(catalogReads() - beforeResolve).toBe(2);
+    expect(witness.appCalls).toEqual([]);
+    if (!isRecord(resolved.body) || !isRecord(resolved.body.app) || typeof resolved.body.app.launchId !== "string"
+      || typeof resolved.body.app.serverName !== "string") throw new Error("Missing recovered App launch");
+    evidence.recordAssertionEvidence("An App opens after one temporary catalog failure", "The first private catalog read returned 503; the same resolve request recovered on its second read and returned the App without running a provider tool.", true);
+
+    // A live App can encounter the same startup race after reconciliation
+    // replaces its catalog. Its first data call must recover without a click.
+    witness.catalog(index([]));
+    await reconcile(endpoint);
+    witness.catalog(index([descriptor]));
+    witness.failNextCatalogReads(1);
+    const beforeCall = catalogReads();
+    const loaded = await appRequest(endpoint, "call", {
+      launchId: resolved.body.app.launchId, serverName: resolved.body.app.serverName,
+      sessionId: null, name: "show", resourceUri: "ui://fixture/app",
+    });
+    expect(loaded).toMatchObject({ status: 200, body: { content: [{ type: "text", text: "Catalog App data" }] } });
+    expect(catalogReads() - beforeCall).toBe(2);
+    expect(witness.appCalls).toEqual(["show"]);
+    evidence.recordAssertionEvidence("The first read recovers without replaying the App tool", "After the catalog was cleared, the first data call encountered one 503, retried discovery, and returned data with exactly one provider tool call. Invalid catalog responses still stop after one read.", true);
 
     // Same loopback origin without the explicit development trust exception is
     // unactivated: supplying private auth must not send it to that origin.

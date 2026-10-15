@@ -18,6 +18,16 @@ test("an owner can hide analytics without losing existing export consent or gran
     await owner.navigate(`${base}/dashboard/analytics/models`);
     await owner.see({ role: "heading", label: "Usage & adoption" }, { timeoutMs: 60_000 });
     await owner.notSee({ text: "Task analytics" });
+    // The dated retirement notice is operator-facing registry metadata, not a
+    // change to collection, billing or stored data. Both rollouts must stay off.
+    const features = await probe.api(world.den.admin, "/v1/admin/features");
+    expect(features.response.status).toBe(200);
+    expect(features.body).toMatchObject({ features: expect.arrayContaining(
+      ["modelsAnalyticsUi", "taskAnalyticsUi"].map((key) => expect.objectContaining({
+        key, default: false, deployments: ["cloud", "self_hosted"],
+        description: expect.stringContaining(`Deprecated 2026-10-14: UI hidden behind ${key} (default off). Most likely delete within 4 weeks (by 2026-11-11) unless an org depends on it.`),
+      })),
+    ) });
     for (const path of guarded) expect((await api(path)).response.status, path).toBe(404);
     for (const [method, path, body] of [
       ["PATCH", "settings", { enabled: false, consentVersion: 1 }],
@@ -33,7 +43,7 @@ test("an owner can hide analytics without losing existing export consent or gran
     });
     expect(memberSettings.response.status).toBe(404);
     await world.arrange("assert-surface-retained");
-    evidence.recordAssertionEvidence("hidden surfaces deny dashboard and configuration APIs without modifying exports", "Four reads and four configuration requests return 404; direct URL returns to Usage & adoption; encrypted export configuration and consent are retained.", true);
+    evidence.recordAssertionEvidence("hidden surfaces deny dashboard and configuration APIs without modifying exports", "Both default-off flags announce the 2026-11-11 retirement review; four reads and four configuration requests return 404; direct URL returns to Usage & adoption; encrypted export configuration and consent are retained.", true);
     await owner.screenshot();
   });
 

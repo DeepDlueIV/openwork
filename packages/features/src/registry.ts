@@ -69,14 +69,14 @@ export const FEATURES = defineFeatures({
   },
   modelsAnalyticsUi: {
     label: "Models analytics",
-    description: "Organization admins can view Models & usage analytics and shared model usage limits.",
+    description: "Organization admins can view Models & usage analytics and shared model usage limits. Deprecated 2026-10-14: UI hidden behind modelsAnalyticsUi (default off). Most likely delete within 4 weeks (by 2026-11-11) unless an org depends on it.",
     since: "2026-10",
     deployments: everywhere,
     default: false,
   },
   taskAnalyticsUi: {
     label: "Task analytics",
-    description: "Members with analytics access can view task activity and consumption, and admins can configure analytics integrations.",
+    description: "Members with analytics access can view task activity and consumption, and admins can configure analytics integrations. Deprecated 2026-10-14: UI hidden behind taskAnalyticsUi (default off). Most likely delete within 4 weeks (by 2026-11-11) unless an org depends on it.",
     since: "2026-10",
     deployments: everywhere,
     default: false,

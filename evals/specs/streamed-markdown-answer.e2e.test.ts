@@ -3,6 +3,7 @@ import { eventually, observeTranscript, readTranscriptMessages, spec } from "@op
 import {
   quotedDraft,
   quotedDraftChat,
+  quotedDraftChecklist,
   quotedDraftCommand,
   quotedDraftMarker,
   streamedMarkdown,
@@ -213,6 +214,16 @@ quoteTest("a member copies a reply the answer quotes, with every bullet still on
     expect(shownLines).toBe(true);
     expect(topGap).toBeGreaterThanOrEqual(8);
     expect(bottomGap).toBeGreaterThanOrEqual(8);
+    await user.screenshot();
+  });
+
+  await step("after: a plain paragraph written line by line keeps each line on its own line", async () => {
+    // A single newline in chat text is a line break, not a space.
+    const checklistLines = quotedDraftChecklist.split("\n");
+    const shown = (await probe.text()).includes(quotedDraftChecklist);
+    evidence.recordAssertionEvidence("A paragraph keeps its single line breaks",
+      `${checklistLines.length} lines with no blank line between them shown one per line: ${shown}`, shown);
+    expect(shown).toBe(true);
     await user.screenshot();
   });
 

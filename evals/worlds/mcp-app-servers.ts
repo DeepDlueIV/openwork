@@ -498,6 +498,11 @@ export const buildReply = "The Quick order pricer is ready in this conversation.
 export const guidedTitle = "Inventory price board";
 export const guidedReply = "The Inventory price board is ready.";
 export const signInPrompt = "I need the Order calculator once more for 6 of WIDGET-7.";
+export const boardTitle = "Unit price board";
+export const boardPrompt = "Show me the unit price board for WIDGET-7.";
+export const boardReply = "The unit price board is open below.";
+export const boardAgainPrompt = "Open the unit price board for WIDGET-7 again.";
+export const boardAgainReply = "Here is the unit price board again.";
 export const signInReply = "Here is the Order calculator.";
 
 /**
@@ -508,12 +513,15 @@ export const signInReply = "Here is the Order calculator.";
 export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place: Place } = false, options: { engine?: EvalEngine; lifecycle?: boolean; ownSignIn?: boolean } = {}) {
   const measured = benchmark === true;
   const engine = options.engine ?? "v1";
+  // The chat journey also opens a price board built from prepare_app's starter.
+  const priceBoard = benchmark === false && !options.lifecycle && !options.ownSignIn;
   const toolStep = (tool: string, args: Record<string, unknown>) => engine === "v2" ? { tool: "execute", arguments: { code: `return await tools["openwork-cloud"].${tool}(${JSON.stringify(args)});` } } : { tool, arguments: args };
   // Den's numeric App timings (never payloads) let the journey count requests to an App's own server.
   const den = await seed.den({
     env: { DEN_GENERATED_ARTIFACT_VIEWS_ENABLED: "true", DEN_APP_MCP_SERVERS_ENABLED: "true", DEN_DASHBOARDS_ENABLED: "true", OPENWORK_MCP_APP_TIMINGS: "1" },
     org: { name: `App servers chat ${Date.now()}` },
-    mocks: { inventory: seed.mock({ allowUnauthenticatedMcp: true, tools: [inventoryTool, reserveTool] }) },
+    // A slow lookup lets the board's kept price show while its refresh is still running.
+    mocks: { inventory: seed.mock({ allowUnauthenticatedMcp: true, tools: [priceBoard ? { ...inventoryTool, delayMs: 3_000 } : inventoryTool, reserveTool] }) },
   });
   // With ownSignIn, each person signs in to Inventory with their own account, as with a real provider.
   const connection = await seed.orgConnection(den.admin, {
@@ -558,6 +566,16 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
     return record(record(JSON.parse(data ? data.slice(5) : raw)).result);
   };
   const { created, tools } = await composeOrderCalculator(seed, den.admin, connection.id, call);
+  // Published from prepare_app's lookup starter unchanged, as an agent following build-an-app would.
+  const board = priceBoard ? await (async () => {
+    const lookup = tools.filter(tool => tool.name === toolNames.connection);
+    const prepared = payload(await call("prepare_app", { title: boardTitle, description: "Look up a product's unit price in Inventory.", tools: lookup }));
+    const starter = record(prepared.starter);
+    return appSummary(await call("create_app", {
+      preparationId: field(prepared, "preparationId"), title: boardTitle, tools: lookup,
+      reactSource: field(starter, "reactSource"), cssSource: field(starter, "cssSource"), textFallback: "Looks up a product's unit price in Inventory.",
+    }));
+  })() : undefined;
   const performanceApps = [];
   if (measured) for (let i = 0; i < 10; i++) performanceApps.push(appSummary(await call("create_app", {
     ...appSource("revision one", { title: `Performance App ${i}`, sampleOrder: true }), tools,
@@ -580,6 +598,9 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
       { promptMarker: signInPrompt, finalReply: signInReply, latestUserTurn: true, steps: [
         { tool: "execute_capability", arguments: { name: `plugin:${created.pluginId}:${created.appId}`, body: launchInput } },
       ] },
+      ...(board ? [[boardPrompt, boardReply], [boardAgainPrompt, boardAgainReply]].map(([promptMarker, finalReply]) => ({ promptMarker, finalReply, latestUserTurn: true, steps: [
+        { tool: "execute_capability", arguments: { name: `plugin:${board.pluginId}:${board.appId}`, body: { sku: launchInput.sku } } },
+      ] })) : []),
     ] }),
     signal: AbortSignal.timeout(15_000),
   });
@@ -631,12 +652,16 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
     if (status !== 200) throw new Error(`Desktop App host reconciliation failed: ${status}`);
   }
   return {
-    app, session, den, created, performanceApps, workspace, engine,
+    app, session, den, created, board, performanceApps, workspace, engine,
+    /** The browser's Back, as the person returns to the conversation they came from. */
+    async goBack() {
+      await evaluate(app.client, () => { history.back(); });
+    },
     /** Switch the system light/dark setting, which OpenWork follows by default, and wait until it has. */
     async setColorScheme(theme: "light" | "dark") {
       await app.client.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: theme }] });
       for (let attempt = 0; attempt < 50; attempt++) {
-        if (await evaluate(app.client, () => document.documentElement.classList.contains("dark")) === (theme === "dark")) return;
+        if (await evaluate(app.client, () => document.documentElement.dataset.theme === "dark" || document.documentElement.classList.contains("dark")) === (theme === "dark")) return;
         await delay(100);
       }
       throw new Error(`OpenWork did not switch to ${theme}`);
@@ -709,7 +734,7 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
       const data = raw.split("\n").find(line => line.startsWith("data:"));
       if (record(JSON.parse(data ? data.slice(5) : raw)).error) throw new Error("Benchmark index rejected");
     },
-    inventoryCalls: (options: { sinceIso?: string; atLeast?: number } = {}) => den.mocks.inventory.toolCalls({ name: toolNames.connection, atLeast: 0, ...options }),
+    inventoryCalls: (options: { sinceIso?: string; atLeast?: number; timeoutMs?: number } = {}) => den.mocks.inventory.toolCalls({ name: toolNames.connection, atLeast: 0, ...options }),
     reservations: (options: { sinceIso?: string; atLeast?: number } = {}) => den.mocks.inventory.toolCalls({ name: toolNames.reserve, atLeast: 0, ...options }),
     inventoryName: connection.name,
     /** The owner removes their own Inventory account, as a teammate who never signed in would be. */

@@ -1,5 +1,5 @@
 import DOMPurify from "dompurify";
-import emojiKeywords from "emojilib";
+import { gemoji } from "gemoji";
 import { Marked, Renderer, TextRenderer, type MarkedExtension, type Token, type Tokens } from "marked";
 import { markedEmoji } from "marked-emoji";
 import {
@@ -128,21 +128,38 @@ function codeLanguageClass(lang: string | undefined) {
   return normalized ? ` class="language-${escapeAttribute(normalized)}"` : "";
 }
 
-function createEmojiAliases() {
-  const aliases: Record<string, string> = {};
+// GitHub's shortcode list (":tada:", ":fire:", ":+1:"): one emoji per name, and no
+// plain words or bare numbers, so text like ":home:" or "14:18:07" stays as written.
+const emojiAliases = Object.fromEntries(gemoji.flatMap(({ emoji, names }) => names.map((name) => [name, emoji])));
 
-  for (const [emoji, names] of Object.entries(emojiKeywords)) {
-    for (const name of names) {
-      if (!aliases[name]) {
-        aliases[name] = emoji;
-      }
-    }
-  }
+// emojilib names include numbers ("18" is 🔞), so a shortcode glued to a letter or
+// digit, like the ":18:" in "14:18:07", is part of the surrounding text and stays
+// as written.
+const SHORTCODE_NEIGHBOR = /[A-Za-z0-9]/;
 
-  return aliases;
+function emojiShortcodes(): MarkedExtension<string, string> {
+  const { extensions } = markedEmoji({
+    emojis: emojiAliases,
+    renderer: (token) => escapeHtml(token.emoji),
+  });
+
+  return {
+    extensions: (extensions ?? []).map((extension) => {
+      if (!("tokenizer" in extension) || !extension.tokenizer) return extension;
+      const tokenize = extension.tokenizer;
+      return {
+        ...extension,
+        tokenizer(src, tokens) {
+          const token = tokenize.call(this, src, tokens);
+          if (!token) return token;
+          const before = tokens.at(-1)?.raw.at(-1) ?? "";
+          const after = src.charAt(token.raw.length);
+          return SHORTCODE_NEIGHBOR.test(before) || SHORTCODE_NEIGHBOR.test(after) ? undefined : token;
+        },
+      };
+    }),
+  };
 }
-
-const emojiAliases = createEmojiAliases();
 
 const COPY_LABELS = {
   code: { copy: "Copy code block", copied: "Code block copied" },
@@ -174,8 +191,8 @@ function chatCodeBlockHtml(text: string, lang: string | undefined) {
   );
 }
 
-// A quote is often a draft meant to be pasted elsewhere: it keeps its line
-// breaks (see index.css) and copies its own Markdown, bullets included.
+// A quote is often a draft meant to be pasted elsewhere: it copies its own
+// Markdown, bullets included.
 function chatBlockquoteHtml(html: string, copyText: string | null) {
   const button = copyText === null ? "" : copyButton(`data-openwork-quote-copy="${escapeAttribute(copyText)}"`, COPY_LABELS.quote.copy);
   const padding = copyText === null ? "pr-4" : "pr-11";
@@ -420,7 +437,9 @@ function createMarkedOptions(profile: MarkdownProfile, presentation: MarkdownPre
   const inline = (tokens: Token[], render: () => string) => containsInlineHtml(tokens) ? withoutReferences(render) : render();
   return {
     async: isAsync,
-    breaks: false,
+    // Chat text is written line by line, so a single newline stays a line break.
+    // File previews keep CommonMark wrapping for hard-wrapped Markdown files.
+    breaks: presentation === "chat",
     gfm: true,
     pedantic: false,
     silent: true,
@@ -584,19 +603,13 @@ function createMarkdownParsers(presentation: MarkdownPresentation, resolveRefere
   const unsafeReferenceTokens = new WeakSet<object>();
   const generatedHtmlTokens = new WeakSet<object>();
   const markdownParser = new Marked<string, string>(createMarkedOptions(profile, presentation, false, resolveReference, unsafeReferenceTokens)).use(
-    markedEmoji({
-      emojis: emojiAliases,
-      renderer: (token) => escapeHtml(token.emoji),
-    }),
+    emojiShortcodes(),
     markdownMath(),
   );
   // Math must be registered on both parsers, otherwise formulas would flicker away
   // when a message containing a fenced code block upgrades to the Shiki render.
   const highlightedMarkdownParser = new Marked<string, string>(createMarkedOptions(profile, presentation, true, resolveReference, new WeakSet<object>(), generatedHtmlTokens)).use(
-    markedEmoji({
-      emojis: emojiAliases,
-      renderer: (token) => escapeHtml(token.emoji),
-    }),
+    emojiShortcodes(),
     markdownMath(),
     highlightedCodeExtension(profile, generatedHtmlTokens),
   );

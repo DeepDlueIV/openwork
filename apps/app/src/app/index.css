@@ -260,11 +260,6 @@ body {
   text-decoration: var(--shiki-dark-text-decoration) !important;
 }
 
-/* A quoted draft keeps its line breaks, so "•" bullets stay on their own lines. */
-.markdown-content [data-openwork-quote] p {
-  white-space: pre-line;
-}
-
 /* Inline Shiki-highlighted shell commands (chat tool rows) use the same
    dual-theme variables as the markdown code blocks above. */
 :is(.dark, [data-theme="dark"]) [data-shell-command-highlighted] span {

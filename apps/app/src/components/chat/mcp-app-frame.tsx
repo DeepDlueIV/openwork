@@ -16,6 +16,7 @@ import { openDesktopUrl } from "@/app/lib/desktop"
 import { mcpAppDiscoverySignature } from "@/app/lib/mcp-app-discovery-scheduler"
 import { scheduleCachedMcpAppDiscovery } from "@/app/lib/mcp-app-presentation-cache"
 import { cachedMcpAppResult, forgetMcpAppResult, MCP_APP_CACHE_REQUEST_META, MCP_APP_CACHED_RESULT_META, rememberMcpAppResult } from "@/app/lib/mcp-app-result-cache"
+import { createMcpAppOpenLoads } from "@/app/lib/mcp-app-open-loads"
 import { onCloudCredentialRefreshed, readCloudCredentialRevision } from "@/react-app/domains/connections/cloud-credential-revision"
 import {
   OpenworkServerError,
@@ -338,6 +339,12 @@ export type McpAppSandboxViewProps = {
   onRetry?: () => void
   /** Sees each result of a call the App makes, so a host can swap in its own recovery UI. */
   onAppToolResult?: (result: unknown) => void
+  /**
+   * Names the open this view belongs to when it can mount again without being
+   * reopened, such as a chat card scrolled back into view. Its loads then run
+   * once for the open rather than once per mount.
+   */
+  openKey?: string
 }
 
 /**
@@ -345,7 +352,7 @@ export type McpAppSandboxViewProps = {
  * bridges it to the workspace MCP App host. Chat messages and dashboard tiles
  * share this exact pipeline so rendering and diagnostics stay identical.
  */
-export function McpAppSandboxView({ origin, app, resolveLiveActions, toolName, inputArguments, result, connectionController, updateMode = "replace", onReady, unavailableNotice, onRequestTeardown, initialHeight, onHeightChange, presentation = "inline", onError, onRetry, onAppToolResult }: McpAppSandboxViewProps) {
+export function McpAppSandboxView({ origin, app, resolveLiveActions, toolName, inputArguments, result, connectionController, updateMode = "replace", onReady, unavailableNotice, onRequestTeardown, initialHeight, onHeightChange, presentation = "inline", onError, onRetry, onAppToolResult, openKey }: McpAppSandboxViewProps) {
   const openworkServerClient = origin.client
   const workspaceId = origin.workspaceId
   const readOnly = origin.readOnly
@@ -395,6 +402,8 @@ export function McpAppSandboxView({ origin, app, resolveLiveActions, toolName, i
     if (!iframe || !iframe.contentWindow || !openworkServerClient || !workspaceId) return
     let disposed = false
     let actions = createMcpAppActions(origin, app)
+    // A retry or sign-in reload is a new open.
+    const loads = createMcpAppOpenLoads(openKey === undefined ? undefined : JSON.stringify([openKey, retryAttempt]))
     let liveActions: Promise<void> | undefined
     let lastSizeEventAt = 0
     const startedAt = performance.now()
@@ -403,6 +412,7 @@ export function McpAppSandboxView({ origin, app, resolveLiveActions, toolName, i
     let failed = false
     let stopSandbox: (() => void) | undefined
     let stopHostContextSync: (() => void) | undefined
+    let stopWaitingForVisibility: (() => void) | undefined
     const checkpoint = (name: string) => checkpoints.push(`${name}+${Math.round(performance.now() - startedAt)}ms`)
     const fail = (
       code: string,
@@ -450,7 +460,8 @@ export function McpAppSandboxView({ origin, app, resolveLiveActions, toolName, i
     // The theme, colors and space the App has now. Sent again whenever they
     // change, so an open App follows a light/dark switch and a resized pane.
     const currentHostContext = () => ({
-      theme: document.documentElement.classList.contains("dark") ? "dark" as const : "light" as const,
+      // OpenWork marks dark mode with data-theme; the stylesheet also accepts a dark class.
+      theme: document.documentElement.dataset.theme === "dark" || document.documentElement.classList.contains("dark") ? "dark" as const : "light" as const,
       displayMode: "inline" as const,
       availableDisplayModes: ["inline" as const],
       styles: { variables: hostStyleVariables() },
@@ -529,6 +540,7 @@ export function McpAppSandboxView({ origin, app, resolveLiveActions, toolName, i
     }
     if (!readOnly || resolveLiveActions) bridge.oncalltool = async ({ name, arguments: args, _meta }) => {
       const cacheRequest = _meta?.[MCP_APP_CACHE_REQUEST_META]
+      const call = { serverName: app.serverName, resourceUri: app.resourceUri, name, args: args ?? {} }
       try {
         if (resolveLiveActions) {
           liveActions ??= resolveLiveActions().then(live => {
@@ -560,10 +572,29 @@ export function McpAppSandboxView({ origin, app, resolveLiveActions, toolName, i
           return cached.result
         }
         const userInteraction = _meta?.["openwork/userInteraction"] === true
-        const toolResult = connectionController
+        const callNow = async () => connectionController
           ? await connectionController.callTool(actions, app, name, args, userInteraction)
           : standardMcpToolResult(await actions.callTool(name, args, userInteraction))
-        if (cacheRequest === "store") void rememberMcpAppResult(origin, app, name, args ?? {}, toolResult)
+        let toolResult: CallToolResult
+        let reused = false
+        if (userInteraction) {
+          toolResult = await callNow()
+          loads.clicked(call, toolResult)
+        } else {
+          // A load without a click: the OpenWork server runs it only for a tool
+          // that needs no approval, and it runs once for this open.
+          const loaded = await loads.load(call, callNow, async (kept) => {
+            const identity = await actions.checkRead(name, args ?? {})
+            return identity !== null && identity === kept._meta?.["openwork/providerIdentity"]
+          })
+          if (disposed || failed) throw new Error("This artifact view has closed or changed.")
+          toolResult = loaded.result
+          reused = loaded.reused
+        }
+        // A failed answer also clears the kept one: it may mean the provider
+        // no longer allows this person to read it. The open App keeps showing
+        // what it already has, marked stale, but a later open starts empty.
+        if (cacheRequest === "store" && !reused) void rememberMcpAppResult(origin, app, name, args ?? {}, toolResult)
         // A sign-in the viewer can finish gets the row above the App; any
         // other connection failure goes to the host's connection card.
         if (!disposed && !failed) {
@@ -572,6 +603,8 @@ export function McpAppSandboxView({ origin, app, resolveLiveActions, toolName, i
         }
         return toolResult
       } catch (cause) {
+        if (cacheRequest === "store") void forgetMcpAppResult(origin, app, name, args ?? {})
+        if (cacheRequest !== "read") loads.failed(call)
         if (cause instanceof OpenworkServerError && ["missing_launch_context", "stale_launch_context", "inactive_session"].includes(cause.code)) {
           fail("MCP_APP_LAUNCH_CONTEXT_STALE", "resource-resolution", cause, "Reopen the artifact in its original conversation before trying again.")
         }
@@ -763,6 +796,7 @@ export function McpAppSandboxView({ origin, app, resolveLiveActions, toolName, i
     stopSandbox = () => {
       if (stopped) return
       stopped = true
+      stopWaitingForVisibility?.()
       if (deliverToolDataRef.current === deliverToolData) deliverToolDataRef.current = null
       actions.dispose()
       releaseStartup?.()
@@ -788,22 +822,38 @@ export function McpAppSandboxView({ origin, app, resolveLiveActions, toolName, i
     }
     window.addEventListener("message", handleSandboxDiagnosticMessage)
     window.addEventListener("message", handleSandboxReady)
-    checkpoint("sandbox-startup-queued")
-    releaseStartup = enqueueAppStartup((release) => {
-      releaseStartup = release
-      navigationStarted = true
-      checkpoint("sandbox-navigation-started")
-      iframe.setAttribute("sandbox", sandbox.sandbox)
-      iframe.src = sandbox.url
-      sandboxReadyTimer = window.setTimeout(() => {
-        fail(
-          "MCP_APP_SANDBOX_PROXY_TIMEOUT",
-          "sandbox-proxy",
-          null,
-          "The sandbox proxy did not report that it was ready within 10 seconds.",
-          sandbox.expectedOrigin,
-        )
-      }, SANDBOX_READY_TIMEOUT_MS)
+    // A chat App starts once its frame is on screen, so a long chat with many
+    // Apps loads only the ones the person can see. A dashboard the person
+    // opened starts all of its tiles.
+    const startWhenVisible = (start: () => void) => {
+      if (presentation === "dashboard" || typeof IntersectionObserver !== "function") return start()
+      const observer = new IntersectionObserver((entries) => {
+        if (!entries.some(entry => entry.isIntersecting)) return
+        observer.disconnect()
+        stopWaitingForVisibility = undefined
+        start()
+      }, { rootMargin: "200px 0px" })
+      observer.observe(iframe)
+      stopWaitingForVisibility = () => observer.disconnect()
+    }
+    startWhenVisible(() => {
+      checkpoint("sandbox-startup-queued")
+      releaseStartup = enqueueAppStartup((release) => {
+        releaseStartup = release
+        navigationStarted = true
+        checkpoint("sandbox-navigation-started")
+        iframe.setAttribute("sandbox", sandbox.sandbox)
+        iframe.src = sandbox.url
+        sandboxReadyTimer = window.setTimeout(() => {
+          fail(
+            "MCP_APP_SANDBOX_PROXY_TIMEOUT",
+            "sandbox-proxy",
+            null,
+            "The sandbox proxy did not report that it was ready within 10 seconds.",
+            sandbox.expectedOrigin,
+          )
+        }, SANDBOX_READY_TIMEOUT_MS)
+      })
     })
 
     return () => {
@@ -811,7 +861,7 @@ export function McpAppSandboxView({ origin, app, resolveLiveActions, toolName, i
       stopHostContextSync?.()
       stopSandbox?.()
     }
-  }, [app, replacementInput, openworkServerClient, replacementResult, toolName, workspaceId, readOnly, origin, origin.sessionId, origin.engine, presentation, updateMode, connectionController, retryAttempt, resolveLiveActions])
+  }, [app, replacementInput, openworkServerClient, replacementResult, toolName, workspaceId, readOnly, origin, origin.sessionId, origin.engine, presentation, updateMode, connectionController, retryAttempt, resolveLiveActions, openKey])
 
   const reload = onRetry ?? (() => {
     setError(null)
@@ -1043,6 +1093,7 @@ function EmbeddedMcpAppFrame({ part, origin: surfaceOrigin }: { part: DynamicToo
       result={result}
       connectionController={connectionController}
       unavailableNotice={CHAT_MCP_APP_UNAVAILABLE_NOTICE}
+      openKey={JSON.stringify([scope, part.toolCallId, resolveToken])}
       onRequestTeardown={() => {
         if (app.launchId) void origin.client.releaseMcpApp(origin.workspaceId, app.launchId).catch(() => undefined)
         setApp(null)

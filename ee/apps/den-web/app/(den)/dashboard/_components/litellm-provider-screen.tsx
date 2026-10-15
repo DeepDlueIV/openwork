@@ -11,6 +11,7 @@ import { DenBrandMark } from "../../_components/ui/brand-mark";
 import { DenButton, buttonVariants } from "../../_components/ui/button";
 import { DenCombobox } from "../../_components/ui/combobox";
 import { DenInput } from "../../_components/ui/input";
+import { DenSecretInput } from "../../_components/ui/secret-input";
 import { DenNotice } from "../../_components/ui/notice";
 import { DenSegmented } from "../../_components/ui/segmented";
 import { DenStickyActionBar } from "../../_components/ui/sticky-action-bar";
@@ -180,7 +181,7 @@ export function LiteLlmSetupScreen({ embedded = false }: { embedded?: boolean })
         ) : null}
         <p className="mt-2 text-[12px] text-gray-500" data-testid="litellm-spend-tracking">Spend tracking: {liteLlmSpendLabel({ spendTracking: mode === "org" })}</p>
         <label className={LABEL}>{liteLlmKeyLabel(mode)}
-          <DenInput className="mt-1.5 font-mono text-[12px]" type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="sk-…" data-testid="litellm-api-key" autoComplete="new-password" />
+          <DenSecretInput className="mt-1.5 font-mono text-[12px]" value={apiKey} onChange={setApiKey} placeholder="sk-…" data-testid="litellm-api-key" autoComplete="new-password" />
         </label>
       </section>
 
@@ -325,7 +326,7 @@ export function LiteLlmProviderScreen({ provider, reload, embedded = false }: { 
               <dd className="flex min-w-0 flex-1 items-center gap-2">
                 {replacing ? (
                   <>
-                    <span className="min-w-0 flex-1"><DenInput className="font-mono text-[12px]" type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="sk-…" autoComplete="new-password" aria-label={`New ${liteLlmKeyLabel(status.mode).toLowerCase()}`} data-testid="litellm-replace-key-input" /></span>
+                    <span className="min-w-0 flex-1"><DenSecretInput className="font-mono text-[12px]" value={apiKey} onChange={setApiKey} placeholder="sk-…" autoComplete="new-password" aria-label={`New ${liteLlmKeyLabel(status.mode).toLowerCase()}`} data-testid="litellm-replace-key-input" /></span>
                     <DenButton size="sm" variant="ghost" disabled={busy === "key"} onClick={() => { setReplacing(false); setApiKey(""); }}>Keep saved key</DenButton>
                     <DenButton size="sm" loading={busy === "key"} onClick={() => void saveKey()} data-testid="litellm-save-key">Save key</DenButton>
                   </>

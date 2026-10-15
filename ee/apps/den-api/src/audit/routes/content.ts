@@ -1,5 +1,5 @@
 // Content slice: plugins, config objects, marketplaces, Workflows, artifact views,
-// dashboards, automations, automation runners, remote-session runner callbacks,
+// automations, automation runners, remote-session runner callbacks,
 // Workbot, resources, brand assets and the deprecated memory / skill-hub stubs.
 
 import { HIGH_VOLUME_EXCLUSIONS, type AuditRouteAttribution, type AuditRouteClass, type AuditRouteDeclaration, type AuditRouteMethod } from "./types.js"
@@ -146,6 +146,8 @@ export const contentAuditRoutes: readonly AuditRouteDeclaration[] = [
   member("DELETE", "/v1/plugins/:pluginId/config-objects/:configObjectId", "tenant_change", "plugin.config_object.remove", "plugin.configuration", "plugin", "pluginId", { notes: `Duplicate route for the mutation behind DELETE /v1/config-objects/:configObjectId/plugins/:pluginId. ${MCP_NATIVE}` }),
   // Not audited: see HIGH_VOLUME_EXCLUSIONS in ./types.ts (ENG-683).
   highVolume("GET", "/v1/plugins/:pluginId/resolved", "plugin.resolved.read", "plugin.configuration", "plugin", "pluginId"),
+  highVolume("GET", "/v1/resolved-plugins", "plugin.resolved.batch_read", "plugin.configuration", "plugin", null),
+  highVolume("GET", "/v1/org/inventory-revision", "organization.inventory_revision.read", "organization.inventory", "organization", null),
   member("GET", "/v1/plugins/:pluginId/access", "tenant_read", "plugin.access_grant.list", "plugin.configuration", "plugin", "pluginId", { notes: MCP_NATIVE }),
   member("POST", "/v1/plugins/:pluginId/access", "tenant_change", "plugin.access_grant.create", "plugin.configuration", "plugin", "pluginId", { notes: MCP_NATIVE }),
   member("DELETE", "/v1/plugins/:pluginId/access/:grantId", "tenant_change", "plugin.access_grant.revoke", "plugin.configuration", "plugin_access_grant", "grantId", { notes: MCP_NATIVE }),
@@ -171,16 +173,6 @@ export const contentAuditRoutes: readonly AuditRouteDeclaration[] = [
   member("GET", "/v1/marketplaces/:marketplaceId/access", "tenant_read", "marketplace.access_grant.list", "marketplace.configuration", "marketplace", "marketplaceId", { notes: MCP_NATIVE }),
   member("POST", "/v1/marketplaces/:marketplaceId/access", "tenant_change", "marketplace.access_grant.create", "marketplace.configuration", "marketplace", "marketplaceId", { notes: MCP_NATIVE }),
   member("DELETE", "/v1/marketplaces/:marketplaceId/access/:grantId", "tenant_change", "marketplace.access_grant.revoke", "marketplace.configuration", "marketplace_access_grant", "grantId", { notes: MCP_NATIVE }),
-
-  // Dashboards (org admin, managed-dashboards capability)
-  member("GET", "/v1/dashboards", "tenant_read", "dashboard.list", "dashboard.configuration", "dashboard", null),
-  member("POST", "/v1/dashboards", "tenant_change", "dashboard.create", "dashboard.configuration", "dashboard", null),
-  member("GET", "/v1/dashboards/:dashboardId", "tenant_read", "dashboard.read", "dashboard.configuration", "dashboard", "dashboardId"),
-  member("PATCH", "/v1/dashboards/:dashboardId", "tenant_change", "dashboard.update", "dashboard.configuration", "dashboard", "dashboardId"),
-  member("DELETE", "/v1/dashboards/:dashboardId", "tenant_change", "dashboard.delete", "dashboard.configuration", "dashboard", "dashboardId"),
-  member("GET", "/v1/dashboards/:dashboardId/access", "tenant_read", "dashboard.access_grant.list", "dashboard.configuration", "dashboard", "dashboardId"),
-  member("POST", "/v1/dashboards/:dashboardId/access", "tenant_change", "dashboard.access_grant.create", "dashboard.configuration", "dashboard", "dashboardId"),
-  member("DELETE", "/v1/dashboards/:dashboardId/access/:grantId", "tenant_change", "dashboard.access_grant.revoke", "dashboard.configuration", "dashboard_access_grant", "grantId"),
 
   // Resources, Workbot, brand assets
   member("GET", "/v1/resources", "tenant_read", "resource_snapshot.read", "resource.discovery", "resource_snapshot", null, { notes: "Desktop polling endpoint; ids and timestamps only." }),

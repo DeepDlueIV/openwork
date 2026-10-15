@@ -9,15 +9,33 @@ import { denDropdownMenuBaseClass } from "./dropdown-styles";
 export const DenDropdownRoot = Popover.Root;
 export const DenDropdownTrigger = Popover.Trigger;
 
+/**
+ * How wide the menu is:
+ *   content  at least 20rem, growing with its options (the default)
+ *   trigger  exactly the trigger's width, for menus that sit inside a form field
+ */
+export type DenDropdownWidth = "content" | "trigger";
+
+const positionerWidthClass: Record<DenDropdownWidth, string> = {
+  // Options can be wider than the compact selected-value control. Bound both
+  // the readable minimum and content width so collision handling still fits
+  // the whole menu on narrow screens (including anchors wider than the viewport).
+  content: "w-max min-w-[min(max(var(--anchor-width),20rem),var(--available-width))] max-w-[min(28rem,var(--available-width))]",
+  // Same edges as the trigger; rows truncate instead of widening the menu.
+  trigger: "w-[var(--anchor-width)] max-w-[var(--available-width)]",
+};
+
 export function DenDropdownPopup({
   anchor,
   popupRef,
   initialFocus = false,
+  width = "content",
   children,
 }: {
   anchor: RefObject<HTMLElement | null>;
   popupRef: RefObject<HTMLDivElement | null>;
   initialFocus?: false | RefObject<HTMLElement | null>;
+  width?: DenDropdownWidth;
   children: ReactNode;
 }) {
   return (
@@ -31,10 +49,7 @@ export function DenDropdownPopup({
         collisionBoundary={[]}
         collisionPadding={8}
         collisionAvoidance={{ side: "flip", align: "shift", fallbackAxisSide: "none" }}
-        // Options can be wider than the compact selected-value control. Bound both
-        // the readable minimum and content width so collision handling still fits
-        // the whole menu on narrow screens (including anchors wider than the viewport).
-        className="z-50 w-max min-w-[min(max(var(--anchor-width),20rem),var(--available-width))] max-w-[min(28rem,var(--available-width))]"
+        className={`z-50 ${positionerWidthClass[width]}`}
       >
         <Popover.Popup
           ref={popupRef}

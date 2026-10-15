@@ -3,10 +3,10 @@ import type { Target } from "@openwork/cdp";
 import { spec } from "@openwork/testkit";
 import { notificationCenter } from "../worlds/notification-center.ts";
 
-// Keep the existing Electron archive/undo regression; member-activity-sync uses
-// appWeb for the new member inventory story without a native dependency.
+// Activity, the archive toast and its Undo are app UI, so this runs on the app
+// in headless Chrome; session-archive-undo keeps the native context menu.
 const test = spec.world(notificationCenter, {
-  resources: { surfaces: ["desktop"], services: [], nativeReason: "Preserves the existing desktop archive confirmation and background-event integration regression." },
+  resources: { surfaces: ["appWeb"], services: [] },
 });
 
 const bell: Target = { role: "button", label: /^Activity/ };

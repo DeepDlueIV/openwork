@@ -53,21 +53,35 @@ export async function startProviderWitnessProxy(upstreamUrl: string) {
 }
 
 /** Explicit selection, not model-initiated discovery. No Den or Electron. */
-export async function selectedSkillsWeb(seed: Seed) {
+export function selectedSkillsWeb(seed: Seed) {
+  return selectedSkillsIn(seed, "workspace");
+}
+
+/** The same contract with the skill only in the person's global OpenCode skills folder. */
+export function selectedGlobalSkillsWeb(seed: Seed) {
+  return selectedSkillsIn(seed, "global");
+}
+
+async function selectedSkillsIn(seed: Seed, folder: "workspace" | "global") {
   const engine = resolveEvalEngine();
   const skillName = "selected-briefing";
   const skillBody = "When preparing a briefing, include the exact phrase AMBER_BODY_ONLY_7391. Keep the briefing concise.";
+  const copyBody = "When preparing a briefing, include the exact phrase COPY_BODY_ONLY_5120. Keep the briefing long.";
   const prompt = "Prepare a short briefing.";
   const reply = "The briefing is ready.";
   const workspacePath = seed.tmpPath("selected-skills");
-  const skillDirectory = join(workspacePath, ".opencode", "skills", skillName);
+  // A global skill lives in OpenCode's own folder under a home this world owns.
+  const home = folder === "global" ? seed.tmpPath("selected-skills-home") : null;
+  const skillDirectory = home
+    ? join(home, ".config", "opencode", "skills", skillName)
+    : join(workspacePath, ".opencode", "skills", skillName);
   await mkdir(skillDirectory, { recursive: true });
   await writeFile(join(skillDirectory, "SKILL.md"), `---\nname: ${skillName}\ndescription: Prepare a concise briefing.\n---\n${skillBody}\n`);
   const mock = seed.mock({ isolatedProcessEnv: true, agentWorkloads: [{
     promptMarker: prompt, latestUserTurn: true, finalReply: reply,
     steps: engine === "v1" ? [{ tool: "skill", arguments: { name: skillName } }] : [],
   }] });
-  const app = await seed.appWeb({ name: "selected-skills", workspacePath, mocks: { agent: mock } });
+  const app = await seed.appWeb({ name: "selected-skills", workspacePath, mocks: { agent: mock }, ...(home ? { env: { HOME: home } } : {}) });
   const witness = app.mocks.agent;
   if (!witness) throw new Error("Missing selected-skills provider witness");
   const { port, providerRequests, dispose } = await startProviderWitnessProxy(witness.url);
@@ -108,8 +122,15 @@ export async function selectedSkillsWeb(seed: Seed) {
     if (!ready) throw new Error("Selected-skill composer did not hydrate the fixture model");
     const session = await seed.session(app, { title: "Selected skill contract" });
     return {
-      app, workspace, session, engine, skillName, skillBody, prompt, reply, modelId,
+      app, workspace, session, engine, skillName, skillBody, prompt, reply, modelId, workspacePath, skillDirectory,
       removeSkill: () => rm(skillDirectory, { recursive: true }),
+      copyBody,
+      /** A renamed copy of the skill folder keeps its frontmatter name, as copying a skill does. */
+      addRenamedCopy: async () => {
+        const directory = join(workspacePath, ".claude", "skills", `${skillName}-copy`);
+        await mkdir(directory, { recursive: true });
+        await writeFile(join(directory, "SKILL.md"), `---\nname: ${skillName}\ndescription: An older copy of the briefing skill.\n---\n${copyBody}\n`);
+      },
       /** Native-boundary requests the app made, in order: permission asks and prompt submissions. */
       nativeRequests: async () => {
         const entries = await seed.evalIn(app, () => window.__selectedSkillPrompts ?? []);

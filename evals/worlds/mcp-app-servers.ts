@@ -10,7 +10,7 @@ import { queryDenDatabase, type EvalEngine, type Place, type Seed } from "@openw
 import type { MockMcpTool } from "@openwork/labs";
 import { reconcileDraftHost } from "../fixtures/cloud-draft-host.ts";
 import { configureProvider } from "./chat.ts";
-import { enableOrganizationCapabilities } from "./dashboards.ts";
+import { enableOrganizationCapabilities } from "./organization-capabilities.ts";
 
 export const appTitle = "Order calculator";
 export const procedureTitle = "Quantity times unit price";
@@ -77,7 +77,7 @@ export function appSource(revision: string, options: { title?: string; sampleOrd
       if (!text) throw new Error("Tool returned no JSON result");
       return JSON.parse(text.text);
     }
-    export default function Calculator({ app, input: launch }) {
+    export default function Calculator({ app, input: launch, hostContext }) {
       const input = ${order};
       const [today, setToday] = React.useState(null);
       const [price, setPrice] = React.useState(null);
@@ -123,6 +123,7 @@ export function appSource(revision: string, options: { title?: string; sampleOrd
       });
       return <main>
         <header><h1>${title}</h1><span>Ready — ${revision}</span></header>
+        <p data-testid="host-context">Theme {hostContext?.theme ?? "unknown"} · fits {hostContext?.containerDimensions?.maxHeight ?? "?"} px</p>
         {!toolsAvailable && <p role="status">Server tools unavailable. Reopen in a host that enables server tools.</p>}
         <p data-testid="pricing-date">{today ? "Prices as of " + today : "Loading pricing date"}</p>
         <p data-testid="order-line">{input.quantity ?? 0} × {input.sku ?? "no product"}{price !== null ? " at " + price : ""}</p>
@@ -361,11 +362,9 @@ export async function mcpAppServers(seed: Seed, context: { place: Place }) {
   }
   const call = (persona: Persona, name: string, args: Record<string, unknown>) => rpc(persona, "connect", "tools/call", { name, arguments: args });
   // Building your own Apps is on for every organization, so Connect offers the
-  // App builder before any platform admin changes a capability. Org dashboards
-  // stay default-off per organization.
+  // App builder before any platform admin changes a capability.
   const builderToolsByDefault = rows((await rpc("owner", "connect", "tools/list", {})).tools)
     .map(tool => field(tool, "name")).filter(name => ["create_app", "update_app", "read_app"].includes(name));
-  await enableOrganizationCapabilities(seed, den.admin, { orgManagedDashboards: true }, organizationId);
   const membership = rows(org.members).find(entry => field(entry.user, "email") === member.email);
   if (!membership) throw new Error("Synthetic member grant target missing");
   const memberId = field(membership, "id");
@@ -376,11 +375,6 @@ export async function mcpAppServers(seed: Seed, context: { place: Place }) {
 
   const { procedure, capabilities, tools, created } = await composeOrderCalculator(seed, den.admin, connection.id, (name, args) => call("owner", name, args));
   appServerPath = created.serverPath;
-  // An empty organization dashboard, for the owner to add the App to.
-  const dashboardName = `Pricing board ${Date.now()}`;
-  const dashboard = await seed.api(den.admin, "/v1/dashboards", { method: "POST", body: JSON.stringify({ name: dashboardName, elements: [] }) });
-  if (dashboard.response.status !== 201) throw new Error(`Creating the dashboard failed: ${dashboard.response.status}`);
-  const dashboardId = field(record(dashboard.body).item, "id");
 
   const built = await buildStandardMcpAppHost();
   let origin = "";
@@ -430,34 +424,20 @@ export async function mcpAppServers(seed: Seed, context: { place: Place }) {
   const pluginWeb = await seed.web({ den, signedInAs: member, startPath: "/dashboard/library", headless: true, viewport: { width: 1280, height: 900 } });
   const url = (persona: Persona) => `${origin}/${persona}/?tool=${encodeURIComponent(created.toolName)}`;
   const retained = resources.move();
-  const elementsOf = (body: unknown) => rows(record(body).elements ?? []);
   return {
-    app, pluginWeb, dashboardId, dashboardName, den, organizationId, created, capabilities, tools, url, requests, rpc, call,
+    app, pluginWeb, den, organizationId, created, capabilities, tools, url, requests, rpc, call,
     /** The App builder tools Connect offered a new organization before any /admin change. */
     builderToolsByDefault,
-    /** Saves the App as the dashboard's tile, from the App catalog the admin reads. */
-    async addAppTile() {
-      const catalog = await seed.api(den.admin, "/v1/mcp-apps");
-      const app = rows(record(catalog.body).apps).find(item => item.connectionId === created.appId);
-      if (!app) throw new Error(`The App catalog did not list ${created.appId}: ${catalog.response.status}`);
-      const { serverName, connectionId, toolName, projectedToolName, resourceUri, title } = app;
-      const saved = await seed.api(den.admin, `/v1/dashboards/${dashboardId}`, { method: "PATCH", body: JSON.stringify({ elements: [{ serverName, connectionId, toolName, projectedToolName, resourceUri, title }] }) });
-      if (!saved.response.ok) throw new Error(`Saving the App's tile failed: ${saved.response.status}`);
-    },
-    /** The dashboard's tiles as its admin sees them. */
-    async dashboardElements() {
-      const read = await seed.api(den.admin, `/v1/dashboards/${dashboardId}`);
-      return elementsOf(record(read.body).item);
-    },
-    /** Grants the dashboard to the teammate and returns their tiles as their desktop reads them. */
-    async teammateDashboardElements() {
-      const granted = await seed.api(den.admin, `/v1/dashboards/${dashboardId}/access`, { method: "POST", body: JSON.stringify({ orgMembershipId: memberId, role: "viewer" }) });
-      if (granted.response.status !== 201) throw new Error(`Granting the dashboard failed: ${granted.response.status}`);
-      const mine = rows(record((await seed.api(member, "/v1/me/dashboards")).body).items);
-      return elementsOf(mine.find(item => item.id === dashboardId) ?? {});
+    /** This person's `GET /v1/mcp-apps` entries for the App, as their desktop reads them. */
+    async catalogEntries(persona: "owner" | "member") {
+      const catalog = await seed.api(persona === "owner" ? den.admin : member, "/v1/mcp-apps");
+      if (!catalog.response.ok) throw new Error(`Reading the App catalog failed: ${catalog.response.status}`);
+      return rows(record(catalog.body).apps).filter(item => item.connectionId === created.appId);
     },
     inventoryCalls: (options: { sinceIso?: string; atLeast?: number } = {}) => den.mocks.inventory.toolCalls({ name: toolNames.connection, atLeast: 0, ...options }),
     reservations: (options: { sinceIso?: string; atLeast?: number } = {}) => den.mocks.inventory.toolCalls({ name: toolNames.reserve, atLeast: 0, ...options }),
+    /** MCP sessions Den opened to Inventory (one initialize each). */
+    inventorySessions: (sinceIso: string) => den.mocks.inventory.handshakes({ sinceIso }),
     /** Shares only the App's own Plugin, which carries the Workflows its tools run. */
     async share() {
       await grant(`/v1/plugins/${created.pluginId}/access`);
@@ -516,7 +496,14 @@ export const reopenReply = "Here it is again, below.";
 export const pricerTitle = "Quick order pricer";
 export const buildPrompt = "Build me an App that looks up a product's unit price in Inventory and multiplies it by the quantity.";
 export const buildReply = "The Quick order pricer is ready in this conversation.";
+export const guidedTitle = "Inventory price board";
+export const guidedReply = "The Inventory price board is ready.";
 export const signInPrompt = "I need the Order calculator once more for 6 of WIDGET-7.";
+export const boardTitle = "Unit price board";
+export const boardPrompt = "Show me the unit price board for WIDGET-7.";
+export const boardReply = "The unit price board is open below.";
+export const boardAgainPrompt = "Open the unit price board for WIDGET-7 again.";
+export const boardAgainReply = "Here is the unit price board again.";
 export const signInReply = "Here is the Order calculator.";
 
 /**
@@ -524,14 +511,18 @@ export const signInReply = "Here is the Order calculator.";
  * create_app and opens an existing one with launch input, both through
  * Connect, and each App's own tools run in the conversation.
  */
-export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place: Place } = false, options: { engine?: EvalEngine; desktop?: boolean; lifecycle?: boolean; ownSignIn?: boolean } = {}) {
+export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place: Place } = false, options: { engine?: EvalEngine; lifecycle?: boolean; ownSignIn?: boolean } = {}) {
   const measured = benchmark === true;
   const engine = options.engine ?? "v1";
+  // The chat journey also opens a price board built from prepare_app's starter.
+  const priceBoard = benchmark === false && !options.lifecycle && !options.ownSignIn;
   const toolStep = (tool: string, args: Record<string, unknown>) => engine === "v2" ? { tool: "execute", arguments: { code: `return await tools["openwork-cloud"].${tool}(${JSON.stringify(args)});` } } : { tool, arguments: args };
+  // Den's numeric App timings (never payloads) let the journey count requests to an App's own server.
   const den = await seed.den({
-    env: { DEN_GENERATED_ARTIFACT_VIEWS_ENABLED: "true", DEN_APP_MCP_SERVERS_ENABLED: "true", DEN_DASHBOARDS_ENABLED: "true", ...(measured ? { OPENWORK_MCP_APP_TIMINGS: "1" } : {}) },
+    env: { DEN_GENERATED_ARTIFACT_VIEWS_ENABLED: "true", DEN_APP_MCP_SERVERS_ENABLED: "true", DEN_DASHBOARDS_ENABLED: "true", OPENWORK_MCP_APP_TIMINGS: "1" },
     org: { name: `App servers chat ${Date.now()}` },
-    mocks: { inventory: seed.mock({ allowUnauthenticatedMcp: true, tools: [inventoryTool, reserveTool] }) },
+    // A slow lookup lets the board's kept price show while its refresh is still running.
+    mocks: { inventory: seed.mock({ allowUnauthenticatedMcp: true, tools: [priceBoard ? { ...inventoryTool, delayMs: 3_000 } : inventoryTool, reserveTool] }) },
   });
   // With ownSignIn, each person signs in to Inventory with their own account, as with a real provider.
   const connection = await seed.orgConnection(den.admin, {
@@ -540,6 +531,8 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
     access: { orgWide: true },
   });
   const organizationId = field(record((await seed.api(den.admin, "/v1/org")).body).organization, "id");
+  // The App journeys check the staged build checklist, which is behind appBuildProgress.
+  await enableOrganizationCapabilities(seed, den.admin, { appBuildProgress: true }, organizationId);
   // Credential expiry writes only to this run's own loopback scratch database.
   const cloudCredentialDatabase = () => {
     const url = den.database?.url;
@@ -576,6 +569,16 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
     return record(record(JSON.parse(data ? data.slice(5) : raw)).result);
   };
   const { created, tools } = await composeOrderCalculator(seed, den.admin, connection.id, call);
+  // Published from prepare_app's lookup starter unchanged, as an agent following build-an-app would.
+  const board = priceBoard ? await (async () => {
+    const lookup = tools.filter(tool => tool.name === toolNames.connection);
+    const prepared = payload(await call("prepare_app", { title: boardTitle, description: "Look up a product's unit price in Inventory.", tools: lookup }));
+    const starter = record(prepared.starter);
+    return appSummary(await call("create_app", {
+      preparationId: field(prepared, "preparationId"), title: boardTitle, tools: lookup,
+      reactSource: field(starter, "reactSource"), cssSource: field(starter, "cssSource"), textFallback: "Looks up a product's unit price in Inventory.",
+    }));
+  })() : undefined;
   const performanceApps = [];
   if (measured) for (let i = 0; i < 10; i++) performanceApps.push(appSummary(await call("create_app", {
     ...appSource("revision one", { title: `Performance App ${i}`, sampleOrder: true }), tools,
@@ -598,13 +601,17 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
       { promptMarker: signInPrompt, finalReply: signInReply, latestUserTurn: true, steps: [
         { tool: "execute_capability", arguments: { name: `plugin:${created.pluginId}:${created.appId}`, body: launchInput } },
       ] },
+      ...(board ? [[boardPrompt, boardReply], [boardAgainPrompt, boardAgainReply]].map(([promptMarker, finalReply]) => ({ promptMarker, finalReply, latestUserTurn: true, steps: [
+        { tool: "execute_capability", arguments: { name: `plugin:${board.pluginId}:${board.appId}`, body: { sku: launchInput.sku } } },
+      ] })) : []),
     ] }),
     signal: AbortSignal.timeout(15_000),
   });
   if (!configured.ok) throw new Error(`Chat model setup failed: ${configured.status}`);
   const workspacePath = seed.tmpPath("mcp-app-servers-chat");
   const denOrigin = new URL(den.ref.apiUrl);
-  const app = options.desktop ? await seed.desktop({ den, as: "admin", workspacePath, enterpriseActivated: true }) : await seed.appWeb({ name: `mcp-app-servers-chat-${engine}`, workspacePath, headless: true, engine,
+  // The creation journeys open a step's hover-only technical details; an owner on a computer has a mouse even when the runner's headless Chrome finds none.
+  const app = await seed.appWeb({ name: `mcp-app-servers-chat-${engine}`, workspacePath, headless: true, mouse: options.lifecycle, engine,
     env: {
       OPENWORK_DEV_HEADLESS_WEB_DEN_PROXY: "1", OPENWORK_DEV_DEN_PROXY_TARGET: den.ref.webUrl,
       OPENWORK_DEV_HEADLESS_DEN_API_TARGET: den.ref.apiUrl,
@@ -612,7 +619,7 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
       ...(measured ? { OPENWORK_MCP_APP_TIMINGS: "1" } : {}),
     },
     ...(denOrigin.protocol === "https:" ? { syntheticPreactivatedDenOrigin: denOrigin.origin } : {}) });
-  if (!options.desktop) await seed.signIn(app, den.admin, "App owner");
+  await seed.signIn(app, den.admin, "App owner");
   const workspace = await seed.workspace(app, workspacePath);
   await configureProvider(seed, app, workspace.workspaceId, "app-chat-model", "app-chat-model", {
     provider: { "app-chat-model": {
@@ -620,8 +627,8 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
       options: { baseURL: `${den.mocks.inventory.url}/v1`, apiKey: "sk-app-chat-fixture" },
       models: { "app-chat-model": { name: "App chat model fixture", tool_call: true } },
     } },
-    mcp: { "openwork-cloud": { type: "remote", url: `${den.ref.apiUrl}/mcp/agent`, enabled: true, oauth: false, headers: { Authorization: `Bearer ${token}` } } },
   }, engine);
+  // openwork-cloud is reserved in workspace config; the reconcile below connects it, as the desktop does.
   const session = await seed.session(app, { title: appTitle });
   // The private App host reads the Connect server index, which lists the App as its own server.
   if ("openworkUrl" in app) {
@@ -648,21 +655,131 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
     if (status !== 200) throw new Error(`Desktop App host reconciliation failed: ${status}`);
   }
   return {
-    app, session, den, created, performanceApps, workspace, engine,
-    async prepareLifecycleTurn(prompt: string, kind: "edit" | "failure" | "interrupt") {
+    app, session, den, created, board, performanceApps, workspace, engine,
+    /** The browser's Back, as the person returns to the conversation they came from. */
+    async goBack() {
+      await evaluate(app.client, () => { history.back(); });
+    },
+    /** Switch the system light/dark setting, which OpenWork follows by default, and wait until it has. */
+    async setColorScheme(theme: "light" | "dark") {
+      await app.client.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: theme }] });
+      for (let attempt = 0; attempt < 50; attempt++) {
+        if (await evaluate(app.client, () => document.documentElement.dataset.theme === "dark" || document.documentElement.classList.contains("dark")) === (theme === "dark")) return;
+        await delay(100);
+      }
+      throw new Error(`OpenWork did not switch to ${theme}`);
+    },
+    /** Observe the real chat across tool handoffs, without changing its state. */
+    async watchCreationProgress() {
+      await evaluate(app.client, () => {
+        const witness = { seen: false, missing: 0, replaced: 0, paused: 0, layoutShifts: 0, collapsedActivity: 0 };
+        let first: Element | null = null;
+        let height: number | null = null;
+        const observer = new MutationObserver(() => {
+          const panel = [...document.querySelectorAll('[data-app-builder-step]')].find(element =>
+            /^(Creating|Updating) MCP App/.test(element.getAttribute("aria-label") ?? "") && element.querySelector('[data-app-builder-checklist]'));
+          if (!witness.seen && panel) { witness.seen = true; first = panel; }
+          if (!witness.seen) return;
+          if (!panel) witness.missing++;
+          else {
+            if (panel !== first) witness.replaced++;
+            if (panel.textContent?.includes("Paused")) witness.paused++;
+            const nextHeight = panel.getBoundingClientRect().height;
+            if (height !== null && Math.abs(nextHeight - height) > 0.5) witness.layoutShifts++;
+            height = nextHeight;
+            const detail = panel.querySelector('[data-checklist-state="active"] [data-app-builder-activity]');
+            if (!detail || detail.getBoundingClientRect().height < 1) witness.collapsedActivity++;
+          }
+        });
+        observer.observe(document.body, { childList: true, subtree: true, characterData: true, attributes: true });
+        Reflect.set(window, "__openworkAppProgressWitness", { witness, observer });
+      });
+    },
+    async creationProgressWitness() {
+      return await evaluate(app.client, () => {
+        const observed: unknown = Reflect.get(window, "__openworkAppProgressWitness");
+        if (!observed || typeof observed !== "object") throw new Error("App progress observation was not started");
+        const observer: unknown = Reflect.get(observed, "observer");
+        const witness: unknown = Reflect.get(observed, "witness");
+        if (!(observer instanceof MutationObserver) || !witness || typeof witness !== "object") throw new Error("App progress observation is missing");
+        observer.disconnect();
+        Reflect.deleteProperty(window, "__openworkAppProgressWitness");
+        const missing: unknown = Reflect.get(witness, "missing");
+        const replaced: unknown = Reflect.get(witness, "replaced");
+        const paused: unknown = Reflect.get(witness, "paused");
+        const layoutShifts: unknown = Reflect.get(witness, "layoutShifts");
+        const collapsedActivity: unknown = Reflect.get(witness, "collapsedActivity");
+        return {
+          seen: Reflect.get(witness, "seen") === true,
+          missing: typeof missing === "number" ? missing : -1,
+          replaced: typeof replaced === "number" ? replaced : -1,
+          paused: typeof paused === "number" ? paused : -1,
+          layoutShifts: typeof layoutShifts === "number" ? layoutShifts : -1,
+          collapsedActivity: typeof collapsedActivity === "number" ? collapsedActivity : -1,
+        };
+      });
+    },
+    /** Den's log so far; pass it to denStages or appServerRequests. */
+    denLog: () => den.apiLog(),
+    /**
+     * Den's numeric App timing stages since a denLog() snapshot (for example
+     * "den.app-server.tools/call"), once at least `atLeast` App-server tools/call requests finished.
+     */
+    async denStages(since: string, atLeast = 1) {
+      const stages = async () => (await den.apiLog()).slice(since.length).split("\n").flatMap(line => {
+        const marker = line.indexOf("MCP_APP_TIMING ");
+        if (marker < 0) return [];
+        const stage = record(JSON.parse(line.slice(marker + 15))).stage;
+        // Den logs each measure under the shared "openwork.mcp-app." prefix.
+        return typeof stage === "string" ? [stage.replace(/^openwork\.mcp-app\./, "")] : [];
+      });
+      const deadline = Date.now() + 30_000;
+      let seen = await stages();
+      while (seen.filter(stage => stage === "den.app-server.tools/call").length < atLeast && Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 250));
+        seen = await stages();
+      }
+      return seen;
+    },
+    /** Requests Den's App servers handled since a denLog() snapshot, by MCP method. */
+    async appServerRequests(since: string, atLeast = 1) {
+      return (await this.denStages(since, atLeast)).flatMap(stage => stage.startsWith("den.app-server.") ? [stage.slice("den.app-server.".length)] : []);
+    },
+    async prepareLifecycleTurn(prompt: string, kind: "edit" | "failure" | "interrupt" | "search" | "guided") {
       const catalog = rows(record((await seed.api(den.admin, "/v1/mcp-apps")).body).apps);
       const built = catalog.find(app => app.title === pricerTitle);
       if (!built) throw new Error("Created App is missing from the accessible catalog");
-      const steps = kind === "edit"
-        ? [toolStep("read_app", { appId: field(built, "connectionId") }), { ...toolStep("update_app", { ...appSource("revision two", { title: pricerTitle, sampleOrder: true }), appId: field(built, "connectionId"), ...(engine === "v2" ? { expectedRevisionId: "__APP_REVISION_ID__" } : {}) }), argumentsFrom: "app-read" }]
+      const lookup = tools.filter(tool => tool.name === toolNames.connection);
+      const steps = kind === "search"
+        ? [toolStep("search_capabilities", { query: "Inventory lookup unit price", type: "mcp", limit: 2 })]
+        : kind === "guided"
+        // The agent reads the guide, finds the tool, prepares, and publishes prepare_app's starter unchanged.
+        ? [toolStep("get_skill", { name: "build-an-app" }),
+          // A completed script with no nested tools is removed from the rail.
+          // Its removal must not turn every later visible message historical.
+          ...(engine === "v2" ? [{ tool: "execute", arguments: { code: 'return "App discovery ready";' } }] : []),
+          // A real non-App tool between the guide and preparation used to
+          // remove the checklist and expose ordinary tool rows instead.
+          { tool: "bash", arguments: { command: "sleep 1; printf 'App inputs checked\\n'", description: "Check app inputs" } },
+          toolStep("search_capabilities", { query: "Inventory lookup unit price", type: "mcp", limit: 2 }),
+          { ...toolStep("prepare_app", { title: guidedTitle, description: "Look up a product's unit price in Inventory.", tools: lookup }), holdUntilReleased: true },
+          // Successful re-preparation of the same App used to leave a stale,
+          // paused checklist above the terminal result. Exercise both attempts.
+          { tool: "bash", arguments: { command: "printf 'App tools rechecked\\n'", description: "Recheck app tools" } },
+          toolStep("prepare_app", { title: guidedTitle, description: "Look up a product's unit price in Inventory.", tools: lookup }),
+          { ...(engine === "v2"
+            ? { tool: "execute", arguments: { code: `return await tools["openwork-cloud"].create_app({ ...${JSON.stringify({ title: guidedTitle, tools: lookup, textFallback: "Looks up a product's unit price in Inventory." })}, ..."__APP_STARTER__" });` } }
+            : toolStep("create_app", { title: guidedTitle, tools: lookup, textFallback: "Looks up a product's unit price in Inventory." })), argumentsFrom: "app-starter" }]
+        : kind === "edit"
+        ? [toolStep("read_app", { appId: field(built, "connectionId") }), { ...toolStep("update_app", { ...appSource("revision two", { title: pricerTitle, sampleOrder: true }), appId: field(built, "connectionId"), ...(engine === "v2" ? { expectedRevisionId: "__APP_REVISION_ID__" } : {}) }), argumentsFrom: "app-read", holdUntilReleased: true }]
         : kind === "failure"
           ? [toolStep("create_app", { title: "Broken App", reactSource: "export default function App( {", tools, textFallback: "The App is unavailable." })]
           : [toolStep("prepare_app", { title: "Interrupted App", tools }), { ...toolStep("create_app", { ...appSource("interrupted", { title: "Interrupted App", sampleOrder: true }), tools, ...(engine === "v2" ? { preparationId: "__APP_PREPARATION_ID__" } : {}) }), argumentsFrom: "app-preparation", holdUntilReleased: true }];
-      const response = await fetch(`${den.mocks.inventory.url}/admin/agent-workloads`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ workloads: [{ promptMarker: prompt, finalReply: kind === "edit" ? "The App has been updated." : "The App could not be created.", latestUserTurn: true, steps }] }) });
+      const response = await fetch(`${den.mocks.inventory.url}/admin/agent-workloads`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ workloads: [{ promptMarker: prompt, finalReply: kind === "edit" ? "The App has been updated." : kind === "search" ? "Inventory can look up unit prices." : kind === "guided" ? guidedReply : "The App could not be created.", latestUserTurn: true, steps }] }) });
       if (!response.ok) throw new Error("Could not prepare the lifecycle turn");
       return field(built, "connectionId");
     },
-    /** Hold the model after preparation so the person can inspect real writing progress. */
+    /** Hold the model before a held step (preparation, build or edit) so the person can inspect real writing progress. */
     async holdCreation(held: boolean) {
       const response = await fetch(`${den.mocks.inventory.url}/admin/agent-hold`, {
         method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ held }),
@@ -681,7 +798,7 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
       const data = raw.split("\n").find(line => line.startsWith("data:"));
       if (record(JSON.parse(data ? data.slice(5) : raw)).error) throw new Error("Benchmark index rejected");
     },
-    inventoryCalls: (options: { sinceIso?: string; atLeast?: number } = {}) => den.mocks.inventory.toolCalls({ name: toolNames.connection, atLeast: 0, ...options }),
+    inventoryCalls: (options: { sinceIso?: string; atLeast?: number; timeoutMs?: number } = {}) => den.mocks.inventory.toolCalls({ name: toolNames.connection, atLeast: 0, ...options }),
     reservations: (options: { sinceIso?: string; atLeast?: number } = {}) => den.mocks.inventory.toolCalls({ name: toolNames.reserve, atLeast: 0, ...options }),
     inventoryName: connection.name,
     /** The owner removes their own Inventory account, as a teammate who never signed in would be. */
@@ -780,4 +897,3 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
 export const mcpAppServersChatOwnSignIn = (seed: Seed) => mcpAppServersChat(seed, false, { ownSignIn: true });
 export const mcpAppCreationV1 = (seed: Seed) => mcpAppServersChat(seed, false, { engine: "v1", lifecycle: true });
 export const mcpAppCreationV2 = (seed: Seed) => mcpAppServersChat(seed, false, { engine: "v2", lifecycle: true });
-export const mcpAppCreationDesktop = (seed: Seed) => mcpAppServersChat(seed, false, { engine: "v1", desktop: true, lifecycle: true });

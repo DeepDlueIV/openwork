@@ -58,6 +58,50 @@ limit is incomplete, never clear, and its `warden-clear` check and comment say
 to split it. Findings from the part that was reviewed are still posted,
 marked as incomplete, so authors can act on them.
 
+## Review cost and generated files
+
+The effective standard policy is the repository-root `warden.toml`, not
+`.warden/warden.toml`. Its coalescing target is 12,000 characters instead of
+Warden 0.43.0's 8,000. Nearby hunks still need to be within 30 lines to merge;
+large hunks are still split. This amortizes repeated prompts and extraction
+calls without removing any eligible diff lines. Models, verification,
+findings thresholds, both skills and scan limits are unchanged. The separate
+contributor screen policy is unchanged too.
+
+Do not add blanket ignores for Drizzle metadata, generated SDK code or
+OpenAPI. The contract lane regenerates OpenAPI and SDK from source, but an
+OpenAPI-only PR currently selects the docs lane and does not run that check.
+Drizzle's historical snapshots and journal have no equivalent deterministic
+regeneration check. Schema declarations, migration SQL, routes and generators
+must remain reviewed, as must confidentiality. Existing Warden built-in
+ignores (including generated markers) and size-limit skips are not new
+exclusions; size-limit skips continue to make clearance incomplete.
+
+An offline sample of the 30 first-parent commits ending at `50f4d06b8` has
+46,342 changed lines; 29,789 (64.3%) are those generated paths. Applying the
+pinned CLI's actual filters and scan limits gives 787 → 757 initial analysis
+chunks per skill (3.8% fewer), with identical skips and eligible diff lines.
+Only one eligible generated-file chunk remains in this sample: most generated
+volume already hits size limits or built-in ignores, so raw diff proportions
+would greatly overstate possible savings. This is a call-count proxy, not a
+claim about billed tokens, total model calls or wall-clock duration.
+
+To reproduce without credentials or model calls, install
+`@sentry/warden@0.43.0` with `pnpm add --ignore-scripts` in a separate scratch
+package (not this workspace), then point at that package's installation:
+
+```sh
+export WARDEN_PACKAGE_ROOT=/path/to/scratch/node_modules/@sentry/warden
+node --test .warden/tests/chunking.test.mjs
+node .warden/scripts/measure-chunks.mjs 50f4d06b8
+node --test .github/scripts/warden-report.test.mjs
+```
+
+The offline tests use Warden's own config loader and chunker. The measurement
+asserts unchanged skips, files and diff-line order across the whole sample.
+The existing CI reporter tests also guard against newly added exclusions,
+missing skills or changed scan coverage; neither command calls a model.
+
 ## Local review
 
 With the model credentials configured, run the pinned CLI:

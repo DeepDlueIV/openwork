@@ -501,6 +501,9 @@ type RawJsonResponse<T> = {
   json: T | null;
 };
 
+/** Den serves GET /v1/resolved-plugins for at most this many plugins per request. */
+const RESOLVED_PLUGINS_BATCH_SIZE = 100;
+
 export class DenApiError extends Error {
   status: number;
   code: string;
@@ -2860,6 +2863,41 @@ export function createDenClient(options: {
     }
   }
 
+  function pluginResolvedFrom(plugin: DenOrgPlugin, payload: unknown): DenOrgPluginResolved {
+    const resolved = getOrgPluginResolved(plugin, payload);
+    verifyInventory(
+      payload,
+      "items",
+      resolved.memberships.filter((item) => item.configObject).length,
+      (item) => !isRecord(item) || hasModeledObjectType(item.configObject),
+    );
+    return resolved;
+  }
+
+  async function getPluginResolved(orgId: string, plugin: DenOrgPlugin): Promise<DenOrgPluginResolved> {
+    const payload = await requestJson<unknown>(
+      baseUrls,
+      `/v1/plugins/${encodeURIComponent(plugin.id)}/resolved`,
+      { method: "GET", token, organizationId: orgId },
+    );
+    return pluginResolvedFrom(plugin, payload);
+  }
+
+  /** One plugin out of GET /v1/resolved-plugins, failing the way its own `/resolved` request would. */
+  function pluginResolvedFromBatch(plugin: DenOrgPlugin, payload: unknown): DenOrgPluginResolved {
+    const failure = isRecord(payload) && isRecord(payload.failures) ? payload.failures[plugin.id] : null;
+    if (isRecord(failure)) {
+      const status = typeof failure.status === "number" ? failure.status : 500;
+      const code = typeof failure.error === "string" ? failure.error : "request_failed";
+      throw new DenApiError(status, code, getErrorMessage(failure, `Request failed with ${status}.`));
+    }
+    const body = isRecord(payload) && isRecord(payload.plugins) ? payload.plugins[plugin.id] : null;
+    if (!isRecord(body)) {
+      throw new DenApiError(502, "incomplete_inventory", "The resource inventory could not be verified.");
+    }
+    return pluginResolvedFrom(plugin, body);
+  }
+
   return {
     /** The resolved web base URL and API base URL. */
     baseUrls,
@@ -3496,6 +3534,53 @@ export function createDenClient(options: {
       );
     },
 
+    /** Private field in chat: a person saves an organization connection's shared key. */
+    async saveMcpConnectionSharedKey(orgId: string, connectionId: string, apiKey: string): Promise<void> {
+      await requestJson<unknown>(
+        baseUrls,
+        `/v1/mcp-connections/${encodeURIComponent(connectionId)}/shared-credential`,
+        { method: "PUT", token, organizationId: orgId, body: { apiKey } },
+      );
+    },
+
+    /** Private field in chat: a person saves a plugin's declared MCP server key through the plugin's own setup. */
+    async savePluginConnectionKey(orgId: string, input: { pluginId: string; configObjectId: string; serverName: string; apiKey: string }): Promise<void> {
+      await requestJson<unknown>(
+        baseUrls,
+        `/v1/plugins/${encodeURIComponent(input.pluginId)}/mcp-connections`,
+        { method: "POST", token, organizationId: orgId, body: { configObjectId: input.configObjectId, serverName: input.serverName, authType: "apikey", credentialMode: "shared", apiKey: input.apiKey } },
+      );
+    },
+
+    /** Whether an AI Gateway provider's credential set already has a working shared key. Never reads the key. */
+    async gatewayCredentialSetReady(orgId: string, inferenceProviderId: string, credentialSetId: string): Promise<boolean> {
+      const payload = await requestJson<unknown>(
+        baseUrls,
+        `/v1/inference-providers/${encodeURIComponent(inferenceProviderId)}/credential-sets`,
+        { method: "GET", token, organizationId: orgId },
+      );
+      const sets = isRecord(payload) && Array.isArray(payload.credentialSets) ? payload.credentialSets : [];
+      return sets.some((set) => isRecord(set) && set.id === credentialSetId && set.credentialStatus === "ready");
+    },
+
+    /** Private fields in chat: a person saves an AI Gateway provider's structured shared credential. */
+    async saveGatewayProviderCredential(orgId: string, inferenceProviderId: string, credentialSetId: string, body: { credential: { kind: "aws_keys" | "gcp_service_account"; secret: string } } | { apiKeys: Record<string, string> }): Promise<void> {
+      await requestJson<unknown>(
+        baseUrls,
+        `/v1/inference-providers/${encodeURIComponent(inferenceProviderId)}/credential-sets/${encodeURIComponent(credentialSetId)}`,
+        { method: "PATCH", token, organizationId: orgId, body },
+      );
+    },
+
+    /** Private field in chat: a person saves an AI Gateway provider's shared API key. */
+    async saveGatewayProviderKey(orgId: string, inferenceProviderId: string, credentialSetId: string, apiKey: string): Promise<void> {
+      await requestJson<unknown>(
+        baseUrls,
+        `/v1/inference-providers/${encodeURIComponent(inferenceProviderId)}/credential-sets/${encodeURIComponent(credentialSetId)}`,
+        { method: "PATCH", token, organizationId: orgId, body: { credential: { kind: "api_key", secret: apiKey } } },
+      );
+    },
+
     async disconnectMyMcpConnectionAccount(orgId: string, connectionId: string): Promise<void> {
       await requestJson<unknown>(
         baseUrls,
@@ -3535,6 +3620,21 @@ export function createDenClient(options: {
       return plugins;
     },
 
+    /** Changes whenever what members can use may have changed; null when this Den cannot tell. */
+    async getInventoryRevision(orgId: string): Promise<string | null> {
+      try {
+        const payload = await requestJson<unknown>(
+          baseUrls,
+          "/v1/org/inventory-revision",
+          { method: "GET", token, organizationId: orgId },
+        );
+        return isRecord(payload) && typeof payload.revision === "string" ? payload.revision : null;
+      } catch (error) {
+        if (error instanceof DenApiError && [404, 405, 501].includes(error.status)) return null;
+        throw error;
+      }
+    },
+
     async getOrgMarketplaceResolved(orgId: string, marketplaceId: string): Promise<DenOrgMarketplaceResolved> {
       const payload = await requestJson<unknown>(
         baseUrls,
@@ -3549,20 +3649,30 @@ export function createDenClient(options: {
       return resolved;
     },
 
-    async getOrgPluginResolved(orgId: string, plugin: DenOrgPlugin): Promise<DenOrgPluginResolved> {
-      const payload = await requestJson<unknown>(
-        baseUrls,
-        `/v1/plugins/${encodeURIComponent(plugin.id)}/resolved`,
-        { method: "GET", token, organizationId: orgId },
-      );
-      const resolved = getOrgPluginResolved(plugin, payload);
-      verifyInventory(
-        payload,
-        "items",
-        resolved.memberships.filter((item) => item.configObject).length,
-        (item) => !isRecord(item) || hasModeledObjectType(item.configObject),
-      );
-      return resolved;
+    getOrgPluginResolved: getPluginResolved,
+
+    /**
+     * Every plugin's contents in one request per 100 plugins. A Den without the
+     * batched route (404) gets the one-request-per-plugin route instead.
+     */
+    async getOrgPluginsResolved(orgId: string, plugins: DenOrgPlugin[]): Promise<DenOrgPluginResolved[]> {
+      const batches: DenOrgPlugin[][] = [];
+      for (let start = 0; start < plugins.length; start += RESOLVED_PLUGINS_BATCH_SIZE) {
+        batches.push(plugins.slice(start, start + RESOLVED_PLUGINS_BATCH_SIZE));
+      }
+      try {
+        return (await Promise.all(batches.map(async (batch) => {
+          const payload = await requestJson<unknown>(
+            baseUrls,
+            `/v1/resolved-plugins?pluginIds=${batch.map((plugin) => encodeURIComponent(plugin.id)).join(",")}`,
+            { method: "GET", token, organizationId: orgId },
+          );
+          return batch.map((plugin) => pluginResolvedFromBatch(plugin, payload));
+        }))).flat();
+      } catch (error) {
+        if (!(error instanceof DenApiError) || error.status !== 404) throw error;
+        return Promise.all(plugins.map((plugin) => getPluginResolved(orgId, plugin)));
+      }
     },
 
     async createOrgPlugin(

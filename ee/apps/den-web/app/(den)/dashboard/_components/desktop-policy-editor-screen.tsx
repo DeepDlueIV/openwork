@@ -365,7 +365,6 @@ export function DesktopPolicyEditorScreen({ desktopPolicyId }: { desktopPolicyId
       icon={Laptop}
       title={isEditing ? "Edit desktop policy" : "New desktop policy"}
       description="Advanced app defaults and grants. Manage team modes and permissions from Team → Access."
-      colors={["#F8FAFC", "#0F172A", "#38BDF8", "#A78BFA"]}
     >
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <Link

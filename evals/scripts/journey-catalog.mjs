@@ -23,7 +23,10 @@ const definitions = {
   },
   'gateway-usage-policy.e2e.test.ts': { name: 'Request and approve a Gateway usage extension', placement: 'local' },
   'composer-model-picker-no-subscribe-promo.e2e.test.ts': {
-    cases: [{ id: 'MODEL-01', engines: ['v2'], optIns: ['OPENWORK_EVAL_E2E_TESTS'], example: { placement: '--local', engine: 'v2' } }],
+    cases: [
+      { id: 'MODEL-01', engines: ['v2'], optIns: ['OPENWORK_EVAL_E2E_TESTS'], example: { placement: '--local', engine: 'v2' } },
+      { id: 'MODEL-BRAND', engines: ['v1', 'v2'], optIns: ['OPENWORK_EVAL_E2E_TESTS'], example: { placement: '--local', engine: 'v2' } },
+    ],
   },
   // Its registered OAuth callback and synthetic client exchange run on owned loopback services.
   'mcp-connection-consent.e2e.test.ts': { name: 'Authorize a connected client once', placement: 'local' },
@@ -107,6 +110,8 @@ const definitions = {
     cases: [
       { id: 'SKILL-ATTACH', engines: ['v1', 'v2'], optIns: ['OPENWORK_EVAL_E2E_TESTS'], example: { placement: '--local', engine: 'v2' } },
       { id: 'SKILL-MISSING', engines: ['v2'], optIns: ['OPENWORK_EVAL_E2E_TESTS'], example: { placement: '--local', engine: 'v2' } },
+      { id: 'SKILL-SAME-NAME', engines: ['v2'], optIns: ['OPENWORK_EVAL_E2E_TESTS'], example: { placement: '--local', engine: 'v2' } },
+      { id: 'SKILL-GLOBAL', engines: ['v2'], optIns: ['OPENWORK_EVAL_E2E_TESTS'], example: { placement: '--local', engine: 'v2' } },
       { id: 'SKILL-NATIVE-01', engines: ['v2'], optIns: ['OPENWORK_EVAL_E2E_TESTS'], example: { placement: '--local', engine: 'v2' } },
       { id: 'SKILL-CLOUD-DISCOVERY', engines: ['v2'], optIns: ['OPENWORK_EVAL_E2E_TESTS'], example: { placement: '--local', engine: 'v2' } },
     ],

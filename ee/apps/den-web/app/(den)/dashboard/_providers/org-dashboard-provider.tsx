@@ -9,15 +9,19 @@ import {
   useState,
 } from "react";
 import { flushSync } from "react-dom";
+import { useQueryClient } from "@tanstack/react-query";
+import { permissionsQueryKeys } from "../_components/permissions-query-keys";
 import { usePathname, useRouter } from "next/navigation";
 import { useDenFlow } from "../../_providers/den-flow-provider";
 import { getErrorMessage, getOrgLimitError, getOrgPaymentRequiredError, getRequestError, isReauthRequiredError, requestJson, WORKSPACE_REAUTH_SECURITY_MESSAGE } from "../../_lib/den-flow";
 import { ReauthDialog } from "../../_components/reauth-dialog";
+import { DenSecretRevealProvider } from "../../_components/ui/secret-input";
 import {
   type DenOrgContext,
   type DenOrgSummary,
   getOrgDashboardRoute,
   getOrgAccessFlags,
+  orgFeatureEnabled,
   parseOrgContextPayload,
   parseOrgListPayload,
   roleIncludesCanonicalRole,
@@ -45,9 +49,12 @@ type OrgDashboardContextValue = {
   updateOrganizationSettings: (input: { name?: string; allowedEmailDomains?: string[] | null; allowedDesktopVersions?: string[] | null; requireSso?: boolean; brandAppName?: string | null; brandLogoUrl?: string | null; brandIconUrl?: string | null; brandAccentColor?: string | null }) => Promise<void>;
   deleteOrganization: () => Promise<void>;
   switchOrganization: (slug: string) => void;
-  inviteMember: (input: { email: string; role: string }) => Promise<void>;
+  /** teamId (teamRoles): invite into a custom role by adding the pending member to its team. */
+  inviteMember: (input: { email: string; role: string; teamId?: string | null }) => Promise<void>;
   startSeatCheckout: () => Promise<void>;
   cancelInvitation: (invitationId: string) => Promise<void>;
+  /** The join link of a pending invitation; GET /v1/org never includes join tokens. */
+  getInvitationLink: (invitationId: string) => Promise<string>;
   updateMemberRole: (memberId: string, role: string) => Promise<void>;
   removeMember: (memberId: string) => Promise<void>;
   transferOwnership: (memberId: string) => Promise<void>;
@@ -78,6 +85,7 @@ export function OrgDashboardProvider({
   children: React.ReactNode;
 }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const pathname = usePathname();
   const { user, sessionHydrated, signOut, runtimeConfig, runtimeConfigLoaded, setupOrganizationId } = useDenFlow();
   const [orgDirectory, setOrgDirectory] = useState<DenOrgSummary[]>([]);
@@ -672,13 +680,16 @@ export function OrgDashboardProvider({
     });
   }
 
-  async function inviteMember(input: { email: string; role: string }) {
+  async function inviteMember(input: { email: string; role: string; teamId?: string | null }) {
     const access = getCurrentAccess();
     if (!access.canInviteMembers) {
       throw new Error("You don't have permission to invite members.");
     }
     const invitationRole = access.canManageRoles ? input.role : "member";
     ensureRoleCanBeAssigned(invitationRole);
+    if (input.teamId && !access.canManageTeams) {
+      throw new Error(permissionLockReason("teams.manage"));
+    }
 
     await runMutation("invite-member", async () => {
       ensureActiveOrganizationSelected();
@@ -686,7 +697,7 @@ export function OrgDashboardProvider({
         "/v1/invitations",
         {
           method: "POST",
-          body: JSON.stringify({ email: input.email, role: invitationRole }),
+          body: JSON.stringify({ email: input.email, role: invitationRole, ...(input.teamId !== undefined ? { teamId: input.teamId } : {}) }),
         },
         12000,
       );
@@ -703,6 +714,7 @@ export function OrgDashboardProvider({
         }
         throw getRequestError(payload, response, `Failed to invite member (${response.status}).`);
       }
+
     });
   }
 
@@ -760,6 +772,35 @@ export function OrgDashboardProvider({
         throw getRequestError(payload, response, `Failed to cancel invitation (${response.status}).`);
       }
     });
+  }
+
+  async function getInvitationLink(invitationId: string): Promise<string> {
+    if (!getCurrentAccess().canInviteMembers) {
+      throw new Error(permissionLockReason("invitations.manage"));
+    }
+
+    const result: { inviteLink: string | null } = { inviteLink: null };
+    await runReauthableAction("invitation-link", async () => {
+      ensureActiveOrganizationSelected();
+      const { response, payload } = await requestJson(
+        `/v1/invitations/${encodeURIComponent(invitationId)}/link`,
+        { method: "GET" },
+        12000,
+      );
+
+      if (!response.ok) {
+        throw getRequestError(payload, response, `Failed to get the invite link (${response.status}).`);
+      }
+
+      result.inviteLink = payload && typeof payload === "object" && "inviteLink" in payload && typeof payload.inviteLink === "string"
+        ? payload.inviteLink
+        : null;
+    });
+
+    if (!result.inviteLink) {
+      throw new Error("The invite link response did not include a link.");
+    }
+    return result.inviteLink;
   }
 
   async function updateMemberRole(memberId: string, role: string) {
@@ -890,6 +931,9 @@ export function OrgDashboardProvider({
       if (response.status !== 204 && !response.ok) {
         throw getRequestError(payload, response, `Failed to delete team (${response.status}).`);
       }
+      // Deletion removes role links in Den, not reusable shared roles. Refresh the
+      // cached sets/details too, so switching tabs cannot resurrect a deleted team.
+      if (activeOrgId) await queryClient.invalidateQueries({ queryKey: permissionsQueryKeys.all(activeOrgId) });
     });
   }
 
@@ -959,6 +1003,7 @@ export function OrgDashboardProvider({
     inviteMember,
     startSeatCheckout,
     cancelInvitation,
+    getInvitationLink,
     updateMemberRole,
     removeMember,
     transferOwnership,
@@ -970,6 +1015,7 @@ export function OrgDashboardProvider({
 
   return (
     <OrgDashboardContext.Provider value={value}>
+      <DenSecretRevealProvider enabled={orgFeatureEnabled(orgContext, "secureSecretFields")}>
       {setupOrganizationId && (orgContext?.organization.id !== setupOrganizationId
         || activeOrgId !== setupOrganizationId || getRequestOrgScope() !== setupOrganizationId) ? (
         <div className="grid min-h-[420px] place-content-center gap-3 px-6 text-sm text-gray-600" data-testid="setup-workspace-restoring">
@@ -977,6 +1023,7 @@ export function OrgDashboardProvider({
           {!orgBusy ? <button type="button" onClick={() => void refreshOrgData()} className="font-medium text-gray-900 underline underline-offset-4">Retry setup workspace</button> : null}
         </div>
       ) : children}
+      </DenSecretRevealProvider>
       <ReauthDialog
         open={reauthDialogOpen}
         user={user}

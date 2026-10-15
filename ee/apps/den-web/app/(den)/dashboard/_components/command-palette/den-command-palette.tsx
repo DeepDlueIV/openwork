@@ -1,5 +1,7 @@
 "use client";
 
+import { desktopPolicyScreenRemoved } from "../../_lib/desktop-policy-screen-rollout";
+
 import { Command } from "cmdk";
 import {
   Box,
@@ -38,7 +40,6 @@ const EMPTY_CAPABILITIES: DenOrgCapabilities = {
   installLinks: false,
   mcpConnections: false,
   openworkWeb: false,
-  orgManagedDashboards: false,
   workflows: false,
 };
 
@@ -125,6 +126,7 @@ export function DenCommandPalette({ open, onOpenChange }: DenCommandPaletteProps
   ), [orgContext?.currentMember.role, orgContext?.currentMember.isOwner, orgContext?.currentMember.permissions]);
   const capabilities = orgContext?.capabilities ?? EMPTY_CAPABILITIES;
   const permissionsEnabled = orgFeatureEnabled(orgContext, "permissions");
+  const teamRoles = orgFeatureEnabled(orgContext, "teamRoles");
   const workbotSettings = capabilities.workbot === true;
   // Plugin results open the admin plugin page, which needs `sharing.manage_all`.
   const pluginsQuery = usePluginSummaries({ enabled: open && access.canManageAllShared });
@@ -158,7 +160,9 @@ export function DenCommandPalette({ open, onOpenChange }: DenCommandPaletteProps
       orgMode: runtimeConfig.orgMode,
       runtimeConfigLoaded,
       permissionsEnabled,
+      teamRoles,
       workbotSettings,
+      desktopPolicyScreenRemoved: desktopPolicyScreenRemoved(orgContext),
     });
     return flattenNavigationForSearch(sections)
       .filter((entry) => entry.href !== "#")
@@ -166,8 +170,10 @@ export function DenCommandPalette({ open, onOpenChange }: DenCommandPaletteProps
   }, [
     access,
     activeOrg?.slug,
+    orgContext,
     capabilities,
     permissionsEnabled,
+    teamRoles,
     workbotSettings,
     runtimeConfig.orgMode,
     runtimeConfigLoaded,

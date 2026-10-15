@@ -1007,6 +1007,7 @@ export async function startServer(
             workspace,
             proxyPath: mount.restPath,
             connection,
+            describeUncopiedChat: (sessionId) => engineV2Preview.describeUncopiedChat(sessionId),
             // A turn uses the connections that are ready; MCP upkeep runs in
             // the background and the engine adds tools as connections finish.
             prepareExecution: async (directory) => {
@@ -1368,6 +1369,8 @@ export async function proxyOpencodeV2Request(input: {
   prepareExecution?: (directory: string) => Promise<void>;
   /** Restart one connection that is not healthy (v1's `POST /mcp/:name/connect`). */
   reconnectMcp?: (directory: string, name: string) => Promise<void>;
+  /** Why v2 has no such chat when it is a v1 chat not copied yet. */
+  describeUncopiedChat?: (sessionId: string) => Promise<string | null>;
   recoverySignal?: AbortSignal;
 }): Promise<Response> {
   const method = input.request.method.toUpperCase();
@@ -1442,7 +1445,11 @@ export async function proxyOpencodeV2Request(input: {
   // Authorization follows the persistent home, not the agent's mutable CWD.
   // The actual native location still controls execution and tool discovery.
   if (sessionId?.startsWith("ses_")) {
-    const session = await readNative(`/api/session/${encodeURIComponent(sessionId)}`);
+    const session = await readNative(`/api/session/${encodeURIComponent(sessionId)}`).catch(async (error: unknown) => {
+      // A v1 chat v2 has not copied yet: say so instead of a bare "could not be read".
+      const reason = error instanceof ApiError && error.status === 404 ? await input.describeUncopiedChat?.(sessionId) : null;
+      throw reason ? new ApiError(404, "engine_chat_not_copied", reason) : error;
+    });
     if (await homes.resolve(session) !== expectedHome) {
       throw new ApiError(404, "session_not_found", "Session not found");
     }
@@ -3298,6 +3305,9 @@ function createRoutes(
 
   addRoute(routes, "GET", "/managed-policy", "client", async () =>
     jsonResponse({ policy: await managedDesktopPolicy(config).current() }));
+  // The desktop process reads the built-in browser's website rules here itself.
+  addRoute(routes, "GET", "/managed-policy/website-rules", "client", async () =>
+    jsonResponse({ rules: await managedDesktopPolicy(config).websiteRules() }));
   addRoute(routes, "POST", "/managed-policy/evaluate", "policy", async (ctx) => {
     const body = await readJsonBody(ctx.request);
     const action = managedPolicyActionSchema.safeParse(body.action);
@@ -3356,6 +3366,8 @@ function createRoutes(
     if (body.chatRouting !== undefined && typeof body.chatRouting !== "boolean") {
       throw new ApiError(400, "invalid_payload", "chatRouting must be a boolean");
     }
+    // Check before starting the v2 process, so a refused switch changes nothing.
+    if (body.chatRouting === true) await engineV2Preview.requireV1HistoryCopied();
     let status = engineV2Preview.status();
     // Stop routing before stopping the v2 process; enable the process before routing to it.
     if (body.chatRouting === false) status = await engineV2Preview.setChatRouting(false);
@@ -3524,6 +3536,17 @@ function createRoutes(
 
     if (!opencode && !openwork) {
       throw new ApiError(400, "invalid_payload", "opencode or openwork updates required");
+    }
+    // Adding or changing an MCP server here is the same as through /mcp: names
+    // OpenWork reserves for the organization's servers are refused, and so is
+    // a local server the member's agent permissions block.
+    if (isRecord(opencode?.mcp)) {
+      const saved = runtimeMcpMap(await readRuntimeOpencodeConfig(config, workspace.id));
+      for (const [name, server] of Object.entries(opencode.mcp)) {
+        if (server === null || JSON.stringify(server) === JSON.stringify(saved[name])) continue;
+        validateUserMcpName(name);
+        await managedDesktopPolicy(config).assertAgentPermission("mcp", name);
+      }
     }
 
     await requireApproval(ctx, {
@@ -3758,6 +3781,7 @@ function createRoutes(
     const workspace = await resolveWorkspace(config, ctx.params.id);
     const body = await readJsonBody(ctx.request);
     const name = String(body.name ?? "");
+    await managedDesktopPolicy(config).assertAgentPermission("skill", name);
     const content = String(body.content ?? "");
     const description = body.description ? String(body.description) : undefined;
     await requireApproval(ctx, {
@@ -3938,6 +3962,9 @@ function createRoutes(
       ? body.arguments as Record<string, unknown>
       : {};
     const approved = body.approved === true;
+    // A cached read asks only whether this call is allowed now; it never runs the tool.
+    const checkOnly = body.checkOnly === true;
+    if (checkOnly && approved) throw new ApiError(400, "invalid_payload", "A check-only call cannot be approved.");
     const launchId = typeof body.launchId === "string" ? body.launchId : undefined;
     const sessionId = typeof body.sessionId === "string" || body.sessionId === null ? body.sessionId : undefined;
     if (body.engine !== undefined && body.engine !== "v1" && body.engine !== "v2") throw new ApiError(400, "invalid_launch_context", "Unknown App session engine.");
@@ -3958,6 +3985,7 @@ function createRoutes(
         expectedResourceDigest,
         arguments: args,
         approved,
+        checkOnly,
         assertSessionActive: async () => {
           if (!sessionId) return;
           if (engine === "v2") {
@@ -4005,6 +4033,7 @@ function createRoutes(
     const body = await readJsonBody(ctx.request);
     const name = String(body.name ?? "").trim();
     validateUserMcpName(name);
+    await managedDesktopPolicy(config).assertAgentPermission("mcp", name);
     const serverUrl = typeof body.url === "string" ? body.url.trim() : "";
     const oauth = body.oauth && typeof body.oauth === "object" && !Array.isArray(body.oauth)
       ? body.oauth as Record<string, unknown>
@@ -4116,6 +4145,7 @@ function createRoutes(
     const body = await readJsonBody(ctx.request);
     const name = String(body.name ?? "");
     validateUserMcpName(name);
+    await managedDesktopPolicy(config).assertAgentPermission("mcp", name);
     const configPayload = body.config as Record<string, unknown> | undefined;
     if (!configPayload) {
       throw new ApiError(400, "invalid_payload", "MCP config is required");

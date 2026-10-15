@@ -6,9 +6,9 @@ import type { MockMcpTool } from "@openwork/labs";
 import { go, runWorkflow, saveWorkflow, waitFor } from "@openwork/behaviors";
 import { connect, debuggerUrlFor, evaluate, listTargets } from "@openwork/cdp";
 import { configureProvider } from "./chat.ts";
-import { enableOrgManagedDashboards } from "./dashboards.ts";
 import { defaultDaytonaExec, execInSandbox } from "@openwork/hosts";
 import { reconcileDraftHost } from "../fixtures/cloud-draft-host.ts";
+import { denForAppWeb, signedInAppWeb } from "./signed-in-app-web.ts";
 
 export const creationPrompt = "Create a reusable app for my dashboard that shows a weekly briefing using my existing Weekly briefing workflow.";
 export const creationReply = "Your briefing app draft is ready. Try the preview, then choose Save.";
@@ -422,32 +422,20 @@ export async function cloudDraftRouting(seed: Seed) {
 }
 
 export async function savedAppCreation(seed: Seed) {
-  const den = await seed.den({
+  const { den, webPort } = await denForAppWeb(seed, {
     env: { DEN_GENERATED_ARTIFACT_VIEWS_ENABLED: "true", DEN_DASHBOARDS_ENABLED: "true" },
     org: { name: `Saved Apps ${Date.now()}`, members: { colleague: { name: "Colleague" }, browserRecipient: { name: "Browser recipient" } } },
     mocks: {
       tracker: seed.mock({ allowUnauthenticatedMcp: true, appToolName: "search_issues_using_jql" }),
     },
   });
-  await enableOrgManagedDashboards(seed, den.admin);
   const connection = await seed.orgConnection(den.admin, {
     name: "Issue tracker", url: den.mocks.tracker.mcpUrl,
     authType: "none", credentialMode: "shared", access: { orgWide: true },
   });
   const catalog = await seed.api(den.admin, `/v1/mcp-connections/${connection.id}/mcp-apps`);
   const apps = record(catalog.body).apps;
-  if (!Array.isArray(apps) || !apps[0]) throw new Error("The company app catalog is empty.");
-  const companyApp = record(apps[0]);
-  const dashboard = await seed.api(den.admin, "/v1/dashboards", { method: "POST", body: JSON.stringify({
-    name: "Team tools", elements: [{ serverName: "Issue tracker", connectionId: connection.id,
-      toolName: field(companyApp, "toolName"), projectedToolName: field(companyApp, "toolName"),
-      resourceUri: field(companyApp, "resourceUri"), title: "Project updates", launchArguments: { jql: "project = DEMO" },
-    }],
-  }) });
-  if (dashboard.response.status !== 201) throw new Error(`Company dashboard setup failed: ${dashboard.text}`);
-  const dashboardId = field(record(dashboard.body).item, "id");
-  const grant = await seed.api(den.admin, `/v1/dashboards/${dashboardId}/access`, { method: "POST", body: JSON.stringify({ orgWide: true, role: "viewer" }) });
-  if (grant.response.status !== 201) throw new Error(`Company dashboard grant failed: ${grant.text}`);
+  if (!Array.isArray(apps) || !apps[0]) throw new Error("The connection's MCP App catalog is empty.");
   const org = await seed.api(den.admin, "/v1/org");
   const orgId = field(record(org.body).organization, "id");
   const tokenResponse = await seed.api(den.admin, "/v1/mcp/token", {
@@ -488,7 +476,7 @@ export async function savedAppCreation(seed: Seed) {
   });
   const firstRun = await run(firstInput.topic);
   const source = (heading: string) => `export default function Briefing({ data }) { const [expanded, setExpanded] = React.useState(false); return <article><h1>${heading}</h1><p>{data.topic}</p><button onClick={() => setExpanded(!expanded)}>{expanded ? "Hide details" : "Show details"}</button>{expanded && <p>Workers: {data.total}</p>}</article> }`;
-  // Only the existing workflow is arranged. The desktop conversation must
+  // Only the existing workflow is arranged. The app conversation must
   // execute the model tool call to create and display the first app draft.
   const configured = await fetch(`${den.mocks.tracker.url}/admin/agent-workloads`, {
     method: "POST", headers: { "content-type": "application/json" },
@@ -510,8 +498,7 @@ export async function savedAppCreation(seed: Seed) {
     await proxy.faults.status("/api/runtime-config", 200, { times: 1000, body: { denApiUrl: proxy.ref.apiUrl } });
   };
   await resetProxy();
-  const app = await seed.desktop({ den: { ...den, ref: proxy.ref }, name: "saved-app-creation", model: `${providerId}/${modelId}` });
-  const workspace = await seed.workspace(app, seed.tmpPath("saved-app-creation"));
+  const { app, workspace } = await signedInAppWeb(seed, { den: { ...den, ref: proxy.ref }, webPort, name: "saved-app-creation", workspacePath: seed.tmpPath("saved-app-creation") });
   await configureProvider(seed, app, workspace.workspaceId, providerId, modelId, {
     provider: { [providerId]: {
       npm: "@ai-sdk/openai-compatible", name: "App creation model fixture",
@@ -522,7 +509,7 @@ export async function savedAppCreation(seed: Seed) {
   });
   const inPreview = async (action: "read" | "details") => (await inAppDocuments(app, action)).join("\n");
   return {
-    app, den, proxy, resetProxy, workspace, configObjectId, dashboardId, rpc, run,
+    app, den, proxy, resetProxy, workspace, configObjectId, rpc, run,
     // `go` only sets the hash; the page being left stays mounted until the router
     // commits, and the dashboard and the app page share control labels and preview
     // text. Return once the destination has rendered its own root so the spec's

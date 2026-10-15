@@ -16,6 +16,7 @@ const appSource = fileURLToPath(new URL("../apps/app/src/", import.meta.url));
 const appResolve = {
   alias: [
     { find: /^@\//, replacement: appSource },
+    { find: /^@openwork\/testkit$/, replacement: fileURLToPath(new URL("./packages/testkit/src/index.ts", import.meta.url)) },
     { find: /^react$/, replacement: fileURLToPath(new URL("../apps/app/node_modules/react/index.js", import.meta.url)) },
     { find: /^react-dom\/client$/, replacement: fileURLToPath(new URL("../apps/app/node_modules/react-dom/client.js", import.meta.url)) },
   ],
@@ -36,9 +37,9 @@ export default defineConfig({
           ...common,
           name: "pr",
           // Live specs are attached-system incident signals: exclude them unless explicitly named.
-          // Unit tests live next to the eval package they test (the spec boundary
+          // Unit tests live next to the module or package they test (the spec boundary
           // ratchet keeps evals/specs for journeys that cross a product boundary).
-          include: ["specs/**/*.test.ts", "../scenarios/**/*.test.ts", "packages/*/src/**/*.test.ts"],
+          include: ["specs/**/*.test.ts", "../scenarios/**/*.test.ts", "packages/*/src/**/*.test.ts", "../apps/server/test/**/*.vitest.test.ts"],
           // Custom excludes replace Vitest's defaults, so keep dependencies out explicitly.
           // "**" does not match "../", so ../scenarios needs its own patterns.
           exclude: ["**/node_modules/**", "**/*.e2e.test.ts", "**/e2e.test.ts", "../**/node_modules/**", "../**/*.e2e.test.ts", "../**/e2e.test.ts",

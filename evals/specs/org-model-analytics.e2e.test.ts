@@ -120,21 +120,12 @@ test("organization model analytics aggregate session dimensions without cross-or
   await user.notSee({ text: "No model usage yet" });
   evidence.recordAssertionEvidence("Usage and adoption shows the same model usage returned by the organization API", "Both model rows show exactly one session, matching the API totals, and the empty-state message is absent", true);
 
-  await step("before: adoption still uses colored stat tiles and purple navigation", async () => {
-    await user.see({ role: "heading", label: "Usage & adoption" });
-    expect((await probe.dom('[data-analytics-integrated="false"]')).elements).toHaveLength(1);
-    evidence.recordAssertionEvidence("the old analytics presentation stays available", "The same two measured model sessions are visible with the rollout off.", true);
-    await user.screenshot();
-  });
-  await step("after: adoption uses neutral statistics without changing model sessions", async () => {
-    await world.setLibraryUsage(true);
-    await user.reload();
-    await user.see({ text: /^prov\/model-a\s+1$/ }, { timeoutMs: 60_000 });
+  await step("adoption uses neutral statistics for the same model sessions", async () => {
     const stats = (await probe.dom('[data-analytics-stat]')).elements;
     expect(stats.length).toBeGreaterThan(0);
     expect((await probe.dom('[data-analytics-stat] svg')).elements).toHaveLength(0);
     expect(await readAnalytics(den.admin, primaryOrgId)).toEqual(primaryModels);
-    evidence.recordAssertionEvidence("only the presentation changes", `${stats.length} neutral statistics, zero decorative icons; the same two sessions and selection totals remain.`, true);
+    evidence.recordAssertionEvidence("statistics stay neutral", `${stats.length} neutral statistics, zero decorative icons; the same two sessions and selection totals remain.`, true);
     await user.screenshot();
     await user.click({ role: "link", label: "Models & usage" });
     await user.see({ role: "heading", label: "Models & usage" });

@@ -332,7 +332,14 @@ export async function reusableAwsCredential(tx: GatewayTx, target: GatewayProvid
   throw unavailable()
 }
 
-export async function writeGatewaySet(tx: GatewayTx, provider: GatewayProvider, input: GatewayCredentialSetPatch, target: GatewaySet["id"] | { createdByOrgMembershipId: GatewayMemberId }) {
+export async function writeGatewaySet(
+  tx: GatewayTx,
+  provider: GatewayProvider,
+  input: GatewayCredentialSetPatch,
+  target: GatewaySet["id"] | { createdByOrgMembershipId: GatewayMemberId },
+  /** Secure keys in chat: create a new organization set whose key a person adds afterwards. */
+  options: { awaitOrganizationKey?: boolean } = {},
+) {
   const setId = typeof target === "string" ? target : undefined
   let creatorId: GatewayMemberId | null = null
   if (!setId) {
@@ -381,7 +388,8 @@ export async function writeGatewaySet(tx: GatewayTx, provider: GatewayProvider, 
   if (credentials.some((row) => row.organization_id !== provider.organization_id || row.gateway_provider_id !== provider.id)) throw new GatewayWriteError(409, "credential_set_inconsistent")
   const orgCredential = credentials.find((row) => row.subject === "org" && row.org_membership_id === null)
   const credential = normalizeCredential(input, provider, mode === existing?.credential_mode ? orgCredential : undefined)
-  if (mode === "org" && !credential && (!existing || modeChanged || enabled && orgCredential?.status !== "active")) {
+  const awaitingKey = options.awaitOrganizationKey === true && !existing && mode === "org"
+  if (mode === "org" && !credential && !awaitingKey && (!existing || modeChanged || enabled && orgCredential?.status !== "active")) {
     throw new GatewayWriteError(400, "credential_required", "Provide a non-empty organization credential to create this set, switch to organization mode, or re-enable it without an active credential.")
   }
   if (modeChanged || clientChanged || disabled) await tx.delete(GatewayProviderOauthStateTable).where(eq(GatewayProviderOauthStateTable.credential_set_id, id))

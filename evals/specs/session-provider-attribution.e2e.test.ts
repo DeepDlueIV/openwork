@@ -4,8 +4,7 @@ import { sessionProviderAttribution } from "../worlds/session-provider-attributi
 
 const test = spec.world(sessionProviderAttribution, {
   timeout: 8 * 60_000,
-  resources: { surfaces: ["desktop"], services: ["mock"],
-    nativeReason: "Attribution of a real UI send to an isolated HTTP 400 provider witness before any assistant text, using source-built local Electron and its real engine." },
+  resources: { surfaces: ["appWeb"], services: ["mock"] },
 });
 
 test("terminal provider rejection before assistant text has an attributable visible outcome", async ({ world, user, agent, probe, step, evidence }) => {

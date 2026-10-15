@@ -1224,7 +1224,7 @@ export function PluginMcpSetupDialog({
                     kind="secret"
                     name="marketplace-mcp-api-key"
                     value={apiKey}
-                    onChange={(event) => setApiKey(event.target.value)}
+                    onChange={setApiKey}
                     placeholder="API key"
                   />
                   <p className="mt-1.5 text-[11.5px] leading-4 text-gray-500">
@@ -1272,7 +1272,7 @@ export function PluginMcpSetupDialog({
                         kind="secret"
                         name="marketplace-mcp-oauth-client-secret"
                         value={clientSecret}
-                        onChange={(event) => setClientSecret(event.target.value)}
+                        onChange={setClientSecret}
                         placeholder="Client secret"
                       />
                     </div>

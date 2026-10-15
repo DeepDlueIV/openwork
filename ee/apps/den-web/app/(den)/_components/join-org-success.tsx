@@ -9,14 +9,7 @@ import {
 } from "../_lib/desktop-handoff";
 import { getErrorMessage, requestJson } from "../_lib/den-flow";
 import { getInstallConfigErrorMessage } from "../_lib/install-errors";
-import {
-  buildInstallDownloadHref,
-  detectedInstallPlatform,
-  downloadCtaLabel,
-  installerApiUrlFromConfig,
-  installTokenFromPageUrl,
-} from "../_lib/install-download";
-import { createOrganizationInstallLink } from "../_lib/install-link-data";
+import { detectedInstallPlatform, downloadCtaLabel, installDownloadHref } from "../_lib/install-download";
 import { isMobileUserAgent } from "../_lib/platform";
 import { useDesktopHandoffStatus } from "../_lib/use-desktop-handoff-status";
 import { OnboardingCard } from "./onboarding-card";
@@ -81,7 +74,6 @@ function ReturnToOpenWorkStatus({
 }
 
 type JoinOrgSuccessProps = {
-  organizationId: string;
   organizationName: string;
   brand: OrganizationBrand;
   desktopAuthRequested: boolean;
@@ -90,7 +82,6 @@ type JoinOrgSuccessProps = {
 };
 
 export function JoinOrgSuccess({
-  organizationId,
   organizationName,
   brand,
   desktopAuthRequested,
@@ -148,28 +139,15 @@ export function JoinOrgSuccess({
     setActionError(null);
 
     try {
-      const installPageUrl = await createOrganizationInstallLink(organizationId, false);
-      const token = installTokenFromPageUrl(installPageUrl);
-      if (!token) {
-        throw new Error("The install link response was incomplete.");
-      }
-
-      const { response, payload } = await requestJson(
-        `/v1/install-config?token=${encodeURIComponent(token)}`,
-        { method: "GET" },
-        12000,
-      );
+      // Joining made this organization active, so the signed-in install routes
+      // serve its approved desktop version.
+      const { response, payload } = await requestJson("/v1/me/install-config", { method: "GET" }, 12000);
       if (!response.ok) {
         throw new Error(getInstallConfigErrorMessage(payload, response.status));
       }
 
-      const apiUrl = installerApiUrlFromConfig(payload);
-      if (!apiUrl) {
-        throw new Error("This install link returned incomplete setup details.");
-      }
-
       const platform = detectedInstallPlatform(detected) ?? "mac-arm64";
-      const href = buildInstallDownloadHref(apiUrl, platform, token);
+      const href = installDownloadHref(platform);
       setDownloadHref(href);
       startInstallerDownload(href);
     } catch (error) {

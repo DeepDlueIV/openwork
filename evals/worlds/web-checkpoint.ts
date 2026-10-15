@@ -6,21 +6,27 @@ import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import { allocateFreePort, setViewport, evaluate, browserScript } from "@openwork/cdp";
 import { chrome, localHost } from "@openwork/hosts";
-import { freestyleEvidenceWeb, attachEvidenceBrowser } from "@openwork/env";
+import { attachEvidenceBrowser, evidenceWeb, evidenceWorldCredentials, evidenceWorldProvider, openedDaytonaCopy } from "@openwork/env";
 import type { EvidenceCheckpoint } from "../../packages/evidence-provider/src/checkpoint.ts";
 import { uploadReview } from "@openwork/review/storage";
+import { prepareReviewBuild } from "./review-build.ts";
 import type { ReviewReport } from "@openwork/review";
 import { client } from "../../packages/freestyle/src/index.ts";
 import { deleteEvidenceVm, FORK_KIND, readEvidenceSession, continueEvidenceStream } from "../../packages/freestyle/src/checkpoints.ts";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
 
+/** Credentials the selected provider needs, for the spec's `needs.env`. */
+export const checkpointWorldCredentials = () => evidenceWorldCredentials();
+
 /**
- * The web world runs in its own Freestyle VM and advertises that it can be
- * checkpointed; the runner-local review app and browsers exercise the result.
+ * The web world runs in its own VM on the selected provider (Freestyle or
+ * Daytona) and advertises that it can be checkpointed; the runner-local review
+ * app and browsers exercise the result.
  */
 export async function checkpointWorld() {
   if (process.env.OPENWORK_EVIDENCE_CHECKPOINTS !== "1") throw new Error("Opt in with OPENWORK_EVIDENCE_CHECKPOINTS=1");
+  prepareReviewBuild();
   const sourceSha = execFileSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8" }).trim();
   if (process.env.OPENWORK_EVIDENCE_SOURCE_SHA && process.env.OPENWORK_EVIDENCE_SOURCE_SHA !== sourceSha) throw new Error("Evidence source must equal the runner checkout");
   const resources = new AsyncDisposableStack();
@@ -28,7 +34,8 @@ export async function checkpointWorld() {
   resources.defer(() => rm(temporary, { recursive: true, force: true }));
   try {
     // The evidence world advertises its checkpoint capability; spreading keeps it.
-    const world = resources.use(await freestyleEvidenceWeb(sourceSha));
+    const provider = evidenceWorldProvider();
+    const world = resources.use(await evidenceWeb(sourceSha, provider));
     const host = resources.use(localHost());
     const reviewer = resources.use(await chrome({ host, name: "checkpoint-reviewer", headless: true }));
     await setViewport(reviewer, { width: 1440, height: 1000, deviceScaleFactor: 1 });
@@ -41,7 +48,8 @@ export async function checkpointWorld() {
     const processHandle = spawn(process.execPath, [join(root, "apps/review/node_modules/next/dist/bin/next"), "start", "--hostname", "127.0.0.1", "--port", String(port)], {
       cwd: join(root, "apps/review"), stdio: "ignore",
       env: { PATH: process.env.PATH, HOME: process.env.HOME, NODE_ENV: "production", VERCEL: "1", VERCEL_ENV: "preview",
-        OPENWORK_REVIEW_LOCAL_DIR: storage, FREESTYLE_API_KEY: process.env.FREESTYLE_API_KEY },
+        OPENWORK_REVIEW_LOCAL_DIR: storage, FREESTYLE_API_KEY: process.env.FREESTYLE_API_KEY, DAYTONA_API_KEY: process.env.DAYTONA_API_KEY,
+        DAYTONA_API_URL: process.env.DAYTONA_API_URL, OPENWORK_DAYTONA_EVIDENCE_REGION: process.env.OPENWORK_DAYTONA_EVIDENCE_REGION },
     });
     resources.defer(async () => {
       if (processHandle.exitCode !== null) return;
@@ -59,8 +67,9 @@ export async function checkpointWorld() {
     return {
       ...world, reviewer, viewer, reviewUrl, sourceSha,
       // Return only a boolean: signed viewer URLs must not enter evidence logs.
-      reviewHasCopyLink: (url: string) => evaluate(reviewer.client, browserScript((expected) =>
-        Array.from(document.querySelectorAll(".viewer-context a.preview-open")).some((link) => link.getAttribute("href") === expected), [url])),
+      // Compared by access token: Daytona signs a new host name for every link to the same copy.
+      reviewHasCopyLink: (url: string) => evaluate(reviewer.client, browserScript((token) =>
+        Array.from(document.querySelectorAll(".viewer-context a.preview-open")).some((link) => new URL(link.getAttribute("href") ?? "", location.href).searchParams.get("token") === token), [new URL(url).searchParams.get("token")])),
       viewerState: () => evaluate(viewer.client, () => {
         const page = document.querySelector("iframe")?.contentDocument;
         const canvas = page?.querySelector("canvas");
@@ -91,6 +100,12 @@ export async function checkpointWorld() {
         return { id, url: `${reviewUrl}/r/${id}` };
       },
       async openedFork(reportId: string, existingIds: readonly string[] = []) {
+        if (provider === "daytona") {
+          const copy = await openedDaytonaCopy(reportId, existingIds);
+          resources.defer(() => copy.stop());
+          // Opened copies are for the reviewer to explore; they are never checkpointed.
+          return { app: copy.app, viewerUrl: copy.viewerUrl, continueStream: copy.continueStream, id: copy.id, streamState: copy.streamState };
+        }
         const api = client();
         const found = await api.vms.list({ metadata: `kind:${FORK_KIND},reportId:${reportId}`, limit: 3 });
         const created = found.vms.filter((vm) => !existingIds.includes(vm.id));

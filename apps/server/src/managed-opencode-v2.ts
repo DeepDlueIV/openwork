@@ -1,7 +1,9 @@
 import type { EnginePermissionRule } from "./managed-policy-rules.js";
+import { agentPermissionEngineV2Rules, type AgentPermissionRule, type EngineV2PermissionRule } from "./agent-permission-engine.js";
+import type { OrganizationMcpServers } from "./organization-mcp-names.js";
 import { nativeModelVariants } from "@openwork/types/cloud-model-fast";
 import { gatewayBase } from "./gateway-quota.js";
-import { openworkContextV2PluginPath, openworkGatewayQuotaV2PluginPath, openworkMcpResultsV2PluginPath, openworkMcpReadinessV2PluginPath, openworkProviderFiltersV2PluginPath } from "./openwork-extensions-plugin-path.js";
+import { openworkAgentPermissionsV2PluginPath, openworkContextV2PluginPath, openworkGatewayQuotaV2PluginPath, openworkMcpResultsV2PluginPath, openworkMcpReadinessV2PluginPath, openworkProviderFiltersV2PluginPath } from "./openwork-extensions-plugin-path.js";
 import { pathToFileURL } from "node:url";
 // Parallel v2 lane prototype: provider injection is a watched-config write. This module
 // deliberately has no reload/dispose call, unlike managed-opencode.ts and server.ts reloadOpencodeEngine.
@@ -53,6 +55,14 @@ export interface ManagedOpencodeV2ServerOptions {
   bootTimeoutMs?: number;
   contextTools?: { url: string; token: string; browser?: { url: string; token: string } };
   permissions?: () => Promise<EnginePermissionRule[]>;
+  /** Extra absolute skill directories registered before boot, so no later config write reloads the catalog. */
+  skills?: string[];
+  /**
+   * The signed-in member's agent permissions, which the engine and the agent
+   * permissions plugin apply, with the organization MCP servers OpenWork
+   * registered, which they leave alone.
+   */
+  agentPermissions?: () => Promise<{ rules: AgentPermissionRule[]; organizationMcp: OrganizationMcpServers }>;
 }
 
 export interface OpencodeV2Health {
@@ -66,6 +76,16 @@ export interface OpencodeV2RequestInit {
   body?: unknown;
   directory?: string;
   timeoutMs?: number;
+  /** Stop reading a larger response body and throw OpencodeV2ResponseTooLargeError instead. */
+  maxResponseBytes?: number;
+}
+
+/** A response body was larger than the caller's `maxResponseBytes`; it was not read into memory. */
+export class OpencodeV2ResponseTooLargeError extends Error {
+  constructor(readonly limitBytes: number) {
+    super(`OpenCode v2 response is larger than ${limitBytes} bytes`);
+    this.name = "OpencodeV2ResponseTooLargeError";
+  }
 }
 
 /** Where a running OpenCode v2 server listens, with its generated Basic credentials. */
@@ -91,6 +111,8 @@ export interface ManagedOpencodeV2Server extends OpencodeV2Connection {
   setProviders(specs: OpencodeV2ProviderSpec[], disabledProviderIds?: string[]): Promise<void>;
   /** Extra absolute skill directories registered through native config `skills`. */
   setSkills(directories: string[]): Promise<void>;
+  /** Rewrites the config when what it is read from changed, e.g. the organization MCP servers OpenWork registers. */
+  refreshConfig(): Promise<void>;
   close(): Promise<void>;
 }
 
@@ -121,7 +143,9 @@ export async function fetchOpencodeV2Json(
     body: init.body === undefined ? undefined : JSON.stringify(init.body),
     signal: init.timeoutMs === undefined ? undefined : AbortSignal.timeout(init.timeoutMs),
   });
-  const text = await response.text();
+  const text = init.maxResponseBytes === undefined
+    ? await response.text()
+    : await readBoundedText(response, init.maxResponseBytes);
   let json: unknown = text;
   try {
     json = JSON.parse(text);
@@ -129,6 +153,29 @@ export async function fetchOpencodeV2Json(
     // Non-JSON engine responses remain observable as raw text.
   }
   return { status: response.status, json };
+}
+
+/** Read a body as UTF-8 only while it stays within `limit` bytes; chunks stay off the JS heap until decoded. */
+async function readBoundedText(response: Response, limit: number): Promise<string> {
+  if (Number(response.headers.get("content-length")) > limit) {
+    await response.body?.cancel();
+    throw new OpencodeV2ResponseTooLargeError(limit);
+  }
+  const reader = response.body?.getReader();
+  if (!reader) return "";
+  const chunks: Uint8Array[] = [];
+  let bytes = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    bytes += value.byteLength;
+    if (bytes > limit) {
+      await reader.cancel();
+      throw new OpencodeV2ResponseTooLargeError(limit);
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks, bytes).toString("utf8");
 }
 
 function diagnostics(exitCode: number | null, stdout: string, stderr: string): Error {
@@ -166,6 +213,9 @@ export function renderOpencodeV2Config(input: {
   mcpReadinessPluginDirectory?: string;
   contextPluginDirectory?: string;
   contextTools?: { url: string; token: string; browser?: { url: string; token: string } };
+  agentPermissionRules?: AgentPermissionRule[];
+  organizationMcp?: OrganizationMcpServers;
+  agentPermissionsPluginDirectory?: string;
 }): Record<string, unknown> {
   const disabled = new Set(input.disabledProviderIds ?? []);
   const enabledProviders = input.providers.filter((provider) => !disabled.has(provider.id));
@@ -190,7 +240,9 @@ export function renderOpencodeV2Config(input: {
         limit: config.limit ?? { context: 128_000, output: 8_192 },
         ...(typeof config.family === "string" ? { family: config.family } : {}),
         ...(isRecord(config.options) ? { settings: config.options } : {}),
-        ...(isRecord(config.variants) ? {
+        // An absent variants key lets the engine infer reasoning efforts even
+        // when the provider explicitly says this model cannot reason.
+        ...(isRecord(config.variants) || config.reasoning === false ? {
           variants: nativeModelVariants(config.variants, providerPackage),
         } : {}),
         ...(isRecord(config.headers) ? { headers: config.headers } : {}),
@@ -234,12 +286,19 @@ export function renderOpencodeV2Config(input: {
     }] : []),
     ...(input.mcpResultsPluginDirectory ? [{ package: pathToFileURL(input.mcpResultsPluginDirectory).href }] : []),
     ...(input.mcpReadinessPluginDirectory ? [{ package: pathToFileURL(input.mcpReadinessPluginDirectory).href }] : []),
+    ...(input.agentPermissionRules?.length && input.agentPermissionsPluginDirectory ? [{
+      package: pathToFileURL(input.agentPermissionsPluginDirectory).href,
+      options: { rules: input.agentPermissionRules, organizationMcp: input.organizationMcp ?? {} },
+    }] : []),
   ];
+  // The engine applies the last matching rule, so the managed execution
+  // denials come last: an agent permission exception never lifts them.
+  const permissions: EngineV2PermissionRule[] = [...agentPermissionEngineV2Rules(input.agentPermissionRules ?? []), ...(input.permissions ?? [])];
   return {
     $schema: "https://opencode.ai/config.json",
     providers: providerConfig,
     ...(plugins.length ? { plugins } : {}),
-    ...(input.permissions ? { permissions: input.permissions } : {}),
+    ...(input.permissions || permissions.length ? { permissions } : {}),
     ...(input.skills.length ? { skills: [...input.skills] } : {}),
   };
 }
@@ -257,13 +316,17 @@ export async function createManagedOpencodeV2Server(
   const mcpResultsPluginDirectory = join(instanceRoot, "mcp-results-plugin");
   const mcpReadinessPluginDirectory = join(instanceRoot, "mcp-readiness-plugin");
   const contextPluginDirectory = join(instanceRoot, "context-plugin");
+  const agentPermissionsPluginDirectory = join(instanceRoot, "agent-permissions-plugin");
   const password = randomBytes(24).toString("base64url");
   const username = "opencode";
   let url = "";
   const providers = new Map<string, OpencodeV2ProviderSpec>();
-  let skills: string[] = [];
+  let skills: string[] = [...(options.skills ?? [])];
   let disabledProviderIds: string[] = [];
   let writes: Promise<void> = Promise.resolve();
+  // Declared before the boot config write, which reads it when the member
+  // already has stored agent permissions.
+  let agentPermissionsPluginWritten = false;
   const opencodeModelsUrl = (options.env?.OPENCODE_MODELS_URL ?? process.env.OPENCODE_MODELS_URL)?.replace(/\/+$/, "");
   // The engine needs OS paths and locale settings, not the server's provider,
   // cloud, database, or control-plane credentials. Unknown keys stay private.
@@ -378,6 +441,21 @@ export async function createManagedOpencodeV2Server(
     return next;
   }
 
+  // The agent permissions plugin is written and loaded only for a member who
+  // has agent permissions; everyone else's engine config stays as it was.
+  async function agentPermissionsConfig(read: NonNullable<ManagedOpencodeV2ServerOptions["agentPermissions"]>) {
+    const { rules, organizationMcp } = await read();
+    if (rules.length === 0) return {};
+    if (!agentPermissionsPluginWritten) {
+      await mkdir(agentPermissionsPluginDirectory, { recursive: true, mode: 0o700 });
+      await writeFile(join(agentPermissionsPluginDirectory, "package.json"), JSON.stringify({ type: "module" }), { mode: 0o600 });
+      await writeFile(join(agentPermissionsPluginDirectory, "server.js"),
+        `export { default } from ${JSON.stringify(pathToFileURL(openworkAgentPermissionsV2PluginPath()).href)};\n`, { mode: 0o600 });
+      agentPermissionsPluginWritten = true;
+    }
+    return { agentPermissionRules: rules, organizationMcp, agentPermissionsPluginDirectory };
+  }
+
   async function writeConfigNow(): Promise<void> {
     const target = join(configDir, "opencode.json");
     const next = `${JSON.stringify(renderOpencodeV2Config({
@@ -390,6 +468,7 @@ export async function createManagedOpencodeV2Server(
       contextPluginDirectory,
       contextTools: options.contextTools,
       ...(options.permissions ? { permissions: await options.permissions() } : {}),
+      ...(options.agentPermissions ? await agentPermissionsConfig(options.agentPermissions) : {}),
       skills,
     }), null, 2)}\n`;
     // The engine watches this file and reloads its model catalog on every
@@ -450,6 +529,7 @@ export async function createManagedOpencodeV2Server(
       skills = [...directories];
       await writeConfig();
     },
+    refreshConfig: writeConfig,
     close,
   };
 

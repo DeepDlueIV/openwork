@@ -289,6 +289,14 @@ export type EnterpriseMcpCallToolInput = {
   arguments: Record<string, unknown>
 }
 
+export type EnterpriseMcpCallListedToolInput = EnterpriseMcpCallToolInput & {
+  /**
+   * Runs on the provider's current tool list, in the same session as the call.
+   * Throwing refuses the call before anything is sent to the tool.
+   */
+  beforeCall: (tools: EnterpriseMcpTool[]) => void | Promise<void>
+}
+
 export type EnterpriseMcpListResourcesInput = {
   connection: EnterpriseMcpConnection
   redirectUri: string
@@ -410,6 +418,8 @@ export interface EnterpriseMcpClient {
   listTools(input: EnterpriseMcpListToolsInput): Promise<EnterpriseMcpTool[]>
   callTool(input: EnterpriseMcpCallToolInput): Promise<EnterpriseMcpToolResult>
   callToolRaw(input: EnterpriseMcpCallToolInput): Promise<EnterpriseMcpToolResult>
+  /** Lists tools, then calls one, in a single provider session. */
+  callListedTool(input: EnterpriseMcpCallListedToolInput): Promise<EnterpriseMcpToolResult>
   listResources(input: EnterpriseMcpListResourcesInput): Promise<EnterpriseMcpResourceList>
   readResource(input: EnterpriseMcpReadResourceInput): Promise<EnterpriseMcpResourceResult>
   listResourceTemplates(input: EnterpriseMcpListResourceTemplatesInput): Promise<EnterpriseMcpResourceTemplateList>

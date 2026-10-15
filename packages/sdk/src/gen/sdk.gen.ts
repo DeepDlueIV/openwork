@@ -5,6 +5,7 @@ import { buildClientParams, type Client, type Options as Options2, type TDataSha
 import type {
   ActivateAutomationErrors,
   ActivateAutomationResponses,
+  AgentPermissionPolicyWrite,
   AppendGoogleSheetsValuesErrors,
   AppendGoogleSheetsValuesResponses,
   ArchiveAutomationErrors,
@@ -34,9 +35,9 @@ import type {
   CreatePermissionSetBody,
   CreateWorkbotRunTokenErrors,
   CreateWorkbotRunTokenResponses,
-  DashboardElement,
   DeactivateAutomationErrors,
   DeactivateAutomationResponses,
+  DefaultModelWrite,
   DeleteApiAuthScimV2GroupsByGroupIdErrors,
   DeleteApiAuthScimV2GroupsByGroupIdResponses,
   DeleteGmailDraftErrors,
@@ -51,6 +52,8 @@ import type {
   DeleteV1AdminAdminsByAdminIdResponses,
   DeleteV1AdminUsersByUserIdErrors,
   DeleteV1AdminUsersByUserIdResponses,
+  DeleteV1AgentPermissionsTeamsByTeamIdErrors,
+  DeleteV1AgentPermissionsTeamsByTeamIdResponses,
   DeleteV1ConfigObjectsByConfigObjectIdAccessByGrantIdErrors,
   DeleteV1ConfigObjectsByConfigObjectIdAccessByGrantIdResponses,
   DeleteV1ConfigObjectsByConfigObjectIdPluginsByPluginIdErrors,
@@ -59,10 +62,6 @@ import type {
   DeleteV1ConnectorInstancesByConnectorInstanceIdAccessByGrantIdResponses,
   DeleteV1ConnectorMappingsByConnectorMappingIdErrors,
   DeleteV1ConnectorMappingsByConnectorMappingIdResponses,
-  DeleteV1DashboardsByDashboardIdAccessByGrantIdErrors,
-  DeleteV1DashboardsByDashboardIdAccessByGrantIdResponses,
-  DeleteV1DashboardsByDashboardIdErrors,
-  DeleteV1DashboardsByDashboardIdResponses,
   DeleteV1DesktopPoliciesByDesktopPolicyIdErrors,
   DeleteV1DesktopPoliciesByDesktopPolicyIdResponses,
   DeleteV1DesktopPoliciesByKeyByExternalKeyResponses,
@@ -128,6 +127,10 @@ import type {
   DeleteV1WorkflowsByConfigObjectIdSnapshotsByReceiptIdContentErrors,
   DeleteV1WorkflowsByConfigObjectIdSnapshotsByReceiptIdContentResponses,
   DenDesktopPolicyDocumentWrite,
+  DescribeHostGoogleDriveDownloadErrors,
+  DescribeHostGoogleDriveDownloadResponses,
+  DownloadHostGoogleDriveFileErrors,
+  DownloadHostGoogleDriveFileResponses,
   ExternalMcpConnectionAccessInput,
   ExternalMcpConnectionByKeyUpsertInput,
   ExternalMcpConnectionToolPolicyInput,
@@ -196,6 +199,8 @@ import type {
   GetV1AdminUsersByUserIdInferenceUsageResponses,
   GetV1AdminUsersErrors,
   GetV1AdminUsersResponses,
+  GetV1AgentPermissionsErrors,
+  GetV1AgentPermissionsResponses,
   GetV1ApiKeysErrors,
   GetV1ApiKeysResponses,
   GetV1AppsByAppIdResponses,
@@ -280,12 +285,6 @@ import type {
   GetV1ConnectorTargetsByConnectorTargetIdMappingsErrors,
   GetV1ConnectorTargetsByConnectorTargetIdMappingsResponses,
   GetV1ConnectorTargetsByConnectorTargetIdResponses,
-  GetV1DashboardsByDashboardIdAccessErrors,
-  GetV1DashboardsByDashboardIdAccessResponses,
-  GetV1DashboardsByDashboardIdErrors,
-  GetV1DashboardsByDashboardIdResponses,
-  GetV1DashboardsErrors,
-  GetV1DashboardsResponses,
   GetV1DesktopPoliciesByDesktopPolicyIdErrors,
   GetV1DesktopPoliciesByDesktopPolicyIdResponses,
   GetV1DesktopPoliciesByKeyByExternalKeyErrors,
@@ -311,9 +310,14 @@ import type {
   GetV1GatewayUsageLimitsMeResponses,
   GetV1InferenceAccessErrors,
   GetV1InferenceAccessResponses,
+  GetV1InferenceAnalyticsActivityErrors,
   GetV1InferenceAnalyticsActivityResponses,
+  GetV1InferenceAnalyticsConsumptionErrors,
   GetV1InferenceAnalyticsConsumptionResponses,
+  GetV1InferenceAnalyticsSettingsErrors,
   GetV1InferenceAnalyticsSettingsResponses,
+  GetV1InferenceAnalyticsUsageErrors,
+  GetV1InferenceAnalyticsUsageResponses,
   GetV1InferenceErrors,
   GetV1InferenceFreeProviderErrors,
   GetV1InferenceFreeProviderResponses,
@@ -348,12 +352,14 @@ import type {
   GetV1InferenceProvidersUsageErrors,
   GetV1InferenceProvidersUsageResponses,
   GetV1InferenceResponses,
-  GetV1InstallByPlatformErrors,
-  GetV1InstallByPlatformResponses,
   GetV1InstallConfigErrors,
   GetV1InstallConfigResponses,
   GetV1IntegrationsSlackOauthCallbackErrors,
+  GetV1InvitationsByInvitationIdLinkErrors,
+  GetV1InvitationsByInvitationIdLinkResponses,
   GetV1LibraryUsageByKindResponses,
+  GetV1LibraryUsageErrors,
+  GetV1LibraryUsageResponses,
   GetV1LlmProviderCatalogByProviderIdErrors,
   GetV1LlmProviderCatalogByProviderIdResponses,
   GetV1LlmProviderCatalogErrors,
@@ -410,8 +416,6 @@ import type {
   GetV1McpConnectionsPresetsErrors,
   GetV1McpConnectionsPresetsResponses,
   GetV1McpConnectionsResponses,
-  GetV1MeDashboardsErrors,
-  GetV1MeDashboardsResponses,
   GetV1MeDesktopConfigErrors,
   GetV1MeDesktopConfigResponses,
   GetV1MeErrors,
@@ -442,7 +446,13 @@ import type {
   GetV1OauthProvidersByProviderIdStatusResponses,
   GetV1OrgActivityErrors,
   GetV1OrgActivityResponses,
+  GetV1OrgDefaultModelErrors,
+  GetV1OrgDefaultModelOptionsErrors,
+  GetV1OrgDefaultModelOptionsResponses,
+  GetV1OrgDefaultModelResponses,
   GetV1OrgErrors,
+  GetV1OrgInventoryRevisionErrors,
+  GetV1OrgInventoryRevisionResponses,
   GetV1OrgResponses,
   GetV1OrgsInvitationsPreviewErrors,
   GetV1OrgsInvitationsPreviewResponses,
@@ -470,6 +480,8 @@ import type {
   GetV1PluginsByPluginIdResponses,
   GetV1PluginsErrors,
   GetV1PluginsResponses,
+  GetV1ResolvedPluginsErrors,
+  GetV1ResolvedPluginsResponses,
   GetV1ResourcesErrors,
   GetV1ResourcesMarketplaceCapabilitiesErrors,
   GetV1ResourcesMarketplaceCapabilitiesResponses,
@@ -572,12 +584,11 @@ import type {
   PatchV1ConnectorMappingsByConnectorMappingIdResponses,
   PatchV1ConnectorTargetsByConnectorTargetIdErrors,
   PatchV1ConnectorTargetsByConnectorTargetIdResponses,
-  PatchV1DashboardsByDashboardIdErrors,
-  PatchV1DashboardsByDashboardIdResponses,
   PatchV1DesktopPoliciesByDesktopPolicyIdErrors,
   PatchV1DesktopPoliciesByDesktopPolicyIdResponses,
   PatchV1GatewayUsageLimitPoliciesByPolicyIdErrors,
   PatchV1GatewayUsageLimitPoliciesByPolicyIdResponses,
+  PatchV1InferenceAnalyticsSettingsErrors,
   PatchV1InferenceAnalyticsSettingsResponses,
   PatchV1InferenceErrors,
   PatchV1InferenceFreePinsErrors,
@@ -601,6 +612,8 @@ import type {
   PatchV1MeProfileResponses,
   PatchV1OrgErrors,
   PatchV1OrgResponses,
+  PatchV1PermissionsSetsByPermissionSetIdErrors,
+  PatchV1PermissionsSetsByPermissionSetIdResponses,
   PatchV1PluginsByPluginIdErrors,
   PatchV1PluginsByPluginIdResponses,
   PatchV1ScimErrors,
@@ -708,10 +721,6 @@ import type {
   PostV1ConnectorTargetsByConnectorTargetIdMappingsResponses,
   PostV1ConnectorTargetsByConnectorTargetIdResyncErrors,
   PostV1ConnectorTargetsByConnectorTargetIdResyncResponses,
-  PostV1DashboardsByDashboardIdAccessErrors,
-  PostV1DashboardsByDashboardIdAccessResponses,
-  PostV1DashboardsErrors,
-  PostV1DashboardsResponses,
   PostV1DesktopPoliciesErrors,
   PostV1DesktopPoliciesResponses,
   PostV1DiagnosticsEgressErrors,
@@ -766,12 +775,6 @@ import type {
   PostV1InferenceProvidersOauthBrowserLitellmKeyErrors,
   PostV1InferenceProvidersOauthBrowserLitellmKeyResponses,
   PostV1InferenceProvidersResponses,
-  PostV1InstallConnectExchangeErrors,
-  PostV1InstallConnectExchangeResponses,
-  PostV1InstallConnectPreviewErrors,
-  PostV1InstallConnectPreviewResponses,
-  PostV1InstallConnectStatusErrors,
-  PostV1InstallConnectStatusResponses,
   PostV1IntegrationsSlackByConnectionIdCommandsErrors,
   PostV1IntegrationsSlackByConnectionIdCommandsResponses,
   PostV1IntegrationsSlackByConnectionIdEventsErrors,
@@ -918,6 +921,10 @@ import type {
   PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses,
   PutV1AdminOrganizationsByOrganizationIdOpenworkWebAccessErrors,
   PutV1AdminOrganizationsByOrganizationIdOpenworkWebAccessResponses,
+  PutV1AgentPermissionsEveryoneErrors,
+  PutV1AgentPermissionsEveryoneResponses,
+  PutV1AgentPermissionsTeamsByTeamIdErrors,
+  PutV1AgentPermissionsTeamsByTeamIdResponses,
   PutV1CapabilitiesMicrosoft365DriveFilesErrors,
   PutV1CapabilitiesMicrosoft365DriveFilesResponses,
   PutV1DesktopPoliciesByKeyByExternalKeyErrors,
@@ -944,12 +951,19 @@ import type {
   PutV1McpConnectionsByConnectionIdToolPolicyResponses,
   PutV1McpConnectionsByKeyByExternalKeyErrors,
   PutV1McpConnectionsByKeyByExternalKeyResponses,
+  PutV1OrgDefaultModelEveryoneErrors,
+  PutV1OrgDefaultModelEveryoneResponses,
+  PutV1OrgDefaultModelTeamsByTeamIdErrors,
+  PutV1OrgDefaultModelTeamsByTeamIdResponses,
   PutV1OrgWorkbotSettingsErrors,
   PutV1OrgWorkbotSettingsResponses,
   PutV1PermissionsSetsByPermissionSetIdPermissionsErrors,
   PutV1PermissionsSetsByPermissionSetIdPermissionsResponses,
   PutV1TeamsByKeyByExternalKeyErrors,
   PutV1TeamsByKeyByExternalKeyResponses,
+  PutV1TeamsByTeamIdPermissionSetErrors,
+  PutV1TeamsByTeamIdPermissionSetResponses,
+  RenamePermissionSetBody,
   RunAutomationNowErrors,
   RunAutomationNowResponses,
   SaveWorkflowErrors,
@@ -958,6 +972,7 @@ import type {
   SendGmailDraftResponses,
   SendMicrosoft365MailDraftErrors,
   SendMicrosoft365MailDraftResponses,
+  TeamPermissionSetBody,
   TrashGmailMessageErrors,
   TrashGmailMessageResponses,
   UntrashGmailMessageErrors,
@@ -2380,7 +2395,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Get current user's desktop config
    *
-   * Returns the authenticated desktop app restrictions for the caller's active organization.
+   * Returns the authenticated desktop app restrictions for the caller's active organization, including the caller's agent permissions as ordered OpenCode permission rules when the organization has agent permissions on, and the model new chats start with (defaultModel, applied by OpenCode v2 desktops only) when the organization has the default model feature on and has chosen one the caller can use.
    */
   public getV1MeDesktopConfig<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
     return (options?.client ?? this.client).get<
@@ -3112,7 +3127,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Get recent dashboard activity
    *
-   * Returns the organization's five newest additions for the admin dashboard, newest first (ties by event id): connections and model providers by their stored creation time, plugins added to an active marketplace (excluding the built-in catalog) by the attachment's creation time, and published versions of active skills in active plugins. A snapshot of existing resources, not an audit log: removed or archived resources do not contribute. Each source follows the permission of its own admin list (View all connections, View all providers, View Gateway providers on a Gateway-enabled deployment, Manage everything shared or the caller's plugin and marketplace access). Workspace owners and admins only, with the dashboardActivity feature.
+   * Returns the organization's five newest additions for the admin dashboard, newest first (ties by event id): connections and model providers by their stored creation time, plugins added to an active marketplace (excluding the built-in catalog) by the attachment's creation time, and published versions of active skills in active plugins. A snapshot of existing resources, not an audit log: removed or archived resources do not contribute. Each source follows the permission of its own admin list (View all connections, View all providers, View Gateway providers on a Gateway-enabled deployment, Manage everything shared or the caller's plugin and marketplace access). Workspace owners and admins only.
    */
   public getV1OrgActivity<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
     return (options?.client ?? this.client).get<GetV1OrgActivityResponses, GetV1OrgActivityErrors, ThrowOnError>({
@@ -3122,9 +3137,22 @@ export class DenClient extends HeyApiClient {
   }
 
   /**
+   * Get the member inventory revision
+   *
+   * Returns an opaque revision that changes whenever what organization members can use may have changed: after any write to providers, plugins, marketplaces, connections, teams, members or their access, after a feature flag change, and on every deploy. Clients compare it with the revision they last loaded and skip reloading their inventory when it is unchanged. A null revision means it cannot be determined, so the client reloads. It describes the organization, not the caller, and reveals nothing else.
+   */
+  public getV1OrgInventoryRevision<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      GetV1OrgInventoryRevisionResponses,
+      GetV1OrgInventoryRevisionErrors,
+      ThrowOnError
+    >({ url: "/v1/org/inventory-revision", ...options });
+  }
+
+  /**
    * Read which clouds can be launched
    *
-   * Lists the clouds this OpenWork environment can install into and the published installer version for each.
+   * Lists the clouds this OpenWork environment can install into and the published installer version for each. Agents call this first: only a provider with available true can be deployed; otherwise relay its reason and missing field names to the person.
    */
   public getV1ManagedDeploymentsConfiguration<ThrowOnError extends boolean = false>(
     options?: Options<never, ThrowOnError>,
@@ -3139,7 +3167,7 @@ export class DenClient extends HeyApiClient {
   /**
    * List the organization's managed deployments
    *
-   * Returns each installation in the organization's own cloud accounts with its latest installer run, health checks and available update.
+   * Returns each installation in the organization's own cloud accounts with its latest installer run, health checks and available update. Agents poll this after the person approves: report run.events as progress, a failed event's errorCode as the problem, and give the person webUrl only once health.state is operational.
    */
   public getV1ManagedDeployments<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
     return (options?.client ?? this.client).get<
@@ -3152,56 +3180,68 @@ export class DenClient extends HeyApiClient {
   /**
    * Create a managed deployment
    *
-   * Records a new installation target (cloud account, region, address). Nothing is launched until an owner prepares and approves it in their cloud.
+   * Records a new installation target (cloud account or project, region, address). Nothing is launched or billed until an owner prepares and approves it in their cloud. Agents confirm the target, address and that the person's cloud account will be billed before calling this.
    */
   public postV1ManagedDeployments<ThrowOnError extends boolean = false>(
     parameters: {
-      name: string;
-      domainName: string;
-      ownerEmail: string;
-      size?: "small";
-      provider: "aws";
-      target: {
-        accountId: string;
-        region:
-          | "us-east-1"
-          | "us-east-2"
-          | "us-west-2"
-          | "eu-west-1"
-          | "eu-central-1"
-          | "ap-southeast-1"
-          | "ap-southeast-2";
-        route53ZoneId: string;
-        network?:
-          | {
-              mode: "dedicated";
-            }
-          | {
-              mode: "existing";
-              vpcId: string;
-              serviceSubnetIds: Array<string>;
-              loadBalancerSubnetIds: Array<string>;
-              ecsClusterArn?: string;
+      body:
+        | {
+            name: string;
+            domainName: string;
+            ownerEmail: string;
+            size?: "small";
+            provider: "aws";
+            target: {
+              accountId: string;
+              region:
+                | "us-east-1"
+                | "us-east-2"
+                | "us-west-2"
+                | "eu-west-1"
+                | "eu-central-1"
+                | "ap-southeast-1"
+                | "ap-southeast-2";
+              route53ZoneId: string;
+              network?:
+                | {
+                    mode: "dedicated";
+                  }
+                | {
+                    mode: "existing";
+                    vpcId: string;
+                    serviceSubnetIds: Array<string>;
+                    loadBalancerSubnetIds: Array<string>;
+                    ecsClusterArn?: string;
+                  };
             };
-      };
+          }
+        | {
+            name: string;
+            domainName: string;
+            ownerEmail: string;
+            size?: "small";
+            provider: "gcp";
+            target: {
+              projectId: string;
+              projectNumber: string;
+              region:
+                | "us-central1"
+                | "us-east1"
+                | "us-east4"
+                | "us-west1"
+                | "us-west2"
+                | "europe-west1"
+                | "europe-west2"
+                | "europe-west3"
+                | "asia-southeast1"
+                | "australia-southeast1";
+              dnsZoneName: string;
+            };
+          };
     },
     options?: Options<never, ThrowOnError>,
   ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "body", key: "name" },
-            { in: "body", key: "domainName" },
-            { in: "body", key: "ownerEmail" },
-            { in: "body", key: "size" },
-            { in: "body", key: "provider" },
-            { in: "body", key: "target" },
-          ],
-        },
-      ],
-    );
+    const params = buildClientParams([parameters], [{ args: [{ key: "body", map: "body" }] }]);
     return (options?.client ?? this.client).post<
       PostV1ManagedDeploymentsResponses,
       PostV1ManagedDeploymentsErrors,
@@ -3244,7 +3284,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Prepare an install, retry or approved update
    *
-   * Creates or reuses an installer run pinned to the published release and returns a console approval link (install) or an account-checked cloud shell command (retry, update).
+   * Creates or reuses an installer run pinned to the published release and returns handoff: the one step the person takes in their own cloud. open_link: give them handoff.url to approve. run_in_cloud_shell: give them handoff.url and handoff.command to paste. OpenWork never runs it; repeating this call reopens the same pending run.
    */
   public postV1ManagedDeploymentsByDeploymentIdLaunch<ThrowOnError extends boolean = false>(
     parameters: {
@@ -3289,12 +3329,19 @@ export class DenClient extends HeyApiClient {
     parameters: {
       deploymentId: string;
       runId: string;
-      headers: {
-        authorization: string;
-        "x-amz-date": string;
-        "x-amz-security-token": string;
-        "x-openwork-proof": string;
-      };
+      body:
+        | {
+            headers: {
+              authorization: string;
+              "x-amz-date": string;
+              "x-amz-security-token": string;
+              "x-openwork-proof": string;
+            };
+          }
+        | {
+            provider: "gcp";
+            idToken: string;
+          };
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -3305,7 +3352,7 @@ export class DenClient extends HeyApiClient {
           args: [
             { in: "path", key: "deploymentId" },
             { in: "path", key: "runId" },
-            { in: "body", key: "headers" },
+            { key: "body", map: "body" },
           ],
         },
       ],
@@ -4337,257 +4384,9 @@ export class DenClient extends HeyApiClient {
   }
 
   /**
-   * List dashboards
+   * List Apps built in OpenWork
    *
-   * Lists every dashboard in the organization, ordered by name, with its ordered MCP App elements. Workspace owners and admins only; members read the dashboards granted to them through GET /v1/me/dashboards.
-   */
-  public getV1Dashboards<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
-    return (options?.client ?? this.client).get<GetV1DashboardsResponses, GetV1DashboardsErrors, ThrowOnError>({
-      url: "/v1/dashboards",
-      ...options,
-    });
-  }
-
-  /**
-   * Create dashboard
-   *
-   * Creates an organization-owned dashboard: a named, ordered list of up to 50 MCP App elements, each pointing at a ui:// resource served by a connected MCP server or by an App built in OpenWork (from GET /v1/mcp-apps). An App's element always points at the App's current revision. Nobody sees the dashboard until access is granted through POST /v1/dashboards/{dashboardId}/access.
-   */
-  public postV1Dashboards<ThrowOnError extends boolean = false>(
-    parameters: {
-      name: string;
-      elements?: Array<DashboardElement>;
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "body", key: "name" },
-            { in: "body", key: "elements" },
-          ],
-        },
-      ],
-    );
-    return (options?.client ?? this.client).post<PostV1DashboardsResponses, PostV1DashboardsErrors, ThrowOnError>({
-      url: "/v1/dashboards",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    });
-  }
-
-  /**
-   * Delete dashboard
-   *
-   * Soft-deletes the dashboard so it disappears from admin lists and from every member's granted dashboards. Its access grants are kept but stop applying; there is no restore.
-   */
-  public deleteV1DashboardsByDashboardId<ThrowOnError extends boolean = false>(
-    parameters: {
-      dashboardId: string;
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "dashboardId" }] }]);
-    return (options?.client ?? this.client).delete<
-      DeleteV1DashboardsByDashboardIdResponses,
-      DeleteV1DashboardsByDashboardIdErrors,
-      ThrowOnError
-    >({
-      url: "/v1/dashboards/{dashboardId}",
-      ...options,
-      ...params,
-    });
-  }
-
-  /**
-   * Get dashboard
-   *
-   * Returns one dashboard with its ordered MCP App elements. Deleted dashboards answer 404.
-   */
-  public getV1DashboardsByDashboardId<ThrowOnError extends boolean = false>(
-    parameters: {
-      dashboardId: string;
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "dashboardId" }] }]);
-    return (options?.client ?? this.client).get<
-      GetV1DashboardsByDashboardIdResponses,
-      GetV1DashboardsByDashboardIdErrors,
-      ThrowOnError
-    >({
-      url: "/v1/dashboards/{dashboardId}",
-      ...options,
-      ...params,
-    });
-  }
-
-  /**
-   * Update dashboard
-   *
-   * Partially updates a dashboard. Send name, elements, or both; when elements is present it replaces the whole ordered element list.
-   */
-  public patchV1DashboardsByDashboardId<ThrowOnError extends boolean = false>(
-    parameters: {
-      dashboardId: string;
-      name?: string;
-      elements?: Array<DashboardElement>;
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "dashboardId" },
-            { in: "body", key: "name" },
-            { in: "body", key: "elements" },
-          ],
-        },
-      ],
-    );
-    return (options?.client ?? this.client).patch<
-      PatchV1DashboardsByDashboardIdResponses,
-      PatchV1DashboardsByDashboardIdErrors,
-      ThrowOnError
-    >({
-      url: "/v1/dashboards/{dashboardId}",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    });
-  }
-
-  /**
-   * List dashboard access grants
-   *
-   * Lists every access grant on the dashboard, oldest first, including revoked grants (removedAt set). Each grant targets exactly one member, one team, or the whole organization.
-   */
-  public getV1DashboardsByDashboardIdAccess<ThrowOnError extends boolean = false>(
-    parameters: {
-      dashboardId: string;
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "dashboardId" }] }]);
-    return (options?.client ?? this.client).get<
-      GetV1DashboardsByDashboardIdAccessResponses,
-      GetV1DashboardsByDashboardIdAccessErrors,
-      ThrowOnError
-    >({
-      url: "/v1/dashboards/{dashboardId}/access",
-      ...options,
-      ...params,
-    });
-  }
-
-  /**
-   * Grant dashboard access
-   *
-   * Assigns a dashboard to one member, one team, or the whole organization — the same subject model connector assignment grants use. Regranting a revoked subject reactivates the existing grant.
-   */
-  public postV1DashboardsByDashboardIdAccess<ThrowOnError extends boolean = false>(
-    parameters: {
-      dashboardId: string;
-      orgMembershipId?: string;
-      teamId?: string;
-      orgWide?: boolean;
-      role: "viewer" | "editor" | "manager";
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "dashboardId" },
-            { in: "body", key: "orgMembershipId" },
-            { in: "body", key: "teamId" },
-            { in: "body", key: "orgWide" },
-            { in: "body", key: "role" },
-          ],
-        },
-      ],
-    );
-    return (options?.client ?? this.client).post<
-      PostV1DashboardsByDashboardIdAccessResponses,
-      PostV1DashboardsByDashboardIdAccessErrors,
-      ThrowOnError
-    >({
-      url: "/v1/dashboards/{dashboardId}/access",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    });
-  }
-
-  /**
-   * Revoke dashboard access
-   *
-   * Revokes one access grant by setting removedAt; the grant row is kept so regranting the same subject reactivates it. Revoking an already revoked grant answers 204 again.
-   */
-  public deleteV1DashboardsByDashboardIdAccessByGrantId<ThrowOnError extends boolean = false>(
-    parameters: {
-      dashboardId: string;
-      grantId: string;
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "dashboardId" },
-            { in: "path", key: "grantId" },
-          ],
-        },
-      ],
-    );
-    return (options?.client ?? this.client).delete<
-      DeleteV1DashboardsByDashboardIdAccessByGrantIdResponses,
-      DeleteV1DashboardsByDashboardIdAccessByGrantIdErrors,
-      ThrowOnError
-    >({
-      url: "/v1/dashboards/{dashboardId}/access/{grantId}",
-      ...options,
-      ...params,
-    });
-  }
-
-  /**
-   * List dashboards granted to the current member
-   *
-   * Returns the dashboards the signed-in member can see: granted directly, through one of their teams, or org-wide, deduplicated and ordered by name. The desktop MCP Apps dashboard renders these as read-only tiles.
-   */
-  public getV1MeDashboards<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
-    return (options?.client ?? this.client).get<GetV1MeDashboardsResponses, GetV1MeDashboardsErrors, ThrowOnError>({
-      url: "/v1/me/dashboards",
-      ...options,
-    });
-  }
-
-  /**
-   * List Apps built in OpenWork for dashboards
-   *
-   * Lists the Apps built in OpenWork that the calling member can use, in the element shape organization Dashboards store. Each element opens the App through its own MCP server with open_app, and Dashboards keep it on the App's current revision. Members see a tile only when the App's Plugin is shared with them. Empty when Apps built in OpenWork are turned off. Only Apps the member can access are listed.
+   * Lists the Apps built in OpenWork that the calling member can use, in the same element shape connection MCP Apps use, so the desktop can show them on a personal Dashboard. Each element opens the App through its own MCP server with open_app. Members see an App only when its Plugin is shared with them. Empty when Apps built in OpenWork are turned off.
    */
   public getV1McpApps<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
     return (options?.client ?? this.client).get<GetV1McpAppsResponses, GetV1McpAppsErrors, ThrowOnError>({
@@ -4853,6 +4652,109 @@ export class DenClient extends HeyApiClient {
   }
 
   /**
+   * List agent permissions
+   *
+   * Returns what agents may do on members' computers: everyone's settings and each team's overrides, every team listed by name. A permission a team leaves out inherits everyone's. Members who can view desktop policies can read; canEdit says whether the caller can change them.
+   */
+  public getV1AgentPermissions<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      GetV1AgentPermissionsResponses,
+      GetV1AgentPermissionsErrors,
+      ThrowOnError
+    >({ url: "/v1/agent-permissions", ...options });
+  }
+
+  /**
+   * Set everyone's agent permissions
+   *
+   * Replaces the agent permissions that apply to every member. A permission left out allows, so members' own settings apply. Members' apps pick up the change the next time they refresh their organization's settings. Requires the agent_permissions.manage permission with a recent sign-in and the Agent permissions feature.
+   */
+  public putV1AgentPermissionsEveryone<ThrowOnError extends boolean = false>(
+    parameters: {
+      agentPermissionPolicyWrite: AgentPermissionPolicyWrite;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "agentPermissionPolicyWrite", map: "body" }] }]);
+    return (options?.client ?? this.client).put<
+      PutV1AgentPermissionsEveryoneResponses,
+      PutV1AgentPermissionsEveryoneErrors,
+      ThrowOnError
+    >({
+      url: "/v1/agent-permissions/everyone",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    });
+  }
+
+  /**
+   * Remove a team's agent permissions
+   *
+   * Removes one team's overrides, so its members get everyone's agent permissions. Idempotent. Requires the agent_permissions.manage permission with a recent sign-in and the Agent permissions feature.
+   */
+  public deleteV1AgentPermissionsTeamsByTeamId<ThrowOnError extends boolean = false>(
+    parameters: {
+      teamId: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "teamId" }] }]);
+    return (options?.client ?? this.client).delete<
+      DeleteV1AgentPermissionsTeamsByTeamIdResponses,
+      DeleteV1AgentPermissionsTeamsByTeamIdErrors,
+      ThrowOnError
+    >({
+      url: "/v1/agent-permissions/teams/{teamId}",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
+   * Set a team's agent permissions
+   *
+   * Replaces one team's overrides. A team's decision replaces everyone's for its members (the strictest wins when a member is in several teams that set one), and its allowed and blocked patterns add to everyone's. A permission left out inherits everyone's; saving no permissions removes the team's overrides. Requires the agent_permissions.manage permission with a recent sign-in and the Agent permissions feature.
+   */
+  public putV1AgentPermissionsTeamsByTeamId<ThrowOnError extends boolean = false>(
+    parameters: {
+      teamId: string;
+      agentPermissionPolicyWrite: AgentPermissionPolicyWrite;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "teamId" },
+            { key: "agentPermissionPolicyWrite", map: "body" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).put<
+      PutV1AgentPermissionsTeamsByTeamIdResponses,
+      PutV1AgentPermissionsTeamsByTeamIdErrors,
+      ThrowOnError
+    >({
+      url: "/v1/agent-permissions/teams/{teamId}",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    });
+  }
+
+  /**
    * Describe the controlled Den egress diagnostic
    *
    * Reports whether the operator-configured public Diagnostics target is available. The target cannot be supplied by the browser.
@@ -4889,6 +4791,19 @@ export class DenClient extends HeyApiClient {
       PutV1DiagnosticsEgressTokenErrors,
       ThrowOnError
     >({ url: "/v1/diagnostics/egress/token", ...options });
+  }
+
+  /**
+   * Read Models analytics usage limits
+   *
+   * Returns Models usage limits for the analytics dashboard. Requires View OpenWork Models settings and the Models analytics surface feature.
+   */
+  public getV1InferenceAnalyticsUsage<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      GetV1InferenceAnalyticsUsageResponses,
+      GetV1InferenceAnalyticsUsageErrors,
+      ThrowOnError
+    >({ url: "/v1/inference/analytics/usage", ...options });
   }
 
   /**
@@ -5011,10 +4926,11 @@ export class DenClient extends HeyApiClient {
    * Returns the organization's task analytics state for OpenWork Models: whether the feature is available and the organization has an active Models subscription, whether collection is enabled and when it was consented to, and whether export to a configured Langfuse host is on. Any member can read it.
    */
   public getV1InferenceAnalyticsSettings<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
-    return (options?.client ?? this.client).get<GetV1InferenceAnalyticsSettingsResponses, unknown, ThrowOnError>({
-      url: "/v1/inference/analytics/settings",
-      ...options,
-    });
+    return (options?.client ?? this.client).get<
+      GetV1InferenceAnalyticsSettingsResponses,
+      GetV1InferenceAnalyticsSettingsErrors,
+      ThrowOnError
+    >({ url: "/v1/inference/analytics/settings", ...options });
   }
 
   /**
@@ -5040,7 +4956,11 @@ export class DenClient extends HeyApiClient {
         },
       ],
     );
-    return (options?.client ?? this.client).patch<PatchV1InferenceAnalyticsSettingsResponses, unknown, ThrowOnError>({
+    return (options?.client ?? this.client).patch<
+      PatchV1InferenceAnalyticsSettingsResponses,
+      PatchV1InferenceAnalyticsSettingsErrors,
+      ThrowOnError
+    >({
       url: "/v1/inference/analytics/settings",
       ...options,
       ...params,
@@ -5142,7 +5062,11 @@ export class DenClient extends HeyApiClient {
         },
       ],
     );
-    return (options?.client ?? this.client).get<GetV1InferenceAnalyticsActivityResponses, unknown, ThrowOnError>({
+    return (options?.client ?? this.client).get<
+      GetV1InferenceAnalyticsActivityResponses,
+      GetV1InferenceAnalyticsActivityErrors,
+      ThrowOnError
+    >({
       url: "/v1/inference/analytics/activity",
       ...options,
       ...params,
@@ -5180,8 +5104,50 @@ export class DenClient extends HeyApiClient {
         },
       ],
     );
-    return (options?.client ?? this.client).get<GetV1InferenceAnalyticsConsumptionResponses, unknown, ThrowOnError>({
+    return (options?.client ?? this.client).get<
+      GetV1InferenceAnalyticsConsumptionResponses,
+      GetV1InferenceAnalyticsConsumptionErrors,
+      ThrowOnError
+    >({
       url: "/v1/inference/analytics/consumption",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
+   * Break down how the organization's skills, plugins or connectors are used
+   *
+   * Uses of one kind of item (`kind`: skills, plugins or connectors) over the last `days` UTC calendar days including today (7, 30 or 90; default 30), grouped by any of `item`, `member` and `day` (comma separated in `groupBy`; default `item`). `item` is the skill, plugin or connector id, `member` the organization member id and `day` the UTC date; dimensions not grouped by come back null. Filter to one member (`memberId`), the current members of one team (`teamId`), or one item (`itemId`). A team view counts its members' past uses by their current team. Every skill load and connector call counts once. Plugins count their skills' loads plus their Workflows' runs. `failures` counts failed connector calls and failed Workflow runs; it is null for skills. `people` counts distinct members in the row. `sources` splits uses by what started them (agent, workflow, automation, app, artifact); a missing key is zero. Only used items appear; ids are resolved to names by the caller. At most 10000 rows: a larger result answers 422 library_usage_too_many_rows without truncation. Members with the usage_analytics.view permission only (owners and admins by default).
+   */
+  public getV1LibraryUsage<ThrowOnError extends boolean = false>(
+    parameters: {
+      kind: "skills" | "plugins" | "connectors";
+      days?: "7" | "30" | "90";
+      groupBy?: string;
+      memberId?: string;
+      teamId?: string;
+      itemId?: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "kind" },
+            { in: "query", key: "days" },
+            { in: "query", key: "groupBy" },
+            { in: "query", key: "memberId" },
+            { in: "query", key: "teamId" },
+            { in: "query", key: "itemId" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).get<GetV1LibraryUsageResponses, GetV1LibraryUsageErrors, ThrowOnError>({
+      url: "/v1/library-usage",
       ...options,
       ...params,
     });
@@ -5190,7 +5156,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Read how the organization's skills, plugins or connectors are used
    *
-   * Lists every active skill (`kind=skills`), plugin (`plugins`) or connector (`connectors`) in the organization with how often it was used over the last `days` days (7, 30 or 90; default 30), by how many members, and when it was last used. Items nobody used come back with zeros. Skills count loads of their SKILL.md through the OpenWork MCP gateway; repeated loads by the same member within 15 minutes count once. Plugins count their skills' loads plus their Workflows' runs, and `failures` counts failed runs. Connectors count tool calls made through OpenWork, and `failures` counts calls that failed. `failures` is null for skills. Counts cover use since the libraryUsage feature was turned on; `trackingSince` is the first recorded use. Aggregates only. Members with the usage_analytics.view permission only (owners and admins by default).
+   * Lists every active skill (`kind=skills`), plugin (`plugins`) or connector (`connectors`) in the organization with how often it was used over the last `days` UTC calendar days including today (7, 30 or 90; default 30), by how many members, and when it was last used. Items nobody used come back with zeros. Skills count every load of their SKILL.md through the OpenWork MCP gateway. Plugins count their skills' loads plus their Workflows' runs, and `failures` counts failed runs. Connectors count tool calls made through OpenWork, and `failures` counts calls that failed. `failures` is null for skills. Uses started by the member's agent, saved Workflows, Automations, Apps and live artifacts all count; GET /v1/library-usage splits them by source, member and day. Counts cover use since usage recording started; `trackingSince` is the first recorded use (skill loads before daily rollups were introduced were counted at most once per member per 15 minutes). Aggregates only. Members with the usage_analytics.view permission only (owners and admins by default).
    */
   public getV1LibraryUsageByKind<ThrowOnError extends boolean = false>(
     parameters: {
@@ -5564,6 +5530,7 @@ export class DenClient extends HeyApiClient {
     parameters: {
       email: string;
       role: string;
+      teamId?: string | null;
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -5574,6 +5541,7 @@ export class DenClient extends HeyApiClient {
           args: [
             { in: "body", key: "email" },
             { in: "body", key: "role" },
+            { in: "body", key: "teamId" },
           ],
         },
       ],
@@ -5614,9 +5582,32 @@ export class DenClient extends HeyApiClient {
   }
 
   /**
-   * Create organization install link (download desktop app, install OpenWork)
+   * Get organization invitation link
    *
-   * Download the desktop app and install OpenWork pointed at this organization. Returns installPageUrl, a shareable page that downloads OpenWork for this organization, and connectUrl, a short-lived link that opens an already-installed desktop app signed in to this organization. Any member can mint one. Older active links remain valid unless an owner or admin explicitly requests rotation.
+   * Returns the join link of a pending invitation so it can be shared directly. The link contains a bearer join token, so it needs the same permissions as resending the invitation: Invite people, Change member roles for a non-member role, and Manage Admin teams when the invitation carries Admin team access.
+   */
+  public getV1InvitationsByInvitationIdLink<ThrowOnError extends boolean = false>(
+    parameters: {
+      invitationId: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "invitationId" }] }]);
+    return (options?.client ?? this.client).get<
+      GetV1InvitationsByInvitationIdLinkResponses,
+      GetV1InvitationsByInvitationIdLinkErrors,
+      ThrowOnError
+    >({
+      url: "/v1/invitations/{invitationId}/link",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
+   * Get organization install page (download desktop app, install OpenWork)
+   *
+   * Download the desktop app and install OpenWork for this organization. Returns installPageUrl, the normal install page: people sign in there and download the desktop app approved for their organization. Creates nothing and carries no token, so the address can be shared freely.
    */
   public postV1OrgsByOrganizationIdInstallLinks<ThrowOnError extends boolean = false>(
     parameters: {
@@ -5689,136 +5680,30 @@ export class DenClient extends HeyApiClient {
   }
 
   /**
-   * Resolve install-link configuration
+   * Get public install configuration
    *
-   * Returns organization setup details and a fresh desktop connection handoff for a valid install link token.
+   * Returns this deployment's public desktop setup: server addresses, sign-in requirement, and the default desktop version. Identifies no organization. Older desktop builds call it with the token from a pasted install link; the token is ignored.
    */
-  public getV1InstallConfig<ThrowOnError extends boolean = false>(
-    parameters: {
-      token: string;
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "token" }] }]);
+  public getV1InstallConfig<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
     return (options?.client ?? this.client).get<GetV1InstallConfigResponses, GetV1InstallConfigErrors, ThrowOnError>({
       url: "/v1/install-config",
       ...options,
-      ...params,
     });
   }
 
   /**
-   * Inspect desktop connection status
+   * Open the install page
    *
-   * Reports whether a short-lived organization connection code is still pending or has been accepted by a desktop.
-   */
-  public postV1InstallConnectStatus<ThrowOnError extends boolean = false>(
-    parameters: {
-      code: string;
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams([parameters], [{ args: [{ in: "body", key: "code" }] }]);
-    return (options?.client ?? this.client).post<
-      PostV1InstallConnectStatusResponses,
-      PostV1InstallConnectStatusErrors,
-      ThrowOnError
-    >({
-      url: "/v1/install-connect/status",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    });
-  }
-
-  /**
-   * Preview desktop connection
-   *
-   * Resolves a short-lived organization connection code without consuming it.
-   */
-  public postV1InstallConnectPreview<ThrowOnError extends boolean = false>(
-    parameters: {
-      code: string;
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams([parameters], [{ args: [{ in: "body", key: "code" }] }]);
-    return (options?.client ?? this.client).post<
-      PostV1InstallConnectPreviewResponses,
-      PostV1InstallConnectPreviewErrors,
-      ThrowOnError
-    >({
-      url: "/v1/install-connect/preview",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    });
-  }
-
-  /**
-   * Accept desktop connection
-   *
-   * Consumes a short-lived organization connection code exactly once.
-   */
-  public postV1InstallConnectExchange<ThrowOnError extends boolean = false>(
-    parameters: {
-      code: string;
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams([parameters], [{ args: [{ in: "body", key: "code" }] }]);
-    return (options?.client ?? this.client).post<
-      PostV1InstallConnectExchangeResponses,
-      PostV1InstallConnectExchangeErrors,
-      ThrowOnError
-    >({
-      url: "/v1/install-connect/exchange",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    });
-  }
-
-  /**
-   * Download managed OpenWork desktop
-   *
-   * Redirects hosted Cloud deployments to the sign-in-required Cloud app and private single-org deployments to the activation-required Enterprise app.
+   * Older install pages linked downloads here with a token. Redirects to the normal install page, where people sign in and download the desktop app approved for their organization.
    */
   public getV1InstallByPlatform<ThrowOnError extends boolean = false>(
     parameters: {
       platform: string;
-      token: string;
     },
     options?: Options<never, ThrowOnError>,
   ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "platform" },
-            { in: "query", key: "token" },
-          ],
-        },
-      ],
-    );
-    return (options?.client ?? this.client).get<
-      GetV1InstallByPlatformResponses,
-      GetV1InstallByPlatformErrors,
-      ThrowOnError
-    >({
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "platform" }] }]);
+    return (options?.client ?? this.client).get<unknown, unknown, ThrowOnError>({
       url: "/v1/install/{platform}",
       ...options,
       ...params,
@@ -6468,7 +6353,7 @@ export class DenClient extends HeyApiClient {
   /**
    * List usage limit policies
    *
-   * Organization-provider estimated cost in integer micro-USD. Calendar windows reset at 05:00 UTC (Monday weekly, day 1 monthly). Admission checks settled spend; in-flight work can overshoot. Unknown/incomplete accounting is explicit. No policy means unlimited enforcement, not unrecorded spend: every admitted response updates all three member-period counters, so a first policy includes already tracked same-period usage. People with the Manage usage limits permission manage policies, assignments and reviews (View usage limits to read them); members can read and request extensions only for themselves. Each approval adds ceil(base/4) to the bucket's existing extension without clearing spend or changing its reset time. Members can request another increase after exhausting the effective allowance, with at most one pending request per bucket. Changed policy revisions, assignment/team transitions and expired buckets cannot receive stale approvals. Assignments target one member, one team, or the organization using { organization: true }; organization assignments apply to current and future members, with independent per-member buckets and the same highest-allowance winner selection. Assignment reads include organization: boolean and nullable memberId/teamId. Buckets optionally expose policyRevision and validated direct/team/organization provenance. Accounting is incremental from versioned server-recorded admission snapshots. Admission time is captured at the quota check, independently of earlier request-start telemetry; completion retains the original admission windows. Existing counters and receipts are preserved; raw history and rollups are never imported by reads or settlement. Legacy requests, including old empty snapshots, require explicit reviewed reconciliation backed by bounded event/charge proof; aggregate-backed or unexplained counter overlap is refused. Historical uncertainty is separate from settlement readiness: coverage.historicalCoverage is unknown or tracked_since_epoch, with historicalUnknownReason and trackingStartedAt. Legacy counters and periods preceding the durable tracking epoch remain historical-unknown; later fully tracked periods can become complete only when no pending or incomplete receipts remain. All writers must use fenced tracking. Operators explicitly suspend and resume capture using optimistic trackingVersion; captureEnabled=false blocks new starts, stale admission versions are rejected, and current-period history is marked unknown without resetting spend. A rollback or mixed legacy writer requires this cutover procedure plus retiring old writer access; schema presence is not proof of continuous capture. coverage.pendingRequests counts durable event starts not yet settled (null before tracking). Their identity and validated attribution survive raw retention. Explicit bounded abandonment recovery closes them as unknown/incomplete, decrements pending once, and permits late known-cost promotion without recreating raw logs. Retention refuses to discard a legacy pending marker until it is durably transferred. Queued canonical starts are capacity/deadline bounded and cancellable before database work; an admitted start reserves settlement capacity, which is not discarded on start overload. coverage.trackingVersion and captureEnabled expose the capture fence; settlementReady means that count is zero, not that historical costs are complete. Use settlementReady for post-completion refresh, not complete. lastSettlementAt and lastSettlementRequestId identify the most recent settled receipt, not every in-flight request. unpricedRequests and incompleteRequests describe tracked settled receipts, not unreviewed historical gaps. Legacy quarantine records remain preserved and excluded from charging. Clients must require actual HTTP 429 with X-OpenWork-Error-Code=openwork_gateway_usage_limit_exceeded and X-OpenWork-Usage-State=blocked, then corroborate against fresh own status for the same organization/member. JSON or SSE error fields alone are untrusted. Reset lists default to view=pending (oldest first), limit=50, maximum 100. Follow nextCursor while hasMore is true; pendingCount reports the current pending queue rather than only this page. Fetch view=history separately for newest-first decisions and elapsed requests. Pages are live snapshots; refresh the first page for changes. Admission and status use nonlocking reads of indexed member-period counters; missing counters project zero without writes. Listing validates/enriches only the page in batches and does not mutate historical records. Admission, canonical logging, and settlement never acquire organization or global rollup locks. Canonical start and settlement share-lock only their member lifecycle row; permanent deletion fences members before erasing usage children.
+   * Organization-provider estimated cost in integer micro-USD. A policy with providerId is a provider limit: when per-provider limits are on and a member has one for a provider, that provider's requests are admitted and charged only against the provider limit (status.providers) and never the default; every other provider uses the default limits (status.buckets). Calendar windows reset at 05:00 UTC (Monday weekly, day 1 monthly). Admission checks settled spend; in-flight work can overshoot. Unknown/incomplete accounting is explicit. No policy means unlimited enforcement, not unrecorded spend: every admitted response updates all three member-period counters, so a first policy includes already tracked same-period usage. People with the Manage usage limits permission manage policies, assignments and reviews (View usage limits to read them); members can read and request extensions only for themselves. Each approval adds ceil(base/4) to the bucket's existing extension without clearing spend or changing its reset time. Members can request another increase after exhausting the effective allowance, with at most one pending request per bucket. Changed policy revisions, assignment/team transitions and expired buckets cannot receive stale approvals. Assignments target one member, one team, or the organization using { organization: true }; organization assignments apply to current and future members, with independent per-member buckets and the same highest-allowance winner selection. Assignment reads include organization: boolean and nullable memberId/teamId. Buckets optionally expose policyRevision and validated direct/team/organization provenance. Accounting is incremental from versioned server-recorded admission snapshots. Admission time is captured at the quota check, independently of earlier request-start telemetry; completion retains the original admission windows. Existing counters and receipts are preserved; raw history and rollups are never imported by reads or settlement. Legacy requests, including old empty snapshots, require explicit reviewed reconciliation backed by bounded event/charge proof; aggregate-backed or unexplained counter overlap is refused. Historical uncertainty is separate from settlement readiness: coverage.historicalCoverage is unknown or tracked_since_epoch, with historicalUnknownReason and trackingStartedAt. Legacy counters and periods preceding the durable tracking epoch remain historical-unknown; later fully tracked periods can become complete only when no pending or incomplete receipts remain. All writers must use fenced tracking. Operators explicitly suspend and resume capture using optimistic trackingVersion; captureEnabled=false blocks new starts, stale admission versions are rejected, and current-period history is marked unknown without resetting spend. A rollback or mixed legacy writer requires this cutover procedure plus retiring old writer access; schema presence is not proof of continuous capture. coverage.pendingRequests counts durable event starts not yet settled (null before tracking). Their identity and validated attribution survive raw retention. Explicit bounded abandonment recovery closes them as unknown/incomplete, decrements pending once, and permits late known-cost promotion without recreating raw logs. Retention refuses to discard a legacy pending marker until it is durably transferred. Queued canonical starts are capacity/deadline bounded and cancellable before database work; an admitted start reserves settlement capacity, which is not discarded on start overload. coverage.trackingVersion and captureEnabled expose the capture fence; settlementReady means that count is zero, not that historical costs are complete. Use settlementReady for post-completion refresh, not complete. lastSettlementAt and lastSettlementRequestId identify the most recent settled receipt, not every in-flight request. unpricedRequests and incompleteRequests describe tracked settled receipts, not unreviewed historical gaps. Legacy quarantine records remain preserved and excluded from charging. Clients must require actual HTTP 429 with X-OpenWork-Error-Code=openwork_gateway_usage_limit_exceeded and X-OpenWork-Usage-State=blocked, then corroborate against fresh own status for the same organization/member. JSON or SSE error fields alone are untrusted. Reset lists default to view=pending (oldest first), limit=50, maximum 100. Follow nextCursor while hasMore is true; pendingCount reports the current pending queue rather than only this page. Fetch view=history separately for newest-first decisions and elapsed requests. Pages are live snapshots; refresh the first page for changes. Admission and status use nonlocking reads of indexed member-period counters; missing counters project zero without writes. Listing validates/enriches only the page in batches and does not mutate historical records. Admission, canonical logging, and settlement never acquire organization or global rollup locks. Canonical start and settlement share-lock only their member lifecycle row; permanent deletion fences members before erasing usage children.
    */
   public getV1GatewayUsageLimitPolicies<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
     return (options?.client ?? this.client).get<
@@ -6481,11 +6366,12 @@ export class DenClient extends HeyApiClient {
   /**
    * Create usage limit policy
    *
-   * Organization-provider estimated cost in integer micro-USD. Calendar windows reset at 05:00 UTC (Monday weekly, day 1 monthly). Admission checks settled spend; in-flight work can overshoot. Unknown/incomplete accounting is explicit. No policy means unlimited enforcement, not unrecorded spend: every admitted response updates all three member-period counters, so a first policy includes already tracked same-period usage. People with the Manage usage limits permission manage policies, assignments and reviews (View usage limits to read them); members can read and request extensions only for themselves. Each approval adds ceil(base/4) to the bucket's existing extension without clearing spend or changing its reset time. Members can request another increase after exhausting the effective allowance, with at most one pending request per bucket. Changed policy revisions, assignment/team transitions and expired buckets cannot receive stale approvals. Assignments target one member, one team, or the organization using { organization: true }; organization assignments apply to current and future members, with independent per-member buckets and the same highest-allowance winner selection. Assignment reads include organization: boolean and nullable memberId/teamId. Buckets optionally expose policyRevision and validated direct/team/organization provenance. Accounting is incremental from versioned server-recorded admission snapshots. Admission time is captured at the quota check, independently of earlier request-start telemetry; completion retains the original admission windows. Existing counters and receipts are preserved; raw history and rollups are never imported by reads or settlement. Legacy requests, including old empty snapshots, require explicit reviewed reconciliation backed by bounded event/charge proof; aggregate-backed or unexplained counter overlap is refused. Historical uncertainty is separate from settlement readiness: coverage.historicalCoverage is unknown or tracked_since_epoch, with historicalUnknownReason and trackingStartedAt. Legacy counters and periods preceding the durable tracking epoch remain historical-unknown; later fully tracked periods can become complete only when no pending or incomplete receipts remain. All writers must use fenced tracking. Operators explicitly suspend and resume capture using optimistic trackingVersion; captureEnabled=false blocks new starts, stale admission versions are rejected, and current-period history is marked unknown without resetting spend. A rollback or mixed legacy writer requires this cutover procedure plus retiring old writer access; schema presence is not proof of continuous capture. coverage.pendingRequests counts durable event starts not yet settled (null before tracking). Their identity and validated attribution survive raw retention. Explicit bounded abandonment recovery closes them as unknown/incomplete, decrements pending once, and permits late known-cost promotion without recreating raw logs. Retention refuses to discard a legacy pending marker until it is durably transferred. Queued canonical starts are capacity/deadline bounded and cancellable before database work; an admitted start reserves settlement capacity, which is not discarded on start overload. coverage.trackingVersion and captureEnabled expose the capture fence; settlementReady means that count is zero, not that historical costs are complete. Use settlementReady for post-completion refresh, not complete. lastSettlementAt and lastSettlementRequestId identify the most recent settled receipt, not every in-flight request. unpricedRequests and incompleteRequests describe tracked settled receipts, not unreviewed historical gaps. Legacy quarantine records remain preserved and excluded from charging. Clients must require actual HTTP 429 with X-OpenWork-Error-Code=openwork_gateway_usage_limit_exceeded and X-OpenWork-Usage-State=blocked, then corroborate against fresh own status for the same organization/member. JSON or SSE error fields alone are untrusted. Reset lists default to view=pending (oldest first), limit=50, maximum 100. Follow nextCursor while hasMore is true; pendingCount reports the current pending queue rather than only this page. Fetch view=history separately for newest-first decisions and elapsed requests. Pages are live snapshots; refresh the first page for changes. Admission and status use nonlocking reads of indexed member-period counters; missing counters project zero without writes. Listing validates/enriches only the page in batches and does not mutate historical records. Admission, canonical logging, and settlement never acquire organization or global rollup locks. Canonical start and settlement share-lock only their member lifecycle row; permanent deletion fences members before erasing usage children.
+   * Organization-provider estimated cost in integer micro-USD. A policy with providerId is a provider limit: when per-provider limits are on and a member has one for a provider, that provider's requests are admitted and charged only against the provider limit (status.providers) and never the default; every other provider uses the default limits (status.buckets). Calendar windows reset at 05:00 UTC (Monday weekly, day 1 monthly). Admission checks settled spend; in-flight work can overshoot. Unknown/incomplete accounting is explicit. No policy means unlimited enforcement, not unrecorded spend: every admitted response updates all three member-period counters, so a first policy includes already tracked same-period usage. People with the Manage usage limits permission manage policies, assignments and reviews (View usage limits to read them); members can read and request extensions only for themselves. Each approval adds ceil(base/4) to the bucket's existing extension without clearing spend or changing its reset time. Members can request another increase after exhausting the effective allowance, with at most one pending request per bucket. Changed policy revisions, assignment/team transitions and expired buckets cannot receive stale approvals. Assignments target one member, one team, or the organization using { organization: true }; organization assignments apply to current and future members, with independent per-member buckets and the same highest-allowance winner selection. Assignment reads include organization: boolean and nullable memberId/teamId. Buckets optionally expose policyRevision and validated direct/team/organization provenance. Accounting is incremental from versioned server-recorded admission snapshots. Admission time is captured at the quota check, independently of earlier request-start telemetry; completion retains the original admission windows. Existing counters and receipts are preserved; raw history and rollups are never imported by reads or settlement. Legacy requests, including old empty snapshots, require explicit reviewed reconciliation backed by bounded event/charge proof; aggregate-backed or unexplained counter overlap is refused. Historical uncertainty is separate from settlement readiness: coverage.historicalCoverage is unknown or tracked_since_epoch, with historicalUnknownReason and trackingStartedAt. Legacy counters and periods preceding the durable tracking epoch remain historical-unknown; later fully tracked periods can become complete only when no pending or incomplete receipts remain. All writers must use fenced tracking. Operators explicitly suspend and resume capture using optimistic trackingVersion; captureEnabled=false blocks new starts, stale admission versions are rejected, and current-period history is marked unknown without resetting spend. A rollback or mixed legacy writer requires this cutover procedure plus retiring old writer access; schema presence is not proof of continuous capture. coverage.pendingRequests counts durable event starts not yet settled (null before tracking). Their identity and validated attribution survive raw retention. Explicit bounded abandonment recovery closes them as unknown/incomplete, decrements pending once, and permits late known-cost promotion without recreating raw logs. Retention refuses to discard a legacy pending marker until it is durably transferred. Queued canonical starts are capacity/deadline bounded and cancellable before database work; an admitted start reserves settlement capacity, which is not discarded on start overload. coverage.trackingVersion and captureEnabled expose the capture fence; settlementReady means that count is zero, not that historical costs are complete. Use settlementReady for post-completion refresh, not complete. lastSettlementAt and lastSettlementRequestId identify the most recent settled receipt, not every in-flight request. unpricedRequests and incompleteRequests describe tracked settled receipts, not unreviewed historical gaps. Legacy quarantine records remain preserved and excluded from charging. Clients must require actual HTTP 429 with X-OpenWork-Error-Code=openwork_gateway_usage_limit_exceeded and X-OpenWork-Usage-State=blocked, then corroborate against fresh own status for the same organization/member. JSON or SSE error fields alone are untrusted. Reset lists default to view=pending (oldest first), limit=50, maximum 100. Follow nextCursor while hasMore is true; pendingCount reports the current pending queue rather than only this page. Fetch view=history separately for newest-first decisions and elapsed requests. Pages are live snapshots; refresh the first page for changes. Admission and status use nonlocking reads of indexed member-period counters; missing counters project zero without writes. Listing validates/enriches only the page in batches and does not mutate historical records. Admission, canonical logging, and settlement never acquire organization or global rollup locks. Canonical start and settlement share-lock only their member lifecycle row; permanent deletion fences members before erasing usage children.
    */
   public postV1GatewayUsageLimitPolicies<ThrowOnError extends boolean = false>(
     parameters: {
       name: string;
+      providerId?: string | null;
       hardLimit?: boolean;
       allowRequestReset?: boolean;
       limits: Array<{
@@ -6501,6 +6387,7 @@ export class DenClient extends HeyApiClient {
         {
           args: [
             { in: "body", key: "name" },
+            { in: "body", key: "providerId" },
             { in: "body", key: "hardLimit" },
             { in: "body", key: "allowRequestReset" },
             { in: "body", key: "limits" },
@@ -6527,12 +6414,13 @@ export class DenClient extends HeyApiClient {
   /**
    * Update usage limit policy
    *
-   * Organization-provider estimated cost in integer micro-USD. Calendar windows reset at 05:00 UTC (Monday weekly, day 1 monthly). Admission checks settled spend; in-flight work can overshoot. Unknown/incomplete accounting is explicit. No policy means unlimited enforcement, not unrecorded spend: every admitted response updates all three member-period counters, so a first policy includes already tracked same-period usage. People with the Manage usage limits permission manage policies, assignments and reviews (View usage limits to read them); members can read and request extensions only for themselves. Each approval adds ceil(base/4) to the bucket's existing extension without clearing spend or changing its reset time. Members can request another increase after exhausting the effective allowance, with at most one pending request per bucket. Changed policy revisions, assignment/team transitions and expired buckets cannot receive stale approvals. Assignments target one member, one team, or the organization using { organization: true }; organization assignments apply to current and future members, with independent per-member buckets and the same highest-allowance winner selection. Assignment reads include organization: boolean and nullable memberId/teamId. Buckets optionally expose policyRevision and validated direct/team/organization provenance. Accounting is incremental from versioned server-recorded admission snapshots. Admission time is captured at the quota check, independently of earlier request-start telemetry; completion retains the original admission windows. Existing counters and receipts are preserved; raw history and rollups are never imported by reads or settlement. Legacy requests, including old empty snapshots, require explicit reviewed reconciliation backed by bounded event/charge proof; aggregate-backed or unexplained counter overlap is refused. Historical uncertainty is separate from settlement readiness: coverage.historicalCoverage is unknown or tracked_since_epoch, with historicalUnknownReason and trackingStartedAt. Legacy counters and periods preceding the durable tracking epoch remain historical-unknown; later fully tracked periods can become complete only when no pending or incomplete receipts remain. All writers must use fenced tracking. Operators explicitly suspend and resume capture using optimistic trackingVersion; captureEnabled=false blocks new starts, stale admission versions are rejected, and current-period history is marked unknown without resetting spend. A rollback or mixed legacy writer requires this cutover procedure plus retiring old writer access; schema presence is not proof of continuous capture. coverage.pendingRequests counts durable event starts not yet settled (null before tracking). Their identity and validated attribution survive raw retention. Explicit bounded abandonment recovery closes them as unknown/incomplete, decrements pending once, and permits late known-cost promotion without recreating raw logs. Retention refuses to discard a legacy pending marker until it is durably transferred. Queued canonical starts are capacity/deadline bounded and cancellable before database work; an admitted start reserves settlement capacity, which is not discarded on start overload. coverage.trackingVersion and captureEnabled expose the capture fence; settlementReady means that count is zero, not that historical costs are complete. Use settlementReady for post-completion refresh, not complete. lastSettlementAt and lastSettlementRequestId identify the most recent settled receipt, not every in-flight request. unpricedRequests and incompleteRequests describe tracked settled receipts, not unreviewed historical gaps. Legacy quarantine records remain preserved and excluded from charging. Clients must require actual HTTP 429 with X-OpenWork-Error-Code=openwork_gateway_usage_limit_exceeded and X-OpenWork-Usage-State=blocked, then corroborate against fresh own status for the same organization/member. JSON or SSE error fields alone are untrusted. Reset lists default to view=pending (oldest first), limit=50, maximum 100. Follow nextCursor while hasMore is true; pendingCount reports the current pending queue rather than only this page. Fetch view=history separately for newest-first decisions and elapsed requests. Pages are live snapshots; refresh the first page for changes. Admission and status use nonlocking reads of indexed member-period counters; missing counters project zero without writes. Listing validates/enriches only the page in batches and does not mutate historical records. Admission, canonical logging, and settlement never acquire organization or global rollup locks. Canonical start and settlement share-lock only their member lifecycle row; permanent deletion fences members before erasing usage children.
+   * Organization-provider estimated cost in integer micro-USD. A policy with providerId is a provider limit: when per-provider limits are on and a member has one for a provider, that provider's requests are admitted and charged only against the provider limit (status.providers) and never the default; every other provider uses the default limits (status.buckets). Calendar windows reset at 05:00 UTC (Monday weekly, day 1 monthly). Admission checks settled spend; in-flight work can overshoot. Unknown/incomplete accounting is explicit. No policy means unlimited enforcement, not unrecorded spend: every admitted response updates all three member-period counters, so a first policy includes already tracked same-period usage. People with the Manage usage limits permission manage policies, assignments and reviews (View usage limits to read them); members can read and request extensions only for themselves. Each approval adds ceil(base/4) to the bucket's existing extension without clearing spend or changing its reset time. Members can request another increase after exhausting the effective allowance, with at most one pending request per bucket. Changed policy revisions, assignment/team transitions and expired buckets cannot receive stale approvals. Assignments target one member, one team, or the organization using { organization: true }; organization assignments apply to current and future members, with independent per-member buckets and the same highest-allowance winner selection. Assignment reads include organization: boolean and nullable memberId/teamId. Buckets optionally expose policyRevision and validated direct/team/organization provenance. Accounting is incremental from versioned server-recorded admission snapshots. Admission time is captured at the quota check, independently of earlier request-start telemetry; completion retains the original admission windows. Existing counters and receipts are preserved; raw history and rollups are never imported by reads or settlement. Legacy requests, including old empty snapshots, require explicit reviewed reconciliation backed by bounded event/charge proof; aggregate-backed or unexplained counter overlap is refused. Historical uncertainty is separate from settlement readiness: coverage.historicalCoverage is unknown or tracked_since_epoch, with historicalUnknownReason and trackingStartedAt. Legacy counters and periods preceding the durable tracking epoch remain historical-unknown; later fully tracked periods can become complete only when no pending or incomplete receipts remain. All writers must use fenced tracking. Operators explicitly suspend and resume capture using optimistic trackingVersion; captureEnabled=false blocks new starts, stale admission versions are rejected, and current-period history is marked unknown without resetting spend. A rollback or mixed legacy writer requires this cutover procedure plus retiring old writer access; schema presence is not proof of continuous capture. coverage.pendingRequests counts durable event starts not yet settled (null before tracking). Their identity and validated attribution survive raw retention. Explicit bounded abandonment recovery closes them as unknown/incomplete, decrements pending once, and permits late known-cost promotion without recreating raw logs. Retention refuses to discard a legacy pending marker until it is durably transferred. Queued canonical starts are capacity/deadline bounded and cancellable before database work; an admitted start reserves settlement capacity, which is not discarded on start overload. coverage.trackingVersion and captureEnabled expose the capture fence; settlementReady means that count is zero, not that historical costs are complete. Use settlementReady for post-completion refresh, not complete. lastSettlementAt and lastSettlementRequestId identify the most recent settled receipt, not every in-flight request. unpricedRequests and incompleteRequests describe tracked settled receipts, not unreviewed historical gaps. Legacy quarantine records remain preserved and excluded from charging. Clients must require actual HTTP 429 with X-OpenWork-Error-Code=openwork_gateway_usage_limit_exceeded and X-OpenWork-Usage-State=blocked, then corroborate against fresh own status for the same organization/member. JSON or SSE error fields alone are untrusted. Reset lists default to view=pending (oldest first), limit=50, maximum 100. Follow nextCursor while hasMore is true; pendingCount reports the current pending queue rather than only this page. Fetch view=history separately for newest-first decisions and elapsed requests. Pages are live snapshots; refresh the first page for changes. Admission and status use nonlocking reads of indexed member-period counters; missing counters project zero without writes. Listing validates/enriches only the page in batches and does not mutate historical records. Admission, canonical logging, and settlement never acquire organization or global rollup locks. Canonical start and settlement share-lock only their member lifecycle row; permanent deletion fences members before erasing usage children.
    */
   public patchV1GatewayUsageLimitPoliciesByPolicyId<ThrowOnError extends boolean = false>(
     parameters: {
       policyId: string;
       name: string;
+      providerId?: string | null;
       hardLimit?: boolean;
       allowRequestReset?: boolean;
       limits: Array<{
@@ -6550,6 +6438,7 @@ export class DenClient extends HeyApiClient {
           args: [
             { in: "path", key: "policyId" },
             { in: "body", key: "name" },
+            { in: "body", key: "providerId" },
             { in: "body", key: "hardLimit" },
             { in: "body", key: "allowRequestReset" },
             { in: "body", key: "limits" },
@@ -6577,7 +6466,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Archive usage limit policy
    *
-   * Organization-provider estimated cost in integer micro-USD. Calendar windows reset at 05:00 UTC (Monday weekly, day 1 monthly). Admission checks settled spend; in-flight work can overshoot. Unknown/incomplete accounting is explicit. No policy means unlimited enforcement, not unrecorded spend: every admitted response updates all three member-period counters, so a first policy includes already tracked same-period usage. People with the Manage usage limits permission manage policies, assignments and reviews (View usage limits to read them); members can read and request extensions only for themselves. Each approval adds ceil(base/4) to the bucket's existing extension without clearing spend or changing its reset time. Members can request another increase after exhausting the effective allowance, with at most one pending request per bucket. Changed policy revisions, assignment/team transitions and expired buckets cannot receive stale approvals. Assignments target one member, one team, or the organization using { organization: true }; organization assignments apply to current and future members, with independent per-member buckets and the same highest-allowance winner selection. Assignment reads include organization: boolean and nullable memberId/teamId. Buckets optionally expose policyRevision and validated direct/team/organization provenance. Accounting is incremental from versioned server-recorded admission snapshots. Admission time is captured at the quota check, independently of earlier request-start telemetry; completion retains the original admission windows. Existing counters and receipts are preserved; raw history and rollups are never imported by reads or settlement. Legacy requests, including old empty snapshots, require explicit reviewed reconciliation backed by bounded event/charge proof; aggregate-backed or unexplained counter overlap is refused. Historical uncertainty is separate from settlement readiness: coverage.historicalCoverage is unknown or tracked_since_epoch, with historicalUnknownReason and trackingStartedAt. Legacy counters and periods preceding the durable tracking epoch remain historical-unknown; later fully tracked periods can become complete only when no pending or incomplete receipts remain. All writers must use fenced tracking. Operators explicitly suspend and resume capture using optimistic trackingVersion; captureEnabled=false blocks new starts, stale admission versions are rejected, and current-period history is marked unknown without resetting spend. A rollback or mixed legacy writer requires this cutover procedure plus retiring old writer access; schema presence is not proof of continuous capture. coverage.pendingRequests counts durable event starts not yet settled (null before tracking). Their identity and validated attribution survive raw retention. Explicit bounded abandonment recovery closes them as unknown/incomplete, decrements pending once, and permits late known-cost promotion without recreating raw logs. Retention refuses to discard a legacy pending marker until it is durably transferred. Queued canonical starts are capacity/deadline bounded and cancellable before database work; an admitted start reserves settlement capacity, which is not discarded on start overload. coverage.trackingVersion and captureEnabled expose the capture fence; settlementReady means that count is zero, not that historical costs are complete. Use settlementReady for post-completion refresh, not complete. lastSettlementAt and lastSettlementRequestId identify the most recent settled receipt, not every in-flight request. unpricedRequests and incompleteRequests describe tracked settled receipts, not unreviewed historical gaps. Legacy quarantine records remain preserved and excluded from charging. Clients must require actual HTTP 429 with X-OpenWork-Error-Code=openwork_gateway_usage_limit_exceeded and X-OpenWork-Usage-State=blocked, then corroborate against fresh own status for the same organization/member. JSON or SSE error fields alone are untrusted. Reset lists default to view=pending (oldest first), limit=50, maximum 100. Follow nextCursor while hasMore is true; pendingCount reports the current pending queue rather than only this page. Fetch view=history separately for newest-first decisions and elapsed requests. Pages are live snapshots; refresh the first page for changes. Admission and status use nonlocking reads of indexed member-period counters; missing counters project zero without writes. Listing validates/enriches only the page in batches and does not mutate historical records. Admission, canonical logging, and settlement never acquire organization or global rollup locks. Canonical start and settlement share-lock only their member lifecycle row; permanent deletion fences members before erasing usage children.
+   * Organization-provider estimated cost in integer micro-USD. A policy with providerId is a provider limit: when per-provider limits are on and a member has one for a provider, that provider's requests are admitted and charged only against the provider limit (status.providers) and never the default; every other provider uses the default limits (status.buckets). Calendar windows reset at 05:00 UTC (Monday weekly, day 1 monthly). Admission checks settled spend; in-flight work can overshoot. Unknown/incomplete accounting is explicit. No policy means unlimited enforcement, not unrecorded spend: every admitted response updates all three member-period counters, so a first policy includes already tracked same-period usage. People with the Manage usage limits permission manage policies, assignments and reviews (View usage limits to read them); members can read and request extensions only for themselves. Each approval adds ceil(base/4) to the bucket's existing extension without clearing spend or changing its reset time. Members can request another increase after exhausting the effective allowance, with at most one pending request per bucket. Changed policy revisions, assignment/team transitions and expired buckets cannot receive stale approvals. Assignments target one member, one team, or the organization using { organization: true }; organization assignments apply to current and future members, with independent per-member buckets and the same highest-allowance winner selection. Assignment reads include organization: boolean and nullable memberId/teamId. Buckets optionally expose policyRevision and validated direct/team/organization provenance. Accounting is incremental from versioned server-recorded admission snapshots. Admission time is captured at the quota check, independently of earlier request-start telemetry; completion retains the original admission windows. Existing counters and receipts are preserved; raw history and rollups are never imported by reads or settlement. Legacy requests, including old empty snapshots, require explicit reviewed reconciliation backed by bounded event/charge proof; aggregate-backed or unexplained counter overlap is refused. Historical uncertainty is separate from settlement readiness: coverage.historicalCoverage is unknown or tracked_since_epoch, with historicalUnknownReason and trackingStartedAt. Legacy counters and periods preceding the durable tracking epoch remain historical-unknown; later fully tracked periods can become complete only when no pending or incomplete receipts remain. All writers must use fenced tracking. Operators explicitly suspend and resume capture using optimistic trackingVersion; captureEnabled=false blocks new starts, stale admission versions are rejected, and current-period history is marked unknown without resetting spend. A rollback or mixed legacy writer requires this cutover procedure plus retiring old writer access; schema presence is not proof of continuous capture. coverage.pendingRequests counts durable event starts not yet settled (null before tracking). Their identity and validated attribution survive raw retention. Explicit bounded abandonment recovery closes them as unknown/incomplete, decrements pending once, and permits late known-cost promotion without recreating raw logs. Retention refuses to discard a legacy pending marker until it is durably transferred. Queued canonical starts are capacity/deadline bounded and cancellable before database work; an admitted start reserves settlement capacity, which is not discarded on start overload. coverage.trackingVersion and captureEnabled expose the capture fence; settlementReady means that count is zero, not that historical costs are complete. Use settlementReady for post-completion refresh, not complete. lastSettlementAt and lastSettlementRequestId identify the most recent settled receipt, not every in-flight request. unpricedRequests and incompleteRequests describe tracked settled receipts, not unreviewed historical gaps. Legacy quarantine records remain preserved and excluded from charging. Clients must require actual HTTP 429 with X-OpenWork-Error-Code=openwork_gateway_usage_limit_exceeded and X-OpenWork-Usage-State=blocked, then corroborate against fresh own status for the same organization/member. JSON or SSE error fields alone are untrusted. Reset lists default to view=pending (oldest first), limit=50, maximum 100. Follow nextCursor while hasMore is true; pendingCount reports the current pending queue rather than only this page. Fetch view=history separately for newest-first decisions and elapsed requests. Pages are live snapshots; refresh the first page for changes. Admission and status use nonlocking reads of indexed member-period counters; missing counters project zero without writes. Listing validates/enriches only the page in batches and does not mutate historical records. Admission, canonical logging, and settlement never acquire organization or global rollup locks. Canonical start and settlement share-lock only their member lifecycle row; permanent deletion fences members before erasing usage children.
    */
   public postV1GatewayUsageLimitPoliciesByPolicyIdArchive<ThrowOnError extends boolean = false>(
     parameters: {
@@ -6616,7 +6505,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Restore archived usage limit policy
    *
-   * Organization-provider estimated cost in integer micro-USD. Calendar windows reset at 05:00 UTC (Monday weekly, day 1 monthly). Admission checks settled spend; in-flight work can overshoot. Unknown/incomplete accounting is explicit. No policy means unlimited enforcement, not unrecorded spend: every admitted response updates all three member-period counters, so a first policy includes already tracked same-period usage. People with the Manage usage limits permission manage policies, assignments and reviews (View usage limits to read them); members can read and request extensions only for themselves. Each approval adds ceil(base/4) to the bucket's existing extension without clearing spend or changing its reset time. Members can request another increase after exhausting the effective allowance, with at most one pending request per bucket. Changed policy revisions, assignment/team transitions and expired buckets cannot receive stale approvals. Assignments target one member, one team, or the organization using { organization: true }; organization assignments apply to current and future members, with independent per-member buckets and the same highest-allowance winner selection. Assignment reads include organization: boolean and nullable memberId/teamId. Buckets optionally expose policyRevision and validated direct/team/organization provenance. Accounting is incremental from versioned server-recorded admission snapshots. Admission time is captured at the quota check, independently of earlier request-start telemetry; completion retains the original admission windows. Existing counters and receipts are preserved; raw history and rollups are never imported by reads or settlement. Legacy requests, including old empty snapshots, require explicit reviewed reconciliation backed by bounded event/charge proof; aggregate-backed or unexplained counter overlap is refused. Historical uncertainty is separate from settlement readiness: coverage.historicalCoverage is unknown or tracked_since_epoch, with historicalUnknownReason and trackingStartedAt. Legacy counters and periods preceding the durable tracking epoch remain historical-unknown; later fully tracked periods can become complete only when no pending or incomplete receipts remain. All writers must use fenced tracking. Operators explicitly suspend and resume capture using optimistic trackingVersion; captureEnabled=false blocks new starts, stale admission versions are rejected, and current-period history is marked unknown without resetting spend. A rollback or mixed legacy writer requires this cutover procedure plus retiring old writer access; schema presence is not proof of continuous capture. coverage.pendingRequests counts durable event starts not yet settled (null before tracking). Their identity and validated attribution survive raw retention. Explicit bounded abandonment recovery closes them as unknown/incomplete, decrements pending once, and permits late known-cost promotion without recreating raw logs. Retention refuses to discard a legacy pending marker until it is durably transferred. Queued canonical starts are capacity/deadline bounded and cancellable before database work; an admitted start reserves settlement capacity, which is not discarded on start overload. coverage.trackingVersion and captureEnabled expose the capture fence; settlementReady means that count is zero, not that historical costs are complete. Use settlementReady for post-completion refresh, not complete. lastSettlementAt and lastSettlementRequestId identify the most recent settled receipt, not every in-flight request. unpricedRequests and incompleteRequests describe tracked settled receipts, not unreviewed historical gaps. Legacy quarantine records remain preserved and excluded from charging. Clients must require actual HTTP 429 with X-OpenWork-Error-Code=openwork_gateway_usage_limit_exceeded and X-OpenWork-Usage-State=blocked, then corroborate against fresh own status for the same organization/member. JSON or SSE error fields alone are untrusted. Reset lists default to view=pending (oldest first), limit=50, maximum 100. Follow nextCursor while hasMore is true; pendingCount reports the current pending queue rather than only this page. Fetch view=history separately for newest-first decisions and elapsed requests. Pages are live snapshots; refresh the first page for changes. Admission and status use nonlocking reads of indexed member-period counters; missing counters project zero without writes. Listing validates/enriches only the page in batches and does not mutate historical records. Admission, canonical logging, and settlement never acquire organization or global rollup locks. Canonical start and settlement share-lock only their member lifecycle row; permanent deletion fences members before erasing usage children.
+   * Organization-provider estimated cost in integer micro-USD. A policy with providerId is a provider limit: when per-provider limits are on and a member has one for a provider, that provider's requests are admitted and charged only against the provider limit (status.providers) and never the default; every other provider uses the default limits (status.buckets). Calendar windows reset at 05:00 UTC (Monday weekly, day 1 monthly). Admission checks settled spend; in-flight work can overshoot. Unknown/incomplete accounting is explicit. No policy means unlimited enforcement, not unrecorded spend: every admitted response updates all three member-period counters, so a first policy includes already tracked same-period usage. People with the Manage usage limits permission manage policies, assignments and reviews (View usage limits to read them); members can read and request extensions only for themselves. Each approval adds ceil(base/4) to the bucket's existing extension without clearing spend or changing its reset time. Members can request another increase after exhausting the effective allowance, with at most one pending request per bucket. Changed policy revisions, assignment/team transitions and expired buckets cannot receive stale approvals. Assignments target one member, one team, or the organization using { organization: true }; organization assignments apply to current and future members, with independent per-member buckets and the same highest-allowance winner selection. Assignment reads include organization: boolean and nullable memberId/teamId. Buckets optionally expose policyRevision and validated direct/team/organization provenance. Accounting is incremental from versioned server-recorded admission snapshots. Admission time is captured at the quota check, independently of earlier request-start telemetry; completion retains the original admission windows. Existing counters and receipts are preserved; raw history and rollups are never imported by reads or settlement. Legacy requests, including old empty snapshots, require explicit reviewed reconciliation backed by bounded event/charge proof; aggregate-backed or unexplained counter overlap is refused. Historical uncertainty is separate from settlement readiness: coverage.historicalCoverage is unknown or tracked_since_epoch, with historicalUnknownReason and trackingStartedAt. Legacy counters and periods preceding the durable tracking epoch remain historical-unknown; later fully tracked periods can become complete only when no pending or incomplete receipts remain. All writers must use fenced tracking. Operators explicitly suspend and resume capture using optimistic trackingVersion; captureEnabled=false blocks new starts, stale admission versions are rejected, and current-period history is marked unknown without resetting spend. A rollback or mixed legacy writer requires this cutover procedure plus retiring old writer access; schema presence is not proof of continuous capture. coverage.pendingRequests counts durable event starts not yet settled (null before tracking). Their identity and validated attribution survive raw retention. Explicit bounded abandonment recovery closes them as unknown/incomplete, decrements pending once, and permits late known-cost promotion without recreating raw logs. Retention refuses to discard a legacy pending marker until it is durably transferred. Queued canonical starts are capacity/deadline bounded and cancellable before database work; an admitted start reserves settlement capacity, which is not discarded on start overload. coverage.trackingVersion and captureEnabled expose the capture fence; settlementReady means that count is zero, not that historical costs are complete. Use settlementReady for post-completion refresh, not complete. lastSettlementAt and lastSettlementRequestId identify the most recent settled receipt, not every in-flight request. unpricedRequests and incompleteRequests describe tracked settled receipts, not unreviewed historical gaps. Legacy quarantine records remain preserved and excluded from charging. Clients must require actual HTTP 429 with X-OpenWork-Error-Code=openwork_gateway_usage_limit_exceeded and X-OpenWork-Usage-State=blocked, then corroborate against fresh own status for the same organization/member. JSON or SSE error fields alone are untrusted. Reset lists default to view=pending (oldest first), limit=50, maximum 100. Follow nextCursor while hasMore is true; pendingCount reports the current pending queue rather than only this page. Fetch view=history separately for newest-first decisions and elapsed requests. Pages are live snapshots; refresh the first page for changes. Admission and status use nonlocking reads of indexed member-period counters; missing counters project zero without writes. Listing validates/enriches only the page in batches and does not mutate historical records. Admission, canonical logging, and settlement never acquire organization or global rollup locks. Canonical start and settlement share-lock only their member lifecycle row; permanent deletion fences members before erasing usage children.
    */
   public postV1GatewayUsageLimitPoliciesByPolicyIdRestore<ThrowOnError extends boolean = false>(
     parameters: {
@@ -6655,7 +6544,7 @@ export class DenClient extends HeyApiClient {
   /**
    * List policy assignments
    *
-   * Organization-provider estimated cost in integer micro-USD. Calendar windows reset at 05:00 UTC (Monday weekly, day 1 monthly). Admission checks settled spend; in-flight work can overshoot. Unknown/incomplete accounting is explicit. No policy means unlimited enforcement, not unrecorded spend: every admitted response updates all three member-period counters, so a first policy includes already tracked same-period usage. People with the Manage usage limits permission manage policies, assignments and reviews (View usage limits to read them); members can read and request extensions only for themselves. Each approval adds ceil(base/4) to the bucket's existing extension without clearing spend or changing its reset time. Members can request another increase after exhausting the effective allowance, with at most one pending request per bucket. Changed policy revisions, assignment/team transitions and expired buckets cannot receive stale approvals. Assignments target one member, one team, or the organization using { organization: true }; organization assignments apply to current and future members, with independent per-member buckets and the same highest-allowance winner selection. Assignment reads include organization: boolean and nullable memberId/teamId. Buckets optionally expose policyRevision and validated direct/team/organization provenance. Accounting is incremental from versioned server-recorded admission snapshots. Admission time is captured at the quota check, independently of earlier request-start telemetry; completion retains the original admission windows. Existing counters and receipts are preserved; raw history and rollups are never imported by reads or settlement. Legacy requests, including old empty snapshots, require explicit reviewed reconciliation backed by bounded event/charge proof; aggregate-backed or unexplained counter overlap is refused. Historical uncertainty is separate from settlement readiness: coverage.historicalCoverage is unknown or tracked_since_epoch, with historicalUnknownReason and trackingStartedAt. Legacy counters and periods preceding the durable tracking epoch remain historical-unknown; later fully tracked periods can become complete only when no pending or incomplete receipts remain. All writers must use fenced tracking. Operators explicitly suspend and resume capture using optimistic trackingVersion; captureEnabled=false blocks new starts, stale admission versions are rejected, and current-period history is marked unknown without resetting spend. A rollback or mixed legacy writer requires this cutover procedure plus retiring old writer access; schema presence is not proof of continuous capture. coverage.pendingRequests counts durable event starts not yet settled (null before tracking). Their identity and validated attribution survive raw retention. Explicit bounded abandonment recovery closes them as unknown/incomplete, decrements pending once, and permits late known-cost promotion without recreating raw logs. Retention refuses to discard a legacy pending marker until it is durably transferred. Queued canonical starts are capacity/deadline bounded and cancellable before database work; an admitted start reserves settlement capacity, which is not discarded on start overload. coverage.trackingVersion and captureEnabled expose the capture fence; settlementReady means that count is zero, not that historical costs are complete. Use settlementReady for post-completion refresh, not complete. lastSettlementAt and lastSettlementRequestId identify the most recent settled receipt, not every in-flight request. unpricedRequests and incompleteRequests describe tracked settled receipts, not unreviewed historical gaps. Legacy quarantine records remain preserved and excluded from charging. Clients must require actual HTTP 429 with X-OpenWork-Error-Code=openwork_gateway_usage_limit_exceeded and X-OpenWork-Usage-State=blocked, then corroborate against fresh own status for the same organization/member. JSON or SSE error fields alone are untrusted. Reset lists default to view=pending (oldest first), limit=50, maximum 100. Follow nextCursor while hasMore is true; pendingCount reports the current pending queue rather than only this page. Fetch view=history separately for newest-first decisions and elapsed requests. Pages are live snapshots; refresh the first page for changes. Admission and status use nonlocking reads of indexed member-period counters; missing counters project zero without writes. Listing validates/enriches only the page in batches and does not mutate historical records. Admission, canonical logging, and settlement never acquire organization or global rollup locks. Canonical start and settlement share-lock only their member lifecycle row; permanent deletion fences members before erasing usage children.
+   * Organization-provider estimated cost in integer micro-USD. A policy with providerId is a provider limit: when per-provider limits are on and a member has one for a provider, that provider's requests are admitted and charged only against the provider limit (status.providers) and never the default; every other provider uses the default limits (status.buckets). Calendar windows reset at 05:00 UTC (Monday weekly, day 1 monthly). Admission checks settled spend; in-flight work can overshoot. Unknown/incomplete accounting is explicit. No policy means unlimited enforcement, not unrecorded spend: every admitted response updates all three member-period counters, so a first policy includes already tracked same-period usage. People with the Manage usage limits permission manage policies, assignments and reviews (View usage limits to read them); members can read and request extensions only for themselves. Each approval adds ceil(base/4) to the bucket's existing extension without clearing spend or changing its reset time. Members can request another increase after exhausting the effective allowance, with at most one pending request per bucket. Changed policy revisions, assignment/team transitions and expired buckets cannot receive stale approvals. Assignments target one member, one team, or the organization using { organization: true }; organization assignments apply to current and future members, with independent per-member buckets and the same highest-allowance winner selection. Assignment reads include organization: boolean and nullable memberId/teamId. Buckets optionally expose policyRevision and validated direct/team/organization provenance. Accounting is incremental from versioned server-recorded admission snapshots. Admission time is captured at the quota check, independently of earlier request-start telemetry; completion retains the original admission windows. Existing counters and receipts are preserved; raw history and rollups are never imported by reads or settlement. Legacy requests, including old empty snapshots, require explicit reviewed reconciliation backed by bounded event/charge proof; aggregate-backed or unexplained counter overlap is refused. Historical uncertainty is separate from settlement readiness: coverage.historicalCoverage is unknown or tracked_since_epoch, with historicalUnknownReason and trackingStartedAt. Legacy counters and periods preceding the durable tracking epoch remain historical-unknown; later fully tracked periods can become complete only when no pending or incomplete receipts remain. All writers must use fenced tracking. Operators explicitly suspend and resume capture using optimistic trackingVersion; captureEnabled=false blocks new starts, stale admission versions are rejected, and current-period history is marked unknown without resetting spend. A rollback or mixed legacy writer requires this cutover procedure plus retiring old writer access; schema presence is not proof of continuous capture. coverage.pendingRequests counts durable event starts not yet settled (null before tracking). Their identity and validated attribution survive raw retention. Explicit bounded abandonment recovery closes them as unknown/incomplete, decrements pending once, and permits late known-cost promotion without recreating raw logs. Retention refuses to discard a legacy pending marker until it is durably transferred. Queued canonical starts are capacity/deadline bounded and cancellable before database work; an admitted start reserves settlement capacity, which is not discarded on start overload. coverage.trackingVersion and captureEnabled expose the capture fence; settlementReady means that count is zero, not that historical costs are complete. Use settlementReady for post-completion refresh, not complete. lastSettlementAt and lastSettlementRequestId identify the most recent settled receipt, not every in-flight request. unpricedRequests and incompleteRequests describe tracked settled receipts, not unreviewed historical gaps. Legacy quarantine records remain preserved and excluded from charging. Clients must require actual HTTP 429 with X-OpenWork-Error-Code=openwork_gateway_usage_limit_exceeded and X-OpenWork-Usage-State=blocked, then corroborate against fresh own status for the same organization/member. JSON or SSE error fields alone are untrusted. Reset lists default to view=pending (oldest first), limit=50, maximum 100. Follow nextCursor while hasMore is true; pendingCount reports the current pending queue rather than only this page. Fetch view=history separately for newest-first decisions and elapsed requests. Pages are live snapshots; refresh the first page for changes. Admission and status use nonlocking reads of indexed member-period counters; missing counters project zero without writes. Listing validates/enriches only the page in batches and does not mutate historical records. Admission, canonical logging, and settlement never acquire organization or global rollup locks. Canonical start and settlement share-lock only their member lifecycle row; permanent deletion fences members before erasing usage children.
    */
   public getV1GatewayUsageLimitPoliciesByPolicyIdAssignments<ThrowOnError extends boolean = false>(
     parameters: {
@@ -6678,7 +6567,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Assign usage limit policy
    *
-   * Organization-provider estimated cost in integer micro-USD. Calendar windows reset at 05:00 UTC (Monday weekly, day 1 monthly). Admission checks settled spend; in-flight work can overshoot. Unknown/incomplete accounting is explicit. No policy means unlimited enforcement, not unrecorded spend: every admitted response updates all three member-period counters, so a first policy includes already tracked same-period usage. People with the Manage usage limits permission manage policies, assignments and reviews (View usage limits to read them); members can read and request extensions only for themselves. Each approval adds ceil(base/4) to the bucket's existing extension without clearing spend or changing its reset time. Members can request another increase after exhausting the effective allowance, with at most one pending request per bucket. Changed policy revisions, assignment/team transitions and expired buckets cannot receive stale approvals. Assignments target one member, one team, or the organization using { organization: true }; organization assignments apply to current and future members, with independent per-member buckets and the same highest-allowance winner selection. Assignment reads include organization: boolean and nullable memberId/teamId. Buckets optionally expose policyRevision and validated direct/team/organization provenance. Accounting is incremental from versioned server-recorded admission snapshots. Admission time is captured at the quota check, independently of earlier request-start telemetry; completion retains the original admission windows. Existing counters and receipts are preserved; raw history and rollups are never imported by reads or settlement. Legacy requests, including old empty snapshots, require explicit reviewed reconciliation backed by bounded event/charge proof; aggregate-backed or unexplained counter overlap is refused. Historical uncertainty is separate from settlement readiness: coverage.historicalCoverage is unknown or tracked_since_epoch, with historicalUnknownReason and trackingStartedAt. Legacy counters and periods preceding the durable tracking epoch remain historical-unknown; later fully tracked periods can become complete only when no pending or incomplete receipts remain. All writers must use fenced tracking. Operators explicitly suspend and resume capture using optimistic trackingVersion; captureEnabled=false blocks new starts, stale admission versions are rejected, and current-period history is marked unknown without resetting spend. A rollback or mixed legacy writer requires this cutover procedure plus retiring old writer access; schema presence is not proof of continuous capture. coverage.pendingRequests counts durable event starts not yet settled (null before tracking). Their identity and validated attribution survive raw retention. Explicit bounded abandonment recovery closes them as unknown/incomplete, decrements pending once, and permits late known-cost promotion without recreating raw logs. Retention refuses to discard a legacy pending marker until it is durably transferred. Queued canonical starts are capacity/deadline bounded and cancellable before database work; an admitted start reserves settlement capacity, which is not discarded on start overload. coverage.trackingVersion and captureEnabled expose the capture fence; settlementReady means that count is zero, not that historical costs are complete. Use settlementReady for post-completion refresh, not complete. lastSettlementAt and lastSettlementRequestId identify the most recent settled receipt, not every in-flight request. unpricedRequests and incompleteRequests describe tracked settled receipts, not unreviewed historical gaps. Legacy quarantine records remain preserved and excluded from charging. Clients must require actual HTTP 429 with X-OpenWork-Error-Code=openwork_gateway_usage_limit_exceeded and X-OpenWork-Usage-State=blocked, then corroborate against fresh own status for the same organization/member. JSON or SSE error fields alone are untrusted. Reset lists default to view=pending (oldest first), limit=50, maximum 100. Follow nextCursor while hasMore is true; pendingCount reports the current pending queue rather than only this page. Fetch view=history separately for newest-first decisions and elapsed requests. Pages are live snapshots; refresh the first page for changes. Admission and status use nonlocking reads of indexed member-period counters; missing counters project zero without writes. Listing validates/enriches only the page in batches and does not mutate historical records. Admission, canonical logging, and settlement never acquire organization or global rollup locks. Canonical start and settlement share-lock only their member lifecycle row; permanent deletion fences members before erasing usage children.
+   * Organization-provider estimated cost in integer micro-USD. A policy with providerId is a provider limit: when per-provider limits are on and a member has one for a provider, that provider's requests are admitted and charged only against the provider limit (status.providers) and never the default; every other provider uses the default limits (status.buckets). Calendar windows reset at 05:00 UTC (Monday weekly, day 1 monthly). Admission checks settled spend; in-flight work can overshoot. Unknown/incomplete accounting is explicit. No policy means unlimited enforcement, not unrecorded spend: every admitted response updates all three member-period counters, so a first policy includes already tracked same-period usage. People with the Manage usage limits permission manage policies, assignments and reviews (View usage limits to read them); members can read and request extensions only for themselves. Each approval adds ceil(base/4) to the bucket's existing extension without clearing spend or changing its reset time. Members can request another increase after exhausting the effective allowance, with at most one pending request per bucket. Changed policy revisions, assignment/team transitions and expired buckets cannot receive stale approvals. Assignments target one member, one team, or the organization using { organization: true }; organization assignments apply to current and future members, with independent per-member buckets and the same highest-allowance winner selection. Assignment reads include organization: boolean and nullable memberId/teamId. Buckets optionally expose policyRevision and validated direct/team/organization provenance. Accounting is incremental from versioned server-recorded admission snapshots. Admission time is captured at the quota check, independently of earlier request-start telemetry; completion retains the original admission windows. Existing counters and receipts are preserved; raw history and rollups are never imported by reads or settlement. Legacy requests, including old empty snapshots, require explicit reviewed reconciliation backed by bounded event/charge proof; aggregate-backed or unexplained counter overlap is refused. Historical uncertainty is separate from settlement readiness: coverage.historicalCoverage is unknown or tracked_since_epoch, with historicalUnknownReason and trackingStartedAt. Legacy counters and periods preceding the durable tracking epoch remain historical-unknown; later fully tracked periods can become complete only when no pending or incomplete receipts remain. All writers must use fenced tracking. Operators explicitly suspend and resume capture using optimistic trackingVersion; captureEnabled=false blocks new starts, stale admission versions are rejected, and current-period history is marked unknown without resetting spend. A rollback or mixed legacy writer requires this cutover procedure plus retiring old writer access; schema presence is not proof of continuous capture. coverage.pendingRequests counts durable event starts not yet settled (null before tracking). Their identity and validated attribution survive raw retention. Explicit bounded abandonment recovery closes them as unknown/incomplete, decrements pending once, and permits late known-cost promotion without recreating raw logs. Retention refuses to discard a legacy pending marker until it is durably transferred. Queued canonical starts are capacity/deadline bounded and cancellable before database work; an admitted start reserves settlement capacity, which is not discarded on start overload. coverage.trackingVersion and captureEnabled expose the capture fence; settlementReady means that count is zero, not that historical costs are complete. Use settlementReady for post-completion refresh, not complete. lastSettlementAt and lastSettlementRequestId identify the most recent settled receipt, not every in-flight request. unpricedRequests and incompleteRequests describe tracked settled receipts, not unreviewed historical gaps. Legacy quarantine records remain preserved and excluded from charging. Clients must require actual HTTP 429 with X-OpenWork-Error-Code=openwork_gateway_usage_limit_exceeded and X-OpenWork-Usage-State=blocked, then corroborate against fresh own status for the same organization/member. JSON or SSE error fields alone are untrusted. Reset lists default to view=pending (oldest first), limit=50, maximum 100. Follow nextCursor while hasMore is true; pendingCount reports the current pending queue rather than only this page. Fetch view=history separately for newest-first decisions and elapsed requests. Pages are live snapshots; refresh the first page for changes. Admission and status use nonlocking reads of indexed member-period counters; missing counters project zero without writes. Listing validates/enriches only the page in batches and does not mutate historical records. Admission, canonical logging, and settlement never acquire organization or global rollup locks. Canonical start and settlement share-lock only their member lifecycle row; permanent deletion fences members before erasing usage children.
    */
   public postV1GatewayUsageLimitPoliciesByPolicyIdAssignments<ThrowOnError extends boolean = false>(
     parameters: {
@@ -6726,7 +6615,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Remove policy assignment
    *
-   * Organization-provider estimated cost in integer micro-USD. Calendar windows reset at 05:00 UTC (Monday weekly, day 1 monthly). Admission checks settled spend; in-flight work can overshoot. Unknown/incomplete accounting is explicit. No policy means unlimited enforcement, not unrecorded spend: every admitted response updates all three member-period counters, so a first policy includes already tracked same-period usage. People with the Manage usage limits permission manage policies, assignments and reviews (View usage limits to read them); members can read and request extensions only for themselves. Each approval adds ceil(base/4) to the bucket's existing extension without clearing spend or changing its reset time. Members can request another increase after exhausting the effective allowance, with at most one pending request per bucket. Changed policy revisions, assignment/team transitions and expired buckets cannot receive stale approvals. Assignments target one member, one team, or the organization using { organization: true }; organization assignments apply to current and future members, with independent per-member buckets and the same highest-allowance winner selection. Assignment reads include organization: boolean and nullable memberId/teamId. Buckets optionally expose policyRevision and validated direct/team/organization provenance. Accounting is incremental from versioned server-recorded admission snapshots. Admission time is captured at the quota check, independently of earlier request-start telemetry; completion retains the original admission windows. Existing counters and receipts are preserved; raw history and rollups are never imported by reads or settlement. Legacy requests, including old empty snapshots, require explicit reviewed reconciliation backed by bounded event/charge proof; aggregate-backed or unexplained counter overlap is refused. Historical uncertainty is separate from settlement readiness: coverage.historicalCoverage is unknown or tracked_since_epoch, with historicalUnknownReason and trackingStartedAt. Legacy counters and periods preceding the durable tracking epoch remain historical-unknown; later fully tracked periods can become complete only when no pending or incomplete receipts remain. All writers must use fenced tracking. Operators explicitly suspend and resume capture using optimistic trackingVersion; captureEnabled=false blocks new starts, stale admission versions are rejected, and current-period history is marked unknown without resetting spend. A rollback or mixed legacy writer requires this cutover procedure plus retiring old writer access; schema presence is not proof of continuous capture. coverage.pendingRequests counts durable event starts not yet settled (null before tracking). Their identity and validated attribution survive raw retention. Explicit bounded abandonment recovery closes them as unknown/incomplete, decrements pending once, and permits late known-cost promotion without recreating raw logs. Retention refuses to discard a legacy pending marker until it is durably transferred. Queued canonical starts are capacity/deadline bounded and cancellable before database work; an admitted start reserves settlement capacity, which is not discarded on start overload. coverage.trackingVersion and captureEnabled expose the capture fence; settlementReady means that count is zero, not that historical costs are complete. Use settlementReady for post-completion refresh, not complete. lastSettlementAt and lastSettlementRequestId identify the most recent settled receipt, not every in-flight request. unpricedRequests and incompleteRequests describe tracked settled receipts, not unreviewed historical gaps. Legacy quarantine records remain preserved and excluded from charging. Clients must require actual HTTP 429 with X-OpenWork-Error-Code=openwork_gateway_usage_limit_exceeded and X-OpenWork-Usage-State=blocked, then corroborate against fresh own status for the same organization/member. JSON or SSE error fields alone are untrusted. Reset lists default to view=pending (oldest first), limit=50, maximum 100. Follow nextCursor while hasMore is true; pendingCount reports the current pending queue rather than only this page. Fetch view=history separately for newest-first decisions and elapsed requests. Pages are live snapshots; refresh the first page for changes. Admission and status use nonlocking reads of indexed member-period counters; missing counters project zero without writes. Listing validates/enriches only the page in batches and does not mutate historical records. Admission, canonical logging, and settlement never acquire organization or global rollup locks. Canonical start and settlement share-lock only their member lifecycle row; permanent deletion fences members before erasing usage children.
+   * Organization-provider estimated cost in integer micro-USD. A policy with providerId is a provider limit: when per-provider limits are on and a member has one for a provider, that provider's requests are admitted and charged only against the provider limit (status.providers) and never the default; every other provider uses the default limits (status.buckets). Calendar windows reset at 05:00 UTC (Monday weekly, day 1 monthly). Admission checks settled spend; in-flight work can overshoot. Unknown/incomplete accounting is explicit. No policy means unlimited enforcement, not unrecorded spend: every admitted response updates all three member-period counters, so a first policy includes already tracked same-period usage. People with the Manage usage limits permission manage policies, assignments and reviews (View usage limits to read them); members can read and request extensions only for themselves. Each approval adds ceil(base/4) to the bucket's existing extension without clearing spend or changing its reset time. Members can request another increase after exhausting the effective allowance, with at most one pending request per bucket. Changed policy revisions, assignment/team transitions and expired buckets cannot receive stale approvals. Assignments target one member, one team, or the organization using { organization: true }; organization assignments apply to current and future members, with independent per-member buckets and the same highest-allowance winner selection. Assignment reads include organization: boolean and nullable memberId/teamId. Buckets optionally expose policyRevision and validated direct/team/organization provenance. Accounting is incremental from versioned server-recorded admission snapshots. Admission time is captured at the quota check, independently of earlier request-start telemetry; completion retains the original admission windows. Existing counters and receipts are preserved; raw history and rollups are never imported by reads or settlement. Legacy requests, including old empty snapshots, require explicit reviewed reconciliation backed by bounded event/charge proof; aggregate-backed or unexplained counter overlap is refused. Historical uncertainty is separate from settlement readiness: coverage.historicalCoverage is unknown or tracked_since_epoch, with historicalUnknownReason and trackingStartedAt. Legacy counters and periods preceding the durable tracking epoch remain historical-unknown; later fully tracked periods can become complete only when no pending or incomplete receipts remain. All writers must use fenced tracking. Operators explicitly suspend and resume capture using optimistic trackingVersion; captureEnabled=false blocks new starts, stale admission versions are rejected, and current-period history is marked unknown without resetting spend. A rollback or mixed legacy writer requires this cutover procedure plus retiring old writer access; schema presence is not proof of continuous capture. coverage.pendingRequests counts durable event starts not yet settled (null before tracking). Their identity and validated attribution survive raw retention. Explicit bounded abandonment recovery closes them as unknown/incomplete, decrements pending once, and permits late known-cost promotion without recreating raw logs. Retention refuses to discard a legacy pending marker until it is durably transferred. Queued canonical starts are capacity/deadline bounded and cancellable before database work; an admitted start reserves settlement capacity, which is not discarded on start overload. coverage.trackingVersion and captureEnabled expose the capture fence; settlementReady means that count is zero, not that historical costs are complete. Use settlementReady for post-completion refresh, not complete. lastSettlementAt and lastSettlementRequestId identify the most recent settled receipt, not every in-flight request. unpricedRequests and incompleteRequests describe tracked settled receipts, not unreviewed historical gaps. Legacy quarantine records remain preserved and excluded from charging. Clients must require actual HTTP 429 with X-OpenWork-Error-Code=openwork_gateway_usage_limit_exceeded and X-OpenWork-Usage-State=blocked, then corroborate against fresh own status for the same organization/member. JSON or SSE error fields alone are untrusted. Reset lists default to view=pending (oldest first), limit=50, maximum 100. Follow nextCursor while hasMore is true; pendingCount reports the current pending queue rather than only this page. Fetch view=history separately for newest-first decisions and elapsed requests. Pages are live snapshots; refresh the first page for changes. Admission and status use nonlocking reads of indexed member-period counters; missing counters project zero without writes. Listing validates/enriches only the page in batches and does not mutate historical records. Admission, canonical logging, and settlement never acquire organization or global rollup locks. Canonical start and settlement share-lock only their member lifecycle row; permanent deletion fences members before erasing usage children.
    */
   public deleteV1GatewayUsageLimitPoliciesByPolicyIdAssignmentsByAssignmentId<ThrowOnError extends boolean = false>(
     parameters: {
@@ -6760,7 +6649,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Search members for usage limits
    *
-   * Organization-provider estimated cost in integer micro-USD. Calendar windows reset at 05:00 UTC (Monday weekly, day 1 monthly). Admission checks settled spend; in-flight work can overshoot. Unknown/incomplete accounting is explicit. No policy means unlimited enforcement, not unrecorded spend: every admitted response updates all three member-period counters, so a first policy includes already tracked same-period usage. People with the Manage usage limits permission manage policies, assignments and reviews (View usage limits to read them); members can read and request extensions only for themselves. Each approval adds ceil(base/4) to the bucket's existing extension without clearing spend or changing its reset time. Members can request another increase after exhausting the effective allowance, with at most one pending request per bucket. Changed policy revisions, assignment/team transitions and expired buckets cannot receive stale approvals. Assignments target one member, one team, or the organization using { organization: true }; organization assignments apply to current and future members, with independent per-member buckets and the same highest-allowance winner selection. Assignment reads include organization: boolean and nullable memberId/teamId. Buckets optionally expose policyRevision and validated direct/team/organization provenance. Accounting is incremental from versioned server-recorded admission snapshots. Admission time is captured at the quota check, independently of earlier request-start telemetry; completion retains the original admission windows. Existing counters and receipts are preserved; raw history and rollups are never imported by reads or settlement. Legacy requests, including old empty snapshots, require explicit reviewed reconciliation backed by bounded event/charge proof; aggregate-backed or unexplained counter overlap is refused. Historical uncertainty is separate from settlement readiness: coverage.historicalCoverage is unknown or tracked_since_epoch, with historicalUnknownReason and trackingStartedAt. Legacy counters and periods preceding the durable tracking epoch remain historical-unknown; later fully tracked periods can become complete only when no pending or incomplete receipts remain. All writers must use fenced tracking. Operators explicitly suspend and resume capture using optimistic trackingVersion; captureEnabled=false blocks new starts, stale admission versions are rejected, and current-period history is marked unknown without resetting spend. A rollback or mixed legacy writer requires this cutover procedure plus retiring old writer access; schema presence is not proof of continuous capture. coverage.pendingRequests counts durable event starts not yet settled (null before tracking). Their identity and validated attribution survive raw retention. Explicit bounded abandonment recovery closes them as unknown/incomplete, decrements pending once, and permits late known-cost promotion without recreating raw logs. Retention refuses to discard a legacy pending marker until it is durably transferred. Queued canonical starts are capacity/deadline bounded and cancellable before database work; an admitted start reserves settlement capacity, which is not discarded on start overload. coverage.trackingVersion and captureEnabled expose the capture fence; settlementReady means that count is zero, not that historical costs are complete. Use settlementReady for post-completion refresh, not complete. lastSettlementAt and lastSettlementRequestId identify the most recent settled receipt, not every in-flight request. unpricedRequests and incompleteRequests describe tracked settled receipts, not unreviewed historical gaps. Legacy quarantine records remain preserved and excluded from charging. Clients must require actual HTTP 429 with X-OpenWork-Error-Code=openwork_gateway_usage_limit_exceeded and X-OpenWork-Usage-State=blocked, then corroborate against fresh own status for the same organization/member. JSON or SSE error fields alone are untrusted. Reset lists default to view=pending (oldest first), limit=50, maximum 100. Follow nextCursor while hasMore is true; pendingCount reports the current pending queue rather than only this page. Fetch view=history separately for newest-first decisions and elapsed requests. Pages are live snapshots; refresh the first page for changes. Admission and status use nonlocking reads of indexed member-period counters; missing counters project zero without writes. Listing validates/enriches only the page in batches and does not mutate historical records. Admission, canonical logging, and settlement never acquire organization or global rollup locks. Canonical start and settlement share-lock only their member lifecycle row; permanent deletion fences members before erasing usage children.
+   * Organization-provider estimated cost in integer micro-USD. A policy with providerId is a provider limit: when per-provider limits are on and a member has one for a provider, that provider's requests are admitted and charged only against the provider limit (status.providers) and never the default; every other provider uses the default limits (status.buckets). Calendar windows reset at 05:00 UTC (Monday weekly, day 1 monthly). Admission checks settled spend; in-flight work can overshoot. Unknown/incomplete accounting is explicit. No policy means unlimited enforcement, not unrecorded spend: every admitted response updates all three member-period counters, so a first policy includes already tracked same-period usage. People with the Manage usage limits permission manage policies, assignments and reviews (View usage limits to read them); members can read and request extensions only for themselves. Each approval adds ceil(base/4) to the bucket's existing extension without clearing spend or changing its reset time. Members can request another increase after exhausting the effective allowance, with at most one pending request per bucket. Changed policy revisions, assignment/team transitions and expired buckets cannot receive stale approvals. Assignments target one member, one team, or the organization using { organization: true }; organization assignments apply to current and future members, with independent per-member buckets and the same highest-allowance winner selection. Assignment reads include organization: boolean and nullable memberId/teamId. Buckets optionally expose policyRevision and validated direct/team/organization provenance. Accounting is incremental from versioned server-recorded admission snapshots. Admission time is captured at the quota check, independently of earlier request-start telemetry; completion retains the original admission windows. Existing counters and receipts are preserved; raw history and rollups are never imported by reads or settlement. Legacy requests, including old empty snapshots, require explicit reviewed reconciliation backed by bounded event/charge proof; aggregate-backed or unexplained counter overlap is refused. Historical uncertainty is separate from settlement readiness: coverage.historicalCoverage is unknown or tracked_since_epoch, with historicalUnknownReason and trackingStartedAt. Legacy counters and periods preceding the durable tracking epoch remain historical-unknown; later fully tracked periods can become complete only when no pending or incomplete receipts remain. All writers must use fenced tracking. Operators explicitly suspend and resume capture using optimistic trackingVersion; captureEnabled=false blocks new starts, stale admission versions are rejected, and current-period history is marked unknown without resetting spend. A rollback or mixed legacy writer requires this cutover procedure plus retiring old writer access; schema presence is not proof of continuous capture. coverage.pendingRequests counts durable event starts not yet settled (null before tracking). Their identity and validated attribution survive raw retention. Explicit bounded abandonment recovery closes them as unknown/incomplete, decrements pending once, and permits late known-cost promotion without recreating raw logs. Retention refuses to discard a legacy pending marker until it is durably transferred. Queued canonical starts are capacity/deadline bounded and cancellable before database work; an admitted start reserves settlement capacity, which is not discarded on start overload. coverage.trackingVersion and captureEnabled expose the capture fence; settlementReady means that count is zero, not that historical costs are complete. Use settlementReady for post-completion refresh, not complete. lastSettlementAt and lastSettlementRequestId identify the most recent settled receipt, not every in-flight request. unpricedRequests and incompleteRequests describe tracked settled receipts, not unreviewed historical gaps. Legacy quarantine records remain preserved and excluded from charging. Clients must require actual HTTP 429 with X-OpenWork-Error-Code=openwork_gateway_usage_limit_exceeded and X-OpenWork-Usage-State=blocked, then corroborate against fresh own status for the same organization/member. JSON or SSE error fields alone are untrusted. Reset lists default to view=pending (oldest first), limit=50, maximum 100. Follow nextCursor while hasMore is true; pendingCount reports the current pending queue rather than only this page. Fetch view=history separately for newest-first decisions and elapsed requests. Pages are live snapshots; refresh the first page for changes. Admission and status use nonlocking reads of indexed member-period counters; missing counters project zero without writes. Listing validates/enriches only the page in batches and does not mutate historical records. Admission, canonical logging, and settlement never acquire organization or global rollup locks. Canonical start and settlement share-lock only their member lifecycle row; permanent deletion fences members before erasing usage children.
    */
   public getV1GatewayUsageLimitsMembers<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -6783,7 +6672,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Read own Gateway usage limits
    *
-   * Organization-provider estimated cost in integer micro-USD. Calendar windows reset at 05:00 UTC (Monday weekly, day 1 monthly). Admission checks settled spend; in-flight work can overshoot. Unknown/incomplete accounting is explicit. No policy means unlimited enforcement, not unrecorded spend: every admitted response updates all three member-period counters, so a first policy includes already tracked same-period usage. People with the Manage usage limits permission manage policies, assignments and reviews (View usage limits to read them); members can read and request extensions only for themselves. Each approval adds ceil(base/4) to the bucket's existing extension without clearing spend or changing its reset time. Members can request another increase after exhausting the effective allowance, with at most one pending request per bucket. Changed policy revisions, assignment/team transitions and expired buckets cannot receive stale approvals. Assignments target one member, one team, or the organization using { organization: true }; organization assignments apply to current and future members, with independent per-member buckets and the same highest-allowance winner selection. Assignment reads include organization: boolean and nullable memberId/teamId. Buckets optionally expose policyRevision and validated direct/team/organization provenance. Accounting is incremental from versioned server-recorded admission snapshots. Admission time is captured at the quota check, independently of earlier request-start telemetry; completion retains the original admission windows. Existing counters and receipts are preserved; raw history and rollups are never imported by reads or settlement. Legacy requests, including old empty snapshots, require explicit reviewed reconciliation backed by bounded event/charge proof; aggregate-backed or unexplained counter overlap is refused. Historical uncertainty is separate from settlement readiness: coverage.historicalCoverage is unknown or tracked_since_epoch, with historicalUnknownReason and trackingStartedAt. Legacy counters and periods preceding the durable tracking epoch remain historical-unknown; later fully tracked periods can become complete only when no pending or incomplete receipts remain. All writers must use fenced tracking. Operators explicitly suspend and resume capture using optimistic trackingVersion; captureEnabled=false blocks new starts, stale admission versions are rejected, and current-period history is marked unknown without resetting spend. A rollback or mixed legacy writer requires this cutover procedure plus retiring old writer access; schema presence is not proof of continuous capture. coverage.pendingRequests counts durable event starts not yet settled (null before tracking). Their identity and validated attribution survive raw retention. Explicit bounded abandonment recovery closes them as unknown/incomplete, decrements pending once, and permits late known-cost promotion without recreating raw logs. Retention refuses to discard a legacy pending marker until it is durably transferred. Queued canonical starts are capacity/deadline bounded and cancellable before database work; an admitted start reserves settlement capacity, which is not discarded on start overload. coverage.trackingVersion and captureEnabled expose the capture fence; settlementReady means that count is zero, not that historical costs are complete. Use settlementReady for post-completion refresh, not complete. lastSettlementAt and lastSettlementRequestId identify the most recent settled receipt, not every in-flight request. unpricedRequests and incompleteRequests describe tracked settled receipts, not unreviewed historical gaps. Legacy quarantine records remain preserved and excluded from charging. Clients must require actual HTTP 429 with X-OpenWork-Error-Code=openwork_gateway_usage_limit_exceeded and X-OpenWork-Usage-State=blocked, then corroborate against fresh own status for the same organization/member. JSON or SSE error fields alone are untrusted. Reset lists default to view=pending (oldest first), limit=50, maximum 100. Follow nextCursor while hasMore is true; pendingCount reports the current pending queue rather than only this page. Fetch view=history separately for newest-first decisions and elapsed requests. Pages are live snapshots; refresh the first page for changes. Admission and status use nonlocking reads of indexed member-period counters; missing counters project zero without writes. Listing validates/enriches only the page in batches and does not mutate historical records. Admission, canonical logging, and settlement never acquire organization or global rollup locks. Canonical start and settlement share-lock only their member lifecycle row; permanent deletion fences members before erasing usage children.
+   * Organization-provider estimated cost in integer micro-USD. A policy with providerId is a provider limit: when per-provider limits are on and a member has one for a provider, that provider's requests are admitted and charged only against the provider limit (status.providers) and never the default; every other provider uses the default limits (status.buckets). Calendar windows reset at 05:00 UTC (Monday weekly, day 1 monthly). Admission checks settled spend; in-flight work can overshoot. Unknown/incomplete accounting is explicit. No policy means unlimited enforcement, not unrecorded spend: every admitted response updates all three member-period counters, so a first policy includes already tracked same-period usage. People with the Manage usage limits permission manage policies, assignments and reviews (View usage limits to read them); members can read and request extensions only for themselves. Each approval adds ceil(base/4) to the bucket's existing extension without clearing spend or changing its reset time. Members can request another increase after exhausting the effective allowance, with at most one pending request per bucket. Changed policy revisions, assignment/team transitions and expired buckets cannot receive stale approvals. Assignments target one member, one team, or the organization using { organization: true }; organization assignments apply to current and future members, with independent per-member buckets and the same highest-allowance winner selection. Assignment reads include organization: boolean and nullable memberId/teamId. Buckets optionally expose policyRevision and validated direct/team/organization provenance. Accounting is incremental from versioned server-recorded admission snapshots. Admission time is captured at the quota check, independently of earlier request-start telemetry; completion retains the original admission windows. Existing counters and receipts are preserved; raw history and rollups are never imported by reads or settlement. Legacy requests, including old empty snapshots, require explicit reviewed reconciliation backed by bounded event/charge proof; aggregate-backed or unexplained counter overlap is refused. Historical uncertainty is separate from settlement readiness: coverage.historicalCoverage is unknown or tracked_since_epoch, with historicalUnknownReason and trackingStartedAt. Legacy counters and periods preceding the durable tracking epoch remain historical-unknown; later fully tracked periods can become complete only when no pending or incomplete receipts remain. All writers must use fenced tracking. Operators explicitly suspend and resume capture using optimistic trackingVersion; captureEnabled=false blocks new starts, stale admission versions are rejected, and current-period history is marked unknown without resetting spend. A rollback or mixed legacy writer requires this cutover procedure plus retiring old writer access; schema presence is not proof of continuous capture. coverage.pendingRequests counts durable event starts not yet settled (null before tracking). Their identity and validated attribution survive raw retention. Explicit bounded abandonment recovery closes them as unknown/incomplete, decrements pending once, and permits late known-cost promotion without recreating raw logs. Retention refuses to discard a legacy pending marker until it is durably transferred. Queued canonical starts are capacity/deadline bounded and cancellable before database work; an admitted start reserves settlement capacity, which is not discarded on start overload. coverage.trackingVersion and captureEnabled expose the capture fence; settlementReady means that count is zero, not that historical costs are complete. Use settlementReady for post-completion refresh, not complete. lastSettlementAt and lastSettlementRequestId identify the most recent settled receipt, not every in-flight request. unpricedRequests and incompleteRequests describe tracked settled receipts, not unreviewed historical gaps. Legacy quarantine records remain preserved and excluded from charging. Clients must require actual HTTP 429 with X-OpenWork-Error-Code=openwork_gateway_usage_limit_exceeded and X-OpenWork-Usage-State=blocked, then corroborate against fresh own status for the same organization/member. JSON or SSE error fields alone are untrusted. Reset lists default to view=pending (oldest first), limit=50, maximum 100. Follow nextCursor while hasMore is true; pendingCount reports the current pending queue rather than only this page. Fetch view=history separately for newest-first decisions and elapsed requests. Pages are live snapshots; refresh the first page for changes. Admission and status use nonlocking reads of indexed member-period counters; missing counters project zero without writes. Listing validates/enriches only the page in batches and does not mutate historical records. Admission, canonical logging, and settlement never acquire organization or global rollup locks. Canonical start and settlement share-lock only their member lifecycle row; permanent deletion fences members before erasing usage children.
    */
   public getV1GatewayUsageLimitsMe<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
     return (options?.client ?? this.client).get<
@@ -6796,7 +6685,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Inspect member Gateway usage limits
    *
-   * Organization-provider estimated cost in integer micro-USD. Calendar windows reset at 05:00 UTC (Monday weekly, day 1 monthly). Admission checks settled spend; in-flight work can overshoot. Unknown/incomplete accounting is explicit. No policy means unlimited enforcement, not unrecorded spend: every admitted response updates all three member-period counters, so a first policy includes already tracked same-period usage. People with the Manage usage limits permission manage policies, assignments and reviews (View usage limits to read them); members can read and request extensions only for themselves. Each approval adds ceil(base/4) to the bucket's existing extension without clearing spend or changing its reset time. Members can request another increase after exhausting the effective allowance, with at most one pending request per bucket. Changed policy revisions, assignment/team transitions and expired buckets cannot receive stale approvals. Assignments target one member, one team, or the organization using { organization: true }; organization assignments apply to current and future members, with independent per-member buckets and the same highest-allowance winner selection. Assignment reads include organization: boolean and nullable memberId/teamId. Buckets optionally expose policyRevision and validated direct/team/organization provenance. Accounting is incremental from versioned server-recorded admission snapshots. Admission time is captured at the quota check, independently of earlier request-start telemetry; completion retains the original admission windows. Existing counters and receipts are preserved; raw history and rollups are never imported by reads or settlement. Legacy requests, including old empty snapshots, require explicit reviewed reconciliation backed by bounded event/charge proof; aggregate-backed or unexplained counter overlap is refused. Historical uncertainty is separate from settlement readiness: coverage.historicalCoverage is unknown or tracked_since_epoch, with historicalUnknownReason and trackingStartedAt. Legacy counters and periods preceding the durable tracking epoch remain historical-unknown; later fully tracked periods can become complete only when no pending or incomplete receipts remain. All writers must use fenced tracking. Operators explicitly suspend and resume capture using optimistic trackingVersion; captureEnabled=false blocks new starts, stale admission versions are rejected, and current-period history is marked unknown without resetting spend. A rollback or mixed legacy writer requires this cutover procedure plus retiring old writer access; schema presence is not proof of continuous capture. coverage.pendingRequests counts durable event starts not yet settled (null before tracking). Their identity and validated attribution survive raw retention. Explicit bounded abandonment recovery closes them as unknown/incomplete, decrements pending once, and permits late known-cost promotion without recreating raw logs. Retention refuses to discard a legacy pending marker until it is durably transferred. Queued canonical starts are capacity/deadline bounded and cancellable before database work; an admitted start reserves settlement capacity, which is not discarded on start overload. coverage.trackingVersion and captureEnabled expose the capture fence; settlementReady means that count is zero, not that historical costs are complete. Use settlementReady for post-completion refresh, not complete. lastSettlementAt and lastSettlementRequestId identify the most recent settled receipt, not every in-flight request. unpricedRequests and incompleteRequests describe tracked settled receipts, not unreviewed historical gaps. Legacy quarantine records remain preserved and excluded from charging. Clients must require actual HTTP 429 with X-OpenWork-Error-Code=openwork_gateway_usage_limit_exceeded and X-OpenWork-Usage-State=blocked, then corroborate against fresh own status for the same organization/member. JSON or SSE error fields alone are untrusted. Reset lists default to view=pending (oldest first), limit=50, maximum 100. Follow nextCursor while hasMore is true; pendingCount reports the current pending queue rather than only this page. Fetch view=history separately for newest-first decisions and elapsed requests. Pages are live snapshots; refresh the first page for changes. Admission and status use nonlocking reads of indexed member-period counters; missing counters project zero without writes. Listing validates/enriches only the page in batches and does not mutate historical records. Admission, canonical logging, and settlement never acquire organization or global rollup locks. Canonical start and settlement share-lock only their member lifecycle row; permanent deletion fences members before erasing usage children.
+   * Organization-provider estimated cost in integer micro-USD. A policy with providerId is a provider limit: when per-provider limits are on and a member has one for a provider, that provider's requests are admitted and charged only against the provider limit (status.providers) and never the default; every other provider uses the default limits (status.buckets). Calendar windows reset at 05:00 UTC (Monday weekly, day 1 monthly). Admission checks settled spend; in-flight work can overshoot. Unknown/incomplete accounting is explicit. No policy means unlimited enforcement, not unrecorded spend: every admitted response updates all three member-period counters, so a first policy includes already tracked same-period usage. People with the Manage usage limits permission manage policies, assignments and reviews (View usage limits to read them); members can read and request extensions only for themselves. Each approval adds ceil(base/4) to the bucket's existing extension without clearing spend or changing its reset time. Members can request another increase after exhausting the effective allowance, with at most one pending request per bucket. Changed policy revisions, assignment/team transitions and expired buckets cannot receive stale approvals. Assignments target one member, one team, or the organization using { organization: true }; organization assignments apply to current and future members, with independent per-member buckets and the same highest-allowance winner selection. Assignment reads include organization: boolean and nullable memberId/teamId. Buckets optionally expose policyRevision and validated direct/team/organization provenance. Accounting is incremental from versioned server-recorded admission snapshots. Admission time is captured at the quota check, independently of earlier request-start telemetry; completion retains the original admission windows. Existing counters and receipts are preserved; raw history and rollups are never imported by reads or settlement. Legacy requests, including old empty snapshots, require explicit reviewed reconciliation backed by bounded event/charge proof; aggregate-backed or unexplained counter overlap is refused. Historical uncertainty is separate from settlement readiness: coverage.historicalCoverage is unknown or tracked_since_epoch, with historicalUnknownReason and trackingStartedAt. Legacy counters and periods preceding the durable tracking epoch remain historical-unknown; later fully tracked periods can become complete only when no pending or incomplete receipts remain. All writers must use fenced tracking. Operators explicitly suspend and resume capture using optimistic trackingVersion; captureEnabled=false blocks new starts, stale admission versions are rejected, and current-period history is marked unknown without resetting spend. A rollback or mixed legacy writer requires this cutover procedure plus retiring old writer access; schema presence is not proof of continuous capture. coverage.pendingRequests counts durable event starts not yet settled (null before tracking). Their identity and validated attribution survive raw retention. Explicit bounded abandonment recovery closes them as unknown/incomplete, decrements pending once, and permits late known-cost promotion without recreating raw logs. Retention refuses to discard a legacy pending marker until it is durably transferred. Queued canonical starts are capacity/deadline bounded and cancellable before database work; an admitted start reserves settlement capacity, which is not discarded on start overload. coverage.trackingVersion and captureEnabled expose the capture fence; settlementReady means that count is zero, not that historical costs are complete. Use settlementReady for post-completion refresh, not complete. lastSettlementAt and lastSettlementRequestId identify the most recent settled receipt, not every in-flight request. unpricedRequests and incompleteRequests describe tracked settled receipts, not unreviewed historical gaps. Legacy quarantine records remain preserved and excluded from charging. Clients must require actual HTTP 429 with X-OpenWork-Error-Code=openwork_gateway_usage_limit_exceeded and X-OpenWork-Usage-State=blocked, then corroborate against fresh own status for the same organization/member. JSON or SSE error fields alone are untrusted. Reset lists default to view=pending (oldest first), limit=50, maximum 100. Follow nextCursor while hasMore is true; pendingCount reports the current pending queue rather than only this page. Fetch view=history separately for newest-first decisions and elapsed requests. Pages are live snapshots; refresh the first page for changes. Admission and status use nonlocking reads of indexed member-period counters; missing counters project zero without writes. Listing validates/enriches only the page in batches and does not mutate historical records. Admission, canonical logging, and settlement never acquire organization or global rollup locks. Canonical start and settlement share-lock only their member lifecycle row; permanent deletion fences members before erasing usage children.
    */
   public getV1GatewayUsageLimitsMembersByMemberId<ThrowOnError extends boolean = false>(
     parameters: {
@@ -6819,7 +6708,7 @@ export class DenClient extends HeyApiClient {
   /**
    * List organization usage increase requests
    *
-   * Organization-provider estimated cost in integer micro-USD. Calendar windows reset at 05:00 UTC (Monday weekly, day 1 monthly). Admission checks settled spend; in-flight work can overshoot. Unknown/incomplete accounting is explicit. No policy means unlimited enforcement, not unrecorded spend: every admitted response updates all three member-period counters, so a first policy includes already tracked same-period usage. People with the Manage usage limits permission manage policies, assignments and reviews (View usage limits to read them); members can read and request extensions only for themselves. Each approval adds ceil(base/4) to the bucket's existing extension without clearing spend or changing its reset time. Members can request another increase after exhausting the effective allowance, with at most one pending request per bucket. Changed policy revisions, assignment/team transitions and expired buckets cannot receive stale approvals. Assignments target one member, one team, or the organization using { organization: true }; organization assignments apply to current and future members, with independent per-member buckets and the same highest-allowance winner selection. Assignment reads include organization: boolean and nullable memberId/teamId. Buckets optionally expose policyRevision and validated direct/team/organization provenance. Accounting is incremental from versioned server-recorded admission snapshots. Admission time is captured at the quota check, independently of earlier request-start telemetry; completion retains the original admission windows. Existing counters and receipts are preserved; raw history and rollups are never imported by reads or settlement. Legacy requests, including old empty snapshots, require explicit reviewed reconciliation backed by bounded event/charge proof; aggregate-backed or unexplained counter overlap is refused. Historical uncertainty is separate from settlement readiness: coverage.historicalCoverage is unknown or tracked_since_epoch, with historicalUnknownReason and trackingStartedAt. Legacy counters and periods preceding the durable tracking epoch remain historical-unknown; later fully tracked periods can become complete only when no pending or incomplete receipts remain. All writers must use fenced tracking. Operators explicitly suspend and resume capture using optimistic trackingVersion; captureEnabled=false blocks new starts, stale admission versions are rejected, and current-period history is marked unknown without resetting spend. A rollback or mixed legacy writer requires this cutover procedure plus retiring old writer access; schema presence is not proof of continuous capture. coverage.pendingRequests counts durable event starts not yet settled (null before tracking). Their identity and validated attribution survive raw retention. Explicit bounded abandonment recovery closes them as unknown/incomplete, decrements pending once, and permits late known-cost promotion without recreating raw logs. Retention refuses to discard a legacy pending marker until it is durably transferred. Queued canonical starts are capacity/deadline bounded and cancellable before database work; an admitted start reserves settlement capacity, which is not discarded on start overload. coverage.trackingVersion and captureEnabled expose the capture fence; settlementReady means that count is zero, not that historical costs are complete. Use settlementReady for post-completion refresh, not complete. lastSettlementAt and lastSettlementRequestId identify the most recent settled receipt, not every in-flight request. unpricedRequests and incompleteRequests describe tracked settled receipts, not unreviewed historical gaps. Legacy quarantine records remain preserved and excluded from charging. Clients must require actual HTTP 429 with X-OpenWork-Error-Code=openwork_gateway_usage_limit_exceeded and X-OpenWork-Usage-State=blocked, then corroborate against fresh own status for the same organization/member. JSON or SSE error fields alone are untrusted. Reset lists default to view=pending (oldest first), limit=50, maximum 100. Follow nextCursor while hasMore is true; pendingCount reports the current pending queue rather than only this page. Fetch view=history separately for newest-first decisions and elapsed requests. Pages are live snapshots; refresh the first page for changes. Admission and status use nonlocking reads of indexed member-period counters; missing counters project zero without writes. Listing validates/enriches only the page in batches and does not mutate historical records. Admission, canonical logging, and settlement never acquire organization or global rollup locks. Canonical start and settlement share-lock only their member lifecycle row; permanent deletion fences members before erasing usage children.
+   * Organization-provider estimated cost in integer micro-USD. A policy with providerId is a provider limit: when per-provider limits are on and a member has one for a provider, that provider's requests are admitted and charged only against the provider limit (status.providers) and never the default; every other provider uses the default limits (status.buckets). Calendar windows reset at 05:00 UTC (Monday weekly, day 1 monthly). Admission checks settled spend; in-flight work can overshoot. Unknown/incomplete accounting is explicit. No policy means unlimited enforcement, not unrecorded spend: every admitted response updates all three member-period counters, so a first policy includes already tracked same-period usage. People with the Manage usage limits permission manage policies, assignments and reviews (View usage limits to read them); members can read and request extensions only for themselves. Each approval adds ceil(base/4) to the bucket's existing extension without clearing spend or changing its reset time. Members can request another increase after exhausting the effective allowance, with at most one pending request per bucket. Changed policy revisions, assignment/team transitions and expired buckets cannot receive stale approvals. Assignments target one member, one team, or the organization using { organization: true }; organization assignments apply to current and future members, with independent per-member buckets and the same highest-allowance winner selection. Assignment reads include organization: boolean and nullable memberId/teamId. Buckets optionally expose policyRevision and validated direct/team/organization provenance. Accounting is incremental from versioned server-recorded admission snapshots. Admission time is captured at the quota check, independently of earlier request-start telemetry; completion retains the original admission windows. Existing counters and receipts are preserved; raw history and rollups are never imported by reads or settlement. Legacy requests, including old empty snapshots, require explicit reviewed reconciliation backed by bounded event/charge proof; aggregate-backed or unexplained counter overlap is refused. Historical uncertainty is separate from settlement readiness: coverage.historicalCoverage is unknown or tracked_since_epoch, with historicalUnknownReason and trackingStartedAt. Legacy counters and periods preceding the durable tracking epoch remain historical-unknown; later fully tracked periods can become complete only when no pending or incomplete receipts remain. All writers must use fenced tracking. Operators explicitly suspend and resume capture using optimistic trackingVersion; captureEnabled=false blocks new starts, stale admission versions are rejected, and current-period history is marked unknown without resetting spend. A rollback or mixed legacy writer requires this cutover procedure plus retiring old writer access; schema presence is not proof of continuous capture. coverage.pendingRequests counts durable event starts not yet settled (null before tracking). Their identity and validated attribution survive raw retention. Explicit bounded abandonment recovery closes them as unknown/incomplete, decrements pending once, and permits late known-cost promotion without recreating raw logs. Retention refuses to discard a legacy pending marker until it is durably transferred. Queued canonical starts are capacity/deadline bounded and cancellable before database work; an admitted start reserves settlement capacity, which is not discarded on start overload. coverage.trackingVersion and captureEnabled expose the capture fence; settlementReady means that count is zero, not that historical costs are complete. Use settlementReady for post-completion refresh, not complete. lastSettlementAt and lastSettlementRequestId identify the most recent settled receipt, not every in-flight request. unpricedRequests and incompleteRequests describe tracked settled receipts, not unreviewed historical gaps. Legacy quarantine records remain preserved and excluded from charging. Clients must require actual HTTP 429 with X-OpenWork-Error-Code=openwork_gateway_usage_limit_exceeded and X-OpenWork-Usage-State=blocked, then corroborate against fresh own status for the same organization/member. JSON or SSE error fields alone are untrusted. Reset lists default to view=pending (oldest first), limit=50, maximum 100. Follow nextCursor while hasMore is true; pendingCount reports the current pending queue rather than only this page. Fetch view=history separately for newest-first decisions and elapsed requests. Pages are live snapshots; refresh the first page for changes. Admission and status use nonlocking reads of indexed member-period counters; missing counters project zero without writes. Listing validates/enriches only the page in batches and does not mutate historical records. Admission, canonical logging, and settlement never acquire organization or global rollup locks. Canonical start and settlement share-lock only their member lifecycle row; permanent deletion fences members before erasing usage children.
    */
   public getV1GatewayUsageLimitResetRequests<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -6855,7 +6744,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Request usage limit extension
    *
-   * Organization-provider estimated cost in integer micro-USD. Calendar windows reset at 05:00 UTC (Monday weekly, day 1 monthly). Admission checks settled spend; in-flight work can overshoot. Unknown/incomplete accounting is explicit. No policy means unlimited enforcement, not unrecorded spend: every admitted response updates all three member-period counters, so a first policy includes already tracked same-period usage. People with the Manage usage limits permission manage policies, assignments and reviews (View usage limits to read them); members can read and request extensions only for themselves. Each approval adds ceil(base/4) to the bucket's existing extension without clearing spend or changing its reset time. Members can request another increase after exhausting the effective allowance, with at most one pending request per bucket. Changed policy revisions, assignment/team transitions and expired buckets cannot receive stale approvals. Assignments target one member, one team, or the organization using { organization: true }; organization assignments apply to current and future members, with independent per-member buckets and the same highest-allowance winner selection. Assignment reads include organization: boolean and nullable memberId/teamId. Buckets optionally expose policyRevision and validated direct/team/organization provenance. Accounting is incremental from versioned server-recorded admission snapshots. Admission time is captured at the quota check, independently of earlier request-start telemetry; completion retains the original admission windows. Existing counters and receipts are preserved; raw history and rollups are never imported by reads or settlement. Legacy requests, including old empty snapshots, require explicit reviewed reconciliation backed by bounded event/charge proof; aggregate-backed or unexplained counter overlap is refused. Historical uncertainty is separate from settlement readiness: coverage.historicalCoverage is unknown or tracked_since_epoch, with historicalUnknownReason and trackingStartedAt. Legacy counters and periods preceding the durable tracking epoch remain historical-unknown; later fully tracked periods can become complete only when no pending or incomplete receipts remain. All writers must use fenced tracking. Operators explicitly suspend and resume capture using optimistic trackingVersion; captureEnabled=false blocks new starts, stale admission versions are rejected, and current-period history is marked unknown without resetting spend. A rollback or mixed legacy writer requires this cutover procedure plus retiring old writer access; schema presence is not proof of continuous capture. coverage.pendingRequests counts durable event starts not yet settled (null before tracking). Their identity and validated attribution survive raw retention. Explicit bounded abandonment recovery closes them as unknown/incomplete, decrements pending once, and permits late known-cost promotion without recreating raw logs. Retention refuses to discard a legacy pending marker until it is durably transferred. Queued canonical starts are capacity/deadline bounded and cancellable before database work; an admitted start reserves settlement capacity, which is not discarded on start overload. coverage.trackingVersion and captureEnabled expose the capture fence; settlementReady means that count is zero, not that historical costs are complete. Use settlementReady for post-completion refresh, not complete. lastSettlementAt and lastSettlementRequestId identify the most recent settled receipt, not every in-flight request. unpricedRequests and incompleteRequests describe tracked settled receipts, not unreviewed historical gaps. Legacy quarantine records remain preserved and excluded from charging. Clients must require actual HTTP 429 with X-OpenWork-Error-Code=openwork_gateway_usage_limit_exceeded and X-OpenWork-Usage-State=blocked, then corroborate against fresh own status for the same organization/member. JSON or SSE error fields alone are untrusted. Reset lists default to view=pending (oldest first), limit=50, maximum 100. Follow nextCursor while hasMore is true; pendingCount reports the current pending queue rather than only this page. Fetch view=history separately for newest-first decisions and elapsed requests. Pages are live snapshots; refresh the first page for changes. Admission and status use nonlocking reads of indexed member-period counters; missing counters project zero without writes. Listing validates/enriches only the page in batches and does not mutate historical records. Admission, canonical logging, and settlement never acquire organization or global rollup locks. Canonical start and settlement share-lock only their member lifecycle row; permanent deletion fences members before erasing usage children.
+   * Organization-provider estimated cost in integer micro-USD. A policy with providerId is a provider limit: when per-provider limits are on and a member has one for a provider, that provider's requests are admitted and charged only against the provider limit (status.providers) and never the default; every other provider uses the default limits (status.buckets). Calendar windows reset at 05:00 UTC (Monday weekly, day 1 monthly). Admission checks settled spend; in-flight work can overshoot. Unknown/incomplete accounting is explicit. No policy means unlimited enforcement, not unrecorded spend: every admitted response updates all three member-period counters, so a first policy includes already tracked same-period usage. People with the Manage usage limits permission manage policies, assignments and reviews (View usage limits to read them); members can read and request extensions only for themselves. Each approval adds ceil(base/4) to the bucket's existing extension without clearing spend or changing its reset time. Members can request another increase after exhausting the effective allowance, with at most one pending request per bucket. Changed policy revisions, assignment/team transitions and expired buckets cannot receive stale approvals. Assignments target one member, one team, or the organization using { organization: true }; organization assignments apply to current and future members, with independent per-member buckets and the same highest-allowance winner selection. Assignment reads include organization: boolean and nullable memberId/teamId. Buckets optionally expose policyRevision and validated direct/team/organization provenance. Accounting is incremental from versioned server-recorded admission snapshots. Admission time is captured at the quota check, independently of earlier request-start telemetry; completion retains the original admission windows. Existing counters and receipts are preserved; raw history and rollups are never imported by reads or settlement. Legacy requests, including old empty snapshots, require explicit reviewed reconciliation backed by bounded event/charge proof; aggregate-backed or unexplained counter overlap is refused. Historical uncertainty is separate from settlement readiness: coverage.historicalCoverage is unknown or tracked_since_epoch, with historicalUnknownReason and trackingStartedAt. Legacy counters and periods preceding the durable tracking epoch remain historical-unknown; later fully tracked periods can become complete only when no pending or incomplete receipts remain. All writers must use fenced tracking. Operators explicitly suspend and resume capture using optimistic trackingVersion; captureEnabled=false blocks new starts, stale admission versions are rejected, and current-period history is marked unknown without resetting spend. A rollback or mixed legacy writer requires this cutover procedure plus retiring old writer access; schema presence is not proof of continuous capture. coverage.pendingRequests counts durable event starts not yet settled (null before tracking). Their identity and validated attribution survive raw retention. Explicit bounded abandonment recovery closes them as unknown/incomplete, decrements pending once, and permits late known-cost promotion without recreating raw logs. Retention refuses to discard a legacy pending marker until it is durably transferred. Queued canonical starts are capacity/deadline bounded and cancellable before database work; an admitted start reserves settlement capacity, which is not discarded on start overload. coverage.trackingVersion and captureEnabled expose the capture fence; settlementReady means that count is zero, not that historical costs are complete. Use settlementReady for post-completion refresh, not complete. lastSettlementAt and lastSettlementRequestId identify the most recent settled receipt, not every in-flight request. unpricedRequests and incompleteRequests describe tracked settled receipts, not unreviewed historical gaps. Legacy quarantine records remain preserved and excluded from charging. Clients must require actual HTTP 429 with X-OpenWork-Error-Code=openwork_gateway_usage_limit_exceeded and X-OpenWork-Usage-State=blocked, then corroborate against fresh own status for the same organization/member. JSON or SSE error fields alone are untrusted. Reset lists default to view=pending (oldest first), limit=50, maximum 100. Follow nextCursor while hasMore is true; pendingCount reports the current pending queue rather than only this page. Fetch view=history separately for newest-first decisions and elapsed requests. Pages are live snapshots; refresh the first page for changes. Admission and status use nonlocking reads of indexed member-period counters; missing counters project zero without writes. Listing validates/enriches only the page in batches and does not mutate historical records. Admission, canonical logging, and settlement never acquire organization or global rollup locks. Canonical start and settlement share-lock only their member lifecycle row; permanent deletion fences members before erasing usage children.
    */
   public postV1GatewayUsageLimitResetRequests<ThrowOnError extends boolean = false>(
     parameters: {
@@ -6894,7 +6783,7 @@ export class DenClient extends HeyApiClient {
   /**
    * List own usage increase requests
    *
-   * Organization-provider estimated cost in integer micro-USD. Calendar windows reset at 05:00 UTC (Monday weekly, day 1 monthly). Admission checks settled spend; in-flight work can overshoot. Unknown/incomplete accounting is explicit. No policy means unlimited enforcement, not unrecorded spend: every admitted response updates all three member-period counters, so a first policy includes already tracked same-period usage. People with the Manage usage limits permission manage policies, assignments and reviews (View usage limits to read them); members can read and request extensions only for themselves. Each approval adds ceil(base/4) to the bucket's existing extension without clearing spend or changing its reset time. Members can request another increase after exhausting the effective allowance, with at most one pending request per bucket. Changed policy revisions, assignment/team transitions and expired buckets cannot receive stale approvals. Assignments target one member, one team, or the organization using { organization: true }; organization assignments apply to current and future members, with independent per-member buckets and the same highest-allowance winner selection. Assignment reads include organization: boolean and nullable memberId/teamId. Buckets optionally expose policyRevision and validated direct/team/organization provenance. Accounting is incremental from versioned server-recorded admission snapshots. Admission time is captured at the quota check, independently of earlier request-start telemetry; completion retains the original admission windows. Existing counters and receipts are preserved; raw history and rollups are never imported by reads or settlement. Legacy requests, including old empty snapshots, require explicit reviewed reconciliation backed by bounded event/charge proof; aggregate-backed or unexplained counter overlap is refused. Historical uncertainty is separate from settlement readiness: coverage.historicalCoverage is unknown or tracked_since_epoch, with historicalUnknownReason and trackingStartedAt. Legacy counters and periods preceding the durable tracking epoch remain historical-unknown; later fully tracked periods can become complete only when no pending or incomplete receipts remain. All writers must use fenced tracking. Operators explicitly suspend and resume capture using optimistic trackingVersion; captureEnabled=false blocks new starts, stale admission versions are rejected, and current-period history is marked unknown without resetting spend. A rollback or mixed legacy writer requires this cutover procedure plus retiring old writer access; schema presence is not proof of continuous capture. coverage.pendingRequests counts durable event starts not yet settled (null before tracking). Their identity and validated attribution survive raw retention. Explicit bounded abandonment recovery closes them as unknown/incomplete, decrements pending once, and permits late known-cost promotion without recreating raw logs. Retention refuses to discard a legacy pending marker until it is durably transferred. Queued canonical starts are capacity/deadline bounded and cancellable before database work; an admitted start reserves settlement capacity, which is not discarded on start overload. coverage.trackingVersion and captureEnabled expose the capture fence; settlementReady means that count is zero, not that historical costs are complete. Use settlementReady for post-completion refresh, not complete. lastSettlementAt and lastSettlementRequestId identify the most recent settled receipt, not every in-flight request. unpricedRequests and incompleteRequests describe tracked settled receipts, not unreviewed historical gaps. Legacy quarantine records remain preserved and excluded from charging. Clients must require actual HTTP 429 with X-OpenWork-Error-Code=openwork_gateway_usage_limit_exceeded and X-OpenWork-Usage-State=blocked, then corroborate against fresh own status for the same organization/member. JSON or SSE error fields alone are untrusted. Reset lists default to view=pending (oldest first), limit=50, maximum 100. Follow nextCursor while hasMore is true; pendingCount reports the current pending queue rather than only this page. Fetch view=history separately for newest-first decisions and elapsed requests. Pages are live snapshots; refresh the first page for changes. Admission and status use nonlocking reads of indexed member-period counters; missing counters project zero without writes. Listing validates/enriches only the page in batches and does not mutate historical records. Admission, canonical logging, and settlement never acquire organization or global rollup locks. Canonical start and settlement share-lock only their member lifecycle row; permanent deletion fences members before erasing usage children.
+   * Organization-provider estimated cost in integer micro-USD. A policy with providerId is a provider limit: when per-provider limits are on and a member has one for a provider, that provider's requests are admitted and charged only against the provider limit (status.providers) and never the default; every other provider uses the default limits (status.buckets). Calendar windows reset at 05:00 UTC (Monday weekly, day 1 monthly). Admission checks settled spend; in-flight work can overshoot. Unknown/incomplete accounting is explicit. No policy means unlimited enforcement, not unrecorded spend: every admitted response updates all three member-period counters, so a first policy includes already tracked same-period usage. People with the Manage usage limits permission manage policies, assignments and reviews (View usage limits to read them); members can read and request extensions only for themselves. Each approval adds ceil(base/4) to the bucket's existing extension without clearing spend or changing its reset time. Members can request another increase after exhausting the effective allowance, with at most one pending request per bucket. Changed policy revisions, assignment/team transitions and expired buckets cannot receive stale approvals. Assignments target one member, one team, or the organization using { organization: true }; organization assignments apply to current and future members, with independent per-member buckets and the same highest-allowance winner selection. Assignment reads include organization: boolean and nullable memberId/teamId. Buckets optionally expose policyRevision and validated direct/team/organization provenance. Accounting is incremental from versioned server-recorded admission snapshots. Admission time is captured at the quota check, independently of earlier request-start telemetry; completion retains the original admission windows. Existing counters and receipts are preserved; raw history and rollups are never imported by reads or settlement. Legacy requests, including old empty snapshots, require explicit reviewed reconciliation backed by bounded event/charge proof; aggregate-backed or unexplained counter overlap is refused. Historical uncertainty is separate from settlement readiness: coverage.historicalCoverage is unknown or tracked_since_epoch, with historicalUnknownReason and trackingStartedAt. Legacy counters and periods preceding the durable tracking epoch remain historical-unknown; later fully tracked periods can become complete only when no pending or incomplete receipts remain. All writers must use fenced tracking. Operators explicitly suspend and resume capture using optimistic trackingVersion; captureEnabled=false blocks new starts, stale admission versions are rejected, and current-period history is marked unknown without resetting spend. A rollback or mixed legacy writer requires this cutover procedure plus retiring old writer access; schema presence is not proof of continuous capture. coverage.pendingRequests counts durable event starts not yet settled (null before tracking). Their identity and validated attribution survive raw retention. Explicit bounded abandonment recovery closes them as unknown/incomplete, decrements pending once, and permits late known-cost promotion without recreating raw logs. Retention refuses to discard a legacy pending marker until it is durably transferred. Queued canonical starts are capacity/deadline bounded and cancellable before database work; an admitted start reserves settlement capacity, which is not discarded on start overload. coverage.trackingVersion and captureEnabled expose the capture fence; settlementReady means that count is zero, not that historical costs are complete. Use settlementReady for post-completion refresh, not complete. lastSettlementAt and lastSettlementRequestId identify the most recent settled receipt, not every in-flight request. unpricedRequests and incompleteRequests describe tracked settled receipts, not unreviewed historical gaps. Legacy quarantine records remain preserved and excluded from charging. Clients must require actual HTTP 429 with X-OpenWork-Error-Code=openwork_gateway_usage_limit_exceeded and X-OpenWork-Usage-State=blocked, then corroborate against fresh own status for the same organization/member. JSON or SSE error fields alone are untrusted. Reset lists default to view=pending (oldest first), limit=50, maximum 100. Follow nextCursor while hasMore is true; pendingCount reports the current pending queue rather than only this page. Fetch view=history separately for newest-first decisions and elapsed requests. Pages are live snapshots; refresh the first page for changes. Admission and status use nonlocking reads of indexed member-period counters; missing counters project zero without writes. Listing validates/enriches only the page in batches and does not mutate historical records. Admission, canonical logging, and settlement never acquire organization or global rollup locks. Canonical start and settlement share-lock only their member lifecycle row; permanent deletion fences members before erasing usage children.
    */
   public getV1GatewayUsageLimitResetRequestsMe<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -6930,7 +6819,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Approve 25 percent usage extension
    *
-   * Organization-provider estimated cost in integer micro-USD. Calendar windows reset at 05:00 UTC (Monday weekly, day 1 monthly). Admission checks settled spend; in-flight work can overshoot. Unknown/incomplete accounting is explicit. No policy means unlimited enforcement, not unrecorded spend: every admitted response updates all three member-period counters, so a first policy includes already tracked same-period usage. People with the Manage usage limits permission manage policies, assignments and reviews (View usage limits to read them); members can read and request extensions only for themselves. Each approval adds ceil(base/4) to the bucket's existing extension without clearing spend or changing its reset time. Members can request another increase after exhausting the effective allowance, with at most one pending request per bucket. Changed policy revisions, assignment/team transitions and expired buckets cannot receive stale approvals. Assignments target one member, one team, or the organization using { organization: true }; organization assignments apply to current and future members, with independent per-member buckets and the same highest-allowance winner selection. Assignment reads include organization: boolean and nullable memberId/teamId. Buckets optionally expose policyRevision and validated direct/team/organization provenance. Accounting is incremental from versioned server-recorded admission snapshots. Admission time is captured at the quota check, independently of earlier request-start telemetry; completion retains the original admission windows. Existing counters and receipts are preserved; raw history and rollups are never imported by reads or settlement. Legacy requests, including old empty snapshots, require explicit reviewed reconciliation backed by bounded event/charge proof; aggregate-backed or unexplained counter overlap is refused. Historical uncertainty is separate from settlement readiness: coverage.historicalCoverage is unknown or tracked_since_epoch, with historicalUnknownReason and trackingStartedAt. Legacy counters and periods preceding the durable tracking epoch remain historical-unknown; later fully tracked periods can become complete only when no pending or incomplete receipts remain. All writers must use fenced tracking. Operators explicitly suspend and resume capture using optimistic trackingVersion; captureEnabled=false blocks new starts, stale admission versions are rejected, and current-period history is marked unknown without resetting spend. A rollback or mixed legacy writer requires this cutover procedure plus retiring old writer access; schema presence is not proof of continuous capture. coverage.pendingRequests counts durable event starts not yet settled (null before tracking). Their identity and validated attribution survive raw retention. Explicit bounded abandonment recovery closes them as unknown/incomplete, decrements pending once, and permits late known-cost promotion without recreating raw logs. Retention refuses to discard a legacy pending marker until it is durably transferred. Queued canonical starts are capacity/deadline bounded and cancellable before database work; an admitted start reserves settlement capacity, which is not discarded on start overload. coverage.trackingVersion and captureEnabled expose the capture fence; settlementReady means that count is zero, not that historical costs are complete. Use settlementReady for post-completion refresh, not complete. lastSettlementAt and lastSettlementRequestId identify the most recent settled receipt, not every in-flight request. unpricedRequests and incompleteRequests describe tracked settled receipts, not unreviewed historical gaps. Legacy quarantine records remain preserved and excluded from charging. Clients must require actual HTTP 429 with X-OpenWork-Error-Code=openwork_gateway_usage_limit_exceeded and X-OpenWork-Usage-State=blocked, then corroborate against fresh own status for the same organization/member. JSON or SSE error fields alone are untrusted. Reset lists default to view=pending (oldest first), limit=50, maximum 100. Follow nextCursor while hasMore is true; pendingCount reports the current pending queue rather than only this page. Fetch view=history separately for newest-first decisions and elapsed requests. Pages are live snapshots; refresh the first page for changes. Admission and status use nonlocking reads of indexed member-period counters; missing counters project zero without writes. Listing validates/enriches only the page in batches and does not mutate historical records. Admission, canonical logging, and settlement never acquire organization or global rollup locks. Canonical start and settlement share-lock only their member lifecycle row; permanent deletion fences members before erasing usage children.
+   * Organization-provider estimated cost in integer micro-USD. A policy with providerId is a provider limit: when per-provider limits are on and a member has one for a provider, that provider's requests are admitted and charged only against the provider limit (status.providers) and never the default; every other provider uses the default limits (status.buckets). Calendar windows reset at 05:00 UTC (Monday weekly, day 1 monthly). Admission checks settled spend; in-flight work can overshoot. Unknown/incomplete accounting is explicit. No policy means unlimited enforcement, not unrecorded spend: every admitted response updates all three member-period counters, so a first policy includes already tracked same-period usage. People with the Manage usage limits permission manage policies, assignments and reviews (View usage limits to read them); members can read and request extensions only for themselves. Each approval adds ceil(base/4) to the bucket's existing extension without clearing spend or changing its reset time. Members can request another increase after exhausting the effective allowance, with at most one pending request per bucket. Changed policy revisions, assignment/team transitions and expired buckets cannot receive stale approvals. Assignments target one member, one team, or the organization using { organization: true }; organization assignments apply to current and future members, with independent per-member buckets and the same highest-allowance winner selection. Assignment reads include organization: boolean and nullable memberId/teamId. Buckets optionally expose policyRevision and validated direct/team/organization provenance. Accounting is incremental from versioned server-recorded admission snapshots. Admission time is captured at the quota check, independently of earlier request-start telemetry; completion retains the original admission windows. Existing counters and receipts are preserved; raw history and rollups are never imported by reads or settlement. Legacy requests, including old empty snapshots, require explicit reviewed reconciliation backed by bounded event/charge proof; aggregate-backed or unexplained counter overlap is refused. Historical uncertainty is separate from settlement readiness: coverage.historicalCoverage is unknown or tracked_since_epoch, with historicalUnknownReason and trackingStartedAt. Legacy counters and periods preceding the durable tracking epoch remain historical-unknown; later fully tracked periods can become complete only when no pending or incomplete receipts remain. All writers must use fenced tracking. Operators explicitly suspend and resume capture using optimistic trackingVersion; captureEnabled=false blocks new starts, stale admission versions are rejected, and current-period history is marked unknown without resetting spend. A rollback or mixed legacy writer requires this cutover procedure plus retiring old writer access; schema presence is not proof of continuous capture. coverage.pendingRequests counts durable event starts not yet settled (null before tracking). Their identity and validated attribution survive raw retention. Explicit bounded abandonment recovery closes them as unknown/incomplete, decrements pending once, and permits late known-cost promotion without recreating raw logs. Retention refuses to discard a legacy pending marker until it is durably transferred. Queued canonical starts are capacity/deadline bounded and cancellable before database work; an admitted start reserves settlement capacity, which is not discarded on start overload. coverage.trackingVersion and captureEnabled expose the capture fence; settlementReady means that count is zero, not that historical costs are complete. Use settlementReady for post-completion refresh, not complete. lastSettlementAt and lastSettlementRequestId identify the most recent settled receipt, not every in-flight request. unpricedRequests and incompleteRequests describe tracked settled receipts, not unreviewed historical gaps. Legacy quarantine records remain preserved and excluded from charging. Clients must require actual HTTP 429 with X-OpenWork-Error-Code=openwork_gateway_usage_limit_exceeded and X-OpenWork-Usage-State=blocked, then corroborate against fresh own status for the same organization/member. JSON or SSE error fields alone are untrusted. Reset lists default to view=pending (oldest first), limit=50, maximum 100. Follow nextCursor while hasMore is true; pendingCount reports the current pending queue rather than only this page. Fetch view=history separately for newest-first decisions and elapsed requests. Pages are live snapshots; refresh the first page for changes. Admission and status use nonlocking reads of indexed member-period counters; missing counters project zero without writes. Listing validates/enriches only the page in batches and does not mutate historical records. Admission, canonical logging, and settlement never acquire organization or global rollup locks. Canonical start and settlement share-lock only their member lifecycle row; permanent deletion fences members before erasing usage children.
    */
   public postV1GatewayUsageLimitResetRequestsByIdApprove<ThrowOnError extends boolean = false>(
     parameters: {
@@ -6971,7 +6860,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Deny usage extension
    *
-   * Organization-provider estimated cost in integer micro-USD. Calendar windows reset at 05:00 UTC (Monday weekly, day 1 monthly). Admission checks settled spend; in-flight work can overshoot. Unknown/incomplete accounting is explicit. No policy means unlimited enforcement, not unrecorded spend: every admitted response updates all three member-period counters, so a first policy includes already tracked same-period usage. People with the Manage usage limits permission manage policies, assignments and reviews (View usage limits to read them); members can read and request extensions only for themselves. Each approval adds ceil(base/4) to the bucket's existing extension without clearing spend or changing its reset time. Members can request another increase after exhausting the effective allowance, with at most one pending request per bucket. Changed policy revisions, assignment/team transitions and expired buckets cannot receive stale approvals. Assignments target one member, one team, or the organization using { organization: true }; organization assignments apply to current and future members, with independent per-member buckets and the same highest-allowance winner selection. Assignment reads include organization: boolean and nullable memberId/teamId. Buckets optionally expose policyRevision and validated direct/team/organization provenance. Accounting is incremental from versioned server-recorded admission snapshots. Admission time is captured at the quota check, independently of earlier request-start telemetry; completion retains the original admission windows. Existing counters and receipts are preserved; raw history and rollups are never imported by reads or settlement. Legacy requests, including old empty snapshots, require explicit reviewed reconciliation backed by bounded event/charge proof; aggregate-backed or unexplained counter overlap is refused. Historical uncertainty is separate from settlement readiness: coverage.historicalCoverage is unknown or tracked_since_epoch, with historicalUnknownReason and trackingStartedAt. Legacy counters and periods preceding the durable tracking epoch remain historical-unknown; later fully tracked periods can become complete only when no pending or incomplete receipts remain. All writers must use fenced tracking. Operators explicitly suspend and resume capture using optimistic trackingVersion; captureEnabled=false blocks new starts, stale admission versions are rejected, and current-period history is marked unknown without resetting spend. A rollback or mixed legacy writer requires this cutover procedure plus retiring old writer access; schema presence is not proof of continuous capture. coverage.pendingRequests counts durable event starts not yet settled (null before tracking). Their identity and validated attribution survive raw retention. Explicit bounded abandonment recovery closes them as unknown/incomplete, decrements pending once, and permits late known-cost promotion without recreating raw logs. Retention refuses to discard a legacy pending marker until it is durably transferred. Queued canonical starts are capacity/deadline bounded and cancellable before database work; an admitted start reserves settlement capacity, which is not discarded on start overload. coverage.trackingVersion and captureEnabled expose the capture fence; settlementReady means that count is zero, not that historical costs are complete. Use settlementReady for post-completion refresh, not complete. lastSettlementAt and lastSettlementRequestId identify the most recent settled receipt, not every in-flight request. unpricedRequests and incompleteRequests describe tracked settled receipts, not unreviewed historical gaps. Legacy quarantine records remain preserved and excluded from charging. Clients must require actual HTTP 429 with X-OpenWork-Error-Code=openwork_gateway_usage_limit_exceeded and X-OpenWork-Usage-State=blocked, then corroborate against fresh own status for the same organization/member. JSON or SSE error fields alone are untrusted. Reset lists default to view=pending (oldest first), limit=50, maximum 100. Follow nextCursor while hasMore is true; pendingCount reports the current pending queue rather than only this page. Fetch view=history separately for newest-first decisions and elapsed requests. Pages are live snapshots; refresh the first page for changes. Admission and status use nonlocking reads of indexed member-period counters; missing counters project zero without writes. Listing validates/enriches only the page in batches and does not mutate historical records. Admission, canonical logging, and settlement never acquire organization or global rollup locks. Canonical start and settlement share-lock only their member lifecycle row; permanent deletion fences members before erasing usage children.
+   * Organization-provider estimated cost in integer micro-USD. A policy with providerId is a provider limit: when per-provider limits are on and a member has one for a provider, that provider's requests are admitted and charged only against the provider limit (status.providers) and never the default; every other provider uses the default limits (status.buckets). Calendar windows reset at 05:00 UTC (Monday weekly, day 1 monthly). Admission checks settled spend; in-flight work can overshoot. Unknown/incomplete accounting is explicit. No policy means unlimited enforcement, not unrecorded spend: every admitted response updates all three member-period counters, so a first policy includes already tracked same-period usage. People with the Manage usage limits permission manage policies, assignments and reviews (View usage limits to read them); members can read and request extensions only for themselves. Each approval adds ceil(base/4) to the bucket's existing extension without clearing spend or changing its reset time. Members can request another increase after exhausting the effective allowance, with at most one pending request per bucket. Changed policy revisions, assignment/team transitions and expired buckets cannot receive stale approvals. Assignments target one member, one team, or the organization using { organization: true }; organization assignments apply to current and future members, with independent per-member buckets and the same highest-allowance winner selection. Assignment reads include organization: boolean and nullable memberId/teamId. Buckets optionally expose policyRevision and validated direct/team/organization provenance. Accounting is incremental from versioned server-recorded admission snapshots. Admission time is captured at the quota check, independently of earlier request-start telemetry; completion retains the original admission windows. Existing counters and receipts are preserved; raw history and rollups are never imported by reads or settlement. Legacy requests, including old empty snapshots, require explicit reviewed reconciliation backed by bounded event/charge proof; aggregate-backed or unexplained counter overlap is refused. Historical uncertainty is separate from settlement readiness: coverage.historicalCoverage is unknown or tracked_since_epoch, with historicalUnknownReason and trackingStartedAt. Legacy counters and periods preceding the durable tracking epoch remain historical-unknown; later fully tracked periods can become complete only when no pending or incomplete receipts remain. All writers must use fenced tracking. Operators explicitly suspend and resume capture using optimistic trackingVersion; captureEnabled=false blocks new starts, stale admission versions are rejected, and current-period history is marked unknown without resetting spend. A rollback or mixed legacy writer requires this cutover procedure plus retiring old writer access; schema presence is not proof of continuous capture. coverage.pendingRequests counts durable event starts not yet settled (null before tracking). Their identity and validated attribution survive raw retention. Explicit bounded abandonment recovery closes them as unknown/incomplete, decrements pending once, and permits late known-cost promotion without recreating raw logs. Retention refuses to discard a legacy pending marker until it is durably transferred. Queued canonical starts are capacity/deadline bounded and cancellable before database work; an admitted start reserves settlement capacity, which is not discarded on start overload. coverage.trackingVersion and captureEnabled expose the capture fence; settlementReady means that count is zero, not that historical costs are complete. Use settlementReady for post-completion refresh, not complete. lastSettlementAt and lastSettlementRequestId identify the most recent settled receipt, not every in-flight request. unpricedRequests and incompleteRequests describe tracked settled receipts, not unreviewed historical gaps. Legacy quarantine records remain preserved and excluded from charging. Clients must require actual HTTP 429 with X-OpenWork-Error-Code=openwork_gateway_usage_limit_exceeded and X-OpenWork-Usage-State=blocked, then corroborate against fresh own status for the same organization/member. JSON or SSE error fields alone are untrusted. Reset lists default to view=pending (oldest first), limit=50, maximum 100. Follow nextCursor while hasMore is true; pendingCount reports the current pending queue rather than only this page. Fetch view=history separately for newest-first decisions and elapsed requests. Pages are live snapshots; refresh the first page for changes. Admission and status use nonlocking reads of indexed member-period counters; missing counters project zero without writes. Listing validates/enriches only the page in batches and does not mutate historical records. Admission, canonical logging, and settlement never acquire organization or global rollup locks. Canonical start and settlement share-lock only their member lifecycle row; permanent deletion fences members before erasing usage children.
    */
   public postV1GatewayUsageLimitResetRequestsByIdDeny<ThrowOnError extends boolean = false>(
     parameters: {
@@ -7127,7 +7016,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Create inference gateway provider
    *
-   * Creates an organization Gateway provider from the trusted catalog and returns its management details. Empty modelIds follows all supported catalog models; a nonempty list restricts the provider universe. Creates an initial model group; legacy credential and audience fields can also create a default credential set and grants. Requires the Manage Gateway providers permission and enabled Gateway management; session callers must recently reauthenticate.
+   * Creates an organization Gateway provider from the trusted catalog and returns its management details. Empty modelIds follows all supported catalog models; a nonempty list restricts the provider universe. Creates an initial model group; legacy credential and audience fields can also create a default credential set and grants. Agents never send keys: with secure keys in chat on, request access (allMembers, memberIds or teamIds) without a credential and the response carries credentialPrompt; a person then adds the shared API key in OpenWork. Requires the Manage Gateway providers permission and enabled Gateway management; session callers must recently reauthenticate.
    */
   public postV1InferenceProviders<ThrowOnError extends boolean = false>(
     parameters: {
@@ -8546,7 +8435,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Create team permissions
    *
-   * Creates the permission set for one team, named "<team name> Permissions" (fixed from then on), links it to the team and stores its initial permissions. A team can have one active set, and the team can't be changed later. You can only turn on permissions you have yourself. Requires permissions.manage (only the owner has it by default), a recent sign-in, and the Permissions feature.
+   * Creates the permission set for one team, named "<team name> Permissions" (fixed from then on), links it to the team and stores its initial permissions. A team can have one active set. With Shared roles on, send name (and optionally teamIds) instead of teamId to create a named role that can be given to any number of teams; each listed team's current custom role is replaced. You can only turn on permissions you have yourself. Requires permissions.manage (only the owner has it by default), a recent sign-in, and the Permissions feature.
    */
   public postV1PermissionsSets<ThrowOnError extends boolean = false>(
     parameters: {
@@ -8614,6 +8503,84 @@ export class DenClient extends HeyApiClient {
       url: "/v1/permissions/sets/{permissionSetId}",
       ...options,
       ...params,
+    });
+  }
+
+  /**
+   * Rename a role
+   *
+   * Renames a team permission set (a custom role). Member and Admin permissions keep their names, and archived sets can't be changed. Requires permissions.manage (only the owner has it by default), a recent sign-in, and the Permissions and Shared roles features.
+   */
+  public patchV1PermissionsSetsByPermissionSetId<ThrowOnError extends boolean = false>(
+    parameters: {
+      permissionSetId: string;
+      renamePermissionSetBody: RenamePermissionSetBody;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "permissionSetId" },
+            { key: "renamePermissionSetBody", map: "body" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).patch<
+      PatchV1PermissionsSetsByPermissionSetIdResponses,
+      PatchV1PermissionsSetsByPermissionSetIdErrors,
+      ThrowOnError
+    >({
+      url: "/v1/permissions/sets/{permissionSetId}",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    });
+  }
+
+  /**
+   * Set a team's custom role
+   *
+   * Gives a team one custom role (a team permission set), replacing its current one, or none with permissionSetId null. The same role can be given to any number of teams; a role left with no team is kept until it is deleted. You can only give a role whose permissions you all have yourself. Whether the team is an Admin team is changed separately (PATCH /v1/teams/:teamId). Requires permissions.manage (only the owner has it by default), a recent sign-in, and the Permissions and Shared roles features.
+   */
+  public putV1TeamsByTeamIdPermissionSet<ThrowOnError extends boolean = false>(
+    parameters: {
+      teamId: string;
+      teamPermissionSetBody: TeamPermissionSetBody;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "teamId" },
+            { key: "teamPermissionSetBody", map: "body" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).put<
+      PutV1TeamsByTeamIdPermissionSetResponses,
+      PutV1TeamsByTeamIdPermissionSetErrors,
+      ThrowOnError
+    >({
+      url: "/v1/teams/{teamId}/permission-set",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
     });
   }
 
@@ -8929,9 +8896,9 @@ export class DenClient extends HeyApiClient {
   }
 
   /**
-   * Prepare a resumable Google Drive file upload for a client with local file transport
+   * Prepare a resumable Google Drive upload, or a replacement of an existing file's content, for a client with local file transport
    *
-   * Prepare a Google Drive resumable upload session for an explicitly requested file upload. This does not upload bytes or prove completion. Clients with file transport can PUT local bytes directly to the returned secret uploadUrl, outside model context. Google sessions can remain valid for up to one week; they are not short-lived signed URLs. Do not automatically create another session after an uncertain result. Final PUT returns file metadata. Uses the selected connection.
+   * Prepare a Google Drive resumable upload session for an explicitly requested file upload. This does not upload bytes or prove completion. Clients with file transport can PUT local bytes directly to the returned secret uploadUrl, outside model context. With fileId the upload replaces that file's content as a new Drive version; with convertTo a new Office file becomes a native Google file. Google sessions can remain valid for up to one week; they are not short-lived signed URLs. Do not automatically create another session after an uncertain result. Final PUT returns file metadata, including headRevisionId and md5Checksum for later replaces. Uses the selected connection.
    */
   public createGoogleDriveUploadSession<ThrowOnError extends boolean = false>(
     parameters: {
@@ -8939,6 +8906,12 @@ export class DenClient extends HeyApiClient {
       size: number;
       mimeType?: string;
       folderId?: string;
+      fileId?: string;
+      baseRevision?: string;
+      convertTo?:
+        | "application/vnd.google-apps.spreadsheet"
+        | "application/vnd.google-apps.document"
+        | "application/vnd.google-apps.presentation";
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -8951,6 +8924,9 @@ export class DenClient extends HeyApiClient {
             { in: "body", key: "size" },
             { in: "body", key: "mimeType" },
             { in: "body", key: "folderId" },
+            { in: "body", key: "fileId" },
+            { in: "body", key: "baseRevision" },
+            { in: "body", key: "convertTo" },
           ],
         },
       ],
@@ -8974,7 +8950,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Prepare a Google Drive session for host file transport
    *
-   * Prepare a Google Drive resumable upload session for an explicitly requested file upload. This does not upload bytes or prove completion. Clients with file transport can PUT local bytes directly to the returned secret uploadUrl, outside model context. Google sessions can remain valid for up to one week; they are not short-lived signed URLs. Do not automatically create another session after an uncertain result. Final PUT returns file metadata. Uses the selected connection.
+   * Prepare a Google Drive resumable upload session for an explicitly requested file upload. This does not upload bytes or prove completion. Clients with file transport can PUT local bytes directly to the returned secret uploadUrl, outside model context. With fileId the upload replaces that file's content as a new Drive version; with convertTo a new Office file becomes a native Google file. Google sessions can remain valid for up to one week; they are not short-lived signed URLs. Do not automatically create another session after an uncertain result. Final PUT returns file metadata, including headRevisionId and md5Checksum for later replaces. Uses the selected connection.
    */
   public prepareHostGoogleDriveUploadSession<ThrowOnError extends boolean = false>(
     parameters: {
@@ -8982,6 +8958,12 @@ export class DenClient extends HeyApiClient {
       size: number;
       mimeType?: string;
       folderId?: string;
+      fileId?: string;
+      baseRevision?: string;
+      convertTo?:
+        | "application/vnd.google-apps.spreadsheet"
+        | "application/vnd.google-apps.document"
+        | "application/vnd.google-apps.presentation";
       connectionId?: string;
     },
     options?: Options<never, ThrowOnError>,
@@ -8995,6 +8977,9 @@ export class DenClient extends HeyApiClient {
             { in: "body", key: "size" },
             { in: "body", key: "mimeType" },
             { in: "body", key: "folderId" },
+            { in: "body", key: "fileId" },
+            { in: "body", key: "baseRevision" },
+            { in: "body", key: "convertTo" },
             { in: "body", key: "connectionId" },
           ],
         },
@@ -9013,6 +8998,78 @@ export class DenClient extends HeyApiClient {
         ...options?.headers,
         ...params.headers,
       },
+    });
+  }
+
+  /**
+   * Describe a Google Drive file pull for host file transport
+   *
+   * Returns the file's revision, checksum and the exact format and size a pull would save, without downloading content. Hosts then fetch the content route in ranged chunks. Optional connectionId selects a native Google Workspace connection; unavailable selections never fall back to the default.
+   */
+  public describeHostGoogleDriveDownload<ThrowOnError extends boolean = false>(
+    parameters: {
+      fileId: string;
+      format?: string;
+      connectionId?: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "fileId" },
+            { in: "query", key: "format" },
+            { in: "query", key: "connectionId" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).get<
+      DescribeHostGoogleDriveDownloadResponses,
+      DescribeHostGoogleDriveDownloadErrors,
+      ThrowOnError
+    >({
+      url: "/v1/direct-downloads/google-workspace/drive-files/{fileId}",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
+   * Stream a Google Drive file's bytes to host file transport
+   *
+   * Streams stored files as-is (Range: bytes=START-END, up to 8 MiB per request) or exports Google files whole in the requested format. Den does not keep or inspect the bytes. Responses stop at the pull size limit.
+   */
+  public downloadHostGoogleDriveFile<ThrowOnError extends boolean = false>(
+    parameters: {
+      fileId: string;
+      format?: string;
+      connectionId?: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "fileId" },
+            { in: "query", key: "format" },
+            { in: "query", key: "connectionId" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).get<
+      DownloadHostGoogleDriveFileResponses,
+      DownloadHostGoogleDriveFileErrors,
+      ThrowOnError
+    >({
+      url: "/v1/direct-downloads/google-workspace/drive-files/{fileId}/content",
+      ...options,
+      ...params,
     });
   }
 
@@ -10184,7 +10241,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Read a Google Drive file's text or binary content as the calling member
    *
-   * Reads a Drive file. Docs and Slides export as plain text; Sheets exports the first tab as CSV. For every spreadsheet tab or edits use the spreadsheet metadata and values capabilities. Downloaded content is bounded; binary files use standard base64 within the model-safety limit.
+   * Reads a Drive file. Docs and Slides export as plain text; Sheets exports the first tab as CSV. For every spreadsheet tab or edits use the spreadsheet metadata and values capabilities. Downloaded content is bounded; binary files use standard base64 within the model-safety limit. To analyze or edit a whole file (Office, PDF, large CSV), pull it into the workspace with the drive_pull_file tool instead.
    */
   public getV1CapabilitiesGoogleWorkspaceDriveFileByFileId<ThrowOnError extends boolean = false>(
     parameters: {
@@ -11217,7 +11274,7 @@ export class DenClient extends HeyApiClient {
   /**
    * List MCP Apps exposed by an External MCP Connection
    *
-   * Enumerates the connection's app-visible MCP App launch tools in the exact reference shape desktop dashboard tiles use, so organization Dashboards can add them as elements. Admin-only.
+   * Enumerates the connection's app-visible MCP App launch tools in the exact reference shape desktop dashboard tiles use. Admin-only.
    */
   public getV1McpConnectionsByConnectionIdMcpApps<ThrowOnError extends boolean = false>(
     parameters: {
@@ -12570,6 +12627,29 @@ export class DenClient extends HeyApiClient {
       ThrowOnError
     >({
       url: "/v1/plugins/{pluginId}/resolved",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
+   * Get resolved plugins
+   *
+   * Returns GET /v1/plugins/:pluginId/resolved for up to 100 plugins in one request, so a client loading every plugin's contents makes one call instead of one per plugin. Each visible plugin's body is the one the single-plugin route returns; plugins the caller cannot view or that do not exist are listed under failures with that route's error. Not recorded in organization audit logs, like the single-plugin route.
+   */
+  public getV1ResolvedPlugins<ThrowOnError extends boolean = false>(
+    parameters: {
+      pluginIds: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "pluginIds" }] }]);
+    return (options?.client ?? this.client).get<
+      GetV1ResolvedPluginsResponses,
+      GetV1ResolvedPluginsErrors,
+      ThrowOnError
+    >({
+      url: "/v1/resolved-plugins",
       ...options,
       ...params,
     });
@@ -15068,6 +15148,99 @@ export class DenClient extends HeyApiClient {
       ThrowOnError
     >({
       url: "/v1/org/workbot-settings",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    });
+  }
+
+  /**
+   * Get default models
+   *
+   * Returns the model new desktop chats start with on the OpenCode v2 engine: the organization default (null for none) and each team's override (null when the team uses the organization default), teams by name. A member on several teams whose overrides differ starts on the organization default; conflictingMemberCount counts them per team. Members can still change the model in each chat. Requires the View OpenWork Models settings permission and the Organization default model feature.
+   */
+  public getV1OrgDefaultModel<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      GetV1OrgDefaultModelResponses,
+      GetV1OrgDefaultModelErrors,
+      ThrowOnError
+    >({ url: "/v1/org/default-model", ...options });
+  }
+
+  /**
+   * List models for the default model
+   *
+   * Lists every model the organization can choose as a default, read live from what it has set up: OpenWork Models, the AI Gateway's providers and models, and the organization's own providers. A source that cannot be read is named in unavailableSources and its models are left out. Requires the View OpenWork Models settings permission and the Organization default model feature.
+   */
+  public getV1OrgDefaultModelOptions<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      GetV1OrgDefaultModelOptionsResponses,
+      GetV1OrgDefaultModelOptionsErrors,
+      ThrowOnError
+    >({ url: "/v1/org/default-model/options", ...options });
+  }
+
+  /**
+   * Set the organization default model
+   *
+   * Sets the model new desktop chats start with for every member whose teams do not override it; null removes the organization default. Only models the organization has are accepted. Desktops pick it up the next time they refresh their organization's settings. Requires the Manage OpenWork Models permission, a recent sign-in and the Organization default model feature.
+   */
+  public putV1OrgDefaultModelEveryone<ThrowOnError extends boolean = false>(
+    parameters: {
+      defaultModelWrite: DefaultModelWrite;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "defaultModelWrite", map: "body" }] }]);
+    return (options?.client ?? this.client).put<
+      PutV1OrgDefaultModelEveryoneResponses,
+      PutV1OrgDefaultModelEveryoneErrors,
+      ThrowOnError
+    >({
+      url: "/v1/org/default-model/everyone",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    });
+  }
+
+  /**
+   * Set a team's default model
+   *
+   * Overrides the model new desktop chats start with for one team's members; null makes the team use the organization default again. A member on several teams whose overrides differ starts on the organization default. Only models the organization has are accepted. Requires the Manage OpenWork Models permission, a recent sign-in and the Organization default model feature.
+   */
+  public putV1OrgDefaultModelTeamsByTeamId<ThrowOnError extends boolean = false>(
+    parameters: {
+      teamId: string;
+      defaultModelWrite: DefaultModelWrite;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "teamId" },
+            { key: "defaultModelWrite", map: "body" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).put<
+      PutV1OrgDefaultModelTeamsByTeamIdResponses,
+      PutV1OrgDefaultModelTeamsByTeamIdErrors,
+      ThrowOnError
+    >({
+      url: "/v1/org/default-model/teams/{teamId}",
       ...options,
       ...params,
       headers: {

@@ -3,9 +3,9 @@ import { spec } from "@openwork/testkit";
 import { parentChildPermissionWorld, scopedPermissionRefreshWorld } from "../worlds/first-run.ts";
 import { delegatedQuestionHandoff, permissionStopRecovery } from "../worlds/chat.ts";
 
-const test = spec.world(parentChildPermissionWorld);
+const test = spec.world(parentChildPermissionWorld, { resources: { surfaces: ["appWeb"], services: [] } });
 
-const scopeTest = spec.world(scopedPermissionRefreshWorld, { timeout: 600_000 });
+const scopeTest = spec.world(scopedPermissionRefreshWorld, { resources: { surfaces: ["appWeb"], services: [] }, timeout: 600_000 });
 
 scopeTest("switching and creating threads hydrate permissions without waiting for unrelated roots", async ({ world, user, agent, probe, step, evidence }) => {
   user = user.on(world.app);
@@ -105,7 +105,7 @@ function text(value: unknown): string {
   return value;
 }
 
-const stopTest = spec.world(permissionStopRecovery, { timeout: 600_000 });
+const stopTest = spec.world(permissionStopRecovery, { resources: { surfaces: ["appWeb"], services: ["mock"] }, timeout: 600_000 });
 
 stopTest("retry recovery and stopping a permission leave other requests and fresh work intact", async ({ world, user, probe, step, evidence }) => {
   const v2 = world.engine === "v2";
@@ -196,7 +196,7 @@ stopTest("retry recovery and stopping a permission leave other requests and fres
   });
 });
 
-const questionTest = spec.world(delegatedQuestionHandoff, { timeout: 600_000 });
+const questionTest = spec.world(delegatedQuestionHandoff, { resources: { surfaces: ["appWeb"], services: ["mock"] }, timeout: 600_000 });
 questionTest("a parent answers and stops real child questions, then finishes fresh work without settling an unrelated root question", { timeout: 1_200_000 }, async ({ world, user, probe, step, evidence }) => {
   const v2 = world.engine === "v2";
   const mount = `/workspace/${encodeURIComponent(world.workspace.workspaceId)}/${v2 ? "opencode2/api" : "opencode"}`;

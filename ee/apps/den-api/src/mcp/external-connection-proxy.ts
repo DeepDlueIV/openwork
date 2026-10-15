@@ -188,8 +188,8 @@ export function createExternalConnectionProxyServer(input: {
       organizationId: connection.organizationId,
       orgMembershipId: input.operation.member.orgMembershipId,
       connectionId: connection.id,
-      toolName: tool.name,
-      via: "connection_proxy",
+      // The App host calls tools for an open App; any other client is the member's agent.
+      source: input.appHostClient === true ? "app" : "agent",
     }, toolCallFailed)
     return call
   }

@@ -1,7 +1,29 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { buildReport, limitSkips, securityFindings } from './warden-report.mjs';
 import { decide, renderComment } from './warden-clearance.mjs';
+
+// Runs in the existing Warden policy/report test job, without model calls.
+test('chunk cost tuning keeps both skills, exclusions and scan coverage unchanged', () => {
+  const policy = readFileSync(new URL('../../warden.toml', import.meta.url), 'utf8');
+  const section = (name) => policy.match(new RegExp(`^\\[${name.replaceAll('.', '\\.')}\\]\\n([\\s\\S]*?)(?=^\\[|$(?![\\s\\S]))`, 'm'))?.[1]
+    .split('\n').filter((line) => line.trim() && !line.startsWith('#')).join('\n');
+  assert.equal(section('defaults'), 'defaultBranch = "dev"\nreportOn = "low"\nignorePaths = ["**/node_modules/**", "**/pnpm-lock.yaml", "**/dist/**", "**/*.min.js"]');
+  assert.equal(section('defaults.scan'), 'maxFileLines = 5000\nmaxFiles = 400\nmaxChangedLines = 60000');
+  assert.equal(section('defaults.chunking.coalesce'), 'enabled = true\nmaxGapLines = 30\nmaxChunkSize = 12000');
+  assert.deepEqual([...policy.matchAll(/^name = "([^"]+)"$/gm)].map((match) => match[1]), ['diff-security-review', 'confidentiality-review']);
+  // Reject skill-scoped filters and global skips as well as new hidden tables.
+  assert.equal([...policy.matchAll(/^ignorePaths =/gm)].length, 1);
+  assert.doesNotMatch(policy, /^(paths|filePatterns|pattern|mode)\s*=|^\[defaults\.ignore\]/m);
+  assert.deepEqual([...policy.matchAll(/^\[([^\[\]]+)\]$/gm)].map((match) => match[1]), ['defaults', 'defaults.scan', 'defaults.chunking.coalesce', 'defaults.agent', 'defaults.auxiliary']);
+  assert.equal([...policy.matchAll(/^type = "pull_request"$/gm)].length, 2);
+  assert.equal([...policy.matchAll(/^type = "local"$/gm)].length, 2);
+  assert.equal([...policy.matchAll(/^failOn = "info"$/gm)].length, 2);
+  assert.equal([...policy.matchAll(/^minConfidence = "low"$/gm)].length, 2);
+  assert.equal(section('defaults.agent'), 'model = "openai/gpt-6-luna"');
+  assert.equal(section('defaults.auxiliary'), 'model = "openai/gpt-6-luna"');
+});
 
 const meta = { repository: 'sample-org/sample-project', pr: 7, head: 'a'.repeat(40), base: 'b'.repeat(40), runId: '99', attempt: 1, outcome: 'success', started: 0, analysisStarted: 0 };
 const finding = (severity, title) => ({ id: title, severity, title, description: `${title} details`, location: { path: 'src/auth.ts', startLine: 3 } });

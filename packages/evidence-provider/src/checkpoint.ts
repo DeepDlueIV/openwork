@@ -19,9 +19,10 @@ export interface EvidenceCheckpoint {
 /** Providers that can save checkpoints, with the ID format each one writes. */
 const CHECKPOINT_IDS = {
   freestyle: /^ow-evidence-v1-[a-f0-9]{32}$/,
+  daytona: /^ow-dy-checkpoint-v1-[a-f0-9]{32}$/,
 } as const satisfies Partial<Record<EvidenceProviderId, RegExp>>;
 export type CheckpointProvider = keyof typeof CHECKPOINT_IDS;
-const CHECKPOINT_PROVIDERS: CheckpointProvider[] = ["freestyle"];
+const CHECKPOINT_PROVIDERS: CheckpointProvider[] = ["freestyle", "daytona"];
 
 /** Longest a checkpoint may stay openable. */
 const MAX_LIFETIME_MS = 24 * 60 * 60_000;

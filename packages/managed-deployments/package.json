@@ -22,6 +22,13 @@
       },
       "default": "./src/lifecycle.ts"
     },
+    "./gcp": {
+      "types": {
+        "openwork-build": "./dist/types/src/gcp.d.ts",
+        "default": "./src/gcp.ts"
+      },
+      "default": "./src/gcp.ts"
+    },
     "./aws": {
       "types": {
         "openwork-build": "./dist/types/src/aws.d.ts",
@@ -32,6 +39,7 @@
   },
   "dependencies": {
     "zod": "^4.3.6",
+    "jose": "6.2.8",
     "fast-xml-parser": "5.8.0"
   }
 }

@@ -17,6 +17,23 @@ OpenWork's primary private-cloud shape uses the published Helm chart, a managed 
   </Card>
 </CardGroup>
 
+## Managed installation from hosted OpenWork
+
+The default-off **Deployments** rollout lets workspace owners approve an AWS
+installer in their own account and track health and approved updates. The GCP
+implementation additionally uses the default-off `managedDeploymentsGcp`
+rollout and customer-approved Google Cloud Shell. It requires a dedicated
+billing-enabled project, public Cloud DNS, and an operator-published immutable
+installer release. Local tests are not a live deployment receipt; the GCP
+rollout must stay off until a real release and approved installation are verified.
+Azure is not supported by the managed installer yet.
+
+A locked installer message is server-side publication/configuration—not a
+request for your cloud keys. Signing in to AWS or Google Cloud on your Mac
+cannot publish the installer. Operators follow
+[the managed-deployment runbook](https://github.com/different-ai/openwork/blob/dev/docs/managed-deployments.md);
+manual deployments below remain independent of the rollout.
+
 ## Common architecture
 
 Every provider guide uses the same OpenWork boundaries:
@@ -72,5 +89,32 @@ You need:
 ## After deployment
 
 To configure Gateway, follow [Enable OpenWork Gateway](/self-host/gateway). This requires the Gateway-capable chart implementation introduced in `0.2.0` or later, matching release images, and an authenticated capability-version-1 response. Gateway is GA for admins in every organization when configured; no platform-admin organization grant or organization API toggle is needed. `GATEWAY_ENABLED` and `deploymentCapabilities.aiGateway` remain installation configuration checks. Neither legacy service enablement nor existing OpenWork Models billing enables the deployment automatically.
+
+## Scheduled maintenance jobs
+
+Two maintenance tasks run on a schedule instead of on every request, so busy write paths never queue behind a shared totals row. Other background work (SCIM cleanup, Automations, worker reconciliation, provider token refresh) runs inside Den API or the Gateway and needs no setup.
+
+| Job | What it does | Hosted schedule | Helm values | Endpoint and token |
+| --- | --- | --- | --- | --- |
+| Gateway usage rollup | Folds Gateway request logs older than two days into hourly usage rollups and deletes the folded rows; folds hourly rollups older than 90 days into daily ones. | Hourly, `5 * * * *` | `gateway.retention.*` (off by default) | Gateway `POST /internal/rollups/run`, `GATEWAY_ADMIN_TOKEN` |
+| Audit usage refresh | Recomputes each organization's audit usage totals (retained operations, events, bytes). | Daily | `denApi.auditUsage.*` (off by default, `30 3 * * *`) | Den API `POST /internal/audit/usage/refresh`, `DEN_MAINTENANCE_TOKEN` |
+
+Both endpoints answer `404` when their token is not configured and `401` for a wrong token. Both are safe to rerun.
+
+With Helm, enable each job and its token as described in [Enable OpenWork Gateway](/self-host/gateway#optional-admin-webhook-and-retention) and the chart README's *Audit usage refresh* section. On Cloud Run, ECS Fargate, or Docker Compose, schedule the calls yourself with Cloud Scheduler, EventBridge Scheduler, or host cron, from a network location that can reach the internal service:
+
+```sh
+# Hourly, only when Gateway is enabled
+curl -fsS -X POST -H "Authorization: Bearer $GATEWAY_ADMIN_TOKEN" \
+  -H "content-type: application/json" \
+  -d '{"maxBucketsPerRun":48,"maxSourceRowsPerBucket":5000}' \
+  http://<gateway-internal-host>:8791/internal/rollups/run
+
+# Daily
+curl -fsS -X POST -H "Authorization: Bearer $DEN_MAINTENANCE_TOKEN" \
+  http://<den-api-internal-host>:8788/internal/audit/usage/refresh
+```
+
+Without the rollup job, Gateway request logs are never compacted and grow without limit. Without the audit refresh, the audit usage screen keeps showing its last measured totals.
 
 Use [Private network deployment](/start-here/private-network-deployment) when Den is reachable only through a VPN or private network. Review [Outbound network access](/start-here/outbound-network-access), [Certificate trust and proxies](/start-here/certificate-trust-and-proxies), and [Air-gapped deployment](/start-here/air-gapped-deployment) before restricting egress.

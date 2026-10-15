@@ -1,6 +1,5 @@
 import { createOrg, type Seed } from "@openwork/env";
 import { evaluateOnSurface, type Surface } from "@openwork/cdp";
-import { enableOrganizationCapabilities } from "./dashboards.ts";
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -86,10 +85,10 @@ function headerMeasurements(surface: Surface) {
   });
 }
 
-/** Real Members, provider, and Analytics pages, one owner, and another default-off org. */
+/** Real Members, provider, and Analytics pages, one owner, and another org of theirs. */
 export async function denFlatPageHeaders(seed: Seed) {
   const stamp = Date.now().toString(36);
-  const names = { workspace: `Compact headers ${stamp}`, otherWorkspace: `Legacy headers ${stamp}` };
+  const names = { workspace: `Compact headers ${stamp}`, otherWorkspace: `Other headers ${stamp}` };
   const den = await seed.den({
     env: { DEN_ORG_MODE: "multi_org", DEN_PLAN_GATING_ENABLED: "false", RESEND_API_KEY: "", STRIPE_SECRET_KEY: "" },
     org: {
@@ -101,11 +100,7 @@ export async function denFlatPageHeaders(seed: Seed) {
   const initial = await seed.api(den.admin, "/v1/org");
   if (!initial.response.ok || !isRecord(initial.body)) throw new Error("Could not read the header workspace.");
   const orgId = textField(initial.body.organization, "id");
-  const slug = textField(initial.body.organization, "slug");
-  // The existing fixture disables plan gating, so Analytics is entitled. Enable
-  // Library usage through the canonical admin seed API before any browser acts;
-  // denFlatPageHeaders itself remains off until the owner uses /admin.
-  await enableOrganizationCapabilities(seed, den.admin, { libraryUsage: true }, orgId);
+  // The existing fixture disables plan gating, so Analytics is entitled.
   const otherOrg = await createOrg(den, names.otherWorkspace);
 
   const web = await seed.web({ den, startPath: "/", headless: true, viewport: { width: 1280, height: 900 } });
@@ -136,7 +131,7 @@ export async function denFlatPageHeaders(seed: Seed) {
   await web.client.send("Page.navigate", { url: new URL("/dashboard/members", den.ref.webUrl).toString() });
 
   return {
-    den, web, owner, names, orgId, slug, otherOrgId: otherOrg.id,
+    den, web, owner, names, orgId, otherOrgId: otherOrg.id,
     scope: { "x-openwork-org-id": orgId },
     measurements: () => headerMeasurements(web),
     url: (path: string) => new URL(path, den.ref.webUrl).toString(),

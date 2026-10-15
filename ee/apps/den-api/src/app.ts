@@ -20,7 +20,7 @@ import { registerAgentMcpRoutes } from "./mcp/agent.js"
 import { registerExternalConnectionProxyRoutes } from "./mcp/external-connection-proxy.js"
 import { registerMcpRoutes } from "./mcp/index.js"
 import type { MemberTeamsContext, OrganizationContextVariables, UserOrganizationsContext } from "./middleware/index.js"
-import { buildOperationId, emptyResponse, htmlResponse, jsonResponse } from "./openapi.js"
+import { buildOperationId, htmlResponse, jsonResponse } from "./openapi.js"
 import { appLogger } from "./observability/logger.js"
 import { isWebOriginApprovedByAnyOrganization } from "./organization-web-origins.js"
 import { createRequestAccessLogMiddleware, createTelemetryErrorSanitizerMiddleware, registerAppErrorHandler, registerObservabilityMiddleware } from "./observability/hono.js"
@@ -53,6 +53,7 @@ import { registerWebhookRoutes } from "./routes/webhooks/index.js"
 import { registerWorkerRoutes } from "./routes/workers/index.js"
 import type { AuthContextVariables } from "./session.js"
 import { sessionMiddleware } from "./session.js"
+import { inventoryRevisionMiddleware } from "./middleware/inventory-revision.js"
 import { preclaimScopeMiddleware } from "./middleware/preclaim-scope.js"
 import { auditRequestMiddleware } from "./audit/request-capture.js"
 import { isOperationalErrorPath, normalizeOperationalErrorResponse, operationalErrorResponse } from "./operational-errors.js"
@@ -130,6 +131,7 @@ app.use("*", async (c, next) => {
   c.res = await normalizeOperationalErrorResponse(c.req.path, c.res, c.get("requestId"))
 })
 app.use("*", createRequestAccessLogMiddleware())
+app.use("*", inventoryRevisionMiddleware)
 registerAppErrorHandler(app, (error, c, requestId) => {
   if (!isOperationalErrorPath(c.req.path)) {
     return undefined
@@ -210,19 +212,17 @@ app.get(
     tags: ["System"],
     security: [],
     hide: true,
-    summary: "Redirect API root",
-    description: "Redirects the API root when DEN_MARKETING_URL is configured; otherwise returns a lightweight service payload.",
+    summary: "Check API origin reachability",
+    description: "Returns a lightweight public service payload directly so MCP hosts can verify the API origin without following a cross-origin redirect.",
     responses: {
       200: jsonResponse("API root service payload.", healthResponseSchema),
-      302: emptyResponse("Redirect to the configured marketing site."),
     },
   }),
   publicRoute,
   (c) => {
-    if (env.marketingUrl) {
-      return c.redirect(env.marketingUrl, 302)
-    }
-    return c.json({ ok: true, service: "den-api" })
+    // MCP view-domain probes need a direct success response even when this
+    // deployment also has a marketing or web app URL configured.
+    return c.json({ ok: true, service: "den-api", version: env.serviceVersion })
   },
 )
 
@@ -330,6 +330,7 @@ configureCloudWorkflowExecutor(async ({ organizationId, ownerMemberId, automatio
     redirectUriBase: env.apiPublicUrl ?? "http://127.0.0.1",
     generatedArtifactViewsEnabled: env.generatedArtifactViewsEnabled,
     organizationFeatures,
+    usageSource: "automation",
   })
   const result = await executeMarketplaceCapability({
     organizationId,
@@ -413,6 +414,7 @@ const openApiOptions: Parameters<typeof generateSpecs>[1] = {
       { name: "Permissions", description: "Organization permissions: the permission catalog, Member, Admin and team permission sets, their history, and each member's effective permissions." },
       { name: "API Keys", description: "Organization API key management routes." },
       { name: "Desktop Policies", description: "Desktop app policies applied to the organization, members, or teams." },
+      { name: "Agent Permissions", description: "What agents may do on members' computers, set for everyone and per team." },
       { name: "LLM Providers", description: "Organization LLM provider catalog, configuration, and access routes." },
       { name: "Inference", description: "Organization inference settings." },
       { name: "Inference Providers", description: "Organization inference Gateway providers, model groups, credential sets, access grants, member connections, and usage." },
@@ -431,7 +433,6 @@ const openApiOptions: Parameters<typeof generateSpecs>[1] = {
       { name: "Plugins", description: "Plugin packages, access grants, and imports." },
       { name: "Marketplaces", description: "Marketplaces that distribute plugins to members and teams." },
       { name: "Resources", description: "Aggregated snapshot of the resources and marketplace capabilities available to the caller." },
-      { name: "Dashboards", description: "Shared dashboards and their access grants." },
       { name: "Capability Sources", description: "Native provider capabilities (Google Workspace, Microsoft 365) and external MCP connections executed as the calling member." },
       { name: "Direct uploads", description: "Multipart uploads that stream workspace files straight to a provider." },
       { name: "Connectors", description: "Connector accounts and instances (GitHub and other sources) and their sync state." },

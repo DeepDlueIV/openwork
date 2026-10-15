@@ -4,7 +4,7 @@ import { beginAuditRequest } from "../audit/request-capture.js"
 import { INSUFFICIENT_SCOPE_CHALLENGE, requiresAdminError } from "../agent-error-envelope.js"
 import { normalizeDenTypeId } from "@openwork-ee/utils/typeid"
 import { getMcpResourceContext, verifyMcpRequest } from "../mcp/auth.js"
-import { DEN_MCP_WRITE_SCOPE } from "../mcp/scopes.js"
+import { DEN_MCP_READ_SCOPE, DEN_MCP_WRITE_SCOPE } from "../mcp/scopes.js"
 import { getOrganizationContextForUser } from "../orgs.js"
 import { organizationRoleValueSatisfies } from "../organization-role-hierarchy.js"
 import { checkMemberPermission } from "../permissions/check.js"
@@ -28,36 +28,41 @@ type RouteAccessVariables =
   & Partial<MemberTeamsContext>
   & Partial<MemberPermissionsVariables>
 
-const cloudTransportRouteHandler: MiddlewareHandler<{ Variables: OrganizationContextVariables }> = async (c, next) => {
-  const principal = await verifyMcpRequest(
-    c.req.raw.headers,
-    getMcpResourceContext(c.req.raw, "agent"),
-  )
-  if (principal instanceof Response) {
-    return principal
-  }
-  if (!principal.scopes.has(DEN_MCP_WRITE_SCOPE)) {
-    return c.json({
-      error: "insufficient_mcp_scope",
-      requiredScope: DEN_MCP_WRITE_SCOPE,
-    }, 403)
-  }
+function createCloudTransportRouteHandler(requiredScope: typeof DEN_MCP_READ_SCOPE | typeof DEN_MCP_WRITE_SCOPE): MiddlewareHandler<{ Variables: OrganizationContextVariables }> {
+  return async (c, next) => {
+    const principal = await verifyMcpRequest(
+      c.req.raw.headers,
+      getMcpResourceContext(c.req.raw, "agent"),
+    )
+    if (principal instanceof Response) {
+      return principal
+    }
+    if (!principal.scopes.has(requiredScope)) {
+      return c.json({
+        error: "insufficient_mcp_scope",
+        requiredScope,
+      }, 403)
+    }
 
-  const organizationContext = await getOrganizationContextForUser({
-    userId: normalizeDenTypeId("user", principal.userId),
-    organizationId: normalizeDenTypeId("organization", principal.organizationId),
-  })
-  if (!organizationContext) {
-    return c.json({ error: "mcp_membership_revoked" }, 403)
-  }
+    const organizationContext = await getOrganizationContextForUser({
+      userId: normalizeDenTypeId("user", principal.userId),
+      organizationId: normalizeDenTypeId("organization", principal.organizationId),
+    })
+    if (!organizationContext) {
+      return c.json({ error: "mcp_membership_revoked" }, 403)
+    }
 
-  c.set("organizationContext", organizationContext)
-  const auditBlocked = await beginAuditRequest(c, { origin: "mcp" })
-  if (auditBlocked) {
-    return auditBlocked
+    c.set("organizationContext", organizationContext)
+    const auditBlocked = await beginAuditRequest(c, { origin: "mcp" })
+    if (auditBlocked) {
+      return auditBlocked
+    }
+    await next()
   }
-  await next()
 }
+
+const cloudTransportRouteHandler = createCloudTransportRouteHandler(DEN_MCP_WRITE_SCOPE)
+const cloudTransportReadRouteHandler = createCloudTransportRouteHandler(DEN_MCP_READ_SCOPE)
 
 const explicitAuthGuardHandlers = new WeakSet<object>([
   requireAdminMiddleware,
@@ -66,6 +71,7 @@ const explicitAuthGuardHandlers = new WeakSet<object>([
   resolveOrganizationContextMiddleware,
   resolveUserOrganizationsMiddleware,
   cloudTransportRouteHandler,
+  cloudTransportReadRouteHandler,
 ])
 
 /**
@@ -101,6 +107,11 @@ export const tokenRoute: MiddlewareHandler = async (_c, next) => {
 
 export function cloudTransportRoute(): typeof cloudTransportRouteHandler {
   return cloudTransportRouteHandler
+}
+
+/** Host file transport that only reads from the provider, so `mcp:read` is enough. */
+export function cloudTransportReadRoute(): typeof cloudTransportReadRouteHandler {
+  return cloudTransportReadRouteHandler
 }
 
 export const delegatedRoute: MiddlewareHandler = async (_c, next) => {

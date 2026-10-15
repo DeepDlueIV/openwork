@@ -1,6 +1,16 @@
 import { expect } from "vitest";
 import { eventually, observeTranscript, readTranscriptMessages, spec } from "@openwork/testkit";
-import { streamedMarkdown, streamedMarkdownMarker, streamedMarkdownReasoning, streamedToolHistory } from "../worlds/chat.ts";
+import {
+  quotedDraft,
+  quotedDraftChat,
+  quotedDraftChecklist,
+  quotedDraftCommand,
+  quotedDraftMarker,
+  streamedMarkdown,
+  streamedMarkdownMarker,
+  streamedMarkdownReasoning,
+  streamedToolHistory,
+} from "../worlds/chat.ts";
 import {
   chatStreamContinuityWeb,
   streamedContinuityBullets,
@@ -163,6 +173,86 @@ test("a streaming answer renders as markdown block by block and settles to the s
     await user.see({ text: streamedMarkdownReasoning });
     expect(occurrences(await probe.text(), streamedMarkdownReasoning)).toBe(1);
     expectSettledDocument(await probe.text());
+  });
+});
+
+const quoteTest = spec.world(quotedDraftChat, {
+  timeout: 300_000,
+  resources: { surfaces: ["appWeb"], services: ["mock"] },
+});
+
+quoteTest("a member copies a reply the answer quotes, with every bullet still on its own line", async ({ world, user, probe, step, evidence }) => {
+  const quotePrompt = `Draft a launch update I can paste to the team. ${quotedDraftMarker}`;
+  const draftLines = quotedDraft.split("\n").filter(Boolean);
+  const bullets = draftLines.filter((line) => line.startsWith("•"));
+
+  await step("given an answer that quotes a reply to send, followed by a command", async () => {
+    await user.see("composer", { editable: true, timeoutMs: 120_000 });
+    await user.type("composer", quotePrompt);
+    await user.click("Run task");
+    await user.see({ text: quotedDraftCommand }, { timeoutMs: 120_000 });
+    const replies = await world.providerReplies();
+    evidence.recordAssertionEvidence("The model answered once with a quoted reply",
+      `${replies} model reply; it quotes ${draftLines.length} lines, ${bullets.length} of them "•" bullets, then a code block`, replies === 1);
+    expect(replies).toBe(1);
+    await user.screenshot();
+  });
+
+  await step("after: each line of the quoted reply sits on its own line, clear of the quote's edges", async () => {
+    // innerText keeps a line break only where the page actually breaks the line.
+    const shownLines = (await probe.text()).includes(quotedDraft);
+    const quote = (await probe.dom("blockquote")).elements[0];
+    const paragraphs = (await probe.dom("blockquote p")).elements;
+    const first = paragraphs[0];
+    const last = paragraphs.at(-1);
+    if (!quote || !first || !last) throw new Error("The answer has no quoted paragraphs.");
+    const topGap = Math.round(first.rect.top - quote.rect.top);
+    const bottomGap = Math.round(quote.rect.bottom - last.rect.bottom);
+    const ok = shownLines && topGap >= 8 && bottomGap >= 8;
+    evidence.recordAssertionEvidence("The quoted reply keeps its lines and clears its edges",
+      `${draftLines.length} lines shown one per line: ${shownLines}; text starts ${topGap}px below the quote's top and ends ${bottomGap}px above its bottom`, ok);
+    expect(shownLines).toBe(true);
+    expect(topGap).toBeGreaterThanOrEqual(8);
+    expect(bottomGap).toBeGreaterThanOrEqual(8);
+    await user.screenshot();
+  });
+
+  await step("after: a plain paragraph written line by line keeps each line on its own line", async () => {
+    // A single newline in chat text is a line break, not a space.
+    const checklistLines = quotedDraftChecklist.split("\n");
+    const shown = (await probe.text()).includes(quotedDraftChecklist);
+    evidence.recordAssertionEvidence("A paragraph keeps its single line breaks",
+      `${checklistLines.length} lines with no blank line between them shown one per line: ${shown}`, shown);
+    expect(shown).toBe(true);
+    await user.screenshot();
+  });
+
+  await step("after: Copy quote puts the exact reply on the clipboard, bullets and line breaks included", async () => {
+    await user.click({ role: "button", label: "Copy quote" });
+    await user.see({ role: "button", label: "Quote copied" });
+    const copied = await probe.eventually(() => world.readClipboard(), {
+      within: 5_000,
+      label: "quoted reply on the clipboard",
+      until: (value) => value === quotedDraft,
+    });
+    evidence.recordAssertionEvidence("Copy quote copies the reply as written",
+      `clipboard holds ${copied.split("\n").length} lines including ${bullets.length} "•" bullets and no ">" quote markers`, copied === quotedDraft);
+    expect(copied).toBe(quotedDraft);
+    await user.screenshot();
+  });
+
+  await step("the code block below keeps its own copy button and copies only its command", async () => {
+    await user.click({ role: "button", label: "Copy code block" });
+    await user.see({ role: "button", label: "Code block copied" });
+    const copied = await probe.eventually(() => world.readClipboard(), {
+      within: 5_000,
+      label: "command on the clipboard",
+      until: (value) => value === quotedDraftCommand,
+    });
+    evidence.recordAssertionEvidence("The code block still copies only its code",
+      `clipboard holds "${copied}"; none of the quoted reply`, copied === quotedDraftCommand);
+    expect(copied).toBe(quotedDraftCommand);
+    await user.screenshot();
   });
 });
 

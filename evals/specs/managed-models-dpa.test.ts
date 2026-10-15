@@ -271,11 +271,11 @@ test("DPA policy blocks warm managed keys without revoking customer-owned models
     const outcomes = await Promise.all([
       api("/v1/org", "PATCH", { brandAppName: `Boundary ${index}` }),
       api(adminPath, "PATCH", { dpaSigned: true, reason: `concurrent set ${index}` }),
-      api(`/v1/admin/organizations/${world.orgId}/capabilities`, "PUT", { capabilities: { modelsAnalytics: false } }),
+      api(`/v1/admin/organizations/${world.orgId}/capabilities`, "PUT", { capabilities: { slackWorkbotReplies: false } }),
     ]);
     expect(outcomes.map((outcome) => outcome.response.status)).toEqual([200, 200, 200]);
     const metadata = record((await fixture()).metadata);
-    expect(metadata).toMatchObject({ dpaSigned: true, brandAppName: `Boundary ${index}`, fixtureNested: { keep: { value: "unchanged" } }, capabilities: { modelsAnalytics: false } });
+    expect(metadata).toMatchObject({ dpaSigned: true, brandAppName: `Boundary ${index}`, fixtureNested: { keep: { value: "unchanged" } }, capabilities: { slackWorkbotReplies: false } });
     await blocked();
   }
   expect(list((await fixture()).audits)).toHaveLength(priorAuditCount + 3);

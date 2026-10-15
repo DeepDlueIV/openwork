@@ -2,7 +2,6 @@ import { createOrg, type Seed } from "@openwork/env";
 import { evaluateOnSurface, type Surface } from "@openwork/cdp";
 import type { DenSession } from "@openwork/behaviors";
 import { activityTransportFaults } from "./den-dashboard-activity-faults.ts";
-import { enableOrganizationCapabilities } from "./dashboards.ts";
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -68,14 +67,13 @@ function dashboardTypography(surface: Surface) {
     return {
       sidebarLabels: read('[data-testid="den-org-sidebar"] [data-sidebar-section] > p'),
       sidebarBadges: read('[data-testid="den-org-sidebar"] [data-testid="nav-badge"]'),
-      quickAddHeadings: read('[data-testid="connector-quick-add-grid"] h4'),
       memberHeadings: read('[data-testid="member-dashboard"] h1'),
     };
   });
 }
 
 /**
- * Real Den, two opted-in workspaces, one default-off workspace, and a member.
+ * Real Den, two workspaces with additions, one with a stored connection, and a member.
  * Only the external MCP server is synthetic; all additions and skill versions
  * are persisted by Den. Nothing writes Activity's responses or browser cache.
  */
@@ -94,7 +92,7 @@ async function activityWorkspace(seed: Seed, populated: boolean) {
     // replacing DOM text or relying on an artificial screenshot-only fixture.
     workspace: `Activity workspace for the internal operations and knowledge sharing team ${stamp}`,
     otherWorkspace: `Activity archive ${stamp}`,
-    disabledWorkspace: `Activity rollout off ${stamp}`,
+    retainedWorkspace: `Activity retained ${stamp}`,
     connection: "Team reference notes",
     plugin: "Activity handbook",
     skill: "activity-briefing",
@@ -113,15 +111,13 @@ async function activityWorkspace(seed: Seed, populated: boolean) {
   const orgId = field(initial.body.organization, "id");
   const otherOrg = await createOrg(den, names.otherWorkspace);
   const otherOrgId = otherOrg.id;
-  await enableOrganizationCapabilities(seed, den.admin, { dashboardActivity: true }, orgId);
-  await enableOrganizationCapabilities(seed, den.admin, { dashboardActivity: true }, otherOrgId);
-  const disabledOrg = await createOrg(den, names.disabledWorkspace);
-  const disabledConnection = await seed.api(den.admin, "/v1/mcp-connections", {
-    method: "POST", headers: { "x-openwork-org-id": disabledOrg.id },
+  const retainedOrg = await createOrg(den, names.retainedWorkspace);
+  const retainedConnection = await seed.api(den.admin, "/v1/mcp-connections", {
+    method: "POST", headers: { "x-openwork-org-id": retainedOrg.id },
     body: JSON.stringify({ name: "Retained connection", url: den.mocks.connector.mcpUrl, authType: "none", credentialMode: "shared", access: { orgWide: true } }),
   });
-  if (!disabledConnection.response.ok) throw new Error("Could not arrange the default-off workspace's connection.");
-  const disabledConnectionId = field(disabledConnection.body, "id");
+  if (!retainedConnection.response.ok) throw new Error("Could not arrange the retained workspace's connection.");
+  const retainedConnectionId = field(retainedConnection.body, "id");
   const otherHeaders = { "x-openwork-org-id": otherOrgId };
   const otherApi = async (path: string, init: RequestInit = {}) => {
     const result = await seed.api(den.admin, path, { ...init, headers: otherHeaders });
@@ -231,7 +227,7 @@ async function activityWorkspace(seed: Seed, populated: boolean) {
   const faults = await activityTransportFaults(web, new URL(den.ref.webUrl).origin, activityPath);
   return {
     den, web, memberWeb, names, orgId, otherOrgId, additions, pluginId, skillId, skillTitle,
-    disabledOrgId: disabledOrg.id, disabledConnectionId, performanceEvents: performanceEvents.slice(0, 5),
+    retainedOrgId: retainedOrg.id, retainedConnectionId, performanceEvents: performanceEvents.slice(0, 5),
     baseUrl: den.ref.webUrl,
     async [Symbol.asyncDispose]() {
       try { await faults[Symbol.asyncDispose](); }
@@ -239,7 +235,7 @@ async function activityWorkspace(seed: Seed, populated: boolean) {
         // Both handles use the same owner. Do not overlap their session/org
         // deletion flows, particularly with the populated performance fixture.
         try { await otherOrg[Symbol.asyncDispose](); }
-        finally { await disabledOrg[Symbol.asyncDispose](); }
+        finally { await retainedOrg[Symbol.asyncDispose](); }
       }
     },
     connector: den.mocks.connector,

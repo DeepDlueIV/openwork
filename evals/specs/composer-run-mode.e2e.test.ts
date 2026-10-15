@@ -1,14 +1,20 @@
 import { expect } from "vitest";
 import { spec } from "@openwork/testkit";
-import { emptySession } from "../worlds/desktop.ts";
+import { emptyDesktopSession } from "../worlds/desktop.ts";
 
-const test = spec.world(emptySession);
+const test = spec.world(emptyDesktopSession, {
+  resources: {
+    surfaces: ["desktop"],
+    services: [],
+    nativeReason: "Workspace run mode is offered only with the standard desktop engine; the switch is disabled in a browser.",
+  },
+});
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-test("workspace run mode is opt-in, confirms Keep going, and preserves policy when hidden", async ({ world, user, probe, step }) => {
+test("workspace run mode is opt-in, confirms Keep going, and preserves policy when hidden", async ({ world, user, probe, step, evidence }) => {
   const mount = `/workspace/${encodeURIComponent(world.workspace.workspaceId)}`;
   const trigger = { testId: "workspace-run-mode-trigger" };
   const flag = { testId: "workspace-run-mode-flag", label: "Show workspace run mode" };
@@ -80,6 +86,12 @@ test("workspace run mode is opt-in, confirms Keep going, and preserves policy wh
   const initialMode = await modeIs("default", null);
   const initialMcp = await mcpRow();
 
+  await step("before: the isolated desktop has an editable chat and inherited workspace permissions", async () => {
+    await user.see("composer", { editable: true });
+    evidence.recordAssertionEvidence("run-mode doctor: the owned desktop is usable before input", JSON.stringify({ route: await probe.hash(), initialMode, initialMcp }), true);
+    await user.screenshot();
+  });
+
   await step("the control is absent until enabled in Advanced, without a policy write", async () => {
     expect(await flagEnabled()).toBe(false);
     await user.notSee(trigger);
@@ -91,6 +103,8 @@ test("workspace run mode is opt-in, confirms Keep going, and preserves policy wh
     await menu("Workspace defaults");
     expect(await read("permissions/mode")).toEqual(initialMode);
     expect(await readConfig()).toEqual(before);
+    evidence.recordAssertionEvidence("showing workspace run mode does not write policy", JSON.stringify({ enabled: await flagEnabled(), mode: await read("permissions/mode") }), true);
+    await user.screenshot();
   });
 
   await step("Ask before actions persists a workspace catch-all and reaches the engine", async () => {
@@ -102,6 +116,8 @@ test("workspace run mode is opt-in, confirms Keep going, and preserves policy wh
     await user.reload();
     await user.see({ ...trigger, label: "Workspace run mode: Ask before actions" });
     expect(await flagEnabled()).toBe(true);
+    evidence.recordAssertionEvidence("Ask before actions survives reload and reaches the engine", JSON.stringify({ mode: await read("permissions/mode"), config: await readConfig(), effectiveMcp: await mcpRow() }), true);
+    await user.screenshot();
   });
 
   await step("opening and cancelling Keep going leaves saved and effective permissions unchanged", async () => {
@@ -112,6 +128,7 @@ test("workspace run mode is opt-in, confirms Keep going, and preserves policy wh
     await user.click({ testId: "run-mode-run-everything" });
     await user.see(confirmation);
     await user.see({ role: "button", label: "Enable Keep going" });
+    await user.screenshot();
     expect(await read("permissions/mode")).toEqual(beforeMode);
     expect(await readConfig()).toEqual(beforeConfig);
     expect(await mcpRow()).toEqual(beforeMcp);
@@ -121,6 +138,8 @@ test("workspace run mode is opt-in, confirms Keep going, and preserves policy wh
     expect(await read("permissions/mode")).toEqual(beforeMode);
     expect(await readConfig()).toEqual(beforeConfig);
     expect(await mcpRow()).toEqual(beforeMcp);
+    evidence.recordAssertionEvidence("cancelling Keep going preserves saved and effective policy", JSON.stringify({ mode: await read("permissions/mode"), config: await readConfig(), effectiveMcp: await mcpRow() }), true);
+    await user.screenshot();
   });
 
   await step("only confirming Keep going changes the workspace and effective MCP action to allow", async () => {
@@ -133,6 +152,8 @@ test("workspace run mode is opt-in, confirms Keep going, and preserves policy wh
     expect(await read("config")).toMatchObject({ opencode: { permission: { "*": "allow" } } });
     await mcpIs("allow");
     await user.see({ ...trigger, label: "Workspace run mode: Keep going" });
+    evidence.recordAssertionEvidence("only confirmation changes saved and effective policy to allow", JSON.stringify({ mode: await read("permissions/mode"), config: await readConfig(), effectiveMcp: await mcpRow() }), true);
+    await user.screenshot();
   });
 
   await step("Workspace defaults removes the catch-all and restores inherited MCP permissions", async () => {
@@ -149,6 +170,8 @@ test("workspace run mode is opt-in, confirms Keep going, and preserves policy wh
     });
     expect(restored).toEqual(initialMcp);
     await user.see({ ...trigger, label: "Workspace run mode: Workspace defaults" });
+    evidence.recordAssertionEvidence("workspace defaults restores inherited permissions", JSON.stringify({ mode: await read("permissions/mode"), config: await readConfig(), effectiveMcp: restored }), true);
+    await user.screenshot();
   });
 
   await step("turning the flag off hides only the control, even with a non-default policy saved", async () => {
@@ -173,5 +196,7 @@ test("workspace run mode is opt-in, confirms Keep going, and preserves policy wh
     expect(await read("permissions/mode")).toEqual(beforeMode);
     expect(await readConfig()).toEqual(beforeConfig);
     expect(await mcpRow()).toEqual(beforeMcp);
+    evidence.recordAssertionEvidence("hiding the control preserves saved and effective policy after reload", JSON.stringify({ mode: await read("permissions/mode"), config: await readConfig(), effectiveMcp: await mcpRow() }), true);
+    await user.screenshot();
   });
 });

@@ -1,8 +1,11 @@
 # Managed deployments: customer-cloud installers
 
 OpenWork installed in a customer's own cloud account, launched and monitored
-from hosted OpenWork. AWS is implemented; the layout is designed so Azure and
-GCP plug in without changing the lifecycle, the API or the UI.
+from hosted OpenWork. AWS uses CloudFormation/CodeBuild; GCP adds a
+customer-approved Cloud Shell installer and Cloud Run platform behind the
+default-off `managedDeploymentsGcp` rollout. Azure remains unsupported.
+GCP offline validation is not a live-install or publication receipt; do not
+roll it out before those gates pass.
 
 ```
 contract/            Provider-neutral Terraform contract (inputs, naming, outputs)
@@ -13,6 +16,12 @@ aws/
   terraform/         AWS root: contract + network + platform + health agent
     modules/network/       AWS "network" building block
     modules/health-agent/  AWS "health agent" building block
+gcp/
+  bootstrap/         Customer approval tutorial (immutable GCS artifact)
+  runner/            Cloud Shell bootstrap and impersonated Terraform runner
+  health/            Read-only Cloud Run health job
+  terraform/         Cloud Run, Cloud SQL, HTTPS load balancer, DNS and secrets
+  README.md          GCP permission, identity, state and rollout gates
 tools/               Release build and publication (provider argument)
 tests/               Installer, runner and health agent tests
 ```
@@ -45,7 +54,13 @@ hand-run Terraform install deploy the same thing.
    identity token and GCP a service-account ID token against their issuers.
 
 Cloud-specific values (AWS account and Route 53 zone; later Azure subscription
-or GCP project) live in the deployment's `target`, never in the contract.
+or GCP project ID/number, region and DNS zone) live in the deployment's `target`,
+never in the contract. API deployment views are discriminated by provider, so an
+AWS target cannot be read as a GCP project. Both use the same ordered milestones,
+allowlisted reports and customer-approved updates. GCP ID tokens are verified
+against fixed Google JWKS, the exact service-account email, fresh issue time,
+and an audience binding the enrollment challenge or exact heartbeat body hash.
+Reports keep working when a feature is killed; launches fail closed.
 
 ## Security model
 
@@ -78,6 +93,7 @@ or GCP project) live in the deployment's `target`, never in the contract.
 ```bash
 (cd contract && terraform init -backend=false && terraform test)
 (cd aws/terraform && terraform init -backend=false -lockfile=readonly && terraform validate && terraform test)
+(cd gcp/terraform && terraform init -backend=false -lockfile=readonly && terraform validate && terraform test)
 node aws/bootstrap/template.mjs            # regenerates aws/bootstrap/cloudformation.json
 python3 -m unittest discover -s tests       # needs boto3
 ```

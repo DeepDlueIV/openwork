@@ -1,10 +1,11 @@
 import { expect } from "vitest";
 import { spec } from "@openwork/testkit";
-import { denDownloadAdmin, denDownloadFailures, denDownloadMember } from "../worlds/den-download-openwork.ts";
+import { denDownloadAdmin, denDownloadFailures, denDownloadLegacy, denDownloadMember } from "../worlds/den-download-openwork.ts";
 
 const admin = spec.world(denDownloadAdmin, { resources: { surfaces: ["web"], services: ["den"] }, timeout: 420_000 });
 const failures = spec.world(denDownloadFailures, { resources: { surfaces: ["web"], services: ["den"] }, timeout: 420_000 });
 const member = spec.world(denDownloadMember, { resources: { surfaces: ["web"], services: ["den"] }, timeout: 420_000 });
+const legacy = spec.world(denDownloadLegacy, { resources: { surfaces: ["web"], services: ["den"] }, timeout: 420_000 });
 const download = { testId: "den-download-openwork" };
 const popover = { testId: "workspace-install-popover" };
 const copy = { testId: "workspace-install-copy" };
@@ -43,16 +44,15 @@ admin("an admin shares and opens a workspace download from the shared header", a
     await user.screenshot();
   });
 
-  await step("the admin copies a genuine shareable link and sees Copied without losing the panel", async () => {
+  await step("after: the admin copies the plain install page and sees Copied without losing the panel", async () => {
     await user.click(copy);
     await user.see(copy, { text: "Copied" });
     await user.see(popover);
     copiedUrl = await world.readClipboard();
-    const resolved = await world.resolveInstallLink(copiedUrl);
-    expect(resolved).toEqual({ status: 200, organizationName: world.organizationName, requireSignin: true });
+    expect(copiedUrl).toBe(new URL("/install", world.den.ref.webUrl).toString());
     const requests = await world.mintRequests();
-    expect(requests.map((request) => [request.status, request.faulted])).toEqual([[200, false]]);
-    evidence.recordAssertionEvidence("The actual browser clipboard holds a valid link for this workspace", `mint=200; resolve=${resolved.status}; workspace=${resolved.organizationName}; sign-in required=${resolved.requireSignin}`, resolved.status === 200);
+    expect(requests).toHaveLength(0);
+    evidence.recordAssertionEvidence("The actual browser clipboard holds the plain install page and nothing was created", `copied=${new URL(copiedUrl).pathname}${new URL(copiedUrl).search}; install-link requests=${requests.length}`, requests.length === 0);
     await user.screenshot();
   });
 
@@ -64,11 +64,8 @@ admin("an admin shares and opens a workspace download from the shared header", a
     if (!popup) throw new Error("The install action did not open a browser tab.");
     await user.on(popup.surface).see({ role: "heading", label: "Download OpenWork" }, { timeoutMs: 60_000 });
     await user.on(popup.surface).see({ role: "link", label: "I already installed OpenWork" });
-    expect(popup.url).not.toBe(copiedUrl);
-    const resolved = await world.resolveInstallLink(popup.url);
-    expect(resolved.organizationName).toBe(world.organizationName);
-    expect(resolved.status).toBe(200);
-    evidence.recordAssertionEvidence("A new browser tab renders the genuine workspace install guide", `new token=true; resolve=${resolved.status}; workspace=${resolved.organizationName}`, resolved.status === 200);
+    expect(popup.url).toBe(copiedUrl);
+    evidence.recordAssertionEvidence("A new browser tab renders the install guide at the same plain address", `url=${new URL(popup.url).pathname}; guide visible`, popup.url === copiedUrl);
     await user.on(popup.surface).screenshot();
   });
 
@@ -125,48 +122,22 @@ admin("an admin shares and opens a workspace download from the shared header", a
   }
 });
 
-failures("an admin can retry a failed mint and a denied clipboard without reopening the panel", async ({ world, user, probe, evidence, step }) => {
-  await step("a failed install-link request leaves its error and both actions in the open panel", async () => {
+failures("an admin can retry a denied clipboard without reopening the panel", async ({ world, user, probe, evidence, step }) => {
+  await step("after: denied clipboard access names the permission and next action without browser errors", async () => {
     await user.see({ ...download, role: "button", label: "Download OpenWork" }, { timeoutMs: 90_000 });
     await user.click(download);
-    expect(await world.mintRequests()).toHaveLength(0);
-    await user.click(open);
-    await user.see({ role: "alert" }, { text: "Install link temporarily unavailable. Please retry.", timeoutMs: 20_000 });
-    await user.see(popover);
-    await user.see(copy, { text: "Copy install link" });
-    await user.see(open);
-    await user.notSee({ role: "button", label: "Copied" });
-    const alerts = await probe.dom('[data-testid="workspace-install-popover"] [role="alert"]');
-    const mintError = alerts.elements.map((element) => element.text).join(" ");
-    expect(mintError).toBe("Install link temporarily unavailable. Please retry.");
-    expect(mintError).not.toMatch(/clipboard|permission|copied/i);
-    const requests = await world.mintRequests();
-    expect(requests.map((request) => [request.status, request.faulted])).toEqual([[503, true]]);
-    const extraPages = await probe.eventually(() => world.newPageCount(), {
-      within: 10_000, label: "failed install tab is closed", until: (count) => count === 0,
-    });
-    evidence.recordAssertionEvidence("The link failure stays distinct from clipboard permission and keeps both retry actions", `mint statuses=${requests.map((request) => request.status).join(",")}; inline error=${mintError}; extra tabs=${extraPages}; not copied`, extraPages === 0);
-    await user.screenshot();
-  });
-
-  await step("after: denied clipboard access names the permission and next action without browser errors", async () => {
     await user.click(copy);
-    const requests = await probe.eventually(() => world.mintRequests(), {
-      within: 20_000, label: "retry reaches real minting", until: (entries) => entries.length === 2,
-    });
     await user.see({ role: "alert" }, { text: clipboardPermissionMessage, timeoutMs: 20_000 });
     await user.see(popover);
     await user.see(copy, { text: "Copy install link" });
     await user.see(open);
     await user.notSee({ role: "button", label: "Copied" });
-    expect(requests.map((request) => [request.status, request.faulted])).toEqual([[503, true], [200, false]]);
     const alerts = await probe.dom('[data-testid="workspace-install-popover"] [role="alert"]');
     const clipboardError = alerts.elements.map((element) => element.text).join(" ");
     expect(clipboardError).toBe(clipboardPermissionMessage);
     expect(clipboardError).toMatch(/denied|not allowed|permission/i);
     expect(clipboardError).not.toMatch(/Failed to execute|writeText|['"]Clipboard['"]|DOMException|NotAllowedError|\bat\s+\S+\s*\(/i);
-    expect(clipboardError).not.toContain("Install link temporarily unavailable.");
-    evidence.recordAssertionEvidence("A genuine clipboard denial shows safe recovery, not browser errors or a copied status", `mint statuses=503,200; inline error=${clipboardError}; both actions visible; not copied`, clipboardError === clipboardPermissionMessage);
+    evidence.recordAssertionEvidence("A genuine clipboard denial shows safe recovery, not browser errors or a copied status", `inline error=${clipboardError}; both actions visible; not copied`, clipboardError === clipboardPermissionMessage);
     await user.screenshot();
   });
 
@@ -176,11 +147,10 @@ failures("an admin can retry a failed mint and a denied clipboard without reopen
     await user.see(copy, { text: "Copied" });
     await user.notSee({ role: "alert" });
     await user.see(popover);
-    const resolved = await world.resolveInstallLink(await world.readClipboard());
-    expect(resolved).toEqual({ status: 200, organizationName: world.organizationName, requireSignin: true });
-    const requests = await world.mintRequests();
-    expect(requests.map((request) => request.status)).toEqual([503, 200, 200]);
-    evidence.recordAssertionEvidence("Retry copies a valid workspace link without closing and reopening the panel", `mint statuses=503,200,200; resolve=${resolved.status}; error cleared`, resolved.status === 200);
+    const copied = await world.readClipboard();
+    expect(copied).toBe(new URL("/install", world.den.ref.webUrl).toString());
+    expect(await world.mintRequests()).toHaveLength(0);
+    evidence.recordAssertionEvidence("Retry copies the plain install page without closing and reopening the panel", `copied=${new URL(copied).pathname}; error cleared`, true);
     await user.screenshot();
   });
 });
@@ -222,5 +192,32 @@ member("a member keeps both download actions and uses the header to go straight 
     expect(await world.mintRequests()).toHaveLength(0);
     evidence.recordAssertionEvidence("The original member download action is unchanged", `path=${location}; no minted share link`, location === "/install");
     await user.screenshot();
+  });
+});
+
+legacy("old install links still open the install page without their token", async ({ world, user, evidence, step }) => {
+  const oldToken = "old-shared-install-link-token";
+
+  await step("after: an old /install?token link opens the install guide and drops the token from the address", async () => {
+    await user.navigate(new URL(`/install?token=${oldToken}`, world.den.ref.webUrl).toString());
+    await user.see({ role: "heading", label: "Download OpenWork" }, { timeoutMs: 90_000 });
+    await user.see({ role: "link", label: "I already installed OpenWork" });
+    const location = await world.location();
+    expect(location).toBe("/install");
+    expect(await world.mintRequests()).toHaveLength(0);
+    evidence.recordAssertionEvidence("The old link renders the signed-in install guide at the plain address", `path=${location}; token removed; nothing created`, location === "/install");
+    await user.screenshot();
+  });
+
+  await step("after: desktop builds that resolve a pasted old link still get this server's setup, and old download links reach the install page", async () => {
+    const config = await world.legacyInstallConfig(oldToken);
+    expect(config.status).toBe(200);
+    expect(new URL(config.webUrl).origin).toBe(new URL(world.den.ref.webUrl).origin);
+    expect(config.requireSignin).toBe(true);
+    expect(config.connectUrl).toBe(false);
+    const download = await world.legacyDownload(oldToken);
+    expect(download.status).toBe(302);
+    expect(new URL(download.location ?? "").pathname).toBe("/install");
+    evidence.recordAssertionEvidence("Old token requests are answered without reading the token", `install-config=${config.status} (sign-in required, no connect link); download=${download.status} -> ${new URL(download.location ?? "").pathname}`, config.status === 200 && download.status === 302);
   });
 });

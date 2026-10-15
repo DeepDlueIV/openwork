@@ -973,6 +973,7 @@ export function registerGatewayRoutes(api: Hono<GatewayEnv>, input: GatewayRoute
       upstreamPath: prepared.url.pathname,
       deferred: prepared.json?.background === true || prepared.json?.async === true || prepared.json?.deferred === true,
       priced: requestPricing !== undefined,
+      inferenceProviderId: provider.id,
     })
     startRecorder({
       protocol: resolved.protocol,

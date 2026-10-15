@@ -405,7 +405,6 @@ export function ToolTesterScreen() {
     <DashboardPageTemplate
       icon={Wrench}
       title="Tool Tester"
-      colors={["#CFFAFE", "#155E75", "#0E7490", "#67E8F9"]}
       description="Run any tool your connections expose, inspect the request on the wire, and control which tools your organization can use. Runs execute with your credential and are never written to OpenWork logs."
     >
       {connectionsQuery.error ? (

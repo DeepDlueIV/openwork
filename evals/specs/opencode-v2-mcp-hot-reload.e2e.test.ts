@@ -1,9 +1,13 @@
 import { browserScript } from "@openwork/testkit";
 import { expect } from "vitest";
 import { createHash } from "node:crypto";
-import { control, evalIn, assertNoLiveSecret, liveOpenAiEnabled, liveOpenAiModel, provisionLiveOpenAi, liveProviderId, liveV2Turn } from "@openwork/behaviors";
+import { createAndSelectWorkspace, evalIn, assertNoLiveSecret, liveOpenAiEnabled, liveOpenAiModel, provisionLiveOpenAi, liveProviderId, liveV2Turn, signInDesktopAs } from "@openwork/behaviors";
 import type { Surface } from "@openwork/cdp";
-import { app, eventually, mcpMock, needs, server, test } from "@openwork/testkit";
+import { allocateFreePorts, appWeb, eventually, mcpMock, needs, server, test } from "@openwork/testkit";
+import { readHeadlessRuntimeManifest, resolveHeadlessWorldRuntimePaths } from "@openwork/world";
+import { fileURLToPath } from "node:url";
+
+const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -32,8 +36,11 @@ test("v2 uses an MCP added through OpenWork on the next call and removes it in t
   const live = liveOpenAiEnabled();
   needs({ optIn: ["OPENWORK_EVAL_E2E_TESTS"], ...(live ? { env: ["OPENAI_API_KEY"], daytona: true } : {}) });
   const nonce = `REPORT-${Date.now()}`;
+  const [webPort] = await allocateFreePorts(1);
+  if (!webPort) throw new Error("No port available for the app in a browser.");
   await using den = await server({
     place,
+    trustedOrigins: [`http://127.0.0.1:${webPort}`],
     org: { name: "V2 MCP Lifecycle", members: { member: { name: "MCP Member" } } },
     mocks: { witness: mcpMock({ allowUnauthenticatedMcp: true, tools: [{
       name: "read_report", description: "Read the current test report", inputSchema: { type: "object", properties: {} },
@@ -41,11 +48,16 @@ test("v2 uses an MCP added through OpenWork on the next call and removes it in t
     }] }), empty: mcpMock({ allowUnauthenticatedMcp: true, tools: [] }) },
   });
   await using managed = await provisionLiveOpenAi(den.admin, "V2 MCP Lifecycle");
-  await using desktop = await app({ den, as: "member", place });
+  // The member's app in headless Chrome; the variable keeps its historical name.
+  const workspacePath = `/tmp/openwork-v2-mcp-hot-reload-${Date.now()}`;
+  await using desktop = await appWeb({ place, name: "v2-mcp-hot-reload", workspacePath, webPort, den: den.ref, mouse: true });
+  const member = den.members.member;
+  if (!member) throw new Error("The MCP member was not created.");
+  await signInDesktopAs(desktop, den.ref, member);
+  const { workspaceId } = await createAndSelectWorkspace(desktop, { path: workspacePath });
   const api = (path: string, method?: string, body?: unknown) => request(desktop, path, method, body);
   const providerId = live ? await liveProviderId(api, managed.id) : "reload-witness";
   const modelId = live ? liveOpenAiModel() : "mock-agent-workload-model";
-  const workspaceId = desktop.workspaceId;
   const root = `/workspace/${workspaceId}`;
   const v2 = `${root}/opencode2`;
   if (!live) expect((await request(desktop, `${root}/config`, "PATCH", { opencode: { provider: {
@@ -204,7 +216,17 @@ test("v2 uses an MCP added through OpenWork on the next call and removes it in t
     ? workspaces.items.find((item) => record(item) && item.id === workspaceId) : undefined;
   if (!record(current) || typeof current.path !== "string") throw new Error("Missing workspace path");
   const otherPath = `${current.path}-unrelated`;
-  await control(desktop, "workspace.create", { path: otherPath }, { timeoutMs: 90_000 });
+  // The app in a browser holds only client credentials, so the second local
+  // folder is added through this test-owned runtime's host API.
+  const runtime = await readHeadlessRuntimeManifest(resolveHeadlessWorldRuntimePaths(repoRoot, desktop.handle.name).runtimeManifestPath);
+  if (!runtime || runtime.openworkUrl !== desktop.openworkUrl) throw new Error("Could not identify this test's own app runtime.");
+  const added = await fetch(`${runtime.openworkUrl}/workspaces/local`, {
+    method: "POST",
+    headers: { "X-OpenWork-Host-Token": runtime.hostToken, "Content-Type": "application/json" },
+    body: JSON.stringify({ folderPath: otherPath, name: "Unrelated workspace", preset: "starter" }),
+    signal: AbortSignal.timeout(30_000),
+  });
+  expect(added.status).toBe(201);
   const otherId = await eventually(async () => {
     const listing = (await request(desktop, "/workspaces")).json;
     const other = record(listing) && Array.isArray(listing.items)

@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const CLOUD_MODEL_CONFIG_VERSION = 3;
+export const CLOUD_MODEL_CONFIG_VERSION = 4;
 export const CATALOG_FAST_VARIANT = "__openwork_catalog_fast_v1";
 export const FAST_VARIANT_PREFIX = "__openwork_fast_v1/";
 export const FAST_DEFAULT_VARIANT = `${FAST_VARIANT_PREFIX}default`;
@@ -48,8 +48,26 @@ export function catalogModelVariants(config: Record<string, unknown>, providerNp
   const fast = catalogFastVariants(config, providerNpm);
   if (fast) return fast;
   const modelProvider = isRecord(config.provider) ? config.provider : {};
-  if (providerNpm !== "@ai-sdk/anthropic" || config.reasoning === false
+  if (config.reasoning === false
     || (modelProvider.npm !== undefined && modelProvider.npm !== providerNpm)) return undefined;
+  if (providerNpm === "@ai-sdk/google" || providerNpm === "@ai-sdk/google-vertex") {
+    const efforts = [...new Set((Array.isArray(config.reasoning_options) ? config.reasoning_options : []).flatMap((option) => {
+      const parsed = effortOption.safeParse(option);
+      return parsed.success ? parsed.data.values : [];
+    }))];
+    if (!efforts.length) return undefined;
+    const variants = isRecord(config.variants) ? { ...config.variants } : {};
+    // V1 merges configured variants into inferred defaults. Omitting MINIMAL
+    // does not remove it: disable every effort the catalog excludes, including
+    // for opaque Gateway aliases. Explicit user overrides still take precedence.
+    for (const effort of reasoningEffort.options) {
+      if (!Object.hasOwn(variants, effort)) variants[effort] = efforts.includes(effort)
+        ? { thinkingConfig: { includeThoughts: true, thinkingLevel: effort } }
+        : { disabled: true };
+    }
+    return variants;
+  }
+  if (providerNpm !== "@ai-sdk/anthropic") return undefined;
   const efforts = [...new Set((Array.isArray(config.reasoning_options) ? config.reasoning_options : []).flatMap((option) => {
     const parsed = effortOption.safeParse(option);
     return parsed.success ? parsed.data.values.filter(value => ["low", "medium", "high", "xhigh", "max"].includes(value)) : [];

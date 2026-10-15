@@ -102,8 +102,38 @@ test("a member can Authenticate or Skip in the native connection card and contin
         return isRecord(metadata.ui) && metadata.ui.resourceUri === connectionUri;
       });
       expect(connectionTools.map(tool => tool.name).sort()).toEqual(["connection_action", "connection_action_intent"]);
+      for (const tool of connectionTools) {
+        expect(tool.annotations).toEqual({ readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false });
+        const metadata = record(tool._meta);
+        const invoking = metadata["openai/toolInvocation/invoking"];
+        const invoked = metadata["openai/toolInvocation/invoked"];
+        expect(typeof invoking).toBe("string");
+        expect(typeof invoked).toBe("string");
+        expect(String(invoking).length).toBeLessThanOrEqual(64);
+        expect(String(invoked).length).toBeLessThanOrEqual(64);
+        expect(invoking).not.toBe(invoked);
+        const properties = record(record(tool.inputSchema).properties);
+        expect(record(properties.connectionId).description).toMatch(/external MCP connection ID/);
+        expect(record(tool.outputSchema).description).toMatch(/connection/i);
+        if (tool.name === "connection_action_intent") {
+          expect(record(properties.action).description).toMatch(/Neither choice starts OAuth/);
+        }
+      }
       const resources = rows(record((await gateway("resources/list")).result).resources);
       expect(resources).toEqual(expect.arrayContaining([expect.objectContaining({ uri: connectionUri })]));
+      const listed = resources.find(resource => resource.uri === connectionUri);
+      if (!listed) throw new Error("The connection App resource is missing");
+      const resource = rows(record((await gateway("resources/read", { uri: connectionUri })).result).contents)[0];
+      expect(resource.uri).toBe(connectionUri);
+      expect(resource.mimeType).toBe("text/html;profile=mcp-app");
+      expect(resource._meta).toEqual(listed._meta);
+      const metadata = record(resource._meta);
+      const domain = record(metadata.ui).domain;
+      expect(typeof domain).toBe("string");
+      const origin = new URL(String(domain));
+      expect(origin.protocol).toBe("https:");
+      expect(domain).toBe(origin.origin);
+      expect(metadata["openai/widgetDescription"]).toMatch(/connection/i);
       const legacyUri = "ui://openwork/connection-action/v1/view.html";
       expect(resources).not.toEqual(expect.arrayContaining([expect.objectContaining({ uri: legacyUri })]));
       const retired = await gateway("resources/read", { uri: legacyUri });

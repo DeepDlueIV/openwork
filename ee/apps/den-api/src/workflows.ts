@@ -183,7 +183,8 @@ function serializeSnapshot(row: WorkflowRunRow, automationTrigger: AutomationRun
   }
 }
 
-async function currentAutomationReferences(context: PluginArchActorContext, configObjectId: ConfigObjectId) {
+/** The caller's automations that run a saved Workflow, with the Workflow each one runs. */
+async function savedScriptAutomations(context: PluginArchActorContext) {
   const rows = await db.select({ automation: AutomationTable, revision: AutomationRevisionTable })
     .from(AutomationTable)
     .innerJoin(AutomationRevisionTable, eq(AutomationRevisionTable.id, AutomationTable.current_revision_id))
@@ -193,15 +194,24 @@ async function currentAutomationReferences(context: PluginArchActorContext, conf
     ))
   return rows.flatMap(({ automation, revision }) => {
     const action = revision.action
-    if (action?.kind !== "saved_script" || action.script.configObjectId !== configObjectId) return []
+    if (action?.kind !== "saved_script") return []
     return [{
-      id: automation.id,
-      name: automation.name,
-      state: automation.state,
-      configObjectVersionId: action.script.configObjectVersionId,
-      input: action.input,
+      configObjectId: action.script.configObjectId,
+      reference: {
+        id: automation.id,
+        name: automation.name,
+        state: automation.state,
+        configObjectVersionId: action.script.configObjectVersionId,
+        input: action.input,
+      },
     }]
   })
+}
+
+async function currentAutomationReferences(context: PluginArchActorContext, configObjectId: ConfigObjectId) {
+  return (await savedScriptAutomations(context))
+    .filter((automation) => automation.configObjectId === configObjectId)
+    .map((automation) => automation.reference)
 }
 
 async function workflowVersions(
@@ -287,6 +297,43 @@ export async function workflowSnapshotPage(
   }
 }
 
+type SnapshotFacts = {
+  receiptId: string
+  status: "succeeded" | "failed"
+  errorMessage: string | null
+  finishedAt: Date | string
+  contentDeletedAt: Date | string | null
+}
+
+/**
+ * The snapshot a Workflow treats as current, its newest readable success, and
+ * their freshness. Snapshots are newest first. Deleted content remains in
+ * history, but must not stay selected as the current readable artifact after
+ * an explicit deletion.
+ */
+function workflowSnapshotState<T extends SnapshotFacts>(
+  snapshots: readonly T[],
+  readable: (snapshot: T) => boolean,
+  maxAgeMs = 24 * 60 * 60_000,
+) {
+  const latestSnapshot = snapshots.find((snapshot) => snapshot.contentDeletedAt === null)
+    ?? snapshots[0]
+    ?? null
+  const latestSuccessfulSnapshot = snapshots.find((snapshot) => snapshot.status === "succeeded" && readable(snapshot)) ?? null
+  return {
+    latestSnapshot,
+    latestSuccessfulSnapshot,
+    freshness: artifactFreshness({
+      latestFinishedAt: latestSnapshot?.contentDeletedAt === null ? new Date(latestSnapshot.finishedAt) : null,
+      latestStatus: latestSnapshot?.contentDeletedAt === null ? latestSnapshot.status : null,
+      latestSuccessfulFinishedAt: latestSuccessfulSnapshot ? new Date(latestSuccessfulSnapshot.finishedAt) : null,
+      latestSuccessfulReceiptId: latestSuccessfulSnapshot?.receiptId ?? null,
+      failureReason: latestSnapshot?.errorMessage,
+      maxAgeMs: Math.min(30 * 24 * 60 * 60_000, Math.max(60_000, maxAgeMs)),
+    }),
+  }
+}
+
 /** The same resource/version gate as detail, without source, graphs, automations or receipts. */
 export async function getWorkflowAccess(input: {
   context: PluginArchActorContext
@@ -334,12 +381,11 @@ export async function getWorkflowDetail(input: {
     const snapshot = serializeSnapshot(row.receipt, row.automationTrigger)
     return snapshot ? [snapshot] : []
   })
-  // Deleted content remains in history, but must not stay selected as the
-  // current readable artifact after an explicit deletion.
-  const latestSnapshot = snapshots.find((snapshot) => snapshot.contentDeletedAt === null)
-    ?? snapshots[0]
-    ?? null
-  const latestSuccessfulSnapshot = snapshots.find((snapshot) => snapshot.status === "succeeded" && snapshot.markdown !== null) ?? null
+  const { latestSnapshot, latestSuccessfulSnapshot, freshness } = workflowSnapshotState(
+    snapshots,
+    (snapshot) => snapshot.markdown !== null,
+    input.maxAgeMs,
+  )
   return {
     pluginId: resource.plugin.id,
     configObjectId: resource.configObject.id,
@@ -351,15 +397,96 @@ export async function getWorkflowDetail(input: {
     versions,
     latestSnapshot,
     latestSuccessfulSnapshot,
-    freshness: artifactFreshness({
-      latestFinishedAt: latestSnapshot?.contentDeletedAt === null ? new Date(latestSnapshot.finishedAt) : null,
-      latestStatus: latestSnapshot?.contentDeletedAt === null ? latestSnapshot.status : null,
-      latestSuccessfulFinishedAt: latestSuccessfulSnapshot ? new Date(latestSuccessfulSnapshot.finishedAt) : null,
-      latestSuccessfulReceiptId: latestSuccessfulSnapshot?.receiptId ?? null,
-      failureReason: latestSnapshot?.errorMessage,
-      maxAgeMs: Math.min(30 * 24 * 60 * 60_000, Math.max(60_000, input.maxAgeMs ?? 24 * 60 * 60_000)),
-    }),
+    freshness,
   }
+}
+
+/** The fields of snapshotRows a freshness check reads, without results, source or tool calls. */
+function snapshotStateRows(
+  organizationId: DenTypeId<"organization">,
+  configObjectId: ConfigObjectId,
+  memberId: DenTypeId<"member">,
+) {
+  return db.select({
+    receiptId: WorkflowRunTable.id,
+    pluginId: WorkflowRunTable.plugin_id,
+    status: WorkflowRunTable.status,
+    errorMessage: WorkflowRunTable.error_message,
+    finishedAt: WorkflowRunTable.finished_at,
+    contentDeletedAt: WorkflowRunTable.artifact_content_deleted_at,
+    hasMarkdown: sql<number>`${WorkflowRunTable.result_markdown} is not null`.mapWith(Number),
+  })
+    .from(WorkflowRunTable)
+    .where(and(
+      eq(WorkflowRunTable.organization_id, organizationId),
+      snapshotReadAccess(memberId),
+      eq(WorkflowRunTable.config_object_id, configObjectId),
+      isNotNull(WorkflowRunTable.config_object_version_id),
+    ))
+    .orderBy(desc(WorkflowRunTable.finished_at), desc(WorkflowRunTable.id)).limit(100)
+}
+
+export type WorkflowCardFacts = {
+  requiredCapabilities: WorkflowVersion["requiredCapabilities"]
+  automationCount: number
+  freshness: ReturnType<typeof artifactFreshness>
+  latestSuccessfulAt: string | null
+}
+
+/**
+ * What a library card shows for each Workflow, as getWorkflowDetail derives
+ * it, with the versions and the caller's automations read once for all of
+ * them. Workflows without a valid version are omitted. Callers resolve access
+ * first.
+ */
+export async function listWorkflowCardFacts(context: PluginArchActorContext, configObjectIds: ConfigObjectId[]) {
+  const facts = new Map<ConfigObjectId, WorkflowCardFacts>()
+  if (configObjectIds.length === 0) return facts
+  const organizationId = context.organizationContext.organization.id
+  const memberId = context.organizationContext.currentMember.id
+  const [versionRows, automations, snapshotsByWorkflow] = await Promise.all([
+    db.select({
+      id: ConfigObjectVersionTable.id,
+      configObjectId: ConfigObjectVersionTable.configObjectId,
+      payload: ConfigObjectVersionTable.normalizedPayloadJson,
+    }).from(ConfigObjectVersionTable).where(and(
+      eq(ConfigObjectVersionTable.organizationId, organizationId),
+      inArray(ConfigObjectVersionTable.configObjectId, configObjectIds),
+      eq(ConfigObjectVersionTable.isDeletedVersion, false),
+    )).orderBy(desc(ConfigObjectVersionTable.createdAt), desc(ConfigObjectVersionTable.id)),
+    savedScriptAutomations(context),
+    Promise.all(configObjectIds.map((configObjectId) => snapshotStateRows(organizationId, configObjectId, memberId))),
+  ])
+  const versionsByWorkflow = new Map<string, Array<{ id: string; requiredCapabilities: WorkflowCardFacts["requiredCapabilities"] }>>()
+  for (const row of versionRows) {
+    const parsed = parseCodemodeScriptPayload(row.payload)
+    if (!parsed.ok) continue
+    const versions = versionsByWorkflow.get(row.configObjectId) ?? []
+    versions.push({ id: row.id, requiredCapabilities: parsed.payload.requiredCapabilities })
+    versionsByWorkflow.set(row.configObjectId, versions)
+  }
+  configObjectIds.forEach((configObjectId, index) => {
+    const versions = versionsByWorkflow.get(configObjectId) ?? []
+    const currentVersion = versions[0]
+    if (!currentVersion) return
+    const versionIds = new Set<string>(versions.map((version) => version.id))
+    const automationIds = new Set(automations.flatMap((automation) =>
+      automation.configObjectId === configObjectId && versionIds.has(automation.reference.configObjectVersionId)
+        ? [automation.reference.id]
+        : []))
+    const snapshots = (snapshotsByWorkflow[index] ?? []).filter((row) => row.pluginId !== null)
+    const { latestSuccessfulSnapshot, freshness } = workflowSnapshotState(
+      snapshots,
+      (snapshot) => snapshot.hasMarkdown === 1 && snapshot.contentDeletedAt === null,
+    )
+    facts.set(configObjectId, {
+      requiredCapabilities: currentVersion.requiredCapabilities,
+      automationCount: automationIds.size,
+      freshness,
+      latestSuccessfulAt: latestSuccessfulSnapshot ? latestSuccessfulSnapshot.finishedAt.toISOString() : null,
+    })
+  })
+  return facts
 }
 
 export async function listWorkflowVersions(input: { context: PluginArchActorContext; configObjectId: string }) {

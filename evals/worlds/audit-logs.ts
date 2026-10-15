@@ -5,7 +5,7 @@ import { allocateFreePort, callFunctionOnSurface, evaluateOnSurface } from "@ope
 import { createAdmin, localMysqlIsRunning, localRedisIsRunning, queryDenDatabase, SkipError, type Den, type Place, type Seed } from "@openwork/env";
 import { defaultDaytonaExec, execInSandbox } from "@openwork/hosts";
 
-import { enableOrganizationCapabilities } from "./dashboards.ts";
+import { enableOrganizationCapabilities } from "./organization-capabilities.ts";
 
 const execFileAsync = promisify(execFile);
 const root = fileURLToPath(new URL("../../", import.meta.url));

@@ -294,7 +294,6 @@ export function ApiKeysScreen() {
                 icon={KeyRound}
                 title="API Keys"
                 description="Create named, rate-limited API keys for your own org membership and revoke any key in the workspace when needed."
-                colors={["#E6FFFA", "#0F766E", "#14B8A6", "#99F6E4"]}
             >
                 <div className="rounded-[28px] border border-gray-200 bg-white px-6 py-10 text-[15px] text-gray-500">
                     Loading organization details...
@@ -308,7 +307,6 @@ export function ApiKeysScreen() {
             icon={KeyRound}
             title="API Keys"
             description="Manage your OpenWork API keys."
-            colors={["#E6FFFA", "#0F766E", "#14B8A6", "#99F6E4"]}
         >
             {!access.canViewApiKeys ? (
                 <div className="rounded-[28px] border border-[var(--dls-border)] bg-[var(--dls-hover)] px-6 py-5 text-[14px] text-[var(--dls-text-primary)]">

@@ -64,50 +64,6 @@ export function ItemPanel({ children, className = "", variant = "divided" }: {
   );
 }
 
-/** Rows on the page itself, separated by hairlines, with no card around them. */
-export function ItemFlatList({ children }: { children: ReactNode }) {
-  return <div className="flex flex-col [&>*]:border-b [&>*]:border-gray-100">{children}</div>;
-}
-
-/**
- * One Library row: logo tile, name with its state, kind, where it came from,
- * and the one action it needs. Fixed-width lanes keep every row aligned.
- */
-export function LibraryListRow({ logo, title, ready, tag, kind, status, action, href, testId }: {
-  logo: ReactNode;
-  title: string;
-  ready?: boolean;
-  tag?: ReactNode;
-  kind: string;
-  status?: ReactNode;
-  action?: ReactNode;
-  href?: string;
-  testId?: string;
-}) {
-  const body = (
-    <>
-      <span className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-gray-50 [&_img]:max-h-5 [&_img]:max-w-5">{logo}</span>
-      <span className="flex w-[150px] shrink-0 items-center gap-1.5 md:w-[200px]">
-        <span className="truncate text-[13px] font-medium leading-4 text-gray-900">{title}</span>
-        {ready ? <span className="size-1.5 shrink-0 rounded-full bg-emerald-500" role="img" aria-label="Ready" data-library-ready /> : null}
-        {tag}
-      </span>
-      <span className="hidden w-[84px] shrink-0 text-[12px] leading-4 text-gray-500 sm:block" data-library-kind-label>{kind}</span>
-      <span className="min-w-0 flex-1 truncate text-[12px] leading-4 text-gray-500" data-item-status>{status}</span>
-    </>
-  );
-  return (
-    <div className="flex h-[52px] items-center gap-3" data-testid={testId}>
-      {href ? (
-        <Link href={href} className="flex min-w-0 flex-1 items-center gap-3 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-gray-300">{body}</Link>
-      ) : (
-        <span className="flex min-w-0 flex-1 items-center gap-3">{body}</span>
-      )}
-      <span className="flex w-[96px] shrink-0 justify-end">{action}</span>
-    </div>
-  );
-}
-
 /** Placeholder rows the size of ItemRow, for an ItemPanel whose list is loading. */
 export function ItemRowsSkeleton({ label, rows = 3 }: { label: string; rows?: number }) {
   return (

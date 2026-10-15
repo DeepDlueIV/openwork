@@ -2,7 +2,7 @@ import { spec } from "@openwork/testkit";
 import { expect } from "vitest";
 import { modelAccessPicker } from "../worlds/chat.ts";
 
-const test = spec.world(modelAccessPicker, { timeout: 420_000 });
+const test = spec.world(modelAccessPicker, { resources: { surfaces: ["appWeb"], services: ["den", "mock"] }, timeout: 420_000 });
 
 test("with \"Only models you provide\", the member's picker lists the organization's model and not their own key", async ({ world, user, probe, step, evidence }) => {
   const key = (model: { providerID: string; modelID: string }) => `${model.providerID}:${model.modelID}`;

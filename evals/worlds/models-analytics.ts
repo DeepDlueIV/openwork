@@ -30,7 +30,7 @@ function object(value: unknown): Record<string, unknown> {
   return Object.fromEntries(Object.entries(value));
 }
 
-async function createModelsWorld(seed: Seed, analyticsUpgrade: boolean, usageSettlement = false) {
+async function createModelsWorld(seed: Seed, analyticsUpgrade: boolean, usageSettlement = false, analyticsSurface = false) {
   if (!analyticsUpgrade && process.env.OPENWORK_EVAL_DEN_API_URL) throw new Error("DPA proof requires a fresh isolated Den, not a reused service");
   const egressFile = seed.tmpPath("models-egress") + ".jsonl";
   const dpaWitnessPort = analyticsUpgrade ? null : await allocateFreePort();
@@ -45,7 +45,7 @@ async function createModelsWorld(seed: Seed, analyticsUpgrade: boolean, usageSet
     MODELS_DPA_FIXTURE: "1", MODELS_EGRESS_FILE: egressFile,
     NODE_OPTIONS: `--import=data:text/javascript,${encodeURIComponent(preload)}`,
   };
-  const den = await seed.den({ web: analyticsUpgrade, org: { name: analyticsUpgrade ? "Models Analytics Upgrade" : "Models DPA Boundary", admin: { name: "Models Admin" }, members: { teammate: { name: "Models Member" } } },
+  const den = await seed.den({ web: analyticsUpgrade || analyticsSurface, org: { name: analyticsSurface ? "Analytics rollout rehearsal" : analyticsUpgrade ? "Models Analytics Upgrade" : "Models DPA Boundary", admin: { name: "Models Admin" }, members: { teammate: { name: "Models Member" } } },
     env: { ...isolatedEnv, ...fixtureSecrets, DEN_ORG_MODE: "multi_org", OPENROUTER_MANAGEMENT_API_KEY: "fixture-management-unused", DEN_PLAN_GATING_ENABLED: "true" },
   });
   if (!analyticsUpgrade) console.error(`placement: ${den.placement?.kind} (testkit resolvePlace; isolated app-less Den and inference)`);
@@ -121,8 +121,6 @@ async function createModelsWorld(seed: Seed, analyticsUpgrade: boolean, usageSet
       const scoped = { "x-openwork-org-id": other.orgId };
       const enabled = await seed.api(other.admin, "/v1/inference", { method: "PATCH", headers: scoped, body: JSON.stringify({ enabled: true }) });
       if (!enabled.response.ok) throw new Error("Second subscriber setup failed");
-      const rollout = await seed.api(den.admin, `/v1/admin/organizations/${other.orgId}/capabilities`, { method: "PUT", body: JSON.stringify({ capabilities: { modelsAnalytics: true } }) });
-      if (!rollout.response.ok) throw new Error("Second subscriber rollout failed");
       const analytics = await seed.api(other.admin, "/v1/inference/analytics/settings", { method: "PATCH", headers: scoped, body: JSON.stringify({ enabled: true, consentVersion: 1 }) });
       if (!analytics.response.ok) throw new Error("Second subscriber analytics setup failed");
       return other;
@@ -161,10 +159,6 @@ async function createModelsWorld(seed: Seed, analyticsUpgrade: boolean, usageSet
       const session = await seed.session(app, { title: "Existing Models conversation" });
       return { app, session, analyticsTransport, upgradeDenApi };
     },
-    async rollout(enabled: boolean) {
-      const result = await seed.api(den.admin, `/v1/admin/organizations/${orgId}/capabilities`, { method: "PUT", body: JSON.stringify({ capabilities: { modelsAnalytics: enabled } }) });
-      if (!result.response.ok) throw new Error(`Rollout fixture failed: ${result.response.status}`);
-    },
     async subscription(active: boolean) { await arrange(active ? "restore" : "cancel"); },
     async complete(input: { sessionId: string; taskId: string; model?: string; prompt?: string; stream?: boolean }) {
       const response = await fetch(`${inferenceUrl}/api/v1/chat/completions`, {
@@ -181,6 +175,28 @@ async function createModelsWorld(seed: Seed, analyticsUpgrade: boolean, usageSet
     },
   };
 }
+
+async function createAnalyticsSurfaceWorld(seed: Seed, connected: boolean) {
+  const models = await createModelsWorld(seed, false, false, true);
+  await models.arrange(connected ? "surface-settings" : "surface-settings-empty");
+  const web = await seed.web({ den: models.den, signedInAs: models.den.admin,
+    startPath: "/dashboard/analytics", headless: true, viewport: { width: 1440, height: 1100 } });
+  const outsider = await provisionOrg(models.den.ref, {});
+  return { ...models, web, outsider,
+    requestAnalytics(path: string, init: RequestInit) {
+      return seed.api(models.den.admin, `/v1/inference/analytics/${path}`, { ...init, headers: { "x-openwork-org-id": models.orgId } });
+    },
+    async flags(modelsAnalyticsUi: boolean, taskAnalyticsUi: boolean) {
+      const response = await seed.api(models.den.admin, `/v1/admin/organizations/${models.orgId}/capabilities`, {
+        method: "PUT", body: JSON.stringify({ capabilities: { modelsAnalyticsUi, taskAnalyticsUi } }),
+      });
+      if (!response.response.ok) throw new Error(`Setting analytics surfaces failed: HTTP ${response.response.status}`);
+    },
+  };
+}
+
+export async function analyticsSurfaceWorld(seed: Seed) { return createAnalyticsSurfaceWorld(seed, true); }
+export async function analyticsSetupWorld(seed: Seed) { return createAnalyticsSurfaceWorld(seed, false); }
 
 export async function modelsInferenceWorld(seed: Seed) {
   return createModelsWorld(seed, false);

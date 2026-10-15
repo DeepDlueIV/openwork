@@ -2,7 +2,7 @@ import { expect } from "vitest";
 import { spec } from "@openwork/testkit";
 import { connectionsMenu } from "../worlds/chat.ts";
 
-const test = spec.world(connectionsMenu);
+const test = spec.world(connectionsMenu, { resources: { surfaces: ["appWeb"], services: ["den", "mock"] } });
 
 const plusButton = { role: "button", label: "Add files, skills, connectors, and more" } as const;
 const menuSearch = { placeholder: "Search files, skills, connectors" } as const;

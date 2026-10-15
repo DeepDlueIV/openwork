@@ -4,9 +4,9 @@ import { faultProxy } from "@openwork/env";
 import type { Place, Seed } from "@openwork/env";
 import { isRecord, stringField } from "./library.ts";
 
-type DownloadScenario = "admin" | "failures" | "member";
+type DownloadScenario = "admin" | "failures" | "member" | "legacy";
 
-/** Real Den minting and real Chromium clipboard/popups; only the first failed mint is synthetic. */
+/** Real Den and real Chromium clipboard/popups; the proxy only records API requests. */
 async function downloadWorkspace(seed: Seed, ctx: { place: Place }, scenario: DownloadScenario) {
   if (ctx.place.kind !== "local") throw new Error("This world pins the Den API proxy before boot; run with --local.");
   const [apiPort, webPort] = await allocateFreePorts(2);
@@ -29,9 +29,6 @@ async function downloadWorkspace(seed: Seed, ctx: { place: Place }, scenario: Do
   const organizationId = isRecord(context.body) ? stringField(context.body.organization, "id") : "";
   if (!organizationId) throw new Error("Could not resolve the seeded organization.");
   const mintPath = `/v1/orgs/${organizationId}/install-links`;
-  if (scenario === "failures") {
-    await proxy.faults.status(mintPath, 503, { times: 1, body: { error: "Install link temporarily unavailable. Please retry." } });
-  }
   const web = await seed.web({
     den,
     signedInAs: scenario === "member" ? den.members.teammate : den.admin,
@@ -70,17 +67,21 @@ async function downloadWorkspace(seed: Seed, ctx: { place: Place }, scenario: Do
     async readClipboard() {
       return seed.evalIn(web, () => navigator.clipboard.readText(), { awaitPromise: true });
     },
-    /** Resolve the copied token through Den, not a regex-only or synthetic URL witness. */
-    async resolveInstallLink(href: string) {
-      const url = new URL(href);
-      if (url.origin !== origin || url.pathname !== "/install" || !url.searchParams.get("token")) {
-        throw new Error("Expected a local workspace install URL containing a minted token.");
-      }
-      const response = await fetch(`${apiUrl}/v1/install-config?token=${encodeURIComponent(url.searchParams.get("token") ?? "")}`, {
+    /** What a desktop build that resolves a pasted old install link receives from Den. */
+    async legacyInstallConfig(token: string) {
+      const response = await fetch(`${apiUrl}/v1/install-config?token=${encodeURIComponent(token)}`, {
         signal: AbortSignal.timeout(15_000),
       });
       const body: unknown = await response.json();
-      return { status: response.status, organizationName: stringField(body, "clientName"), requireSignin: isRecord(body) && body.requireSignin === true };
+      return { status: response.status, webUrl: stringField(body, "webUrl"), requireSignin: isRecord(body) && body.requireSignin === true, connectUrl: isRecord(body) && "connectUrl" in body };
+    },
+    /** Where an old token download link now sends the browser. */
+    async legacyDownload(token: string) {
+      const response = await fetch(`${apiUrl}/v1/install/mac-arm64?token=${encodeURIComponent(token)}`, {
+        redirect: "manual",
+        signal: AbortSignal.timeout(15_000),
+      });
+      return { status: response.status, location: response.headers.get("location") };
     },
     async newPageCount() {
       return (await listTargets(web.handle.cdpUrl)).filter((target) => target.type === "page" && !initialPageIds.has(target.id)).length;
@@ -88,7 +89,7 @@ async function downloadWorkspace(seed: Seed, ctx: { place: Place }, scenario: Do
     /** Observe the real tab opened by the trusted click; never replace window.open. */
     async installPopup(): Promise<{ surface: Surface; url: string } | null> {
       const target = (await listTargets(web.handle.cdpUrl)).find((entry) => (
-        entry.type === "page" && entry.id !== web.client.targetId && entry.url.startsWith(`${origin}/install?token=`)
+        entry.type === "page" && entry.id !== web.client.targetId && entry.url === `${origin}/install`
       ));
       if (!target) return null;
       const client = await connect(debuggerUrlFor(web.handle.cdpUrl, target));
@@ -105,3 +106,4 @@ async function downloadWorkspace(seed: Seed, ctx: { place: Place }, scenario: Do
 export const denDownloadAdmin = (seed: Seed, ctx: { place: Place }) => downloadWorkspace(seed, ctx, "admin");
 export const denDownloadFailures = (seed: Seed, ctx: { place: Place }) => downloadWorkspace(seed, ctx, "failures");
 export const denDownloadMember = (seed: Seed, ctx: { place: Place }) => downloadWorkspace(seed, ctx, "member");
+export const denDownloadLegacy = (seed: Seed, ctx: { place: Place }) => downloadWorkspace(seed, ctx, "legacy");

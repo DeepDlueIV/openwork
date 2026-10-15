@@ -3,7 +3,7 @@ import { expect } from "vitest";
 import { liveOpenAiEnabled } from "@openwork/behaviors";
 import { browserScript, observeTranscript, readTranscriptMessages, spec, type Probe, type User } from "@openwork/testkit";
 import { skillLifecycle } from "../worlds/chat.ts";
-import { selectedSkillsWeb } from "../worlds/selected-skills.ts";
+import { selectedGlobalSkillsWeb, selectedSkillsWeb } from "../worlds/selected-skills.ts";
 import {
   cloudNativeSkillIdPrefix,
   skillJitWeb,
@@ -12,6 +12,7 @@ import {
 
 const test = spec.world(skillLifecycle, {
   timeout: 900_000,
+  resources: { surfaces: ["appWeb"], services: ["den", "mock"] },
   needs: liveOpenAiEnabled() ? { env: ["OPENAI_API_KEY"], daytona: true } : {},
 });
 
@@ -206,7 +207,7 @@ selectedTest("SKILL-MISSING a selected skill removed from the native registry fa
     until: (result) => !JSON.stringify(result.body).includes(world.skillName),
   });
   await user.click("Run task");
-  await user.see({ text: /Selected skill .* is unavailable or ambiguous in OpenCode v2\. Nothing was sent\./ }, { timeoutMs: 30_000 });
+  await user.see({ text: /Selected skill .* is not available in OpenCode v2\. Nothing was sent\./ }, { timeoutMs: 30_000 });
   expect(await world.nativeRequests()).toEqual([]);
   expect(world.providerRequests()).toEqual([]);
   expect(await readTranscriptMessages(probe, "assistant")).toEqual([]);
@@ -216,6 +217,66 @@ selectedTest("SKILL-MISSING a selected skill removed from the native registry fa
   });
   evidence.recordAssertionEvidence("A removed selected skill fails visibly",
     "After the selected skill left the native registry, sending showed that nothing was sent, with no engine prompt, provider request or assistant message.", true);
+});
+
+selectedTest("SKILL-SAME-NAME a person picks a skill whose renamed copy shares its name and the chosen skill is sent", async ({ world, user, probe, evidence, step }) => {
+  expect(world.engine).toBe("v2");
+  const skillPath = `/workspace/${world.workspace.workspaceId}/opencode2/api/skill`;
+  await step("given: a renamed copy of the skill in another folder carries the same name", async () => {
+    await world.addRenamedCopy();
+    const shared = await probe.eventually(async () => {
+      const catalog = await world.readNative(skillPath);
+      const skills = record(catalog.body) && Array.isArray(catalog.body.data) ? catalog.body.data.filter(record) : [];
+      return skills.filter((entry) => entry.name === world.skillName).map((entry) => String(entry.id)).sort();
+    }, { within: 30_000, label: "the engine registers both folders under one name", until: (ids) => ids.length === 2 });
+    expect(shared).toEqual([world.skillName, `${world.skillName}-copy`]);
+    evidence.recordAssertionEvidence("Two skills share one name", `Engine skills named ${world.skillName}: ${shared.join(", ")}`, true);
+  });
+  await step("when: the person picks the skill in the composer and sends", async () => {
+    await openSkillMenu(user, world.skillName);
+    await user.type("composer", ` ${world.prompt}`);
+    await user.click("Run task");
+    await user.see({ text: world.reply }, { timeoutMs: 90_000 });
+    await user.screenshot();
+    evidence.recordAssertionEvidence("The message is sent", `The reply "${world.reply}" arrived with no error notice.`, true);
+  });
+  await step("after: only the chosen skill's instructions reached the model", async () => {
+    const prompts = (await world.nativeRequests()).filter((request) => request.kind === "prompt").map((request) => request.body);
+    expect(prompts).toEqual([{ text: expect.stringContaining(world.prompt), skills: [{ id: world.skillName }] }]);
+    const sent = JSON.stringify(world.providerRequests());
+    expect(sent).toContain(world.skillBody);
+    expect(sent).not.toContain(world.copyBody);
+    evidence.recordAssertionEvidence("The chosen skill is the one attached",
+      `Prompt attached ${JSON.stringify(record(prompts[0]) ? prompts[0].skills : null)}; the model saw the chosen skill's instructions and not the copy's.`, true);
+  });
+});
+
+const selectedGlobalTest = spec.world(selectedGlobalSkillsWeb, {
+  timeout: 420_000, resources: { surfaces: ["appWeb"], services: ["mock"] },
+});
+
+selectedGlobalTest("SKILL-GLOBAL a person picks a skill from their global OpenCode skills folder and it is sent", async ({ world, user, evidence, step }) => {
+  expect(world.engine).toBe("v2");
+  await step("given: the skill lives only in the person's global OpenCode skills folder", async () => {
+    expect(world.skillDirectory.startsWith(world.workspacePath)).toBe(false);
+    await openSkillMenu(user, world.skillName);
+    await user.screenshot();
+    evidence.recordAssertionEvidence("The picker offers a global skill", `${world.skillName} is offered from a folder outside the workspace.`, true);
+  });
+  await step("when: the person sends a message with it", async () => {
+    await user.type("composer", ` ${world.prompt}`);
+    await user.click("Run task");
+    await user.see({ text: world.reply }, { timeoutMs: 90_000 });
+    await user.screenshot();
+    evidence.recordAssertionEvidence("The message is sent", `The reply "${world.reply}" arrived with no error notice.`, true);
+  });
+  await step("after: the global skill's instructions reached the model", async () => {
+    const prompts = (await world.nativeRequests()).filter((request) => request.kind === "prompt").map((request) => request.body);
+    expect(prompts).toEqual([{ text: expect.stringContaining(world.prompt), skills: [{ id: world.skillName }] }]);
+    expect(JSON.stringify(world.providerRequests())).toContain(world.skillBody);
+    evidence.recordAssertionEvidence("The global skill is attached",
+      `Prompt attached ${JSON.stringify(record(prompts[0]) ? prompts[0].skills : null)}; the model saw the skill's instructions.`, true);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -362,7 +423,10 @@ jitTest("SKILL-CLOUD-DISCOVERY a member discovers Cloud skills without delaying 
     expect(calls).toContain("get_skill");
     expect(calls).not.toContain("list_skills");
     expect((await world.cloudNativeSkills()).some(skill => skill.content.includes(code))).toBe(false);
-    evidence.recordAssertionEvidence("A natural request finds the Cloud skill without naming it", `Native skill selection followed by live get_skill; no list_skills call and no body in the registry. ${turn.text}`, true);
+    // Registering Cloud skills must not cost OpenWork its own context and browser tools.
+    const context = (await world.cloudDiscoveryState()).plugins.find(plugin => plugin.id === "openwork.context");
+    expect(context?.state).toMatchObject({ status: "active" });
+    evidence.recordAssertionEvidence("A natural request finds the Cloud skill without naming it", `Native skill selection followed by live get_skill; no list_skills call and no body in the registry; OpenWork's context plugin is ${JSON.stringify(context?.state)}. ${turn.text}`, true);
   });
 
   await step("workspace skills still update while organization discovery is enabled", async () => {

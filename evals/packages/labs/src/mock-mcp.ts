@@ -68,6 +68,8 @@ export interface MockAgentRequest {
   model: string;
   advertisedToolNames?: string[];
   toolResultCodes?: unknown;
+  /** Whether any value registered with /admin/private-sentinels appeared anywhere in this model request. */
+  privateSentinelSeen?: boolean;
   reasoningEffort?: string | null;
   promptMarker: string | null;
   matchedMarkers: string[];
@@ -548,6 +550,7 @@ export async function startMockMcp(options: StartMockMcpOptions = {}): Promise<M
       completions.push({
         model: completion.model,
         toolResultCodes: completion.toolResultCodes,
+        privateSentinelSeen: completion.privateSentinelSeen === true,
         advertisedToolNames: Array.isArray(completion.advertisedToolNames)
           ? completion.advertisedToolNames.filter((value): value is string => typeof value === "string") : undefined,
         reasoningEffort: typeof completion.reasoningEffort === "string" ? completion.reasoningEffort : null,

@@ -17,11 +17,16 @@ const REQUEST_ID = "req_01JZK4W9N7X2Q8M3V5T6B1C0DE";
 const DEBUG_PANEL_TITLE = /react session debug/i;
 
 const detailsToggle = { testId: "session-error-details-toggle" };
+// Technical details is revealed on hover (or focus) of its card, as a person
+// with a mouse finds it; point at the card's text before reaching for it.
 const detailsPanel = { testId: "session-error-details" };
 const statusLine = { text: /Status: 429/ };
 const requestId = { text: new RegExp(REQUEST_ID) };
 
-test("session error cards expose provider diagnostics only in Developer mode", async ({ user, probe, step, world, place }) => {
+// A failed turn in the transcript keeps its raw error one click away for
+// everyone (behind the code icon that appears on hover or focus); the session
+// error banner and the React session debug panel stay Developer-mode only.
+test("session error cards keep provider diagnostics behind Technical details; the error banner shows them only in Developer mode", async ({ user, probe, step, world, place }) => {
   // Toggle Developer mode the way a person does: command palette → "Enable/Disable Developer Mode".
   const toggleDeveloperMode = async (next: "on" | "off") => {
     const label = next === "on" ? /enable developer mode/i : /disable developer mode/i;
@@ -33,8 +38,15 @@ test("session error cards expose provider diagnostics only in Developer mode", a
       label: `Developer mode persisted ${next}`,
     });
   };
+  // Closing the disclosure fades the panel out; wait for that to finish
+  // before requiring it to stay hidden.
+  const detailsClosed = () => probe.eventually(() => probe.dom('[data-testid="session-error-details"]'), {
+    within: 10_000,
+    label: "Technical details closed",
+    until: (value) => value.elements.every((element) => element.rect.height === 0),
+  });
 
-  await step("with Developer mode off, a failed turn shows only the plain error card", async () => {
+  await step("a failed turn shows only the plain error card until a person points at it", async () => {
     await user.see({ text: new RegExp(CARD_TEXT) });
     expect(String(await probe.storage("openwork.developerMode"))).not.toBe("1");
     await user.notSee(detailsToggle);
@@ -43,14 +55,13 @@ test("session error cards expose provider diagnostics only in Developer mode", a
     await user.notSee({ text: DEBUG_PANEL_TITLE });
   });
 
-  await step("enabling Developer mode reaches the session surface without a reload", async () => {
-    await toggleDeveloperMode("on");
+  await step("pointing at the card reveals a collapsed Technical details control outside Developer mode", async () => {
+    await user.hover({ text: new RegExp(CARD_TEXT) });
     await user.see(detailsToggle);
-    await user.see({ text: new RegExp(CARD_TEXT) });
-    await user.see({ text: DEBUG_PANEL_TITLE });
     // The disclosure starts collapsed: the toggle is present, the panel is not.
     await user.notSee(detailsPanel);
     await user.notSee(statusLine);
+    await user.notSee({ text: DEBUG_PANEL_TITLE });
   });
 
   await step("opening Technical details shows the full provider diagnostic payload with a copy action", async () => {
@@ -59,38 +70,48 @@ test("session error cards expose provider diagnostics only in Developer mode", a
     for (const line of DIAGNOSTIC_LINES) await user.see({ text: new RegExp(line.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")) });
     // The request id sits inside the raw response-body block, so match it within that block's text.
     await user.see(requestId);
-    await user.see({ role: "button", label: /copy details/i });
+    await user.see({ role: "button", label: /^copy$/i });
   });
 
-  await step("disabling Developer mode removes diagnostics while the error card remains", async () => {
-    await toggleDeveloperMode("off");
-    await user.notSee(detailsToggle, { timeoutMs: 10_000 });
-    await user.see({ text: new RegExp(CARD_TEXT) });
+  await step("closing Technical details hides the payload while the error card remains", async () => {
+    await user.click(detailsToggle);
+    await detailsClosed();
     await user.notSee(detailsPanel);
     await user.notSee(statusLine);
     await user.notSee(requestId);
+    await user.see({ text: new RegExp(CARD_TEXT) });
+  });
+
+  await step("Developer mode adds the session debug panel without a reload, and turning it off removes the panel", async () => {
+    await toggleDeveloperMode("on");
+    await user.see({ text: DEBUG_PANEL_TITLE });
+    await user.see({ text: new RegExp(CARD_TEXT) });
+    await user.notSee(detailsPanel);
+    await toggleDeveloperMode("off");
     await user.notSee({ text: DEBUG_PANEL_TITLE });
+    await user.see({ text: new RegExp(CARD_TEXT) });
+    await user.notSee(statusLine);
   });
 
   const storageErrors: Array<"disk-full" | "database-error"> = ["disk-full", "database-error"];
   for (const kind of storageErrors) {
-    await step(`${kind} shows recovery guidance and keeps the stack trace in Developer mode`, async () => {
+    await step(`${kind} shows recovery guidance and keeps the stack trace behind Technical details`, async () => {
       await world.seedStorageError(kind);
       const title = kind === "disk-full" ? STORAGE_TITLE : "OpenWork couldn’t access its saved data";
       await user.see({ text: title });
       await user.see({ text: kind === "disk-full" ? STORAGE_DESCRIPTION : /check the available disk space/ });
       await user.notSee({ text: /effect\/sql\/SqlError/ });
       await user.notSee({ text: /at runLoop/ });
-      await user.notSee(detailsToggle);
       await user.notSee({ text: "Not enough disk space" });
       if (kind === "database-error") await user.notSee({ text: STORAGE_TITLE });
-      await toggleDeveloperMode("on");
+      await user.hover({ text: title });
       await user.click(detailsToggle);
       await user.see({ text: /effect\/sql\/SqlError/ });
       await user.see({ text: /at runLoop/ });
-      await user.see({ role: "button", label: /copy details/i });
-      await toggleDeveloperMode("off");
+      await user.see({ role: "button", label: /^copy$/i });
+      await user.click(detailsToggle);
       await user.see({ text: title });
+      await detailsClosed();
       await user.notSee(detailsPanel);
       await user.notSee({ text: /at runLoop/ });
     });
@@ -101,6 +122,7 @@ test("session error cards expose provider diagnostics only in Developer mode", a
       await user.see({ text: title });
       await user.notSee({ text: /at runLoop/ });
       await toggleDeveloperMode("on");
+      await user.hover({ text: title });
       await user.click(detailsToggle);
       await user.see({ text: /effect\/sql\/SqlError/ });
       await user.see({ text: /at runLoop/ });
@@ -120,6 +142,7 @@ providerTest("a model server failure retries clearly and leaves one completed an
     await user.see({ text: "The model couldn’t respond. Retrying…" });
     await user.notSee({ text: "Internal server error" });
     await user.notSee({ testId: "admission-outcome-unknown" });
+    await user.hover({ text: "The model couldn’t respond. Retrying…" });
     await user.click(detailsToggle);
     await user.see({ text: /attempt [12]/ });
   });

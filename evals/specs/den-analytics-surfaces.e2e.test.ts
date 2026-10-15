@@ -70,7 +70,7 @@ test("an owner can hide analytics without losing existing export consent or gran
 
   await step("the owner can inspect the existing export but an ordinary member and another organization cannot read analytics", async () => {
     await owner.click({ role: "tab", label: "Integrations" });
-    await owner.see({ text: "Connected", exact: true });
+    await owner.see({ text: /^Connected$/ });
     await owner.see({ role: "button", label: "Disconnect Langfuse" });
     const member = world.den.members.teammate;
     const forbidden = await denFetch(member, "/v1/inference/analytics/activity?days=30", { headers: { ...headers, authorization: `Bearer ${member.token}` } });

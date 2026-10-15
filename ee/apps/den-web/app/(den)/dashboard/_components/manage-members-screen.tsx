@@ -758,7 +758,7 @@ export function ManageMembersScreen() {
           {listToolbars ? <MemberListToolbar
             collection="members" value={memberFilter} onChange={setMemberFilter}
             action={<DenButton size="sm" icon={access.canInviteMembers ? Plus : Lock} disabled={!access.canInviteMembers} title={!access.canInviteMembers ? permissionLockReason("invitations.manage") : undefined} onClick={() => { resetMemberEditor(); setShowInviteForm((current) => !current); }}>Add member</DenButton>}
-            secondary={access.canInviteMembers && orgContext.capabilities.installLinks ? <ItemMenu label="Member list actions" entries={[{ label: installLinkCopied ? "Copied" : "Copy install link", disabled: installLinkBusy || mutationBusy === "copy-install-link", onSelect: handleCopyInstallLink }]} /> : undefined}
+            secondary={access.canInviteMembers && orgContext.capabilities.installLinks ? <ItemMenu label="Member list actions" entries={[{ label: installLinkCopied ? "Copied" : "Copy install link", onSelect: handleCopyInstallLink }]} /> : undefined}
           /> : <div className="mb-6 flex flex-wrap items-center justify-end gap-4" data-testid="members-toolbar">
             {toolbarAction ? (
               <div className="flex flex-wrap justify-end gap-2">

@@ -121,7 +121,10 @@ test("first run signs in through the browser, then shares a skill with a colleag
     const grant = handoff.searchParams.get("grant");
     expect(grant, `unexpected deep link: ${deepLink}`).toBeTruthy();
     await agent.on(world.app).run("auth.exchange-grant", { grant, baseUrl: world.den.ref.webUrl });
+    await appUser.see({ role: "button", label: /.+ — account and status$/ }, { timeoutMs: 180_000 });
+    await appUser.click({ testId: "account-status-menu" });
     await appUser.see({ text: world.den.admin.email }, { timeoutMs: 180_000 });
+    await appUser.press("Escape");
     await appUser.notSee({ text: /sign-in failure|something went wrong/i });
     await appUser.looks([
       "The app is back in focus and no longer offers a bare Sign in to OpenWork Cloud as the only action",

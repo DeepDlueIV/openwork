@@ -318,7 +318,7 @@ describe.sequential("setup SSO full API and Web matrix", () => {
         const person = user.on(browser);
         const shot = journeyCapture(browser, step, "generic web handoff context");
         await person.navigate(installUrl.toString());
-        await person.see({ role: "heading", label: "Start using OpenWork" }, { timeoutMs: 90_000 });
+        await person.see({ role: "heading", label: "Start using OpenWork." }, { timeoutMs: 90_000 });
         const signInUrl = new URL(await readSetupSsoBrowserUrl(browser));
         expect(signInUrl.pathname).toBe("/");
         expect(signInUrl.searchParams.get("mode")).toBe("sign-in");
@@ -343,7 +343,7 @@ describe.sequential("setup SSO full API and Web matrix", () => {
           const person = user.on(browser);
           const shot = journeyCapture(browser, step, `generic ${scenario.route}, SSO ${scenario.unverified ? "unverified" : "disabled"}`);
           await person.navigate(`${column.webUrl}${scenario.route}`);
-          await person.see({ role: "heading", label: "Start using OpenWork" }, { timeoutMs: 90_000 });
+          await person.see({ role: "heading", label: "Start using OpenWork." }, { timeoutMs: 90_000 });
           const signInUrl = new URL(await readSetupSsoBrowserUrl(browser));
           expect(signInUrl.pathname).toBe("/");
           expect(signInUrl.searchParams.get("mode")).toBe("sign-in");

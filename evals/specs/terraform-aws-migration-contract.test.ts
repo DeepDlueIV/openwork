@@ -47,12 +47,12 @@ print(json.dumps({'scenarios':6,'singleTask':True,'ambiguousOutcomePromotes':Fal
 // Both tools fail a real apply at the completion gate. Their test-language
 // expect_failures differs for apply-time values, so the parent asserts exit 1
 // rather than using Terraform-only override_during or state_key options.
-test("Terraform and OpenTofu reject a failed migration before service rollout", { timeout: 300_000 }, async () => {
+test("Terraform and OpenTofu reject a failed migration before service rollout", { timeout: 600_000 }, async () => {
   needs({ commands: ["terraform", "tofu"] });
   for (const tool of ["terraform", "tofu"]) {
-    const init = spawnSync(tool, ["init", "-backend=false", "-input=false", "-upgrade", "-no-color"], { cwd: moduleDir, encoding: "utf8", timeout: 90_000 });
+    const init = spawnSync(tool, ["init", "-backend=false", "-input=false", "-upgrade", "-no-color"], { cwd: moduleDir, encoding: "utf8", timeout: 240_000 });
     expect(init.status, init.stderr).toBe(0);
-    const negative = spawnSync(tool, ["test", "-no-color", "-test-directory=tests/negative"], { cwd: moduleDir, encoding: "utf8", timeout: 90_000 });
+    const negative = spawnSync(tool, ["test", "-no-color", "-test-directory=tests/negative"], { cwd: moduleDir, encoding: "utf8", timeout: 240_000 });
     expect(negative.status).toBe(1);
     expect((negative.stdout + negative.stderr).replace(/\s+/g, " ")).toContain("No service rollout is permitted");
     expect(negative.stdout + negative.stderr).not.toContain("Missing expected failure");

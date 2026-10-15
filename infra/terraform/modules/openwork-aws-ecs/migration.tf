@@ -85,9 +85,11 @@ resource "aws_lambda_function" "migration" {
   timeout          = 900
   memory_size      = 128
   # Invocation runs only ECS control-plane calls, never connects to the database.
-  reserved_concurrent_executions = 1
-  tags                           = var.tags
-  depends_on                     = [aws_iam_role_policy.migration]
+  # Do not reserve concurrency: low-quota accounts may not have capacity above
+  # Lambda's required unreserved floor. ECS clientToken deduplicates retries;
+  # the Terraform state lock and one schema coordinator serialize deployments.
+  tags       = var.tags
+  depends_on = [aws_iam_role_policy.migration]
 }
 
 resource "terraform_data" "migration_complete" {

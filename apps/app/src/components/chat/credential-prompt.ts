@@ -29,12 +29,26 @@ function records(value: unknown): Record<string, unknown>[] {
 }
 
 /**
+ * Den's own operations that answer with a credential prompt. Results of an
+ * organization's MCP servers, plugins or Workflows also pass through
+ * execute_capability, but under prefixed names (mcp:..., plugin:...), so they
+ * can never match and cannot forge a key field.
+ */
+const DEN_PROMPT_OPERATIONS = new Set(["postMcpConnections", "postInferenceProviders"])
+
+function isDenPromptCall(part: DynamicToolUIPart): boolean {
+  if (!isOpenworkCloudCapabilityTool(part.toolName) || !/(?:^|_)execute_capability$/.test(part.toolName)) return false
+  const name = isRecord(part.input) ? part.input.name : undefined
+  return typeof name === "string" && DEN_PROMPT_OPERATIONS.has(name)
+}
+
+/**
  * The one credential prompt an OpenWork Cloud tool result carries, if any.
- * Only Den's own tools are read, and only the exact schema is accepted, so
- * another MCP server or a model cannot make the host draw a key field.
+ * Only Den's own prompt-creating operations are read, and only the exact
+ * schema is accepted, so another MCP server or a model cannot draw a key field.
  */
 export function credentialPromptFromToolPart(part: DynamicToolUIPart): CredentialPrompt | null {
-  if (part.state !== "output-available" || !isOpenworkCloudCapabilityTool(part.toolName)) return null
+  if (part.state !== "output-available" || !isDenPromptCall(part)) return null
   const metadata = isRecord(part.callProviderMetadata) && isRecord(part.callProviderMetadata.openwork)
     ? part.callProviderMetadata.openwork.mcpResult
     : undefined

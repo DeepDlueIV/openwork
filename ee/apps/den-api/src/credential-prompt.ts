@@ -78,5 +78,5 @@ export function credentialPromptManageUrl(prompt: CredentialPrompt): string | nu
 /** Fields added to a REST response so the agent and the host both read the prompt. */
 export function credentialPromptResponseFields(prompt: CredentialPrompt) {
   const manageUrl = credentialPromptManageUrl(prompt)
-  return { credentialPrompt: prompt, nextStep: credentialPromptInstruction(prompt, manageUrl) }
+  return { credentialPrompt: prompt, nextStep: credentialPromptInstruction(manageUrl) }
 }

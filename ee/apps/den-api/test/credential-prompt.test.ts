@@ -52,7 +52,9 @@ test("the agent is told to end its turn and never to ask for the key in chat", (
   assert.match(fields.nextStep, /Never ask them to paste the key in chat/)
   assert.match(fields.nextStep, /End your turn/)
   assert.match(fields.nextStep, /https:\/\/console\.example\.test\/dashboard\/ai-gateway\?tab=ai-providers/)
-  assert.match(credentialPromptInstruction(prompt, null), /^A private field for the Team OpenAI API key/)
+  // Names are chosen by whoever created the resource; they never reach the agent's instruction.
+  assert.ok(!fields.nextStep.includes("Team OpenAI"))
+  assert.match(credentialPromptInstruction(null), /^A private field for this API key/)
 })
 
 test("agents are offered AI Gateway provider creation only while secure keys in chat is on", () => {

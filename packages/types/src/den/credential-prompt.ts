@@ -45,10 +45,12 @@ export function credentialPromptDestination(value: unknown): string | null {
 }
 
 /**
- * What the agent reads next to the prompt. The person enters the key in
- * OpenWork; the agent must not ask for it in chat.
+ * What the agent reads next to the prompt. Fixed text: resource names are
+ * chosen by whoever created the resource, so they are display data for the
+ * person only and never part of the agent's instruction. The dashboard URL is
+ * built by Den from validated IDs.
  */
-export function credentialPromptInstruction(prompt: CredentialPrompt, manageUrl: string | null): string {
+export function credentialPromptInstruction(manageUrl: string | null): string {
   const where = manageUrl ? ` Other clients: ask the person to add it at ${manageUrl}.` : ""
-  return `A private field for the ${prompt.name} API key is shown to the person in OpenWork. Never ask them to paste the key in chat or into a tool argument. End your turn; OpenWork continues the task once the key is saved.${where}`
+  return `A private field for this API key is shown to the person in OpenWork. Never ask them to paste the key in chat or into a tool argument. End your turn; OpenWork continues the task once the key is saved.${where}`
 }

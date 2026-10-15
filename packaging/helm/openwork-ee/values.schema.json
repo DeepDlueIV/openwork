@@ -18,6 +18,16 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "memberListToolbars": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Members: consistent list toolbars: Filter members, teams and roles beside their add action, with compact member rows and secondary actions in the list menu. Renders DEN_FEATURE_MEMBER_LIST_TOOLBARS."
+            },
             "appBuildProgress": {
               "enum": [
                 "",

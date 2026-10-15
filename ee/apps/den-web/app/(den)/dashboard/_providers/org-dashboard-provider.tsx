@@ -9,6 +9,8 @@ import {
   useState,
 } from "react";
 import { flushSync } from "react-dom";
+import { useQueryClient } from "@tanstack/react-query";
+import { permissionsQueryKeys } from "../_components/permissions-query-keys";
 import { usePathname, useRouter } from "next/navigation";
 import { useDenFlow } from "../../_providers/den-flow-provider";
 import { getErrorMessage, getOrgLimitError, getOrgPaymentRequiredError, getRequestError, isReauthRequiredError, requestJson, WORKSPACE_REAUTH_SECURITY_MESSAGE } from "../../_lib/den-flow";
@@ -79,6 +81,7 @@ export function OrgDashboardProvider({
   children: React.ReactNode;
 }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const pathname = usePathname();
   const { user, sessionHydrated, signOut, runtimeConfig, runtimeConfigLoaded, setupOrganizationId } = useDenFlow();
   const [orgDirectory, setOrgDirectory] = useState<DenOrgSummary[]>([]);
@@ -920,6 +923,9 @@ export function OrgDashboardProvider({
       if (response.status !== 204 && !response.ok) {
         throw getRequestError(payload, response, `Failed to delete team (${response.status}).`);
       }
+      // Deletion removes role links in Den, not reusable shared roles. Refresh the
+      // cached sets/details too, so switching tabs cannot resurrect a deleted team.
+      if (activeOrgId) await queryClient.invalidateQueries({ queryKey: permissionsQueryKeys.all(activeOrgId) });
     });
   }
 

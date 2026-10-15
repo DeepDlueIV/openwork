@@ -840,6 +840,7 @@
           "key": {
             "type": "string",
             "enum": [
+              "memberListToolbars",
               "appBuildProgress",
               "teamMembershipCache",
               "managedDeploymentsGcp",
@@ -1035,6 +1036,9 @@
                 "capabilities": {
                   "type": "object",
                   "properties": {
+                    "memberListToolbars": {
+                      "type": "boolean"
+                    },
                     "appBuildProgress": {
                       "type": "boolean"
                     },
@@ -1106,6 +1110,7 @@
                     }
                   },
                   "required": [
+                    "memberListToolbars",
                     "appBuildProgress",
                     "teamMembershipCache",
                     "managedDeploymentsGcp",
@@ -1133,6 +1138,62 @@
                 "featureStates": {
                   "type": "object",
                   "properties": {
+                    "memberListToolbars": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "appBuildProgress": {
                       "type": "object",
                       "properties": {
@@ -2311,6 +2372,7 @@
                     }
                   },
                   "required": [
+                    "memberListToolbars",
                     "appBuildProgress",
                     "teamMembershipCache",
                     "managedDeploymentsGcp",
@@ -2705,6 +2767,9 @@
                 "capabilities": {
                   "type": "object",
                   "properties": {
+                    "memberListToolbars": {
+                      "type": "boolean"
+                    },
                     "appBuildProgress": {
                       "type": "boolean"
                     },
@@ -2776,6 +2841,7 @@
                     }
                   },
                   "required": [
+                    "memberListToolbars",
                     "appBuildProgress",
                     "teamMembershipCache",
                     "managedDeploymentsGcp",
@@ -2803,6 +2869,62 @@
                 "featureStates": {
                   "type": "object",
                   "properties": {
+                    "memberListToolbars": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "appBuildProgress": {
                       "type": "object",
                       "properties": {
@@ -3981,6 +4103,7 @@
                     }
                   },
                   "required": [
+                    "memberListToolbars",
                     "appBuildProgress",
                     "teamMembershipCache",
                     "managedDeploymentsGcp",
@@ -26935,6 +27058,9 @@
                     "capabilities": {
                       "type": "object",
                       "properties": {
+                        "memberListToolbars": {
+                          "type": "boolean"
+                        },
                         "appBuildProgress": {
                           "type": "boolean"
                         },
@@ -27006,6 +27132,7 @@
                         }
                       },
                       "required": [
+                        "memberListToolbars",
                         "appBuildProgress",
                         "teamMembershipCache",
                         "managedDeploymentsGcp",
@@ -27033,6 +27160,62 @@
                     "featureStates": {
                       "type": "object",
                       "properties": {
+                        "memberListToolbars": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "appBuildProgress": {
                           "type": "object",
                           "properties": {
@@ -28211,6 +28394,7 @@
                         }
                       },
                       "required": [
+                        "memberListToolbars",
                         "appBuildProgress",
                         "teamMembershipCache",
                         "managedDeploymentsGcp",
@@ -28350,6 +28534,9 @@
                     "capabilities": {
                       "type": "object",
                       "properties": {
+                        "memberListToolbars": {
+                          "type": "boolean"
+                        },
                         "appBuildProgress": {
                           "type": "boolean"
                         },
@@ -28421,6 +28608,7 @@
                         }
                       },
                       "required": [
+                        "memberListToolbars",
                         "appBuildProgress",
                         "teamMembershipCache",
                         "managedDeploymentsGcp",
@@ -28448,6 +28636,62 @@
                     "featureStates": {
                       "type": "object",
                       "properties": {
+                        "memberListToolbars": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "appBuildProgress": {
                           "type": "object",
                           "properties": {
@@ -29626,6 +29870,7 @@
                         }
                       },
                       "required": [
+                        "memberListToolbars",
                         "appBuildProgress",
                         "teamMembershipCache",
                         "managedDeploymentsGcp",

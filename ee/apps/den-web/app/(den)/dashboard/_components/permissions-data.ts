@@ -7,6 +7,7 @@ import { getErrorMessage, getReauthRequiredError, requestJson } from "../../_lib
 import { ORG_SCOPE_HEADER } from "../../_lib/org-scope";
 import { orgFeatureEnabled } from "../../_lib/den-org";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
+import { permissionsQueryKeys } from "./permissions-query-keys";
 
 /**
  * Den API Permissions endpoints (ee/apps/den-api/src/routes/org/permissions.ts).
@@ -229,14 +230,7 @@ function required<T>(value: T | null): T {
   return value;
 }
 
-export const permissionsQueryKeys = {
-  all: (orgId: string) => ["permissions", orgId],
-  sets: (orgId: string) => ["permissions", orgId, "sets"],
-  set: (orgId: string, setId: string) => ["permissions", orgId, "set", setId],
-  history: (orgId: string, setId: string) => ["permissions", orgId, "history", setId],
-  key: (orgId: string, key: string) => ["permissions", orgId, "key", key],
-  member: (orgId: string, memberId: string) => ["permissions", orgId, "member", memberId],
-};
+export { permissionsQueryKeys } from "./permissions-query-keys";
 
 export function usePermissionSets(orgId: string | null, enabled = true) {
   return useQuery({

@@ -37,6 +37,8 @@ export const RETIRED_FEATURE_KEYS = [
   // wherever Workbot or the desktop Calendar is.
   "denFlatPageHeaders", "dashboardActivity", "libraryIntegrated", "libraryUsage", "modelsAnalytics",
   "headlessAutomations", "calendarPolish",
+  // Plain install pages replaced token links; accept old Helm values and overrides.
+  "stableInstallLinks",
   // Removed (2026-10): organization Dashboards
   "orgManagedDashboards",
 ] as const

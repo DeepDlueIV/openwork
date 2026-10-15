@@ -578,6 +578,16 @@
               ],
               "description": "Retired: no longer a feature switch. Ignored."
             },
+            "stableInstallLinks": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Retired: no longer a feature switch. Ignored."
+            },
             "orgManagedDashboards": {
               "enum": [
                 "",

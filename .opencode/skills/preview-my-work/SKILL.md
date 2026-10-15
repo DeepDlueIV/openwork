@@ -25,7 +25,7 @@ Act on what the CLI prints:
 
 ## Rules the CLI cannot enforce
 
-- To check your own change on this computer, start with `pnpm world up dev-app-web --detach -- --browser`: headless, with a `cdp` address to drive (`browser-automation`). A `--place local` world with a desktop opens a window that takes focus here. Use one only when asked or when the change needs the desktop shell; otherwise use Daytona.
+- To check your own change on this computer, start with `pnpm world up dev-app-web --detach -- --browser`: headless, with a `cdp` address to attach to. A `--place local` world with a desktop opens a window that takes focus here. Use one only when asked or when the change needs the desktop shell; otherwise use Daytona.
 - Use a pushed full SHA for explicit sources. Cold builds take minutes. Never promise seconds.
 - App settings: export the key, then `--env KEY` before `--`. Never pass credentials, tokens, profiles or secrets volumes.
 - `preview-app-web` Den proxy: only `OPENWORK_DEV_HEADLESS_WEB_DEN_PROXY` plus `OPENWORK_DEV_DEN_PROXY_TARGET`, selected together. Remote targets allow only `https://app.openworklabs.com`.

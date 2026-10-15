@@ -78,7 +78,7 @@ focus. Check app UI in headless Chrome instead:
 * Specs: `seed.appWeb` (`write-a-spec`); `run-tests` explains which placement
   tests your working tree.
 * By hand: `pnpm world up dev-app-web --detach -- --browser`, then drive the
-  printed `cdp` address (`browser-automation`).
+  printed `cdp` address.
 * Use the desktop app (`seed.desktop`, `pnpm dev`, `preview-desktop`,
   `live-desktop`) only when the user asks or the change needs the desktop
   shell: titlebar and window controls, native menus and dialogs, `openwork://`

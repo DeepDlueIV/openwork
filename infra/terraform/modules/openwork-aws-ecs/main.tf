@@ -1,11 +1,12 @@
 locals {
   # Den derives its public API origin as api.<web host>; it must be HTTPS.
-  api_host      = var.api_domain_name != "" ? var.api_domain_name : "api.${var.domain_name}"
-  web_url       = "https://${var.domain_name}"
-  api_url       = "https://${local.api_host}"
-  region        = split(":", aws_cloudwatch_log_group.api.arn)[3] # works on AWS provider v5 and v6
-  den_api_image = var.den_api_image != "" ? var.den_api_image : "ghcr.io/different-ai/openwork-den-api:${var.openwork_version}"
-  den_web_image = var.den_web_image != "" ? var.den_web_image : "ghcr.io/different-ai/openwork-den-web:${var.openwork_version}"
+  api_host = var.api_domain_name != "" ? var.api_domain_name : "api.${var.domain_name}"
+  web_url  = "https://${var.domain_name}"
+  api_url  = "https://${local.api_host}"
+  region   = split(":", aws_cloudwatch_log_group.api.arn)[3] # works on AWS provider v5 and v6
+  # Known release index digests; other versions require explicit immutable refs.
+  den_api_image = var.den_api_image != "" ? var.den_api_image : "ghcr.io/different-ai/openwork-den-api@sha256:0942e02a8e2033151e982f51b24926fe5090807b7f7480d77f2c4fc5b806737e"
+  den_web_image = var.den_web_image != "" ? var.den_web_image : "ghcr.io/different-ai/openwork-den-web@sha256:b1543b2bb36df0a7c75d7dc18cdd773eb2e87df268169dcb1e284439299ada3f"
 
   # OpenWork Web: den-gateway serves the web app and proxies each member to
   # their Daytona sandbox; den-api provisions the sandboxes.
@@ -36,7 +37,7 @@ locals {
   database_url = var.create_database ? format(
     "mysql://%s:%s@%s:%d/%s?%s",
     aws_db_instance.this[0].username,
-    random_password.db[0].result,
+    var.write_only_secrets ? "" : random_password.db[0].result,
     aws_db_instance.this[0].address,
     aws_db_instance.this[0].port,
     aws_db_instance.this[0].db_name,
@@ -45,7 +46,7 @@ locals {
 
   redis_url = var.create_redis ? "rediss://${aws_elasticache_replication_group.this[0].primary_endpoint_address}:6379" : ""
 
-  bootstrap_code = var.initial_admin_bootstrap_code != "" ? var.initial_admin_bootstrap_code : random_password.bootstrap_code.result
+  bootstrap_code = var.initial_admin_bootstrap_code != "" ? var.initial_admin_bootstrap_code : one(random_password.bootstrap_code[*].result)
 
   # Mirrors the env the openwork-ee Helm chart puts in its ConfigMap; both
   # services receive the same set, as they do on Kubernetes.
@@ -78,7 +79,6 @@ locals {
     EMAIL_FROM                             = var.email_from
     SMTP_HOST                              = var.smtp.host
     SMTP_PORT                              = tostring(var.smtp.port)
-    SMTP_USER                              = var.smtp.username
     SMTP_SECURE                            = local.bool[var.smtp.secure]
   }, local.web_environment, local.agent_environment, var.extra_environment)
 
@@ -116,10 +116,11 @@ locals {
   # Only keys with a value are written, so ECS never references a missing key.
   secret_values = { for k, v in {
     DATABASE_URL                     = local.database_url
-    BETTER_AUTH_SECRET               = random_password.better_auth.result
-    DEN_DB_ENCRYPTION_KEY            = random_password.db_encryption.result
+    BETTER_AUTH_SECRET               = one(random_password.better_auth[*].result)
+    DEN_DB_ENCRYPTION_KEY            = one(random_password.db_encryption[*].result)
     DEN_INITIAL_ADMIN_BOOTSTRAP_CODE = local.bootstrap_code
     DATABASE_REDIS_URL               = local.redis_url
+    SMTP_USER                        = var.smtp.username
     SMTP_PASS                        = var.smtp.password
     RESEND_API_KEY                   = var.resend_api_key
     DAYTONA_API_KEY                  = local.provisioner_mode == "daytona" ? var.daytona_api_key : ""
@@ -141,16 +142,19 @@ locals {
 }
 
 resource "random_password" "better_auth" {
+  count   = var.write_only_secrets ? 0 : 1
   length  = 48
   special = false
 }
 
 resource "random_password" "db_encryption" {
+  count   = var.write_only_secrets ? 0 : 1
   length  = 48
   special = false
 }
 
 resource "random_password" "bootstrap_code" {
+  count   = var.write_only_secrets ? 0 : 1
   length  = 24
   special = false
 }
@@ -163,6 +167,8 @@ resource "aws_secretsmanager_secret" "app" {
 }
 
 resource "aws_secretsmanager_secret_version" "app" {
-  secret_id     = aws_secretsmanager_secret.app.id
-  secret_string = jsonencode(local.secret_values)
+  secret_id                = aws_secretsmanager_secret.app.id
+  secret_string            = var.write_only_secrets ? null : jsonencode(local.secret_values)
+  secret_string_wo         = var.write_only_secrets ? jsonencode(local.secret_values_wo) : null
+  secret_string_wo_version = var.write_only_secrets ? var.secrets_version : null
 }

@@ -6,11 +6,11 @@
 # pass your own VPC and subnets instead.
 
 terraform {
-  required_version = ">= 1.5.0"
+  required_version = ">= 1.11, < 2.0"
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = ">= 5.40.0"
+      version = "~> 6.69"
     }
   }
 }
@@ -112,12 +112,18 @@ resource "aws_route_table_association" "private" {
 }
 
 module "openwork" {
-  source = "../.."
+  source     = "../.."
+  depends_on = [aws_route_table_association.public, aws_route_table_association.private]
 
-  name             = var.name
-  openwork_version = var.openwork_version
-  owner_emails     = var.owner_emails
-  org_name         = var.org_name
+  name                = var.name
+  openwork_version    = var.openwork_version
+  den_api_image       = var.den_api_image
+  den_web_image       = var.den_web_image
+  write_only_secrets  = var.write_only_secrets
+  secret_values_wo    = var.secret_values_wo
+  service_name_prefix = "${var.name}-"
+  owner_emails        = var.owner_emails
+  org_name            = var.org_name
 
   vpc_id         = aws_vpc.this.id
   alb_subnet_ids = aws_subnet.public[*].id
@@ -162,3 +168,8 @@ output "alb_dns_name" { value = module.openwork.alb_dns_name }
 output "alb_arn" { value = module.openwork.alb_arn }
 output "nat_public_ip" { value = one(aws_eip.nat[*].public_ip) }
 output "log_groups" { value = module.openwork.log_groups }
+output "migration_result" { value = module.openwork.migration_result }
+output "migration_step_identifier" { value = module.openwork.migration_step_identifier }
+output "database_identifier" { value = module.openwork.database_identifier }
+output "target_group_arns" { value = module.openwork.target_group_arns }
+output "service_names" { value = module.openwork.service_names }

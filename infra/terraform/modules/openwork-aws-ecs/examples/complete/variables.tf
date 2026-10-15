@@ -1,3 +1,28 @@
+variable "den_api_image" {
+  type    = string
+  default = ""
+}
+variable "den_web_image" {
+  type    = string
+  default = ""
+}
+variable "write_only_secrets" {
+  type    = bool
+  default = false
+}
+variable "secret_values_wo" {
+  type = object({
+    database_password  = string
+    better_auth_secret = string
+    db_encryption_key  = string
+    bootstrap_code     = string
+    database_url       = optional(string, "")
+  })
+  sensitive = true
+  ephemeral = true
+  default   = { database_password = "", better_auth_secret = "", db_encryption_key = "", bootstrap_code = "" }
+}
+
 variable "region" {
   type    = string
   default = "us-east-1"
@@ -10,7 +35,7 @@ variable "name" {
 
 variable "openwork_version" {
   type    = string
-  default = "0.18.54"
+  default = "0.18.58"
 }
 
 variable "owner_emails" {

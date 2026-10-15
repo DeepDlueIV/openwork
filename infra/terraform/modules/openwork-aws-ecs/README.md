@@ -1,5 +1,7 @@
 # openwork-aws-ecs (Terraform)
 
+## What it deploys
+
 Runs a private, single-organization OpenWork control plane (Den) on AWS
 **ECS Fargate**, without Kubernetes:
 
@@ -8,7 +10,7 @@ Runs a private, single-organization OpenWork control plane (Den) on AWS
 | ECS cluster | `<name>-den`, or your existing cluster (`ecs_cluster_arn`) |
 | Den API (`ghcr.io/different-ai/openwork-den-api`, port 8788) | Fargate service, registered in Cloud Map |
 | Den web (`ghcr.io/different-ai/openwork-den-web`, port 3005) | Fargate service |
-| Database migrations | Init container in each den-api task; den-api starts only if it succeeds |
+| Database migrations | One standalone Fargate task, synchronously observed by a Lambda invocation; terminal exit 0 gates API and web rollout |
 | MySQL 8.4 | RDS, encrypted, private (or bring your own `database_url`) |
 | Cache (optional) | ElastiCache Redis with TLS (`create_redis = true`) |
 | HTTPS | ALB: `domain_name` → den-web, `api.<domain_name>` → den-api, HTTP redirects (or your existing ALB / listener) |
@@ -22,9 +24,17 @@ It sets the same environment the [`openwork-ee` Helm chart](../../../../packagin
 sets on Kubernetes, so the chart's README and `ee/apps/den-api/.env.example`
 document every setting you can add through `extra_environment`.
 
+## Support level
+
 > **Status: tested for the core deployment (Den API, Den web, RDS, ALB);
 > the headless runner, Workbot and Slack are still draft.** Pin the module
 > to a commit and report anything that fails in your environment.
+
+## Tested scenarios
+
+Contract-v1 offline checks: Terraform 1.16.5 / AWS provider 6.69.1 and
+OpenTofu 1.11.14 / AWS provider 6.69.0, 2026-10-15, 35 tests each.
+The live contract-v1 result must be recorded separately from historical runs.
 
 What has been applied end to end in an AWS test account with
 `examples/complete`, and what has not:
@@ -38,6 +48,7 @@ What has been applied end to end in an AWS test account with
 | Upgrade 0.18.57 → 0.18.58 with two den-api tasks: migrations ran, users and sessions kept | Passed | 0.18.57 → 0.18.58 | 2026-10-13 |
 | OpenWork Desktop signs in to the deployment and runs a chat | Passed | 0.18.58 | 2026-10-13 |
 | Email through Amazon SES SMTP (member invite delivered) | Passed | 0.18.58 | 2026-10-13 |
+| Legacy per-task migrations with two API tasks (fresh install and release → dev) | Failed: concurrent peers required ECS replacement; eventual apply success did not mean every migration succeeded | 0.18.58 → dev | 2026-10-14 |
 | Certificate created and validated by the module in a Route 53 zone (`route53_zone_id`) | Not run live (offline tests only) | | |
 | Existing ECS cluster, ALB or HTTPS listener | Not run live (offline tests only) | | |
 | Headless runner, Workbot, Slack assistant | Not run live | | |
@@ -65,7 +76,9 @@ What has been applied end to end in an AWS test account with
 module "openwork" {
   source = "github.com/different-ai/openwork//infra/terraform/modules/openwork-aws-ecs?ref=<commit>"
 
-  openwork_version = "0.18.54"
+  openwork_version = "0.18.58" # built-in digest pins; other versions need both image overrides
+  write_only_secrets = true
+  secret_values_wo   = var.den_secrets # ephemeral input, supplied by your secret manager
   owner_emails     = ["admin@example.com"]
   org_name         = "Example Co"
 
@@ -139,23 +152,43 @@ at the `alb_dns_name` output (CNAME) at your DNS provider.
   In both cases the module creates no DNS records: point both hostnames at
   your load balancer. `route53_zone_id` is then only used to validate a
   certificate the module creates.
-- **Wait for steady state.** With `wait_for_steady_state = true`,
-  `terraform apply` waits until the new tasks pass health checks and the old
-  ones drain, so a crash or failed migration fails the apply. The default
-  (`false`) returns as soon as ECS accepts the update.
-- **Migrations** run in each den-api task before the app starts, like the Helm
-  chart's pre-upgrade Job. They are idempotent but not locked: every new task
-  runs them, so with `den_api.desired_count = 2` two tasks run them at the
-  same time. A fresh install and the 0.18.57 → 0.18.58 upgrade both
-  succeeded this way. For an upgrade with large data migrations, scale to one
-  task first, apply, then scale back.
-- **Secrets** (`DATABASE_URL`, `BETTER_AUTH_SECRET`, `DEN_DB_ENCRYPTION_KEY`,
-  the setup code, SMTP/Resend/Redis) live in Secrets Manager and in Terraform
-  state. Use an encrypted remote backend. Losing `DEN_DB_ENCRYPTION_KEY` makes
-  encrypted database values unreadable.
-- **MySQL TLS** defaults to `sslaccept=accept` (encrypted, certificate not
-  verified), because the RDS CA is not in Node's trust store. For verified TLS,
-  add the RDS CA bundle to the images and set `database.tls_query`.
+- **Wait for steady state.** `wait_for_steady_state = true` also waits for app
+  health and task drain. Its compatibility default is `false`; migration
+  completion is mandatory regardless of that setting.
+- **Migrations** run once in a dedicated task before either service rolls out.
+  A Lambda invocation starts exactly one task and polls its terminal container
+  exit. Failed, missing or timed-out exits block rollout; no automatic SQL
+  retry. The 15-minute observation budget includes image pull and migration;
+  timeout requests task stop and requires inspection before retry. Existing
+  app tasks can still serve during an additive upgrade; incompatible changes
+  require maintenance. This is deployment ordering, not a database mutex,
+  dirty-state detector or schema-compatibility certification. Only one state /
+  release coordinator may own a physical schema.
+- **Native trigger vs provisioner.** ECS has no native Terraform RunTask-and-wait
+  resource. A tiny Python Lambda plus `aws_lambda_invocation` avoids a
+  workstation CLI, local credentials and `local-exec` portability exceptions.
+  Its IAM can run only this migration definition in this cluster and pass only
+  the two ECS roles. Describe/stop task APIs use a wildcard resource constrained
+  to the cluster. A deterministic ECS client token deduplicates uncertain
+  invocation retries within ECS's token lifetime; it is not cross-state locking.
+  Change `migration_run_id` only after inspecting failed/unknown tasks. Refresh
+  does not rerun the invocation. Replica scaling never runs bootstrap.
+- **Secrets** use ECS secret references, including SMTP username/password.
+  `extra_environment` rejects secret-like names and collisions; use
+  `extra_secrets` for additional Secrets Manager/SSM references. Core secrets
+  support ephemeral inputs and provider write-only fields; see State guidance.
+- **MySQL TLS** requires `sslaccept=strict` (default) or `sslmode=verify-full`.
+  The module downloads the public regional RDS CA bundle via verified HTTPS,
+  writes it into each API/web/migration container's temporary filesystem before
+  Node starts, and sets `NODE_EXTRA_CA_CERTS`. No image rebuild or unverified
+  connection exception is needed. This verifies the certificate chain. The
+  current application's MySQL parser does not enable mysql2's separate hostname
+  identity check, even for a `sslmode=verify-full` URL; full hostname verification
+  needs a follow-up application change and is not claimed here. For an existing database pass its public
+  `database_ca_bundle` and a strict-TLS URL. Custom images must provide `/bin/sh`,
+  `base64`, Node and the documented application paths; no migration-on-start
+  custom entrypoint is supported. Migration currently shares the DB principal
+  with the app; a separate DDL principal / DML-only app user is a follow-up.
 - **Email is optional to start.** Setup, sign-in and admin work without it.
   Without `smtp` or `resend_api_key`, member invites fail (the API returns
   `email_not_configured` and no invite link) and password reset is
@@ -165,6 +198,150 @@ at the `alb_dns_name` output (CNAME) at your DNS provider.
   Daytona sandbox) is off by default; see [OpenWork Web](#openwork-web).
 - **Anything else** (SSO, proxies, Gateway, observability): add env vars with
   `extra_environment` and secrets with `extra_secrets`.
+
+## Upgrade notes
+
+**First upgrade from the old per-task migrator requires maintenance.** Reducing
+replicas to one is not an exclusion barrier. Before applying this module:
+
+1. Inventory all schema owners, including other clusters, manual jobs and retries.
+   Back up the database and freeze all independent deployment/migration owners.
+2. With the old module still installed, scale the old API service to **zero** and
+   disable autoscaling/replacement/manual launch sources. Wait for every old
+   task/migration to become terminal and for DB sessions/in-flight DDL to drain.
+   Stop other writers if their compatibility cannot be established. Revoke the
+   old migration credential after terminating sessions where feasible; queued
+   legacy definitions must not be able to regain DDL access.
+3. Only after that fence, apply this module with the required target replica
+   count (for example two). The dedicated task must finish successfully before
+   API-only tasks start. Keep legacy launch sources disabled. The API circuit
+   breaker does not automatically roll back to a migration-capable definition.
+4. Resume scaling using API-only definitions. Roll back application code only
+   to a schema-compatible API-only image; never restore the old init container
+   or assume rolling back Terraform rolls back the schema.
+
+This module does not invent the application-level database lock, interruption
+marker or schema-range protocol. If the legacy fence cannot be enforced, stay
+in maintenance rather than running a second migrator.
+
+**Digest migration:** `openwork_version = "0.18.58"` selects the built-in API/web
+index digests. All other releases require `den_api_image` and `den_web_image`
+with `@sha256` digests. Tags are rejected, including custom optional service
+images when enabled. Existing image override names remain unchanged; pin their
+current digest before upgrading. Gateway, runner and Workbot runtime behavior
+is otherwise unchanged and not included in the contract-v1 live run.
+
+**Secret migration:** `write_only_secrets = false` deliberately preserves the
+legacy random-resource addresses through `moved` blocks and does **not**
+regenerate auth/encryption keys. For new installations use `true` and supply
+`secret_values_wo` from your own secret manager on every apply. It contains
+`database_password`, `better_auth_secret`, `db_encryption_key`, `bootstrap_code`
+and, for an existing DB, `database_url`. These inputs are ephemeral; RDS uses
+`password_wo`, Secrets Manager uses `secret_string_wo`. Keep `secrets_version`
+unchanged on ordinary application upgrades. The write-only bootstrap code is
+not exported: retrieve it from your source secret manager for setup.
+
+For an existing deployment, do not switch modes until the exact existing DB
+password, auth secret, encryption key and bootstrap code have been captured
+securely in that source secret manager. Supply those **same values**, change
+mode, inspect the plan, apply in maintenance and verify existing sessions and
+stored encrypted credentials. Never generate replacements as part of this
+conversion. A later deliberate rotation changes `secrets_version` and must
+preserve the encryption key unless application data is explicitly re-encrypted.
+Historical state snapshots still contain old values; follow your backend's
+retention and restricted-access policy rather than assuming write-only purges
+them. Optional integration secrets remain on the compatibility state-backed
+path; they are not converted implicitly.
+
+## State guidance
+
+Use an encrypted, access-controlled remote state backend. The reusable module
+contains neither a provider configuration nor a backend. For S3, use native
+locking, not a new DynamoDB lock table:
+
+```hcl
+terraform {
+  backend "s3" {
+    bucket       = "your-private-terraform-state"
+    key          = "openwork/terraform.tfstate"
+    region       = "us-east-1"
+    encrypt      = true
+    use_lockfile = true
+  }
+}
+```
+
+Require Terraform **>= 1.11, < 2.0** or OpenTofu **>= 1.11, < 2.0**.
+No provider lock file is shipped in this reusable module. Generate your root
+or example lock with the tool you use (`terraform init` / `tofu init`), then
+commit it in that root. Registries differ; regenerate with `init -upgrade`
+when deliberately switching tools (a newly released provider may appear in
+one registry before the other). `.openwork-migration.zip` is generated locally
+from the shipped public controller source and is not committed.
+
+Compatibility mode retains generated core values in state. Write-only mode
+keeps core values out of new plan/state snapshots, but optional integration
+inputs (SMTP, Resend, Daytona, runner) still use legacy sensitive variables /
+state and must not be committed. Losing the persistent encryption key makes
+stored encrypted credentials unreadable. The task definition and Lambda input
+contain only secret references, never secret bytes. Do not disable Node TLS
+verification through custom environment overrides.
+
+## Inputs and defaults
+
+All inputs remain listed in `variables.tf` and `security.tf`; equivalent cloud
+concepts use the common names below. AWS uses `tags` rather than GCP `labels`.
+
+| Input | Default / meaning |
+| --- | --- |
+| `openwork_version` | Required release label; built-in pins for 0.18.58 |
+| `den_api_image`, `den_web_image` | Empty selects built-in release pins; custom refs require digests |
+| `domain_name`, `api_domain_name` | Required web host; API defaults to `api.<domain_name>` |
+| `owner_emails`, `org_name`, `org_slug` | Required owners; `OpenWork`, `default` |
+| `name`, `tags` | `openwork`, `{}` |
+| `vpc_id`, `service_subnet_ids` | Required existing VPC and task subnets |
+| `alb_subnet_ids`, `database_subnet_ids` | `[]`; supply two AZs for managed ALB/RDS |
+| `create_database`, `database_url` | `true`, empty; false brings an existing strict-TLS DB |
+| `deletion_protection` | `true`; deprecated `database.deletion_protection` overrides if set |
+| `database` | t4g.micro, MySQL 8.4, 20–100 GiB gp3, single AZ, 7-day backups, final snapshot, deferred changes, strict TLS |
+| `database_ca_bundle` | Empty fetches regional public RDS CA; PEM override for existing DB |
+| `den_api` | 1024 CPU units / 2048 MiB / one task; no migrations in replicas |
+| `den_web` | 512 CPU units / 1024 MiB / one task |
+| `cpu_architecture` | `X86_64`; also ARM64 |
+| `migration_run_id` | `initial`; intentional same-definition rerun only |
+| `write_only_secrets`, `secret_values_wo`, `secrets_version` | `false` compatibility; ephemeral core object; version `1` |
+| `initial_admin_bootstrap_code` | Empty generates code in compatibility mode only |
+| `ecs_cluster_arn`, `service_name_prefix` | Empty creates cluster; empty service prefix |
+| `load_balancer_arn`, `alb_listener_arn`, `alb_security_group_id` | Empty creates resources; nonempty brings existing infrastructure |
+| `certificate_arn`, `route53_zone_id` | Empty; provide validated ACM or Route 53 zone |
+| `api_listener_rule_priority`, `web_listener_rule_priority`, `attach_listener_certificate` | `10`, `20`, `false` |
+| `internal_alb`, `assign_public_ip`, `allowed_ingress_cidrs` | `false`, `false`, public ALB ingress |
+| `allow_public_signup`, `require_email_verification` | Both `false` |
+| `automations_enabled`, `dashboards_enabled`, `slack_assistant_enabled` | All `false` |
+| `email_from`, `smtp`, `resend_api_key` | Empty / disabled; SMTP port 587, nonimplicit TLS |
+| `extra_environment`, `extra_secrets` | Empty maps; nonsecret settings / secret references |
+| `create_redis`, `redis_node_type` | `false`, `cache.t4g.micro` |
+| `wait_for_steady_state`, `log_retention_days`, `secret_recovery_window_days` | `false`, `30`, `7` |
+| `openwork_web_enabled`, `openwork_web_domain_name`, `openwork_web_url` | Off; `web.<domain_name>`; no override |
+| `den_gateway`, `den_gateway_image`, `openwork_web_listener_rule_priority` | 256 CPU / 512 MiB / one; digest override required if enabled; `30` |
+| `provisioner_mode`, `daytona`, `daytona_api_key` | Auto stub/Daytona; hosted API with empty snapshot/target; empty key |
+| `headless_runner`, `headless_runner_image`, `headless_runner_token` | Off; 512 CPU / 1024 MiB; digest override if managed; empty external token |
+| `headless_model_api_key`, `headless_computer`, `headless_computer_api_key` | Empty key; computer off; empty key |
+| `workbot`, `workbot_image`, `workbot_listener_rule_priority` | Off; 256 CPU / 512 MiB / one; digest override if enabled; `40` |
+
+## Outputs
+
+| Output | Meaning |
+| --- | --- |
+| `web_url`, `api_url` | Common public HTTPS endpoints |
+| `database_identifier` | Common managed DB identifier, null for existing DB |
+| `migration_step_identifier`, `migration_result` | Common migration task definition; terminal task/image/exit result |
+| `setup_url`, `bootstrap_code` | First administrator URL; sensitive legacy code (null in write-only mode) |
+| `secret_arn`, `database_endpoint` | Secret reference; managed RDS endpoint |
+| `cluster_name`, `cluster_arn`, `service_names` | ECS identities |
+| `alb_arn`, `alb_dns_name`, `alb_zone_id`, `alb_security_group_id` | ALB/DNS integration |
+| `task_security_group_id`, `target_group_arns`, `log_groups`, `certificate_arn` | Network and observation references |
+| `openwork_web_url`, `workbot_url` | Optional app endpoints, null while disabled |
 
 ## Slack, headless Automations and Workbot
 
@@ -330,7 +507,9 @@ use the `openwork_web_url` output (also the dashboard's OpenWork Web button).
 Sandbox and volume names start with `daytona.name_prefix` (default `name`), so
 several deployments can share one Daytona organization.
 
-## Rough cost (us-east-1, defaults)
+## Cost notes
+
+### Rough cost (us-east-1, defaults)
 
 About $3/day: den-api 1 vCPU/2 GB and den-web 0.5 vCPU/1 GB on Fargate, a
 db.t4g.micro RDS, and an ALB. ElastiCache adds about $0.40/day. A NAT

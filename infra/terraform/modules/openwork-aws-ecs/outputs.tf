@@ -102,6 +102,16 @@ output "database_identifier" {
   value       = var.create_database ? aws_db_instance.this[0].identifier : null
 }
 
+output "migration_step_identifier" {
+  description = "Standalone ECS migration task definition; API replicas never migrate."
+  value       = aws_ecs_task_definition.migrate.arn
+}
+
+output "migration_result" {
+  description = "Migration task ARN, intended image and terminal exit result."
+  value       = jsondecode(aws_lambda_invocation.migrate.result)
+}
+
 output "certificate_arn" {
   description = "ACM certificate serving the HTTPS listener."
   value       = local.certificate_arn

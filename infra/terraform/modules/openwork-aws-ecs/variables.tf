@@ -3,8 +3,13 @@
 # ---------------------------------------------------------------------------
 
 variable "openwork_version" {
-  description = "Published OpenWork release, for example \"0.18.54\". Used as the tag for both images unless den_api_image / den_web_image are set."
+  description = "Release label. 0.18.58 has built-in digest pins; other releases require den_api_image and den_web_image digest overrides."
   type        = string
+
+  validation {
+    condition     = var.openwork_version == "0.18.58" || (var.den_api_image != "" && var.den_web_image != "")
+    error_message = "For versions other than 0.18.58, supply both den_api_image and den_web_image pinned by @sha256 digest."
+  }
 }
 
 variable "vpc_id" {
@@ -111,7 +116,7 @@ variable "tags" {
 }
 
 variable "den_api_image" {
-  description = "Full den-api image reference. Empty uses ghcr.io/different-ai/openwork-den-api:<openwork_version>. Set this to an ECR mirror if tasks cannot reach ghcr.io."
+  description = "Full den-api image pinned with @sha256 digest (including ECR mirrors). Empty uses the built-in 0.18.58 digest only."
   type        = string
   default     = ""
 }
@@ -123,7 +128,7 @@ variable "den_gateway_image" {
 }
 
 variable "den_web_image" {
-  description = "Full den-web image reference. Empty uses ghcr.io/different-ai/openwork-den-web:<openwork_version>."
+  description = "Full den-web image pinned with @sha256 digest. Empty uses the built-in 0.18.58 digest only."
   type        = string
   default     = ""
 }
@@ -499,10 +504,10 @@ variable "database" {
     max_allocated_storage = optional(number, 100)
     multi_az              = optional(bool, false)
     backup_retention_days = optional(number, 7)
-    deletion_protection   = optional(bool, true)
+    deletion_protection   = optional(bool) # deprecated alias for top-level deletion_protection
     skip_final_snapshot   = optional(bool, false)
     apply_immediately     = optional(bool, false)
-    tls_query             = optional(string, "sslaccept=accept")
+    tls_query             = optional(string, "sslaccept=strict")
   })
   default = {}
 }
@@ -524,7 +529,7 @@ variable "redis_node_type" {
 # ---------------------------------------------------------------------------
 
 variable "den_api" {
-  description = "den-api task size and count. Keep desired_count = 1 until you have confirmed migrations: each task runs them on start."
+  description = "API-only task size and count. A dedicated migration task gates rollout regardless of replica count."
   type = object({
     cpu           = optional(number, 1024)
     memory        = optional(number, 2048)

@@ -70,6 +70,13 @@ export function invitationWitnesses(admin: DenSession) {
   };
 }
 
+// An anonymous email sign-up, as a visitor without an invitation would send it.
+export function signUpAttempt(den: Parameters<typeof denFetch>[0], person: { email: string; name: string; password: string }) {
+  return denFetch(den, "/api/auth/sign-up/email", {
+    method: "POST", body: JSON.stringify(person), signal: AbortSignal.timeout(15_000),
+  });
+}
+
 export function emailLinks(html: string): string[] {
   return [...html.matchAll(/href=["'](https?:\/\/[^"']+)["']/g)].map((match) => match[1].replaceAll("&amp;", "&"));
 }

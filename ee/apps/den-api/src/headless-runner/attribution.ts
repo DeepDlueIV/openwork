@@ -14,7 +14,7 @@ async function readMember({ organizationId, userId }: HeadlessRunnerActor) {
   const [member] = await db.select({ memberId: MemberTable.id, email: AuthUserTable.email })
     .from(MemberTable)
     .innerJoin(AuthUserTable, eq(AuthUserTable.id, MemberTable.userId))
-    .where(and(eq(MemberTable.organizationId, organizationId), eq(MemberTable.userId, userId), isNull(MemberTable.removedAt)))
+    .where(and(eq(MemberTable.organizationId, normalizeDenTypeId("organization", organizationId)), eq(MemberTable.userId, normalizeDenTypeId("user", userId)), isNull(MemberTable.removedAt)))
     .limit(1)
   return member
 }

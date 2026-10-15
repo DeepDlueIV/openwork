@@ -1,5 +1,12 @@
 import { denFetch, type DenFetchResult, type DenSession } from "./den.ts";
 
+/** `value` without trailing slashes, in linear time. */
+function withoutTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value[end - 1] === "/") end -= 1;
+  return value.slice(0, end);
+}
+
 /**
  * The HTTP calls a person's browser or MCP client makes around personal API
  * keys and capability access. Every call uses the caller's own session or MCP
@@ -50,7 +57,7 @@ export async function mintMcpToken(session: DenSession, options: ScopeOptions = 
 
 /** One tools/call on OpenWork's MCP gateway, exactly as an MCP client sends it. */
 export async function callMcpTool(den: { apiUrl: string }, token: string, name: string, args: Record<string, unknown>): Promise<McpToolResult> {
-  const response = await fetch(`${den.apiUrl.replace(/\/+$/, "")}/mcp/agent`, {
+  const response = await fetch(`${withoutTrailingSlashes(den.apiUrl)}/mcp/agent`, {
     method: "POST",
     headers: { authorization: `Bearer ${token}`, "content-type": "application/json", accept: "application/json, text/event-stream" },
     body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/call", params: { name, arguments: args } }),

@@ -57,9 +57,14 @@ export async function readSamlServiceProviderMetadata(den: DenRef, caller: OrgCa
 
 /** The ACS location the SP metadata advertises to the identity provider. */
 export function advertisedAcsLocation(metadataXml: string): string {
-  return metadataXml.match(/AssertionConsumerService[^>]*Location="([^"]+)"/)?.[1]
-    ?? metadataXml.match(/Location="([^"]+\/sp\/acs\/[^"]+)"/)?.[1]
-    ?? "";
+  // Linear scans: find the element, then read its Location attribute.
+  const start = metadataXml.indexOf("AssertionConsumerService");
+  const tag = start < 0 ? "" : metadataXml.slice(start, metadataXml.indexOf(">", start) + 1 || undefined);
+  const marker = 'Location="';
+  const at = tag.indexOf(marker);
+  if (at < 0) return "";
+  const end = tag.indexOf('"', at + marker.length);
+  return end < 0 ? "" : tag.slice(at + marker.length, end);
 }
 
 /** A minimal, unsigned Google Workspace-shaped SAML response carrying the fields the delivery policy inspects. */

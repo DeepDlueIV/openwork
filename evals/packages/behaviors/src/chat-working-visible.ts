@@ -36,6 +36,8 @@ export async function chatReadWorkingScreen(probe: DomReader): Promise<ChatWorki
 
 /** Seconds shown on a "Working 1m 5s" line, or null. */
 export function chatWorkingSeconds(working: string | null): number | null {
-  const match = working?.match(/(?:(\d+)m\s*)?(\d+)s/);
-  return match ? Number(match[1] ?? 0) * 60 + Number(match[2]) : null;
+  const seconds = working?.match(/\b(\d{1,4})s\b/);
+  if (!seconds) return null;
+  const minutes = working?.match(/\b(\d{1,4})m\b/);
+  return Number(minutes?.[1] ?? 0) * 60 + Number(seconds[1]);
 }

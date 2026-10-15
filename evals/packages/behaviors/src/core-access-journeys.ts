@@ -7,6 +7,13 @@ import { denFetch, type DenFetchResult, type DenRef, type DenSession } from "./d
 import type { OrgCaller } from "./identity.ts";
 import type { PermissionCall } from "./permissions.ts";
 
+/** `value` without trailing slashes, in linear time. */
+function withoutTrailingSlashes(value: string): string {
+  let end = value.length;
+  while (end > 0 && value[end - 1] === "/") end -= 1;
+  return value.slice(0, end);
+}
+
 type OrgScope = Record<string, string>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -150,7 +157,7 @@ export function oktaUser(email: string, externalId: string, givenName: string, f
 /** The SCIM calls an identity provider makes with one bearer. */
 export function scimClient(apiUrl: string, bearer: string) {
   const send = async (path: string, init: { method?: string; body?: unknown } = {}): Promise<ScimResult> => {
-    const response = await fetch(`${apiUrl.replace(/\/+$/, "")}${SCIM_BASE_PATH}${path}`, {
+    const response = await fetch(`${withoutTrailingSlashes(apiUrl)}${SCIM_BASE_PATH}${path}`, {
       method: init.method ?? "GET",
       headers: { authorization: `Bearer ${bearer}`, accept: "application/scim+json, application/json", "content-type": "application/scim+json" },
       body: init.body === undefined ? undefined : JSON.stringify(init.body),

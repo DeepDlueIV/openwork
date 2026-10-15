@@ -104,7 +104,7 @@ variable "grant_iam_roles" {
 }
 
 variable "deletion_protection" {
-  description = "Protect the Cloud Run services and migration job from terraform destroy. Set false for disposable test stacks."
+  description = "Protect Cloud SQL, Cloud Run services and the migration job from destroy. Set false for disposable stacks. The deprecated database.deletion_protection override takes precedence when set."
   type        = bool
   default     = true
 }
@@ -233,10 +233,32 @@ variable "dashboards_enabled" {
   default     = false
 }
 
-variable "extra_environment" {
-  description = "Additional plain env vars for den-api, den-web and the migration job. See ee/apps/den-api/.env.example and the openwork-ee Helm chart README."
+variable "write_only_secrets" {
+  description = "Use ephemeral random passwords and provider write-only arguments so generated secrets never enter state. Recommended for NEW deployments. Defaults false solely to preserve existing random values: before opting in on an existing deployment, supply every existing value through preserved_secrets_wo (see upgrade notes). Never toggle this on a populated deployment without preserving its keys."
+  type        = bool
+  default     = false
+}
+
+variable "preserved_secrets_wo" {
+  description = "Ephemeral overrides when adopting write_only_secrets: DATABASE_PASSWORD, BETTER_AUTH_SECRET, DEN_DB_ENCRYPTION_KEY and DEN_INITIAL_ADMIN_BOOTSTRAP_CODE (and DATABASE_URL for an existing database). Supply the current values from your secret manager, never literals in committed tfvars. Ignored in legacy mode."
   type        = map(string)
   default     = {}
+  sensitive   = true
+  ephemeral   = true
+  validation {
+    condition     = alltrue([for k, v in var.preserved_secrets_wo : k != "DATABASE_URL" || (!can(regex("(?i)(sslaccept=(accept|accept_invalid_certs)|sslmode=disable)", v)) && (strcontains(v, "socket=") || strcontains(v, "sslaccept=strict")))])
+    error_message = "Preserved DATABASE_URL must use the authenticated connector socket or verified TLS."
+  }
+}
+
+variable "extra_environment" {
+  description = "Additional non-secret env vars for den-api, den-web and the migration job. Put credentials in extra_secrets, never here."
+  type        = map(string)
+  default     = {}
+  validation {
+    condition     = alltrue([for k in keys(var.extra_environment) : !can(regex("(?i)(SECRET|PASSWORD|TOKEN|API_KEY|ENCRYPTION_KEY|BOOTSTRAP_CODE|DATABASE_URL|SMTP_PASS)", k)) && !contains(keys(var.extra_secrets), k)])
+    error_message = "Credentials and extra_secrets keys must not be passed as plain extra_environment values. Use Secret Manager references."
+  }
 }
 
 variable "extra_secrets" {
@@ -286,10 +308,14 @@ variable "create_database" {
 }
 
 variable "database_url" {
-  description = "mysql:// URL of an existing database. Used only when create_database = false. For Cloud SQL through Cloud Run's connector: mysql://USER:PASSWORD@localhost/DB?socket=%2Fcloudsql%2FPROJECT%3AREGION%3AINSTANCE (percent-encoded)."
+  description = "mysql:// URL of an existing database. Must use the authenticated Cloud SQL socket connector or sslaccept=strict verified TLS. In write-only mode prefer preserved_secrets_wo.DATABASE_URL to keep it out of state."
   type        = string
   default     = ""
   sensitive   = true
+  validation {
+    condition     = var.database_url == "" || (!can(regex("(?i)(sslaccept=(accept|accept_invalid_certs)|sslmode=disable)", var.database_url)) && (strcontains(var.database_url, "socket=") || strcontains(var.database_url, "sslaccept=strict")))
+    error_message = "Existing database URLs must use the authenticated connector socket or verified sslaccept=strict TLS."
+  }
 }
 
 variable "cloud_sql_connection_name" {
@@ -302,13 +328,13 @@ variable "cloud_sql_connection_name" {
 variable "database" {
   description = "Cloud SQL settings. den-api reaches the instance through Cloud Run's Cloud SQL connector (IAM-authorized, verified TLS). For a private-IP instance or another database, set create_database = false and pass database_url."
   type = object({
-    tier                = optional(string, "db-f1-micro")
+    tier                = optional(string, "db-g1-small")
     edition             = optional(string, "ENTERPRISE")
     database_version    = optional(string, "MYSQL_8_4")
     disk_size_gb        = optional(number, 10)
     availability_type   = optional(string, "ZONAL")
     backup_enabled      = optional(bool, true)
-    deletion_protection = optional(bool, true)
+    deletion_protection = optional(bool) # Deprecated alias; null uses deletion_protection.
   })
   default = {}
 }

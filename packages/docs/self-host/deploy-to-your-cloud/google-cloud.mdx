@@ -50,27 +50,48 @@ For exact GKE commands, values, health checks, migration troubleshooting, verifi
 
 Follow the [Cloud Run operator runbook](https://github.com/different-ai/openwork/blob/dev/docs/gcp-cloud-run.md) for the manifests, exact commands, migration ordering, verification, and upgrade notes.
 
-## Cloud Run with Terraform (draft)
+## Cloud Run with Terraform
 
-A draft Terraform module deploys the Cloud Run path in one `terraform apply`: Den API and Den web as Cloud Run services, Cloud SQL for MySQL 8.4 reached through the Cloud SQL connector, secrets in Secret Manager, and the migration job, which runs during the apply before Den API is updated. It pulls the published images through an Artifact Registry remote repository that proxies `ghcr.io`, so you do not mirror images by hand.
+### What it deploys
 
-<Warning>
-  The module is an early draft, and inputs may change. Pin it to a commit, and open an issue or pull request for anything that fails in your environment.
-</Warning>
+The module deploys Den API and Den web on Cloud Run, Cloud SQL for MySQL 8.4 through the authenticated, verified-TLS Cloud SQL connector, Secret Manager, an Artifact Registry ghcr.io mirror, and one migration job. Apply waits for that job to succeed before updating Den API; application instances do not run migrations. Default endpoints are HTTPS `run.app` URLs. Optional custom domains use a global HTTPS load balancer with a managed certificate.
 
-You don't need a domain to start: by default the services use their HTTPS `run.app` URLs. Set `domain_name` to put both hostnames (the web host and `api.` plus the web host) behind a global external HTTPS load balancer with a Google-managed certificate. You can reuse an existing VPC (Direct VPC egress), an existing database or Cloud SQL instance, a service account, certificates, and a reserved IP address. Email is optional for setup and sign-in, but member invites and password reset need SMTP or Resend.
+The common outputs are `web_url`, `api_url`, `database_identifier` (managed Cloud SQL instance ID, or supplied existing Cloud SQL connection name) and `migration_step_identifier` (full Cloud Run job ID). All previous outputs remain available; `database_identifier` is empty for an external non-Cloud-SQL database.
 
-The account that runs `terraform apply` must be able to set IAM policies: the module grants its service account Cloud SQL access and access to each secret, and lets browsers reach the services without Google sign-in (Den does its own sign-in). Project Editor alone is not enough; add Project IAM Admin and Cloud Run Admin, or let your platform team grant `roles/cloudsql.client` and `roles/secretmanager.secretAccessor` and set `grant_iam_roles = false`.
+Existing network/subnet, database, service account, certificates and reserved IP inputs remain supported. The applying account needs resource-creation and IAM-setting permissions, including Project IAM Admin, Secret Manager Admin and Cloud Run Admin; Editor alone is insufficient. Alternatively grant runtime IAM separately and use `grant_iam_roles = false`. Use application-default credentials or workload identity.
 
-**What was tested.** The module was applied with its defaults (Secret Manager, IAM grants, public access) in a Google Cloud test project, using `examples/complete` and release 0.18.58:
+### Tested scenarios
 
-- the migration job ran during the apply on an empty Cloud SQL for MySQL 8.4 database;
-- Den API and Den web answered over HTTPS on their `run.app` URLs, and both readiness checks passed;
-- in a browser, the one-time setup page on Den web created the first administrator, and a new browser session signed in to the dashboard;
-- an isolated OpenWork desktop app signed in to the deployment, and the deployment's API accepted its session as the administrator.
+| Date | Tools | Release | Result |
+| --- | --- | --- | --- |
+| 2026-10-14 | Terraform 1.16.5 | 0.18.58 → dev b8efc5b, digest-pinned | Prior module: setup, fresh browser sign-in, isolated desktop, same-database upgrade, identity/organization persistence and destroy passed with one API instance |
+| 2026-10-15 | Terraform 1.16.5 / OpenTofu 1.11.14 | Mocked Google provider | 31 contract tests per tool: write-only fields, protected SQL, measured sizing and two-instance/singleton-job topology passed |
+| 2026-10-15 | Terraform 1.16.5; local testkit | 0.18.58 → dev f450b1a, digest-pinned | Two API instances observed in both revisions; one successful migration per deployment (exit 0), setup, fresh browser sign-in, exact admin/org persistence, isolated source Electron, no secret rotation or state values, destroy and empty inventory passed |
 
-Earlier runs also checked Direct VPC egress into an existing VPC, and the load balancer with a custom hostname. In that run, the Google-managed certificate became active for both hostnames in about 7 minutes, each hostname reached the right service, and HTTP redirected to HTTPS. Not yet tested: an existing database, several Den API instances, email delivery, and upgrades between releases. OpenWork Web, the Slack assistant, headless Automations and Workbot are not in this module yet; use the ECS module or the Helm chart for those.
+The live run used new-deployment write-only mode, db-g1-small and default HTTPS endpoints. Earlier runs exercised Direct VPC egress and the HTTPS load balancer/certificate. Existing databases, legacy write-only adoption, email delivery, concurrent coordinators and production load remain unverified. Missing job CPU/memory or idle-memory samples are not sizing guarantees.
 
-See the [module README](https://github.com/different-ai/openwork/tree/dev/infra/terraform/modules/openwork-gcp-cloud-run) for inputs, a complete example, and cost notes.
+### Support level
+
+**Preview:** pin to a reviewed commit. Requires Terraform or OpenTofu `>= 1.11, < 2.0`. The module's bounded providers are Google `~> 8.7` and Random `~> 3.9`. Workbot, the runner, Slack and OpenWork Web/gateway are outside this change. A dedicated job orders one deployment; it does not implement a database mutex, dirty marker or coordination across independent deployments.
+
+Defaults: API **1 vCPU / 2 GiB**, web **1 vCPU / 1 GiB**, one warm instance per service, maximum three; Cloud SQL **db-g1-small (1.7 GB)** with 10 GB disk and backups. The old micro tier exhausted its reported memory quota at idle. Database, services and job have deletion protection by default; explicitly turn it off only for disposable stacks. The deprecated nested `database.deletion_protection` override retains precedence.
+
+### Upgrade notes
+
+Back up and inventory every schema-changing owner, including other installations and manual jobs sharing the database. Freeze retries/rollouts and select one coordinator. When upgrading from per-replica migration definitions, enter maintenance: scale old Den API to zero or stop it, disable autoscale/replacement/retry sources, wait for old containers/jobs and DB sessions/in-flight DDL to terminate, and fence old migration credentials. Drain other incompatible consumers too. If that barrier cannot be established, do not migrate.
+
+Update both pinned image digests, apply the single native job, verify its successful completion, then roll out API-only instances. A failed or unknown job must not promote a revision or trigger a blind retry. Resume scaling only after data and sign-in verification. Never roll back to old migration-capable definitions or automatically reverse the database schema. This module still shares one database principal between app and migration; separate DDL/DML principals remain a follow-up.
+
+Ordinary upgrades retain existing generated secret values. For **new** deployments set `write_only_secrets = true`: ephemeral generation feeds provider write-only arguments and values persist in Secret Manager rather than state. Stable write-only version counters prevent image upgrades from rotating secrets. The default remains legacy mode to preserve existing installations. Existing installations must supply all exact current values through the ephemeral `preserved_secrets_wo` map before opting in; never silently regenerate an auth or encryption key. Read the README's adoption and partial-failure cautions first. Legacy bootstrap output is null in write-only mode; retrieve the setup code directly from Secret Manager without logging it. Existing external database URLs must use the authenticated connector socket or verified `sslaccept=strict` TLS; unverified URLs are rejected.
+
+### State guidance
+
+Use encrypted remote state, restricted access and locking (for example GCS). Legacy mode retains generated values in state for backwards compatibility; historical state snapshots still require protection after write-only adoption. Never commit state, plan files, credentials or secret variable files. Root configurations own provider/backend blocks and lockfiles; the reusable module ships no registry-specific lock. The complete example ships a Terraform lock: when switching to OpenTofu, regenerate the lock in your own copied root with `tofu init`, then verify `tofu init -lockfile=readonly`. Each registry has different archives/checksums. For S3 state use native `use_lockfile = true`, not DynamoDB locking.
+
+### Cost notes
+
+Budget for warm Cloud Run instances, db-g1-small, disk/backups, secrets and image cache; custom domains add load balancer and IP charges. This measured smoke baseline is not production or HA sizing, and the old micro-based price estimate no longer applies. Min instances zero reduces idle cost at the expense of sign-in cold starts. Direct VPC egress may hold a subnet busy for roughly two hours after deleting services: allow teardown time. Email is optional for setup/sign-in; invites and reset require SMTP or Resend.
+
+See the [module README](https://github.com/different-ai/openwork/tree/dev/infra/terraform/modules/openwork-gcp-cloud-run) for all inputs, outputs, defaults, write-only adoption, tool-specific lock regeneration and the disposable complete example.
 
 Next: [Create the first administrator](/self-host/deploy-to-your-cloud/first-administrator).

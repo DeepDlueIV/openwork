@@ -97,7 +97,7 @@ resource "google_cloud_run_v2_job" "migrate" {
 
   lifecycle {
     precondition {
-      condition     = var.create_database || nonsensitive(var.database_url != "")
+      condition     = var.create_database || var.write_only_secrets || nonsensitive(var.database_url != "")
       error_message = "Set database_url when create_database = false."
     }
     precondition {

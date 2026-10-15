@@ -24,7 +24,7 @@ mock_provider "google" {
   }
 }
 
-mock_provider "random" {}
+provider "random" {} # Local-only; mock providers do not support ephemeral resources.
 
 variables {
   project_id       = "test-project"

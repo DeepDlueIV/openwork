@@ -1,4 +1,5 @@
 import { denFetch, signIn, type DenSession } from "@openwork/behaviors";
+import { selfHostServer } from "@openwork/env";
 import { enableOrganizationCapabilities } from "./organization-capabilities.ts";
 import { allocateFreePorts } from "@openwork/cdp";
 import { defaultReuseAdmin, faultProxy, localMysqlIsRunning, localRedisIsRunning, needs, personDefaults, queryDenDatabase, SkipError, type Place, type Seed } from "@openwork/env";
@@ -195,4 +196,33 @@ export async function orgInvite(seed: Seed, { place }: { place: Place }) {
       return queryDenDatabase(den.database.url, "SELECT session.id FROM session INNER JOIN user ON user.id = session.user_id WHERE user.email = ? AND session.expires_at > NOW()", [email]);
     },
   };
+}
+
+/**
+ * Option of this world: a private self-hosted Den (public signup off) whose
+ * configured administrator claimed it with a one-time bootstrap code. The
+ * journey checks what that claim produced.
+ */
+export async function privateSelfHostInvite(seed: Seed, { place }: { place: Place }) {
+  await localInviteNeeds();
+  const runId = `${Date.now().toString(36)}${process.pid.toString(36)}`;
+  const owner = personDefaults("bootstrap-owner", undefined, runId);
+  const outsider = personDefaults("invited-outsider", { email: `invited-${runId}@outside.test` }, runId);
+  const rejected = personDefaults("uninvited-outsider", { email: `uninvited-${runId}@outside.test` }, runId);
+  const bootstrapCode = `test-bootstrap-${runId}`;
+  const workspaceName = `Private workspace ${runId}`;
+  const server = await selfHostServer({ place, name: workspaceName, slug: `private-${runId}`, ownerEmails: [owner.email], allowPublicSignup: false, bootstrapCode });
+  try {
+    const den = await seed.den({ reuse: server.ref, provision: false });
+    const anonymous = den.admin;
+    const verified = await seed.api(anonymous, "/v1/auth/bootstrap/verify", { method: "POST", body: JSON.stringify({ email: owner.email, code: bootstrapCode }), signal: AbortSignal.timeout(15_000) });
+    const grant = verified.response.status === 200 ? record(verified.body).grant : undefined;
+    const ownerSignUp = await seed.api(anonymous, "/api/auth/sign-up/email", { method: "POST", body: JSON.stringify({ ...owner, bootstrapGrant: grant }), signal: AbortSignal.timeout(15_000) });
+    const bootstrap = { verifyStatus: verified.response.status, verifyText: verified.text, grant, signUpOk: ownerSignUp.response.ok, signUpText: ownerSignUp.text };
+    const web = await seed.web({ den, headless: true });
+    return { den, web, owner, outsider, rejected, bootstrapCode, bootstrap, workspaceName, anonymous, async [Symbol.asyncDispose]() { await server[Symbol.asyncDispose](); } };
+  } catch (error) {
+    await server[Symbol.asyncDispose]();
+    throw error;
+  }
 }

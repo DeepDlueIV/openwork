@@ -1,8 +1,12 @@
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
 
-const SPEC = /^evals\/specs\/.+\.e2e\.test\.ts$/;
-const PACKAGED_SPEC = /^evals\/specs\/packaged-[^/]+\.e2e\.test\.ts$/;
-const DAYTONA_SPEC = "evals/specs/windows-published-preview.e2e.test.ts";
+// Journeys live in evals/core (maintained) or
+// evals/proofs (one-off agent proofs); a file can move between them and keeps
+// its basename, so lanes compare journeys by basename.
+const SPEC = /^evals\/(?:(?:specs|core)\/.+\.e2e|proofs\/.+\.proof)\.test\.ts$/;
+const PACKAGED_SPEC = /^evals\/(?:specs|core)\/(packaged-[^/]+)\.e2e\.test\.ts$/;
+const specBasename = spec => spec.slice(spec.lastIndexOf("/") + 1);
 // A spec opts into checkpoints with the Vitest tag, e.g. `{ tags: ["checkpoints"] }`.
 const CHECKPOINTS_TAG = /\btags\s*:\s*\[[^\]]*["'`]checkpoints["'`]/;
 
@@ -14,11 +18,12 @@ export function checkpointTagged(source) {
 /** The packaged smoke journey a packaged spec runs as (its file name without the suffix). */
 export function packagedJourney(spec) {
   if (!safePath(spec) || !PACKAGED_SPEC.test(spec)) throw new Error("Invalid packaged proof spec path.");
-  return spec.slice("evals/specs/".length, -".e2e.test.ts".length);
+  return PACKAGED_SPEC.exec(spec)[1];
 }
 
 // Packaged journeys that need a signed macOS bundle; packaged-smoke-macos.mjs
-// builds and runs them. Every other packaged journey runs on Linux.
+// builds and runs them. Any other packaged-* journey would run through the
+// Linux packaged-smoke.mjs, which boots only app-smoke and rejects other names.
 const MACOS_PACKAGED_JOURNEYS = new Set(["packaged-update-install"]);
 
 /** Runner operating system a packaged proof spec needs: "macos" or "linux". */
@@ -34,7 +39,9 @@ export function safePath(path) {
 
 // Core journeys run on every PR that changes more than docs. Their end-state
 // checkpoint is the PR's hands-on preview in the review app.
-export const CORE_SPECS = ["evals/specs/core-chat.e2e.test.ts"];
+const repoRoot = new URL("../../", import.meta.url);
+const journeyPath = name => ["core", "specs", "proofs"].map(folder => `evals/${folder}/${name}`).find(path => existsSync(new URL(path, repoRoot))) ?? `evals/core/${name}`;
+export const CORE_SPECS = [journeyPath("core-chat.e2e.test.ts")];
 const docsOnlyFile = path => path.startsWith("packages/docs/") || path.endsWith(".md");
 
 // Every E2E spec the PR added or changed is a proof of its work, plus the core
@@ -55,24 +62,20 @@ export function proofLanes(allSpecs, { event, current, repo, actor, triggeringAc
   // Forks and Dependabot cannot reach the Freestyle credential; they skip the
   // core journeys instead of failing selection. A changed checkpoint spec still fails below.
   const specs = trustedProofContext({ event, current, repo, actor, triggeringActor }) ? allSpecs : allSpecs.filter(spec => !CORE_SPECS.includes(spec));
-  const liveSpecs = specs.filter(spec => ["evals/specs/live-stream-continuity.e2e.test.ts"].includes(spec));
   // Packaged specs boot a packaged desktop binary, which only the packaged
   // smoke runner builds; running them against a dev build always fails.
   const packagedSpecs = specs.filter(spec => PACKAGED_SPEC.test(spec));
-  // Windows release proof requires a Daytona Windows VM and a real installer.
-  // It cannot be rerouted to local Linux to obtain a green but meaningless run.
-  const daytonaSpecs = specs.filter(spec => spec === DAYTONA_SPEC);
   // Core journeys get their own slim job: the app runs in Freestyle, the runner only drives it.
   const coreSpecs = specs.filter(spec => CORE_SPECS.includes(spec));
   // Checkpoint runs need the Freestyle credential, so they use the protected lane.
-  const checkpointSpecs = specs.filter(spec => !coreSpecs.includes(spec) && !liveSpecs.includes(spec) && !packagedSpecs.includes(spec) && !daytonaSpecs.includes(spec) && tagged(spec));
-  const normalSpecs = specs.filter(spec => !coreSpecs.includes(spec) && !liveSpecs.includes(spec) && !packagedSpecs.includes(spec) && !daytonaSpecs.includes(spec) && !checkpointSpecs.includes(spec));
-  if (liveSpecs.length || daytonaSpecs.length || checkpointSpecs.length) {
+  const checkpointSpecs = specs.filter(spec => !coreSpecs.includes(spec) && !packagedSpecs.includes(spec) && tagged(spec));
+  const normalSpecs = specs.filter(spec => !coreSpecs.includes(spec) && !packagedSpecs.includes(spec) && !checkpointSpecs.includes(spec));
+  if (checkpointSpecs.length) {
     if (!trustedProofContext({ event, current, repo, actor, triggeringActor })) {
-      throw new Error("Live PR proof is unsupported for forks, untrusted repository metadata, or Dependabot. A maintainer must move the reviewed change to a same-repository PR (organization members run automatically; other contributors need pr-slow-specs approval); do not bypass or skip the selected live or Windows spec.");
+      throw new Error("Checkpoint PR proof is unsupported for forks, untrusted repository metadata, or Dependabot. A maintainer must move the reviewed change to a same-repository PR (organization members run automatically; other contributors need pr-slow-specs approval); do not bypass or skip the selected checkpoint spec.");
     }
   }
-  return { coreSpecs, normalSpecs, liveSpecs, packagedSpecs, daytonaSpecs, checkpointSpecs };
+  return { coreSpecs, normalSpecs, packagedSpecs, checkpointSpecs };
 }
 
 function trustedProofContext({ event, current, repo, actor, triggeringActor }) {

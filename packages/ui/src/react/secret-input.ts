@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type FocusEvent, type KeyboardEvent, type RefObject } from "react"
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type FocusEvent, type KeyboardEvent, type RefObject } from "react"
 
 /**
  * Shared behaviour for every field where a person types a secret (API keys,
@@ -109,4 +109,18 @@ export function useSecretReveal<T extends HTMLElement>(options: {
       onBlur: (event) => { if (event.relatedTarget !== field.current) setRevealed(false) },
     },
   }
+}
+
+function textSecuritySupported(): boolean {
+  return typeof CSS !== "undefined" && typeof CSS.supports === "function" && CSS.supports("-webkit-text-security", "disc")
+}
+
+/**
+ * Whether a multi-line field can be masked. Where the browser can't mask a
+ * textarea, use a password input instead: a pasted key file is still valid
+ * JSON on one line, and it is never shown in clear text. False on the server
+ * and the first render, so nothing unmasked is ever drawn.
+ */
+export function useMultilineSecretSupported(): boolean {
+  return useSyncExternalStore(() => () => {}, textSecuritySupported, () => false)
 }

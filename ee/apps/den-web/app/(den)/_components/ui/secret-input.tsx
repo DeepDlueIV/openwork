@@ -7,6 +7,7 @@ import {
   SECRET_INPUT_ATTRIBUTES,
   SECRET_REGION_ATTRIBUTES,
   useSecretReveal,
+  useMultilineSecretSupported,
 } from "@openwork/ui/secret-input";
 
 import { DenButton } from "./button";
@@ -102,7 +103,7 @@ export function DenSecretInput({
   disabled = false,
   className,
   autoComplete,
-  multiline = false,
+  multiline: multilineRequested = false,
   rows = 4,
   saved = false,
   savedPlaceholder,
@@ -113,6 +114,7 @@ export function DenSecretInput({
   ...rest
 }: DenSecretInputProps) {
   const enabled = useContext(DenSecretRevealContext);
+  const multilineSupported = useMultilineSecretSupported();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const focusOnShow = useRef(false);
@@ -135,6 +137,8 @@ export function DenSecretInput({
 
   const inputReveal = useSecretReveal<HTMLInputElement>({ field: inputRef, hasValue: value.length > 0, disabled });
   const textareaReveal = useSecretReveal<HTMLTextAreaElement>({ field: textareaRef, hasValue: value.length > 0, disabled });
+  // Only where the browser can mask a textarea; otherwise a password input.
+  const multiline = multilineSupported && multilineRequested;
   const reveal = multiline ? textareaReveal : inputReveal;
   const revealed = enabled && reveal.revealed;
 

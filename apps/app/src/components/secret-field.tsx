@@ -2,7 +2,7 @@
 
 import { createContext, use, useEffect, useImperativeHandle, useRef, useState, type ReactNode, type Ref } from "react"
 import { Eye, EyeOff } from "lucide-react"
-import { SECRET_INPUT_ATTRIBUTES, SECRET_REGION_ATTRIBUTES, useSecretReveal } from "@openwork/ui/secret-input"
+import { SECRET_INPUT_ATTRIBUTES, SECRET_REGION_ATTRIBUTES, useMultilineSecretSupported, useSecretReveal } from "@openwork/ui/secret-input"
 import { Field, FieldDescription, FieldError, FieldLabel } from "@/components/ui/field"
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput, InputGroupTextarea } from "@/components/ui/input-group"
 import { cn } from "@/lib/utils"
@@ -33,7 +33,7 @@ export function SecretRevealProvider({ enabled, children }: { enabled: boolean; 
  * `multiline` is for pasted JSON keys (service accounts): the text stays
  * masked the same way until revealed.
  */
-export function SecretField({ id, label, labelHidden = false, labelClassName, description, error, disabled, onSubmit, onValueChange, handleRef, autoFocus = false, multiline = false, placeholder, revealable, testId, className }: {
+export function SecretField({ id, label, labelHidden = false, labelClassName, description, error, disabled, onSubmit, onValueChange, handleRef, autoFocus = false, multiline: multilineRequested = false, placeholder, revealable, testId, className }: {
   id: string
   label: string
   /** The surrounding title already names the secret; keep the label for assistive tech only. */
@@ -58,6 +58,8 @@ export function SecretField({ id, label, labelHidden = false, labelClassName, de
   className?: string
 }) {
   const canReveal = revealable ?? use(SecretRevealContext)
+  // Only where the browser can mask a textarea; otherwise a password input.
+  const multiline = useMultilineSecretSupported() && multilineRequested
   const input = useRef<HTMLInputElement>(null)
   const area = useRef<HTMLTextAreaElement>(null)
   const [hasValue, setHasValue] = useState(false)

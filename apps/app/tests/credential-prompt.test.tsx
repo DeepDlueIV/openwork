@@ -138,3 +138,9 @@ test("structured AI Gateway credentials draw fixed fields and build the dashboar
   // Single-key targets keep one API key field.
   expect(promptFields({ type: "mcp_connection_key", connectionId: "emc_1" })).toEqual([{ id: "apiKey", label: "API key", kind: "secret" }])
 })
+
+test("a key-file field is never drawn unmasked: a password input until the browser can mask a textarea", () => {
+  const html = renderToStaticMarkup(<SecretField id="file" label="Service account key (JSON)" multiline />)
+  expect(html).toContain('type="password"')
+  expect(html).not.toContain("<textarea")
+})

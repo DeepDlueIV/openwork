@@ -1223,7 +1223,7 @@ function classifyByCode(code: string): Classification | null {
       code,
       retryable: false,
       actionOwner: "organization_admin",
-      operatorAction: "Repeat requirements discovery and select an authorization server advertised by the protected resource.",
+      operatorAction: "Ask the server owner to fix its inconsistent sign-in information, or enter the authorization and token URLs under Advanced sign-in settings.",
     }
   }
   if (code === "MCP_OAUTH_PERSISTENCE_INVALID") {

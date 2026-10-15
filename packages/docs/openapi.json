@@ -15586,6 +15586,38 @@
       "ExternalMcpRequirementsDiscovery": {
         "type": "object",
         "properties": {
+          "publishedSignInAddresses": {
+            "description": "Unverified read-only suggestions; never applied until an administrator saves manual sign-in settings.",
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "authorizationEndpoint": {
+                  "type": "string",
+                  "maxLength": 2048,
+                  "format": "uri"
+                },
+                "tokenEndpoint": {
+                  "type": "string",
+                  "maxLength": 2048,
+                  "format": "uri"
+                },
+                "advertisedIssuer": {
+                  "type": "string"
+                },
+                "metadataIssuer": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "authorizationEndpoint",
+                "tokenEndpoint",
+                "advertisedIssuer",
+                "metadataIssuer"
+              ],
+              "additionalProperties": false
+            }
+          },
           "status": {
             "type": "string",
             "enum": [
@@ -16436,6 +16468,33 @@
             "anyOf": [
               {
                 "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "manualOAuthEndpoints": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "authorizationEndpoint": {
+                    "type": "string",
+                    "maxLength": 2048,
+                    "format": "uri"
+                  },
+                  "tokenEndpoint": {
+                    "type": "string",
+                    "maxLength": 2048,
+                    "format": "uri"
+                  }
+                },
+                "required": [
+                  "authorizationEndpoint",
+                  "tokenEndpoint"
+                ],
+                "additionalProperties": false
               },
               {
                 "type": "null"
@@ -17499,6 +17558,33 @@
               }
             ]
           },
+          "manualOAuthEndpoints": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "authorizationEndpoint": {
+                    "type": "string",
+                    "maxLength": 2048,
+                    "format": "uri"
+                  },
+                  "tokenEndpoint": {
+                    "type": "string",
+                    "maxLength": 2048,
+                    "format": "uri"
+                  }
+                },
+                "required": [
+                  "authorizationEndpoint",
+                  "tokenEndpoint"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "oauthCallbackUrl": {
             "anyOf": [
               {
@@ -17923,6 +18009,33 @@
               }
             ]
           },
+          "manualOAuthEndpoints": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "authorizationEndpoint": {
+                    "type": "string",
+                    "maxLength": 2048,
+                    "format": "uri"
+                  },
+                  "tokenEndpoint": {
+                    "type": "string",
+                    "maxLength": 2048,
+                    "format": "uri"
+                  }
+                },
+                "required": [
+                  "authorizationEndpoint",
+                  "tokenEndpoint"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "oauthCallbackUrl": {
             "anyOf": [
               {
@@ -18126,6 +18239,34 @@
               "clientId"
             ]
           },
+          "manualOAuthEndpoints": {
+            "description": "Administrator-pinned authorization and token URLs. Both required; null restores strict discovery. Changing them clears saved sign-ins.",
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "authorizationEndpoint": {
+                    "type": "string",
+                    "maxLength": 2048,
+                    "format": "uri"
+                  },
+                  "tokenEndpoint": {
+                    "type": "string",
+                    "maxLength": 2048,
+                    "format": "uri"
+                  }
+                },
+                "required": [
+                  "authorizationEndpoint",
+                  "tokenEndpoint"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
           "authorizationServerIssuer": {
             "anyOf": [
               {
@@ -18239,6 +18380,9 @@
           },
           "message": {
             "type": "string"
+          },
+          "diagnostic": {
+            "$ref": "#/components/schemas/ExternalMcpDiagnostic"
           }
         },
         "required": [
@@ -84354,6 +84498,34 @@
                           "clientId"
                         ]
                       },
+                      "manualOAuthEndpoints": {
+                        "description": "Administrator-pinned authorization and token URLs. Both required; null restores strict discovery. Changing them clears saved sign-ins.",
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "authorizationEndpoint": {
+                                "type": "string",
+                                "maxLength": 2048,
+                                "format": "uri"
+                              },
+                              "tokenEndpoint": {
+                                "type": "string",
+                                "maxLength": 2048,
+                                "format": "uri"
+                              }
+                            },
+                            "required": [
+                              "authorizationEndpoint",
+                              "tokenEndpoint"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
                       "authorizationServerIssuer": {
                         "anyOf": [
                           {
@@ -85321,6 +85493,34 @@
                     },
                     "required": [
                       "clientId"
+                    ]
+                  },
+                  "manualOAuthEndpoints": {
+                    "description": "Administrator-pinned authorization and token URLs. Both required; null restores strict discovery. Changing them clears saved sign-ins.",
+                    "anyOf": [
+                      {
+                        "type": "object",
+                        "properties": {
+                          "authorizationEndpoint": {
+                            "type": "string",
+                            "maxLength": 2048,
+                            "format": "uri"
+                          },
+                          "tokenEndpoint": {
+                            "type": "string",
+                            "maxLength": 2048,
+                            "format": "uri"
+                          }
+                        },
+                        "required": [
+                          "authorizationEndpoint",
+                          "tokenEndpoint"
+                        ],
+                        "additionalProperties": false
+                      },
+                      {
+                        "type": "null"
+                      }
                     ]
                   },
                   "authorizationServerIssuer": {

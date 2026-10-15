@@ -9,6 +9,7 @@ import { ApiKeySchemeAdvanced } from "./connector-setup-fields";
 import { ConfirmDialog } from "./item-list";
 import { credentialModeForAuth } from "./member-api-key";
 import { McpCredentialInput } from "./mcp-credential-input";
+import { EMPTY_OAUTH_ADDRESSES, ManualOAuthFields } from "./manual-oauth-fields";
 import { apiKeyAuthSchemeInput, type ExternalMcpApiKeyAuthScheme, type ExternalMcpAuthType, type ExternalMcpCredentialMode, type ExternalMcpConnection, type McpIssuerReview, type UpdateMcpConnectionInput, useReviewMcpIssuer, useUpdateMcpConnection } from "./mcp-connections-data";
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
@@ -35,6 +36,9 @@ export function ConnectorSettingsForm({ connection, onSaved, lockedReason = null
   const [apiKey, setApiKey] = useState("");
   const [clientId, setClientId] = useState(connection.oauthClientId ?? "");
   const [clientSecret, setClientSecret] = useState("");
+  const [manualAddresses, setManualAddresses] = useState(connection.manualOAuthEndpoints ?? EMPTY_OAUTH_ADDRESSES);
+  const manualChanged = manualAddresses.authorizationEndpoint.trim() !== (connection.manualOAuthEndpoints?.authorizationEndpoint ?? "") || manualAddresses.tokenEndpoint.trim() !== (connection.manualOAuthEndpoints?.tokenEndpoint ?? "");
+  const halfSet = Boolean(manualAddresses.authorizationEndpoint.trim()) !== Boolean(manualAddresses.tokenEndpoint.trim());
   const [confirming, setConfirming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const managedByPlugin = connection.identityManagedBy.length > 0;
@@ -50,10 +54,10 @@ export function ConnectorSettingsForm({ connection, onSaved, lockedReason = null
     || (usesKey && apiKeyAuthScheme !== connection.apiKeyAuthScheme);
   const requestedScopes = [...new Set(scopes.split(/[\s,]+/).filter(Boolean))];
   const scopesChanged = requestedScopes.join(" ") !== (connection.requestedScopes ?? []).join(" ");
-  const clientChanged = usesOAuthApp && (clientId.trim() !== (connection.oauthClientId ?? "") || Boolean(clientSecret.trim()));
-  const changed = name.trim() !== connection.name || identityChanged || Boolean(usesSharedKey && normalizedApiKey) || clientChanged || scopesChanged || exposeDirectly !== connection.exposeDirectly;
+  const clientChanged = usesOAuthApp && (clientId.trim() !== (connection.oauthClientId ?? "") || Boolean(clientSecret.trim()) || ((manualChanged || identityChanged) && Boolean(manualAddresses.authorizationEndpoint.trim())));
+  const changed = name.trim() !== connection.name || identityChanged || Boolean(usesSharedKey && normalizedApiKey) || clientChanged || scopesChanged || manualChanged || exposeDirectly !== connection.exposeDirectly;
   const keyRequired = usesSharedKey && identityChanged && !normalizedApiKey;
-  const disabled = !changed || !name.trim() || !url.trim() || keyRequired || (clientChanged && !clientId.trim()) || !connection.updatedAt;
+  const disabled = halfSet || (authType === "oauth" && Boolean(manualAddresses.authorizationEndpoint) && !clientId.trim()) || !changed || !name.trim() || !url.trim() || keyRequired || (clientChanged && !clientId.trim()) || !connection.updatedAt;
 
   async function save() {
     if (!connection.updatedAt) return;
@@ -67,6 +71,7 @@ export function ConnectorSettingsForm({ connection, onSaved, lockedReason = null
       credentialMode: chosenMode,
       exposeDirectly,
       ...(authType === "oauth" && !managedByPlugin ? { requestedScopes } : {}),
+      ...(authType === "oauth" && (manualChanged || (identityChanged && Boolean(manualAddresses.authorizationEndpoint.trim()))) ? { manualOAuthEndpoints: manualAddresses.authorizationEndpoint.trim() ? { authorizationEndpoint: manualAddresses.authorizationEndpoint.trim(), tokenEndpoint: manualAddresses.tokenEndpoint.trim() } : null } : {}),
       ...(!managedByPlugin ? apiKeyAuthSchemeInput(authType, apiKeyAuthScheme) : {}),
       ...(usesSharedKey && !managedByPlugin && normalizedApiKey ? { apiKey: normalizedApiKey } : {}),
       ...(clientChanged && clientId.trim()
@@ -95,7 +100,7 @@ export function ConnectorSettingsForm({ connection, onSaved, lockedReason = null
       data-testid="connector-settings"
       onSubmit={(event) => {
         event.preventDefault();
-        if (identityChanged) setConfirming(true);
+        if (identityChanged || manualChanged) setConfirming(true);
         else void save();
       }}
     >
@@ -146,6 +151,7 @@ export function ConnectorSettingsForm({ connection, onSaved, lockedReason = null
           </Field>
         </>
       ) : null}
+      {authType === "oauth" ? <ManualOAuthFields url={url} value={manualAddresses} onChange={(value) => { setManualAddresses(value); if (value.authorizationEndpoint) setShowOAuthApp(true); }} disabled={managedByPlugin} /> : null}
       {authType === "oauth" ? (
         <Field label="Requested OAuth scopes">
           <DenInput value={scopes} disabled={managedByPlugin} onChange={(event) => setScopes(event.target.value)} placeholder="records.read records.write" data-testid="connector-settings-scopes" />

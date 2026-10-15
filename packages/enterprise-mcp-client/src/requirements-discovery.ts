@@ -14,6 +14,8 @@ import type {
   EnterpriseMcpFetch,
 } from "./contracts.js"
 import { isEquivalentOAuthDiscoveryAlias } from "./oauth-resource-alias.js"
+import { OAuthMetadataSchema } from "@modelcontextprotocol/core"
+import { manualOAuthEndpointsSchema, oauthIssuerMismatchMessage } from "./manual-oauth.js"
 
 const DEFAULT_TIMEOUT_MS = 15_000
 const DEFAULT_MAX_AUTHORIZATION_SERVERS = 5
@@ -90,7 +92,7 @@ function scopedFetch(input: {
     const signal = init?.signal
       ? AbortSignal.any([init.signal, input.signal])
       : input.signal
-    const response = boundedResponse(await input.fetch(url, { ...init, signal }))
+    const response = boundedResponse(await input.fetch(url, { ...init, signal, redirect: "manual", credentials: "omit" }))
     input.observe(response)
     return response
   }
@@ -116,6 +118,7 @@ async function discoverBoundAuthorizationServerMetadata(input: {
   fetch: EnterpriseMcpFetch
 }): Promise<AuthorizationServerMetadata | null> {
   let canonicalIssuer: string
+  let mismatch: IssuerMismatchError
   try {
     return await discoverAuthorizationServerMetadata(input.advertisedIssuer, { fetchFn: input.fetch }) ?? null
   } catch (error) {
@@ -126,15 +129,16 @@ async function discoverBoundAuthorizationServerMetadata(input: {
       || !error.received
     ) throw error
     canonicalIssuer = error.received
+    mismatch = error
   }
 
   // A few providers advertise the protected resource as a discovery alias.
   // The strict SDK mismatch exposes only the parsed issuer identifier. Treat
   // that value as a pointer, independently rediscover it with RFC 8414 issuer
   // validation enabled, and never consume endpoints from the alias document.
-  return await discoverAuthorizationServerMetadata(canonicalIssuer, {
-    fetchFn: input.fetch,
-  }) ?? null
+  const canonical = await discoverAuthorizationServerMetadata(canonicalIssuer, { fetchFn: input.fetch })
+  if (!canonical) throw mismatch
+  return canonical
 }
 
 function uniqueScopes(value: string | undefined): string[] {
@@ -279,12 +283,27 @@ export async function discoverConnectionRequirements(
   const advertisedIssuers = (resourceMetadata?.authorization_servers ?? [])
     .slice(0, input.maxAuthorizationServers ?? DEFAULT_MAX_AUTHORIZATION_SERVERS)
   const authorizationServers: EnterpriseMcpAuthorizationServerRequirement[] = []
+  const publishedSignInAddresses: NonNullable<EnterpriseMcpConnectionRequirements["publishedSignInAddresses"]> = []
   for (const issuer of advertisedIssuers) {
+    // Observe the already-fetched document, separately from strict SDK validation.
+    // Never follow a URL from a failed document to obtain these suggestions.
+    const candidates: Array<{ authorizationEndpoint: string; tokenEndpoint: string; metadataIssuer: string }> = []
+    const inspectFetch: EnterpriseMcpFetch = async (url, init) => {
+      const response = await fetch(url, { ...init, redirect: "manual", credentials: "omit" })
+      if (response.status === 200 && response.headers.get("content-type")?.split(";", 1)[0]?.trim() === "application/json") {
+        const metadata = OAuthMetadataSchema.safeParse(await response.clone().json().catch(() => undefined))
+        if (metadata.success) {
+          const endpoints = manualOAuthEndpointsSchema.safeParse({ authorizationEndpoint: metadata.data.authorization_endpoint, tokenEndpoint: metadata.data.token_endpoint })
+          if (endpoints.success) candidates.push({ ...endpoints.data, metadataIssuer: metadata.data.issuer })
+        }
+      }
+      return response
+    }
     try {
       const metadata = await discoverBoundAuthorizationServerMetadata({
         advertisedIssuer: issuer,
         resource: resourceMetadata?.resource,
-        fetch,
+        fetch: inspectFetch,
       })
       if (!metadata) {
         warnings.push({ code: "oauth_server_metadata_unavailable", message: `No OAuth metadata was found for issuer ${issuer}.` })
@@ -294,9 +313,12 @@ export async function discoverConnectionRequirements(
     } catch (error) {
       warnings.push({
         code: error instanceof IssuerMismatchError ? "oauth_issuer_mismatch" : "oauth_server_metadata_unavailable",
-        message: error instanceof Error ? error.message : `OAuth metadata could not be loaded for issuer ${issuer}.`,
+        message: error instanceof IssuerMismatchError
+          ? oauthIssuerMismatchMessage(error.expected, error.received)
+          : error instanceof Error ? error.message : `OAuth metadata could not be loaded for issuer ${issuer}.`,
       })
     }
+    for (const candidate of candidates) publishedSignInAddresses.push({ ...candidate, advertisedIssuer: issuer })
   }
 
   const requiredScopes = uniqueScopes(challengeScope)
@@ -326,13 +348,14 @@ export async function discoverConnectionRequirements(
       ? "unreachable"
       : oauthDetected && !requirements.some((requirement) => requirement.required)
         ? "ready"
-        : authenticationRequired
+        : authenticationRequired || oauthDetected
           ? "manual_action_required"
           : "unsupported"
 
   try {
     return {
       status,
+      ...(publishedSignInAddresses.length ? { publishedSignInAddresses } : {}),
       server: {
         url: serverUrl.toString(),
         initialize,

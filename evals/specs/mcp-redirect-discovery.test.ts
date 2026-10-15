@@ -45,15 +45,15 @@ for (const mode of ["valid", "issuer-mismatch", "missing"] as const) {
           expect(authorize.origin + authorize.pathname).toBe(`${mock.origin}/authorize`);
           expect(authorize.searchParams.get("code_challenge_method")).toBe("S256");
         } else {
-          expect(started.response.status, started.text).toBe(424);
+          expect(started.response.status, started.text).toBe(mode === "missing" ? 424 : 409);
           expect(started.text).not.toContain("MCP_HTTP_HTML_RESPONSE");
-          expect(started.text).toContain(mode === "missing" ? "MCP_OAUTH_SIGN_IN_METADATA_MISSING" : "MCP_MCP_INITIALIZE");
+          expect(started.text).toContain(mode === "missing" ? "MCP_OAUTH_SIGN_IN_METADATA_MISSING" : "MCP_OAUTH_ISSUER_MISMATCH");
           if (mode === "missing") expect(started.text).toContain("ask the server administrator");
           else expect(mock.requests.some((entry) => entry.path === "/.well-known/oauth-authorization-server/mcp/team")).toBe(true);
           expect(isRecord(started.body) && "authorizeUrl" in started.body).toBe(false);
         }
         expect(mock.requests.some((entry) => entry.path === "/token" || entry.path === "/authorize")).toBe(false);
-        evidence.recordAssertionEvidence("OAuth requires valid resource and issuer metadata", `${mode}: connect/start HTTP ${started.response.status}; no token exchange or browser login request. An inconsistent issuer still requires the planned manual sign-in configuration.`, true);
+        evidence.recordAssertionEvidence("OAuth requires valid resource and issuer metadata", `${mode}: connect/start HTTP ${started.response.status}; no token exchange or browser login request. An inconsistent issuer remains blocked until an administrator explicitly saves manual sign-in settings.`, true);
       }
     } finally { await mock.stop(); }
   });

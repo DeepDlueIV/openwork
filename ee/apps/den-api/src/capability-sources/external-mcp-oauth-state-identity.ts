@@ -12,9 +12,11 @@ export type ExternalMcpOAuthStateIdentitySource = {
   authType: ExternalMcpAuthType
   credentialMode: ExternalMcpCredentialMode
   apiKeyAuthScheme?: "bearer" | "token"
+  oauthConfiguration?: { manualOAuthEndpoints?: { authorizationEndpoint: string; tokenEndpoint: string } } | null
 }
 
 type NonSecretExternalMcpOAuthStateIdentity =
+  | readonly [url: string, authType: "oauth", credentialMode: ExternalMcpCredentialMode, authorizationEndpoint: string, tokenEndpoint: string]
   | readonly [url: string, authType: ExternalMcpAuthType, credentialMode: ExternalMcpCredentialMode]
   | readonly [url: string, authType: "apikey", credentialMode: ExternalMcpCredentialMode, apiKeyAuthScheme: "bearer" | "token"]
   | readonly [nativeProviderId: string, url: string, authType: ExternalMcpAuthType, credentialMode: ExternalMcpCredentialMode]
@@ -41,6 +43,8 @@ function connectionIdentityFields(source: ExternalMcpOAuthStateIdentitySource): 
   if (source.kind === "native_provider") {
     return [source.id, url, authType, credentialMode]
   }
+  const manual = source.oauthConfiguration?.manualOAuthEndpoints
+  if (authType === "oauth" && manual) return [new URL(source.url).href, authType, credentialMode, manual.authorizationEndpoint, manual.tokenEndpoint]
   if (authType === "apikey") return [url, authType, credentialMode, source.apiKeyAuthScheme === "token" ? "token" : "bearer"]
   return [url, authType, credentialMode]
 }

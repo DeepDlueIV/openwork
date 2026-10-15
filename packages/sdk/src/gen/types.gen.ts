@@ -3574,6 +3574,15 @@ export type Microsoft365TeamsMessageBody = {
 };
 
 export type ExternalMcpRequirementsDiscovery = {
+  /**
+   * Unverified read-only suggestions; never applied until an administrator saves manual sign-in settings.
+   */
+  publishedSignInAddresses?: Array<{
+    authorizationEndpoint: string;
+    tokenEndpoint: string;
+    advertisedIssuer: string;
+    metadataIssuer: string;
+  }>;
   status: "ready" | "manual_action_required" | "unsupported" | "unreachable";
   server: {
     url: string;
@@ -3753,6 +3762,10 @@ export type ExternalMcpConnectionResponse = {
   setupRequired?: boolean;
   access: ExternalMcpConnectionAccessSummary | null;
   oauthClientId?: string | null;
+  manualOAuthEndpoints?: {
+    authorizationEndpoint: string;
+    tokenEndpoint: string;
+  } | null;
   oauthCallbackUrl?: string | null;
   oauthSharedCallbackUrl?: string | null;
   oauthClientMetadataUrl?: string | null;
@@ -4021,6 +4034,10 @@ export type ExternalMcpConnectionCreatedResponse = {
   setupRequired?: boolean;
   access: ExternalMcpConnectionAccessSummary | null;
   oauthClientId?: string | null;
+  manualOAuthEndpoints?: {
+    authorizationEndpoint: string;
+    tokenEndpoint: string;
+  } | null;
   oauthCallbackUrl?: string | null;
   oauthSharedCallbackUrl?: string | null;
   oauthClientMetadataUrl?: string | null;
@@ -4096,6 +4113,10 @@ export type ExternalMcpConnectionUpdatedResponse = {
   setupRequired?: boolean;
   access: ExternalMcpConnectionAccessSummary | null;
   oauthClientId?: string | null;
+  manualOAuthEndpoints?: {
+    authorizationEndpoint: string;
+    tokenEndpoint: string;
+  } | null;
   oauthCallbackUrl?: string | null;
   oauthSharedCallbackUrl?: string | null;
   oauthClientMetadataUrl?: string | null;
@@ -4130,6 +4151,13 @@ export type ExternalMcpConnectionByKeyUpsertInput = {
     clientSecret?: string;
     tokenEndpointAuthMethod?: "client_secret_basic" | "client_secret_post";
   };
+  /**
+   * Administrator-pinned authorization and token URLs. Both required; null restores strict discovery. Changing them clears saved sign-ins.
+   */
+  manualOAuthEndpoints?: {
+    authorizationEndpoint: string;
+    tokenEndpoint: string;
+  } | null;
   authorizationServerIssuer?: string | null;
   requestedScopes?: Array<string>;
   access?: ExternalMcpConnectionAccessInput;
@@ -4156,6 +4184,7 @@ export type ExternalMcpOAuthConfigurationRequiredError = {
 export type ExternalMcpOAuthIssuerMismatchError = {
   error: "mcp_oauth_issuer_mismatch";
   message: string;
+  diagnostic?: ExternalMcpDiagnostic;
 };
 
 export type ExternalMcpConnectStartConflictError =
@@ -25783,6 +25812,13 @@ export type PostV1McpConnectionsData = {
           clientSecret?: string;
           tokenEndpointAuthMethod?: "client_secret_basic" | "client_secret_post";
         };
+        /**
+         * Administrator-pinned authorization and token URLs. Both required; null restores strict discovery. Changing them clears saved sign-ins.
+         */
+        manualOAuthEndpoints?: {
+          authorizationEndpoint: string;
+          tokenEndpoint: string;
+        } | null;
         authorizationServerIssuer?: string | null;
         requestedScopes?: Array<string>;
         access?: ExternalMcpConnectionAccessInput;
@@ -26297,6 +26333,13 @@ export type PutV1McpConnectionsByConnectionIdData = {
       clientSecret?: string;
       tokenEndpointAuthMethod?: "client_secret_basic" | "client_secret_post";
     };
+    /**
+     * Administrator-pinned authorization and token URLs. Both required; null restores strict discovery. Changing them clears saved sign-ins.
+     */
+    manualOAuthEndpoints?: {
+      authorizationEndpoint: string;
+      tokenEndpoint: string;
+    } | null;
     authorizationServerIssuer?: string | null;
     requestedScopes?: Array<string>;
     access: ExternalMcpConnectionAccessInput;

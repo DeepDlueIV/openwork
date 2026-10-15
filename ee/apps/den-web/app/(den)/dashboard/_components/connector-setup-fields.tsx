@@ -5,7 +5,8 @@ import { useState } from "react";
 import { DenButton } from "../../_components/ui/button";
 import { DenSelect } from "../../_components/ui/select";
 import type { OAuthAppInput } from "./connector-setup";
-import type { ExternalMcpApiKeyAuthScheme } from "./mcp-connections-data";
+import type { ExternalMcpApiKeyAuthScheme, McpRequirementsDiscovery } from "./mcp-connections-data";
+import { EMPTY_OAUTH_ADDRESSES, ManualOAuthFields } from "./manual-oauth-fields";
 import { McpCredentialInput } from "./mcp-credential-input";
 
 /** Step two's one field for a server that takes a key. */
@@ -46,7 +47,9 @@ export function ApiKeyFields({ name, saving, error, onSave }: {
 }
 
 /** Step two's fields for a server that only accepts a pre-registered OAuth app. */
-export function OAuthAppFields({ secretRequired, saving, error, onSave }: {
+export function OAuthAppFields({ secretRequired, saving, error, onSave, url, discovery }: {
+  url?: string;
+  discovery?: McpRequirementsDiscovery | null;
   secretRequired: boolean;
   saving: boolean;
   error: string | null;
@@ -54,14 +57,17 @@ export function OAuthAppFields({ secretRequired, saving, error, onSave }: {
 }) {
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
-  const ready = Boolean(clientId.trim()) && (!secretRequired || Boolean(clientSecret.trim()));
+  const [manualAddresses, setManualAddresses] = useState(EMPTY_OAUTH_ADDRESSES);
+  const hasManual = Boolean(manualAddresses.authorizationEndpoint.trim() && manualAddresses.tokenEndpoint.trim());
+  const halfSet = Boolean(manualAddresses.authorizationEndpoint.trim()) !== Boolean(manualAddresses.tokenEndpoint.trim());
+  const ready = !halfSet && Boolean(clientId.trim()) && (hasManual || !secretRequired || Boolean(clientSecret.trim()));
   return (
     <form
       className="flex flex-col gap-2"
       data-testid="setup-oauth-app"
       onSubmit={(event) => {
         event.preventDefault();
-        onSave({ clientId, clientSecret });
+        onSave({ clientId, clientSecret, ...(hasManual ? { manualOAuthEndpoints: { authorizationEndpoint: manualAddresses.authorizationEndpoint.trim(), tokenEndpoint: manualAddresses.tokenEndpoint.trim() } } : {}) });
       }}
     >
       <McpCredentialInput
@@ -86,6 +92,7 @@ export function OAuthAppFields({ secretRequired, saving, error, onSave }: {
         />
         <DenButton type="submit" className="shrink-0" loading={saving} disabled={!ready}>Save app</DenButton>
       </div>
+      {url ? <ManualOAuthFields url={url} value={manualAddresses} onChange={setManualAddresses} disabled={saving} discovery={discovery} /> : null}
       {error ? <p className="text-[12px] text-red-600" role="alert">{error}</p> : null}
     </form>
   );

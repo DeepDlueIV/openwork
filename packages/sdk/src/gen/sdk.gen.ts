@@ -11139,6 +11139,13 @@ export class DenClient extends HeyApiClient {
               clientSecret?: string;
               tokenEndpointAuthMethod?: "client_secret_basic" | "client_secret_post";
             };
+            /**
+             * Administrator-pinned authorization and token URLs. Both required; null restores strict discovery. Changing them clears saved sign-ins.
+             */
+            manualOAuthEndpoints?: {
+              authorizationEndpoint: string;
+              tokenEndpoint: string;
+            } | null;
             authorizationServerIssuer?: string | null;
             requestedScopes?: Array<string>;
             access?: ExternalMcpConnectionAccessInput;
@@ -11464,6 +11471,10 @@ export class DenClient extends HeyApiClient {
         clientSecret?: string;
         tokenEndpointAuthMethod?: "client_secret_basic" | "client_secret_post";
       };
+      manualOAuthEndpoints?: {
+        authorizationEndpoint: string;
+        tokenEndpoint: string;
+      } | null;
       authorizationServerIssuer?: string | null;
       requestedScopes?: Array<string>;
       access: ExternalMcpConnectionAccessInput;
@@ -11485,6 +11496,7 @@ export class DenClient extends HeyApiClient {
             { in: "body", key: "apiKey" },
             { in: "body", key: "apiKeyAuthScheme" },
             { in: "body", key: "oauthClient" },
+            { in: "body", key: "manualOAuthEndpoints" },
             { in: "body", key: "authorizationServerIssuer" },
             { in: "body", key: "requestedScopes" },
             { in: "body", key: "access" },

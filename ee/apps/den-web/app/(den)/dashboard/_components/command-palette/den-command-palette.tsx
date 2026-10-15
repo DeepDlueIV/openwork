@@ -1,5 +1,7 @@
 "use client";
 
+import { desktopPolicyScreenRemoved } from "../../_lib/desktop-policy-screen-rollout";
+
 import { Command } from "cmdk";
 import {
   Box,
@@ -160,6 +162,7 @@ export function DenCommandPalette({ open, onOpenChange }: DenCommandPaletteProps
       permissionsEnabled,
       teamRoles,
       workbotSettings,
+      desktopPolicyScreenRemoved: desktopPolicyScreenRemoved(orgContext),
     });
     return flattenNavigationForSearch(sections)
       .filter((entry) => entry.href !== "#")
@@ -167,6 +170,7 @@ export function DenCommandPalette({ open, onOpenChange }: DenCommandPaletteProps
   }, [
     access,
     activeOrg?.slug,
+    orgContext,
     capabilities,
     permissionsEnabled,
     teamRoles,

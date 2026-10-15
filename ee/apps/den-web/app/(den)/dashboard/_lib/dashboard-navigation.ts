@@ -93,6 +93,7 @@ export type BuildDashboardNavSectionsInput = {
   managedDeployments?: boolean;
   /** Workbot is on: admins choose the organization's default model. */
   workbotSettings?: boolean;
+  desktopPolicyScreenRemoved?: boolean;
 };
 
 export function buildDashboardNavSections({
@@ -105,6 +106,7 @@ export function buildDashboardNavSections({
   teamRoles = false,
   managedDeployments = false,
   workbotSettings = false,
+  desktopPolicyScreenRemoved = false,
 }: BuildDashboardNavSectionsInput): DashboardNavSection[] {
   const workflowsEnabled = capabilities.workflows;
   const showWeb = runtimeConfigLoaded && capabilities.openworkWeb;
@@ -135,7 +137,7 @@ export function buildDashboardNavSections({
         { href: getPluginsRoute(orgSlug), label: "Plugins", icon: Box },
         { href: getMcpConnectionsRoute(orgSlug), label: "Connectors", icon: Plug, badge: "MCPs" },
         { href: getAiGatewayRoute(orgSlug), label: "AI Gateway", icon: Sparkles },
-        { href: getDesktopPoliciesRoute(orgSlug), label: "Desktop policies", icon: Laptop },
+        ...(!desktopPolicyScreenRemoved ? [{ href: getDesktopPoliciesRoute(orgSlug), label: "Desktop policies", icon: Laptop }] : []),
         ...(workbotSettings ? [{ href: getWorkbotSettingsRoute(orgSlug), label: "Workbot", icon: MessageCircle, testId: "dashboard-nav-workbot-settings" }] : []),
         ...(managedDeployments ? [{ href: getDeploymentsRoute(orgSlug), label: "Deployments", icon: Server }] : []),
       ].filter((item) => canOpen(item.href))

@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { ArrowLeft, Compass, KeyRound, Layers, ShieldCheck, SquareTerminal, Users } from "lucide-react";
+import { ArrowLeft, Laptop, Compass, KeyRound, Layers, ShieldCheck, SquareTerminal, Users } from "lucide-react";
 import { DenBadge } from "../../_components/ui/badge";
 import { DenButton } from "../../_components/ui/button";
 import { DenNotice } from "../../_components/ui/notice";
 import { type TabItem, UnderlineTabs } from "../../_components/ui/tabs";
 import { getMarketplaceRoute, getMembersRoute, getOrgAccessFlags, orgFeatureEnabled } from "../../_lib/den-org";
+import { desktopPolicyScreenRemoved } from "../_lib/desktop-policy-screen-rollout";
+import { DesktopSuggestionsPanel } from "./desktop-suggestions-panel";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
 import { AgentsPanel, agentsTabVisible } from "./agent-permissions-editor";
 import { TeamPermissionsPanel } from "./team-permissions-panel";
@@ -27,7 +29,7 @@ import {
   useTeamPluginAccess,
 } from "./team-access-data";
 
-export type TeamDetailTab = "role" | "overview" | "access" | "agents" | "browser" | "models";
+export type TeamDetailTab = "role" | "overview" | "access" | "agents" | "browser" | "models" | "desktop";
 
 function formatGrantedDate(value: string): string {
   const date = new Date(value);
@@ -88,6 +90,7 @@ export function TeamDetailScreen({ teamId, initialTab = null }: { teamId: string
   // the team's AI providers, spend limits and default model get a Models tab.
   const pageTabs = orgContext ? orgFeatureEnabled(orgContext, "teamPageTabs") : false;
   const showBrowser = pageTabs && showAgents;
+  const showDesktop = desktopPolicyScreenRemoved(orgContext);
   const showModels = modelsTabVisible(orgContext);
   const [chosenTab, setChosenTab] = useState<TeamDetailTab | null>(initialTab);
   const defaultTab: TeamDetailTab = teamRoles ? "role" : "access";
@@ -102,6 +105,7 @@ export function TeamDetailScreen({ teamId, initialTab = null }: { teamId: string
   const available = (tab: TeamDetailTab) => tab === "role" ? teamRoles
     : tab === "agents" ? showAgents
       : tab === "browser" ? showBrowser
+        : tab === "desktop" ? showDesktop
         : tab === "models" ? showModels
           : true;
   const activeTab: TeamDetailTab = chosenTab && available(chosenTab) ? chosenTab : defaultTab;
@@ -118,6 +122,7 @@ export function TeamDetailScreen({ teamId, initialTab = null }: { teamId: string
     ...(showAgents ? [{ value: "agents" as const, label: "Agents", icon: SquareTerminal }] : []),
     ...(showBrowser ? [{ value: "browser" as const, label: "Browser", icon: Compass }] : []),
     ...(showModels ? [{ value: "models" as const, label: "Models", icon: Layers }] : []),
+    ...(showDesktop ? [{ value: "desktop" as const, label: "Desktop", icon: Laptop }] : []),
   ];
   const tabs: readonly TabItem<TeamDetailTab>[] = teamRoles
     ? [
@@ -197,7 +202,7 @@ export function TeamDetailScreen({ teamId, initialTab = null }: { teamId: string
             {defaultModelOn && viewerAccess?.canViewModelsSettings && !showModels ? (
               <TeamDefaultModelSection teamId={teamId} canManage={viewerAccess.canManageModelsSettings} />
             ) : null}
-            {sharedRoles ? null : <TeamPermissionsPanel teamId={teamId} heading={teamRoles ? "In the desktop app" : undefined} />}
+            {sharedRoles || showDesktop ? null : <TeamPermissionsPanel teamId={teamId} heading={teamRoles ? "In the desktop app" : undefined} />}
             {orgContext && orgFeatureEnabled(orgContext, "teamAccessRows") ? (
               <TeamPluginAccessPanel teamId={teamId} teamName={team?.name ?? "This team"} orgSlug={orgSlug} canRevoke={canRevokeAccess} />
             ) : <>
@@ -315,6 +320,8 @@ export function TeamDetailScreen({ teamId, initialTab = null }: { teamId: string
             <AgentsPanel team={{ id: team.id, name: team.name }} area="browser" />
           </div>
         ) : null}
+
+        {activeTab === "desktop" && team ? (<div role="tabpanel" aria-label="Desktop"><DesktopSuggestionsPanel team={{ id: team.id, name: team.name }} /></div>) : null}
 
         {activeTab === "models" && team ? (
           <div role="tabpanel" aria-label="Models">

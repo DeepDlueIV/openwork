@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { DesktopPolicyEditorScreen } from "../../../_components/desktop-policy-editor-screen";
+import { DesktopPolicyRoute } from "../../../_components/desktop-policy-route";
 
 export default async function EditDesktopPolicyPage({
   params,
@@ -12,5 +12,5 @@ export default async function EditDesktopPolicyPage({
   const { setup } = await searchParams;
   // Legacy setup links may resume onboarding, but navigation never applies policy.
   if (setup === "restricted") redirect("/dashboard/onboarding/people");
-  return <DesktopPolicyEditorScreen desktopPolicyId={desktopPolicyId} />;
+  return <DesktopPolicyRoute editor desktopPolicyId={desktopPolicyId} />;
 }

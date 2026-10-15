@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { ArrowLeft, Compass, Layers, ShieldCheck, SquareTerminal } from "lucide-react";
+import { ArrowLeft, Laptop, Compass, Layers, ShieldCheck, SquareTerminal } from "lucide-react";
 import { type TabItem, UnderlineTabs } from "../../_components/ui/tabs";
 import { getMembersTeamsRoute, getOrgAccessFlags, getPermissionSetRoute, orgFeatureEnabled } from "../../_lib/den-org";
+import { desktopPolicyScreenRemoved } from "../_lib/desktop-policy-screen-rollout";
+import { DesktopSuggestionsPanel } from "./desktop-suggestions-panel";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
 import { IconTile } from "./access-rows";
 import { AgentsPanel, agentsTabVisible } from "./agent-permissions-editor";
@@ -12,7 +14,7 @@ import { ItemPanel, ItemRow } from "./item-list";
 import { ModelsPanel, modelsTabVisible } from "./team-models-panel";
 import { usePermissionSets } from "./permissions-data";
 
-export type EveryoneTab = "role" | "agents" | "browser" | "models";
+export type EveryoneTab = "role" | "agents" | "browser" | "models" | "desktop";
 
 /**
  * Members › Teams › Everyone: every member, including people in no team.
@@ -27,6 +29,7 @@ export function EveryoneScreen({ initialTab }: { initialTab: EveryoneTab | null 
   // teamPageTabs: Browser and Models hold the organization's defaults, as each team's page does.
   const pageTabs = orgContext ? orgFeatureEnabled(orgContext, "teamPageTabs") : false;
   const showBrowser = pageTabs && showAgents;
+  const showDesktop = desktopPolicyScreenRemoved(orgContext);
   const showModels = modelsTabVisible(orgContext);
   const [chosenTab, setChosenTab] = useState<EveryoneTab | null>(initialTab);
   // The tab is in the address, so a reload or a shared link opens it again.
@@ -39,7 +42,7 @@ export function EveryoneScreen({ initialTab }: { initialTab: EveryoneTab | null 
   const activeTab: EveryoneTab = chosenTab === "agents" && showAgents ? "agents"
     : chosenTab === "browser" && showBrowser ? "browser"
       : chosenTab === "models" && showModels ? "models"
-        : "role";
+        : chosenTab === "desktop" && showDesktop ? "desktop" : "role";
   const memberCount = orgContext?.members.length ?? 0;
   const canViewSets = Boolean(orgContext && orgFeatureEnabled(orgContext, "permissions") && access?.canViewPermissions);
   const setsQuery = usePermissionSets(orgId, canViewSets);
@@ -49,6 +52,7 @@ export function EveryoneScreen({ initialTab }: { initialTab: EveryoneTab | null 
     ...(showAgents ? [{ value: "agents" as const, label: "Agents", icon: SquareTerminal }] : []),
     ...(showBrowser ? [{ value: "browser" as const, label: "Browser", icon: Compass }] : []),
     ...(showModels ? [{ value: "models" as const, label: "Models", icon: Layers }] : []),
+    ...(showDesktop ? [{ value: "desktop" as const, label: "Desktop", icon: Laptop }] : []),
   ];
 
   return (
@@ -73,7 +77,7 @@ export function EveryoneScreen({ initialTab }: { initialTab: EveryoneTab | null 
       <UnderlineTabs className="mt-6" tabs={tabs} activeTab={activeTab} onChange={chooseTab} />
 
       <div className="mt-6">
-        {activeTab === "role" ? (
+        {activeTab === "desktop" ? (<div role="tabpanel" aria-label="Desktop"><DesktopSuggestionsPanel team={null} /></div>) : activeTab === "role" ? (
           <div role="tabpanel" aria-label="Role">
             <ItemPanel>
               <ItemRow

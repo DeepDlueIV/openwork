@@ -49,8 +49,6 @@ type OrgDashboardContextValue = {
   inviteMember: (input: { email: string; role: string; teamId?: string | null }) => Promise<void>;
   startSeatCheckout: () => Promise<void>;
   cancelInvitation: (invitationId: string) => Promise<void>;
-  /** The join link of a pending invitation; GET /v1/org never includes join tokens. */
-  getInvitationLink: (invitationId: string) => Promise<string>;
   updateMemberRole: (memberId: string, role: string) => Promise<void>;
   removeMember: (memberId: string) => Promise<void>;
   transferOwnership: (memberId: string) => Promise<void>;
@@ -794,35 +792,6 @@ export function OrgDashboardProvider({
     });
   }
 
-  async function getInvitationLink(invitationId: string): Promise<string> {
-    if (!getCurrentAccess().canInviteMembers) {
-      throw new Error(permissionLockReason("invitations.manage"));
-    }
-
-    const result: { inviteLink: string | null } = { inviteLink: null };
-    await runReauthableAction("invitation-link", async () => {
-      ensureActiveOrganizationSelected();
-      const { response, payload } = await requestJson(
-        `/v1/invitations/${encodeURIComponent(invitationId)}/link`,
-        { method: "GET" },
-        12000,
-      );
-
-      if (!response.ok) {
-        throw getRequestError(payload, response, `Failed to get the invite link (${response.status}).`);
-      }
-
-      result.inviteLink = payload && typeof payload === "object" && "inviteLink" in payload && typeof payload.inviteLink === "string"
-        ? payload.inviteLink
-        : null;
-    });
-
-    if (!result.inviteLink) {
-      throw new Error("The invite link response did not include a link.");
-    }
-    return result.inviteLink;
-  }
-
   async function updateMemberRole(memberId: string, role: string) {
     if (!getCurrentAccess().canManageRoles) {
       throw new Error("You don't have permission to change member roles.");
@@ -1020,7 +989,6 @@ export function OrgDashboardProvider({
     inviteMember,
     startSeatCheckout,
     cancelInvitation,
-    getInvitationLink,
     updateMemberRole,
     removeMember,
     transferOwnership,

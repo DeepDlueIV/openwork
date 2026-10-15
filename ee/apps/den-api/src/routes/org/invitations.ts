@@ -53,12 +53,6 @@ const invitationResponseSchema = z.object({
   inviteToken: z.string(),
 }).meta({ ref: "InvitationResponse" })
 
-const invitationLinkResponseSchema = z.object({
-  invitationId: denTypeIdSchema("invitation"),
-  inviteLink: z.string().url(),
-  expiresAt: z.string().datetime(),
-}).meta({ ref: "InvitationLinkResponse" })
-
 const invitationEmailFailedSchema = z.object({
   error: z.literal("invitation_email_failed"),
   reason: z.enum(["email_not_configured", "resend_rejected", "resend_network", "nodemailer_rejected"]),
@@ -653,115 +647,6 @@ export function registerOrgInvitationRoutes<T extends { Variables: OrgRouteVaria
     }, cancellation.auditEventIds)
 
     return c.json({ success: true })
-    },
-  )
-
-  app.get(
-    "/v1/invitations/:invitationId/link",
-    describeRoute({
-      tags: ["Invitations"],
-      summary: "Get organization invitation link",
-      description: "Returns the join link of a pending invitation so it can be shared directly. The link contains a bearer join token, so it needs the same permissions as resending the invitation: Invite people, Change member roles for a non-member role, and Manage Admin teams when the invitation carries Admin team access.",
-      responses: {
-        200: jsonResponse("Invitation link returned successfully.", invitationLinkResponseSchema),
-        400: jsonResponse("The invitation link path parameters were invalid.", invalidRequestSchema),
-        401: jsonResponse("The caller must be signed in to read invitation links.", unauthorizedSchema),
-        403: jsonResponse("The caller needs the permissions required to resend this invitation and a recent sign-in.", forbiddenSchema),
-        404: jsonResponse("The invitation or organization could not be found.", notFoundSchema),
-        409: jsonResponse("The invitation is no longer pending or has expired; resend it to issue a new link.", invitationNotPendingSchema),
-      },
-    }),
-    orgPermissionRoute("invitations.manage"),
-    paramValidator(orgInvitationParamsSchema),
-    async (c) => {
-    const payload = c.get("organizationContext")
-    const params = c.req.valid("param")
-    let invitationId: InvitationId
-    try {
-      invitationId = normalizeDenTypeId("invitation", params.invitationId)
-    } catch {
-      return c.json({ error: "invitation_not_found" }, 404)
-    }
-
-    const availableRoles = await listAssignableRoles(payload.organization.id)
-    const adminCheck = adminInvitationCheck(c)
-    // Read, authorize and disclose under the organization row lock that team mutations take
-    // FOR UPDATE (withOrganizationTeamMutation): a concurrent Admin-team grant to this
-    // invitation either commits first and is seen here, or waits until the link is decided.
-    const disclosure = await db.transaction(async (tx) => {
-      await tx.select({ id: OrganizationTable.id }).from(OrganizationTable)
-        .where(eq(OrganizationTable.id, payload.organization.id)).for("share")
-
-      const invitationRows = await tx
-        .select({
-          id: InvitationTable.id,
-          organizationId: InvitationTable.organizationId,
-          teamId: InvitationTable.teamId,
-          role: InvitationTable.role,
-          status: InvitationTable.status,
-          expiresAt: InvitationTable.expiresAt,
-          inviteToken: InvitationTable.inviteToken,
-        })
-        .from(InvitationTable)
-        .where(and(eq(InvitationTable.id, invitationId), eq(InvitationTable.organizationId, payload.organization.id)))
-        .limit(1)
-      const invitation = invitationRows[0] ?? null
-      if (!invitation) return { status: "not_found" as const }
-
-      // Resending returns the token to the caller, so reading the link needs exactly what a
-      // resend needs, re-checked against the caller's permissions resolved through this lock.
-      const caller = await resolvePermissionsForMember({ organizationId: payload.organization.id, memberId: payload.currentMember.id, database: tx })
-      if (!caller.has("invitations.manage")) {
-        return { status: "permission" as const, invitation, response: permissionDeniedResponse("invitations.manage") }
-      }
-      if (await invitationHasAdminTeam(tx, invitation)) {
-        const permission = await requirePermission(c, "teams.manage_admin")
-        if (!permission.ok) return { status: "permission" as const, invitation, response: permission.response }
-        if (!caller.has("teams.manage_admin")) {
-          return { status: "permission" as const, invitation, response: permissionDeniedResponse("teams.manage_admin") }
-        }
-      }
-      const roleCheck = await validateInvitationRole(c, { role: normalizeRoleName(invitation.role), availableRoles, adminCheck, database: tx })
-      if (!roleCheck.ok) return { status: "role_error" as const, invitation, validation: roleCheck }
-
-      const expired = invitation.expiresAt <= new Date()
-      if (invitation.status !== "pending" || expired || !invitation.inviteToken) {
-        return { status: "not_pending" as const, invitation, reportedStatus: invitation.status === "pending" && expired ? "expired" : invitation.status }
-      }
-      return { status: "ok" as const, invitation, inviteToken: invitation.inviteToken }
-    })
-
-    if (disclosure.status === "not_found") {
-      return c.json({ error: "invitation_not_found" }, 404)
-    }
-    addAuditRequestResource(c, { type: "invitation", id: disclosure.invitation.id })
-    if (disclosure.status === "permission") {
-      return c.json(disclosure.response, orgAccessFailureStatus(disclosure.response), permissionFailureHeaders(disclosure.response))
-    }
-    if (disclosure.status === "role_error") {
-      const validation = disclosure.validation
-      if (validation.error === "permission") {
-        return c.json(validation.response, orgAccessFailureStatus(validation.response), permissionFailureHeaders(validation.response))
-      }
-      if (validation.error === "role_assignment") {
-        return c.json(roleAssignmentDeniedResponse(validation.denial), 403, roleAssignmentDeniedHeaders(validation.denial))
-      }
-      return c.json({ error: "forbidden", message: validation.message }, 403)
-    }
-    if (disclosure.status === "not_pending") {
-      return c.json({
-        error: "invitation_not_pending",
-        message: "This invitation can no longer be used. Resend it to create a new link.",
-        status: disclosure.reportedStatus,
-      }, 409)
-    }
-
-    c.header("Cache-Control", "private, no-store")
-    return c.json({
-      invitationId: disclosure.invitation.id,
-      inviteLink: buildInvitationLink(disclosure.inviteToken),
-      expiresAt: disclosure.invitation.expiresAt.toISOString(),
-    })
     },
   )
 }

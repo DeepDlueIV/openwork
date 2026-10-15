@@ -181,8 +181,7 @@ export type AdminFeature = {
     | "orgDefaultModel"
     | "gatewayProviderUsageLimits"
     | "stableInstallLinks"
-    | "teamPageTabs"
-    | "inviteLinkVerifiesEmail";
+    | "teamPageTabs";
   label: string;
   description: string;
   since: string;
@@ -240,7 +239,6 @@ export type AdminOrganizationsPageResponse = {
       gatewayProviderUsageLimits: boolean;
       stableInstallLinks: boolean;
       teamPageTabs: boolean;
-      inviteLinkVerifiesEmail: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -415,15 +413,6 @@ export type AdminOrganizationsPageResponse = {
         overrideApplies: boolean;
       };
       teamPageTabs: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      inviteLinkVerifiesEmail: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -514,7 +503,6 @@ export type AdminOverviewResponse = {
       gatewayProviderUsageLimits: boolean;
       stableInstallLinks: boolean;
       teamPageTabs: boolean;
-      inviteLinkVerifiesEmail: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -689,15 +677,6 @@ export type AdminOverviewResponse = {
         overrideApplies: boolean;
       };
       teamPageTabs: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      inviteLinkVerifiesEmail: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -2027,15 +2006,6 @@ export type InvitationNotPendingError = {
   error: "invitation_not_pending";
   message: string;
   status: string;
-};
-
-export type InvitationLinkResponse = {
-  /**
-   * Den TypeID with 'inv_' prefix and a 26-character base32 suffix.
-   */
-  invitationId: string;
-  inviteLink: string;
-  expiresAt: string;
 };
 
 export type CreateInstallLinkResponse = {
@@ -6519,7 +6489,6 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       gatewayProviderUsageLimits: boolean;
       stableInstallLinks: boolean;
       teamPageTabs: boolean;
-      inviteLinkVerifiesEmail: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -6694,15 +6663,6 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       teamPageTabs: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      inviteLinkVerifiesEmail: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6781,7 +6741,6 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       gatewayProviderUsageLimits: boolean;
       stableInstallLinks: boolean;
       teamPageTabs: boolean;
-      inviteLinkVerifiesEmail: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -6956,15 +6915,6 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       teamPageTabs: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      inviteLinkVerifiesEmail: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -15320,54 +15270,6 @@ export type PostV1InvitationsByInvitationIdCancelResponses = {
 
 export type PostV1InvitationsByInvitationIdCancelResponse =
   PostV1InvitationsByInvitationIdCancelResponses[keyof PostV1InvitationsByInvitationIdCancelResponses];
-
-export type GetV1InvitationsByInvitationIdLinkData = {
-  body?: never;
-  path: {
-    /**
-     * Den TypeID with 'inv_' prefix and a 26-character base32 suffix.
-     */
-    invitationId: string;
-  };
-  query?: never;
-  url: "/v1/invitations/{invitationId}/link";
-};
-
-export type GetV1InvitationsByInvitationIdLinkErrors = {
-  /**
-   * The invitation link path parameters were invalid.
-   */
-  400: InvalidRequestError;
-  /**
-   * The caller must be signed in to read invitation links.
-   */
-  401: UnauthorizedError;
-  /**
-   * The caller needs the permissions required to resend this invitation and a recent sign-in.
-   */
-  403: ForbiddenError;
-  /**
-   * The invitation or organization could not be found.
-   */
-  404: NotFoundError;
-  /**
-   * The invitation is no longer pending or has expired; resend it to issue a new link.
-   */
-  409: InvitationNotPendingError;
-};
-
-export type GetV1InvitationsByInvitationIdLinkError =
-  GetV1InvitationsByInvitationIdLinkErrors[keyof GetV1InvitationsByInvitationIdLinkErrors];
-
-export type GetV1InvitationsByInvitationIdLinkResponses = {
-  /**
-   * Invitation link returned successfully.
-   */
-  200: InvitationLinkResponse;
-};
-
-export type GetV1InvitationsByInvitationIdLinkResponse =
-  GetV1InvitationsByInvitationIdLinkResponses[keyof GetV1InvitationsByInvitationIdLinkResponses];
 
 export type PostV1OrgsByOrganizationIdInstallLinksData = {
   body: CreateInstallLinkRequest;

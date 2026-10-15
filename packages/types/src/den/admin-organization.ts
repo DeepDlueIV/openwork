@@ -3,15 +3,15 @@ import { z } from "zod"
 const count = z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER)
 export const adminOrganizationDetailSchema = z.object({
   organization: z.object({
-    id: z.string(), name: z.string(), slug: z.string().nullable(), createdAt: z.string(),
+    id: z.string(), name: z.string(), slug: z.string().nullable(), createdAt: z.string().datetime(),
     planTier: z.string(), seatLimit: count, memberCount: count,
   }),
   members: z.array(z.object({
     id: z.string(), userId: z.string().nullable(), name: z.string().nullable(), email: z.string().nullable(),
-    role: z.string(), joinedAt: z.string().nullable(),
+    role: z.string(), joinedAt: z.string().datetime().nullable(),
   })),
   page: z.object({ limit: count, offset: count, search: z.string(), total: count, returned: count, hasMore: z.boolean(), durationMs: count }),
-  generatedAt: z.string(),
+  generatedAt: z.string().datetime(),
 }).meta({ ref: "AdminOrganizationDetail" })
 
 export const adminOrganizationUsageTotalsSchema = z.object({

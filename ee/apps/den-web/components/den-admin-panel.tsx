@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { DenSelect } from "../app/(den)/_components/ui/select";
 import { Copy, Pencil, Trash2 } from "lucide-react";
 import { FEATURE_KEYS, mapFeatures, type FeatureKey } from "@openwork/features";
 import { denApiCredentials, denBrowserEndpoint } from "../app/(den)/_lib/den-api-origin";
@@ -2595,7 +2596,7 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                   <div className="mt-4 grid gap-3 border-t border-slate-200 pt-4 lg:grid-cols-[12rem_10rem_auto] lg:items-end">
                     <label className="grid min-w-0 gap-2">
                       <span className="text-[0.68rem] font-semibold uppercase tracking-[0.14em] text-slate-500">Plan</span>
-                      <select
+                      <DenSelect
                         value={draft.tier}
                         onChange={(event) => {
                           const tier = event.target.value === "enterprise" || event.target.value === "team" ? event.target.value : "free";
@@ -2606,7 +2607,7 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                         <option value="free">Free</option>
                         <option value="team">Team</option>
                         <option value="enterprise">Enterprise</option>
-                      </select>
+                      </DenSelect>
                     </label>
 
                     <label className="grid min-w-0 gap-2">

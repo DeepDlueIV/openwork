@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { FEATURE_KEYS, FEATURES, type FeatureKey } from "@openwork/features";
 import { DenButton } from "../../app/(den)/_components/ui/button";
+import { DenSwitch } from "../../app/(den)/_components/ui/switch";
 
 export type AdminFeatureState = {
   enabled: boolean;
@@ -75,13 +76,12 @@ export function AdminOrganizationFeatureControls({ organizationId, features, loa
               return (
                 <li key={key} className="flex items-start gap-3">
                   <label className="flex min-w-0 flex-1 items-start gap-2">
-                    <input type="checkbox" data-testid={`admin-capability-${key}`} checked={state.enabled}
-                      disabled={!state.overrideApplies || saving} onChange={(event) => onChange(key, event.target.checked)}
-                      className="mt-0.5 h-4 w-4 shrink-0 rounded-sm border-slate-300" />
+                    <DenSwitch testId={`admin-capability-${key}`} aria-label={definition.label} checked={state.enabled} size="sm"
+                      disabled={!state.overrideApplies || saving} onChange={(enabled) => onChange(key, enabled)} />
                     <span className="min-w-0">
                       <span className="text-sm text-slate-700">{definition.label}</span>
-                      <span className="ml-2 text-xs text-slate-400" data-testid={`admin-capability-source-${key}`}>{describeSource(state)}</span>
-                      <span className="block text-xs leading-5 text-slate-400">{definition.description}</span>
+                      <span className="ml-2 text-xs text-slate-500" data-testid={`admin-capability-source-${key}`}>{describeSource(state)}</span>
+                      <span className="block text-xs leading-5 text-slate-500">{definition.description}</span>
                     </span>
                   </label>
                   {state.source === "override" && state.overrideApplies ? (

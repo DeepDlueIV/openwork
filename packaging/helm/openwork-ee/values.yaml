@@ -26,7 +26,7 @@ config:
   #   "false" off for everyone; /admin shows "Set by deployment config"
   # The /admin kill switch still turns a feature off, even when locked on.
   features:
-    secureSecretFields: ""         # default off · When an agent sets up a connection or AI Gateway provider that needs an API key, people enter the key in a private field in the chat; the agent never sees it and continues once it is saved.
+    secureSecretFields: ""         # default off · When an agent sets up a connection, plugin or AI Gateway provider that needs keys, people enter them in private fields in the chat and the agent continues once they are saved. Key fields across OpenWork and OpenWork Cloud can be shown while typing and show saved keys as Replace rows.
     memberListToolbars: ""         # default off · Filter members, teams and roles beside their add action, with compact member rows and secondary actions in the list menu.
     appBuildProgress: ""           # default off · While an agent creates or changes an MCP App, the chat shows each stage it goes through (finding and checking tools, writing the App, building and verifying it) as a checklist with a progress bar.
     modelsAnalyticsUi: ""          # default off · Organization admins can view Models & usage analytics and shared model usage limits. Deprecated 2026-10-14: UI hidden behind modelsAnalyticsUi (default off). Most likely delete within 4 weeks (by 2026-11-11) unless an org depends on it.

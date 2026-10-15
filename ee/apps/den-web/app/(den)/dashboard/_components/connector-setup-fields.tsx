@@ -34,7 +34,7 @@ export function ApiKeyFields({ name, saving, error, onSave }: {
           data-ph-no-capture
           placeholder={`${name} API key`}
           value={apiKey}
-          onChange={(event) => setApiKey(event.target.value)}
+          onChange={setApiKey}
           disabled={saving}
           autoFocus
         />
@@ -81,7 +81,7 @@ export function OAuthAppFields({ secretRequired, saving, error, onSave }: {
           aria-label="Client secret"
           placeholder={secretRequired ? "Client secret" : "Client secret (optional)"}
           value={clientSecret}
-          onChange={(event) => setClientSecret(event.target.value)}
+          onChange={setClientSecret}
           disabled={saving}
         />
         <DenButton type="submit" className="shrink-0" loading={saving} disabled={!ready}>Save app</DenButton>

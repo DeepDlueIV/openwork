@@ -55,7 +55,7 @@ const everywhere = ["cloud", "self_hosted"] as const
 export const FEATURES = defineFeatures({
   secureSecretFields: {
     label: "Secure keys in chat",
-    description: "When an agent sets up a connection or AI Gateway provider that needs an API key, people enter the key in a private field in the chat; the agent never sees it and continues once it is saved.",
+    description: "When an agent sets up a connection, plugin or AI Gateway provider that needs keys, people enter them in private fields in the chat and the agent continues once they are saved. Key fields across OpenWork and OpenWork Cloud can be shown while typing and show saved keys as Replace rows.",
     since: "2026-10",
     deployments: everywhere,
     default: false,

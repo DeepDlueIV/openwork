@@ -2,52 +2,64 @@
 
 An agent sets something up, a tool needs a key to continue, the person types
 the key into a private field in the same chat, and the agent carries on. The
-key never reaches the model, the transcript or a tool argument.
+key never reaches the model, the transcript or a tool argument. The same
+private field is used for every key typed in OpenWork and OpenWork Cloud.
 
-## Three pieces
+## Pieces
 
 1. **Credential prompt** (`packages/types/src/den/credential-prompt.ts`): Den
-   tool-result metadata (`credentialPrompt`) naming the saved resource, its
-   name and where the key will be sent. The schema is strict and has no value
-   field.
-2. **Private field** (`apps/app/src/components/secret-field.tsx`,
-   `components/chat/credential-prompt-card.tsx`): the app draws it only for
-   results from OpenWork Cloud's own tools (direct calls, or calls inside a
-   Code Mode script). The value stays out of React state, is masked by default,
-   is shown only while typing when the person asks, and is cleared once sent.
-   It goes straight to Den using the person's own session. Once it is saved,
-   the app continues the run with "I've saved the key. Go ahead.", which
-   contains no key.
-3. **Human-only writes in Den**: agents (`mcp_internal`), and API keys while
-   the flag is on, get `secure_entry_required` if they send a key. They create
-   the resource without one and receive the prompt.
+   tool-result metadata naming the saved resource and where the key goes. The
+   schema is strict and has no value field. The fields drawn for each target
+   are fixed in the app, never taken from the result.
+2. **Shared secret field** (`packages/ui/src/react/secret-input.ts`): the
+   privacy and no-autofill attributes, reveal only while typing, the fixed
+   `••••••••` saved state, and key validation. The desktop `SecretField` and
+   den-web `DenSecretInput` both build on it.
+3. **Human-only writes in Den**: agents (`mcp_internal`) are always refused
+   when they send a key, and API keys are refused while the flag is on
+   (`secure_entry_required`, `middleware/refuse-machine-secrets.ts`).
 
-This is deliberately not a general secrets engine. Each target writes to
-storage that already exists, so turning the flag off restores today's
-behaviour unchanged.
+## Keys the agent can ask for in chat
 
-## Supported targets
+| Target | Saved through (people only) |
+| --- | --- |
+| Shared API key of an org MCP connection | `PUT /v1/mcp-connections/:id/shared-credential` (hidden) |
+| Key of a plugin's declared MCP server | `POST /v1/plugins/:id/mcp-connections` (the plugin's own setup) |
+| AI Gateway provider: single API key | `PATCH /v1/inference-providers/:id/credential-sets/:setId` |
+| AI Gateway provider: AWS keys (Bedrock), Google service-account key (Vertex), or several named keys | same route, structured body |
 
-| Target | Save route (people only) | Who can save it |
-| --- | --- | --- |
-| Shared API key of an org MCP connection | `PUT /v1/mcp-connections/:id/shared-credential` (hidden) | Manage connections |
-| Shared API key of an AI Gateway provider (one env key, not LiteLLM) | `PATCH /v1/inference-providers/:id/credential-sets/:setId` | Manage Gateway providers, with a recent sign-in check shown in place |
+The app shows a prompt only for results of Den's own operations
+(`postMcpConnections`, `postPluginsMcpConnections`, `postInferenceProviders`),
+so another MCP server can't make it draw a key field. A key the server refuses
+is not kept, and provider error text is never echoed or logged, because it
+can repeat the key.
 
-The MCP route checks the key against the server. A rejected key is not kept,
-and provider error text is never echoed or logged, because it can repeat the
-key. Marketplace-managed connections are refused. Personal keys already use
-the existing member dialog.
+## Forms
 
-## Not in scope here
+The forms below use the shared field. With the flag on, they offer "Show while
+typing", and keys that are already saved appear as a `••••••••` row with a
+Replace action:
+- den-web: connectors (API keys and OAuth app secrets), native Google and
+  Microsoft clients, personal keys, marketplace plugin setup, the Slack
+  signing secret, AI Gateway providers (OAuth secret, service-account JSON,
+  which is now masked, AWS keys, env keys, single key), LiteLLM, legacy custom
+  LLM providers, Langfuse, the egress token and the OIDC client secret.
+- Desktop: personal keys, Library connectors, new library items, OAuth client
+  secrets in Add MCP, and local provider keys.
 
-OAuth client secrets, arbitrary headers, structured or multi-key provider
-credentials (AWS, Vertex), LiteLLM, local desktop provider/env secrets, and
-plugin/SSO/Slack setup. These keep their existing dashboard forms. Clients
-other than OpenWork receive `nextStep` text that points to the dashboard page.
+Account passwords keep normal password-manager support.
+
+## Not in scope
+
+Arbitrary custom headers, OAuth app credentials requested by an agent in chat
+(set them in the connection form), LiteLLM in chat, and local environment
+variables. Environment variables are arbitrary values with their own reveal
+control.
 
 ## Proof
 
 `evals/specs/secure-keys-in-chat.e2e.test.ts` runs on engines v1 and v2. It
-checks the in-chat field, a rejected key, the saved key reaching the service,
-that the key never appears in the page, any model request or Den's log, a
-member being refused, the AI Gateway provider, and the rollout turned off.
+covers the MCP key, a rejected key, the AI Gateway provider key, a Vertex
+service-account key file, the refused legacy LLM provider key, the den-web
+saved and Replace row, and the rollout turned off. It also checks that no key
+appears in the page, any model request or Den's log.

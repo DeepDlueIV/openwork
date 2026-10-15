@@ -12,6 +12,7 @@ export const KEY_SAVED_PROMPT = "I've saved the key. Go ahead.";
 export const CONNECT_PROMPT = "Connect our status service. It needs an API key.";
 export const GATEWAY_PROMPT = "Add our OpenRouter account to the AI Gateway for everyone.";
 export const BACKUP_PROMPT = "Also connect our backup status service.";
+export const VERTEX_PROMPT = "Add our Google Cloud Vertex project to the AI Gateway for everyone.";
 
 function field(value: unknown, ...path: string[]): unknown {
   let current = value;
@@ -35,6 +36,7 @@ export async function secureKeysInChat(seed: Seed, context: { place: Place }) {
   const gatewayUrl = `http://127.0.0.1:${await allocateFreePort()}`;
   const proof = `Status: all systems normal ${randomBytes(4).toString("hex")}`;
   const den = await seed.den({
+    web: true,
     env: {
       DEN_ORG_MODE: "multi_org", GATEWAY_ENABLED: "true", PROVISIONER_MODE: "stub",
       ...(local ? { NODE_ENV: "test", OPENWORK_DEV_MODE: "1", DB_MODE: "mysql", GATEWAY_PROXY_BASE_URL: gatewayUrl, GATEWAY_PUBLIC_BASE_URL: gatewayUrl } : {}),
@@ -48,6 +50,10 @@ export async function secureKeysInChat(seed: Seed, context: { place: Place }) {
 
   // Keys exist only in this process; witnesses keep a 12-character fingerprint.
   const keys = { status: randomBytes(24).toString("hex"), wrong: randomBytes(24).toString("hex"), gateway: `sk-or-${randomBytes(24).toString("hex")}` };
+  // The private key body is unique per run; any trace of it in a model request is a leak.
+  const serviceAccountSentinel = randomBytes(48).toString("hex");
+  /** A synthetic service-account key file; never a real credential. */
+  const serviceAccount = JSON.stringify({ type: "service_account", project_id: "fixture-project", client_email: `fixture-${randomBytes(4).toString("hex")}@fixture-project.iam.gserviceaccount.com`, private_key: `-----BEGIN PRIVATE KEY-----\n${serviceAccountSentinel}\n-----END PRIVATE KEY-----\n`, token_uri: "https://oauth2.googleapis.com/token" });
   const fingerprint = (key: string) => createHash("sha256").update(key).digest("hex").slice(0, 12);
   const wire: { method: string; identity: string; status: number }[] = [];
   const witness = createServer(async (request, response) => {
@@ -87,7 +93,7 @@ export async function secureKeysInChat(seed: Seed, context: { place: Place }) {
     config: { type: "remote", url: `${den.ref.apiUrl}/mcp/agent`, enabled: true, oauth: false, headers: { Authorization: `Bearer ${token}` } }, trigger: "secure-keys-fixture",
   });
   if (connected.status !== 200) throw new Error(`Connect reconciliation failed: ${connected.status}`);
-  const sentinels = await fetch(`${base.mock.url}/admin/private-sentinels`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ values: Object.values(keys) }) });
+  const sentinels = await fetch(`${base.mock.url}/admin/private-sentinels`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ values: [...Object.values(keys), serviceAccountSentinel] }) });
   if (!sentinels.ok) throw new Error("Model privacy witness setup failed");
 
   /** One OpenWork Cloud call as the engine makes it: a direct call (v1) or inside Code Mode (v2). */
@@ -124,9 +130,22 @@ export async function secureKeysInChat(seed: Seed, context: { place: Place }) {
     return { isError: field(envelope, "result", "isError") === true, body, text };
   }
 
+  const vertexModels = await (async () => {
+    const result = await seed.api(den.admin, "/v1/llm-provider-catalog/google-vertex");
+    const models = field(result.body, "provider", "models");
+    const ids = Array.isArray(models) ? models.flatMap((model) => isRecord(model) && typeof model.id === "string" && /^gemini-2\.5/.test(model.id) && !/preview|exp|lite|image|tts|live|embed/i.test(model.id) ? [model.id] : []) : [];
+    if (!ids.length) throw new Error("The google-vertex catalog has no Gemini 2.5 models");
+    return ids.slice(0, 1);
+  })();
+  // OpenWork Cloud in headless Chrome, signed in as the admin.
+  const web = await seed.web({
+    den, signedInAs: den.admin, startPath: "/dashboard/ai-gateway?tab=ai-providers", headless: true,
+    viewport: { width: 1280, height: 900, deviceScaleFactor: 1 },
+  });
+
   const resources = setup.move();
   return {
-    ...base, den, organizationId, keys, fingerprint, wire, proof, statusUrl,
+    ...base, den, web, organizationId, keys, fingerprint, wire, proof, statusUrl, serviceAccount,
     /** The admin asks; the agent creates the connection without its key and ends its turn. */
     async scriptConnection() {
       await script([
@@ -153,7 +172,25 @@ export async function secureKeysInChat(seed: Seed, context: { place: Place }) {
         ] },
       ]);
     },
+    /** The admin asks; the agent adds a Vertex provider for everyone without its key file and ends its turn. */
+    async scriptVertex() {
+      await script([
+        { promptMarker: VERTEX_PROMPT, latestUserTurn: true, finalReply: "Paste the service account key in the field above and I'll finish.", steps: [
+          cloudCall("execute_capability", { name: "postInferenceProviders", body: { name: "Team Vertex", providerId: "google-vertex", modelIds: vertexModels, settings: { project: "fixture-project", location: "us-central1" }, allMembers: true } }),
+        ] },
+        { promptMarker: KEY_SAVED_PROMPT, latestUserTurn: true, finalReply: "Team Vertex is ready for everyone.", steps: [] },
+      ]);
+    },
     agentMcp,
+    async providerByName(name: string) {
+      const listed = await seed.api(den.admin, "/v1/inference-providers", { headers: { "x-openwork-org-id": organizationId } });
+      const rows = field(listed.body, "inferenceProviders");
+      const summary = Array.isArray(rows) ? rows.find((row) => isRecord(row) && row.name === name) : undefined;
+      const id = field(summary, "id");
+      if (typeof id !== "string") return null;
+      const detail = await seed.api(den.admin, `/v1/inference-providers/${encodeURIComponent(id)}`, { headers: { "x-openwork-org-id": organizationId } });
+      return { id, body: detail.body, text: detail.text };
+    },
     async connection() {
       const listed = await seed.api(den.admin, "/v1/mcp-connections?scope=manageable", { headers: { "x-openwork-org-id": organizationId } });
       const rows = field(listed.body, "connections");

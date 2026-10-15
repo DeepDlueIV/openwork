@@ -34,7 +34,7 @@ function records(value: unknown): Record<string, unknown>[] {
  * execute_capability, but under prefixed names (mcp:..., plugin:...), so they
  * can never match and cannot forge a key field.
  */
-const DEN_PROMPT_OPERATIONS = new Set(["postMcpConnections", "postInferenceProviders"])
+const DEN_PROMPT_OPERATIONS = new Set(["postMcpConnections", "postInferenceProviders", "postPluginsMcpConnections"])
 
 function isDenPromptCall(part: DynamicToolUIPart): boolean {
   if (!isOpenworkCloudCapabilityTool(part.toolName) || !/(?:^|_)execute_capability$/.test(part.toolName)) return false

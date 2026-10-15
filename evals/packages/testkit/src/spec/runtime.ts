@@ -856,7 +856,12 @@ export class UserChannel implements User {
       if (this.#runtime.adapters.user?.click) await this.#runtime.adapters.user.click(surface, target, 1);
       else await clickTarget(surface, target);
       if (options.sensitive) {
-        const masked = await callFunctionOnSurface(surface, () => document.activeElement instanceof HTMLInputElement && document.activeElement.type === 'password', []);
+        // A password input, or a multi-line secret field (pasted key files) masked with text-security.
+        const masked = await callFunctionOnSurface(surface, () => {
+          const active = document.activeElement;
+          if (active instanceof HTMLInputElement) return active.type === 'password';
+          return active instanceof HTMLTextAreaElement && !['', 'none'].includes(getComputedStyle(active).getPropertyValue('-webkit-text-security'));
+        }, []);
         if (masked !== true) throw new Error("Sensitive typing requires a masked password input");
       }
       const mac = surface.handle.hostKind !== "daytona" && process.platform === "darwin";

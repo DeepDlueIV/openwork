@@ -5,6 +5,8 @@ import {
   type CredentialPrompt,
 } from "@openwork/types/den/credential-prompt"
 import { MICROSOFT_FOUNDRY_PROVIDER_ID, microsoftFoundryBaseUrl } from "@openwork-ee/utils/microsoft-foundry-catalog"
+import { inferenceCredentialEnvNames } from "@openwork-ee/utils/inference-credentials"
+import { isLiteLlmProviderId } from "@openwork-ee/utils/litellm-catalog"
 import { env } from "./env.js"
 
 function text(record: unknown, ...path: string[]): string | null {
@@ -53,6 +55,49 @@ export function mcpConnectionKeyPrompt(connection: { id: string; name: string; u
   })
 }
 
+export function pluginConnectionKeyPrompt(input: { pluginId: string; configObjectId: string; serverName: string; connection: { id: string; name: string; url: string } }): CredentialPrompt {
+  return credentialPromptSchema.parse({
+    schemaVersion: "1",
+    kind: "credential_prompt",
+    target: { type: "plugin_connection_key", pluginId: input.pluginId, configObjectId: input.configObjectId, serverName: input.serverName, connectionId: input.connection.id },
+    name: input.connection.name,
+    destination: credentialPromptDestination(input.connection.url),
+  })
+}
+
+/** What a person enters for one AI Gateway provider's shared credential, or null when chat can't collect it. */
+export type GatewayCredentialShape =
+  | { kind: "api_key" }
+  | { kind: "aws_keys" }
+  | { kind: "gcp_service_account" }
+  | { kind: "api_key_map"; envNames: string[] }
+
+export function gatewayCredentialShape(providerId: string, envNames: readonly string[]): GatewayCredentialShape | null {
+  if (isLiteLlmProviderId(providerId)) return null
+  if (providerId === "google-vertex" || providerId === "google-vertex-anthropic") return { kind: "gcp_service_account" }
+  if (providerId === "amazon-bedrock" || providerId === "amazon-bedrock-mantle") return { kind: "aws_keys" }
+  if (envNames.length === 1) return { kind: "api_key" }
+  const keys = inferenceCredentialEnvNames(envNames)
+  return keys.length >= 1 && keys.length <= 6 ? { kind: "api_key_map", envNames: keys } : null
+}
+
+export function gatewayProviderCredentialPrompt(input: { inferenceProviderId: string; credentialSetId: string; name: string; destination: string | null; shape: GatewayCredentialShape }): CredentialPrompt {
+  if (input.shape.kind === "api_key") return gatewayProviderKeyPrompt(input)
+  return credentialPromptSchema.parse({
+    schemaVersion: "1",
+    kind: "credential_prompt",
+    target: {
+      type: "gateway_provider_credential",
+      inferenceProviderId: input.inferenceProviderId,
+      credentialSetId: input.credentialSetId,
+      credentialKind: input.shape.kind,
+      ...(input.shape.kind === "api_key_map" ? { envNames: input.shape.envNames } : {}),
+    },
+    name: input.name,
+    destination: credentialPromptDestination(input.destination),
+  })
+}
+
 export function gatewayProviderKeyPrompt(input: { inferenceProviderId: string; credentialSetId: string; name: string; destination: string | null }): CredentialPrompt {
   return credentialPromptSchema.parse({
     schemaVersion: "1",
@@ -65,7 +110,7 @@ export function gatewayProviderKeyPrompt(input: { inferenceProviderId: string; c
 
 /** The dashboard page where a person can add the same key outside OpenWork chat. */
 export function credentialPromptManageUrl(prompt: CredentialPrompt): string | null {
-  const path = prompt.target.type === "mcp_connection_key"
+  const path = prompt.target.type === "mcp_connection_key" || prompt.target.type === "plugin_connection_key"
     ? `/dashboard/mcp-connections/${encodeURIComponent(prompt.target.connectionId)}`
     : "/dashboard/ai-gateway?tab=ai-providers"
   try {

@@ -20160,6 +20160,174 @@
               "connection",
               "links"
             ]
+          },
+          "credentialPrompt": {
+            "type": "object",
+            "properties": {
+              "schemaVersion": {
+                "type": "string",
+                "const": "1"
+              },
+              "kind": {
+                "type": "string",
+                "const": "credential_prompt"
+              },
+              "target": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "const": "mcp_connection_key"
+                      },
+                      "connectionId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 160
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "connectionId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "const": "plugin_connection_key"
+                      },
+                      "pluginId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 160
+                      },
+                      "configObjectId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 160
+                      },
+                      "serverName": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 255
+                      },
+                      "connectionId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 160
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "pluginId",
+                      "configObjectId",
+                      "serverName",
+                      "connectionId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "const": "gateway_provider_key"
+                      },
+                      "inferenceProviderId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 160
+                      },
+                      "credentialSetId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 160
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "inferenceProviderId",
+                      "credentialSetId"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "const": "gateway_provider_credential"
+                      },
+                      "inferenceProviderId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 160
+                      },
+                      "credentialSetId": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 160
+                      },
+                      "credentialKind": {
+                        "type": "string",
+                        "enum": [
+                          "aws_keys",
+                          "gcp_service_account",
+                          "api_key_map"
+                        ]
+                      },
+                      "envNames": {
+                        "minItems": 1,
+                        "maxItems": 6,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "pattern": "^[A-Z][A-Z0-9_]{0,127}$"
+                        }
+                      }
+                    },
+                    "required": [
+                      "type",
+                      "inferenceProviderId",
+                      "credentialSetId",
+                      "credentialKind"
+                    ],
+                    "additionalProperties": false
+                  }
+                ]
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 255
+              },
+              "destination": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 2048
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "schemaVersion",
+              "kind",
+              "target",
+              "name",
+              "destination"
+            ],
+            "additionalProperties": false
+          },
+          "nextStep": {
+            "type": "string"
           }
         },
         "required": [
@@ -66087,6 +66255,43 @@
                               "properties": {
                                 "type": {
                                   "type": "string",
+                                  "const": "plugin_connection_key"
+                                },
+                                "pluginId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 160
+                                },
+                                "configObjectId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 160
+                                },
+                                "serverName": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 255
+                                },
+                                "connectionId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 160
+                                }
+                              },
+                              "required": [
+                                "type",
+                                "pluginId",
+                                "configObjectId",
+                                "serverName",
+                                "connectionId"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "type": {
+                                  "type": "string",
                                   "const": "gateway_provider_key"
                                 },
                                 "inferenceProviderId": {
@@ -66104,6 +66309,49 @@
                                 "type",
                                 "inferenceProviderId",
                                 "credentialSetId"
+                              ],
+                              "additionalProperties": false
+                            },
+                            {
+                              "type": "object",
+                              "properties": {
+                                "type": {
+                                  "type": "string",
+                                  "const": "gateway_provider_credential"
+                                },
+                                "inferenceProviderId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 160
+                                },
+                                "credentialSetId": {
+                                  "type": "string",
+                                  "minLength": 1,
+                                  "maxLength": 160
+                                },
+                                "credentialKind": {
+                                  "type": "string",
+                                  "enum": [
+                                    "aws_keys",
+                                    "gcp_service_account",
+                                    "api_key_map"
+                                  ]
+                                },
+                                "envNames": {
+                                  "minItems": 1,
+                                  "maxItems": 6,
+                                  "type": "array",
+                                  "items": {
+                                    "type": "string",
+                                    "pattern": "^[A-Z][A-Z0-9_]{0,127}$"
+                                  }
+                                }
+                              },
+                              "required": [
+                                "type",
+                                "inferenceProviderId",
+                                "credentialSetId",
+                                "credentialKind"
                               ],
                               "additionalProperties": false
                             }

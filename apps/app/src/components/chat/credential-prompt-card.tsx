@@ -8,6 +8,9 @@ import type { CredentialPrompt } from "@openwork/types/den/credential-prompt"
 import { DenApiError, createDenClient, readDenSettings } from "@/app/lib/den"
 import { DEN_DASHBOARD_LINKS } from "@/app/lib/den-dashboard-links"
 import { SecretField, type SecretFieldHandle } from "@/components/secret-field"
+import { Field, FieldLabel } from "@/components/ui/field"
+import { Input } from "@/components/ui/input"
+import { gatewayCredentialBody, promptFields, promptFieldsProblem } from "./credential-prompt-fields"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { DenReauthNotice } from "@/react-app/domains/cloud/den-reauth-notice"
 import { useDenAuth } from "@/react-app/domains/cloud/den-auth-provider"
@@ -30,7 +33,7 @@ function targetKey(prompt: CredentialPrompt) {
 
 function denDashboardUrl(baseUrl: string, prompt: CredentialPrompt): string | null {
   try {
-    const path = prompt.target.type === "mcp_connection_key"
+    const path = prompt.target.type === "mcp_connection_key" || prompt.target.type === "plugin_connection_key"
       ? `/dashboard/mcp-connections/${encodeURIComponent(prompt.target.connectionId)}`
       : DEN_DASHBOARD_LINKS.gatewayProviders
     const url = new URL(path, baseUrl)
@@ -69,7 +72,10 @@ export function CredentialPromptCard({ part, continueToolCallId = part.toolCallI
   const auth = useDenAuth()
   const queryClient = useQueryClient()
   const fieldId = useId()
-  const field = useRef<SecretFieldHandle>(null)
+  // One handle per field; values are read once at save and never kept.
+  const fields = useRef(new Map<string, SecretFieldHandle>())
+  const identifiers = useRef(new Map<string, HTMLInputElement>())
+  const filled = useRef(new Set<string>())
   const verifiedClient = useRef<ReturnType<typeof createDenClient> | null>(null)
   const [phase, setPhase] = useState<Phase>("entry")
   const [error, setError] = useState<string | null>(null)
@@ -95,7 +101,7 @@ export function CredentialPromptCard({ part, continueToolCallId = part.toolCallI
     queryFn: async () => {
       if (!prompt) return false
       const client = createDenClient({ baseUrl: settings.baseUrl, token })
-      if (prompt.target.type === "gateway_provider_key") {
+      if (prompt.target.type === "gateway_provider_key" || prompt.target.type === "gateway_provider_credential") {
         return client.gatewayCredentialSetReady(organizationId, prompt.target.inferenceProviderId, prompt.target.credentialSetId)
       }
       const connectionId = prompt.target.connectionId
@@ -114,27 +120,44 @@ export function CredentialPromptCard({ part, continueToolCallId = part.toolCallI
   const blocked = !signedIn ? "signed_out" : readOnly ? "read_only" : enabled.data === false ? "off" : phase === "denied" ? "denied" : phase === "gone" ? "gone" : null
   const showField = !blocked && phase !== "reauth" && (!saved || replacing)
 
-  const save = async () => {
-    if (phase === "saving" || !field.current) return
-    const run = readDenSettings()
-    let value = field.current.take()
+  const specs = promptFields(prompt.target)
+  const clearAll = () => {
+    for (const handle of fields.current.values()) handle.clear()
+    for (const input of identifiers.current.values()) input.value = ""
+    filled.current.clear()
     setHasValue(false)
-    if (!value) return
-    if (!/^[\x21-\x7e]{1,8192}$/.test(value)) {
-      value = ""
-      setError("Enter only the key, without spaces or a prefix.")
+  }
+  const save = async () => {
+    if (phase === "saving") return
+    const run = readDenSettings()
+    let values: Record<string, string> = {}
+    for (const spec of specs) {
+      values[spec.id] = spec.kind === "identifier" ? identifiers.current.get(spec.id)?.value.trim() ?? "" : fields.current.get(spec.id)?.take() ?? ""
+    }
+    clearAll()
+    for (const input of identifiers.current.values()) input.value = ""
+    const problem = promptFieldsProblem(prompt.target, values)
+    if (problem) {
+      values = {}
+      setError(problem)
       return
     }
+    const value = values.apiKey ?? ""
     setPhase("saving")
     setError(null)
     try {
       const client = verifiedClient.current ?? createDenClient({ baseUrl: run.baseUrl, token: run.authToken?.trim() ?? "" })
-      if (prompt.target.type === "mcp_connection_key") {
+      if (prompt.target.type === "gateway_provider_credential") {
+        await client.saveGatewayProviderCredential(organizationId, prompt.target.inferenceProviderId, prompt.target.credentialSetId, gatewayCredentialBody(prompt.target, values))
+      } else if (prompt.target.type === "mcp_connection_key") {
         await client.saveMcpConnectionSharedKey(organizationId, prompt.target.connectionId, value)
+      } else if (prompt.target.type === "plugin_connection_key") {
+        const { pluginId, configObjectId, serverName } = prompt.target
+        await client.savePluginConnectionKey(organizationId, { pluginId, configObjectId, serverName, apiKey: value })
       } else {
         await client.saveGatewayProviderKey(organizationId, prompt.target.inferenceProviderId, prompt.target.credentialSetId, value)
       }
-      value = ""
+      values = {}
       const current = readDenSettings()
       if (current.authToken !== run.authToken || current.activeOrgId !== run.activeOrgId) throw new Error("account_changed")
       setReplacing(false)
@@ -144,20 +167,27 @@ export function CredentialPromptCard({ part, continueToolCallId = part.toolCallI
       // Picks the task up as if the person said so; the message carries no key.
       messageList?.continueAfterConnection?.(continueToolCallId, CREDENTIAL_SAVED_CONTINUE_PROMPT)
     } catch (cause) {
-      value = ""
+      values = {}
       const next = failureState(cause, name)
       setPhase(next.phase)
       setError(next.message)
     }
   }
 
+  const track = (id: string, has: boolean) => {
+    if (has) filled.current.add(id)
+    else filled.current.delete(id)
+    setHasValue(filled.current.size > 0)
+  }
+  const plural = specs.length > 1 || prompt.target.type === "gateway_provider_credential"
   const settled = saved && !replacing
-  const title = settled ? `${name}: key saved`
-    : blocked === "denied" ? `An admin must add the API key for ${name}`
+  const what = plural ? "credentials" : "API key"
+  const title = settled ? `${name}: ${plural ? "credentials" : "key"} saved`
+    : blocked === "denied" ? `An admin must add the ${what} for ${name}`
     : blocked === "gone" ? `${name} is no longer available`
-    : blocked ? `API key for ${name}`
-    : replacing ? `Replace the API key for ${name}`
-    : `Add the API key for ${name}`
+    : blocked ? `${plural ? "Credentials" : "API key"} for ${name}`
+    : replacing ? `Replace the ${what} for ${name}`
+    : `Add the ${what} for ${name}`
   const blockedLine = blocked === "read_only" ? "This conversation is read-only."
     : blocked === "signed_out" ? "Sign in to OpenWork Cloud to add this key here."
     : blocked === "off" ? "Adding keys in chat is off for your organization. Use OpenWork Cloud instead."
@@ -177,7 +207,7 @@ export function CredentialPromptCard({ part, continueToolCallId = part.toolCallI
         </span>
         <p role="status" className="min-w-0 flex-1 font-medium">{title}</p>
         {settled ? <span aria-label="Saved key, hidden" className="shrink-0 font-mono text-muted-foreground">••••••••</span> : null}
-        {settled && !blocked ? <Button variant="ghost" size="sm" onClick={() => { setReplacing(true); setError(null) }}>Replace key</Button> : null}
+        {settled && !blocked ? <Button variant="ghost" size="sm" onClick={() => { setReplacing(true); setError(null) }}>{plural ? "Replace" : "Replace key"}</Button> : null}
         {blocked && blocked !== "read_only" && blocked !== "gone" && dashboardUrl ? (
           <a className={buttonVariants({ variant: "ghost", size: "sm" })} href={dashboardUrl} target="_blank" rel="noopener noreferrer">Open in OpenWork Cloud</a>
         ) : null}
@@ -200,17 +230,38 @@ export function CredentialPromptCard({ part, continueToolCallId = part.toolCallI
       {showField ? (
         <form className="flex flex-col gap-2 px-3 pb-2" autoComplete="off" onSubmit={(event) => { event.preventDefault(); void save() }}>
           <p className="text-muted-foreground">{consent}</p>
-          <div className="flex items-start gap-2">
-            <div className="min-w-0 flex-1">
-              <SecretField id={fieldId} label="API key" labelHidden error={error} disabled={phase === "saving"}
-                handleRef={field} onSubmit={() => void save()} onValueChange={setHasValue} />
+          {specs.length > 1 || specs[0]?.kind !== "secret" ? (
+            <div className="flex flex-col gap-3">
+              {specs.map((spec, index) => spec.kind === "identifier" ? (
+                <Field key={spec.id}>
+                  <FieldLabel htmlFor={`${fieldId}-${spec.id}`}>{spec.label}</FieldLabel>
+                  <Input id={`${fieldId}-${spec.id}`} autoComplete="off" spellCheck={false} disabled={phase === "saving"} autoFocus={index === 0}
+                    ref={(input) => { if (input) identifiers.current.set(spec.id, input); else identifiers.current.delete(spec.id) }}
+                    onChange={(event) => track(spec.id, event.currentTarget.value.length > 0)} />
+                </Field>
+              ) : (
+                <SecretField key={spec.id} id={`${fieldId}-${spec.id}`} label={spec.label} revealable multiline={spec.kind === "json"}
+                  disabled={phase === "saving"} onSubmit={() => void save()}
+                  handleRef={(handle) => { if (handle) fields.current.set(spec.id, handle); else fields.current.delete(spec.id) }}
+                  onValueChange={(has) => track(spec.id, has)} />
+              ))}
+              {error ? <p role="alert" className="text-destructive">{error}</p> : null}
             </div>
+          ) : null}
+          <div className="flex items-start gap-2">
+            {specs.length === 1 && specs[0]?.kind === "secret" ? (
+              <div className="min-w-0 flex-1">
+                <SecretField id={fieldId} label="API key" labelHidden revealable error={error} disabled={phase === "saving"}
+                  handleRef={(handle) => { if (handle) fields.current.set("apiKey", handle); else fields.current.delete("apiKey") }}
+                  onSubmit={() => void save()} onValueChange={(has) => track("apiKey", has)} />
+              </div>
+            ) : <div className="flex-1" />}
             <Button type="submit" size="sm" disabled={phase === "saving" || !hasValue}>
               {phase === "saving" ? <Loader2 data-icon="inline-start" aria-hidden="true" className="animate-spin" strokeWidth={1.5} /> : null}
-              {phase === "saving" ? "Checking key…" : "Save key"}
+              {phase === "saving" ? (plural ? "Saving…" : "Checking key…") : plural ? "Save credentials" : "Save key"}
             </Button>
             {replacing ? <Button type="button" variant="ghost" size="sm" disabled={phase === "saving"}
-              onClick={() => { field.current?.clear(); setReplacing(false); setError(null) }}>Cancel</Button> : null}
+              onClick={() => { clearAll(); setReplacing(false); setError(null) }}>Cancel</Button> : null}
           </div>
         </form>
       ) : null}

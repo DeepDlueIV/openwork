@@ -15,11 +15,13 @@ import { usePathname, useRouter } from "next/navigation";
 import { useDenFlow } from "../../_providers/den-flow-provider";
 import { getErrorMessage, getOrgLimitError, getOrgPaymentRequiredError, getRequestError, isReauthRequiredError, requestJson, WORKSPACE_REAUTH_SECURITY_MESSAGE } from "../../_lib/den-flow";
 import { ReauthDialog } from "../../_components/reauth-dialog";
+import { DenSecretRevealProvider } from "../../_components/ui/secret-input";
 import {
   type DenOrgContext,
   type DenOrgSummary,
   getOrgDashboardRoute,
   getOrgAccessFlags,
+  orgFeatureEnabled,
   parseOrgContextPayload,
   parseOrgListPayload,
   roleIncludesCanonicalRole,
@@ -981,6 +983,7 @@ export function OrgDashboardProvider({
 
   return (
     <OrgDashboardContext.Provider value={value}>
+      <DenSecretRevealProvider enabled={orgFeatureEnabled(orgContext, "secureSecretFields")}>
       {setupOrganizationId && (orgContext?.organization.id !== setupOrganizationId
         || activeOrgId !== setupOrganizationId || getRequestOrgScope() !== setupOrganizationId) ? (
         <div className="grid min-h-[420px] place-content-center gap-3 px-6 text-sm text-gray-600" data-testid="setup-workspace-restoring">
@@ -988,6 +991,7 @@ export function OrgDashboardProvider({
           {!orgBusy ? <button type="button" onClick={() => void refreshOrgData()} className="font-medium text-gray-900 underline underline-offset-4">Retry setup workspace</button> : null}
         </div>
       ) : children}
+      </DenSecretRevealProvider>
       <ReauthDialog
         open={reauthDialogOpen}
         user={user}

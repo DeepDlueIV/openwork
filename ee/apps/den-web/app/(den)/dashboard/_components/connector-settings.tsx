@@ -133,7 +133,7 @@ export function ConnectorSettingsForm({ connection, onSaved, lockedReason = null
       {authType === "oauth" && !showOAuthApp ? <DenButton type="button" variant="secondary" size="sm" onClick={() => setShowOAuthApp(true)}>Add OAuth app</DenButton> : null}
       {usesSharedKey && !managedByPlugin ? (
         <Field label={keyRequired ? "New API key" : "New API key (optional)"}>
-          <McpCredentialInput kind="secret" name="connector-settings-api-key" autoComplete="off" data-ph-no-capture value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="Leave empty to keep the saved key" data-testid="connector-settings-api-key" />
+          <McpCredentialInput kind="secret" name="connector-settings-api-key" autoComplete="off" data-ph-no-capture value={apiKey} onChange={setApiKey} saved={connection.connected && !identityChanged} placeholder="API key" savedPlaceholder="Leave empty to keep the saved key" data-testid="connector-settings-api-key" replaceTestId="connector-settings-replace-api-key" />
         </Field>
       ) : null}
       {usesOAuthApp ? (
@@ -142,7 +142,7 @@ export function ConnectorSettingsForm({ connection, onSaved, lockedReason = null
             <McpCredentialInput kind="identifier" name="connector-settings-client-id" value={clientId} onChange={(event) => setClientId(event.target.value)} placeholder="Client ID" />
           </Field>
           <Field label="New client secret (optional)">
-            <McpCredentialInput kind="secret" name="connector-settings-client-secret" value={clientSecret} onChange={(event) => setClientSecret(event.target.value)} placeholder="Leave empty to keep the saved secret" />
+            <McpCredentialInput kind="secret" name="connector-settings-client-secret" value={clientSecret} onChange={setClientSecret} saved={connection.oauthClientConfigured === true} placeholder="Client secret" savedPlaceholder="Leave empty to keep the saved secret" />
           </Field>
         </>
       ) : null}

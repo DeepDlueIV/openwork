@@ -43,7 +43,7 @@ import type { OrgRouteVariables } from "./shared.js"
 import { registerOrgGatewayUsageRoutes } from "./gateway-usage.js"
 import { registerOrgGatewayUsageLimitRoutes } from "./gateway-usage-limits.js"
 import { credentialPromptSchema } from "@openwork/types/den/credential-prompt"
-import { credentialPromptResponseFields, gatewayProviderKeyPrompt, gatewayUpstreamDestination } from "../../credential-prompt.js"
+import { credentialPromptResponseFields, gatewayCredentialShape, gatewayProviderCredentialPrompt, gatewayUpstreamDestination } from "../../credential-prompt.js"
 import { organizationFeatureEnabled } from "../../features.js"
 
 const paramsSchema = idParamSchema("inferenceProviderId", "inferenceProvider")
@@ -178,7 +178,8 @@ const managementWrite: MiddlewareHandler<{ Variables: OrgRouteVariables }> = asy
 }
 /** The one organization set still waiting for its key, when a person can add it in chat. */
 async function pendingKeyPrompt(provider: GatewayProvider, setId: string | null) {
-  if (!setId || readProviderEnvNames(provider.provider_config).length !== 1 || isLiteLlmProviderId(provider.provider_id)) return null
+  const shape = gatewayCredentialShape(provider.provider_id, readProviderEnvNames(provider.provider_config))
+  if (!setId || !shape) return null
   if (!await organizationFeatureEnabled(provider.organization_id, "secureSecretFields")) return null
   const [set] = await db.select({ mode: GatewayCredentialSetTable.credential_mode }).from(GatewayCredentialSetTable)
     .where(and(eq(GatewayCredentialSetTable.id, normalizeDenTypeId("gatewayCredentialSet", setId)), eq(GatewayCredentialSetTable.gateway_provider_id, provider.id)))
@@ -186,8 +187,8 @@ async function pendingKeyPrompt(provider: GatewayProvider, setId: string | null)
   const [credential] = await db.select({ status: GatewayProviderCredentialTable.status }).from(GatewayProviderCredentialTable)
     .where(and(eq(GatewayProviderCredentialTable.credential_set_id, normalizeDenTypeId("gatewayCredentialSet", setId)), eq(GatewayProviderCredentialTable.subject, "org")))
   if (credential?.status === "active") return null
-  return credentialPromptResponseFields(gatewayProviderKeyPrompt({
-    inferenceProviderId: provider.id, credentialSetId: setId, name: provider.name,
+  return credentialPromptResponseFields(gatewayProviderCredentialPrompt({
+    inferenceProviderId: provider.id, credentialSetId: setId, name: provider.name, shape,
     destination: gatewayUpstreamDestination(provider.provider_id, provider.provider_config, provider.settings),
   }))
 }
@@ -276,7 +277,7 @@ async function defaultMatrix(tx: GatewayTx, provider: GatewayProvider, input: z.
   const hasCredentialInput = input.credential !== undefined || input.apiKeys !== undefined || input.credentialMode === "member" || input.oauthClientId !== undefined || input.oauthClientSecret !== undefined || input.oauthTenantId !== undefined || input.awsSso !== undefined
   // Secure keys in chat: access is set up now and the shared key is added by a person next.
   const awaitKey = options.awaitKey === true && !hasCredentialInput && audiences.length > 0
-    && readProviderEnvNames(provider.provider_config).length === 1 && !isLiteLlmProviderId(provider.provider_id)
+    && gatewayCredentialShape(provider.provider_id, readProviderEnvNames(provider.provider_config)) !== null
   if (!hasCredentialInput && audiences.length && !awaitKey) throw new GatewayWriteError(400, "credential_required", "Configure credentials before granting initial provider access.")
   const set = hasCredentialInput || awaitKey
     ? await writeGatewaySet(tx, provider, { name: "Default credentials", credentialMode: input.credentialMode ?? "org", credential: input.credential, apiKeys: input.apiKeys, oauthClientId: input.oauthClientId, oauthClientSecret: input.oauthClientSecret, oauthTenantId: input.oauthTenantId, awsSso: input.awsSso }, { createdByOrgMembershipId: creatorId }, { awaitOrganizationKey: awaitKey })

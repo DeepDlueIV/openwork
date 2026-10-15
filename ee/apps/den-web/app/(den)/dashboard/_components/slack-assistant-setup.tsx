@@ -9,6 +9,7 @@ import { useOrgDashboard } from "../_providers/org-dashboard-provider";
 import { DenButton } from "../../_components/ui/button";
 import { DenSwitch } from "../../_components/ui/switch";
 import { DenInput } from "../../_components/ui/input";
+import { DenSecretInput } from "../../_components/ui/secret-input";
 import { auditSummaryClass, AuditChevron } from "./audit-logs-details";
 import type { ExternalMcpConnection } from "./mcp-connections-data";
 
@@ -177,14 +178,16 @@ export function SlackAssistantSetup({ connection }: { connection: ExternalMcpCon
           </div>
           <label className="flex flex-col gap-1 text-sm">
             Slack app signing secret
-            <DenInput
-              type="password"
+            <DenSecretInput
               autoComplete="off"
               data-ph-no-capture
               data-testid="slack-assistant-signing-secret"
               value={secret}
-              onChange={(e) => setSecret(e.target.value)}
-              placeholder={data.hasSigningSecret ? "Saved securely" : "Paste from Slack app settings"}
+              onChange={setSecret}
+              saved={data.hasSigningSecret}
+              placeholder="Paste from Slack app settings"
+              savedPlaceholder="Saved securely"
+              replaceTestId="slack-assistant-replace-signing-secret"
             />
           </label>
           <div className="flex flex-wrap gap-2">

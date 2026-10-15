@@ -1,14 +1,16 @@
 /** @jsxImportSource react */
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Check, Info, Loader2, Search, Server } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import type { SecretFieldHandle } from "@/components/secret-field";
 import type { DenExternalMcpPreset } from "../../../../app/lib/den";
 import { t } from "../../../../i18n";
 import { resolveExtensionIconUrl } from "../../../design-system/extension-icon-src";
 import { IconImage } from "../../../design-system/icon-image";
+import { SecretTextInput } from "../../../design-system/secret-text-input";
 import { TextInput } from "../../../design-system/text-input";
-import { libraryFieldClass } from "./add-library-item-page";
+import { libraryFieldClass, librarySecretFieldClass } from "./add-library-item-page";
 import { LibraryPage } from "./library-page";
 
 /** Den's preset copy leads with what it does; the rest is admin detail. */
@@ -116,21 +118,25 @@ export function LibraryConnectorSetupPage(props: {
   onSubmit: (input: LibraryConnectorSetupInput) => Promise<void>;
 }) {
   const { preset } = props;
-  const [apiKey, setApiKey] = useState("");
+  const apiKeyField = useRef<SecretFieldHandle>(null);
+  const clientSecretField = useRef<SecretFieldHandle>(null);
+  const [hasApiKey, setHasApiKey] = useState(false);
   const [clientId, setClientId] = useState("");
-  const [clientSecret, setClientSecret] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const needsCodes = preset.authType === "oauth" && preset.requiresOAuthClient === true;
   const signsIn = preset.authType === "oauth";
 
   const submit = async () => {
-    if (preset.authType === "apikey" && !apiKey.trim()) {
-      setError(t("extensions.add_mcp_api_key_required"));
-      return;
-    }
     if (needsCodes && !clientId.trim()) {
       setError(t("extensions.connector_codes_required", { name: preset.displayName }));
+      return;
+    }
+    // Each secret is read once here and the field empties.
+    const apiKey = preset.authType === "apikey" ? apiKeyField.current?.take() ?? "" : "";
+    const clientSecret = needsCodes ? clientSecretField.current?.take() ?? "" : "";
+    if (preset.authType === "apikey" && !apiKey.trim()) {
+      setError(t("extensions.add_mcp_api_key_required"));
       return;
     }
     setBusy(true);
@@ -167,7 +173,7 @@ export function LibraryConnectorSetupPage(props: {
       actions={(
         <>
           <Button variant="outline" disabled={busy} onClick={props.onBack}>{t("common.cancel")}</Button>
-          <Button disabled={busy} onClick={() => void submit()}>
+          <Button disabled={busy || (preset.authType === "apikey" && !hasApiKey)} onClick={() => void submit()}>
             {busy ? <Loader2 size={14} className="animate-spin" /> : null}
             {signsIn ? t("extensions.connector_sign_in_with", { name: preset.displayName }) : t("extensions.connector_add")}
           </Button>
@@ -187,14 +193,13 @@ export function LibraryConnectorSetupPage(props: {
           <span>{note}</span>
         </p>
         {preset.authType === "apikey" ? (
-          <TextInput
+          <SecretTextInput
+            id="library-connector-api-key"
             label={t("extensions.add_mcp_api_key_label")}
-            type="password"
-            autoComplete="new-password"
-            value={apiKey}
             disabled={busy}
-            className={libraryFieldClass}
-            onChange={(event) => setApiKey(event.currentTarget.value)}
+            handleRef={apiKeyField}
+            onValueChange={setHasApiKey}
+            className={librarySecretFieldClass}
           />
         ) : null}
         {needsCodes ? (
@@ -207,14 +212,12 @@ export function LibraryConnectorSetupPage(props: {
               className={libraryFieldClass}
               onChange={(event) => setClientId(event.currentTarget.value)}
             />
-            <TextInput
+            <SecretTextInput
+              id="library-connector-client-secret"
               label={t("extensions.add_mcp_oauth_client_secret_label")}
-              type="password"
-              autoComplete="new-password"
-              value={clientSecret}
               disabled={busy}
-              className={libraryFieldClass}
-              onChange={(event) => setClientSecret(event.currentTarget.value)}
+              handleRef={clientSecretField}
+              className={librarySecretFieldClass}
             />
           </div>
         ) : null}

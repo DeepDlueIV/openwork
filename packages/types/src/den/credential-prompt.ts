@@ -15,8 +15,22 @@ const id = z.string().trim().min(1).max(160)
 export const credentialPromptTargetSchema = z.discriminatedUnion("type", [
   /** A shared API key for one organization MCP connection. */
   z.object({ type: z.literal("mcp_connection_key"), connectionId: id }).strict(),
+  /** The shared API key of a plugin's declared MCP server, saved through the plugin's own setup. */
+  z.object({ type: z.literal("plugin_connection_key"), pluginId: id, configObjectId: id, serverName: z.string().trim().min(1).max(255), connectionId: id }).strict(),
   /** The shared API key of one AI Gateway provider's organization credential set. */
   z.object({ type: z.literal("gateway_provider_key"), inferenceProviderId: id, credentialSetId: id }).strict(),
+  /**
+   * Several values for one AI Gateway provider's organization credential set:
+   * AWS keys (Bedrock), a Google service-account key (Vertex), or one key per
+   * named variable. The host draws the fields for the kind; Den checks the shape.
+   */
+  z.object({
+    type: z.literal("gateway_provider_credential"),
+    inferenceProviderId: id,
+    credentialSetId: id,
+    credentialKind: z.enum(["aws_keys", "gcp_service_account", "api_key_map"]),
+    envNames: z.array(z.string().regex(/^[A-Z][A-Z0-9_]{0,127}$/)).min(1).max(6).optional(),
+  }).strict().refine((target) => (target.credentialKind === "api_key_map") === (target.envNames !== undefined), "envNames is required for api_key_map only"),
 ])
 
 export const credentialPromptSchema = z.object({

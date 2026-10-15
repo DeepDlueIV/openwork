@@ -4612,6 +4612,37 @@ export type PluginArchPluginMcpRequirementConfigureResponse = {
       yourConnections: string;
     };
   };
+  credentialPrompt?: {
+    schemaVersion: "1";
+    kind: "credential_prompt";
+    target:
+      | {
+          type: "mcp_connection_key";
+          connectionId: string;
+        }
+      | {
+          type: "plugin_connection_key";
+          pluginId: string;
+          configObjectId: string;
+          serverName: string;
+          connectionId: string;
+        }
+      | {
+          type: "gateway_provider_key";
+          inferenceProviderId: string;
+          credentialSetId: string;
+        }
+      | {
+          type: "gateway_provider_credential";
+          inferenceProviderId: string;
+          credentialSetId: string;
+          credentialKind: "aws_keys" | "gcp_service_account" | "api_key_map";
+          envNames?: Array<string>;
+        };
+    name: string;
+    destination: string | null;
+  };
+  nextStep?: string;
 };
 
 export type GithubPluginMcpImportServer = {
@@ -18869,9 +18900,23 @@ export type PostV1InferenceProvidersResponses = {
             connectionId: string;
           }
         | {
+            type: "plugin_connection_key";
+            pluginId: string;
+            configObjectId: string;
+            serverName: string;
+            connectionId: string;
+          }
+        | {
             type: "gateway_provider_key";
             inferenceProviderId: string;
             credentialSetId: string;
+          }
+        | {
+            type: "gateway_provider_credential";
+            inferenceProviderId: string;
+            credentialSetId: string;
+            credentialKind: "aws_keys" | "gcp_service_account" | "api_key_map";
+            envNames?: Array<string>;
           };
       name: string;
       destination: string | null;

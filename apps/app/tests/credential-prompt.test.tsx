@@ -4,8 +4,9 @@ import { act, createRef } from "react"
 import type { Root } from "react-dom/client"
 import { renderToStaticMarkup } from "react-dom/server"
 import type { DynamicToolUIPart } from "ai"
-import { SecretField, type SecretFieldHandle } from "../src/components/secret-field"
+import { SecretField, SecretRevealProvider, type SecretFieldHandle } from "../src/components/secret-field"
 import { credentialPromptFromToolPart } from "../src/components/chat/credential-prompt"
+import { gatewayCredentialBody, promptFields, promptFieldsProblem } from "../src/components/chat/credential-prompt-fields"
 
 let createRoot: typeof import("react-dom/client")["createRoot"]
 const ownedDom = !GlobalRegistrator.isRegistered && typeof document === "undefined"
@@ -79,7 +80,7 @@ test("the key is shown only while typing and asked for, hidden on blur, and clea
   root = createRoot(container)
   const handle = createRef<SecretFieldHandle>()
   const changes: boolean[] = []
-  await act(async () => root?.render(<SecretField id="key" label="API key" handleRef={handle} onSubmit={() => {}} onValueChange={(has) => changes.push(has)} />))
+  await act(async () => root?.render(<SecretField id="key" label="API key" revealable handleRef={handle} onSubmit={() => {}} onValueChange={(has) => changes.push(has)} />))
   const input = container.querySelector("input")
   const toggle = container.querySelector("button")
   if (!input || !toggle) throw new Error("missing field")
@@ -104,4 +105,36 @@ test("the key is shown only while typing and asked for, hidden on blur, and clea
   expect(taken).toBe("fixture-private-value")
   expect(input.value).toBe("")
   expect(container.innerHTML).not.toContain("fixture-private-value")
+})
+
+test("with the rollout off the field is a plain masked input with no show button", () => {
+  const html = renderToStaticMarkup(<SecretField id="key" label="API key" />)
+  expect(html).toContain('type="password"')
+  expect(html).not.toContain("Show while typing")
+  const on = renderToStaticMarkup(<SecretRevealProvider enabled><SecretField id="key" label="API key" /></SecretRevealProvider>)
+  expect(on).toContain("Show while typing")
+})
+
+test("a plugin's setup can ask for its connection key in chat", () => {
+  const plugin = { ...prompt, target: { type: "plugin_connection_key", pluginId: "plg_fixture", configObjectId: "cob_fixture", serverName: "status", connectionId: "emc_fixture" } }
+  const part = toolPart("openwork-cloud_execute_capability", JSON.stringify({ ok: true, item: {}, credentialPrompt: plugin }), "postPluginsMcpConnections")
+  expect(credentialPromptFromToolPart(part)?.target.type).toBe("plugin_connection_key")
+})
+
+test("structured AI Gateway credentials draw fixed fields and build the dashboard's request body", () => {
+  const aws = { type: "gateway_provider_credential", inferenceProviderId: "ipr_1", credentialSetId: "gcs_1", credentialKind: "aws_keys" } as const
+  expect(promptFields(aws).map((field) => field.id)).toEqual(["accessKeyId", "secretAccessKey", "sessionToken"])
+  expect(promptFieldsProblem(aws, { accessKeyId: "AKIAFIXTURE", secretAccessKey: "" })).toBe("Enter the secret access key.")
+  expect(promptFieldsProblem(aws, { accessKeyId: "AKIAFIXTURE", secretAccessKey: "fixture-secret" })).toBeNull()
+  expect(gatewayCredentialBody(aws, { accessKeyId: "AKIAFIXTURE", secretAccessKey: "fixture-secret" })).toEqual({ credential: { kind: "aws_keys", secret: JSON.stringify({ accessKeyId: "AKIAFIXTURE", secretAccessKey: "fixture-secret" }) } })
+
+  const vertex = { ...aws, credentialKind: "gcp_service_account" } as const
+  expect(promptFieldsProblem(vertex, { serviceAccount: "not json" })).toMatch(/whole key file/)
+  expect(promptFieldsProblem(vertex, { serviceAccount: '{"client_email":"a@b.test"}' })).toBeNull()
+
+  const map = { ...aws, credentialKind: "api_key_map", envNames: ["FIRST_API_KEY", "SECOND_API_KEY"] } as const
+  expect(promptFieldsProblem(map, {})).toBe("Enter at least one key.")
+  expect(gatewayCredentialBody(map, { SECOND_API_KEY: "fixture-second" })).toEqual({ apiKeys: { SECOND_API_KEY: "fixture-second" } })
+  // Single-key targets keep one API key field.
+  expect(promptFields({ type: "mcp_connection_key", connectionId: "emc_1" })).toEqual([{ id: "apiKey", label: "API key", kind: "secret" }])
 })

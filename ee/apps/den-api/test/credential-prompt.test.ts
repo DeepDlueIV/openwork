@@ -80,3 +80,33 @@ test("the shared-key route is hidden, rollout-gated, human-only and never echoes
   assert.ok(!route.includes("diagnostic.message"), "provider text can repeat the submitted key")
   assert.ok(!route.includes("externalMcpDiagnosticForLog"), "provider text can repeat the submitted key")
 })
+
+test("each AI Gateway provider asks for the credential it actually uses; LiteLLM is never asked in chat", async () => {
+  const { gatewayCredentialShape, gatewayProviderCredentialPrompt } = await import("../src/credential-prompt.js")
+  assert.deepEqual(gatewayCredentialShape("openai", ["OPENAI_API_KEY"]), { kind: "api_key" })
+  assert.deepEqual(gatewayCredentialShape("amazon-bedrock", ["AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_REGION"]), { kind: "aws_keys" })
+  assert.deepEqual(gatewayCredentialShape("google-vertex", ["GOOGLE_VERTEX_PROJECT"]), { kind: "gcp_service_account" })
+  assert.deepEqual(gatewayCredentialShape("azure", ["AZURE_RESOURCE_NAME", "AZURE_API_KEY"]), { kind: "api_key_map", envNames: ["AZURE_API_KEY"] })
+  assert.equal(gatewayCredentialShape("litellm", ["LITELLM_API_KEY"]), null)
+  const prompt = gatewayProviderCredentialPrompt({ inferenceProviderId: "ipr_1", credentialSetId: "gcs_1", name: "Team Bedrock", destination: null, shape: { kind: "aws_keys" } })
+  assert.deepEqual(prompt.target, { type: "gateway_provider_credential", inferenceProviderId: "ipr_1", credentialSetId: "gcs_1", credentialKind: "aws_keys" })
+  // Field lists are fixed by kind; a prompt cannot carry values or arbitrary fields.
+  assert.equal(credentialPromptSchema.safeParse({ ...prompt, target: { ...prompt.target, secretAccessKey: sentinel } }).success, false)
+  assert.equal(credentialPromptSchema.safeParse({ ...prompt, target: { ...prompt.target, credentialKind: "api_key_map" } }).success, false)
+})
+
+test("agents never send secrets; API keys may not while secure keys in chat is on", async () => {
+  const { bodyCarriesSecret } = await import("../src/middleware/refuse-machine-secrets.js")
+  assert.equal(bodyCarriesSecret({ apiKey: sentinel }, ["apiKey"]), true)
+  assert.equal(bodyCarriesSecret({ apiKeys: { OPENAI_API_KEY: sentinel } }, ["apiKey", "apiKeys"]), true)
+  assert.equal(bodyCarriesSecret({ apiKey: "" }, ["apiKey"]), false)
+  assert.equal(bodyCarriesSecret({ name: "x" }, ["apiKey"]), false)
+  assert.equal(bodyCarriesSecret([sentinel], ["apiKey"]), false)
+  const source = readFileSync(new URL("../src/routes/org/llm-providers.ts", import.meta.url), "utf8")
+  for (const route of ['"/v1/llm-providers",\n    describeRoute({\n      tags: ["LLM Providers"],\n      summary: "Create', '"/v1/llm-providers/:llmProviderId",\n    describeRoute({\n      tags: ["LLM Providers"],\n      summary: "Update', '"/v1/llm-providers/by-key/:externalKey",\n    describeRoute({\n      tags: ["LLM Providers"],\n      summary: "Apply', '"/v1/llm-providers/test-connection"', '"/v1/llm-providers/:llmProviderId/my-credential",\n    describeRoute({\n      tags: ["LLM Providers"],\n      summary: "Set', '"/v1/llm-providers/:llmProviderId/member-credentials/:orgMembershipId",']) {
+    const start = source.indexOf(route)
+    assert.ok(start > 0, route)
+    const block = source.slice(start, source.indexOf("async (c)", start))
+    assert.match(block, /refuseMachineSecrets\(/, `missing guard on ${route.split("\n")[0]}`)
+  }
+})

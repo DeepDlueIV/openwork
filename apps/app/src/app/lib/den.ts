@@ -3543,6 +3543,15 @@ export function createDenClient(options: {
       );
     },
 
+    /** Private field in chat: a person saves a plugin's declared MCP server key through the plugin's own setup. */
+    async savePluginConnectionKey(orgId: string, input: { pluginId: string; configObjectId: string; serverName: string; apiKey: string }): Promise<void> {
+      await requestJson<unknown>(
+        baseUrls,
+        `/v1/plugins/${encodeURIComponent(input.pluginId)}/mcp-connections`,
+        { method: "POST", token, organizationId: orgId, body: { configObjectId: input.configObjectId, serverName: input.serverName, authType: "apikey", credentialMode: "shared", apiKey: input.apiKey } },
+      );
+    },
+
     /** Whether an AI Gateway provider's credential set already has a working shared key. Never reads the key. */
     async gatewayCredentialSetReady(orgId: string, inferenceProviderId: string, credentialSetId: string): Promise<boolean> {
       const payload = await requestJson<unknown>(
@@ -3552,6 +3561,15 @@ export function createDenClient(options: {
       );
       const sets = isRecord(payload) && Array.isArray(payload.credentialSets) ? payload.credentialSets : [];
       return sets.some((set) => isRecord(set) && set.id === credentialSetId && set.credentialStatus === "ready");
+    },
+
+    /** Private fields in chat: a person saves an AI Gateway provider's structured shared credential. */
+    async saveGatewayProviderCredential(orgId: string, inferenceProviderId: string, credentialSetId: string, body: { credential: { kind: "aws_keys" | "gcp_service_account"; secret: string } } | { apiKeys: Record<string, string> }): Promise<void> {
+      await requestJson<unknown>(
+        baseUrls,
+        `/v1/inference-providers/${encodeURIComponent(inferenceProviderId)}/credential-sets/${encodeURIComponent(credentialSetId)}`,
+        { method: "PATCH", token, organizationId: orgId, body },
+      );
     },
 
     /** Private field in chat: a person saves an AI Gateway provider's shared API key. */

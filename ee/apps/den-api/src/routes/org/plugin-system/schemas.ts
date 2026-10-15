@@ -1,3 +1,4 @@
+import { credentialPromptSchema } from "@openwork/types/den/credential-prompt"
 import {
   accessRoleValues,
   configObjectCreatedViaValues,
@@ -1145,8 +1146,7 @@ export const githubPluginMcpImportResponseSchema = pluginArchMutationResponseSch
     })),
   }),
 )
-export const pluginMcpRequirementConfigureResponseSchema = pluginArchMutationResponseSchema(
-  "PluginArchPluginMcpRequirementConfigureResponse",
+const pluginMcpRequirementConfigureItemSchema = (
   z.object({
     binding: z.object({
       id: pluginMcpRequirementBindingIdSchema,
@@ -1167,8 +1167,15 @@ export const pluginMcpRequirementConfigureResponseSchema = pluginArchMutationRes
     links: z.object({
       yourConnections: z.string(),
     }),
-  }),
+  })
 )
+/** With secure keys in chat on, an API-key requirement set up without its key also returns credentialPrompt. */
+export const pluginMcpRequirementConfigureResponseSchema = z.object({
+  ok: z.literal(true),
+  item: pluginMcpRequirementConfigureItemSchema,
+  credentialPrompt: credentialPromptSchema.optional(),
+  nextStep: z.string().optional(),
+}).meta({ ref: "PluginArchPluginMcpRequirementConfigureResponse" })
 export const marketplacePluginListResponseSchema = pluginArchListResponseSchema("PluginArchMarketplacePluginListResponse", marketplacePluginSchema)
 export const marketplacePluginMutationResponseSchema = pluginArchMutationResponseSchema("PluginArchMarketplacePluginMutationResponse", marketplacePluginSchema)
 export const accessGrantListResponseSchema = pluginArchListResponseSchema("PluginArchAccessGrantListResponse", accessGrantSchema)

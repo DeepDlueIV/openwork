@@ -5721,7 +5721,7 @@ function validatePluginMcpRequirementAuth(input: {
   authType: PluginMcpRequirementAuthType
   credentialMode: PluginMcpRequirementCredentialMode
   oauthClient?: { clientId: string; clientSecret?: string }
-}) {
+}, options: { awaitingKey?: boolean } = {}) {
   const apiKey = normalizedPluginMcpApiKey(input.apiKey)
   if (input.oauthClient && input.authType !== "oauth") {
     throw new PluginArchRouteFailure(400, "invalid_mcp_auth", "oauthClient is only allowed when authType is oauth.")
@@ -5732,7 +5732,7 @@ function validatePluginMcpRequirementAuth(input: {
   if (input.authType === "apikey" && input.credentialMode !== "shared") {
     throw new PluginArchRouteFailure(400, "invalid_mcp_auth", "authType apikey requires credentialMode shared.")
   }
-  if (input.authType === "apikey" && !apiKey) {
+  if (input.authType === "apikey" && !apiKey && !options.awaitingKey) {
     throw new PluginArchRouteFailure(400, "invalid_mcp_auth", "authType apikey requires apiKey.")
   }
   if (input.credentialMode === "per_member" && input.authType !== "oauth") {
@@ -5831,16 +5831,22 @@ async function validateConfiguredPluginMcpConnection(input: {
     )
   } catch (error) {
     const diagnostic = externalMcpDiagnosticForResponse(error, input.connection.id, "MCP_INITIALIZE")
+    // Provider text can repeat a just-entered key; keep only server-owned fields.
     console.error("plugin_mcp_connection_validation_failed", {
       connectionId: input.connection.id,
       organizationId: input.connection.organizationId,
       connectionEndpoint: safeExternalMcpEndpointForLog(input.connection.url),
-      ...externalMcpDiagnosticForLog(error, input.connection.id, "MCP_INITIALIZE"),
+      category: diagnostic.category,
+      httpStatus: diagnostic.httpStatus ?? null,
+      referenceId: diagnostic.referenceId,
     })
+    if (diagnostic.httpStatus === 401 || diagnostic.httpStatus === 403) {
+      throw new PluginArchRouteFailure(400, "credential_rejected", `${input.connection.name} did not accept this key.`)
+    }
     throw new PluginArchRouteFailure(
       502,
       "connection_validation_failed",
-      `Could not validate "${input.connection.name}": ${diagnostic.message} Reference: ${diagnostic.referenceId}.`,
+      `Could not reach ${input.connection.name} to check it. Reference: ${diagnostic.referenceId}.`,
     )
   }
 
@@ -6024,8 +6030,11 @@ export async function configureMarketplacePluginMcpRequirement(input: {
   oauthClient?: { clientId: string; clientSecret?: string }
   pluginId: PluginId
   serverName: string
+  /** Secure keys in chat: set up a shared API-key connection now; a person adds the key next. */
+  awaitKey?: boolean
 }) {
-  validatePluginMcpRequirementAuth(input)
+  const awaitingKey = input.awaitKey === true && input.authType === "apikey" && !normalizedPluginMcpApiKey(input.apiKey)
+  validatePluginMcpRequirementAuth(input, { awaitingKey })
   const organizationId = input.context.organizationContext.organization.id
   const requirement = await activePluginMcpRequirement({
     configObjectId: input.configObjectId,
@@ -6082,7 +6091,8 @@ export async function configureMarketplacePluginMcpRequirement(input: {
   const connection = connectionResult.connection
 
   try {
-    await validateConfiguredPluginMcpConnection({ authType: input.authType, connection })
+    // A connection still waiting for its key is checked when the key is saved.
+    if (!(awaitingKey && !connection.apiKey)) await validateConfiguredPluginMcpConnection({ authType: input.authType, connection })
   } catch (error) {
     if (connectionResult.created) {
       await deleteExternalMcpConnection({ connectionId: connection.id, organizationId })
@@ -6128,6 +6138,8 @@ export async function configureMarketplacePluginMcpRequirement(input: {
   const refreshedConnection = await getExternalMcpConnection({ connectionId: connection.id, organizationId })
 
   return {
+    awaitingKey: awaitingKey && !(refreshedConnection ?? connection).apiKey,
+    connectionRow: refreshedConnection ?? connection,
     binding: serializePluginMcpRequirementBinding(binding),
     connection: serializePluginMcpRequirementConnection(refreshedConnection ?? connection),
     links: {

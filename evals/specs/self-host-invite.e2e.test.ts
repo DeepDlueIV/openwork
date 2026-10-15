@@ -28,7 +28,7 @@ const test = spec.world(async (seed, { place }) => {
   }
 }, { resources: { surfaces: ["web"], services: ["den"] }, needs: { placement: "local" }, timeout: 600_000 });
 
-test("private self-host signup admits the bootstrap owner and invited outsider, but not an uninvited outsider", async ({ world, user, probe, seed, step }) => {
+test("private self-host signup admits the bootstrap owner and invited outsider, but not an uninvited outsider", async ({ world, user, probe, seed, step, evidence }) => {
   let orgId = "";
   await step("the configured bootstrap administrator auto-joins without an invitation", async () => {
     expect(world.bootstrap.verifyStatus, world.bootstrap.verifyText).toBe(200);
@@ -43,6 +43,8 @@ test("private self-host signup admits the bootstrap owner and invited outsider, 
     expect(membersFor(org, world.owner.email)).toEqual([expect.objectContaining({ role: "owner" })]);
     expect(invitationsFor(org, world.owner.email)).toEqual([]);
     const replay = await witness.api("/v1/auth/bootstrap/verify", { method: "POST", body: JSON.stringify({ email: world.owner.email, code: world.bootstrapCode }) });
+    const ownerRoles = membersFor(org, world.owner.email).map((member) => String(member.role));
+    evidence.recordAssertionEvidence("the bootstrap administrator owns the workspace without an invitation, and the code cannot be reused", `organizations=${organizations.length}; owner roles=[${ownerRoles.join(", ")}]; replayed code → HTTP ${replay.response.status}`, organizations.length === 1 && ownerRoles.join() === "owner" && replay.response.status === 409);
     expect(replay.response.status).toBe(409);
     expect(replay.body).not.toHaveProperty("grant");
   });
@@ -51,9 +53,12 @@ test("private self-host signup admits the bootstrap owner and invited outsider, 
   await step("public signup disabled rejects an uninvited outsider without a session or placeholder", async () => {
     const before = await witness.org(orgId);
     const denied = await signUpAttempt(world.anonymous, world.rejected);
+    const after = await witness.org(orgId);
+    const traces = membersFor(after, world.rejected.email).length + invitationsFor(after, world.rejected.email).length;
+    evidence.recordAssertionEvidence("an uninvited outsider is refused and leaves no member, invitation or session behind", `sign-up → HTTP ${denied.response.status}; token returned=${denied.body !== null && typeof denied.body === "object" && "token" in denied.body}; member or invitation rows=${traces}`, denied.response.status === 403 && traces === 0);
     expect(denied.response.status, denied.text).toBe(403);
     expect(denied.body).not.toHaveProperty("token");
-    expect(await witness.org(orgId)).toEqual(before);
+    expect(after).toEqual(before);
     expect(membersFor(before, world.rejected.email)).toEqual([]);
     expect(invitationsFor(before, world.rejected.email)).toEqual([]);
     expect(await witness.emails("verification", world.rejected.email)).toEqual([]);
@@ -83,6 +88,8 @@ test("private self-host signup admits the bootstrap owner and invited outsider, 
     expect((await invitationWitnesses(member).orgs()).map((entry) => entry.id)).toEqual([orgId]);
     const replay = await seed.api(member, "/v1/orgs/invitations/accept", { method: "POST", body: JSON.stringify({ id: invite.token }) });
     expect(replay.response.ok, replay.text).toBe(true);
-    expect(membersFor(await witness.org(orgId), world.outsider.email)).toHaveLength(1);
+    const joined = membersFor(await witness.org(orgId), world.outsider.email);
+    evidence.recordAssertionEvidence("the invited outsider creates an account from the invitation and joins exactly once", `member rows=${joined.length}; role=${String(joined[0]?.role)}; repeated accept → HTTP ${replay.response.status}`, joined.length === 1 && joined[0]?.role === "member");
+    expect(joined).toHaveLength(1);
   });
 });

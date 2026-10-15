@@ -32,7 +32,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-/** Reads run; writes ask the person through the engine's permission prompt, which follows their allow, ask and deny rules. */
+/** Engine permissions check writes; Desktop separately confirms every transfer at the host boundary. */
 async function askPermission(context: unknown, permission: DriveFileAction, patterns: string[], metadata: Record<string, unknown>) {
   const ask = isRecord(context) && typeof context.ask === "function" ? context.ask : null;
   if (!ask) throw new Error("This OpenWork engine cannot ask for approval, so nothing was changed. Update OpenWork to save files to Drive.");

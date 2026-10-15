@@ -18,6 +18,7 @@ import {
   type CloudUploadDependencies,
 } from "./cloud-uploads.js";
 import { uploadDriveResumableFile } from "./drive-resumable-upload.js";
+import { openWorkspaceFileForWriting, proveHandleInPlace, WorkspaceFileError } from "../opencode-plugins/workspace-file-identity.js";
 
 const LINKS_FILE = "drive-links.json";
 const DEN_TIMEOUT_MS = 2 * 60 * 1000;
@@ -32,14 +33,14 @@ const CONVERTIBLE_FORMATS: Record<string, string[]> = {
 };
 
 /** Only the embedding Desktop host can supply this callback; request payloads and shell credentials cannot approve a write. */
-async function confirmDriveWrite(config: ServerConfig, request: DriveFileApprovalRequest, signal?: AbortSignal) {
+async function confirmDriveTransfer(config: ServerConfig, request: DriveFileApprovalRequest, signal?: AbortSignal) {
   signal?.throwIfAborted();
   if (!config.driveFileApproval) {
-    throw new ApiError(403, "drive_approval_unavailable", "OpenWork Desktop must confirm this Drive write. Open the desktop app and try again.");
+    throw new ApiError(403, "drive_approval_unavailable", "OpenWork Desktop must confirm this Drive transfer. Open the desktop app and try again.");
   }
   const approved = await config.driveFileApproval(request);
   signal?.throwIfAborted();
-  if (!approved) throw new ApiError(403, "drive_write_denied", "The Drive write was not approved. Nothing was changed.");
+  if (!approved) throw new ApiError(403, "drive_write_denied", "The Drive transfer was not approved. Nothing was changed.");
 }
 
 type DriveLink = {
@@ -163,34 +164,52 @@ async function hashFile(path: string) {
   }
 }
 
-/** An unlinked host-owned copy keeps uploads on the exact bytes hashed before confirmation. */
-async function snapshotForPush(config: ServerConfig, source: FileHandle, expected: { sha256: string; size: number }, signal?: AbortSignal) {
+/** No pathname remains when transferred bytes enter this host-owned staging file. */
+async function privateDriveFile(config: ServerConfig) {
   const folder = runtimeStorageDir(config);
   await mkdir(folder, { recursive: true });
-  const path = join(folder, `.drive-push-${randomBytes(16).toString("hex")}`);
-  const snapshot = await open(path, "wx+", 0o600);
+  const path = join(folder, `.drive-transfer-${randomBytes(16).toString("hex")}`);
+  const handle = await open(path, "wx+", 0o600);
   try {
-    // Remove its pathname before copying any bytes; workspace processes never receive it.
     await rm(path);
-    const buffer = new Uint8Array(1024 * 1024);
-    for (let offset = 0; offset < expected.size;) {
-      signal?.throwIfAborted();
-      const { bytesRead } = await source.read(buffer, 0, Math.min(buffer.length, expected.size - offset), offset);
-      if (!bytesRead) throw new ApiError(409, "local_changes", "The local file changed before confirmation. Nothing was uploaded; try again once it is saved.");
-      for (let written = 0; written < bytesRead;) {
-        const part = await snapshot.write(buffer, written, bytesRead - written, offset + written);
-        if (!part.bytesWritten) throw new ApiError(500, "snapshot_failed", "Could not prepare a private file copy. Nothing was uploaded.");
-        written += part.bytesWritten;
-      }
-      offset += bytesRead;
-    }
+    return handle;
+  } catch (error) {
+    await handle.close();
+    await rm(path, { force: true });
+    throw error;
+  }
+}
+
+async function writeAll(handle: FileHandle, bytes: Uint8Array, offset: number) {
+  for (let written = 0; written < bytes.byteLength;) {
+    const part = await handle.write(bytes, written, bytes.byteLength - written, offset + written);
+    if (!part.bytesWritten) throw new ApiError(500, "file_write_failed", "Could not write the file completely.");
+    written += part.bytesWritten;
+  }
+}
+
+async function copyHandles(source: FileHandle, target: FileHandle, size: number, signal?: AbortSignal) {
+  const buffer = new Uint8Array(1024 * 1024);
+  for (let offset = 0; offset < size;) {
+    signal?.throwIfAborted();
+    const { bytesRead } = await source.read(buffer, 0, Math.min(buffer.length, size - offset), offset);
+    if (!bytesRead) throw new ApiError(409, "local_changes", "The file changed while transferring. Try again once it is saved.");
+    await writeAll(target, buffer.subarray(0, bytesRead), offset);
+    offset += bytesRead;
+  }
+}
+
+/** An unlinked host-owned copy keeps uploads on the exact bytes hashed before confirmation. */
+async function snapshotForPush(config: ServerConfig, source: FileHandle, expected: { sha256: string; size: number }, signal?: AbortSignal) {
+  const snapshot = await privateDriveFile(config);
+  try {
+    await copyHandles(source, snapshot, expected.size, signal);
     if ((await hashHandle(snapshot)).sha256 !== expected.sha256) {
       throw new ApiError(409, "local_changes", "The local file changed before confirmation. Nothing was uploaded; try again once it is saved.");
     }
     return snapshot;
   } catch (error) {
     await snapshot.close();
-    await rm(path, { force: true });
     throw error;
   }
 }
@@ -388,62 +407,47 @@ async function describe(config: ServerConfig, dependencies: CloudUploadDependenc
 }
 
 /** Ranged chunks for stored files, one stream for exports; the caller verifies size and md5. */
-async function download(config: ServerConfig, dependencies: CloudUploadDependencies, info: DownloadInfo, connectionId: string | undefined, target: string) {
+async function download(config: ServerConfig, dependencies: CloudUploadDependencies, info: DownloadInfo, connectionId: string | undefined, handle: FileHandle) {
   const suffix = `/v1/direct-downloads/google-workspace/drive-files/${info.file.id}/content`;
   const query = { format: info.download.exported ? info.download.format ?? undefined : undefined, connectionId };
-  // Never follow a planted symlink, and confirm where the new file landed before writing any bytes.
-  await assertStableFolder(config, dirname(target));
-  const handle = await open(target, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
-  const opened = await handle.stat();
-  try {
-    await assertStableFolder(config, dirname(target));
-    await assertSameFile(target, opened);
-  } catch (error) {
-    await handle.close();
-    throw error;
-  }
   const sha256 = createHash("sha256");
   const md5 = createHash("md5");
   let written = 0;
   const write = async (bytes: Uint8Array) => {
     if (written + bytes.byteLength > info.download.maxBytes) throw new ApiError(413, "file_too_large", `Pulls support files up to ${info.download.maxBytes} bytes.`);
-    await handle.write(bytes, 0, bytes.byteLength, written);
+    await writeAll(handle, bytes, written);
     sha256.update(bytes);
     md5.update(bytes);
     written += bytes.byteLength;
   };
-  try {
-    const size = info.download.size;
-    if (!info.download.exported && size !== null) {
-      for (let start = 0; start < size; start += GOOGLE_DRIVE_PULL_CHUNK_BYTES) {
-        const end = Math.min(size, start + GOOGLE_DRIVE_PULL_CHUNK_BYTES) - 1;
-        const response = await denRequest(config, dependencies, suffix, { query, headers: { range: `bytes=${start}-${end}` } });
-        if (!response.ok) await denFailure(response);
-        if (response.status !== 206 && !(response.status === 200 && start === 0 && end === size - 1)) {
-          await response.body?.cancel();
-          throw new ApiError(502, "drive_download_incomplete", "Google did not return the requested part of the file. Try the pull again.");
-        }
-        const bytes = new Uint8Array(await response.arrayBuffer().catch(() => {
-          throw new ApiError(502, "drive_download_incomplete", "The download stopped early. Try the pull again.");
-        }));
-        if (bytes.byteLength !== end - start + 1) throw new ApiError(502, "drive_download_incomplete", "The download stopped early. Try the pull again.");
-        await write(bytes);
-      }
-    } else {
-      const response = await denRequest(config, dependencies, suffix, { query });
+  const size = info.download.size;
+  if (!info.download.exported && size !== null) {
+    for (let start = 0; start < size; start += GOOGLE_DRIVE_PULL_CHUNK_BYTES) {
+      const end = Math.min(size, start + GOOGLE_DRIVE_PULL_CHUNK_BYTES) - 1;
+      const response = await denRequest(config, dependencies, suffix, { query, headers: { range: `bytes=${start}-${end}` } });
       if (!response.ok) await denFailure(response);
-      if (!response.body) throw new ApiError(502, "drive_download_incomplete", "Google returned no file content.");
-      try {
-        for await (const chunk of response.body) await write(chunk);
-      } catch (error) {
-        if (error instanceof ApiError) throw error;
-        throw new ApiError(502, "drive_download_incomplete", "The download stopped early. Try the pull again.");
+      if (response.status !== 206 && !(response.status === 200 && start === 0 && end === size - 1)) {
+        await response.body?.cancel();
+        throw new ApiError(502, "drive_download_incomplete", "Google did not return the requested part of the file. Try the pull again.");
       }
+      const bytes = new Uint8Array(await response.arrayBuffer().catch(() => {
+        throw new ApiError(502, "drive_download_incomplete", "The download stopped early. Try the pull again.");
+      }));
+      if (bytes.byteLength !== end - start + 1) throw new ApiError(502, "drive_download_incomplete", "The download stopped early. Try the pull again.");
+      await write(bytes);
     }
-  } finally {
-    await handle.close();
+  } else {
+    const response = await denRequest(config, dependencies, suffix, { query });
+    if (!response.ok) await denFailure(response);
+    if (!response.body) throw new ApiError(502, "drive_download_incomplete", "Google returned no file content.");
+    try {
+      for await (const chunk of response.body) await write(chunk);
+    } catch (error) {
+      if (error instanceof ApiError) throw error;
+      throw new ApiError(502, "drive_download_incomplete", "The download stopped early. Try the pull again.");
+    }
   }
-  return { size: written, sha256: sha256.digest("hex"), md5: md5.digest("hex"), opened };
+  return { size: written, sha256: sha256.digest("hex"), md5: md5.digest("hex") };
 }
 
 function verified(info: DownloadInfo, saved: { size: number; md5: string }) {
@@ -490,21 +494,38 @@ async function pullDriveFile(config: ServerConfig, args: Record<string, unknown>
   }
 
   let saved: Awaited<ReturnType<typeof download>> | null = null;
-  if (before && overwrite) {
-    await confirmDriveWrite(config, { action: "overwrite", path: target, fileId: info.file.id, name: info.file.name }, dependencies.signal);
-  }
+  await confirmDriveTransfer(config, { action: before && overwrite ? "overwrite" : "pull", path: target, fileId: info.file.id, name: info.file.name, webViewLink: info.file.webViewLink }, dependencies.signal);
   for (let attempt = 1; attempt <= 2 && !saved; attempt += 1) {
-    const temporary = join(dirname(target), `.${basename(target)}.${randomBytes(6).toString("hex")}.openwork-pull`);
+    const temporary = await privateDriveFile(config);
     try {
       const result = await download(config, dependencies, info, connectionId, temporary);
       if (verified(info, result)) {
         if (!sameState(before, await lstat(target).catch(() => null))) {
           throw new ApiError(409, "local_changes", "The file at that path changed while pulling, so it was not replaced. Pull again once it is saved or pushed.", { path: displayPath(config, context, target) });
         }
-        await assertStableFolder(config, dirname(target));
-        await assertSameFile(temporary, result.opened);
-        await rename(temporary, target);
-        saved = result;
+        const root = (await realRoots(config)).find((candidate) => isWithinRoot(target, candidate));
+        if (!root) throw new ApiError(403, "path_outside_workspace", "Files can only be saved inside an authorized workspace.");
+        // Match the workbook/attachment writer: prove the opened inode before
+        // truncating or writing, then use only its handle. No path-based rename
+        // can follow a swapped parent into another file.
+        let destination: Awaited<ReturnType<typeof openWorkspaceFileForWriting>>;
+        try {
+          destination = await openWorkspaceFileForWriting(root, target, before, "Drive download");
+        } catch (error) {
+          if (error instanceof WorkspaceFileError) throw new ApiError(409, "workspace_changed", error.message);
+          throw error;
+        }
+        try {
+          if (before && !sameState(before, destination.info)) throw new ApiError(409, "local_changes", "The local file changed while pulling. It was not replaced.");
+          await destination.handle.truncate(0);
+          await copyHandles(temporary, destination.handle, result.size, dependencies.signal);
+          if (!(await proveHandleInPlace(await destination.handle.stat(), target, root))) {
+            throw new ApiError(409, "workspace_changed", "The workspace folder changed during the transfer. Check the local copy before trying again.");
+          }
+          saved = result;
+        } finally {
+          await destination.handle.close();
+        }
       }
     } catch (error) {
       // A file that changed (or shrank) mid-download fails a chunk: retry once from its new revision.
@@ -515,7 +536,7 @@ async function pullDriveFile(config: ServerConfig, args: Record<string, unknown>
       info = fresh;
       continue;
     } finally {
-      await rm(temporary, { force: true });
+      await temporary.close();
     }
     // Size or md5 did not match: the file changed while downloading.
     if (!saved && attempt === 1) info = await describe(config, dependencies, fileId, format, connectionId);
@@ -627,6 +648,9 @@ async function pushDriveFile(config: ServerConfig, args: Record<string, unknown>
 async function pushOpenFile(config: ServerConfig, args: Record<string, unknown>, context: Record<string, unknown>, dependencies: CloudUploadDependencies, path: string, handle: FileHandle) {
   const link = (await readLinks(config)).links[path];
   if (!link) throw new ApiError(409, "not_linked", "That file was not pulled from Drive. Upload it as a new file with drive_upload_file instead.");
+  if (!DRIVE_ID.test(link.fileId) || (link.connectionId !== null && !CONNECTION_ID.test(link.connectionId))) {
+    throw new ApiError(409, "invalid_link", "The saved Drive link is invalid. Pull the file again before saving.");
+  }
   const modeArg = readArgString(args, "mode");
   if (modeArg && modeArg !== "replace" && modeArg !== "copy") throw new ApiError(400, "invalid_payload", "mode must be replace or copy.");
   const mode = modeArg || (link.native ? "copy" : "replace");
@@ -643,15 +667,19 @@ async function pushOpenFile(config: ServerConfig, args: Record<string, unknown>,
   }
   const snapshot = await snapshotForPush(config, handle, local, dependencies.signal);
   try {
-    const convert = mode === "copy" && link.native && (CONVERTIBLE_FORMATS[link.driveMimeType] ?? []).includes(link.format ?? "");
-    await confirmDriveWrite(config, { action: "push", path, fileId: link.fileId, name: link.name, mode: mode === "copy" ? "copy" : "replace" }, dependencies.signal);
+    const remote = await describe(config, dependencies, link.fileId, link.native ? link.format ?? undefined : undefined, link.connectionId ?? undefined);
+    if (remote.file.id !== link.fileId) throw new ApiError(409, "drive_conflict", "The Drive target changed. Pull it again before saving.");
+    if (mode === "replace" && remote.file.native) throw new ApiError(400, "native_file_replace_unsupported", "Save this Google file as a copy instead.");
+    const target = { ...link, name: remote.file.name, driveMimeType: remote.file.mimeType, native: remote.file.native, parents: remote.file.parents };
+    const convert = mode === "copy" && target.native && (CONVERTIBLE_FORMATS[target.driveMimeType] ?? []).includes(link.format ?? "");
+    await confirmDriveTransfer(config, { action: "push", path, fileId: remote.file.id, name: remote.file.name, webViewLink: remote.file.webViewLink, mode: mode === "copy" ? "copy" : "replace" }, dependencies.signal);
     await assertStableFolder(config, dirname(path));
     await assertSameFile(path, await handle.stat());
     if ((await hashHandle(handle)).sha256 !== local.sha256) {
       throw new ApiError(409, "local_changes", "The local file changed while confirmation was open. Nothing was uploaded; review the edits and save again.");
     }
-    const mimeType = link.localMimeType || mimeTypeForPath(path);
-    const name = mode === "copy" ? copyName(link, readArgString(args, "name"), convert) : basename(path);
+    const mimeType = remote.download.mimeType || mimeTypeForPath(path);
+    const name = mode === "copy" ? copyName(target, readArgString(args, "name"), convert) : basename(path);
     const session = await denJson(config, dependencies, "/v1/direct-uploads/google-workspace/drive-upload-sessions", {
       method: "POST",
       body: {
@@ -659,7 +687,7 @@ async function pushOpenFile(config: ServerConfig, args: Record<string, unknown>,
         ...(link.connectionId ? { connectionId: link.connectionId } : {}),
         ...(mode === "replace"
           ? { fileId: link.fileId, baseRevision: link.revision }
-          : { ...(link.parents[0] ? { folderId: link.parents[0] } : {}), ...(convert ? { convertTo: link.driveMimeType } : {}) }),
+          : { ...(target.parents[0] ? { folderId: target.parents[0] } : {}), ...(convert ? { convertTo: target.driveMimeType } : {}) }),
       },
     });
     if (typeof session.uploadUrl !== "string" || session.size !== local.size) throw new ApiError(502, "invalid_upload_session", "OpenWork Cloud returned an invalid upload session.");
@@ -669,7 +697,7 @@ async function pushOpenFile(config: ServerConfig, args: Record<string, unknown>,
       throw new ApiError(502, "drive_upload_unverified", "Drive saved different bytes than the local file. Check the file in Drive before trying again.", { fileId: file.id });
     }
     const revision = file.headRevisionId ?? file.version ?? null;
-    const driveMimeType = file.mimeType ?? (convert ? link.driveMimeType : mimeType);
+    const driveMimeType = file.mimeType ?? (convert ? target.driveMimeType : mimeType);
     await withLinks(config, (current) => {
       current.links[path] = {
         ...link,

@@ -64,6 +64,18 @@ test("an agent pulls a Drive file into the workspace, edits it with bash and sav
     evidence.recordAssertionEvidence("Shell edits are tracked against the pulled revision", "A dd command changed bytes in place; drive_file_status reported local edited and Drive unchanged at rev-1.", true);
   });
 
+  await step("a swapped destination folder cannot redirect downloaded bytes outside the workspace", async () => {
+    const downloads = await world.contentRequests(world.files.supplier);
+    await world.pullFolderRace();
+    const refused = await world.host("drive_pull_file", { fileId: world.files.supplier, connectionId: world.fullId, path: "racing/Supplier.xlsx" });
+    expect(refused.status).toBe(409);
+    expect(refused.body).toMatchObject({ code: "local_changes" });
+    expect(world.folderSwaps()).toBe(1);
+    expect(await world.contentRequests(world.files.supplier)).toBeGreaterThan(downloads);
+    expect(await world.readRaceOutside()).toBe("outside file stays untouched");
+    evidence.recordAssertionEvidence("Swapped folders cannot redirect Drive bytes", "The destination folder was replaced with a symlink while confirmation was open. Drive bytes reached only private host staging; the changed destination was refused before any workspace write and the outside sentinel file was unchanged.", true);
+  });
+
   await step("connected clients cannot bypass the save approval with a direct call", async () => {
     world.setApproval(false);
     const approvalsBefore = world.approvals().length;
@@ -82,19 +94,23 @@ test("an agent pulls a Drive file into the workspace, edits it with bash and sav
       const overwrite = await world.direct("drive_pull_file", { fileId: world.files.supplier, connectionId: world.fullId, path: supplierPath, overwrite: true }, scope, true);
       expect(overwrite.status).toBe(403);
       if (scope !== "viewer") expect(overwrite.body).toMatchObject({ code: "drive_write_denied" });
+      const download = await world.direct("drive_pull_file", { fileId: world.files.supplier, connectionId: world.fullId, path: "unapproved-read.xlsx" }, scope, true);
+      expect(download.status).toBe(403);
+      if (scope !== "viewer") expect(download.body).toMatchObject({ code: "drive_write_denied" });
     }
     const after = await driveFile(world.files.supplier);
     expect([after.revision, after.bytes.equals(before.bytes)]).toEqual([before.revision, true]);
     expect((await world.google.driveFiles(world.accounts.member)).length).toBe(fileCount);
     expect((await world.read(supplierPath)).equals(local)).toBe(true);
-    expect(world.approvals().length - approvalsBefore).toBe(6);
+    expect((await world.bash("test ! -e unapproved-read.xlsx")).code).toBe(0);
+    expect(world.approvals().length - approvalsBefore).toBe(8);
     expect(world.approvals().slice(approvalsBefore)).toEqual(expect.arrayContaining([
       expect.objectContaining({ action: "push", fileId: world.files.supplier, mode: "replace" }),
       expect.objectContaining({ action: "push", fileId: world.files.supplier, mode: "copy" }),
       expect.objectContaining({ action: "overwrite", fileId: world.files.supplier }),
     ]));
     world.setApproval(true);
-    evidence.recordAssertionEvidence("Client tokens cannot bypass Drive approval", "Owner and collaborator extension calls returned 404; viewer calls returned 403. Direct replace, copy and overwrite calls reached six host confirmations and were denied, even with approved: true. Neither Drive nor the edited local file changed; the next save succeeds only after the host allows it.", true);
+    evidence.recordAssertionEvidence("Client tokens cannot bypass Drive approval", "Owner and collaborator extension calls returned 404; viewer calls returned 403. Direct replace, copy, overwrite and download calls reached eight host confirmations and were denied, even with approved: true. Neither Drive nor the local files changed; transfers succeed only after the host allows them.", true);
   });
 
   await step("push replaces the Drive file in place as a new version", async () => {
@@ -172,6 +188,27 @@ test("an agent pulls a Drive file into the workspace, edits it with bash and sav
     expect(Buffer.from(copy.exports[XLSX] ?? "", "base64").equals(local)).toBe(true);
     expect((await driveFile(world.files.inventory)).version).toBe("1");
     evidence.recordAssertionEvidence("Google Sheets round-trip as a new Google Sheet", "Pulling a Drive shortcut fetched the Sheet it points to, as xlsx with the exact export bytes, next to an unrelated file that already had the default name (left untouched). Re-pulling after a local edit was refused instead of discarding it. Replacing the Sheet from an upload was refused; the default push converted the edited workbook into a new Google Sheet in the same folder and left the original at version 1.", true);
+  });
+
+  await step("confirmation shows the real Drive target even when a local link label is changed", async () => {
+    const original = await driveFile(world.files.supplier);
+    const uploads = await world.uploadRequests();
+    expect((await world.bash(`printf ' unsaved edit' >> '${supplierPath}'`)).code).toBe(0);
+    const record = await world.rewriteLink(supplierPath, { fileId: world.files.supplier, name: "misleading local label", revision: original.revision });
+    world.setApproval(false);
+    try {
+      const refused = await world.host("drive_push_file", { path: supplierPath });
+      expect(refused.status).toBe(403);
+      expect(refused.body).toMatchObject({ code: "drive_write_denied" });
+      expect(world.approvals().at(-1)).toMatchObject({ action: "push", fileId: world.files.supplier, name: original.name, webViewLink: expect.stringContaining(world.files.supplier) });
+      expect(world.approvals().at(-1)?.name).not.toBe("misleading local label");
+      expect(await world.uploadRequests()).toBe(uploads);
+      expect((await driveFile(world.files.supplier)).bytes.equals(original.bytes)).toBe(true);
+      evidence.recordAssertionEvidence("Confirmation names the authoritative Drive target", "A changed local link record supplied a misleading name and another file ID. The host fetched that file's real Google metadata and confirmed its actual name, ID and Drive URL. Denial left Drive and the upload-request count unchanged.", true);
+    } finally {
+      world.setApproval(true);
+      await record.restore();
+    }
   });
 
   await step("after: another member, a read-only connection and paths or symlinks outside the workspace are refused", async () => {

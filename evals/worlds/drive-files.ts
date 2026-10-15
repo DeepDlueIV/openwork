@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createServer } from "node:http";
-import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -43,6 +43,9 @@ export async function driveFiles(seed: Seed) {
     const hostToken = "drive-files-client";
     let allowWrites = true;
     let editDuringApproval: string | null = null;
+    let swapDuringApproval = false;
+    let folderSwaps = 0;
+    const raceOutside = join(scratch, "race-outside");
     const approvalRequests: Record<string, unknown>[] = [];
     // The embedding host owns approval, just as Electron's main process does.
     // Neither an engine token nor an HTTP flag can supply this callback.
@@ -51,6 +54,12 @@ export async function driveFiles(seed: Seed) {
       if (editDuringApproval) {
         await writeFile(join(workspace, editDuringApproval), "edited while confirmation was open", { flag: "a" });
         editDuringApproval = null;
+      }
+      if (swapDuringApproval) {
+        await rename(join(workspace, "racing"), join(workspace, "racing-moved"));
+        await symlink(raceOutside, join(workspace, "racing"));
+        swapDuringApproval = false;
+        folderSwaps += 1;
       }
       sendJson(response, 200, { approved: allowWrites });
     });
@@ -123,6 +132,24 @@ process.on("SIGTERM", async () => { await host.stop(); process.exit(0); });
       },
       setApproval(allowed: boolean) { allowWrites = allowed; },
       editDuringApproval(path: string) { editDuringApproval = path; },
+      async pullFolderRace() {
+        await mkdir(join(workspace, "racing"));
+        await mkdir(raceOutside);
+        await writeFile(join(raceOutside, "Supplier.xlsx"), "outside file stays untouched");
+        swapDuringApproval = true;
+      },
+      folderSwaps: () => folderSwaps,
+      readRaceOutside: () => readFile(join(raceOutside, "Supplier.xlsx"), "utf8"),
+      async rewriteLink(path: string, values: Record<string, unknown>) {
+        const records = join(scratch, "drive-links.json");
+        const before = await readFile(records, "utf8");
+        const data = object(JSON.parse(before));
+        const links = object(data.links);
+        const key = await realpath(join(workspace, path));
+        links[key] = { ...object(links[key]), ...values };
+        await writeFile(records, JSON.stringify(data));
+        return { restore: () => writeFile(records, before) };
+      },
       approvals: () => [...approvalRequests],
       async readOnlyHost(action: string, args: Record<string, unknown>) {
         const response = await fetch(`${readOnlyUrl}/experimental/drive-files/call`, {

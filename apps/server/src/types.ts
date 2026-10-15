@@ -72,10 +72,11 @@ export interface ApprovalConfig {
 export type LocalManagedMcpVaultKeyProvider = () => Promise<Uint8Array>;
 
 export type DriveFileApprovalRequest = {
-  action: "push" | "overwrite";
+  action: "push" | "overwrite" | "pull";
   path: string;
   fileId: string;
   name: string;
+  webViewLink?: string | null;
   mode?: "replace" | "copy";
 };
 

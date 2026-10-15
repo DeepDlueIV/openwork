@@ -16,8 +16,11 @@ const lockedTest = spec.world(lockedMemberCustomRolesWorld, {
   resources: { surfaces: ["web"], services: ["den"] },
 });
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
 function record(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Expected an object witness");
+  if (!isRecord(value)) throw new Error("Expected an object witness");
   return value;
 }
 function rows(value: unknown): Record<string, unknown>[] { return Array.isArray(value) ? value.map(record) : []; }

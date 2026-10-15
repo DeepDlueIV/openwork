@@ -2,8 +2,11 @@ import type { Seed } from "@openwork/env";
 import { signIn } from "@openwork/behaviors";
 import { sharedRolesWorld } from "./shared-roles.ts";
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
 function record(value: unknown): Record<string, unknown> {
-  if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("Expected an object");
+  if (!isRecord(value)) throw new Error("Expected an object");
   return value;
 }
 

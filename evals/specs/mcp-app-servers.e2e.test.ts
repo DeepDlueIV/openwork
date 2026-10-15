@@ -304,14 +304,14 @@ chatTest("an owner follows App creation progress and opens the finished App besi
     await world.holdCreation(true);
     builtAt = new Date().toISOString();
     await agent.send(buildPrompt);
-    await user.see({ text: /Writing artifact “/ });
+    await user.see({ text: /Creating MCP App “/ });
     // The row reaches "writing" only once the preparation result is recorded.
     expect(await probe.eventually(async () => (await probe.dom('[data-app-builder-step][data-app-creation-stage="writing"]')).elements, {
       within: 30_000, intervalMs: 200, label: "preparation completes while creation is held", until: elements => elements.length === 1,
     })).toHaveLength(1);
     expect((await probe.dom("[data-built-app-preview]")).elements).toHaveLength(0);
     await user.screenshot();
-    evidence.recordAssertionEvidence("Creation progress follows the actual work", "The agent called prepare_app, which verified the four tools and returned a starter. While the agent was still writing, the creation row read Writing artifact with preparation complete, and no preview opened.", true);
+    evidence.recordAssertionEvidence("Creation progress follows the actual work", "The agent called prepare_app, which verified the four tools and returned a starter. While the agent was still writing, the creation step read Creating MCP App with preparation complete, and no preview opened.", true);
     await world.holdCreation(false);
   });
 
@@ -609,7 +609,7 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
       await world.holdCreation(true);
       expect((await probe.dom("[data-built-app-preview]")).elements).toHaveLength(0);
       await agent.send(buildPrompt);
-      await user.see({ text: /Writing artifact “/ }, { timeoutMs: 120_000 });
+      await user.see({ text: /Creating MCP App “/ }, { timeoutMs: 120_000 });
       expect(await probe.eventually(async () => (await probe.dom('[data-app-builder-step][data-app-creation-stage="writing"]')).elements, { within: 30_000, intervalMs: 200, label: "the actual preparation completes before checking the held writing stage", until: elements => elements.length === 1 })).toHaveLength(1);
       expect((await probe.dom("[data-built-app-preview]")).elements).toHaveLength(0);
       const calls = (await world.den.mocks.inventory.agentRequests({ promptMarker: buildPrompt })).filter(request => request.kind === "tool");
@@ -618,7 +618,7 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
       const done = (await probe.dom('[data-app-builder-checklist] [data-checklist-state="done"]')).elements.map(element => element.text.trim());
       const active = (await probe.dom('[data-app-builder-checklist] [data-checklist-state="active"]')).elements.map(element => element.text.trim());
       expect(done.some(text => /^Checked \d+ tools?$/.test(text))).toBe(true);
-      expect(active).toEqual([expect.stringMatching(/^Writing the view/)]);
+      expect(active).toEqual([expect.stringMatching(/^Writing the App/)]);
       evidence.recordAssertionEvidence("Discovery and preparation are real calls before any preview", `${name}: the model requested discovery and preparation before the held build. The actual preparation result completes that stage, writing is active, and the preview remains absent. The step's checklist reads ${[...done, ...active].map(text => `"${text}"`).join(", ")}.`, true);
       await user.screenshot();
       await world.holdCreation(false);
@@ -657,12 +657,12 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
       // The model reads the App, then is held before update_app, as while it writes a long change.
       await world.holdCreation(true);
       await agent.send(prompt);
-      await user.see({ text: `Updating artifact “${pricerTitle}”` }, { timeoutMs: 120_000 });
+      await user.see({ text: `Updating MCP App “${pricerTitle}”` }, { timeoutMs: 120_000 });
       expect(await probe.eventually(async () => (await probe.dom('[data-app-builder-step][data-app-creation-stage="writing"] .ow-text-shimmer')).elements, { within: 30_000, intervalMs: 200, label: "the edit step is live before update_app", until: elements => elements.length === 1 && elements[0].rect.height > 0 })).toHaveLength(1);
       expect(await probe.eventually(async () => (await probe.dom(`[data-built-app-preview="${appId}"] [aria-busy="true"]`)).elements, { within: 30_000, intervalMs: 200, label: "the open App being changed is marked Updating", until: elements => elements.length === 1 })).toHaveLength(1);
       // Witness: update_app has not run yet, so the open App still shows revision one.
       await revision("revision one");
-      evidence.recordAssertionEvidence("An edit is visible before its update_app call", `${name}: after read_app, with the model held before update_app, the step reads Updating artifact “${pricerTitle}” and the open App beside the composer is marked Updating, still on revision one.`, true);
+      evidence.recordAssertionEvidence("An edit is visible before its update_app call", `${name}: after read_app, with the model held before update_app, the step reads Updating MCP App “${pricerTitle}” and the open App beside the composer is marked Updating, still on revision one.`, true);
       await user.screenshot();
       await world.holdCreation(false);
     });
@@ -687,11 +687,11 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
       const prompt = "Create an App with the invalid source to check the failure.";
       await world.prepareLifecycleTurn(prompt, "failure");
       await agent.send(prompt);
-      await user.see({ text: /Couldn’t create artifact “Broken App”/ }, { timeoutMs: 120_000 });
+      await user.see({ text: /Couldn’t create MCP App “Broken App”/ }, { timeoutMs: 120_000 });
       await user.see({ text: "The App could not be created." }, { timeoutMs: 30_000 });
       expect(await probe.eventually(async () => (await probe.dom('button[aria-label="Stop"]')).elements, { within: 30_000, intervalMs: 200, label: "the failed creation turn finishes before the next workload", until: elements => elements.length === 0 })).toHaveLength(0);
       expect((await probe.dom('[data-built-app-preview]')).elements).toHaveLength(0);
-      evidence.recordAssertionEvidence("A real compilation failure never becomes readiness", `${name}: create_app rejects invalid source; the creation row says Couldn’t create artifact and opens no App.`, true);
+      evidence.recordAssertionEvidence("A real compilation failure never becomes readiness", `${name}: create_app rejects invalid source; the creation step says Couldn’t create MCP App and opens no App.`, true);
       await user.screenshot();
     });
     await step("after: a turn that only searches leaves no artifact step behind", async () => {
@@ -701,8 +701,8 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
       await user.see({ text: "Inventory can look up unit prices." }, { timeoutMs: 120_000 });
       expect(await probe.eventually(async () => (await probe.dom('button[aria-label="Stop"]')).elements, { within: 30_000, intervalMs: 200, label: "the search-only turn finishes", until: elements => elements.length === 0 })).toHaveLength(0);
       expect((await probe.dom('[data-app-builder-step][data-app-creation-stage="needs"]')).elements).toHaveLength(0);
-      await user.notSee({ text: /Preparing artifact/ });
-      evidence.recordAssertionEvidence("Searching without building is not an artifact", `${name}: the person asked about creating an App, the model only called search_capabilities and replied. Once the turn ended, no Preparing artifact step remained.`, true);
+      await user.notSee({ text: /Creating MCP App/ });
+      evidence.recordAssertionEvidence("Searching without building is not an artifact", `${name}: the person asked about creating an App, the model only called search_capabilities and replied. Once the turn ended, no Creating MCP App step remained.`, true);
       await user.screenshot();
     });
     await step("after: a dashboard request is one artifact step holding the agent's guide, search and build, and the unchanged starter works", async () => {
@@ -713,11 +713,11 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
       await world.holdCreation(true);
       await agent.send(prompt);
       expect(await probe.eventually(async () => (await probe.dom('[data-app-builder-step][data-app-creation-stage="needs"] .ow-text-shimmer')).elements, { within: 120_000, intervalMs: 200, label: "the guide starts the artifact step before prepare_app", until: elements => elements.length === 1 && elements[0].rect.height > 0 })).toHaveLength(1);
-      await user.see({ text: "Preparing artifact" });
+      await user.see({ text: /Creating MCP App/ });
       const guidedDone = (await probe.dom('[data-app-builder-checklist] [data-checklist-state="done"]')).elements.map(element => element.text.trim());
-      expect(guidedDone).toEqual(expect.arrayContaining(["Read the build guide", "Searched your connections for “Inventory lookup unit price”"]));
+      expect(guidedDone).toEqual(expect.arrayContaining(["Searched your connections for “Inventory lookup unit price”"]));
       await world.holdCreation(false);
-      const sentence = `Created artifact “${guidedTitle}”`;
+      const sentence = `Created MCP App “${guidedTitle}”`;
       await user.see({ text: sentence }, { timeoutMs: 120_000 });
       await user.see({ text: guidedReply }, { timeoutMs: 30_000 });
       frame = await world.appFrameShowing(guidedTitle, "Show unit price");
@@ -734,7 +734,7 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
       await user.on(frame).type({ role: "textbox", label: "Sku" }, launchInput.sku);
       await user.on(frame).click({ role: "button", label: "Show unit price" });
       await user.on(frame).see({ text: "Unit price" }, { timeoutMs: 60_000 });
-      evidence.recordAssertionEvidence("The agent's own calls make one artifact step, and the starter works as published", `${name}: a dashboard request without the word app read build-an-app, searched, prepared and built from prepare_app's starter. While the model was held before prepare_app, the step already read Preparing artifact and listed "Read the build guide" and the search as done. The guide and search sit inside the one Created artifact step, and the published starter loads the Inventory price on one click.`, true);
+      evidence.recordAssertionEvidence("The agent's own calls make one artifact step, and the starter works as published", `${name}: a dashboard request without the word app read build-an-app, searched, prepared and built from prepare_app's starter. While the model was held before prepare_app, the step already read Creating MCP App with the search done. The guide and search sit inside the one Created MCP App step, and the published starter loads the Inventory price on one click.`, true);
       await user.screenshot();
       await closeFrame();
       await user.click({ role: "button", label: "Close panel" });

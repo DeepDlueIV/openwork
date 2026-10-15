@@ -282,3 +282,9 @@ overrides:
       - "**/*.json#/components/schemas/AutomationDesktopTarget/properties/lastSeenAt"
     rules:
       ow-timestamps-date-time: "off"
+  # Remote-session status uses the desktop protocol's Unix milliseconds,
+  # including its nullable observation time; preserve that numeric contract.
+  - files:
+      - "**/*.json#/components/schemas/RemoteSessionStatusResult/properties/threads/items/oneOf/0/properties/observedAt"
+    rules:
+      ow-timestamps-date-time: "off"

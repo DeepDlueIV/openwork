@@ -77,9 +77,13 @@ test("an admin: I want to invite someone straight into the Skill publisher role"
   await step("the invited person accepts and receives Skill publisher through Engineering", async () => {
     const result = await probe.api(world.owner, "/v1/org", { headers: world.scope });
     const invitation = rows(record(result.body).invitations).find((entry) => entry.email === world.nora.email && entry.status === "pending");
-    if (typeof invitation?.inviteToken !== "string") throw new Error("Missing invitation token");
+    if (typeof invitation?.id !== "string") throw new Error("Missing pending invitation");
+    // GET /v1/org never carries join tokens; the owner reads the link like Copy invite link does.
+    const link = await probe.api(world.owner, `/v1/invitations/${invitation.id}/link`, { headers: world.scope });
+    const inviteLink = record(link.body).inviteLink;
+    if (!link.response.ok || typeof inviteLink !== "string") throw new Error(`Invite link: HTTP ${link.response.status}`);
     const invitee = user.on(world.noraWeb);
-    await invitee.navigate(world.url(`/join-org?invite=${encodeURIComponent(invitation.inviteToken)}`));
+    await invitee.navigate(world.url(`/join-org?invite=${encodeURIComponent(new URL(inviteLink).searchParams.get("invite") ?? "")}`));
     await invitee.click({ role: "button", label: /^Join Team roles workspace$/ });
     await invitee.see({ text: "Download OpenWork" }, { timeoutMs: 60_000 });
     const joined = await probe.api(world.nora, "/v1/org", { headers: world.scope });
@@ -247,9 +251,13 @@ multiTeamTest("an admin chooses which team grants a shared role before sending a
   await step("accepting joins only Sales, not every team that carries the role", async () => {
     const result = await probe.api(world.owner, "/v1/org", { headers: world.scope });
     const invitation = rows(record(result.body).invitations).find((entry) => entry.email === world.nora.email && entry.status === "pending");
-    if (typeof invitation?.inviteToken !== "string") throw new Error("Missing invitation token");
+    if (typeof invitation?.id !== "string") throw new Error("Missing pending invitation");
+    // GET /v1/org never carries join tokens; the owner reads the link like Copy invite link does.
+    const link = await probe.api(world.owner, `/v1/invitations/${invitation.id}/link`, { headers: world.scope });
+    const inviteLink = record(link.body).inviteLink;
+    if (!link.response.ok || typeof inviteLink !== "string") throw new Error(`Invite link: HTTP ${link.response.status}`);
     const invitee = user.on(world.noraWeb);
-    await invitee.navigate(world.url(`/join-org?invite=${encodeURIComponent(invitation.inviteToken)}`));
+    await invitee.navigate(world.url(`/join-org?invite=${encodeURIComponent(new URL(inviteLink).searchParams.get("invite") ?? "")}`));
     await invitee.click({ role: "button", label: /^Join Team roles workspace$/ });
     await invitee.see({ text: "Download OpenWork" }, { timeoutMs: 60_000 });
     const joined = await probe.api(world.nora, "/v1/org", { headers: world.scope });

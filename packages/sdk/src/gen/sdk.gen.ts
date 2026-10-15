@@ -357,6 +357,8 @@ import type {
   GetV1InstallConfigErrors,
   GetV1InstallConfigResponses,
   GetV1IntegrationsSlackOauthCallbackErrors,
+  GetV1InvitationsByInvitationIdLinkErrors,
+  GetV1InvitationsByInvitationIdLinkResponses,
   GetV1LibraryUsageByKindResponses,
   GetV1LibraryUsageErrors,
   GetV1LibraryUsageResponses,
@@ -5582,6 +5584,29 @@ export class DenClient extends HeyApiClient {
       ThrowOnError
     >({
       url: "/v1/invitations/{invitationId}/cancel",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
+   * Get organization invitation link
+   *
+   * Returns the join link of a pending invitation so it can be shared directly. The link contains a bearer join token, so it needs the same permissions as resending the invitation: Invite people, Change member roles for a non-member role, and Manage Admin teams when the invitation carries Admin team access.
+   */
+  public getV1InvitationsByInvitationIdLink<ThrowOnError extends boolean = false>(
+    parameters: {
+      invitationId: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "invitationId" }] }]);
+    return (options?.client ?? this.client).get<
+      GetV1InvitationsByInvitationIdLinkResponses,
+      GetV1InvitationsByInvitationIdLinkErrors,
+      ThrowOnError
+    >({
+      url: "/v1/invitations/{invitationId}/link",
       ...options,
       ...params,
     });

@@ -235,6 +235,13 @@ export const FEATURES = defineFeatures({
     deployments: everywhere,
     default: false,
   },
+  inviteLinkVerifiesEmail: {
+    label: "Invite links verify the invited email",
+    description: "Creating an account from an invitation link, emailed or shared by an admin, counts as verifying that email, so the invited person joins without entering an emailed code.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
 })
 
 export type FeatureKey = keyof typeof FEATURES

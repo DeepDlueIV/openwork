@@ -865,7 +865,8 @@
               "gatewayProviderUsageLimits",
               "stableInstallLinks",
               "teamAccessRows",
-              "teamPageTabs"
+              "teamPageTabs",
+              "inviteLinkVerifiesEmail"
             ]
           },
           "label": {
@@ -1118,6 +1119,9 @@
                     "teamPageTabs": {
                       "type": "boolean"
                     },
+                    "inviteLinkVerifiesEmail": {
+                      "type": "boolean"
+                    },
                     "gatewayDashboard": {
                       "type": "boolean",
                       "const": true,
@@ -1152,6 +1156,7 @@
                     "stableInstallLinks",
                     "teamAccessRows",
                     "teamPageTabs",
+                    "inviteLinkVerifiesEmail",
                     "gatewayDashboard"
                   ]
                 },
@@ -2613,6 +2618,62 @@
                         "override",
                         "overrideApplies"
                       ]
+                    },
+                    "inviteLinkVerifiesEmail": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
                     }
                   },
                   "required": [
@@ -2641,7 +2702,8 @@
                     "gatewayProviderUsageLimits",
                     "stableInstallLinks",
                     "teamAccessRows",
-                    "teamPageTabs"
+                    "teamPageTabs",
+                    "inviteLinkVerifiesEmail"
                   ],
                   "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
                 }
@@ -3093,6 +3155,9 @@
                     "teamPageTabs": {
                       "type": "boolean"
                     },
+                    "inviteLinkVerifiesEmail": {
+                      "type": "boolean"
+                    },
                     "gatewayDashboard": {
                       "type": "boolean",
                       "const": true,
@@ -3127,6 +3192,7 @@
                     "stableInstallLinks",
                     "teamAccessRows",
                     "teamPageTabs",
+                    "inviteLinkVerifiesEmail",
                     "gatewayDashboard"
                   ]
                 },
@@ -4588,6 +4654,62 @@
                         "override",
                         "overrideApplies"
                       ]
+                    },
+                    "inviteLinkVerifiesEmail": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
                     }
                   },
                   "required": [
@@ -4616,7 +4738,8 @@
                     "gatewayProviderUsageLimits",
                     "stableInstallLinks",
                     "teamAccessRows",
-                    "teamPageTabs"
+                    "teamPageTabs",
+                    "inviteLinkVerifiesEmail"
                   ],
                   "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
                 }
@@ -10328,6 +10451,32 @@
           "error",
           "message",
           "status"
+        ]
+      },
+      "InvitationLinkResponse": {
+        "type": "object",
+        "properties": {
+          "invitationId": {
+            "description": "Den TypeID with 'inv_' prefix and a 26-character base32 suffix.",
+            "format": "typeid",
+            "type": "string",
+            "minLength": 30,
+            "maxLength": 30
+          },
+          "inviteLink": {
+            "type": "string",
+            "format": "uri"
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
+          }
+        },
+        "required": [
+          "invitationId",
+          "inviteLink",
+          "expiresAt"
         ]
       },
       "CreateInstallLinkResponse": {
@@ -27628,6 +27777,9 @@
                         "teamPageTabs": {
                           "type": "boolean"
                         },
+                        "inviteLinkVerifiesEmail": {
+                          "type": "boolean"
+                        },
                         "gatewayDashboard": {
                           "type": "boolean",
                           "const": true,
@@ -27662,6 +27814,7 @@
                         "stableInstallLinks",
                         "teamAccessRows",
                         "teamPageTabs",
+                        "inviteLinkVerifiesEmail",
                         "gatewayDashboard"
                       ]
                     },
@@ -29123,6 +29276,62 @@
                             "override",
                             "overrideApplies"
                           ]
+                        },
+                        "inviteLinkVerifiesEmail": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
                         }
                       },
                       "required": [
@@ -29151,7 +29360,8 @@
                         "gatewayProviderUsageLimits",
                         "stableInstallLinks",
                         "teamAccessRows",
-                        "teamPageTabs"
+                        "teamPageTabs",
+                        "inviteLinkVerifiesEmail"
                       ],
                       "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
                     }
@@ -29348,6 +29558,9 @@
                         "teamPageTabs": {
                           "type": "boolean"
                         },
+                        "inviteLinkVerifiesEmail": {
+                          "type": "boolean"
+                        },
                         "gatewayDashboard": {
                           "type": "boolean",
                           "const": true,
@@ -29382,6 +29595,7 @@
                         "stableInstallLinks",
                         "teamAccessRows",
                         "teamPageTabs",
+                        "inviteLinkVerifiesEmail",
                         "gatewayDashboard"
                       ]
                     },
@@ -30843,6 +31057,62 @@
                             "override",
                             "overrideApplies"
                           ]
+                        },
+                        "inviteLinkVerifiesEmail": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
                         }
                       },
                       "required": [
@@ -30871,7 +31141,8 @@
                         "gatewayProviderUsageLimits",
                         "stableInstallLinks",
                         "teamAccessRows",
-                        "teamPageTabs"
+                        "teamPageTabs",
+                        "inviteLinkVerifiesEmail"
                       ],
                       "description": "Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect."
                     }
@@ -56411,6 +56682,100 @@
           },
           "409": {
             "description": "The invitation is no longer pending and cannot be canceled.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationNotPendingError"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "invitationId",
+            "schema": {
+              "format": "typeid",
+              "type": "string",
+              "minLength": 30,
+              "maxLength": 30
+            },
+            "required": true,
+            "description": "Den TypeID with 'inv_' prefix and a 26-character base32 suffix."
+          }
+        ],
+        "security": [
+          {
+            "denApiKey": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
+      }
+    },
+    "/v1/invitations/{invitationId}/link": {
+      "get": {
+        "operationId": "getV1InvitationsByInvitationIdLink",
+        "tags": [
+          "Invitations"
+        ],
+        "summary": "Get organization invitation link",
+        "description": "Returns the join link of a pending invitation so it can be shared directly. The link contains a bearer join token, so it needs the same permissions as resending the invitation: Invite people, Change member roles for a non-member role, and Manage Admin teams when the invitation carries Admin team access.",
+        "responses": {
+          "200": {
+            "description": "Invitation link returned successfully.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvitationLinkResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The invitation link path parameters were invalid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "The caller must be signed in to read invitation links.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The caller needs the permissions required to resend this invitation and a recent sign-in.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ForbiddenError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The invitation or organization could not be found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The invitation is no longer pending or has expired; resend it to issue a new link.",
             "content": {
               "application/json": {
                 "schema": {

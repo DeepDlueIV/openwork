@@ -23,7 +23,6 @@ import {
   canRefreshInvitationRole,
   formatRoleLabel,
   assignableOrgRole,
-  getJoinOrgRoute,
   getOrgAccessFlags,
   getMembersRoute,
   getEveryoneRoute,
@@ -64,6 +63,22 @@ import { TEAM_ROLE_LABELS, memberRoleOptions, parseRoleChoice, teamRole, teamRol
 import { MemberRoleEditor, MemberRoleSelect } from "./member-role-select";
 
 type MembersTab = "members" | "teams" | "roles";
+
+/**
+ * Copies text that is still being fetched. Safari only allows clipboard writes
+ * started inside the click, so the pending text is handed to a ClipboardItem;
+ * where that is unsupported, write it once it arrives.
+ */
+async function copyTextWhenReady(text: Promise<string>) {
+  try {
+    await navigator.clipboard.write([
+      new ClipboardItem({ "text/plain": text.then((value) => new Blob([value], { type: "text/plain" })) }),
+    ]);
+  } catch {
+    // Rethrows the fetch error when the text itself failed.
+    await navigator.clipboard.writeText(await text);
+  }
+}
 
 function ActionButton({
   children,
@@ -129,6 +144,7 @@ export function ManageMembersScreen() {
     inviteMember,
     startSeatCheckout,
     cancelInvitation,
+    getInvitationLink,
     updateMemberRole,
     removeMember,
     transferOwnership,
@@ -265,11 +281,6 @@ export function ManageMembersScreen() {
       ]),
     );
   }, [orgContext?.members, orgContext?.teams]);
-
-  const invitationsById = useMemo(
-    () => new Map((orgContext?.invitations ?? []).map((invitation) => [invitation.id, invitation])),
-    [orgContext?.invitations],
-  );
 
   const feedbackHref = useMemo(
     () =>
@@ -851,7 +862,6 @@ export function ManageMembersScreen() {
               const roleLabel = [...new Set(roleLabels)].join(", ");
               const isInvited = !member.joinedAt;
               const inviteId = member.inviteId;
-              const inviteToken = inviteId ? invitationsById.get(inviteId)?.inviteToken : null;
               const memberAccess = getOrgAccessFlags(member.effectiveRole, member.isOwner);
               const canManageMemberGrants = access.canManageAdminTeams || member.adminTeams.length === 0;
               const canResendInvitation = isInvited && canManageMemberGrants && canRefreshInvitationRole(member.role, access);
@@ -864,7 +874,7 @@ export function ManageMembersScreen() {
                   : access.canManageRoles || access.canManageTeams || access.canRemoveMembers || canTransferOwnershipToMember || canViewPermissions;
 
               const memberActions = [
-                ...(isInvited && inviteToken ? [{ label: "Copy invite link", onSelect: async () => { await navigator.clipboard.writeText(new URL(getJoinOrgRoute(inviteToken), window.location.origin).toString()); } }] : []),
+                ...(canResendInvitation && inviteId ? [{ label: "Copy invite link", onSelect: async () => { setPageError(null); try { await copyTextWhenReady(getInvitationLink(inviteId)); } catch (error) { setPageError(error instanceof Error ? error.message : "Could not copy the invite link."); } } }] : []),
                 ...(canResendInvitation ? [{ label: "Resend invite", disabled: mutationBusy === "invite-member", onSelect: async () => { try { await inviteMember({ email: member.user.email, role: assignableOrgRole(member.role) }); } catch (error) { setPageError(error instanceof Error ? error.message : "Could not resend invitation."); } } }] : []),
                 ...(isInvited && access.canCancelInvitations && canManageMemberGrants && inviteId ? [{ label: "Cancel invite", destructive: true, onSelect: async () => { try { await cancelInvitation(inviteId); } catch (error) { setPageError(error instanceof Error ? error.message : "Could not cancel invitation."); } } }] : []),
                 ...(canViewPermissions ? [{ label: permissionsMemberId === member.id ? "Hide permissions" : "View permissions", onSelect: () => setPermissionsMemberId((current) => current === member.id ? null : member.id) }] : []),
@@ -914,13 +924,17 @@ export function ManageMembersScreen() {
                         </button>
                         {openMemberMenuId === member.id ? (
                           <div className="absolute right-0 top-9 z-10 w-44 overflow-hidden rounded-2xl border border-gray-100 bg-white p-1.5 text-[13px] shadow-xl shadow-gray-900/10">
-                            {isInvited && inviteToken ? (
+                            {canResendInvitation && inviteId ? (
                               <button
                                 type="button"
                                 onClick={async () => {
-                                  const inviteUrl = new URL(getJoinOrgRoute(inviteToken), window.location.origin).toString();
-                                  await navigator.clipboard.writeText(inviteUrl);
+                                  setPageError(null);
                                   setOpenMemberMenuId(null);
+                                  try {
+                                    await copyTextWhenReady(getInvitationLink(inviteId));
+                                  } catch (error) {
+                                    setPageError(error instanceof Error ? error.message : "Could not copy the invite link.");
+                                  }
                                 }}
                                 className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-gray-600 transition hover:bg-gray-50"
                               >

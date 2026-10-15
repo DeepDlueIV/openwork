@@ -388,6 +388,7 @@ OpenWork Cloud. Don't change it on a customer install.
 | `stableInstallLinks` | `DEN_FEATURE_STABLE_INSTALL_LINKS` | default off | Download and Copy install link share the normal install page address instead of a one-off link. Teammates sign in to download; links shared earlier keep working. |
 | `teamAccessRows` | `DEN_FEATURE_TEAM_ACCESS_ROWS` | default off | Team plugin access shows compact rows with clear access sources and a confirmation before revoking a team grant. |
 | `teamPageTabs` | `DEN_FEATURE_TEAM_PAGE_TABS` | default off | Each team's page, and Everyone's, gets a Browser tab for the pages agents and the built-in browser can open, and a Models tab with the AI providers the team can use, its spend limits and its default model. |
+| `inviteLinkVerifiesEmail` | `DEN_FEATURE_INVITE_LINK_VERIFIES_EMAIL` | default off | Creating an account from an invitation link, emailed or shared by an admin, counts as verifying that email, so the invited person joins without entering an emailed code. |
 <!-- END GENERATED features -->
 
 The table and the `config.features` block are generated: run `pnpm features:sync`

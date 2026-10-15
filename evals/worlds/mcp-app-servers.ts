@@ -10,6 +10,7 @@ import { queryDenDatabase, type EvalEngine, type Place, type Seed } from "@openw
 import type { MockMcpTool } from "@openwork/labs";
 import { reconcileDraftHost } from "../fixtures/cloud-draft-host.ts";
 import { configureProvider } from "./chat.ts";
+import { enableOrganizationCapabilities } from "./organization-capabilities.ts";
 
 export const appTitle = "Order calculator";
 export const procedureTitle = "Quantity times unit price";
@@ -530,6 +531,8 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
     access: { orgWide: true },
   });
   const organizationId = field(record((await seed.api(den.admin, "/v1/org")).body).organization, "id");
+  // The App journeys check the staged build checklist, which is behind appBuildProgress.
+  await enableOrganizationCapabilities(seed, den.admin, { appBuildProgress: true }, organizationId);
   // Credential expiry writes only to this run's own loopback scratch database.
   const cloudCredentialDatabase = () => {
     const url = den.database?.url;

@@ -18,6 +18,16 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "appBuildProgress": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "App build progress: While an agent creates or changes an MCP App, the chat shows each stage it goes through (finding and checking tools, writing the App, building and verifying it) as a checklist with a progress bar. Renders DEN_FEATURE_APP_BUILD_PROGRESS."
+            },
             "teamMembershipCache": {
               "enum": [
                 "",

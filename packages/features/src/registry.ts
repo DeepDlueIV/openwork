@@ -53,6 +53,13 @@ function defineFeatures<const T extends Record<string, FeatureDefinition>>(featu
 const everywhere = ["cloud", "self_hosted"] as const
 
 export const FEATURES = defineFeatures({
+  appBuildProgress: {
+    label: "App build progress",
+    description: "While an agent creates or changes an MCP App, the chat shows each stage it goes through (finding and checking tools, writing the App, building and verifying it) as a checklist with a progress bar.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
   teamMembershipCache: {
     label: "Team membership cache",
     description: "Reduce repeated team lookups while keeping access changes immediate. Enable only after every API instance runs revision-aware team writes.",

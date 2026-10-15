@@ -417,9 +417,11 @@ export function ManageMembersScreen() {
             event.preventDefault();
             setPageError(null);
             try {
-              // A custom role invites a Member into that role's team; with sharedRoles the team is picked directly.
+              // Custom roles remain Member and grant access through exactly one chosen team.
+              if (inviteChoice.blocked) return;
               const choice = parseRoleChoice(canChooseInviteRole ? inviteRole : "member");
-              await inviteMember({ email: inviteEmail, role: choice.role, teamId: inviteTeamPicker ? inviteTeamId || null : choice.teamId });
+              const teamId = inviteChoice.set ? inviteChoice.selected?.id : inviteTeamPicker ? inviteTeamId || null : choice.teamId ?? undefined;
+              await inviteMember({ email: inviteEmail, role: choice.role, teamId });
               resetInviteForm();
             } catch (error) {
               const paymentRequiredError = getOrgPaymentRequiredError(error);

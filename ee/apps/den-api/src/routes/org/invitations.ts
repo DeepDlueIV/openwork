@@ -324,7 +324,7 @@ export function registerOrgInvitationRoutes<T extends { Variables: OrgRouteVaria
       // teamId preserves a pending invitation's team when it is resent.
       const teamId = input.teamId === undefined ? existingInvitation?.teamId ?? null : input.teamId
       if (existingInvitation?.teamId && existingInvitation.teamId !== teamId && (await getScimManagedTeamIds(payload.organization.id, tx)).has(existingInvitation.teamId)) return { status: "invalid_team" as const }
-      if (teamId || input.teamId !== undefined) {
+      if (teamId || (existingInvitation?.teamId && input.teamId !== undefined)) {
         const actor = await resolveTeamActorInTransaction(tx, payload.organization.id, payload.currentMember.id)
         if (!actor.has("teams.manage")) return { status: "team_forbidden" as const, response: permissionDeniedResponse("teams.manage") }
         if (teamId) {

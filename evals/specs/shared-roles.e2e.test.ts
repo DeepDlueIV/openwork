@@ -175,6 +175,17 @@ test("an owner picks a role for Sales from every role on the team page, and crea
     await owner.screenshot();
   });
 
+  await step("the team uses the same searchable trigger-width role picker as invitations and member editing", async () => {
+    await owner.type({ placeholder: "Search roles" }, "Billing viewer");
+    await owner.see({ role: "option", label: /^Billing viewer/ });
+    const trigger = (await probe.on(world.ownerWeb).dom('[data-testid="team-role-change"]')).elements[0]?.rect;
+    const popup = (await probe.on(world.ownerWeb).dom('[data-testid="team-role-choice"]')).elements[0]?.rect;
+    const fits = Boolean(trigger && popup && Math.abs(trigger.width - popup.width) <= 1);
+    expect(fits).toBe(true);
+    evidence.recordAssertionEvidence("The shared searchable menu matches its team trigger width", `Trigger ${trigger?.width}px; menu ${popup?.width}px`, fits);
+    await owner.screenshot();
+  });
+
   await step("after: Sales is Billing viewer and Maya can view billing", async () => {
     await owner.click({ role: "option", label: /^Billing viewer/ });
     await owner.click({ testId: "team-role-save" });

@@ -63,7 +63,7 @@ test("an admin: I want to invite someone straight into the Skill publisher role"
     await admin.click({ role: "button", label: "Send invite" });
     await admin.see({ text: world.nora.email }, { timeoutMs: 30_000 });
     const result = await probe.api(world.owner, "/v1/org", { headers: world.scope });
-    const invitation = rows(record(result.body).invitations).find((entry) => entry.email === world.nora.email);
+    const invitation = rows(record(result.body).invitations).find((entry) => entry.email === world.nora.email && entry.status === "pending");
     const pending = rows(record(result.body).members).find((entry) => record(entry.user).email === world.nora.email);
     const team = rows(record(result.body).teams).find((entry) => entry.id === world.teams.engineering);
     const ok = invitation?.role === "member" && pending?.role === "member" && Array.isArray(team?.memberIds) && team.memberIds.includes(pending.id);
@@ -73,7 +73,7 @@ test("an admin: I want to invite someone straight into the Skill publisher role"
   });
   await step("the invited person accepts and receives Skill publisher through Engineering", async () => {
     const result = await probe.api(world.owner, "/v1/org", { headers: world.scope });
-    const invitation = rows(record(result.body).invitations).find((entry) => entry.email === world.nora.email);
+    const invitation = rows(record(result.body).invitations).find((entry) => entry.email === world.nora.email && entry.status === "pending");
     if (typeof invitation?.inviteToken !== "string") throw new Error("Missing invitation token");
     const invitee = user.on(world.noraWeb);
     await invitee.navigate(world.url(`/join-org?invite=${encodeURIComponent(invitation.inviteToken)}`));
@@ -163,9 +163,11 @@ test("an admin can use long role names on a phone-width screen without overflow"
     await admin.type({ placeholder: "Search roles" }, "Workspace compliance reviewer");
     await admin.see({ role: "option", label: new RegExp(world.longRoleName) });
     const page = await probe.on(world.ownerPhone).dom("html");
-    const fits = page.documentWidth <= page.viewportWidth;
+    const trigger = (await probe.on(world.ownerPhone).dom('[data-testid="member-role-change"]')).elements[0]?.rect;
+    const popup = (await probe.on(world.ownerPhone).dom('[data-testid="member-role-choice"]')).elements[0]?.rect;
+    const fits = page.documentWidth <= page.viewportWidth && Boolean(trigger && popup && Math.abs(trigger.width - popup.width) <= 1);
     expect(fits).toBe(true);
-    evidence.recordAssertionEvidence("The long role menu stays inside the viewport", `Page ${page.documentWidth}px; viewport ${page.viewportWidth}px`, fits);
+    evidence.recordAssertionEvidence("The long role menu stays trigger-width inside the viewport", `Page ${page.documentWidth}px; viewport ${page.viewportWidth}px; trigger ${trigger?.width}px; menu ${popup?.width}px`, fits);
     await admin.screenshot();
   });
   await step("Escape closes the menu and returns to the invitation without changing its role", async () => {
@@ -234,14 +236,14 @@ multiTeamTest("an admin chooses which team grants a shared role before sending a
     await admin.click({ role: "button", label: "Send invite" });
     await admin.see({ text: world.nora.email }, { timeoutMs: 30_000 });
     const result = await probe.api(world.owner, "/v1/org", { headers: world.scope });
-    const invitation = rows(record(result.body).invitations).find((entry) => entry.email === world.nora.email);
+    const invitation = rows(record(result.body).invitations).find((entry) => entry.email === world.nora.email && entry.status === "pending");
     expect(invitation?.role).toBe("member");
     evidence.recordAssertionEvidence("A shared role does not promote the invitee to Admin", `Invitation role: ${String(invitation?.role)}`, invitation?.role === "member");
     await admin.screenshot();
   });
   await step("accepting joins only Sales, not every team that carries the role", async () => {
     const result = await probe.api(world.owner, "/v1/org", { headers: world.scope });
-    const invitation = rows(record(result.body).invitations).find((entry) => entry.email === world.nora.email);
+    const invitation = rows(record(result.body).invitations).find((entry) => entry.email === world.nora.email && entry.status === "pending");
     if (typeof invitation?.inviteToken !== "string") throw new Error("Missing invitation token");
     const invitee = user.on(world.noraWeb);
     await invitee.navigate(world.url(`/join-org?invite=${encodeURIComponent(invitation.inviteToken)}`));

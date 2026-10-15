@@ -1,4 +1,5 @@
 import type { Seed } from "@openwork/env";
+import { signIn } from "@openwork/behaviors";
 import { sharedRolesWorld } from "./shared-roles.ts";
 
 function record(value: unknown): Record<string, unknown> {
@@ -20,6 +21,10 @@ export async function memberCustomRolesWorld(seed: Seed) {
   if (!coordinator.response.ok) throw new Error(`Coordinator role: ${coordinator.text}`);
   const removed = await seed.api(world.owner, `/v1/members/${world.ids.nora}`, { method: "DELETE", headers: world.scope });
   if (!removed.response.ok) throw new Error(`Remove future invitee: ${removed.text}`);
+  // Removal revokes the old sessions. Arrange a fresh signed-in account with
+  // no organization so the journey exercises explicit invitation acceptance.
+  const nora = await signIn(world.den.ref, { email: world.nora.email, password: world.nora.password });
+  const noraWeb = await seed.web({ den: world.den, signedInAs: nora, startPath: "/", headless: true, viewport: { width: 1280, height: 900 } });
   const mayaWeb = await seed.web({ den: world.den, signedInAs: world.maya, startPath: "/dashboard", headless: true, viewport: { width: 1280, height: 900 } });
   const longRoleName = "Workspace compliance reviewer for every synthetic product and engineering department";
   const longRole = await seed.api(world.owner, "/v1/permissions/sets", { method: "POST", headers: world.scope, body: JSON.stringify({ name: longRoleName, permissions: [] }) });
@@ -27,7 +32,7 @@ export async function memberCustomRolesWorld(seed: Seed) {
   const ownerPhone = await seed.web({ den: world.den, signedInAs: world.owner, startPath: "/dashboard", headless: true, viewport: { width: 390, height: 844 } });
   const coordinatorId = record(record(coordinator.body).set).id;
   if (typeof coordinatorId !== "string") throw new Error("Missing coordinator role id");
-  return { ...world, publisherId: publisher.id, coordinatorId, mayaWeb, ownerPhone, longRoleName };
+  return { ...world, nora, noraWeb, publisherId: publisher.id, coordinatorId, mayaWeb, ownerPhone, longRoleName };
 }
 
 export async function lockedMemberCustomRolesWorld(seed: Seed) {

@@ -693,7 +693,7 @@ export function OrgDashboardProvider({
         "/v1/invitations",
         {
           method: "POST",
-          body: JSON.stringify({ email: input.email, role: invitationRole, ...(input.teamId ? { teamId: input.teamId } : {}) }),
+          body: JSON.stringify({ email: input.email, role: invitationRole, ...(input.teamId !== undefined ? { teamId: input.teamId } : {}) }),
         },
         12000,
       );

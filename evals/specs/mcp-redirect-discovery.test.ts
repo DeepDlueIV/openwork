@@ -7,7 +7,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 for (const mode of ["valid", "issuer-mismatch", "missing"] as const) {
-  test(`a member can safely attempt sign-in behind a login redirect with ${mode} metadata`, { timeout: 300_000 }, async ({ place, evidence, step }) => {
+  test(`a member can safely attempt sign-in behind a login redirect with ${mode} metadata`, { timeout: 300_000 }, async ({ place, evidence }) => {
     needs({ commands: ["bun"], placement: "local" });
     const mock = await redirectDiscoveryMock();
     try {
@@ -24,17 +24,19 @@ for (const mode of ["valid", "issuer-mismatch", "missing"] as const) {
       if (!isRecord(created.body) || typeof created.body.id !== "string") throw new Error("Connection id missing");
       const connectionId = created.body.id;
       mock.setMode(mode);
-      await step("when the member starts sign-in, the endpoint redirects to a login page", async () => {
+      {
         evidence.recordAssertionEvidence("A synthetic provider redirects unauthenticated MCP requests", "Configured MCP endpoint returns HTTP 302 with an HTML login target; no real provider is contacted.", true);
-      });
+      }
       const started = await denFetch(den.members.tester, `/v1/mcp-connections/${connectionId}/connect/start`, { headers: { authorization: `Bearer ${den.members.tester.token}` } });
-      await step("then sign-in information is checked without following the login redirect", async () => {
-        expect(mock.requests.some((entry) => entry.path === "/.well-known/oauth-protected-resource/mcp/team")).toBe(true);
+      {
+        const discovered = mock.requests.some((entry) => entry.path === "/.well-known/oauth-protected-resource/mcp/team");
+        evidence.recordAssertionEvidence("Metadata discovery replaces the HTML routing failure", `HTTP ${started.response.status}; HTML routing error: ${started.text.includes("MCP_HTTP_HTML_RESPONSE")}; requests: ${mock.requests.map((entry) => `${entry.method} ${entry.path}`).join(" → ")}.`, discovered);
+        expect(discovered).toBe(true);
         expect(mock.requests.some((entry) => entry.path === "/login")).toBe(false);
         expect(mock.requests.some((entry) => entry.authorized)).toBe(false);
         evidence.recordAssertionEvidence("The redirect is never followed and no credential reaches it", "MCP POST 302 → path-suffixed metadata GET; zero login-page requests and zero authenticated provider requests.", true);
-      });
-      await step("after: valid metadata starts OAuth while missing metadata and inconsistent issuers stay blocked", async () => {
+      }
+      {
         if (mode === "valid") {
           expect(started.response.status, started.text).toBe(200);
           expect(started.body).toMatchObject({ status: "needs_auth" });
@@ -52,7 +54,7 @@ for (const mode of ["valid", "issuer-mismatch", "missing"] as const) {
         }
         expect(mock.requests.some((entry) => entry.path === "/token" || entry.path === "/authorize")).toBe(false);
         evidence.recordAssertionEvidence("OAuth requires valid resource and issuer metadata", `${mode}: connect/start HTTP ${started.response.status}; no token exchange or browser login request. An inconsistent issuer still requires the planned manual sign-in configuration.`, true);
-      });
+      }
     } finally { await mock.stop(); }
   });
 }

@@ -30,6 +30,7 @@ import type {
 import { EnterpriseMcpClientError, EnterpriseMcpLifecycleDeadlineError, EnterpriseMcpToolResultError } from "./errors.js"
 import { ENTERPRISE_MCP_REQUESTED_SCOPES_LIMIT } from "./contracts.js"
 import { EnterpriseMcpOAuthProvider } from "./oauth-provider.js"
+import { createOAuthLoginDiscoveryFetch } from "./oauth-login-discovery.js"
 import { createEnterpriseMcpRequestObserver, type EnterpriseMcpRequestObserver } from "./request-observer.js"
 import { createEnterpriseMcpTokenResponseCompat } from "./token-response-compat.js"
 import { collectEnterpriseMcpTools } from "./tool-catalog.js"
@@ -248,7 +249,9 @@ export function createEnterpriseMcpClient(options: EnterpriseMcpClientOptions): 
     controller.signal.addEventListener("abort", () => clearTimeout(timeout), { once: true })
 
     const compatibleFetch = createEnterpriseMcpTokenResponseCompat({
-      fetch: configuredFetch,
+      fetch: input.connection.authorization.type === "oauth" && input.flow.kind === "connect"
+        ? createOAuthLoginDiscoveryFetch({ fetch: configuredFetch, serverUrl })
+        : configuredFetch,
       onTranslation: (translation) => emitDiagnostic({
         kind: "request",
         connectionId: input.connection.id,

@@ -800,6 +800,9 @@ function safeMessageFor(input: {
   providerErrorMessage?: string
   providerDetail?: string
 }): string {
+  if (input.code === "MCP_OAUTH_SIGN_IN_METADATA_MISSING") {
+    return "This server returns a redirect or login page and publishes no valid sign-in information for this MCP URL. Configure the connection manually or ask the server administrator."
+  }
   if (input.code === "MCP_OAUTH_REDIRECT_URI_NOT_ALLOWED") {
     return "The provider's sign-in server has not approved OpenWork's redirect address, so it refused to register OpenWork as an OAuth client. Retrying will not help until the provider allowlists it."
   }
@@ -1113,6 +1116,16 @@ function httpClassification(input: {
 }
 
 function classifyByCode(code: string): Classification | null {
+  if (code === "MCP_OAUTH_SIGN_IN_METADATA_MISSING") {
+    return {
+      phase: "AUTH_RESOURCE_DISCOVERY",
+      category: "oauth_failure",
+      code,
+      retryable: false,
+      actionOwner: "organization_admin",
+      operatorAction: "Configure the connection manually or ask the server administrator to publish valid protected-resource metadata for the configured MCP URL.",
+    }
+  }
   if (code === "MCP_OAUTH_AUTHORIZATION_ID_REQUIRED") {
     return {
       phase: "CONFIGURATION",

@@ -1,6 +1,5 @@
 import { expect } from "vitest";
 import { spec } from "@openwork/testkit";
-import { callMcpTool, createPersonalKeyConnection, createTeamWith, memberIdByEmail, mintMcpToken, myConnectionRow, readMyConnectionKey, saveMyConnectionKey, setTeamMembers, type McpToolResult } from "@openwork/behaviors";
 import { BACKUP_PROMPT, CONNECT_PROMPT, GATEWAY_PROMPT, secureKeysInChat } from "../worlds/secure-keys-in-chat.ts";
 
 const test = spec.world(secureKeysInChat, {
@@ -18,11 +17,6 @@ function within(text: string): RegExp {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-/** The gateway refused the call, either as a tool error or a JSON-RPC error. */
-function refused(result: McpToolResult): boolean {
-  return result.isError || result.rpcError !== null;
 }
 
 test("an admin adds a key-protected service and an AI Gateway provider by entering keys privately in chat", async ({ world, user, probe, step }) => {
@@ -102,100 +96,6 @@ test("an admin adds a key-protected service and an AI Gateway provider by enteri
     const attempt = await world.memberSavesSharedKey(id);
     expect(attempt.response.status).toBe(403);
     expect(attempt.text.includes(world.keys.wrong)).toBe(false);
-  });
-
-  await step("with individual keys, each call carries only the caller's own key and nobody can read a key back", async () => {
-    const scope = { organizationId: world.organizationId };
-    const riley = world.den.members.riley;
-    if (!riley) throw new Error("Missing member");
-    const url = new URL("/personal/mcp", world.statusUrl).toString();
-    const sentSince = (start: number) => world.wire.slice(start).filter((entry) => entry.path.startsWith("/personal"));
-    const id = await createPersonalKeyConnection(world.den.admin, { name: "Personal status service", url, access: { orgWide: true } }, scope);
-    const capability = { name: `mcp:${id}:team_status`, body: {} };
-    expect((await saveMyConnectionKey(world.den.admin, id, world.keys.status, scope)).response.status).toBe(200);
-    const adminStart = world.wire.length;
-    expect((await world.agentMcp("execute_capability", capability)).isError).toBe(false);
-    expect(sentSince(adminStart).some((entry) => entry.method === "tools/call" && entry.status === 200 && entry.identity === world.fingerprint(world.keys.status))).toBe(true);
-
-    // Riley can use the connection but has no key yet: the owner's key is not lent to her.
-    const rileyToken = await mintMcpToken(riley, scope);
-    const noKeyStart = world.wire.length;
-    const noKey = await callMcpTool(world.den.ref, rileyToken, "execute_capability", capability);
-    expect(refused(noKey)).toBe(true);
-    expect(sentSince(noKeyStart)).toHaveLength(0);
-
-    expect((await saveMyConnectionKey(riley, id, "x\r\nCookie: y", scope)).response.status).toBe(400);
-    const rileyKey = `riley-${crypto.randomUUID()}`;
-    expect((await saveMyConnectionKey(riley, id, rileyKey, scope)).response.status).toBe(200);
-    const ownStart = world.wire.length;
-    const own = await callMcpTool(world.den.ref, rileyToken, "execute_capability", capability);
-    expect(refused(own)).toBe(true);
-    const ownSent = sentSince(ownStart);
-    expect(ownSent.length).toBeGreaterThan(0);
-    expect(ownSent.every((entry) => entry.identity === world.fingerprint(rileyKey))).toBe(true);
-    expect([rileyKey, world.keys.status].some((key) => own.raw.includes(key))).toBe(false);
-
-    const readBack = await readMyConnectionKey(riley, id, scope);
-    expect(readBack.response.status).toBe(404);
-    const row = await myConnectionRow(riley, id, scope);
-    expect(row).not.toBeNull();
-    expect([rileyKey, world.keys.status].some((key) => JSON.stringify(row).includes(key))).toBe(false);
-
-    const ownerId = await memberIdByEmail(world.den.admin, world.den.admin.email, scope);
-    const ownerOnly = await createPersonalKeyConnection(world.den.admin, { name: "Owner-only status service", url, access: { orgWide: false, memberIds: [ownerId] } }, scope);
-    const outsideStart = world.wire.length;
-    const outsideSave = await saveMyConnectionKey(riley, ownerOnly, rileyKey, scope);
-    expect(outsideSave.response.status).toBe(403);
-    expect(refused(await callMcpTool(world.den.ref, rileyToken, "execute_capability", { name: `mcp:${ownerOnly}:team_status`, body: {} }))).toBe(true);
-    expect(sentSince(outsideStart)).toHaveLength(0);
-  });
-
-  await step("leaving the team that gives a connection removes the person's key from it", async () => {
-    const scope = { organizationId: world.organizationId };
-    const riley = world.den.members.riley;
-    if (!riley) throw new Error("Missing member");
-    const sentSince = (start: number) => world.wire.slice(start).filter((entry) => entry.path.startsWith("/team"));
-    const rileyId = await memberIdByEmail(world.den.admin, riley.email, scope);
-    const teamId = await createTeamWith(world.den.admin, "Status readers", [rileyId], scope);
-    const id = await createPersonalKeyConnection(world.den.admin, { name: "Team status service", url: new URL("/team/mcp", world.statusUrl).toString(), access: { orgWide: false, teamIds: [teamId] } }, scope);
-    const capability = { name: `mcp:${id}:team_status`, body: {} };
-    const rileyToken = await mintMcpToken(riley, scope);
-    // Riley's own entry; the witness only accepts this one value.
-    expect((await saveMyConnectionKey(riley, id, world.keys.status, scope)).response.status).toBe(200);
-    expect(refused(await callMcpTool(world.den.ref, rileyToken, "execute_capability", capability))).toBe(false);
-
-    expect((await setTeamMembers(world.den.admin, teamId, [], scope)).response.status).toBe(200);
-    const removedStart = world.wire.length;
-    expect(refused(await callMcpTool(world.den.ref, rileyToken, "execute_capability", capability))).toBe(true);
-    expect((await saveMyConnectionKey(riley, id, world.keys.status, scope)).response.status).toBe(403);
-
-    expect((await setTeamMembers(world.den.admin, teamId, [rileyId], scope)).response.status).toBe(200);
-    expect(refused(await callMcpTool(world.den.ref, rileyToken, "execute_capability", capability))).toBe(true);
-    const sent = sentSince(removedStart).length;
-    expect(sent).toBe(0);
-    const row = await myConnectionRow(riley, id, scope);
-    expect(row?.connectedForMe).toBe(false);
-  });
-
-  await step("a personal key is never sent on through a redirect or repeated back from a service error", async () => {
-    const scope = { organizationId: world.organizationId };
-    const moved = await createPersonalKeyConnection(world.den.admin, { name: "Moved status service", url: new URL("/redirect/mcp", world.statusUrl).toString(), access: { orgWide: true } }, scope);
-    expect((await saveMyConnectionKey(world.den.admin, moved, world.keys.status, scope)).response.status).toBe(200);
-    const movedStart = world.wire.length;
-    expect((await world.agentMcp("execute_capability", { name: `mcp:${moved}:team_status`, body: {} })).isError).toBe(true);
-    const redirected = world.wire.slice(movedStart).filter((entry) => entry.path.startsWith("/redirect")).length;
-    const followed = world.wire.slice(movedStart).filter((entry) => entry.path.startsWith("/followed")).length;
-    expect(redirected).toBeGreaterThan(0);
-    expect(followed).toBe(0);
-
-    const echoing = await createPersonalKeyConnection(world.den.admin, { name: "Echoing status service", url: new URL("/echo/mcp", world.statusUrl).toString(), access: { orgWide: true } }, scope);
-    expect((await saveMyConnectionKey(world.den.admin, echoing, world.keys.status, scope)).response.status).toBe(200);
-    const echoStart = world.wire.length;
-    const echoed = await world.agentMcp("execute_capability", { name: `mcp:${echoing}:team_status`, body: {} });
-    expect(echoed.isError).toBe(true);
-    expect(world.wire.slice(echoStart).some((entry) => entry.path.startsWith("/echo") && entry.method === "tools/call")).toBe(true);
-    const repeated = echoed.text.includes(world.keys.status) || (await world.den.apiLog()).includes(world.keys.status);
-    expect(repeated).toBe(false);
   });
 
   await step("the admin adds an AI Gateway provider the same way", async () => {

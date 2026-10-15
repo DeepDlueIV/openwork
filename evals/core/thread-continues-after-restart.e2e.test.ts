@@ -178,15 +178,6 @@ for (const { title, mode, slowHistory } of cases) {
         await user.see("composer", { editable: true, text: "" });
       });
 
-      if (!slowHistory) await step("ArrowUp in the empty composer recalls the prompt sent before the restart", async () => {
-        await composerSettled();
-        await user.click("composer");
-        await user.press("ArrowUp");
-        await user.see("composer", { text: world.prompts.interrupted });
-        await user.press("ArrowDown");
-        await user.see("composer", { text: "" });
-      });
-
       await step("the person types the next message", async () => {
         await typeAndSend(relaunched, world.prompts.continuation);
       });

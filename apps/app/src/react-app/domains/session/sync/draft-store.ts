@@ -44,6 +44,8 @@ export type SessionDraftSnapshot = {
    * unsent draft instead of dropping them or sending them unattended.
    */
   queued?: string[];
+  /** Failed sends kept separately from a newer composer draft; never auto-sent. */
+  failed?: string[];
 };
 
 export type SessionDraftIdentity = {
@@ -60,6 +62,7 @@ type StoredDraft = {
   text: string;
   mode: PromptMode;
   queued: string[];
+  failed: string[];
   revision: number;
 };
 
@@ -119,8 +122,8 @@ const normalizedOpaqueId = (value: string) => encodeURIComponent(value.trim());
 const parseQueued = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.length > 0) : [];
 
-const isEmptyStoredDraft = (draft: Pick<StoredDraft, "text" | "mode" | "queued">) =>
-  !draft.text && draft.mode === "prompt" && draft.queued.length === 0;
+const isEmptyStoredDraft = (draft: Pick<StoredDraft, "text" | "mode" | "queued" | "failed">) =>
+  !draft.text && draft.mode === "prompt" && draft.queued.length === 0 && draft.failed.length === 0;
 
 export function cloudSessionDraftScope(identity: SessionDraftIdentity | null | undefined): string | null {
   const principalId = identity?.principalId.trim() ?? "";
@@ -165,8 +168,9 @@ function parseDocument(raw: string | null): DraftDocument {
       if (!key || !isRecord(value) || typeof value.text !== "string" || !isPromptMode(value.mode)) continue;
       if (typeof value.revision !== "number" || !Number.isSafeInteger(value.revision) || value.revision < 1) continue;
       const queued = parseQueued(value.queued);
-      if (isEmptyStoredDraft({ text: value.text, mode: value.mode, queued })) continue;
-      drafts[key] = { text: value.text, mode: value.mode, queued, revision: value.revision };
+      const failed = parseQueued(value.failed);
+      if (isEmptyStoredDraft({ text: value.text, mode: value.mode, queued, failed })) continue;
+      drafts[key] = { text: value.text, mode: value.mode, queued, failed, revision: value.revision };
       highestRevision = Math.max(highestRevision, value.revision);
     }
 
@@ -203,7 +207,9 @@ function sameStoredDraft(left: StoredDraft | undefined, right: StoredDraft | und
     && left.text === right.text
     && left.mode === right.mode
     && left.queued.length === right.queued.length
-    && left.queued.every((item, index) => item === right.queued[index]);
+    && left.queued.every((item, index) => item === right.queued[index])
+    && left.failed.length === right.failed.length
+    && left.failed.every((item, index) => item === right.failed[index]);
 }
 
 function documentFingerprint(document: DraftDocument) {
@@ -290,9 +296,11 @@ export function createSessionDraftStore(options: DraftStoreOptions) {
     if (!stored) return null;
     const existing = visibleSnapshots.get(stored);
     if (existing) return existing;
-    const snapshot: SessionDraftSnapshot = stored.queued.length > 0
-      ? { text: stored.text, mode: stored.mode, queued: [...stored.queued] }
-      : { text: stored.text, mode: stored.mode };
+    const snapshot: SessionDraftSnapshot = {
+      text: stored.text, mode: stored.mode,
+      ...(stored.queued.length ? { queued: [...stored.queued] } : {}),
+      ...(stored.failed.length ? { failed: [...stored.failed] } : {}),
+    };
     visibleSnapshots.set(stored, snapshot);
     return snapshot;
   };
@@ -357,8 +365,8 @@ export function createSessionDraftStore(options: DraftStoreOptions) {
     const key = sessionDraftScopeKey(scopeId, workspaceId, sessionId);
     if (!key) return { status: "unavailable", snapshot: null };
     return replaceEntry(key, (latest, revision) => {
-      if (!latest || latest.queued.length === 0) return null;
-      return { text: "", mode: "prompt", queued: latest.queued, revision };
+      if (!latest || latest.queued.length === 0 && latest.failed.length === 0) return null;
+      return { text: "", mode: "prompt", queued: latest.queued, failed: latest.failed, revision };
     });
   };
 
@@ -371,7 +379,7 @@ export function createSessionDraftStore(options: DraftStoreOptions) {
     const key = sessionDraftScopeKey(scopeId, workspaceId, sessionId);
     if (!key) return { status: "unavailable", snapshot: null };
     return replaceEntry(key, (latest, revision) => {
-      const entry = { text: snapshot.text, mode: snapshot.mode, queued: snapshot.queued ?? latest?.queued ?? [], revision };
+      const entry = { text: snapshot.text, mode: snapshot.mode, queued: snapshot.queued ?? latest?.queued ?? [], failed: snapshot.failed ?? latest?.failed ?? [], revision };
       return isEmptyStoredDraft(entry) ? null : entry;
     });
   };
@@ -381,7 +389,15 @@ export function createSessionDraftStore(options: DraftStoreOptions) {
   const saveQueued = (key: string, queued: readonly string[]): SessionDraftWriteResult => {
     if (!key) return { status: "unavailable", snapshot: null };
     return replaceEntry(key, (latest, revision) => {
-      const entry = { text: latest?.text ?? "", mode: latest?.mode ?? "prompt", queued: [...queued], revision };
+      const entry = { text: latest?.text ?? "", mode: latest?.mode ?? "prompt", queued: [...queued], failed: latest?.failed ?? [], revision };
+      return isEmptyStoredDraft(entry) ? null : entry;
+    });
+  };
+
+  const saveFailed = (key: string, failed: readonly string[]): SessionDraftWriteResult => {
+    if (!key) return { status: "unavailable", snapshot: null };
+    return replaceEntry(key, (latest, revision) => {
+      const entry = { text: latest?.text ?? "", mode: latest?.mode ?? "prompt", queued: latest?.queued ?? [], failed: [...failed], revision };
       return isEmptyStoredDraft(entry) ? null : entry;
     });
   };
@@ -402,7 +418,7 @@ export function createSessionDraftStore(options: DraftStoreOptions) {
     if (queue) {
       const draftKey = sessionDraftScopeKey(owner.scopeId, owner.workspaceId, owner.sessionId);
       const previous = drafts[draftKey];
-      const next = { text: previous?.text ?? "", mode: previous?.mode ?? "prompt", queued: queue.remaining, revision: latest.nextRevision } satisfies StoredDraft;
+      const next = { text: previous?.text ?? "", mode: previous?.mode ?? "prompt", queued: queue.remaining, failed: previous?.failed ?? [], revision: latest.nextRevision } satisfies StoredDraft;
       if (isEmptyStoredDraft(next)) delete drafts[draftKey]; else drafts[draftKey] = next;
     }
     return write({ ...latest, nextRevision: latest.nextRevision + 1, rejected, drafts }) ? "saved" : "unavailable";
@@ -434,6 +450,7 @@ export function createSessionDraftStore(options: DraftStoreOptions) {
     get,
     save,
     saveQueued,
+    saveFailed,
     clear,
     getRejected,
     hasMovedRejected: (owner: RejectedTurnOwner, id: string) => Boolean(loadCache().moved[JSON.stringify([rejectedTurnOwnerKey(owner), id])]),
@@ -508,6 +525,9 @@ export const clearSessionDraft = (
 export const saveSessionQueuedDrafts = (scopeKey: string, queued: readonly string[]) =>
   getBrowserStore()?.saveQueued(scopeKey, queued) ?? { status: "unavailable", snapshot: null };
 
+export const saveSessionFailedDrafts = (scopeKey: string, failed: readonly string[]) =>
+  getBrowserStore()?.saveFailed(scopeKey, failed) ?? { status: "unavailable", snapshot: null };
+
 export const saveRejectedTurn = (owner: RejectedTurnOwner, turn: RejectedTurn, queue?: { remaining: string[] }) =>
   getBrowserStore()?.saveRejected(owner, turn, queue) ?? "unavailable";
 export const beginRejectedTurnRecovery = (owner: RejectedTurnOwner, id: string) => getBrowserStore()?.beginRejectedRecovery(owner, id) ?? false;
@@ -542,7 +562,8 @@ export function useSessionDraftState(
     if (!isRecord(parsed) || typeof parsed.text !== "string" || !isPromptMode(parsed.mode)) return null;
     const queued = parseQueued(parsed.queued);
     const snapshot: SessionDraftSnapshot = { text: parsed.text, mode: parsed.mode };
-    return queued.length > 0 ? { ...snapshot, queued } : snapshot;
+    const failed = parseQueued(parsed.failed);
+    return { ...snapshot, ...(queued.length ? { queued } : {}), ...(failed.length ? { failed } : {}) };
   }, [serializedSnapshot]);
 
   const save = useCallback(

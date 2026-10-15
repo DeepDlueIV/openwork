@@ -24,7 +24,7 @@ import type { ComposerSettingsSection } from "@/react-app/domains/settings/libra
 import { type CloudImportedPlugin } from "@/app/cloud/import-state";
 import { createDenClient, readDenSettings } from "@/app/lib/den";
 import { denSettingsChangedEvent } from "@/app/lib/den-session-events";
-import { hasMovedRejectedTurn, rejectedTurnOwner, useRejectedTurns, useSessionDraftState } from "@/react-app/domains/session/sync/draft-store";
+import { saveSessionFailedDrafts, hasMovedRejectedTurn, rejectedTurnOwner, useRejectedTurns, useSessionDraftState } from "@/react-app/domains/session/sync/draft-store";
 import { mergeRejectedTurns, retainRejectedTurn } from "@/react-app/domains/session/sync/rejected-turn";
 import type {
   OpenworkServerClient,
@@ -924,6 +924,23 @@ function RevertedMessagesBanner(props: { hiddenCount: number; restoring: boolean
   );
 }
 
+// Persist text only, like ordinary drafts. Expand collapsed pastes before the
+// live clipboard objects disappear; attachment File objects remain in memory.
+function failedDraftTexts(drafts: readonly ComposerSessionState[]) {
+  return drafts.map((draft) => {
+    let text = draft.draft;
+    for (const part of draft.pasteParts) text = text.replaceAll(`[pasted text ${part.label}]`, part.text);
+    return persistableComposerDraftText(text);
+  }).filter((text) => text.length > 0);
+}
+
+function retainFailedDraft(owner: string, scopeKey: string, draft: ComposerSessionState) {
+  const state = useComposerStateStore.getState();
+  const failed = [...(state.failedDrafts[owner] ?? []), draft];
+  useComposerStateStore.setState({ failedDrafts: { ...state.failedDrafts, [owner]: failed } });
+  saveSessionFailedDrafts(scopeKey, failedDraftTexts(failed));
+}
+
 function revokeAttachmentPreview(attachment: { previewUrl?: string | undefined }) {
   if (!attachment.previewUrl) return;
   URL.revokeObjectURL(attachment.previewUrl);
@@ -1542,6 +1559,22 @@ export function SessionSurface(props: SessionSurfaceProps) {
   const pendingMessages = useComposerStateStore((state) => state.pendingMessages[sessionOwner]);
   const [submittedMessage, setSubmittedMessage] = useState<{ owner: string; id: string } | null>(null);
   const failedDraft = useComposerStateStore((state) => state.failedDrafts[sessionOwner]?.[0]);
+  const hydratedFailedDraftsRef = useRef<string | null>(null);
+  useLayoutEffect(() => {
+    if (!persistedDraftKey || hydratedDraftScopeKey !== persistedDraftKey) return;
+    const identity = JSON.stringify([persistedDraftKey, sessionOwner]);
+    if (hydratedFailedDraftsRef.current === identity) return;
+    hydratedFailedDraftsRef.current = identity;
+    const state = useComposerStateStore.getState();
+    // Keep live snapshots (including attachments) when returning to this pane.
+    if (state.failedDrafts[sessionOwner] !== undefined) return;
+    useComposerStateStore.setState({ failedDrafts: {
+      ...state.failedDrafts,
+      [sessionOwner]: (persistedDraftSnapshot?.failed ?? []).map((text) => ({
+        draft: text, attachments: [], mentions: {}, pasteParts: [], revertMessageId: null,
+      })),
+    } });
+  }, [hydratedDraftScopeKey, persistedDraftKey, persistedDraftSnapshot, sessionOwner]);
   const pendingReconciliation = useMemo(() => {
     const matchedIds = new Set<string>();
     const messageIdReplacements = new Map<string, string>();
@@ -2342,10 +2375,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
         useComposerStateStore.setState({ sessions: { ...state.sessions, [props.sessionId]: savedComposer } });
         props.onDraftChange(nextDraft);
       } else {
-        useComposerStateStore.setState({ failedDrafts: {
-          ...state.failedDrafts,
-          [sessionOwner]: [...(state.failedDrafts[sessionOwner] ?? []), savedComposer],
-        } });
+        retainFailedDraft(sessionOwner, persistedDraftKey, savedComposer);
       }
     };
     if (sentAttachments.length) setAttachmentsUploading(true);
@@ -2582,8 +2612,8 @@ export function SessionSurface(props: SessionSurfaceProps) {
         if (pending) {
           useComposerStateStore.setState({
             pendingMessages: { ...state.pendingMessages, [sessionOwner]: (state.pendingMessages[sessionOwner] ?? []).filter((item) => item !== pending) },
-            failedDrafts: { ...state.failedDrafts, [sessionOwner]: [...(state.failedDrafts[sessionOwner] ?? []), pending.composer] },
           });
+          retainFailedDraft(sessionOwner, persistedDraftKey, pending.composer);
         }
         if (notify) toast.error("The message was not accepted. Your unsent message is saved.");
       } else if (notify) {
@@ -2592,7 +2622,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
     } catch {
       if (notify) toast.error("Could not check acceptance. The message has not been resent; check again when connected.");
     }
-  }, [opencodeClient, props.sessionId, props.workspaceId, sessionOwner, setError]);
+  }, [opencodeClient, persistedDraftKey, props.sessionId, props.workspaceId, sessionOwner, setError]);
 
   const handleDismissError = useCallback(() => {
     setError(null);
@@ -3606,6 +3636,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
                 sessions: { ...state.sessions, [props.sessionId]: failedDraft },
                 failedDrafts,
               });
+              persistDraft({ text: failedDraftTexts([failedDraft])[0] ?? "", mode: "prompt", failed: failedDraftTexts(failedDrafts[sessionOwner]) });
             }}>Restore unsent message</button>
           </div>
         ) : null}

@@ -173,3 +173,42 @@ export async function queuedFollowUps(seed: Seed) {
     releaseQueuedReply: () => mock.releaseAgentReply(queued.prompt, 1),
     modelRequests: (promptMarker: string) => mock.agentRequests({ promptMarker }) };
 }
+
+/** A rejected transport send while the person writes a newer draft. The POST
+ * never reaches the engine, so reconciliation can prove it was not accepted. */
+export async function failedSendDraft(seed: Seed) {
+  const world = await existingSessionDraft(seed);
+  await seed.evalIn(world.app, () => {
+    const originalFetch = window.fetch;
+    let release = () => {};
+    const fault = { attempts: 0, release: () => release() };
+    window.__failedDraftSubmission = fault;
+    window.fetch = async (input, init) => {
+      const url = input instanceof Request ? input.url : String(input);
+      const method = init?.method ?? (input instanceof Request ? input.method : "GET");
+      if (method === "POST" && /\/session\/[^/]+\/prompt_async(?:\?|$)/.test(url)) {
+        fault.attempts += 1;
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, 60_000);
+          release = () => { clearTimeout(timer); resolve(); };
+        });
+        window.fetch = originalFetch;
+        return new Response(JSON.stringify({ name: "SubmissionUnavailable", message: "Submission unavailable" }), {
+          status: 503, headers: { "content-type": "application/json" },
+        });
+      }
+      return originalFetch(input, init);
+    };
+  });
+  return {
+    ...world,
+    submissionAttempts: () => seed.evalIn(world.app, () => window.__failedDraftSubmission?.attempts ?? 0),
+    rejectSubmission: () => seed.evalIn(world.app, () => window.__failedDraftSubmission?.release()),
+  };
+}
+
+declare global {
+  interface Window {
+    __failedDraftSubmission?: { attempts: number; release(): void };
+  }
+}

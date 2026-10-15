@@ -588,7 +588,7 @@ export function InstallScreen() {
                       </div>
 
                       <p className="m-0 max-w-xl text-[13px] leading-5 text-slate-500">
-                        Then choose Continue — sign-in finishes in this browser and sends you back to the app.
+                        Then choose Sign in — sign-in finishes in this browser and sends you back to the app.
                       </p>
 
                       {connectError ? <p className="m-0 text-sm text-red-600" role="alert">{connectError}</p> : null}

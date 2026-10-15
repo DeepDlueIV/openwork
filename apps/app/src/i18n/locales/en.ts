@@ -1391,6 +1391,7 @@ export default {
   "welcome.organization_server_dialog_title": "Connect to your organization's server",
   "welcome.organization_server_error": "Enter a valid http:// or https:// OpenWork server URL.",
   "welcome.organization_server_link": "Using OpenWork on-premises?",
+  "welcome.organization_server_saved": "Organization server saved. Sign in to continue.",
   "welcome.organization_server_url_label": "Organization server URL",
   "welcome.organization_server_url_placeholder": "https://openwork.yourcompany.com",
   "welcome.team_signin": "Joining a team? Sign in",

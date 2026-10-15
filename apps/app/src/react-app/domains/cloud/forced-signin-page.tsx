@@ -188,7 +188,10 @@ export function ForcedSigninPage({ developerMode }: ForcedSigninPageProps) {
     void exchangeGrant(grant, baseUrl);
   }, [authBusy, baseUrl, exchangeGrant]);
 
-  const applyBaseUrl = useCallback(async (value?: string) => {
+  const applyBaseUrl = useCallback(async (
+    value?: string,
+    savedMessage = t("den.status_base_url_updated"),
+  ) => {
     const serverOrigin = normalizeOrganizationServerInput(value ?? baseUrlDraft);
     const normalized = serverOrigin ? normalizeDenBaseUrl(serverOrigin) : null;
     if (!normalized) {
@@ -211,7 +214,7 @@ export function ForcedSigninPage({ developerMode }: ForcedSigninPageProps) {
       setBaseUrlDraft(persisted.baseUrl);
       clearDenSession({ includeBaseUrls: false });
       setAuthError(null);
-      setStatusMessage(t("den.status_base_url_updated"));
+      setStatusMessage(savedMessage);
       void desktopConfig.refresh();
       void denAuth.refresh();
       return true;
@@ -293,7 +296,7 @@ export function ForcedSigninPage({ developerMode }: ForcedSigninPageProps) {
       organizationServerError={baseUrlError}
       organizationServerUrl={baseUrl}
       onBaseUrlDraftInput={setBaseUrlDraft}
-      onOrganizationServerSave={applyBaseUrl}
+      onOrganizationServerSave={(url) => applyBaseUrl(url, t("welcome.organization_server_saved"))}
       onResetBaseUrl={() => setBaseUrlDraft(baseUrl)}
       onApplyBaseUrl={() => {
         void applyBaseUrl();

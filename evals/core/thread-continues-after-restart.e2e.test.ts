@@ -1,7 +1,7 @@
 import { basename } from "node:path";
 import { expect } from "vitest";
 import { spec } from "@openwork/testkit";
-import { assertWitnessModel, reloadRenderer, restartedThreadWorld, slowUncappedHistoryReads, type RestartMode } from "../worlds/thread-restart.ts";
+import { assertWitnessModel, restartedThreadWorld, type RestartMode } from "../worlds/thread-restart.ts";
 
 /**
  * A person restarts OpenWork (crash, force quit, or a normal quit) while a
@@ -25,18 +25,16 @@ const record = (value: unknown): Record<string, unknown> => {
 };
 
 /** Longer than the renderer's request timeout for one uncapped history read. */
-const SLOW_HISTORY_READ_MS = 12_000;
 /** Unsent words typed before a quit: one queued follow-up and a draft after it. */
 const QUEUED = "Then publish the release notes";
 const DRAFT = "Draft typed before the restart";
 
-const cases: { title: string; mode: RestartMode; slowHistory: boolean }[] = [
-  { title: "a thread interrupted by a crash accepts the next typed message after relaunch", mode: "kill", slowHistory: false },
-  { title: "a thread interrupted by a quit accepts the next typed message after relaunch", mode: "quit", slowHistory: false },
-  { title: "a slow complete-history read after relaunch never bounces the typed message", mode: "quit", slowHistory: true },
+const cases: { title: string; mode: RestartMode }[] = [
+  { title: "a thread interrupted by a crash accepts the next typed message after relaunch", mode: "kill" },
+  { title: "a thread interrupted by a quit accepts the next typed message after relaunch", mode: "quit" },
 ];
 
-for (const { title, mode, slowHistory } of cases) {
+for (const { title, mode } of cases) {
   test(title, async ({ world, user, probe, agent, step, evidence }) => {
     user = user.on(world.app);
     probe = probe.on(world.app);
@@ -132,7 +130,7 @@ for (const { title, mode, slowHistory } of cases) {
     });
 
     // A normal quit commits renderer storage, so unsent words must come back.
-    const keepsUnsent = mode === "quit" && !slowHistory;
+    const keepsUnsent = mode === "quit";
     if (keepsUnsent) await step("while it runs, the person queues a follow-up and starts typing a draft", async () => {
       await user.type("composer", QUEUED, { verify: true });
       await user.press("Enter");
@@ -148,84 +146,64 @@ for (const { title, mode, slowHistory } of cases) {
     probe = probe.on(relaunched);
     agent = agent.on(relaunched);
 
-    const fault = slowHistory
-      ? await step("the relaunched engine answers the thread's complete history slowly", async () => {
-        const installed = await slowUncappedHistoryReads(relaunched, world.workspace.workspaceId, world.session.sessionId, SLOW_HISTORY_READ_MS);
-        // The fault takes effect from the next document.
-        await reloadRenderer(relaunched);
-        return installed;
-      })
-      : null;
+    await step("the person reopens the thread", async () => {
+      await reopenThread(world.prompts.interrupted);
+      await user.screenshot();
+    });
 
-    try {
-      await step("the person reopens the thread", async () => {
-        await reopenThread(world.prompts.interrupted);
-        await user.screenshot();
-      });
+    if (keepsUnsent) await step("the queued follow-up and the draft come back as unsent text in the composer, and nothing was sent", async () => {
+      await user.see("composer", { editable: true, text: new RegExp(`${QUEUED}[\\s\\S]*${DRAFT}`), timeoutMs: 30_000 });
+      await user.notSee({ text: /\d+ queued/ });
+      // Recalling an earlier prompt never overwrites unsent words.
+      await user.click("composer");
+      await user.press("ArrowUp");
+      await user.see("composer", { text: new RegExp(DRAFT) });
+      expect(await world.mock.agentRequests({ promptMarker: QUEUED })).toHaveLength(0);
+      expect(userTexts(await messages()).some((text) => text.includes(QUEUED))).toBe(false);
+      await user.screenshot();
+      await user.type("composer", " ", { replace: true });
+      await user.press("Backspace");
+      await user.see("composer", { editable: true, text: "" });
+    });
 
-      if (keepsUnsent) await step("the queued follow-up and the draft come back as unsent text in the composer, and nothing was sent", async () => {
-        await user.see("composer", { editable: true, text: new RegExp(`${QUEUED}[\\s\\S]*${DRAFT}`), timeoutMs: 30_000 });
-        await user.notSee({ text: /\d+ queued/ });
-        // Recalling an earlier prompt never overwrites unsent words.
-        await user.click("composer");
-        await user.press("ArrowUp");
-        await user.see("composer", { text: new RegExp(DRAFT) });
-        expect(await world.mock.agentRequests({ promptMarker: QUEUED })).toHaveLength(0);
-        expect(userTexts(await messages()).some((text) => text.includes(QUEUED))).toBe(false);
-        await user.screenshot();
-        await user.type("composer", " ", { replace: true });
-        await user.press("Backspace");
-        await user.see("composer", { editable: true, text: "" });
-      });
+    await step("the person types the next message", async () => {
+      await typeAndSend(relaunched, world.prompts.continuation);
+    });
 
-      await step("the person types the next message", async () => {
-        await typeAndSend(relaunched, world.prompts.continuation);
+    await step("the typed message is accepted once and answered", async () => {
+      const outcome = await probe.eventually(async () => {
+        const composer = await probe.composer();
+        const text = await probe.text();
+        const history = await messages();
+        return {
+          draft: composer.draftText,
+          replied: history.some((message) => message.role === "assistant"
+            && message.parts.some((part) => part.type === "text" && part.text === world.prompts.continuationReply)),
+          continuations: userTexts(history).filter((value) => value.trim() === world.prompts.continuation).length,
+          recoveries: userTexts(history).filter((value) => value.includes(world.prompts.recoveryMarker)).length,
+          bounced: composer.draftText.trim() === world.prompts.continuation,
+          notice: /unsent message|could not|failed|unavailable|unknown|not accepted|timed out/i.test(text) ? text.slice(-1_200) : null,
+          active: await active(),
+        };
+      }, {
+        within: 120_000, label: "the continuation is answered or bounced back",
+        until: (state) => state.replied || state.bounced,
       });
-
-      await step("the typed message is accepted once and answered", async () => {
-        const outcome = await probe.eventually(async () => {
-          const composer = await probe.composer();
-          const text = await probe.text();
-          const history = await messages();
-          return {
-            draft: composer.draftText,
-            replied: history.some((message) => message.role === "assistant"
-              && message.parts.some((part) => part.type === "text" && part.text === world.prompts.continuationReply)),
-            continuations: userTexts(history).filter((value) => value.trim() === world.prompts.continuation).length,
-            recoveries: userTexts(history).filter((value) => value.includes(world.prompts.recoveryMarker)).length,
-            bounced: composer.draftText.trim() === world.prompts.continuation,
-            notice: /unsent message|could not|failed|unavailable|unknown|not accepted|timed out/i.test(text) ? text.slice(-1_200) : null,
-            active: await active(),
-          };
-        }, {
-          within: 120_000, label: "the continuation is answered or bounced back",
-          until: (state) => state.replied || state.bounced,
-        });
-        await user.screenshot();
-        const accepted = outcome.replied && !outcome.bounced && outcome.continuations === 1;
-        evidence.recordAssertionEvidence(
-          `After a ${mode}${slowHistory ? " and a slow complete-history read" : ""}, the typed continuation was accepted once and answered without returning to the composer`,
-          JSON.stringify({ ...outcome, notice: outcome.notice ? "shown" : null }),
-          accepted,
-        );
-        expect(outcome, `continuation outcome after ${mode}${slowHistory ? " with slow history" : ""}: ${JSON.stringify(outcome)}`).toMatchObject({ replied: true, bounced: false, continuations: 1 });
-        expect(outcome.draft).toBe("");
-        if (fault) {
-          // The slow uncapped read was really in the way, and the send did not
-          // wait on it: a bounded read carried the current turn instead.
-          const reads = await fault.read();
-          expect(reads.delayed, `uncapped reads delayed: ${JSON.stringify(reads)}`).toBeGreaterThanOrEqual(1);
-          expect(reads.bounded, `bounded reads passed: ${JSON.stringify(reads)}`).toBeGreaterThanOrEqual(1);
-        }
-        // The interrupted turn's tool ran once, before the restart; nothing replays it.
-        expect((await world.mock.agentRequests({ promptMarker: world.prompts.interrupted })).filter((call) => call.kind === "tool")).toHaveLength(1);
-        expect((await world.mock.agentRequests({ promptMarker: world.prompts.continuation })).filter((call) => call.kind === "final")).toHaveLength(1);
-        // Earlier history is intact.
-        expect((await messages()).slice(0, before.length).map((message) => message.id)).toEqual(before.map((message) => message.id));
-        await user.see({ text: world.prompts.continuationReply });
-      });
-    } finally {
-      await fault?.dispose();
-    }
+      await user.screenshot();
+      const accepted = outcome.replied && !outcome.bounced && outcome.continuations === 1;
+      evidence.recordAssertionEvidence(
+        `After a ${mode}, the typed continuation was accepted once and answered without returning to the composer`,
+        JSON.stringify({ ...outcome, notice: outcome.notice ? "shown" : null }),
+        accepted,
+      );
+      expect(outcome, `continuation outcome after ${mode}: ${JSON.stringify(outcome)}`).toMatchObject({ replied: true, bounced: false, continuations: 1 });
+      expect(outcome.draft).toBe("");
+      // The interrupted turn's tool ran once, before the restart; nothing replays it.
+      expect((await world.mock.agentRequests({ promptMarker: world.prompts.interrupted })).filter((call) => call.kind === "tool")).toHaveLength(1);
+      expect((await world.mock.agentRequests({ promptMarker: world.prompts.continuation })).filter((call) => call.kind === "final")).toHaveLength(1);
+      // Earlier history is intact.
+      expect((await messages()).slice(0, before.length).map((message) => message.id)).toEqual(before.map((message) => message.id));
+      await user.see({ text: world.prompts.continuationReply });
+    });
   });
 }

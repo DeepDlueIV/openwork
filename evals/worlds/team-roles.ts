@@ -25,7 +25,14 @@ function text(value: unknown, label: string): string {
   return value;
 }
 
-export async function teamRolesWorld(seed: Seed) {
+export interface TeamRolesOptions {
+  /** Shared roles on: one custom role can be given to several teams. */
+  sharedRoles?: boolean;
+  /** A private plugin, "Sales playbook", granted directly to Sales. */
+  salesPlugin?: boolean;
+}
+
+export async function teamRolesWorld(seed: Seed, options: TeamRolesOptions = {}) {
   const stamp = Date.now().toString(36);
   const den = await seed.den({
     env: { DEN_PLAN_GATING_ENABLED: "false", RESEND_API_KEY: "", STRIPE_SECRET_KEY: "" },
@@ -50,7 +57,7 @@ export async function teamRolesWorld(seed: Seed) {
 
   const flags = await seed.api(owner, `/v1/admin/organizations/${encodeURIComponent(orgId)}/capabilities`, {
     method: "PUT",
-    body: JSON.stringify({ capabilities: { permissions: true, teamRoles: true } }),
+    body: JSON.stringify({ capabilities: { permissions: true, teamRoles: true, ...(options.sharedRoles ? { sharedRoles: true } : {}) } }),
   });
   if (!flags.response.ok) throw new Error(`Turning on Permissions and Team roles failed: HTTP ${flags.response.status} ${flags.text.slice(0, 300)}`);
 
@@ -77,6 +84,21 @@ export async function teamRolesWorld(seed: Seed) {
   });
   if (engineeringSet.response.status !== 201) throw new Error(`Giving Engineering its custom role failed: HTTP ${engineeringSet.response.status} ${engineeringSet.text.slice(0, 300)}`);
 
+  let salesPlugin: { id: string; grantId: string } | null = null;
+  if (options.salesPlugin) {
+    const created = await seed.api(owner, "/v1/plugins", { method: "POST", headers: scope, body: JSON.stringify({
+      name: "Sales playbook", orgWide: false,
+      components: [{ type: "skill", input: { rawSourceText: "---\nname: playbook\ndescription: Summarize synthetic deal notes.\n---\nSummarize the supplied notes." } }],
+    }) });
+    const pluginId = text(isRecord(created.body) && isRecord(created.body.item) ? created.body.item.id : null, "Sales playbook id");
+    const granted = await seed.api(owner, `/v1/plugins/${pluginId}/access`, { method: "POST", headers: scope, body: JSON.stringify({ teamId: teams.sales, role: "viewer" }) });
+    if (!granted.response.ok) throw new Error(`Granting Sales the playbook failed: HTTP ${granted.response.status} ${granted.text.slice(0, 300)}`);
+    const grants = await seed.api(owner, `/v1/teams/${teams.sales}/plugin-access`, { headers: scope });
+    const items = isRecord(grants.body) && Array.isArray(grants.body.items) ? grants.body.items.filter(isRecord) : [];
+    const grantId = items.find((item) => isRecord(item.plugin) && item.plugin.id === pluginId && item.edge === "direct_team")?.grantId;
+    salesPlugin = { id: pluginId, grantId: text(grantId, "Sales playbook grant id") };
+  }
+
   const viewport = { width: 1280, height: 900 };
   const ownerWeb = await seed.web({ den, signedInAs: owner, startPath: "/dashboard", headless: true, viewport });
   const noraWeb = await seed.web({ den, signedInAs: nora, startPath: "/dashboard", headless: true, viewport });
@@ -93,6 +115,7 @@ export async function teamRolesWorld(seed: Seed) {
     ownerWeb,
     noraWeb,
     scope,
+    salesPlugin,
     /** Absolute Den Web URL for a dashboard path. */
     url(path: string): string {
       return new URL(path, den.ref.webUrl).toString();

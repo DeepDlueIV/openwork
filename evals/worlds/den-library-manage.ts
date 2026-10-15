@@ -39,7 +39,7 @@ const slackTools: MockMcpTool[] = [
  * answers, so the catalog's Slack entry points at a local mock that signs
  * people in and serves tools; no real provider is contacted.
  */
-export async function denLibraryManage(seed: Seed, ctx: { place: Place }, options: { samHasSlack?: boolean; asAdmin?: boolean; adminStartPath?: string } = {}) {
+export async function denLibraryManage(seed: Seed, ctx: { place: Place }, options: { samHasSlack?: boolean; asAdmin?: boolean; adminStartPath?: string; oauthBoundaries?: boolean } = {}) {
   if (ctx.place.kind !== "local") throw new Error("This world fixes a local proxy in front of den-api before boot; run it on the local lane.");
   const [apiPort, webPort] = await allocateFreePorts(2);
   const denApiUrl = `http://127.0.0.1:${apiPort}`;
@@ -61,6 +61,12 @@ export async function denLibraryManage(seed: Seed, ctx: { place: Place }, option
       keyed: seed.mock({ allowUnauthenticatedMcp: true, tools: slackTools }),
       // Signs people in through an OAuth app the admin registered with it.
       wiki: seed.mock({ tools: slackTools }),
+      // Callback and resource boundaries: a server that returns RFC 9207 `iss`
+      // on sign-in, and one that declares its protected resource on another site.
+      ...(options.oauthBoundaries ? {
+        issuer: seed.mock({ tools: slackTools, authorizationResponseIssuerSupported: true }),
+        foreignResource: seed.mock({ tools: slackTools, protectedResource: "https://mcp.example.com/mcp" }),
+      } : {}),
     },
   });
 
@@ -144,6 +150,8 @@ export async function denLibraryManage(seed: Seed, ctx: { place: Place }, option
     custom: den.mocks.custom,
     keyed,
     wiki,
+    /** Present only with `oauthBoundaries`: servers used to prove Den's OAuth client boundaries. */
+    oauthBoundaries: options.oauthBoundaries ? { issuer: den.mocks.issuer, foreignResource: den.mocks.foreignResource } : null,
     people,
     memberIds,
     teamIds,
@@ -199,7 +207,7 @@ export async function denLibraryManage(seed: Seed, ctx: { place: Place }, option
 export const denLibraryWithSamsSlack = (seed: Seed, ctx: { place: Place }) => denLibraryManage(seed, ctx, { samHasSlack: true });
 
 /** The same organization, with the admin signed in on Manage › Connectors. */
-export const denManageAsAdmin = (seed: Seed, ctx: { place: Place }) => denLibraryManage(seed, ctx, { asAdmin: true });
+export const denManageAsAdmin = (seed: Seed, ctx: { place: Place }) => denLibraryManage(seed, ctx, { asAdmin: true, oauthBoundaries: true });
 
 /** The same organization, with the admin signed in on Manage › Plugins. */
 export const denManagePluginsAsAdmin = (seed: Seed, ctx: { place: Place }) => denLibraryManage(seed, ctx, { asAdmin: true, adminStartPath: "/dashboard/plugins" });

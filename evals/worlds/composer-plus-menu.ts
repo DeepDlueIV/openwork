@@ -144,6 +144,19 @@ export async function plusMenuWeb(seed: Seed) {
         }, [name, "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGOwbvoGAAKvAbS3T615AAAAAElFTkSuQmCC"]));
         if (pasted !== true) throw new Error("The composer editor was not found for pasting an image");
       },
+      /** Pastes a tiny MP4 recording, as a clipboard video file reaches the composer. */
+      async pasteVideoIntoComposer(name: string) {
+        const pasted = await seed.evalIn(app, browserScript((fileName: string) => {
+          const editor = document.querySelector<HTMLElement>('[contenteditable="true"]');
+          if (!editor) return false;
+          editor.focus();
+          const transfer = new DataTransfer();
+          transfer.items.add(new File([new Uint8Array([0, 0, 0, 24, 102, 116, 121, 112])], fileName, { type: "video/mp4" }));
+          editor.dispatchEvent(new ClipboardEvent("paste", { bubbles: true, cancelable: true, clipboardData: transfer }));
+          return true;
+        }, [name]));
+        if (pasted !== true) throw new Error("The composer editor was not found for pasting a video");
+      },
       [Symbol.asyncDispose]: dispose,
     };
   } catch (error) { await dispose(); throw error; }

@@ -417,14 +417,36 @@ export async function abandonedQuestion(seed: Seed) {
 }
 
 /** Real provider errors and automatic recovery, without synthetic UI events. */
-export async function sessionProviderErrorRecovery(seed: Seed) {
+export async function sessionProviderErrorRecovery(seed: Seed, options: { terminalRejection?: boolean; retiredSavedModel?: boolean } = {}) {
   const prompt = "Prepare a short reliability summary.";
   const reply = "The reliability summary is ready.";
+  // Opt-in: a prompt the provider always refuses with a non-retryable 400 before any text.
+  const rejected = { prompt: "Summarize the rejected reliability report.", message: "The provider rejected this request before writing an answer." };
   const base = await splitPaneQuestions(seed, "session-provider-error-recovery", [{
     promptMarker: prompt, latestUserTurn: true, serverErrorAttempts: 2, finalReply: reply, steps: [],
-  }]);
+  }, ...(options.terminalRejection ? [{
+    promptMarker: rejected.prompt, latestUserTurn: true, terminalErrorMessage: rejected.message, finalReply: "Never served.", steps: [],
+  }] : [])]);
   const session = await seedSessionRetry(seed, base.app, { title: "Response recovery" });
-  return { ...base, session, prompt, reply };
+  // Opt-in: the person chose a model earlier that this provider has since dropped.
+  const models = { kept: { providerID: "split-send-mock", modelID: "split-send-model", name: "Split send model" }, retired: { providerID: "split-send-mock", modelID: "retired-model" } };
+  if (options.retiredSavedModel) {
+    const ref = `${models.retired.providerID}/${models.retired.modelID}`;
+    const saved = await seed.evalIn(base.app, browserScript((workspaceId, ref) => {
+      const raw = localStorage.getItem("openwork.preferences");
+      let preferences: Record<string, unknown> = {};
+      try { preferences = raw ? JSON.parse(raw) : {}; } catch { preferences = {}; }
+      const [providerID, modelID] = ref.split("/");
+      localStorage.setItem("openwork.preferences", JSON.stringify({ ...preferences, defaultModel: { providerID, modelID }, modelVariant: null }));
+      localStorage.setItem("openwork.defaultModel", ref);
+      localStorage.setItem("openwork.modelChoice.explicit", "1");
+      localStorage.removeItem("openwork.sessionModels." + workspaceId);
+      return localStorage.getItem("openwork.defaultModel");
+    }, [base.workspace.workspaceId, ref]));
+    if (saved !== ref) throw new Error(`Saving the retired default failed: ${String(saved)}`);
+    await reload(base.app);
+  }
+  return { ...base, session, prompt, reply, rejected, models };
 }
 
 /** Real native permissions and a provider retry, without synthetic UI events. */
@@ -1371,6 +1393,7 @@ export async function sessionErrorCard(seed: Seed) {
   return {
     app, workspace, session,
     seedStorageError: (kind: "disk-full" | "database-error", surface: "transcript" | "banner" = "transcript") => arrangeControl(seed, app, "eval.session_error.seed", { kind, surface }),
+    failSnapshot: () => failSessionSnapshot(seed, app),
   };
 }
 
@@ -1495,6 +1518,12 @@ export async function snapshotFailure(seed: Seed) {
   const workspace = await seed.workspace(app, workspacePath);
   const session = await seedSessionRetry(seed, app, { title: "Composer snapshot failure proof" });
   await arrangeControl(seed, app, "eval.chat_transcript.seed");
+  await failSessionSnapshot(seed, app);
+  return { app, workspace, session };
+}
+
+/** Put the open session's snapshot query into error, as a failed history read does. */
+async function failSessionSnapshot(seed: Seed, app: Surface) {
   const failureJson = await seed.evalIn(app, browserScript(async () => {
     const deadline = Date.now() + 30000;
     while (Date.now() < deadline) {
@@ -1511,7 +1540,6 @@ export async function snapshotFailure(seed: Seed) {
   if (!isRecord(failure) || failure.isError !== true) {
     throw new Error(`Session snapshot failure was not established: ${JSON.stringify(failure)}`);
   }
-  return { app, workspace, session };
 }
 
 /** More stored messages than OpenCode's `limit`-paged transcript read used to fetch. */
@@ -2076,11 +2104,27 @@ async function stoppingFeedbackFault(
   };
 }
 
-export async function unfinishedToolsWeb(seed: Seed) {
+export async function unfinishedToolsWeb(seed: Seed, options: { editRunning?: boolean } = {}) {
   const engine = resolveEvalEngine();
   const prompt = "Hold the native tool open for Stop feedback proof.";
   const warmup = { prompt: "Create the Stop feedback fixture.", reply: "Stop feedback fixture ready." };
+  // Opt-in turns whose answers stream one chunk and then hold, so a person can
+  // edit or queue behind a turn that is still running.
+  const editRunning = {
+    original: "Review the initial draft EDIT-RUNNING", partial: "Review in progress.", neverReleased: "Unfinished answer that must never show.",
+    edited: "Review the corrected draft EDIT-RUNNING", answer: "Corrected review is ready.",
+    held: "Keep this turn running EDIT-RUNNING", heldPartial: "Still working on it.", followup: "A later follow-up EDIT-RUNNING",
+  };
+  const held = (promptMarker: string, partial: string): MockAgentWorkload => ({
+    promptMarker, latestUserTurn: true, steps: [], finalReply: `${partial} ${editRunning.neverReleased}`,
+    finalReplyChunks: [`${partial} `, editRunning.neverReleased], finalReplyInitiallyReleasedChunks: 1,
+  });
   const base = await splitPaneQuestions(seed, "unfinished-tool-lifecycle", [
+    ...(options.editRunning ? [
+      held(editRunning.original, editRunning.partial),
+      { promptMarker: editRunning.edited, latestUserTurn: true, finalReply: editRunning.answer, steps: [] },
+      held(editRunning.held, editRunning.heldPartial),
+    ] : []),
     { promptMarker: warmup.prompt, latestUserTurn: true, finalReply: warmup.reply, steps: [] },
     {
       promptMarker: prompt,
@@ -2102,6 +2146,7 @@ export async function unfinishedToolsWeb(seed: Seed) {
     session,
     prompt,
     warmup,
+    editRunning,
     engine,
     startStopFault: () => stoppingFeedbackFault(seed, base.app, base.workspace.workspaceId, session.sessionId),
     nativeStatus: () => seed.evalIn(base.app, browserScript(async (statusPath, sessionId) => {

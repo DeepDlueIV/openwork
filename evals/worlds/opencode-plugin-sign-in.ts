@@ -4,7 +4,7 @@ import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { allocateFreePort, evaluateOnSurface, type Surface } from "@openwork/cdp";
 import { defaultDaytonaExec, execInSandbox, readSandboxRepoSourceReceipt, startScriptOnSandbox } from "@openwork/hosts";
-import type { Place, Seed } from "@openwork/env";
+import { createOrg, type Place, type Seed } from "@openwork/env";
 import { object, records, string, remoteSessionGateway } from "./fixtures/remote-session-gateway.ts";
 
 export { object, record, records, string } from "./fixtures/remote-session-gateway.ts";
@@ -230,6 +230,10 @@ export async function opencodePluginSignIn(seed: Seed, options: { remoteSessions
     return { verificationUrl: string(value.verificationUrl), userCode: string(value.userCode), finished, async stop() { await control("login-stop", { id }); } };
   }
   const gateway = remoteSessionGateway({ owner: { session: den.admin }, ...(den.members.other ? { other: { session: den.members.other } } : {}) });
+  // Another organization the same owner belongs to, created only when a spec
+  // first acts from it, so sign-in and the plugin's own token are unaffected.
+  let otherOrg: Awaited<ReturnType<typeof createOrg>> | null = null;
+  let otherOrgGateway: ReturnType<typeof remoteSessionGateway> | null = null;
   const cleanup = setup.move();
   return {
     den, web, organizationName, home, directory, fixtureProvenance, run, native, startLogin,
@@ -241,6 +245,14 @@ export async function opencodePluginSignIn(seed: Seed, options: { remoteSessions
     async nativeContext(sessionId: string) { return records(object(await native(`/api/session/${encodeURIComponent(sessionId)}/context`)).data); },
     async nativeInbox(sessionId: string) { return records(object(await native(`/api/session/${encodeURIComponent(sessionId)}/inbox`)).data); },
     remote: (action: "targets" | "create" | "read" | "list" | "send" | "stop", body: Record<string, unknown>, persona = "owner") => gateway.remote(persona, action, body),
+    /** The same remote-session MCP tools, called by the owner from a different organization. */
+    async remoteFromOtherOrg(action: "targets" | "create" | "read" | "list" | "send" | "stop", body: Record<string, unknown>) {
+      if (!otherOrgGateway) {
+        otherOrg = await createOrg(den, `${organizationName} elsewhere`);
+        otherOrgGateway = remoteSessionGateway({ otherOrg: { session: den.admin, organizationId: otherOrg.id } });
+      }
+      return otherOrgGateway.remote("otherOrg", action, body);
+    },
     searchRemote: () => gateway.call("owner", "search_capabilities", { query: "remote session targets registered computer", limit: 20 }),
     webAccess: () => gateway.api("owner", "/v1/billing/web"),
     automationRoute: () => gateway.api("owner", "/v1/automations"),
@@ -258,7 +270,9 @@ export async function opencodePluginSignIn(seed: Seed, options: { remoteSessions
       const witness = object(await control("token-witness"));
       return { injected: number(witness.injected), http429s: number(witness.http429s), authorizations: number(witness.authorizations), retriedPolls: number(witness.retriedPolls) };
     },
-    async [Symbol.asyncDispose]() { await cleanup.disposeAsync(); },
+    async [Symbol.asyncDispose]() {
+      try { await otherOrg?.[Symbol.asyncDispose](); } finally { await cleanup.disposeAsync(); }
+    },
   };
 }
 

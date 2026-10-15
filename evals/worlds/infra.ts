@@ -1,4 +1,8 @@
+import { spawn } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
 import { mkdir } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+import { eventually } from "@openwork/env";
 import type { Seed } from "@openwork/env";
 import {
   createDaytonaK3sCluster,
@@ -16,6 +20,64 @@ import { daytonaSandbox, desktop } from "@openwork/hosts";
 import { bootRemoteSession } from "./infra/remote-session.ts";
 import { bootCloudModelInfra } from "./infra/cloud-model-infra.ts";
 import { signIn as signInDen } from "@openwork/behaviors";
+
+/**
+ * Runs the real AI Gateway (ee/apps/gateway) from source on a loopback port
+ * against a Den scratch database, and stops it on dispose.
+ */
+export async function startLocalGatewayProcess(input: { port: number; databaseUrl: string; allowedOrigin: string }): Promise<AsyncDisposable & { baseUrl: string }> {
+  const child: ChildProcess = spawn("pnpm", ["--dir", "ee/apps/gateway", "exec", "tsx", "src/server.ts"], {
+    cwd: fileURLToPath(new URL("../..", import.meta.url)),
+    env: {
+      ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith("GATEWAY_") && !key.startsWith("INFERENCE_"))),
+      NODE_ENV: "test",
+      OPENWORK_DEV_MODE: "1",
+      NODE_OPTIONS: "--conditions=development",
+      GATEWAY_PORT: String(input.port),
+      GATEWAY_ENABLED: "true",
+      DATABASE_URL: input.databaseUrl,
+      DB_MODE: "mysql",
+      DEN_DB_ENCRYPTION_KEY: "local-dev-db-encryption-key-please-change-1234567890",
+      GATEWAY_WEBHOOK_SECRET: "litellm-eval-webhook-secret",
+      GATEWAY_PROXY_BASE_URL: `http://127.0.0.1:${input.port}`,
+      GATEWAY_PUBLIC_BASE_URL: `http://127.0.0.1:${input.port}`,
+      GATEWAY_EGRESS_ALLOWED_ORIGINS: input.allowedOrigin,
+      CORS_ORIGINS: "",
+      OPENROUTER_UPSTREAM_URL: "https://openrouter.ai/api/v1",
+      SENTRY_DSN: "",
+      SENTRY_LOG_LEVEL: "off",
+    },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  const logLines: string[] = [];
+  const capture = (chunk: Buffer) => {
+    for (const line of chunk.toString("utf8").split(/\r?\n/)) if (line.trim()) logLines.push(line);
+    if (logLines.length > 200) logLines.splice(0, logLines.length - 200);
+  };
+  child.stdout?.on("data", capture);
+  child.stderr?.on("data", capture);
+  const baseUrl = `http://127.0.0.1:${input.port}`;
+  const stop = async () => {
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    child.kill("SIGTERM");
+    const exited = await new Promise<boolean>((resolve) => {
+      const timer = setTimeout(() => resolve(false), 5_000);
+      child.once("exit", () => { clearTimeout(timer); resolve(true); });
+    });
+    if (!exited) child.kill("SIGKILL");
+  };
+  try {
+    await eventually(async () => {
+      if (child.exitCode !== null) throw new Error(`gateway exited with ${child.exitCode}. Log tail:\n${logLines.slice(-40).join("\n")}`);
+      const response = await fetch(`${baseUrl}/ready`, { signal: AbortSignal.timeout(5_000) });
+      return response.ok;
+    }, { within: 120_000, intervalMs: 1_000, label: `gateway /ready at ${baseUrl}` });
+  } catch (error) {
+    await stop();
+    throw new Error(`${error instanceof Error ? error.message : String(error)}\nLog tail:\n${logLines.slice(-40).join("\n")}`);
+  }
+  return { baseUrl, async [Symbol.asyncDispose]() { await stop(); } };
+}
 
 export async function emptyInfraWorld(_seed: Seed) {
   return {};

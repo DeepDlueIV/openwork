@@ -119,9 +119,28 @@ async function catalogTransportFaults(web: Surface, origin: string) {
   };
 }
 
-/** The ordinary owner/member world with read faults, and a real team to grant access to. */
-export async function aiGatewayCatalogStates(seed: Seed, context: { place: Place }) {
+/**
+ * The ordinary owner/member world with read faults, and a real team to grant access to.
+ *
+ * Option teammatePasswordSession (default off): the teammate also signs in to
+ * Den in their browser with their password, the way people do, so it holds
+ * their Den session cookie. OpenWork's gateway connect page checks that cookie
+ * before it sends anyone to AWS or Microsoft to sign in.
+ */
+export async function aiGatewayCatalogStates(seed: Seed, context: { place: Place }, options: { teammatePasswordSession?: boolean } = {}) {
   const world = await aiGatewayAdmin(seed, context);
+  if (options.teammatePasswordSession) {
+    const signedIn = await seed.api(world.teammate, "/api/auth/sign-in/email", {
+      method: "POST", body: JSON.stringify({ email: world.teammate.email, password: world.teammate.password }),
+    });
+    const sessionCookie = signedIn.response.headers.getSetCookie().find((value) => value.includes("session_token="))?.split(";")[0] ?? "";
+    const separator = sessionCookie.indexOf("=");
+    if (!signedIn.response.ok || separator < 1) throw new Error(`Could not sign the teammate in with their password: HTTP ${signedIn.response.status}`);
+    const applied = record(await world.memberWeb.client.send("Network.setCookie", {
+      name: sessionCookie.slice(0, separator), value: sessionCookie.slice(separator + 1), url: world.den.ref.webUrl, path: "/", httpOnly: true,
+    }));
+    if (applied.success !== true) throw new Error("Could not give the browser the teammate's Den session cookie.");
+  }
   const teammateOrg = record((await seed.api(world.teammate, "/v1/org")).body);
   const teammateId = String(record(teammateOrg.currentMember).id);
   const teamName = "Gateway Reviewers";

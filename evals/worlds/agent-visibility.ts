@@ -1,6 +1,7 @@
 import { mkdir, realpath, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { resolveEvalEngine, type Seed } from "@openwork/env";
+import { resolveEvalEngine, SkipError, type Seed } from "@openwork/env";
+import type { MockAgentWorkload } from "@openwork/labs";
 import { configureProvider } from "./chat.ts";
 
 /**
@@ -10,8 +11,29 @@ import { configureProvider } from "./chat.ts";
  * helper agent whose own step takes a while), a short private thought, and the
  * answer. Tool names follow each engine: v1 `bash`/`task`, v2 `shell`/`subagent`.
  */
-export async function agentVisibility(seed: Seed) {
+export async function agentVisibility(seed: Seed, options: { background?: boolean } = {}) {
   const engine = resolveEvalEngine();
+  // Only v2 runs helpers in the background: the parent turn ends while the
+  // helper keeps going, and the engine wakes the parent with the helper's text.
+  if (options.background && engine !== "v2") throw new SkipError("Background helpers only exist on OpenCode v2");
+  const background = {
+    prompt: "Start a helper in the background to compare the new screenshots with the designs, and tell me when it's done.",
+    started: "A helper is comparing the screenshots in the background. I'll tell you when it's done.",
+    helperMarker: "Compare every new screenshot with its design and list the differences.",
+    helperDone: "Screenshot comparison finished: 3 differences.",
+    quickQuestion: "While that runs, what's the capital of Portugal?",
+    quickAnswer: "Lisbon.",
+    wakeReply: "The helper finished: it found 3 differences between the screenshots and the designs.",
+  };
+  const backgroundWorkloads: MockAgentWorkload[] = options.background ? [
+    { promptMarker: background.prompt, latestUserTurn: true, finalReply: background.started, steps: [{ tool: "subagent", arguments: {
+      description: "Compare screenshots with the designs", prompt: background.helperMarker, agent: "general", background: true,
+    } }] },
+    { promptMarker: background.quickQuestion, latestUserTurn: true, finalReply: background.quickAnswer, steps: [] },
+    { promptMarker: background.helperDone, latestUserTurn: true, finalReply: background.wakeReply, steps: [] },
+    { promptMarker: background.helperMarker, latestUserTurn: true, steps: [], finalReply: `Comparing screenshots. ${background.helperDone}`,
+      finalReplyChunks: ["Comparing screenshots. ", background.helperDone], finalReplyInitiallyReleasedChunks: 1 },
+  ] : [];
   const dir = seed.tmpPath("agent-visibility");
   await mkdir(dir, { recursive: true });
   const workspacePath = await realpath(dir);
@@ -35,7 +57,7 @@ export async function agentVisibility(seed: Seed) {
   const followUp = "Also check whether the billing page has the same problem.";
 
   const app = await seed.appWeb({ name: "agent-visibility", workspacePath, mocks: {
-    agent: seed.mock({ isolatedProcessEnv: true, agentWorkloads: [{
+    agent: seed.mock({ isolatedProcessEnv: true, agentWorkloads: [...backgroundWorkloads, {
       promptMarker: prompt,
       latestUserTurn: true,
       finalReasoning: "The notes and the helper agree, so I can answer.",
@@ -100,7 +122,7 @@ export async function agentVisibility(seed: Seed) {
   };
 
   return {
-    app, workspace, session, engine, shell, prompt, answer, helperAnswer, followUp,
+    app, workspace, session, engine, shell, prompt, answer, helperAnswer, helperMarker, followUp,
     requests: () => mock.agentRequests({ promptMarker: prompt }),
     helperRequests: () => mock.agentRequests({ promptMarker: helperMarker }),
     followUpRequests: () => mock.agentRequests({ promptMarker: followUp }),
@@ -108,5 +130,10 @@ export async function agentVisibility(seed: Seed) {
     // until then the mock answers 404, so keep trying for a bounded time.
     releaseHelper: () => releaseWhenAsked(helperMarker),
     releaseAnswer: () => releaseWhenAsked(prompt),
+    background: {
+      ...background,
+      finishHelper: () => mock.releaseAgentReply(background.helperMarker),
+      helperState: () => mock.agentReplyState(background.helperMarker),
+    },
   };
 }

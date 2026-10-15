@@ -55,20 +55,32 @@ export async function secureKeysInChat(seed: Seed, context: { place: Place }) {
   /** A synthetic service-account key file; never a real credential. */
   const serviceAccount = JSON.stringify({ type: "service_account", project_id: "fixture-project", client_email: `fixture-${randomBytes(4).toString("hex")}@fixture-project.iam.gserviceaccount.com`, private_key: `-----BEGIN PRIVATE KEY-----\n${serviceAccountSentinel}\n-----END PRIVATE KEY-----\n`, token_uri: "https://oauth2.googleapis.com/token" });
   const fingerprint = (key: string) => createHash("sha256").update(key).digest("hex").slice(0, 12);
-  const wire: { method: string; identity: string; status: number }[] = [];
+  // `path` lets a step tell its own connection's traffic apart. Besides /mcp the
+  // witness serves /redirect/* (answers a valid key with a 307 to /followed/mcp)
+  // and /echo/* (answers tools/call with an error that repeats the key it got).
+  const wire: { method: string; identity: string; status: number; path: string }[] = [];
   const witness = createServer(async (request, response) => {
     const chunks: Buffer[] = [];
     for await (const chunk of request) chunks.push(Buffer.from(chunk));
     const body = Buffer.concat(chunks).toString();
     let method = request.method ?? "";
-    try { const parsed: unknown = body ? JSON.parse(body) : null; if (isRecord(parsed) && typeof parsed.method === "string") method = parsed.method; } catch { /* non-JSON */ }
+    let rpcId: unknown = null;
+    try { const parsed: unknown = body ? JSON.parse(body) : null; if (isRecord(parsed) && typeof parsed.method === "string") { method = parsed.method; rpcId = parsed.id ?? null; } } catch { /* non-JSON */ }
+    const path = request.url ?? "/";
     const key = request.headers.authorization?.replace(/^Bearer /, "") ?? "";
-    if (key !== keys.status) { wire.push({ method, identity: fingerprint(key), status: 401 }); response.writeHead(401).end(); return; }
+    if (path.startsWith("/followed")) { wire.push({ method, identity: fingerprint(key), status: 400, path }); response.writeHead(400).end(); return; }
+    if (key !== keys.status) { wire.push({ method, identity: fingerprint(key), status: 401, path }); response.writeHead(401).end(); return; }
+    if (path.startsWith("/redirect")) { wire.push({ method, identity: fingerprint(key), status: 307, path }); response.writeHead(307, { location: "/followed/mcp" }).end(); return; }
+    if (path.startsWith("/echo") && method === "tools/call") {
+      wire.push({ method, identity: fingerprint(key), status: 200, path });
+      response.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ jsonrpc: "2.0", id: rpcId, result: { isError: true, content: [{ type: "text", text: `403 forbidden Authorization: Bearer ${key}` }] } }));
+      return;
+    }
     const headers = new Headers();
     for (const [name, value] of Object.entries(request.headers)) if (value && !["host", "connection", "content-length", "authorization"].includes(name)) headers.set(name, Array.isArray(value) ? value.join(",") : value);
     try {
       const upstream = await fetch(den.mocks.status.mcpUrl, { method: request.method, headers, ...(body ? { body } : {}), signal: AbortSignal.timeout(10_000) });
-      wire.push({ method, identity: fingerprint(key), status: upstream.status });
+      wire.push({ method, identity: fingerprint(key), status: upstream.status, path });
       response.writeHead(upstream.status, Object.fromEntries(upstream.headers)).end(Buffer.from(await upstream.arrayBuffer()));
     } catch { response.writeHead(502).end(); }
   });

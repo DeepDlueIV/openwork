@@ -1,12 +1,12 @@
 ---
 name: write-a-spec
-description: Write or extend an E2E journey spec in evals/specs that proves a PR's change to a human reviewer. Use when a PR changes user-visible behaviour, when a reviewer asks "show me", or when the coverage decision says a journey is missing.
+description: Extend a core journey in evals/core or write a one-off proof in evals/proofs that proves a PR's change to a human reviewer. Use when a PR changes user-visible behaviour, when a reviewer asks "show me", or when the coverage decision says a journey is missing.
 ---
 
 # Skill: Write a Spec
 
-Every `evals/specs/**/*.e2e.test.ts` a PR adds or changes runs in CI on the PR
-head and is published as that PR's proof (private report + one PR comment).
+Every `evals/core/*.e2e.test.ts` or `evals/proofs/*.proof.test.ts` a PR adds or
+changes runs in CI on the PR head and is published as that PR's proof (private report + one PR comment).
 Write the spec for the person who will read that report in thirty seconds,
 not for the machine that runs it.
 
@@ -28,10 +28,10 @@ it decides the world you can build.
 
 | If the spec… | Name / tag | CI lane |
 | --- | --- | --- |
-| runs in a browser or local world with no secrets (default) | `evals/specs/<journey>.e2e.test.ts` | PR change proof, unprotected |
-| must boot the packaged desktop binary | `evals/specs/packaged-<journey>.e2e.test.ts` | packaged smoke runner |
+| protects a promise in `evals/promises.ts` (default: add a step) | `evals/core/<journey>.e2e.test.ts` | PR change proof, unprotected |
+| proves one change and nothing else | `evals/proofs/<journey>.proof.test.ts` | PR change proof, unprotected |
+| must boot the packaged desktop binary | `evals/core/packaged-<journey>.e2e.test.ts` | packaged smoke runner |
 | needs a reviewer to reopen the *running* browser at a screenshot | add `{ tags: ["checkpoints"] }` to the `test(...)` options | protected checkpoint lane on Freestyle |
-| needs Windows and a published installer | the existing `windows-published-preview` spec only | Daytona Windows, protected |
 
 Tag `checkpoints` only when a still image cannot show what the reviewer has to
 check: an open stream, a populated workspace to explore, a state that costs
@@ -49,11 +49,17 @@ reviewer would open, not every step. Run it locally with
   journey, not per PR; bug fixes add a step to the journey they escaped from.
 - The change is a pure function: write a colocated unit test, not evidence.
 - You would import `../../apps|packages|ee`, read source files, or spawn another
-  runner. That is a unit test in disguise; the boundary ratchet rejects it.
+  runner. That is a unit test in disguise; `pnpm --dir evals lint:specs`
+  rejects it and names the core journey to extend instead.
 
 No UI does not mean no spec. A server, proxy, or protocol bug gets a
-browser-less world (see `evals/specs/session-title-recovery.test.ts`); the
+browser-less world whose steps are the requests a real client makes; the
 steps still read as one person's before → after.
+
+Core journey or proof? Read `evals/promises.ts`. If your change touches a
+promise, add a step to its core journey (`core/`, title `PROMISE-ID: ...`).
+Otherwise write a one-off proof in `evals/proofs/*.proof.test.ts`: it runs on
+your PR and expires.
 
 ## The proof shape
 

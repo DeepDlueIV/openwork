@@ -2,8 +2,9 @@ import { queryDenDatabase, type Seed } from "@openwork/env";
 import { defaultDaytonaExec, execInSandbox } from "@openwork/hosts";
 import { enableOrganizationCapabilities } from "./organization-capabilities.ts";
 
-export async function orgModelAnalyticsWorld(seed: Seed) {
-  const den = await seed.den({ web: true, org: { name: "Analytics team" }, env: { DEN_ORG_MODE: "multi_org", DEN_PLAN_GATING_ENABLED: "false" } });
+export async function orgModelAnalyticsWorld(seed: Seed, options: { teammate?: boolean } = {}) {
+  // `teammate` adds a member to the analytics organization, for origin and key isolation checks. Off by default.
+  const den = await seed.den({ web: true, org: { name: "Analytics team", ...(options.teammate ? { members: { teammate: { name: "Taylor Teammate" } } } : {}) }, env: { DEN_ORG_MODE: "multi_org", DEN_PLAN_GATING_ENABLED: "false" } });
   await enableOrganizationCapabilities(seed, den.admin, { modelsAnalyticsUi: true });
   const web = await seed.web({ den, signedInAs: den.admin,
     startPath: "/dashboard/analytics", headless: true, viewport: { width: 1440, height: 1100 } });

@@ -76,11 +76,47 @@ PY`);
   if (!cookieDomain) throw new Error("The fixture requires the same shared-domain cookie topology as production");
   const appliedCookie = await web.client.send("Network.setCookie", { name: cookie.slice(0, separator), value: cookie.slice(separator + 1), domain: `.${cookieDomain.replace(/^\./, "")}`, path: "/", url: den.ref.webUrl, httpOnly: true, secure: true });
   if (record(appliedCookie).success !== true) throw new Error("Could not apply the fixture session cookie");
+  const extraBrowsers: { stop(): Promise<void> }[] = [];
+  let heldNonce: string | null = null;
   return {
     den, web, originalName, testUrl, issuer, organizationId, pluginId, skillId, otherEmail: `other@${domain}`,
+    inviteeEmail: `invitee@${domain}`,
     async [Symbol.asyncDispose]() {
+      for (const extra of extraBrowsers) await extra.stop();
       await web.stop();
       await host.stop();
+    },
+    /** A signed-out browser on the same host, opened at url. */
+    async freshBrowser(url: string): Promise<Surface> {
+      const extra = await chrome({ host, name: `reauth-fresh-${extraBrowsers.length + 1}`, startUrl: url, headless: true });
+      extraBrowsers.push(extra);
+      await setViewport(extra, { width: 1440, height: 1000, deviceScaleFactor: 1 });
+      return extra;
+    },
+    /** The owner invites email with role, as Members › Add member does; returns the emailed join link. */
+    async invite(email: string, role: "member" | "admin") {
+      const result = await seed.api(den.admin, "/v1/invitations", { method: "POST", headers, body: JSON.stringify({ email, role }) });
+      if (!result.response.ok) throw new Error(`Invitation: ${result.response.status} ${result.text}`);
+      return new URL(`/join-org?invite=${encodeURIComponent(text(record(result.body).inviteToken))}`, den.ref.webUrl).toString();
+    },
+    /** The owner's member list for email: joined roles and pending invitation count. */
+    async membership(email: string) {
+      const result = await seed.api(den.admin, "/v1/org", { headers });
+      const body = record(result.body);
+      const list = (value: unknown) => (Array.isArray(value) ? value.filter(isRecord) : []);
+      const roles = list(body.members).filter((member) => member.joinedAt && isRecord(member.user) && member.user.email === email).map((member) => String(member.role));
+      const pending = list(body.invitations).filter((invite) => invite.email === email && invite.status === "pending").length;
+      return { roles, pending };
+    },
+    /** Fault injection: remember the open dialog's nonce so a completion can arrive after the person cancels. */
+    async holdLateCompletion() {
+      const nonce = await evaluate(web.client, browserScript(() => document.querySelector<HTMLElement>("[data-reauth-nonce]")?.dataset.reauthNonce ?? null, []));
+      if (typeof nonce !== "string") throw new Error("Expected the current dialog nonce");
+      heldNonce = nonce;
+    },
+    async sendLateCompletion() {
+      if (!heldNonce) throw new Error("No held completion");
+      await this.sendCompletion("stale", heldNonce);
     },
     async enable() {
       const result = await seed.api(den.admin, "/v1/sso/enable", { method: "POST", headers, body: "{}" });

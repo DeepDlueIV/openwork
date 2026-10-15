@@ -9,7 +9,6 @@ on:
       - evals/packages/test-evidence/**
       - evals/scripts/publish-review*.mjs
       - evals/scripts/pr-proof*.mjs
-      - evals/specs/*review*.test.ts
       - evals/worlds/*review*.ts
       - .github/scripts/pr-proof*.mjs
       - .github/scripts/internal-proof-contributor*.mjs
@@ -63,9 +62,5 @@ jobs:
       - run: |
           pnpm --filter @openwork/review-app... --filter @openwork/world... --filter @openwork/types... install --frozen-lockfile --ignore-scripts
           pnpm --dir evals install --frozen-lockfile --ignore-scripts
-      - name: Build and verify the existing review journey
-        env:
-          OPENWORK_EVAL_REVIEW: "1"
-        run: |
-          pnpm --filter @openwork/review-app build
-          pnpm evals:pr specs/evidence-review.test.ts
+      - name: Build the review app
+        run: pnpm --filter @openwork/review-app build

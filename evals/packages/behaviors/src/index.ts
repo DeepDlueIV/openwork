@@ -13,9 +13,23 @@ export * from "./models.ts";
 export * from "./skills.ts";
 export * from "./sessions.ts";
 export * from "./workflows.ts";
+export * from "./permissions.ts";
 
 export * from "./live-openai.ts";
 
 export { observeText, textProgressFailures } from "./text-observation.ts";
 export * from "./typing.ts";
 export { observeSidebarExpansion, readSidebarOverflow } from "./sidebar-observation.ts";
+export * from "./api-keys.ts";
+export * from "./identity.ts";
+export * from "./mcp-oauth.ts";
+export * from "./audit.ts";
+export * from "./infra.ts";
+export * from "./core-chat-journeys.ts";
+export * from "./core-packaged-journeys.ts";
+export * from "./core-gateway-journeys.ts";
+export * from "./core-library-journeys.ts";
+export * from "./core-mcp-journeys.ts";
+export * from "./core-agent-journeys.ts";
+export * from "./core-apps-journeys.ts";
+export * from "./core-access-journeys.ts";

@@ -840,7 +840,7 @@
           "key": {
             "type": "string",
             "enum": [
-              "mcpOAuthDomainRecovery",
+              "mcpOauthDomainRecovery",
               "memberListToolbars",
               "appBuildProgress",
               "modelsAnalyticsUi",
@@ -1040,7 +1040,7 @@
                 "capabilities": {
                   "type": "object",
                   "properties": {
-                    "mcpOAuthDomainRecovery": {
+                    "mcpOauthDomainRecovery": {
                       "type": "boolean"
                     },
                     "memberListToolbars": {
@@ -1126,7 +1126,7 @@
                     }
                   },
                   "required": [
-                    "mcpOAuthDomainRecovery",
+                    "mcpOauthDomainRecovery",
                     "memberListToolbars",
                     "appBuildProgress",
                     "modelsAnalyticsUi",
@@ -1158,7 +1158,7 @@
                 "featureStates": {
                   "type": "object",
                   "properties": {
-                    "mcpOAuthDomainRecovery": {
+                    "mcpOauthDomainRecovery": {
                       "type": "object",
                       "properties": {
                         "enabled": {
@@ -2616,7 +2616,7 @@
                     }
                   },
                   "required": [
-                    "mcpOAuthDomainRecovery",
+                    "mcpOauthDomainRecovery",
                     "memberListToolbars",
                     "appBuildProgress",
                     "modelsAnalyticsUi",
@@ -3015,7 +3015,7 @@
                 "capabilities": {
                   "type": "object",
                   "properties": {
-                    "mcpOAuthDomainRecovery": {
+                    "mcpOauthDomainRecovery": {
                       "type": "boolean"
                     },
                     "memberListToolbars": {
@@ -3101,7 +3101,7 @@
                     }
                   },
                   "required": [
-                    "mcpOAuthDomainRecovery",
+                    "mcpOauthDomainRecovery",
                     "memberListToolbars",
                     "appBuildProgress",
                     "modelsAnalyticsUi",
@@ -3133,7 +3133,7 @@
                 "featureStates": {
                   "type": "object",
                   "properties": {
-                    "mcpOAuthDomainRecovery": {
+                    "mcpOauthDomainRecovery": {
                       "type": "object",
                       "properties": {
                         "enabled": {
@@ -4591,7 +4591,7 @@
                     }
                   },
                   "required": [
-                    "mcpOAuthDomainRecovery",
+                    "mcpOauthDomainRecovery",
                     "memberListToolbars",
                     "appBuildProgress",
                     "modelsAnalyticsUi",
@@ -27550,7 +27550,7 @@
                     "capabilities": {
                       "type": "object",
                       "properties": {
-                        "mcpOAuthDomainRecovery": {
+                        "mcpOauthDomainRecovery": {
                           "type": "boolean"
                         },
                         "memberListToolbars": {
@@ -27636,7 +27636,7 @@
                         }
                       },
                       "required": [
-                        "mcpOAuthDomainRecovery",
+                        "mcpOauthDomainRecovery",
                         "memberListToolbars",
                         "appBuildProgress",
                         "modelsAnalyticsUi",
@@ -27668,7 +27668,7 @@
                     "featureStates": {
                       "type": "object",
                       "properties": {
-                        "mcpOAuthDomainRecovery": {
+                        "mcpOauthDomainRecovery": {
                           "type": "object",
                           "properties": {
                             "enabled": {
@@ -29126,7 +29126,7 @@
                         }
                       },
                       "required": [
-                        "mcpOAuthDomainRecovery",
+                        "mcpOauthDomainRecovery",
                         "memberListToolbars",
                         "appBuildProgress",
                         "modelsAnalyticsUi",
@@ -29270,7 +29270,7 @@
                     "capabilities": {
                       "type": "object",
                       "properties": {
-                        "mcpOAuthDomainRecovery": {
+                        "mcpOauthDomainRecovery": {
                           "type": "boolean"
                         },
                         "memberListToolbars": {
@@ -29356,7 +29356,7 @@
                         }
                       },
                       "required": [
-                        "mcpOAuthDomainRecovery",
+                        "mcpOauthDomainRecovery",
                         "memberListToolbars",
                         "appBuildProgress",
                         "modelsAnalyticsUi",
@@ -29388,7 +29388,7 @@
                     "featureStates": {
                       "type": "object",
                       "properties": {
-                        "mcpOAuthDomainRecovery": {
+                        "mcpOauthDomainRecovery": {
                           "type": "object",
                           "properties": {
                             "enabled": {
@@ -30846,7 +30846,7 @@
                         }
                       },
                       "required": [
-                        "mcpOAuthDomainRecovery",
+                        "mcpOauthDomainRecovery",
                         "memberListToolbars",
                         "appBuildProgress",
                         "modelsAnalyticsUi",

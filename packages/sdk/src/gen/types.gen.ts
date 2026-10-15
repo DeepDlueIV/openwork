@@ -163,7 +163,7 @@ export type NotFoundError = {
 
 export type AdminFeature = {
   key:
-    | "mcpOAuthDomainRecovery"
+    | "mcpOauthDomainRecovery"
     | "memberListToolbars"
     | "appBuildProgress"
     | "modelsAnalyticsUi"
@@ -227,7 +227,7 @@ export type AdminUsersPageResponse = {
 export type AdminOrganizationsPageResponse = {
   organizations: Array<{
     capabilities: {
-      mcpOAuthDomainRecovery: boolean;
+      mcpOauthDomainRecovery: boolean;
       memberListToolbars: boolean;
       appBuildProgress: boolean;
       modelsAnalyticsUi: boolean;
@@ -264,7 +264,7 @@ export type AdminOrganizationsPageResponse = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates: {
-      mcpOAuthDomainRecovery: {
+      mcpOauthDomainRecovery: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -561,7 +561,7 @@ export type AdminOverviewResponse = {
   }>;
   organizations: Array<{
     capabilities: {
-      mcpOAuthDomainRecovery: boolean;
+      mcpOauthDomainRecovery: boolean;
       memberListToolbars: boolean;
       appBuildProgress: boolean;
       modelsAnalyticsUi: boolean;
@@ -598,7 +598,7 @@ export type AdminOverviewResponse = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates: {
-      mcpOAuthDomainRecovery: {
+      mcpOauthDomainRecovery: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6617,7 +6617,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
    */
   200: {
     capabilities: {
-      mcpOAuthDomainRecovery: boolean;
+      mcpOauthDomainRecovery: boolean;
       memberListToolbars: boolean;
       appBuildProgress: boolean;
       modelsAnalyticsUi: boolean;
@@ -6654,7 +6654,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates: {
-      mcpOAuthDomainRecovery: {
+      mcpOauthDomainRecovery: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6939,7 +6939,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       id: string;
     };
     capabilities: {
-      mcpOAuthDomainRecovery: boolean;
+      mcpOauthDomainRecovery: boolean;
       memberListToolbars: boolean;
       appBuildProgress: boolean;
       modelsAnalyticsUi: boolean;
@@ -6976,7 +6976,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates: {
-      mcpOAuthDomainRecovery: {
+      mcpOauthDomainRecovery: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;

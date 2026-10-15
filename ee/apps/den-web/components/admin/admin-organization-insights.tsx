@@ -8,7 +8,7 @@ import { AdminRankingChart, AdminUsageChart } from "./admin-usage-chart";
 const count = (value: number) => new Intl.NumberFormat().format(value);
 const percent = (value: number) => new Intl.NumberFormat(undefined, { style: "percent", maximumFractionDigits: 1 }).format(value);
 const usd = (value: number) => new Intl.NumberFormat(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 4 }).format(value / 1_000_000);
-type Totals = Report["insights"]["current"];
+type Totals = Pick<Report["insights"]["current"], "costMicroUsd" | "unpricedRequests">;
 function Cost({ data }: { data: Totals }) {
   return <span>{data.costMicroUsd === 0 && data.unpricedRequests !== 0 ? "Unknown" : usd(data.costMicroUsd)}{data.unpricedRequests !== 0 && data.costMicroUsd > 0 ? <span className="ml-1 text-xs text-amber-800">(partial)</span> : null}</span>;
 }

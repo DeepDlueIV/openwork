@@ -287,12 +287,13 @@ export async function readAdminOrganizationInsights(organizationId: typeof Gatew
     .groupBy(sources.seriesId).having(sql`sum(${sources.requestCount}) > 0`).orderBy(desc(sql`sum(${sources.requestCount})`), asc(sources.seriesId)).limit(8).as("insight_people")
   const snapshot = periods.unionAll(daily).unionAll(db.select().from(people)).as("insight_snapshot")
   const rows = await db.with(sources).select().from(snapshot)
-  const parse = (row: Omit<typeof rows[number], "id" | "kind">) => ({
+  const parseUsage = (row: Omit<typeof rows[number], "id" | "kind" | "activeMembers">) => ({
     requests: safeCount(row.requests), tokens: safeCount(row.tokens), costMicroUsd: safeCount(row.costMicroUsd),
     unreportedRequests: row.unreportedRequests === null ? null : safeCount(row.unreportedRequests),
     unpricedRequests: row.unpricedRequests === null ? null : safeCount(row.unpricedRequests),
-    activeMembers: safeCount(row.activeMembers), successfulRequests: safeCount(row.successfulRequests), lastActiveDay: row.lastActiveDay,
+    successfulRequests: safeCount(row.successfulRequests), lastActiveDay: row.lastActiveDay,
   })
+  const parse = (row: Omit<typeof rows[number], "id" | "kind">) => ({ ...parseUsage(row), activeMembers: safeCount(row.activeMembers) })
   const zero = { requests: 0, tokens: 0, costMicroUsd: 0, unreportedRequests: 0, unpricedRequests: 0, activeMembers: 0, successfulRequests: 0, lastActiveDay: null }
   const currentRow = rows.find((row) => row.kind === "period" && row.id === "current")
   const previousRow = rows.find((row) => row.kind === "period" && row.id === "previous")
@@ -313,7 +314,7 @@ export async function readAdminOrganizationInsights(organizationId: typeof Gatew
     current: currentRow ? parse(currentRow) : zero, previous: previousRow ? parse(previousRow) : zero,
     daily: Array.from({ length: 30 }, (_, index) => { const date = day(from + index * DAY_MS); return { date, ...(dailyRows.get(date) ?? zero) } }),
     people: top.map((row) => { const member = members.find((member) => member.id === row.id); return { memberId: row.id, userId: member?.userId ?? null, name: member?.name ?? null, email: member?.email ?? null, currentMember: Boolean(member?.userId && !member.removedAt && !member.isSetupAgent), ...parse(row) } }),
-    models: modelRows.map((row) => { const model = modelIdentityParts(row.id); return { id: row.id, name: model.model ?? "Unreported model", provider: model.family === "openwork" ? OPENWORK_MODELS_LABEL : model.family, ...parse({ ...row, activeMembers: "0" }) } }),
+    models: modelRows.map((row) => { const model = modelIdentityParts(row.id); return { id: row.id, name: model.model ?? "Unreported model", provider: model.family === "openwork" ? OPENWORK_MODELS_LABEL : model.family, ...parseUsage(row) } }),
   }
 }
 

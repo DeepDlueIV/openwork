@@ -646,7 +646,6 @@ export type AdminOrganizationInsights = {
       costMicroUsd: number;
       unreportedRequests: number | null;
       unpricedRequests: number | null;
-      activeMembers: number;
       successfulRequests: number;
       lastActiveDay: string | null;
       id: string;

@@ -1882,11 +1882,6 @@
                         }
                       ]
                     },
-                    "activeMembers": {
-                      "type": "integer",
-                      "minimum": 0,
-                      "maximum": 9007199254740991
-                    },
                     "successfulRequests": {
                       "type": "integer",
                       "minimum": 0,
@@ -1918,7 +1913,6 @@
                     "costMicroUsd",
                     "unreportedRequests",
                     "unpricedRequests",
-                    "activeMembers",
                     "successfulRequests",
                     "lastActiveDay",
                     "id",

@@ -49,7 +49,7 @@ export const adminOrganizationInsightsSchema = adminOrganizationDetailSchema.ext
     current: insightTotals, previous: insightTotals,
     daily: z.array(insightTotals.extend({ date: z.string() })).length(30),
     people: z.array(insightTotals.extend({ memberId: z.string(), userId: z.string().nullable(), name: z.string().nullable(), email: z.string().nullable(), currentMember: z.boolean() })).max(8),
-    models: z.array(insightTotals.extend({ id: z.string(), name: z.string(), provider: z.string() })).max(8),
+    models: z.array(insightTotals.omit({ activeMembers: true }).extend({ id: z.string(), name: z.string(), provider: z.string() })).max(8),
   }),
 }).meta({ ref: "AdminOrganizationInsights" })
 export type AdminOrganizationInsights = z.infer<typeof adminOrganizationInsightsSchema>

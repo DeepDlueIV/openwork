@@ -9,7 +9,6 @@ const specs = new Set([
   "agent-connection-journey.e2e.test.ts",
   "secure-keys-in-chat.e2e.test.ts",
   "agent-permissions.e2e.test.ts",
-  "remote-session-subagents.proof.test.ts",
 ]);
 
 const v2Only = new Set([

@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { adminOrganizationDetailSchema, adminOrganizationUsageSchema, type AdminOrganizationDetail, type AdminOrganizationUsage, type AdminOrganizationUsageTotals } from "@openwork/types/den/admin-organization";
+import { lazy, Suspense, useEffect, useState } from "react";
+import { adminOrganizationDetailSchema, adminOrganizationInsightsSchema, adminOrganizationUsageSchema, type AdminOrganizationDetail, type AdminOrganizationInsights as InsightReport, type AdminOrganizationUsage, type AdminOrganizationUsageTotals } from "@openwork/types/den/admin-organization";
 import { DenButton } from "../../app/(den)/_components/ui/button";
 import { DenInput } from "../../app/(den)/_components/ui/input";
 import { DenTable, type DenTableColumn } from "../../app/(den)/_components/ui/table";
@@ -12,7 +12,9 @@ import { ADMIN_LIST_PAGE_SIZE, useAdminListLocation } from "./admin-list-locatio
 import { requestAdmin, withStoredBearer, type AdminResult } from "./admin-request";
 import { useAdminSessionCookie } from "./admin-shell";
 
-type PageData = AdminOrganizationDetail & { usage?: AdminOrganizationUsage["usage"] };
+const AdminOrganizationInsights = lazy(() => import("./admin-organization-insights").then((module) => ({ default: module.AdminOrganizationInsights })));
+
+type PageData = AdminOrganizationDetail & { usage?: AdminOrganizationUsage["usage"]; insights?: InsightReport["insights"] };
 type PageState = AdminResult<PageData> | { access: "checking" };
 type Member = AdminOrganizationDetail["members"][number];
 const zeroUsage: AdminOrganizationUsageTotals = { requests: 0, tokens: 0, costMicroUsd: 0, unreportedRequests: 0, unpricedRequests: 0 };
@@ -26,7 +28,7 @@ function Coverage({ totals }: { totals: AdminOrganizationUsageTotals }) {
   return <p className="mt-1 text-xs text-gray-500">{totals.unreportedRequests === null ? "Token coverage unknown" : `${requests(totals.unreportedRequests)} without reported tokens`}; {totals.unpricedRequests === null ? "price coverage unknown" : `${requests(totals.unpricedRequests)} without a recorded price`}.</p>;
 }
 
-export function AdminOrganizationPage({ organizationId, section }: { organizationId: string; section: "members" | "usage" }) {
+export function AdminOrganizationPage({ organizationId, section }: { organizationId: string; section: "members" | "usage" | "insights" }) {
   const hasSessionCookie = useAdminSessionCookie();
   const { search, draftSearch, page, offset, setSearch, setPage, organizationsHref } = useAdminListLocation();
   const [state, setState] = useState<PageState>(() => hasSessionCookie ? { access: "checking" } : { access: "signed-out", message: "" });
@@ -51,10 +53,10 @@ export function AdminOrganizationPage({ organizationId, section }: { organizatio
       setState((current) => result.access === "error" && current.access === "ready" ? current : result);
     };
     const timeout = window.setTimeout(() => {
-      const query = new URLSearchParams({ limit: String(ADMIN_LIST_PAGE_SIZE), offset: String(offset) });
-      if (search.trim()) query.set("search", search.trim());
-      const schema = section === "usage" ? adminOrganizationUsageSchema : adminOrganizationDetailSchema;
-      void requestAdmin<PageData>(`/v1/admin/organizations/${encodeURIComponent(organizationId)}${section === "usage" ? "/usage" : ""}?${query}`, (payload) => {
+      const query = new URLSearchParams({ limit: section === "insights" ? "1" : String(ADMIN_LIST_PAGE_SIZE), offset: section === "insights" ? "0" : String(offset) });
+      if (search.trim() && section !== "insights") query.set("search", search.trim());
+      const schema = section === "insights" ? adminOrganizationInsightsSchema : section === "usage" ? adminOrganizationUsageSchema : adminOrganizationDetailSchema;
+      void requestAdmin<PageData>(`/v1/admin/organizations/${encodeURIComponent(organizationId)}${section === "members" ? "" : `/${section}`}?${query}`, (payload) => {
         const result = schema.safeParse(payload);
         return result.success ? result.data : null;
       }, controller.signal).then((result) => {
@@ -76,8 +78,8 @@ export function AdminOrganizationPage({ organizationId, section }: { organizatio
   const breadcrumbs = <AdminBreadcrumbs items={[
     { id: "admin", label: "Admin", href: "/admin" },
     { id: "organizations", label: "Organizations", href: organizationsHref },
-    { id: "organization", label: organizationName, href: section === "usage" ? `${base}${suffix}` : undefined },
-    ...(section === "usage" ? [{ id: "usage", label: "Usage" }] : []),
+    { id: "organization", label: organizationName, href: section !== "members" ? `${base}${suffix}` : undefined },
+    ...(section !== "members" ? [{ id: section, label: section === "usage" ? "Usage" : "Insights" }] : []),
   ]} />;
 
   if (state.access !== "ready") {
@@ -131,6 +133,7 @@ export function AdminOrganizationPage({ organizationId, section }: { organizatio
         <nav aria-label="Organization sections" className="mt-5 flex gap-5">
           <Link href={`${base}${suffix}`} prefetch={false} aria-current={section === "members" ? "page" : undefined} className={`border-b-2 px-1 py-2 text-sm font-medium ${section === "members" ? "border-slate-900 text-slate-950" : "border-transparent text-slate-500 hover:text-slate-950"}`}>Members</Link>
           <Link href={`${base}/usage${suffix}`} prefetch={false} aria-current={section === "usage" ? "page" : undefined} className={`border-b-2 px-1 py-2 text-sm font-medium ${section === "usage" ? "border-slate-900 text-slate-950" : "border-transparent text-slate-500 hover:text-slate-950"}`}>Usage</Link>
+          <Link href={`${base}/insights${suffix}`} prefetch={false} aria-current={section === "insights" ? "page" : undefined} className={`border-b-2 px-1 py-2 text-sm font-medium ${section === "insights" ? "border-slate-900 text-slate-950" : "border-transparent text-slate-500 hover:text-slate-950"}`}>Insights</Link>
         </nav>
       </header>
 
@@ -146,7 +149,8 @@ export function AdminOrganizationPage({ organizationId, section }: { organizatio
         {usage.totals.requests === 0 ? <p className="mt-4 text-sm text-gray-500">No recorded gateway requests in this period.</p> : null}
       </section> : null}
 
-      <div className="py-5">
+      {data.insights ? <Suspense fallback={<p role="status" className="py-6 text-sm text-slate-500">Loading insights charts…</p>}><AdminOrganizationInsights organization={organization} insights={data.insights} /></Suspense> : null}
+      {section !== "insights" ?       <div className="py-5">
         <h2 className="text-sm font-semibold text-gray-900">{section === "usage" ? "Usage by member" : "Members"}</h2>
         <div className="mt-4 flex flex-wrap items-end justify-between gap-3">
           <label className="grid w-full max-w-md gap-2 text-sm text-gray-600">Search members<DenInput aria-label="Search members" maxLength={160} value={draftSearch} onChange={(event) => setSearch(event.target.value)} placeholder="Name, email, or role" /></label>
@@ -158,7 +162,7 @@ export function AdminOrganizationPage({ organizationId, section }: { organizatio
         <p className="my-4 text-xs text-gray-500">Page {Math.floor(data.page.offset / ADMIN_LIST_PAGE_SIZE) + 1} · {count(data.page.total)} matching members</p>
         <DenTable columns={columns} rows={data.members} getRowKey={(member) => member.id} density="compact" emptyLabel={search ? "No matching members. Try another name, email, or role." : "No active members in this organization."} />
         <p className="mt-5 text-xs text-gray-500">Updated {new Date(data.generatedAt).toLocaleString()}</p>
-      </div>
+      </div> : null}
     </section>
     </>
   );

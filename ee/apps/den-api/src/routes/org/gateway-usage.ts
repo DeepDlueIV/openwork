@@ -180,6 +180,7 @@ function gatewayUsageSources(organizationId: typeof GatewayProviderTable.$inferS
   const sources = db.$with("usage_sources").as(db.select({
     ...rawDimensions,
     requestCount: sql<string>`count(*)`.as("request_count"),
+    successfulRequests: sql<string>`sum(case when ${raw.outcome} = 'ok' then 1 else 0 end)`.as("successful_requests"),
     successfulUnreportedRequests: sql<string | null>`sum(case when ${raw.outcome} = 'ok' and ${raw.total_tokens} is null then 1 else 0 end)`.as("uncountable_ok"),
     upstreamErrorUnreportedRequests: sql<string | null>`sum(case when ${raw.outcome} = 'upstream_error' and ${raw.total_tokens} is null then 1 else 0 end)`.as("uncountable_upstream_error"),
     unreachableUnreportedRequests: sql<string | null>`sum(case when ${raw.outcome} = 'upstream_unreachable' and ${raw.total_tokens} is null then 1 else 0 end)`.as("uncountable_upstream_unreachable"),
@@ -196,6 +197,7 @@ function gatewayUsageSources(organizationId: typeof GatewayProviderTable.$inferS
   )).groupBy(rawDimensions.date, rawDimensions.seriesId, rawDimensions.filterId).unionAll(db.select({
     ...rollupDimensions,
     requestCount: sql<string>`sum(${rollup.request_count})`.as("request_count"),
+    successfulRequests: sql<string>`sum(${rollup.ok_count})`.as("successful_requests"),
     successfulUnreportedRequests: sql<string | null>`case when count(${successfulUnreportedRequestsRollup}) = count(*) then sum(${successfulUnreportedRequestsRollup}) else null end`.as("uncountable_ok"),
     upstreamErrorUnreportedRequests: sql<string | null>`case when count(${upstreamErrorUnreportedRequestsRollup}) = count(*) then sum(${upstreamErrorUnreportedRequestsRollup}) else null end`.as("uncountable_upstream_error"),
     unreachableUnreportedRequests: sql<string | null>`case when count(${unreachableUnreportedRequestsRollup}) = count(*) then sum(${unreachableUnreportedRequestsRollup}) else null end`.as("uncountable_upstream_unreachable"),
@@ -253,6 +255,65 @@ export async function readAdminGatewayDashboard(now = new Date()) {
       return { date, ...(dailyRows.get(date) ?? { requests: 0, tokens: 0, costMicroUsd: 0, unreportedRequests: 0, unpricedRequests: 0 }) }
     }),
     organizations: top.map((row) => ({ id: row.id, name: names.find((name) => name.id === row.id)?.name ?? "Deleted organization", ...parse(row) })),
+  }
+}
+
+/** Organization insights stay bounded to two 30-day periods and eight leaders.
+ * Current-member adoption excludes removed/setup identities; accounting totals
+ * continue to include their historical usage. No prompts or task text are read. */
+export async function readAdminOrganizationInsights(organizationId: typeof GatewayProviderTable.$inferSelect.organization_id, now = new Date()) {
+  const today = Math.floor(now.getTime() / DAY_MS) * DAY_MS
+  const from = today - 29 * DAY_MS
+  const previousFrom = from - 30 * DAY_MS
+  const day = (timestamp: number) => new Date(timestamp).toISOString().slice(0, 10)
+  const sources = gatewayUsageSources(organizationId, { groupBy: "person", days: 60, filterIds: [] }, previousFrom / 1000, (today + DAY_MS) / 1000)
+  const current = sql`${sources.date} >= ${day(from)}`
+  const currentMember = sql`${MemberTable.id} is not null and ${MemberTable.userId} is not null and ${MemberTable.removedAt} is null and ${MemberTable.isSetupAgent} = false`
+  const scope = and(eq(MemberTable.organizationId, organizationId), sql`${MemberTable.id} = ${sources.seriesId}`)
+  const totals = {
+    requests: sql<string>`coalesce(sum(${sources.requestCount}), 0)`.as("requests"),
+    tokens: sql<string>`coalesce(sum(${sources.totalTokens}), 0)`.as("tokens"),
+    costMicroUsd: sql<string>`coalesce(sum(${sources.totalCostMicroUsd}), 0)`.as("cost_micro_usd"),
+    unreportedRequests: sql<string | null>`case when count(${sources.unreportedRequests}) = count(*) then coalesce(sum(${sources.unreportedRequests}), 0) else null end`.as("unreported"),
+    unpricedRequests: sql<string | null>`case when count(${sources.unpricedRequests}) = count(*) then coalesce(sum(${sources.unpricedRequests}), 0) else null end`.as("unpriced"),
+    activeMembers: sql<string>`count(distinct case when ${currentMember} and ${sources.requestCount} > 0 then ${sources.seriesId} end)`.as("active_members"),
+    successfulRequests: sql<string>`coalesce(sum(${sources.successfulRequests}), 0)`.as("successful_requests"),
+    lastActiveDay: sql<string | null>`max(case when ${sources.requestCount} > 0 then ${sources.date} end)`.as("last_active_day"),
+  }
+  const period = sql<string>`case when ${current} then 'current' else 'previous' end`
+  const periods = db.select({ kind: sql<string>`'period'`.as("kind"), id: period.as("id"), ...totals }).from(sources).leftJoin(MemberTable, scope).groupBy(period)
+  const daily = db.select({ kind: sql<string>`'day'`.as("kind"), id: sql<string>`${sources.date}`.as("id"), ...totals }).from(sources).leftJoin(MemberTable, scope).where(current).groupBy(sources.date)
+  const people = db.select({ kind: sql<string>`'person'`.as("kind"), id: sql<string>`${sources.seriesId}`.as("id"), ...totals }).from(sources).leftJoin(MemberTable, scope).where(current)
+    .groupBy(sources.seriesId).having(sql`sum(${sources.requestCount}) > 0`).orderBy(desc(sql`sum(${sources.requestCount})`), asc(sources.seriesId)).limit(8).as("insight_people")
+  const snapshot = periods.unionAll(daily).unionAll(db.select().from(people)).as("insight_snapshot")
+  const rows = await db.with(sources).select().from(snapshot)
+  const parse = (row: Omit<typeof rows[number], "id" | "kind">) => ({
+    requests: safeCount(row.requests), tokens: safeCount(row.tokens), costMicroUsd: safeCount(row.costMicroUsd),
+    unreportedRequests: row.unreportedRequests === null ? null : safeCount(row.unreportedRequests),
+    unpricedRequests: row.unpricedRequests === null ? null : safeCount(row.unpricedRequests),
+    activeMembers: safeCount(row.activeMembers), successfulRequests: safeCount(row.successfulRequests), lastActiveDay: row.lastActiveDay,
+  })
+  const zero = { requests: 0, tokens: 0, costMicroUsd: 0, unreportedRequests: 0, unpricedRequests: 0, activeMembers: 0, successfulRequests: 0, lastActiveDay: null }
+  const currentRow = rows.find((row) => row.kind === "period" && row.id === "current")
+  const previousRow = rows.find((row) => row.kind === "period" && row.id === "previous")
+  const dailyRows = new Map(rows.filter((row) => row.kind === "day").map((row) => [row.id, parse(row)]))
+  const top = rows.filter((row) => row.kind === "person").sort((a, b) => safeCount(b.requests) - safeCount(a.requests) || a.id.localeCompare(b.id))
+  const members = top.length ? await db.select({ id: MemberTable.id, userId: MemberTable.userId, name: AuthUserTable.name, email: AuthUserTable.email, removedAt: MemberTable.removedAt, isSetupAgent: MemberTable.isSetupAgent })
+    .from(MemberTable).leftJoin(AuthUserTable, eq(MemberTable.userId, AuthUserTable.id)).where(and(eq(MemberTable.organizationId, organizationId), sql`${MemberTable.id} in (${sql.join(top.map((row) => sql`${row.id}`), sql`, `)})`)) : []
+  const modelSources = gatewayUsageSources(organizationId, { groupBy: "model", days: 30, filterIds: [] }, from / 1000, (today + DAY_MS) / 1000)
+  const modelRows = await db.with(modelSources).select({
+    id: modelSources.seriesId,
+    requests: sql<string>`sum(${modelSources.requestCount})`, tokens: sql<string>`sum(${modelSources.totalTokens})`, costMicroUsd: sql<string>`sum(${modelSources.totalCostMicroUsd})`,
+    unreportedRequests: sql<string | null>`case when count(${modelSources.unreportedRequests}) = count(*) then sum(${modelSources.unreportedRequests}) else null end`,
+    unpricedRequests: sql<string | null>`case when count(${modelSources.unpricedRequests}) = count(*) then sum(${modelSources.unpricedRequests}) else null end`,
+    successfulRequests: sql<string>`sum(${modelSources.successfulRequests})`, lastActiveDay: sql<string | null>`max(case when ${modelSources.requestCount} > 0 then ${modelSources.date} end)`,
+  }).from(modelSources).groupBy(modelSources.seriesId).having(sql`sum(${modelSources.requestCount}) > 0`).orderBy(desc(sql`sum(${modelSources.requestCount})`), asc(modelSources.seriesId)).limit(8)
+  return {
+    from: day(from), to: day(today), previousFrom: day(previousFrom), previousTo: day(from - DAY_MS),
+    current: currentRow ? parse(currentRow) : zero, previous: previousRow ? parse(previousRow) : zero,
+    daily: Array.from({ length: 30 }, (_, index) => { const date = day(from + index * DAY_MS); return { date, ...(dailyRows.get(date) ?? zero) } }),
+    people: top.map((row) => { const member = members.find((member) => member.id === row.id); return { memberId: row.id, userId: member?.userId ?? null, name: member?.name ?? null, email: member?.email ?? null, currentMember: Boolean(member?.userId && !member.removedAt && !member.isSetupAgent), ...parse(row) } }),
+    models: modelRows.map((row) => { const model = modelIdentityParts(row.id); return { id: row.id, name: model.model ?? "Unreported model", provider: model.family === "openwork" ? OPENWORK_MODELS_LABEL : model.family, ...parse({ ...row, activeMembers: "0" }) } }),
   }
 }
 

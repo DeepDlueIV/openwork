@@ -240,6 +240,422 @@ export type AdminOrganizationUsage = {
   };
 };
 
+export type AdminOrganizationInsights = {
+  organization: {
+    id: string;
+    name: string;
+    slug: string | null;
+    createdAt: string;
+    planTier: string;
+    seatLimit: number;
+    memberCount: number;
+  };
+  members: Array<{
+    id: string;
+    userId: string | null;
+    name: string | null;
+    email: string | null;
+    role: string;
+    joinedAt: string | null;
+  }>;
+  page: {
+    limit: number;
+    offset: number;
+    search: string;
+    total: number;
+    returned: number;
+    hasMore: boolean;
+    durationMs: number;
+  };
+  generatedAt: string;
+  insights: {
+    from: string;
+    to: string;
+    previousFrom: string;
+    previousTo: string;
+    current: {
+      requests: number;
+      tokens: number;
+      costMicroUsd: number;
+      unreportedRequests: number | null;
+      unpricedRequests: number | null;
+      activeMembers: number;
+      successfulRequests: number;
+      lastActiveDay: string | null;
+    };
+    previous: {
+      requests: number;
+      tokens: number;
+      costMicroUsd: number;
+      unreportedRequests: number | null;
+      unpricedRequests: number | null;
+      activeMembers: number;
+      successfulRequests: number;
+      lastActiveDay: string | null;
+    };
+    daily: [
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+    ];
+    people: Array<{
+      requests: number;
+      tokens: number;
+      costMicroUsd: number;
+      unreportedRequests: number | null;
+      unpricedRequests: number | null;
+      activeMembers: number;
+      successfulRequests: number;
+      lastActiveDay: string | null;
+      memberId: string;
+      userId: string | null;
+      name: string | null;
+      email: string | null;
+      currentMember: boolean;
+    }>;
+    models: Array<{
+      requests: number;
+      tokens: number;
+      costMicroUsd: number;
+      unreportedRequests: number | null;
+      unpricedRequests: number | null;
+      activeMembers: number;
+      successfulRequests: number;
+      lastActiveDay: string | null;
+      id: string;
+      name: string;
+      provider: string;
+    }>;
+  };
+};
+
 export type AdminDashboard = {
   from: string;
   to: string;
@@ -6291,6 +6707,51 @@ export type GetV1AdminOrganizationsByOrganizationIdUsageResponses = {
 
 export type GetV1AdminOrganizationsByOrganizationIdUsageResponse =
   GetV1AdminOrganizationsByOrganizationIdUsageResponses[keyof GetV1AdminOrganizationsByOrganizationIdUsageResponses];
+
+export type GetV1AdminOrganizationsByOrganizationIdInsightsData = {
+  body?: never;
+  path: {
+    organizationId: string;
+  };
+  query?: {
+    search?: string;
+    limit?: string;
+    offset?: string;
+  };
+  url: "/v1/admin/organizations/{organizationId}/insights";
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdInsightsErrors = {
+  /**
+   * Invalid organization id or pagination query.
+   */
+  400: InvalidRequestError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Platform admin access required.
+   */
+  403: ForbiddenError;
+  /**
+   * Organization not found.
+   */
+  404: NotFoundError;
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdInsightsError =
+  GetV1AdminOrganizationsByOrganizationIdInsightsErrors[keyof GetV1AdminOrganizationsByOrganizationIdInsightsErrors];
+
+export type GetV1AdminOrganizationsByOrganizationIdInsightsResponses = {
+  /**
+   * Organization detail returned.
+   */
+  200: AdminOrganizationInsights;
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdInsightsResponse =
+  GetV1AdminOrganizationsByOrganizationIdInsightsResponses[keyof GetV1AdminOrganizationsByOrganizationIdInsightsResponses];
 
 export type GetV1AdminDashboardData = {
   body?: never;

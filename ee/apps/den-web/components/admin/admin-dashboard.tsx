@@ -1,12 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { adminDashboardSchema, type AdminDashboard as Dashboard, type AdminOrganizationUsageTotals } from "@openwork/types/den/admin-organization";
 import { DenButton, buttonVariants } from "../../app/(den)/_components/ui/button";
-import { DenSelect } from "../../app/(den)/_components/ui/select";
 import { DenTable, type DenTableColumn } from "../../app/(den)/_components/ui/table";
 import { requestAdmin } from "./admin-request";
+
+const AdminUsageChart = lazy(() => import("./admin-usage-chart").then((module) => ({ default: module.AdminUsageChart })));
 
 const count = (value: number) => new Intl.NumberFormat().format(value);
 const compact = (value: number) => new Intl.NumberFormat(undefined, { notation: "compact", maximumFractionDigits: 1 }).format(value);
@@ -29,13 +30,7 @@ function Metric({ label, value, detail, href, testId }: { label: string; value: 
   </div>;
 }
 
-type ChartMetric = "requests" | "tokens" | "costMicroUsd";
 function UsageChart({ data }: { data: Dashboard }) {
-  const [metric, setMetric] = useState<ChartMetric>("requests");
-  const label = metric === "requests" ? "Requests" : metric === "tokens" ? "Reported tokens" : "Recorded cost";
-  const format = metric === "costMicroUsd" ? usd : compact;
-  const ceiling = Math.max(1, ...data.daily.map((day) => day[metric]));
-  const points = data.daily.map((day, index) => `${index * 720 / 29},${150 - (day[metric] / ceiling) * 140}`).join(" ");
   const columns: DenTableColumn<Dashboard["daily"][number]>[] = [
     { key: "date", header: "Date (UTC)", render: (day) => day.date },
     { key: "requests", header: "Requests", align: "right", render: (day) => count(day.requests) },
@@ -43,23 +38,7 @@ function UsageChart({ data }: { data: Dashboard }) {
     { key: "cost", header: "Recorded cost", align: "right", render: recordedCost },
   ];
   return <section aria-label="AI usage trend" className="min-w-0 border-b border-slate-200 py-6">
-    <div className="flex flex-wrap items-center justify-between gap-3">
-      <h2 className="text-sm font-semibold text-slate-950">AI usage</h2>
-      <DenSelect aria-label="Chart metric" value={metric} onChange={(event) => setMetric(event.target.value === "tokens" ? "tokens" : event.target.value === "costMicroUsd" ? "costMicroUsd" : "requests")} className="w-auto text-xs">
-        <option value="requests">Requests</option><option value="tokens">Reported tokens</option><option value="costMicroUsd">Recorded cost</option>
-      </DenSelect>
-    </div>
-    <div className="mt-4 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3" data-testid="admin-dashboard-chart">
-      <div aria-hidden="true" className="flex h-44 flex-col justify-between py-2 text-right text-xs tabular-nums text-slate-500">
-        {[1, 0.5, 0].map((fraction) => <span key={fraction}>{format(ceiling * fraction)}</span>)}
-      </div>
-      <svg data-testid={`admin-dashboard-chart-${metric}`} viewBox="0 0 720 160" preserveAspectRatio="none" role="img" aria-label={`${label} from ${data.from} to ${data.to} UTC`} className="h-44 w-full">
-        <title>{label} over the last 30 days</title>
-        {[0, 0.5, 1].map((fraction) => <line key={fraction} x1="0" x2="720" y1={150 - fraction * 140} y2={150 - fraction * 140} className="stroke-slate-100" />)}
-        <polyline points={points} fill="none" strokeWidth="2" vectorEffect="non-scaling-stroke" className="stroke-slate-800" strokeLinejoin="round" />
-      </svg>
-      <div className="col-start-2 mt-2 flex justify-between text-xs text-slate-500"><span>{data.from}</span><span>{data.to}</span></div>
-    </div>
+    <Suspense fallback={<div className="h-72" aria-busy="true" aria-label="Loading usage chart" />}><AdminUsageChart daily={data.daily} /></Suspense>
     {data.totals.requests === 0 ? <p className="text-sm text-slate-500">No recorded gateway requests in this period.</p> : null}
     <Coverage totals={data.totals} />
     <details className="mt-4 text-xs text-slate-600">
@@ -94,7 +73,7 @@ export function AdminDashboard({ totalOrganizations, totalUsers, refreshKey, onA
     return () => controller.abort();
   }, [attempt, onAccessDenied, refreshKey]);
   const organizations: DenTableColumn<Dashboard["organizations"][number]>[] = [
-    { key: "organization", header: "Organization", render: (org) => <Link href={`/admin/organizations/${encodeURIComponent(org.id)}/usage`} prefetch={false} className="font-medium text-slate-950 hover:underline">{org.name}</Link> },
+    { key: "organization", header: "Organization", render: (org) => <Link href={`/admin/organizations/${encodeURIComponent(org.id)}/insights`} prefetch={false} className="font-medium text-slate-950 hover:underline">{org.name}</Link> },
     { key: "requests", header: "Requests", align: "right", render: (org) => count(org.requests) },
     { key: "tokens", header: "Reported tokens", align: "right", render: (org) => compact(org.tokens) },
     { key: "cost", header: "Recorded cost", align: "right", render: (org) => <span>{recordedCost(org)}{org.unpricedRequests !== 0 ? <span className="ml-1 text-xs text-amber-800" title="Some prices are missing or coverage is unknown">(partial)</span> : null}</span> },

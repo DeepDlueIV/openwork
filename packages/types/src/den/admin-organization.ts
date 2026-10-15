@@ -39,3 +39,17 @@ export const adminDashboardSchema = z.object({
   organizations: z.array(adminOrganizationUsageTotalsSchema.extend({ id: z.string(), name: z.string() })).max(8),
 }).meta({ ref: "AdminDashboard" })
 export type AdminDashboard = z.infer<typeof adminDashboardSchema>
+
+const insightTotals = adminOrganizationUsageTotalsSchema.extend({
+  activeMembers: count, successfulRequests: count, lastActiveDay: z.string().nullable(),
+})
+export const adminOrganizationInsightsSchema = adminOrganizationDetailSchema.extend({
+  insights: z.object({
+    from: z.string(), to: z.string(), previousFrom: z.string(), previousTo: z.string(),
+    current: insightTotals, previous: insightTotals,
+    daily: z.array(insightTotals.extend({ date: z.string() })).length(30),
+    people: z.array(insightTotals.extend({ memberId: z.string(), userId: z.string().nullable(), name: z.string().nullable(), email: z.string().nullable(), currentMember: z.boolean() })).max(8),
+    models: z.array(insightTotals.extend({ id: z.string(), name: z.string(), provider: z.string() })).max(8),
+  }),
+}).meta({ ref: "AdminOrganizationInsights" })
+export type AdminOrganizationInsights = z.infer<typeof adminOrganizationInsightsSchema>

@@ -1,5 +1,5 @@
 import { queryDenDatabase, type Seed } from "@openwork/env";
-import { adminDashboardSchema, adminOrganizationDetailSchema, adminOrganizationUsageSchema } from "@openwork/types/den/admin-organization";
+import { adminDashboardSchema, adminOrganizationDetailSchema, adminOrganizationInsightsSchema, adminOrganizationUsageSchema } from "@openwork/types/den/admin-organization";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -60,6 +60,10 @@ export async function adminOverviewWorld(seed: Seed) {
   await insertRaw(5, organizationId, unpricedId, 20, null);
   await queryDenDatabase(databaseUrl, "INSERT INTO gateway_usage_rollups (id, granularity, bucket_start, dimension_key, organization_id, org_membership_id, route, protocol, upstream_provider_id, request_count, ok_count, total_tokens, total_tokens_count, cost_micro_usd, cost_count) VALUES (?, 'day', DATE_SUB(UTC_DATE(), INTERVAL 3 DAY), 'admin-organization-legacy', ?, ?, 'org_provider', 'openai_chat', 'fixture', 1, 1, 0, NULL, 0, NULL)", [`iur_${"2".padStart(26, "0")}`, organizationId, unpricedId]);
   await queryDenDatabase(databaseUrl, "INSERT INTO gateway_usage_rollups (id, granularity, bucket_start, dimension_key, organization_id, org_membership_id, route, protocol, upstream_provider_id, request_count, ok_count, total_tokens, total_tokens_count, cost_micro_usd, cost_count) VALUES (?, 'day', DATE_SUB(UTC_DATE(), INTERVAL 2 DAY), 'admin-organization-retained', ?, ?, 'org_provider', 'openai_chat', 'fixture', 2, 2, 80, 2, 500000, 2)", [`iur_${"1".padStart(26, "0")}`, organizationId, memberId]);
+  await queryDenDatabase(databaseUrl, "UPDATE gateway_request_logs SET upstream_model = CASE WHEN openwork_request_id IN ('admin-organization-1', 'admin-organization-3') THEN 'test-active-model' ELSE 'test-secondary-model' END WHERE organization_id = ?", [organizationId]);
+  await queryDenDatabase(databaseUrl, "UPDATE gateway_usage_rollups SET upstream_model = 'test-active-model' WHERE dimension_key = 'admin-organization-retained' AND organization_id = ?", [organizationId]);
+  await queryDenDatabase(databaseUrl, "INSERT INTO gateway_usage_rollups (id, granularity, bucket_start, dimension_key, organization_id, org_membership_id, route, protocol, upstream_provider_id, upstream_model, request_count, ok_count, total_tokens, total_tokens_count, cost_micro_usd, cost_count) VALUES (?, 'day', DATE_SUB(UTC_DATE(), INTERVAL 40 DAY), 'admin-organization-prior', ?, ?, 'org_provider', 'openai_chat', 'fixture', 'previous-period-model', 3, 3, 300, 3, 750000, 3)", [`iur_${"3".padStart(26, "0")}`, organizationId, memberId]);
+  await queryDenDatabase(databaseUrl, "INSERT INTO gateway_usage_rollups (id, granularity, bucket_start, dimension_key, organization_id, org_membership_id, route, protocol, upstream_provider_id, upstream_model, request_count, ok_count, total_tokens, total_tokens_count, cost_micro_usd, cost_count) VALUES (?, 'day', DATE_SUB(UTC_DATE(), INTERVAL 70 DAY), 'admin-organization-outside', ?, ?, 'org_provider', 'openai_chat', 'fixture', 'outside-window-model', 100, 100, 10000, 100, 90000000, 100)", [`iur_${"4".padStart(26, "0")}`, organizationId, memberId]);
   const viewport = { width: 1280, height: 700 };
   const anonymous = await seed.web({ den, startPath: "/admin/users?search=Routing&page=2", headless: true, viewport });
   const admin = await seed.web({ den, signedInAs: den.admin, startPath: "/admin/users", headless: true, viewport: { width: 1280, height: 200 } });
@@ -87,9 +91,15 @@ export async function adminOverviewWorld(seed: Seed) {
     async dashboardAccess() {
       return (await seed.api(den.members.member, "/v1/admin/dashboard")).response.status;
     },
+    async organizationInsights() {
+      const result = await seed.api(den.admin, `/v1/admin/organizations/${organizationId}/insights?limit=1`);
+      if (!result.response.ok) throw new Error(`Organization insights failed (${result.response.status}).`);
+      return adminOrganizationInsightsSchema.parse(result.body);
+    },
     async organizationAccess() {
       return {
         member: (await seed.api(den.members.member, `/v1/admin/organizations/${organizationId}`)).response.status,
+        memberInsights: (await seed.api(den.members.member, `/v1/admin/organizations/${organizationId}/insights`)).response.status,
         memberUsage: (await seed.api(den.members.member, `/v1/admin/organizations/${organizationId}/usage`)).response.status,
         missing: (await seed.api(den.admin, `/v1/admin/organizations/org_${"0".repeat(26)}`)).response.status,
         invalid: (await seed.api(den.admin, "/v1/admin/organizations/invalid")).response.status,
@@ -138,6 +148,7 @@ export async function adminOverviewWorld(seed: Seed) {
           usage: resources.filter((entry) => new URL(entry.name).pathname.endsWith("/inference-usage")).length,
           dashboard: resources.filter((entry) => new URL(entry.name).pathname.endsWith("/admin/dashboard")).length,
           metrics: resources.filter((entry) => new URL(entry.name).pathname.endsWith("/admin/metrics")).length,
+          organizationInsights: resources.filter((entry) => /\/v1\/admin\/organizations\/[^/]+\/insights$/.test(new URL(entry.name).pathname)).length,
           organizationUsage: resources.filter((entry) => /\/v1\/admin\/organizations\/[^/]+\/usage$/.test(new URL(entry.name).pathname)).length,
           organizationDetail: resources.filter((entry) => /\/v1\/admin\/organizations\/[^/]+$/.test(new URL(entry.name).pathname)).length,
           features: resources.filter((entry) => /\/admin\/organizations\/[^/]+\/capabilities$/.test(new URL(entry.name).pathname)).length,

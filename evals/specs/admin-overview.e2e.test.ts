@@ -262,6 +262,37 @@ test("an admin navigates organizations and member usage without loading every de
     await admin.screenshot();
   });
 
+  await step("after: organization insights rank people and models, compare periods and show an activity chart", async () => {
+    await admin.resizeViewport({ width: 1280, height: 900, deviceScaleFactor: 1 });
+    await admin.click({ role: "link", label: "Insights" });
+    await admin.see({ testId: "admin-organization-insights" }, { text: /Active member adoption/ });
+    await admin.see({ testId: "admin-breadcrumb-current" }, { text: "Insights" });
+    const report = await world.organizationInsights();
+    const { current, previous, daily, people, models } = report.insights;
+    const ok = current.requests === 7 && previous.requests === 3 && current.activeMembers === 2 && previous.activeMembers === 1
+      && current.successfulRequests === 7 && daily.length === 30 && daily.reduce((sum, day) => sum + day.requests, 0) === 7
+      && people.length <= 8 && people[0].memberId === world.memberId && people[0].requests === 4
+      && models[0].name === "test-active-model" && models[0].requests === 4
+      && !models.some((model) => model.name.includes("previous-period") || model.name.includes("outside-window"))
+      && current.costMicroUsd === 2000000 && current.unpricedRequests === null;
+    evidence.recordAssertionEvidence("Insights preserve organization scope, retained usage, period bounds, current-member adoption and leader rankings", JSON.stringify({ current, previous, people: people.length, models }), ok);
+    expect(ok).toBe(true);
+    await admin.click({ role: "button", label: "Chart metric" });
+    await admin.click({ role: "option", label: "Active members" });
+    await admin.see({ testId: "admin-dashboard-chart-activeMembers" });
+    await admin.screenshot();
+    await admin.wheelAt({ x: 1000, y: 700, deltaY: 700 });
+    await admin.see({ role: "heading", label: "Most active people" });
+    await admin.screenshot();
+    await admin.wheelAt({ x: 1000, y: 700, deltaY: 700 });
+    await admin.see({ role: "heading", label: "Most used models" });
+    await admin.screenshot();
+    await admin.resizeViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
+    const layout = await adminProbe.dom("body");
+    expect(layout.documentWidth).toBeLessThanOrEqual(layout.viewportWidth);
+    await admin.screenshot();
+  });
+
   await step("an organization with no usage has an explicit empty state", async () => {
     await admin.navigate(world.url(`${world.emptyDetailPath}/usage`));
     await admin.see({ testId: "admin-organization-usage" }, { text: /No recorded gateway requests in this period\./ });
@@ -301,7 +332,7 @@ test("an admin navigates organizations and member usage without loading every de
     await admin.click({ role: "option", label: "Recorded cost" });
     await admin.see({ testId: "admin-dashboard-chart-costMicroUsd" });
     await admin.click({ role: "link", label: report.organizations[0].name });
-    await admin.see({ testId: "admin-organization-usage" });
+    await admin.see({ testId: "admin-organization-insights" });
     await admin.click({ testId: "admin-breadcrumb-admin" });
     await admin.resizeViewport({ width: 390, height: 844, deviceScaleFactor: 1 });
     await admin.see({ testId: "admin-dashboard-requests" }, { text: /8/ });
@@ -321,6 +352,14 @@ test("an admin navigates organizations and member usage without loading every de
     await anonymous.screenshot();
   });
 
+  await step("signed-out organization insights never start aggregation", async () => {
+    await anonymous.navigate(world.url(`${world.detailPath}/insights`));
+    await anonymous.see({ role: "heading", label: "Sign in required" });
+    const traffic = await world.traffic("anonymous");
+    expect(traffic.organizationInsights).toBe(0);
+    await anonymous.screenshot();
+  });
+
   await step("the signed-out overview never fetches platform analytics", async () => {
     await anonymous.navigate(world.url("/admin"));
     await anonymous.see({ role: "heading", label: "Sign in required" });
@@ -334,7 +373,7 @@ test("an admin navigates organizations and member usage without loading every de
     await member.navigate(world.url(world.detailPath));
     await member.see({ role: "heading", label: "Admin access required" }, { timeoutMs: 60_000 });
     const access = await world.organizationAccess();
-    expect(access).toEqual({ member: 403, memberUsage: 403, missing: 404, invalid: 400 });
+    expect(access).toEqual({ member: 403, memberUsage: 403, memberInsights: 403, missing: 404, invalid: 400 });
     const controls = await probe.on(world.member).dom('[data-testid^="admin-user-row-"], [aria-busy="true"]');
     evidence.recordAssertionEvidence("A non-admin session never mounts the dashboard", `dashboard rows and skeletons=${controls.elements.length}; endpoint status=${JSON.stringify(access)}`, controls.elements.length === 0);
     expect(controls.elements.length).toBe(0);

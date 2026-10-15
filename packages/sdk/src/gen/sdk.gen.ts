@@ -194,6 +194,8 @@ import type {
   GetV1AdminOrganizationsByOrganizationIdCapabilitiesErrors,
   GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses,
   GetV1AdminOrganizationsByOrganizationIdErrors,
+  GetV1AdminOrganizationsByOrganizationIdInsightsErrors,
+  GetV1AdminOrganizationsByOrganizationIdInsightsResponses,
   GetV1AdminOrganizationsByOrganizationIdResponses,
   GetV1AdminOrganizationsByOrganizationIdUsageErrors,
   GetV1AdminOrganizationsByOrganizationIdUsageResponses,
@@ -1179,6 +1181,44 @@ export class DenClient extends HeyApiClient {
       ThrowOnError
     >({
       url: "/v1/admin/organizations/{organizationId}/usage",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
+   * Get organization activity, people and model insights
+   *
+   * Returns two 30-day UTC usage periods, 30 daily totals, at most eight people and eight models ranked by requests. Adoption counts current non-setup memberships with recorded gateway use. Totals include historical members, preserve unknown accounting coverage and never read prompts or conversation content.
+   */
+  public getV1AdminOrganizationsByOrganizationIdInsights<ThrowOnError extends boolean = false>(
+    parameters: {
+      organizationId: string;
+      search?: string;
+      limit?: string;
+      offset?: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "organizationId" },
+            { in: "query", key: "search" },
+            { in: "query", key: "limit" },
+            { in: "query", key: "offset" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).get<
+      GetV1AdminOrganizationsByOrganizationIdInsightsResponses,
+      GetV1AdminOrganizationsByOrganizationIdInsightsErrors,
+      ThrowOnError
+    >({
+      url: "/v1/admin/organizations/{organizationId}/insights",
       ...options,
       ...params,
     });

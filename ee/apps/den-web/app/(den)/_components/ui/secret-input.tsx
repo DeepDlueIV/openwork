@@ -69,12 +69,12 @@ export type DenSecretInputProps = DataAttributes & {
 const FIELD_BASE = [
   "w-full rounded-lg border border-gray-200 bg-white",
   "text-[14px] text-gray-900",
-  "outline-hidden transition-all placeholder:text-gray-400",
+  "outline-hidden transition-all placeholder:text-gray-500",
   "focus:border-gray-300 focus:ring-2 focus:ring-gray-900/5",
 ];
 
 const ICON_BUTTON = [
-  "flex h-8 w-8 items-center justify-center rounded-md text-gray-400 transition-colors duration-150 ease-out",
+  "flex h-8 w-8 items-center justify-center rounded-md text-gray-500 transition-colors duration-150 ease-out",
   "hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-40",
   "outline-hidden focus-visible:ring-2 focus-visible:ring-gray-900/20",
 ].join(" ");

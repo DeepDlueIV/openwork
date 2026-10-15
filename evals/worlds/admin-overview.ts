@@ -93,7 +93,7 @@ export async function adminOverviewWorld(seed: Seed) {
       // read-only projection of the pathname, search state and active link.
       return seed.evalIn(admin, () => {
         const params = new URLSearchParams(location.search);
-        return { pathname: location.pathname, search: params.get("search") ?? "", page: Number(params.get("page") ?? "1"), active: document.querySelector('[data-testid="admin-navigation"] [aria-current="page"]')?.textContent?.trim() };
+        return { pathname: location.pathname, search: params.get("search") ?? "", page: Number(params.get("page") ?? "1"), active: document.querySelector('[data-testid="admin-navigation"] [aria-current]')?.textContent?.trim() };
       });
     },
     async history(direction: "back" | "forward") {

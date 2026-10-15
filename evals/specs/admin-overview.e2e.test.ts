@@ -26,6 +26,7 @@ test("an admin navigates organizations and member usage without loading every de
 
   await step("the admin reads the overview while model consumption remains below the viewport", async () => {
     await admin.see({ role: "heading", label: "Users" }, { timeoutMs: 60_000 });
+    await admin.see({ testId: "admin-breadcrumb-current" }, { text: "Users" });
     const deferred = await adminProbe.dom('[data-admin-deferred="pending"]');
     const traffic = await world.traffic("admin");
     const ok = deferred.elements.length === 1 && deferred.elements[0].rect.top > 600 && traffic.usage === 0 && traffic.metrics === 0 && traffic.overview === 0;
@@ -153,7 +154,30 @@ test("an admin navigates organizations and member usage without loading every de
     await admin.screenshot();
   });
 
-  await step("organization search resets the page and navigation remains usable on a narrow screen", async () => {
+  await step("breadcrumbs return from an organization's usage to the filtered second list page", async () => {
+    const secondPage = await world.firstRow("organizations", "Routing", 2);
+    const links = await adminProbe.dom('[data-testid^="admin-org-row-"] a');
+    const organizationName = links.elements[0]?.text;
+    if (!organizationName) throw new Error("Expected an organization link on the second page.");
+    await admin.click({ role: "link", label: organizationName });
+    await admin.see({ testId: "admin-breadcrumb-current" }, { text: organizationName });
+    await admin.click({ role: "link", label: "Usage" });
+    await admin.see({ testId: "admin-breadcrumb-organization" }, { text: organizationName });
+    await admin.see({ testId: "admin-breadcrumb-current" }, { text: "Usage" });
+    await admin.reload();
+    await admin.see({ testId: "admin-breadcrumb-current" }, { text: "Usage" });
+    await admin.click({ testId: "admin-breadcrumb-organization" });
+    await admin.see({ role: "heading", label: "Members" });
+    await admin.click({ testId: "admin-breadcrumb-organizations" });
+    await admin.see({ testId: secondPage });
+    const location = await world.location();
+    const ok = location.pathname === "/admin/organizations" && location.search === "Routing" && location.page === 2;
+    evidence.recordAssertionEvidence("Breadcrumb parents preserve the organization list's search and page after refresh", JSON.stringify(location), ok);
+    expect(ok).toBe(true);
+    await admin.screenshot();
+  });
+
+  await step("organization search resets the page and every admin section is visible on a narrow screen", async () => {
     const first = await world.firstRow("organizations", "Routing organization 00", 1);
     await admin.type({ role: "textbox", label: "Search organizations" }, "Routing organization 00", { replace: true });
     await admin.see({ testId: first });
@@ -163,8 +187,10 @@ test("an admin navigates organizations and member usage without loading every de
     await admin.see({ role: "textbox", label: "Search organizations" }, { value: "Routing organization 00" });
     const location = await world.location();
     const layout = await adminProbe.dom("body");
-    const ok = location.page === 1 && location.search === "Routing organization 00" && layout.documentWidth <= layout.viewportWidth;
-    evidence.recordAssertionEvidence("The filtered organization list and compact navigation fit a narrow screen", `${JSON.stringify(location)}; document=${layout.documentWidth}px; viewport=${layout.viewportWidth}px`, ok);
+    const navigation = await adminProbe.dom('[data-testid="admin-navigation"] a');
+    const visibleSections = navigation.elements.length === 5 && navigation.elements.every((link) => link.rect.left >= 0 && link.rect.left + link.rect.width <= navigation.viewportWidth);
+    const ok = location.page === 1 && location.search === "Routing organization 00" && layout.documentWidth <= layout.viewportWidth && visibleSections;
+    evidence.recordAssertionEvidence("Every admin destination fits the compact navigation without sideways scrolling", `${JSON.stringify(location)}; sections=${navigation.elements.length}; document=${layout.documentWidth}px; viewport=${layout.viewportWidth}px`, ok);
     expect(ok).toBe(true);
     await admin.screenshot();
   });
@@ -242,6 +268,17 @@ test("an admin navigates organizations and member usage without loading every de
     const usage = await adminProbe.dom('[data-testid="admin-organization-usage"]');
     evidence.recordAssertionEvidence("A zero-usage organization has a usable destination and a clear empty state", usage.elements[0]?.text ?? "missing", usage.elements.length === 1);
     expect(usage.elements.length).toBe(1);
+    await admin.screenshot();
+  });
+
+  await step("the Admin breadcrumb returns to the overview", async () => {
+    await admin.click({ testId: "admin-breadcrumb-admin" });
+    await admin.see({ role: "heading", label: "Overview" });
+    await admin.see({ testId: "admin-breadcrumb-current" }, { text: "Overview" });
+    const location = await world.location();
+    const ok = location.pathname === "/admin" && location.active === "Overview";
+    evidence.recordAssertionEvidence("The breadcrumb root and active navigation agree on the overview", JSON.stringify(location), ok);
+    expect(ok).toBe(true);
     await admin.screenshot();
   });
 

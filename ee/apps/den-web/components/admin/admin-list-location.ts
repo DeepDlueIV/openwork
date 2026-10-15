@@ -14,6 +14,29 @@ export function readAdminListLocation(params: { get: (key: string) => string | n
   return { search: params.get("search") ?? "", page, offset: (page - 1) * ADMIN_LIST_PAGE_SIZE };
 }
 
+function organizationsListHref(search: string, page: number) {
+  const query = new URLSearchParams();
+  if (search) query.set("search", search.slice(0, 160));
+  if (page > 1) query.set("page", String(Math.min(MAX_PAGE, page)));
+  return `/admin/organizations${query.size ? `?${query}` : ""}`;
+}
+
+export function adminOrganizationHref(organizationId: string, search: string, page: number) {
+  const returnTo = organizationsListHref(search, page);
+  const query = new URLSearchParams();
+  if (returnTo !== "/admin/organizations") query.set("returnTo", returnTo);
+  return `/admin/organizations/${encodeURIComponent(organizationId)}${query.size ? `?${query}` : ""}`;
+}
+
+/** Only the organization list's search and page can be used as a parent link. */
+function organizationsReturnHref(params: { get: (key: string) => string | null }) {
+  const returnTo = params.get("returnTo") ?? "";
+  const separator = returnTo.indexOf("?");
+  if (separator < 0 || returnTo.slice(0, separator) !== "/admin/organizations") return "/admin/organizations";
+  const { search, page } = readAdminListLocation(new URLSearchParams(returnTo.slice(separator + 1)));
+  return organizationsListHref(search, page);
+}
+
 export function adminDataEndpoint(section: AdminDataSection, params: { get: (key: string) => string | null }) {
   if (section === "overview") return "/v1/admin/overview?limit=1";
   const { search, offset } = readAdminListLocation(params);
@@ -46,5 +69,5 @@ export function useAdminListLocation() {
     updateLocation(value, 1, "replace");
   }, [updateLocation]);
   const setPage = useCallback((value: number) => updateLocation(search, value, "push"), [search, updateLocation]);
-  return { search, draftSearch, page, offset, setSearch, setPage };
+  return { search, draftSearch, page, offset, setSearch, setPage, organizationsHref: organizationsReturnHref(params) };
 }

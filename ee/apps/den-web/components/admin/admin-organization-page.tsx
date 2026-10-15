@@ -7,6 +7,7 @@ import { DenButton, buttonVariants } from "../../app/(den)/_components/ui/button
 import { DenInput } from "../../app/(den)/_components/ui/input";
 import { DenTable, type DenTableColumn } from "../../app/(den)/_components/ui/table";
 import { AdminAccessScreen } from "./admin-access-screen";
+import { AdminBreadcrumbs } from "./admin-breadcrumbs";
 import { ADMIN_LIST_PAGE_SIZE, useAdminListLocation } from "./admin-list-location";
 import { requestAdmin, withStoredBearer, type AdminResult } from "./admin-request";
 import { useAdminSessionCookie } from "./admin-shell";
@@ -27,7 +28,7 @@ function Coverage({ totals }: { totals: AdminOrganizationUsageTotals }) {
 
 export function AdminOrganizationPage({ organizationId, section }: { organizationId: string; section: "members" | "usage" }) {
   const hasSessionCookie = useAdminSessionCookie();
-  const { search, draftSearch, page, offset, setSearch, setPage } = useAdminListLocation();
+  const { search, draftSearch, page, offset, setSearch, setPage, organizationsHref } = useAdminListLocation();
   const [state, setState] = useState<PageState>(() => hasSessionCookie ? { access: "checking" } : { access: "signed-out", message: "" });
   const [refreshing, setRefreshing] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -65,19 +66,28 @@ export function AdminOrganizationPage({ organizationId, section }: { organizatio
     return () => { controller.abort(); window.clearTimeout(timeout); };
   }, [hasSessionCookie, organizationId, section, search, offset, attempt]);
 
+  const query = new URLSearchParams();
+  if (search) query.set("search", search);
+  if (page > 1) query.set("page", String(page));
+  if (organizationsHref !== "/admin/organizations") query.set("returnTo", organizationsHref);
+  const suffix = query.size ? `?${query}` : "";
+  const base = `/admin/organizations/${encodeURIComponent(organizationId)}`;
+  const organizationName = state.access === "ready" && state.data.organization.id === organizationId ? state.data.organization.name : "Organization";
+  const breadcrumbs = <AdminBreadcrumbs items={[
+    { id: "admin", label: "Admin", href: "/admin" },
+    { id: "organizations", label: "Organizations", href: organizationsHref },
+    { id: "organization", label: organizationName, href: section === "usage" ? `${base}${suffix}` : undefined },
+    ...(section === "usage" ? [{ id: "usage", label: "Usage" }] : []),
+  ]} />;
+
   if (state.access !== "ready") {
-    if (state.access !== "checking") return <AdminAccessScreen state={state.access} message={state.message} onRetry={() => setAttempt((value) => value + 1)} />;
-    return <section aria-busy="true" aria-label="Loading organization" className="rounded-2xl bg-white p-6"><div className="h-6 w-56 rounded-sm bg-gray-100" /><div className="mt-6 h-10 rounded-sm bg-gray-100" /><div className="mt-6 h-56 rounded-sm bg-gray-100" /></section>;
+    if (state.access !== "checking") return <>{breadcrumbs}<AdminAccessScreen state={state.access} message={state.message} onRetry={() => setAttempt((value) => value + 1)} /></>;
+    return <>{breadcrumbs}<section aria-busy="true" aria-label="Loading organization" className="rounded-2xl bg-white p-6"><div className="h-6 w-56 rounded-sm bg-gray-100" /><div className="mt-6 h-10 rounded-sm bg-gray-100" /><div className="mt-6 h-56 rounded-sm bg-gray-100" /></section></>;
   }
 
   const data = state.data;
   const organization = data.organization;
   const usage = data.usage;
-  const query = new URLSearchParams();
-  if (search) query.set("search", search);
-  if (page > 1) query.set("page", String(page));
-  const suffix = query.size ? `?${query}` : "";
-  const base = `/admin/organizations/${encodeURIComponent(organizationId)}`;
   const usageByMember = new Map(usage?.members.map((entry) => [entry.memberId, entry]));
   const personColumn: DenTableColumn<Member> = {
     key: "person", header: "Member", render: (member) => <div className="min-w-0 max-w-xs break-words" data-testid={`admin-organization-member-${member.id}`}>
@@ -103,11 +113,12 @@ export function AdminOrganizationPage({ organizationId, section }: { organizatio
   ];
 
   return (
+    <>
+    {breadcrumbs}
     <section data-testid="admin-organization-page" aria-busy={refreshing} className="min-w-0 rounded-2xl border border-gray-200 bg-white">
       {errorMessage ? <p role="alert" className="border-b border-gray-200 p-4 text-sm text-red-700">{errorMessage} Use Refresh to try again. Showing the last successful snapshot.</p> : null}
       <header className="border-b border-gray-200 p-4 sm:p-6">
-        <Link href="/admin/organizations" prefetch={false} className="text-sm text-gray-500 hover:text-gray-900">Organizations</Link>
-        <div className="mt-3 flex flex-wrap items-start justify-between gap-3">
+        <div className="flex flex-wrap items-start justify-between gap-3">
           <h1 className="min-w-0 break-words text-lg font-semibold text-gray-900">{organization.name}</h1>
           <DenButton size="sm" variant="secondary" loading={refreshing} onClick={() => setAttempt((value) => value + 1)}>Refresh</DenButton>
         </div>
@@ -149,5 +160,6 @@ export function AdminOrganizationPage({ organizationId, section }: { organizatio
         <p className="mt-5 text-xs text-gray-500">Updated {new Date(data.generatedAt).toLocaleString()}</p>
       </div>
     </section>
+    </>
   );
 }

@@ -7,7 +7,7 @@ import { Copy, Pencil, Trash2 } from "lucide-react";
 import { FEATURE_KEYS, mapFeatures, type FeatureKey } from "@openwork/features";
 import { denApiCredentials, denBrowserEndpoint } from "../app/(den)/_lib/den-api-origin";
 import { withStoredBearer } from "./admin/admin-request";
-import { useAdminListLocation, type AdminDataSection } from "./admin/admin-list-location";
+import { adminOrganizationHref, useAdminListLocation, type AdminDataSection } from "./admin/admin-list-location";
 import { AdminDeferredContent } from "./admin/admin-deferred-content";
 import { AdminAccessScreen } from "./admin/admin-access-screen";
 import { AdminOrganizationFeatureControls, type AdminFeatureState, type AdminOrganizationFeatures } from "./admin/admin-organization-feature-controls";
@@ -2497,7 +2497,7 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div className="min-w-0">
                       <div className="flex flex-wrap items-center gap-2">
-                        <Link href={`/admin/organizations/${encodeURIComponent(org.id)}`} prefetch={false} className="truncate text-base font-semibold text-slate-950 hover:underline">{org.name}</Link>
+                        <Link href={adminOrganizationHref(org.id, routeSearch, routePage)} prefetch={false} className="truncate text-base font-semibold text-slate-950 hover:underline">{org.name}</Link>
                         <PlanPill tier={org.plan.tier} />
                       </div>
                       <p className="mt-1 truncate text-sm text-slate-500">/{org.slug} · {org.id}</p>

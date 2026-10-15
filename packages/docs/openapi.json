@@ -844,6 +844,7 @@
               "appBuildProgress",
               "modelsAnalyticsUi",
               "taskAnalyticsUi",
+              "desktopPolicyScreenRemoval",
               "teamMembershipCache",
               "managedDeploymentsGcp",
               "managedDeploymentsMcp",
@@ -1050,6 +1051,9 @@
                     "taskAnalyticsUi": {
                       "type": "boolean"
                     },
+                    "desktopPolicyScreenRemoval": {
+                      "type": "boolean"
+                    },
                     "teamMembershipCache": {
                       "type": "boolean"
                     },
@@ -1122,6 +1126,7 @@
                     "appBuildProgress",
                     "modelsAnalyticsUi",
                     "taskAnalyticsUi",
+                    "desktopPolicyScreenRemoval",
                     "teamMembershipCache",
                     "managedDeploymentsGcp",
                     "managedDeploymentsMcp",
@@ -1372,6 +1377,62 @@
                         "overrideApplies"
                       ]
                     },
+                    "desktopPolicyScreenRemoval": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "teamMembershipCache": {
                       "type": "object",
                       "properties": {
@@ -2498,6 +2559,7 @@
                     "appBuildProgress",
                     "modelsAnalyticsUi",
                     "taskAnalyticsUi",
+                    "desktopPolicyScreenRemoval",
                     "teamMembershipCache",
                     "managedDeploymentsGcp",
                     "managedDeploymentsMcp",
@@ -2903,6 +2965,9 @@
                     "taskAnalyticsUi": {
                       "type": "boolean"
                     },
+                    "desktopPolicyScreenRemoval": {
+                      "type": "boolean"
+                    },
                     "teamMembershipCache": {
                       "type": "boolean"
                     },
@@ -2975,6 +3040,7 @@
                     "appBuildProgress",
                     "modelsAnalyticsUi",
                     "taskAnalyticsUi",
+                    "desktopPolicyScreenRemoval",
                     "teamMembershipCache",
                     "managedDeploymentsGcp",
                     "managedDeploymentsMcp",
@@ -3225,6 +3291,62 @@
                         "overrideApplies"
                       ]
                     },
+                    "desktopPolicyScreenRemoval": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "teamMembershipCache": {
                       "type": "object",
                       "properties": {
@@ -4351,6 +4473,7 @@
                     "appBuildProgress",
                     "modelsAnalyticsUi",
                     "taskAnalyticsUi",
+                    "desktopPolicyScreenRemoval",
                     "teamMembershipCache",
                     "managedDeploymentsGcp",
                     "managedDeploymentsMcp",
@@ -27316,6 +27439,9 @@
                         "taskAnalyticsUi": {
                           "type": "boolean"
                         },
+                        "desktopPolicyScreenRemoval": {
+                          "type": "boolean"
+                        },
                         "teamMembershipCache": {
                           "type": "boolean"
                         },
@@ -27388,6 +27514,7 @@
                         "appBuildProgress",
                         "modelsAnalyticsUi",
                         "taskAnalyticsUi",
+                        "desktopPolicyScreenRemoval",
                         "teamMembershipCache",
                         "managedDeploymentsGcp",
                         "managedDeploymentsMcp",
@@ -27638,6 +27765,62 @@
                             "overrideApplies"
                           ]
                         },
+                        "desktopPolicyScreenRemoval": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "teamMembershipCache": {
                           "type": "object",
                           "properties": {
@@ -28764,6 +28947,7 @@
                         "appBuildProgress",
                         "modelsAnalyticsUi",
                         "taskAnalyticsUi",
+                        "desktopPolicyScreenRemoval",
                         "teamMembershipCache",
                         "managedDeploymentsGcp",
                         "managedDeploymentsMcp",
@@ -28914,6 +29098,9 @@
                         "taskAnalyticsUi": {
                           "type": "boolean"
                         },
+                        "desktopPolicyScreenRemoval": {
+                          "type": "boolean"
+                        },
                         "teamMembershipCache": {
                           "type": "boolean"
                         },
@@ -28986,6 +29173,7 @@
                         "appBuildProgress",
                         "modelsAnalyticsUi",
                         "taskAnalyticsUi",
+                        "desktopPolicyScreenRemoval",
                         "teamMembershipCache",
                         "managedDeploymentsGcp",
                         "managedDeploymentsMcp",
@@ -29236,6 +29424,62 @@
                             "overrideApplies"
                           ]
                         },
+                        "desktopPolicyScreenRemoval": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "teamMembershipCache": {
                           "type": "object",
                           "properties": {
@@ -30362,6 +30606,7 @@
                         "appBuildProgress",
                         "modelsAnalyticsUi",
                         "taskAnalyticsUi",
+                        "desktopPolicyScreenRemoval",
                         "teamMembershipCache",
                         "managedDeploymentsGcp",
                         "managedDeploymentsMcp",

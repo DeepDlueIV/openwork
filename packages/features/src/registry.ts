@@ -81,6 +81,13 @@ export const FEATURES = defineFeatures({
     deployments: everywhere,
     default: false,
   },
+  desktopPolicyScreenRemoval: {
+    label: "Desktop suggestions in teams",
+    description: "Manage prompt suggestions in Everyone and team Desktop tabs instead of Advanced Desktop policies. Requires team page tabs; turning off restores the policy screens without changing stored policies.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
   teamMembershipCache: {
     label: "Team membership cache",
     description: "Reduce repeated team lookups while keeping access changes immediate. Enable only after every API instance runs revision-aware team writes.",

@@ -167,6 +167,7 @@ export type AdminFeature = {
     | "appBuildProgress"
     | "modelsAnalyticsUi"
     | "taskAnalyticsUi"
+    | "desktopPolicyScreenRemoval"
     | "teamMembershipCache"
     | "managedDeploymentsGcp"
     | "managedDeploymentsMcp"
@@ -229,6 +230,7 @@ export type AdminOrganizationsPageResponse = {
       appBuildProgress: boolean;
       modelsAnalyticsUi: boolean;
       taskAnalyticsUi: boolean;
+      desktopPolicyScreenRemoval: boolean;
       teamMembershipCache: boolean;
       managedDeploymentsGcp: boolean;
       managedDeploymentsMcp: boolean;
@@ -288,6 +290,15 @@ export type AdminOrganizationsPageResponse = {
         overrideApplies: boolean;
       };
       taskAnalyticsUi: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      desktopPolicyScreenRemoval: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -543,6 +554,7 @@ export type AdminOverviewResponse = {
       appBuildProgress: boolean;
       modelsAnalyticsUi: boolean;
       taskAnalyticsUi: boolean;
+      desktopPolicyScreenRemoval: boolean;
       teamMembershipCache: boolean;
       managedDeploymentsGcp: boolean;
       managedDeploymentsMcp: boolean;
@@ -602,6 +614,15 @@ export type AdminOverviewResponse = {
         overrideApplies: boolean;
       };
       taskAnalyticsUi: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      desktopPolicyScreenRemoval: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6579,6 +6600,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       appBuildProgress: boolean;
       modelsAnalyticsUi: boolean;
       taskAnalyticsUi: boolean;
+      desktopPolicyScreenRemoval: boolean;
       teamMembershipCache: boolean;
       managedDeploymentsGcp: boolean;
       managedDeploymentsMcp: boolean;
@@ -6638,6 +6660,15 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       taskAnalyticsUi: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      desktopPolicyScreenRemoval: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6881,6 +6912,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       appBuildProgress: boolean;
       modelsAnalyticsUi: boolean;
       taskAnalyticsUi: boolean;
+      desktopPolicyScreenRemoval: boolean;
       teamMembershipCache: boolean;
       managedDeploymentsGcp: boolean;
       managedDeploymentsMcp: boolean;
@@ -6940,6 +6972,15 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       taskAnalyticsUi: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      desktopPolicyScreenRemoval: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;

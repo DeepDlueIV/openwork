@@ -30,6 +30,7 @@ config:
     appBuildProgress: ""           # default off · While an agent creates or changes an MCP App, the chat shows each stage it goes through (finding and checking tools, writing the App, building and verifying it) as a checklist with a progress bar.
     modelsAnalyticsUi: ""          # default off · Organization admins can view Models & usage analytics and shared model usage limits.
     taskAnalyticsUi: ""            # default off · Members with analytics access can view task activity and consumption, and admins can configure analytics integrations.
+    desktopPolicyScreenRemoval: "" # default off · Manage prompt suggestions in Everyone and team Desktop tabs instead of Advanced Desktop policies. Requires team page tabs; turning off restores the policy screens without changing stored policies.
     teamMembershipCache: ""        # default off · Reduce repeated team lookups while keeping access changes immediate. Enable only after every API instance runs revision-aware team writes.
     managedDeploymentsGcp: ""      # default off (cloud only) · Organization admins approve OpenWork installations in their own Google Cloud project and track health and updates.
     managedDeploymentsMcp: ""      # default off (cloud only) · Agents connected to OpenWork can check deployment readiness, create deployments, prepare the cloud approval link or command, and follow progress until the deployment is ready.

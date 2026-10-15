@@ -58,6 +58,16 @@
               ],
               "description": "Task analytics: Members with analytics access can view task activity and consumption, and admins can configure analytics integrations. Renders DEN_FEATURE_TASK_ANALYTICS_UI."
             },
+            "desktopPolicyScreenRemoval": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Desktop suggestions in teams: Manage prompt suggestions in Everyone and team Desktop tabs instead of Advanced Desktop policies. Requires team page tabs; turning off restores the policy screens without changing stored policies. Renders DEN_FEATURE_DESKTOP_POLICY_SCREEN_REMOVAL."
+            },
             "teamMembershipCache": {
               "enum": [
                 "",

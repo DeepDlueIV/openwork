@@ -90,6 +90,14 @@ test("a platform admin identifies accounts and paid customers who came back afte
     evidence.recordAssertionEvidence("Range, identity, and pagination boundaries hold", "An old subscription's renewal is excluded; two observations for one known account count once; a 70-day observation is outside the default range. The second 50-row page has two of 52 unlinked guests and survives reload.", true);
   });
 
+  await step("rotating anonymous headers cannot grow history beyond the network's daily bound", async () => {
+    const result = await world.guestObservationCap();
+    expect(result.exhausted).toBe(120);
+    expect(result.observations).toBe(100);
+    evidence.recordAssertionEvidence("Anonymous analytics storage is bounded independently of client headers",
+      "120 concurrent-batched requests with distinct journey identifiers from the same exhausted IP leave exactly 100 real guest observations, including the two earlier journeys. All requests retain the exhausted allowance response.", true);
+  });
+
   await step("signed-out visitors and ordinary members cannot read account conversion information", async () => {
     await anonymous.see({ role: "heading", label: "Sign in required" }, { timeoutMs: 60_000 });
     const busy = await probe.on(world.anonymous).dom('[aria-busy="true"], .animate-pulse');

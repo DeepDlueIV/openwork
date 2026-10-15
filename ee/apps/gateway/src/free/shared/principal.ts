@@ -13,6 +13,8 @@ type InferenceKeyRow = typeof InferenceKeyTable.$inferSelect
 export type GuestPrincipal = { kind: "installation"; id: string; untaggedIpHash?: string;
   /** Client-reported random journey, used only for analytics; never allowance identity. */
   journeyHash?: string;
+  /** Keyed network hash derived by the Gateway, used only to bound analytics writes. */
+  observationRateHash?: string;
   /** An open request (no desktop proof, like OpenCode Zen's "public" key): there is no machine, only the IP. */
   deviceless?: true }
 /** Signed-in, unsubscribed member using their OpenWork Models key. The allowance is per person. */

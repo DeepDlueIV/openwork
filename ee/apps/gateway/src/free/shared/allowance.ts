@@ -131,6 +131,7 @@ export function createFreeAllowanceStore(config: AutoConfig, family: FreeAllowan
     if (!subjectHash) return
     await recordFreeAutoLimit(database, { audience: principal.kind === "member" ? "member" : "guest", subjectHash,
       ...(principal.kind === "member" ? { userId: principal.id, organizationId: principal.organizationId } : {}),
+      ...(principal.kind === "installation" ? { observationRateHash: principal.observationRateHash } : {}),
       windowStart: result.personalLimit.start, now: result.now }).catch(() => console.warn("[free-auto] limit behavior could not be recorded"))
   }
 

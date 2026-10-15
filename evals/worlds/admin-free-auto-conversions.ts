@@ -125,6 +125,19 @@ export async function adminFreeAutoConversionsWorld(seed: Seed, { place }: { pla
       // Another event for the same returning account must not add another person.
       await event("returning-member-duplicate", returningUserId, 4, 3);
     },
+    async guestObservationCap() {
+      let exhausted = 0;
+      // Change every client-controlled header; the Gateway must use its own network identity for this bound.
+      // Concurrent requests exercise the shared database lock as well as sequential retries.
+      for (let batch = 0; batch < 30; batch += 1) {
+        const responses = await Promise.all(Array.from({ length: 4 }, (_, index) => fetch(`${gatewayUrl}/api/anonymous/status`, {
+          headers: { authorization: "Bearer public", "x-openwork-free-journey": digest("rotating-client", String(batch * 4 + index)) },
+        }).then(async (response) => ({ status: response.status, body: record(await response.json()) }))));
+        exhausted += responses.filter((response) => response.status === 200 && response.body.state === "exhausted").length;
+      }
+      const rows = await sql("SELECT COUNT(*) AS total FROM free_auto_limit_events WHERE audience='guest' AND id REGEXP '^[a-f0-9]{64}$'");
+      return { exhausted, observations: Number(record(rows[0]).total) };
+    },
     async purchase(paid: boolean) {
       if (!newSession) throw new Error("Expected a signed-in customer");
       const now = Math.floor(Date.now() / 1000);

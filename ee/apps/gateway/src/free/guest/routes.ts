@@ -102,7 +102,7 @@ export function registerAnonymousInferenceRoutes(app: Hono, dependencies = defau
       if (!address) return { error: desktopFreeGateError(503, "anonymous_unavailable") }
       const ipHash = anonymousIpHash(address, config)
       return { principal: { kind: "installation", id: freeIdentityHash("open-ip", ipHash), untaggedIpHash: ipHash, deviceless: true,
-        journeyHash: freeAutoJourneyHash(c.req.header("x-openwork-free-journey")) ?? undefined },
+        journeyHash: freeAutoJourneyHash(c.req.header("x-openwork-free-journey")) ?? undefined, observationRateHash: ipHash },
         versionError: null, minimumVersion: null, currentVersion: "" }
     }
     const guest = token && address ? verifyAnonymousToken(token, address, config) : null
@@ -114,6 +114,7 @@ export function registerAnonymousInferenceRoutes(app: Hono, dependencies = defau
       ? { kind: "installation", id: guest.installationHash, untaggedIpHash: guest.ipHash }
       : { kind: "installation", id: guest.installationHash }
     principal.journeyHash = freeAutoJourneyHash(c.req.header("x-openwork-free-journey")) ?? undefined
+    principal.observationRateHash = guest.ipHash
     return { principal, versionError: gate.versionError, minimumVersion: gate.minimumVersion, currentVersion: gate.proof.appVersion }
   }
 

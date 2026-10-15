@@ -35,7 +35,7 @@ function UsageChart({ data }: { data: Dashboard }) {
   const label = metric === "requests" ? "Requests" : metric === "tokens" ? "Reported tokens" : "Recorded cost";
   const format = metric === "costMicroUsd" ? usd : compact;
   const ceiling = Math.max(1, ...data.daily.map((day) => day[metric]));
-  const points = data.daily.map((day, index) => `${40 + index * 24},${170 - (day[metric] / ceiling) * 140}`).join(" ");
+  const points = data.daily.map((day, index) => `${index * 720 / 29},${150 - (day[metric] / ceiling) * 140}`).join(" ");
   const columns: DenTableColumn<Dashboard["daily"][number]>[] = [
     { key: "date", header: "Date (UTC)", render: (day) => day.date },
     { key: "requests", header: "Requests", align: "right", render: (day) => count(day.requests) },
@@ -49,17 +49,16 @@ function UsageChart({ data }: { data: Dashboard }) {
         <option value="requests">Requests</option><option value="tokens">Reported tokens</option><option value="costMicroUsd">Recorded cost</option>
       </DenSelect>
     </div>
-    <div className="mt-4" data-testid="admin-dashboard-chart">
-      <svg data-testid={`admin-dashboard-chart-${metric}`} viewBox="0 0 760 200" role="img" aria-label={`${label} from ${data.from} to ${data.to} UTC`} className="h-52 w-full overflow-visible">
+    <div className="mt-4 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3" data-testid="admin-dashboard-chart">
+      <div aria-hidden="true" className="flex h-44 flex-col justify-between py-2 text-right text-xs tabular-nums text-slate-500">
+        {[1, 0.5, 0].map((fraction) => <span key={fraction}>{format(ceiling * fraction)}</span>)}
+      </div>
+      <svg data-testid={`admin-dashboard-chart-${metric}`} viewBox="0 0 720 160" preserveAspectRatio="none" role="img" aria-label={`${label} from ${data.from} to ${data.to} UTC`} className="h-44 w-full">
         <title>{label} over the last 30 days</title>
-        {[0, 0.5, 1].map((fraction) => <g key={fraction}>
-          <line x1="40" x2="736" y1={170 - fraction * 140} y2={170 - fraction * 140} className="stroke-slate-100" />
-          <text x="32" y={174 - fraction * 140} textAnchor="end" className="fill-slate-400 text-xs">{format(ceiling * fraction)}</text>
-        </g>)}
+        {[0, 0.5, 1].map((fraction) => <line key={fraction} x1="0" x2="720" y1={150 - fraction * 140} y2={150 - fraction * 140} className="stroke-slate-100" />)}
         <polyline points={points} fill="none" strokeWidth="2" vectorEffect="non-scaling-stroke" className="stroke-slate-800" strokeLinejoin="round" />
-        <text x="40" y="196" className="fill-slate-500 text-xs">{data.from}</text>
-        <text x="736" y="196" textAnchor="end" className="fill-slate-500 text-xs">{data.to}</text>
       </svg>
+      <div className="col-start-2 mt-2 flex justify-between text-xs text-slate-500"><span>{data.from}</span><span>{data.to}</span></div>
     </div>
     {data.totals.requests === 0 ? <p className="text-sm text-slate-500">No recorded gateway requests in this period.</p> : null}
     <Coverage totals={data.totals} />
@@ -70,8 +69,8 @@ function UsageChart({ data }: { data: Dashboard }) {
   </section>;
 }
 
-export function AdminDashboard({ totalOrganizations, totalUsers, onAccessDenied }: {
-  totalOrganizations: number; totalUsers: number; onAccessDenied: (access: "signed-out" | "forbidden") => void;
+export function AdminDashboard({ totalOrganizations, totalUsers, refreshKey, onAccessDenied }: {
+  totalOrganizations: number; totalUsers: number; refreshKey: string | null; onAccessDenied: (access: "signed-out" | "forbidden") => void;
 }) {
   const [data, setData] = useState<Dashboard | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -93,7 +92,7 @@ export function AdminDashboard({ totalOrganizations, totalUsers, onAccessDenied 
       if (!controller.signal.aborted) setError(error instanceof Error ? error.message : "Could not load dashboard metrics.");
     }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [attempt, onAccessDenied]);
+  }, [attempt, onAccessDenied, refreshKey]);
   const organizations: DenTableColumn<Dashboard["organizations"][number]>[] = [
     { key: "organization", header: "Organization", render: (org) => <Link href={`/admin/organizations/${encodeURIComponent(org.id)}/usage`} prefetch={false} className="font-medium text-slate-950 hover:underline">{org.name}</Link> },
     { key: "requests", header: "Requests", align: "right", render: (org) => count(org.requests) },
@@ -103,7 +102,7 @@ export function AdminDashboard({ totalOrganizations, totalUsers, onAccessDenied 
   return <div data-testid="admin-dashboard">
     <div className="flex flex-wrap items-center justify-between gap-3 pt-5 text-xs text-slate-500">
       <p>{data ? `${data.from} – ${data.to} UTC` : "Last 30 days · UTC"}</p>
-      <DenButton variant="secondary" size="sm" loading={loading} onClick={() => setAttempt((value) => value + 1)}>Refresh metrics</DenButton>
+      <p role={loading ? "status" : undefined}>{loading ? "Updating metrics…" : data ? `Updated ${new Date(data.generatedAt).toLocaleTimeString()}` : "Metrics unavailable"}</p>
     </div>
     <dl className="grid grid-cols-2 divide-y divide-slate-200 border-b border-slate-200 sm:divide-y-0 xl:grid-cols-4" aria-label="Platform metrics" aria-busy={loading}>
       <Metric label="Organizations" value={count(totalOrganizations)} detail={data ? `${count(data.activeOrganizations)} with AI usage in 30 days` : "All organizations"} href="/admin/organizations" testId="admin-dashboard-organizations" />
@@ -118,7 +117,7 @@ export function AdminDashboard({ totalOrganizations, totalUsers, onAccessDenied 
         <div className="mb-4 flex flex-wrap items-center justify-between gap-2"><h2 className="text-sm font-semibold text-slate-950">Most active organizations</h2><Link href="/admin/organizations" prefetch={false} className={buttonVariants({ variant: "ghost", size: "sm" })}>View organizations</Link></div>
         <DenTable columns={organizations} rows={data.organizations} getRowKey={(org) => org.id} density="compact" emptyLabel="No organizations have recorded AI usage in this period." />
       </section>
-      <div className="flex flex-wrap justify-between gap-2 border-t border-slate-200 py-3 text-xs text-slate-500"><p>{count(totalUsers)} total users · Activity includes sign-ins and telemetry</p><p>Updated {new Date(data.generatedAt).toLocaleTimeString()}</p></div>
+      <div className="flex flex-wrap justify-between gap-2 border-t border-slate-200 py-3 text-xs text-slate-500"><p>{count(totalUsers)} total users · Activity includes sign-ins and telemetry</p></div>
     </> : loading ? <p role="status" className="py-10 text-sm text-slate-500">Loading activity and AI usage…</p> : null}
   </div>;
 }

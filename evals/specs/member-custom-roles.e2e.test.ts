@@ -81,7 +81,7 @@ test("an admin: I want to invite someone straight into the Skill publisher role"
     const invitee = user.on(world.noraWeb);
     await invitee.navigate(world.url(`/join-org?invite=${encodeURIComponent(invitation.inviteToken)}`));
     await invitee.click({ role: "button", label: /^Join Team roles workspace$/ });
-    await invitee.see({ text: "My Library" }, { timeoutMs: 60_000 });
+    await invitee.see({ text: "Download OpenWork" }, { timeoutMs: 60_000 });
     const joined = await probe.api(world.nora, "/v1/org", { headers: world.scope });
     const member = record(record(joined.body).currentMember);
     const roster = await probe.api(world.owner, "/v1/org", { headers: world.scope });
@@ -251,7 +251,7 @@ multiTeamTest("an admin chooses which team grants a shared role before sending a
     const invitee = user.on(world.noraWeb);
     await invitee.navigate(world.url(`/join-org?invite=${encodeURIComponent(invitation.inviteToken)}`));
     await invitee.click({ role: "button", label: /^Join Team roles workspace$/ });
-    await invitee.see({ text: "My Library" }, { timeoutMs: 60_000 });
+    await invitee.see({ text: "Download OpenWork" }, { timeoutMs: 60_000 });
     const joined = await probe.api(world.nora, "/v1/org", { headers: world.scope });
     const member = record(record(joined.body).currentMember);
     const roster = await probe.api(world.owner, "/v1/org", { headers: world.scope });

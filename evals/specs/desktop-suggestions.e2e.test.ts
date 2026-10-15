@@ -47,7 +47,7 @@ test("an owner manages desktop suggestions in Everyone and teams without losing 
     await owner.screenshot();
     await owner.navigate(world.url(`/dashboard/desktop-policies/${world.defaultId}`));
     await owner.see({ text: "Edit desktop policy" }, { timeoutMs: 30_000 });
-    await owner.click({ label: "First prompt" });
+    await owner.click({ placeholder: "Enter a suggested prompt", nth: 0 });
     await owner.screenshot();
   });
 

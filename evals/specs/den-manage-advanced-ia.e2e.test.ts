@@ -93,6 +93,15 @@ test("the Den admin sidebar groups Manage and moves Advanced into Settings", asy
     evidence.recordAssertionEvidence("Desktop policies has no navigation entry", JSON.stringify(labels), !labels.includes("Desktop policies"));
     await user.screenshot();
   });
+  await step("searching for desktop suggestions offers Members, not the removed policy screen", async () => {
+    await user.click({ testId: "den-command-palette-trigger" });
+    await user.type({ testId: "den-command-palette-input" }, "desktop");
+    await user.see({ role: "option", label: /^Members/ });
+    await user.notSee({ role: "option", label: /Desktop policies/ });
+    evidence.recordAssertionEvidence("Desktop search has one management home", "Members offered; Desktop policies absent", true);
+    await user.screenshot();
+    await user.press("Escape");
+  });
   await step("old list, new and detail links open Members Teams instead of the removed screen", async () => {
     for (const path of ["/dashboard/desktop-policies", "/dashboard/desktop-policies/new", "/dashboard/desktop-policies/legacy-policy", "/dashboard/desktop-policies/legacy-policy?setup=restricted"]) {
       await user.navigate(new URL(path, world.den.ref.webUrl).toString());

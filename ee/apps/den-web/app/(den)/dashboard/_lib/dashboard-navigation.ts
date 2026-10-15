@@ -228,7 +228,7 @@ const PAGE_KEYWORDS: Record<string, string[]> = {
   Diagnostics: ["health", "debug", "troubleshooting"],
   General: ["organization", "workspace"],
   // Agent permissions live on Members › Teams (Everyone and each team's Agents tab).
-  Members: ["people", "users", "invite", "teams", "roles", "agent permissions", "commands", "websites", "allow list", "block list"],
+  Members: ["people", "users", "invite", "teams", "roles", "agent permissions", "commands", "websites", "allow list", "block list", "desktop", "prompt suggestions"],
   Models: ["llm", "provider", "byok", "api key"],
   Permissions: ["access", "roles", "teams", "admin", "rbac"],
   "My Automations": ["schedule", "recurring", "tasks"],

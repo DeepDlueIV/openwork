@@ -20,7 +20,7 @@ import { registerAgentMcpRoutes } from "./mcp/agent.js"
 import { registerExternalConnectionProxyRoutes } from "./mcp/external-connection-proxy.js"
 import { registerMcpRoutes } from "./mcp/index.js"
 import type { MemberTeamsContext, OrganizationContextVariables, UserOrganizationsContext } from "./middleware/index.js"
-import { buildOperationId, emptyResponse, htmlResponse, jsonResponse } from "./openapi.js"
+import { buildOperationId, htmlResponse, jsonResponse } from "./openapi.js"
 import { appLogger } from "./observability/logger.js"
 import { isWebOriginApprovedByAnyOrganization } from "./organization-web-origins.js"
 import { createRequestAccessLogMiddleware, createTelemetryErrorSanitizerMiddleware, registerAppErrorHandler, registerObservabilityMiddleware } from "./observability/hono.js"
@@ -212,19 +212,17 @@ app.get(
     tags: ["System"],
     security: [],
     hide: true,
-    summary: "Redirect API root",
-    description: "Redirects the API root when DEN_MARKETING_URL is configured; otherwise returns a lightweight service payload.",
+    summary: "Check API origin reachability",
+    description: "Returns a lightweight public service payload directly so MCP hosts can verify the API origin without following a cross-origin redirect.",
     responses: {
       200: jsonResponse("API root service payload.", healthResponseSchema),
-      302: emptyResponse("Redirect to the configured marketing site."),
     },
   }),
   publicRoute,
   (c) => {
-    if (env.marketingUrl) {
-      return c.redirect(env.marketingUrl, 302)
-    }
-    return c.json({ ok: true, service: "den-api" })
+    // MCP view-domain probes need a direct success response even when this
+    // deployment also has a marketing or web app URL configured.
+    return c.json({ ok: true, service: "den-api", version: env.serviceVersion })
   },
 )
 

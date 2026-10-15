@@ -6,7 +6,7 @@ import { adminDashboardWeb } from "../worlds/den-admin-navigation.ts";
 // for admins. Collections and Brand appearance live in Settings › Advanced,
 // Desktop policies is its own Manage entry, and Plugins lists plugins without
 // GitHub sources while the legacy integrations URL still opens its old tab.
-const test = spec.world(adminDashboardWeb, { timeout: 420_000 });
+const test = spec.world(adminDashboardWeb, { timeout: 420_000, resources: { surfaces: ["web"], services: ["den"] } });
 
 test("the Den admin sidebar groups Manage and moves Advanced into Settings", async ({ world, user, probe, evidence, step }) => {
   await step("before: Desktop policies has a Manage entry and an Advanced tab while the rollout is off", async () => {

@@ -47,7 +47,16 @@ test("an owner manages desktop suggestions in Everyone and teams without losing 
     await owner.screenshot();
     await owner.navigate(world.url(`/dashboard/desktop-policies/${world.defaultId}`));
     await owner.see({ text: "Edit desktop policy" }, { timeoutMs: 30_000 });
-    await owner.click({ placeholder: "Enter a suggested prompt", nth: 0 });
+    await owner.wheelAt({ x: 1100, y: 800, deltaY: 1100 });
+    await owner.see({ text: "Organization prompt suggestions" });
+    await owner.screenshot();
+  });
+
+  await step("before: team Access still contains the legacy desktop permissions and Browse websites", async () => {
+    await owner.navigate(world.url(`/dashboard/members/teams/${world.writers}?tab=access`));
+    await owner.see({ text: "In the desktop app" }, { timeoutMs: 30_000 });
+    await owner.see({ text: "Browse websites" });
+    evidence.recordAssertionEvidence("Legacy team Access", "Desktop permissions and Browse websites are still present with removal off", true);
     await owner.screenshot();
   });
 
@@ -178,6 +187,15 @@ test("an owner manages desktop suggestions in Everyone and teams without losing 
     expect(promptConfig(await config("casey"))).toEqual(promptConfig(beforeShared));
     expect(promptConfig(await config("admin"))).toEqual(promptConfig(beforeOwner));
     evidence.recordAssertionEvidence("Overlapping policies are preserved", "Shared North's multi-team/owner policy and Reviewers' member override lock editing; Morgan still receives the higher-priority member prompts", true);
+  });
+
+  await step("after: team Access keeps plugin access but drops the legacy desktop permissions", async () => {
+    await owner.navigate(world.url(`/dashboard/members/teams/${world.writers}?tab=access`));
+    await owner.see({ text: "Plugins & connections" }, { timeoutMs: 30_000 });
+    await owner.notSee({ text: "In the desktop app" });
+    await owner.notSee({ text: "Browse websites" });
+    evidence.recordAssertionEvidence("Team Access after removal", "Plugins & connections remains; legacy desktop permissions and Browse websites are absent", true);
+    await owner.screenshot();
   });
 
   await step("a member without management permissions cannot open the suggestion editor", async () => {

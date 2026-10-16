@@ -131,7 +131,7 @@ export function DocumentsBrowser({ provider, editor, scope, enabled, connections
   const needsConnection = query.error instanceof DocumentsError && query.error.code === "needs_connection"
   const flagOff = query.error instanceof DocumentsError && ["workbot_documents_not_enabled", "feature_disabled"].includes(query.error.code)
   const blocked = query.error instanceof DocumentsError && [401, 403, 409].includes(query.error.status)
-  const accessLost = blocked || recent.error instanceof DocumentsError && [401, 403, 409].includes(recent.error.status)
+  const accessLost = blocked && !flagOff || recent.error instanceof DocumentsError && [401, 403, 409].includes(recent.error.status) && !["feature_disabled", "workbot_documents_not_enabled"].includes(recent.error.code)
   useEffect(() => {
     if (!accessLost) return
     setOpened([]); setTabOrder([]); setActiveTab("files"); setSelected(null)
@@ -175,7 +175,7 @@ export function DocumentsBrowser({ provider, editor, scope, enabled, connections
           {visible && selected && <aside className="ow-documents-detail" aria-label="Document details"><div className="ow-documents-detail-heading"><Info size={16} aria-hidden /><span>Details</span><button type="button" aria-label="Close document details" onClick={() => setSelected(null)}><X size={16} /></button></div><ItemIcon item={selected} /><h2>{selected.name}</h2><dl><dt>Type</dt><dd>{documentType(selected)}</dd><dt>Last modified</dt><dd>{date(selected.modifiedTime)}</dd><dt>Size</dt><dd>{size(selected.size)}</dd></dl>{selected.openUrl ? <a className="ow-documents-open" href={selected.openUrl} target="_blank" rel="noopener noreferrer">Open in {provider.label}<ExternalLink size={14} aria-hidden /></a> : <p>This file has no available link.</p>}</aside>}
         </div></>}
     </div>
-    {editor && !accessLost && opened.map(item => <DocumentEditorTab toolbarHost={actionsHost} key={item.id} item={item} editor={editor} enabled={enabled} active={enabled && activeTab === item.id} scope={scope} connectionsHref={connectionsHref} onDirtyChange={updateDirty} onSavingChange={updateSaving} onControlsChange={registerControls} onClose={() => close(item.id)} />)}
+    {editor && !accessLost && opened.map(item => <DocumentEditorTab toolbarHost={actionsHost} key={item.id} item={item} editor={editor} enabled={enabled} active={enabled && !query.isError && !recent.isError && activeTab === item.id} scope={scope} connectionsHref={connectionsHref} onDirtyChange={updateDirty} onSavingChange={updateSaving} onControlsChange={registerControls} onClose={() => close(item.id)} />)}
     </div>
   </section>
 }

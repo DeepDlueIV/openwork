@@ -24,6 +24,19 @@ test("a member opens and edits a Drive document while unavailable access stays b
     evidence.recordAssertionEvidence("Drive browsing and editing remain separate from chat", "The file opens as a tab and marks local changes without sending a message", world.messages().length === 0);
     await user.screenshot();
   });
+  await step("turning the feature off masks a draft and turning it back on restores it", async () => {
+    world.disableDocuments();
+    await user.click({ role: "button", label: /^Files$/ });
+    await user.click({ role: "button", label: "Refresh documents" });
+    await user.see({ text: "Documents is off for your workspace. An admin can turn it on." });
+    await user.notSee({ role: "textbox", label: "Document text" });
+    world.enableDocuments();
+    await user.click({ role: "button", label: "Try again" });
+    await user.click({ role: "button", label: "Project brief.txt", nth: 0 });
+    await user.see({ role: "textbox", label: "Document text" }, { value: "Revised project overview" });
+    evidence.recordAssertionEvidence("The feature switch preserves a local draft", "The edited document survives a feature kill and restore", (await probe.dom(".ow-editor-plain")).elements.length === 1);
+    await user.screenshot();
+  });
   await step("revoked Drive access closes every cached document", async () => {
     world.revokeDrive();
     await user.click({ role: "button", label: /^Files$/ });

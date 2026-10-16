@@ -14,6 +14,7 @@ export async function workbotWorkspace(_seed: Seed, { place }: { place: Place })
   const messages: Record<string, unknown>[] = [];
   const opened: string[] = [];
   let driveDenied = false;
+  let documentsOff = false;
   const files = [
     { id: "file_brief", name: "Project brief.txt", mimeType: "text/plain", modifiedTime: "2026-10-12T09:00:00Z", size: "42", webViewLink: "https://drive.google.com/file/d/file_brief/view" },
     { id: "file_budget", name: "Budget notes.txt", mimeType: "text/plain", modifiedTime: "2026-10-11T09:00:00Z", size: "36", webViewLink: "https://drive.google.com/file/d/file_budget/view" },
@@ -29,7 +30,7 @@ export async function workbotWorkspace(_seed: Seed, { place }: { place: Place })
           if (!url.pathname.startsWith("/v1/workbot")) return next();
           const referring = new URL(req.headers.referer ?? "http://fixture");
           const enabled = referring.searchParams.get("assistant") !== "off";
-          const documents = referring.searchParams.get("documents") !== "off";
+          const documents = !documentsOff && referring.searchParams.get("documents") !== "off";
           const denied = driveDenied || referring.searchParams.get("access") === "denied";
           const json = (body: unknown, status = 200) => { res.statusCode = status; res.setHeader("content-type", "application/json"); res.end(JSON.stringify(body)); };
           if (url.pathname === "/v1/workbot/me") return json({ name: "Alex", email: "alex@example.test", userId: "user_example", organizationId: "org_example", organizationName: "Example", enabled: true, calendar: true, documents, workspaceAssistant: enabled, canSchedule: false, sideChats: false, denUrl: "https://workspace.example.test" });
@@ -73,6 +74,6 @@ export async function workbotWorkspace(_seed: Seed, { place }: { place: Place })
     const url = vite.resolvedUrls?.local[0];
     if (!url) throw new Error("Workbot fixture did not start");
     const web = resources.use(await chrome({ host: place.host(), name: "workbot-workspace", startUrl: `${url}documents?assistant=off`, headless: true }));
-    return { web, url, messages: () => [...messages], opened: () => [...opened], revokeDrive: () => { driveDenied = true; }, restoreDrive: () => { driveDenied = false; }, async [Symbol.asyncDispose]() { await resources.disposeAsync(); } };
+    return { web, url, messages: () => [...messages], opened: () => [...opened], revokeDrive: () => { driveDenied = true; }, restoreDrive: () => { driveDenied = false; }, disableDocuments: () => { documentsOff = true; }, enableDocuments: () => { documentsOff = false; }, async [Symbol.asyncDispose]() { await resources.disposeAsync(); } };
   } catch (error) { await resources.disposeAsync(); throw error; }
 }

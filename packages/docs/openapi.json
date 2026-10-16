@@ -81136,6 +81136,13 @@
                       "type": "string",
                       "format": "uri"
                     },
+                    "editorUrl": {
+                      "type": "string",
+                      "format": "uri"
+                    },
+                    "accessToken": {
+                      "type": "string"
+                    },
                     "expiresAt": {
                       "type": "number"
                     },
@@ -81145,186 +81152,23 @@
                     "canEdit": {
                       "type": "boolean"
                     },
-                    "config": {
-                      "type": "object",
-                      "properties": {
-                        "documentType": {
-                          "type": "string",
-                          "enum": [
-                            "word",
-                            "cell"
-                          ]
-                        },
-                        "document": {
-                          "type": "object",
-                          "properties": {
-                            "key": {
-                              "type": "string"
-                            },
-                            "title": {
-                              "type": "string"
-                            },
-                            "fileType": {
-                              "type": "string",
-                              "enum": [
-                                "docx",
-                                "xlsx"
-                              ]
-                            },
-                            "url": {
-                              "type": "string",
-                              "format": "uri"
-                            },
-                            "permissions": {
-                              "type": "object",
-                              "properties": {
-                                "edit": {
-                                  "type": "boolean"
-                                },
-                                "download": {
-                                  "type": "boolean"
-                                },
-                                "print": {
-                                  "type": "boolean"
-                                },
-                                "copy": {
-                                  "type": "boolean"
-                                }
-                              },
-                              "required": [
-                                "edit",
-                                "download",
-                                "print",
-                                "copy"
-                              ]
-                            }
-                          },
-                          "required": [
-                            "key",
-                            "title",
-                            "fileType",
-                            "url",
-                            "permissions"
-                          ]
-                        },
-                        "editorConfig": {
-                          "type": "object",
-                          "properties": {
-                            "mode": {
-                              "type": "string",
-                              "enum": [
-                                "edit",
-                                "view"
-                              ]
-                            },
-                            "callbackUrl": {
-                              "type": "string",
-                              "format": "uri"
-                            },
-                            "user": {
-                              "type": "object",
-                              "properties": {
-                                "id": {
-                                  "type": "string"
-                                },
-                                "name": {
-                                  "type": "string"
-                                }
-                              },
-                              "required": [
-                                "id",
-                                "name"
-                              ]
-                            },
-                            "customization": {
-                              "type": "object",
-                              "properties": {
-                                "autosave": {
-                                  "type": "boolean"
-                                },
-                                "forcesave": {
-                                  "type": "boolean"
-                                },
-                                "macros": {
-                                  "type": "boolean",
-                                  "const": false
-                                },
-                                "plugins": {
-                                  "type": "boolean",
-                                  "const": false
-                                }
-                              },
-                              "required": [
-                                "autosave",
-                                "forcesave",
-                                "macros",
-                                "plugins"
-                              ]
-                            },
-                            "plugins": {
-                              "type": "object",
-                              "properties": {
-                                "autostart": {
-                                  "type": "array",
-                                  "items": {
-                                    "type": "string"
-                                  }
-                                },
-                                "pluginsData": {
-                                  "type": "array",
-                                  "items": {
-                                    "type": "string"
-                                  }
-                                }
-                              },
-                              "required": [
-                                "autostart",
-                                "pluginsData"
-                              ]
-                            }
-                          },
-                          "required": [
-                            "mode",
-                            "callbackUrl",
-                            "user",
-                            "customization",
-                            "plugins"
-                          ]
-                        },
-                        "token": {
-                          "type": "string"
-                        },
-                        "width": {
-                          "type": "string",
-                          "const": "100%"
-                        },
-                        "height": {
-                          "type": "string",
-                          "const": "100%"
-                        },
-                        "type": {
-                          "type": "string",
-                          "const": "desktop"
-                        }
-                      },
-                      "required": [
-                        "documentType",
-                        "document",
-                        "editorConfig",
-                        "token",
-                        "width",
-                        "height",
-                        "type"
+                    "fileType": {
+                      "type": "string",
+                      "enum": [
+                        "docx",
+                        "xlsx"
                       ]
                     }
                   },
                   "required": [
                     "id",
                     "serverUrl",
+                    "editorUrl",
+                    "accessToken",
                     "expiresAt",
                     "saveAsCopy",
                     "canEdit",
-                    "config"
+                    "fileType"
                   ]
                 }
               }
@@ -81422,23 +81266,18 @@
                     "expiresAt": {
                       "type": "number"
                     },
-                    "ready": {
-                      "type": "boolean"
-                    },
-                    "pending": {
-                      "type": "boolean"
+                    "draftVersion": {
+                      "type": "integer",
+                      "minimum": -9007199254740991,
+                      "maximum": 9007199254740991
                     },
                     "savedFileId": {
-                      "type": "string"
-                    },
-                    "error": {
                       "type": "string"
                     }
                   },
                   "required": [
                     "expiresAt",
-                    "ready",
-                    "pending"
+                    "draftVersion"
                   ]
                 }
               }
@@ -81523,117 +81362,6 @@
         "x-mint": {
           "metadata": {
             "og:description": "Check whether an Office save is ready API reference in OpenWork Docs."
-          }
-        }
-      }
-    },
-    "/v1/documents/google-drive/files/{fileId}/office/{sessionId}/flush": {
-      "post": {
-        "operationId": "prepareGoogleDriveOfficeSave",
-        "summary": "Prepare an Office snapshot for an explicit save",
-        "tags": [
-          "Documents"
-        ],
-        "x-mcp": false,
-        "responses": {
-          "200": {
-            "description": "Office editor result.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "ok": {
-                      "type": "boolean",
-                      "const": true
-                    }
-                  },
-                  "required": [
-                    "ok"
-                  ]
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Reopen or reconnect.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "message"
-                  ]
-                }
-              }
-            }
-          },
-          "503": {
-            "description": "The editor is unavailable.",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "error": {
-                      "type": "string"
-                    },
-                    "message": {
-                      "type": "string"
-                    }
-                  },
-                  "required": [
-                    "error",
-                    "message"
-                  ]
-                }
-              }
-            }
-          }
-        },
-        "parameters": [
-          {
-            "in": "path",
-            "name": "fileId",
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 512,
-              "pattern": "^[A-Za-z0-9_-]+$"
-            },
-            "required": true
-          },
-          {
-            "in": "path",
-            "name": "sessionId",
-            "schema": {
-              "type": "string",
-              "format": "uuid",
-              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
-            },
-            "required": true
-          }
-        ],
-        "security": [
-          {
-            "denApiKey": []
-          },
-          {
-            "bearerAuth": []
-          }
-        ],
-        "x-mint": {
-          "metadata": {
-            "og:description": "Prepare an Office snapshot for an explicit save API reference in OpenWork Docs."
           }
         }
       }
@@ -81736,6 +81464,27 @@
             "required": true
           }
         ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "draftVersion": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740991
+                  }
+                },
+                "required": [
+                  "draftVersion"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
         "security": [
           {
             "denApiKey": []
@@ -81862,10 +81611,10 @@
         }
       }
     },
-    "/v1/documents/onlyoffice/sessions/{sessionId}/source": {
+    "/v1/documents/wopi/files/{sessionId}": {
       "get": {
-        "operationId": "downloadOnlyOfficeSource",
-        "summary": "Download one signed Office session source",
+        "operationId": "getOfficeFileInfo",
+        "summary": "Read metadata for one temporary editor session",
         "tags": [
           "Documents"
         ],
@@ -81937,15 +81686,13 @@
         ],
         "x-mint": {
           "metadata": {
-            "og:description": "Download one signed Office session source API reference in OpenWork Docs."
+            "og:description": "Read metadata for one temporary editor session API reference in OpenWork Docs."
           }
         }
-      }
-    },
-    "/v1/documents/onlyoffice/sessions/{sessionId}/callback": {
+      },
       "post": {
-        "operationId": "receiveOnlyOfficeSnapshot",
-        "summary": "Retain a signed editor snapshot without writing to Drive",
+        "operationId": "lockOfficeFile",
+        "summary": "Manage a temporary editor session lock",
         "tags": [
           "Documents"
         ],
@@ -81959,12 +81706,12 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "error": {
-                      "type": "number"
+                    "ok": {
+                      "type": "boolean"
                     }
                   },
                   "required": [
-                    "error"
+                    "ok"
                   ]
                 }
               }
@@ -82027,7 +81774,175 @@
         ],
         "x-mint": {
           "metadata": {
-            "og:description": "Retain a signed editor snapshot without writing to Drive API reference in OpenWork Docs."
+            "og:description": "Manage a temporary editor session lock API reference in OpenWork Docs."
+          }
+        }
+      }
+    },
+    "/v1/documents/wopi/files/{sessionId}/contents": {
+      "get": {
+        "operationId": "getOfficeFileContents",
+        "summary": "Read one temporary editor file",
+        "tags": [
+          "Documents"
+        ],
+        "x-mcp": false,
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Office editor result.",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "409": {
+            "description": "Reopen or reconnect.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The editor is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "sessionId",
+            "required": true
+          }
+        ],
+        "x-mint": {
+          "metadata": {
+            "og:description": "Read one temporary editor file API reference in OpenWork Docs."
+          }
+        }
+      },
+      "post": {
+        "operationId": "putOfficeFileContents",
+        "summary": "Stage editor changes without writing to Drive",
+        "tags": [
+          "Documents"
+        ],
+        "x-mcp": false,
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Office editor result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "LastModifiedTime": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "LastModifiedTime"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Reopen or reconnect.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "The editor is unavailable.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "schema": {
+              "type": "string"
+            },
+            "in": "path",
+            "name": "sessionId",
+            "required": true
+          }
+        ],
+        "x-mint": {
+          "metadata": {
+            "og:description": "Stage editor changes without writing to Drive API reference in OpenWork Docs."
           }
         }
       }

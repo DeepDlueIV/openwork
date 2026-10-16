@@ -4,21 +4,21 @@ import { bodyLimit } from "hono/body-limit"
 import { describeRoute, type DescribeRouteOptions } from "hono-openapi"
 import { z } from "zod"
 import { normalizeDenTypeId } from "@openwork-ee/utils/typeid"
-import { officeSessionSchema, officeStatusSchema } from "@openwork/documents/onlyoffice"
-import { createOnlyOfficeService, validateOfficePackage, officeBytes, OFFICE_TTL_SECONDS, type OfficeDraft } from "@openwork/documents/onlyoffice-server"
+import { officeSessionSchema, officeStatusSchema } from "@openwork/documents/office-engine"
+import { createCollaboraService, officeTicketMatches, validateOfficePackage, officeBytes, OFFICE_TTL_SECONDS, type OfficeDraft } from "@openwork/documents/office-server"
 import { documentIdSchema } from "@openwork/documents/model"
 import { configuredOfficeStore } from "../../documents-office-store.js"
 import { env } from "../../env.js"
 import { getOrganizationContextForUser } from "../../orgs.js"
 import { beginAuditRequest } from "../../audit/request-capture.js"
 import { organizationFeatureEnabled } from "../../features.js"
-import { orgMemberRoute, tokenRoute, paramValidator } from "../../middleware/index.js"
+import { orgMemberRoute, tokenRoute, paramValidator, jsonValidator } from "../../middleware/index.js"
 import { jsonResponse } from "../../openapi.js"
 import { requestGoogleAction, readGoogleActionJson, type GoogleWorkspaceActionDependencies } from "./google-workspace-actions.js"
 import type { OrgRouteVariables } from "./shared.js"
 
 const ROOT = "/v1/documents/google-drive/files/:fileId/office"
-const SERVICE = "/v1/documents/onlyoffice/sessions/:sessionId"
+const SERVICE = "/v1/documents/wopi/files/:sessionId"
 const scope = "https://www.googleapis.com/auth/drive"
 const READ = [scope, `${scope}.readonly`]
 const MIME = { docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }
@@ -34,8 +34,8 @@ function validOrigin(value: string) {
 }
 function configuredService() {
   const config = env.documentsOffice
-  if (!config.serverUrl || !config.jwtSecret || !config.callbackBaseUrl) return null
-  return createOnlyOfficeService({ serverUrl: validOrigin(config.serverUrl), callbackBaseUrl: validOrigin(config.callbackBaseUrl), jwtSecret: config.jwtSecret })
+  if (!config.serverUrl || !config.hostOrigin || !config.callbackBaseUrl) return null
+  return createCollaboraService({ serverUrl: validOrigin(config.serverUrl), callbackBaseUrl: validOrigin(config.callbackBaseUrl), hostOrigin: validOrigin(config.hostOrigin) })
 }
 
 export function registerGoogleOfficeEditorRoutes<T extends { Variables: OrgRouteVariables }>(routeApp: Hono<T>, deps: GoogleWorkspaceActionDependencies) {
@@ -104,7 +104,7 @@ export function registerGoogleOfficeEditorRoutes<T extends { Variables: OrgRoute
         id: randomUUID(), organizationId: context.organization.id, memberId: context.currentMember.id, userId: context.currentMember.userId, connectionId: auth.connectionId,
         fileId, revision: meta.file.version, name: native ? `${meta.file.name}.${fileType}` : meta.file.name, mimeType: MIME[fileType], fileType,
         canEdit: canWrite && (native !== null || meta.file.capabilities?.canEdit === true), saveAsCopy: native !== null,
-        expiresAt: Date.now() + OFFICE_TTL_SECONDS * 1000, ticket: randomBytes(32).toString("base64url"), source: Buffer.from(bytes).toString("base64"),
+        expiresAt: Date.now() + OFFICE_TTL_SECONDS * 1000, ticket: randomBytes(32).toString("base64url"), source: Buffer.from(bytes).toString("base64"), draftVersion: 0,
       }
       await store.lock(`member:${draft.organizationId}:${draft.memberId}`, () => store.put(draft))
       return c.json(await service.session(draft))
@@ -116,32 +116,18 @@ export function registerGoogleOfficeEditorRoutes<T extends { Variables: OrgRoute
       const input = c.req.valid("param"); const draft = await owned(c, input.sessionId, input.fileId)
       const auth = await selected(c, draft.connectionId); if (!auth.ok) return auth.reply
       const check = await metadata(c, auth.deps, draft.savedFileId ?? draft.fileId); if (!check.ok) return check.reply
-      return c.json({ expiresAt: draft.expiresAt, ready: !!draft.pending && draft.pending === draft.completed, pending: !!draft.pending && draft.pending !== draft.completed, savedFileId: draft.savedFileId, error: draft.error })
+      return c.json({ expiresAt: draft.expiresAt, draftVersion: draft.draftVersion, savedFileId: draft.savedFileId })
     } catch (error) { return failure(c, error instanceof Error ? error.message : "Couldn't check the save.") }
   })
 
-  app.post(`${ROOT}/:sessionId/flush`, description("prepareGoogleDriveOfficeSave", "Prepare an Office snapshot for an explicit save", z.object({ ok: z.literal(true) })), orgMemberRoute(), guard, paramValidator(sessionParams), async c => {
-    if (!store || !service) return failure(c, "The document editor is unavailable.")
-    try {
-      const input = c.req.valid("param"); const draft = await owned(c, input.sessionId, input.fileId)
-      const auth = await selected(c, draft.connectionId); if (!auth.ok) return auth.reply
-      if (!draft.canEdit || !auth.token.account.scopes?.includes(scope) || !auth.token.enabledScopes.includes(scope)) return c.json({ error: "read_only", message: "Editing requires Drive write access." }, 403)
-      if (draft.uncertain) return failure(c, "Check the file in Drive and reopen it before saving again. The last write was not confirmed.")
-      const nonce = randomUUID()
-      await store.lock(draft.id, async () => { const current = await owned(c, draft.id, input.fileId); current.pending = nonce; current.completed = undefined; current.error = undefined; await store.put(current) })
-      // Do not hold the session lock across a command: the service may callback before responding.
-      if (await service.flush(draft, nonce) === "unchanged") await store.lock(draft.id, async () => { const current = await owned(c, draft.id, input.fileId); if (current.pending === nonce) { current.completed = nonce; await store.put(current) } })
-      return c.json({ ok: true })
-    } catch (error) { return failure(c, error instanceof Error ? error.message : "Couldn't prepare the save.") }
-  })
-
-  app.post(`${ROOT}/:sessionId/save`, description("saveGoogleDriveOfficeEditor", "Save an Office snapshot to Drive", z.object({ fileId: documentIdSchema })), orgMemberRoute(), guard, paramValidator(sessionParams), async c => {
+  app.post(`${ROOT}/:sessionId/save`, description("saveGoogleDriveOfficeEditor", "Save an Office snapshot to Drive", z.object({ fileId: documentIdSchema })), orgMemberRoute(), guard, paramValidator(sessionParams), jsonValidator(z.object({ draftVersion: z.number().int().min(0) }).strict()), async c => {
     if (!store) return failure(c, "The document editor is unavailable.")
     try {
+      const expected = c.req.valid("json").draftVersion
       const input = c.req.valid("param"); const initial = await owned(c, input.sessionId, input.fileId)
       return await store.lock(`file:${initial.organizationId}:${initial.connectionId}:${initial.savedFileId ?? initial.fileId}`, () => store.lock(initial.id, async () => {
         const draft = await owned(c, initial.id, input.fileId)
-        if (!draft.canEdit || !draft.pending || draft.pending !== draft.completed || draft.uncertain) return failure(c, "Prepare your latest changes before saving. An unconfirmed save must be checked in Drive.")
+        if (!draft.canEdit || draft.draftVersion !== expected || draft.uncertain) return failure(c, "Prepare your latest changes before saving. An unconfirmed save must be checked in Drive.")
         const auth = await selected(c, draft.connectionId); if (!auth.ok) return auth.reply
         const target = draft.savedFileId ?? draft.fileId
         const meta = await metadata(c, auth.deps, target); if (!meta.ok) return meta.reply
@@ -162,7 +148,7 @@ export function registerGoogleOfficeEditorRoutes<T extends { Variables: OrgRoute
         if (!result.ok) return result.reply
         const saved = z.object({ id: documentIdSchema, version: z.string() }).parse(await readGoogleActionJson(result.response))
         if (!copy && saved.id !== target) throw new Error("The save response could not be verified. Check the file in Drive before reopening it.")
-        draft.savedFileId = saved.id; draft.revision = saved.version; draft.pending = undefined; draft.completed = undefined; draft.uncertain = false
+        draft.savedFileId = saved.id; draft.revision = saved.version; draft.uncertain = false
         await store.put(draft)
         return c.json({ fileId: saved.id })
       }))
@@ -178,35 +164,71 @@ export function registerGoogleOfficeEditorRoutes<T extends { Variables: OrgRoute
     } catch { return failure(c, "This editing session is already closed or expired.") }
   })
 
-  app.get(`${SERVICE}/source`, description("downloadOnlyOfficeSource", "Download one signed Office session source", z.unknown(), []), tokenRoute, async c => {
+  const wopiDraft = async (c: Parameters<MiddlewareHandler<{ Variables: OrgRouteVariables }>>[0], write = false) => {
+    const id = z.string().uuid().parse(c.req.param("sessionId")); const draft = await store?.get(id)
+    const bearer = c.req.header("authorization")?.replace(/^Bearer /i, "")
+    if (!draft || !service || !officeTicketMatches(draft, c.req.query("access_token") ?? bearer) || !await serviceAuthorized(c, draft)) return null
+    if (write) {
+      const auth = await selected(c, draft.connectionId)
+      if (!draft.canEdit || !auth.ok || !auth.token.account.scopes?.includes(scope) || !auth.token.enabledScopes.includes(scope)) return null
+      const meta = await metadata(c, auth.deps, draft.savedFileId ?? draft.fileId)
+      if (!meta.ok || ((!draft.saveAsCopy || draft.savedFileId) && !meta.file.capabilities?.canEdit)) return null
+    }
+    const blocked = await beginAuditRequest(c); if (blocked) throw blocked
+    c.header("cache-control", "no-store"); c.header("x-content-type-options", "nosniff")
+    return draft
+  }
+  const wopiFailure = (c: GoogleContext, error: unknown) => error instanceof Response ? error : c.json({ error: "invalid_document_request" }, 403)
+  const lockConflict = (c: GoogleContext, value: string) => c.json({ error: "lock_mismatch" }, 409, { "X-WOPI-Lock": value })
+
+  app.get(SERVICE, description("getOfficeFileInfo", "Read metadata for one temporary editor session", z.unknown(), []), tokenRoute, async c => {
     try {
-      const id = z.string().uuid().parse(c.req.param("sessionId")); const draft = await store?.get(id)
-      if (!draft || !service) return c.json({ error: "not_found" }, 404)
-      await service.verifySource(draft, c.req.header("authorization"), c.req.query("ticket"))
-      if (!await serviceAuthorized(c, draft)) return c.json({ error: "not_found" }, 403)
-      const blocked = await beginAuditRequest(c); if (blocked) return blocked
-      return new Response(new Uint8Array(Buffer.from(draft.source, "base64")).buffer, { headers: { "content-type": draft.mimeType, "cache-control": "no-store", "x-content-type-options": "nosniff", "content-security-policy": "default-src 'none'; sandbox" } })
-    } catch { return c.json({ error: "invalid_document_request" }, 403) }
+      const draft = await wopiDraft(c)
+      if (!draft || !service) return c.json({ error: "not_found" }, 403)
+      return c.json(service.fileInfo(draft, Buffer.byteLength(draft.draft ?? draft.source, "base64")))
+    } catch (error) { return wopiFailure(c, error) }
   })
-  app.post(`${SERVICE}/callback`, description("receiveOnlyOfficeSnapshot", "Retain a signed editor snapshot without writing to Drive", z.object({ error: z.number() }), []), tokenRoute, bodyLimit({ maxSize: 1024 * 1024 }), async c => {
+  app.get(`${SERVICE}/contents`, description("getOfficeFileContents", "Read one temporary editor file", z.unknown(), []), tokenRoute, async c => {
     try {
-      const id = z.string().uuid().parse(c.req.param("sessionId")); const draft = await store?.get(id)
-      if (!store || !draft || !service || !await enabled(draft.organizationId)) return c.json({ error: 1 }, 403)
-      const input = z.object({ token: z.string().optional() }).parse(await c.req.json())
-      const snapshot = await service.callback(draft, c.req.header("authorization"), input.token)
-      if (!await serviceAuthorized(c, draft)) return c.json({ error: 1 }, 403)
-      const blocked = await beginAuditRequest(c); if (blocked) return blocked
-      if (snapshot.bytes) validateOfficePackage(snapshot.bytes, draft.fileType)
-      await store.lock(id, async () => {
-        const current = await store.get(id); if (!current) throw new Error("Expired session.")
-        if (snapshot.bytes && (!snapshot.completed || current.pending !== snapshot.completed)) return
-        if (snapshot.bytes) current.draft = Buffer.from(snapshot.bytes).toString("base64")
-        if (snapshot.completed && current.pending === snapshot.completed) current.completed = snapshot.completed
-        if (snapshot.error) current.error = snapshot.error
+      const draft = await wopiDraft(c)
+      if (!draft) return c.json({ error: "not_found" }, 403)
+      return new Response(new Uint8Array(Buffer.from(draft.draft ?? draft.source, "base64")).buffer, { headers: { "content-type": draft.mimeType, "cache-control": "no-store", "x-content-type-options": "nosniff", "content-security-policy": "default-src 'none'; sandbox", "X-WOPI-ItemVersion": String(draft.draftVersion) } })
+    } catch (error) { return wopiFailure(c, error) }
+  })
+  app.post(`${SERVICE}/contents`, description("putOfficeFileContents", "Stage editor changes without writing to Drive", z.object({ LastModifiedTime: z.string() }), []), tokenRoute, bodyLimit({ maxSize: 12 * 1024 * 1024 }), async c => {
+    if (!store) return c.json({ error: "not_found" }, 403)
+    try {
+      const draft = await wopiDraft(c, true)
+      if (!draft) return c.json({ error: "not_found" }, 403)
+      const bytes = await officeBytes(new Response(c.req.raw.body)); validateOfficePackage(bytes, draft.fileType)
+      return await store.lock(draft.id, async () => {
+        const current = await store.get(draft.id); if (!current) return c.json({ error: "expired" }, 403)
+        const lock = current.wopiLock && current.wopiLock.expiresAt > Date.now() ? current.wopiLock.value : ""
+        if (lock && lock !== c.req.header("x-wopi-lock")) return lockConflict(c, lock)
+        current.draft = Buffer.from(bytes).toString("base64"); current.draftVersion++
         await store.put(current)
+        return c.json({ LastModifiedTime: new Date().toISOString() }, 200, { "X-WOPI-ItemVersion": String(current.draftVersion) })
       })
-      return c.json({ error: 0 })
-    } catch { return c.json({ error: 1 }, 403) }
+    } catch (error) { return wopiFailure(c, error) }
+  })
+  app.post(SERVICE, description("lockOfficeFile", "Manage a temporary editor session lock", z.object({ ok: z.boolean() }), []), tokenRoute, bodyLimit({ maxSize: 1024 }), async c => {
+    if (!store) return c.json({ error: "not_found" }, 403)
+    try {
+      const draft = await wopiDraft(c, true)
+      if (!draft) return c.json({ error: "not_found" }, 403)
+      const action = c.req.header("x-wopi-override"); const requested = c.req.header("x-wopi-lock") ?? ""
+      if (!["LOCK", "UNLOCK", "REFRESH_LOCK", "GET_LOCK"].includes(action ?? "") || requested.length > 1024) return c.json({ error: "unsupported_operation" }, 400)
+      return await store.lock(draft.id, async () => {
+        const current = await store.get(draft.id); if (!current) return c.json({ error: "expired" }, 403)
+        const lock = current.wopiLock && current.wopiLock.expiresAt > Date.now() ? current.wopiLock.value : ""
+        if (action === "GET_LOCK") return c.json({ ok: true }, 200, { "X-WOPI-Lock": lock })
+        const previous = c.req.header("x-wopi-oldlock") ?? requested
+        if (!requested || (lock && lock !== previous) || (action !== "LOCK" && lock !== requested)) return lockConflict(c, lock)
+        current.wopiLock = action === "UNLOCK" ? undefined : { value: requested, expiresAt: Date.now() + 30 * 60 * 1000 }
+        await store.put(current)
+        return c.json({ ok: true })
+      })
+    } catch (error) { return wopiFailure(c, error) }
   })
   routeApp.route("/", app)
 }

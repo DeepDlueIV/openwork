@@ -1,6 +1,6 @@
 import { createCipheriv, createDecipheriv, createHash, createSecretKey, randomBytes, randomUUID } from "node:crypto"
 import Redis from "ioredis"
-import { officeDraftSchema, type OfficeStore } from "@openwork/documents/onlyoffice-server"
+import { officeDraftSchema, type OfficeStore } from "@openwork/documents/office-server"
 import { env } from "./env.js"
 
 /** Fail closed without shared storage; Office drafts must survive routing between API replicas. */

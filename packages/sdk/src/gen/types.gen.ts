@@ -24172,46 +24172,12 @@ export type OpenGoogleDriveOfficeEditorResponses = {
   200: {
     id: string;
     serverUrl: string;
+    editorUrl: string;
+    accessToken: string;
     expiresAt: number;
     saveAsCopy: boolean;
     canEdit: boolean;
-    config: {
-      documentType: "word" | "cell";
-      document: {
-        key: string;
-        title: string;
-        fileType: "docx" | "xlsx";
-        url: string;
-        permissions: {
-          edit: boolean;
-          download: boolean;
-          print: boolean;
-          copy: boolean;
-        };
-      };
-      editorConfig: {
-        mode: "edit" | "view";
-        callbackUrl: string;
-        user: {
-          id: string;
-          name: string;
-        };
-        customization: {
-          autosave: boolean;
-          forcesave: boolean;
-          macros: false;
-          plugins: false;
-        };
-        plugins: {
-          autostart: Array<string>;
-          pluginsData: Array<string>;
-        };
-      };
-      token: string;
-      width: "100%";
-      height: "100%";
-      type: "desktop";
-    };
+    fileType: "docx" | "xlsx";
   };
 };
 
@@ -24254,60 +24220,18 @@ export type GetGoogleDriveOfficeEditorStatusResponses = {
    */
   200: {
     expiresAt: number;
-    ready: boolean;
-    pending: boolean;
+    draftVersion: number;
     savedFileId?: string;
-    error?: string;
   };
 };
 
 export type GetGoogleDriveOfficeEditorStatusResponse =
   GetGoogleDriveOfficeEditorStatusResponses[keyof GetGoogleDriveOfficeEditorStatusResponses];
 
-export type PrepareGoogleDriveOfficeSaveData = {
-  body?: never;
-  path: {
-    fileId: string;
-    sessionId: string;
-  };
-  query?: never;
-  url: "/v1/documents/google-drive/files/{fileId}/office/{sessionId}/flush";
-};
-
-export type PrepareGoogleDriveOfficeSaveErrors = {
-  /**
-   * Reopen or reconnect.
-   */
-  409: {
-    error: string;
-    message: string;
-  };
-  /**
-   * The editor is unavailable.
-   */
-  503: {
-    error: string;
-    message: string;
-  };
-};
-
-export type PrepareGoogleDriveOfficeSaveError =
-  PrepareGoogleDriveOfficeSaveErrors[keyof PrepareGoogleDriveOfficeSaveErrors];
-
-export type PrepareGoogleDriveOfficeSaveResponses = {
-  /**
-   * Office editor result.
-   */
-  200: {
-    ok: true;
-  };
-};
-
-export type PrepareGoogleDriveOfficeSaveResponse =
-  PrepareGoogleDriveOfficeSaveResponses[keyof PrepareGoogleDriveOfficeSaveResponses];
-
 export type SaveGoogleDriveOfficeEditorData = {
-  body?: never;
+  body: {
+    draftVersion: number;
+  };
   path: {
     fileId: string;
     sessionId: string;
@@ -24390,16 +24314,16 @@ export type CloseGoogleDriveOfficeEditorResponses = {
 export type CloseGoogleDriveOfficeEditorResponse =
   CloseGoogleDriveOfficeEditorResponses[keyof CloseGoogleDriveOfficeEditorResponses];
 
-export type DownloadOnlyOfficeSourceData = {
+export type GetOfficeFileInfoData = {
   body?: never;
   path: {
     sessionId: string;
   };
   query?: never;
-  url: "/v1/documents/onlyoffice/sessions/{sessionId}/source";
+  url: "/v1/documents/wopi/files/{sessionId}";
 };
 
-export type DownloadOnlyOfficeSourceErrors = {
+export type GetOfficeFileInfoErrors = {
   /**
    * Reopen or reconnect.
    */
@@ -24416,25 +24340,25 @@ export type DownloadOnlyOfficeSourceErrors = {
   };
 };
 
-export type DownloadOnlyOfficeSourceError = DownloadOnlyOfficeSourceErrors[keyof DownloadOnlyOfficeSourceErrors];
+export type GetOfficeFileInfoError = GetOfficeFileInfoErrors[keyof GetOfficeFileInfoErrors];
 
-export type DownloadOnlyOfficeSourceResponses = {
+export type GetOfficeFileInfoResponses = {
   /**
    * Office editor result.
    */
   200: unknown;
 };
 
-export type ReceiveOnlyOfficeSnapshotData = {
+export type LockOfficeFileData = {
   body?: never;
   path: {
     sessionId: string;
   };
   query?: never;
-  url: "/v1/documents/onlyoffice/sessions/{sessionId}/callback";
+  url: "/v1/documents/wopi/files/{sessionId}";
 };
 
-export type ReceiveOnlyOfficeSnapshotErrors = {
+export type LockOfficeFileErrors = {
   /**
    * Reopen or reconnect.
    */
@@ -24451,19 +24375,92 @@ export type ReceiveOnlyOfficeSnapshotErrors = {
   };
 };
 
-export type ReceiveOnlyOfficeSnapshotError = ReceiveOnlyOfficeSnapshotErrors[keyof ReceiveOnlyOfficeSnapshotErrors];
+export type LockOfficeFileError = LockOfficeFileErrors[keyof LockOfficeFileErrors];
 
-export type ReceiveOnlyOfficeSnapshotResponses = {
+export type LockOfficeFileResponses = {
   /**
    * Office editor result.
    */
   200: {
-    error: number;
+    ok: boolean;
   };
 };
 
-export type ReceiveOnlyOfficeSnapshotResponse =
-  ReceiveOnlyOfficeSnapshotResponses[keyof ReceiveOnlyOfficeSnapshotResponses];
+export type LockOfficeFileResponse = LockOfficeFileResponses[keyof LockOfficeFileResponses];
+
+export type GetOfficeFileContentsData = {
+  body?: never;
+  path: {
+    sessionId: string;
+  };
+  query?: never;
+  url: "/v1/documents/wopi/files/{sessionId}/contents";
+};
+
+export type GetOfficeFileContentsErrors = {
+  /**
+   * Reopen or reconnect.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The editor is unavailable.
+   */
+  503: {
+    error: string;
+    message: string;
+  };
+};
+
+export type GetOfficeFileContentsError = GetOfficeFileContentsErrors[keyof GetOfficeFileContentsErrors];
+
+export type GetOfficeFileContentsResponses = {
+  /**
+   * Office editor result.
+   */
+  200: unknown;
+};
+
+export type PutOfficeFileContentsData = {
+  body?: never;
+  path: {
+    sessionId: string;
+  };
+  query?: never;
+  url: "/v1/documents/wopi/files/{sessionId}/contents";
+};
+
+export type PutOfficeFileContentsErrors = {
+  /**
+   * Reopen or reconnect.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The editor is unavailable.
+   */
+  503: {
+    error: string;
+    message: string;
+  };
+};
+
+export type PutOfficeFileContentsError = PutOfficeFileContentsErrors[keyof PutOfficeFileContentsErrors];
+
+export type PutOfficeFileContentsResponses = {
+  /**
+   * Office editor result.
+   */
+  200: {
+    LastModifiedTime: string;
+  };
+};
+
+export type PutOfficeFileContentsResponse = PutOfficeFileContentsResponses[keyof PutOfficeFileContentsResponses];
 
 export type SendGmailDraftData = {
   body: {

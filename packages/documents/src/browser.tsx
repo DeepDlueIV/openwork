@@ -41,6 +41,7 @@ export function DocumentsBrowser({ provider, editor, scope, enabled, connections
   const [view, setView] = useState<"recent" | "folder">("recent")
   const [opened, setOpened] = useState<DocumentItem[]>([])
   const [activeTab, setActiveTab] = useState("files")
+  const [actionsHost, setActionsHost] = useState<HTMLDivElement | null>(null)
   const [folders, setFolders] = useState([{ id: "root", name: provider.rootLabel }])
   const [draft, setDraft] = useState("")
   const [search, setSearch] = useState("")
@@ -97,7 +98,7 @@ export function DocumentsBrowser({ provider, editor, scope, enabled, connections
       {enabled && recentItems.slice(0, 8).map(item => <button type="button" className="ow-documents-recent-file" key={item.id} onClick={() => open(item)}><ItemIcon item={item} /><span>{item.name}</span></button>)}
     </aside>
     <div className="ow-documents-workspace">
-      <nav className="ow-document-tabs" aria-label="Open documents"><button type="button" aria-current={activeTab === "files" ? "page" : undefined} onClick={() => setActiveTab("files")}>Files</button>{opened.map(item => <button type="button" key={item.id} aria-current={activeTab === item.id ? "page" : undefined} onClick={() => setActiveTab(item.id)}><FileText size={14} aria-hidden /><span>{item.name}</span></button>)}</nav>
+      <div className="ow-document-tabs-row"><nav className="ow-document-tabs" aria-label="Open documents"><button type="button" aria-current={activeTab === "files" ? "page" : undefined} onClick={() => setActiveTab("files")}>Files</button>{opened.map(item => <button type="button" key={item.id} aria-current={activeTab === item.id ? "page" : undefined} onClick={() => setActiveTab(item.id)}><FileText size={14} aria-hidden /><span>{item.name}</span></button>)}</nav><div className="ow-document-actions" ref={setActionsHost}/></div>
     <div className="ow-documents-main" hidden={activeTab !== "files"}>
       <header className="ow-documents-toolbar">
         <form onSubmit={submit} role="search" className="ow-documents-search"><Search size={16} strokeWidth={1.5} aria-hidden /><input aria-label={`Search ${folder.name}`} placeholder={`Search in ${folder.name}`} value={draft} maxLength={500} onChange={event => setDraft(event.target.value)} /><button type="submit">Search</button></form>
@@ -120,9 +121,9 @@ export function DocumentsBrowser({ provider, editor, scope, enabled, connections
           {visible && selected && <aside className="ow-documents-detail" aria-label="Document details"><div className="ow-documents-detail-heading"><Info size={16} aria-hidden /><span>Details</span><button type="button" aria-label="Close document details" onClick={() => setSelected(null)}><X size={16} /></button></div><ItemIcon item={selected} /><h2>{selected.name}</h2><dl><dt>Type</dt><dd>{documentType(selected)}</dd><dt>Last modified</dt><dd>{date(selected.modifiedTime)}</dd><dt>Size</dt><dd>{size(selected.size)}</dd></dl>{selected.openUrl ? <a className="ow-documents-open" href={selected.openUrl} target="_blank" rel="noopener noreferrer">Open in {provider.label}<ExternalLink size={14} aria-hidden /></a> : <p>This file has no available link.</p>}</aside>}
         </div></>}
     </div>
-    {editor && opened.map(item => <DocumentEditorTab key={item.id} item={item} editor={editor} enabled={enabled} active={activeTab === item.id} scope={scope} connectionsHref={connectionsHref} onDirtyChange={updateDirty} onClose={() => { setOpened(current => current.filter(file => file.id !== item.id)); setActiveTab("files"); void query.refetch(); void recent.refetch() }} />)}
+    {editor && opened.map(item => <DocumentEditorTab toolbarHost={actionsHost} key={item.id} item={item} editor={editor} enabled={enabled} active={activeTab === item.id} scope={scope} connectionsHref={connectionsHref} onDirtyChange={updateDirty} onClose={() => { setOpened(current => current.filter(file => file.id !== item.id)); setActiveTab("files"); void query.refetch(); void recent.refetch() }} />)}
     </div>
   </section>
 }
 
-export { OnlyOfficeEditorTab } from "./onlyoffice-editor"
+export { OfficeEditorTab } from "./office-editor"

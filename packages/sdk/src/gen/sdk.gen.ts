@@ -137,8 +137,6 @@ import type {
   DownloadGoogleDriveFileByLinkResponses,
   DownloadHostGoogleDriveFileErrors,
   DownloadHostGoogleDriveFileResponses,
-  DownloadOnlyOfficeSourceErrors,
-  DownloadOnlyOfficeSourceResponses,
   ExternalMcpConnectionAccessInput,
   ExternalMcpConnectionByKeyUpsertInput,
   ExternalMcpConnectionToolPolicyInput,
@@ -191,6 +189,10 @@ import type {
   GetMcpAdminWellKnownOauthProtectedResourceResponses,
   GetMcpAgentWellKnownOauthProtectedResourceResponses,
   GetMcpWellKnownOauthProtectedResourceResponses,
+  GetOfficeFileContentsErrors,
+  GetOfficeFileContentsResponses,
+  GetOfficeFileInfoErrors,
+  GetOfficeFileInfoResponses,
   GetReadyErrors,
   GetReadyResponses,
   GetV1AdminDashboardErrors,
@@ -568,6 +570,8 @@ import type {
   ListGmailLabelsResponses,
   ListWorkbotConnectionsErrors,
   ListWorkbotConnectionsResponses,
+  LockOfficeFileErrors,
+  LockOfficeFileResponses,
   Microsoft365CalendarCancelBody,
   Microsoft365CalendarDeleteBody,
   Microsoft365CalendarEventBody,
@@ -941,14 +945,14 @@ import type {
   PostV1WorkflowsByConfigObjectIdVersionsResponses,
   PostV1WorkflowsTestErrors,
   PostV1WorkflowsTestResponses,
-  PrepareGoogleDriveOfficeSaveErrors,
-  PrepareGoogleDriveOfficeSaveResponses,
   PrepareHostGoogleDriveUploadSessionErrors,
   PrepareHostGoogleDriveUploadSessionResponses,
   PutApiAuthScimV2GroupsByGroupIdErrors,
   PutApiAuthScimV2GroupsByGroupIdResponses,
   PutApiAuthScimV2UsersByUserIdErrors,
   PutApiAuthScimV2UsersByUserIdResponses,
+  PutOfficeFileContentsErrors,
+  PutOfficeFileContentsResponses,
   PutV1AdminFeaturesByKeyErrors,
   PutV1AdminFeaturesByKeyResponses,
   PutV1AdminOrganizationsByOrganizationIdCapabilitiesErrors,
@@ -999,8 +1003,6 @@ import type {
   PutV1TeamsByTeamIdPermissionSetResponses,
   ReadGoogleDriveDocumentContentErrors,
   ReadGoogleDriveDocumentContentResponses,
-  ReceiveOnlyOfficeSnapshotErrors,
-  ReceiveOnlyOfficeSnapshotResponses,
   RemoteSessionStatusRequest,
   RenamePermissionSetBody,
   RunAutomationNowErrors,
@@ -9700,44 +9702,13 @@ export class DenClient extends HeyApiClient {
   }
 
   /**
-   * Prepare an Office snapshot for an explicit save
-   */
-  public prepareGoogleDriveOfficeSave<ThrowOnError extends boolean = false>(
-    parameters: {
-      fileId: string;
-      sessionId: string;
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "fileId" },
-            { in: "path", key: "sessionId" },
-          ],
-        },
-      ],
-    );
-    return (options?.client ?? this.client).post<
-      PrepareGoogleDriveOfficeSaveResponses,
-      PrepareGoogleDriveOfficeSaveErrors,
-      ThrowOnError
-    >({
-      url: "/v1/documents/google-drive/files/{fileId}/office/{sessionId}/flush",
-      ...options,
-      ...params,
-    });
-  }
-
-  /**
    * Save an Office snapshot to Drive
    */
   public saveGoogleDriveOfficeEditor<ThrowOnError extends boolean = false>(
     parameters: {
       fileId: string;
       sessionId: string;
+      draftVersion: number;
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -9748,6 +9719,7 @@ export class DenClient extends HeyApiClient {
           args: [
             { in: "path", key: "fileId" },
             { in: "path", key: "sessionId" },
+            { in: "body", key: "draftVersion" },
           ],
         },
       ],
@@ -9760,6 +9732,11 @@ export class DenClient extends HeyApiClient {
       url: "/v1/documents/google-drive/files/{fileId}/office/{sessionId}/save",
       ...options,
       ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
     });
   }
 
@@ -9796,9 +9773,43 @@ export class DenClient extends HeyApiClient {
   }
 
   /**
-   * Download one signed Office session source
+   * Read metadata for one temporary editor session
    */
-  public downloadOnlyOfficeSource<ThrowOnError extends boolean = false>(
+  public getOfficeFileInfo<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionId: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionId" }] }]);
+    return (options?.client ?? this.client).get<GetOfficeFileInfoResponses, GetOfficeFileInfoErrors, ThrowOnError>({
+      url: "/v1/documents/wopi/files/{sessionId}",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
+   * Manage a temporary editor session lock
+   */
+  public lockOfficeFile<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionId: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionId" }] }]);
+    return (options?.client ?? this.client).post<LockOfficeFileResponses, LockOfficeFileErrors, ThrowOnError>({
+      url: "/v1/documents/wopi/files/{sessionId}",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
+   * Read one temporary editor file
+   */
+  public getOfficeFileContents<ThrowOnError extends boolean = false>(
     parameters: {
       sessionId: string;
     },
@@ -9806,20 +9817,20 @@ export class DenClient extends HeyApiClient {
   ) {
     const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionId" }] }]);
     return (options?.client ?? this.client).get<
-      DownloadOnlyOfficeSourceResponses,
-      DownloadOnlyOfficeSourceErrors,
+      GetOfficeFileContentsResponses,
+      GetOfficeFileContentsErrors,
       ThrowOnError
     >({
-      url: "/v1/documents/onlyoffice/sessions/{sessionId}/source",
+      url: "/v1/documents/wopi/files/{sessionId}/contents",
       ...options,
       ...params,
     });
   }
 
   /**
-   * Retain a signed editor snapshot without writing to Drive
+   * Stage editor changes without writing to Drive
    */
-  public receiveOnlyOfficeSnapshot<ThrowOnError extends boolean = false>(
+  public putOfficeFileContents<ThrowOnError extends boolean = false>(
     parameters: {
       sessionId: string;
     },
@@ -9827,11 +9838,11 @@ export class DenClient extends HeyApiClient {
   ) {
     const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionId" }] }]);
     return (options?.client ?? this.client).post<
-      ReceiveOnlyOfficeSnapshotResponses,
-      ReceiveOnlyOfficeSnapshotErrors,
+      PutOfficeFileContentsResponses,
+      PutOfficeFileContentsErrors,
       ThrowOnError
     >({
-      url: "/v1/documents/onlyoffice/sessions/{sessionId}/callback",
+      url: "/v1/documents/wopi/files/{sessionId}/contents",
       ...options,
       ...params,
     });

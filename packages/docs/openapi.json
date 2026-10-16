@@ -125,6 +125,10 @@
       "description": "Scheduled Automations, their runs, and desktop runner presence."
     },
     {
+      "name": "Documents",
+      "description": "Connected Drive documents, inline editing and file-bound temporary Office sessions."
+    },
+    {
       "name": "Workbot",
       "description": "The signed-in member's single Workbot conversation."
     },
@@ -80571,6 +80575,7 @@
         ],
         "x-mcp": false,
         "summary": "Open a Drive document in the inline editor",
+        "description": "Requires organization membership, Workbot and Documents, and the member’s currently authorized Drive connection. Reads recheck provider access. Writes require current grants, explicit edits and a matching revision.",
         "responses": {
           "200": {
             "description": "Document result.",
@@ -80992,12 +80997,7 @@
           {
             "bearerAuth": []
           }
-        ],
-        "x-mint": {
-          "metadata": {
-            "og:description": "Open a Drive document in the inline editor API reference in OpenWork Docs."
-          }
-        }
+        ]
       },
       "post": {
         "operationId": "saveGoogleDriveDocumentEdits",
@@ -81006,6 +81006,7 @@
         ],
         "x-mcp": false,
         "summary": "Save explicit inline edits to the same Drive file",
+        "description": "Requires organization membership, Workbot and Documents, and the member’s currently authorized Drive connection. Reads recheck provider access. Writes require current grants, explicit edits and a matching revision.",
         "responses": {
           "200": {
             "description": "Document result.",
@@ -81249,12 +81250,7 @@
           {
             "bearerAuth": []
           }
-        ],
-        "x-mint": {
-          "metadata": {
-            "og:description": "Save explicit inline edits to the same Drive file API reference in OpenWork Docs."
-          }
-        }
+        ]
       }
     },
     "/v1/documents/google-drive/files/{fileId}/content": {
@@ -81265,6 +81261,7 @@
         ],
         "x-mcp": false,
         "summary": "Preview a Drive PDF or image",
+        "description": "Requires organization membership, Workbot and Documents, and the member’s currently authorized Drive connection. Reads recheck provider access. Writes require current grants, explicit edits and a matching revision.",
         "responses": {
           "200": {
             "description": "Document result.",
@@ -81348,18 +81345,14 @@
           {
             "bearerAuth": []
           }
-        ],
-        "x-mint": {
-          "metadata": {
-            "og:description": "Preview a Drive PDF or image API reference in OpenWork Docs."
-          }
-        }
+        ]
       }
     },
     "/v1/documents/google-drive/files/{fileId}/office": {
       "post": {
         "operationId": "openGoogleDriveOfficeEditor",
         "summary": "Open the full Word or Excel editor",
+        "description": "Requires organization membership, Workbot and Documents, and the member’s authorized Drive connection. Saving explicitly commits the selected draft version; native Google files first create an Office copy.",
         "tags": [
           "Documents"
         ],
@@ -81389,7 +81382,9 @@
                       "type": "string"
                     },
                     "expiresAt": {
-                      "type": "number"
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
                     },
                     "saveAsCopy": {
                       "type": "boolean"
@@ -81484,18 +81479,14 @@
           {
             "bearerAuth": []
           }
-        ],
-        "x-mint": {
-          "metadata": {
-            "og:description": "Open the full Word or Excel editor API reference in OpenWork Docs."
-          }
-        }
+        ]
       }
     },
     "/v1/documents/google-drive/files/{fileId}/office/{sessionId}": {
       "get": {
         "operationId": "getGoogleDriveOfficeEditorStatus",
         "summary": "Check whether an Office save is ready",
+        "description": "Requires organization membership, Workbot and Documents, and the member’s authorized Drive connection. Saving explicitly commits the selected draft version; native Google files first create an Office copy.",
         "tags": [
           "Documents"
         ],
@@ -81509,7 +81500,9 @@
                   "type": "object",
                   "properties": {
                     "expiresAt": {
-                      "type": "number"
+                      "type": "string",
+                      "format": "date-time",
+                      "pattern": "^(?:(?:\\d\\d[2468][048]|\\d\\d[13579][26]|\\d\\d0[48]|[02468][048]00|[13579][26]00)-02-29|\\d{4}-(?:(?:0[13578]|1[02])-(?:0[1-9]|[12]\\d|3[01])|(?:0[469]|11)-(?:0[1-9]|[12]\\d|30)|(?:02)-(?:0[1-9]|1\\d|2[0-8])))T(?:(?:[01]\\d|2[0-3]):[0-5]\\d(?::[0-5]\\d(?:\\.\\d+)?)?(?:Z))$"
                     },
                     "draftVersion": {
                       "type": "integer",
@@ -81603,18 +81596,14 @@
           {
             "bearerAuth": []
           }
-        ],
-        "x-mint": {
-          "metadata": {
-            "og:description": "Check whether an Office save is ready API reference in OpenWork Docs."
-          }
-        }
+        ]
       }
     },
     "/v1/documents/google-drive/files/{fileId}/office/{sessionId}/save": {
       "post": {
         "operationId": "saveGoogleDriveOfficeEditor",
         "summary": "Save an Office snapshot to Drive",
+        "description": "Requires organization membership, Workbot and Documents, and the member’s authorized Drive connection. Saving explicitly commits the selected draft version; native Google files first create an Office copy.",
         "tags": [
           "Documents"
         ],
@@ -81737,18 +81726,14 @@
           {
             "bearerAuth": []
           }
-        ],
-        "x-mint": {
-          "metadata": {
-            "og:description": "Save an Office snapshot to Drive API reference in OpenWork Docs."
-          }
-        }
+        ]
       }
     },
     "/v1/documents/google-drive/files/{fileId}/office/{sessionId}/close": {
       "post": {
         "operationId": "closeGoogleDriveOfficeEditor",
         "summary": "Discard the temporary Office session without changing Drive",
+        "description": "Requires organization membership, Workbot and Documents, and the member’s authorized Drive connection. Saving explicitly commits the selected draft version; native Google files first create an Office copy.",
         "tags": [
           "Documents"
         ],
@@ -81848,18 +81833,14 @@
           {
             "bearerAuth": []
           }
-        ],
-        "x-mint": {
-          "metadata": {
-            "og:description": "Discard the temporary Office session without changing Drive API reference in OpenWork Docs."
-          }
-        }
+        ]
       }
     },
     "/v1/documents/wopi/files/{sessionId}": {
       "get": {
         "operationId": "getOfficeFileInfo",
         "summary": "Read metadata for one temporary editor session",
+        "description": "Requires a file-bound WOPI capability and current workspace membership, feature and connector permissions. Reads and staged edits never write to Drive.",
         "tags": [
           "Documents"
         ],
@@ -81928,16 +81909,12 @@
             "name": "sessionId",
             "required": true
           }
-        ],
-        "x-mint": {
-          "metadata": {
-            "og:description": "Read metadata for one temporary editor session API reference in OpenWork Docs."
-          }
-        }
+        ]
       },
       "post": {
         "operationId": "lockOfficeFile",
         "summary": "Manage a temporary editor session lock",
+        "description": "Requires a file-bound WOPI capability and current workspace membership, feature and connector permissions. Reads and staged edits never write to Drive.",
         "tags": [
           "Documents"
         ],
@@ -82016,18 +81993,14 @@
             "name": "sessionId",
             "required": true
           }
-        ],
-        "x-mint": {
-          "metadata": {
-            "og:description": "Manage a temporary editor session lock API reference in OpenWork Docs."
-          }
-        }
+        ]
       }
     },
     "/v1/documents/wopi/files/{sessionId}/contents": {
       "get": {
         "operationId": "getOfficeFileContents",
         "summary": "Read one temporary editor file",
+        "description": "Requires a file-bound WOPI capability and current workspace membership, feature and connector permissions. Reads and staged edits never write to Drive.",
         "tags": [
           "Documents"
         ],
@@ -82096,16 +82069,12 @@
             "name": "sessionId",
             "required": true
           }
-        ],
-        "x-mint": {
-          "metadata": {
-            "og:description": "Read one temporary editor file API reference in OpenWork Docs."
-          }
-        }
+        ]
       },
       "post": {
         "operationId": "putOfficeFileContents",
         "summary": "Stage editor changes without writing to Drive",
+        "description": "Requires a file-bound WOPI capability and current workspace membership, feature and connector permissions. Reads and staged edits never write to Drive.",
         "tags": [
           "Documents"
         ],
@@ -82184,12 +82153,7 @@
             "name": "sessionId",
             "required": true
           }
-        ],
-        "x-mint": {
-          "metadata": {
-            "og:description": "Stage editor changes without writing to Drive API reference in OpenWork Docs."
-          }
-        }
+        ]
       }
     },
     "/v1/capabilities/google-workspace/gmail-draft/{draftId}/send": {

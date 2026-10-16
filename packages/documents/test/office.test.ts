@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { randomUUID } from "node:crypto"
+import { officeSessionSchema, officeStatusSchema } from "../src/office-engine"
 import { createCollaboraService, officeTicketMatches, officeBytes, OFFICE_MAX_BYTES, type OfficeDraft } from "../src/office-server"
 
 const draft: OfficeDraft = { id: randomUUID(), organizationId: "example-org", memberId: "example-member", userId: "example-user", connectionId: "google-workspace", fileId: "example-file", revision: "1", name: "Example.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileType: "xlsx", canEdit: true, saveAsCopy: false, expiresAt: Date.now() + 60_000, ticket: randomUUID(), source: "", draftVersion: 0 }
@@ -24,6 +25,10 @@ test("editor discovery cannot point the browser at an arbitrary host, protocol o
 test("free WOPI launch omits credentials from URLs, exposes no vendor config and binds the host origin", async () => {
   const engine = service(async (_url, init) => { assert.equal(init?.redirect, "error"); return new Response(xml("https://office.example.com/browser/build/cool.html?")) })
   const session = await engine.session(draft)
+  assert.equal(Date.parse(session.expiresAt), draft.expiresAt)
+  assert.deepEqual(officeSessionSchema.parse(session), session)
+  assert.equal(officeSessionSchema.safeParse({ ...session, expiresAt: draft.expiresAt }).success, false)
+  assert.equal(officeStatusSchema.safeParse({ expiresAt: session.expiresAt, draftVersion: 0 }).success, true)
   const url = new URL(session.editorUrl)
   assert.equal(url.searchParams.get("WOPISrc"), `https://api.example.com/v1/documents/wopi/files/${draft.id}`)
   assert.equal(session.editorUrl.includes(draft.ticket), false)

@@ -15,6 +15,7 @@ import { organizationFeatureEnabled } from "../../features.js"
 import { orgMemberRoute, tokenRoute, paramValidator, jsonValidator } from "../../middleware/index.js"
 import { jsonResponse } from "../../openapi.js"
 import { requestGoogleAction, readGoogleActionJson, type GoogleWorkspaceActionDependencies } from "./google-workspace-actions.js"
+import { canWriteDriveDocument } from "./google-document-scopes.js"
 import type { OrgRouteVariables } from "./shared.js"
 
 const ROOT = "/v1/documents/google-drive/files/:fileId/office"
@@ -51,7 +52,7 @@ export function registerGoogleOfficeEditorRoutes<T extends { Variables: OrgRoute
     await next()
   }
   const description = (operationId: string, summary: string, schema: z.ZodType, security?: []) => {
-    const options: DescribeRouteOptions & { "x-mcp": false } = { operationId, summary, tags: ["Documents"], "x-mcp": false, ...(security ? { security } : {}), responses: { 200: jsonResponse("Office editor result.", schema), 409: jsonResponse("Reopen or reconnect.", failureSchema), 503: jsonResponse("The editor is unavailable.", failureSchema) } }
+    const options: DescribeRouteOptions & { "x-mcp": false } = { operationId, summary, description: security ? "Requires a file-bound WOPI capability and current workspace membership, feature and connector permissions. Reads and staged edits never write to Drive." : "Requires organization membership, Workbot and Documents, and the member’s authorized Drive connection. Saving explicitly commits the selected draft version; native Google files first create an Office copy.", tags: ["Documents"], "x-mcp": false, ...(security ? { security } : {}), responses: { 200: jsonResponse("Office editor result.", schema), 409: jsonResponse("Reopen or reconnect.", failureSchema), 503: jsonResponse("The editor is unavailable.", failureSchema) } }
     return describeRoute(options)
   }
   const failure = (c: GoogleContext, message: string) => c.json({ error: "office_unavailable", message }, 409)
@@ -99,7 +100,7 @@ export function registerGoogleOfficeEditorRoutes<T extends { Variables: OrgRoute
       const latest = await metadata(c, auth.deps, fileId); if (!latest.ok) return latest.reply
       if (meta.file.version !== latest.file.version) return failure(c, "This file changed while opening. Open the latest version again.")
       const context = c.get("organizationContext")!
-      const canWrite = auth.token.account.scopes?.includes(scope) === true && auth.token.enabledScopes.includes(scope)
+      const canWrite = canWriteDriveDocument(auth.token.account.scopes, auth.token.enabledScopes)
       const draft: OfficeDraft = {
         id: randomUUID(), organizationId: context.organization.id, memberId: context.currentMember.id, userId: context.currentMember.userId, connectionId: auth.connectionId,
         fileId, revision: meta.file.version, name: native ? `${meta.file.name}.${fileType}` : meta.file.name, mimeType: MIME[fileType], fileType,
@@ -116,7 +117,7 @@ export function registerGoogleOfficeEditorRoutes<T extends { Variables: OrgRoute
       const input = c.req.valid("param"); const draft = await owned(c, input.sessionId, input.fileId)
       const auth = await selected(c, draft.connectionId); if (!auth.ok) return auth.reply
       const check = await metadata(c, auth.deps, draft.savedFileId ?? draft.fileId); if (!check.ok) return check.reply
-      return c.json({ expiresAt: draft.expiresAt, draftVersion: draft.draftVersion, savedFileId: draft.savedFileId })
+      return c.json({ expiresAt: new Date(draft.expiresAt).toISOString(), draftVersion: draft.draftVersion, savedFileId: draft.savedFileId })
     } catch (error) { return failure(c, error instanceof Error ? error.message : "Couldn't check the save.") }
   })
 
@@ -170,7 +171,7 @@ export function registerGoogleOfficeEditorRoutes<T extends { Variables: OrgRoute
     if (!draft || !service || !officeTicketMatches(draft, c.req.query("access_token") ?? bearer) || !await serviceAuthorized(c, draft)) return null
     if (write) {
       const auth = await selected(c, draft.connectionId)
-      if (!draft.canEdit || !auth.ok || !auth.token.account.scopes?.includes(scope) || !auth.token.enabledScopes.includes(scope)) return null
+      if (!draft.canEdit || !auth.ok || !canWriteDriveDocument(auth.token.account.scopes, auth.token.enabledScopes)) return null
       const meta = await metadata(c, auth.deps, draft.savedFileId ?? draft.fileId)
       if (!meta.ok || ((!draft.saveAsCopy || draft.savedFileId) && !meta.file.capabilities?.canEdit)) return null
     }

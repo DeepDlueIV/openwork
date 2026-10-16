@@ -77,7 +77,7 @@ export function createCollaboraService(options: CollaboraOptions) {
       url.searchParams.set("lang", "en-US")
       url.searchParams.set("closebutton", "0")
       url.searchParams.set("ui_defaults", "UIMode=notebookbar;")
-      return { id: draft.id, serverUrl: server.origin, editorUrl: url.toString(), accessToken: draft.ticket, expiresAt: draft.expiresAt, canEdit: draft.canEdit, saveAsCopy: draft.saveAsCopy, fileType: draft.fileType }
+      return { id: draft.id, serverUrl: server.origin, editorUrl: url.toString(), accessToken: draft.ticket, expiresAt: new Date(draft.expiresAt).toISOString(), canEdit: draft.canEdit, saveAsCopy: draft.saveAsCopy, fileType: draft.fileType }
     },
     fileInfo(draft: OfficeDraft, size: number) {
       return {

@@ -9517,6 +9517,8 @@ export class DenClient extends HeyApiClient {
 
   /**
    * Open a Drive document in the inline editor
+   *
+   * Requires organization membership, Workbot and Documents, and the member’s currently authorized Drive connection. Reads recheck provider access. Writes require current grants, explicit edits and a matching revision.
    */
   public openGoogleDriveDocumentEditor<ThrowOnError extends boolean = false>(
     parameters: {
@@ -9553,6 +9555,8 @@ export class DenClient extends HeyApiClient {
 
   /**
    * Save explicit inline edits to the same Drive file
+   *
+   * Requires organization membership, Workbot and Documents, and the member’s currently authorized Drive connection. Reads recheck provider access. Writes require current grants, explicit edits and a matching revision.
    */
   public saveGoogleDriveDocumentEdits<ThrowOnError extends boolean = false>(
     parameters: {
@@ -9618,6 +9622,8 @@ export class DenClient extends HeyApiClient {
 
   /**
    * Preview a Drive PDF or image
+   *
+   * Requires organization membership, Workbot and Documents, and the member’s currently authorized Drive connection. Reads recheck provider access. Writes require current grants, explicit edits and a matching revision.
    */
   public readGoogleDriveDocumentContent<ThrowOnError extends boolean = false>(
     parameters: {
@@ -9650,6 +9656,8 @@ export class DenClient extends HeyApiClient {
 
   /**
    * Open the full Word or Excel editor
+   *
+   * Requires organization membership, Workbot and Documents, and the member’s authorized Drive connection. Saving explicitly commits the selected draft version; native Google files first create an Office copy.
    */
   public openGoogleDriveOfficeEditor<ThrowOnError extends boolean = false>(
     parameters: {
@@ -9671,6 +9679,8 @@ export class DenClient extends HeyApiClient {
 
   /**
    * Check whether an Office save is ready
+   *
+   * Requires organization membership, Workbot and Documents, and the member’s authorized Drive connection. Saving explicitly commits the selected draft version; native Google files first create an Office copy.
    */
   public getGoogleDriveOfficeEditorStatus<ThrowOnError extends boolean = false>(
     parameters: {
@@ -9703,6 +9713,8 @@ export class DenClient extends HeyApiClient {
 
   /**
    * Save an Office snapshot to Drive
+   *
+   * Requires organization membership, Workbot and Documents, and the member’s authorized Drive connection. Saving explicitly commits the selected draft version; native Google files first create an Office copy.
    */
   public saveGoogleDriveOfficeEditor<ThrowOnError extends boolean = false>(
     parameters: {
@@ -9742,6 +9754,8 @@ export class DenClient extends HeyApiClient {
 
   /**
    * Discard the temporary Office session without changing Drive
+   *
+   * Requires organization membership, Workbot and Documents, and the member’s authorized Drive connection. Saving explicitly commits the selected draft version; native Google files first create an Office copy.
    */
   public closeGoogleDriveOfficeEditor<ThrowOnError extends boolean = false>(
     parameters: {
@@ -9774,6 +9788,8 @@ export class DenClient extends HeyApiClient {
 
   /**
    * Read metadata for one temporary editor session
+   *
+   * Requires a file-bound WOPI capability and current workspace membership, feature and connector permissions. Reads and staged edits never write to Drive.
    */
   public getOfficeFileInfo<ThrowOnError extends boolean = false>(
     parameters: {
@@ -9791,6 +9807,8 @@ export class DenClient extends HeyApiClient {
 
   /**
    * Manage a temporary editor session lock
+   *
+   * Requires a file-bound WOPI capability and current workspace membership, feature and connector permissions. Reads and staged edits never write to Drive.
    */
   public lockOfficeFile<ThrowOnError extends boolean = false>(
     parameters: {
@@ -9808,6 +9826,8 @@ export class DenClient extends HeyApiClient {
 
   /**
    * Read one temporary editor file
+   *
+   * Requires a file-bound WOPI capability and current workspace membership, feature and connector permissions. Reads and staged edits never write to Drive.
    */
   public getOfficeFileContents<ThrowOnError extends boolean = false>(
     parameters: {
@@ -9829,6 +9849,8 @@ export class DenClient extends HeyApiClient {
 
   /**
    * Stage editor changes without writing to Drive
+   *
+   * Requires a file-bound WOPI capability and current workspace membership, feature and connector permissions. Reads and staged edits never write to Drive.
    */
   public putOfficeFileContents<ThrowOnError extends boolean = false>(
     parameters: {

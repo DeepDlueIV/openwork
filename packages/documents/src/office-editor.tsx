@@ -72,7 +72,7 @@ export function OfficeEditorTab({ item, editor, enabled, active, scope, toolbarH
   }, [session])
   const [now, setNow] = useState(Date.now)
   useEffect(() => { if (!session) return; const timer = setInterval(() => setNow(Date.now()), 30_000); return () => clearInterval(timer) }, [session])
-  const expired = !!session && session.expiresAt <= now
+  const expired = !!session && Date.parse(session.expiresAt) <= now
   const save = async (closeAfter = false) => {
     if (!session || !enabled || saving || expired || !ready || !session.canEdit) return
     const generation = changes.current; setSaving(true); setError(undefined)
@@ -99,7 +99,7 @@ export function OfficeEditorTab({ item, editor, enabled, active, scope, toolbarH
     {(error || query.isError || expired) && <div className="ow-editor-message" role="alert">{expired ? "This editing session expired. Download your changes from the editor before closing it." : error ?? (query.error instanceof Error ? query.error.message : "Couldn't open the full editor.")}{!session && item.openUrl && <a href={item.openUrl} target="_blank" rel="noopener noreferrer">Open in Drive</a>}</div>}
     {!session && query.isPending && <div className="ow-documents-skeleton" aria-label="Opening full editor" aria-busy="true"><div/><div/><div/></div>}
     {session && <div className="ow-office-canvas" inert={saving || !enabled} aria-busy={saving}>
-      <form ref={form} method="post" action={session.editorUrl} target={frameName} hidden><input type="hidden" name="access_token" value={session.accessToken}/><input type="hidden" name="access_token_ttl" value={session.expiresAt}/></form>
+      <form ref={form} method="post" action={session.editorUrl} target={frameName} hidden><input type="hidden" name="access_token" value={session.accessToken}/><input type="hidden" name="access_token_ttl" value={Date.parse(session.expiresAt)}/></form>
       <iframe ref={frame} name={frameName} title={`Edit ${item.name}`} className="ow-office-frame" sandbox="allow-scripts allow-same-origin allow-forms allow-downloads allow-popups allow-modals" allow="clipboard-read; clipboard-write" referrerPolicy="no-referrer"/>
     </div>}
   </section>

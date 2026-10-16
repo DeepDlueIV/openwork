@@ -4,17 +4,21 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { createComputerControl } from "../electron/computer-control.mjs";
-import { createRemoteComputerAdapter } from "../electron/computer-remote.mjs";
-import { createX11Driver } from "../electron/computer-x11-driver.mjs";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createComputerControl } from "@openwork/computer-use/computer-control";
+import { createRemoteComputerAdapter } from "@openwork/computer-use/computer-remote";
+import { createX11Driver } from "@openwork/computer-use/computer-x11-driver";
 import { runComputerProgram } from "@openwork/computer-use/runtime";
+import { createCloudComputer } from "@openwork/computer-use/cloud";
 
 const container = process.env.OPENWORK_TEST_COMPUTER_CONTAINER;
 assert.ok(container, "Set OPENWORK_TEST_COMPUTER_CONTAINER to the isolated GTK fixture container.");
 const exec = promisify(execFile);
 let commands = 0;
 let workerDirectory = "";
-const driver = createX11Driver({ machine: {
+const machine = {
   async run(command, timeoutMs) {
     commands++;
     workerDirectory ||= command.match(/\/tmp\/openwork-computer-[a-f0-9-]+/)?.[0] ?? "";
@@ -24,7 +28,8 @@ const driver = createX11Driver({ machine: {
     } catch (error) { return { exitCode: 1, stdout: error.stdout ?? "", stderr: error.stderr ?? "" }; }
   },
   async read(path, timeout) { return (await exec("docker", ["exec", container, "cat", path], { timeout, encoding: "buffer", maxBuffer: 3_000_000 })).stdout; },
-} });
+};
+const driver = createX11Driver({ machine });
 const adapter = createRemoteComputerAdapter({ id: "proof-vm", label: "Proof desktop", driver });
 const control = createComputerControl({ adapters: [adapter], readRemoteFeatureEnabled: async () => true, runProgram: runComputerProgram });
 const state = async () => JSON.parse((await exec("docker", ["exec", container, "cat", "/tmp/computer-shortcuts-state.json"])).stdout);
@@ -99,4 +104,21 @@ try {
   assert.ok(recovered.elements.some(element => element.name === "Project name"));
   assert.equal((await state()).text, partial);
   console.log("worker recovery", JSON.stringify({ staleSocketRestarted: true, inputReplayed: false }));
+
+  const directory = await mkdtemp(join(tmpdir(), "computer-shortcuts-cloud-"));
+  const cloud = await createCloudComputer({ directory, machine, enabled: async () => true });
+  try {
+    const result = await cloud.task("/computer/program", { sessionId: "cloud-proof", surface: "computer", timeoutMs: 60000, code: `
+      await tools.ui.open({appId:"desktop"});
+      await tools.ui.fill({target:{role:"textbox",name:"Project name"},text:"Cloud program"});
+      return {filled:true};
+    ` });
+    assert.equal(result.ok, true, JSON.stringify(result));
+    assert.equal((await state()).text, "Cloud program");
+    const waiting = cloud.task("/computer/program", { sessionId: "cloud-proof", surface: "computer", code: 'await tools.ui.waitFor({target:{name:"Never appears"},timeoutMs:15000}); return true;' });
+    await new Promise(resolve => setTimeout(resolve, 150));
+    await cloud.interact({ action: "takeover" });
+    assert.equal((await waiting).ok, false);
+    console.log("cloud program", JSON.stringify({ filled: true, takeoverStopped: true }));
+  } finally { await cloud.close(); await rm(directory, { recursive: true, force: true }); }
 } finally { await control.reset(true); }

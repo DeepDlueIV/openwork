@@ -30,7 +30,7 @@ export async function startCloudComputerBridge(config: ServerConfig): Promise<()
   const bridge = await serve({ hostname: "127.0.0.1", port: 0, fetch: async request => {
     if (request.headers.get("authorization") !== `Bearer ${token}`) return new Response(null, { status: 401 });
     const path = new URL(request.url).pathname;
-    if (request.method !== "POST" || !["/browser/task", "/computer/task"].includes(path)) return new Response(null, { status: 404 });
+    if (request.method !== "POST" || !["/browser/task", "/computer/task", "/computer/program"].includes(path)) return new Response(null, { status: 404 });
     try {
       const text = await request.text();
       if (text.length > 64_000) return new Response(null, { status: 413 });

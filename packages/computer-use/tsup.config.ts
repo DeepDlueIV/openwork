@@ -1,7 +1,8 @@
 import { defineConfig } from "tsup"
 
 export default defineConfig({
-  entry: { runtime: "src/runtime.ts" },
+  entry: { runtime: "src/runtime.ts", worker: "src/worker.ts" },
+  loader: { ".py": "text" },
   format: ["esm"],
   platform: "node",
   target: "es2022",

@@ -3,7 +3,7 @@
 // shell command and read a file. Input goes through xdotool and screenshots
 // through ImageMagick, batched so one action costs one round trip.
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { computerWorkerSource } from "./dist/worker.js";
 
 const quote = (value) => `'${String(value).replaceAll("'", "'\\''")}'`;
 const TOOLS = ["xdotool", "import", "python3"];
@@ -24,7 +24,7 @@ export function createX11Driver({ machine, display = ":99", timeoutMs = 20_000 }
     return machine.run(`export DISPLAY=${display}; ${script}`, ms);
   };
   const socketPath = `${directory}/input.sock`;
-  const workerSource = readFileSync(new URL("./computer-x11-worker.py", import.meta.url)).toString("base64");
+  const workerSource = Buffer.from(computerWorkerSource).toString("base64");
   let worker = null;
   const bootstrap = async () => {
     if (!worker) worker = run(`python3 -c ${quote(`import base64, os, pathlib, socket, subprocess, time

@@ -24,7 +24,10 @@ export async function createCloudComputer({ directory, display = ":99", enabled,
   const localMachine = machine ?? {
     async run(command, timeout) {
       try {
-        const result = await execute("/bin/sh", ["-c", command], { timeout, maxBuffer: 1024 * 1024, signal: current?.signal });
+        // Input cancellation travels over an independent worker connection.
+        // Aborting every provider command with the task would also kill that
+        // cancellation connection and leave detached typing running.
+        const result = await execute("/bin/sh", ["-c", command], { timeout, maxBuffer: 1024 * 1024 });
         return { exitCode: 0, stdout: result.stdout, stderr: result.stderr };
       } catch (error) {
         if (error.killed || current?.signal.aborted) throw error;
@@ -79,6 +82,24 @@ export async function createCloudComputer({ directory, display = ":99", enabled,
         current = { controller, generation, signal: AbortSignal.any([signal, controller.signal, AbortSignal.timeout(120_000)]) };
         onActivity();
         assertActive();
+        if (path === "/computer/program") {
+          if (!["computer", "browser"].includes(body.surface) || typeof body.code !== "string" || body.code.length > 32_000
+            || body.timeoutMs !== undefined && (!Number.isInteger(body.timeoutMs) || body.timeoutMs < 1000 || body.timeoutMs > 60_000)) throw failure("invalid_arguments", "Provide a surface, bounded code and a timeout from 1000 to 60000 milliseconds.");
+          const { runComputerProgram } = await import("@openwork/computer-use/runtime");
+          const signal = current.signal;
+          return await runComputerProgram(body, {
+            computer: async (name, args, signal) => {
+              assertActive(); browser.invalidate();
+              const result = await control.execute({ sessionId: body.sessionId, name, args }, { signal, includePostImage: false });
+              assertActive(); return result;
+            },
+            browser: async (operation, args, signal) => {
+              assertActive();
+              const result = await browser.request({ sessionId: body.sessionId, operation, args }, { signal });
+              assertActive(); return result;
+            },
+          }, signal);
+        }
         if (path === "/browser/task") {
           const result = await browser.request(body, { signal: current.signal });
           assertActive();

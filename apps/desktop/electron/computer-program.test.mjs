@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { runComputerProgram } from "@openwork/computer-use/runtime";
-import { createComputerControl, COMPUTER_PROTOCOL } from "./computer-control.mjs";
+import { createComputerControl, COMPUTER_PROTOCOL } from "@openwork/computer-use/computer-control";
 
 function browserFixture() {
   let value = "";

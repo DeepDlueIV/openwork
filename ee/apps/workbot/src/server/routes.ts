@@ -3,6 +3,7 @@ import {
   createWorkbot,
   toWorkbotPageEvent,
   workbotOwner,
+  workbotSessionId,
   WORKBOT_CHAT_ID,
   WorkbotFilesUnavailableError,
   WorkbotUnavailableError,
@@ -80,19 +81,16 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
    */
   const runnerFor = (member: Member) => ({ ...config.runner, owner: workbotOwner(member.den.organization.id, member.den.memberId) })
 
+  const clientFor = (member: Member) => createHeadlessRunnerClient({
+    config: runnerFor(member), fetch,
+    mintToken: async ({ readOnly }) => ({ token: await den.runToken(member.accessToken, { readOnly }) }),
+    maxTokenTtlMs: RUN_TOKEN_TTL_MS,
+  })
   /** Workbot bound to this person: their runner conversation, and turn tokens Den mints for them. */
-  const workbotFor = (member: Member) =>
-    createWorkbot({
-      client: createHeadlessRunnerClient({
-        config: runnerFor(member),
-        fetch,
-        mintToken: async ({ readOnly }) => ({ token: await den.runToken(member.accessToken, { readOnly }) }),
-        maxTokenTtlMs: RUN_TOKEN_TTL_MS,
-      }),
-      canSchedule: async () => member.den.canSchedule,
-      desktop: member.den.computer,
-      model: async () => member.den.model,
-    })
+  const workbotFor = (member: Member) => createWorkbot({
+    client: clientFor(member), canSchedule: async () => member.den.canSchedule,
+    desktop: member.den.computer, model: async () => member.den.model,
+  })
 
   const enabled = (c: Context<AppEnv>) => c.get("member").den.enabled
   /**
@@ -131,6 +129,7 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
       enabled: who.enabled,
       calendar: who.enabled && who.calendar === true,
       computer: who.enabled && who.computer,
+      documents: who.enabled && who.documents === true,
       canSchedule: who.enabled && who.canSchedule,
       sideChats: who.enabled && who.sideChats,
       denUrl: config.denWebUrl ?? (await den.webUrl().catch(() => null)),
@@ -144,19 +143,29 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
     if (!member.den.enabled || !member.den.computer) return c.json({ error: "feature_disabled" }, 403)
     const operation = c.req.param("operation")
     if (operation !== "viewer" && operation !== "action") return c.json({ error: "not_found" }, 404)
-    const workbot = workbotFor(member)
-    const sessionId = await workbot.ensureComputer(actorOf(member))
-    const client = createHeadlessRunnerClient({ config: runnerFor(member), fetch, mintToken: async () => ({ token: "" }), maxTokenTtlMs: RUN_TOKEN_TTL_MS })
     const raw: unknown = await c.req.json().catch(() => null)
+    const viewer = z.object({ view: z.enum(["browser", "computer"]), control: z.boolean().default(false) }).strict().safeParse(raw)
+    const action = z.object({ action: z.enum(["continue", "pause", "resume"]) }).strict().safeParse(raw)
+    if (operation === "viewer" ? !viewer.success : !action.success) return c.json({ error: "invalid_request" }, 400)
+    const workbot = workbotFor(member)
+    const client = clientFor(member)
+    const sessionId = workbotSessionId(member.den.organization.id, member.den.memberId)
     try {
+      const existing = await client.readSession(sessionId, { turns: 1, limit: 1, outputs: "none" })
+      if (!existing.ok && existing.status === 404) await workbot.ensureComputer(actorOf(member))
+      else {
+        if (!existing.ok) return c.json({ error: "desktop_unavailable" }, 409)
+        const updated = await client.putSession(sessionId, { computer: true, desktop: true })
+        if (!updated.ok) return c.json({ error: "desktop_unavailable" }, 409)
+      }
       if (operation === "viewer") {
-        const body = z.object({ view: z.enum(["browser", "computer"]), control: z.boolean().default(false) }).strict().safeParse(raw)
+        const body = viewer
         if (!body.success) return c.json({ error: "invalid_request" }, 400)
         if (body.data.control) await workbot.stop(actorOf(member))
         const result = await client.desktopViewer(sessionId, { ...body.data, origin: new URL(config.publicUrl).origin })
         return result.ok ? c.json(result.value) : c.json({ error: "desktop_unavailable", message: "Your computer is unavailable. Try reconnecting." }, 409)
       }
-      const body = z.object({ action: z.enum(["continue", "pause", "resume"]) }).strict().safeParse(raw)
+      const body = action
       if (!body.success) return c.json({ error: "invalid_request" }, 400)
       if (body.data.action === "pause") await workbot.stop(actorOf(member))
       const result = await client.desktopAction(sessionId, body.data.action)
@@ -184,6 +193,24 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
     const { status, payload } = await den.calendar(member.accessToken, { method, path: `${path}${url.search}`, body })
     return new Response(JSON.stringify(payload), { status, headers: { "content-type": "application/json" } })
   }
+  app.on(["GET", "POST"], "/v1/workbot/documents/*", bodyLimit({ maxSize: 2 * 1024 * 1024 }), async (c) => {
+    const member = c.get("member")
+    if (!member.den.enabled || member.den.documents !== true) return c.json({ error: "workbot_documents_not_enabled" }, 403)
+    const url = new URL(c.req.url)
+    const path = url.pathname.slice("/v1/workbot/documents".length)
+    const editor = /^\/v1\/documents\/google-drive\/files\/[A-Za-z0-9_-]{1,512}\/(editor|content)$/.exec(path)
+    const office = /^\/v1\/documents\/google-drive\/files\/[A-Za-z0-9_-]{1,512}\/office(?:\/[0-9a-f-]{36}(?:\/(save|close))?)?$/.exec(path)
+    const method = c.req.method === "POST" ? "POST" : "GET"
+    if (!(method === "GET" && path === "/v1/capabilities/google-workspace/drive-files") && !(editor && (method === "GET" || editor[1] === "editor")) && !(office && (method === "GET" ? !office[1] && /\/[0-9a-f-]{36}$/.test(path) : path.endsWith("/office") || !!office[1]))) return c.json({ error: "not_found" }, 404)
+    if (editor?.[1] === "content") {
+      const response = await den.documentContent(member.accessToken, `${path}${url.search}`)
+      return new Response(response.body, { status: response.status, headers: { "content-type": response.headers.get("content-type") ?? "application/octet-stream", "cache-control": "no-store", "x-content-type-options": "nosniff", "content-security-policy": "default-src 'none'; sandbox" } })
+    }
+    const body: unknown = method === "POST" ? await c.req.json().catch(() => null) : undefined
+    const { status, payload } = await den.documents(member.accessToken, `${path}${url.search}`, method, body)
+    return new Response(JSON.stringify(payload), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } })
+  })
+
   app.get("/v1/workbot/calendar/*", calendarRoute)
   app.post("/v1/workbot/calendar/*", calendarRoute)
   app.patch("/v1/workbot/calendar/*", calendarRoute)

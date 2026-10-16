@@ -91,6 +91,9 @@ const EnvSchema = z.object({
   CORS_ORIGINS: z.string().optional(),
   DEN_CORS_HANDLED_BY_EDGE: z.string().optional(),
   DEN_API_PUBLIC_URL: z.string().optional(),
+  DEN_DOCUMENTS_COLLABORA_URL: z.string().url().optional(),
+  DEN_DOCUMENTS_HOST_ORIGIN: z.string().url().optional(),
+  DEN_DOCUMENTS_CALLBACK_BASE_URL: z.string().url().optional(),
   DEN_API_VERSION: z.string().optional(),
   RENDER_GIT_COMMIT: z.string().optional(),
   OPENWORK_INSTALLER_ARTIFACTS_DIR: z.string().optional(),
@@ -763,6 +766,11 @@ export const env = {
   },
   port,
   corsOrigins,
+  documentsOffice: {
+    serverUrl: optionalString(parsed.DEN_DOCUMENTS_COLLABORA_URL),
+    hostOrigin: optionalString(parsed.DEN_DOCUMENTS_HOST_ORIGIN),
+    callbackBaseUrl: optionalString(parsed.DEN_DOCUMENTS_CALLBACK_BASE_URL) ?? apiPublicUrl,
+  },
   apiPublicUrl,
   serviceVersion: resolveDenServiceVersion({
     configuredVersion: parsed.DEN_API_VERSION,

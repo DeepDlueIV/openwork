@@ -30,6 +30,7 @@ import { OpenFileContext } from "./open-file";
 import { PreviewPanel } from "./preview";
 import { Welcome } from "./welcome";
 import { WorkbotCalendar } from "./calendar";
+import { WorkbotDocuments } from "./documents";
 import { WorkbotComputer } from "./computer";
 import { useQueryClient } from "@tanstack/react-query";
 
@@ -106,7 +107,12 @@ function ChatScreen({ host, navigation }: { host: WorkbotHost; navigation: ChatN
   const [pending, setPending] = useState<Pending[]>([]);
   const [turnWindow, setTurnWindow] = useState(PAGE_TURNS);
   const [filesOpen, setFilesOpen] = useState(false);
-  const [tab, setTab] = useWorkbotTab();
+  const [documentsDirty, setDocumentsDirty] = useState(false);
+  const [leavingDocuments, setLeavingDocuments] = useState<WorkbotTab | null>(null);
+  const [tab, setTab] = useWorkbotTab((next) => {
+    if (documentsDirty && next !== "documents") { setLeavingDocuments(next); return false; }
+    return true;
+  });
   const [preview, setPreview] = useState<WorkbotAttachment | null>(null);
   // The welcome shows once, while there's no conversation yet; leaving it, Workbot starts the conversation itself.
   // "pending" until the conversation is first read: then it shows (no conversation yet) or never does. Side chats
@@ -219,7 +225,7 @@ function ChatScreen({ host, navigation }: { host: WorkbotHost; navigation: ChatN
     );
   };
 
-  if ((tab === "calendar" && host.calendar) || (tab === "computer" && host.computer)) {
+  if ((tab === "calendar" && host.calendar) || tab === "documents" || (tab === "computer" && host.computer)) {
     return (
       <div className="workbot flex h-dvh flex-col bg-[var(--wb-bg)] antialiased">
         <WorkbotHeader
@@ -229,8 +235,9 @@ function ChatScreen({ host, navigation }: { host: WorkbotHost; navigation: ChatN
           files={null}
           nav={<WorkbotNav tab={tab} onTab={setTab} />}
         />
+        {leavingDocuments && <div className="border-t border-[var(--wb-hairline)] px-4 py-2 text-[13px]" role="status">You have unsaved document edits. <button type="button" className="ml-3 underline" onClick={() => setLeavingDocuments(null)}>Keep editing</button><button type="button" className="ml-3 underline" onClick={() => { const next = leavingDocuments; setLeavingDocuments(null); setDocumentsDirty(false); setTab(next, true); }}>Discard edits and leave Documents</button></div>}
         <div className="flex min-h-0 flex-1 border-t border-[#01162712]">
-          {tab === "computer" ? <WorkbotComputer /> : <WorkbotCalendar connectionsHref={host.connectionsHref ?? null} assistantName={data?.name ?? "Workbot"} />}
+          {tab === "computer" ? <WorkbotComputer /> : tab === "documents" ? <WorkbotDocuments onDirtyChange={setDocumentsDirty} /> : <WorkbotCalendar connectionsHref={host.connectionsHref ?? null} assistantName={data?.name ?? "Workbot"} />}
         </div>
       </div>
     );
@@ -305,7 +312,7 @@ function ChatScreen({ host, navigation }: { host: WorkbotHost; navigation: ChatN
         chats={navigation && !chatId ? <ChatsButton onOpen={navigation.openChats} /> : null}
         title={navigation && chatId ? <SideChatTitle title={navigation.title} onBack={() => navigation.openChat(null)} /> : null}
         remove={navigation && chatId && data.turns.length > 0 ? <RemoveChatButton chatId={chatId} title={navigation.title} onRemoved={() => navigation.openChat(null)} /> : null}
-        nav={(host.calendar || host.computer) && !chatId ? <WorkbotNav tab={tab} onTab={setTab} /> : null}
+        nav={!chatId ? <WorkbotNav tab={tab} onTab={setTab} /> : null}
       />
       <div className="flex min-h-0 flex-1">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -457,23 +464,30 @@ function useConnectedApps() {
   return workbotHost().useConnectedApps();
 }
 
-type WorkbotTab = "home" | "calendar" | "computer";
+type WorkbotTab = "home" | "calendar" | "documents" | "computer";
 
 function tabFromLocation(): WorkbotTab {
   const path = typeof window !== "undefined" ? window.location.pathname.replace(/\/+$/, "") : "";
-  return path === "/computer" ? "computer" : path === "/calendar" ? "calendar" : "home";
+  return path === "/computer" ? "computer" : path === "/documents" ? "documents" : path === "/calendar" ? "calendar" : "home";
 }
 
 /** Home (the conversation) and Calendar, as paths so a reload or a shared link opens the same tab. */
-function useWorkbotTab() {
+function useWorkbotTab(beforeLeave?: (next: WorkbotTab) => boolean) {
+  const beforeLeaveRef = useRef(beforeLeave);
+  beforeLeaveRef.current = beforeLeave;
   const [tab, setTabState] = useState<WorkbotTab>(tabFromLocation);
   useEffect(() => {
-    const sync = () => setTabState(tabFromLocation());
+    const sync = () => {
+      const next = tabFromLocation();
+      if (beforeLeaveRef.current?.(next) === false) { window.history.pushState(null, "", "/documents"); return; }
+      setTabState(next);
+    };
     window.addEventListener("popstate", sync);
     return () => window.removeEventListener("popstate", sync);
   }, []);
-  const setTab = (next: WorkbotTab) => {
+  const setTab = (next: WorkbotTab, discard = false) => {
     if (next === tab) return;
+    if (!discard && beforeLeaveRef.current?.(next) === false) return;
     window.history.pushState(null, "", next === "home" ? "/" : `/${next}`);
     setTabState(next);
   };
@@ -484,7 +498,7 @@ function useWorkbotTab() {
 function WorkbotNav({ tab, onTab }: { tab: WorkbotTab; onTab: (tab: WorkbotTab) => void }) {
   return (
     <nav className="ml-4 flex items-center gap-0.5" aria-label="Workbot">
-      {(["home", ...(workbotHost().calendar ? ["calendar" as const] : []), ...(workbotHost().computer ? ["computer" as const] : [])] as const).map((entry) => (
+      {(["home", ...(workbotHost().calendar ? ["calendar" as const] : []), "documents", ...(workbotHost().computer ? ["computer" as const] : [])] as const).map((entry) => (
         <button
           key={entry}
           type="button"
@@ -492,7 +506,7 @@ function WorkbotNav({ tab, onTab }: { tab: WorkbotTab; onTab: (tab: WorkbotTab) 
           onClick={() => onTab(entry)}
           className={`flex h-8 items-center rounded-lg px-3 text-[13px] leading-4 transition-colors duration-150 focus-visible:outline-none focus-visible:shadow-[var(--wb-focus)] ${tab === entry ? "bg-[#EDF0F2] font-semibold text-[#11181C]" : "font-medium text-[#687076] hover:text-[#11181C]"}`}
         >
-          {entry === "home" ? "Home" : entry === "calendar" ? "Calendar" : "Computer"}
+          {entry === "home" ? "Home" : entry === "calendar" ? "Calendar" : entry === "documents" ? "Documents" : "Computer"}{entry === "documents" && !workbotHost().documents ? <Lock size={12} className="ml-1.5" aria-label="Unavailable" /> : null}
         </button>
       ))}
     </nav>

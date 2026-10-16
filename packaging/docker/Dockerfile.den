@@ -51,6 +51,8 @@ COPY packages/sandbox-freestyle/package.json /app/packages/sandbox-freestyle/pac
 COPY ee/packages/den-db/package.json /app/ee/packages/den-db/package.json
 COPY ee/packages/telemetry-contracts/package.json /app/ee/packages/telemetry-contracts/package.json
 COPY ee/packages/telemetry/package.json /app/ee/packages/telemetry/package.json
+COPY packages/workbook/package.json /app/packages/workbook/package.json
+COPY packages/documents/package.json /app/packages/documents/package.json
 COPY ee/apps/den-api/package.json /app/ee/apps/den-api/package.json
 
 RUN pnpm install --frozen-lockfile --trust-lockfile
@@ -79,6 +81,8 @@ COPY packages/sandbox-daytona /app/packages/sandbox-daytona
 COPY ee/packages/den-db /app/ee/packages/den-db
 COPY ee/packages/telemetry-contracts /app/ee/packages/telemetry-contracts
 COPY ee/packages/telemetry /app/ee/packages/telemetry
+COPY packages/workbook /app/packages/workbook
+COPY packages/documents /app/packages/documents
 COPY ee/apps/den-api /app/ee/apps/den-api
 COPY apps/desktop/package.json /app/apps/desktop/package.json
 

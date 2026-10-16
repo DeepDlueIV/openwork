@@ -16,6 +16,7 @@ export function WorkbotComputer() {
   const container = useRef<HTMLDivElement>(null);
   const [view, setView] = useState<"browser" | "computer">("browser");
   const [control, setControl] = useState(false);
+  const [agentPaused, setAgentPaused] = useState(false);
   const [paused, setPaused] = useState(false);
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -27,7 +28,7 @@ export function WorkbotComputer() {
     const target = screen.current;
     if (!target || paused) return;
     let disposed = false;
-    let client: import("@novnc/novnc/lib/rfb.js").default | null = null;
+    let client: import("@novnc/novnc").default | null = null;
     let retry: ReturnType<typeof setTimeout> | undefined;
     const controller = new AbortController();
     let failures = 0;
@@ -44,7 +45,8 @@ export function WorkbotComputer() {
         }
         const session = viewerSchema.parse(payload);
         if (session.state === "paused") { setPaused(true); return; }
-        const { default: RFB } = await import("@novnc/novnc/lib/rfb.js");
+        setAgentPaused(session.paused);
+        const { default: RFB } = await import("@novnc/novnc");
         if (disposed) return;
         target.replaceChildren();
         client = new RFB(target, session.url, { shared: true });
@@ -81,7 +83,7 @@ export function WorkbotComputer() {
     try {
       const { response, payload } = await host.requestJson("/v1/workbot/computer/action", { method: "POST", body: JSON.stringify({ action: next }) }, 150_000);
       if (!response.ok) throw new Error(errorMessage(payload, "Your computer didn't respond. Try again."));
-      if (next === "continue") setControl(false);
+      if (next === "continue") { setControl(false); setAgentPaused(false); }
       setPaused(next === "pause");
       setRevision(current => current + 1);
     } catch (error) { setError(error instanceof Error ? error.message : "Your computer didn't respond."); }
@@ -97,6 +99,7 @@ export function WorkbotComputer() {
         <span className="mr-2 hidden text-[12px] text-[var(--wb-muted)] sm:inline" role="status">{paused ? "Paused" : error ? "Disconnected" : connected ? control ? "You have control" : "Live" : "Connecting…"}</span>
         {paused ? <button type="button" className={button} disabled={changing} onClick={() => void action("resume")}><Play size={14} aria-hidden />Resume</button> : <>
           <button type="button" className={button} disabled={changing || !connected} onClick={() => control ? void action("continue") : setControl(true)}>{control ? "Return to Workbot" : "Take control"}</button>
+          {agentPaused && !control ? <button type="button" className={button} disabled={changing} onClick={() => void action("continue")}>Continue Workbot</button> : null}
           <button type="button" className={button} disabled={changing} onClick={() => void action("pause")}><Pause size={14} aria-hidden />Pause</button>
         </>}
         <button type="button" className={button} aria-label="Full screen" onClick={() => void container.current?.requestFullscreen().catch(() => setError("Full screen isn't available in this browser."))}><Maximize2 size={14} aria-hidden /></button>

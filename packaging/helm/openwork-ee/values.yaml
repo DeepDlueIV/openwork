@@ -40,6 +40,7 @@ config:
     slackAssistant: ""             # default off · Answers Slack mentions and DMs for the organization after the Slack connector is set up.
     slackWorkbotReplies: ""        # default off · OpenWork in Slack writes its reply as it works, reacts to messages with an emoji, and takes bigger jobs into the background, posting the result in the thread when done.
     workbot: ""                    # default off · Members can use Workbot, with side chats, a Calendar tab of its scheduled work and the option to run stopped tasks again, and organization admins choose the default model Workbot, the Slack assistant and cloud Automations answer with. Needs the deployment's Workbot app.
+    workbotDocuments: ""           # default off · Members browse recent Google Drive files and folders in Workbot, open documents in tabs, and save supported text and spreadsheet edits to Drive.
     automationCalendar: ""         # default off · Members see a Calendar in the desktop app with their Automations next to meetings from their connected Google or Outlook calendar.
     permissions: ""                # default off · Organization admins choose what members, admins and each team can do, instead of the fixed Member and Admin defaults.
     teamRoles: ""                  # default off · Members › Teams shows each team's role (Member, Admin or Custom) with one Change role action, and Members gets a Roles tab to see and create roles.

@@ -746,6 +746,7 @@ export type AdminFeature = {
     | "slackAssistant"
     | "slackWorkbotReplies"
     | "workbot"
+    | "workbotDocuments"
     | "automationCalendar"
     | "permissions"
     | "teamRoles"
@@ -815,6 +816,7 @@ export type AdminOrganizationsPageResponse = {
       slackAssistant: boolean;
       slackWorkbotReplies: boolean;
       workbot: boolean;
+      workbotDocuments: boolean;
       automationCalendar: boolean;
       permissions: boolean;
       teamRoles: boolean;
@@ -961,6 +963,15 @@ export type AdminOrganizationsPageResponse = {
         overrideApplies: boolean;
       };
       workbot: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotDocuments: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -1199,6 +1210,7 @@ export type AdminOverviewResponse = {
       slackAssistant: boolean;
       slackWorkbotReplies: boolean;
       workbot: boolean;
+      workbotDocuments: boolean;
       automationCalendar: boolean;
       permissions: boolean;
       teamRoles: boolean;
@@ -1345,6 +1357,15 @@ export type AdminOverviewResponse = {
         overrideApplies: boolean;
       };
       workbot: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotDocuments: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6672,6 +6693,7 @@ export type WorkbotSession = {
   canSchedule: boolean;
   computer?: boolean;
   calendar?: boolean;
+  documents?: boolean;
   sideChats: boolean;
   model?: string | null;
 };
@@ -7641,6 +7663,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       slackAssistant: boolean;
       slackWorkbotReplies: boolean;
       workbot: boolean;
+      workbotDocuments: boolean;
       automationCalendar: boolean;
       permissions: boolean;
       teamRoles: boolean;
@@ -7787,6 +7810,15 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       workbot: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotDocuments: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -8013,6 +8045,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       slackAssistant: boolean;
       slackWorkbotReplies: boolean;
       workbot: boolean;
+      workbotDocuments: boolean;
       automationCalendar: boolean;
       permissions: boolean;
       teamRoles: boolean;
@@ -8159,6 +8192,15 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       workbot: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotDocuments: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -24039,6 +24081,553 @@ export type DownloadGoogleDriveFileByLinkResponses = {
 export type DownloadGoogleDriveFileByLinkResponse =
   DownloadGoogleDriveFileByLinkResponses[keyof DownloadGoogleDriveFileByLinkResponses];
 
+export type OpenGoogleDriveDocumentEditorData = {
+  body?: never;
+  path: {
+    fileId: string;
+  };
+  query?: {
+    sheetId?: string;
+    startRow?: number;
+    connectionId?: string;
+  };
+  url: "/v1/documents/google-drive/files/{fileId}/editor";
+};
+
+export type OpenGoogleDriveDocumentEditorErrors = {
+  /**
+   * Unsupported edit.
+   */
+  400: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Reconnect or reload the changed file.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+};
+
+export type OpenGoogleDriveDocumentEditorError =
+  OpenGoogleDriveDocumentEditorErrors[keyof OpenGoogleDriveDocumentEditorErrors];
+
+export type OpenGoogleDriveDocumentEditorResponses = {
+  /**
+   * Document result.
+   */
+  200:
+    | {
+        connectionId: string;
+        fileId: string;
+        name: string;
+        revision: string;
+        canEdit: boolean;
+        notice?: string;
+        kind: "spreadsheet";
+        source: "google" | "xlsx";
+        sheets: Array<{
+          id: string;
+          name: string;
+          rows: number;
+          columns: number;
+        }>;
+        activeSheetId: string;
+        startRow: number;
+        endRow: number;
+        cells: Array<{
+          row: number;
+          column: number;
+          text: string;
+          formula?: string;
+        }>;
+      }
+    | {
+        connectionId: string;
+        fileId: string;
+        name: string;
+        revision: string;
+        canEdit: boolean;
+        notice?: string;
+        kind: "document";
+        source: "google" | "docx";
+        sections: Array<{
+          id: string;
+          name: string;
+          paragraphs: Array<{
+            id: string;
+            heading?: boolean;
+            runs: Array<{
+              id: string;
+              text: string;
+              bold?: boolean;
+              italic?: boolean;
+              underline?: boolean;
+            }>;
+          }>;
+        }>;
+      }
+    | {
+        connectionId: string;
+        fileId: string;
+        name: string;
+        revision: string;
+        canEdit: boolean;
+        notice?: string;
+        kind: "text";
+        text: string;
+      }
+    | {
+        connectionId: string;
+        fileId: string;
+        name: string;
+        revision: string;
+        canEdit: boolean;
+        notice?: string;
+        kind: "preview";
+        mimeType: string;
+      };
+};
+
+export type OpenGoogleDriveDocumentEditorResponse =
+  OpenGoogleDriveDocumentEditorResponses[keyof OpenGoogleDriveDocumentEditorResponses];
+
+export type SaveGoogleDriveDocumentEditsData = {
+  body:
+    | {
+        kind: "spreadsheet";
+        connectionId: string;
+        revision: string;
+        sheetId: string;
+        changes: Array<{
+          row: number;
+          column: number;
+          value: string;
+          formula?: boolean;
+        }>;
+      }
+    | {
+        kind: "document";
+        connectionId: string;
+        revision: string;
+        changes: Array<{
+          sectionId: string;
+          runId: string;
+          value: string;
+        }>;
+      }
+    | {
+        kind: "text";
+        connectionId: string;
+        revision: string;
+        text: string;
+      };
+  path: {
+    fileId: string;
+  };
+  query?: never;
+  url: "/v1/documents/google-drive/files/{fileId}/editor";
+};
+
+export type SaveGoogleDriveDocumentEditsErrors = {
+  /**
+   * Unsupported edit.
+   */
+  400: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Reconnect or reload the changed file.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+};
+
+export type SaveGoogleDriveDocumentEditsError =
+  SaveGoogleDriveDocumentEditsErrors[keyof SaveGoogleDriveDocumentEditsErrors];
+
+export type SaveGoogleDriveDocumentEditsResponses = {
+  /**
+   * Document result.
+   */
+  200: {
+    ok: true;
+  };
+};
+
+export type SaveGoogleDriveDocumentEditsResponse =
+  SaveGoogleDriveDocumentEditsResponses[keyof SaveGoogleDriveDocumentEditsResponses];
+
+export type ReadGoogleDriveDocumentContentData = {
+  body?: never;
+  path: {
+    fileId: string;
+  };
+  query: {
+    connectionId: string;
+  };
+  url: "/v1/documents/google-drive/files/{fileId}/content";
+};
+
+export type ReadGoogleDriveDocumentContentErrors = {
+  /**
+   * Unsupported edit.
+   */
+  400: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Reconnect or reload the changed file.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+};
+
+export type ReadGoogleDriveDocumentContentError =
+  ReadGoogleDriveDocumentContentErrors[keyof ReadGoogleDriveDocumentContentErrors];
+
+export type ReadGoogleDriveDocumentContentResponses = {
+  /**
+   * Document result.
+   */
+  200: unknown;
+};
+
+export type OpenGoogleDriveOfficeEditorData = {
+  body?: never;
+  path: {
+    fileId: string;
+  };
+  query?: never;
+  url: "/v1/documents/google-drive/files/{fileId}/office";
+};
+
+export type OpenGoogleDriveOfficeEditorErrors = {
+  /**
+   * Reopen or reconnect.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The editor is unavailable.
+   */
+  503: {
+    error: string;
+    message: string;
+  };
+};
+
+export type OpenGoogleDriveOfficeEditorError =
+  OpenGoogleDriveOfficeEditorErrors[keyof OpenGoogleDriveOfficeEditorErrors];
+
+export type OpenGoogleDriveOfficeEditorResponses = {
+  /**
+   * Office editor result.
+   */
+  200: {
+    id: string;
+    serverUrl: string;
+    editorUrl: string;
+    accessToken: string;
+    expiresAt: number;
+    saveAsCopy: boolean;
+    canEdit: boolean;
+    fileType: "docx" | "xlsx" | "pptx" | "odt" | "ods" | "odp";
+  };
+};
+
+export type OpenGoogleDriveOfficeEditorResponse =
+  OpenGoogleDriveOfficeEditorResponses[keyof OpenGoogleDriveOfficeEditorResponses];
+
+export type GetGoogleDriveOfficeEditorStatusData = {
+  body?: never;
+  path: {
+    fileId: string;
+    sessionId: string;
+  };
+  query?: never;
+  url: "/v1/documents/google-drive/files/{fileId}/office/{sessionId}";
+};
+
+export type GetGoogleDriveOfficeEditorStatusErrors = {
+  /**
+   * Reopen or reconnect.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The editor is unavailable.
+   */
+  503: {
+    error: string;
+    message: string;
+  };
+};
+
+export type GetGoogleDriveOfficeEditorStatusError =
+  GetGoogleDriveOfficeEditorStatusErrors[keyof GetGoogleDriveOfficeEditorStatusErrors];
+
+export type GetGoogleDriveOfficeEditorStatusResponses = {
+  /**
+   * Office editor result.
+   */
+  200: {
+    expiresAt: number;
+    draftVersion: number;
+    saveRequestId?: string;
+    savedFileId?: string;
+  };
+};
+
+export type GetGoogleDriveOfficeEditorStatusResponse =
+  GetGoogleDriveOfficeEditorStatusResponses[keyof GetGoogleDriveOfficeEditorStatusResponses];
+
+export type SaveGoogleDriveOfficeEditorData = {
+  body: {
+    draftVersion: number;
+  };
+  path: {
+    fileId: string;
+    sessionId: string;
+  };
+  query?: never;
+  url: "/v1/documents/google-drive/files/{fileId}/office/{sessionId}/save";
+};
+
+export type SaveGoogleDriveOfficeEditorErrors = {
+  /**
+   * Reopen or reconnect.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The editor is unavailable.
+   */
+  503: {
+    error: string;
+    message: string;
+  };
+};
+
+export type SaveGoogleDriveOfficeEditorError =
+  SaveGoogleDriveOfficeEditorErrors[keyof SaveGoogleDriveOfficeEditorErrors];
+
+export type SaveGoogleDriveOfficeEditorResponses = {
+  /**
+   * Office editor result.
+   */
+  200: {
+    fileId: string;
+  };
+};
+
+export type SaveGoogleDriveOfficeEditorResponse =
+  SaveGoogleDriveOfficeEditorResponses[keyof SaveGoogleDriveOfficeEditorResponses];
+
+export type CloseGoogleDriveOfficeEditorData = {
+  body?: never;
+  path: {
+    fileId: string;
+    sessionId: string;
+  };
+  query?: never;
+  url: "/v1/documents/google-drive/files/{fileId}/office/{sessionId}/close";
+};
+
+export type CloseGoogleDriveOfficeEditorErrors = {
+  /**
+   * Reopen or reconnect.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The editor is unavailable.
+   */
+  503: {
+    error: string;
+    message: string;
+  };
+};
+
+export type CloseGoogleDriveOfficeEditorError =
+  CloseGoogleDriveOfficeEditorErrors[keyof CloseGoogleDriveOfficeEditorErrors];
+
+export type CloseGoogleDriveOfficeEditorResponses = {
+  /**
+   * Office editor result.
+   */
+  200: {
+    ok: true;
+  };
+};
+
+export type CloseGoogleDriveOfficeEditorResponse =
+  CloseGoogleDriveOfficeEditorResponses[keyof CloseGoogleDriveOfficeEditorResponses];
+
+export type GetOfficeFileInfoData = {
+  body?: never;
+  path: {
+    sessionId: string;
+  };
+  query?: never;
+  url: "/v1/documents/wopi/files/{sessionId}";
+};
+
+export type GetOfficeFileInfoErrors = {
+  /**
+   * Reopen or reconnect.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The editor is unavailable.
+   */
+  503: {
+    error: string;
+    message: string;
+  };
+};
+
+export type GetOfficeFileInfoError = GetOfficeFileInfoErrors[keyof GetOfficeFileInfoErrors];
+
+export type GetOfficeFileInfoResponses = {
+  /**
+   * Office editor result.
+   */
+  200: unknown;
+};
+
+export type LockOfficeFileData = {
+  body?: never;
+  path: {
+    sessionId: string;
+  };
+  query?: never;
+  url: "/v1/documents/wopi/files/{sessionId}";
+};
+
+export type LockOfficeFileErrors = {
+  /**
+   * Reopen or reconnect.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The editor is unavailable.
+   */
+  503: {
+    error: string;
+    message: string;
+  };
+};
+
+export type LockOfficeFileError = LockOfficeFileErrors[keyof LockOfficeFileErrors];
+
+export type LockOfficeFileResponses = {
+  /**
+   * Office editor result.
+   */
+  200: {
+    ok: boolean;
+  };
+};
+
+export type LockOfficeFileResponse = LockOfficeFileResponses[keyof LockOfficeFileResponses];
+
+export type GetOfficeFileContentsData = {
+  body?: never;
+  path: {
+    sessionId: string;
+  };
+  query?: never;
+  url: "/v1/documents/wopi/files/{sessionId}/contents";
+};
+
+export type GetOfficeFileContentsErrors = {
+  /**
+   * Reopen or reconnect.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The editor is unavailable.
+   */
+  503: {
+    error: string;
+    message: string;
+  };
+};
+
+export type GetOfficeFileContentsError = GetOfficeFileContentsErrors[keyof GetOfficeFileContentsErrors];
+
+export type GetOfficeFileContentsResponses = {
+  /**
+   * Office editor result.
+   */
+  200: unknown;
+};
+
+export type PutOfficeFileContentsData = {
+  body?: never;
+  path: {
+    sessionId: string;
+  };
+  query?: never;
+  url: "/v1/documents/wopi/files/{sessionId}/contents";
+};
+
+export type PutOfficeFileContentsErrors = {
+  /**
+   * Reopen or reconnect.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The editor is unavailable.
+   */
+  503: {
+    error: string;
+    message: string;
+  };
+};
+
+export type PutOfficeFileContentsError = PutOfficeFileContentsErrors[keyof PutOfficeFileContentsErrors];
+
+export type PutOfficeFileContentsResponses = {
+  /**
+   * Office editor result.
+   */
+  200: {
+    LastModifiedTime: string;
+  };
+};
+
+export type PutOfficeFileContentsResponse = PutOfficeFileContentsResponses[keyof PutOfficeFileContentsResponses];
+
 export type SendGmailDraftData = {
   body: {
     /**
@@ -26095,6 +26684,8 @@ export type GetV1CapabilitiesGoogleWorkspaceDriveFilesData = {
      */
     maxResults?: number;
     pageToken?: string;
+    orderBy?: "folder,name_natural" | "recency desc" | "modifiedTime desc";
+    filesOnly?: "true" | "false";
     /**
      * Only files modified after this RFC3339 timestamp; follow nextPageToken to enumerate all matching files.
      */

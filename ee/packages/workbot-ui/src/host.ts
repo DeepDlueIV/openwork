@@ -23,6 +23,8 @@ export type WorkbotHost = {
   calendar?: boolean
   /** Shared browser and computer desktop, enabled by the organization flags. */
   computer?: boolean
+  /** Documents browsing is enabled for this organization; omitted means off. */
+  documents?: boolean
   /** The organization runs Automations in the cloud, so the Calendar can create them. Off when unset. */
   canSchedule?: boolean
   /** Where the person connects their own Google or Microsoft account, for the Calendar's connect links. */

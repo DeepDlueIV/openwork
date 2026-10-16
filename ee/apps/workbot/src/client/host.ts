@@ -13,6 +13,7 @@ export const meSchema = z.object({
   computer: z.boolean().default(false),
   /** Workbot's Calendar tab (on while Workbot is on); older servers omit it. */
   calendar: z.boolean().default(false),
+  documents: z.boolean().default(false),
   /** The organization runs Automations in the cloud, so the Calendar can create them. */
   canSchedule: z.boolean().default(false),
   /** Side chats are on for this person (while Workbot is on). */
@@ -64,6 +65,7 @@ export function createHost(me: Me): WorkbotHost {
     homeHref: me.denUrl ? `${me.denUrl}/dashboard` : "/",
     calendar: me.calendar,
     computer: me.computer,
+    documents: me.documents,
     canSchedule: me.canSchedule,
     connectionsHref: me.denUrl ? `${me.denUrl}/dashboard/your-connections` : null,
     sideChats: me.sideChats,

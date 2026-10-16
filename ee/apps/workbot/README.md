@@ -62,3 +62,22 @@ A web service in the same region as the headless runner (it reaches the runner's
 | Health check | `/healthz` |
 | Disk | None. Scale instances freely |
 | Custom domain | `chat.openworklabs.com` |
+
+## Documents
+
+The Documents tab mounts the reusable `@openwork/documents` workspace through
+`@openwork-ee/workbot-ui`. `workbotDocuments` is off by default and also requires
+Workbot. Enable it through Den's existing Features controls; there is no separate
+Workbot environment switch.
+
+Recent and My Drive use the member's real Drive API v3 connection. Missing
+access offers Connect/Reconnect. Google Sheets, Excel, Google Docs, Word and
+UTF-8 text open in internal tabs with explicit save-to-original-file actions;
+PDFs/images preview inline. Other formats link to the original editor. This is
+bounded cell/text editing, not full Office layout or collaboration parity.
+
+The host protects dirty tabs before navigation. Den independently checks the
+feature, membership, OAuth read/write scopes and the exact Google connection.
+The editor preserves unrelated file parts and refuses unsupported unsafe edits.
+See `packages/documents/README.md` for the package contract, format limits,
+permission requirements and concurrency boundaries.

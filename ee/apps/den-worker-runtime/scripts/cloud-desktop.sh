@@ -11,7 +11,7 @@ chown -R openwork-browser:openwork-browser "$state"
 export DISPLAY="$display" XAUTHORITY="$state/.Xauthority"
 as_browser() {
   # The desktop must not inherit the worker's host, model or activity tokens.
-  env -i PATH=/usr/local/bin:/usr/bin:/bin HOME=/home/openwork-browser \
+  env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin HOME=/home/openwork-browser \
     USER=openwork-browser LOGNAME=openwork-browser LANG=C.UTF-8 \
     DISPLAY="$display" XAUTHORITY="$XAUTHORITY" runuser -u openwork-browser -- "$@"
 }

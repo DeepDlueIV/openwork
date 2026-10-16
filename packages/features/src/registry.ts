@@ -151,6 +151,13 @@ export const FEATURES = defineFeatures({
     deployments: everywhere,
     default: false,
   },
+  workbotDocuments: {
+    label: "Workbot Documents",
+    description: "Members browse recent Google Drive files and folders in Workbot, open documents in tabs, and save supported text and spreadsheet edits to Drive.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
   automationCalendar: {
     label: "Calendar: desktop app",
     description: "Members see a Calendar in the desktop app with their Automations next to meetings from their connected Google or Outlook calendar.",

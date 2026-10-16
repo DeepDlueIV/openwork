@@ -14,7 +14,9 @@ button is selected. `POST /engine/v1-history/import` requires the host token and
 explicit confirmation. `GET /engine/status` reports progress and the saved result.
 Existing v2 chats are kept. Chats pause while copying; closing OpenWork preserves
 progress, and startup resumes the interrupted copy before opening v2 history.
-A successful receipt survives restart and dismisses the one-time offer.
+A successful receipt survives restart and dismisses the one-time offer. At startup,
+OpenWork checks for v1 chats newer than that receipt and requires another copy
+when someone returned to v1 during the preview.
 
 The upgrade and progress dialogs cannot be dismissed until copying completes.
 Errors keep chat access blocked and offer **Try again**. A failed initial status

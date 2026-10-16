@@ -434,6 +434,11 @@ function useImportCandidate(): ImportCandidate | null {
         if (cancelled) return;
         observeChatImport(client, status);
         setCandidate({ client, status });
+        // The startup check may invalidate a preview-era receipt when v1
+        // gained more chats. Read again once that check/engine startup finishes.
+        if (!status.running && !status.v1HistoryAvailable && status.migration?.state !== "running" && status.migration?.state !== "error") {
+          retryTimer = setTimeout(() => void readStatus(), 2_000);
+        }
       } catch {
         // Startup can race the local server. Keep trying so an upgrade cannot
         // disappear for this launch because the first status read failed.

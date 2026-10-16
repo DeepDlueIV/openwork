@@ -215,6 +215,19 @@ test("closing OpenWork pauses a copy and startup resumes it before serving v2", 
     assert.equal(preview.status().migration.state, "idle");
     assert.equal(preview.connection(), undefined, "v1 history without a receipt blocks all chat access");
     await preview.stop(); preview = undefined;
+    // A completed preview import does not cover chats created later in v1.
+    await writeFile(join(directory, "engine-v2-preview.json"), JSON.stringify({ enabled: true, chatRouting: true,
+      v1HistoryCopiedAt: 0, historyCopyResult: { state: "completed", imported: 1, skipped: 0, total: 1 } }));
+    preview = createEngineV2Preview({ config, deferStart: true });
+    preview.start();
+    while (!preview.status().running) {
+      assert.ok(Date.now() < initialDeadline, "the preview receipt is checked before serving chats");
+      await new Promise(resolve => setTimeout(resolve, 20));
+    }
+    assert.equal(preview.status().v1HistoryAvailable, true, "newer v1 chats invalidate the old receipt");
+    assert.equal(preview.status().migration.state, "idle");
+    assert.equal(preview.connection(), undefined);
+    await preview.stop(); preview = undefined;
     await writeFile(join(directory, "engine-v2-preview.json"), JSON.stringify({ enabled: true, chatRouting: true, v1HistoryCopyStartedAt: 1 }));
     preview = createEngineV2Preview({ config, deferStart: true });
     assert.deepEqual(preview.inspectMcpRegistration(directory, "unconfigured"), {

@@ -762,6 +762,14 @@ export function createEngineV2Preview(options: {
   }
 
   async function startSidecar(): Promise<void> {
+    // Preview users could import once, switch back to v1, and create more
+    // chats. An old receipt only covers the snapshot it actually copied.
+    if (v1HistoryCopiedAt !== undefined && v1HistoryCopyStartedAt === undefined
+      && await hasV1ChatsSince(opencodeV1DatabasePath(), v1HistoryCopiedAt)) {
+      v1HistoryCopiedAt = undefined;
+      migration = { state: "idle", imported: 0, skipped: 0, total: 0 };
+      await persistState();
+    }
     const resolved = await resolveBinary(config);
     binSource = resolved.source;
     if (stopped) return;

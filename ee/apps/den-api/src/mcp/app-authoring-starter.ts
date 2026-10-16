@@ -525,6 +525,14 @@ export default function App({ app, input, result, hostContext }) {
     setValues(next);
     if (delivered && isReady(LOAD.fields, next)) load.call(argumentsFor(LOAD, next));
   }, [launch, delivered]);
+  // A later launch result is the host refreshing the open App, as a dashboard
+  // does: load the same inputs again while the data stays on screen.
+  const refreshed = React.useRef(result);
+  React.useEffect(() => {
+    const previous = refreshed.current;
+    refreshed.current = result;
+    if (previous !== undefined && previous !== result && isReady(LOAD.fields, values)) load.call(argumentsFor(LOAD, values));
+  }, [result]);
   // The last result for these inputs shows at once, from OpenWork's storage.
   const query = JSON.stringify(values);
   React.useEffect(() => {
@@ -578,6 +586,14 @@ export default function App({ app, input, result, hostContext }) {
   React.useEffect(() => {
     if (LOAD && delivered) load.call(argumentsFor(LOAD, {}));
   }, [delivered]);
+  // A later launch result is the host refreshing the open App, as a dashboard
+  // does: load again while the data stays on screen.
+  const refreshed = React.useRef(result);
+  React.useEffect(() => {
+    const previous = refreshed.current;
+    refreshed.current = result;
+    if (LOAD && previous !== undefined && previous !== result) load.call(argumentsFor(LOAD, {}));
+  }, [result]);
   const reload = () => {
     if (LOAD) load.call(argumentsFor(LOAD, {}));
   };
@@ -673,8 +689,9 @@ export default function App({ input, hostContext }) {
 }
 `
 
-const STARTER_CSS = `body { margin: 0; }
-.app { box-sizing: border-box; container-type: inline-size; display: grid; gap: 12px; min-width: 0; padding: 12px 14px; color: var(--color-text-primary, CanvasText); font: 13px/1.5 var(--font-sans, system-ui, sans-serif); }
+const STARTER_CSS = `:root { color-scheme: light dark; }
+body { margin: 0; }
+.app { box-sizing: border-box; container-type: inline-size; display: grid; gap: 12px; min-width: 0; padding: 12px 14px; color: var(--color-text-primary, CanvasText); background: var(--color-background-primary, Canvas); font: 13px/1.5 var(--font-sans, system-ui, sans-serif); }
 .app *, .app *::before, .app *::after { box-sizing: border-box; }
 .controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
 .field { display: grid; flex: 1 1 140px; gap: 4px; min-width: 0; }

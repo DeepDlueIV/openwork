@@ -149,7 +149,7 @@ export function AdminConnectorSetupScreen({ catalogId }: { catalogId: string }) 
               )}
             </div>
           )
-          : <OAuthAppFields secretRequired={setup.secretRequired} saving={setup.saving} error={setup.saveError} onSave={(input) => void setup.saveOAuthApp(input)} />,
+          : <OAuthAppFields url={target.url} discovery={setup.discovery} secretRequired={setup.secretRequired} saving={setup.saving} error={setup.saveError} onSave={(input) => void setup.saveOAuthApp(input)} />,
       };
     }
     return check;

@@ -1023,6 +1023,13 @@
       "when": 1792003878606,
       "tag": "0146_gateway_provider_usage_limits",
       "breakpoints": true
+    },
+    {
+      "idx": 147,
+      "version": "5",
+      "when": 1792104699960,
+      "tag": "0147_free_auto_behavior",
+      "breakpoints": true
     }
   ]
 }

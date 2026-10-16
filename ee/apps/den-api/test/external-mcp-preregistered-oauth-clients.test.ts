@@ -1,4 +1,5 @@
-import { describe, expect, test } from "bun:test"
+import assert from "node:assert/strict"
+import { describe, test } from "node:test"
 import type { EnterpriseMcpConnectionRequirements } from "@openwork/enterprise-mcp-client"
 import { pluginMcpRequiresPreRegisteredOAuthClient } from "../src/capability-sources/external-mcp-auth-policy.js"
 import {
@@ -47,25 +48,25 @@ function oauthRequirements(overrides: Partial<EnterpriseMcpConnectionRequirement
 
 describe("DEN_EXTERNAL_MCP_PREREGISTERED_OAUTH_CLIENTS parsing", () => {
   test("an unset or blank value configures no clients", () => {
-    expect(parseExternalMcpPreRegisteredOAuthClients(undefined).size).toBe(0)
-    expect(parseExternalMcpPreRegisteredOAuthClients("   ").size).toBe(0)
+    assert.equal(parseExternalMcpPreRegisteredOAuthClients(undefined).size, 0)
+    assert.equal(parseExternalMcpPreRegisteredOAuthClients("   ").size, 0)
   })
 
   test("parses a public client keyed by normalized server URL", () => {
     const clients = renderClients(`{"https://MCP.render.com:443/mcp/":{"clientId":"openwork"}}`)
-    expect([...clients.keys()]).toEqual([RENDER_URL])
-    expect(preRegisteredOAuthClientForUrl("https://mcp.render.com/mcp/", clients)).toEqual({ clientId: "openwork" })
-    expect(preRegisteredOAuthClientForUrl("https://mcp.render.com/other", clients)).toBeNull()
-    expect(preRegisteredOAuthClientForUrl("http://mcp.render.com/mcp", clients)).toBeNull()
-    expect(preRegisteredOAuthClientForUrl("not a url", clients)).toBeNull()
-    expect(preRegisteredOAuthClientForUrl(RENDER_URL, EMPTY_EXTERNAL_MCP_PREREGISTERED_OAUTH_CLIENTS)).toBeNull()
+    assert.deepEqual([...clients.keys()], [RENDER_URL])
+    assert.deepEqual(preRegisteredOAuthClientForUrl("https://mcp.render.com/mcp/", clients), { clientId: "openwork" })
+    assert.equal(preRegisteredOAuthClientForUrl("https://mcp.render.com/other", clients), null)
+    assert.equal(preRegisteredOAuthClientForUrl("http://mcp.render.com/mcp", clients), null)
+    assert.equal(preRegisteredOAuthClientForUrl("not a url", clients), null)
+    assert.equal(preRegisteredOAuthClientForUrl(RENDER_URL, EMPTY_EXTERNAL_MCP_PREREGISTERED_OAUTH_CLIENTS), null)
   })
 
   test("keeps a confidential client's secret and token endpoint auth method", () => {
     const clients = renderClients(JSON.stringify({
       [RENDER_URL]: { clientId: "openwork", clientSecret: "s3cret", tokenEndpointAuthMethod: "client_secret_post" },
     }))
-    expect(preRegisteredOAuthClientForUrl(RENDER_URL, clients)).toEqual({
+    assert.deepEqual(preRegisteredOAuthClientForUrl(RENDER_URL, clients), {
       clientId: "openwork",
       clientSecret: "s3cret",
       tokenEndpointAuthMethod: "client_secret_post",
@@ -73,53 +74,55 @@ describe("DEN_EXTERNAL_MCP_PREREGISTERED_OAUTH_CLIENTS parsing", () => {
   })
 
   test("rejects malformed configuration at startup", () => {
-    expect(() => parseExternalMcpPreRegisteredOAuthClients("{not json")).toThrow(/JSON object/)
-    expect(() => parseExternalMcpPreRegisteredOAuthClients(`["https://mcp.render.com/mcp"]`)).toThrow(/is invalid/)
-    expect(() => parseExternalMcpPreRegisteredOAuthClients(`{"${RENDER_URL}":{"clientId":""}}`)).toThrow(/is invalid at/)
-    expect(() => parseExternalMcpPreRegisteredOAuthClients(`{"${RENDER_URL}":{"clientId":"x","extra":1}}`)).toThrow(/is invalid/)
-    expect(() => parseExternalMcpPreRegisteredOAuthClients(`{"http://mcp.render.com/mcp":{"clientId":"x"}}`)).toThrow(/absolute https/)
-    expect(() => parseExternalMcpPreRegisteredOAuthClients(`{"${RENDER_URL}?x=1":{"clientId":"x"}}`)).toThrow(/absolute https/)
-    expect(() => parseExternalMcpPreRegisteredOAuthClients(
+    assert.throws(() => parseExternalMcpPreRegisteredOAuthClients("{not json"), /JSON object/)
+    assert.throws(() => parseExternalMcpPreRegisteredOAuthClients(`["https://mcp.render.com/mcp"]`), /is invalid/)
+    assert.throws(() => parseExternalMcpPreRegisteredOAuthClients(`{"${RENDER_URL}":{"clientId":""}}`), /is invalid at/)
+    assert.throws(() => parseExternalMcpPreRegisteredOAuthClients(`{"${RENDER_URL}":{"clientId":"x","extra":1}}`), /is invalid/)
+    assert.throws(() => parseExternalMcpPreRegisteredOAuthClients(`{"http://mcp.render.com/mcp":{"clientId":"x"}}`), /absolute https/)
+    assert.throws(() => parseExternalMcpPreRegisteredOAuthClients(`{"${RENDER_URL}?x=1":{"clientId":"x"}}`), /absolute https/)
+    assert.throws(() => parseExternalMcpPreRegisteredOAuthClients(
       `{"${RENDER_URL}":{"clientId":"a"},"${RENDER_URL}/":{"clientId":"b"}}`,
-    )).toThrow(/more than once/)
-    expect(() => parseExternalMcpPreRegisteredOAuthClients(
+    ), /more than once/)
+    assert.throws(() => parseExternalMcpPreRegisteredOAuthClients(
       `{"${RENDER_URL}":{"clientId":"x","tokenEndpointAuthMethod":"client_secret_basic"}}`,
-    )).toThrow(/without a clientSecret/)
+    ), /without a clientSecret/)
   })
 })
 
 describe("deployment-supplied OAuth clients and presets", () => {
   test("a preset stops demanding an admin OAuth app when the deployment supplies one", () => {
-    const render = EXTERNAL_MCP_PRESETS.find((preset) => preset.presetId === "render")
-    expect(render).toMatchObject({ authType: "oauth", supportedAuthTypes: ["oauth", "apikey"], requiresOAuthClient: true })
-    expect(pluginMcpRequiresPreRegisteredOAuthClient(RENDER_URL)).toBe(true)
+    // Render now ships a public client; also exercise a deployment where the app must be supplied.
+    const needsClient = EXTERNAL_MCP_PRESETS.map((preset) => preset.presetId === "render" ? { ...preset, requiresOAuthClient: true } : preset)
+    const render = needsClient.find((preset) => preset.presetId === "render")
+    assert.partialDeepStrictEqual(render, { authType: "oauth", supportedAuthTypes: ["oauth", "apikey"], requiresOAuthClient: true })
+    assert.equal(pluginMcpRequiresPreRegisteredOAuthClient(RENDER_URL, needsClient), true)
 
-    const presets = applyPreRegisteredOAuthClientDefaults(EXTERNAL_MCP_PRESETS, renderClients())
+    const presets = applyPreRegisteredOAuthClientDefaults(needsClient, renderClients())
     const renderForDeployment = presets.find((preset) => preset.presetId === "render")
-    expect(renderForDeployment?.requiresOAuthClient).toBeUndefined()
-    expect(renderForDeployment).toMatchObject({ authType: "oauth", supportedAuthTypes: ["oauth", "apikey"], url: RENDER_URL })
-    expect(pluginMcpRequiresPreRegisteredOAuthClient(RENDER_URL, presets)).toBe(false)
+    assert.equal(renderForDeployment?.requiresOAuthClient, undefined)
+    assert.partialDeepStrictEqual(renderForDeployment, { authType: "oauth", supportedAuthTypes: ["oauth", "apikey"], url: RENDER_URL })
+    assert.equal(pluginMcpRequiresPreRegisteredOAuthClient(RENDER_URL, presets), false)
 
     // Other presets that need an admin-supplied app are untouched.
-    expect(presets.find((preset) => preset.presetId === "slack")?.requiresOAuthClient).toBe(true)
-    expect(presets.find((preset) => preset.presetId === "github")?.requiresOAuthClient).toBe(true)
-    expect(pluginMcpRequiresPreRegisteredOAuthClient("https://mcp.slack.com/mcp", presets)).toBe(true)
+    assert.equal(presets.find((preset) => preset.presetId === "slack")?.requiresOAuthClient, true)
+    assert.equal(presets.find((preset) => preset.presetId === "github")?.requiresOAuthClient, true)
+    assert.equal(pluginMcpRequiresPreRegisteredOAuthClient("https://mcp.slack.com/mcp", presets), true)
   })
 
   test("without configured clients presets are returned unchanged", () => {
     const presets = applyPreRegisteredOAuthClientDefaults(EXTERNAL_MCP_PRESETS, EMPTY_EXTERNAL_MCP_PREREGISTERED_OAUTH_CLIENTS)
-    expect(presets).toEqual(EXTERNAL_MCP_PRESETS)
+    assert.deepEqual(presets, EXTERNAL_MCP_PRESETS)
   })
 })
 
 describe("deployment-supplied OAuth clients and requirements discovery", () => {
   test("downgrades the registration blocker and reads as ready", () => {
     const result = applyPreRegisteredOAuthClientToRequirements(oauthRequirements(), { clientId: "openwork" })
-    expect(result.status).toBe("ready")
+    assert.equal(result.status, "ready")
     const registration = result.manualRequirements.find((requirement) => requirement.code === "oauth_client_registration")
-    expect(registration?.required).toBe(false)
-    expect(registration?.reason).toContain("pre-registered OAuth client")
-    expect(result.manualRequirements.map((requirement) => requirement.code)).toEqual([
+    assert.equal(registration?.required, false)
+    assert.ok(registration?.reason.includes("pre-registered OAuth client"))
+    assert.deepEqual(result.manualRequirements.map((requirement) => requirement.code), [
       "oauth_client_registration",
       "provider_access",
       "network_trust",
@@ -128,7 +131,7 @@ describe("deployment-supplied OAuth clients and requirements discovery", () => {
 
   test("leaves other blockers and non-OAuth results alone", () => {
     const requirements = oauthRequirements()
-    expect(applyPreRegisteredOAuthClientToRequirements(requirements, null)).toBe(requirements)
+    assert.equal(applyPreRegisteredOAuthClientToRequirements(requirements, null), requirements)
 
     const withIssuerChoice = oauthRequirements({
       manualRequirements: [
@@ -137,13 +140,13 @@ describe("deployment-supplied OAuth clients and requirements discovery", () => {
       ],
     })
     const result = applyPreRegisteredOAuthClientToRequirements(withIssuerChoice, { clientId: "openwork" })
-    expect(result.status).toBe("manual_action_required")
-    expect(result.manualRequirements.find((requirement) => requirement.code === "authorization_server_selection")?.required).toBe(true)
+    assert.equal(result.status, "manual_action_required")
+    assert.equal(result.manualRequirements.find((requirement) => requirement.code === "authorization_server_selection")?.required, true)
 
     const alreadyReady = oauthRequirements({
       status: "ready",
       manualRequirements: oauthRequirements().manualRequirements.filter((requirement) => requirement.code !== "oauth_client_registration"),
     })
-    expect(applyPreRegisteredOAuthClientToRequirements(alreadyReady, { clientId: "openwork" })).toBe(alreadyReady)
+    assert.equal(applyPreRegisteredOAuthClientToRequirements(alreadyReady, { clientId: "openwork" }), alreadyReady)
   })
 })

@@ -20,6 +20,8 @@ import type {
   CreateCloudAutomationResponses,
   CreateGmailLabelErrors,
   CreateGmailLabelResponses,
+  CreateGoogleDriveDownloadLinkErrors,
+  CreateGoogleDriveDownloadLinkResponses,
   CreateGoogleDriveFolderErrors,
   CreateGoogleDriveFolderResponses,
   CreateGoogleDriveUploadSessionErrors,
@@ -129,6 +131,8 @@ import type {
   DenDesktopPolicyDocumentWrite,
   DescribeHostGoogleDriveDownloadErrors,
   DescribeHostGoogleDriveDownloadResponses,
+  DownloadGoogleDriveFileByLinkErrors,
+  DownloadGoogleDriveFileByLinkResponses,
   DownloadHostGoogleDriveFileErrors,
   DownloadHostGoogleDriveFileResponses,
   ExternalMcpConnectionAccessInput,
@@ -183,14 +187,24 @@ import type {
   GetMcpWellKnownOauthProtectedResourceResponses,
   GetReadyErrors,
   GetReadyResponses,
+  GetV1AdminDashboardErrors,
+  GetV1AdminDashboardResponses,
   GetV1AdminFeaturesErrors,
   GetV1AdminFeaturesResponses,
+  GetV1AdminFreeAutoConversionsErrors,
+  GetV1AdminFreeAutoConversionsResponses,
   GetV1AdminFreeAutoUsageErrors,
   GetV1AdminFreeAutoUsageResponses,
   GetV1AdminMetricsErrors,
   GetV1AdminMetricsResponses,
   GetV1AdminOrganizationsByOrganizationIdCapabilitiesErrors,
   GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses,
+  GetV1AdminOrganizationsByOrganizationIdErrors,
+  GetV1AdminOrganizationsByOrganizationIdInsightsErrors,
+  GetV1AdminOrganizationsByOrganizationIdInsightsResponses,
+  GetV1AdminOrganizationsByOrganizationIdResponses,
+  GetV1AdminOrganizationsByOrganizationIdUsageErrors,
+  GetV1AdminOrganizationsByOrganizationIdUsageResponses,
   GetV1AdminOrganizationsErrors,
   GetV1AdminOrganizationsResponses,
   GetV1AdminOverviewErrors,
@@ -1112,6 +1126,170 @@ export class DenClient extends HeyApiClient {
   }
 
   /**
+   * Get observed behavior after the free Auto limit
+   *
+   * Cohorts by personal-limit observation date, deduplicated by known account or anonymous client-reported journey. Counts subsequent sign-ins, new accounts, and positively paid subscriptions started within 30 days of a limit. Guest links use a random client correlation ID, never IP matching. Historical guest behavior is not backfilled. Search and stage affect the bounded 50-row list, not cohort totals.
+   */
+  public getV1AdminFreeAutoConversions<ThrowOnError extends boolean = false>(
+    parameters?: {
+      days?: number;
+      page?: number;
+      search?: string;
+      stage?: "all" | "signed-in" | "new-account" | "subscribed" | "unlinked";
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "days" },
+            { in: "query", key: "page" },
+            { in: "query", key: "search" },
+            { in: "query", key: "stage" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).get<
+      GetV1AdminFreeAutoConversionsResponses,
+      GetV1AdminFreeAutoConversionsErrors,
+      ThrowOnError
+    >({
+      url: "/v1/admin/free-auto/conversions",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
+   * Get an organization and a bounded member page
+   *
+   * Returns organization identity, plan, seats and active memberships. Members are searched and paginated on the server. Does not calculate usage or resolve feature maps.
+   */
+  public getV1AdminOrganizationsByOrganizationId<ThrowOnError extends boolean = false>(
+    parameters: {
+      organizationId: string;
+      search?: string;
+      limit?: string;
+      offset?: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "organizationId" },
+            { in: "query", key: "search" },
+            { in: "query", key: "limit" },
+            { in: "query", key: "offset" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).get<
+      GetV1AdminOrganizationsByOrganizationIdResponses,
+      GetV1AdminOrganizationsByOrganizationIdErrors,
+      ThrowOnError
+    >({
+      url: "/v1/admin/organizations/{organizationId}",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
+   * Get organization usage and a bounded member page
+   *
+   * Returns the organization's last 30 UTC days of gateway usage, with requests, reported tokens, recorded cost and accounting coverage. Member usage is bounded to the requested member page; organization totals include all members, including removed members. Raw and retained usage use the same accounting as the organization dashboard.
+   */
+  public getV1AdminOrganizationsByOrganizationIdUsage<ThrowOnError extends boolean = false>(
+    parameters: {
+      organizationId: string;
+      search?: string;
+      limit?: string;
+      offset?: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "organizationId" },
+            { in: "query", key: "search" },
+            { in: "query", key: "limit" },
+            { in: "query", key: "offset" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).get<
+      GetV1AdminOrganizationsByOrganizationIdUsageResponses,
+      GetV1AdminOrganizationsByOrganizationIdUsageErrors,
+      ThrowOnError
+    >({
+      url: "/v1/admin/organizations/{organizationId}/usage",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
+   * Get organization activity, people and model insights
+   *
+   * Returns two 30-day UTC usage periods, 30 daily totals, at most eight people and eight models ranked by requests. Adoption counts current non-setup memberships with recorded gateway use. Totals include historical members, preserve unknown accounting coverage and never read prompts or conversation content.
+   */
+  public getV1AdminOrganizationsByOrganizationIdInsights<ThrowOnError extends boolean = false>(
+    parameters: {
+      organizationId: string;
+      search?: string;
+      limit?: string;
+      offset?: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "organizationId" },
+            { in: "query", key: "search" },
+            { in: "query", key: "limit" },
+            { in: "query", key: "offset" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).get<
+      GetV1AdminOrganizationsByOrganizationIdInsightsResponses,
+      GetV1AdminOrganizationsByOrganizationIdInsightsErrors,
+      ThrowOnError
+    >({
+      url: "/v1/admin/organizations/{organizationId}/insights",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
+   * Get bounded platform activity and AI usage
+   *
+   * Returns 30 UTC calendar days of completed gateway usage across organizations, using the same raw and retained accounting as organization reports. Includes accounting coverage, 30 daily totals, at most eight organizations ranked by requests, and distinct users with sign-in or telemetry activity. Does not hydrate features, billing or members.
+   */
+  public getV1AdminDashboard<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<GetV1AdminDashboardResponses, GetV1AdminDashboardErrors, ThrowOnError>({
+      url: "/v1/admin/dashboard",
+      ...options,
+    });
+  }
+
+  /**
    * Add a platform admin
    *
    * Adds an email address to the platform admin allowlist. Body: { email: string, note?: string | null }.
@@ -1443,7 +1621,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Get a bounded admin organization page
    *
-   * Returns one bounded page of organizations plus required pagination metadata. Search runs across the global organization set without changing the global overview totals.
+   * Returns one bounded page of organizations plus required pagination metadata. Set includeFeatures=0 to skip feature resolution and omit capabilities and featureStates; read them per organization when needed. Search runs across the global organization set without changing the global overview totals.
    */
   public getV1AdminOrganizations<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -1451,6 +1629,7 @@ export class DenClient extends HeyApiClient {
       limit?: string;
       offset?: string;
       search?: string;
+      includeFeatures?: "0" | "1";
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -1463,6 +1642,7 @@ export class DenClient extends HeyApiClient {
             { in: "query", key: "limit" },
             { in: "query", key: "offset" },
             { in: "query", key: "search" },
+            { in: "query", key: "includeFeatures" },
           ],
         },
       ],
@@ -9252,6 +9432,68 @@ export class DenClient extends HeyApiClient {
   }
 
   /**
+   * Create a five-minute download link for one Google Drive file, for clients with a shell
+   *
+   * For clients without OpenWork host file transport but with a shell, such as a Workbot computer or a coding agent. Download with curl into a file instead of reading the file into context; Docs, Sheets and Slides export to Office formats by default. To save edits back, prepare createGoogleDriveUploadSession with fileId and this revision as baseRevision. Uses the selected connection.
+   */
+  public createGoogleDriveDownloadLink<ThrowOnError extends boolean = false>(
+    parameters: {
+      fileId: string;
+      format?: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "body", key: "fileId" },
+            { in: "body", key: "format" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).post<
+      CreateGoogleDriveDownloadLinkResponses,
+      CreateGoogleDriveDownloadLinkErrors,
+      ThrowOnError
+    >({
+      url: "/v1/capabilities/google-workspace/drive-download-links",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    });
+  }
+
+  /**
+   * Download one Google Drive file with a short-lived link
+   *
+   * The signed link names one member, connection, file and format and expires after five minutes. The member's current organization access and Google connection are checked again on every download.
+   */
+  public downloadGoogleDriveFileByLink<ThrowOnError extends boolean = false>(
+    parameters: {
+      token: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "token" }] }]);
+    return (options?.client ?? this.client).get<
+      DownloadGoogleDriveFileByLinkResponses,
+      DownloadGoogleDriveFileByLinkErrors,
+      ThrowOnError
+    >({
+      url: "/v1/direct-downloads/google-workspace/drive-link",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
    * Send an existing Gmail draft
    *
    * Sends the existing draft unchanged, including To/Cc/Bcc, reply threading and attachments. Create or inspect the draft first. Requires gmail.compose or gmail.modify (gmail.send alone does not authorize drafts.send). A successful response contains the actual sent message id and threadId, not the old draft message ID. Uses only the calling member's selected connected Google account. Perform writes only when explicitly requested by the user; capability discovery or selection is not authorization. Never automatically retry an uncertain write.
@@ -10419,7 +10661,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Read a Google Drive file's text or binary content as the calling member
    *
-   * Reads a Drive file. Docs and Slides export as plain text; Sheets exports the first tab as CSV. For every spreadsheet tab or edits use the spreadsheet metadata and values capabilities. Downloaded content is bounded; binary files use standard base64 within the model-safety limit. To analyze or edit a whole file (Office, PDF, large CSV), pull it into the workspace with the drive_pull_file tool instead.
+   * Reads a Drive file. Docs and Slides export as plain text; Sheets exports the first tab as CSV. For every spreadsheet tab or edits use the spreadsheet metadata and values capabilities. Downloaded content is bounded; binary files use standard base64 within the model-safety limit. To analyze or edit a whole file (Office, PDF, large CSV), pull it into the workspace with the drive_pull_file tool instead, or with createGoogleDriveDownloadLink from a shell.
    */
   public getV1CapabilitiesGoogleWorkspaceDriveFileByFileId<ThrowOnError extends boolean = false>(
     parameters: {
@@ -11317,6 +11559,13 @@ export class DenClient extends HeyApiClient {
               clientSecret?: string;
               tokenEndpointAuthMethod?: "client_secret_basic" | "client_secret_post";
             };
+            /**
+             * Administrator-pinned authorization and token URLs. Both required; null restores strict discovery. Changing them clears saved sign-ins.
+             */
+            manualOAuthEndpoints?: {
+              authorizationEndpoint: string;
+              tokenEndpoint: string;
+            } | null;
             authorizationServerIssuer?: string | null;
             requestedScopes?: Array<string>;
             access?: ExternalMcpConnectionAccessInput;
@@ -11642,6 +11891,10 @@ export class DenClient extends HeyApiClient {
         clientSecret?: string;
         tokenEndpointAuthMethod?: "client_secret_basic" | "client_secret_post";
       };
+      manualOAuthEndpoints?: {
+        authorizationEndpoint: string;
+        tokenEndpoint: string;
+      } | null;
       authorizationServerIssuer?: string | null;
       requestedScopes?: Array<string>;
       access: ExternalMcpConnectionAccessInput;
@@ -11663,6 +11916,7 @@ export class DenClient extends HeyApiClient {
             { in: "body", key: "apiKey" },
             { in: "body", key: "apiKeyAuthScheme" },
             { in: "body", key: "oauthClient" },
+            { in: "body", key: "manualOAuthEndpoints" },
             { in: "body", key: "authorizationServerIssuer" },
             { in: "body", key: "requestedScopes" },
             { in: "body", key: "access" },

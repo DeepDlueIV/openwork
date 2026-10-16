@@ -296,6 +296,7 @@ export function DenAuthProvider({ children }: DenAuthProviderProps) {
           ensureDenActiveOrganization({
             forceServerSync:
               !settings.activeOrgId?.trim() || !settings.activeOrgSlug?.trim(),
+            verifiedSession: { userId: nextUser.id, token, baseUrl: settings.baseUrl },
           })
         );
       }

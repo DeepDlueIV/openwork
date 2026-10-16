@@ -1,15 +1,17 @@
 import { timingSafeEqual } from "node:crypto"
 import { Hono, type MiddlewareHandler } from "hono"
 import { bodyLimit } from "hono/body-limit"
+import { routePath } from "hono/route"
 import { streamSSE } from "hono/streaming"
+import type { ErrorReporter } from "./error-reporting.js"
 import type { SessionEvents } from "./events.js"
 import { SavedFileLimitError, type SavedFiles } from "./saved-files.js"
 import { formatBytes } from "./tool-files.js"
 import { z } from "zod"
 import { normalizePath } from "./files.js"
 import type { Runner } from "./runner.js"
-import type { Store } from "./store.js"
-import { ACTIVE, repeatLimitsSchema, turnCredentialsSchema, type SessionComputer } from "./types.js"
+import type { StoredMessage, Store } from "./store.js"
+import { repeatLimitsSchema, turnCredentialsSchema, type SessionComputer } from "./types.js"
 
 const createSessionBody = z
   .object({
@@ -66,18 +68,36 @@ const sendBody = z
   .strict()
   .refine((body) => body.prompt.trim().length > 0 || (body.attachments?.length ?? 0) > 0, "prompt or attachments is required")
 const abortBody = z.object({ messageId: messageIdSchema.optional() }).strict()
+/** Turns a session read returns when the caller doesn't say how many: about a screenful (Workbot's first page). */
+export const DEFAULT_READ_TURNS = 30
+/** The most turns one session read returns; asking for more gets this many, and `before` pages further back. */
+export const MAX_READ_TURNS = 200
 const readQuery = z.object({
+  /** One turn: its transcript, and the turn with the background tasks it started and their reports. */
   messageId: messageIdSchema.optional(),
   limit: z.coerce.number().int().min(1).max(5_000).default(100),
   /** `none` leaves tool outputs out, for callers that poll a long turn and only need its steps. */
   outputs: z.enum(["full", "none"]).default("full"),
   /**
-   * Only the newest `turns` turns (before `before`, a messageId) and their messages, so reading a long
-   * conversation costs the same as reading a short one. `limit` still caps the messages returned.
+   * Without `messageId`, only the newest `turns` turns (before `before`, a messageId) and their messages, so reading
+   * a long conversation costs the same as reading a short one. `limit` still caps the messages returned.
    */
-  turns: z.coerce.number().int().min(1).max(200).optional(),
+  turns: z.coerce
+    .number()
+    .int()
+    .min(1)
+    .optional()
+    .transform((turns) => Math.min(turns ?? DEFAULT_READ_TURNS, MAX_READ_TURNS)),
   before: messageIdSchema.optional(),
 })
+
+/** What the assistant wrote in one turn, its messages joined. */
+function assistantText(entries: StoredMessage[], messageId: string) {
+  return entries
+    .filter((entry) => entry.messageId === messageId)
+    .flatMap((entry) => (entry.message.role === "assistant" && entry.message.text ? [entry.message.text] : []))
+    .join("\n\n")
+}
 
 export type ModelCatalog = { defaultModel: string; models: Array<{ id: string; name: string }> }
 
@@ -93,6 +113,8 @@ export function createApp(input: {
   files?: SavedFiles
   /** The per-conversation computers, deleted with their conversation. */
   computer?: SessionComputer
+  /** Reports request failures (route and error type only, never the request or its body). */
+  errors?: ErrorReporter
 }) {
   const { store, runner } = input
   const expected = Buffer.from(input.apiToken)
@@ -113,6 +135,7 @@ export function createApp(input: {
 
   app.onError((error, c) => {
     console.error("[headless-runner] request failed", { path: c.req.path, error: error.message })
+    if (input.errors?.enabled) void input.errors.report({ code: "request_failed", tags: { route: routePath(c), method: c.req.method }, error })
     return c.json({ error: "internal_error" }, 500)
   })
 
@@ -147,23 +170,14 @@ export function createApp(input: {
     if (!session) return c.json({ error: "unknown_session" }, 404)
     const query = readQuery.safeParse(c.req.query())
     if (!query.success) return c.json({ error: "invalid_request", issues: query.error.issues }, 400)
-    const windowed = query.data.turns ? store.recentTurns(session.id, query.data.turns, query.data.before) : null
-    const turns = windowed ? windowed.turns : store.listTurns(session.id)
-    const target = query.data.messageId ?? turns.at(-1)?.messageId
-    const all = query.data.messageId
-      ? store.turnMessages(session.id, query.data.messageId)
-      : windowed
-        ? store.messagesForTurns(session.id, turns.map((turn) => turn.messageId))
-        : store.messages(session.id)
-    const scoped = all
-    const finalAssistantText = all
-      .filter((entry) => entry.messageId === target && entry.message.role === "assistant")
-      .flatMap((entry) => (entry.message.role === "assistant" && entry.message.text ? [entry.message.text] : []))
-      .join("\n\n")
-    // Busy means the conversation itself is answering; background tasks running alongside don't count.
-    const busy = windowed
-      ? store.activeTurn(session.id, { conversation: true }) !== null
-      : turns.some((turn) => ACTIVE.has(turn.status) && turn.kind !== "task")
+    const { messageId, limit } = query.data
+    // Every read is bounded, however long the conversation: one turn (messageId), or a window of the newest turns
+    // that `before` pages back through. Nothing here reads the whole transcript.
+    const read = messageId ? readTurn(session.id, messageId, limit) : readWindow(session.id, query.data.turns, limit, query.data.before)
+    const { turns } = read
+    // Busy means the conversation itself is answering; background tasks running alongside don't count. Asked of the
+    // whole session, so a turn outside the window still counts.
+    const busy = store.activeTurn(session.id, { conversation: true }) !== null
     // A message waiting its turn (or stopped before it started) has no transcript yet: its text comes with the turn.
     const waiting = store.waitingPrompts(session.id, turns.filter((turn) => turn.kind === undefined && (turn.status === "queued" || turn.status === "aborted")).map((turn) => turn.messageId))
     return c.json({
@@ -173,9 +187,10 @@ export function createApp(input: {
         const prompt = waiting.get(turn.messageId)
         return prompt === undefined ? turn : { ...turn, prompt }
       }),
-      ...(windowed ? { hasEarlier: windowed.hasEarlier } : {}),
+      // Older turns exist: read them with `before` set to the first turn's messageId.
+      ...(read.hasEarlier === undefined ? {} : { hasEarlier: read.hasEarlier }),
       // Image and PDF data stay in the store; callers poll this, so they get counts instead.
-      messages: scoped.slice(-query.data.limit).map((entry) => {
+      messages: read.messages.map((entry) => {
         const { seq, messageId, message, createdAt } = entry
         if (message.role !== "tool") return { seq, messageId, ...(createdAt === undefined ? {} : { createdAt }), ...message }
         const { images, documents, output, ...rest } = message
@@ -189,9 +204,32 @@ export function createApp(input: {
           ...(documents ? { documentCount: documents.length } : {}),
         }
       }),
-      finalAssistantText,
+      finalAssistantText: read.finalAssistantText,
     })
   })
+
+  /** One turn's transcript (its newest `limit` messages) and its family; the answer is the whole turn's. */
+  function readTurn(sessionId: string, messageId: string, limit: number) {
+    const transcript = store.turnMessages(sessionId, messageId)
+    return {
+      turns: store.turnFamily(sessionId, messageId),
+      messages: transcript.slice(-limit),
+      finalAssistantText: assistantText(transcript, messageId),
+      hasEarlier: undefined,
+    }
+  }
+
+  /** The newest `count` turns before `before` with their newest `limit` messages; the answer is the newest turn's. */
+  function readWindow(sessionId: string, count: number, limit: number, before?: string) {
+    const window = store.recentTurns(sessionId, count, before)
+    const first = window.turns.at(0)?.messageId
+    const last = window.turns.at(-1)?.messageId
+    const messages = first && last ? store.windowMessages(sessionId, first, last, limit) : []
+    // Fewer than `limit` messages means the window's whole transcript came back; otherwise the newest turn may
+    // start before the cut, so its answer is read on its own (one turn).
+    const finalAssistantText = !last ? "" : assistantText(messages.length < limit ? messages : store.turnMessages(sessionId, last), last)
+    return { turns: window.turns, messages, finalAssistantText, hasEarlier: window.hasEarlier }
+  }
 
   // Live events for one session as server-sent events: `changed` (re-read the session) and `text` (model text
   // as it is written). A comment every 15 seconds keeps idle proxies from closing the stream.

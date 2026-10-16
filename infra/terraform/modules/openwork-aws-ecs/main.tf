@@ -101,8 +101,8 @@ locals {
 
   # Feature locks (DEN_FEATURE_*) turn each capability on for the organization.
   agent_environment = {
-    DEN_HEADLESS_RUNNER_URL          = local.runner_enabled ? local.runner_url : ""
-    DEN_FEATURE_HEADLESS_AUTOMATIONS = local.runner_enabled && var.automations_enabled ? "true" : ""
+    # With the runner set, Automations on plans that include it run there.
+    DEN_HEADLESS_RUNNER_URL = local.runner_enabled ? local.runner_url : ""
     # Slack replies run on the headless runner; without it, Slack setup says the runner is needed.
     DEN_FEATURE_SLACK_ASSISTANT = var.slack_assistant_enabled ? "true" : ""
     # Work a Slack reply hands to a member's desktop needs the automations runtime.

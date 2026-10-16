@@ -4,7 +4,7 @@ import { test } from "node:test"
 import { Hono } from "hono"
 import { googleDriveFileId, workbotContextForModel, readWorkbotContextPrompt, workbotContextPrompt, workbotViewContextSchema, type WorkbotViewContext } from "@openwork/types/workbot-context"
 import { createHeadlessRunnerClient } from "@openwork-ee/headless-protocol"
-import { buildWorkbotTurns, retryWorkbotMessage, workbotInstructions } from "@openwork-ee/workbot-server"
+import { buildWorkbotTurns, readWorkbotThread, retryWorkbotMessage, workbotInstructions } from "@openwork-ee/workbot-server"
 import { createAuth, type AppEnv } from "../src/server/auth.js"
 import { createDen, denSessionSchema } from "../src/server/den.js"
 import { loadConfig } from "../src/server/config.js"
@@ -92,13 +92,14 @@ test("message and edit routes fail closed before runner access; normal chat stil
 test("retry uses the snapshot saved with the message, not a newer open view", async () => {
   const prompt = workbotContextPrompt("Summarize this", context)
   const sent: unknown[] = []
+  let interrupted = false
   const client = createHeadlessRunnerClient({ config: { url: "http://runner", token: "x".repeat(32) }, mintToken: async () => ({ token: "scoped-test-token" }), maxTokenTtlMs: 60000, fetch: async (input, init) => {
     const url = new URL(String(input))
     const json = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } })
     if (init?.method === "PUT") return json({ id: decodeURIComponent(url.pathname.split("/").at(-1) ?? "") })
     if (init?.method === "POST") { sent.push(JSON.parse(String(init.body))); return json({ state: "accepted" }, 202) }
     if (init?.method === "DELETE") return json({ removed: [] })
-    return json({ turns: [{ messageId: "wb_message_001", status: "failed", error: "model_http_500" }], messages: [{ role: "user", messageId: "wb_message_001", text: prompt }], finalAssistantText: "" })
+    return json({ turns: [{ messageId: "wb_message_001", status: interrupted ? "interrupted" : "failed", error: "model_http_500" }], messages: [{ role: "user", messageId: "wb_message_001", text: prompt }], finalAssistantText: "" })
   } })
   await retryWorkbotMessage({ organizationId: "org_example", organizationName: "Example", organizationMetadata: {}, memberId: "member_a", userId: "user_a", firstName: "Alex" }, { id: "message_001" }, { client, canSchedule: async () => false, workspaceAssistant: async () => true })
   assert.equal(sent.length, 1)
@@ -111,4 +112,9 @@ test("retry uses the snapshot saved with the message, not a newer open view", as
   const [turn] = buildWorkbotTurns(snapshot.value)
   assert.equal(turn?.text, "Summarize this")
   assert.deepEqual(turn?.context, workbotContextForModel(context))
+  interrupted = true
+  await readWorkbotThread({ organizationId: "org_example", organizationName: "Example", organizationMetadata: {}, memberId: "member_a", userId: "user_a", firstName: "Alex" }, {}, { client, canSchedule: async () => false, workspaceAssistant: async () => true })
+  assert.equal(sent.length, 2)
+  assert.ok(typeof sent[1] === "object" && sent[1] !== null && "credentials" in sent[1])
+  assert.deepEqual(sent[1].credentials, { mcpToken: "scoped-test-token", readOnly: true })
 })

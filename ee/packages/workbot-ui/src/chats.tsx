@@ -3,7 +3,7 @@
 import { AlertDialog } from "@base-ui/react/alert-dialog";
 import { Dialog } from "@base-ui/react/dialog";
 import { ArrowLeft, PanelLeft, Plus, Trash2, X } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { newChatId, useRemoveWorkbotChat, type WorkbotChats } from "./data";
 
 /**
@@ -24,15 +24,30 @@ function chatInLocation(): string | null {
  * The chat on screen, kept in the address (`?chat=<id>` for a side chat), so a reload stays in it and Back returns to
  * the chat before. Always the main chat (null) where side chats are off.
  */
-export function useChatLocation(enabled: boolean): [string | null, (chat: string | null) => void] {
+export function useChatLocation(enabled: boolean, beforeLeave?: (chat: string | null) => boolean): [string | null, (chat: string | null) => void] {
   const [chat, setChat] = useState<string | null>(() => (enabled ? chatInLocation() : null));
+  const guard = useRef(beforeLeave);
+  guard.current = beforeLeave;
+  const currentChat = useRef(chat);
+  currentChat.current = chat;
   useEffect(() => {
     if (!enabled) return;
-    const onPop = () => setChat(chatInLocation());
+    const onPop = () => {
+      const next = chatInLocation();
+      if (next !== currentChat.current && guard.current?.(next) === false) {
+        const url = new URL(window.location.href);
+        if (currentChat.current) url.searchParams.set(CHAT_PARAM, currentChat.current);
+        else url.searchParams.delete(CHAT_PARAM);
+        window.history.replaceState(null, "", url);
+        return;
+      }
+      setChat(next);
+    };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
   }, [enabled]);
   const open = useCallback((next: string | null) => {
+    if (next !== currentChat.current && guard.current?.(next) === false) return;
     const url = new URL(window.location.href);
     if (next) url.searchParams.set(CHAT_PARAM, next);
     else url.searchParams.delete(CHAT_PARAM);
@@ -72,10 +87,10 @@ export function ChatsButton({ onOpen }: { onOpen: () => void }) {
 }
 
 /** A side chat's header: back to the main chat, and the chat's name. */
-export function SideChatTitle({ title, onBack }: { title: string; onBack: () => void }) {
+export function SideChatTitle({ title, onBack, disabled = false }: { title: string; onBack: () => void; disabled?: boolean }) {
   return (
     <div className="flex min-w-0 items-center gap-1.5">
-      <button type="button" onClick={onBack} aria-label="Back to main chat" title="Back to main chat" className={`-ml-1.5 ${ICON_BUTTON}`}>
+      <button type="button" onClick={onBack} disabled={disabled} aria-label="Back to main chat" title={disabled ? "Save or close document drafts before switching chats." : "Back to main chat"} className={`-ml-1.5 ${ICON_BUTTON}`}>
         <ArrowLeft size={16} strokeWidth={1.5} aria-hidden />
       </button>
       <h1 className="truncate text-[15px] font-semibold leading-5 tracking-[-0.015em] text-[var(--wb-text)]">{title}</h1>
@@ -84,12 +99,12 @@ export function SideChatTitle({ title, onBack }: { title: string; onBack: () => 
 }
 
 /** Removes the side chat on screen, after asking (OW-CONFIRM). */
-export function RemoveChatButton({ chatId, title, onRemoved }: { chatId: string; title: string; onRemoved: () => void }) {
+export function RemoveChatButton({ chatId, title, onRemoved, disabled = false }: { chatId: string; title: string; onRemoved: () => void; disabled?: boolean }) {
   const [open, setOpen] = useState(false);
   const remove = useRemoveWorkbotChat();
   return (
     <AlertDialog.Root open={open} onOpenChange={(next) => { setOpen(next); if (!next) remove.reset(); }}>
-      <AlertDialog.Trigger aria-label="Remove side chat" title="Remove side chat" className={ICON_BUTTON}>
+      <AlertDialog.Trigger disabled={disabled} aria-label="Remove side chat" title={disabled ? "Save or close document drafts before removing this chat." : "Remove side chat"} className={ICON_BUTTON}>
         <Trash2 size={15} strokeWidth={1.5} aria-hidden />
       </AlertDialog.Trigger>
       <AlertDialog.Portal>

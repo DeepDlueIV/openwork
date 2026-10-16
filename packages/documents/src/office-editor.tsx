@@ -5,14 +5,14 @@ import { useEffect, useId, useRef, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { z } from "zod"
 import type { DocumentItem } from "./index"
-import { officeFormats, type OfficeEditor } from "./office-engine"
+import { officeFormats, savedOfficeDocument, type OfficeEditor } from "./office-engine"
 import { EditorActions } from "./editor-actions"
 import type { DocumentTabControlsChange } from "./document-tabs"
 import { collaboraWorkspaceUrl, useCollaboraController } from "./collabora-controller"
 import { DocumentToolbar } from "./document-toolbar"
 
 const messageSchema = z.object({ MessageId: z.string(), Values: z.object({ Status: z.string().optional(), Modified: z.boolean().optional(), success: z.boolean().optional(), result: z.string().optional() }).passthrough().optional() })
-export function OfficeEditorTab({ item, editor, enabled, active, scope, toolbarHost, onDirtyChange, onSavingChange, onControlsChange, onClose }: { item: DocumentItem; editor: OfficeEditor; enabled: boolean; active: boolean; scope: readonly string[]; toolbarHost?: HTMLElement | null; onDirtyChange?(id: string, dirty: boolean): void; onSavingChange?(id: string, saving: boolean): void; onControlsChange?: DocumentTabControlsChange; onClose(): void }) {
+export function OfficeEditorTab({ item, editor, enabled, active, scope, toolbarHost, onDirtyChange, onSavingChange, onResourceChange, onControlsChange, onClose }: { item: DocumentItem; editor: OfficeEditor; enabled: boolean; active: boolean; scope: readonly string[]; toolbarHost?: HTMLElement | null; onDirtyChange?(id: string, dirty: boolean): void; onSavingChange?(id: string, saving: boolean): void; onResourceChange?(tabId: string, resource: DocumentItem): void; onControlsChange?: DocumentTabControlsChange; onClose(): void }) {
   const [dirty, setDirty] = useState(false)
   const [ready, setReady] = useState(false)
   const [saving, setSaving] = useState(false)
@@ -100,6 +100,7 @@ export function OfficeEditorTab({ item, editor, enabled, active, scope, toolbarH
       const result = await editor.save(item.id, session.id, status.draftVersion)
       if (!mounted.current) return
       setSaved(result.fileId)
+      onResourceChange?.(item.id, savedOfficeDocument(item, session.fileType, session.saveAsCopy, result.fileId))
       if (generation === changes.current) { setDirty(false); setClosing(false); if (closeAfter) onClose() }
     } catch (failure) { if (mounted.current) setError(failure instanceof Error ? failure.message : "The save was not confirmed. Check Drive before trying again.") }
     finally { if (mounted.current) setSaving(false) }

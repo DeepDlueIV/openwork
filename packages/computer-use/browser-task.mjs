@@ -95,6 +95,7 @@ function prepareAction(id, action) {
   return { x, y };
 }
 async function captureObservation(webContents, viewport) {
+  if (typeof webContents.captureObservation === "function") return webContents.captureObservation(viewport);
   const capture = await webContents.capturePage();
   return capture.resize({ width: viewport.width, height: viewport.height }).toPNG({ scaleFactor: 1 });
 }
@@ -400,7 +401,7 @@ export function createBrowserTaskHost({ getTab, tabsFor, ownerOf, activeFor, isV
             if (attached && cdp.isAttached()) cdp.detach();
           }
         }
-        if (action.type === "key") { contents.sendInputEvent({ type: "keyDown", keyCode: keys[action.key] }); contents.sendInputEvent({ type: "keyUp", keyCode: keys[action.key] }); }
+        if (action.type === "key") { await contents.sendInputEvent({ type: "keyDown", keyCode: keys[action.key] }); requestSignal.throwIfAborted(); await contents.sendInputEvent({ type: "keyUp", keyCode: keys[action.key] }); }
         return { ok: true, dispatched: true, outcome: "not_yet_verified", retrySafe: false, tabId: tab.tabId, next: "observe", message: "Observe the page and verify the requested outcome before reporting success." };
       };
       const result = await Promise.race([run(), canceled]);

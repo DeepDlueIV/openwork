@@ -2,11 +2,21 @@
   "name": "@openwork/computer-use",
   "version": "0.1.0",
   "private": true,
-  "description": "macOS helper that lets OpenWork see and use one approved app window",
+  "description": "Shared computer and browser control, with native Mac and Linux desktop adapters",
   "license": "MIT",
   "type": "module",
   "scripts": {
     "build:native": "swift build --package-path native -c release --product ComputerUse",
     "check": "swift test --package-path native"
+  },
+  "exports": {
+    "./computer-control": "./computer-control.mjs",
+    "./computer-remote": "./computer-remote.mjs",
+    "./computer-x11-driver": "./computer-x11-driver.mjs",
+    "./browser-task": "./browser-task.mjs",
+    "./cloud": {
+      "types": "./cloud.d.mts",
+      "default": "./cloud.mjs"
+    }
   }
 }

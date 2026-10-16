@@ -8,8 +8,8 @@
 //
 // Another provider only needs a `machine` binding below. Provider packages load
 // lazily, so a desktop without a configured VM never starts their clients.
-import { createRemoteComputerAdapter } from "./computer-remote.mjs";
-import { createX11Driver } from "./computer-x11-driver.mjs";
+import { createRemoteComputerAdapter } from "@openwork/computer-use/computer-remote";
+import { createX11Driver } from "@openwork/computer-use/computer-x11-driver";
 
 /**
  * @typedef {{ run: (command: string, timeoutMs: number) => Promise<{ exitCode: number, stdout: string, stderr: string }>, read: (path: string, timeoutMs: number) => Promise<Uint8Array> }} Machine

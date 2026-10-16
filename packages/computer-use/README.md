@@ -130,3 +130,19 @@ The computer rollout therefore grants broader GUI access; enabling it requires
 reviewing that access model, rather than assuming those structured rules sandbox
 the app session. Take over, Stop, window boundaries and rollout cancellation
 remain enforced.
+
+
+## Shared cloud runtime
+
+The JavaScript browser host, computer broker and X11 adapter are shared with
+Electron. They live in this package; the desktop imports its explicit exports.
+`cloud.mjs` composes them for a member-owned Web worker. See
+[Managed Daytona computer](../../docs/computer-use/managed-daytona.md) for its
+image, flags, lifecycle and current viewer limits.
+
+In a dedicated VM with the desktop running, Node 22+ can run
+`scripts/prove-cloud-desktop.mjs`. Request its loopback `/run` endpoint, pause
+and resume the VM through the provider, then request `/after`. This checks a
+browser fill followed by a desktop keyboard save, shared takeover, screenshot
+coordinates at browser zoom, and memory preservation. It uses synthetic data;
+it is a focused provider diagnostic, separate from the Web rollout UI proof.

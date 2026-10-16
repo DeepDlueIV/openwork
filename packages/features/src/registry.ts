@@ -236,8 +236,8 @@ export const FEATURES = defineFeatures({
     default: false,
   },
   computerUse: {
-    label: "Desktop: computer use",
-    description: "Let agents use Mac apps directly, with a floating live view, a visible cursor, and Take over and Stop controls. Enabling this rollout provides access without chat or window consent prompts. GUI access is experimental and is not sandboxed by structured-tool permission rules.",
+    label: "Computer use",
+    description: "Let agents use Mac apps or a managed cloud desktop directly, with a live view and Take over and Stop controls. Enabling this rollout provides access without chat or window consent prompts. GUI access is experimental and is not sandboxed by structured-tool permission rules.",
     since: "2026-10",
     deployments: everywhere,
     default: false,
@@ -253,7 +253,7 @@ export const FEATURES = defineFeatures({
 
   remoteComputers: {
     label: "Desktop: computer use on remote computers",
-    description: "Computer use can work on a connected Linux VM (Freestyle or Daytona) instead of this Mac. The Computer popover lets the person pick the computer for each chat; the VM is set up by an operator or developer.",
+    description: "Use a Linux cloud computer with its browser and desktop in OpenWork Web, or connect a VM from Desktop. Access starts directly when the rollout is enabled; Take over and Stop stay available.",
     since: "2026-10",
     deployments: everywhere,
     default: false,

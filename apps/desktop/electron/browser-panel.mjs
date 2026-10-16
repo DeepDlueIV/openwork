@@ -13,7 +13,7 @@ import {
 } from "@openwork/browser-tabs";
 import { runDetachedTask } from "./process-resilience.mjs";
 import { openExternalUrl } from "./open-external.mjs";
-import { BrowserTaskError, createBrowserTaskHost } from "./browser-task.mjs";
+import { BrowserTaskError, createBrowserTaskHost } from "@openwork/computer-use/browser-task";
 import { agentPermissionDenialMessage, decideAgentPermission, stricterAgentPermissionDecision } from "@openwork/types/den/agent-permissions-runtime";
 import { createWebMcpBroker } from "./webmcp-host.mjs";
 import { createWebMcpFramePolicy } from "./webmcp-policy.mjs";

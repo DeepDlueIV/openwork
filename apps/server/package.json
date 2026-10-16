@@ -67,7 +67,8 @@
     "minimatch": "^10.2.5",
     "undici": "6.28.1",
     "yaml": "^2.9.0",
-    "zod": "^4.3.6"
+    "zod": "^4.3.6",
+    "@openwork/computer-use": "workspace:*"
   },
   "devDependencies": {
     "@hyzyla/pdfium": "2.1.13",

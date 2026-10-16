@@ -336,6 +336,9 @@ importers:
       '@openwork/browser-tabs':
         specifier: workspace:*
         version: link:../../packages/browser-tabs
+      '@openwork/computer-use':
+        specifier: workspace:*
+        version: link:../../packages/computer-use
       '@openwork/enterprise-mcp-client':
         specifier: workspace:*
         version: link:../../packages/enterprise-mcp-client
@@ -467,6 +470,9 @@ importers:
       '@opencode-ai/sdk':
         specifier: ^1.18.15
         version: 1.18.18
+      '@openwork/computer-use':
+        specifier: workspace:*
+        version: link:../../packages/computer-use
       '@openwork/enterprise-mcp-client':
         specifier: workspace:*
         version: link:../../packages/enterprise-mcp-client

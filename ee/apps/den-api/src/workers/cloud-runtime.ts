@@ -36,6 +36,7 @@ const providers: Record<string, {
       apiUrl: env.daytona.apiUrl,
       target: env.daytona.target,
       snapshot: env.daytona.snapshot ?? null,
+      ...(env.daytona.sandboxClass === "linux-vm" ? { platform: { os: "linux", isolation: "vm" }, supportsPause: true } : {}),
       image: env.daytona.image,
       resources: {
         cpu: env.daytona.resources.cpu,
@@ -112,6 +113,7 @@ export function cloudRuntimeOrchestratorConfig(): CloudRuntimeOrchestratorConfig
     pollIntervalMs: runtime.pollIntervalMs,
     activityHeartbeatUrl: workerActivityHeartbeatUrl,
     bootstrap: {
+      ...(runtime.sandboxClass === "linux-vm" ? { cloudComputerDisplay: ":99" } : {}),
       imageDescription: "Daytona runtime image",
       rebuildHint: "rebuild and republish the Daytona snapshot",
     },

@@ -169,6 +169,7 @@ const EnvSchema = z.object({
   DAYTONA_API_KEY: z.string().optional(),
   DAYTONA_TARGET: z.string().optional(),
   DAYTONA_SNAPSHOT: z.string().optional(),
+  DAYTONA_SANDBOX_CLASS: z.enum(["container", "linux-vm"]).default("container"),
   DAYTONA_SANDBOX_IMAGE: z.string().optional(),
   DAYTONA_SANDBOX_CPU: z.string().optional(),
   DAYTONA_SANDBOX_MEMORY: z.string().optional(),
@@ -900,6 +901,7 @@ export const env = {
     apiKey: optionalString(parsed.DAYTONA_API_KEY),
     target: optionalString(parsed.DAYTONA_TARGET),
     snapshot: optionalString(parsed.DAYTONA_SNAPSHOT),
+    sandboxClass: parsed.DAYTONA_SANDBOX_CLASS,
     image: optionalString(parsed.DAYTONA_SANDBOX_IMAGE) ?? "node:20-bookworm",
     resources: {
       cpu: Number(parsed.DAYTONA_SANDBOX_CPU ?? "2"),

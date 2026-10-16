@@ -286,7 +286,7 @@
                 true,
                 false
               ],
-              "description": "Desktop: computer use: Let agents use Mac apps directly, with a floating live view, a visible cursor, and Take over and Stop controls. Enabling this rollout provides access without chat or window consent prompts. GUI access is experimental and is not sandboxed by structured-tool permission rules. Renders DEN_FEATURE_COMPUTER_USE."
+              "description": "Computer use: Let agents use Mac apps or a managed cloud desktop directly, with a live view and Take over and Stop controls. Enabling this rollout provides access without chat or window consent prompts. GUI access is experimental and is not sandboxed by structured-tool permission rules. Renders DEN_FEATURE_COMPUTER_USE."
             },
             "browserFloatingView": {
               "enum": [
@@ -306,7 +306,7 @@
                 true,
                 false
               ],
-              "description": "Desktop: computer use on remote computers: Computer use can work on a connected Linux VM (Freestyle or Daytona) instead of this Mac. The Computer popover lets the person pick the computer for each chat; the VM is set up by an operator or developer. Renders DEN_FEATURE_REMOTE_COMPUTERS."
+              "description": "Desktop: computer use on remote computers: Use a Linux cloud computer with its browser and desktop in OpenWork Web, or connect a VM from Desktop. Access starts directly when the rollout is enabled; Take over and Stop stay available. Renders DEN_FEATURE_REMOTE_COMPUTERS."
             },
             "inviteLinkVerifiesEmail": {
               "enum": [

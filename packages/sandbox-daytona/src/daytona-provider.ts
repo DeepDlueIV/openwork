@@ -478,7 +478,7 @@ export function createDaytonaProvider(config: DaytonaProviderConfig, deps: Dayto
   const capabilities: ProviderCapabilities = {
     stopResume: true,
     persistentStorage: true,
-    memorySnapshotRestore: false,
+    memorySnapshotRestore: config.supportsPause === true && config.platform?.isolation === "vm",
     warmPool: false,
     endpointKind: "signed-expiring",
     exec: true,

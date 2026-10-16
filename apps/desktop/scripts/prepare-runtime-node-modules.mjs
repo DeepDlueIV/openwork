@@ -6,6 +6,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const dirnameHere = dirname(fileURLToPath(import.meta.url));
 const desktopRoot = resolve(dirnameHere, "..");
 const requiredRoots = [{
+  name: "@openwork/computer-use", resolveTarget: "@openwork/computer-use/computer-control",
+}, {
   name: "@modelcontextprotocol/sdk",
   resolveTarget: "@modelcontextprotocol/sdk/validation/ajv",
 }, {
@@ -72,6 +74,7 @@ export function stageRuntimeNodeModules(outdir) {
         if (parts.includes("node_modules")) return false;
         // The core's published entrypoints are dist (Node) and src (Bun/dev).
         // Do not ship checkout-only tests, tooling or incidental local links.
+        if (name === "@openwork/computer-use") return parts.length === 1 && (parts[0] === "package.json" || (/\.(mjs|d\.mts)$/.test(parts[0]) && !parts[0].includes(".test.")));
         if (name === "@openwork/remote-sessions") return ["dist", "src", "package.json"].includes(parts[0]);
         return true;
       },

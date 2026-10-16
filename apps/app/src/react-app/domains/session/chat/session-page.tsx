@@ -94,6 +94,7 @@ import { useBrowserPresentationController } from "../panel/use-browser-presentat
 import { BrowserHeaderButton, BrowserPresentationSurfaces } from "../panel/browser-presentation";
 import { FloatingSlotProvider, SessionFloatingLayer } from "../panel/floating-slot";
 import { useDesktopFeature } from "../status/use-desktop-feature";
+import { CloudComputerControl } from "../computer/cloud-computer-control";
 import { ComputerControl } from "../computer/computer-control";
 import { useComputerBridge } from "../computer/computer-store";
 import { TerminalDock } from "../terminal/terminal-dock";
@@ -1625,6 +1626,7 @@ export function SessionPage(props: SessionPageProps) {
                   Reset notifications
                 </Button>
               ) : null}
+              {!isElectronRuntime() && computerUseFeature && remoteComputersFeature && props.openworkServerClient ? <CloudComputerControl client={props.openworkServerClient} /> : null}
               {computerUse && props.selectedSessionId ? <ComputerControl key={props.selectedSessionId} sessionId={props.selectedSessionId} /> : null}
               {browserPresentation.enabled ? <BrowserHeaderButton controller={browserPresentation} /> : null}
               <Tooltip>

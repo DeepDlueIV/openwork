@@ -52,7 +52,8 @@
     "node-pty": "npm:@lydell/node-pty@1.2.0-beta.12",
     "undici": "6.28.1",
     "yaml": "^2.9.0",
-    "zod": "^4.3.6"
+    "zod": "^4.3.6",
+    "@openwork/computer-use": "workspace:*"
   },
   "devDependencies": {
     "@electron/asar": "^3.4.1",

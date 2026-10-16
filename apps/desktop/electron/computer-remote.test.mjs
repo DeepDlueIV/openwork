@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createX11Driver } from "./computer-x11-driver.mjs";
-import { createRemoteComputerAdapter } from "./computer-remote.mjs";
+import { createX11Driver } from "@openwork/computer-use/computer-x11-driver";
+import { createRemoteComputerAdapter } from "@openwork/computer-use/computer-remote";
 
 const payload = (result) => JSON.parse(result.content.find((item) => item.type === "text").text);
 const deferred = () => {
@@ -13,7 +13,7 @@ async function fixture(t, overrides = {}) {
   const inputs = [];
   const events = [];
   const region = { x: 50, y: 60, width: 400, height: 300 };
-  /** @type {import("./computer-remote.mjs").ComputerDriver} */
+  /** @type {import("@openwork/computer-use/computer-remote").ComputerDriver} */
   const driver = {
     platform: "linux", describe: async () => ({ readiness: "ready", detail: "Ready" }),
     windows: async () => [{ id: 42, title: "Draft", app: "Editor", region }],

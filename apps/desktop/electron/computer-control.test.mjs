@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createComputerControl, COMPUTER_PROTOCOL } from "./computer-control.mjs";
+import { createComputerControl, COMPUTER_PROTOCOL } from "@openwork/computer-use/computer-control";
 
 const deferred = () => {
   let resolve = () => {};
@@ -13,7 +13,7 @@ function fixture(options = {}) {
   const calls = [];
   const requests = [];
   const selected = [];
-  /** @type {import("./computer-control.mjs").ComputerAdapter} */
+  /** @type {import("@openwork/computer-use/computer-control").ComputerAdapter} */
   const adapter = {
     id: "local", label: "This computer", placement: "local",
     protocol: COMPUTER_PROTOCOL,
@@ -39,7 +39,7 @@ function fixture(options = {}) {
       };
     },
   };
-  /** @type {import("./computer-control.mjs").ComputerAdapter} */
+  /** @type {import("@openwork/computer-use/computer-control").ComputerAdapter} */
   const remote = { ...adapter, id: "vm", label: "VM", placement: "remote" };
   const control = createComputerControl({ adapters: options.remote ? [adapter, remote] : [adapter], readRemoteFeatureEnabled: options.authority, onRequest: (_sessionId, value) => { requests.push(value); } });
   return { control, calls, requests, selected };

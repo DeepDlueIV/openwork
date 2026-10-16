@@ -29,7 +29,7 @@ import { createApplicationMenu } from "./app-menu.mjs";
 import { createNativeContextMenus } from "./context-menu.mjs";
 import { applyBrandAppName } from "./brand-app-name.mjs";
 import { createBrowserPanel } from "./browser-panel.mjs";
-import { createComputerControl } from "./computer-control.mjs";
+import { createComputerControl } from "@openwork/computer-use/computer-control";
 import { createLocalComputerAdapter } from "./computer-local.mjs";
 import { remoteComputerAdapters } from "./computer-targets.mjs";
 import { resetPermissionEntry, resolvePermissionEntry } from "./computer-permission-entry.mjs";

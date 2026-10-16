@@ -135,13 +135,21 @@ const runnerSnapshotSchema = z.object({
 })
 
 export type RunnerSnapshot = {
+  /**
+   * Reading one turn (`messageId`): that turn, the background tasks it started and their reports. Otherwise the
+   * newest turns (a window; see `hasEarlier`), oldest first.
+   */
   turns: RunnerTurn[]
   /** Transcript entries the runner returned that Den understands; unknown shapes are skipped. */
   messages: RunnerMessage[]
+  /** What the assistant wrote in the turn read (`messageId`), or in the newest turn of the window. */
   finalAssistantText: string
-  /** `busy` when any turn in the session is queued or running, including turns outside a windowed read. */
+  /** `busy` when the conversation (not a background task) is queued or running, including turns outside the window. */
   status?: string
-  /** Set on windowed reads (`turns`): whether older turns exist. */
+  /**
+   * Set on reads without `messageId`: whether older turns exist, read by passing the first turn's messageId as
+   * `before`. Older runners only set it when `turns` was given.
+   */
   hasEarlier?: boolean
 }
 
@@ -337,7 +345,12 @@ export function createHeadlessRunnerClient(deps: HeadlessRunnerDeps) {
       return { ok: true, value: { state: accepted.success ? accepted.data.state : "accepted" } }
     },
 
-    /** `outputs: "none"` leaves tool outputs on the runner when a caller only needs each tool's outcome. */
+    /**
+     * Every read is bounded. With `messageId`: that turn's transcript (its newest `limit` messages) and the turn with
+     * its background tasks and their reports. Without it: the newest `turns` turns (30 unless given, at most 200)
+     * before `before`, with their newest `limit` messages; `hasEarlier` says whether to page back.
+     * `outputs: "none"` leaves tool outputs on the runner when a caller only needs each tool's outcome.
+     */
     async readSession(
       sessionId: string,
       input: { messageId?: string; limit?: number; outputs?: "none"; turns?: number; before?: string } = {},

@@ -250,6 +250,13 @@ function toTurn(row: unknown): Turn {
   }
 }
 
+/**
+ * A turn's columns without its prompt and attachments (a prompt can be 100k characters), so listing turns reads only
+ * their state. The prompt is read where it is needed (startTranscript, waitingPrompts).
+ */
+const TURN_COLUMNS =
+  "session_id, message_id, status, model, error, input_tokens, cached_input_tokens, output_tokens, created_at, updated_at, kind, parent, title, error_detail"
+
 /** Leaves out background tasks' own transcripts: the conversation hears from a task through its report. */
 const CONVERSATION_ROWS = "message_id NOT IN (SELECT message_id FROM turns WHERE session_id = ? AND kind = 'task')"
 
@@ -498,14 +505,32 @@ export class Store {
   }
 
   getTurn(sessionId: string, messageId: string): Turn | null {
-    const row = this.db.prepare("SELECT * FROM turns WHERE session_id = ? AND message_id = ?").get(sessionId, messageId)
+    const row = this.db.prepare(`SELECT ${TURN_COLUMNS} FROM turns WHERE session_id = ? AND message_id = ?`).get(sessionId, messageId)
     return row ? toTurn(row) : null
   }
 
+  /** Every turn of the session. Not for reads a caller asks for: those are windowed (recentTurns, turnFamily). */
   listTurns(sessionId: string): Turn[] {
     return this.db
-      .prepare("SELECT * FROM turns WHERE session_id = ? ORDER BY created_at, rowid")
+      .prepare(`SELECT ${TURN_COLUMNS} FROM turns WHERE session_id = ? ORDER BY created_at, rowid`)
       .all(sessionId)
+      .map(toTurn)
+  }
+
+  /**
+   * One turn with the background tasks it started and those tasks' reports, oldest first: everything a caller
+   * following one turn looks at, however long the conversation is.
+   */
+  turnFamily(sessionId: string, messageId: string): Turn[] {
+    return this.db
+      .prepare(
+        `SELECT ${TURN_COLUMNS} FROM turns WHERE session_id = ? AND (
+           message_id = ?
+           OR (kind = 'task' AND parent = ?)
+           OR (kind = 'report' AND parent IN (SELECT message_id FROM turns WHERE session_id = ? AND kind = 'task' AND parent = ?))
+         ) ORDER BY rowid`,
+      )
+      .all(sessionId, messageId, messageId, sessionId, messageId)
       .map(toTurn)
   }
 
@@ -513,7 +538,7 @@ export class Store {
   activeTurn(sessionId: string, options: { conversation?: boolean } = {}): Turn | null {
     const row = this.db
       .prepare(
-        `SELECT * FROM turns WHERE session_id = ? AND status IN (${[...ACTIVE].map(() => "?").join(", ")})${options.conversation ? " AND kind IS NOT 'task'" : ""} ORDER BY rowid LIMIT 1`,
+        `SELECT ${TURN_COLUMNS} FROM turns WHERE session_id = ? AND status IN (${[...ACTIVE].map(() => "?").join(", ")})${options.conversation ? " AND kind IS NOT 'task'" : ""} ORDER BY rowid LIMIT 1`,
       )
       .get(sessionId, ...ACTIVE)
     return row ? toTurn(row) : null
@@ -522,7 +547,7 @@ export class Store {
   /** The session's newest background tasks, oldest first. */
   recentTasks(sessionId: string, limit: number): Turn[] {
     return this.db
-      .prepare("SELECT * FROM turns WHERE session_id = ? AND kind = 'task' ORDER BY rowid DESC LIMIT ?")
+      .prepare(`SELECT ${TURN_COLUMNS} FROM turns WHERE session_id = ? AND kind = 'task' ORDER BY rowid DESC LIMIT ?`)
       .all(sessionId, limit)
       .map(toTurn)
       .reverse()
@@ -648,6 +673,7 @@ export class Store {
     })
   }
 
+  /** The whole transcript. Not for reads a caller asks for: a long conversation's can be hundreds of megabytes. */
   messages(sessionId: string): StoredMessage[] {
     return this.db
       .prepare("SELECT seq, message_id, body, created_at FROM messages WHERE session_id = ? ORDER BY seq")
@@ -707,11 +733,11 @@ export class Store {
     const rows = beforeMessageId
       ? this.db
           .prepare(
-            `SELECT * FROM turns WHERE session_id = ? AND rowid < (SELECT rowid FROM turns WHERE session_id = ? AND message_id = ?)
+            `SELECT ${TURN_COLUMNS} FROM turns WHERE session_id = ? AND rowid < (SELECT rowid FROM turns WHERE session_id = ? AND message_id = ?)
              ORDER BY rowid DESC LIMIT ?`,
           )
           .all(sessionId, sessionId, beforeMessageId, limit + 1)
-      : this.db.prepare("SELECT * FROM turns WHERE session_id = ? ORDER BY rowid DESC LIMIT ?").all(sessionId, limit + 1)
+      : this.db.prepare(`SELECT ${TURN_COLUMNS} FROM turns WHERE session_id = ? ORDER BY rowid DESC LIMIT ?`).all(sessionId, limit + 1)
     const turns = rows.slice(0, limit).map(toTurn).reverse()
     return { turns, hasEarlier: rows.length > limit }
   }
@@ -731,15 +757,22 @@ export class Store {
     return new Map(z.array(z.object({ message_id: z.string(), prompt: z.string() })).parse(rows).map((row) => [row.message_id, row.prompt]))
   }
 
-  /** The transcript of the given turns only. */
-  messagesForTurns(sessionId: string, messageIds: string[]): StoredMessage[] {
-    if (messageIds.length === 0) return []
+  /**
+   * The newest `limit` transcript messages of the turns from `firstMessageId` to `lastMessageId` (a window from
+   * recentTurns, so a run of consecutive turns), oldest first. Only those rows are read, whatever the turns hold.
+   */
+  windowMessages(sessionId: string, firstMessageId: string, lastMessageId: string, limit: number): StoredMessage[] {
     return this.db
       .prepare(
-        `SELECT seq, message_id, body, created_at FROM messages WHERE session_id = ? AND message_id IN (${messageIds.map(() => "?").join(", ")}) ORDER BY seq`,
+        `SELECT seq, message_id, body, created_at FROM messages WHERE session_id = ? AND message_id IN (
+           SELECT message_id FROM turns WHERE session_id = ?
+             AND rowid >= (SELECT rowid FROM turns WHERE session_id = ? AND message_id = ?)
+             AND rowid <= (SELECT rowid FROM turns WHERE session_id = ? AND message_id = ?)
+         ) ORDER BY seq DESC LIMIT ?`,
       )
-      .all(sessionId, ...messageIds)
+      .all(sessionId, sessionId, sessionId, firstMessageId, sessionId, lastMessageId, limit)
       .map(parseMessageRow)
+      .reverse()
   }
 
   /** The files under memory/, which the model sees at the start of every turn. */
@@ -821,4 +854,36 @@ export class Store {
   deleteFile(sessionId: string, path: string) {
     return Number(this.db.prepare("DELETE FROM files WHERE session_id = ? AND path = ?").run(sessionId, path).changes) > 0
   }
+
+  /** Every row of one conversation exactly as stored, to move it to another runner (GET /v1/sessions/:id/export). */
+  exportConversation(id: string): ConversationRows | null {
+    const session = this.db.prepare("SELECT * FROM sessions WHERE id = ?").get(id)
+    if (!session) return null
+    const rows = (table: ConversationTable) => z.array(sqlRow).parse(this.db.prepare(`SELECT * FROM ${table} WHERE session_id = ? ORDER BY rowid`).all(id))
+    return { session: sqlRow.parse(session), turns: rows("turns"), messages: rows("messages"), files: rows("files"), saved_files: rows("saved_files") }
+  }
+
+  /** The columns this database has for a table: an export from a newer runner can name ones it lacks. */
+  columns(table: "sessions" | ConversationTable): Set<string> {
+    return new Set(tableColumns.parse(this.db.prepare(`PRAGMA table_info(${table})`).all()).map((column) => column.name))
+  }
+
+  /** Writes an exported conversation in one transaction: all of it, or nothing. Columns must be checked first. */
+  importConversation(conversation: ConversationRows) {
+    const insert = (table: "sessions" | ConversationTable, row: SqlRow) => {
+      const names = Object.keys(row)
+      if (!names.length || names.some((name) => !/^[a-z_]+$/.test(name))) throw new Error("invalid_column")
+      this.db.prepare(`INSERT INTO ${table} (${names.join(", ")}) VALUES (${names.map(() => "?").join(", ")})`).run(...names.map((name) => row[name] ?? null))
+    }
+    this.transaction(() => {
+      insert("sessions", conversation.session)
+      for (const table of CONVERSATION_TABLES) for (const row of conversation[table]) insert(table, row)
+    })
+  }
 }
+
+export const CONVERSATION_TABLES = ["turns", "messages", "files", "saved_files"] as const
+type ConversationTable = (typeof CONVERSATION_TABLES)[number]
+export const sqlRow = z.record(z.string(), z.union([z.string(), z.number(), z.null()]))
+type SqlRow = z.infer<typeof sqlRow>
+export type ConversationRows = { session: SqlRow } & Record<ConversationTable, SqlRow[]>

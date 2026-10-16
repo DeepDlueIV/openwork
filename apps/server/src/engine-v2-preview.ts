@@ -9,7 +9,7 @@ import { MCP_READINESS_RPC_ID } from "./opencode-v2-mcp-readiness.js";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import constants from "../../../constants.json" with { type: "json" };
@@ -148,6 +148,8 @@ export interface EngineV2PreviewState {
   v1HistoryCopiedAt?: number;
   /** Set while a migration runs, so one OpenWork closed mid-copy resumes when it starts again. */
   v1HistoryCopyStartedAt?: number;
+  /** A durable receipt keeps completion and errors visible across restarts. */
+  historyCopyResult?: EngineV2MigrationStatus;
 }
 
 export function resolveInitialEngineV2PreviewState(
@@ -192,6 +194,11 @@ export function readEngineV2PreviewState(config: Pick<ServerConfig, "configPath"
       chatRouting: parsed.chatRouting === true,
       ...(typeof parsed.v1HistoryCopiedAt === "number" ? { v1HistoryCopiedAt: parsed.v1HistoryCopiedAt } : {}),
       ...(typeof parsed.v1HistoryCopyStartedAt === "number" ? { v1HistoryCopyStartedAt: parsed.v1HistoryCopyStartedAt } : {}),
+      ...(isRecord(parsed.historyCopyResult) && (parsed.historyCopyResult.state === "completed" || parsed.historyCopyResult.state === "error")
+        && typeof parsed.historyCopyResult.imported === "number" && typeof parsed.historyCopyResult.skipped === "number" && typeof parsed.historyCopyResult.total === "number"
+        ? { historyCopyResult: { state: parsed.historyCopyResult.state, imported: parsed.historyCopyResult.imported,
+          skipped: parsed.historyCopyResult.skipped, total: parsed.historyCopyResult.total,
+          ...(typeof parsed.historyCopyResult.error === "string" ? { error: parsed.historyCopyResult.error } : {}) } } : {}),
     };
   } catch {
     return { enabled: false, chatRouting: false };
@@ -252,7 +259,10 @@ export async function writeEngineV2PreviewState(
   state: EngineV2PreviewState,
 ): Promise<void> {
   await mkdir(runtimeStorageDir(config), { recursive: true });
-  await writeFile(statePath(config), `${JSON.stringify(state, null, 2)}\n`, "utf8");
+  const path = statePath(config);
+  const temporary = `${path}.tmp`;
+  await writeFile(temporary, `${JSON.stringify(state, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+  await rename(temporary, path);
 }
 
 function exec(file: string, args: string[], options: { cwd?: string; timeout?: number } = {}): Promise<void> {
@@ -498,16 +508,19 @@ export function createEngineV2Preview(options: {
   const resumeMigration = initialState.v1HistoryCopyStartedAt !== undefined;
   let migration: EngineV2MigrationStatus = resumeMigration
     ? { state: "running", phase: "starting", imported: 0, skipped: 0, total: 0, resumed: true }
-    : { state: "idle", imported: 0, skipped: 0, total: 0 };
+    : initialState.historyCopyResult ?? { state: "idle", imported: 0, skipped: 0, total: 0 };
   let migrationJob: Promise<void> | undefined;
+  let migrationAbort: AbortController | undefined;
+  let stopping = false;
   let enabled = initialState.enabled;
   let chatRouting = initialState.chatRouting === true;
   let v1HistoryCopiedAt = initialState.v1HistoryCopiedAt;
   let v1HistoryCopyStartedAt = initialState.v1HistoryCopyStartedAt;
-  const persistState = () => writeEngineV2PreviewState(config, {
+  const persistState = (receipt: EngineV2MigrationStatus = migration) => writeEngineV2PreviewState(config, {
     enabled, chatRouting,
     ...(v1HistoryCopiedAt === undefined ? {} : { v1HistoryCopiedAt }),
     ...(v1HistoryCopyStartedAt === undefined ? {} : { v1HistoryCopyStartedAt }),
+    ...(receipt.state === "completed" || receipt.state === "error" ? { historyCopyResult: receipt } : {}),
   });
   let allowRunning = true;
   let running = false;
@@ -868,6 +881,9 @@ export function createEngineV2Preview(options: {
   }
 
   async function start(): Promise<void> {
+    // A saved/in-progress offline copy owns the database. Startup and config
+    // upkeep must not reopen it while a worker is committing history batches.
+    if (v1HistoryCopyStartedAt !== undefined) return;
     if (sidecar) return;
     if (startPromise) {
       await startPromise;
@@ -952,6 +968,7 @@ export function createEngineV2Preview(options: {
   }
 
   function connection(): { url: string; username: string; password: string } | undefined {
+    if (v1HistoryCopyStartedAt !== undefined || migration.state === "running") return undefined;
     if (!running || !sidecar) return undefined;
     return { url: sidecar.url, username: sidecar.username, password: sidecar.password };
   }
@@ -1007,33 +1024,66 @@ export function createEngineV2Preview(options: {
     const startedAt = new Date().toISOString();
     const marker = resumed ? { resumed } : {};
     migration = { state: "running", phase: "starting", imported: 0, skipped: 0, total: 0, startedAt, ...marker };
+    const abort = new AbortController();
+    migrationAbort = abort;
     migrationJob = (async () => {
+      let completed: EngineV2MigrationStatus | undefined;
+      let persistedCompletion = false;
       try {
         const source = opencodeV1DatabasePath();
         const resolved = await resolveBinary(config);
         enabled = true;
         allowRunning = true;
+        // Initialize/upgrade the target schema with its own pinned engine,
+        // then close it before any direct SQLite transfer. An existing saved
+        // copy already owns an initialized target and must never be reopened.
+        if (v1HistoryCopyStartedAt === undefined) await start();
+        if (sidecar) {
+          const activity = await sidecar.fetchJson("/api/session/active");
+          if (activity.status !== 200 || !isRecord(activity.json) || !isRecord(activity.json.data)) {
+            throw new Error("Could not verify that OpenCode v2 is idle. No history was changed.");
+          }
+          if (Object.values(activity.json.data).some(value => isRecord(value) && value.type === "running")) {
+            throw new Error("Wait for running OpenCode v2 tasks to finish before migrating history.");
+          }
+        }
         v1HistoryCopyStartedAt = Date.parse(startedAt);
         await persistState();
-        await start();
-        if (!sidecar) throw new Error("OpenCode v2 could not start. Retry migration.");
+        await stopRuntime();
         const storageDir = join(runtimeStorageDir(config), "opencode-v2");
         await runOpencodeV1HistoryMigration({ source, storageDir,
-          bin: resolved.bin, target: sidecar,
+          bin: resolved.bin, targetDatabase: join(rootDir, "opencode.db"), signal: abort.signal,
           backup: { database: join(rootDir, "opencode.db"), directory: join(storageDir, "backups") },
-          progress: (next) => { migration = { ...next, startedAt, ...marker }; } });
-        if (migration.state === "completed") v1HistoryCopiedAt = Date.parse(startedAt);
+          progress: (next) => {
+            const result = { ...next, startedAt: next.startedAt ?? startedAt, ...marker };
+            if (next.state === "completed") completed = result;
+            else migration = result;
+          } });
+        if (completed) {
+          v1HistoryCopiedAt = Date.parse(completed.startedAt ?? startedAt);
+          v1HistoryCopyStartedAt = undefined;
+          if (!stopping) { allowRunning = true; await start(); }
+          await persistState(completed);
+          persistedCompletion = true;
+          migration = completed;
+        }
       } catch (error) {
         migration = { ...migration, state: "error", error: errorMessage(error) };
       }
-      // Finished or failed (with Try again shown): nothing to resume at the next start.
-      v1HistoryCopyStartedAt = undefined;
-      await persistState().catch((error) => warn(`Migration state: ${errorMessage(error)}`));
+      // Errors retain both the start marker and SQLite checkpoints. Restart
+      // resumes instead of making partially copied history available in v2.
+      if (!persistedCompletion) await persistState().catch((error) => warn(`Migration state: ${errorMessage(error)}`));
+      if (v1HistoryCopyStartedAt === undefined && enabled && !stopping) {
+        allowRunning = true;
+        await start().catch(recordStartError);
+      }
     })();
     return status();
   }
 
   async function stop(): Promise<void> {
+    stopping = true;
+    migrationAbort?.abort(new Error("History copy paused while OpenWork closes. Restart to resume."));
     await migrationJob;
     await stopRuntime();
   }

@@ -26,7 +26,7 @@ headless-runner (one Node process, SQLite file)
 | **Cheap** | One process serves many sessions, and an idle session is just rows. Anthropic prompt caching sits on the system prompt, the ends of the two newest earlier turns and the newest message, so each agent step, and each new turn, reuses the previous prefix. In the smoke test, 123k of 167k input tokens were cache reads. Tool output, file sizes and context are capped. A long turn drops its oldest large tool outputs in blocks, so the cached prefix survives most steps. |
 | **Reliable** | Every step is written to SQLite (WAL) before the next one starts. Sends are idempotent on `messageId`. Follow-ups sent while a turn runs are queued per conversation and answered in order, each seeing the earlier answers; the caller never has to retry "busy". After a crash or restart, turns are marked `interrupted`; sending the same `messageId` again resumes them. A tool call whose result was never recorded is **not re-run**: it is recorded as an error so the model can check its effect instead of repeating a possible write. Model calls retry on 408/409/425/429/5xx with backoff. Turns have no time or step limit by default (both are optional settings); every model and tool call has its own timeout, and a step that repeats the previous one (same calls, same results) is treated as waiting: each repeat first waits longer (5, 10, 20, then 30 seconds), so checking back on a desktop, CI, or a job is cheap. When the same failure has come back `maxIdenticalFailures` times, or the same answer has kept coming back for `maxWaitingMs`, the model is told (in the system prompt, not the transcript) to stop and report what it was waiting for; a model that still repeats the step ends as `stuck_repeating`. Each caller sets both limits per session in `repeats` (defaults: 10 minutes, 3 failures). A turn using a caller's MCP token pauses itself between steps every 50 minutes (`interrupted`, `credentials_refresh`) so the caller can resume it with a fresh token; no tool call is cut off. There is a global concurrency limit. Each turn logs one line when it starts and one when it ends (status, error code, steps, tool calls, elapsed time, tokens), never content or credentials. |
 | **Safe** | No shell, no host filesystem, no child processes. Network access goes only to the two operator-configured URLs (https, or http on loopback). Callers can't redirect it. Model keys and MCP tokens are supplied per turn, held in memory only, and never written to disk or logs (a test checks this). File paths are normalized so they can't escape the session. A service bearer token (≥32 chars) guards every `/v1` route. `HEADLESS_MCP_TOOL_ALLOWLIST` can narrow the MCP tools. The default system prompt asks the model to read and draft, and to change data only when explicitly asked. |
-| **Simple** | About 1,900 lines of source, four runtime deps (`hono`, `@hono/node-server`, `@modelcontextprotocol/client`, `zod`), the workspace's `@openwork/workbook` for Office files, and `node:sqlite`. No agent framework, no provider SDKs. The build bundles the workspace package into `dist/server.js` with esbuild, so it runs on plain Node. |
+| **Simple** | About 4,600 lines of source and five third-party runtime deps: `hono`, `@hono/node-server`, `@modelcontextprotocol/client` and `zod`, plus `aws4fetch` for S3 files. From the workspace: `@openwork/workbook` for Office files and `@openwork-ee/headless-computer` (loaded only when a computer is configured). SQLite is `node:sqlite`. No agent framework, no model provider SDKs. The build bundles `@openwork/workbook` and `aws4fetch` into `dist/server.js` with esbuild, so it runs on plain Node. |
 
 ## API
 
@@ -39,16 +39,22 @@ All `/v1` routes require `Authorization: Bearer $HEADLESS_API_TOKEN`.
 | `POST` | `/v1/sessions` | `{ title?, instructions?, repeats?: { maxWaitingMs?, maxIdenticalFailures? }, files?, computer?, reactions?, tasks?, owner?, ref?, timeZone?, autoTitle?, memoryOf? }` | session (`hs_…`). `files`, `computer`, `reactions` and `tasks` are off unless set to `true` (see [Isolation](#isolation)). See [Several conversations per person](#several-conversations-per-person) for the rest |
 | `PUT` | `/v1/sessions/:id` | same body as `POST` | `201` session when created, `200` when updated; settings left out keep their value. The caller picks the id (`hs_` + 8–96 of `A-Za-z0-9_-`), so it can keep one durable conversation per person without storing the runner's id. Workbot derives one per member, and one per side chat |
 | `GET` | `/v1/sessions` | `?owner=&limit=` | `{ sessions: [{ id, ref, title, createdAt, updatedAt }] }`: one owner's conversations that have a message, most recently used first |
-| `POST` | `/v1/sessions/:id/turns` | `{ messageId, prompt, model?, credentials: { modelApiKey?, mcpToken? } }` | `202 { state: accepted \| resumed \| already_present, turn }`. A message sent while another turn runs is accepted and answered next (`turn.status: queued`); only a runaway queue of 20+ returns `429 too_many_queued` |
-| `GET` | `/v1/sessions/:id` | `?messageId=&limit=&outputs=` | `{ session, status: idle \| busy, turns, messages, finalAssistantText }`. `outputs=none` returns each tool result's `outputLength` instead of its output, for callers that poll a long turn. `busy` means the conversation is answering; background tasks don't count. A task's turn has `kind: task`, `parent` (the turn that started it) and `title`; its report has `kind: report` and `parent` (the task) |
+| `POST` | `/v1/sessions/:id/turns` | `{ messageId, prompt, model?, attachments?, interrupt?, credentials: { modelApiKey?, mcpToken?, readOnly? } }` | `202 { state: accepted \| resumed \| already_present, turn }`. A message sent while another turn runs is accepted and answered next (`turn.status: queued`); only a runaway queue of 20+ returns `429 too_many_queued`. `attachments` are saved-file ids (`fl_…`); `prompt` may be empty when there are attachments, and an unknown id returns `400 unknown_file`. `interrupt: true` makes the answer in progress wrap up at its next safe point, keeping what it wrote (it ends `aborted` with error `superseded`), and answers this message next. `credentials.readOnly: true` leaves out the tools that change anything (writing, editing or deleting files, `save_file`, the computer, reactions, tasks) and runs the turn's tool calls at the same time. `404 unknown_session` |
+| `DELETE` | `/v1/sessions/:id/turns/:messageId` | `?after=1` | `{ removed: [messageId] }`: removes the message and what it led to (its answer, tasks and reports); `after=1` also removes every later message, for editing a message. `409 turn_busy` while any of them is queued or running |
+| `GET` | `/v1/sessions/:id` | `?messageId=&limit=&outputs=&turns=&before=` | `{ session, status: idle \| busy, turns, messages, finalAssistantText }`. `outputs=none` returns each tool result's `outputLength` instead of its output, for callers that poll a long turn. Every read is bounded: without `messageId` it returns the newest `turns` turns (default 30, at most 200) before the `before` messageId, their messages and `hasEarlier`, so a long conversation reads as cheaply as a short one; with `messageId`, that turn's transcript and, in `turns`, the turn with the tasks it started and their reports. `limit` (default 100) caps the messages. `busy` means the conversation is answering; background tasks don't count. A task's turn has `kind: task`, `parent` (the turn that started it) and `title`; its report has `kind: report` and `parent` (the task) |
+| `GET` | `/v1/sessions/:id/events` | | Server-sent events: `ready` first, then messages whose JSON `type` is `changed { messageId, status? }` (re-read the session), `text { messageId, step, delta, reset? }` (model text as it is written) or `tool { messageId, step, tool }` (a tool call started). Nothing is stored or replayed; a reader that misses one re-reads the session. A comment every 15 s keeps proxies from closing it |
 | `POST` | `/v1/sessions/:id/abort` | `{ messageId? }` | `{ accepted }`. With a `messageId`, stops only that turn (running or queued); without one, stops the running turn and every follow-up queued behind it (background tasks keep going) |
 | `GET` | `/v1/sessions/:id/files` | | `{ files: [{ path, size, updatedAt }] }` |
 | `GET` | `/v1/sessions/:id/files/content` | `?path=` | file text |
-| `DELETE` | `/v1/sessions/:id` | | `204` (also deletes its saved files' bytes) |
+| `DELETE` | `/v1/sessions/:id` | | `204` (also deletes its saved files' bytes and its computer). `409 session_busy` while a turn is queued or running |
+| `GET` | `/v1/sessions/:id/export` | | Every row of the conversation as stored, to [move it to Node](#move-conversations-to-node). `409 session_busy` while a turn is queued or running |
+| `POST` | `/v1/sessions/:id/import` | an export | Node only (celld answers `405`). `201 { id, rows }`, or `409 session_exists`; `400` (nothing written) for another conversation's, a cut-off or a newer runner's export |
 | `GET` | `/v1/files/status` | | `{ enabled, kind, maxFileBytes, maxSessionBytes }` |
 | `POST` | `/v1/sessions/:id/saved-files` | `?name=`, raw body typed by `Content-Type` | `201` saved file (`fl_…`). Send its id in a turn's `attachments`. `403 files_not_enabled` for a session without `files: true`; `413 file_too_large` or `413 files_full` past the limits |
 | `GET` | `/v1/sessions/:id/saved-files` | | `{ files }`, newest first, `source: user \| agent` |
 | `GET` | `/v1/sessions/:id/saved-files/:fileId` | | the bytes, with `x-file-name` |
+| `GET` | `/v1/sessions/:id/saved-files/:fileId/preview` | | the page-image manifest, or `404 no_preview`. Without one, a session with a computer renders it first (see [Computer](#computer-optional)) |
+| `GET` | `/v1/sessions/:id/saved-files/:fileId/preview/:page` | | one page as PNG |
 | `DELETE` | `/v1/sessions/:id/saved-files/:fileId` | | `204` |
 
 Turn status is one of `queued`, `running`, `completed`, `failed`, `interrupted` or `aborted`. `failed` and `interrupted` can be resumed by re-sending the same `messageId` with fresh credentials; `aborted` cannot. Resuming continues the same turn (Workbot's "Try again" does this), so the conversation never gets a second copy of the message. A failed turn's `errorDetail` says what the model provider answered, with its request id, and the turn's `turn ended` log line carries it too; it is for support, never for the person. The `error` field holds a stable code:
@@ -102,7 +108,7 @@ The runner is a private service with one caller (Den), which authorizes each per
 - **Opt-in per session.** Configuring files or a computer makes them *available*; a session only gets them when it is created (or updated) with `files: true` / `computer: true`. Slack replies and Automations don't ask, so they keep their exact behavior: no file tools, no computer, no uploads, and the preview route never starts a computer for them.
 - **Files belong to one session.** Every read, download, preview and delete looks a file up by session id *and* file id, and bytes are stored under `sessions/<sessionId>/<fileId>`. Deleting a session deletes its bytes and its computer.
 - **Limits.** `HEADLESS_FILES_MAX_BYTES` (100 MB) per file, enforced while the upload streams in (with or without `Content-Length`), and on `save_file` and computer outputs. `HEADLESS_FILES_MAX_SESSION_BYTES` (5 GB) per session in total. Past either, the upload gets `413`, and the model is told why so it can say so.
-- **Storage credentials.** Use a store or bucket for this runner alone, with credentials scoped to it. For Vercel Blob, the store's own read-write token is passed explicitly, so the SDK never uses other `BLOB_READ_WRITE_TOKEN` or OIDC credentials in the environment. Neither the storage credentials nor the Freestyle key ever enter a computer.
+- **Storage credentials.** Use a store or bucket for this runner alone, with credentials scoped to it. Neither the storage credentials nor the Freestyle key ever enter a computer.
 - **Computers.** One VM per session, created only when that session first runs a command; it holds no credentials and has outbound internet only.
 
 ## Computer (optional)
@@ -126,6 +132,26 @@ The runner is a private service with one caller (Den), which authorizes each per
 The same runner also runs on celld, one SQLite cell per Workbot person or per Slack/Automation conversation, kept
 in an S3 bucket instead of a disk: [OWNER-CELLS.md](./OWNER-CELLS.md).
 
+## Move conversations to Node
+
+Every conversation can leave celld for a Node runner with nothing lost: export it, import it with the same id, and point
+Den and Workbot at the new URL. Every celld deploy proves this with its smoke conversation before it goes out.
+
+- **Same token, model and MCP settings** on the Node runner.
+- **Same bucket** (`HEADLESS_FILES=s3`): kept files' bytes stay there; the export carries only their keys.
+- **Same computer settings** (`HEADLESS_COMPUTER`, its key, snapshot, `HEADLESS_COMPUTER_SCOPE`): a conversation's computer
+  is found by a hash of its id, so it keeps its `/workspace`.
+
+Pause Slack, Automations and Workbot first (export refuses a conversation while a turn runs). Den knows every
+conversation (Slack threads, Automation runs' receipts, Workbot members); for each:
+
+```sh
+curl -sf -H "authorization: Bearer $FROM" ${OWNER:+-H "x-openwork-headless-owner: $OWNER"} "$FROM_URL/v1/sessions/$ID/export" |
+  curl -sf -X POST -H "authorization: Bearer $TO" --data-binary @- "$TO_URL/v1/sessions/$ID/import"
+```
+
+Nothing on celld changes, so pointing the URLs back is the rollback.
+
 ## Configuration
 
 | Variable | Default | |
@@ -146,11 +172,10 @@ in an S3 bucket instead of a disk: [OWNER-CELLS.md](./OWNER-CELLS.md).
 | `HEADLESS_MAX_OUTPUT_TOKENS` | `8192` | Output cap per model call: Anthropic `max_tokens`, OpenAI `max_completion_tokens` |
 | `HEADLESS_CONTEXT_CHAR_BUDGET` | `400000` | Past this, the oldest whole turns are left out, down to 60% of it (see [Long conversations](#long-conversations)). A turn that outgrows it alone replaces its oldest large tool outputs with a short note, in blocks of eight |
 | `HEADLESS_SYSTEM_PROMPT` | built-in | |
-| `HEADLESS_FILES` | `off` | Saved files: `off`, `disk`, `s3`, or `vercel`. Only sessions created with `files: true` use them. Off means the file routes answer `files_not_configured` |
+| `HEADLESS_FILES` | `off` | Saved files: `off`, `disk`, or `s3`. Only sessions created with `files: true` use them. Off means the file routes answer `files_not_configured` |
 | `HEADLESS_FILES_MAX_BYTES` | `104857600` (100 MB) | Largest single kept file |
 | `HEADLESS_FILES_MAX_SESSION_BYTES` | `5368709120` (5 GB) | Most one session may keep in total |
 | `HEADLESS_FILES_DIR` | `files` next to `HEADLESS_DB_PATH` | For `disk`. Defaults to the database's volume so files survive deploys; disk is for development, use a store in production |
-| `HEADLESS_VERCEL_BLOB_TOKEN` | | For `vercel`: the read-write token of one **private** Vercel Blob store used only by this runner |
 | `HEADLESS_S3_ENDPOINT` | | For `s3`: any S3-compatible endpoint, e.g. `https://<account>.r2.cloudflarestorage.com`, `https://s3.us-east-1.amazonaws.com`, or a self-hosted MinIO/RustFS |
 | `HEADLESS_S3_REGION` | `auto` | `auto` for R2; the bucket's region for AWS |
 | `HEADLESS_S3_BUCKET`, `HEADLESS_S3_ACCESS_KEY_ID`, `HEADLESS_S3_SECRET_ACCESS_KEY` | | For `s3` |
@@ -160,11 +185,15 @@ in an S3 bucket instead of a disk: [OWNER-CELLS.md](./OWNER-CELLS.md).
 | `HEADLESS_COMPUTER_SNAPSHOT` | built from the package | Snapshot id or slug new computers boot from |
 | `HEADLESS_COMPUTER_PAUSE_SECONDS` | `300` | Pause a computer this long after its last turn, unless a `background` job runs |
 | `HEADLESS_COMPUTER_KEEP_DAYS` | `14` | Freestyle deletes a computer unused this long |
+| `HEADLESS_SENTRY_DSN` | unset | Optional Sentry error reports (both hosts, posted over `fetch`): failed turns by error code, startup recovery errors and 500s. Codes, ids and counts only, never content or credentials. Unset sends nothing |
+| `HEADLESS_SENTRY_ENVIRONMENT`, `HEADLESS_SENTRY_RELEASE` | unset, `headless-runner@<HEADLESS_RUNNER_VERSION>` | Tags on those reports |
+| `HEADLESS_RUNNER_VERSION` | set by the image | Tagged `runnerVersion` on reports |
 
 ## Run
 
 ```sh
-pnpm --filter @openwork-ee/headless-runner test
+pnpm --filter @openwork-ee/headless-runner typecheck
+pnpm --filter @openwork-ee/headless-runner run "/^test:/"   # test:conversation, test:sql-store, test:computer-config
 pnpm --filter @openwork-ee/headless-runner build
 HEADLESS_API_TOKEN=… HEADLESS_MODEL_PROTOCOL=anthropic HEADLESS_MODEL_BASE_URL=… HEADLESS_MODEL=gwm_… \
   HEADLESS_MCP_URL=https://api.openworklabs.com/mcp/agent node ee/apps/headless-runner/dist/server.js
@@ -172,9 +201,15 @@ HEADLESS_API_TOKEN=… HEADLESS_MODEL_PROTOCOL=anthropic HEADLESS_MODEL_BASE_URL
 
 `pnpm --filter @openwork-ee/headless-runner smoke "<prompt>"` runs one real turn through the HTTP API with a throwaway database. Pass credentials as `SMOKE_MODEL_API_KEY` and `SMOKE_MCP_TOKEN`. It prints the status, token usage (including cached tokens), tools used, files written, elapsed time and RSS. It never prints credentials.
 
-## Deploy on Render
+## Deploy as a single Node process (Render or any Node host)
 
-Create a **private service** so it has no public URL; only den-api reaches it. Use Node 22.13 or later.
+This is the single-node deployment: one `node dist/server.js` process with its SQLite file on a persistent disk. It
+is what Docker (`packaging/docker/Dockerfile.headless-runner`) and the AWS Terraform module run. OpenWork's own
+production runner runs on celld instead (see [Run on celld](#run-on-celld-no-disk)). **A celld deployment must set
+`HEADLESS_FILES=s3` or `off`**: it refuses `disk` (`cells_require_s3_files`); see
+[OWNER-CELLS.md](./OWNER-CELLS.md).
+
+On Render, create a **private service** so it has no public URL; only den-api and Workbot reach it. Use Node 22.13 or later.
 
 | Setting | Value |
 |---|---|
@@ -183,18 +218,9 @@ Create a **private service** so it has no public URL; only den-api reaches it. U
 | Disk | Mount at `/var/data`, then set `HEADLESS_DB_PATH=/var/data/headless.sqlite` |
 | Instances | 1. A service with a disk runs as a single instance, and a deploy restarts in-flight turns, which Den resumes |
 | Env | `HEADLESS_API_TOKEN`, `HEADLESS_MODEL_PROTOCOL`, `HEADLESS_MODEL_BASE_URL`, `HEADLESS_MODEL`, `HEADLESS_MODEL_API_KEY`, `HEADLESS_MCP_URL` |
-| Files (optional) | `HEADLESS_FILES=vercel` and `HEADLESS_VERCEL_BLOB_TOKEN`. Keep the 1 GB disk for SQLite only |
+| Files (optional) | `HEADLESS_FILES=s3` with celld's bucket settings, so conversations moved from celld keep their files. Keep the disk for SQLite only |
 
-**Kept files in production** use a private Vercel Blob store in the `prologe` team, region `iad1` (next to the service's Virginia region):
-
-| Store | For | Token |
-|---|---|---|
-| `openwork-headless-files` | the Render runner | Infisical `prod`, `/headless-runner/HEADLESS_VERCEL_BLOB_TOKEN` |
-| `openwork-headless-files-dev` | local runs and tests | Infisical `dev`, `/headless-runner/HEADLESS_VERCEL_BLOB_TOKEN` |
-
-Both are connected only to the empty Vercel project `openwork-headless-runner` (no code, no deployments), which exists to hold their tokens: production to the production environment, dev to development. Each token reaches only its own store.
-
-On den-api, set `DEN_HEADLESS_RUNNER_URL` to the private service address (for example `http://headless-runner:8795`) and `DEN_HEADLESS_RUNNER_TOKEN` to the same value as `HEADLESS_API_TOKEN`. Then, per organization in `/admin`, turn on **Slack Assistant** and **Slack Assistant: headless runtime** for Slack, and **Cloud Automations: headless runtime** for scheduled cloud Automations.
+On den-api, set `DEN_HEADLESS_RUNNER_URL` to the private service address (for example `http://headless-runner:8795`) and `DEN_HEADLESS_RUNNER_TOKEN` to the same value as `HEADLESS_API_TOKEN`. With the runner set, scheduled cloud agent Automations run on it for organizations whose plan includes it (every organization when plan gating is off); there is no flag for it. For Slack, turn on **Slack Assistant** per organization in `/admin` and set up the Slack connector.
 
 ## Limits and next steps
 

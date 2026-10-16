@@ -14,9 +14,11 @@ import type { Context, Hono, MiddlewareHandler } from "hono"
 import { bodyLimit } from "hono/body-limit"
 import { streamSSE } from "hono/streaming"
 import { z } from "zod"
+import { workbotContextPrompt, workbotViewContextSchema } from "@openwork/types/workbot-context"
 import type { AppEnv, Member } from "./auth.js"
 import type { Config } from "./config.js"
 import type { Den } from "./den.js"
+import { observedRunnerFetch, reportError } from "./error-reporting.js"
 
 /**
  * The Workbot API the page talks to (`/v1/workbot/...`). Every route needs a signed-in member, and Den's answer
@@ -33,6 +35,7 @@ const sendSchema = z
     text: z.string().trim().max(MAX_MESSAGE_CHARS),
     timeZone: z.string().max(64).optional(),
     attachments: z.array(fileIdSchema).max(20).optional(),
+    context: workbotViewContextSchema.optional(),
   })
   .strict()
 const editSchema = z
@@ -41,6 +44,7 @@ const editSchema = z
     text: z.string().trim().max(MAX_MESSAGE_CHARS),
     timeZone: z.string().max(64).optional(),
     attachments: z.array(fileIdSchema).max(20).optional(),
+    context: workbotViewContextSchema.optional(),
   })
   .strict()
 const messageTooLong = { error: "message_too_long", message: "That's too long for one message. Send it as a file instead." } as const
@@ -74,6 +78,7 @@ function actorOf(member: Member): WorkbotActor {
 export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config; den: Den; member: MiddlewareHandler<AppEnv>; sameOrigin: MiddlewareHandler }) {
   const { config, den } = input
   const sent = new Map<string, number[]>()
+  const runnerFetch = observedRunnerFetch()
 
   /**
    * The runner, told whose conversations these are: on celld that is the person's own cell (all their chats and
@@ -82,15 +87,19 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
   const runnerFor = (member: Member) => ({ ...config.runner, owner: workbotOwner(member.den.organization.id, member.den.memberId) })
 
   const clientFor = (member: Member) => createHeadlessRunnerClient({
-    config: runnerFor(member), fetch,
+    config: runnerFor(member), fetch: runnerFetch,
     mintToken: async ({ readOnly }) => ({ token: await den.runToken(member.accessToken, { readOnly }) }),
     maxTokenTtlMs: RUN_TOKEN_TTL_MS,
   })
   /** Workbot bound to this person: their runner conversation, and turn tokens Den mints for them. */
-  const workbotFor = (member: Member) => createWorkbot({
-    client: clientFor(member), canSchedule: async () => member.den.canSchedule,
-    desktop: member.den.computer, model: async () => member.den.model,
-  })
+  const workbotFor = (member: Member) =>
+    createWorkbot({
+      client: clientFor(member),
+      desktop: member.den.computer,
+      canSchedule: async () => member.den.canSchedule,
+      model: async () => member.den.model,
+      workspaceAssistant: async () => member.den.workspaceAssistant,
+    })
 
   const enabled = (c: Context<AppEnv>) => c.get("member").den.enabled
   /**
@@ -128,8 +137,9 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
       organizationName: who.organization.name,
       enabled: who.enabled,
       calendar: who.enabled && who.calendar === true,
-      computer: who.enabled && who.computer,
       documents: who.enabled && who.documents === true,
+      computer: who.enabled && who.computer,
+      workspaceAssistant: who.enabled && who.workspaceAssistant,
       canSchedule: who.enabled && who.canSchedule,
       sideChats: who.enabled && who.sideChats,
       denUrl: config.denWebUrl ?? (await den.webUrl().catch(() => null)),
@@ -202,7 +212,8 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
     if (!member.den.enabled || member.den.documents !== true) return c.json({ error: "workbot_documents_not_enabled" }, 403)
     const url = new URL(c.req.url)
     const path = url.pathname.slice("/v1/workbot/documents".length)
-    const editor = /^\/v1\/documents\/google-drive\/files\/[A-Za-z0-9_-]{1,512}\/(editor|content)$/.exec(path)
+    const editor = /^\/v1\/documents\/google-drive\/files\/[A-Za-z0-9_-]{1,512}\/(editor|content|metadata)$/.exec(path)
+    if (editor?.[1] === "metadata" && !member.den.workspaceAssistant) return c.json({ error: "feature_disabled" }, 403)
     const office = /^\/v1\/documents\/google-drive\/files\/[A-Za-z0-9_-]{1,512}\/office(?:\/[0-9a-f-]{36}(?:\/(save|close))?)?$/.exec(path)
     const method = c.req.method === "POST" ? "POST" : "GET"
     if (!(method === "GET" && path === "/v1/capabilities/google-workspace/drive-files") && !(editor && (method === "GET" || editor[1] === "editor")) && !(office && (method === "GET" ? !office[1] && /\/[0-9a-f-]{36}$/.test(path) : path.endsWith("/office") || !!office[1]))) return c.json({ error: "not_found" }, 404)
@@ -300,6 +311,8 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
     const scope = chatOf(c)
     if (scope.refused) return scope.refused
     const member = c.get("member")
+    if (body.data.context && (!member.den.workspaceAssistant || (body.data.context.kind === "calendar" ? !member.den.calendar : !member.den.documents))) return c.json({ error: "feature_disabled", message: "Contextual chat is off for this workspace." }, 403)
+    if (workbotContextPrompt(body.data.text, body.data.context).length > MAX_MESSAGE_CHARS) return c.json(messageTooLong, 400)
     const retryAfter = rateLimited(member.den.memberId)
     if (retryAfter !== null) return c.json({ error: "rate_limited" as const, retryAfter }, 429)
     try {
@@ -370,6 +383,8 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
     const scope = chatOf(c)
     if (scope.refused) return scope.refused
     const member = c.get("member")
+    if (body.data.context && (!member.den.workspaceAssistant || (body.data.context.kind === "calendar" ? !member.den.calendar : !member.den.documents))) return c.json({ error: "feature_disabled", message: "Contextual chat is off for this workspace." }, 403)
+    if (workbotContextPrompt(body.data.text, body.data.context).length > MAX_MESSAGE_CHARS) return c.json(messageTooLong, 400)
     const retryAfter = rateLimited(member.den.memberId)
     if (retryAfter !== null) return c.json({ error: "rate_limited" as const, retryAfter }, 429)
     try {
@@ -445,8 +460,9 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
             if (event) await stream.writeSSE({ data: JSON.stringify(event) })
           }
         }
-      } catch {
-        // The page reconnects; nothing to report.
+      } catch (error) {
+        // The page reconnects. Only a break Workbot didn't cause itself (the page leaving, the time limit) is a fault.
+        if (!upstream.signal.aborted && !stream.aborted) reportError("events_relay_failed", error)
       } finally {
         clearTimeout(deadline)
         upstream.abort()

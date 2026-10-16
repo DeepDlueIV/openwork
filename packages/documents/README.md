@@ -46,22 +46,34 @@ commits to Drive. WOPI writes stage snapshots and never write to Google. Unsaved
 
 ## Free and open-source editor
 
-Documents uses **Collabora Online**, whose editor source is MPL-2.0, with
-LibreOffice Writer, Calc and Impress underneath. No paid SDK, vendor license key,
-commercial-only import/export or proprietary editing dependency is required.
-The integration also uses free MIT-licensed React, React DOM, Base UI, Zod and htmlparser2.
+Documents integrates the **Collabora Online source engine**, primarily MPL-2.0,
+with LibreOffice Writer, Calc and Impress underneath. The integration uses no
+paid SDK, vendor license key or commercial-only import/export API. For a fully
+open-source deployment, use upstream's documented `nobrand=yes` build or maintain
+a source build with open-source branding, fonts and dependencies. The upstream
+vendor's binary distribution and branding terms are separate from its source license; do not treat a free download
+of `collabora/code` as proof of an unrestricted open-source production license.
+
+The package and OpenWork integration assets are MIT. React, React DOM, Base UI,
+TanStack Query, Zod and htmlparser2 are MIT; Lucide is ISC; parser dependencies
+include BSD-2-Clause code. See [the dependency and engine license inventory](THIRD_PARTY_NOTICES.md).
+The existing Workbot/Den server host remains subject to [OpenWork's EE license](../../ee/LICENSE).
+Google Drive is an external service governed by Google's terms; it is not an
+open-source dependency. Running the engine and storage requires infrastructure.
 
 - [Editor source and MPL-2.0 license](https://github.com/CollaboraOnline/online/blob/main/COPYING)
 - [Source mirror and build instructions](https://github.com/CollaboraOnline/online.mirror)
 - [WOPI integration](https://sdk.collaboraonline.com/docs/advanced_integration.html)
 - [PostMessage API](https://sdk.collaboraonline.com/docs/postmessage_api.html)
 
-Collabora CODE is the free development build and works for local evaluation and
-small teams. The vendor recommends its supported subscription build for business
-production. A maintained MPL source build is also an option without a paid editor
-license; maintainers then own builds, updates, security and operation. The
-integration calls the open WOPI protocol and does not depend on subscription-only
-features. Hosting the service still uses infrastructure resources.
+The integration calls the open WOPI protocol and does not depend on subscription-only
+features. Upstream calls its `nobrand=yes` image build "100% open source";
+see [the upstream Docker instructions](https://github.com/CollaboraOnline/online.mirror/blob/eaa2d031909488c7b9600c85c247ec05a3bd10f6/docker/README).
+Maintainers own security updates, operation and license notices.
+Local acceptance also exercised the unbranded 25.04.12.4 engine: document text,
+spreadsheet formulas/recalculation, presentation slide duplication, formatting
+controls and correlated save round trips with synthetic Drive files. This does
+not establish live Google Drive or production-deployment acceptance.
 
 ## OpenWork editing controls
 
@@ -81,11 +93,35 @@ Both directions check the exact frame/parent window and configured WOPI host ori
 Menus and popovers use Base UI for keyboard behavior, focus and viewport collision
 handling, and copy semantic theme tokens when portaling outside their host.
 
-Build the integrator theme and its editor image from the repository root:
+Build an unbranded base using upstream's recipe, then pin the resulting image by
+digest in deployment. The recipe below is from the same 25.04 source revision as
+the engine interface used for local editing checks; its package repository can
+advance independently, so check installed versions and rerun acceptance after upgrades.
+
+```sh
+git clone --depth 1 --filter=blob:none --sparse --branch cp-25.04.6-2 \
+  https://github.com/CollaboraOnline/online.mirror.git office-engine
+git -C office-engine sparse-checkout set docker/from-packages
+test "$(git -C office-engine rev-parse HEAD)" = eaa2d031909488c7b9600c85c247ec05a3bd10f6
+docker build --build-arg nobrand=yes -t openwork-office-unbranded \
+  office-engine/docker/from-packages
+```
+
+Alternatively use [upstream's source-build instructions](https://www.collaboraoffice.org/post/build-code/),
+without proprietary branding, and package its runtime as a pinned internal image.
+Either base must provide a shell, `dpkg-query`, `coolwsd`, a `cool` runtime user,
+and the browser assets at
+`/usr/share/coolwsd/browser/dist`. The integration was exercised against the
+25.04.6.2.1 engine interface; a different engine build needs the same focused
+editing, selection, save-receipt and layout acceptance checks.
+
+Build the integrator theme and overlay from the repository root, explicitly
+supplying the unbranded image:
 
 ```sh
 pnpm --filter @openwork/documents build:collabora-theme
 docker build -f packages/documents/collabora/Dockerfile \
+  --build-arg DOCUMENTS_EDITOR_BASE_IMAGE=openwork-office-unbranded \
   -t openwork-documents-editor packages/documents/collabora
 ```
 
@@ -93,7 +129,9 @@ Run that image with the same WOPI allowlist, TLS, sandboxing, macro settings,
 network policy and resource limits as the existing service. The image appends
 the OpenWork integration beside Collabora's branding hooks and preserves its
 notices and About screen. Customization applies only to frames launched with
-`integrator=openwork`. The base engine version is pinned; upgrades need the
+`integrator=openwork`. The overlay rejects installed `code-brand` and
+`collabora-online-brand` packages. Pin the base engine image by digest; upgrades
+need the
 focused editing/selection/layout checks again. A service without this integration
 keeps its existing editing controls and reports that an admin needs to update it.
 

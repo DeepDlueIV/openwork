@@ -8,6 +8,11 @@ import { tmpdir } from "node:os"
 import { builtinModules } from "node:module"
 import { join } from "node:path"
 import { z } from "zod"
+import { createApp } from "../src/app.js"
+import type { ModelClient } from "../src/model.js"
+import { nodeSqlite } from "../src/node-sqlite.js"
+import { Runner } from "../src/runner.js"
+import { Store } from "../src/store.js"
 
 const runtime = process.argv.includes("--celld") ? "celld" : "wrangler"
 const project = join(import.meta.dirname, "..")
@@ -185,25 +190,32 @@ try {
   console.log("PASS streamed model turns, file tools, shared side-chat memory, owner listing, per-turn credentials, and idempotency")
 
   // Den's own Slack adapter (the code Slack runs use), unchanged, against this runtime.
-  const { headlessRemoteCall } = await import("../../den-api/src/slack-assistant/headless.ts")
+  const { createSlackRunner } = await import("../../den-api/src/slack-assistant/headless.ts")
   const slackDeps = { config: { url: base, token }, fetch, mintToken: async () => ({ token: "test-mcp-token" }), maxTokenTtlMs: 60 * 60_000 }
-  const actor = { userId: "test-user", organizationId: "test-org" }
-  const opened = await headlessRemoteCall(actor, "create", { title: "Slack thread" }, slackDeps)
-  const slackSession = z.object({ sessionId: z.string() }).parse(opened).sessionId
-  assert.deepEqual(await headlessRemoteCall(actor, "send", { sessionId: slackSession, messageId: "slack_run_1", prompt: "[write] What changed?" }, slackDeps), {})
-  let slackRead: Record<string, unknown> = {}
+  const slackRunner = createSlackRunner({ userId: "test-user", organizationId: "test-org" }, slackDeps)
+  const opened = await slackRunner.create({ title: "Slack thread" })
+  assert.ok(opened.ok, JSON.stringify(opened))
+  const slackSession = opened.sessionId
+  const sentRun = await slackRunner.send({ sessionId: slackSession, messageId: "slack_run_1", prompt: "[write] What changed?" })
+  assert.ok(sentRun.ok && sentRun.accepted, JSON.stringify(sentRun))
+  let slackStatus = "busy"
+  let slackText = ""
+  let slackError: string | undefined
   for (const until = Date.now() + 30_000; Date.now() < until; await sleep(200)) {
-    slackRead = await headlessRemoteCall(actor, "read", { sessionId: slackSession, messageId: "slack_run_1" }, slackDeps)
-    if (slackRead.status === "idle") break
+    const read = await slackRunner.read({ sessionId: slackSession, messageId: "slack_run_1" })
+    assert.ok(read.ok, JSON.stringify(read))
+    slackStatus = read.snapshot.status
+    slackText = read.snapshot.finalAssistantText
+    slackError = read.snapshot.terminalError?.code
+    if (slackStatus === "idle") break
   }
-  assert.equal(slackRead.status, "idle", JSON.stringify(slackRead))
-  assert.equal(slackRead.finalAssistantText, "Memory checked.")
-  assert.equal(slackRead.terminalError, undefined)
+  assert.equal(slackStatus, "idle")
+  assert.equal(slackText, "Memory checked.")
+  assert.equal(slackError, undefined)
   assert.ok(modelKeys.at(-1) === "Bearer test-default-key")
-  const stopResult = await headlessRemoteCall(actor, "stop", { sessionId: slackSession, messageId: "slack_run_1" }, slackDeps)
-  assert.ok("accepted" in stopResult || "stopped" in stopResult, JSON.stringify(stopResult))
-  const unknown = await headlessRemoteCall(actor, "read", { sessionId: `hs_${"1".repeat(32)}`, messageId: "x" }, slackDeps)
-  assert.equal(unknown.error, "unknown_session")
+  await slackRunner.stop({ sessionId: slackSession, messageId: "slack_run_1" })
+  const unknown = await slackRunner.read({ sessionId: `hs_${"1".repeat(32)}`, messageId: "x" })
+  assert.ok(!unknown.ok && unknown.error === "unknown_session", JSON.stringify(unknown))
   console.log("PASS Den's Slack adapter (create, send, read to the answer, stop, unknown session) unchanged on this runtime")
 
   assert.equal((await send(main, "msg_slow", "[slow] [write] Resume after restart")).status, 202)
@@ -226,6 +238,23 @@ try {
   assert.equal((await call(`/v1/sessions/${main}`)).status, 200)
   assert.equal((await call(`/v1/sessions/${main}/files/content?path=memory/note.md`)).status, 200)
   console.log("PASS runtime-kill recovery, resume, persisted memory, and deleting a side chat without deleting its owner's state")
+
+  // The way off this host: a conversation's export imports into a Node runner and re-exports byte for byte.
+  const exported = await call(`/v1/sessions/${main}/export`)
+  assert.equal(exported.status, 200, await exported.clone().text())
+  const conversation = await exported.text()
+  assert.equal((await call(`/v1/sessions/${main}/import`, ownerA, { method: "POST", body: conversation })).status, 405)
+  const nodeStore = new Store(nodeSqlite(":memory:"))
+  const nodeModel: ModelClient = { complete: async () => { throw new Error("the Node runner only stores here") } }
+  const nodeApp = createApp({ store: nodeStore, apiToken: token, runner: new Runner({ store: nodeStore, model: nodeModel, defaultModel: "test-model", limits: { maxConcurrentTurns: 1, maxSteps: 1, turnTimeoutMs: 60_000, credentialRefreshMs: 60_000, contextCharBudget: 10_000 } }) })
+  const nodeAuth = { authorization: `Bearer ${token}` }
+  const intoNode = await nodeApp.request(`/v1/sessions/${main}/import`, { method: "POST", headers: nodeAuth, body: conversation })
+  assert.equal(intoNode.status, 201, await intoNode.clone().text())
+  assert.equal(nodeStore.readFile(main, "memory/note.md"), "shared-memory-witness")
+  assert.deepEqual(nodeStore.listSessions(ownerA, 10).map((session) => session.id), [main])
+  assert.equal(await (await nodeApp.request(`/v1/sessions/${main}/export`, { headers: nodeAuth })).text(), conversation)
+  nodeStore.close()
+  console.log("PASS a conversation moves off this host into a Node runner with nothing lost; this host refuses imports")
 } catch (error) {
   console.error(error)
   console.error(output.slice(-8_000))

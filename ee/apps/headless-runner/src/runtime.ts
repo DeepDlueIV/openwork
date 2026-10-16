@@ -1,6 +1,7 @@
 import { createApp } from "./app.js"
 import { SessionEvents } from "./events.js"
-import { diskBlobStore, s3BlobStore, vercelBlobStore } from "./blobs.js"
+import { diskBlobStore, s3BlobStore } from "./blobs.js"
+import { createErrorReporter } from "./error-reporting.js"
 import { REACTION_TOOL_NAMES } from "./reactions.js"
 import { TASK_TOOL_NAMES } from "./tasks.js"
 import { mediaTypeFor, SavedFiles, SAVED_FILE_TOOL_NAMES } from "./saved-files.js"
@@ -15,16 +16,17 @@ import type { SessionComputer } from "./types.js"
 
 /** Both hosts build the same runner, tools, file store and live events; only SQLite ownership differs. */
 export async function createRuntime(config: Config, store: Store) {
-  const recovered = store.recoverInterruptedTurns()
+  const errors = createErrorReporter(config.errorReporting)
+  let recovered: number
+  try {
+    recovered = store.recoverInterruptedTurns()
+  } catch (error) {
+    // Startup stops here; wait for the report (it gives up after a few seconds) before failing.
+    await errors.report({ code: "startup_recovery_failed", error })
+    throw error
+  }
   const events = new SessionEvents()
-  const blobs =
-    config.files.kind === "disk"
-      ? diskBlobStore(config.files.directory)
-      : config.files.kind === "s3"
-        ? s3BlobStore(config.files)
-        : config.files.kind === "vercel"
-          ? await vercelBlobStore(config.files)
-          : null
+  const blobs = config.files.kind === "disk" ? diskBlobStore(config.files.directory) : config.files.kind === "s3" ? s3BlobStore(config.files) : null
   const files = blobs ? new SavedFiles(store, blobs, config.fileLimits) : undefined
   // Provider SDKs load only when configured, including on the Worker host.
   let computer: SessionComputer | undefined
@@ -58,8 +60,9 @@ export async function createRuntime(config: Config, store: Store) {
     events,
     files,
     computer,
+    errors,
   })
-  const app = createApp({ store, runner, apiToken: config.apiToken, models: gatewayModelCatalog(config), events, files, computer })
+  const app = createApp({ store, runner, apiToken: config.apiToken, models: gatewayModelCatalog(config), events, files, computer, errors })
   return { app, runner, recovered, blobKind: blobs?.kind ?? "off", computer }
 }
 

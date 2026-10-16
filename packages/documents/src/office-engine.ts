@@ -1,4 +1,5 @@
 import { z } from "zod"
+import type { DocumentItem } from "./index"
 
 export const officeFileTypeSchema = z.enum(["docx", "xlsx", "pptx", "odt", "ods", "odp"])
 export type OfficeFileType = z.infer<typeof officeFileTypeSchema>
@@ -38,4 +39,11 @@ export function officeEditor(request: (path: string, init?: RequestInit) => Prom
     save: async (fileId, id, draftVersion) => z.object({ fileId: z.string() }).parse(await post(`${path(fileId, id)}/save`, { draftVersion })),
     close: async (fileId, id) => { await post(`${path(fileId, id)}/close`) },
   }
+}
+
+/** A native Google file becomes a distinct saved Office resource after the explicit copy is confirmed. */
+export function savedOfficeDocument(item: DocumentItem, fileType: OfficeFileType, saveAsCopy: boolean, fileId: string): DocumentItem {
+  return { ...item, id: fileId, name: saveAsCopy ? `${item.name}.${fileType}` : item.name,
+    mimeType: officeFormats[fileType].mimeType,
+    modifiedTime: null, size: null, openUrl: fileId === item.id ? item.openUrl : null }
 }

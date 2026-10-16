@@ -17,7 +17,7 @@ export function DocumentEditorTab(props: Parameters<typeof BasicDocumentEditorTa
   return <BasicDocumentEditorTab {...props} />
 }
 
-function BasicDocumentEditorTab({ toolbarHost, item, editor, enabled, active, scope, connectionsHref, onDirtyChange, onSavingChange, onControlsChange, onClose }: { toolbarHost?: HTMLElement | null; item: DocumentItem; editor: DocumentsEditor; enabled: boolean; active: boolean; scope: readonly string[]; connectionsHref?: string | null; onDirtyChange?(id: string, dirty: boolean): void; onSavingChange?(id: string, saving: boolean): void; onControlsChange?: DocumentTabControlsChange; onClose(): void }) {
+function BasicDocumentEditorTab({ toolbarHost, item, editor, enabled, active, scope, connectionsHref, onDirtyChange, onSavingChange, onControlsChange, onClose }: { toolbarHost?: HTMLElement | null; item: DocumentItem; editor: DocumentsEditor; enabled: boolean; active: boolean; scope: readonly string[]; connectionsHref?: string | null; onDirtyChange?(id: string, dirty: boolean): void; onSavingChange?(id: string, saving: boolean): void; onResourceChange?(tabId: string, resource: DocumentItem): void; onControlsChange?: DocumentTabControlsChange; onClose(): void }) {
   const [sheetId, setSheetId] = useState<string>()
   const [startRow, setStartRow] = useState(1)
   const [connectionId, setConnectionId] = useState<string>()

@@ -53,6 +53,20 @@ function defineFeatures<const T extends Record<string, FeatureDefinition>>(featu
 const everywhere = ["cloud", "self_hosted"] as const
 
 export const FEATURES = defineFeatures({
+  googleDocumentTools: {
+    label: "Google Docs: focused reading and edits",
+    description: "Connected assistants inspect document tabs and headings, read or search bounded passages, and replace text against the revision they read.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
+  offlineRecovery: {
+    label: "Connection failure presentation",
+    description: "Show compact App connection failures and a discreet offline indicator in OpenCode v2 conversations.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
   rememberLastOrganization: {
     label: "Remember last organization",
     description: "Return to the last organization used by the same account on this server after signing in again. Invite and installation links keep their selected organization.",
@@ -154,6 +168,13 @@ export const FEATURES = defineFeatures({
   workbotDocuments: {
     label: "Workbot Documents",
     description: "Members browse recent Google Drive files and folders in Workbot, open documents in tabs, and save supported text and spreadsheet edits to Drive.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
+  workbotWorkspaceAssistant: {
+    label: "Workbot: workspace assistant",
+    description: "Members ask Workbot about the document or calendar view they have open, chat without leaving their work, and navigate from a compact sidebar.",
     since: "2026-10",
     deployments: everywhere,
     default: false,

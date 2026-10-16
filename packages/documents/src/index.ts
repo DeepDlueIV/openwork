@@ -17,7 +17,12 @@ export type DocumentsProvider = {
   label: string
   rootLabel: string
   list(request: DocumentsRequest): Promise<DocumentsPage>
+  /** Resolve a user-opened link with current provider permissions, without downloading bytes. */
+  get?(id: string, signal?: AbortSignal): Promise<DocumentItem>
 }
+export type DocumentsViewContext = { kind: "file"; item: DocumentItem; unsaved: boolean }
+  | { kind: "files"; view: "recent" | "folder"; folderId: string; folderName: string; query: string }
+export type DocumentOpenRequest = { fileId: string; requestId: string }
 export type DocumentsTransport = (path: string, signal?: AbortSignal) => Promise<{ response: Response; payload: unknown }>
 
 export class DocumentsError extends Error {
@@ -49,6 +54,16 @@ export function googleDocumentUrl(value: string): string | null {
 export function googleDriveProvider(transport: DocumentsTransport): DocumentsProvider {
   return {
     id: "google-drive", label: "Google Drive", rootLabel: "My Drive",
+    async get(id, signal) {
+      if (!/^[A-Za-z0-9_-]{1,512}$/.test(id)) throw new DocumentsError(400, "invalid_request", "This document link is invalid.")
+      const { response, payload } = await transport(`/v1/documents/google-drive/files/${encodeURIComponent(id)}/metadata`, signal)
+      if (!response.ok) {
+        const error = z.object({ error: z.string() }).safeParse(payload)
+        throw new DocumentsError(response.status, error.success ? error.data.error : "request_failed", "Couldn't open this document. Check your Drive connection and access, then try again.")
+      }
+      const file = z.object({ id: z.literal(id), name: z.string(), mimeType: z.string(), modifiedTime: z.string().nullable(), size: z.number().nullable(), openUrl: z.string().nullable() }).parse(payload)
+      return { ...file, kind: file.mimeType === "application/vnd.google-apps.folder" ? "folder" : "file", openUrl: file.openUrl ? googleDocumentUrl(file.openUrl) : null }
+    },
     async list(input) {
       const params = new URLSearchParams({ maxResults: "25" })
       // Search within the displayed folder, matching the breadcrumb's scope.

@@ -732,6 +732,8 @@ export type AdminDashboard = {
 
 export type AdminFeature = {
   key:
+    | "googleDocumentTools"
+    | "offlineRecovery"
     | "rememberLastOrganization"
     | "secureSecretFields"
     | "memberListToolbars"
@@ -747,6 +749,7 @@ export type AdminFeature = {
     | "slackWorkbotReplies"
     | "workbot"
     | "workbotDocuments"
+    | "workbotWorkspaceAssistant"
     | "automationCalendar"
     | "permissions"
     | "teamRoles"
@@ -802,6 +805,8 @@ export type AdminUsersPageResponse = {
 export type AdminOrganizationsPageResponse = {
   organizations: Array<{
     capabilities?: {
+      googleDocumentTools: boolean;
+      offlineRecovery: boolean;
       rememberLastOrganization: boolean;
       secureSecretFields: boolean;
       memberListToolbars: boolean;
@@ -817,6 +822,7 @@ export type AdminOrganizationsPageResponse = {
       slackWorkbotReplies: boolean;
       workbot: boolean;
       workbotDocuments: boolean;
+      workbotWorkspaceAssistant: boolean;
       automationCalendar: boolean;
       permissions: boolean;
       teamRoles: boolean;
@@ -845,6 +851,24 @@ export type AdminOrganizationsPageResponse = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates?: {
+      googleDocumentTools: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      offlineRecovery: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       rememberLastOrganization: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -972,6 +996,15 @@ export type AdminOrganizationsPageResponse = {
         overrideApplies: boolean;
       };
       workbotDocuments: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotWorkspaceAssistant: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -1196,6 +1229,8 @@ export type AdminOverviewResponse = {
   }>;
   organizations: Array<{
     capabilities: {
+      googleDocumentTools: boolean;
+      offlineRecovery: boolean;
       rememberLastOrganization: boolean;
       secureSecretFields: boolean;
       memberListToolbars: boolean;
@@ -1211,6 +1246,7 @@ export type AdminOverviewResponse = {
       slackWorkbotReplies: boolean;
       workbot: boolean;
       workbotDocuments: boolean;
+      workbotWorkspaceAssistant: boolean;
       automationCalendar: boolean;
       permissions: boolean;
       teamRoles: boolean;
@@ -1239,6 +1275,24 @@ export type AdminOverviewResponse = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates: {
+      googleDocumentTools: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      offlineRecovery: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       rememberLastOrganization: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -1366,6 +1420,15 @@ export type AdminOverviewResponse = {
         overrideApplies: boolean;
       };
       workbotDocuments: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotWorkspaceAssistant: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6694,6 +6757,7 @@ export type WorkbotSession = {
   computer?: boolean;
   calendar?: boolean;
   documents?: boolean;
+  workspaceAssistant?: boolean;
   sideChats: boolean;
   model?: string | null;
 };
@@ -7649,6 +7713,8 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
    */
   200: {
     capabilities: {
+      googleDocumentTools: boolean;
+      offlineRecovery: boolean;
       rememberLastOrganization: boolean;
       secureSecretFields: boolean;
       memberListToolbars: boolean;
@@ -7664,6 +7730,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       slackWorkbotReplies: boolean;
       workbot: boolean;
       workbotDocuments: boolean;
+      workbotWorkspaceAssistant: boolean;
       automationCalendar: boolean;
       permissions: boolean;
       teamRoles: boolean;
@@ -7692,6 +7759,24 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates: {
+      googleDocumentTools: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      offlineRecovery: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       rememberLastOrganization: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -7819,6 +7904,15 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       workbotDocuments: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotWorkspaceAssistant: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -8031,6 +8125,8 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       id: string;
     };
     capabilities: {
+      googleDocumentTools: boolean;
+      offlineRecovery: boolean;
       rememberLastOrganization: boolean;
       secureSecretFields: boolean;
       memberListToolbars: boolean;
@@ -8046,6 +8142,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       slackWorkbotReplies: boolean;
       workbot: boolean;
       workbotDocuments: boolean;
+      workbotWorkspaceAssistant: boolean;
       automationCalendar: boolean;
       permissions: boolean;
       teamRoles: boolean;
@@ -8074,6 +8171,24 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates: {
+      googleDocumentTools: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      offlineRecovery: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       rememberLastOrganization: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -8201,6 +8316,15 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       workbotDocuments: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotWorkspaceAssistant: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -24081,6 +24205,52 @@ export type DownloadGoogleDriveFileByLinkResponses = {
 export type DownloadGoogleDriveFileByLinkResponse =
   DownloadGoogleDriveFileByLinkResponses[keyof DownloadGoogleDriveFileByLinkResponses];
 
+export type GetGoogleDriveDocumentMetadataData = {
+  body?: never;
+  path: {
+    fileId: string;
+  };
+  query?: never;
+  url: "/v1/documents/google-drive/files/{fileId}/metadata";
+};
+
+export type GetGoogleDriveDocumentMetadataErrors = {
+  /**
+   * Unsupported edit.
+   */
+  400: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Reconnect or reload the changed file.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+};
+
+export type GetGoogleDriveDocumentMetadataError =
+  GetGoogleDriveDocumentMetadataErrors[keyof GetGoogleDriveDocumentMetadataErrors];
+
+export type GetGoogleDriveDocumentMetadataResponses = {
+  /**
+   * Document result.
+   */
+  200: {
+    id: string;
+    name: string;
+    mimeType: string;
+    modifiedTime: string | null;
+    size: number | null;
+    openUrl: string | null;
+  };
+};
+
+export type GetGoogleDriveDocumentMetadataResponse =
+  GetGoogleDriveDocumentMetadataResponses[keyof GetGoogleDriveDocumentMetadataResponses];
+
 export type OpenGoogleDriveDocumentEditorData = {
   body?: never;
   path: {
@@ -26337,6 +26507,263 @@ export type UpdateGoogleDriveFileMetadataResponses = {
 
 export type UpdateGoogleDriveFileMetadataResponse =
   UpdateGoogleDriveFileMetadataResponses[keyof UpdateGoogleDriveFileMetadataResponses];
+
+export type GetGoogleDocumentOutlineData = {
+  body?: never;
+  path: {
+    documentId: string;
+  };
+  query?: never;
+  url: "/v1/capabilities/google-workspace/documents/{documentId}/outline";
+};
+
+export type GetGoogleDocumentOutlineErrors = {
+  /**
+   * Invalid bounded request.
+   */
+  400: InvalidRequestError;
+  /**
+   * Sign in first.
+   */
+  401: UnauthorizedError;
+  /**
+   * Feature disabled or tab unavailable.
+   */
+  404: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * Connect with the required permissions, or read the changed document again.
+   */
+  409: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * Request exceeds 64 KiB.
+   */
+  413: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * Google did not confirm the operation.
+   */
+  502: {
+    error: string;
+    message?: string;
+  };
+};
+
+export type GetGoogleDocumentOutlineError = GetGoogleDocumentOutlineErrors[keyof GetGoogleDocumentOutlineErrors];
+
+export type GetGoogleDocumentOutlineResponses = {
+  /**
+   * Google-confirmed result.
+   */
+  200: {
+    ok: true;
+    documentId: string;
+    title: string;
+    revisionId: string | null;
+    bodyTextOnly: true;
+    suggestionsOmitted: boolean;
+    tabs: Array<{
+      tabId: string;
+      title: string;
+      parentTabId: string | null;
+      headings: Array<{
+        startIndex: number;
+        text: string;
+        style: string;
+      }>;
+    }>;
+    headingsTruncated: boolean;
+  };
+};
+
+export type GetGoogleDocumentOutlineResponse =
+  GetGoogleDocumentOutlineResponses[keyof GetGoogleDocumentOutlineResponses];
+
+export type ReadGoogleDocumentTextData = {
+  body?: never;
+  path: {
+    documentId: string;
+  };
+  query: {
+    /**
+     * A tab ID returned by getGoogleDocumentOutline, including child tabs.
+     */
+    tabId: string;
+    /**
+     * Google UTF-16 offset. For another page, use nextStartIndex with the same revisionId and query.
+     */
+    startIndex?: number;
+    /**
+     * Maximum total UTF-16 text characters returned to the assistant.
+     */
+    maxCharacters?: number;
+    /**
+     * Optional literal, case-insensitive search within body paragraphs and tables in this tab. Returns matching excerpts, not the whole document.
+     */
+    query?: string;
+    /**
+     * Pass the revision from the previous page to stop if the saved document changed. Null on read-only accounts; those reads cannot guarantee stable pagination.
+     */
+    revisionId?: string;
+  };
+  url: "/v1/capabilities/google-workspace/documents/{documentId}/text";
+};
+
+export type ReadGoogleDocumentTextErrors = {
+  /**
+   * Invalid bounded request.
+   */
+  400: InvalidRequestError;
+  /**
+   * Sign in first.
+   */
+  401: UnauthorizedError;
+  /**
+   * Feature disabled or tab unavailable.
+   */
+  404: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * Connect with the required permissions, or read the changed document again.
+   */
+  409: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * Request exceeds 64 KiB.
+   */
+  413: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * Google did not confirm the operation.
+   */
+  502: {
+    error: string;
+    message?: string;
+  };
+};
+
+export type ReadGoogleDocumentTextError = ReadGoogleDocumentTextErrors[keyof ReadGoogleDocumentTextErrors];
+
+export type ReadGoogleDocumentTextResponses = {
+  /**
+   * Google-confirmed result.
+   */
+  200: {
+    ok: true;
+    documentId: string;
+    title: string;
+    revisionId: string | null;
+    bodyTextOnly: true;
+    suggestionsOmitted: boolean;
+    tabId: string;
+    passages: Array<{
+      startIndex: number;
+      endIndex: number;
+      text: string;
+    }>;
+    nextStartIndex: number | null;
+  };
+};
+
+export type ReadGoogleDocumentTextResponse = ReadGoogleDocumentTextResponses[keyof ReadGoogleDocumentTextResponses];
+
+export type ReplaceGoogleDocumentTextData = {
+  body: {
+    tabId: string;
+    /**
+     * Required revisionId from a fresh outline or text read by this same connected account. A stale revision is never merged automatically.
+     */
+    revisionId: string;
+    /**
+     * UTF-16 offset of the exact passage being changed; add its offset within the returned excerpt.
+     */
+    startIndex: number;
+    /**
+     * Exact, case-sensitive saved text at startIndex, inside one paragraph. Cannot cross table cells, embedded objects, or paragraph boundaries.
+     */
+    expectedText: string;
+    /**
+     * User-requested replacement. Empty string deletes the matched passage. This edits the native Google Doc, not an unsaved local draft; require the user's explicit request before calling.
+     */
+    replacement: string;
+  };
+  path: {
+    documentId: string;
+  };
+  query?: never;
+  url: "/v1/capabilities/google-workspace/documents/{documentId}/replace-text";
+};
+
+export type ReplaceGoogleDocumentTextErrors = {
+  /**
+   * Invalid bounded request.
+   */
+  400: InvalidRequestError;
+  /**
+   * Sign in first.
+   */
+  401: UnauthorizedError;
+  /**
+   * Feature disabled or tab unavailable.
+   */
+  404: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * Connect with the required permissions, or read the changed document again.
+   */
+  409: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * Request exceeds 64 KiB.
+   */
+  413: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * Google did not confirm the operation.
+   */
+  502: {
+    error: string;
+    message?: string;
+  };
+};
+
+export type ReplaceGoogleDocumentTextError = ReplaceGoogleDocumentTextErrors[keyof ReplaceGoogleDocumentTextErrors];
+
+export type ReplaceGoogleDocumentTextResponses = {
+  /**
+   * Google-confirmed result.
+   */
+  200: {
+    ok: true;
+    documentId: string;
+    tabId: string;
+    revisionId: string;
+    replacedCharacters: number;
+    insertedCharacters: number;
+  };
+};
+
+export type ReplaceGoogleDocumentTextResponse =
+  ReplaceGoogleDocumentTextResponses[keyof ReplaceGoogleDocumentTextResponses];
 
 export type PostV1DirectUploadsGoogleWorkspaceDriveFilesData = {
   body?: never;

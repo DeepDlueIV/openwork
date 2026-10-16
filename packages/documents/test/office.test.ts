@@ -1,6 +1,7 @@
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { randomUUID } from "node:crypto"
+import { officeSessionSchema, officeStatusSchema, savedOfficeDocument } from "../src/office-engine"
 import { createCollaboraService, officeTicketMatches, officeBytes, OFFICE_MAX_BYTES, type OfficeDraft } from "../src/office-server"
 
 const draft: OfficeDraft = { id: randomUUID(), organizationId: "example-org", memberId: "example-member", userId: "example-user", connectionId: "google-workspace", fileId: "example-file", revision: "1", name: "Example.xlsx", mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", fileType: "xlsx", canEdit: true, saveAsCopy: false, expiresAt: Date.now() + 60_000, ticket: randomUUID(), source: "", draftVersion: 0 }
@@ -24,11 +25,12 @@ test("editor discovery cannot point the browser at an arbitrary host, protocol o
 test("free WOPI launch omits credentials from URLs, exposes no vendor config and binds the host origin", async () => {
   const engine = service(async (_url, init) => { assert.equal(init?.redirect, "error"); return new Response(xml("https://office.example.com/browser/build/cool.html?")) })
   const session = await engine.session(draft)
+  assert.equal(officeSessionSchema.parse(session).expiresAt, new Date(draft.expiresAt).toISOString())
+  assert.equal(officeStatusSchema.parse({ expiresAt: session.expiresAt, draftVersion: 0 }).draftVersion, 0)
   const url = new URL(session.editorUrl)
   assert.equal(url.searchParams.get("WOPISrc"), `https://api.example.com/v1/documents/wopi/files/${draft.id}`)
   assert.equal(session.editorUrl.includes(draft.ticket), false)
   assert.equal(session.accessToken, draft.ticket)
-  assert.equal(Date.parse(session.expiresAt), draft.expiresAt)
   assert.equal("config" in session, false)
   const info = engine.fileInfo(draft, 120)
   assert.equal(info.PostMessageOrigin, "https://workbot.example.com")
@@ -43,4 +45,17 @@ test("chunked and declared oversized editor output is rejected before buffering 
   await assert.rejects(officeBytes(new Response(new ReadableStream({ pull(controller) { controller.enqueue(new Uint8Array(OFFICE_MAX_BYTES + 1)) }, cancel() { cancelled = true } }))))
   assert.equal(cancelled, true)
   await assert.rejects(officeBytes(new Response("small", { headers: { "content-length": String(OFFICE_MAX_BYTES + 1) } })))
+})
+
+test("context follows the confirmed Office copy while the original tab identity can stay stable", () => {
+  const original = { id: "google_original", name: "Project brief", mimeType: "application/vnd.google-apps.document", kind: "file" as const, modifiedTime: null, size: null, openUrl: "https://docs.google.com/document/d/google_original/edit" }
+  const saved = savedOfficeDocument(original, "docx", true, "saved_copy")
+  assert.equal(saved.id, "saved_copy")
+  assert.equal(saved.name, "Project brief.docx")
+  assert.equal(saved.mimeType, "application/vnd.openxmlformats-officedocument.wordprocessingml.document")
+  const slides = savedOfficeDocument({ ...original, mimeType: "application/vnd.google-apps.presentation" }, "pptx", true, "saved_slides")
+  assert.equal(slides.name, "Project brief.pptx")
+  assert.equal(slides.mimeType, "application/vnd.openxmlformats-officedocument.presentationml.presentation")
+  assert.equal(original.id, "google_original")
+  assert.equal(savedOfficeDocument({ ...original, name: "Budget.xlsx" }, "xlsx", false, "existing_file").name, "Budget.xlsx")
 })

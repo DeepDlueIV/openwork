@@ -92,8 +92,14 @@ jobs:
           pnpm --filter @openwork-ee/headless-computer test
           pnpm --filter @openwork-ee/headless-runner test:computer-config
           pnpm --filter @openwork-ee/workbot exec tsx --conditions=development --test scripts/computer.test.ts
-      - name: Test headless conversations (follow-ups, read-only lookups, waiting messages)
-        run: pnpm --filter @openwork-ee/headless-runner test:conversation
+      - name: Test headless conversations (follow-ups, read-only lookups, waiting messages, bounded reads, moving to Node)
+        run: |
+          pnpm --filter @openwork-ee/headless-runner test:conversation
+          pnpm --filter @openwork-ee/headless-runner test:transfer
+      - name: Test opt-in error reporting (runner and Workbot)
+        run: |
+          pnpm --filter @openwork-ee/headless-runner test:error-reporting
+          pnpm --filter @openwork-ee/workbot test:error-reporting
       - name: Boot the app provider tree
         run: pnpm test:boot
       - name: Check desktop links open real Den pages

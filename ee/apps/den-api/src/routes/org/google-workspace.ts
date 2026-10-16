@@ -38,6 +38,7 @@ import { registerGoogleDriveUploadRoutes } from "./google-drive-uploads.js"
 import { isGoogleAuthorizationFailure, parseGoogleError } from "./google-workspace-actions.js"
 import { registerGmailManagementRoutes } from "./gmail-management.js"
 import { registerGoogleProductivityManagementRoutes } from "./google-productivity-management.js"
+import { registerGoogleDocumentRoutes } from "./google-documents.js"
 import { listTeamsForMember } from "../../orgs.js"
 import { readInternalCapabilityConnectorId } from "../../session.js"
 import type { OrgRouteVariables } from "./shared.js"
@@ -753,6 +754,7 @@ export function registerGoogleWorkspaceRoutes<T extends { Variables: OrgRouteVar
   registerGoogleOfficeEditorRoutes(app, actionDependencies)
   registerGmailManagementRoutes(app, actionDependencies)
   registerGoogleProductivityManagementRoutes(app, actionDependencies)
+  registerGoogleDocumentRoutes(app, actionDependencies)
 
   app.post(
     "/v1/direct-uploads/google-workspace/drive-files",
@@ -1262,7 +1264,7 @@ export function registerGoogleWorkspaceRoutes<T extends { Variables: OrgRouteVar
       }
       const permissionMessage = driveReadPermissionMessage(token.account)
       // A previously granted Google scope is not permission after the admin removes it from this connector.
-      const enabledRead = token.enabledScopes?.some((scope) => scope === DRIVE_READ_SCOPE || scope === DRIVE_FULL_SCOPE)
+      const enabledRead = token.enabledScopes.some((scope) => scope === DRIVE_READ_SCOPE || scope === DRIVE_FULL_SCOPE)
       if (permissionMessage || !enabledRead) {
         return c.json({ error: "needs_connection", message: permissionMessage ?? "An organization admin must enable Read all Drive files in connector setup, then reconnect Google Workspace." }, 409)
       }
@@ -1328,8 +1330,9 @@ export function registerGoogleWorkspaceRoutes<T extends { Variables: OrgRouteVar
         return c.json({ error: token.kind, message: token.message }, token.kind === "policy_blocked" ? 403 : 409)
       }
       const permissionMessage = driveReadPermissionMessage(token.account)
-      if (permissionMessage) {
-        return c.json({ error: "needs_connection", message: permissionMessage }, 409)
+      const enabledRead = token.enabledScopes.some((scope) => scope === DRIVE_READ_SCOPE || scope === DRIVE_FULL_SCOPE)
+      if (permissionMessage || !enabledRead) {
+        return c.json({ error: "needs_connection", message: permissionMessage ?? "An organization admin must enable Read all Drive files in connector setup, then reconnect Google Workspace." }, 409)
       }
 
       const { fileId } = c.req.valid("param")

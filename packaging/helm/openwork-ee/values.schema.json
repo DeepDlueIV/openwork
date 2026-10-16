@@ -18,6 +18,26 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "googleDocumentTools": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Google Docs: focused reading and edits: Connected assistants inspect document tabs and headings, read or search bounded passages, and replace text against the revision they read. Renders DEN_FEATURE_GOOGLE_DOCUMENT_TOOLS."
+            },
+            "offlineRecovery": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Connection failure presentation: Show compact App connection failures and a discreet offline indicator in OpenCode v2 conversations. Renders DEN_FEATURE_OFFLINE_RECOVERY."
+            },
             "rememberLastOrganization": {
               "enum": [
                 "",
@@ -167,6 +187,16 @@
                 false
               ],
               "description": "Workbot Documents: Members browse recent Google Drive files and folders in Workbot, open documents in tabs, and save supported text and spreadsheet edits to Drive. Renders DEN_FEATURE_WORKBOT_DOCUMENTS."
+            },
+            "workbotWorkspaceAssistant": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Workbot: workspace assistant: Members ask Workbot about the document or calendar view they have open, chat without leaving their work, and navigate from a compact sidebar. Renders DEN_FEATURE_WORKBOT_WORKSPACE_ASSISTANT."
             },
             "automationCalendar": {
               "enum": [

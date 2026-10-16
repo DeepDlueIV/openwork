@@ -49,5 +49,7 @@ export function OfflineRecoveryNotice(props: {
 
   useEffect(() => () => { toast.dismiss(toastId); }, [toastId]);
 
-  return visible ? <Toaster id={toastId} position="bottom-right" offset={notificationOffset} mobileOffset={notificationOffset} /> : null;
+  // Sonner only receives events after its host subscribes. Keep the active
+  // conversation’s host mounted before the first connection warning arrives.
+  return props.active ? <Toaster id={toastId} position="bottom-right" offset={notificationOffset} mobileOffset={notificationOffset} /> : null;
 }

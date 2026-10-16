@@ -627,8 +627,10 @@ export function SessionPage(props: SessionPageProps) {
   // Computer use on this Mac, behind its feature flag: the header Computer
   // button, its floating view, in-chat requests and the hand-back at turn end.
   const computerUseFeature = useDesktopFeature("computerUse");
-  const computerUse = computerUseFeature && isElectronRuntime() && isMacPlatform();
-  useComputerBridge(props.sidebar.sessionStatusById, computerUse);
+  const remoteComputersFeature = useDesktopFeature("remoteComputers");
+  // The button hides itself when this computer can't run it and no VM is connected.
+  const computerUse = computerUseFeature && isElectronRuntime();
+  useComputerBridge(props.sidebar.sessionStatusById, computerUse, remoteComputersFeature);
 
   // Open the side panel of the conversation that owns a browser event. For the
   // conversation on screen that is the visible panel; for a background

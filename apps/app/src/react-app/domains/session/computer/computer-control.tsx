@@ -5,6 +5,7 @@ import type { ComputerPermission, ComputerSnapshot } from "@openwork/types/deskt
 import { desktopBridge } from "@/app/lib/desktop"
 import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useSessionFloatingSlot } from "../panel/floating-slot"
 import { ComputerPanel } from "./computer-panel"
@@ -78,12 +79,30 @@ export function ComputerControl({ sessionId }: { sessionId: string }) {
     }
   }
 
+  async function choose(targetId: string) {
+    if (changing.current || targetId === snapshot?.targetId) return
+    changing.current = true
+    const current = ++generation.current
+    setBusy("choose")
+    setActionError("")
+    try {
+      const next = await desktopBridge.computerChoose({ sessionId, targetId })
+      if (current === generation.current) { setSnapshot(next); setReadError("") }
+    } catch (cause) {
+      if (current === generation.current) setActionError(message(cause))
+    } finally {
+      changing.current = false
+      if (current === generation.current) setBusy(null)
+    }
+  }
+  const remote = snapshot?.placement === "remote"
+  const computer = snapshot?.targets.find((target) => target.id === snapshot.targetId)?.label ?? "This computer"
   const session = snapshot?.session
   const ready = snapshot?.readiness === "ready"
   const status = readError || session?.state === "unavailable" ? "Status unavailable" : snapshot?.cleanupPending ? "Stopping" : session?.state === "paused" ? "You have control" : session ? "Working" : ready ? "Ready" : snapshot?.readiness === "setup-required" ? "Setup needed" : "Unavailable"
   const attention = Boolean(request || readError || actionError || snapshot?.cleanupPending)
   // Unsupported platforms have no native computer controls.
-  if (snapshot?.readiness === "unsupported") return null
+  if (snapshot?.readiness === "unsupported" && snapshot.targets.length === 1) return null
 
   return <>
     {slot && snapshot && working ? <ComputerPanel sessionId={sessionId} slot={slot} enabled={snapshot.enabled} canStop controlsBusy={busy !== null} stopping={busy === "halt"} cleanupPending={Boolean(snapshot.cleanupPending)} stopError={actionError} onStop={() => void act("halt")} /> : null}
@@ -94,6 +113,7 @@ export function ComputerControl({ sessionId }: { sessionId: string }) {
       </Tooltip>
       <PopoverContent align="end" className="w-[min(320px,calc(100vw-32px))] gap-3 text-xs leading-relaxed text-muted-foreground" data-testid="session-computer-popover">
         <h2 className="text-sm font-semibold text-foreground">Computer</h2>
+        {snapshot && snapshot.targets.length > 1 ? <Select value={snapshot.targetId} disabled={busy !== null} onValueChange={(value) => { if (value) void choose(value) }}><SelectTrigger aria-label="Computer" data-testid="session-computer-target"><SelectValue /></SelectTrigger><SelectContent>{snapshot.targets.map((target) => <SelectItem key={target.id} value={target.id}>{target.label}</SelectItem>)}</SelectContent></Select> : <p>{computer}</p>}
         <p role="status" className="text-foreground" data-testid="session-computer-status">{status}</p>
         {snapshot ? <p data-testid="session-computer-readiness" data-state={snapshot.readiness}>{snapshot.detail}</p> : null}
         {session?.appName ? <p>{session.appName}{session.windowTitle ? ` · ${session.windowTitle}` : ""}</p> : null}
@@ -103,7 +123,7 @@ export function ComputerControl({ sessionId }: { sessionId: string }) {
         {snapshot?.busyElsewhere ? <p>Another chat is using the computer. This chat can use it when that task finishes.</p> : null}
         <div className="flex flex-wrap gap-2">
           {working ? <Button size="sm" variant="destructive" disabled={busy !== null} aria-busy={busy === "halt"} data-testid="session-computer-stop" onClick={() => void act("halt")}>Stop</Button> : null}
-          <Button size="sm" variant={ready ? "outline" : "default"} disabled={busy !== null || !snapshot} data-testid="session-computer-setup" onClick={() => { setOpen(false); openSetup(sessionId) }}>{ready ? "macOS permissions" : "Set up"}</Button>
+          {!remote ? <Button size="sm" variant={ready ? "outline" : "default"} disabled={busy !== null || !snapshot} data-testid="session-computer-setup" onClick={() => { setOpen(false); openSetup(sessionId) }}>{ready ? "macOS permissions" : "Set up"}</Button> : null}
         </div>
       </PopoverContent>
     </Popover>

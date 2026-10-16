@@ -18,6 +18,7 @@ function appLabel(appId: string | undefined) {
  * to ask them to go set it up and try again.
  */
 export function ComputerRequestPanel({ sessionId, request }: { sessionId: string; request: ComputerRequest }) {
+  const remote = request.placement === "remote"
   const openSetup = useComputerStore((state) => state.openSetup)
   const [busy, setBusy] = useState<"dismiss" | null>(null)
   const [error, setError] = useState("")
@@ -45,7 +46,7 @@ export function ComputerRequestPanel({ sessionId, request }: { sessionId: string
           <div className="min-w-0">
             <div className="text-[13px] font-medium leading-5 text-dls-text">Set up computer use</div>
             <div className="mt-0.5 text-[12px] leading-5 text-dls-secondary">
-              Turn on the macOS permissions to continue working in {appLabel(request.appId)}.
+              {remote ? request.detail || `${request.computer} needs a desktop connection.` : <>Turn on the macOS permissions to continue working in {appLabel(request.appId)}.</>}
             </div>
             {request.purpose ? <div className="mt-1 line-clamp-2 text-[12px] leading-5 text-dls-secondary">{request.purpose}</div> : null}
             {error ? <div role="alert" className="mt-1 text-[12px] leading-5 text-red-11">{error}</div> : null}
@@ -55,7 +56,7 @@ export function ComputerRequestPanel({ sessionId, request }: { sessionId: string
           <Button type="button" variant="ghost" size="sm" disabled={busy !== null} aria-busy={busy === "dismiss"} data-testid="session-computer-request-dismiss" onClick={() => void answer("dismiss")}>
             Not now
           </Button>
-          <Button type="button" size="sm" data-testid="session-computer-request-setup" onClick={() => openSetup(sessionId)}>Set up</Button>
+          {!remote ? <Button type="button" size="sm" data-testid="session-computer-request-setup" onClick={() => openSetup(sessionId)}>Set up</Button> : null}
         </div>
       </div>
     </div>

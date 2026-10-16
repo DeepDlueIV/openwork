@@ -31,6 +31,7 @@ import { applyBrandAppName } from "./brand-app-name.mjs";
 import { createBrowserPanel } from "./browser-panel.mjs";
 import { createComputerControl } from "./computer-control.mjs";
 import { createLocalComputerAdapter } from "./computer-local.mjs";
+import { remoteComputerAdapters } from "./computer-targets.mjs";
 import { resetPermissionEntry, resolvePermissionEntry } from "./computer-permission-entry.mjs";
 import { createWorkspaceStore } from "./workspace-store.mjs";
 import {
@@ -171,13 +172,27 @@ const applicationMenu = createApplicationMenu({
 
 let browserPanel = null;
 
+// Always allow and each allowed chat are the person's own choices, kept in app
+// data outside every workspace so an agent can never grant itself access.
+const computerAllowsPath = () => path.join(app.getPath("userData"), "computer-use-targets.json");
 // The System Settings entry macOS lists for computer use: OpenWork when
 // packaged, or the terminal/editor that started a development build.
 let computerPermissionEntry = null;
 const readComputerPermissionEntry = () => (computerPermissionEntry ??= resolvePermissionEntry({ fallbackName: APP_NAME })
   .catch(() => ({ name: APP_NAME, bundleId: null, ours: false })));
 const computerControl = createComputerControl({
-  adapter: createLocalComputerAdapter({
+  readRemoteFeatureEnabled: async () => {
+    const server = await runtimeManager.openworkServerInfo();
+    if (!server.baseUrl || !(server.clientToken ?? server.ownerToken)) return false;
+    // loopback-fetch: the local policy service verifies the signed-in Den identity.
+    const response = await fetch(`${server.baseUrl}/managed-policy/remote-computers`, {
+      headers: { Authorization: `Bearer ${server.clientToken ?? server.ownerToken}` }, signal: AbortSignal.timeout(10_000),
+    });
+    if (!response.ok) return false;
+    return (await response.json())?.enabled === true;
+  },
+  // This computer first, then any configured VM (see computer-targets.mjs).
+  adapters: [createLocalComputerAdapter({
     resourcesPath: process.resourcesPath,
     appRoot: path.resolve(__dirname, ".."),
     permissionEntry: async () => (await readComputerPermissionEntry()).name,
@@ -188,7 +203,23 @@ const computerControl = createComputerControl({
       window.focus();
       app.focus({ steal: true });
     },
-  }),
+  }), ...remoteComputerAdapters()],
+  standing: {
+    read: async () => {
+      try {
+        const saved = JSON.parse(await readFile(computerAllowsPath(), "utf8"));
+        return {
+          targets: saved?.targets && typeof saved.targets === "object" ? saved.targets : {},
+        };
+      } catch { return { targets: {} }; }
+    },
+    write: async (state) => {
+      const target = computerAllowsPath();
+      const temporary = `${target}.${process.pid}.tmp`;
+      await writeFile(temporary, JSON.stringify(state), "utf8");
+      await rename(temporary, target);
+    },
+  },
   permissionEntry: async () => {
     const entry = await readComputerPermissionEntry();
     return { name: entry.name, ours: entry.ours };
@@ -1946,6 +1977,10 @@ const desktopCommandHandlers = {
       assertComputerSender(event);
       await computerControl.dismissSetup({ setupId });
   },
+  "computerChoose": async (event, input) => {
+      assertComputerSender(event);
+      return computerControl.choose({ sessionId: String(input?.sessionId ?? ""), targetId: String(input?.targetId ?? "") });
+  },
   "computerHalt": async (event, sessionId) => {
       assertComputerSender(event);
       return computerControl.halt({ sessionId: String(sessionId ?? "") });
@@ -1957,6 +1992,10 @@ const desktopCommandHandlers = {
   "computerSetFeatureEnabled": async (event, enabled) => {
       assertComputerSender(event);
       return computerControl.setFeatureEnabled(enabled === true);
+  },
+  "computerSetRemoteEnabled": async (event, enabled) => {
+      assertComputerSender(event);
+      return computerControl.setRemoteEnabled(enabled === true);
   },
   "computerResetPermission": async (event, permission) => {
       assertComputerSender(event);

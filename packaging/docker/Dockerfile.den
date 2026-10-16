@@ -46,6 +46,7 @@ COPY ee/packages/headless-protocol/package.json /app/ee/packages/headless-protoc
 COPY ee/packages/cloud-runtime/package.json /app/ee/packages/cloud-runtime/package.json
 COPY packages/sandbox/package.json /app/packages/sandbox/package.json
 COPY packages/sandbox-daytona/package.json /app/packages/sandbox-daytona/package.json
+COPY packages/sandbox-freestyle/package.json /app/packages/sandbox-freestyle/package.json
 COPY ee/packages/den-db/package.json /app/ee/packages/den-db/package.json
 COPY ee/packages/telemetry-contracts/package.json /app/ee/packages/telemetry-contracts/package.json
 COPY ee/packages/telemetry/package.json /app/ee/packages/telemetry/package.json

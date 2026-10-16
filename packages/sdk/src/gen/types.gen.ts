@@ -760,6 +760,7 @@ export type AdminFeature = {
     | "teamPageTabs"
     | "computerUse"
     | "browserFloatingView"
+    | "remoteComputers"
     | "inviteLinkVerifiesEmail"
     | "remoteSessionSubagents";
   label: string;
@@ -828,6 +829,7 @@ export type AdminOrganizationsPageResponse = {
       teamPageTabs: boolean;
       computerUse: boolean;
       browserFloatingView: boolean;
+      remoteComputers: boolean;
       inviteLinkVerifiesEmail: boolean;
       remoteSessionSubagents: boolean;
       /**
@@ -1093,6 +1095,15 @@ export type AdminOrganizationsPageResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
+      remoteComputers: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       inviteLinkVerifiesEmail: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -1202,6 +1213,7 @@ export type AdminOverviewResponse = {
       teamPageTabs: boolean;
       computerUse: boolean;
       browserFloatingView: boolean;
+      remoteComputers: boolean;
       inviteLinkVerifiesEmail: boolean;
       remoteSessionSubagents: boolean;
       /**
@@ -1459,6 +1471,15 @@ export type AdminOverviewResponse = {
         overrideApplies: boolean;
       };
       browserFloatingView: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      remoteComputers: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -7633,6 +7654,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       teamPageTabs: boolean;
       computerUse: boolean;
       browserFloatingView: boolean;
+      remoteComputers: boolean;
       inviteLinkVerifiesEmail: boolean;
       remoteSessionSubagents: boolean;
       /**
@@ -7890,6 +7912,15 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       browserFloatingView: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      remoteComputers: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -7995,6 +8026,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       teamPageTabs: boolean;
       computerUse: boolean;
       browserFloatingView: boolean;
+      remoteComputers: boolean;
       inviteLinkVerifiesEmail: boolean;
       remoteSessionSubagents: boolean;
       /**
@@ -8252,6 +8284,15 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       browserFloatingView: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      remoteComputers: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;

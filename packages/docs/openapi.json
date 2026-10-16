@@ -2454,6 +2454,7 @@
               "teamPageTabs",
               "computerUse",
               "browserFloatingView",
+              "remoteComputers",
               "inviteLinkVerifiesEmail",
               "remoteSessionSubagents"
             ]
@@ -2714,6 +2715,9 @@
                     "browserFloatingView": {
                       "type": "boolean"
                     },
+                    "remoteComputers": {
+                      "type": "boolean"
+                    },
                     "inviteLinkVerifiesEmail": {
                       "type": "boolean"
                     },
@@ -2756,6 +2760,7 @@
                     "teamPageTabs",
                     "computerUse",
                     "browserFloatingView",
+                    "remoteComputers",
                     "inviteLinkVerifiesEmail",
                     "remoteSessionSubagents",
                     "gatewayDashboard"
@@ -4332,6 +4337,62 @@
                         "overrideApplies"
                       ]
                     },
+                    "remoteComputers": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "inviteLinkVerifiesEmail": {
                       "type": "object",
                       "properties": {
@@ -4474,6 +4535,7 @@
                     "teamPageTabs",
                     "computerUse",
                     "browserFloatingView",
+                    "remoteComputers",
                     "inviteLinkVerifiesEmail",
                     "remoteSessionSubagents"
                   ],
@@ -4929,6 +4991,9 @@
                     "browserFloatingView": {
                       "type": "boolean"
                     },
+                    "remoteComputers": {
+                      "type": "boolean"
+                    },
                     "inviteLinkVerifiesEmail": {
                       "type": "boolean"
                     },
@@ -4971,6 +5036,7 @@
                     "teamPageTabs",
                     "computerUse",
                     "browserFloatingView",
+                    "remoteComputers",
                     "inviteLinkVerifiesEmail",
                     "remoteSessionSubagents",
                     "gatewayDashboard"
@@ -6547,6 +6613,62 @@
                         "overrideApplies"
                       ]
                     },
+                    "remoteComputers": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "inviteLinkVerifiesEmail": {
                       "type": "object",
                       "properties": {
@@ -6689,6 +6811,7 @@
                     "teamPageTabs",
                     "computerUse",
                     "browserFloatingView",
+                    "remoteComputers",
                     "inviteLinkVerifiesEmail",
                     "remoteSessionSubagents"
                   ],
@@ -30736,6 +30859,9 @@
                         "browserFloatingView": {
                           "type": "boolean"
                         },
+                        "remoteComputers": {
+                          "type": "boolean"
+                        },
                         "inviteLinkVerifiesEmail": {
                           "type": "boolean"
                         },
@@ -30778,6 +30904,7 @@
                         "teamPageTabs",
                         "computerUse",
                         "browserFloatingView",
+                        "remoteComputers",
                         "inviteLinkVerifiesEmail",
                         "remoteSessionSubagents",
                         "gatewayDashboard"
@@ -32354,6 +32481,62 @@
                             "overrideApplies"
                           ]
                         },
+                        "remoteComputers": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "inviteLinkVerifiesEmail": {
                           "type": "object",
                           "properties": {
@@ -32496,6 +32679,7 @@
                         "teamPageTabs",
                         "computerUse",
                         "browserFloatingView",
+                        "remoteComputers",
                         "inviteLinkVerifiesEmail",
                         "remoteSessionSubagents"
                       ],
@@ -32700,6 +32884,9 @@
                         "browserFloatingView": {
                           "type": "boolean"
                         },
+                        "remoteComputers": {
+                          "type": "boolean"
+                        },
                         "inviteLinkVerifiesEmail": {
                           "type": "boolean"
                         },
@@ -32742,6 +32929,7 @@
                         "teamPageTabs",
                         "computerUse",
                         "browserFloatingView",
+                        "remoteComputers",
                         "inviteLinkVerifiesEmail",
                         "remoteSessionSubagents",
                         "gatewayDashboard"
@@ -34318,6 +34506,62 @@
                             "overrideApplies"
                           ]
                         },
+                        "remoteComputers": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "inviteLinkVerifiesEmail": {
                           "type": "object",
                           "properties": {
@@ -34460,6 +34704,7 @@
                         "teamPageTabs",
                         "computerUse",
                         "browserFloatingView",
+                        "remoteComputers",
                         "inviteLinkVerifiesEmail",
                         "remoteSessionSubagents"
                       ],

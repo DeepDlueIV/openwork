@@ -15,6 +15,7 @@ function fixture(options = {}) {
   const selected = [];
   /** @type {import("./computer-control.mjs").ComputerAdapter} */
   const adapter = {
+    id: "local", label: "This computer", placement: "local",
     protocol: COMPUTER_PROTOCOL,
     setup: async () => ({ setupId: "setup" }),
     readiness: options.readiness ?? (async () => ({ readiness: "ready", detail: "Ready" })),
@@ -38,7 +39,7 @@ function fixture(options = {}) {
       };
     },
   };
-  const control = createComputerControl({ adapter, onRequest: (_sessionId, value) => { requests.push(value); } });
+  const control = createComputerControl({ adapters: [adapter], onRequest: (_sessionId, value) => { requests.push(value); } });
   return { control, calls, requests, selected };
 }
 

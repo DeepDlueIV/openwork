@@ -251,6 +251,14 @@ export const FEATURES = defineFeatures({
     default: false,
   },
 
+  remoteComputers: {
+    label: "Desktop: computer use on remote computers",
+    description: "Computer use can work on a connected Linux VM (Freestyle or Daytona) instead of this Mac. The Computer popover lets the person pick the computer for each chat; the VM is set up by an operator or developer.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
+
   inviteLinkVerifiesEmail: {
     label: "Invite links verify the invited email",
     description: "Creating an account from an invitation link, emailed or shared by an admin, counts as verifying that email, so the invited person joins without entering an emailed code.",

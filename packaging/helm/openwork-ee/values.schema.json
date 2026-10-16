@@ -298,6 +298,16 @@
               ],
               "description": "Desktop: floating and full-screen browser: The built-in browser can float as a small live card over the chat, sit beside it, or fill the window, with a Browser button in the chat header that shows when it needs the person. Renders DEN_FEATURE_BROWSER_FLOATING_VIEW."
             },
+            "remoteComputers": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Desktop: computer use on remote computers: Computer use can work on a connected Linux VM (Freestyle or Daytona) instead of this Mac. The Computer popover lets the person pick the computer for each chat; the VM is set up by an operator or developer. Renders DEN_FEATURE_REMOTE_COMPUTERS."
+            },
             "inviteLinkVerifiesEmail": {
               "enum": [
                 "",

@@ -3305,6 +3305,9 @@ function createRoutes(
 
   addRoute(routes, "GET", "/managed-policy", "client", async () =>
     jsonResponse({ policy: await managedDesktopPolicy(config).current() }));
+  // Electron verifies remote rollout authority here, independent of renderer state.
+  addRoute(routes, "GET", "/managed-policy/remote-computers", "client", async () =>
+    jsonResponse({ enabled: await managedDesktopPolicy(config).remoteComputersEnabled() }));
   // The desktop process reads the built-in browser's website rules here itself.
   addRoute(routes, "GET", "/managed-policy/website-rules", "client", async () =>
     jsonResponse({ rules: await managedDesktopPolicy(config).websiteRules() }));

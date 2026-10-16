@@ -1,4 +1,4 @@
-// The computer broker owns feature-gated access, the single native session lease,
+// The computer broker owns per-chat consent, the single native session lease,
 // receipts, observations and handoff. Model arguments never select a session,
 // window, receipt identity, helper command or credential.
 import { randomUUID } from "node:crypto";
@@ -73,27 +73,36 @@ function deadline(ms) {
 /**
  * @typedef {{ isError?: boolean, content: Array<{ type: string, text?: string, data?: string, mimeType?: string }> }} ComputerResult
  * @typedef {{ sessionId?: string }} ChatInput
- * @typedef {{ id: string, reason: "setup", appId?: string, purpose?: string }} ComputerRequest
+ * @typedef {{ id: string, reason: "setup", computer: string, placement: "local" | "remote", detail?: string, appId?: string, purpose?: string }} ComputerRequest
+ * @typedef {{ targets?: Record<string, string> }} SavedChoices
  * @typedef {{
  *   callTool: (name: string, args: Record<string, unknown>, options?: { signal?: AbortSignal, timeoutMs?: number }) => Promise<ComputerResult>,
  *   notifyUi: (params: Record<string, unknown>) => Promise<void>,
  *   close: () => Promise<void>,
  * }} ComputerTransport
  * @typedef {{
+ *   id: string,
+ *   label: string,
+ *   placement: "local" | "remote",
  *   protocol: string,
  *   readiness: () => Promise<{ readiness: string, detail: string, permissions?: { accessibility: boolean, screenRecording: boolean } }>,
- *   setup: (permission: "accessibility" | "screenRecording") => Promise<{ setupId: string }>,
+ *   setup?: (permission: "accessibility" | "screenRecording") => Promise<{ setupId: string }>,
  *   dismissSetup?: (setupId?: string) => Promise<void>,
  *   connect: (options: { signal: AbortSignal, presence: { name: string, color: string } | null, onUi: (value: unknown) => void, onClose: () => void }) => Promise<ComputerTransport>,
  * }} ComputerAdapter
  */
 
 /**
- * The adapter is a trusted main-process dependency, never renderer or model
- * input. connect() owns a dedicated native session scope; close() MUST confirm
- * session revocation, not merely disconnect. One controller across all chats.
+ * Adapters are trusted main-process dependencies, never renderer or model
+ * input: "This Mac" (the native helper) and any remote computer such as a
+ * Linux VM (see computer-remote.mjs). Every adapter speaks the same seven-tool
+ * contract; each chat picks one. connect() owns a dedicated session scope;
+ * close() MUST confirm session revocation, not merely disconnect. One
+ * controller across all chats and computers, deliberately conservative.
  * @param {{
- *   adapter: ComputerAdapter,
+ *   adapters: ComputerAdapter[],
+ *   readRemoteFeatureEnabled?: () => Promise<boolean>,
+ *   standing?: { read: () => Promise<SavedChoices>, write: (state: SavedChoices) => Promise<void> },
  *   presence?: { name: string, color: string } | null,
  *   permissionEntry?: () => Promise<{ name: string, ours: boolean }>,
  *   onRequest?: (sessionId: string, request: ComputerRequest | null) => void,
@@ -101,18 +110,37 @@ function deadline(ms) {
  *   cleanupMs?: number, operationMs?: number, pollMs?: number, idleMs?: number, now?: () => number,
  * }} options
  */
-export function createComputerControl({ adapter, presence = null,
+export function createComputerControl({ adapters, readRemoteFeatureEnabled = async () => false, standing = { read: async () => ({ targets: {} }), write: async (_state) => {} }, presence = null,
   permissionEntry = async () => ({ name: "OpenWork", ours: false }), onRequest = () => {},
   cleanupMs = 3000, operationMs = 120_000, pollMs = 750, idleMs = 90_000, requestMs = 600_000, now = Date.now }) {
-  if (!adapter || adapter.protocol !== COMPUTER_PROTOCOL || ["readiness", "setup", "connect"].some((name) => typeof adapter[name] !== "function")) {
-    throw new Error("A trusted computer adapter with the supported protocol is required.");
+  const targets = new Map();
+  for (const candidate of Array.isArray(adapters) ? adapters : []) {
+    if (!candidate || typeof candidate.id !== "string" || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(candidate.id) || targets.has(candidate.id)
+      || typeof candidate.label !== "string" || !candidate.label.trim() || !["local", "remote"].includes(candidate.placement)
+      || candidate.protocol !== COMPUTER_PROTOCOL || ["readiness", "connect"].some((name) => typeof candidate[name] !== "function")) {
+      throw new Error("Computer adapters need a unique id, a label, a placement, the supported protocol, readiness and connect.");
+    }
+    targets.set(candidate.id, Object.freeze({ ...candidate }));
   }
+  if (!targets.size) throw new Error("At least one trusted computer adapter is required.");
+  const defaultTarget = [...targets.values()].find((target) => target.placement === "local") ?? [...targets.values()][0];
+  const offered = () => [...targets.values()].filter((target) => target.placement === "local" || remoteEnabled);
+  /** The computer a chat really uses: its choice, unless remote computers are turned off. */
+  const targetFor = (grant) => grant.adapter.placement === "remote" && !remoteEnabled ? defaultTarget : grant.adapter;
   for (const value of [cleanupMs, operationMs, pollMs, idleMs, requestMs]) if (!Number.isSafeInteger(value) || value < 1 || value > 2_147_483_647) throw new Error("Computer time limits must be positive bounded milliseconds.");
   const grants = new Map();
   const requests = new Map();
   let lease = null;
   let featureEnabled = false;
   let featureGeneration = 0;
+  let remoteGeneration = 0;
+  let remoteUpdateRevision = 0;
+  // `remoteComputers`: off, VMs are hidden and every chat uses a local computer.
+  let remoteEnabled = false;
+  let remoteRequested = false;
+  let saved = null;
+  let loadingChoices = null;
+  let remembering = Promise.resolve();
   let tail = Promise.resolve();
   let closed = false;
   let resetting = 0;
@@ -128,8 +156,28 @@ export function createComputerControl({ adapter, presence = null,
     grant.enabled = false; advance(grant);
     if (lease?.grant === grant) invalidateObservation(lease);
   }
+  async function choices() {
+    if (!saved) {
+      loadingChoices ??= Promise.resolve().then(() => standing.read()).catch(() => null).then((state) => {
+        const chosen = state?.targets && typeof state.targets === "object" ? Object.entries(state.targets).filter(([id, target]) => typeof id === "string" && typeof target === "string") : [];
+        saved = { targets: new Map(chosen) };
+      });
+      await loadingChoices;
+    }
+    return saved;
+  }
+  function remember(change) {
+    const result = remembering.then(async () => {
+      const state = await choices();
+      change(state);
+      state.targets = new Map([...state.targets].slice(-500));
+      await standing.write({ targets: Object.fromEntries(state.targets) });
+    });
+    remembering = result.catch(() => {});
+    return result;
+  }
   // An automatic stop (helper exit, failed handoff) pauses a chat for the rest
-  // of its turn. The next turn re-arms access automatically.
+  // of its turn. The next turn re-arms every chat the person allowed.
   async function rearm(sessionId) {
     if (closed || resetting) return;
     for (const grant of grants.values()) {
@@ -149,32 +197,37 @@ export function createComputerControl({ adapter, presence = null,
     if (typeof sessionId !== "string" || !sessionId.trim()) throw new Error("A chat is required.");
     let grant = grants.get(sessionId);
     if (!grant) {
+      const state = await choices();
       grant = grants.get(sessionId);
       if (!grant) {
-        grant = { sessionId, revision: 0, controller: new AbortController(), enabled: true, windows: new Map() };
+        // Each chat remembers the computer it last used; one that went away falls back to the first.
+        const adapter = targets.get(state.targets.get(sessionId) ?? "") ?? defaultTarget;
+        grant = { sessionId, revision: 0, controller: new AbortController(), enabled: true, windows: new Map(), adapter };
         grants.set(sessionId, grant);
       }
     }
     return grant;
   }
   // Probes start a helper process; reuse a recent answer, longer once ready.
-  let lastReadiness = null;
-  async function readiness() {
-    const reuse = lastReadiness && now() - lastReadiness.at < (lastReadiness.value.readiness === "ready" ? 10_000 : 1_000);
-    if (reuse) return lastReadiness.value;
-    const value = await probeReadiness();
-    lastReadiness = { at: now(), value };
+  const lastReadiness = new Map();
+  async function readiness(adapter) {
+    const last = lastReadiness.get(adapter.id);
+    const reuse = last && now() - last.at < (last.value.readiness === "ready" ? 10_000 : 1_000);
+    if (reuse) return last.value;
+    const value = await probeReadiness(adapter);
+    lastReadiness.set(adapter.id, { at: now(), value });
     return value;
   }
-  async function probeReadiness() {
+  async function probeReadiness(adapter) {
     try {
-      const status = await bounded(adapter.readiness(), cleanupMs);
+      // A remote computer's readiness may cross the network; allow it longer.
+      const status = await bounded(adapter.readiness(), adapter.placement === "remote" ? 15_000 : cleanupMs);
       if (!["ready", "setup-required", "unsupported", "unavailable"].includes(status?.readiness) || typeof status.detail !== "string") throw new Error("Invalid readiness.");
       const permissions = status.permissions;
       if (permissions !== undefined && (typeof permissions?.accessibility !== "boolean" || typeof permissions?.screenRecording !== "boolean")) throw new Error("Invalid permissions.");
       return { readiness: status.readiness, detail: status.detail,
         ...(permissions ? { permissions: { accessibility: permissions.accessibility, screenRecording: permissions.screenRecording } } : {}) };
-    } catch { return { readiness: "unavailable", detail: "Computer use is unavailable on this Mac." }; }
+    } catch { return { readiness: "unavailable", detail: `${adapter.label} is unavailable right now.` }; }
   }
   function revise(grant, expectedRevision) {
     if (!Number.isSafeInteger(expectedRevision) || expectedRevision !== grant.revision) throw new Error("Computer settings changed. Check the latest state before trying again.");
@@ -190,7 +243,7 @@ export function createComputerControl({ adapter, presence = null,
   function assertUiActive(current) {
     if (lease !== current || current.closing || current.uiEnded || !current.grant.enabled
       || current.controller.signal.aborted || (current.expiresAt !== undefined && now() >= current.expiresAt)) {
-      throw new Error("This computer session ended. Use Stop or Take over to interrupt computer use.");
+      throw new Error("This computer session ended. Sensitive actions still require your authorization.");
     }
   }
   function controlStillOwned(call, observation) {
@@ -233,7 +286,7 @@ export function createComputerControl({ adapter, presence = null,
     if (current.presentation !== presentation || presentation.phase !== "approval"
       || !presentation.windows.some((window) => window.id === windowId)) throw new Error("The native window choice changed. Review it again.");
     await current.transport.notifyUi({ id: presentation.id, action: "approve", windowId });
-    // Remember the selected window for this app within the chat.
+    // The person approved this app's window once in this chat; reopening it later does not ask again.
     const title = presentation.windows.find((window) => window.id === windowId)?.title;
     if (title) current.grant.windows.set(opening.args.app_id, title);
   }
@@ -277,8 +330,7 @@ export function createComputerControl({ adapter, presence = null,
       }
       if (value.phase === "approval" && isDeepStrictEqual(presentation, next)) return;
       current.presentation = next;
-      // The rollout is the application opt-in. Resolve the requested app's
-      // window automatically, using its last window when it is still present.
+      // The rollout supplies access; select the app window automatically.
       if (value.phase === "approval" && !current.opening?.decisionSent) {
         const previous = current.grant.windows.get(value.appID);
         const selected = next.windows.find((window) => window.title === previous) ?? next.windows[0];
@@ -409,7 +461,8 @@ export function createComputerControl({ adapter, presence = null,
       } catch { /* The snapshot below reports the last known state. */ }
       finally { limit.dispose(); }
     }
-    const status = await readiness();
+    const target = targetFor(grant);
+    const status = await readiness(target);
     const elsewhere = lease && lease.grant !== grant;
     const current = lease?.grant === grant ? lease : null;
     return {
@@ -417,8 +470,11 @@ export function createComputerControl({ adapter, presence = null,
       entry: await permissionEntry().then(({ name, ours }) => ({ name, ours }), () => ({ name: "OpenWork", ours: false })),
       request: (() => {
         const request = requests.get(grant.sessionId);
-        return request?.published ? { id: request.id, reason: request.reason, ...(request.appId ? { appId: request.appId } : {}), ...(request.purpose ? { purpose: request.purpose } : {}) } : null;
+        return request?.published ? describeRequest(grant, request) : null;
       })(),
+      targetId: target.id,
+      targets: offered().map(({ id, label, placement }) => ({ id, label, placement })),
+      placement: target.placement,
       readiness: status.readiness, ...(status.permissions ? { permissions: status.permissions } : {}),
       detail: current?.cleanupPending ? "Stopping computer use. Native release has not yet been confirmed." : status.detail,
       busyElsewhere: Boolean(elsewhere),
@@ -429,7 +485,7 @@ export function createComputerControl({ adapter, presence = null,
   async function run(call, signal, limit) {
     const { name, args, grant, revision } = call;
     const check = () => {
-      if (!featureEnabled || call.featureGeneration !== featureGeneration || closed || resetting || !grant.enabled || grant.revision !== revision || grants.get(grant.sessionId) !== grant) {
+      if (!featureEnabled || call.featureGeneration !== featureGeneration || call.remoteTarget && call.remoteGeneration !== remoteGeneration || closed || resetting || !grant.enabled || grant.revision !== revision || grants.get(grant.sessionId) !== grant) {
         throw new Error("Computer use was turned off, revoked, or restarted before this call finished.");
       }
     };
@@ -441,7 +497,7 @@ export function createComputerControl({ adapter, presence = null,
           ? "The previous computer session is still stopping. Try again in a moment. Nothing was dispatched."
           : "Another chat is using this Mac. It must finish or be stopped first. Nothing was dispatched.");
       }
-      lease ??= { grant, controller: new AbortController(), nativeId: null, session: null, busy: false, handoffGeneration: 0 };
+      lease ??= { grant, adapter: targetFor(grant), controller: new AbortController(), nativeId: null, session: null, busy: false, handoffGeneration: 0 };
       const current = lease;
       clearTimeout(current.idleTimer);
       current.busy = true;
@@ -458,7 +514,7 @@ export function createComputerControl({ adapter, presence = null,
         progress();
         if (!current.transport) {
           try {
-            current.transport = await adapter.connect({
+            current.transport = await current.adapter.connect({
               signal: active, presence,
               onUi: (value) => receiveUi(current, value),
               onClose: () => {
@@ -599,9 +655,15 @@ export function createComputerControl({ adapter, presence = null,
       }
     }, limit, admissionSignal);
   }
+  function describeRequest(grant, request) {
+    const target = targetFor(grant);
+    return { id: request.id, reason: request.reason, computer: target.label, placement: target.placement,
+      ...(request.reason === "setup" && target.placement === "remote" && request.detail ? { detail: request.detail } : {}),
+      ...(request.appId ? { appId: request.appId } : {}), ...(request.purpose ? { purpose: request.purpose } : {}) };
+  }
   /**
    * One in-chat request per chat. It resolves "ready" once macOS permissions
-   * are granted, without another prompt.
+   * are granted and the chat is allowed, without the agent asking again.
    * @returns {Promise<"ready" | "dismissed" | "timeout" | "aborted" | "unavailable">}
    */
   function askPerson(grant, args, signal) {
@@ -612,7 +674,7 @@ export function createComputerControl({ adapter, presence = null,
       let settled = null;
       const finished = new Promise((resolve) => {
         request = {
-          id, reason: "setup", waiters: 0, published: false, finished: Promise.resolve("aborted"),
+          id, reason: "setup", detail: "", waiters: 0, published: false, finished: Promise.resolve("aborted"),
           ...(typeof args.app_id === "string" ? { appId: args.app_id } : {}),
           ...(typeof args.purpose === "string" ? { purpose: args.purpose } : {}),
           settle: (answer) => { if (!settled) { settled = answer; resolve(answer); } },
@@ -621,15 +683,17 @@ export function createComputerControl({ adapter, presence = null,
       });
       requests.set(grant.sessionId, request);
       const current = request;
-      const publish = () => onRequest(grant.sessionId, { id: current.id, reason: current.reason, ...(current.appId ? { appId: current.appId } : {}), ...(current.purpose ? { purpose: current.purpose } : {}) });
+      const publish = () => onRequest(grant.sessionId, describeRequest(grant, current));
       void (async () => {
         const expires = now() + requestMs;
         while (!settled && !closed && now() < expires) {
-          const status = await readiness();
+          const status = await readiness(targetFor(grant));
           if (settled) break;
           if (["unsupported", "unavailable"].includes(status.readiness)) { current.settle("unavailable"); break; }
           const reason = /** @type {const} */ ("setup");
-          if (reason !== current.reason || current.published !== true) { current.reason = reason; current.published = true; publish(); }
+          if (reason !== current.reason || current.published !== true || status.detail !== current.detail) {
+            current.reason = reason; current.detail = status.detail; current.published = true; publish();
+          }
           if (status.readiness === "ready" && grant.enabled) { current.settle("ready"); break; }
           await new Promise((resolve) => { const timer = setTimeout(resolve, 1_500); timer.unref?.(); wake = () => { clearTimeout(timer); resolve(undefined); }; });
         }
@@ -678,7 +742,7 @@ export function createComputerControl({ adapter, presence = null,
     async interact(input) {
       if (!input || !["approve", "deny", "takeover", "resume"].includes(input.action) || !uiText(input.id, 128) || !input.id
         || Object.keys(input).some((key) => !["sessionId", "id", "action", "windowId"].includes(key))
-        || (input.action === "approve" ? !uiNumber(input.windowId, 0xffffffff) || !input.windowId : input.windowId !== undefined)) throw new Error("Choose an explicit action for this computer session. Use Stop or Take over to interrupt computer use.");
+        || (input.action === "approve" ? !uiNumber(input.windowId, 0xffffffff) || !input.windowId : input.windowId !== undefined)) throw new Error("Choose an explicit action for this computer session. Sensitive actions still require your authorization.");
       const current = lease;
       if (!current || current.grant !== grants.get(input.sessionId) || !current.transport?.notifyUi) throw new Error("This chat does not own an active computer session.");
       assertUiActive(current);
@@ -737,7 +801,7 @@ export function createComputerControl({ adapter, presence = null,
     async snapshot({ sessionId } = {}) { return view(await grantFor(sessionId), true); },
     /**
      * Stop from the Computer view or the pill: ends this task now and keeps the
-     * access available for the next message.
+     * chat allowed for the person's next message.
      * @param {ChatInput} input
      */
     async halt({ sessionId } = {}) {
@@ -747,9 +811,29 @@ export function createComputerControl({ adapter, presence = null,
       return view(grant);
     },
     /**
+     * Point this chat at another computer: this Mac or a connected VM. The
+     * chat's allowance carries over; a running session is ended first, and
+     * remembered windows belong to the previous computer.
+     * @param {ChatInput & { targetId?: string }} input
+     */
+    async choose({ sessionId, targetId } = {}) {
+      const adapter = targets.get(String(targetId ?? ""));
+      if (!adapter || !offered().includes(adapter)) throw new Error("Choose one of the listed computers.");
+      const grant = await grantFor(sessionId);
+      if (targetFor(grant) === adapter && grant.adapter === adapter) return view(grant);
+      if (lease?.grant === grant && !await cleanup(lease)) throw new Error(COMPUTER_STOP_GUIDANCE);
+      advance(grant);
+      grant.adapter = adapter;
+      grant.windows = new Map();
+      grant.enabled = true;
+      await remember((state) => { state.targets.delete(grant.sessionId); state.targets.set(grant.sessionId, adapter.id); });
+      requests.get(grant.sessionId)?.wake();
+      return view(grant);
+    },
+    /**
      * The renderer reports the `computerUse` feature. Turning it off (including
      * the kill switch) ends any running session and every waiting request at
-     * once. Turning it back on restores access without another prompt.
+     * once; saved allowances stay, so turning it back on asks nobody again.
      */
     async setFeatureEnabled(enabled) {
       if (featureEnabled !== (enabled === true)) featureGeneration++;
@@ -763,7 +847,29 @@ export function createComputerControl({ adapter, presence = null,
       return false;
     },
     /**
-     * Dismiss the system setup card. System permissions are granted in macOS.
+     * The renderer reports the `remoteComputers` feature. Turning it off ends a
+     * session running on a VM at once; each chat keeps its saved choice and
+     * returns to it when the feature is back on.
+     */
+    async setRemoteEnabled(enabled) {
+      const update = ++remoteUpdateRevision;
+      remoteRequested = enabled === true;
+      // The app window may request a refresh, but only verified Den grants it.
+      const authorized = enabled === true && await readRemoteFeatureEnabled().catch(() => false);
+      if (update !== remoteUpdateRevision || closed || resetting) return remoteEnabled;
+      enabled = authorized;
+      if (remoteEnabled !== (enabled === true)) remoteGeneration++;
+      remoteEnabled = enabled === true;
+      for (const request of requests.values()) request.wake();
+      if (!remoteEnabled && lease?.adapter.placement === "remote") {
+        lease.expectedClose = true;
+        if (!await cleanup(lease)) throw new Error(COMPUTER_STOP_GUIDANCE);
+      }
+      return remoteEnabled;
+    },
+    /**
+     * The person's answer to an in-chat request: allow this chat, always
+     * allow, or not now. Setup itself is answered by macOS permissions.
      * @param {ChatInput & { answer?: "dismiss" }} input
      */
     async answerRequest({ sessionId, answer } = {}) {
@@ -777,11 +883,13 @@ export function createComputerControl({ adapter, presence = null,
     async setup({ permission } = {}) {
       if (closed || resetting || lease) throw new Error("Stop computer use before opening permission setup.");
       if (!["accessibility", "screenRecording"].includes(permission)) throw new Error("Choose Accessibility or Screen Recording settings.");
-      return adapter.setup(permission);
+      const local = [...targets.values()].find((target) => target.placement === "local" && typeof target.setup === "function");
+      if (!local?.setup) throw new Error("Permission setup is only for this computer.");
+      return local.setup(permission);
     },
     /** @param {{ setupId?: string }} input */
     async dismissSetup({ setupId } = {}) {
-      if (typeof adapter.dismissSetup === "function") await adapter.dismissSetup(typeof setupId === "string" ? setupId : undefined);
+      for (const target of targets.values()) if (typeof target.dismissSetup === "function") await target.dismissSetup(typeof setupId === "string" ? setupId : undefined);
     },
     /**
      * Tool calls from the engine, scoped to the requesting chat by the bridge.
@@ -801,24 +909,30 @@ export function createComputerControl({ adapter, presence = null,
         if (closed || resetting) return failure("stopping", "Computer use is stopping or restarting. Nothing was dispatched.");
         if (!featureEnabled) return failure("computer_unavailable", "Computer use is not turned on in this OpenWork app. Use connected apps or the browser instead.");
         const generation = featureGeneration;
+        const remoteRevision = remoteGeneration;
         const grant = await grantFor(sessionId);
+        if (targetFor(grant).placement === "remote" && !await readRemoteFeatureEnabled().catch(() => false)) {
+          await api.setRemoteEnabled(false);
+          return failure("computer_unavailable", "Your organization's remote computer feature could not be verified. Nothing was dispatched.");
+        }
         if (!grant.enabled) {
           return failure("not_allowed", "Computer use stopped earlier in this turn, because the person stopped it or after a failure. It turns back on with the person's next message, so do not ask them to re-enable it; tell them what failed.");
         }
-        // Missing macOS permissions show the system setup checklist.
-        const status = name === "computer_discover" || name === "computer_open" ? await readiness() : null;
+        // Setup or this chat's allowance missing: ask the person in the chat and
+        // carry on once they answer, so the agent never has to ask them itself.
+        const status = name === "computer_discover" || name === "computer_open" ? await readiness(targetFor(grant)) : null;
         if (status && status.readiness !== "ready") {
           if (status && ["unsupported", "unavailable"].includes(status.readiness)) return failure("setup_required", status.detail);
           const answer = await askPerson(grant, args, signal);
           if (answer !== "ready") {
             return failure("not_allowed", answer === "dismissed"
-              ? "The person dismissed macOS setup. Nothing was dispatched. Do not ask again unless they bring it up; continue another way."
+              ? "The person dismissed computer setup. Nothing was dispatched. Do not ask again unless they bring it up; continue another way."
               : answer === "unavailable" ? "Computer use is not turned on in this OpenWork app. Use connected apps or the browser instead."
-              : "macOS setup did not finish in time. Nothing was dispatched. Tell the person it is waiting for the Computer card in the chat.");
+              : "Computer setup did not finish in time. Nothing was dispatched. Tell the person it is waiting for the Computer card in the chat.");
           }
         }
-        if (!featureEnabled || generation !== featureGeneration) return failure("computer_unavailable", "Computer use was turned off while this request was waiting. Nothing was dispatched.");
-        const call = { name, args: structuredClone(args), grant, revision: grant.revision, featureGeneration: generation };
+        if (!featureEnabled || generation !== featureGeneration || grant.adapter.placement === "remote" && remoteRevision !== remoteGeneration) return failure("computer_unavailable", "Computer use was turned off while this request was waiting. Nothing was dispatched.");
+        const call = { name, args: structuredClone(args), grant, revision: grant.revision, featureGeneration: generation, remoteGeneration: remoteRevision, remoteTarget: grant.adapter.placement === "remote" };
         // The operation budget starts once the person has answered.
         limit = deadline(operationMs);
         return deliverResult(call, await run(call, signal, limit));
@@ -827,7 +941,7 @@ export function createComputerControl({ adapter, presence = null,
       } finally { limit?.dispose(); }
     },
     /**
-     * The chat's turn ended: release its native session and re-arm access.
+     * The chat's turn ended: release its native session and re-arm Always allow.
      * @param {ChatInput} input
      */
     async endTurn({ sessionId } = {}) {
@@ -844,10 +958,15 @@ export function createComputerControl({ adapter, presence = null,
     },
     async reset(shutdown = false) {
       resetting++;
-      if (shutdown) closed = true;
+      if (shutdown) { closed = true; clearInterval(remoteFeatureTimer); }
       try { return await api.revoke(); }
       finally { resetting--; }
     },
   };
+  // Poll authority even while the renderer is on another screen or suspended.
+  const remoteFeatureTimer = setInterval(() => {
+    if (remoteRequested && !closed && !resetting) void api.setRemoteEnabled(true).catch(() => {});
+  }, 30_000);
+  remoteFeatureTimer.unref?.();
   return api;
 }

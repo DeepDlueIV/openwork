@@ -33,11 +33,15 @@ export const useComputerRequest = (sessionId: string | null | undefined) =>
 
 /**
  * Connects the desktop's computer broker to the chat, once per window: reports
- * whether the `computerUse` feature is on, keeps in-chat requests current, and
+ * the `computerUse` and `remoteComputers` features, keeps in-chat requests current, and
  * hands the Mac back as soon as a chat's turn ends (the broker also releases
  * idle sessions on its own; this only makes it immediate).
  */
-export function useComputerBridge(statusById: Record<string, string>, enabled: boolean) {
+export function useComputerBridge(statusById: Record<string, string>, enabled: boolean, remote: boolean) {
+  useEffect(() => {
+    void desktopBridge.computerSetRemoteEnabled(enabled && remote).catch(() => {})
+  }, [enabled, remote])
+
   useEffect(() => {
     void desktopBridge.computerSetFeatureEnabled(enabled).catch(() => {})
     if (!enabled) return

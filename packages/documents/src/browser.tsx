@@ -142,7 +142,7 @@ export function DocumentsBrowser({ provider, editor, scope, enabled, connections
       && ["editor", "office"].includes(String(entry.queryKey[scope.length + 1])) })
   }, [accessLost, queryClient, scopeKey, scope.length, onDirtyChange])
   // A failed revalidation must not leave a previously authorized file list or detail on screen.
-  const visible = enabled && !query.isError
+  const visible = enabled && !query.isError && !accessLost
   return <section className="ow-documents" aria-label="Documents">
     <aside className="ow-documents-sidebar">
       <div className="ow-documents-source">Documents</div>
@@ -152,7 +152,7 @@ export function DocumentsBrowser({ provider, editor, scope, enabled, connections
       {visible && recentItems.slice(0, 8).map(item => <button type="button" className="ow-documents-recent-file" key={item.id} onClick={() => open(item)}><ItemIcon item={item} /><span>{item.name}</span></button>)}
     </aside>
     <div className="ow-documents-workspace">
-      <div className="ow-document-tabs-row" ref={tabsRow}><DocumentTabs items={orderedTabs} activeId={activeTab} dirtyIds={dirtyIds} busyIds={busyIds} onSelect={setActiveTab} onClose={requestClose} onReorder={setTabOrder}/><div className="ow-document-actions" ref={setActionsHost}/></div>
+      <div className="ow-document-tabs-row" ref={tabsRow}><DocumentTabs items={accessLost ? [] : orderedTabs} activeId={activeTab} dirtyIds={dirtyIds} busyIds={busyIds} onSelect={setActiveTab} onClose={requestClose} onReorder={setTabOrder}/><div className="ow-document-actions" ref={setActionsHost}/></div>
     <div className="ow-documents-main" hidden={activeTab !== "files"}>
       <header className="ow-documents-toolbar">
         <form onSubmit={submit} role="search" className="ow-documents-search"><Search size={16} strokeWidth={1.5} aria-hidden /><input aria-label={`Search ${folder.name}`} placeholder={`Search in ${folder.name}`} value={draft} maxLength={500} onChange={event => setDraft(event.target.value)} /><button type="submit">Search</button></form>
@@ -162,7 +162,7 @@ export function DocumentsBrowser({ provider, editor, scope, enabled, connections
       <div className="ow-documents-heading"><nav aria-label="Folder breadcrumbs">{(view === "recent" ? [{ id: "recent", name: "Recent" }] : folders).map((entry, index) => <span key={`${entry.id}-${index}`}>{index > 0 && <ChevronRight size={14} aria-hidden />}<button type="button" onClick={() => view === "recent" ? setActiveTab("files") : navigate(index)} aria-current={index === folders.length - 1 ? "location" : undefined}>{entry.name}</button></span>)}</nav><label>Sort by <select aria-label="Sort documents" value={order} onChange={event => setOrder(event.target.value === "modified" ? "modified" : event.target.value === "recent" ? "recent" : "name")}><option value="recent">Drive order</option><option value="name">Name</option><option value="modified">Last modified</option></select></label></div>
       {search && <div className="ow-documents-notice">Results for “{search}” <button type="button" onClick={() => { setDraft(""); setSearch("") }}>Clear search</button></div>}
       {!enabled ? <div className="ow-documents-state"><Lock size={20} strokeWidth={1.5} /><p>Documents is off for your workspace. An admin can turn it on.</p></div>
-        : query.isError ? <div className="ow-documents-state" role="status">{blocked && <Lock size={20} strokeWidth={1.5} />}<p>{flagOff ? "Documents is off for your workspace. An admin can turn it on." : needsConnection ? "Connect Google Drive to browse and open your documents. Drive read permission is required." : blocked ? "Your workspace blocks access to these documents. An admin can review the connection." : "Couldn't load your documents."}</p>{needsConnection && connectionsHref && <a href={connectionsHref} target="_blank" rel="noopener noreferrer">Connect Google Drive</a>}<button type="button" onClick={() => { void query.refetch(); void recent.refetch() }}>Try again</button></div>
+        : query.isError || accessLost ? <div className="ow-documents-state" role="status">{blocked && <Lock size={20} strokeWidth={1.5} />}<p>{flagOff ? "Documents is off for your workspace. An admin can turn it on." : needsConnection ? "Connect Google Drive to browse and open your documents. Drive read permission is required." : blocked ? "Your workspace blocks access to these documents. An admin can review the connection." : "Couldn't load your documents."}</p>{needsConnection && connectionsHref && <a href={connectionsHref} target="_blank" rel="noopener noreferrer">Connect Google Drive</a>}<button type="button" onClick={() => { void query.refetch(); void recent.refetch() }}>Try again</button></div>
         : query.isPending ? <div className="ow-documents-skeleton" aria-label="Loading documents" aria-busy="true">{Array.from({ length: 8 }, (_, index) => <div key={index} />)}</div>
         : <><div className="ow-documents-content">
           <div className="ow-documents-listing">

@@ -1,5 +1,5 @@
 import { z } from "zod"
-import type { OfficeEditor } from "./onlyoffice"
+import type { OfficeEditor } from "./office-engine"
 
 export const documentIdSchema = z.string().min(1).max(512).regex(/^[A-Za-z0-9_-]+$/)
 export const editorCellSchema = z.object({ row: z.number().int().min(1), column: z.number().int().min(1), text: z.string(), formula: z.string().optional() })

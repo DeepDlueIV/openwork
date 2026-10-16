@@ -1,21 +1,22 @@
 "use client"
 
 import { z } from "zod"
+import { EditorActions } from "./editor-actions"
 import { useQuery } from "@tanstack/react-query"
 import { ArrowLeft, ArrowRight, ExternalLink, Save, X } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
-import { OnlyOfficeEditorTab } from "./onlyoffice-editor"
-import { officeMimeTypes } from "./onlyoffice"
+import { OfficeEditorTab } from "./office-editor"
+import { officeMimeTypes } from "./office-engine"
 import { columnLetters } from "@openwork/workbook"
 import { DocumentsError, type DocumentItem } from "./index"
 import type { DocumentSave, DocumentsEditor, EditorDocument, SpreadsheetDocument, TextDocument } from "./model"
 
 export function DocumentEditorTab(props: Parameters<typeof BasicDocumentEditorTab>[0]) {
-  if (props.editor.office && officeMimeTypes.has(props.item.mimeType)) return <OnlyOfficeEditorTab {...props} editor={props.editor.office} />
+  if (props.editor.office && officeMimeTypes.has(props.item.mimeType)) return <OfficeEditorTab {...props} editor={props.editor.office} />
   return <BasicDocumentEditorTab {...props} />
 }
 
-function BasicDocumentEditorTab({ item, editor, enabled, active, scope, connectionsHref, onDirtyChange, onClose }: { item: DocumentItem; editor: DocumentsEditor; enabled: boolean; active: boolean; scope: readonly string[]; connectionsHref?: string | null; onDirtyChange?(id: string, dirty: boolean): void; onClose(): void }) {
+function BasicDocumentEditorTab({ toolbarHost, item, editor, enabled, active, scope, connectionsHref, onDirtyChange, onClose }: { toolbarHost?: HTMLElement | null; item: DocumentItem; editor: DocumentsEditor; enabled: boolean; active: boolean; scope: readonly string[]; connectionsHref?: string | null; onDirtyChange?(id: string, dirty: boolean): void; onClose(): void }) {
   const [sheetId, setSheetId] = useState<string>()
   const [startRow, setStartRow] = useState(1)
   const [connectionId, setConnectionId] = useState<string>()
@@ -66,7 +67,7 @@ function BasicDocumentEditorTab({ item, editor, enabled, active, scope, connecti
   }
   const readonly = !enabled || !data?.canEdit || saving
   return <section className="ow-document-editor" hidden={!active} aria-label={item.name}>
-    <header className="ow-editor-toolbar"><strong>{item.name}</strong><span role="status">{saving ? "Saving to Drive…" : dirty ? "Unsaved changes" : saved ? "Saved to Drive" : data?.canEdit ? "Saved in Drive" : "Read-only"}</span>{item.openUrl && <a href={item.openUrl} target="_blank" rel="noopener noreferrer" aria-label="Open original in Drive"><ExternalLink size={16} /></a>}<button type="button" disabled={!dirty || readonly} onClick={() => void save()}><Save size={15} aria-hidden />Save to Drive</button><button type="button" aria-label={`Close ${item.name}`} disabled={saving} onClick={() => dirty ? setClosing(true) : onClose()}><X size={16} /></button></header>
+    <EditorActions active={active} host={toolbarHost}><span role="status">{saving ? "Saving to Drive…" : dirty ? "Unsaved changes" : saved ? "Saved to Drive" : data?.canEdit ? "Saved in Drive" : "Read-only"}</span>{item.openUrl && <a href={item.openUrl} target="_blank" rel="noopener noreferrer" aria-label="Open original in Drive"><ExternalLink size={16} /></a>}<button type="button" disabled={!dirty || readonly} onClick={() => void save()}><Save size={15} aria-hidden />Save to Drive</button><button type="button" aria-label={`Close ${item.name}`} disabled={saving} onClick={() => dirty ? setClosing(true) : onClose()}><X size={16} /></button></EditorActions>
     {closing && <div className="ow-editor-message" role="status">Keep changes to {item.name}?<button type="button" onClick={() => void save()} disabled={readonly}>Save and close</button><button type="button" onClick={() => setClosing(false)}>Keep editing</button><button type="button" onClick={onClose} disabled={saving}>Discard changes</button></div>}
     {!enabled ? <div className="ow-editor-message">Documents is off for this workspace. Your draft remains in this tab.</div>
       : query.isError ? <div className="ow-editor-message" role="status">{query.error instanceof Error ? query.error.message : "Couldn't open this document."}{connectionsHref && query.error instanceof DocumentsError && query.error.code === "needs_connection" && <a href={connectionsHref} target="_blank" rel="noopener noreferrer">Reconnect Google Drive</a>}<button type="button" onClick={() => void query.refetch()}>Try again</button></div>

@@ -39,7 +39,9 @@ function fixture(options = {}) {
       };
     },
   };
-  const control = createComputerControl({ adapters: [adapter], onRequest: (_sessionId, value) => { requests.push(value); } });
+  /** @type {import("./computer-control.mjs").ComputerAdapter} */
+  const remote = { ...adapter, id: "vm", label: "VM", placement: "remote" };
+  const control = createComputerControl({ adapters: options.remote ? [adapter, remote] : [adapter], readRemoteFeatureEnabled: options.authority, onRequest: (_sessionId, value) => { requests.push(value); } });
   return { control, calls, requests, selected };
 }
 
@@ -107,4 +109,35 @@ test("a turn ending during an admitted tool releases the computer as soon as tha
   await new Promise((resolve) => setImmediate(resolve));
   assert.ok(f.calls.includes("close"));
   assert.equal((await f.control.snapshot({ sessionId: "chat" })).enabled, true);
+});
+
+test("VMs stay hidden until the resolved rollout enables them, then run without chat consent", async (t) => {
+  let authorized = false;
+  const f = fixture({ remote: true, authority: async () => authorized });
+  t.after(() => f.control.reset(true));
+  await f.control.setFeatureEnabled(true);
+  assert.equal(await f.control.setRemoteEnabled(true), false);
+  assert.deepEqual((await f.control.snapshot({ sessionId: "chat" })).targets.map((target) => target.id), ["local"]);
+  await assert.rejects(f.control.choose({ sessionId: "chat", targetId: "vm" }), /listed computers/);
+  authorized = true;
+  assert.equal(await f.control.setRemoteEnabled(true), true);
+  await f.control.choose({ sessionId: "chat", targetId: "vm" });
+  assert.equal(payload(await f.control.execute({ sessionId: "chat", name: "computer_discover", args: {} })).ok, true);
+  assert.deepEqual(f.requests, []);
+  await f.control.setRemoteEnabled(false);
+  assert.ok(f.calls.includes("close"));
+  assert.equal((await f.control.snapshot({ sessionId: "chat" })).placement, "local");
+});
+
+test("a revoked VM rollout blocks the next tool before connecting", async (t) => {
+  let authorized = true;
+  const f = fixture({ remote: true, authority: async () => authorized });
+  t.after(() => f.control.reset(true));
+  await f.control.setFeatureEnabled(true);
+  await f.control.setRemoteEnabled(true);
+  await f.control.choose({ sessionId: "chat", targetId: "vm" });
+  authorized = false;
+  const result = await f.control.execute({ sessionId: "chat", name: "computer_discover", args: {} });
+  assert.equal(payload(result).code, "computer_unavailable");
+  assert.deepEqual(f.calls, []);
 });

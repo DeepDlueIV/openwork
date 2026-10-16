@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { createX11Driver } from "./computer-x11-driver.mjs";
 import { createRemoteComputerAdapter } from "./computer-remote.mjs";
 
 const payload = (result) => JSON.parse(result.content.find((item) => item.type === "text").text);
@@ -107,4 +108,16 @@ test("invalid input preserves the observation for a corrected request", async (t
   assert.equal(payload(await f.act(observation, [{ type: "click", x: 399, y: 10 }], "corrected")).status, "dispatched");
   assert.equal(f.inputs[0].x, 399);
   assert.equal(f.inputs.length, 1);
+});
+
+test("an invalid VM display reports readiness without crashing app construction or contacting the VM", async () => {
+  let contacted = false;
+  const driver = createX11Driver({ display: ":99; invalid", machine: {
+    run: async () => { contacted = true; return { exitCode: 0, stdout: "", stderr: "" }; },
+    read: async () => new Uint8Array(),
+  } });
+  const status = await driver.describe();
+  assert.equal(status.readiness, "unavailable");
+  assert.match(status.detail, /X display/);
+  assert.equal(contacted, false);
 });

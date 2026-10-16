@@ -23,9 +23,12 @@ const TOOLS = ["xdotool", "import", "python3"];
  * @returns {import("./computer-remote.mjs").ComputerDriver}
  */
 export function createX11Driver({ machine, display = ":99", timeoutMs = 20_000 }) {
-  if (!/^:\d{1,3}(\.\d)?$/.test(display)) throw new Error("Use an X display such as :99.");
+  const validDisplay = /^:\d{1,3}(\.\d)?$/.test(display);
   const directory = `/tmp/openwork-computer-${randomUUID().slice(0, 8)}`;
-  const run = (script, ms = timeoutMs) => machine.run(`export DISPLAY=${display}; ${script}`, ms);
+  const run = (script, ms = timeoutMs) => {
+    if (!validDisplay) throw new Error("Use an X display such as :99.");
+    return machine.run(`export DISPLAY=${display}; ${script}`, ms);
+  };
   const key = (name, modifiers = []) => {
     const base = KEYS[String(name).toLowerCase()] ?? (String(name).length === 1 ? String(name) : String(name));
     if (!/^[A-Za-z0-9_+\-.,;:'"/\\=[\]`]{1,24}$/.test(base)) throw new Error(`Unsupported key ${name}.`);
@@ -155,12 +158,12 @@ print(json.dumps(windows))
       const drawable = targetId === undefined ? "root" : windowId(targetId);
       try {
         const result = await run(`mkdir -p ${quote(directory)} && import -silent -window ${drawable} -crop ${geometry} +repage${resize} png:${quote(file)} && identify -format '%w %h' ${quote(file)}`);
-      if (result.exitCode !== 0) throw new Error(result.stderr.trim().slice(0, 300) || "The screenshot failed.");
-      const [width, height] = result.stdout.trim().split(/\s+/).map(Number);
-      if (![width, height].every((value) => Number.isSafeInteger(value) && value > 0 && value <= 8192)) throw new Error("The VM returned an invalid screenshot size.");
-      const png = await machine.read(file, timeoutMs);
-      if (!png.byteLength || png.byteLength > 16 * 1024 * 1024) throw new Error("The screenshot is empty or too large.");
-      return { png, width, height };
+        if (result.exitCode !== 0) throw new Error(result.stderr.trim().slice(0, 300) || "The screenshot failed.");
+        const [width, height] = result.stdout.trim().split(/\s+/).map(Number);
+        if (![width, height].every((value) => Number.isSafeInteger(value) && value > 0 && value <= 8192)) throw new Error("The VM returned an invalid screenshot size.");
+        const png = await machine.read(file, timeoutMs);
+        if (!png.byteLength || png.byteLength > 16 * 1024 * 1024) throw new Error("The screenshot is empty or too large.");
+        return { png, width, height };
       } finally { await run(`rm -f ${quote(file)}`).catch(() => {}); }
     },
     async input(steps, { windowId: targetId } = {}) {

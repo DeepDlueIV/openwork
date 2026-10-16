@@ -162,8 +162,9 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
     const url = new URL(c.req.url)
     const path = url.pathname.slice("/v1/workbot/documents".length)
     const editor = /^\/v1\/documents\/google-drive\/files\/[A-Za-z0-9_-]{1,512}\/(editor|content)$/.exec(path)
+    const office = /^\/v1\/documents\/google-drive\/files\/[A-Za-z0-9_-]{1,512}\/office(?:\/[0-9a-f-]{36}(?:\/(flush|save|close))?)?$/.exec(path)
     const method = c.req.method === "POST" ? "POST" : "GET"
-    if (!(method === "GET" && path === "/v1/capabilities/google-workspace/drive-files") && !(editor && (method === "GET" || editor[1] === "editor"))) return c.json({ error: "not_found" }, 404)
+    if (!(method === "GET" && path === "/v1/capabilities/google-workspace/drive-files") && !(editor && (method === "GET" || editor[1] === "editor")) && !(office && (method === "GET" ? !office[1] && /\/[0-9a-f-]{36}$/.test(path) : path.endsWith("/office") || !!office[1]))) return c.json({ error: "not_found" }, 404)
     if (editor?.[1] === "content") {
       const response = await den.documentContent(member.accessToken, `${path}${url.search}`)
       return new Response(response.body, { status: response.status, headers: { "content-type": response.headers.get("content-type") ?? "application/octet-stream", "cache-control": "no-store", "x-content-type-options": "nosniff", "content-security-policy": "default-src 'none'; sandbox" } })

@@ -365,8 +365,9 @@ export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono
       if (auditBlocked) return auditBlocked
       const inner = c.req.path.slice("/v1/workbot/documents".length)
       const editor = /^\/v1\/documents\/google-drive\/files\/[A-Za-z0-9_-]{1,512}\/(editor|content)$/.exec(inner)
+      const office = /^\/v1\/documents\/google-drive\/files\/[A-Za-z0-9_-]{1,512}\/office(?:\/[0-9a-f-]{36}(?:\/(flush|save|close))?)?$/.exec(inner)
       const read = c.req.method === "GET"
-      if (!(read && inner === "/v1/capabilities/google-workspace/drive-files") && !(editor && (read || editor[1] === "editor"))) return c.json({ error: "not_found" }, 404)
+      if (!(read && inner === "/v1/capabilities/google-workspace/drive-files") && !(editor && (read || editor[1] === "editor")) && !(office && (read ? !office[1] && /\/[0-9a-f-]{36}$/.test(inner) : inner.endsWith("/office") || !!office[1]))) return c.json({ error: "not_found" }, 404)
       const features = await getOrganizationFeatures(resolved.organization.id)
       if (!features.workbot || !features.workbotDocuments) return c.json({ error: "workbot_documents_not_enabled", message: "Documents is off for this workspace." }, 403)
       if (!resolved.scopes.has(read ? DEN_MCP_READ_SCOPE : DEN_MCP_WRITE_SCOPE)) return c.json({ error: "insufficient_scope" }, 403)

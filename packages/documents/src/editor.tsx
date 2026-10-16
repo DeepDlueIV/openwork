@@ -4,11 +4,18 @@ import { z } from "zod"
 import { useQuery } from "@tanstack/react-query"
 import { ArrowLeft, ArrowRight, ExternalLink, Save, X } from "lucide-react"
 import { useEffect, useMemo, useState } from "react"
+import { OnlyOfficeEditorTab } from "./onlyoffice-editor"
+import { officeMimeTypes } from "./onlyoffice"
 import { columnLetters } from "@openwork/workbook"
 import { DocumentsError, type DocumentItem } from "./index"
 import type { DocumentSave, DocumentsEditor, EditorDocument, SpreadsheetDocument, TextDocument } from "./model"
 
-export function DocumentEditorTab({ item, editor, enabled, active, scope, connectionsHref, onDirtyChange, onClose }: { item: DocumentItem; editor: DocumentsEditor; enabled: boolean; active: boolean; scope: readonly string[]; connectionsHref?: string | null; onDirtyChange?(id: string, dirty: boolean): void; onClose(): void }) {
+export function DocumentEditorTab(props: Parameters<typeof BasicDocumentEditorTab>[0]) {
+  if (props.editor.office && officeMimeTypes.has(props.item.mimeType)) return <OnlyOfficeEditorTab {...props} editor={props.editor.office} />
+  return <BasicDocumentEditorTab {...props} />
+}
+
+function BasicDocumentEditorTab({ item, editor, enabled, active, scope, connectionsHref, onDirtyChange, onClose }: { item: DocumentItem; editor: DocumentsEditor; enabled: boolean; active: boolean; scope: readonly string[]; connectionsHref?: string | null; onDirtyChange?(id: string, dirty: boolean): void; onClose(): void }) {
   const [sheetId, setSheetId] = useState<string>()
   const [startRow, setStartRow] = useState(1)
   const [connectionId, setConnectionId] = useState<string>()

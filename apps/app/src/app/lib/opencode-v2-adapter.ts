@@ -1984,6 +1984,9 @@ function translateV2Events(
         if ("error" in read) throw read.error;
         const { chunk } = read;
         if (chunk.done) { ended = true; continue; }
+        // Transport activity includes SSE comments and events filtered for
+        // another workspace. Let the watchdog see those bytes as liveness.
+        if (chunk.value.length > 0) yield { type: "server.heartbeat", properties: {} };
         buffer += decoder.decode(chunk.value, { stream: true });
         const lines = buffer.split(/\r?\n/);
         buffer = lines.pop() ?? "";

@@ -129,6 +129,7 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
       organizationName: who.organization.name,
       enabled: who.enabled,
       calendar: who.enabled && who.calendar === true,
+      documents: who.enabled && who.documents === true,
       canSchedule: who.enabled && who.canSchedule,
       sideChats: who.enabled && who.sideChats,
       denUrl: config.denWebUrl ?? (await den.webUrl().catch(() => null)),
@@ -155,6 +156,16 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
     const { status, payload } = await den.calendar(member.accessToken, { method, path: `${path}${url.search}`, body })
     return new Response(JSON.stringify(payload), { status, headers: { "content-type": "application/json" } })
   }
+  app.get("/v1/workbot/documents/*", async (c) => {
+    const member = c.get("member")
+    if (!member.den.enabled || member.den.documents !== true) return c.json({ error: "workbot_documents_not_enabled" }, 403)
+    const url = new URL(c.req.url)
+    const path = url.pathname.slice("/v1/workbot/documents".length)
+    if (path !== "/v1/capabilities/google-workspace/drive-files") return c.json({ error: "not_found" }, 404)
+    const { status, payload } = await den.documents(member.accessToken, `${path}${url.search}`)
+    return new Response(JSON.stringify(payload), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } })
+  })
+
   app.get("/v1/workbot/calendar/*", calendarRoute)
   app.post("/v1/workbot/calendar/*", calendarRoute)
   app.patch("/v1/workbot/calendar/*", calendarRoute)

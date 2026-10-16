@@ -62,3 +62,17 @@ A web service in the same region as the headless runner (it reaches the runner's
 | Health check | `/healthz` |
 | Disk | None. Scale instances freely |
 | Custom domain | `chat.openworklabs.com` |
+
+## Documents
+
+The Documents tab mounts the reusable `@openwork/documents` browser through a
+small host adapter in `@openwork-ee/workbot-ui`. It is behind `workbotDocuments`,
+off by default, and requires Workbot too. Enable it per organization through
+Den's existing Features controls; do not add a Workbot environment switch.
+
+The first version browses/searches the member's default connected Google Drive,
+with folder breadcrumbs, list/grid views, pagination and details. Files open in
+Google Drive in a new browser tab. Browsing reads metadata only and makes no
+Drive changes. Den independently checks the flag, current membership and read
+scope for every proxied request. See `packages/documents/README.md` for the
+provider contract and later scope.

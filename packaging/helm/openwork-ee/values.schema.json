@@ -148,6 +148,16 @@
               ],
               "description": "Workbot: Members can use Workbot, with side chats, a Calendar tab of its scheduled work and the option to run stopped tasks again, and organization admins choose the default model Workbot, the Slack assistant and cloud Automations answer with. Needs the deployment's Workbot app. Renders DEN_FEATURE_WORKBOT."
             },
+            "workbotDocuments": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Workbot Documents: Members browse and search their connected Google Drive files and folders in Workbot, and open documents in Drive. Renders DEN_FEATURE_WORKBOT_DOCUMENTS."
+            },
             "automationCalendar": {
               "enum": [
                 "",

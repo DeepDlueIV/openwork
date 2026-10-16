@@ -1,7 +1,5 @@
 "use memo";
 
-import { useOfflineRecoveryStore } from "@/react-app/domains/session/status/offline-recovery-store";
-import { isConnectivityError } from "@/react-app/domains/session/status/use-session-offline-recovery";
 import { appBuildActivity, appBuildInProgress, appCreationRuns } from "@/react-app/domains/apps/app-creation-progress"
 import { useAppBuildProgressEnabled } from "@/react-app/domains/apps/use-app-build-progress-feature"
 import { BuiltAppPreviewSync } from "@/react-app/domains/apps/built-app-chat-preview"
@@ -1097,10 +1095,8 @@ type MessageComponentProps = {
 
 const MessageComponent = React.memo(
   ({ message, isLastMessage, isStreaming, isLastStep, hideReasoning }: MessageComponentProps) => {
-    const connectivityIssue = useOfflineRecoveryStore((state) => state.enabled && state.issue !== null);
     if (isSessionErrorMessage(message)) {
       const presentation = sessionErrorPresentationFromUIMessage(message)
-      if (connectivityIssue && isConnectivityError(presentation?.kind)) return null;
       if (presentation?.autoAccessWall) return <TranscriptAutoAccessNotice wall={presentation.autoAccessWall} />
       return (
         <ErrorMessage
@@ -1306,15 +1302,12 @@ const RetryMessage = React.memo(({ status }: RetryMessageProps) => {
     : `Retrying · attempt ${status.attempt}`
   const action = status.action
   const freeModelLimit = action?.reason === "free_tier_limit"
-  const connectivityIssue = useOfflineRecoveryStore((state) => state.enabled && state.issue !== null);
   const presentation = presentOpencodeSessionError({ name: "APIError", data: { message: status.message } })
   // Transport failures are the engine reconnecting, not a failure yet: say so
   // and show progress instead of echoing the raw fetch error.
   const reconnecting = !freeModelLimit && !action
     && ["network-unavailable", "provider-unreachable", "provider-connection-dropped"].includes(presentation.kind)
   const progress = seconds > 0 ? `Attempt ${status.attempt}, next try in ${seconds}s` : `Attempt ${status.attempt}`
-
-  if (connectivityIssue && isConnectivityError(presentation.kind)) return null;
 
   return (
     <TaskRecovery state="retrying" testId="session-retrying"

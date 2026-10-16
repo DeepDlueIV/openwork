@@ -1,31 +1,30 @@
+import { useSyncExternalStore } from "react";
 import { createPortal } from "react-dom";
-import { Button } from "@/components/ui/button";
+import { useOfflineRecoveryFeature } from "@/react-app/domains/session/status/use-offline-recovery-feature";
 import { TaskRecovery } from "./task-recovery";
-import { checkOnlineConnection, type ConnectivityIssue } from "@/react-app/domains/session/status/offline-recovery-store";
 
-export function OfflineRecoveryNotice(props: {
-  active: boolean;
-  issue: ConnectivityIssue;
-  checking: boolean;
-  held: boolean;
-  interrupted: boolean;
-  stopUnconfirmed: boolean;
-  canContinue: boolean;
-  onContinue: () => void;
-}) {
-  if (!props.active || (!props.issue && !props.held)) return null;
+function subscribe(listener: () => void) {
+  window.addEventListener("online", listener);
+  window.addEventListener("offline", listener);
+  return () => {
+    window.removeEventListener("online", listener);
+    window.removeEventListener("offline", listener);
+  };
+}
+
+const noSubscription = () => () => {};
+const isOffline = () => navigator.onLine === false;
+const serverSnapshot = () => false;
+
+/** A network hint only. OpenCode v2 owns retries and task recovery. */
+export function OfflineRecoveryNotice({ active }: { active: boolean }) {
+  const enabled = useOfflineRecoveryFeature(active);
+  const offline = useSyncExternalStore(enabled ? subscribe : noSubscription, isOffline, serverSnapshot);
+  if (!enabled || !offline) return null;
   return createPortal(
     <div className="pointer-events-none fixed inset-x-4 bottom-24 z-40 flex justify-end">
-      <div className="pointer-events-auto w-full max-w-sm rounded-lg bg-popover px-4 py-2 text-popover-foreground shadow-[var(--dls-card-shadow)]">
-        <TaskRecovery compact state="paused" emphasized={Boolean(props.issue)} testId="offline-recovery"
-          title={props.issue === "offline" ? "You’re offline" : props.issue ? "Can’t reach online services" : "Connection restored"}
-          technicalDetails={props.stopUnconfirmed ? "The task could not be confirmed stopped. Check its status before continuing. Some steps may already have completed."
-            : props.interrupted ? "The local task stopped retrying. Some steps may already have completed; continuing checks the conversation before doing what remains." : undefined}
-          actions={props.issue ? <Button variant="ghost" size="xs" disabled={props.checking}
-            onClick={() => void checkOnlineConnection()}>Check connection</Button>
-            : <Button variant="ghost" size="xs" disabled={!props.canContinue || props.stopUnconfirmed} onClick={props.onContinue}>
-              {props.interrupted ? "Continue task" : "Continue"}
-            </Button>} />
+      <div className="pointer-events-auto max-w-sm rounded-lg bg-popover px-4 py-2 text-popover-foreground shadow-[var(--dls-card-shadow)]">
+        <TaskRecovery compact emphasized state="paused" testId="offline-recovery" title="You’re offline" />
       </div>
     </div>,
     document.body,

@@ -1,7 +1,5 @@
 /** @jsxImportSource react */
 import { OfflineRecoveryNotice } from "@/components/chat/offline-recovery-notice";
-import { checkOnlineConnection, isLocalNetworkEndpoint, onlineRequestsPaused, useOfflineRecoveryStore } from "../status/offline-recovery-store";
-import { isConnectivityError, useSessionOfflineRecovery } from "../status/use-session-offline-recovery";
 import { openMemberApiKeyDialog } from "../../connections/member-api-key-dialog";
 import { useCallback, useEffect, useEffectEvent, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { UIMessage } from "ai";
@@ -1506,22 +1504,6 @@ export function SessionSurface(props: SessionSurfaceProps) {
     useCallback(() => sessionNeedsStop(props.opencodeBaseUrl, props.sessionId), [props.opencodeBaseUrl, props.sessionId]),
   );
   const chatStreaming = needsStop || sending || liveStatus.type === "busy" || liveStatus.type === "retry";
-  const selectedProviderModel = props.providerCatalog?.[sessionModel.selectedModel.providerID]?.[sessionModel.selectedModel.modelID];
-  const onlineModel = Boolean(props.gatewayProviderIds?.has(sessionModel.selectedModel.providerID)
-    || selectedProviderModel?.endpoint && !isLocalNetworkEndpoint(selectedProviderModel.endpoint));
-  const retryModel = snapshot?.session.model;
-  const retryProviderModel = retryModel ? props.providerCatalog?.[retryModel.providerID]?.[retryModel.id] : selectedProviderModel;
-  const retryOnlineModel = retryModel ? Boolean(props.gatewayProviderIds?.has(retryModel.providerID)
-    || retryProviderModel?.endpoint && !isLocalNetworkEndpoint(retryProviderModel.endpoint)) : onlineModel;
-  const offlineRecovery = useSessionOfflineRecovery({
-    owner: sessionOwner, engineUrl: props.opencodeBaseUrl, onlineModel: retryOnlineModel,
-    retrying: liveStatus.type === "retry", idle: liveStatus.type === "idle",
-    networkFailure: liveStatus.type === "retry" && isConnectivityError(presentOpencodeSessionError({ name: "APIError", data: { message: liveStatus.message } }).kind)
-      || isConnectivityError(error?.presentation?.kind),
-    stopRetry: () => abortSession(interruptionClient, props.sessionId, props.workspaceRoot.trim() || undefined),
-  });
-  const offlineBlocksSend = Boolean(offlineRecovery.issue && (onlineModel || !isLocalNetworkEndpoint(props.opencodeBaseUrl)));
-
   const archiveHeld = useSyncExternalStore(
     useCallback((listener) => subscribeSessionInterruption(props.opencodeBaseUrl, props.sessionId, listener), [props.opencodeBaseUrl, props.sessionId]),
     useCallback(() => sessionWorkHeld(props.opencodeBaseUrl, props.sessionId), [props.opencodeBaseUrl, props.sessionId]),
@@ -1643,9 +1625,6 @@ export function SessionSurface(props: SessionSurfaceProps) {
     }
     return null;
   }, [renderedMessages]);
-  useEffect(() => {
-    if (offlineRecovery.enabled && isConnectivityError(usageError?.presentation.kind)) void checkOnlineConnection(true);
-  }, [offlineRecovery.enabled, usageError?.message.id, usageError?.presentation.kind]);
   const latestUsageEvidence = usageError?.presentation.gatewayUsage ?? null;
   const gatewayUsage = useGatewayUsage(gatewaySelected, false, gatewayUsageRefreshKey({
     sessionOwner,
@@ -2197,15 +2176,6 @@ export function SessionSurface(props: SessionSurfaceProps) {
     setError(null);
     try {
       if (archived || !archiveStateKnown) throw new Error("This session is read-only. Restore it before sending.");
-      const connectivity = useOfflineRecoveryStore.getState();
-      if (connectivity.enabled && nextDraft.mode !== "shell" && (onlineModel || !isLocalNetworkEndpoint(props.opencodeBaseUrl))) {
-        if (navigator.onLine === false && !connectivity.issue) await checkOnlineConnection();
-        if (onlineRequestsPaused()) {
-          dispatchQueuedDrain(props.sessionId, { type: "send_result", itemId, outcome: "blocked", at: Date.now() });
-          return { outcome: "cancelled", reason: "context_changed" };
-        }
-      }
-
       const identity = readDenSettings();
       const freeBlock = nextDraft.mode === "shell" ? null : isAutoModel(sessionModel.selectedModel) && props.openWorkModelsSyncing
         ? { outcome: "blocked", reason: "auto-access", wall: { state: "sync" } } satisfies AutoAccessBlock
@@ -2246,7 +2216,6 @@ export function SessionSurface(props: SessionSurfaceProps) {
       });
       if (getQueuedSendGeneration(props.sessionId) !== generation) return result;
       if (result.outcome === "blocked" || result.outcome === "cancelled") return result;
-      offlineRecovery.release();
       // Only report a run after the pre-send gate released the exact queued
       // submission and the route accepted or sent it.
       useSessionActivityStore.getState().setRunStatus(props.workspaceId, props.sessionId, { type: "busy" });
@@ -2294,7 +2263,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
       pendingSendsRef.current.delete(submissionId);
       setPendingSendSessions([...pendingSendsRef.current.values()]);
     }
-  }, [offlineRecovery.release, onlineModel, archived, archiveStateKnown, interruptionClient, openingHistory.readSendHistory, props.onSendDraft, props.opencodeBaseUrl, props.selectedAgent, props.sessionId, props.workspaceId, props.workspaceRoot, removeQueuedDraftFromStore, renderedMessages.length, sessionOwner, setError, props.client, props.openWorkModelsSyncing, sessionModel.selectedModel, rejectedOwner, localRejectedRuntime, baseRenderedMessages]);
+  }, [archived, archiveStateKnown, interruptionClient, openingHistory.readSendHistory, props.onSendDraft, props.opencodeBaseUrl, props.selectedAgent, props.sessionId, props.workspaceId, props.workspaceRoot, removeQueuedDraftFromStore, renderedMessages.length, sessionOwner, setError, props.client, props.openWorkModelsSyncing, sessionModel.selectedModel, rejectedOwner, localRejectedRuntime, baseRenderedMessages]);
 
   const clearComposer = useCallback(() => {
     clearPersistedDraft();
@@ -2323,14 +2292,6 @@ export function SessionSurface(props: SessionSurfaceProps) {
       ...buildDraft(text, sentAttachments, savedComposer),
       messageId: createPromptMessageID(),
     };
-    // A known offline submission never owns the composer: keep its text,
-    // attachments and mentions in place instead of clearing then restoring it.
-    const connectivity = useOfflineRecoveryStore.getState();
-    if (connectivity.enabled && nextDraft.mode !== "shell" && (onlineModel || !isLocalNetworkEndpoint(props.opencodeBaseUrl))) {
-      if (navigator.onLine === false && !connectivity.issue) await checkOnlineConnection();
-      if (onlineRequestsPaused()) return;
-      if (getQueuedSendGeneration(props.sessionId) !== generation || activeSessionOwnerRef.current !== sessionOwner) return;
-    }
     // Immediate sends and queued sends share the same slot across all panes.
     dispatchQueuedDrain(props.sessionId, { type: "user_retry" });
     if (!claimQueuedSend(props.sessionId, nextDraft.messageId, true)) return;
@@ -2422,7 +2383,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
     } finally {
       setAttachmentsUploading(false);
     }
-  }, [onlineModel, archived, archiveStateKnown, attachments, baseRenderedMessages, buildDraft, clearComposer, draft, mentions, pasteParts, persistedDraftKey, props.onDraftChange, props.opencodeBaseUrl, props.sessionId, sendDraft, sessionOwner]);
+  }, [archived, archiveStateKnown, attachments, baseRenderedMessages, buildDraft, clearComposer, draft, mentions, pasteParts, persistedDraftKey, props.onDraftChange, props.opencodeBaseUrl, props.sessionId, sendDraft, sessionOwner]);
 
   // One-step run from the empty-state hero: the route keeps the continuation
   // in this session's composer and marks the submitted snapshot for auto-send.
@@ -2718,7 +2679,6 @@ export function SessionSurface(props: SessionSurfaceProps) {
   }, [checkUnknownAdmission, observationProbeVersion, opencodeClient, props.opencodeBaseUrl, props.sessionId, props.workspaceId, queuedDrainState, sessionOwner, snapshotQuery.refetch]);
 
   useEffect(() => {
-    if (offlineBlocksSend || offlineRecovery.held) return;
     if (drainingQueueRef.current || sendingQueued) return;
     if (archived || !archiveStateKnown) return;
     if (sessionWorkHeld(props.opencodeBaseUrl, props.sessionId)) return;
@@ -2758,7 +2718,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
         drainingQueueRef.current = false;
       }
     })();
-  }, [offlineBlocksSend, offlineRecovery.held, archived, archiveStateKnown, chatStreaming, cloudQueueRetryVersion, liveStatus.type, props.opencodeBaseUrl, props.sessionId, queuedDrainState, queuedItems, sendDraft, sendingQueued]);
+  }, [archived, archiveStateKnown, chatStreaming, cloudQueueRetryVersion, liveStatus.type, props.opencodeBaseUrl, props.sessionId, queuedDrainState, queuedItems, sendDraft, sendingQueued]);
 
   useEffect(() => {
     if (props.cloudMcpSubmissionState.status !== "failed") {
@@ -3432,7 +3392,6 @@ export function SessionSurface(props: SessionSurfaceProps) {
   return (
     <DevProfiler id="SessionSurface">
     <div
-      data-offline-recovery-enabled={offlineRecovery.enabled ? "" : undefined}
       data-session-surface-id={props.sessionId}
       data-session-surface-workspace-id={props.workspaceId}
       onPointerDownCapture={handleFindSurfaceInteraction}
@@ -3490,7 +3449,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
                 onRestore={handleRestoreRevertedSession}
               />
             ) : null}
-            {error && !(offlineRecovery.issue && isConnectivityError(error?.presentation?.kind)) && !hideDirectGatewayError && snapshot && snapshot.messages.length > 0 ? (
+            {error && !hideDirectGatewayError && snapshot && snapshot.messages.length > 0 ? (
               <SessionErrorCard
                 developerMode={props.developerMode}
                 error={error}
@@ -3505,7 +3464,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
               <div className="px-6 py-12">
                 <AssistantWaitingCard label={getSessionActivityStatusLabel(effectiveActivityStatus)} />
               </div>
-            ) : renderedMessages.length === 0 && snapshot && snapshot.messages.length === 0 && error && !(offlineRecovery.issue && isConnectivityError(error?.presentation?.kind)) && !hideDirectGatewayError ? (
+            ) : renderedMessages.length === 0 && snapshot && snapshot.messages.length === 0 && error && !hideDirectGatewayError ? (
               <SessionErrorCard
                 developerMode={props.developerMode}
                 error={error}
@@ -3602,15 +3561,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
       </div>
 
       <div ref={composerShellRef} className="shrink-0 px-0 pb-2 pt-2 max-lg:pb-0">
-        <OfflineRecoveryNotice active={props.isControlTarget} issue={offlineRecovery.issue} checking={offlineRecovery.checking} held={offlineRecovery.held}
-          interrupted={offlineRecovery.stop === "stopped"} stopUnconfirmed={offlineRecovery.stop === "unconfirmed"}
-          canContinue={!archived && archiveStateKnown && !chatStreaming && !resuming}
-          onContinue={() => {
-            const interrupted = offlineRecovery.stop === "stopped";
-            offlineRecovery.release();
-            if (interrupted) void handleResumeInterrupted(interruptedTaskRecoveryPrompt);
-            else dispatchQueuedDrain(props.sessionId, { type: "user_retry" });
-          }} />
+        <OfflineRecoveryNotice active={props.isControlTarget && isOpencodeV2BaseUrl(props.opencodeBaseUrl)} />
         <GatewayUsageApprovalNotice />
         {gatewayNotice && gatewayScope ? <GatewayUsageNotice key={`${gatewayUsage.scopeKey}:${sessionOwner}:${gatewayCloudProviderId ?? ""}`} state={gatewayNotice} status={gatewayScope.status} stale={gatewayUsage.query.isError}
           providerName={gatewayScope.providerName} canSwitchProvider={gatewayCanSwitchProvider} /> : null}

@@ -1,6 +1,5 @@
 "use client"
 
-import { checkOnlineConnection, isLocalNetworkEndpoint, useOfflineRecoveryStore } from "@/react-app/domains/session/status/offline-recovery-store";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import type { DynamicToolUIPart } from "ai"
 import { AppBridge, PostMessageTransport } from "@modelcontextprotocol/ext-apps/app-bridge"
@@ -32,6 +31,7 @@ import { McpAppLoading } from "./mcp-app-loading"
 import { useAppBuildProgressEnabled } from "@/react-app/domains/apps/use-app-build-progress-feature"
 import { Button } from "@/components/ui/button"
 import { t } from "@/i18n"
+import { useOfflineRecoveryFeature } from "@/react-app/domains/session/status/use-offline-recovery-feature"
 import {
   formatMcpAppDiagnostic,
   safeMcpAppDiagnosticMessage,
@@ -281,20 +281,27 @@ function isRetiredFirstPartyConfirmation(toolName: string, result: PreservedMcpA
 
 const CHAT_MCP_APP_UNAVAILABLE_NOTICE = "Interactive view unavailable. The normal tool result is still available."
 
-export function McpAppDiagnosticNotice({ error, notice, onRetry }: { error: McpAppDiagnostic; notice: string; onRetry?: () => void }) {
+export function McpAppDiagnosticNotice({ error, notice, onRetry, engine }: { error: McpAppDiagnostic; notice: string; onRetry?: () => void; engine?: "v1" | "v2" }) {
+  const enabled = useOfflineRecoveryFeature(engine === "v2")
+  const compact = enabled && (error.causeCode === "server_unavailable" || error.causeCode === "mcp_unreachable")
   const [detailsCopied, setDetailsCopied] = useState(false)
   const details = formatMcpAppDiagnostic(error)
   return (
     <div className="mt-2 text-xs text-muted-foreground" role="status">
-      <p>{notice} {error.message}</p>
-      {error.causeCode === "server_unavailable" || error.causeCode === "mcp_unreachable" ? (
+      {compact ? (
+        <div className="flex items-center gap-2">
+          <p>View unavailable</p>
+          {onRetry ? <Button type="button" variant="link" size="xs" className="px-0" onClick={onRetry}>Retry view</Button> : null}
+        </div>
+      ) : <p>{notice} {error.message}</p>}
+      {!compact && (error.causeCode === "server_unavailable" || error.causeCode === "mcp_unreachable") ? (
         <p className="mt-1">The connection was not ready. Retry, or check the connection under Settings &gt; Library.</p>
       ) : null}
-      {onRetry ? (
+      {!compact && onRetry ? (
         <Button type="button" variant="link" size="xs" className="mt-1 px-0" onClick={onRetry}>{t("common.retry")}</Button>
       ) : null}
       <details className="mt-1">
-        <summary className="cursor-pointer select-none">Technical details ({error.code})</summary>
+        <summary className="cursor-pointer select-none">Technical details{compact ? null : ` (${error.code})`}</summary>
         <p className="mt-1">Copy these details when reporting the rendering problem.</p>
         <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-muted p-2 font-mono text-[11px] text-foreground">{details}</pre>
         <button
@@ -373,9 +380,6 @@ export type McpAppSandboxViewProps = {
 export function McpAppSandboxView({ origin, app, resolveLiveActions, goesLiveInPlace = false, liveReady = false, toolName, inputArguments, result, connectionController, updateMode = "replace", onReady, unavailableNotice, onRequestTeardown, initialHeight, onHeightChange, presentation = "inline", onError, onRetry, onAppToolResult, openKey }: McpAppSandboxViewProps) {
   const openworkServerClient = origin.client
   const workspaceId = origin.workspaceId
-  const offline = useOfflineRecoveryStore((state) => state.enabled && state.issue !== null)
-    && (app.serverName.startsWith("openwork-cloud") || !isLocalNetworkEndpoint(origin.client.baseUrl));
-
   const readOnly = origin.readOnly
   // A saved Dashboard view that becomes live in place once its lease arrives.
   const savedLive = readOnly && Boolean(resolveLiveActions) && goesLiveInPlace
@@ -899,8 +903,7 @@ export function McpAppSandboxView({ origin, app, resolveLiveActions, goesLiveInP
     setError(null)
     setRetryAttempt((attempt) => attempt + 1)
   })
-  if (error && offline) return <p className="text-sm text-muted-foreground">View unavailable. Check your connection.</p>;
-  if (error) return <McpAppDiagnosticNotice error={error} notice={unavailableNotice} onRetry={reload} />
+  if (error) return <McpAppDiagnosticNotice error={error} notice={unavailableNotice} onRetry={reload} engine={origin.engine} />
   return (
     <>
       <McpAppSignInPrompts prompts={signIn.prompts} appTitle={signIn.appTitle} scope={app.resourceUri}
@@ -959,11 +962,6 @@ function EmbeddedMcpAppFrame({ part, origin: surfaceOrigin }: { part: DynamicToo
   const origin = useMemo(() => nextOrigin, [nextOrigin?.client, nextOrigin?.workspaceId, nextOrigin?.sessionId, nextOrigin?.engine, nextOrigin?.readOnly])
   const openworkServerClient = origin?.client
   const workspaceId = origin?.workspaceId
-  const connectivityIssue = useOfflineRecoveryStore((state) => state.enabled && state.issue !== null);
-  const cloudView = part.toolName.startsWith("openwork-cloud_") || Boolean(gatewayMcpAppLaunch(preservedResult(part)?._meta))
-    || Boolean(origin && !isLocalNetworkEndpoint(origin.client.baseUrl));
-  const offline = connectivityIssue && cloudView;
-
   const nextResult = preservedResult(part)
   const nextResultSignature = mcpAppDiscoverySignature(nextResult)
   const resultCache = useRef<{ signature: string; value: PreservedMcpAppResult | null }>({
@@ -1025,7 +1023,6 @@ function EmbeddedMcpAppFrame({ part, origin: surfaceOrigin }: { part: DynamicToo
   const resolvedFor = useRef<object | null>(null)
 
   useEffect(() => {
-    if (offline) return;
     let cancelled = false
     const live = Promise.withResolvers<{ origin: McpAppOrigin; app: OpenworkMcpAppResource }>()
     // Discovery failure retires the preview through the existing error state.
@@ -1065,10 +1062,6 @@ function EmbeddedMcpAppFrame({ part, origin: surfaceOrigin }: { part: DynamicToo
         (cause) => {
           live.reject(cause)
           if (cancelled) return
-          if (/fetch failed|failed to fetch|network|connection|timed? out|timeout|ENOTFOUND|ECONNREFUSED/i.test(cause instanceof Error ? cause.message : String(cause))) {
-            void checkOnlineConnection(true);
-          }
-
           checkpoints.push(`resolve-failed+${Math.round(performance.now() - startedAt)}ms`)
           if (launch || isActionableMcpAppResolutionError(cause)) {
             const diagnostic: McpAppDiagnostic = {
@@ -1109,7 +1102,7 @@ function EmbeddedMcpAppFrame({ part, origin: surfaceOrigin }: { part: DynamicToo
       stopCredentialRetry?.()
       release()
     }
-  }, [draft, launch, openworkServerClient, part.toolName, result, workspaceId, origin, resolution, offline])
+  }, [draft, launch, openworkServerClient, part.toolName, result, workspaceId, origin, resolution])
 
   if (draft) return <AppChatArtifact key={`${draft.appId}:${draft.revisionId}:${draft.receiptId}`} {...draft} />
   const viewId = result?._meta?.artifactViewId
@@ -1122,8 +1115,7 @@ function EmbeddedMcpAppFrame({ part, origin: surfaceOrigin }: { part: DynamicToo
   }
   if (!result) return null
   if (!origin) return <p role="status">This artifact is missing its conversation origin. Reopen the conversation to use it.</p>
-  if (offline && (!app || error)) return <p className="text-sm text-muted-foreground">View unavailable. Check your connection.</p>;
-  if (error) return <McpAppDiagnosticNotice error={error} notice={CHAT_MCP_APP_UNAVAILABLE_NOTICE} onRetry={() => setResolveToken((token) => token + 1)} />
+  if (error) return <McpAppDiagnosticNotice error={error} notice={CHAT_MCP_APP_UNAVAILABLE_NOTICE} onRetry={() => setResolveToken((token) => token + 1)} engine={origin.engine} />
   if (!app || resolvedFor.current !== resolution) return launch && resolvedFor.current !== resolution
     ? stagedLoading ? <McpAppLoading /> : <p role="status">Opening artifact…</p> : null
   if (appConnection) return <DashboardConnectionCard toolName={appConnection.toolName} toolCallId={`${part.toolCallId}:app`}

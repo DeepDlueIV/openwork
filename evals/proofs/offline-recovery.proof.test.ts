@@ -1,130 +1,91 @@
 import { expect } from "vitest";
 import { spec } from "@openwork/testkit";
-import { offlineRecoveryWorld, localOfflineRecoveryWorld, RETRY_PROMPT, SAVED_PROMPT, SAVED_REPLY } from "../worlds/offline-recovery.ts";
+import { offlineRecoveryWorld, MCP_PROMPT, MCP_REPLY, APP_CONNECTION_ERROR } from "../worlds/offline-recovery.ts";
 
 const test = spec.world(offlineRecoveryWorld, {
   resources: { surfaces: ["appWeb"], services: ["den", "mock"] }, timeout: 480_000,
 });
 
-test("a member keeps completed work and explicitly continues after losing their internet connection", async ({ world, user, probe, step, evidence }) => {
-  await step("before: with the feature off, the conversation keeps its existing offline behavior", async () => {
+test("a member can distinguish an unavailable App view from a failed tool call in OpenCode v2", async ({ world, user, probe, step, evidence }) => {
+  await step("before: an App connection failure fills the conversation with transport details", async () => {
     await user.see("composer", { editable: true });
+    await user.type("composer", MCP_PROMPT);
+    await probe.eventually(() => probe.dom('button[aria-label="Run task"]:not(:disabled)'), {
+      within: 30_000, label: "the conversation is ready to run the task", until: (value) => value.elements.length === 1,
+    });
+    await user.click("Run task");
+    await user.see({ text: MCP_REPLY }, { timeoutMs: 90_000 });
+    await user.see({ text: new RegExp(APP_CONNECTION_ERROR) }, { timeoutMs: 30_000 });
+    const calls = await world.toolCalls();
+    expect(calls.filter(call => call.name === "read_report")).toHaveLength(1);
+    expect(calls.filter(call => call.name === "update_note")).toHaveLength(1);
     await world.offline(true);
     await user.notSee({ text: "You’re offline" });
-    const counts = await world.counts();
-    expect(counts.probes).toBe(0);
-    evidence.recordAssertionEvidence("The disabled feature does not probe or change the conversation", "No connectivity warning or probe with the organization switch off.", counts.probes === 0);
+    evidence.recordAssertionEvidence("The view fails separately from one completed read and one timed-out tool call", JSON.stringify(calls.map(call => call.name)), calls.length === 2);
     await user.screenshot();
-    await world.offline(false);
   });
 
-  await step("the organization enables recovery and the member completes a report", async () => {
+  await step("after: the enabled feature keeps the App failure compact and its diagnostics collapsed", async () => {
     await world.enable();
-    await probe.eventually(() => probe.dom("[data-offline-recovery-enabled]"), {
-      within: 15_000, label: "the enabled recovery switch has reached the conversation", until: (value) => value.elements.length === 1,
-    });
-    await user.see("composer", { editable: true });
-    await probe.eventually(() => world.counts(), {
-      within: 15_000, label: "the connected catalog advertises the online provider endpoint", until: (value) => value.remoteCatalogs > 0,
-    });
-    await user.type("composer", SAVED_PROMPT);
-    await user.click("Run task");
-    await user.see({ text: SAVED_REPLY }, { timeoutMs: 90_000 });
-    await user.see("Run task");
+    await user.see({ text: "View unavailable" }, { timeoutMs: 30_000 });
+    await user.see("Retry view");
+    await user.notSee({ text: new RegExp(APP_CONNECTION_ERROR) });
+    await user.see({ text: MCP_REPLY });
+    await user.notSee({ text: "Change model" });
+    const counts = await world.counts();
+    expect(counts.views).toBeGreaterThan(0);
+    expect(counts.probes).toBe(0);
+    evidence.recordAssertionEvidence("A failed App view leaves the completed work and actual tool outcome intact", JSON.stringify(counts), counts.views > 0 && counts.probes === 0);
+    await user.screenshot();
   });
 
-  await step("after: one floating offline notification keeps the draft and completed report visible", async () => {
+  await step("retrying the view never repeats the tool call or restarts the task", async () => {
     const before = await world.counts();
+    await user.click("Retry view");
+    await probe.eventually(() => world.counts(), {
+      within: 15_000, label: "the view is read again", until: (value) => value.views > before.views,
+    });
+    await user.see("Retry view", { timeoutMs: 30_000 });
+    const after = await world.counts();
+    const calls = await world.toolCalls();
+    expect(calls).toHaveLength(2);
+    expect(after.prompts).toBe(0);
+    expect(after.stops).toBe(0);
+    evidence.recordAssertionEvidence("Retry view reloads only the view, with no tool replay, new prompt, or task stop", JSON.stringify({ before, after, tools: calls.map(call => call.name) }), calls.length === 2 && after.prompts === 0 && after.stops === 0);
+    await user.screenshot();
+  });
+
+  await step("offline is one bottom-right network hint that preserves the draft", async () => {
     await world.offline(true);
     await user.see({ text: "You’re offline" });
-    await user.type("composer", RETRY_PROMPT);
-    await user.click("Run task");
-    await user.see("composer", { text: RETRY_PROMPT });
-    await user.see({ text: SAVED_REPLY });
-    await user.notSee({ text: "Couldn’t reach the model provider" });
-    const after = await world.counts();
-    expect(after.prompts).toBe(before.prompts);
+    await user.type("composer", "Check whether the client note was saved.");
+    await user.see("composer", { text: "Check whether the client note was saved." });
     const notices = await probe.dom('[data-testid="offline-recovery"]');
     expect(notices.elements).toHaveLength(1);
     const notice = notices.elements[0];
     const send = (await probe.dom('button[aria-label="Run task"]')).elements[0];
-    if (!notice || !send) throw new Error("The connection notification and Send must both remain visible");
+    if (!notice || !send) throw new Error("The offline indicator and Send must both remain visible");
     expect(notice.rect.right).toBeLessThanOrEqual(notices.viewportWidth);
     expect(notice.rect.bottom).toBeLessThanOrEqual(send.rect.top);
     expect(notice.rect.top).toBeGreaterThan(send.rect.top / 2);
     if (notices.viewportWidth >= 768) expect(notice.rect.left).toBeGreaterThan(notices.viewportWidth / 2);
-    evidence.recordAssertionEvidence("One floating offline warning keeps the draft and leaves Send clear", JSON.stringify({ before, after, notices: notices.elements.length, notice: notice.rect, send: send.rect }), after.prompts === before.prompts && notices.elements.length === 1);
+    evidence.recordAssertionEvidence("The offline indicator is discreet and leaves the draft and Send clear", JSON.stringify({ notice: notice.rect, send: send.rect }), notices.elements.length === 1);
     await user.screenshot();
   });
 
-  await step("reconnecting checks the connection without resending the draft", async () => {
+  await step("reconnecting only clears the indicator and leaves recovery with OpenCode v2", async () => {
     const before = await world.counts();
     await world.offline(false);
-    await user.see({ text: "Connection restored" });
-    await user.see("composer", { text: RETRY_PROMPT });
-    const after = await world.counts();
-    expect(after.prompts).toBe(before.prompts);
-    evidence.recordAssertionEvidence("Reconnection sends no prompt or external action", JSON.stringify({ before, after }), after.prompts === before.prompts);
-    await user.click("Continue");
-    await user.notSee({ text: "Connection restored" });
-    await user.screenshot();
-  });
-
-  await step("a provider outage alone retains its normal retry behavior", async () => {
-    await user.click("Run task");
-    await probe.eventually(() => world.modelRequests(), { within: 60_000, label: "the provider has received a report request", until: (requests) => requests.length > 0 });
-    await user.see({ text: /Retrying|retrying|Reconnecting/ }, { timeoutMs: 60_000 });
     await user.notSee({ text: "You’re offline" });
-    await user.notSee({ text: "Can’t reach online services" });
-    await user.screenshot();
-  });
-
-  await step("losing connectivity stops the local engine retry and preserves completed work", async () => {
-    await world.offline(true);
-    await user.see({ text: "You’re offline" });
-    const stopped = await probe.eventually(() => world.counts(), {
-      within: 15_000, label: "the local engine receives one stop request", until: (value) => value.stops === 1,
-    });
-    await user.see("Run task", { timeoutMs: 15_000 });
-    await user.see({ text: SAVED_REPLY });
-    evidence.recordAssertionEvidence("The local engine is stopped at its retry boundary", JSON.stringify(stopped), stopped.stops === 1);
-    await user.screenshot();
-  });
-
-  await step("after: connection recovery offers Continue task without replaying the interrupted turn", async () => {
-    const before = await world.counts();
-    await world.offline(false);
-    await user.see("Continue task");
+    await user.notSee({ text: "Connection restored" });
+    await user.see("composer", { text: "Check whether the client note was saved." });
     const after = await world.counts();
+    const calls = await world.toolCalls();
     expect(after.prompts).toBe(before.prompts);
-    expect(after.stops).toBe(1);
-    evidence.recordAssertionEvidence("The interrupted task waits for an explicit continuation", JSON.stringify({ before, after }), after.prompts === before.prompts && after.stops === 1);
-    await user.screenshot();
-  });
-});
-
-const localTest = spec.world(localOfflineRecoveryWorld, {
-  resources: { surfaces: ["appWeb"], services: ["den", "mock"] }, timeout: 480_000,
-});
-
-localTest("a member can still use a local model while internet services are offline", async ({ world, user, probe, step, evidence }) => {
-  await step("the member enables recovery and loses internet connectivity", async () => {
-    await world.enable();
-    await probe.eventually(() => probe.dom("[data-offline-recovery-enabled]"), {
-      within: 15_000, label: "the enabled recovery switch has reached the conversation", until: (value) => value.elements.length === 1,
-    });
-    await user.see("composer", { editable: true });
-    await world.offline(true);
-    await user.see({ text: "You’re offline" });
-  });
-  await step("after: the local model answers while the offline warning remains visible", async () => {
-    await user.type("composer", SAVED_PROMPT);
-    await user.click("Run task");
-    await user.see({ text: SAVED_REPLY }, { timeoutMs: 90_000 });
-    const counts = await world.counts();
-    expect(counts.prompts).toBeGreaterThan(0);
-    expect(counts.stops).toBe(0);
-    evidence.recordAssertionEvidence("The local model completes without a stop request", JSON.stringify(counts), counts.prompts > 0 && counts.stops === 0);
+    expect(after.stops).toBe(0);
+    expect(after.probes).toBe(0);
+    expect(calls).toHaveLength(2);
+    evidence.recordAssertionEvidence("Network recovery does not replay the timed-out action", JSON.stringify({ before, after, tools: calls.length }), after.prompts === before.prompts && after.stops === 0 && calls.length === 2);
     await user.screenshot();
   });
 });

@@ -61,8 +61,8 @@ export const FEATURES = defineFeatures({
     default: false,
   },
   offlineRecovery: {
-    label: "Offline connection recovery",
-    description: "Show a shared offline warning, pause affected online requests, and let people continue interrupted tasks after reconnecting.",
+    label: "Connection failure presentation",
+    description: "Show compact App connection failures and a discreet offline indicator in OpenCode v2 conversations.",
     since: "2026-10",
     deployments: everywhere,
     default: false,

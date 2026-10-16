@@ -76,6 +76,9 @@ export function stageRuntimeNodeModules(outdir) {
         // Do not ship checkout-only tests, tooling or incidental local links.
         if (name === "@openwork/computer-use") return parts.length === 1 && (parts[0] === "package.json" || (/\.(mjs|d\.mts)$/.test(parts[0]) && !parts[0].includes(".test.")));
         if (name === "@openwork/remote-sessions") return ["dist", "src", "package.json"].includes(parts[0]);
+        // Native builds ship as a separate helper. Copying this workspace's
+        // Swift .build cache into asar would duplicate the compiler artifacts.
+        if (name === "@openwork/computer-use") return ["dist", "package.json"].includes(parts[0]);
         return true;
       },
     });

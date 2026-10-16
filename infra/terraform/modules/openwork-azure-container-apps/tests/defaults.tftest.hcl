@@ -132,7 +132,7 @@ run "two_api_replicas_one_migrator" {
 
 run "rejects_plain_secret" {
   command = plan
-  variables { extra_environment = { DATABASE_URL = "not-a-secret" } }
+  variables { extra_environment = { DATABASE_URL = "fixture", AZURE_STORAGE_KEY = "fixture", DOCKER_AUTH_CONFIG = "fixture" } }
   expect_failures = [var.extra_environment]
 }
 run "rejects_mutable_api_image" {
@@ -264,6 +264,49 @@ run "key_vault_extra_secrets" {
     error_message = "Existing Key Vault references and their supplied identity must remain supported without reading values."
   }
 }
+run "migration_only_gets_registry_identity" {
+  command = apply
+  variables {
+    key_vault_identity_id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test/providers/Microsoft.ManagedIdentity/userAssignedIdentities/vault"
+    user_assigned_identity_ids = [
+      "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test/providers/Microsoft.ManagedIdentity/userAssignedIdentities/vault",
+      "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test/providers/Microsoft.ManagedIdentity/userAssignedIdentities/registry",
+    ]
+    registry = { server = "registry.example.com", identity = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test/providers/Microsoft.ManagedIdentity/userAssignedIdentities/registry" }
+  }
+  assert {
+    condition     = length(azapi_resource.migration.identity[0].identity_ids) == 1 && contains(azapi_resource.migration.identity[0].identity_ids, var.registry.identity) && !contains(azapi_resource.migration.identity[0].identity_ids, var.key_vault_identity_id)
+    error_message = "Migration must receive only its registry-pull identity, never the Key Vault identity even if repeated in user_assigned_identity_ids."
+  }
+}
+run "rejects_shared_registry_and_vault_identity" {
+  command = plan
+  variables {
+    key_vault_identity_id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test/providers/Microsoft.ManagedIdentity/userAssignedIdentities/vault"
+    registry              = { server = "registry.example.com", identity = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test/providers/Microsoft.ManagedIdentity/userAssignedIdentities/vault" }
+  }
+  expect_failures = [var.registry]
+}
+run "dedicated_ddl_url_is_not_an_application_recovery_source" {
+  command = plan
+  override_data {
+    target = data.azapi_resource.existing_migration
+    values = { exists = false, output = { versions = null, database_url_mode = "dedicated" } }
+  }
+  assert {
+    condition     = local.saved_migration_database_url_mode == "dedicated" && !contains(local.reusable_migration_secret_names, "database-url")
+    error_message = "Persisted dedicated-credential provenance must exclude the migration URL from application recovery regardless of the current empty migration_database_url input."
+  }
+}
+run "allows_reviewed_public_environment" {
+  command = apply
+  variables { extra_environment = { SENTRY_LOG_LEVEL = "warn", NODE_USE_ENV_PROXY = "1" } }
+  assert {
+    condition     = anytrue([for env in azapi_resource.api.body.properties.template.containers[0].env : env.name == "SENTRY_LOG_LEVEL" && lookup(env, "value", "") == "warn"])
+    error_message = "Reviewed nonsecret tuning must remain available through extra_environment."
+  }
+}
+
 run "extra_secrets_need_identity" {
   command = plan
   variables { extra_secrets = { DEN_SSO_CLIENT_SECRET = "https://corp-vault.vault.azure.net/secrets/openwork-sso" } }

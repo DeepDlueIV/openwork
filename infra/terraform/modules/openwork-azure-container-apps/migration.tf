@@ -1,6 +1,8 @@
 locals {
+  migration_identity_ids           = var.registry == null ? [] : (var.registry.identity != "" && var.registry.identity != var.key_vault_identity_id ? [var.registry.identity] : [])
+  migration_database_url_mode      = nonsensitive(var.migration_database_url != "") ? "dedicated" : "application"
   migration_database_url_candidate = var.migration_database_url != "" ? var.migration_database_url : local.database_url
-  migration_database_url           = var.secret_versions.database_password_version == try(local.saved_versions.database_password_version, 1) && var.secret_versions.migration_database_url_version == try(local.saved_versions.migration_database_url_version, 1) ? try(local.saved_migration_all_secrets["database-url"], local.migration_database_url_candidate) : local.migration_database_url_candidate
+  migration_database_url           = local.saved_migration_database_url_mode == local.migration_database_url_mode && var.secret_versions.database_password_version == try(local.saved_versions.database_password_version, 1) && var.secret_versions.migration_database_url_version == try(local.saved_versions.migration_database_url_version, 1) ? try(local.saved_migration_all_secrets["database-url"], local.migration_database_url_candidate) : local.migration_database_url_candidate
   app_database_target              = var.create_database ? "${azurerm_mysql_flexible_server.this[0].fqdn}:3306/${var.database.name}" : nonsensitive(try(regex("^mysql://[^@]+@([^?]+)[?]", var.database_url)[0], ""))
   migration_secret_names           = concat(["database-url", "den-db-encryption-key"], local.registry_password ? ["registry-password"] : [])
   migration_secret_values          = { database-url = local.migration_database_url, den-db-encryption-key = local.secret_values.DEN_DB_ENCRYPTION_KEY, registry-password = local.secret_values.REGISTRY_PASSWORD }
@@ -22,6 +24,7 @@ locals {
           command   = ["node", "/app/ee/packages/den-db/dist/scripts/bootstrap.js"]
           resources = { cpu = 0.5, memory = "1Gi" }
           env = concat(local.plain_env, [
+            { name = "OPENWORK_MIGRATION_DATABASE_URL_MODE", value = local.migration_database_url_mode },
             { name = "DATABASE_URL", secretRef = "database-url" },
             { name = "DEN_DB_ENCRYPTION_KEY", secretRef = "den-db-encryption-key" },
           ])
@@ -39,20 +42,24 @@ resource "azapi_resource" "migration" {
   ignore_null_property   = true
   response_export_values = []
   dynamic "identity" {
-    for_each = length(local.identity_ids) > 0 ? [1] : []
+    for_each = length(local.migration_identity_ids) > 0 ? [1] : []
     content {
       type         = "UserAssigned"
-      identity_ids = local.identity_ids
+      identity_ids = local.migration_identity_ids
     }
   }
   body           = local.migration_body
   sensitive_body = { properties = { configuration = { secrets = local.migration_secret_payload } } }
   # Full collection must accompany PUT; existing values are read ephemerally.
   sensitive_body_version = {
-    "properties.configuration.secrets" = sha256(jsonencode({ body = local.migration_body, tags = var.tags, identities = local.identity_ids, location = local.app_location }))
+    "properties.configuration.secrets" = sha256(jsonencode({ body = local.migration_body, tags = var.tags, identities = local.migration_identity_ids, location = local.app_location }))
   }
   depends_on = [azurerm_mysql_flexible_database.this, azurerm_mysql_flexible_server_firewall_rule.azure_services]
   lifecycle {
+    precondition {
+      condition     = !data.azapi_resource.existing_migration.exists || local.saved_migration_database_url_mode == null || local.saved_migration_database_url_mode == local.migration_database_url_mode || var.secret_versions.migration_database_url_version > try(local.saved_versions.migration_database_url_version, 1)
+      error_message = "Changing the migration credential role requires an explicit migration_database_url_version bump."
+    }
     precondition {
       condition     = var.migration_database_url == "" || try(regex("^mysql://[^@]+@([^?]+)[?]", var.migration_database_url)[0] == local.app_database_target, false)
       error_message = "migration_database_url must target the same host, port and schema as the application database URL."

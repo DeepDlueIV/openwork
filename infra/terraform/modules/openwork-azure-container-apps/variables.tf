@@ -106,6 +106,10 @@ variable "registry" {
     username = optional(string, "")
   })
   default = null
+  validation {
+    condition     = var.registry == null ? true : (var.registry.identity == "" || var.registry.identity != var.key_vault_identity_id)
+    error_message = "Use a registry-pull identity separate from key_vault_identity_id; the migration Job must not receive Key Vault access."
+  }
 }
 
 variable "registry_password" {
@@ -299,15 +303,15 @@ variable "openwork_web_url" {
 }
 
 variable "extra_environment" {
-  description = "Additional non-secret env vars. Secret-like names and overrides of secret bindings are rejected; use extra_secrets with Key Vault references instead."
+  description = "Reviewed plaintext tuning only: LOG_LEVEL, SENTRY_LOG_LEVEL, DEN_OBSERVABILITY_BACKEND, OTEL_LOGS_EXPORTER, OTEL_METRICS_EXPORTER, OTEL_TRACES_EXPORTER, LIFECYCLE_EMAILS_INTERVAL_MS, WORKER_PROVISIONING_RECONCILE_INTERVAL_MS, NODE_USE_ENV_PROXY, NODE_EXTRA_CA_CERTS, NO_PROXY and TZ. All other names must use extra_secrets or a dedicated input."
   type        = map(string)
   default     = {}
   validation {
     condition = alltrue([for name in keys(var.extra_environment) :
-      !can(regex("(?i)(secret|password|passwd|token|credential|private.key|api.key|encryption.key|database.url|smtp.pass|bootstrap.code)", name)) &&
+      contains(["LOG_LEVEL", "SENTRY_LOG_LEVEL", "DEN_OBSERVABILITY_BACKEND", "OTEL_LOGS_EXPORTER", "OTEL_METRICS_EXPORTER", "OTEL_TRACES_EXPORTER", "LIFECYCLE_EMAILS_INTERVAL_MS", "WORKER_PROVISIONING_RECONCILE_INTERVAL_MS", "NODE_USE_ENV_PROXY", "NODE_EXTRA_CA_CERTS", "NO_PROXY", "TZ"], name) &&
       !contains(keys(var.extra_secrets), name)
     ])
-    error_message = "Secret environment variables must use extra_secrets, never extra_environment."
+    error_message = "extra_environment accepts only the documented plaintext allowlist; credentials and unreviewed names must use extra_secrets or a dedicated input."
   }
 }
 

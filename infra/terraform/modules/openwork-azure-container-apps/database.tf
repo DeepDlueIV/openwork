@@ -79,7 +79,7 @@ resource "azurerm_mysql_flexible_server" "this" {
 
   lifecycle {
     precondition {
-      condition     = !data.azapi_resource.existing_database[0].exists || data.azapi_resource.existing_api.exists || (data.azapi_resource.existing_migration.exists && var.migration_database_url == "") || var.database_password_recovery_acknowledged
+      condition     = !data.azapi_resource.existing_database[0].exists || data.azapi_resource.existing_api.exists || (data.azapi_resource.existing_migration.exists && local.saved_migration_database_url_mode == "application") || var.database_password_recovery_acknowledged
       error_message = "A database exists but no cloud credential copy can be recovered. Stop and preserve/reset its password explicitly before acknowledging recovery; do not regenerate silently."
     }
     precondition {

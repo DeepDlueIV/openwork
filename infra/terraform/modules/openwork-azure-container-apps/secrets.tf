@@ -7,10 +7,13 @@ data "azapi_resource" "existing_api" {
   response_export_values = { versions = "properties.template.containers[0].env[?name=='OPENWORK_DEPLOYMENT_SECRETS_VERSION'].value | [0]" }
 }
 data "azapi_resource" "existing_migration" {
-  type                   = "Microsoft.App/jobs@2025-01-01"
-  resource_id            = "${data.azurerm_resource_group.this.id}/providers/Microsoft.App/jobs/${var.name}-migrate"
-  ignore_not_found       = true
-  response_export_values = { versions = "properties.template.containers[0].env[?name=='OPENWORK_DEPLOYMENT_SECRETS_VERSION'].value | [0]" }
+  type             = "Microsoft.App/jobs@2025-01-01"
+  resource_id      = "${data.azurerm_resource_group.this.id}/providers/Microsoft.App/jobs/${var.name}-migrate"
+  ignore_not_found = true
+  response_export_values = {
+    versions          = "properties.template.containers[0].env[?name=='OPENWORK_DEPLOYMENT_SECRETS_VERSION'].value | [0]"
+    database_url_mode = "properties.template.containers[0].env[?name=='OPENWORK_MIGRATION_DATABASE_URL_MODE'].value | [0]"
+  }
 }
 ephemeral "azapi_resource_action" "api_secrets" {
   provider               = azapi.secret_read
@@ -43,10 +46,12 @@ ephemeral "azapi_resource_action" "migration_secrets" {
 locals {
   saved_api_secrets = data.azapi_resource.existing_api.exists ? { for secret in ephemeral.azapi_resource_action.api_secrets[0].output.value : secret.name => secret.value if contains([for name in local.managed_secret_names : lower(replace(name, "_", "-"))], secret.name) } : {}
   # A distinct DDL URL must never become the application's DML URL on recovery.
-  saved_migration_all_secrets = data.azapi_resource.existing_migration.exists ? { for secret in ephemeral.azapi_resource_action.migration_secrets[0].output.value : secret.name => secret.value } : {}
-  saved_migration_secrets     = { for name, value in local.saved_migration_all_secrets : name => value if name != "database-url" || var.migration_database_url == "" }
-  saved_secrets               = merge(local.saved_migration_secrets, local.saved_api_secrets)
-  saved_versions              = data.azapi_resource.existing_api.exists ? try(jsondecode(data.azapi_resource.existing_api.output.versions), {}) : try(jsondecode(data.azapi_resource.existing_migration.output.versions), {})
+  saved_migration_all_secrets       = data.azapi_resource.existing_migration.exists ? { for secret in ephemeral.azapi_resource_action.migration_secrets[0].output.value : secret.name => secret.value } : {}
+  saved_migration_database_url_mode = try(data.azapi_resource.existing_migration.output.database_url_mode, null)
+  reusable_migration_secret_names   = concat(["den-db-encryption-key", "registry-password"], local.saved_migration_database_url_mode == "application" ? ["database-url"] : [])
+  saved_migration_secrets           = { for name, value in local.saved_migration_all_secrets : name => value if contains(local.reusable_migration_secret_names, name) }
+  saved_secrets                     = merge(local.saved_migration_secrets, local.saved_api_secrets)
+  saved_versions                    = data.azapi_resource.existing_api.exists ? try(jsondecode(data.azapi_resource.existing_api.output.versions), {}) : try(jsondecode(data.azapi_resource.existing_migration.output.versions), {})
   version_names = {
     DATABASE_URL                     = "database_password_version"
     BETTER_AUTH_SECRET               = "better_auth_secret_version"

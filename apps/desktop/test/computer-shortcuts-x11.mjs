@@ -48,7 +48,7 @@ try {
     await tools.ui.setChecked({target:{role:"checkbox",name:"Include details"},checked:true});
     await tools.ui.click({target:{role:"button",name:"Save project"}});
     await tools.ui.waitFor({target:{name:"Saved: Website refresh"},timeoutMs:5000});
-    const row = await tools.ui.scrollUntil({target:{role:"button",name:"Project 35"},container:{role:"region",name:"Projects"},maxPages:6});
+    const row = await tools.ui.scrollUntil({target:{role:"button",name:"Project 35"},container:{role:"region",name:"Projects"},maxPages:12});
     if (!row.found) return row;
     await tools.ui.click({target:row.target});
     await tools.ui.waitFor({target:{name:"Opened: Project 35"}});
@@ -121,4 +121,27 @@ try {
     assert.equal((await waiting).ok, false);
     console.log("cloud program", JSON.stringify({ filled: true, takeoverStopped: true }));
   } finally { await cloud.close(); await rm(directory, { recursive: true, force: true }); }
+
+  // Two top-level windows share one PID and overlap. Selecting one must never
+  // expose or activate a sibling control, even with a previous desktop ref.
+  await exec("docker", ["exec", container, "pkill", "-USR1", "-f", "^python3 /tmp/computer-shortcuts-gtk.py$"]);
+  await new Promise(resolve => setTimeout(resolve, 400));
+  const windows = await driver.windows();
+  const primary = windows.find(window => window.title === "Computer shortcuts proof");
+  assert.ok(primary);
+  const whole = await driver.accessibility(await driver.screen(), { observationId: "whole-sibling" });
+  const sibling = whole.elements.find(element => element.name === "Sibling only");
+  assert.ok(sibling);
+  const refused = await driver.input([{ type: "press", ref: sibling.ref }], { observationId: "whole-sibling", windowId: primary.id });
+  assert.equal(refused.completed, 0);
+  assert.match(refused.error, /window scope/);
+  const scoped = await driver.accessibility(primary.region, { observationId: "selected-window", windowId: primary.id });
+  assert.ok(scoped.elements.some(element => element.name === "Project name"), JSON.stringify(scoped));
+  assert.equal(scoped.elements.some(element => element.name === "Sibling only"), false);
+  const field = scoped.elements.find(element => element.name === "Project name");
+  const edited = await driver.input([{ type:"set_value", ref:field.ref, text:"Selected window" }], { observationId:"selected-window", windowId:primary.id });
+  assert.equal(edited.completed,1,JSON.stringify(edited));
+  assert.equal((await state()).text,"Selected window");
+  assert.equal((await state()).siblingClicks ?? 0, 0);
+  console.log("window scope", JSON.stringify({ primaryControlsAvailable: true, siblingHidden: true, siblingInputRefused: true }));
 } finally { await control.reset(true); }

@@ -129,6 +129,8 @@ def run_actions(request, event):
 # accessibility session adds semantic controls without guessing image targets.
 ACCESSIBLE = {}
 OBSERVATION = None
+OBSERVED_WINDOW = None
+SCOPED_ROOT = None
 try:
     import gi
     gi.require_version("Atspi", "2.0")
@@ -138,27 +140,59 @@ except (ImportError, ValueError):
     Atspi = None
 
 
+def window_root(window_id):
+    """Resolve one X11 client to a unique accessible top-level window.
+
+    PID alone is insufficient: one application can expose several overlapping
+    windows. An ambiguous/missing match withholds semantics; pixels still work.
+    """
+    pid = int(command("getwindowpid", window_id))
+    title = command("getwindowname", window_id)
+    geometry = dict(line.split("=", 1) for line in command("getwindowgeometry", "--shell", window_id).splitlines() if "=" in line)
+    expected = tuple(int(geometry[key]) for key in ["X", "Y", "WIDTH", "HEIGHT"])
+    matches = []
+    desktop = Atspi.get_desktop(0)
+    if desktop.get_child_count() > 128: return None
+    until = time.monotonic() + 3
+    for index in range(desktop.get_child_count()):
+        if time.monotonic() >= until: return None
+        app = desktop.get_child_at_index(index)
+        if app is None or app.get_process_id() != pid: continue
+        if app.get_child_count() > 128: return None
+        for child_index in range(app.get_child_count()):
+            if time.monotonic() >= until: return None
+            item = app.get_child_at_index(child_index)
+            if item is None or item.get_name() != title: continue
+            component = item.get_component_iface()
+            if component is None: continue
+            rect = component.get_extents(Atspi.CoordType.SCREEN)
+            if (rect.x, rect.y, rect.width, rect.height) == expected:
+                matches.append(item)
+    return matches[0] if len(matches) == 1 else None
+
+
 def read_accessibility(request):
-    global ACCESSIBLE, OBSERVATION
+    global ACCESSIBLE, OBSERVATION, OBSERVED_WINDOW, SCOPED_ROOT
     ACCESSIBLE = {}
     OBSERVATION = request["observationId"]
+    OBSERVED_WINDOW = request.get("windowId")
+    SCOPED_ROOT = None
     if Atspi is None:
         return {"elements": [], "capability": "unavailable"}
     region = request["region"]
-    pid = None
-    if request.get("windowId"):
-        try: pid = int(command("getwindowpid", request["windowId"]))
+    if OBSERVED_WINDOW:
+        try: SCOPED_ROOT = window_root(OBSERVED_WINDOW)
         except Exception: return {"elements": [], "capability": "unavailable"}
+        if SCOPED_ROOT is None: return {"elements": [], "capability": "unavailable"}
     result = []
     scanned = 0
-    stack = [Atspi.get_desktop(0)]
+    stack = [SCOPED_ROOT if SCOPED_ROOT is not None else Atspi.get_desktop(0)]
     until = time.monotonic() + 3
     while stack and scanned < 2500 and len(result) < 400 and time.monotonic() < until:
         item = stack.pop()
         scanned += 1
         try:
             if item is None: continue
-            if item.get_role_name() == "application" and pid and item.get_process_id() != pid: continue
             role = item.get_role_name().lower()
             if "password" in role: continue
             # Traverse even a nonvisual/container node whose other interfaces
@@ -190,12 +224,23 @@ def read_accessibility(request):
     return {"elements": result, "capability": "atspi", "truncated": bool(stack)}
 
 
-def perform_semantic_action(action, request):
+def perform_semantic_action(action, request, event, deadline):
     if request.get("observationId") != OBSERVATION:
         raise RuntimeError("The accessibility observation expired")
     item = ACCESSIBLE.get(action.get("ref"))
     if item is None:
         raise RuntimeError("The accessible control is unavailable")
+    if request.get("windowId") != OBSERVED_WINDOW:
+        raise RuntimeError("The accessibility observation belongs to another window scope")
+    if SCOPED_ROOT is not None:
+        if window_root(OBSERVED_WINDOW) != SCOPED_ROOT:
+            raise RuntimeError("The selected accessible window changed")
+        ancestor = item
+        for _ in range(256):
+            if ancestor is None or ancestor == SCOPED_ROOT: break
+            ancestor = ancestor.get_parent()
+        if ancestor != SCOPED_ROOT:
+            raise RuntimeError("The control left the selected window")
     states = item.get_state_set()
     if not states.contains(Atspi.StateType.SHOWING) or not states.contains(Atspi.StateType.SENSITIVE):
         raise RuntimeError("The accessible control is no longer ready")
@@ -203,13 +248,17 @@ def perform_semantic_action(action, request):
         raise RuntimeError("Use the desktop directly for protected fields")
     if action["type"] == "set_value":
         editable = item.get_editable_text_iface()
+        check(event, deadline)
         if editable is None or not editable.set_text_contents(action["text"]):
             raise RuntimeError("The field refused its text")
     elif item.get_editable_text_iface() is not None:
-        if not item.get_component_iface().grab_focus():
+        component = item.get_component_iface()
+        check(event, deadline)
+        if not component.grab_focus():
             raise RuntimeError("The text field refused focus")
     else:
         interface = item.get_action_iface()
+        check(event, deadline)
         if interface is None or not interface.do_action(0):
             raise RuntimeError("The control refused its action")
 
@@ -240,7 +289,7 @@ def semantic_action(action, request, event, deadline):
     def execute():
         # A queued call must recheck cancellation when its thread actually runs.
         check(event, deadline)
-        return perform_semantic_action(action, request)
+        return perform_semantic_action(action, request, event, deadline)
     return semantic_call(execute)
 
 

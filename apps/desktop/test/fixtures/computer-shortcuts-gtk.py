@@ -1,9 +1,10 @@
 import gi
 import json
 import os
+import signal
 
 gi.require_version("Gtk", "3.0")
-from gi.repository import Gtk
+from gi.repository import Gtk, GLib
 
 window = Gtk.Window(title="Computer shortcuts proof")
 window.set_default_size(700, 600)
@@ -21,6 +22,19 @@ button = Gtk.Button(label="Save project")
 box.pack_start(button, False, False, 0)
 box.pack_start(status, False, False, 0)
 state = {"saved": [], "text": "Original"}
+sibling = Gtk.Window(title="Sibling window")
+sibling.set_default_size(300, 180)
+sibling_button = Gtk.Button(label="Sibling only")
+sibling.add(sibling_button)
+def sibling_click(_):
+    state["siblingClicks"] = state.get("siblingClicks", 0) + 1
+    record()
+sibling_button.connect("clicked", sibling_click)
+def show_sibling(*_):
+    sibling.move(0, 0)
+    sibling.show_all()
+    return False
+signal.signal(signal.SIGUSR1, lambda *_: GLib.idle_add(show_sibling))
 
 def record():
     with open("/tmp/computer-shortcuts-state.json.tmp", "w") as stream:

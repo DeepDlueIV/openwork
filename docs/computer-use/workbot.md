@@ -172,6 +172,21 @@ dot's installed package list on those pages.
 
 Focused checks:
 
+For a private cloud test deployment, launch the maintained Workbot world with a
+published snapshot. It enables the existing flags only for its seeded test org,
+passes the scoped Daytona key only to the runner host, and removes its computer
+VMs during teardown. The world retains its deterministic test model; this tests
+desktop control without implying real model inference. Hosting sandboxes have a
+provider TTL; conversation computers have one-day idle retention as a crash backstop.
+
+```sh
+pnpm world up preview-workbot --place daytona --stage computer-desktop --detach \
+  --timeout 1200000 --source sha:<pushed-commit> -- \
+  --computer-snapshot <published-linux-vm-snapshot>
+pnpm world outputs preview-workbot --stage computer-desktop --reveal
+pnpm world down preview-workbot --stage computer-desktop
+```
+
 ```sh
 pnpm evals:e2e workbot-computer --local
 pnpm --filter @openwork-ee/workbot exec tsx --conditions=development --test scripts/computer.test.ts

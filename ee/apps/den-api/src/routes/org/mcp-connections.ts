@@ -2430,13 +2430,14 @@ export function registerMcpConnectionRoutes<T extends { Variables: OrgRouteVaria
         }
       }))
       const match = probes.find((probe) => probe !== null && discoveryQualifiesAsMcp(probe.discovery, { guessed })) ?? null
+      const canViewSettings = match ? await hasPermission(c, "connections.view") : false
 
       if (preset) {
         return c.json({
           resolution: "preset" as const,
           attempted: candidates,
           preset,
-          ...(match ? { match: { url: match.url, suggestedName: preset.displayName, discovery: match.discovery } } : {}),
+          ...(match ? { match: { url: match.url, suggestedName: preset.displayName, discovery: requirementsForCaller(match.discovery, canViewSettings) } } : {}),
         })
       }
       if (!match) {
@@ -2445,7 +2446,7 @@ export function registerMcpConnectionRoutes<T extends { Variables: OrgRouteVaria
       return c.json({
         resolution: "discovered" as const,
         attempted: candidates,
-        match: { url: match.url, suggestedName: suggestConnectionName(match.url), discovery: requirementsForCaller(match.discovery, await hasPermission(c, "connections.view")) },
+        match: { url: match.url, suggestedName: suggestConnectionName(match.url), discovery: requirementsForCaller(match.discovery, canViewSettings) },
       })
     },
   )

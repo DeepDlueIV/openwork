@@ -2323,6 +2323,14 @@ export function SessionSurface(props: SessionSurfaceProps) {
       ...buildDraft(text, sentAttachments, savedComposer),
       messageId: createPromptMessageID(),
     };
+    // A known offline submission never owns the composer: keep its text,
+    // attachments and mentions in place instead of clearing then restoring it.
+    const connectivity = useOfflineRecoveryStore.getState();
+    if (connectivity.enabled && nextDraft.mode !== "shell" && (onlineModel || !isLocalNetworkEndpoint(props.opencodeBaseUrl))) {
+      if (navigator.onLine === false && !connectivity.issue) await checkOnlineConnection();
+      if (onlineRequestsPaused()) return;
+      if (getQueuedSendGeneration(props.sessionId) !== generation || activeSessionOwnerRef.current !== sessionOwner) return;
+    }
     // Immediate sends and queued sends share the same slot across all panes.
     dispatchQueuedDrain(props.sessionId, { type: "user_retry" });
     if (!claimQueuedSend(props.sessionId, nextDraft.messageId, true)) return;
@@ -2414,7 +2422,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
     } finally {
       setAttachmentsUploading(false);
     }
-  }, [archived, archiveStateKnown, attachments, baseRenderedMessages, buildDraft, clearComposer, draft, mentions, pasteParts, persistedDraftKey, props.onDraftChange, props.opencodeBaseUrl, props.sessionId, sendDraft, sessionOwner]);
+  }, [onlineModel, archived, archiveStateKnown, attachments, baseRenderedMessages, buildDraft, clearComposer, draft, mentions, pasteParts, persistedDraftKey, props.onDraftChange, props.opencodeBaseUrl, props.sessionId, sendDraft, sessionOwner]);
 
   // One-step run from the empty-state hero: the route keeps the continuation
   // in this session's composer and marks the submitted snapshot for auto-send.

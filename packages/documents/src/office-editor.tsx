@@ -7,15 +7,23 @@ import { z } from "zod"
 import type { DocumentItem } from "./index"
 import type { OfficeEditor } from "./office-engine"
 import { EditorActions } from "./editor-actions"
+import type { DocumentTabControlsChange } from "./document-tabs"
 
 const messageSchema = z.object({ MessageId: z.string(), Values: z.object({ Status: z.string().optional(), Modified: z.boolean().optional(), success: z.boolean().optional() }).passthrough().optional() })
-export function OfficeEditorTab({ item, editor, enabled, active, scope, toolbarHost, onDirtyChange, onClose }: { item: DocumentItem; editor: OfficeEditor; enabled: boolean; active: boolean; scope: readonly string[]; toolbarHost?: HTMLElement | null; onDirtyChange?(id: string, dirty: boolean): void; onClose(): void }) {
+export function OfficeEditorTab({ item, editor, enabled, active, scope, toolbarHost, onDirtyChange, onSavingChange, onControlsChange, onClose }: { item: DocumentItem; editor: OfficeEditor; enabled: boolean; active: boolean; scope: readonly string[]; toolbarHost?: HTMLElement | null; onDirtyChange?(id: string, dirty: boolean): void; onSavingChange?(id: string, saving: boolean): void; onControlsChange?: DocumentTabControlsChange; onClose(): void }) {
   const [dirty, setDirty] = useState(false)
   const [ready, setReady] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState<string>()
   const [error, setError] = useState<string>()
   const [closing, setClosing] = useState(false)
+  const closeAction = useRef<() => void>(() => {})
+  closeAction.current = () => { if (!saving) { if (dirty) setClosing(true); else onClose() } }
+  useEffect(() => {
+    onControlsChange?.(item.id, { requestClose: () => closeAction.current() })
+    return () => onControlsChange?.(item.id, null)
+  }, [item.id, onControlsChange])
+  useEffect(() => { onSavingChange?.(item.id, saving); return () => onSavingChange?.(item.id, false) }, [item.id, saving, onSavingChange])
   const changes = useRef(0)
   const frame = useRef<HTMLIFrameElement>(null)
   const form = useRef<HTMLFormElement>(null)
@@ -65,7 +73,7 @@ export function OfficeEditorTab({ item, editor, enabled, active, scope, toolbarH
   const [now, setNow] = useState(Date.now)
   useEffect(() => { if (!session) return; const timer = setInterval(() => setNow(Date.now()), 30_000); return () => clearInterval(timer) }, [session])
   const expired = !!session && session.expiresAt <= now
-  const save = async () => {
+  const save = async (closeAfter = false) => {
     if (!session || !enabled || saving || expired || !ready || !session.canEdit) return
     const generation = changes.current; setSaving(true); setError(undefined)
     try {
@@ -78,14 +86,14 @@ export function OfficeEditorTab({ item, editor, enabled, active, scope, toolbarH
       const result = await editor.save(item.id, session.id, status.draftVersion)
       if (!mounted.current) return
       setSaved(result.fileId)
-      if (generation === changes.current) setDirty(false)
+      if (generation === changes.current) { setDirty(false); setClosing(false); if (closeAfter) onClose() }
     } catch (failure) { if (mounted.current) setError(failure instanceof Error ? failure.message : "The save was not confirmed. Check Drive before trying again.") }
     finally { if (mounted.current) setSaving(false) }
   }
   const status = saving ? "Saving to Drive…" : dirty ? "Unsaved to Drive" : saved ? "Saved to Drive" : !session?.canEdit && session ? "Read-only" : ""
   return <section className="ow-document-editor ow-office-editor" hidden={!active} aria-label={item.name}>
-    <EditorActions active={active} host={toolbarHost}><span role="status">{status}</span>{item.openUrl && <a href={item.openUrl} target="_blank" rel="noopener noreferrer" aria-label="Open original in Drive"><ExternalLink size={16}/></a>}<button type="button" disabled={!enabled || !session?.canEdit || !ready || saving || expired || (!dirty && (!session.saveAsCopy || !!saved))} onClick={() => void save()}><Save size={15}/>{session?.saveAsCopy && !saved ? `Save ${session.fileType === "docx" ? "Word" : "Excel"} copy to Drive` : "Save to Drive"}</button><button type="button" aria-label={`Close ${item.name}`} disabled={saving} onClick={() => dirty ? setClosing(true) : onClose()}><X size={16}/></button></EditorActions>
-    {closing && <div className="ow-editor-message">This file has changes that haven't been saved to Drive.<button type="button" onClick={() => setClosing(false)}>Keep editing</button><button type="button" disabled={saving} onClick={onClose}>Close without saving</button></div>}
+    <EditorActions active={active} host={toolbarHost}><span role="status">{status}</span>{item.openUrl && <a href={item.openUrl} target="_blank" rel="noopener noreferrer" aria-label="Open original in Drive"><ExternalLink size={16}/></a>}<button type="button" disabled={!enabled || !session?.canEdit || !ready || saving || expired || (!dirty && (!session.saveAsCopy || !!saved))} onClick={() => void save()}><Save size={15}/>{session?.saveAsCopy && !saved ? `Save ${session.fileType === "docx" ? "Word" : "Excel"} copy to Drive` : "Save to Drive"}</button>{!onControlsChange && <button type="button" aria-label={`Close ${item.name}`} disabled={saving} onClick={() => closeAction.current()}><X size={16}/></button>}</EditorActions>
+    {closing && <div className="ow-editor-message" role="status">This file has changes that haven't been saved to Drive.<button type="button" disabled={saving || !enabled || !ready || expired || !session?.canEdit} onClick={() => void save(true)}>Save and close</button><button type="button" disabled={saving} onClick={() => setClosing(false)}>Keep editing</button><button type="button" disabled={saving} onClick={onClose}>Close without saving</button></div>}
     {session?.saveAsCopy && <div className="ow-editor-message">{saved ? "Your Office copy is saved in My Drive. Further saves update that copy." : `You’re editing ${session.fileType === "docx" ? "a Word" : "an Excel"} copy. Save creates a new file in My Drive; the Google original stays unchanged.`}{saved && <a href={`https://drive.google.com/file/d/${encodeURIComponent(saved)}/view`} target="_blank" rel="noopener noreferrer">Open saved copy</a>}</div>}
     {!enabled && <div className="ow-editor-message">Documents is off for this workspace.</div>}
     {(error || query.isError || expired) && <div className="ow-editor-message" role="alert">{expired ? "This editing session expired. Download your changes from the editor before closing it." : error ?? (query.error instanceof Error ? query.error.message : "Couldn't open the full editor.")}{!session && item.openUrl && <a href={item.openUrl} target="_blank" rel="noopener noreferrer">Open in Drive</a>}</div>}

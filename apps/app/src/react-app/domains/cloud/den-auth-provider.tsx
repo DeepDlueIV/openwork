@@ -183,18 +183,20 @@ function pendingServerSwitchForDeepLink(input: {
   // control plane and activate the app in a single unattended step.
   if (bootstrap.source !== "file" && !input.isEnterpriseActivation) return null;
 
-  const currentApiBaseUrl = resolveDenBaseUrls(bootstrap).apiBaseUrl;
-  const newApiBaseUrl = resolveDenBaseUrls(input.denBaseUrl).apiBaseUrl;
-  const currentOrigin = denOriginComparisonKey(currentApiBaseUrl);
-  const newOrigin = denOriginComparisonKey(newApiBaseUrl);
+  // Handoff links identify Den's web origin. Its configured API may live on
+  // another origin; compare the same identity used by the handoff transaction.
+  const currentWebBaseUrl = resolveDenBaseUrls(bootstrap).baseUrl;
+  const newWebBaseUrl = resolveDenBaseUrls(input.denBaseUrl).baseUrl;
+  const currentOrigin = denOriginComparisonKey(currentWebBaseUrl);
+  const newOrigin = denOriginComparisonKey(newWebBaseUrl);
   if (!currentOrigin || !newOrigin || currentOrigin === newOrigin) return null;
 
   return {
     grant: input.grant,
     denBaseUrl: input.denBaseUrl,
     isEnterpriseActivation: input.isEnterpriseActivation,
-    currentHost: hostLabel(currentApiBaseUrl),
-    newHost: hostLabel(newApiBaseUrl),
+    currentHost: hostLabel(currentWebBaseUrl),
+    newHost: hostLabel(newWebBaseUrl),
   };
 }
 
@@ -294,6 +296,7 @@ export function DenAuthProvider({ children }: DenAuthProviderProps) {
           ensureDenActiveOrganization({
             forceServerSync:
               !settings.activeOrgId?.trim() || !settings.activeOrgSlug?.trim(),
+            verifiedSession: { userId: nextUser.id, token, baseUrl: settings.baseUrl },
           })
         );
       }

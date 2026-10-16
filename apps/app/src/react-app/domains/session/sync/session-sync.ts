@@ -99,6 +99,14 @@ type SyncOptions = {
 
 type ListenerRegistry<Listener> = Map<Listener, number>;
 
+type MessageReconcile = {
+  sessionId: string;
+  controller: AbortController;
+  dirty: boolean;
+  timer: ReturnType<typeof setTimeout> | null;
+  finished: Promise<void>;
+};
+
 type SyncEntry = {
   input: SyncOptions;
   openworkToken: string;
@@ -134,6 +142,8 @@ type SyncEntry = {
   nativeSequenceRevision: number;
   nativeTerminalSessions: Set<string>;
   permissionReconciles: Map<string, AbortController>;
+  questionReconciles: Map<string, AbortController>;
+  messageReconciles: Map<string, MessageReconcile>;
   titleRecovery: SessionTitleRecovery | null;
   /** `shell.created` details, so a background call's start can name its command. */
   shellInfo: Map<string, EngineShell>;
@@ -585,6 +595,7 @@ function clearTrackedSession(input: SyncOptions, entry: SyncEntry, sessionId: st
     || queryClient.getQueryData<PendingPermission[]>(permissionKey(input.workspaceId, sessionId))?.length
     || queryClient.getQueryData<PendingQuestion[]>(questionKey(input.workspaceId, sessionId))?.length
     || entry.permissionReconciles.has(sessionId)
+    || entry.questionReconciles.has(sessionId)
   ) {
     retainSession(input, entry, sessionId);
     return;
@@ -595,6 +606,7 @@ function clearTrackedSession(input: SyncOptions, entry: SyncEntry, sessionId: st
   entry.runActiveObservedAt.delete(sessionId);
   entry.assistantMessageCompletedAt.delete(sessionId);
   entry.gatewayUsageRuns.delete(sessionId);
+  cancelMessageReconciles(entry, sessionId);
   for (const [key, pending] of entry.pendingDeltas) {
     if (pending.sessionId === sessionId) entry.pendingDeltas.delete(key);
   }
@@ -658,6 +670,9 @@ function disposeWorkspaceSync(key: string, entry: SyncEntry) {
   entry.statusReconcileAbort = null;
   for (const controller of entry.permissionReconciles.values()) controller.abort();
   entry.permissionReconciles.clear();
+  for (const controller of entry.questionReconciles.values()) controller.abort();
+  entry.questionReconciles.clear();
+  cancelMessageReconciles(entry);
   for (const controller of entry.backgroundShellReads) controller.abort();
   entry.backgroundShellReads.clear();
   entry.shellInfo.clear();
@@ -842,7 +857,7 @@ export function seedQuestionState(
   workspaceId: string,
   sessionId: string,
   questions: QuestionRequest[],
-  options: { snapshotStartedAt?: number } = {},
+  options: { snapshotStartedAt?: number; snapshotRevision?: number } = {},
 ) {
   const queryClient = getReactQueryClient();
   const now = Date.now();
@@ -850,6 +865,13 @@ export function seedQuestionState(
   const terminalCallIds = terminalTranscriptCallIds(workspaceId, sessionId);
   for (const question of questions) {
     if (isOrphanedInteraction(question.tool, terminalCallIds)) settled.add(question.id);
+  }
+  const changedDuringRead = options.snapshotRevision === undefined
+    || options.snapshotRevision !== (queryClient.getQueryState(questionKey(workspaceId, sessionId))?.dataUpdateCount ?? 0);
+  const snapshotKey = [...questionKey(workspaceId, sessionId), "snapshot-started-at"];
+  if (options.snapshotStartedAt !== undefined) {
+    if (options.snapshotStartedAt < (queryClient.getQueryData<number>(snapshotKey) ?? 0)) return;
+    queryClient.setQueryData(snapshotKey, options.snapshotStartedAt);
   }
   const nextQuestions = queryClient.setQueryData<PendingQuestion[]>(questionKey(workspaceId, sessionId), (current = []) => {
     const receivedAtById = new Map(current.map((question) => [question.id, question.receivedAt]));
@@ -864,7 +886,8 @@ export function seedQuestionState(
         ? current.filter(
             (question) =>
               question.sessionID === sessionId &&
-              question.receivedAt > snapshotStartedAt &&
+              changedDuringRead &&
+              question.receivedAt >= snapshotStartedAt &&
               !seededIds.has(question.id),
           )
         : [];
@@ -1161,6 +1184,20 @@ function applyEvent(entry: SyncEntry, workspaceId: string, event: OpencodeEvent)
   const queryClient = getReactQueryClient();
   const input = entry.input;
 
+  if (event.type === "openwork.message.refresh") {
+    const sessionId = sessionIdFromProperties(event.properties);
+    const props = event.properties;
+    const messageId = props && typeof props === "object" && "messageID" in props ? props.messageID : undefined;
+    const partId = props && typeof props === "object" && "partID" in props ? props.partID : undefined;
+    // Once the retained cache has this text declaration, addressed deltas can
+    // keep it current without racing history reads against every new token.
+    const declared = typeof partId === "string" && (queryClient.getQueryData<UIMessage[]>(transcriptKey(workspaceId, sessionId)) ?? [])
+      .some((message) => message.id === messageId && message.parts.some((part) =>
+        (part.type === "text" || part.type === "reasoning") && getPartMetadataId(part) === partId));
+    if (!declared && typeof messageId === "string" && messageId) reconcileSessionMessages(entry, sessionId, messageId);
+    return;
+  }
+
   if (isBackgroundShellEvent(event)) {
     applyBackgroundShellEvent(entry, workspaceId, event);
     return;
@@ -1252,8 +1289,11 @@ function applyEvent(entry: SyncEntry, workspaceId: string, event: OpencodeEvent)
     const props = (event.properties ?? {}) as { sessionID?: string; info?: { id?: string } };
     const sessionId = props.sessionID ?? props.info?.id ?? "";
     if (!sessionId) return;
+    cancelMessageReconciles(entry, sessionId);
     entry.permissionReconciles.get(sessionId)?.abort();
     entry.permissionReconciles.delete(sessionId);
+    entry.questionReconciles.get(sessionId)?.abort();
+    entry.questionReconciles.delete(sessionId);
     // Deletion settles known interactions, but their watermarks must outlive
     // the pending caches so delayed snapshots/events cannot revive them.
     const record = useSessionActivityStore.getState().recordsByWorkspaceId[workspaceId]?.[sessionId];
@@ -1496,6 +1536,7 @@ function applyEvent(entry: SyncEntry, workspaceId: string, event: OpencodeEvent)
       || typeof props.sessionID !== "string" || typeof props.messageID !== "string") return;
     const { sessionID, messageID } = props;
     if (!isTrackedSession(entry, sessionID)) return;
+    cancelMessageReconciles(entry, sessionID);
     const fullKey = snapshotKey(workspaceId, sessionID);
     const latestKey = ["react-session-latest", ...fullKey];
     void queryClient.cancelQueries({ queryKey: latestKey });
@@ -1523,6 +1564,7 @@ function applyEvent(entry: SyncEntry, workspaceId: string, event: OpencodeEvent)
     const props = (event.properties ?? {}) as { sessionID?: string; messageID?: string };
     if (!props.sessionID || !props.messageID) return;
     if (!isTrackedSession(entry, props.sessionID)) return;
+    cancelMessageReconciles(entry, props.sessionID);
     const fullKey = snapshotKey(workspaceId, props.sessionID);
     const latestKey = ["react-session-latest", ...fullKey];
     void queryClient.cancelQueries({ queryKey: latestKey });
@@ -1755,6 +1797,13 @@ function startSync(input: SyncOptions, entry: SyncEntry) {
     // cached idle: the server may have started or finished work while the
     // stream was down.
     onConnected: (signal) => {
+      // v2's event feed has no replay. Catch up messages even when the run
+      // stayed busy (or was already idle) across the missing interval.
+      if (isOpencodeV2BaseUrl(input.baseUrl)) {
+        for (const sessionId of new Set([...entry.trackedSessionRefs.keys(), ...entry.retainedSessionTimers.keys()])) {
+          reconcileSessionMessages(entry, sessionId);
+        }
+      }
       void reconcileSessionRunStatuses(entry, input, signal, "connect-reconcile");
     },
     onPhaseChange: (phase) => {
@@ -1894,6 +1943,96 @@ function clearSessionRetry(entry: SyncEntry, workspaceId: string, sessionId: str
   if (status?.type === "retry") applySessionRunStatus(entry, workspaceId, sessionId, { type: "busy" });
 }
 
+function cancelMessageReconciles(entry: SyncEntry, sessionId?: string) {
+  for (const [key, read] of entry.messageReconciles) {
+    if (sessionId !== undefined && read.sessionId !== sessionId) continue;
+    read.controller.abort();
+    if (read.timer) clearTimeout(read.timer);
+    entry.messageReconciles.delete(key);
+  }
+}
+
+/** Coalesce missed fragments into scoped native reads, never another prompt. */
+async function reconcileSessionMessages(entry: SyncEntry, sessionId: string, messageId?: string): Promise<void> {
+  if (!isOpencodeV2BaseUrl(entry.input.baseUrl) || !isTrackedSession(entry, sessionId)) return;
+  const key = JSON.stringify([sessionId, messageId ?? null]);
+  const pending = entry.messageReconciles.get(key);
+  if (pending) { pending.dirty = true; return pending.finished; }
+  const read: MessageReconcile = { sessionId, controller: new AbortController(), dirty: false, timer: null, finished: Promise.resolve() };
+  entry.messageReconciles.set(key, read);
+  const fetch = async () => {
+    read.dirty = false;
+    read.timer = null;
+    try {
+      const client = createSyncClient(entry.input.baseUrl, entry.openworkToken);
+      const options = { signal: AbortSignal.any([read.controller.signal, AbortSignal.timeout(10_000)]) };
+      const messages = messageId
+        ? [unwrap(await client.session.message({ sessionID: sessionId, messageID: messageId }, options))]
+        : unwrap(await client.session.messages({ sessionID: sessionId, limit: 24 }, options));
+      if (read.controller.signal.aborted || syncs.get(syncKey(entry.input)) !== entry) return;
+      if (messages.some(({ info, parts }) => info.sessionID !== sessionId || (messageId && info.id !== messageId)
+        || parts.some((part) => part.sessionID !== sessionId || part.messageID !== info.id))) return;
+      const workspaceId = entry.input.workspaceId;
+      const queryClient = getReactQueryClient();
+      flushSessionDeltas(entry, workspaceId, sessionId);
+      queryClient.setQueryData<UIMessage[]>(transcriptKey(workspaceId, sessionId), (current = []) => applyRevertCursor(
+        reconcileTranscriptMessages({ currentMessages: current, snapshotMessages: snapshotToUIMessages({ messages }) }),
+        queryClient.getQueryData<OpenworkSessionHistory>(snapshotKey(workspaceId, sessionId))?.session.revert?.messageID,
+      ));
+      settleOrphanedInteractions(workspaceId, sessionId, terminalToolCallIds(messages));
+      if (!messageId) {
+        // The latest window can miss a command that finished during a long
+        // outage. Read only cached unfinished calls outside that window, with
+        // four workers so a long conversation cannot fan out unbounded reads.
+        const recovered = new Set(messages.map(({ info }) => info.id));
+        const unfinished = (queryClient.getQueryData<UIMessage[]>(transcriptKey(workspaceId, sessionId)) ?? [])
+          .filter((message) => !recovered.has(message.id) && message.parts.some((part) =>
+            part.type === "dynamic-tool" && (part.state === "input-streaming" || part.state === "input-available")))
+          .map((message) => message.id);
+        await Promise.all(Array.from({ length: Math.min(4, unfinished.length) }, async () => {
+          while (!read.controller.signal.aborted) {
+            const id = unfinished.shift();
+            if (!id) return;
+            await reconcileSessionMessages(entry, sessionId, id);
+          }
+        }));
+      }
+    } catch {
+      // Unavailable history is not a completion. A later fragment retries.
+    } finally {
+      if (read.controller.signal.aborted) return;
+      // Keep one trailing read when a completion races an earlier snapshot.
+      // At most one request per message runs, with a 500ms gap between reads.
+      read.timer = setTimeout(() => {
+        if (read.dirty) read.finished = fetch();
+        else entry.messageReconciles.delete(key);
+      }, 500);
+    }
+  };
+  read.finished = fetch();
+  return read.finished;
+}
+
+async function reconcileSessionQuestions(entry: SyncEntry, sessionId: string) {
+  if (!isOpencodeV2BaseUrl(entry.input.baseUrl)) return;
+  entry.questionReconciles.get(sessionId)?.abort();
+  const controller = new AbortController();
+  entry.questionReconciles.set(sessionId, controller);
+  const workspaceId = entry.input.workspaceId;
+  const snapshotStartedAt = Date.now();
+  const snapshotRevision = getReactQueryClient().getQueryState(questionKey(workspaceId, sessionId))?.dataUpdateCount ?? 0;
+  try {
+    const questions = unwrap(await createClientV2(entry.input.baseUrl, undefined, { token: entry.openworkToken })
+      .listSessionQuestions({ sessionID: sessionId }, { signal: AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]) }));
+    if (controller.signal.aborted || syncs.get(syncKey(entry.input)) !== entry) return;
+    seedQuestionState(workspaceId, sessionId, questions, { snapshotStartedAt, snapshotRevision });
+  } catch {
+    // Failed reads cannot dismiss a question. Reconnect will retry.
+  } finally {
+    if (entry.questionReconciles.get(sessionId) === controller) entry.questionReconciles.delete(sessionId);
+  }
+}
+
 async function reconcileSessionPermissions(entry: SyncEntry, sessionId: string) {
   if (!isOpencodeV2BaseUrl(entry.input.baseUrl)) return;
   entry.permissionReconciles.get(sessionId)?.abort();
@@ -1943,8 +2082,9 @@ async function reconcileSessionRunStatuses(
   if (source === "connect-reconcile") {
     const records = useSessionActivityStore.getState().recordsByWorkspaceId[input.workspaceId] ?? {};
     const candidates = workspaceRecordsOwned ? Object.keys(records) : [];
-    for (const sessionId of new Set([...candidates, ...entry.trackedSessionRefs.keys()])) {
+    for (const sessionId of new Set([...candidates, ...entry.trackedSessionRefs.keys(), ...entry.retainedSessionTimers.keys()])) {
       void reconcileSessionPermissions(entry, sessionId);
+      void reconcileSessionQuestions(entry, sessionId);
       void refreshSessionTodos(input.workspaceId, sessionId);
     }
   }
@@ -2100,15 +2240,6 @@ if (typeof window !== "undefined") {
   window.addEventListener("online", revalidateWorkspaceSyncs);
 }
 
-export function __revalidateWorkspaceSyncsForTest() {
-  revalidateWorkspaceSyncs();
-}
-
-export function __resetWorkspaceSyncReconcileHealthForTest() {
-  lastReconcileSuccessAtByKey.clear();
-  useWorkspaceSyncStreamStore.setState({ reconcileHealthByKey: {} });
-}
-
 export function ensureWorkspaceSessionSync(input: SyncOptions) {
   const key = syncKey(input);
   retireOtherEngineSyncs(input);
@@ -2163,6 +2294,8 @@ export function ensureWorkspaceSessionSync(input: SyncOptions) {
     nativeSequenceRevision: 0,
     nativeTerminalSessions: new Set(),
     permissionReconciles: new Map(),
+    questionReconciles: new Map(),
+    messageReconciles: new Map(),
     titleRecovery: null,
     shellInfo: new Map(),
     backgroundShellReads: new Set(),
@@ -2533,6 +2666,8 @@ export function __createWorkspaceSessionSyncForTest(input: SyncOptions) {
     nativeSequenceRevision: 0,
     nativeTerminalSessions: new Set(),
     permissionReconciles: new Map(),
+    questionReconciles: new Map(),
+    messageReconciles: new Map(),
     titleRecovery: null,
     shellInfo: new Map(),
     backgroundShellReads: new Set(),
@@ -2544,51 +2679,18 @@ export function __createWorkspaceSessionSyncForTest(input: SyncOptions) {
       if (entry.statusReconcileTimer) clearTimeout(entry.statusReconcileTimer);
       entry.statusReconcileAbort?.abort();
       for (const controller of entry.permissionReconciles.values()) controller.abort();
+      for (const controller of entry.questionReconciles.values()) controller.abort();
+      cancelMessageReconciles(entry);
       for (const controller of entry.backgroundShellReads) controller.abort();
     }
     syncs.delete(key);
   };
 }
 
-export function __hasWorkspaceSessionSyncForTest(input: SyncOptions) {
-  return syncs.has(syncKey(input));
-}
-
-export function __disposeWorkspaceSessionSyncForTest(input: SyncOptions) {
-  const key = syncKey(input);
-  const entry = syncs.get(key);
-  if (!entry) return;
-  entry.refs = 0;
-  disposeWorkspaceSync(key, entry);
-}
-
 export function __applySessionSyncEventForTest(input: SyncOptions, event: OpencodeEvent) {
   const entry = syncs.get(syncKey(input));
   if (!entry) return;
   applyEvent(entry, input.workspaceId, event);
-}
-
-export function __queueSessionSyncDeltaForTest(input: SyncOptions, delta: PendingDelta) {
-  const entry = syncs.get(syncKey(input));
-  if (!entry) return;
-  entry.deltaFlushBuffer.push(delta);
-  scheduleDeltaFlush(entry, input.workspaceId);
-}
-
-export function __setSessionSyncDeltaFlushSchedulerForTest(scheduler: DeltaFlushScheduler | null) {
-  deltaFlushScheduler = scheduler ?? defaultDeltaFlushScheduler;
-}
-
-export function __setWorkspaceSessionSyncSubscriptionFactoryForTest(factory: SyncSubscriptionFactory | null) {
-  syncSubscriptionFactory = factory ?? defaultSyncSubscriptionFactory;
-}
-
-export function __setWorkspaceSessionSyncStatusFetcherForTest(fetcher: SessionStatusFetcher | null) {
-  sessionStatusFetcher = fetcher ?? defaultSessionStatusFetcher;
-}
-
-export function __setWorkspaceSessionSyncPermissionFetcherForTest(fetcher: typeof defaultSessionPermissionFetcher | null) {
-  sessionPermissionFetcher = fetcher ?? defaultSessionPermissionFetcher;
 }
 
 export function __setWorkspaceSessionSyncRunningShellFetcherForTest(fetcher: RunningShellFetcher | null) {

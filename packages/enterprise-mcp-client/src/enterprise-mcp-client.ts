@@ -30,6 +30,8 @@ import type {
 import { EnterpriseMcpClientError, EnterpriseMcpLifecycleDeadlineError, EnterpriseMcpToolResultError } from "./errors.js"
 import { ENTERPRISE_MCP_REQUESTED_SCOPES_LIMIT } from "./contracts.js"
 import { EnterpriseMcpOAuthProvider } from "./oauth-provider.js"
+import { createOAuthLoginDiscoveryFetch } from "./oauth-login-discovery.js"
+import { manualOAuthEndpointsSchema } from "./manual-oauth.js"
 import { createEnterpriseMcpRequestObserver, type EnterpriseMcpRequestObserver } from "./request-observer.js"
 import { createEnterpriseMcpTokenResponseCompat } from "./token-response-compat.js"
 import { collectEnterpriseMcpTools } from "./tool-catalog.js"
@@ -53,6 +55,7 @@ const clientMetadataUrlSchema = z.string().trim().url().refine((value) => {
 }, "An OAuth client metadata document URL must use HTTPS and include a path.")
 const oauthConfigurationSchema = z.object({
   applicationType: z.enum(["web", "native"]),
+  manualOAuthEndpoints: manualOAuthEndpointsSchema.optional(),
   clientMetadataUrl: clientMetadataUrlSchema.optional(),
   authorizationServerIssuer: z.string().trim().url().optional(),
   requestedScopes: z.array(z.string().trim().min(1)).max(ENTERPRISE_MCP_REQUESTED_SCOPES_LIMIT).optional(),
@@ -248,7 +251,9 @@ export function createEnterpriseMcpClient(options: EnterpriseMcpClientOptions): 
     controller.signal.addEventListener("abort", () => clearTimeout(timeout), { once: true })
 
     const compatibleFetch = createEnterpriseMcpTokenResponseCompat({
-      fetch: configuredFetch,
+      fetch: input.connection.authorization.type === "oauth" && input.flow.kind === "connect"
+        ? createOAuthLoginDiscoveryFetch({ fetch: configuredFetch, serverUrl, manual: Boolean(oauthConfiguration?.manualOAuthEndpoints) })
+        : configuredFetch,
       onTranslation: (translation) => emitDiagnostic({
         kind: "request",
         connectionId: input.connection.id,
@@ -275,6 +280,7 @@ export function createEnterpriseMcpClient(options: EnterpriseMcpClientOptions): 
     const oauthProvider = input.connection.authorization.type === "oauth"
       ? new EnterpriseMcpOAuthProvider({
           redirectUri,
+          serverUrl: serverUrl.href,
           connectionId: input.connection.id,
           persistence: input.connection.authorization.persistence,
           flow: input.flow,

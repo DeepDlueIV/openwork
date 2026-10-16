@@ -10,6 +10,7 @@ import { AuditUnavailableError, auditUnavailableToolResult, runMcpServiceAction,
 import type { AuditServiceActionName } from "../audit/service-actions.js"
 import { isPlatformAdminUserId } from "../middleware/admin.js"
 import { mcpPrincipalCredentialId, type McpPrincipal } from "./auth.js"
+import { catalogOperationAvailableToCapabilities } from "./catalog-availability.js"
 import type { McpToolOperation } from "./catalog.js"
 import {
   executeAdminCapability,
@@ -127,7 +128,13 @@ export type CapabilityRegistryContext = {
   member: McpMemberIdentity | null
   redirectUriBase: string
   generatedArtifactViewsEnabled: boolean
+  /** Managed deployment planning, launch preparation and status (both rollouts on). */
+  managedDeploymentsMcpEnabled: boolean
+  /** Secure keys in chat: provider creation is offered to agents, never keys. */
+  secureSecretFieldsEnabled: boolean
   remoteSessionEventsEnabled: boolean
+  /** `remote-session:status`, rolled out with the desktop's remote sub-agents. */
+  remoteSessionStatusEnabled: boolean
   resolvePlatformAdmin: () => Promise<boolean>
   resolveNamespaceContext: () => Promise<CodemodeConnectionNamespaceContext>
   /** Set only by MCP transports: direct service mutations are audited for this caller (src/audit/service-actions.ts). */
@@ -146,7 +153,7 @@ export type CapabilityRegistryContextInput = {
   redirectUriBase: string
   generatedArtifactViewsEnabled: boolean
   /** Effective features of the organization (see features.ts). */
-  organizationFeatures: Partial<Pick<FeatureMap, "remoteSessionEvents">>
+  organizationFeatures: Partial<Pick<FeatureMap, "remoteSessionEvents" | "remoteSessionSubagents" | "managedDeployments" | "managedDeploymentsMcp" | "secureSecretFields" | "googleDocumentTools">>
   /** MCP transports pass the verified caller; route and Automation contexts omit it (their route records the request). */
   audit?: McpAuditPrincipal | null
   /**
@@ -174,13 +181,20 @@ export function createCapabilityRegistryContext(input: CapabilityRegistryContext
   return {
     app: input.app,
     env: input.env,
-    catalog: input.catalog,
+    // All capability paths (search, Code Mode, execution, saved Workflows) use this catalog.
+    // The route also checks the current rollout so a cached tool cannot bypass a kill switch.
+    catalog: input.catalog.filter(operation => input.organizationFeatures.googleDocumentTools === true
+      || !operation.path.startsWith("/v1/capabilities/google-workspace/documents/")),
     principal: input.principal,
     organizationId: input.organizationId,
     member: input.member,
     redirectUriBase: input.redirectUriBase,
     generatedArtifactViewsEnabled: input.generatedArtifactViewsEnabled,
+    managedDeploymentsMcpEnabled: input.organizationFeatures.managedDeployments === true
+      && input.organizationFeatures.managedDeploymentsMcp === true,
+    secureSecretFieldsEnabled: input.organizationFeatures.secureSecretFields === true,
     remoteSessionEventsEnabled: input.organizationFeatures.remoteSessionEvents === true,
+    remoteSessionStatusEnabled: input.organizationFeatures.remoteSessionSubagents === true,
     resolvePlatformAdmin,
     resolveNamespaceContext,
     audit: input.audit ?? null,
@@ -229,14 +243,7 @@ function remoteSessionResourceId(body: unknown): string | null {
   return serviceAuditResourceId(normalized.sessionId)
 }
 
-export function catalogOperationAvailableToCapabilities(
-  context: Pick<CapabilityRegistryContext, "generatedArtifactViewsEnabled">,
-  operation: Pick<McpToolOperation, "method" | "path">,
-) {
-  if (context.generatedArtifactViewsEnabled) return true
-  return operation.path !== "/v1/workflows/{configObjectId}/views"
-    && !operation.path.startsWith("/v1/artifact-views/")
-}
+export { catalogOperationAvailableToCapabilities }
 
 type CapabilitySearchContext = CapabilityRegistryContext & {
   sourceFilter: ReturnType<typeof searchCapabilitySourceFilter>
@@ -740,7 +747,7 @@ const remoteSessionSource: CapabilitySource = {
   },
   search: async (ctx, query, limit) => {
     if (!ctx.sourceFilter.api || !ctx.member) return []
-    return searchRemoteSessionCapabilities(query, limit)
+    return searchRemoteSessionCapabilities(query, limit, { status: ctx.remoteSessionStatusEnabled })
   },
   // Deliberately absent from the confined-script tool tree in v1: remote
   // sessions are long-lived side effects that agents should drive through
@@ -748,6 +755,7 @@ const remoteSessionSource: CapabilitySource = {
   enumerate: () => Promise.resolve([]),
   execute: async (ctx, parsed, input) => {
     if (!parsedForKind(parsed, "remoteSession")) return unknownCapabilityResult(input.name)
+    if (parsed.action === "status" && !ctx.remoteSessionStatusEnabled) return unknownCapabilityResult(input.name)
     if (!ctx.member) {
       return {
         isError: true,

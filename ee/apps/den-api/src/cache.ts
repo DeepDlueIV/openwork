@@ -18,7 +18,7 @@ type UserId = typeof AuthUserTable.$inferSelect.id
 type OAuthConsentId = typeof OAuthConsentTable.$inferSelect.id
 
 type CacheParent = "auth" | "features" | "org"
-type CacheChild = "generation" | "grant" | "grant-revoked" | "member" | "member-revoked" | "members" | "member-teams" | "overrides" | "rollouts" | "session" | "session-id" | "session-revoked" | "session-id-revoked"
+type CacheChild = "generation" | "inventory-generation" | "grant" | "grant-revoked" | "member" | "member-revoked" | "members" | "member-teams" | "overrides" | "rollouts" | "session" | "session-id" | "session-revoked" | "session-id-revoked"
 
 type CacheKeyInput = {
   parent: CacheParent
@@ -1015,6 +1015,42 @@ async function deleteAuthSessionsForUser(userId: UserId) {
  * role edits clear org member/membership keys, and every membership credential
  * revocation also writes a membership tombstone.
  */
+function inventoryGenerationKey(organizationId: string) {
+  return cacheKey({ parent: "org", child: "inventory-generation", id: organizationId })
+}
+
+/**
+ * An opaque value that changes whenever the organization's member inventory
+ * may have changed: its inventory generation (bumped after writes, see
+ * inventory-writes.ts), the feature flag generation, and the running build.
+ * Null when Redis is not configured or cannot answer, so callers reload.
+ */
+async function getInventoryRevision(organizationId: OrgId): Promise<string | null> {
+  const redis = activeRedisClient
+  if (!redis) return null
+  try {
+    const keys = [inventoryGenerationKey(organizationId), FEATURES_GENERATION_KEY]
+    const [inventory, features] = redis.mget ? await redis.mget(...keys) : await Promise.all(keys.map((key) => redis.get(key)))
+    return createHash("sha256").update(JSON.stringify([inventory ?? "0", features ?? "0", env.serviceVersion])).digest("hex").slice(0, 32)
+  } catch (error) {
+    console.error("openwork_cache_get_failed", { cacheParent: "org", cacheChild: "inventory-generation", id: organizationId, error })
+    return null
+  }
+}
+
+/** Call only after the writes have committed (at the end of the request). */
+async function bumpInventoryRevisions(organizationIds: string[]) {
+  const redis = activeRedisClient
+  if (!redis || organizationIds.length === 0) return
+  await Promise.all(organizationIds.map(async (organizationId) => {
+    try {
+      await bumpGeneration(redis, inventoryGenerationKey(organizationId))
+    } catch (error) {
+      console.error("openwork_cache_delete_failed", { cacheParent: "org", cacheChild: "inventory-generation", id: organizationId, error })
+    }
+  }))
+}
+
 export const cache = {
   auth: {
     session: getAuthSession,
@@ -1051,6 +1087,10 @@ export const cache = {
     overrides: getOrganizationFeatureOverrides,
     state: getOrganizationFeatureState,
     invalidate: invalidateFeatures,
+  },
+  inventory: {
+    revision: getInventoryRevision,
+    bump: bumpInventoryRevisions,
   },
 }
 

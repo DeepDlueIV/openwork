@@ -2,26 +2,34 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { ArrowLeft, KeyRound, ShieldCheck, Users } from "lucide-react";
+import { ArrowLeft, Laptop, Compass, KeyRound, Layers, ShieldCheck, SquareTerminal, Users } from "lucide-react";
 import { DenBadge } from "../../_components/ui/badge";
 import { DenButton } from "../../_components/ui/button";
 import { DenNotice } from "../../_components/ui/notice";
 import { type TabItem, UnderlineTabs } from "../../_components/ui/tabs";
 import { getMarketplaceRoute, getMembersRoute, getOrgAccessFlags, orgFeatureEnabled } from "../../_lib/den-org";
+import { desktopPolicyScreenRemoved } from "../_lib/desktop-policy-screen-rollout";
+import { DesktopSuggestionsPanel } from "./desktop-suggestions-panel";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
+import { AgentsPanel, agentsTabVisible } from "./agent-permissions-editor";
 import { TeamPermissionsPanel } from "./team-permissions-panel";
+import { TeamPluginAccessPanel } from "./team-plugin-access-panel";
+import { ModelsPanel, modelsTabVisible } from "./team-models-panel";
+import { TeamDefaultModelSection } from "./default-model-section";
+import { useDefaultModelFeatureOn } from "./default-model-data";
 import { OrgMemberIdentity } from "./org-member-identity";
 import { TeamAdminCheckbox } from "./team-admin-checkbox";
 import { TeamRolePanel } from "./team-role-panel";
+import { SharedTeamRolePanel } from "./shared-team-role-panel";
 import { MemberTeamRoles } from "./member-team-roles";
-import { useCustomRoleTeams } from "./permissions-data";
+import { useCustomRoleTeams, useSharedRolesOn } from "./permissions-data";
 import {
   type TeamPluginAccessItem,
   useRevokeTeamPluginAccess,
   useTeamPluginAccess,
 } from "./team-access-data";
 
-type TeamDetailTab = "role" | "overview" | "access";
+export type TeamDetailTab = "role" | "overview" | "access" | "agents" | "browser" | "models" | "desktop";
 
 function formatGrantedDate(value: string): string {
   const date = new Date(value);
@@ -61,7 +69,7 @@ function RoleBadge({ role }: { role: TeamPluginAccessItem["role"] }) {
   );
 }
 
-export function TeamDetailScreen({ teamId }: { teamId: string }) {
+export function TeamDetailScreen({ teamId, initialTab = null }: { teamId: string; initialTab?: TeamDetailTab | null }) {
   const { orgContext, orgId, orgSlug } = useOrgDashboard();
   const viewerAccess = orgContext
     ? getOrgAccessFlags(orgContext.currentMember.role, orgContext.currentMember.isOwner, orgContext.currentMember.permissions)
@@ -70,10 +78,37 @@ export function TeamDetailScreen({ teamId }: { teamId: string }) {
   const canRevokeAccess = viewerAccess?.canManageAllShared ?? false;
   // teamRoles: the team page opens on its one role (Member, Admin or Custom).
   const teamRoles = orgContext ? orgFeatureEnabled(orgContext, "teamRoles") : false;
+  // sharedRoles: the role is picked from every custom role, and the unused desktop-policy editor leaves Access.
+  const sharedRoles = useSharedRolesOn();
   // Members list each person's team roles the same way the Members page does.
   const customRoles = useCustomRoleTeams(orgId, teamRoles && Boolean(orgContext && orgFeatureEnabled(orgContext, "permissions")) && (viewerAccess?.canViewPermissions ?? false));
-  const [chosenTab, setActiveTab] = useState<TeamDetailTab | null>(null);
-  const activeTab: TeamDetailTab = chosenTab && (teamRoles || chosenTab !== "role") ? chosenTab : teamRoles ? "role" : "access";
+  // orgDefaultModel: the Access tab lets admins override the model new desktop chats start with.
+  const defaultModelOn = useDefaultModelFeatureOn();
+  // agentPermissions: the team's Agents tab holds what it changes from Everyone.
+  const showAgents = agentsTabVisible(orgContext);
+  // teamPageTabs: Open websites moves from Agents to its own Browser tab, and
+  // the team's AI providers, spend limits and default model get a Models tab.
+  const pageTabs = orgContext ? orgFeatureEnabled(orgContext, "teamPageTabs") : false;
+  const showBrowser = pageTabs && showAgents;
+  const showDesktop = desktopPolicyScreenRemoved(orgContext);
+  const showModels = modelsTabVisible(orgContext);
+  const [chosenTab, setChosenTab] = useState<TeamDetailTab | null>(initialTab);
+  const defaultTab: TeamDetailTab = teamRoles ? "role" : "access";
+  // The tab is in the address (?tab=agents), so a reload or a shared link opens it again.
+  const setActiveTab = (tab: TeamDetailTab) => {
+    setChosenTab(tab);
+    const url = new URL(window.location.href);
+    if (tab === defaultTab) url.searchParams.delete("tab");
+    else url.searchParams.set("tab", tab);
+    window.history.replaceState(null, "", url);
+  };
+  const available = (tab: TeamDetailTab) => tab === "role" ? teamRoles
+    : tab === "agents" ? showAgents
+      : tab === "browser" ? showBrowser
+        : tab === "desktop" ? showDesktop
+        : tab === "models" ? showModels
+          : true;
+  const activeTab: TeamDetailTab = chosenTab && available(chosenTab) ? chosenTab : defaultTab;
   const accessQuery = useTeamPluginAccess(teamId);
   const revokeAccess = useRevokeTeamPluginAccess();
   const team = orgContext?.teams.find((entry) => entry.id === teamId);
@@ -83,15 +118,23 @@ export function TeamDetailScreen({ teamId }: { teamId: string }) {
     return member ? [member] : [];
   });
   const memberCount = team?.memberIds.length ?? 0;
+  const agentsTab: readonly TabItem<TeamDetailTab>[] = [
+    ...(showAgents ? [{ value: "agents" as const, label: "Agents", icon: SquareTerminal }] : []),
+    ...(showBrowser ? [{ value: "browser" as const, label: "Browser", icon: Compass }] : []),
+    ...(showModels ? [{ value: "models" as const, label: "Models", icon: Layers }] : []),
+    ...(showDesktop ? [{ value: "desktop" as const, label: "Desktop", icon: Laptop }] : []),
+  ];
   const tabs: readonly TabItem<TeamDetailTab>[] = teamRoles
     ? [
       { value: "role", label: "Role", icon: ShieldCheck },
       { value: "overview", label: "Members", icon: Users },
       { value: "access", label: "Access", icon: KeyRound },
+      ...agentsTab,
     ]
     : [
       { value: "overview", label: "Overview", icon: Users },
       { value: "access", label: "Access", icon: ShieldCheck },
+      ...agentsTab,
     ];
 
   return (
@@ -99,7 +142,7 @@ export function TeamDetailScreen({ teamId }: { teamId: string }) {
       <div className="mb-6 flex items-center justify-between gap-4">
         <Link
           href={getMembersRoute(orgSlug)}
-          className="inline-flex items-center gap-1.5 text-[13px] text-gray-400 transition hover:text-gray-700"
+          className="inline-flex items-center gap-1.5 text-[13px] text-gray-500 transition hover:text-gray-700"
         >
           <ArrowLeft className="h-4 w-4" />
           Back
@@ -126,7 +169,7 @@ export function TeamDetailScreen({ teamId }: { teamId: string }) {
       <div className="mt-6">
         {activeTab === "role" && team ? (
           <div role="tabpanel" aria-label="Role">
-            <TeamRolePanel team={team} />
+            {sharedRoles ? <SharedTeamRolePanel team={team} /> : <TeamRolePanel team={team} />}
           </div>
         ) : null}
 
@@ -142,7 +185,7 @@ export function TeamDetailScreen({ teamId }: { teamId: string }) {
                   <div key={member.id} className="px-6 py-4">
                     <OrgMemberIdentity member={member} />
                     {teamRoles && orgContext ? (
-                      <MemberTeamRoles member={member} teams={orgContext.teams} customTeamIds={customRoles.teamIds} exceptTeamId={teamId} />
+                      <MemberTeamRoles member={member} teams={orgContext.teams} customTeamIds={customRoles.teamIds} customRoleNameByTeam={sharedRoles ? customRoles.nameByTeam : undefined} exceptTeamId={teamId} />
                     ) : member.adminTeams.length > 0 ? (
                       <p className="mt-2 text-[12px] text-gray-500">Admin via {member.adminTeams.map((entry) => entry.name).join(", ")}</p>
                     ) : null}
@@ -155,9 +198,16 @@ export function TeamDetailScreen({ teamId }: { teamId: string }) {
 
         {activeTab === "access" ? (
           <div role="tabpanel" aria-label="Access">
-            <TeamPermissionsPanel teamId={teamId} heading={teamRoles ? "In the desktop app" : undefined} />
+            {/* With the Models tab, the default model lives there instead. */}
+            {defaultModelOn && viewerAccess?.canViewModelsSettings && !showModels ? (
+              <TeamDefaultModelSection teamId={teamId} canManage={viewerAccess.canManageModelsSettings} />
+            ) : null}
+            {sharedRoles || showDesktop ? null : <TeamPermissionsPanel teamId={teamId} heading={teamRoles ? "In the desktop app" : undefined} />}
+            {orgContext && orgFeatureEnabled(orgContext, "teamAccessRows") ? (
+              <TeamPluginAccessPanel teamId={teamId} teamName={team?.name ?? "This team"} orgSlug={orgSlug} canRevoke={canRevokeAccess} />
+            ) : <>
             <h2 className="mb-2 text-lg font-semibold text-gray-950">Plugins & connections</h2>
-            <p className="mb-4 text-sm text-gray-500">Review what this team can use and where access comes from.</p>
+            {sharedRoles ? null : <p className="mb-4 text-sm text-gray-500">Review what this team can use and where access comes from.</p>}
             {accessQuery.isLoading ? (
               <div className="rounded-2xl border border-gray-100 bg-white px-6 py-8 text-[13px] text-gray-400">
                 Loading team access…
@@ -255,6 +305,27 @@ export function TeamDetailScreen({ teamId }: { teamId: string }) {
             <p className="mt-4 text-[12px] text-gray-500">
               direct = revocable here; via catalog = manage in the catalog; org-wide = org setting.
             </p>
+            </>}
+          </div>
+        ) : null}
+
+        {activeTab === "agents" && team ? (
+          <div role="tabpanel" aria-label="Agents">
+            <AgentsPanel team={{ id: team.id, name: team.name }} area={showBrowser ? "agents" : "all"} />
+          </div>
+        ) : null}
+
+        {activeTab === "browser" && team ? (
+          <div role="tabpanel" aria-label="Browser">
+            <AgentsPanel team={{ id: team.id, name: team.name }} area="browser" />
+          </div>
+        ) : null}
+
+        {activeTab === "desktop" && team ? (<div role="tabpanel" aria-label="Desktop"><DesktopSuggestionsPanel team={{ id: team.id, name: team.name }} /></div>) : null}
+
+        {activeTab === "models" && team ? (
+          <div role="tabpanel" aria-label="Models">
+            <ModelsPanel team={{ id: team.id, name: team.name }} />
           </div>
         ) : null}
       </div>

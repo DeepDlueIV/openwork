@@ -34,6 +34,8 @@ export interface Sandbox {
   state: string;
   labels: Record<string, string>;
   toolboxProxyUrl?: string;
+  /** Provider-confirmed privacy, when returned by the API. */
+  public?: boolean;
   errorReason?: string | null;
   createdAt?: string;
   snapshot?: string;
@@ -71,7 +73,8 @@ function labels(value: unknown): Record<string, string> {
 function asSandbox(value: unknown): Sandbox {
   if (!record(value) || typeof value.id !== "string" || typeof value.state !== "string") throw new Error("Invalid Daytona sandbox response");
   return { id: value.id, name: text(value.name) ?? value.id, state: value.state, labels: labels(value.labels),
-    toolboxProxyUrl: text(value.toolboxProxyUrl), errorReason: text(value.errorReason) ?? null, createdAt: text(value.createdAt),
+    toolboxProxyUrl: text(value.toolboxProxyUrl), public: typeof value.public === "boolean" ? value.public : undefined,
+    errorReason: text(value.errorReason) ?? null, createdAt: text(value.createdAt),
     snapshot: text(value.snapshot), lastActivityAt: text(value.lastActivityAt) };
 }
 function asSnapshot(value: unknown): Snapshot {

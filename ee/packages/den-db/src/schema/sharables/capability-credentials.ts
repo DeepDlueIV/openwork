@@ -140,6 +140,8 @@ export type ExternalMcpOAuthConfiguration = {
   authorizationServerIssuer: string | null
   requestedScopes: string[]
   callbackMode: ExternalMcpOAuthCallbackMode
+  /** Explicit administrator-pinned endpoints; absent on discovery-based connections. */
+  manualOAuthEndpoints?: { authorizationEndpoint: string; tokenEndpoint: string }
   /**
    * SDK-owned discovery state. Den validates it before reuse and never exposes
    * it through the connection API. Keeping it with the connection allows

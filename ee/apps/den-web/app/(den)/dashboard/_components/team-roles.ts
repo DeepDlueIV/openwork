@@ -113,10 +113,15 @@ export type RoleSetLike = {
   team: { id: string; name: string | null } | null;
 };
 
-/** The role a permission set is: Member, Admin, or the team's name. */
-export function roleName(set: RoleSetLike): string {
+/**
+ * The role a permission set is: Member, Admin, or a custom role. A custom
+ * role is named after its team, or by its own name when roles are shared
+ * between teams (sharedRoles).
+ */
+export function roleName(set: RoleSetLike, options: { shared?: boolean } = {}): string {
   if (set.kind === "member_default") return TEAM_ROLE_LABELS.member;
   if (set.kind === "admin_default") return TEAM_ROLE_LABELS.admin;
+  if (options.shared) return set.name;
   return set.team?.name ?? set.name;
 }
 
@@ -131,10 +136,11 @@ export type PermissionSourceLike = {
   label: string;
   via?: string;
   teamName?: string;
+  setName?: string;
   set?: string;
 };
 
-export function permissionSourceRoleLabel(source: PermissionSourceLike): string {
+export function permissionSourceRoleLabel(source: PermissionSourceLike, options: { shared?: boolean } = {}): string {
   switch (source.kind) {
     case "owner":
       return "Owner";
@@ -143,6 +149,7 @@ export function permissionSourceRoleLabel(source: PermissionSourceLike): string 
     case "admin_default":
       return source.via === "team" && source.teamName ? `Admin via ${source.teamName}` : TEAM_ROLE_LABELS.admin;
     case "team":
+      if (options.shared && source.setName) return source.teamName ? `${source.setName} via ${source.teamName}` : source.setName;
       return source.teamName ?? source.label;
     case "code_default":
       return source.set === "admin" ? TEAM_ROLE_LABELS.admin : TEAM_ROLE_LABELS.member;
@@ -161,16 +168,20 @@ export function teamRoleLabels(input: {
   ownRole: "owner" | "admin" | "member";
   teams: readonly { id: string; name: string; memberIds: readonly string[]; grantsOrganizationAdmin: boolean }[];
   customTeamIds: ReadonlySet<string>;
+  /** sharedRoles: each custom role's own name by team, shown instead of the team's name. */
+  customRoleNameByTeam?: ReadonlyMap<string, string>;
 }): string[] {
   if (input.ownRole === "owner") return [];
   const mine = input.teams.filter((team) => team.memberIds.includes(input.memberId));
   const adminTeams = input.ownRole === "admin" ? [] : mine.filter((team) => team.grantsOrganizationAdmin).map((team) => team.name);
-  const custom = mine.filter((team) => !team.grantsOrganizationAdmin && input.customTeamIds.has(team.id)).map((team) => team.name);
-  return [...(adminTeams.length > 0 ? [`Admin via ${adminTeams.join(", ")}`] : []), ...custom];
+  const custom = mine
+    .filter((team) => !team.grantsOrganizationAdmin && input.customTeamIds.has(team.id))
+    .map((team) => input.customRoleNameByTeam?.get(team.id) ?? team.name);
+  return [...(adminTeams.length > 0 ? [`Admin via ${adminTeams.join(", ")}`] : []), ...new Set(custom)];
 }
 
 /** Invite and role pickers: a built-in role, or a custom role by its team. */
-export type RoleChoiceValue = "member" | "admin" | `team:${string}`;
+export type RoleChoiceValue = "member" | "admin" | `team:${string}` | `role:${string}`;
 
 export function customRoleChoice(teamId: string): RoleChoiceValue {
   return `team:${teamId}`;
@@ -179,6 +190,50 @@ export function customRoleChoice(teamId: string): RoleChoiceValue {
 export function parseRoleChoice(value: string): { role: "member" | "admin"; teamId: string | null } {
   if (value.startsWith("team:")) return { role: "member", teamId: value.slice("team:".length) || null };
   return { role: value === "admin" ? "admin" : "member", teamId: null };
+}
+
+export type MemberRoleOption = {
+  value: RoleChoiceValue;
+  label: string;
+  /** "Custom role" next to a custom role's name, null for built-in roles. */
+  caption: string | null;
+  disabled: boolean;
+  lockReason?: string | null;
+};
+
+/**
+ * The roles a person can be given directly, for both Invite and Edit role.
+ *
+ * Member and Admin always. With teamRoles each custom role is listed by its
+ * team. With sharedRoles it is listed once by permission-set name, including
+ * roles with no teams. The caller resolves its team choice before saving;
+ * custom roles always keep the person's organization role Member.
+ */
+export function memberRoleOptions(input: {
+  sharedRoles: boolean;
+  customRoleTeams: readonly { id: string; name: string; managedByScim?: boolean }[];
+  canManageTeams: boolean;
+  customRoles?: readonly { id: string; name: string; teams: readonly { id: string; name: string | null }[] }[];
+  lockReasons?: ReadonlyMap<string, string | null>;
+  adminLockReason?: string | null;
+}): MemberRoleOption[] {
+  const builtIn: MemberRoleOption[] = [
+    { value: "member", label: TEAM_ROLE_LABELS.member, caption: null, disabled: false },
+    { value: "admin", label: TEAM_ROLE_LABELS.admin, caption: null, disabled: Boolean(input.adminLockReason), lockReason: input.adminLockReason },
+  ];
+  if (input.sharedRoles) return [...builtIn, ...(input.customRoles ?? []).map((role): MemberRoleOption => {
+    const lockReason = !input.canManageTeams ? "Needs Manage teams. Ask the organization owner." : input.lockReasons?.get(role.id) ?? null;
+    return { value: `role:${role.id}`, label: role.name, caption: role.teams.length ? `On ${role.teams.map((team) => team.name ?? "A deleted team").join(", ")}` : "No teams yet", disabled: lockReason !== null, lockReason };
+  })];
+  return [
+    ...builtIn,
+    ...input.customRoleTeams.map((team): MemberRoleOption => ({
+      value: customRoleChoice(team.id),
+      label: team.name,
+      caption: "Custom role",
+      disabled: !input.canManageTeams || team.managedByScim === true,
+    })),
+  ];
 }
 
 export type TeamRoleAbilities = {
@@ -209,4 +264,67 @@ export function teamRoleLockReason(current: TeamRoleState, next: TeamRole, abili
 export function allowedKeys(permissions: readonly { key: string; status: "allow" | "deny" }[]): PermissionKey[] {
   const allowed = new Set(permissions.filter((entry) => entry.status === "allow").map((entry) => entry.key));
   return PERMISSION_KEYS.filter((key) => allowed.has(key) && isPermissionKey(key));
+}
+
+/**
+ * sharedRoles: a team's role is Member, Admin, or one of the organization's
+ * custom roles (permission sets) by id.
+ */
+export type SharedTeamRole = { kind: "member" } | { kind: "admin" } | { kind: "custom"; setId: string };
+
+export type SharedTeamRoleState = {
+  admin: boolean;
+  /** The custom role the team has now, if any. */
+  setId: string | null;
+};
+
+export type SharedTeamRoleStep =
+  | { kind: "set-admin"; value: boolean }
+  | { kind: "assign"; setId: string | null };
+
+/** The role a team shows: Admin first, then its custom role, else Member. */
+export function sharedTeamRole(state: SharedTeamRoleState): SharedTeamRole {
+  if (state.admin) return { kind: "admin" };
+  return state.setId ? { kind: "custom", setId: state.setId } : { kind: "member" };
+}
+
+export function sameSharedTeamRole(left: SharedTeamRole, right: SharedTeamRole): boolean {
+  if (left.kind === "custom" && right.kind === "custom") return left.setId === right.setId;
+  return left.kind === right.kind;
+}
+
+/**
+ * The calls that move a team to `next`, ordered so the team never has less
+ * access part way than at either end: the Admin flag goes on before the custom
+ * role comes off, and a new custom role is given before the Admin flag goes off.
+ * Giving a team another custom role is one call (the API replaces it).
+ */
+export function sharedTeamRoleSteps(current: SharedTeamRoleState, next: SharedTeamRole): SharedTeamRoleStep[] {
+  const steps: SharedTeamRoleStep[] = [];
+  if (next.kind === "admin") {
+    if (!current.admin) steps.push({ kind: "set-admin", value: true });
+    if (current.setId) steps.push({ kind: "assign", setId: null });
+    return steps;
+  }
+  if (next.kind === "custom") {
+    if (current.setId !== next.setId) steps.push({ kind: "assign", setId: next.setId });
+    if (current.admin) steps.push({ kind: "set-admin", value: false });
+    return steps;
+  }
+  if (current.admin) steps.push({ kind: "set-admin", value: false });
+  if (current.setId) steps.push({ kind: "assign", setId: null });
+  return steps;
+}
+
+/** Why the person can't move the team to `next` (sharedRoles), or null when they can. */
+export function sharedTeamRoleLockReason(current: SharedTeamRoleState, next: SharedTeamRole, abilities: TeamRoleAbilities): string | null {
+  for (const step of sharedTeamRoleSteps(current, next)) {
+    if (step.kind === "set-admin" && !abilities.canManageAdminTeams) {
+      return "Needs Manage Admin teams. Ask the owner.";
+    }
+    if (step.kind === "assign" && !abilities.canManagePermissions) {
+      return "Needs Manage permissions. Ask the owner.";
+    }
+  }
+  return null;
 }

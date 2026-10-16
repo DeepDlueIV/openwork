@@ -6,7 +6,8 @@ import type { McpAppToolBinding, McpAppToolDeclaration, PrepareMcpAppInput, Prep
  * OpenWork's opinionated App starters. prepare_app returns the one that fits
  * the verified tools, already calling them with inputs built from their
  * schemas; the same three are readable as resources. Each covers the host
- * rules (theme, one call per click, approval, blocked) and every state, so
+ * rules (theme, reads that load on open, one click per change, approval,
+ * blocked) and every state, so
  * the author only replaces the presentation.
  */
 export type AppStarterPattern = "lookup" | "action" | "standalone"
@@ -74,8 +75,8 @@ export function appStarter(tools: McpAppToolBinding[]) {
   ].filter(Boolean).join("\n")
   const body = change ? ACTION_SOURCE : LOOKUP_SOURCE
   const describe = change
-    ? `Starter: action. ${change.name} runs once per click of its button, from inputs built from its schema${load ? `; ${load.name} runs from its own button` : ""}. It covers approval, failure, and blocked states.`
-    : `Starter: lookup. ${load?.name} runs when the person clicks its button or presses Enter, with inputs built from its schema and filled from the launch input, and covers loading, empty, approval, failure, and blocked states.`
+    ? `Starter: action. ${change.name} runs once per click of its button, from inputs built from its schema${load ? `; ${load.name} loads when the App opens and again from its own button` : ""}. It covers approval, failure, and blocked states.`
+    : `Starter: lookup. ${load?.name} loads when the App opens, with inputs built from its schema and filled from the launch input: the last result for them shows at once while it refreshes, and Enter or its button loads it again. It covers loading, empty, stale, approval, failure, and blocked states.`
   return {
     pattern,
     reactSource: [STARTER_HEADER, constants, SHARED_SOURCE, body].join("\n"),
@@ -84,7 +85,7 @@ export function appStarter(tools: McpAppToolBinding[]) {
       describe,
       change
         ? "Rename the button and its done line to exactly what happens (for example \"Create invoice\" and \"Invoice created\"), keep only the inputs the person needs, and show the outcome they care about."
-        : "Rename the button to the outcome (for example \"Find orders\"), keep only the inputs the person needs, and replace ResultView with the focal view they came for: the list, number, or status.",
+        : "Rename the button to the outcome (for example \"Find orders\"), keep only the inputs the person needs, and replace ResultView with the focal view they came for: the list, number, or status. Keep its load on open.",
       ...(unwired.length > 0 ? [`Also declared but not wired yet: ${unwired.join(", ")}. Give each its own control.`] : []),
       "Keep useTheme, useToolCall, and the state components, then call create_app with this preparationId.",
     ],
@@ -204,8 +205,8 @@ const MAX_ROWS = 8;
 const MAX_COLUMNS = 4;
 const numberFormat = new Intl.NumberFormat();
 
-// The host sends its colors and fonts; applying them at the root keeps the App
-// readable in light and dark themes.
+// The host sends its colors and fonts, and sends them again when the person
+// switches light or dark; applying them at the root keeps the App in step.
 function useTheme(hostContext) {
   const variables = hostContext?.styles?.variables;
   const scheme = hostContext?.theme ?? "light dark";
@@ -244,19 +245,58 @@ function messageOf(response) {
   return text || "That didn't work. Try again.";
 }
 
+function dateOf(value) {
+  const date = new Date(value);
+  return value && !Number.isNaN(date.getTime()) ? date : null;
+}
+
 // One declared tool, with every state the person can see. Only the latest
 // call updates the view, so a slow earlier answer never replaces a newer one.
+// OpenWork keeps read-only results, so peek shows the last one at once
+// without running the tool while a call refreshes it. A failed refresh keeps
+// the value on screen with its time, so the person knows it is stale.
 function useToolCall(app, name) {
   const [state, setState] = React.useState({ status: "idle" });
   const latest = React.useRef(0);
+  const latestPeek = React.useRef(0);
+  // The inputs of the newest peek or call; a kept result for other inputs is never shown.
+  const latestArgs = React.useRef(null);
   const available = Boolean(name) && Boolean(app?.getHostCapabilities()?.serverTools);
+  // Only OpenWork answers a cached read from storage; elsewhere it would run the tool.
+  const cacheable = app?.getHostContext()?.experimental?.["openwork/result-cache"] === true;
+  const peek = React.useCallback(async (args) => {
+    if (!available || !cacheable) return;
+    const asked = JSON.stringify(args);
+    latestArgs.current = asked;
+    // A slower earlier peek never overwrites a newer one, and a finished call wins over both.
+    const peekId = ++latestPeek.current;
+    let response;
+    try {
+      response = await app.callServerTool({ name, arguments: args, _meta: { "openwork/cache": "read" } });
+    } catch {
+      return;
+    }
+    if (peekId !== latestPeek.current || latestArgs.current !== asked) return;
+    const meta = response?._meta;
+    // A kept result replaces nothing newer; with none kept, an earlier kept
+    // result for other inputs is cleared rather than shown under these.
+    if (response?.isError || meta?.["openwork/cached"] !== true) {
+      setState((previous) => previous.cached ? { status: previous.status === "loading" ? "loading" : "idle" } : previous);
+      return;
+    }
+    // A call still running keeps loading behind the kept value.
+    setState((previous) => previous.value === undefined || previous.cached
+      ? { status: previous.status === "loading" ? "loading" : "ready", value: valueOf(response), updatedAt: dateOf(meta["openwork/cachedAt"]) ?? new Date(), cached: true }
+      : previous);
+  }, [app, name, available, cacheable]);
   const call = React.useCallback(async (args) => {
     if (!available) return false;
+    latestArgs.current = JSON.stringify(args);
     const id = ++latest.current;
     setState((previous) => ({ ...previous, status: "loading" }));
     let response;
     try {
-      response = await app.callServerTool({ name, arguments: args });
+      response = await app.callServerTool({ name, arguments: args, _meta: { "openwork/cache": "store" } });
     } catch (reason) {
       response = { isError: true, content: [{ type: "text", text: reason instanceof Error ? reason.message : String(reason) }] };
     }
@@ -266,10 +306,11 @@ function useToolCall(app, name) {
       setState((previous) => ({ ...previous, status: /approv/i.test(message) ? "approval" : "error", message }));
       return false;
     }
-    setState({ status: "ready", value: valueOf(response), updatedAt: new Date() });
+    // An answer OpenWork already loaded for this open carries the time it loaded.
+    setState({ status: "ready", value: valueOf(response), updatedAt: dateOf(response?._meta?.["openwork/cachedAt"]) ?? new Date() });
     return true;
   }, [app, name, available]);
-  return { ...state, available, call };
+  return { ...state, available, call, peek };
 }
 
 function humanize(key) {
@@ -412,7 +453,8 @@ function ToolNotice({ call, retryLabel, onRetry, showBlocked = true }) {
     return <p className="notice">This needs your approval first. <button type="button" onClick={onRetry}>{retryLabel}</button></p>;
   }
   if (call.status === "error") {
-    return <p className="notice" role="alert" data-tone="danger">{call.message} <button type="button" onClick={onRetry}>Try again</button></p>;
+    const stale = call.value !== undefined && call.updatedAt ? " Showing what loaded at " + timeOf(call.updatedAt) + "." : "";
+    return <p className="notice" role="alert" data-tone="danger">{call.message}{stale} <button type="button" onClick={onRetry}>Try again</button></p>;
   }
   return null;
 }
@@ -469,20 +511,38 @@ function ResultView({ value, emptyText }) {
 `
 
 const LOOKUP_SOURCE = `
-export default function App({ app, input, hostContext }) {
+export default function App({ app, input, result, hostContext }) {
   const theme = useTheme(hostContext);
   const load = useToolCall(app, LOAD.name);
   const [values, setValues] = React.useState(() => initialValues(LOAD.fields, input));
   const launch = JSON.stringify(input ?? {});
-  // The launch input only fills the inputs. The tool runs when the person
-  // clicks its button or presses Enter, never on its own when the App opens.
+  // Opening the App is enough to load its data: once the host has delivered
+  // the launch, the launch input fills the inputs and, when they are ready,
+  // the read loads with no click. OpenWork runs it once per open.
+  const delivered = result !== undefined;
   React.useEffect(() => {
-    setValues(initialValues(LOAD.fields, input));
-  }, [launch]);
+    const next = initialValues(LOAD.fields, input);
+    setValues(next);
+    if (delivered && isReady(LOAD.fields, next)) load.call(argumentsFor(LOAD, next));
+  }, [launch, delivered]);
+  // A later launch result is the host refreshing the open App, as a dashboard
+  // does: load the same inputs again while the data stays on screen.
+  const refreshed = React.useRef(result);
+  React.useEffect(() => {
+    const previous = refreshed.current;
+    refreshed.current = result;
+    if (previous !== undefined && previous !== result && isReady(LOAD.fields, values)) load.call(argumentsFor(LOAD, values));
+  }, [result]);
+  // The last result for these inputs shows at once, from OpenWork's storage.
+  const query = JSON.stringify(values);
+  React.useEffect(() => {
+    if (isReady(LOAD.fields, values)) load.peek(argumentsFor(LOAD, values));
+  }, [query]);
   const ready = isReady(LOAD.fields, values);
   const find = () => {
     if (ready) load.call(argumentsFor(LOAD, values));
   };
+  const needed = LOAD.fields.filter((field) => field.required && !isFilled(field, values[field.name])).map((field) => field.label);
   const rows = rowsOf(load.value);
   return (
     <main className="app" style={theme}>
@@ -493,12 +553,12 @@ export default function App({ app, input, hostContext }) {
       <ToolNotice call={load} retryLabel={LOAD.label} onRetry={find} />
       <section className="result" aria-live="polite" aria-busy={load.status === "loading"}>
         {load.value === undefined
-          ? load.status === "loading" ? <Skeleton /> : null
+          ? load.status === "loading" ? <Skeleton /> : needed.length > 0 && load.available ? <p className="notice">Enter {needed.join(" and ")} to see results.</p> : null
           : <ResultView value={load.value} emptyText={LOAD.fields.length > 0 ? "Nothing matches. Try different inputs." : "Nothing here yet."} />}
       </section>
       {load.updatedAt ? (
         <p className="meta">
-          {rows ? (rows.length === 1 ? "1 result · " : rows.length + " results · ") : ""}Updated {timeOf(load.updatedAt)}
+          {rows ? (rows.length === 1 ? "1 result · " : rows.length + " results · ") : ""}Updated {timeOf(load.updatedAt)}{load.status === "loading" ? " · Refreshing…" : ""}
         </p>
       ) : null}
     </main>
@@ -507,7 +567,7 @@ export default function App({ app, input, hostContext }) {
 `
 
 const ACTION_SOURCE = `
-export default function App({ app, input, hostContext }) {
+export default function App({ app, input, result, hostContext }) {
   const theme = useTheme(hostContext);
   const change = useToolCall(app, CHANGE.name);
   const load = useToolCall(app, LOAD ? LOAD.name : "");
@@ -517,6 +577,23 @@ export default function App({ app, input, hostContext }) {
   React.useEffect(() => {
     setValues(initialValues(CHANGE.fields, input));
   }, [launch]);
+  // The read loads when the App opens, showing its last result at once while
+  // it refreshes, and again from its button. Only the change waits for a click.
+  const delivered = result !== undefined;
+  React.useEffect(() => {
+    if (LOAD) load.peek(argumentsFor(LOAD, {}));
+  }, []);
+  React.useEffect(() => {
+    if (LOAD && delivered) load.call(argumentsFor(LOAD, {}));
+  }, [delivered]);
+  // A later launch result is the host refreshing the open App, as a dashboard
+  // does: load again while the data stays on screen.
+  const refreshed = React.useRef(result);
+  React.useEffect(() => {
+    const previous = refreshed.current;
+    refreshed.current = result;
+    if (LOAD && previous !== undefined && previous !== result) load.call(argumentsFor(LOAD, {}));
+  }, [result]);
   const reload = () => {
     if (LOAD) load.call(argumentsFor(LOAD, {}));
   };
@@ -554,7 +631,7 @@ export default function App({ app, input, hostContext }) {
             : <ResultView value={load.value} emptyText="Nothing here yet." />}
           <p className="meta">
             <button type="button" className="link" onClick={reload} disabled={!load.available || load.status === "loading"}>{LOAD.label}</button>
-            {load.updatedAt ? " · Updated " + timeOf(load.updatedAt) : ""}
+            {load.updatedAt ? " · Updated " + timeOf(load.updatedAt) : ""}{load.status === "loading" && load.value !== undefined ? " · Refreshing…" : ""}
           </p>
         </section>
       ) : null}
@@ -612,8 +689,9 @@ export default function App({ input, hostContext }) {
 }
 `
 
-const STARTER_CSS = `body { margin: 0; }
-.app { box-sizing: border-box; display: grid; gap: 12px; padding: 12px 14px; color: var(--color-text-primary, CanvasText); font: 13px/1.5 var(--font-sans, system-ui, sans-serif); }
+const STARTER_CSS = `:root { color-scheme: light dark; }
+body { margin: 0; }
+.app { box-sizing: border-box; container-type: inline-size; display: grid; gap: 12px; min-width: 0; padding: 12px 14px; color: var(--color-text-primary, CanvasText); background: var(--color-background-primary, Canvas); font: 13px/1.5 var(--font-sans, system-ui, sans-serif); }
 .app *, .app *::before, .app *::after { box-sizing: border-box; }
 .controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
 .field { display: grid; flex: 1 1 140px; gap: 4px; min-width: 0; }
@@ -642,7 +720,14 @@ td { padding: 6px 8px 6px 0; border-top: 1px solid var(--color-border-primary, r
 .facts dd { margin: 0; overflow-wrap: anywhere; }
 .skeleton { display: grid; gap: 8px; }
 .skeleton-row { height: 14px; border-radius: 4px; background: var(--color-background-tertiary, rgba(128, 128, 128, 0.15)); }
-@media (prefers-reduced-motion: no-preference) { button { transition: opacity 150ms ease-out, background-color 150ms ease-out; } }`
+@media (prefers-reduced-motion: no-preference) { button { transition: opacity 150ms ease-out, background-color 150ms ease-out; } }
+@container (max-width: 380px) {
+  .controls { flex-direction: column; align-items: stretch; }
+  .field { flex-basis: auto; }
+  .controls button.primary { width: 100%; }
+  .facts { grid-template-columns: 1fr; gap: 0; }
+  .facts dd { margin-bottom: 6px; }
+}`
 
 const SAMPLE_CAPABILITY = "<exact capability from search_capabilities>"
 
@@ -658,7 +743,7 @@ const STARTER_SAMPLES: StarterSample[] = [
   {
     pattern: "lookup",
     title: "Lookup App starter",
-    useWhen: "Every bound tool only reads: a dashboard, list, status board, or search. Loads on its button.",
+    useWhen: "Every bound tool only reads: a dashboard, list, status board, or search. Loads its data when it opens.",
     tools: [{
       name: "find_orders",
       description: "Find orders by status and customer.",

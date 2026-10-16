@@ -3,6 +3,8 @@ import { DaytonaApi, type Sandbox } from "./api.ts";
 import { DAYTONA_BASE_PREFIX, DAYTONA_BASE_SNAPSHOT, DAYTONA_IMAGE_PREFIX, DAYTONA_TEMPLATE_PREFIX } from "./builder.ts";
 import { CAPTURE_KIND, CHECKPOINT_PREFIX, COPY_KIND } from "./checkpoints.ts";
 import { EVIDENCE_KIND } from "./world.ts";
+import { PREVIEW_KIND } from "./kinds.ts";
+import { PREVIEW_SNAPSHOT_PREFIX, PREVIEW_TOOLS_PREFIX } from "./previews.ts";
 
 const WORLD_MAX_IDLE_MS = 2 * 3600_000;
 const IMAGE_MAX_AGE_MS = 7 * 24 * 3600_000;
@@ -10,7 +12,7 @@ const SANDBOX_MAX_AGE_MS = 2 * 3600_000;
 const CHECKPOINT_MAX_AGE_MS = 14 * 3600_000;
 const CHECKPOINT_MAX_COUNT = 30;
 const BUILDER_KIND = "openwork-daytona-builder-v1";
-const OWNED_KINDS = new Set([EVIDENCE_KIND, BUILDER_KIND, CAPTURE_KIND, COPY_KIND]);
+const OWNED_KINDS = new Set([EVIDENCE_KIND, BUILDER_KIND, CAPTURE_KIND, COPY_KIND, PREVIEW_KIND]);
 const TERMINAL_STATES = new Set(["stopped", "archived", "error", "build_failed"]);
 
 export interface CleanupResult { deletedSnapshots: string[]; deletedSandboxes: string[] }
@@ -44,6 +46,8 @@ export async function cleanupDaytonaEvidence(api = new DaytonaApi(), { dryRun = 
     (s.name.startsWith(DAYTONA_TEMPLATE_PREFIX) && age(s.lastUsedAt ?? s.createdAt) > WORLD_MAX_IDLE_MS)
     || (s.name.startsWith(CHECKPOINT_PREFIX) && (checkpoints.indexOf(s) >= CHECKPOINT_MAX_COUNT || age(s.createdAt) > CHECKPOINT_MAX_AGE_MS))
     || (s.name.startsWith(DAYTONA_IMAGE_PREFIX) && age(s.createdAt) > IMAGE_MAX_AGE_MS)
+    || (s.name.startsWith(PREVIEW_SNAPSHOT_PREFIX) && age(s.lastUsedAt ?? s.createdAt) > 2 * 24 * 3600_000)
+    || (s.name.startsWith(PREVIEW_TOOLS_PREFIX) && age(s.lastUsedAt ?? s.createdAt) > IMAGE_MAX_AGE_MS)
     || s.name.startsWith(DAYTONA_BASE_PREFIX);
   for (const snapshot of snapshots) {
     if (snapshot.state !== "active" || !Number.isFinite(age(snapshot.createdAt))
@@ -58,6 +62,19 @@ export async function cleanupDaytonaEvidence(api = new DaytonaApi(), { dryRun = 
     result.deletedSnapshots.push(snapshot.name);
   }
   for (const sandbox of sandboxes) {
+    // Access and a guest shutdown timer enforce the exact two-hour deadline.
+    // This independent controller also reclaims a still-active expired preview,
+    // including one whose guest shutdown was prevented or whose launcher died.
+    if (sandbox.labels.kind === PREVIEW_KIND && Date.parse(sandbox.labels.expiresAt ?? "") <= now) {
+      if (!dryRun) {
+        const current = await api.getSandbox(sandbox.id);
+        if (!current || current.labels.kind !== PREVIEW_KIND || current.labels.expiresAt !== sandbox.labels.expiresAt
+          || !(Date.parse(current.labels.expiresAt ?? "") <= now)) continue;
+        await api.deleteSandbox(sandbox.id);
+      }
+      result.deletedSandboxes.push(sandbox.name);
+      continue;
+    }
     // Cold saves stop their builder before snapshotting. A stopped builder is
     // not proof of abandonment; only its controller/provider TTL may remove it.
     if ([BUILDER_KIND, CAPTURE_KIND].includes(sandbox.labels.kind)) continue;

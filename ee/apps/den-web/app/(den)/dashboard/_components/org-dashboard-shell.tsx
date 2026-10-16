@@ -1,5 +1,7 @@
 "use client";
 
+import { desktopPolicyScreenRemoved } from "../_lib/desktop-policy-screen-rollout";
+
 import { Popover } from "@base-ui/react/popover";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -456,6 +458,7 @@ export function OrgDashboardShell({ children }: { children: React.ReactNode }) {
     teamRoles: orgFeatureEnabled(orgContext, "teamRoles"),
     managedDeployments: orgFeatureEnabled(orgContext, "managedDeployments"),
     workbotSettings: orgContext?.capabilities.workbot === true,
+    desktopPolicyScreenRemoved: desktopPolicyScreenRemoved(orgContext),
   });
 
   const orgSwitcher = isSingleOrgMode ? (

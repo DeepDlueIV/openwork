@@ -31,6 +31,8 @@ import { Button } from "@/components/ui/button";
 import { ProviderIcon } from "../../../design-system/provider-icon";
 import { OrganizationMark, ProviderSectionLabel, ProviderStatus, ProviderTile } from "../../settings/pages/provider-rows";
 import { autoProviderSubtitle } from "../../models/model-catalog";
+import type { SecretFieldHandle } from "@/components/secret-field";
+import { SecretTextInput } from "../../../design-system/secret-text-input";
 import { TextInput } from "../../../design-system/text-input";
 import type {
   ProviderAuthMethod,
@@ -95,7 +97,9 @@ export default function ProviderAuthModal(props: ProviderAuthModalProps) {
     "list" | "method" | "api" | "oauth-code" | "oauth-auto"
   >("list");
   const [selectedProviderId, setSelectedProviderId] = useState<string | null>(null);
-  const [apiKeyInput, setApiKeyInput] = useState("");
+  // The key stays in the field until submit takes it; only emptiness is state.
+  const apiKeyField = useRef<SecretFieldHandle>(null);
+  const [hasApiKey, setHasApiKey] = useState(false);
   const [oauthCodeInput, setOauthCodeInput] = useState("");
   const [oauthSession, setOauthSession] = useState<ProviderOAuthSession | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -269,7 +273,8 @@ export default function ProviderAuthModal(props: ProviderAuthModalProps) {
     }
     setView("list");
     setSelectedProviderId(null);
-    setApiKeyInput("");
+    apiKeyField.current?.clear();
+    setHasApiKey(false);
     setOauthCodeInput("");
     setOauthSession(null);
     setSearchQuery("");
@@ -551,7 +556,7 @@ export default function ProviderAuthModal(props: ProviderAuthModalProps) {
   const handleApiSubmit = async () => {
     if (!selectedEntry || actionDisabled) return;
 
-    const trimmed = apiKeyInput.trim();
+    const trimmed = (apiKeyField.current?.take() ?? "").trim();
     if (!trimmed) {
       setLocalError("API key is required.");
       return;
@@ -600,7 +605,8 @@ export default function ProviderAuthModal(props: ProviderAuthModalProps) {
 
     if (resolvedView === "api" && (selectedEntry?.methods.length ?? 0) > 1) {
       setView("method");
-      setApiKeyInput("");
+      apiKeyField.current?.clear();
+    setHasApiKey(false);
       setLocalError(null);
       return;
     }
@@ -864,19 +870,16 @@ export default function ProviderAuthModal(props: ProviderAuthModalProps) {
                       </button>
                     </div>
                   ) : null}
-                  <TextInput
-                    className="text-base lg:text-sm"
+                  <SecretTextInput
+                    id="provider-auth-api-key"
                     label="API key"
-                    type="password"
                     placeholder={isOpencodeZenProvider(selectedEntry.id) ? "ock_..." : "sk-..."}
-                    value={apiKeyInput}
-                    onChange={(event) => {
-                      setApiKeyInput(event.currentTarget.value);
-                      if (localError) setLocalError(null);
+                    handleRef={apiKeyField}
+                    onValueChange={(next) => {
+                      setHasApiKey(next);
+                      if (next && localError) setLocalError(null);
                     }}
-                    autoComplete="off"
-                    autoCapitalize="off"
-                    spellCheck={false}
+                    onSubmit={() => void handleApiSubmit()}
                     disabled={actionDisabled}
                   />
                   {selectedEntry.env.length > 0 ? (
@@ -1056,7 +1059,7 @@ export default function ProviderAuthModal(props: ProviderAuthModalProps) {
               Close
             </DialogClose>
             {resolvedView === "api" && selectedEntry ? (
-              <Button onClick={handleApiSubmit} disabled={actionDisabled || !apiKeyInput.trim()}>
+              <Button onClick={handleApiSubmit} disabled={actionDisabled || !hasApiKey}>
                 {props.submitting ? (
                   <>
                     <Loader2 className="size-4 animate-spin" />

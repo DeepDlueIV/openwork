@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertDialog } from "@base-ui/react/alert-dialog";
-import { Check, Globe, LockKeyhole, Plus, Search, User, Users } from "lucide-react";
+import { Globe, LockKeyhole, Plus, Search, User, Users } from "lucide-react";
 import type { GatewayAccessGrantWrite, GatewayCredentialSetWrite } from "@openwork/types/den/gateway";
 import { createAuditOperationContext, type AuditOperationContext } from "@openwork/types/den/audit";
 import { DenBrandMark } from "../../_components/ui/brand-mark";
@@ -12,11 +12,11 @@ import { DenButton, buttonVariants } from "../../_components/ui/button";
 import { DenCombobox } from "../../_components/ui/combobox";
 import { DenInput } from "../../_components/ui/input";
 import { DenNotice } from "../../_components/ui/notice";
+import { DenSecretInput } from "../../_components/ui/secret-input";
 import { DenSegmented } from "../../_components/ui/segmented";
 import { DenSkeleton } from "../../_components/ui/skeleton";
 import { DenStickyActionBar } from "../../_components/ui/sticky-action-bar";
 import { DenSwitch } from "../../_components/ui/switch";
-import { DenTextarea } from "../../_components/ui/textarea";
 import { getAiGatewayProvidersRoute, getNewAiGatewayProviderRoute } from "../../_lib/den-org";
 import { gatewayMemberSignInMethod } from "@openwork/types/den/inference";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
@@ -158,7 +158,7 @@ export function InferenceProviderEditorScreen({ inferenceProviderId, catalogProv
       || (signInMethod === "microsoft" && oauthTenantId.trim().toLowerCase() !== (configuredSet.oauthTenantId ?? ""))
       || (signInMethod === "aws_sso" && JSON.stringify(trimAwsSso(awsSso)) !== JSON.stringify(configuredSet.awsSso ?? EMPTY_AWS_SSO))))
   ));
-  const keySaved = Boolean(configuredSet?.configured && configuredSet.credentialMode === credentialMode) && !replacingKey;
+  const keySaved = Boolean(configuredSet?.configured && configuredSet.credentialMode === credentialMode);
   const displayName = detail?.name ?? provider?.name ?? "provider";
   const formInput = {
     name, providerId, modelIds: allowAllModels ? [] : modelIds, credentialMode, status: "active" as const,
@@ -358,11 +358,11 @@ export function InferenceProviderEditorScreen({ inferenceProviderId, catalogProv
               : "Save this provider to obtain its exact OAuth callback URL, then register it in your Google Web OAuth client before members connect."} />}
             {signInMethod === "microsoft" ? <label className={LABEL}>Directory (tenant) ID<DenInput className={`mt-1.5 ${MONO_INPUT}`} data-testid="gateway-oauth-tenant-id" value={oauthTenantId} autoComplete="off" placeholder="00000000-0000-0000-0000-000000000000" onChange={(event) => { setOauthTenantId(event.target.value); setRotationAcknowledged(false); }} /></label> : null}
             <label className={LABEL}>{signInMethod === "microsoft" ? "Application (client) ID" : "OAuth client ID"}<DenInput className={`mt-1.5 ${MONO_INPUT}`} data-testid="gateway-oauth-client-id" value={oauthClientId} autoComplete="off" onChange={(event) => { setOauthClientId(event.target.value); setRotationAcknowledged(false); }} /></label>
-            <label className={LABEL}>{signInMethod === "microsoft" ? "Client secret" : "OAuth client secret"} {configuredSet?.hasOauthClientSecret ? "(configured)" : ""}<DenInput className={`mt-1.5 ${MONO_INPUT}`} type="password" data-testid="gateway-oauth-client-secret" value={oauthClientSecret} autoComplete="new-password" onChange={(event) => { setOauthClientSecret(event.target.value); setRotationAcknowledged(false); }} placeholder={configuredSet?.hasOauthClientSecret ? "Saved — enter a replacement to change it" : undefined} /></label>
+            <label className={LABEL}>{signInMethod === "microsoft" ? "Client secret" : "OAuth client secret"} {configuredSet?.hasOauthClientSecret ? "(configured)" : ""}<DenSecretInput className={`mt-1.5 ${MONO_INPUT}`} data-testid="gateway-oauth-client-secret" value={oauthClientSecret} autoComplete="new-password" onChange={(value) => { setOauthClientSecret(value); setRotationAcknowledged(false); }} saved={configuredSet?.hasOauthClientSecret === true} savedPlaceholder="Saved — enter a replacement to change it" replaceTestId="gateway-oauth-client-secret-replace" /></label>
             <Link href={MEMBER_SIGN_IN_DOC_URLS[signInMethod ?? "google"]} target="_blank" rel="noopener noreferrer" className={buttonVariants({ variant: "secondary", size: "sm", className: "mt-3 w-fit" })}>Read setup instructions</Link>
           </>
         ) : vertex ? (
-          <label className={LABEL}>Service account JSON<DenTextarea className={`mt-1.5 ${MONO_INPUT}`} data-testid="gateway-service-account" value={serviceAccountJson} onChange={(event) => setServiceAccountJson(event.target.value)} placeholder={configuredSet?.configured ? "Saved — paste a replacement to change it" : "Paste the key file"} /></label>
+          <label className={LABEL}>Service account JSON<DenSecretInput multiline className={`mt-1.5 ${MONO_INPUT}`} data-testid="gateway-service-account" value={serviceAccountJson} onChange={setServiceAccountJson} saved={configuredSet?.configured === true} placeholder="Paste the key file" savedPlaceholder="Saved — paste a replacement to change it" replaceTestId="gateway-service-account-replace" /></label>
         ) : bedrock ? (
           <>
             {reusableKeyProviders.length ? (
@@ -380,29 +380,21 @@ export function InferenceProviderEditorScreen({ inferenceProviderId, catalogProv
             ) : null}
             {reuseSource ? null : <>
             <label className={LABEL}>Access key ID<DenInput className={`mt-1.5 ${MONO_INPUT}`} data-testid="gateway-aws-access-key-id" value={awsKeys.accessKeyId} autoComplete="off" onChange={(event) => setAwsKeys((current) => ({ ...current, accessKeyId: event.target.value }))} placeholder={configuredSet?.configured ? "Saved — enter replacement keys to change them" : "AKIA…"} /></label>
-            <label className={LABEL}>Secret access key<DenInput className={`mt-1.5 ${MONO_INPUT}`} type="password" data-testid="gateway-aws-secret-access-key" value={awsKeys.secretAccessKey} autoComplete="new-password" onChange={(event) => setAwsKeys((current) => ({ ...current, secretAccessKey: event.target.value }))} /></label>
-            <label className={LABEL}>Session token (optional)<DenInput className={`mt-1.5 ${MONO_INPUT}`} type="password" data-testid="gateway-aws-session-token" value={awsKeys.sessionToken} autoComplete="new-password" onChange={(event) => setAwsKeys((current) => ({ ...current, sessionToken: event.target.value }))} /></label>
+            <label className={LABEL}>Secret access key<DenSecretInput className={`mt-1.5 ${MONO_INPUT}`} data-testid="gateway-aws-secret-access-key" value={awsKeys.secretAccessKey} autoComplete="new-password" onChange={(value) => setAwsKeys((current) => ({ ...current, secretAccessKey: value }))} /></label>
+            <label className={LABEL}>Session token (optional)<DenSecretInput className={`mt-1.5 ${MONO_INPUT}`} data-testid="gateway-aws-session-token" value={awsKeys.sessionToken} autoComplete="new-password" onChange={(value) => setAwsKeys((current) => ({ ...current, sessionToken: value }))} /></label>
             </>}
           </>
         ) : envNames.length > 1 ? (
           envNames.map((envName) => (
-            <label key={envName} className={LABEL}>{envName}<DenInput className={`mt-1.5 ${MONO_INPUT}`} type="password" value={apiKeyValues[envName] ?? ""} onChange={(event) => setApiKeyValues((current) => ({ ...current, [envName]: event.target.value }))} /></label>
+            <label key={envName} className={LABEL}>{envName}<DenSecretInput className={`mt-1.5 ${MONO_INPUT}`} autoComplete="new-password" value={apiKeyValues[envName] ?? ""} onChange={(value) => setApiKeyValues((current) => ({ ...current, [envName]: value }))} /></label>
           ))
         ) : (
           <label className={LABEL}>
             API key
-            <span className="mt-1.5 flex items-center gap-2">
-              <span className="min-w-0 flex-1">
-                <DenInput className={MONO_INPUT} type={keySaved ? "text" : "password"} data-testid="gateway-provider-api-key" readOnly={keySaved}
-                  value={keySaved ? "••••••••••••••••••••••••••••••••" : apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="Paste the key" />
-              </span>
-              {configuredSet?.configured ? (
-                <>
-                  <DenButton size="sm" variant="secondary" type="button" data-testid="gateway-provider-replace-key" onClick={() => { setReplacingKey((current) => !current); setApiKey(""); }}>{replacingKey ? "Keep saved key" : "Replace key"}</DenButton>
-                  <Check className="h-4 w-4 text-emerald-600" aria-label="Key saved" />
-                </>
-              ) : null}
-            </span>
+            <DenSecretInput className={`mt-1.5 ${MONO_INPUT}`} data-testid="gateway-provider-api-key" autoComplete="new-password"
+              value={apiKey} onChange={setApiKey} placeholder="Paste the key"
+              saved={keySaved} alwaysShowSaved
+              replacing={replacingKey} onReplacingChange={setReplacingKey} replaceTestId="gateway-provider-replace-key" />
           </label>
         )}
       </section>

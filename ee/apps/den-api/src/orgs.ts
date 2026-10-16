@@ -250,7 +250,6 @@ export type OrganizationDirectory = {
     status: string
     expiresAt: Date
     createdAt: Date
-    inviteToken: string | null
   }>
   teams: Array<{
     id: typeof TeamTable.$inferSelect.id
@@ -1590,8 +1589,8 @@ export async function loadOrganizationDirectory(organizationId: OrgId): Promise<
         role: InvitationTable.role,
         status: InvitationTable.status,
         expiresAt: InvitationTable.expiresAt,
+        // Never the join token: the directory goes to every member. Share links via GET /v1/invitations/:id/link.
         createdAt: InvitationTable.createdAt,
-        inviteToken: InvitationTable.inviteToken,
       })
       .from(InvitationTable)
       .where(eq(InvitationTable.organizationId, organizationId))

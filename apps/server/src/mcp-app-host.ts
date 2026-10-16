@@ -33,6 +33,7 @@ import {
 import { diagnoseMcpToolDenies, listMcpFromRuntimeSnapshot } from "./mcp.js";
 import { readEffectiveRuntimeOpencodeConfig, readRuntimeMcpConfigRevisions } from "./runtime-opencode-config-store.js";
 import { localManagedMcpAppIdentity } from "./local-managed-mcp.js";
+import { externalFetch } from "./server-fetch.js";
 
 async function listMcp(serverConfig: ServerConfig, workspaceId: string, workspaceRoot: string) {
   // Account-scoped gateways live in the engine-global runtime layer. Resolve
@@ -57,6 +58,11 @@ type McpAppCsp = {
 };
 
 export type McpAppToolResult = CallToolResult & { hostAction?: ConnectionActionIntent };
+
+/** Result _meta key the host trusts to decide whether a result may be kept. */
+export const MCP_APP_READ_ONLY_RESULT_META = "openwork/readOnly";
+/** Result _meta key naming the verified server and credential revision a result came from, so a kept result never crosses either. */
+export const MCP_APP_PROVIDER_IDENTITY_META = "openwork/providerIdentity";
 
 export async function supportsHostConnectionActions(serverName: string, config: Record<string, unknown>, toolName: string, resourceUri: string): Promise<boolean> {
   if (serverName !== "openwork-cloud" && serverName !== "openwork") return false;
@@ -575,6 +581,8 @@ function connectCatalogError(diagnostic: Exclude<ConnectMcpCatalogDiagnostic, "r
   return new McpAppHostError(`connect_catalog_${diagnostic}`, messages[diagnostic]);
 }
 
+const CONNECT_CATALOG_RECOVERY_BUDGET_MS = 1_000;
+
 async function privateConnectMcpConfigUntimed(input: {
   serverConfig: ServerConfig;
   workspaceId: string;
@@ -589,7 +597,16 @@ async function privateConnectMcpConfigUntimed(input: {
     { connectionId: input.connectionId, serverName: input.serverName },
   );
   if (!descriptor) {
-    const refreshed = await refreshOpenWorkConnectMcpAppHostCatalog(input.serverConfig, input.workspaceId);
+    let refreshed = await refreshOpenWorkConnectMcpAppHostCatalog(input.serverConfig, input.workspaceId);
+    if (refreshed.diagnostic === "discovery_unavailable") {
+      // One immediate discovery-only recovery, with one shared deadline for
+      // its handshake and read. Never add backoff or replay a provider tool.
+      const deadline = AbortSignal.timeout(CONNECT_CATALOG_RECOVERY_BUDGET_MS);
+      refreshed = await refreshOpenWorkConnectMcpAppHostCatalog(input.serverConfig, input.workspaceId, (url, init) => externalFetch(url, {
+        ...init,
+        signal: init?.signal ? AbortSignal.any([init.signal, deadline]) : deadline,
+      }));
+    }
     if (refreshed.diagnostic !== "ready" && refreshed.diagnostic !== "empty") {
       throw connectCatalogError(refreshed.diagnostic);
     }
@@ -1075,6 +1092,8 @@ export async function callMcpAppTool(input: {
   expectedResourceDigest?: string;
   arguments?: Record<string, unknown>;
   approved?: boolean;
+  /** Run every check for a call that needs no approval, then return without calling the tool. */
+  checkOnly?: boolean;
   /** Required for conversation leases; the HTTP host checks current ownership/archive state. */
   assertSessionActive?: () => Promise<void>;
 }): Promise<McpAppToolResult> {
@@ -1173,6 +1192,18 @@ export async function callMcpAppTool(input: {
     }
     await currentConfig();
     assertLive();
+    // The configured server and credential revision this launch verified: the
+    // launch fingerprint already hashes its configuration, auth headers and
+    // private credential revision, so any credential change gives a new identity.
+    const providerIdentity = createHash("sha256").update(JSON.stringify([input.serverName, remoteUrl(config)?.href ?? null, launch.fingerprint])).digest("hex");
+    // For a cached read: the call would be allowed now without approval, so
+    // the host may show the result it kept from this same server. Nothing reaches the tool.
+    if (input.checkOnly) {
+      if (input.approved === true || toolRequiresApproval(tool) || hostConnectionAction) {
+        throw new McpAppHostError("tool_requires_approval", "Only a read-only App tool's kept result can be shown.");
+      }
+      return { content: [], _meta: { [MCP_APP_READ_ONLY_RESULT_META]: true, [MCP_APP_PROVIDER_IDENTITY_META]: providerIdentity } };
+    }
     // A provider that rejects the call (for example JSON-RPC -32602 for a
     // missing required argument) must reach the member as that rejection,
     // not as an unhandled 500 "Unexpected server error". The text is
@@ -1183,7 +1214,11 @@ export async function callMcpAppTool(input: {
     if (new TextEncoder().encode(JSON.stringify(result)).byteLength > MAX_RESULT_BYTES) {
       throw new McpAppHostError("result_too_large", "The MCP App tool result exceeds the 1 MiB host limit.");
     }
-    const sanitized = CallToolResultSchema.parse(stripProviderHostActions(result));
+    const parsed = CallToolResultSchema.parse(stripProviderHostActions(result));
+    // Whether the tool ran without needing approval: read-only and not
+    // destructive. The host keeps only such results for instant reopening.
+    // Set here, never taken from the provider.
+    const sanitized = { ...parsed, _meta: { ...parsed._meta, [MCP_APP_READ_ONLY_RESULT_META]: !toolRequiresApproval(tool), [MCP_APP_PROVIDER_IDENTITY_META]: providerIdentity } };
     if (!hostConnectionAction || sanitized.isError) return sanitized;
     await currentConfig();
     await input.assertSessionActive?.();

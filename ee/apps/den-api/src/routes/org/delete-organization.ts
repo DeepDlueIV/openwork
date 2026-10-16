@@ -3,6 +3,8 @@ import { deleteGatewayUsageForOrganization } from "@openwork-ee/den-db/gateway-u
 import {
   AuthApiKeyTable,
   AuthSessionTable,
+  FreeAutoLimitEventTable,
+  FreeAutoPurchaseTable,
   AuditEventTable,
   AuditEventResourceTable,
   AuditOperationTable,
@@ -97,6 +99,8 @@ import { deleteModelsAnalyticsForOrganization } from "@openwork-ee/telemetry"
 import type { Hono } from "hono"
 import { describeRoute } from "hono-openapi"
 import { z } from "zod"
+import { deleteOrganizationAgentPermissions } from "../../agent-permissions.js"
+import { deleteOrganizationDefaultModels } from "../../default-model.js"
 import { addAuditRequestResource } from "../../audit/request-capture.js"
 import { cache } from "../../cache.js"
 import { db } from "../../db.js"
@@ -426,6 +430,8 @@ export function registerDeleteOrganizationRoutes<T extends { Variables: OrgRoute
           }
         }
 
+        // Install links are no longer issued; erase rows created before that
+        // until a later migration drops both tables.
         const installLinkIds = (await tx
           .select({ id: InstallLinkTable.id })
           .from(InstallLinkTable)
@@ -549,6 +555,8 @@ export function registerDeleteOrganizationRoutes<T extends { Variables: OrgRoute
         await tx.delete(TeamTable).where(eq(TeamTable.organizationId, organizationId))
 
         await tx.delete(OrgSubscriptionTable).where(eq(OrgSubscriptionTable.organization_id, organizationId))
+        await tx.delete(FreeAutoLimitEventTable).where(eq(FreeAutoLimitEventTable.organization_id, organizationId))
+        await tx.delete(FreeAutoPurchaseTable).where(eq(FreeAutoPurchaseTable.organization_id, organizationId))
         await tx.delete(ScimUserTombstoneTable).where(eq(ScimUserTombstoneTable.organizationId, organizationId))
         await tx.delete(ScimGroupTable).where(eq(ScimGroupTable.organizationId, organizationId))
 
@@ -559,6 +567,8 @@ export function registerDeleteOrganizationRoutes<T extends { Variables: OrgRoute
         await tx.delete(InferenceOrgUpstreamProviderKeyTable).where(eq(InferenceOrgUpstreamProviderKeyTable.organization_id, organizationId))
 
         await tx.delete(DesktopPolicyMemberTable).where(eq(DesktopPolicyMemberTable.organizationId, organizationId))
+        await deleteOrganizationAgentPermissions(tx, organizationId)
+        await deleteOrganizationDefaultModels(tx, organizationId)
         await tx.delete(DesktopPolicyTable).where(eq(DesktopPolicyTable.organizationId, organizationId))
 
         await tx.delete(OrganizationDiagnosticCredentialTable).where(eq(OrganizationDiagnosticCredentialTable.organizationId, organizationId))

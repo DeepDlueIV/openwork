@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { LockKeyhole } from "lucide-react";
 import { DenPageHeader } from "../../(den)/_components/ui/page-header";
 import { DenButton, buttonVariants } from "../../(den)/_components/ui/button";
-import { DenInput } from "../../(den)/_components/ui/input";
+import { DenSecretInput } from "../../(den)/_components/ui/secret-input";
 import { DenNotice } from "../../(den)/_components/ui/notice";
 import { gatewayBrowserEndpoint } from "./gateway-browser-endpoint";
 
@@ -539,8 +539,8 @@ export function GatewayConnect() {
         {step === "ready" && liteLlm ? (
           <label className="flex flex-col gap-1.5 text-[12px] font-medium text-[var(--dls-text-secondary)]">
             {providerName} key
-            <DenInput type="password" autoComplete="off" value={liteLlmKey} placeholder="sk-…" data-testid="gateway-connect-litellm-key" className="font-mono text-[12px]"
-              onChange={(event) => setLiteLlmKey(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void connectLiteLlmKey(); }} />
+            <DenSecretInput autoComplete="off" value={liteLlmKey} placeholder="sk-…" data-testid="gateway-connect-litellm-key" className="font-mono text-[12px]"
+              onChange={setLiteLlmKey} onKeyDown={(event) => { if (event.key === "Enter") void connectLiteLlmKey(); }} />
           </label>
         ) : null}
         <div className="flex flex-wrap gap-3">

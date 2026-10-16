@@ -3,6 +3,9 @@ import { findMarketplaceByExternalKey } from "./store.js"
 import type { Context, Hono } from "hono"
 import { describeRoute } from "hono-openapi"
 import { z } from "zod"
+import { credentialPromptResponseFields, pluginConnectionKeyPrompt } from "../../../credential-prompt.js"
+import { organizationFeatureEnabled } from "../../../features.js"
+import { SECURE_ENTRY_REQUIRED } from "../../../middleware/refuse-machine-secrets.js"
 import { normalizeDenTypeId } from "@openwork-ee/utils/typeid"
 import { queryValidator, jsonValidator, orgMemberRoute, paramValidator, resolveMemberTeamsMiddleware } from "../../../middleware/index.js"
 import { emptyResponse, forbiddenSchema, invalidRequestSchema, jsonResponse, notFoundSchema, unauthorizedSchema } from "../../../openapi.js"
@@ -111,6 +114,8 @@ import {
   pluginMutationResponseSchema,
   pluginParamsSchema,
   pluginUpdateSchema,
+  resolvedPluginsQuerySchema,
+  resolvedPluginsResponseSchema,
   resourceAccessGrantWriteSchema,
   teamParamsSchema,
   teamPluginAccessListResponseSchema,
@@ -165,6 +170,7 @@ import {
   listMeLibraryPluginItems,
   listMeEffectivePluginAccess,
   listPluginMemberships,
+  listResolvedPlugins,
   listPlugins,
   listResourceAccess,
   listTeamEffectivePluginAccess,
@@ -270,7 +276,11 @@ async function configurePluginMcpConnectionResponse(c: OrgContext) {
     }
     const denied = await requirePermissionWithFreshSession(c, "connections.manage")
     if (denied) return denied
-    return c.json({ ok: true, item: await configureMarketplacePluginMcpRequirement({
+    const organizationId = actorContext(c).organizationContext.organization.id
+    const secureEntry = await organizationFeatureEnabled(organizationId, "secureSecretFields")
+    if (secureEntry && c.get("apiKey") && body.apiKey) return c.json(SECURE_ENTRY_REQUIRED, 400)
+    const { awaitingKey, connectionRow, ...item } = await configureMarketplacePluginMcpRequirement({
+      awaitKey: secureEntry,
       authType: body.authType,
       apiKey: body.apiKey,
       configObjectId: body.configObjectId,
@@ -279,7 +289,9 @@ async function configurePluginMcpConnectionResponse(c: OrgContext) {
       oauthClient: body.oauthClient,
       pluginId: normalizeDenTypeId("plugin", params.pluginId),
       serverName: body.serverName,
-    }) })
+    })
+    const prompt = awaitingKey ? pluginConnectionKeyPrompt({ pluginId: item.binding.pluginId, configObjectId: item.binding.configObjectId, serverName: item.binding.serverName, connection: connectionRow }) : null
+    return c.json({ ok: true, item, ...(prompt ? credentialPromptResponseFields(prompt) : {}) })
   } catch (error) {
     return routeErrorResponse(c, error)
   }
@@ -945,6 +957,23 @@ export function registerPluginArchRoutes<T extends { Variables: OrgRouteVariable
       } catch (error) {
         return routeErrorResponse(c, error)
       }
+    })
+
+  withPluginArchOrgContext(app, "get", pluginArchRoutePaths.resolvedPlugins,
+    queryValidator(resolvedPluginsQuerySchema),
+    describeRoute({
+      tags: ["Plugins"],
+      summary: "Get resolved plugins",
+      description: "Returns GET /v1/plugins/:pluginId/resolved for up to 100 plugins in one request, so a client loading every plugin's contents makes one call instead of one per plugin. Each visible plugin's body is the one the single-plugin route returns; plugins the caller cannot view or that do not exist are listed under failures with that route's error. Not recorded in organization audit logs, like the single-plugin route.",
+      responses: {
+        200: jsonResponse("Resolved plugins returned successfully.", resolvedPluginsResponseSchema),
+        400: jsonResponse("The plugin ids were invalid.", invalidRequestSchema),
+        401: jsonResponse("The caller must be signed in to view resolved plugins.", unauthorizedSchema),
+      },
+    }),
+    async (c: OrgContext) => {
+      const query = validQuery<z.infer<typeof resolvedPluginsQuerySchema>>(c)
+      return c.json(await listResolvedPlugins({ context: actorContext(c), pluginIds: query.pluginIds }))
     })
 
   withPluginArchOrgContext(app, "post", pluginArchRoutePaths.pluginMcpConnections,

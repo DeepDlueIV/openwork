@@ -9,6 +9,7 @@ import { modelsAnalyticsSettingsSchema, modelsAnalyticsActivitySchema, modelsCon
 import { DenButton } from "../../_components/ui/button";
 import { DenBrandMark } from "../../_components/ui/brand-mark";
 import { DenInput } from "../../_components/ui/input";
+import { DenSecretInput } from "../../_components/ui/secret-input";
 import { DenSelect } from "../../_components/ui/select";
 import { UnderlineTabs } from "../../_components/ui/tabs";
 import { AnalyticsAdoptionLink, AnalyticsEmptyState, AnalyticsErrorState, AnalyticsLoading, analyticsSurfaceClass } from "../_features/analytics/analytics-layout";
@@ -19,6 +20,7 @@ import { DenSectionHeader } from "../../_components/ui/section-header";
 import { DenTable } from "../../_components/ui/table";
 import { getErrorMessage, requestJson } from "../../_lib/den-flow";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
+import { orgFeatureEnabled } from "../../_lib/den-org";
 import { ItemRowsSkeleton } from "./item-list";
 
 type Activity = z.infer<typeof modelsAnalyticsActivitySchema>;
@@ -82,7 +84,7 @@ function LangfuseSettings({ settings, refresh }: { settings: ModelsAnalyticsSett
         </div>
         {region === "custom" ? <label className="grid gap-1.5 text-xs font-medium text-[#30405F]">Langfuse address<DenInput type="url" value={host} onChange={(event) => setHost(event.target.value)} placeholder="https://langfuse.example.com" /></label> : null}
         <label className="grid gap-1.5 text-xs font-medium text-[#30405F]">Public key<DenInput autoComplete="off" value={publicKey} onChange={(event) => setPublicKey(event.target.value)} placeholder="pk-lf-…" /></label>
-        <label className="grid gap-1.5 text-xs font-medium text-[#30405F]">Secret key<DenInput type="password" autoComplete="new-password" value={secretKey} onChange={(event) => setSecretKey(event.target.value)} placeholder="sk-lf-…" /></label>
+        <label className="grid gap-1.5 text-xs font-medium text-[#30405F]">Secret key<DenSecretInput autoComplete="new-password" value={secretKey} onChange={setSecretKey} placeholder="sk-lf-…" /></label>
         <div className="flex flex-wrap gap-2"><DenButton variant="secondary" disabled={busy || !publicKey || !secretKey || !host} onClick={() => void act("test")}>Test connection</DenButton>
           <DenButton disabled={busy || !publicKey || !secretKey || !host} onClick={() => void act("connect")}>Connect Langfuse</DenButton></div>
       </>}
@@ -102,6 +104,12 @@ function Outcome({ events }: { events: Activity["events"] }) {
 }
 
 export function ModelsAnalyticsPanel() {
+  const { orgContext } = useOrgDashboard();
+  if (!orgFeatureEnabled(orgContext, "taskAnalyticsUi")) return null;
+  return <EnabledModelsAnalyticsPanel />;
+}
+
+function EnabledModelsAnalyticsPanel() {
   const { orgContext, activeOrg, runReauthableAction } = useOrgDashboard();
   const queryClient = useQueryClient();
   const key = ["models-analytics", orgContext?.organization.id];

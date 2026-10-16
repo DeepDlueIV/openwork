@@ -70,7 +70,7 @@ export const WORLD_GUIDES: Readonly<Record<string, WorldGuide>> = {
     family: "preview",
     components: ["desktop"],
     targets: [
-      { target: "local/host", seeds: ["fresh"], sources: ["local"], defaultSource: LOCAL, note: "A native desktop window on this computer; no Den or account." },
+      { target: "local/host", seeds: ["fresh"], sources: ["local"], defaultSource: LOCAL, note: "Opens and focuses a desktop window on this computer; no Den or account. To check app UI without a window, use dev-app-web (headless)." },
       { target: "daytona/linux", seeds: ["fresh", "blank"], sources: ["sha", "ref", "release"], defaultSource: DEV, note: "Linux Electron in a private noVNC viewer. fresh builds a pushed commit; blank runs exact published release bytes." },
       { target: "daytona/windows", seeds: ["blank"], sources: ["release"], note: "Only an exact published Windows x64 release in a private VM." },
       { target: "freestyle/linux", seeds: ["fresh"], sources: ["sha", "ref"], defaultSource: DEV, note: "Signed-out desktop snapshot of a pushed commit: no Den, releases or --env app settings." },
@@ -80,12 +80,13 @@ export const WORLD_GUIDES: Readonly<Record<string, WorldGuide>> = {
       { intent: "Latest dev (alpha) desktop on Daytona (accepts --env app settings)", command: `${UP} preview-desktop --place daytona --stage <stage> ${DETACH}` },
       { intent: "Exact published Linux release with a blank profile", command: `${UP} preview-desktop --place daytona --stage <stage> --source desktop=release:<x.y.z>/<distribution> --seed blank ${DETACH}` },
       { intent: "Exact published Windows release", command: `${UP} preview-desktop --place daytona --os windows --stage <stage> --source desktop=release:<x.y.z>/<distribution> --seed blank ${DETACH}` },
-      { intent: "This checkout as a native desktop window", command: `${UP} preview-desktop --stage <stage>` },
+      { intent: "This checkout as a native desktop window (opens a window on this computer; only when asked)", command: `${UP} preview-desktop --stage <stage>` },
     ],
     caveats: [
       "The desktop app alone: for a signed-in desktop use preview-full --seed workspace.",
       NO_MODELS,
       "Remote desktops are Linux (or a published Windows release), not a macOS parity check.",
+      "For app UI that does not need the desktop shell, prefer `pnpm world up dev-app-web --detach -- --browser`: the app in headless Chrome with a CDP address, nothing on screen.",
     ],
   },
   "preview-den": {
@@ -106,7 +107,7 @@ export const WORLD_GUIDES: Readonly<Record<string, WorldGuide>> = {
     family: "preview",
     components: ["den", "desktop"],
     targets: [
-      { target: "local/host", seeds: DEN_SEEDS, sources: ["local"], defaultSource: LOCAL, note: "Den on this computer's MySQL and Redis plus a native desktop window." },
+      { target: "local/host", seeds: DEN_SEEDS, sources: ["local"], defaultSource: LOCAL, note: "Den on this computer's MySQL and Redis plus a desktop window that opens and takes focus on this computer." },
       { target: "daytona/linux", seeds: DEN_SEEDS, sources: ["sha", "ref"], defaultSource: DEV, note: "Two private Daytona sandboxes: Den plus a Linux desktop wired to it. Select a commit with --source den=...; the desktop builds from the same commit." },
     ],
     examples: [

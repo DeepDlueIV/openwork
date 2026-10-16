@@ -96,7 +96,7 @@ test("a prepared world uses the normal private access handshake without allocati
     } });
   const original = globalThis.fetch;
   globalThis.fetch = async (_url, init) => {
-    assert.ok(init?.headers); return new Response("{}", { status: 200 });
+    assert.ok(init?.headers); return new Response(JSON.stringify({ Browser: "Chrome/123", webSocketDebuggerUrl: "ws://127.0.0.1:9999/devtools/browser/test" }), { status: 200 });
   };
   try {
     const session = await launchDaytonaEvidenceWorld({ sandbox, runtimeFingerprint: fingerprint }, sha, api);

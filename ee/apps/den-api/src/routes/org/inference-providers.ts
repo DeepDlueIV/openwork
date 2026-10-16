@@ -42,6 +42,9 @@ import { hasPermission, idParamSchema, orgAccessFailureStatus, permissionDeniedM
 import type { OrgRouteVariables } from "./shared.js"
 import { registerOrgGatewayUsageRoutes } from "./gateway-usage.js"
 import { registerOrgGatewayUsageLimitRoutes } from "./gateway-usage-limits.js"
+import { credentialPromptSchema } from "@openwork/types/den/credential-prompt"
+import { credentialPromptResponseFields, gatewayCredentialShape, gatewayProviderCredentialPrompt, gatewayUpstreamDestination } from "../../credential-prompt.js"
+import { organizationFeatureEnabled } from "../../features.js"
 
 const paramsSchema = idParamSchema("inferenceProviderId", "inferenceProvider")
 const groupParams = paramsSchema.extend(idParamSchema("groupId", "gatewayModelGroup").shape)
@@ -154,12 +157,40 @@ const managementWrite: MiddlewareHandler<{ Variables: OrgRouteVariables }> = asy
     }
     const unavailable = gatewayManagementUnavailable()
     if (unavailable) { status = 403; return c.json(unavailable, 403) }
+    // Entering a key is human-only: the agent never may, and with secure keys
+    // in chat on, neither may an API key. They leave it out and a person adds it.
+    const agent = c.get("session")?.id === "mcp_internal"
+    if (agent || c.get("apiKey")) {
+      const body: unknown = await c.req.raw.clone().json().catch(() => null)
+      const carriesKey = typeof body === "object" && body !== null
+        && ["credential", "apiKeys", "apiKey", "oauthClientSecret"].some((key) => Object.getOwnPropertyDescriptor(body, key)?.value !== undefined)
+      if (carriesKey && (agent || !actor || await organizationFeatureEnabled(actor.organization.id, "secureSecretFields"))) {
+        status = 400
+        return c.json({ error: "secure_entry_required", message: "Do not send keys through the agent or an API key. Leave the key out; the person adds it in a private field in OpenWork." }, 400)
+      }
+    }
     await next()
     status = c.res.status
   } finally {
     providerAuditRequests.delete(c.req.raw)
     await recordProviderAttempt(db, capture, status)
   }
+}
+/** The one organization set still waiting for its key, when a person can add it in chat. */
+async function pendingKeyPrompt(provider: GatewayProvider, setId: string | null) {
+  const shape = gatewayCredentialShape(provider.provider_id, readProviderEnvNames(provider.provider_config))
+  if (!setId || !shape) return null
+  if (!await organizationFeatureEnabled(provider.organization_id, "secureSecretFields")) return null
+  const [set] = await db.select({ mode: GatewayCredentialSetTable.credential_mode }).from(GatewayCredentialSetTable)
+    .where(and(eq(GatewayCredentialSetTable.id, normalizeDenTypeId("gatewayCredentialSet", setId)), eq(GatewayCredentialSetTable.gateway_provider_id, provider.id)))
+  if (set?.mode !== "org") return null
+  const [credential] = await db.select({ status: GatewayProviderCredentialTable.status }).from(GatewayProviderCredentialTable)
+    .where(and(eq(GatewayProviderCredentialTable.credential_set_id, normalizeDenTypeId("gatewayCredentialSet", setId)), eq(GatewayProviderCredentialTable.subject, "org")))
+  if (credential?.status === "active") return null
+  return credentialPromptResponseFields(gatewayProviderCredentialPrompt({
+    inferenceProviderId: provider.id, credentialSetId: setId, name: provider.name, shape,
+    destination: gatewayUpstreamDestination(provider.provider_id, provider.provider_config, provider.settings),
+  }))
 }
 async function providerTransaction<T>(c: { req: { raw: Request; param: (key: string) => string | undefined }; get: (key: "organizationContext") => OrgRouteVariables["organizationContext"] }, mutate: (tx: GatewayTx, provider: GatewayProvider) => Promise<T>): Promise<T> {
   const actor = c.get("organizationContext")
@@ -237,16 +268,19 @@ function affectedRows(result: unknown): number {
 async function touch(tx: GatewayTx, provider: GatewayProvider) {
   await tx.update(GatewayProviderTable).set({ updated_at: new Date() }).where(eq(GatewayProviderTable.id, provider.id))
 }
-async function defaultMatrix(tx: GatewayTx, provider: GatewayProvider, input: z.infer<typeof createSchema>, creatorId: GatewayMemberId) {
+async function defaultMatrix(tx: GatewayTx, provider: GatewayProvider, input: z.infer<typeof createSchema>, creatorId: GatewayMemberId, options: { awaitKey?: boolean } = {}) {
   const audiences: GatewayAccessGrantWrite["audience"][] = [
     ...(input.allMembers ? [{ type: "organization" as const }] : []),
     ...[...new Set(input.memberIds ?? [])].map((memberId) => ({ type: "member" as const, memberId })),
     ...[...new Set(input.teamIds ?? [])].map((teamId) => ({ type: "team" as const, teamId })),
   ]
   const hasCredentialInput = input.credential !== undefined || input.apiKeys !== undefined || input.credentialMode === "member" || input.oauthClientId !== undefined || input.oauthClientSecret !== undefined || input.oauthTenantId !== undefined || input.awsSso !== undefined
-  if (!hasCredentialInput && audiences.length) throw new GatewayWriteError(400, "credential_required", "Configure credentials before granting initial provider access.")
-  const set = hasCredentialInput
-    ? await writeGatewaySet(tx, provider, { name: "Default credentials", credentialMode: input.credentialMode ?? "org", credential: input.credential, apiKeys: input.apiKeys, oauthClientId: input.oauthClientId, oauthClientSecret: input.oauthClientSecret, oauthTenantId: input.oauthTenantId, awsSso: input.awsSso }, { createdByOrgMembershipId: creatorId })
+  // Secure keys in chat: access is set up now and the shared key is added by a person next.
+  const awaitKey = options.awaitKey === true && !hasCredentialInput && audiences.length > 0
+    && gatewayCredentialShape(provider.provider_id, readProviderEnvNames(provider.provider_config)) !== null
+  if (!hasCredentialInput && audiences.length && !awaitKey) throw new GatewayWriteError(400, "credential_required", "Configure credentials before granting initial provider access.")
+  const set = hasCredentialInput || awaitKey
+    ? await writeGatewaySet(tx, provider, { name: "Default credentials", credentialMode: input.credentialMode ?? "org", credential: input.credential, apiKeys: input.apiKeys, oauthClientId: input.oauthClientId, oauthClientSecret: input.oauthClientSecret, oauthTenantId: input.oauthTenantId, awsSso: input.awsSso }, { createdByOrgMembershipId: creatorId }, { awaitOrganizationKey: awaitKey })
     : null
   const models = await tx.select().from(GatewayProviderModelTable).where(eq(GatewayProviderModelTable.gateway_provider_id, provider.id))
   if (!models.length && audiences.length) throw new GatewayWriteError(400, "model_required", "No supported catalog models are available for the requested initial access grants.")
@@ -502,10 +536,12 @@ export function registerOrgInferenceProviderRoutes<T extends { Variables: OrgRou
     } catch (error) { return respond(c, error) }
   })
 
-  app.post("/v1/inference-providers", route("Create inference gateway provider", "Creates an organization Gateway provider from the trusted catalog and returns its management details. Empty modelIds follows all supported catalog models; a nonempty list restricts the provider universe. Creates an initial model group; legacy credential and audience fields can also create a default credential set and grants. Requires the Manage Gateway providers permission and enabled Gateway management; session callers must recently reauthenticate.", detailsResponse, 201), orgMemberRoute(), managementWrite, jsonValidator(createSchema), async (c) => {
+  app.post("/v1/inference-providers", route("Create inference gateway provider", "Creates an organization Gateway provider from the trusted catalog and returns its management details. Empty modelIds follows all supported catalog models; a nonempty list restricts the provider universe. Creates an initial model group; legacy credential and audience fields can also create a default credential set and grants. Agents never send keys: with secure keys in chat on, request access (allMembers, memberIds or teamIds) without a credential and the response carries credentialPrompt; a person then adds the shared API key in OpenWork. Requires the Manage Gateway providers permission and enabled Gateway management; session callers must recently reauthenticate.", detailsResponse.extend({ credentialPrompt: credentialPromptSchema.optional(), nextStep: z.string().optional() }), 201, false, { "x-mcp": true, "x-mcp-search-aliases": ["add AI gateway provider", "connect our AI gateway", "add OpenAI or Anthropic API provider"] }), orgMemberRoute(), managementWrite, jsonValidator(createSchema), async (c) => {
     try {
       const actor = c.get("organizationContext")
       const input = c.req.valid("json")
+      const awaitKey = await organizationFeatureEnabled(actor.organization.id, "secureSecretFields")
+      let defaultSetId: string | null = null
       const catalog = await gatewayCatalog(input.providerId, input.modelIds)
       validateGatewaySettings(catalog.config, input.settings ?? {})
       const now = new Date()
@@ -519,10 +555,11 @@ export function registerOrgInferenceProviderRoutes<T extends { Variables: OrgRou
           await tx.insert(GatewayProviderTable).values(provider)
           await writeGatewayModels(tx, provider, catalog.models)
           const credential = input.reuseCredentialFrom === undefined ? input.credential : await reusableAwsCredential(tx, provider, input.reuseCredentialFrom)
-          await defaultMatrix(tx, provider, { ...input, credential }, member.id)
+          defaultSetId = (await defaultMatrix(tx, provider, { ...input, credential }, member.id, { awaitKey })).setId
         })
       })
-      return c.json({ inferenceProvider: await gatewaySummary(provider, actor.currentMember.id, publicBase(c.req.raw), true, { managerDetails: await hasPermission(c, MANAGE) }) }, 201)
+      const prompt = awaitKey ? await pendingKeyPrompt(provider, defaultSetId) : null
+      return c.json({ inferenceProvider: await gatewaySummary(provider, actor.currentMember.id, publicBase(c.req.raw), true, { managerDetails: await hasPermission(c, MANAGE) }), ...prompt }, 201)
     } catch (error) { return respond(c, error) }
   })
 

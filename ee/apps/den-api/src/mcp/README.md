@@ -5,6 +5,27 @@ The MCP catalog is generated from `openapi.json`, then filtered by `policy.ts` b
 For third-party client setup and `invalid_target` troubleshooting, see
 [Connect a third-party MCP client with OAuth](../../../../../docs/mcp-client-oauth.md).
 
+## Gateway discovery metadata
+
+`/mcp/agent` identifies itself as **OpenWork Connect** during initialization,
+including its purpose, public website, and scalable public SVG icon. Initialization
+keeps critical routing and safety guidance within 2048 UTF-8 bytes, including when
+remote-session receipt subscriptions are enabled. Agents read
+`openwork://agent/guidance.md` for the full operating rules; those rules are retained
+rather than silently truncated. App authoring details live in `build-an-app`.
+
+The fixed connection-action and Workflow-artifact views share one HTTPS widget
+origin and advertise descriptions through resource `_meta`, never resource
+annotations. Invocation labels live on their tools.
+
+`execute_capability_script` declares the schema of its structured authoring-test
+result. `execute_capability` deliberately has no output schema: it forwards
+heterogeneous provider results, some with structured content and some text-only.
+The installed MCP server SDK rejects a successful text-only result whenever an
+output schema is registered. Advertising even an unconstrained object schema
+would break those existing calls; a checker should accept this optional-structured
+proxy case rather than require a fabricated result shape or runtime conversion.
+
 ## Allowed Tags
 
 Every tagged Den API product surface is allowed unless it is listed under blocked tags or blocked operation IDs:
@@ -113,9 +134,10 @@ route App requests to the built-in `build-an-app` skill
 the order of calls and the quality bar. `prepare_app` returns a starter wired
 to the verified tools: `lookup` when every tool reads, `action` when one
 changes data, `standalone` with none; the same three are resources at
-`openwork://apps/starters/<pattern>.json`. `create_app`'s description owns the
-source and tool-call rules the compiler and host enforce. Add a rule to its
-owner instead of repeating it elsewhere.
+`openwork://apps/starters/<pattern>.json`. `create_app`'s concise description
+routes agents to `build-an-app` for the source, tool-call, approval, and caching
+rules the compiler and host enforce. Add detailed rules to the skill rather
+than growing the discovery payload.
 
 `create_app` and `update_app` add each bound Workflow to the App's Plugin and
 route its tool through that Plugin, so sharing the Plugin shares the Workflows;

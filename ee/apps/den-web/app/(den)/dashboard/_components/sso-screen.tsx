@@ -4,6 +4,7 @@ import { CheckCircle2, Copy, KeyRound, LoaderCircle, RefreshCw, Shield, ShieldAl
 import { useEffect, useMemo, useRef, useState } from "react";
 import { DashboardPageTemplate } from "../../_components/ui/dashboard-page-template";
 import { DenButton } from "../../_components/ui/button";
+import { DenSecretInput } from "../../_components/ui/secret-input";
 import { DenNotice } from "../../_components/ui/notice";
 import { getRequestError, isReauthRequiredError, requestJson } from "../../_lib/den-flow";
 import { getBillingRoute, getOrgAccessFlags, parseOrgSsoPayload, type DenOrgSsoConnection, permissionLockReason } from "../../_lib/den-org";
@@ -537,7 +538,7 @@ export function SsoScreen() {
                     </label>
                     <label className="block text-[14px] text-gray-700">
                       <span className="mb-2 block font-medium">Client Secret</span>
-                      <input type="password" className="w-full rounded-[18px] border border-gray-200 px-4 py-3" value={clientSecret} onChange={(event) => setClientSecret(event.target.value)} placeholder="Secret is not returned after save" disabled={ssoFormDisabled} />
+                      <DenSecretInput autoComplete="new-password" value={clientSecret} onChange={setClientSecret} placeholder="Secret is not returned after save" disabled={ssoFormDisabled} />
                       <span className="mt-1 block text-[12px] text-gray-500">Client secrets are never returned by Den.</span>
                     </label>
                     <label className="block text-[14px] text-gray-700 md:col-span-2">

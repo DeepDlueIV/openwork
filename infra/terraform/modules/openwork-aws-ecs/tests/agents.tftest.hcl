@@ -107,7 +107,8 @@ run "runner_workbot_and_slack" {
   assert {
     condition = alltrue([
       local.environment.DEN_HEADLESS_RUNNER_URL == "http://headless-runner:8795",
-      local.environment.DEN_FEATURE_HEADLESS_AUTOMATIONS == "true",
+      # headlessAutomations is retired; den-api would warn and ignore the lock.
+      !contains(keys(local.environment), "DEN_FEATURE_HEADLESS_AUTOMATIONS"),
       local.environment.DEN_FEATURE_SLACK_ASSISTANT == "true",
       local.environment.DEN_AUTOMATIONS_RUNTIME_ENABLED == "true",
       local.environment.DEN_WORKBOT_URL == "https://chat.openwork.example.com",

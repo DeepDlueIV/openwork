@@ -15,7 +15,7 @@ as_browser() {
     USER=openwork-browser LOGNAME=openwork-browser LANG=C.UTF-8 \
     DISPLAY="$display" XAUTHORITY="$XAUTHORITY" LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe runuser -u openwork-browser -- "$@"
 }
-umask 002
+umask 077
 if [ ! -s "$XAUTHORITY" ]; then
   touch "$XAUTHORITY"
   chmod 0600 "$XAUTHORITY"

@@ -44,8 +44,9 @@ const box = await fake.create({ idempotencyKey: "desktop-proof", image: null, la
 await desktop.start(box)
 const fixture = `/tmp/openwork-vnc-proof-${randomUUID()}`
 const html = `<!doctype html><title>Workbot computer check</title><style>body{font:24px sans-serif;padding:60px}input,button{font:inherit;padding:12px}</style><h1>Workbot desktop</h1><label>Title <input id="entry"></label><button onclick="document.querySelector('#saved').textContent='Saved: '+document.querySelector('#entry').value">Save</button><p id="saved">Not saved</p>`
-const fixtureSource = `const fs=require('node:fs'); const server=require('node:http').createServer((_,res)=>res.end(${JSON.stringify(html)}));server.listen(0,'127.0.0.1',()=>fs.writeFileSync('${fixture}/port',String(server.address().port)));fs.writeFileSync('${fixture}/pid',String(process.pid));`
-await remote(`mkdir -p ${fixture}; printf %s ${shellQuote(Buffer.from(fixtureSource).toString("base64"))} | base64 -d > ${fixture}/server.cjs; setsid -f node ${fixture}/server.cjs > ${fixture}/server.log 2>&1 < /dev/null; for n in 1 2 3 4 5 6 7 8 9 10; do test -s ${fixture}/port && break; sleep 0.1; done`)
+// Keep the fixture program constant; HTML and paths are data rather than JS source.
+const fixtureSource = `const fs=require('node:fs'),path=require('node:path');const dir=process.argv[2];const server=require('node:http').createServer((_,res)=>res.end(fs.readFileSync(path.join(dir,'index.html'))));server.listen(0,'127.0.0.1',()=>fs.writeFileSync(path.join(dir,'port'),String(server.address().port)));fs.writeFileSync(path.join(dir,'pid'),String(process.pid));`
+await remote(`mkdir -p ${fixture}; printf %s ${shellQuote(Buffer.from(html).toString("base64"))} | base64 -d > ${fixture}/index.html; printf %s ${shellQuote(Buffer.from(fixtureSource).toString("base64"))} | base64 -d > ${fixture}/server.cjs; setsid -f node ${fixture}/server.cjs ${shellQuote(fixture)} > ${fixture}/server.log 2>&1 < /dev/null; for n in 1 2 3 4 5 6 7 8 9 10; do test -s ${fixture}/port && break; sleep 0.1; done`)
 const port = Number((await remote(`cat ${fixture}/port`)).trim())
 assert.ok(Number.isInteger(port) && port > 0)
 const browser = (operation: string, args: Record<string, unknown>) => desktop.call(box, "/browser/task", { sessionId: "vnc-proof", operation, args })

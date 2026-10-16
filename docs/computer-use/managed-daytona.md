@@ -64,11 +64,25 @@ keeps the existing server/browser processes when healthy. A genuinely cold or
 unhealthy runtime runs the normal bootstrap. Container workers retain cold
 stop/start behavior. Viewing or operating the desktop contributes to worker
 activity; an active view does not silently time out while the user is working.
+Daytona also receives `autoPauseInterval=5` and `autoStopInterval=0`, independently
+of Den's idle loop. Set `DAYTONA_SANDBOX_AUTO_PAUSE_INTERVAL` to adjust that
+provider backstop. VM instances omit container-only auto-archive. A positive
+`DAYTONA_SANDBOX_AUTO_DELETE_INTERVAL` enables a renewable inactivity lease for
+retained VM disks; durable Web instances keep their existing disabled default.
+Paused microVMs release CPU/RAM billing; disks still incur storage charges.
+Preview traffic itself does not count as Daytona activity. Fresh, authenticated
+worker activity heartbeats renew its idle timer and retention lease while the
+person or agent is working. Health heartbeats without activity do not renew
+either, and a late heartbeat never wakes a paused computer.
 
 The browser profile lives beneath the worker's runtime data directory and is
 included in its existing checkpoint storage. Live memory survives pause/resume;
 disk checkpoint recovery relaunches Chromium and cannot promise unsaved memory.
-User-managed hot checkpoints and cloning are a later slice.
+The shared provider also supports explicit hot checkpoints and restored clones
+through `blocks.snapshots`, using the same memory-snapshot API as upstream
+worlds. A user-facing checkpoint manager remains a later slice. Checkpoint
+storage has a separate lifetime from its source computer and needs explicit
+owner cleanup. See the [lifecycle diagnostic](./workbot.md#microvm-lifecycle-and-cost).
 
 ## Boundaries
 

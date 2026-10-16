@@ -98,7 +98,7 @@ export function registerGoogleOfficeEditorRoutes<T extends { Variables: OrgRoute
       const latest = await metadata(c, auth.deps, fileId); if (!latest.ok) return latest.reply
       if (meta.file.version !== latest.file.version) return failure(c, "This file changed while opening. Open the latest version again.")
       const context = c.get("organizationContext")!
-      const canWrite = auth.token.account.scopes?.includes(scope) === true && auth.token.enabledScopes.includes(scope)
+      const canWrite = auth.token.account.scopes?.some(grant => grant === scope) === true && auth.token.enabledScopes.some(grant => grant === scope)
       const draft: OfficeDraft = {
         id: randomUUID(), organizationId: context.organization.id, memberId: context.currentMember.id, userId: context.currentMember.userId, connectionId: auth.connectionId,
         fileId, revision: meta.file.version, name: native ? `${meta.file.name}.${fileType}` : meta.file.name, mimeType: officeFormats[fileType].mimeType, fileType,
@@ -169,7 +169,7 @@ export function registerGoogleOfficeEditorRoutes<T extends { Variables: OrgRoute
     if (!draft || !service || !officeTicketMatches(draft, c.req.query("access_token") ?? bearer) || !await serviceAuthorized(c, draft)) return null
     if (write) {
       const auth = await selected(c, draft.connectionId)
-      if (!draft.canEdit || !auth.ok || !auth.token.account.scopes?.includes(scope) || !auth.token.enabledScopes.includes(scope)) return null
+      if (!draft.canEdit || !auth.ok || !auth.token.account.scopes?.some(grant => grant === scope) || !auth.token.enabledScopes.some(grant => grant === scope)) return null
       const meta = await metadata(c, auth.deps, draft.savedFileId ?? draft.fileId)
       if (!meta.ok || ((!draft.saveAsCopy || draft.savedFileId) && !meta.file.capabilities?.canEdit)) return null
     }

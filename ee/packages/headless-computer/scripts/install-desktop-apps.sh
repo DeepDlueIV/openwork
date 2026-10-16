@@ -6,13 +6,9 @@ packages=$(node --input-type=module -e 'import { DESKTOP_APPS } from "/usr/local
 apt-get update -qq
 # Word splitting is intentional: the package names come from our static catalog.
 apt-get install -y -qq --no-install-recommends $packages \
-  libreoffice-gtk3 libgl1-mesa-dri libglx-mesa0 mesa-utils tint2 adwaita-icon-theme fonts-noto-cjk fonts-noto-color-emoji
+  libreoffice-gtk3 libgl1-mesa-dri libglx-mesa0 mesa-utils tint2 adwaita-icon-theme fonts-noto-cjk fonts-noto-color-emoji acl
 
-# Both the command user and GUI user can work with the same files. Keep private
-# broker tokens outside these shared directories; never chmod the whole workspace.
-usermod -a -G ubuntu openwork-browser
-install -d -o ubuntu -g ubuntu -m 2775 /workspace/files /workspace/out
-install -d -o openwork-browser -g ubuntu -m 2775 /home/openwork-browser
+bash /usr/local/share/openwork-desktop/configure-files.sh
 ln -sfn /workspace/files /home/openwork-browser/Uploads
 ln -sfn /workspace/out /home/openwork-browser/Outputs
 ln -sfn /workspace/out /home/openwork-browser/Downloads
@@ -22,7 +18,7 @@ env -i PATH=/usr/sbin:/usr/bin:/bin HOME=/home/openwork-browser LIBGL_ALWAYS_SOF
   'import bpy; bpy.context.preferences.view.show_splash = False; bpy.ops.wm.save_userpref(); s = bpy.context.scene; s.render.engine = "CYCLES"; s.cycles.device = "CPU"; s.cycles.use_denoising = False; bpy.ops.wm.save_homefile()'
 cat > /usr/local/bin/openwork-desktop-app <<'HELPER'
 #!/bin/sh
-umask 002
+umask 077
 exec node /usr/local/share/openwork-desktop/apps.mjs --launch-app "$@"
 HELPER
 chmod 0755 /usr/local/bin/openwork-desktop-app

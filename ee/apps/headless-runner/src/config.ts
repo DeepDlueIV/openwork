@@ -155,6 +155,7 @@ function computerConfig(value: z.infer<typeof configSchema>): Config["computer"]
   const apiKey = value.HEADLESS_COMPUTER === "daytona" ? value.DAYTONA_API_KEY : value.FREESTYLE_API_KEY
   if (!apiKey) throw new Error(`Invalid headless-runner configuration: HEADLESS_COMPUTER=${value.HEADLESS_COMPUTER} needs ${value.HEADLESS_COMPUTER === "daytona" ? "DAYTONA_API_KEY" : "FREESTYLE_API_KEY"}`)
   if (value.HEADLESS_COMPUTER === "daytona" && !value.HEADLESS_COMPUTER_SNAPSHOT) throw new Error("Daytona computers need HEADLESS_COMPUTER_SNAPSHOT (snapshot:build:daytona)")
+  if (value.HEADLESS_COMPUTER === "daytona" && value.HEADLESS_COMPUTER_DESKTOP === "true" && value.HEADLESS_COMPUTER_CLASS !== "linux-vm") throw new Error("Daytona desktop computers require HEADLESS_COMPUTER_CLASS=linux-vm for memory-preserving pause and snapshots")
   return {
     kind: value.HEADLESS_COMPUTER,
     apiKey,

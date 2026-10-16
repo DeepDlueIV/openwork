@@ -46,6 +46,7 @@ export class Computers {
   /** Sessions whose VM this process has resolved: the handle, so later calls skip the lookup. */
   private readonly vms = new Map<string, Promise<SandboxHandle>>()
   private readonly pauseTimers = new Map<string, ReturnType<typeof setTimeout>>()
+  private readonly pausing = new Map<string, Promise<void>>()
   /** Saved file ids already copied into each session's VM by this process. */
   private readonly copied = new Map<string, Set<string>>()
 
@@ -142,24 +143,25 @@ export class Computers {
     void this.vm(sessionId)
       .then((box) => this.execute(box, { command: "true", timeoutMs: 10_000 }))
       .catch(() => undefined)
+      .finally(() => this.release(sessionId))
   }
 
   /** The conversation's VM, created from the snapshot on first use. A paused VM wakes on its next command. */
   async vm(sessionId: string): Promise<SandboxHandle> {
     this.cancelPause(sessionId)
-    let pending = this.vms.get(sessionId)
-    if (!pending) {
-      pending = this.resolve(sessionId)
-      this.vms.set(sessionId, pending)
-      pending.catch(() => this.vms.delete(sessionId))
-      return pending
-    }
-    const current = await this.provider.inspect(await pending)
-    if (current.state === "running") return current
-    if (current.state === "missing") this.copied.delete(sessionId)
-    const waking = this.resolve(sessionId)
-    this.vms.set(sessionId, waking)
-    return waking
+    await this.pausing.get(sessionId)
+    const prior = this.vms.get(sessionId)
+    // Reserve the transition before awaiting provider state. Concurrent viewer
+    // and tool requests must not both issue a start against the same paused VM.
+    const pending = prior ? prior.then(async box => {
+      const current = await this.provider.inspect(box)
+      if (current.state === "running") return current
+      if (current.state === "missing") this.copied.delete(sessionId)
+      return this.resolve(sessionId)
+    }) : this.resolve(sessionId)
+    this.vms.set(sessionId, pending)
+    pending.catch(() => { if (this.vms.get(sessionId) === pending) this.vms.delete(sessionId) })
+    return pending
   }
 
   private spec(sessionId: string): SandboxSpec {
@@ -167,9 +169,14 @@ export class Computers {
       idempotencyKey: this.slug(sessionId), image: this.provider.currentImage(),
       labels: { kind: "headless-computer", ...(this.options.scope ? { [SCOPE_LABEL]: this.options.scope } : {}) },
       env: {}, storage: [], exposePorts: [],
-      // The job's own timer checks background jobs. Keep the provider's idle
-      // backstop long enough that a quiet rendering job does not get stopped.
-      lifecycle: { autoStopMinutes: 60, autoDeleteMinutes: this.options.keepDays * 1440 },
+      // Give the local background-job probe a minute of grace before provider
+      // auto-pause. The backstop still bounds cost if the runner disappears.
+      lifecycle: {
+        ...(this.provider.id === "daytona" && this.provider.blocks?.pause
+          ? { autoPauseMinutes: Math.max(1, Math.ceil(this.options.idlePauseMs / 60_000)) + 1, autoStopMinutes: 0 }
+          : { autoStopMinutes: 60 }),
+        autoDeleteMinutes: this.options.keepDays * 1440,
+      },
     }
   }
 
@@ -185,7 +192,7 @@ export class Computers {
   private async exec(sessionId: string, command: string, timeoutSeconds: number) {
     const box = await this.vm(sessionId)
     return this.execute(box, {
-      command: `${this.desktop ? "umask 002; " : ""}cd ${WORKSPACE} 2>/dev/null || cd ~; exec bash -c "$WORKBOT_COMMAND"`,
+      command: `${this.desktop ? "umask 077; " : ""}cd ${WORKSPACE} 2>/dev/null || cd ~; exec bash -c "$WORKBOT_COMMAND"`,
       env: { WORKBOT_COMMAND: command, PATH: GUEST_PATH, HOME: "/home/ubuntu", LANG: "C.UTF-8" },
       timeoutMs: timeoutSeconds * 1000,
     })
@@ -200,13 +207,21 @@ export class Computers {
     this.pauseTimers.set(sessionId, timer)
   }
 
-  private async pauseIfIdle(sessionId: string) {
+  private pauseIfIdle(sessionId: string): Promise<void> {
+    const current = this.pausing.get(sessionId)
+    if (current) return current
+    const pending = this.checkIdle(sessionId).finally(() => this.pausing.delete(sessionId))
+    this.pausing.set(sessionId, pending)
+    return pending
+  }
+
+  private async checkIdle(sessionId: string) {
     this.pauseTimers.delete(sessionId)
     const pending = this.vms.get(sessionId)
     if (!pending) return
     try {
       const vm = await pending
-      const jobs = await this.execute(vm, { command: `ls ${WORKSPACE}/.jobs/*.running 2>/dev/null | wc -l`, timeoutMs: 10_000 })
+      const jobs = await this.execute(vm, { command: `ls ${WORKSPACE}/.jobs/*.running 2>/dev/null | wc -l`, activity: "maintenance", timeoutMs: 10_000 })
       if (Number(jobs.stdout?.trim() ?? "0") > 0) return this.release(sessionId)
       await (this.provider.blocks?.pause ? this.provider.blocks.pause(vm, { timeoutMs: 30_000 }) : this.provider.stop(vm, { timeoutMs: 30_000 }))
     } catch {
@@ -251,7 +266,7 @@ export class Computers {
         done.add(file.id)
         continue
       }
-      await this.blocks.files.write(vm, path.path, found.bytes, { timeoutMs: 30_000, ...(this.desktop ? { mode: 0o664 } : {}) })
+      await this.blocks.files.write(vm, path.path, found.bytes, { timeoutMs: 30_000, ...(this.desktop ? { mode: 0o660 } : {}) })
       done.add(file.id)
       copied.push(path.path)
     }

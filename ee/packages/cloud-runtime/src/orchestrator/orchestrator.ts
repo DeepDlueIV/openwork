@@ -111,6 +111,7 @@ export interface CloudRuntimeOrchestrator {
   deprovision(workerId: string): Promise<void>
   flushCheckpoint(workerId: string): Promise<boolean>
   inspect(workerId: string): Promise<RuntimeInstanceInspection | null>
+  recordActivity(workerId: string): Promise<void>
   refreshEndpoint(workerId: string): Promise<RuntimeInstanceRecord | null>
   getRecord(workerId: string): Promise<RuntimeInstanceRecord | null>
 }
@@ -744,6 +745,17 @@ export function createCloudRuntimeOrchestrator(deps: CloudRuntimeOrchestratorDep
     return { ...record, ...update }
   }
 
+  async function recordActivity(workerId: string) {
+    const activity = provider.blocks?.activity
+    if (!activity) return
+    const record = await store.get(workerId)
+    if (!record) return
+    // Preview requests do not refresh Daytona's idle timer. Only actual work
+    // heartbeats reach this path; a dormant or paused instance stays asleep.
+    const handle = await provider.get(record.sandbox)
+    if (handle?.state === "running") await activity(handle, { timeoutMs: 5_000 })
+  }
+
   async function eraseWorkerData(workerId: string) {
     let volume: VolumeRef
     try {
@@ -799,6 +811,7 @@ export function createCloudRuntimeOrchestrator(deps: CloudRuntimeOrchestratorDep
     deprovision,
     flushCheckpoint,
     inspect,
+    recordActivity,
     refreshEndpoint,
     getRecord: (workerId) => store.get(workerId),
   }

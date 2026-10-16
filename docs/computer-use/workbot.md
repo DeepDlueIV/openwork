@@ -69,6 +69,10 @@ mode; noVNC's `viewOnly` setting also disables accidental input. Both manual
 streams and structured tools operate the same broad desktop. Browser processes
 run as an unprivileged account with Chromium's sandbox and a protected X cookie.
 Workbot's model and connected-app tokens are not passed to the desktop.
+The member's VM has broad browser, native and shell access, including local
+web apps. This slice does not enforce the desktop app's organization website
+rules or a private-network egress policy. Deploy it on an isolated VM network;
+an organization requiring restricted egress needs enforcement at that boundary.
 
 ## Useful applications
 
@@ -90,8 +94,10 @@ its lighter LibreOffice packages; GUI apps are installed only in the desktop ima
 opens the app menu. The taskbar switches between open windows. Uploaded files
 are in `/workspace/files`; save deliverables in `/workspace/out`. The desktop's
 Uploads, Outputs and Downloads shortcuts point to these shared folders. Both
-the command user and GUI user can save outputs without making broker secrets
-readable. App profiles live in `/home/openwork-browser` and survive VM pause/resume.
+the command user and GUI user can save outputs through a dedicated shared group
+and default directory ACLs. Homes and files elsewhere use private permissions;
+the GUI account is not a member of the command user's group. App profiles live
+in `/home/openwork-browser` and survive VM pause/resume.
 
 Workbot's `desktop` tool exposes `computer_apps {}` to discover app availability,
 package versions, supported formats, paths and environment guidance, and
@@ -101,6 +107,49 @@ it does not prove the application is ready or the file saved. Older snapshots
 report missing apps honestly and need an operator rebuild to add them. Existing
 computers are never replaced automatically. Launches use the same input rail
 and takeover pause as browser and native actions, with no extra consent screen.
+
+## MicroVM lifecycle and cost
+
+Daytona's `linux-vm` class is its hypervisor-backed microVM, also used by the
+upstream Daytona worlds. Desktop mode requires that class and verifies the
+configured snapshot with Daytona before creating or adopting a computer.
+It never silently falls back to a container or an unprepared image. Snapshot
+resources determine the computer's size; a warm pool is not required.
+
+One stable computer is reused per conversation, including after runner restarts.
+The default idle period is five minutes (`HEADLESS_COMPUTER_PAUSE_SECONDS=300`).
+The runner pauses after work, and Daytona receives an independent auto-pause
+backstop one minute later, with auto-stop disabled. The grace period lets the
+runner check background jobs before the provider deadline. This keeps unsaved apps and processes in memory
+even if the runner goes away. Prewarming also releases its idle timer. A new
+operation waits for an in-progress local idle pause, then resumes the same VM.
+
+`HEADLESS_COMPUTER_KEEP_DAYS` defaults to 14 days without work. MicroVMs receive
+a renewable provider TTL so paused disks can eventually expire too; Daytona's
+auto-delete setting alone applies to stopped computers. Commands, file access,
+and viewer access renew the lease, at most once a minute. Inventory and idle
+maintenance probes do not renew it. Export deliverables to kept Files before
+retention expires. The existing container/Freestyle behavior stays unchanged.
+
+The shared Daytona provider exposes `blocks.snapshots` for explicit hot
+checkpoints using `{includeMemory:true}`, matching upstream's world API. A
+checkpoint returns only after it is active; launching from it restores running
+processes without rebuilding software. Routine pause/resume uses the original
+VM. Checkpoints consume separate storage until their owner deletes them, even
+after VM deletion. The adapter waits for VM deletion to finish and resolves a
+snapshot's provider ID for deletion.
+
+For the managed Web runtime, set `DAYTONA_SANDBOX_CLASS=linux-vm` and a prepared
+`DAYTONA_SNAPSHOT`. `DAYTONA_SANDBOX_AUTO_PAUSE_INTERVAL` defaults to five minutes.
+On that class, auto-stop and container-only auto-archive are omitted. A positive
+`DAYTONA_SANDBOX_AUTO_DELETE_INTERVAL` also sets the renewable idle-retention
+lease; its default remains disabled for durable Web instances.
+Fresh authenticated worker activity renews Daytona's idle timer because preview
+traffic alone does not count as provider activity. An inactive health heartbeat
+cannot keep compute alive, and a late heartbeat never resumes a paused VM.
+
+Paused microVMs stop CPU/RAM billing; retained disk and checkpoint storage remain
+billable. See [Daytona billing](https://www.daytona.io/docs/en/billing/).
 
 Blender uses Mesa software OpenGL; Cycles renders run on CPU. This image does
 not supply a GPU. Its initial scene uses CPU Cycles with denoising off so builds
@@ -125,11 +174,18 @@ pnpm evals:e2e workbot-computer --local
 pnpm --filter @openwork-ee/workbot exec tsx --conditions=development --test scripts/computer.test.ts
 pnpm --dir ee/packages/headless-computer exec tsx --conditions=development \
   scripts/prove-desktop-vnc.ts <dedicated-test-vm>
+DAYTONA_API_KEY=… pnpm --dir ee/packages/headless-computer exec tsx --conditions=development \
+  scripts/prove-daytona-lifecycle.ts
 ```
 
 The Workbot journey proves rollout, navigation and recovery through the real
 signed-in application. The CLI diagnostic operates a dedicated prepared VM and
 checks actual signed RFB streams; it does not provision or delete a sandbox.
+The lifecycle diagnostic creates two small microVMs and one private hot
+checkpoint, verifies memory continuity, automatic pause and runner restart, and
+deletes its resources in `finally`. Its test computers have a 30-minute provider
+TTL as a crash backstop. Set `DAYTONA_TARGET` and `HEADLESS_COMPUTER_SNAPSHOT` to
+test another compatible region/snapshot; it never provisions a warm pool.
 
 For image acceptance, copy `ee/packages/headless-computer/scripts/prove-desktop-apps.mjs`
 into a dedicated prepared test guest, start its desktop, then run it as root with

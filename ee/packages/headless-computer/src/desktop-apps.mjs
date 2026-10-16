@@ -70,6 +70,6 @@ export function createDesktopApplications({ display = ":99", authority = process
 }
 
 if (process.argv[2] === "--launch-app" && process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  process.umask(0o002);
+  process.umask(0o077);
   await createDesktopApplications({ directory: `${home}/.local/state/openwork-apps` }).launch({ app: process.argv[3], ...(process.argv[4] ? { path: process.argv[4] } : {}) });
 }

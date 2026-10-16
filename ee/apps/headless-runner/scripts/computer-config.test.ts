@@ -21,4 +21,5 @@ test("VM and desktop capabilities require explicit operator configuration", () =
   const vm = loadConfig({ ...env, HEADLESS_COMPUTER_CLASS: "linux-vm", HEADLESS_COMPUTER_DESKTOP: "true" }).computer
   assert.equal(vm?.desktop, true)
   assert.equal(vm?.sandboxClass, "linux-vm")
+  assert.throws(() => loadConfig({ ...env, HEADLESS_COMPUTER_DESKTOP: "true" }), /HEADLESS_COMPUTER_CLASS=linux-vm/)
 })

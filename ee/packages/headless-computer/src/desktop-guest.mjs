@@ -14,7 +14,7 @@ let until = 0;
 const tickets = new Map();
 const sockets = new Set();
 const transports = new Map();
-process.umask(0o002);
+process.umask(0o077);
 const computer = await createCloudComputer({ directory, display: ":99", enabled: async () => Date.now() < until,
   applications: createDesktopApplications({ directory: `${directory}/apps`, display: ":99" }),
 });

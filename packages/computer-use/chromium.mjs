@@ -152,6 +152,9 @@ export function createCloudBrowser({ statePath, assertActive, enabled, beforeInp
   const host = createBrowserTaskHost({
     getTab: id => tabs.get(id), tabsFor: sessionId => [...tabs.values()].filter(tab => owners.get(tab.tabId) === sessionId),
     ownerOf: id => owners.get(id), activeFor: sessionId => [...owners].find(([id, owner]) => owner === sessionId && tabs.has(id))?.[0],
+    // This browser is inside the member's full computer, alongside native input
+    // and shell access. Local apps and private sites are intentionally reachable.
+    // Network restrictions belong at the VM boundary, not solely in this tool.
     isVisible: () => true, enabled, allowed: async () => true, changed: () => {},
     async openTab(url, sessionId, signal, admit) {
       if (tabs.size >= 12) throw new Error("Close a browser tab before opening another.");

@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import { mkdir, readFile, writeFile, stat, chown, chmod } from "node:fs/promises";
+import { readFile, writeFile, stat } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { createDesktopApplications } from "/usr/local/share/openwork-desktop/apps.mjs";
 
@@ -11,9 +11,7 @@ const execute = promisify(execFile);
 const display = process.env.DISPLAY ?? ":99";
 process.env.DISPLAY = display;
 const directory = `/workspace/out/desktop-apps-proof-${randomUUID()}`;
-await mkdir(directory, { mode: 0o2775 });
-await chown(directory, 1000, 1000);
-await chmod(directory, 0o2775);
+await execute("/usr/sbin/runuser", ["-u", "ubuntu", "--", "sh", "-c", 'umask 077; mkdir "$1"', "_", directory]);
 const applications = createDesktopApplications({ directory: `${directory}/logs`, display });
 const catalog = await applications.list();
 assert.equal(catalog.apps.filter(app => !app.available).length, 0, JSON.stringify(catalog));
@@ -39,7 +37,7 @@ for (const [app, pattern] of [["writer", "libreoffice-writer"], ["gimp", "gimp"]
 
 // A real GUI save verifies the two users can exchange files, not just list apps.
 const note = `${directory}/note.txt`;
-await execute("/usr/sbin/runuser", ["-u", "ubuntu", "--", "sh", "-c", 'umask 002; printf "Before editing\\n" > "$1"', "_", note]);
+await execute("/usr/sbin/runuser", ["-u", "ubuntu", "--", "sh", "-c", 'umask 077; printf "Before editing\\n" > "$1"', "_", note]);
 await applications.launch({ app: "editor", path: note }, deadline);
 const editor = await window("mousepad");
 // A mapped window can precede document loading and other apps' startup focus.

@@ -204,6 +204,9 @@ export function renderOpenWorkBootstrapScript(config: OpenWorkBootstrapConfig) {
     shellQuote(config.activityHeartbeat.url),
     " DEN_ACTIVITY_HEARTBEAT_TOKEN=",
     shellQuote(config.activityHeartbeat.token),
+    // VM auto-pause can be as short as one minute. The five-minute legacy
+    // heartbeat cannot keep an active preview awake before that deadline.
+    ...(config.cloudComputerDisplay ? [" DEN_ACTIVITY_HEARTBEAT_INTERVAL_SECONDS=30 DEN_ACTIVITY_WINDOW_SECONDS=120"] : []),
     ...(config.cloudComputerDisplay ? [` sh -c ${shellQuote(`openwork-cloud-desktop ${shellQuote(config.runtimeDataPath)} ${shellQuote(config.cloudComputerDisplay)} && exec openwork-server "$@"`)} --`] : [" openwork-server"]),
     ` --workspace ${shellQuote(config.runtimeWorkspacePath)}`,
     ` --host 0.0.0.0`,

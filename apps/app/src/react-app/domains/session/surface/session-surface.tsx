@@ -2246,6 +2246,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
       });
       if (getQueuedSendGeneration(props.sessionId) !== generation) return result;
       if (result.outcome === "blocked" || result.outcome === "cancelled") return result;
+      offlineRecovery.release();
       // Only report a run after the pre-send gate released the exact queued
       // submission and the route accepted or sent it.
       useSessionActivityStore.getState().setRunStatus(props.workspaceId, props.sessionId, { type: "busy" });
@@ -2293,7 +2294,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
       pendingSendsRef.current.delete(submissionId);
       setPendingSendSessions([...pendingSendsRef.current.values()]);
     }
-  }, [onlineModel, archived, archiveStateKnown, interruptionClient, openingHistory.readSendHistory, props.onSendDraft, props.opencodeBaseUrl, props.selectedAgent, props.sessionId, props.workspaceId, props.workspaceRoot, removeQueuedDraftFromStore, renderedMessages.length, sessionOwner, setError, props.client, props.openWorkModelsSyncing, sessionModel.selectedModel, rejectedOwner, localRejectedRuntime, baseRenderedMessages]);
+  }, [offlineRecovery.release, onlineModel, archived, archiveStateKnown, interruptionClient, openingHistory.readSendHistory, props.onSendDraft, props.opencodeBaseUrl, props.selectedAgent, props.sessionId, props.workspaceId, props.workspaceRoot, removeQueuedDraftFromStore, renderedMessages.length, sessionOwner, setError, props.client, props.openWorkModelsSyncing, sessionModel.selectedModel, rejectedOwner, localRejectedRuntime, baseRenderedMessages]);
 
   const clearComposer = useCallback(() => {
     clearPersistedDraft();

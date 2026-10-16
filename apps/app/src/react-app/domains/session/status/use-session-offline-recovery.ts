@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { isLoopbackOpenworkServerUrl } from "@/app/lib/openwork-server";
 import { checkOnlineConnection, isLocalNetworkEndpoint, useOfflineRecoveryStore } from "./offline-recovery-store";
 
@@ -26,7 +26,10 @@ export function useSessionOfflineRecovery(options: {
   const [stop, setStop] = useState<{ owner: string; state: StopState } | null>(null);
   const stopRetry = useRef(options.stopRetry);
   stopRetry.current = options.stopRetry;
-  const attempted = useRef<string | null>(null);
+  const attempted = useRef<{ owner: string } | null>(null);
+  const release = useCallback(() => { setHold(null); setStop(null); attempted.current = null; }, []);
+
+  useEffect(() => { release(); }, [owner, enabled, release]);
 
   useEffect(() => {
     if (enabled && networkFailure) void checkOnlineConnection(true);
@@ -35,12 +38,13 @@ export function useSessionOfflineRecovery(options: {
   useEffect(() => {
     if (!enabled || !issue) return;
     if (onlineModel || !isLocalNetworkEndpoint(engineUrl)) setHold(owner);
-    if (!onlineModel || !retrying || !isLoopbackOpenworkServerUrl(engineUrl) || attempted.current === owner) return;
-    attempted.current = owner;
+    if (!onlineModel || !retrying || !isLoopbackOpenworkServerUrl(engineUrl) || attempted.current?.owner === owner) return;
+    const attempt = { owner };
+    attempted.current = attempt;
     setStop({ owner, state: "stopping" });
     void stopRetry.current().then(
-      (stopped) => setStop({ owner, state: stopped ? "stopped" : "unconfirmed" }),
-      () => setStop({ owner, state: "unconfirmed" }),
+      (stopped) => { if (attempted.current === attempt) setStop({ owner, state: stopped ? "stopped" : "unconfirmed" }); },
+      () => { if (attempted.current === attempt) setStop({ owner, state: "unconfirmed" }); },
     );
   }, [enabled, issue, owner, onlineModel, retrying, engineUrl]);
 
@@ -48,7 +52,6 @@ export function useSessionOfflineRecovery(options: {
     if (idle && stop?.owner === owner && stop.state === "unconfirmed") setStop(null);
   }, [idle, stop, owner]);
 
-  const release = () => { setHold(null); setStop(null); attempted.current = null; };
   return {
     enabled,
     issue: enabled ? issue : null,

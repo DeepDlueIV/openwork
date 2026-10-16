@@ -899,7 +899,7 @@ export function McpAppSandboxView({ origin, app, resolveLiveActions, goesLiveInP
     setError(null)
     setRetryAttempt((attempt) => attempt + 1)
   })
-  if (error && offline) return <p className="text-sm text-muted-foreground">View unavailable while offline</p>;
+  if (error && offline) return <p className="text-sm text-muted-foreground">View unavailable. Check your connection.</p>;
   if (error) return <McpAppDiagnosticNotice error={error} notice={unavailableNotice} onRetry={reload} />
   return (
     <>
@@ -1122,7 +1122,7 @@ function EmbeddedMcpAppFrame({ part, origin: surfaceOrigin }: { part: DynamicToo
   }
   if (!result) return null
   if (!origin) return <p role="status">This artifact is missing its conversation origin. Reopen the conversation to use it.</p>
-  if (offline && (!app || error)) return <p className="text-sm text-muted-foreground">View unavailable while offline</p>;
+  if (offline && (!app || error)) return <p className="text-sm text-muted-foreground">View unavailable. Check your connection.</p>;
   if (error) return <McpAppDiagnosticNotice error={error} notice={CHAT_MCP_APP_UNAVAILABLE_NOTICE} onRetry={() => setResolveToken((token) => token + 1)} />
   if (!app || resolvedFor.current !== resolution) return launch && resolvedFor.current !== resolution
     ? stagedLoading ? <McpAppLoading /> : <p role="status">Opening artifact…</p> : null

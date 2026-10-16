@@ -100,9 +100,9 @@ retains its existing feature checks. The drawer reads recent files through the
 same authenticated Drive provider as Documents.
 
 At Send, the user can include or exclude the current view. The bounded snapshot
-contains the open Drive file's ID, name, type and unsaved status, or the calendar
-range, time zone and selected event/automation. It contains no document bytes or
-unsaved text. Workbot reads saved content using the member's existing connected
+contains the open Drive file's ID and unsaved status, or the calendar
+range, time zone and selected event/automation ID. Display titles, MIME labels and search text never enter the model prompt. It contains no document bytes or
+unsaved text. Contextual turns, retries and interrupted-turn resumes use read-only MCP credentials and disable write-capable runner tools. Changes require a separate explicit request from Home without view context. Workbot reads saved content using the member's existing connected
 apps and permissions; visible metadata grants no access. The snapshot remains
 with that turn for transcript display, editing and retry. After a native Google
 file is saved as an Office copy, context follows the confirmed copy’s file ID.

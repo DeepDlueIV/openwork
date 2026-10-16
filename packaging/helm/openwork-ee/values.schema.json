@@ -18,6 +18,16 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "googleDocumentTools": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Google Docs: focused reading and edits: Connected assistants inspect document tabs and headings, read or search bounded passages, and replace text against the revision they read. Renders DEN_FEATURE_GOOGLE_DOCUMENT_TOOLS."
+            },
             "offlineRecovery": {
               "enum": [
                 "",

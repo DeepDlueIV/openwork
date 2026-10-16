@@ -26,6 +26,7 @@ config:
   #   "false" off for everyone; /admin shows "Set by deployment config"
   # The /admin kill switch still turns a feature off, even when locked on.
   features:
+    googleDocumentTools: ""        # default off · Connected assistants inspect document tabs and headings, read or search bounded passages, and replace text against the revision they read.
     offlineRecovery: ""            # default off · Show a shared offline warning, pause affected online requests, and let people continue interrupted tasks after reconnecting.
     rememberLastOrganization: ""   # default off · Return to the last organization used by the same account on this server after signing in again. Invite and installation links keep their selected organization.
     secureSecretFields: ""         # default off · When an agent sets up a connection, plugin or AI Gateway provider that needs keys, people enter them in private fields in the chat and the agent continues once they are saved. Key fields across OpenWork and OpenWork Cloud can be shown while typing and show saved keys as Replace rows.

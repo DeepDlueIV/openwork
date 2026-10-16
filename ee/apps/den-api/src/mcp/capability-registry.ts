@@ -153,7 +153,7 @@ export type CapabilityRegistryContextInput = {
   redirectUriBase: string
   generatedArtifactViewsEnabled: boolean
   /** Effective features of the organization (see features.ts). */
-  organizationFeatures: Partial<Pick<FeatureMap, "remoteSessionEvents" | "remoteSessionSubagents" | "managedDeployments" | "managedDeploymentsMcp" | "secureSecretFields">>
+  organizationFeatures: Partial<Pick<FeatureMap, "remoteSessionEvents" | "remoteSessionSubagents" | "managedDeployments" | "managedDeploymentsMcp" | "secureSecretFields" | "googleDocumentTools">>
   /** MCP transports pass the verified caller; route and Automation contexts omit it (their route records the request). */
   audit?: McpAuditPrincipal | null
   /**
@@ -181,7 +181,10 @@ export function createCapabilityRegistryContext(input: CapabilityRegistryContext
   return {
     app: input.app,
     env: input.env,
-    catalog: input.catalog,
+    // All capability paths (search, Code Mode, execution, saved Workflows) use this catalog.
+    // The route also checks the current rollout so a cached tool cannot bypass a kill switch.
+    catalog: input.catalog.filter(operation => input.organizationFeatures.googleDocumentTools === true
+      || !operation.path.startsWith("/v1/capabilities/google-workspace/documents/")),
     principal: input.principal,
     organizationId: input.organizationId,
     member: input.member,

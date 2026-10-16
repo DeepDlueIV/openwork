@@ -773,7 +773,8 @@ export type AdminFeature = {
     | "inviteLinkVerifiesEmail"
     | "nativeCloudSkills"
     | "mcpSkillsExtension"
-    | "remoteSessionSubagents";
+    | "remoteSessionSubagents"
+    | "headlessDurableTurns";
   label: string;
   description: string;
   since: string;
@@ -854,6 +855,7 @@ export type AdminOrganizationsPageResponse = {
       nativeCloudSkills: boolean;
       mcpSkillsExtension: boolean;
       remoteSessionSubagents: boolean;
+      headlessDurableTurns: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -1243,6 +1245,15 @@ export type AdminOrganizationsPageResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
+      headlessDurableTurns: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
     };
     [key: string]: unknown;
   }>;
@@ -1348,6 +1359,7 @@ export type AdminOverviewResponse = {
       nativeCloudSkills: boolean;
       mcpSkillsExtension: boolean;
       remoteSessionSubagents: boolean;
+      headlessDurableTurns: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -1729,6 +1741,15 @@ export type AdminOverviewResponse = {
         overrideApplies: boolean;
       };
       remoteSessionSubagents: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      headlessDurableTurns: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6952,6 +6973,7 @@ export type WorkbotSession = {
 export type WorkbotRunToken = {
   token: string;
   expiresAt: string;
+  resumeGrant?: string;
 };
 
 export type DenAppVersionResponse = {
@@ -7945,6 +7967,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       nativeCloudSkills: boolean;
       mcpSkillsExtension: boolean;
       remoteSessionSubagents: boolean;
+      headlessDurableTurns: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -8326,6 +8349,15 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       remoteSessionSubagents: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      headlessDurableTurns: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -8427,6 +8459,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       nativeCloudSkills: boolean;
       mcpSkillsExtension: boolean;
       remoteSessionSubagents: boolean;
+      headlessDurableTurns: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -8808,6 +8841,15 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       remoteSessionSubagents: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      headlessDurableTurns: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -35093,6 +35135,8 @@ export type CreateWorkbotRunTokenData = {
   body: {
     ttlMs?: number;
     readOnly?: boolean;
+    sessionId?: string;
+    messageId?: string;
   };
   path?: never;
   query?: never;

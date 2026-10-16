@@ -163,7 +163,11 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
         if (!body.success) return c.json({ error: "invalid_request" }, 400)
         if (body.data.control) await workbot.stop(actorOf(member))
         const result = await client.desktopViewer(sessionId, { ...body.data, origin: new URL(config.publicUrl).origin })
-        return result.ok ? c.json(result.value) : c.json({ error: "desktop_unavailable", message: "Your computer is unavailable. Try reconnecting." }, 409)
+        if (!result.ok) return c.json({ error: "desktop_unavailable", message: "Your computer is unavailable. Try reconnecting." }, 409)
+        // A cold VM may take longer than the membership cache: verify again before sharing its stream.
+        const fresh = await den.session(member.accessToken)
+        if (!fresh.enabled || !fresh.computer || fresh.organization.id !== member.den.organization.id || fresh.memberId !== member.den.memberId) return c.json({ error: "feature_disabled" }, 403)
+        return c.json(result.value)
       }
       const body = action
       if (!body.success) return c.json({ error: "invalid_request" }, 400)

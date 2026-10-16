@@ -170,12 +170,12 @@ export type RunnerResult<T> = { ok: true; value: T } | { ok: false; status: numb
 
 const REQUEST_TIMEOUT_MS = 15_000
 
-async function request(deps: HeadlessRunnerDeps, method: string, path: string, body?: unknown) {
+async function request(deps: HeadlessRunnerDeps, method: string, path: string, body?: unknown, timeoutMs = REQUEST_TIMEOUT_MS) {
   const response = await deps.fetch(`${deps.config.url}${path}`, {
     method,
     headers: runnerHeaders(deps.config, { "content-type": "application/json" }),
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+    signal: AbortSignal.timeout(timeoutMs),
   })
   const payload: unknown = await response.json().catch(() => ({}))
   return { status: response.status, payload }
@@ -229,13 +229,13 @@ const unknownSetting = (status: number, payload: unknown) => status === 400 && e
 export function createHeadlessRunnerClient(deps: HeadlessRunnerDeps) {
   return {
     async desktopViewer(sessionId: string, input: { view: "browser" | "computer"; control: boolean; origin: string }) {
-      const { status, payload } = await request(deps, "POST", `${sessionPath(sessionId)}/desktop/viewer`, input)
+      const { status, payload } = await request(deps, "POST", `${sessionPath(sessionId)}/desktop/viewer`, input, 180_000)
       const parsed = z.union([z.object({ state: z.literal("paused") }), z.object({ state: z.literal("connected"), url: z.string().url(), expiresAt: z.number(), paused: z.boolean() })]).safeParse(payload)
       if (status !== 200 || !parsed.success) return { ok: false as const, status, error: errorCode(payload, "desktop_unavailable") }
       return { ok: true as const, value: parsed.data }
     },
     async desktopAction(sessionId: string, action: "continue" | "pause" | "resume") {
-      const { status, payload } = await request(deps, "POST", `${sessionPath(sessionId)}/desktop/action`, { action })
+      const { status, payload } = await request(deps, "POST", `${sessionPath(sessionId)}/desktop/action`, { action }, 180_000)
       return { ok: status === 200, error: errorCode(payload, "desktop_unavailable") }
     },
     async createSession(

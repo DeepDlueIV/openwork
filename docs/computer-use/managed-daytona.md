@@ -1,5 +1,7 @@
 # Managed cloud computer
 
+For Workbot’s live noVNC Computer tab, see [Workbot computer use](./workbot.md).
+
 OpenWork Web can use a member's managed Daytona Linux VM as its browser and
 desktop. The existing Cloud worker remains the owner of the runtime, workspace,
 and endpoint. Browser tools drive headed Chromium in that VM; computer tools

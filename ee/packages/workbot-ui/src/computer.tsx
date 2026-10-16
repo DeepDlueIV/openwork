@@ -35,8 +35,8 @@ export function WorkbotComputer() {
     const connect = async () => {
       try {
         const { response, payload } = await host.requestJson("/v1/workbot/computer/viewer", {
-          method: "POST", body: JSON.stringify({ view, control }), signal: controller.signal,
-        }, 150_000);
+          method: "POST", body: JSON.stringify({ view, control }), signal: AbortSignal.any([controller.signal, AbortSignal.timeout(195_000)]),
+        }, 195_000);
         if (disposed) return;
         if (!response.ok) {
           setConnected(false);
@@ -81,7 +81,7 @@ export function WorkbotComputer() {
     if (changing) return;
     setChanging(true); setError(null);
     try {
-      const { response, payload } = await host.requestJson("/v1/workbot/computer/action", { method: "POST", body: JSON.stringify({ action: next }) }, 150_000);
+      const { response, payload } = await host.requestJson("/v1/workbot/computer/action", { method: "POST", body: JSON.stringify({ action: next }) }, 195_000);
       if (!response.ok) throw new Error(errorMessage(payload, "Your computer didn't respond. Try again."));
       if (next === "continue") { setControl(false); setAgentPaused(false); }
       setPaused(next === "pause");

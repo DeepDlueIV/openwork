@@ -42,9 +42,10 @@ test("Computer access uses the signed-in member's conversation and refuses a cal
     return json({ turns: [], messages: [], finalAssistantText: "" })
   })
   let signed = member("alice")
+  let refreshed: Member | null = null
   const app = new Hono<AppEnv>()
   registerWorkbotRoutes(app, {
-    config, den: createDen({ apiUrl: config.denApiUrl, publicUrl: config.publicUrl }),
+    config, den: { ...createDen({ apiUrl: config.denApiUrl, publicUrl: config.publicUrl }), session: async () => refreshed?.den ?? signed.den },
     member: async (c, next) => { c.set("member", signed); await next() }, sameOrigin: async (_c, next) => next(),
   })
   const open = (body: unknown) => app.request("/v1/workbot/computer/viewer", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) })
@@ -64,4 +65,10 @@ test("Computer access uses the signed-in member's conversation and refuses a cal
   signed = member("alice", false)
   assert.equal((await open({ view: "computer" })).status, 403)
   assert.equal(calls.length, 0)
+  // Access may be revoked while a cold VM wakes: a successful provider response still must not expose its URL.
+  signed = member("alice")
+  refreshed = member("alice", false)
+  const revoked = await open({ view: "computer" })
+  assert.equal(revoked.status, 403)
+  assert.deepEqual(await revoked.json(), { error: "feature_disabled" })
 })

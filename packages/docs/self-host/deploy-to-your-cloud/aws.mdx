@@ -44,10 +44,14 @@ API defaults to 1 vCPU / 2 GiB and web to 0.5 vCPU / 1 GiB. Managed RDS deletion
 
 | Scenario | Tools / release | Result | Date |
 | --- | --- | --- | --- |
-| Offline module defaults, secrets, TLS and existing infrastructure | Terraform 1.16.5; OpenTofu 1.11.14 | Passed: 36 tests per tool | 2026-10-15 |
+| Offline module defaults, secrets, TLS and existing infrastructure | Terraform 1.16.5; OpenTofu 1.11.14 | Passed: 37 tests per tool | 2026-10-15 |
 | Controller single-task, timeout/rejection, and failed migration completion gate | Local testkit; both tools | Passed: 2 tests | 2026-10-15 |
 | Legacy per-task migrator, two API replicas, fresh install and release-to-dev upgrade | 0.18.58 → dev | Failed: concurrent peers; eventual ECS replacement masked failures | 2026-10-14 |
-| Contract-v1 live release-to-dev upgrade, two API tasks | 0.18.58 → dev | NotRun to completion yet | 2026-10-15 |
+| Contract-v1 live release-to-dev upgrade, two API tasks, one successful migrator per image | 0.18.58 → dev ef455ca; Terraform 1.16.5 / AWS 6.69.1 | Passed | 2026-10-15 |
+| Same-version reapply; secret fingerprints and the pre-apply session unchanged | 0.18.58 | Passed: plan exit 0, no changes | 2026-10-15 |
+| Core secret values absent from actual state after release, reapply and upgrade | Write-only mode | Passed | 2026-10-15 |
+| Fresh browser and isolated native desktop sign-in on the preserved database | dev ef455ca | Passed | 2026-10-15 |
+| Destroy with protection explicitly disabled; independent absence and snapshot cleanup | Disposable contract-v1 stack | Passed | 2026-10-15 |
 
 ### Upgrade notes
 

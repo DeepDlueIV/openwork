@@ -33,14 +33,22 @@ document every setting you can add through `extra_environment`.
 ## Tested scenarios
 
 Contract-v1 offline checks: Terraform 1.16.5 / AWS provider 6.69.1 and
-OpenTofu 1.11.14 / AWS provider 6.69.0, 2026-10-15, 36 tests each.
-The live contract-v1 result must be recorded separately from historical runs.
+OpenTofu 1.11.14 / AWS provider 6.69.0, 2026-10-15, 37 tests each (including write-only existing-database coverage).
+The contract-v1 rows below are separate from historical task-local-migration runs.
+A second module suite also passed with AWS 5.100.0 / random 3.7.2; the managed
+root's read-only lock/validate/tests passed 3/3 and its neutral contract 5/5.
 
 What has been applied end to end in an AWS test account with
 `examples/complete`, and what has not:
 
-| Scenario | Result | Release | Date |
+| Scenario | Result | Release / tools | Date |
 | --- | --- | --- | --- |
+| Contract-v1 offline guards, including write-only existing DB and no legacy bootstrap output in write-only mode | Passed: 37 per tool | Terraform 1.16.5 / OpenTofu 1.11.14 | 2026-10-15 |
+| Contract-v1 release → dev, two API-only tasks, exactly one successful migrator per image, recognizable org preserved | Passed | 0.18.58 → dev ef455ca; AWS 6.69.1 | 2026-10-15 |
+| Same-version later apply with identical ephemeral inputs; secret hashes/version and pre-apply session unchanged | Passed: plan exit 0, no changes | 0.18.58 | 2026-10-15 |
+| Actual core secret values absent from state after release, reapply and upgrade | Passed | Write-only mode | 2026-10-15 |
+| Fresh browser and isolated native desktop sign-in against the same preserved database | Passed | dev ef455ca | 2026-10-15 |
+| Destroy with protection explicitly disabled; independent absence including automated snapshots | Passed | Contract-v1 disposable stack | 2026-10-15 |
 | HTTPS on both hosts, migrations, `/setup` first administrator, sign-in, optional Redis | Passed | 0.18.54 | 2026-09 |
 | OpenWork Web: sign-in through the gateway, a Daytona sandbox per member, a chat that edits files | Passed | 0.18.54 | 2026-09 |
 | Tasks in private subnets behind a NAT gateway (`private_subnets = true` in the example) | Passed | 0.18.57 | 2026-10-13 |
@@ -244,7 +252,10 @@ there is no automatic key-generation conversion. For new installations supply
 and, for an existing DB, `database_url`. These inputs are ephemeral; RDS uses
 `password_wo`, Secrets Manager uses `secret_string_wo`. Keep `secrets_version`
 unchanged on ordinary application upgrades. The write-only bootstrap code is
-not exported: retrieve it from your source secret manager for setup.
+not exported: retrieve it from your source secret manager for setup. A leftover
+`initial_admin_bootstrap_code` is also never exported in write-only mode.
+Remove regular legacy secret inputs when converting; supply only the ephemeral
+object so old input values do not remain in saved plan files.
 
 For an existing deployment, do not switch modes until the exact existing DB
 password, auth secret, encryption key and bootstrap code have been captured
@@ -317,7 +328,7 @@ concepts use the common names below. AWS uses `tags` rather than GCP `labels`.
 | `name`, `tags` | `openwork`, `{}` |
 | `vpc_id`, `service_subnet_ids` | Required existing VPC and task subnets |
 | `alb_subnet_ids`, `database_subnet_ids` | `[]`; supply two AZs for managed ALB/RDS |
-| `create_database`, `database_url` | `true`, empty; false brings an existing strict-TLS DB |
+| `create_database`, `database_url` | `true`, empty legacy URL; false brings an existing strict-TLS DB (write-only mode uses `secret_values_wo.database_url`) |
 | `deletion_protection` | `true`; deprecated `database.deletion_protection` overrides if set |
 | `database` | t4g.micro, MySQL 8.4, 20–100 GiB gp3, single AZ, 7-day backups, final snapshot, deferred changes, strict TLS |
 | `database_ca_bundle` | Empty fetches regional public RDS CA; PEM override for existing DB |

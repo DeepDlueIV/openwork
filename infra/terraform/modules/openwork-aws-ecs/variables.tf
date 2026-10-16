@@ -227,7 +227,7 @@ variable "org_slug" {
 }
 
 variable "initial_admin_bootstrap_code" {
-  description = "One-time /setup code. Empty generates one (see the bootstrap_code output)."
+  description = "Legacy compatibility /setup code. Empty generates one only with write_only_secrets = false. Write-only mode uses secret_values_wo.bootstrap_code and never exports this legacy input."
   type        = string
   default     = ""
   sensitive   = true

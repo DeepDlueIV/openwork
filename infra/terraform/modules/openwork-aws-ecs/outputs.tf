@@ -25,7 +25,7 @@ output "setup_url" {
 
 output "bootstrap_code" {
   description = "Code to enter at /setup with an owner email."
-  value       = local.bootstrap_code
+  value       = var.write_only_secrets ? null : local.bootstrap_code
   sensitive   = true
 }
 

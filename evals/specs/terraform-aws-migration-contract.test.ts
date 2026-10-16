@@ -62,8 +62,8 @@ test("Terraform and OpenTofu enforce the AWS contract and block failed migration
   const proof = createBriefRun(testBrief({
     behavior: "Both engines enforce the AWS contract before service rollout.",
     claims: {
-      terraform: claim("Terraform validates 36 contract cases and blocks failed-migration apply", { never: "count a skipped or missing negative control as passed" }),
-      tofu: claim("OpenTofu validates the same 36 cases and blocks failed-migration apply", { never: "depend on Terraform-only test options" }),
+      terraform: claim("Terraform validates 37 contract cases and blocks failed-migration apply", { never: "count a skipped or missing negative control as passed" }),
+      tofu: claim("OpenTofu validates the same 37 cases and blocks failed-migration apply", { never: "depend on Terraform-only test options" }),
     },
   }));
   for (const tool of ["terraform", "tofu"]) {
@@ -74,13 +74,13 @@ test("Terraform and OpenTofu enforce the AWS contract and block failed migration
     const positive = spawnSync(tool, ["test", "-no-color"], { cwd: moduleDir, encoding: "utf8", timeout: 120_000 });
     expect(positive.status, positive.stderr).toBe(0);
     const passed = Number(positive.stdout.match(/Success! (\d+) passed, 0 failed/)?.[1]);
-    expect(passed).toBeGreaterThanOrEqual(36);
+    expect(passed).toBeGreaterThanOrEqual(37);
     expect(positive.stdout).not.toMatch(/[1-9]\d* skipped/);
     const negative = spawnSync(tool, ["test", "-no-color", "-test-directory=tests/negative"], { cwd: moduleDir, encoding: "utf8", timeout: 240_000 });
     expect(negative.status).toBe(1);
     expect((negative.stdout + negative.stderr).replace(/\s+/g, " ")).toContain("No service rollout is permitted");
     expect(negative.stdout + negative.stderr).not.toContain("Missing expected failure");
-    const verified = init.status === 0 && validate.status === 0 && positive.status === 0 && passed >= 36 && negative.status === 1;
+    const verified = init.status === 0 && validate.status === 0 && positive.status === 0 && passed >= 37 && negative.status === 1;
     const evidence = `${tool}: init/validate exit 0; ${passed} positive cases; intentional failed apply exit ${negative.status} with the completion-gate diagnostic.`;
     if (tool === "terraform") proof.prove.terraform(verified, evidence);
     else proof.prove.tofu(verified, evidence);

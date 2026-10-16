@@ -120,6 +120,25 @@ run "deletion_override_and_existing_db" {
     error_message = "Existing databases must remain supported without creating RDS."
   }
 }
+run "write_only_existing_database_keeps_database_secret_reference" {
+  command = apply
+  variables {
+    write_only_secrets = true
+    create_database    = false
+    secret_values_wo = {
+      database_password  = ""
+      database_url       = "mysql://example:fixture@example.test/den?sslaccept=strict"
+      better_auth_secret = "fixture-auth-secret-at-least-32-characters"
+      db_encryption_key  = "fixture-encryption-key-at-least-32-characters"
+      bootstrap_code     = "fixture-bootstrap-code"
+    }
+  }
+  assert {
+    condition     = length(aws_db_instance.this) == 0 && alltrue([for definition in [aws_ecs_task_definition.api, aws_ecs_task_definition.web, aws_ecs_task_definition.migrate] : contains([for secret in jsondecode(definition.container_definitions)[0].secrets : secret.name], "DATABASE_URL")])
+    error_message = "An ephemeral existing-DB URL must still be injected into API, web and migrator without creating RDS."
+  }
+}
+
 run "missing_existing_keys_fail_before_conversion" {
   command = plan
   variables { write_only_secrets = true }
@@ -129,8 +148,9 @@ run "missing_existing_keys_fail_before_conversion" {
 run "write_only_core_secrets" {
   command = apply
   variables {
-    write_only_secrets  = true
-    deletion_protection = false
+    write_only_secrets           = true
+    deletion_protection          = false
+    initial_admin_bootstrap_code = "fixture-legacy-bootstrap-must-not-enter-state"
     secret_values_wo = {
       database_password  = "FixturePassword123!"
       better_auth_secret = "fixture-auth-secret-at-least-32-characters"
@@ -139,7 +159,7 @@ run "write_only_core_secrets" {
     }
   }
   assert {
-    condition     = length(random_password.better_auth) == 0 && length(random_password.db_encryption) == 0 && length(random_password.db) == 0 && length(random_password.bootstrap_code) == 0 && aws_secretsmanager_secret_version.app.secret_string == null && aws_db_instance.this[0].password == null && !aws_db_instance.this[0].deletion_protection
+    condition     = length(random_password.better_auth) == 0 && length(random_password.db_encryption) == 0 && length(random_password.db) == 0 && length(random_password.bootstrap_code) == 0 && aws_secretsmanager_secret_version.app.secret_string == null && aws_db_instance.this[0].password == null && output.bootstrap_code == null && !aws_db_instance.this[0].deletion_protection
     error_message = "Write-only mode must not retain core secret values in random resources or readable provider fields."
   }
 }

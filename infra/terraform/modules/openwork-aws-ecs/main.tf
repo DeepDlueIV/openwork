@@ -138,7 +138,9 @@ locals {
   } : k => v if v != "" }
 
   secrets_list = concat(
-    [for k in keys(local.secret_values) : { name = k, valueFrom = "${aws_secretsmanager_secret.app.arn}:${k}::" }],
+    # Required names must not depend on legacy values: write-only existing DB
+    # URLs are ephemeral and intentionally absent from local.secret_values.
+    [for k in setunion(toset(keys(local.secret_values)), toset(["DATABASE_URL", "BETTER_AUTH_SECRET", "DEN_DB_ENCRYPTION_KEY", "DEN_INITIAL_ADMIN_BOOTSTRAP_CODE"])) : { name = k, valueFrom = "${aws_secretsmanager_secret.app.arn}:${k}::" }],
     [for k, arn in var.extra_secrets : { name = k, valueFrom = arn }],
   )
 

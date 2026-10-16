@@ -80,7 +80,7 @@ export function ComputerControl({ sessionId }: { sessionId: string }) {
 
   const session = snapshot?.session
   const ready = snapshot?.readiness === "ready"
-  const status = snapshot?.cleanupPending ? "Stopping" : session?.state === "paused" ? "You have control" : session ? "Working" : ready ? "Ready" : snapshot?.readiness === "setup-required" ? "Setup needed" : "Unavailable"
+  const status = readError || session?.state === "unavailable" ? "Status unavailable" : snapshot?.cleanupPending ? "Stopping" : session?.state === "paused" ? "You have control" : session ? "Working" : ready ? "Ready" : snapshot?.readiness === "setup-required" ? "Setup needed" : "Unavailable"
   const attention = Boolean(request || readError || actionError || snapshot?.cleanupPending)
   // Unsupported platforms have no native computer controls.
   if (snapshot?.readiness === "unsupported") return null

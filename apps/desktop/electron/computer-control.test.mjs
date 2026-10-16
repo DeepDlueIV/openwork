@@ -24,6 +24,7 @@ function fixture(options = {}) {
       return {
         callTool: async (name, args) => {
           calls.push(name);
+          await options.beforeTool?.(name);
           if (name === "computer_open_session") {
             onUi({ kind: "state", id: "view", phase: "approval", appID: args.app_id, appName: "Editor", mode: args.mode, task: args.purpose, windows: [{ id: 17, title: "Draft" }, { id: 18, title: "Notes" }] });
             await opened.promise;
@@ -90,4 +91,19 @@ test("disable then re-enable during readiness cannot revive an old request", asy
   gate.resolve();
   assert.equal(payload(await request).code, "computer_unavailable");
   assert.deepEqual(f.calls, []);
+});
+
+test("a turn ending during an admitted tool releases the computer as soon as that tool settles", async (t) => {
+  const started = deferred(); const finish = deferred();
+  const f = fixture({ beforeTool: async (name) => { if (name === "computer_discover") { started.resolve(); await finish.promise; } } });
+  t.after(() => f.control.reset(true));
+  await f.control.setFeatureEnabled(true);
+  const request = f.control.execute({ sessionId: "chat", name: "computer_discover", args: {} });
+  await started.promise;
+  await f.control.endTurn({ sessionId: "chat" });
+  finish.resolve();
+  await request;
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(f.calls.includes("close"));
+  assert.equal((await f.control.snapshot({ sessionId: "chat" })).enabled, true);
 });

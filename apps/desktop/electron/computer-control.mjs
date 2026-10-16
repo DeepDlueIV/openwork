@@ -369,7 +369,8 @@ export function createComputerControl({ adapter, presence = null,
   }
   // An idle or finished session hands the Mac back without turning the chat off.
   async function release(current) {
-    if (lease !== current || current.busy || current.closing) return true;
+    if (lease !== current || current.closing) return true;
+    if (current.busy) { current.releaseWhenIdle = true; return true; }
     current.expectedClose = true;
     const confirmed = await cleanup(current);
     await rearm(current.grant.sessionId);
@@ -378,6 +379,7 @@ export function createComputerControl({ adapter, presence = null,
   function armIdleRelease(current) {
     clearTimeout(current.idleTimer);
     if (lease !== current || current.busy || current.closing) return;
+    if (current.releaseWhenIdle) { void release(current); return; }
     current.idleTimer = setTimeout(() => { void release(current); }, idleMs);
     current.idleTimer.unref?.();
   }

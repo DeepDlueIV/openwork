@@ -318,7 +318,7 @@ async function desktopWorld(seed: Seed, place: Place, { feature }: { feature: bo
       const workspace = encodeURIComponent(app.workspaceId);
       const { status, body } = await localServer(app, `/workspace/${workspace}/opencode2/api/mcp`);
       if (status !== 200) throw new Error(`Listing engine MCP servers failed: HTTP ${status}`);
-      
+
       const entries = isRecord(body) && Array.isArray(body.data) ? records(body.data) : records(body);
       return Object.fromEntries(entries.flatMap((entry) => typeof entry.name === "string"
         ? [[entry.name, isRecord(entry.status) && typeof entry.status.status === "string" ? entry.status.status : "unknown"]]
@@ -363,7 +363,7 @@ async function desktopWorld(seed: Seed, place: Place, { feature }: { feature: bo
        * once the engine is running again, or with the reason it did not start.
        */
       async restartEngine(): Promise<{ running: boolean; error: string | null }> {
-        
+
         // Stop routing before stopping the process; start the process before routing to it.
         const stopped = await localServer(app, "/experimental/engine-v2-preview", { method: "PUT", body: { enabled: false, chatRouting: false } });
         if (stopped.status !== 200) return { running: false, error: `Stopping the engine failed: HTTP ${stopped.status}` };

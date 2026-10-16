@@ -281,9 +281,11 @@ function validateAgentWorkloads(value) {
     const serverErrorAttempts = workload.serverErrorAttempts ?? 0;
     if (!Number.isInteger(serverErrorAttempts) || serverErrorAttempts < 0 || serverErrorAttempts > 3)
       throw new Error("serverErrorAttempts must be between 0 and 3");
+    if (workload.terminalErrorMessage !== undefined && (typeof workload.terminalErrorMessage !== "string" || !workload.terminalErrorMessage.trim()))
+      throw new Error(`agent workload ${promptMarker} terminalErrorMessage must be a non-empty string`);
     return { promptMarker, matchAll: workload.matchAll === true, finalReply, finalReplyFrom: workload.finalReplyFrom, finalReplyChunkSize, finalReplyChunks,
       finalReplyInitiallyReleasedChunks, finalReplyDelayMs, finalReasoning: workload.finalReasoning, steps,
-      latestUserTurn: workload.latestUserTurn === true, rateLimitAttempts, serverErrorAttempts };
+      latestUserTurn: workload.latestUserTurn === true, rateLimitAttempts, serverErrorAttempts, terminalErrorMessage: workload.terminalErrorMessage };
   });
 }
 
@@ -657,6 +659,11 @@ async function handleAgentCompletion(req, res, entry) {
     return;
   }
   if (!workload) throw new Error("matched agent workload disappeared");
+  if (workload.terminalErrorMessage) {
+    entry.agentCompletion = { ...baseRequest, kind: "error", promptMarker: workload.promptMarker, toolName: null, arguments: {} };
+    json(res, 400, { error: { message: workload.terminalErrorMessage, type: "invalid_request_error", code: "terminal_rejection" } });
+    return;
+  }
   if (workload.serverErrorAttempts > 0) {
     workload.serverErrorAttempts -= 1;
     entry.agentCompletion = { ...baseRequest, kind: "error", promptMarker: workload.promptMarker, toolName: null, arguments: {} };

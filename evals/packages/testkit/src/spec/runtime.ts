@@ -62,7 +62,7 @@ import type {
   TraceEntry,
   TraceEntryInput,
 } from "@openwork/test-evidence";
-import { eventually } from "../eventually.ts";
+import { eventually } from "@openwork/env";
 import { denLink as startDenLink } from "../link.ts";
 import { readConnectState } from "../state.ts";
 import type {
@@ -1243,6 +1243,36 @@ export class ProbeChannel implements Probe {
     return pick ? pick(value) : value;
   }
 
+  /** The page address, as shown in the browser's address bar. */
+  url(): Promise<string> {
+    const surface = requireSurface(this.#surface);
+    return this.#runtime.call("probe", "url", "url", surface, async () => {
+      const value = await evaluateOnSurface(surface, () => window.location.href);
+      if (typeof value !== "string") throw new Error("location.href was not a string.");
+      return value;
+    });
+  }
+
+  /**
+   * What a person can read or copy from visible links and read-only fields
+   * matching `selector`: each link's destination and each field's shown text.
+   * Password and editable fields are never read.
+   */
+  linkTargets(selector: string): Promise<string[]> {
+    const surface = requireSurface(this.#surface);
+    return this.#runtime.call("probe", "linkTargets", `linkTargets(${JSON.stringify(redacted(selector))})`, surface, async () => {
+      const values = await callFunctionOnSurface(surface, (input: string) => Array.from(document.querySelectorAll(input)).flatMap((element) => {
+        const box = element.getBoundingClientRect();
+        if (box.width === 0 || box.height === 0) return [];
+        if (element instanceof HTMLAnchorElement) return [element.href];
+        if (element instanceof HTMLInputElement && element.readOnly && element.type !== "password") return [element.value];
+        return [];
+      }), [selector]);
+      if (!Array.isArray(values) || !values.every((value) => typeof value === "string")) throw new Error("linkTargets returned an invalid list.");
+      return values;
+    });
+  }
+
   hash(): Promise<string> {
     const surface = requireSurface(this.#surface);
     return this.#runtime.call("probe", "hash", "hash", surface, async () => {
@@ -1324,7 +1354,7 @@ export class ProbeChannel implements Probe {
     return this.#runtime.call("probe", "toolCalls", `toolCalls(${options.name ?? "any"})`, null, () => mock.toolCalls(options));
   }
 
-  eventually<T>(fn: () => Promise<T> | T, options: import("../eventually.ts").EventuallyOptions<T>): Promise<T> {
+  eventually<T>(fn: () => Promise<T> | T, options: import("@openwork/env").EventuallyOptions<T>): Promise<T> {
     return this.#runtime.call("probe", "eventually", `eventually(${options.label ?? "condition"})`, null, () => eventually(fn, options));
   }
 }

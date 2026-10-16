@@ -156,9 +156,578 @@ export type ForbiddenError = {
   message?: string;
 };
 
+export type AdminFreeAutoConversions = {
+  from: string;
+  to: string;
+  generatedAt: string;
+  attributionDays: 30;
+  firstRecordedAt: string | null;
+  totals: {
+    reachedLimit: number;
+    signedIn: number;
+    newAccounts: number;
+    subscribed: number;
+    unlinkedGuests: number;
+  };
+  daily: Array<{
+    date: string;
+    reachedLimit: number;
+    signedIn: number;
+    newAccounts: number;
+    subscribed: number;
+  }>;
+  rows: Array<{
+    id: string;
+    userId: string | null;
+    name: string | null;
+    email: string | null;
+    startedAsGuest: boolean;
+    exhaustedAt: string;
+    signedInAt: string | null;
+    signedUpAt: string | null;
+    subscribedAt: string | null;
+  }>;
+  page: {
+    page: number;
+    pageSize: 50;
+    total: number;
+    hasMore: boolean;
+  };
+};
+
+export type AdminOrganizationDetail = {
+  organization: {
+    id: string;
+    name: string;
+    slug: string | null;
+    createdAt: string;
+    planTier: string;
+    seatLimit: number;
+    memberCount: number;
+  };
+  members: Array<{
+    id: string;
+    userId: string | null;
+    name: string | null;
+    email: string | null;
+    role: string;
+    joinedAt: string | null;
+  }>;
+  page: {
+    limit: number;
+    offset: number;
+    search: string;
+    total: number;
+    returned: number;
+    hasMore: boolean;
+    durationMs: number;
+  };
+  generatedAt: string;
+};
+
 export type NotFoundError = {
   error: string;
   message?: string;
+};
+
+export type AdminOrganizationUsage = {
+  organization: {
+    id: string;
+    name: string;
+    slug: string | null;
+    createdAt: string;
+    planTier: string;
+    seatLimit: number;
+    memberCount: number;
+  };
+  members: Array<{
+    id: string;
+    userId: string | null;
+    name: string | null;
+    email: string | null;
+    role: string;
+    joinedAt: string | null;
+  }>;
+  page: {
+    limit: number;
+    offset: number;
+    search: string;
+    total: number;
+    returned: number;
+    hasMore: boolean;
+    durationMs: number;
+  };
+  generatedAt: string;
+  usage: {
+    from: string;
+    to: string;
+    totals: {
+      requests: number;
+      tokens: number;
+      costMicroUsd: number;
+      unreportedRequests: number | null;
+      unpricedRequests: number | null;
+    };
+    members: Array<{
+      requests: number;
+      tokens: number;
+      costMicroUsd: number;
+      unreportedRequests: number | null;
+      unpricedRequests: number | null;
+      memberId: string;
+    }>;
+  };
+};
+
+export type AdminOrganizationInsights = {
+  organization: {
+    id: string;
+    name: string;
+    slug: string | null;
+    createdAt: string;
+    planTier: string;
+    seatLimit: number;
+    memberCount: number;
+  };
+  members: Array<{
+    id: string;
+    userId: string | null;
+    name: string | null;
+    email: string | null;
+    role: string;
+    joinedAt: string | null;
+  }>;
+  page: {
+    limit: number;
+    offset: number;
+    search: string;
+    total: number;
+    returned: number;
+    hasMore: boolean;
+    durationMs: number;
+  };
+  generatedAt: string;
+  insights: {
+    from: string;
+    to: string;
+    previousFrom: string;
+    previousTo: string;
+    current: {
+      requests: number;
+      tokens: number;
+      costMicroUsd: number;
+      unreportedRequests: number | null;
+      unpricedRequests: number | null;
+      activeMembers: number;
+      successfulRequests: number;
+      lastActiveDay: string | null;
+    };
+    previous: {
+      requests: number;
+      tokens: number;
+      costMicroUsd: number;
+      unreportedRequests: number | null;
+      unpricedRequests: number | null;
+      activeMembers: number;
+      successfulRequests: number;
+      lastActiveDay: string | null;
+    };
+    daily: [
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+    ];
+    people: Array<{
+      requests: number;
+      tokens: number;
+      costMicroUsd: number;
+      unreportedRequests: number | null;
+      unpricedRequests: number | null;
+      activeMembers: number;
+      successfulRequests: number;
+      lastActiveDay: string | null;
+      memberId: string;
+      userId: string | null;
+      name: string | null;
+      email: string | null;
+      currentMember: boolean;
+    }>;
+    models: Array<{
+      requests: number;
+      tokens: number;
+      costMicroUsd: number;
+      unreportedRequests: number | null;
+      unpricedRequests: number | null;
+      successfulRequests: number;
+      lastActiveDay: string | null;
+      id: string;
+      name: string;
+      provider: string;
+    }>;
+  };
+};
+
+export type AdminDashboard = {
+  from: string;
+  to: string;
+  generatedAt: string;
+  activeUsers: {
+    today: number;
+    days7: number;
+    days30: number;
+  };
+  activeOrganizations: number;
+  totals: {
+    requests: number;
+    tokens: number;
+    costMicroUsd: number;
+    unreportedRequests: number | null;
+    unpricedRequests: number | null;
+  };
+  daily: Array<{
+    requests: number;
+    tokens: number;
+    costMicroUsd: number;
+    unreportedRequests: number | null;
+    unpricedRequests: number | null;
+    date: string;
+  }>;
+  organizations: Array<{
+    requests: number;
+    tokens: number;
+    costMicroUsd: number;
+    unreportedRequests: number | null;
+    unpricedRequests: number | null;
+    id: string;
+    name: string;
+  }>;
 };
 
 export type AdminFeature = {
@@ -188,7 +757,8 @@ export type AdminFeature = {
     | "gatewayProviderUsageLimits"
     | "teamAccessRows"
     | "teamPageTabs"
-    | "inviteLinkVerifiesEmail";
+    | "inviteLinkVerifiesEmail"
+    | "remoteSessionSubagents";
   label: string;
   description: string;
   since: string;
@@ -226,7 +796,7 @@ export type AdminUsersPageResponse = {
 
 export type AdminOrganizationsPageResponse = {
   organizations: Array<{
-    capabilities: {
+    capabilities?: {
       secureSecretFields: boolean;
       memberListToolbars: boolean;
       appBuildProgress: boolean;
@@ -253,6 +823,7 @@ export type AdminOrganizationsPageResponse = {
       teamAccessRows: boolean;
       teamPageTabs: boolean;
       inviteLinkVerifiesEmail: boolean;
+      remoteSessionSubagents: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -263,7 +834,7 @@ export type AdminOrganizationsPageResponse = {
     /**
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
-    featureStates: {
+    featureStates?: {
       secureSecretFields: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -490,6 +1061,15 @@ export type AdminOrganizationsPageResponse = {
         overrideApplies: boolean;
       };
       inviteLinkVerifiesEmail: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      remoteSessionSubagents: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -587,6 +1167,7 @@ export type AdminOverviewResponse = {
       teamAccessRows: boolean;
       teamPageTabs: boolean;
       inviteLinkVerifiesEmail: boolean;
+      remoteSessionSubagents: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -824,6 +1405,15 @@ export type AdminOverviewResponse = {
         overrideApplies: boolean;
       };
       inviteLinkVerifiesEmail: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      remoteSessionSubagents: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -1291,6 +1881,58 @@ export type AutomationRunReceipt = {
   automation: Automation;
   revision: AutomationRevision;
   events: Array<AutomationRunEvent>;
+};
+
+export type RemoteSessionStatusResult = {
+  threads: Array<
+    | {
+        ref: string;
+        changed: true;
+        version: string;
+        target: "cloud" | "desktop";
+        state: "starting" | "running" | "waiting" | "idle" | "error";
+        waitingFor: "permission" | "question" | null;
+        title: string | null;
+        computerId: string | null;
+        computerLabel: string | null;
+        sessionId: string | null;
+        workspaceId: string | null;
+        messageCount: number | null;
+        preview: string | null;
+        error: {
+          code: string;
+          message: string;
+        } | null;
+        observedAt: number | null;
+      }
+    | {
+        ref: string;
+        changed: false;
+        version: string;
+        stale?: boolean;
+      }
+  >;
+  retryAfterMs: number | null;
+};
+
+export type RemoteSessionError = {
+  error: string;
+  message?: string;
+  retryable?: boolean;
+  [key: string]: unknown;
+};
+
+export type RemoteSessionStatusRequest = {
+  threads: Array<{
+    commandId?: string;
+    sessionId?: string;
+    version?: string;
+  }>;
+  waitMs?: number;
+};
+
+export type RemoteSessionResult = {
+  [key: string]: unknown;
 };
 
 export type OrganizationResponse = {
@@ -6137,6 +6779,210 @@ export type GetV1AdminFreeAutoUsageResponses = {
 
 export type GetV1AdminFreeAutoUsageResponse = GetV1AdminFreeAutoUsageResponses[keyof GetV1AdminFreeAutoUsageResponses];
 
+export type GetV1AdminFreeAutoConversionsData = {
+  body?: never;
+  path?: never;
+  query?: {
+    days?: number;
+    page?: number;
+    search?: string;
+    stage?: "all" | "signed-in" | "new-account" | "subscribed" | "unlinked";
+  };
+  url: "/v1/admin/free-auto/conversions";
+};
+
+export type GetV1AdminFreeAutoConversionsErrors = {
+  /**
+   * Invalid query.
+   */
+  400: InvalidRequestError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Platform admin access required.
+   */
+  403: ForbiddenError;
+};
+
+export type GetV1AdminFreeAutoConversionsError =
+  GetV1AdminFreeAutoConversionsErrors[keyof GetV1AdminFreeAutoConversionsErrors];
+
+export type GetV1AdminFreeAutoConversionsResponses = {
+  /**
+   * Free Auto conversions returned.
+   */
+  200: AdminFreeAutoConversions;
+};
+
+export type GetV1AdminFreeAutoConversionsResponse =
+  GetV1AdminFreeAutoConversionsResponses[keyof GetV1AdminFreeAutoConversionsResponses];
+
+export type GetV1AdminOrganizationsByOrganizationIdData = {
+  body?: never;
+  path: {
+    organizationId: string;
+  };
+  query?: {
+    search?: string;
+    limit?: string;
+    offset?: string;
+  };
+  url: "/v1/admin/organizations/{organizationId}";
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdErrors = {
+  /**
+   * Invalid organization id or pagination query.
+   */
+  400: InvalidRequestError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Platform admin access required.
+   */
+  403: ForbiddenError;
+  /**
+   * Organization not found.
+   */
+  404: NotFoundError;
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdError =
+  GetV1AdminOrganizationsByOrganizationIdErrors[keyof GetV1AdminOrganizationsByOrganizationIdErrors];
+
+export type GetV1AdminOrganizationsByOrganizationIdResponses = {
+  /**
+   * Organization detail returned.
+   */
+  200: AdminOrganizationDetail;
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdResponse =
+  GetV1AdminOrganizationsByOrganizationIdResponses[keyof GetV1AdminOrganizationsByOrganizationIdResponses];
+
+export type GetV1AdminOrganizationsByOrganizationIdUsageData = {
+  body?: never;
+  path: {
+    organizationId: string;
+  };
+  query?: {
+    search?: string;
+    limit?: string;
+    offset?: string;
+  };
+  url: "/v1/admin/organizations/{organizationId}/usage";
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdUsageErrors = {
+  /**
+   * Invalid organization id or pagination query.
+   */
+  400: InvalidRequestError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Platform admin access required.
+   */
+  403: ForbiddenError;
+  /**
+   * Organization not found.
+   */
+  404: NotFoundError;
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdUsageError =
+  GetV1AdminOrganizationsByOrganizationIdUsageErrors[keyof GetV1AdminOrganizationsByOrganizationIdUsageErrors];
+
+export type GetV1AdminOrganizationsByOrganizationIdUsageResponses = {
+  /**
+   * Organization detail returned.
+   */
+  200: AdminOrganizationUsage;
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdUsageResponse =
+  GetV1AdminOrganizationsByOrganizationIdUsageResponses[keyof GetV1AdminOrganizationsByOrganizationIdUsageResponses];
+
+export type GetV1AdminOrganizationsByOrganizationIdInsightsData = {
+  body?: never;
+  path: {
+    organizationId: string;
+  };
+  query?: {
+    search?: string;
+    limit?: string;
+    offset?: string;
+  };
+  url: "/v1/admin/organizations/{organizationId}/insights";
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdInsightsErrors = {
+  /**
+   * Invalid organization id or pagination query.
+   */
+  400: InvalidRequestError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Platform admin access required.
+   */
+  403: ForbiddenError;
+  /**
+   * Organization not found.
+   */
+  404: NotFoundError;
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdInsightsError =
+  GetV1AdminOrganizationsByOrganizationIdInsightsErrors[keyof GetV1AdminOrganizationsByOrganizationIdInsightsErrors];
+
+export type GetV1AdminOrganizationsByOrganizationIdInsightsResponses = {
+  /**
+   * Organization detail returned.
+   */
+  200: AdminOrganizationInsights;
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdInsightsResponse =
+  GetV1AdminOrganizationsByOrganizationIdInsightsResponses[keyof GetV1AdminOrganizationsByOrganizationIdInsightsResponses];
+
+export type GetV1AdminDashboardData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/admin/dashboard";
+};
+
+export type GetV1AdminDashboardErrors = {
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Platform admin access required.
+   */
+  403: ForbiddenError;
+};
+
+export type GetV1AdminDashboardError = GetV1AdminDashboardErrors[keyof GetV1AdminDashboardErrors];
+
+export type GetV1AdminDashboardResponses = {
+  /**
+   * Platform dashboard returned.
+   */
+  200: AdminDashboard;
+};
+
+export type GetV1AdminDashboardResponse = GetV1AdminDashboardResponses[keyof GetV1AdminDashboardResponses];
+
 export type PostV1AdminAdminsData = {
   body?: never;
   path?: never;
@@ -6670,6 +7516,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       teamAccessRows: boolean;
       teamPageTabs: boolean;
       inviteLinkVerifiesEmail: boolean;
+      remoteSessionSubagents: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -6907,6 +7754,15 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       inviteLinkVerifiesEmail: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      remoteSessionSubagents: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6992,6 +7848,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       teamAccessRows: boolean;
       teamPageTabs: boolean;
       inviteLinkVerifiesEmail: boolean;
+      remoteSessionSubagents: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -7229,6 +8086,15 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       inviteLinkVerifiesEmail: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      remoteSessionSubagents: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -7363,6 +8229,10 @@ export type GetV1AdminOrganizationsData = {
     limit?: string;
     offset?: string;
     search?: string;
+    /**
+     * Set to 0 to omit capabilities and featureStates. Fetch one organization's features when its editor is opened. Defaults to 1 for existing clients.
+     */
+    includeFeatures?: "0" | "1";
   };
   url: "/v1/admin/organizations";
 };
@@ -9544,6 +10414,217 @@ export type CancelAutomationRunResponses = {
 };
 
 export type CancelAutomationRunResponse = CancelAutomationRunResponses[keyof CancelAutomationRunResponses];
+
+export type PostV1RemoteSessionsStatusData = {
+  body: RemoteSessionStatusRequest;
+  path?: never;
+  query?: never;
+  url: "/v1/remote-sessions/status";
+};
+
+export type PostV1RemoteSessionsStatusErrors = {
+  /**
+   * The request or its arguments were invalid.
+   */
+  400: InvalidRequestError | RemoteSessionError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * The task is unknown, the organization was not found, or the feature is off.
+   */
+  404:
+    | NotFoundError
+    | {
+        error: string;
+        feature?: string;
+      };
+  /**
+   * The task cannot do that now.
+   */
+  409: RemoteSessionError;
+  /**
+   * The computer or cloud workspace that runs the task can't be reached right now; retry.
+   */
+  503: RemoteSessionError;
+};
+
+export type PostV1RemoteSessionsStatusError = PostV1RemoteSessionsStatusErrors[keyof PostV1RemoteSessionsStatusErrors];
+
+export type PostV1RemoteSessionsStatusResponses = {
+  /**
+   * The status of each session.
+   */
+  200: RemoteSessionStatusResult;
+};
+
+export type PostV1RemoteSessionsStatusResponse =
+  PostV1RemoteSessionsStatusResponses[keyof PostV1RemoteSessionsStatusResponses];
+
+export type PostV1RemoteSessionsReadData = {
+  body: {
+    messageId?: string;
+    sessionId?: string;
+    commandId?: string;
+    requestId?: string;
+    workspaceId?: string;
+    from?: "start" | "end";
+    cursor?: string;
+    limit?: number;
+  };
+  path?: never;
+  query?: never;
+  url: "/v1/remote-sessions/read";
+};
+
+export type PostV1RemoteSessionsReadErrors = {
+  /**
+   * The request or its arguments were invalid.
+   */
+  400: InvalidRequestError | RemoteSessionError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * The task is unknown, the organization was not found, or the feature is off.
+   */
+  404:
+    | NotFoundError
+    | {
+        error: string;
+        feature?: string;
+      };
+  /**
+   * The task cannot do that now.
+   */
+  409: RemoteSessionError;
+  /**
+   * The computer or cloud workspace that runs the task can't be reached right now; retry.
+   */
+  503: RemoteSessionError;
+};
+
+export type PostV1RemoteSessionsReadError = PostV1RemoteSessionsReadErrors[keyof PostV1RemoteSessionsReadErrors];
+
+export type PostV1RemoteSessionsReadResponses = {
+  /**
+   * The transcript page or receipt.
+   */
+  200: RemoteSessionResult;
+};
+
+export type PostV1RemoteSessionsReadResponse =
+  PostV1RemoteSessionsReadResponses[keyof PostV1RemoteSessionsReadResponses];
+
+export type PostV1RemoteSessionsSendData = {
+  body: {
+    messageId?: string;
+    sessionId: string;
+    workspaceId?: string;
+    prompt: string;
+    model?: {
+      providerId: string;
+      modelId: string;
+      variant?: string;
+    };
+  };
+  path?: never;
+  query?: never;
+  url: "/v1/remote-sessions/send";
+};
+
+export type PostV1RemoteSessionsSendErrors = {
+  /**
+   * The request or its arguments were invalid.
+   */
+  400: InvalidRequestError | RemoteSessionError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * The task is unknown, the organization was not found, or the feature is off.
+   */
+  404:
+    | NotFoundError
+    | {
+        error: string;
+        feature?: string;
+      };
+  /**
+   * The task cannot do that now.
+   */
+  409: RemoteSessionError;
+  /**
+   * The computer or cloud workspace that runs the task can't be reached right now; retry.
+   */
+  503: RemoteSessionError;
+};
+
+export type PostV1RemoteSessionsSendError = PostV1RemoteSessionsSendErrors[keyof PostV1RemoteSessionsSendErrors];
+
+export type PostV1RemoteSessionsSendResponses = {
+  /**
+   * The follow-up was accepted or is pending.
+   */
+  200: RemoteSessionResult;
+};
+
+export type PostV1RemoteSessionsSendResponse =
+  PostV1RemoteSessionsSendResponses[keyof PostV1RemoteSessionsSendResponses];
+
+export type PostV1RemoteSessionsStopData = {
+  body: {
+    sessionId: string;
+    workspaceId?: string;
+    messageId?: string;
+  };
+  path?: never;
+  query?: never;
+  url: "/v1/remote-sessions/stop";
+};
+
+export type PostV1RemoteSessionsStopErrors = {
+  /**
+   * The request or its arguments were invalid.
+   */
+  400: InvalidRequestError | RemoteSessionError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * The task is unknown, the organization was not found, or the feature is off.
+   */
+  404:
+    | NotFoundError
+    | {
+        error: string;
+        feature?: string;
+      };
+  /**
+   * The task cannot do that now.
+   */
+  409: RemoteSessionError;
+  /**
+   * The computer or cloud workspace that runs the task can't be reached right now; retry.
+   */
+  503: RemoteSessionError;
+};
+
+export type PostV1RemoteSessionsStopError = PostV1RemoteSessionsStopErrors[keyof PostV1RemoteSessionsStopErrors];
+
+export type PostV1RemoteSessionsStopResponses = {
+  /**
+   * Whether the session stopped, or a pending requestId.
+   */
+  200: RemoteSessionResult;
+};
+
+export type PostV1RemoteSessionsStopResponse =
+  PostV1RemoteSessionsStopResponses[keyof PostV1RemoteSessionsStopResponses];
 
 export type DeleteV1OrgData = {
   body?: never;

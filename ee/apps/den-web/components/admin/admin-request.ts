@@ -8,8 +8,13 @@ const AUTH_TOKEN_STORAGE_KEY = "openwork:web:auth-token";
  */
 export function withStoredBearer(headers: Record<string, string>): Record<string, string> {
   if (typeof window === "undefined") return headers;
-  const token = window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)?.trim();
-  return token ? { ...headers, Authorization: `Bearer ${token}` } : headers;
+  try {
+    const token = window.localStorage.getItem(AUTH_TOKEN_STORAGE_KEY)?.trim();
+    return token ? { ...headers, Authorization: `Bearer ${token}` } : headers;
+  } catch {
+    // Cookie sign-in still works when browser storage is unavailable.
+    return headers;
+  }
 }
 
 export type AdminAccess = "ready" | "signed-out" | "forbidden" | "error";

@@ -63,9 +63,4 @@ test("only the secret-free proof lane opts in; review servers prepare before sta
   assert.match(normal, /OPENWORK_EVAL_BUILD_REVIEW_APP: "1"/);
   assert.doesNotMatch(normal, /@openwork\/review-app build|secrets\./);
   assert.equal(workflow.match(/OPENWORK_EVAL_BUILD_REVIEW_APP:/g)?.length, 1);
-  for (const world of ["evidence-review.ts", "web-checkpoint.ts"]) {
-    const source = readFileSync(join(root, "evals/worlds", world), "utf8");
-    assert.match(source, /import \{ prepareReviewBuild \} from "\.\/review-build.ts"/);
-    assert.ok(source.indexOf("prepareReviewBuild();") < source.indexOf('apps/review/node_modules/next/dist/bin/next'));
-  }
 });

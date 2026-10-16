@@ -2100,15 +2100,6 @@ if (typeof window !== "undefined") {
   window.addEventListener("online", revalidateWorkspaceSyncs);
 }
 
-export function __revalidateWorkspaceSyncsForTest() {
-  revalidateWorkspaceSyncs();
-}
-
-export function __resetWorkspaceSyncReconcileHealthForTest() {
-  lastReconcileSuccessAtByKey.clear();
-  useWorkspaceSyncStreamStore.setState({ reconcileHealthByKey: {} });
-}
-
 export function ensureWorkspaceSessionSync(input: SyncOptions) {
   const key = syncKey(input);
   retireOtherEngineSyncs(input);
@@ -2550,45 +2541,10 @@ export function __createWorkspaceSessionSyncForTest(input: SyncOptions) {
   };
 }
 
-export function __hasWorkspaceSessionSyncForTest(input: SyncOptions) {
-  return syncs.has(syncKey(input));
-}
-
-export function __disposeWorkspaceSessionSyncForTest(input: SyncOptions) {
-  const key = syncKey(input);
-  const entry = syncs.get(key);
-  if (!entry) return;
-  entry.refs = 0;
-  disposeWorkspaceSync(key, entry);
-}
-
 export function __applySessionSyncEventForTest(input: SyncOptions, event: OpencodeEvent) {
   const entry = syncs.get(syncKey(input));
   if (!entry) return;
   applyEvent(entry, input.workspaceId, event);
-}
-
-export function __queueSessionSyncDeltaForTest(input: SyncOptions, delta: PendingDelta) {
-  const entry = syncs.get(syncKey(input));
-  if (!entry) return;
-  entry.deltaFlushBuffer.push(delta);
-  scheduleDeltaFlush(entry, input.workspaceId);
-}
-
-export function __setSessionSyncDeltaFlushSchedulerForTest(scheduler: DeltaFlushScheduler | null) {
-  deltaFlushScheduler = scheduler ?? defaultDeltaFlushScheduler;
-}
-
-export function __setWorkspaceSessionSyncSubscriptionFactoryForTest(factory: SyncSubscriptionFactory | null) {
-  syncSubscriptionFactory = factory ?? defaultSyncSubscriptionFactory;
-}
-
-export function __setWorkspaceSessionSyncStatusFetcherForTest(fetcher: SessionStatusFetcher | null) {
-  sessionStatusFetcher = fetcher ?? defaultSessionStatusFetcher;
-}
-
-export function __setWorkspaceSessionSyncPermissionFetcherForTest(fetcher: typeof defaultSessionPermissionFetcher | null) {
-  sessionPermissionFetcher = fetcher ?? defaultSessionPermissionFetcher;
 }
 
 export function __setWorkspaceSessionSyncRunningShellFetcherForTest(fetcher: RunningShellFetcher | null) {

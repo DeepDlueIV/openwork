@@ -3,6 +3,7 @@ import {
   DesktopFreeProofNonceTable as Nonce, AnonymousInferenceIdentityTable as Identity,
   AnonymousInferenceUsageBucketTable as GuestBucket, AnonymousInferenceUsageTable as GuestUsage,
   InferenceFreeUsageBucketTable as MemberBucket, InferenceFreeUsageTable as MemberUsage,
+  recordFreeAutoLimit,
 } from "@openwork-ee/den-db"
 import { freeInferenceWindow, INFERENCE_FREE_MODEL_ID, INFERENCE_USAGE_CONVERSION_FACTOR } from "@openwork/types/den/inference"
 import { DESKTOP_FREE_PROOF_CLOCK_SKEW_MS, type DesktopFreeAccessStatus } from "@openwork/free-auto"
@@ -113,13 +114,25 @@ export function createFreeAllowanceStore(config: AutoConfig, family: FreeAllowan
     const all = windows(principal, now, await identityActivity(tx, principal, now))
     let allowance: DesktopFreeAccessStatus["allowance"] = null
     let code: string | null = null
+    let personalLimit: FreeWindow | null = null
     for (const window of all) {
       const total = await used(tx, window)
       if (window.scope !== "global") allowance = { limitUsd: window.limit / INFERENCE_USAGE_CONVERSION_FACTOR, usedUsd: total / INFERENCE_USAGE_CONVERSION_FACTOR,
         remainingUsd: Math.max(0, window.limit - total) / INFERENCE_USAGE_CONVERSION_FACTOR, resetsAt: window.end.toISOString() }
       if (!code && total >= window.limit) code = window.scope === "global" ? "anonymous_capacity_exceeded" : "anonymous_limit_exceeded"
+      if (!personalLimit && window.scope !== "global" && window.limit > 0 && total >= window.limit) personalLimit = window
     }
-    return { windows: all, allowance, code }
+    return { windows: all, allowance, code, personalLimit, now }
+  }
+
+  async function observeLimit(principal: FreePrincipal, result: Awaited<ReturnType<typeof check>>) {
+    if (!result.personalLimit) return
+    const subjectHash = principal.kind === "member" ? freePrincipalHash(principal) : principal.journeyHash ?? (!principal.deviceless ? freePrincipalHash(principal) : null)
+    if (!subjectHash) return
+    await recordFreeAutoLimit(database, { audience: principal.kind === "member" ? "member" : "guest", subjectHash,
+      ...(principal.kind === "member" ? { userId: principal.id, organizationId: principal.organizationId } : {}),
+      ...(principal.kind === "installation" ? { observationRateHash: principal.observationRateHash } : {}),
+      windowStart: result.personalLimit.start, now: result.now }).catch(() => console.warn("[free-auto] limit behavior could not be recorded"))
   }
 
   return {
@@ -153,22 +166,31 @@ export function createFreeAllowanceStore(config: AutoConfig, family: FreeAllowan
     },
     async read(principal: FreePrincipal): Promise<Pick<DesktopFreeAccessStatus, "state" | "code" | "allowance">> {
       if (!owns(principal)) return { state: "unavailable", code: "free_principal_rejected", allowance: null }
-      return capacity.run(() => database.transaction(async (tx) => {
+      return capacity.run(async () => {
+        const result = await database.transaction(async (tx) => {
         if (!await memberFreePrincipalAllowed(principal, tx)) return { state: "unavailable", code: "free_principal_rejected", allowance: null }
-        const { allowance, code } = await check(tx, principal, new Date())
+        return check(tx, principal, new Date())
+        })
+        if (!("windows" in result)) return { state: "unavailable", code: result.code, allowance: null }
+        await observeLimit(principal, result)
+        const { allowance, code } = result
         if (code === "anonymous_limit_exceeded") return { state: "exhausted", code, allowance }
         if (code) return { state: "unavailable", code, allowance }
         return { state: "ready", code: null, allowance }
-      }))
+      })
     },
     /** Before a request: the same "used is below the limit" check as paid Models' ensureUsableBuckets. */
     async admit(principal: FreePrincipal): Promise<FreeAdmission> {
       if (!owns(principal)) return { ok: false, code: "free_principal_rejected" }
-      return capacity.run(() => database.transaction(async (tx) => {
-        if (!await memberFreePrincipalAllowed(principal, tx)) return { ok: false, code: "free_principal_rejected" }
-        const result = await check(tx, principal, new Date())
+      return capacity.run(async () => {
+        const result = await database.transaction(async (tx) => {
+          if (!await memberFreePrincipalAllowed(principal, tx)) return null
+          return check(tx, principal, new Date())
+        })
+        if (!result) return { ok: false, code: "free_principal_rejected" }
+        await observeLimit(principal, result)
         return result.code ? { ok: false, code: result.code } : { ok: true, windows: result.windows }
-      }))
+      })
     },
     /**
      * After a request: record its cost once and add it to each window it was admitted under. Without a usage

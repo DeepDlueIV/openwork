@@ -183,14 +183,24 @@ import type {
   GetMcpWellKnownOauthProtectedResourceResponses,
   GetReadyErrors,
   GetReadyResponses,
+  GetV1AdminDashboardErrors,
+  GetV1AdminDashboardResponses,
   GetV1AdminFeaturesErrors,
   GetV1AdminFeaturesResponses,
+  GetV1AdminFreeAutoConversionsErrors,
+  GetV1AdminFreeAutoConversionsResponses,
   GetV1AdminFreeAutoUsageErrors,
   GetV1AdminFreeAutoUsageResponses,
   GetV1AdminMetricsErrors,
   GetV1AdminMetricsResponses,
   GetV1AdminOrganizationsByOrganizationIdCapabilitiesErrors,
   GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses,
+  GetV1AdminOrganizationsByOrganizationIdErrors,
+  GetV1AdminOrganizationsByOrganizationIdInsightsErrors,
+  GetV1AdminOrganizationsByOrganizationIdInsightsResponses,
+  GetV1AdminOrganizationsByOrganizationIdResponses,
+  GetV1AdminOrganizationsByOrganizationIdUsageErrors,
+  GetV1AdminOrganizationsByOrganizationIdUsageResponses,
   GetV1AdminOrganizationsErrors,
   GetV1AdminOrganizationsResponses,
   GetV1AdminOverviewErrors,
@@ -870,6 +880,14 @@ import type {
   PostV1PluginsImportMcpsFromGithubUrlPreviewResponses,
   PostV1PluginsImportMcpsFromGithubUrlResponses,
   PostV1PluginsResponses,
+  PostV1RemoteSessionsReadErrors,
+  PostV1RemoteSessionsReadResponses,
+  PostV1RemoteSessionsSendErrors,
+  PostV1RemoteSessionsSendResponses,
+  PostV1RemoteSessionsStatusErrors,
+  PostV1RemoteSessionsStatusResponses,
+  PostV1RemoteSessionsStopErrors,
+  PostV1RemoteSessionsStopResponses,
   PostV1ScimReconcileErrors,
   PostV1ScimReconcileResponses,
   PostV1ScimTokenErrors,
@@ -963,6 +981,7 @@ import type {
   PutV1TeamsByKeyByExternalKeyResponses,
   PutV1TeamsByTeamIdPermissionSetErrors,
   PutV1TeamsByTeamIdPermissionSetResponses,
+  RemoteSessionStatusRequest,
   RenamePermissionSetBody,
   RunAutomationNowErrors,
   RunAutomationNowResponses,
@@ -1099,6 +1118,170 @@ export class DenClient extends HeyApiClient {
       url: "/v1/admin/free-auto/usage",
       ...options,
       ...params,
+    });
+  }
+
+  /**
+   * Get observed behavior after the free Auto limit
+   *
+   * Cohorts by personal-limit observation date, deduplicated by known account or anonymous client-reported journey. Counts subsequent sign-ins, new accounts, and positively paid subscriptions started within 30 days of a limit. Guest links use a random client correlation ID, never IP matching. Historical guest behavior is not backfilled. Search and stage affect the bounded 50-row list, not cohort totals.
+   */
+  public getV1AdminFreeAutoConversions<ThrowOnError extends boolean = false>(
+    parameters?: {
+      days?: number;
+      page?: number;
+      search?: string;
+      stage?: "all" | "signed-in" | "new-account" | "subscribed" | "unlinked";
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "days" },
+            { in: "query", key: "page" },
+            { in: "query", key: "search" },
+            { in: "query", key: "stage" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).get<
+      GetV1AdminFreeAutoConversionsResponses,
+      GetV1AdminFreeAutoConversionsErrors,
+      ThrowOnError
+    >({
+      url: "/v1/admin/free-auto/conversions",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
+   * Get an organization and a bounded member page
+   *
+   * Returns organization identity, plan, seats and active memberships. Members are searched and paginated on the server. Does not calculate usage or resolve feature maps.
+   */
+  public getV1AdminOrganizationsByOrganizationId<ThrowOnError extends boolean = false>(
+    parameters: {
+      organizationId: string;
+      search?: string;
+      limit?: string;
+      offset?: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "organizationId" },
+            { in: "query", key: "search" },
+            { in: "query", key: "limit" },
+            { in: "query", key: "offset" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).get<
+      GetV1AdminOrganizationsByOrganizationIdResponses,
+      GetV1AdminOrganizationsByOrganizationIdErrors,
+      ThrowOnError
+    >({
+      url: "/v1/admin/organizations/{organizationId}",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
+   * Get organization usage and a bounded member page
+   *
+   * Returns the organization's last 30 UTC days of gateway usage, with requests, reported tokens, recorded cost and accounting coverage. Member usage is bounded to the requested member page; organization totals include all members, including removed members. Raw and retained usage use the same accounting as the organization dashboard.
+   */
+  public getV1AdminOrganizationsByOrganizationIdUsage<ThrowOnError extends boolean = false>(
+    parameters: {
+      organizationId: string;
+      search?: string;
+      limit?: string;
+      offset?: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "organizationId" },
+            { in: "query", key: "search" },
+            { in: "query", key: "limit" },
+            { in: "query", key: "offset" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).get<
+      GetV1AdminOrganizationsByOrganizationIdUsageResponses,
+      GetV1AdminOrganizationsByOrganizationIdUsageErrors,
+      ThrowOnError
+    >({
+      url: "/v1/admin/organizations/{organizationId}/usage",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
+   * Get organization activity, people and model insights
+   *
+   * Returns two 30-day UTC usage periods, 30 daily totals, at most eight people and eight models ranked by requests. Adoption counts current non-setup memberships with recorded gateway use. Totals include historical members, preserve unknown accounting coverage and never read prompts or conversation content.
+   */
+  public getV1AdminOrganizationsByOrganizationIdInsights<ThrowOnError extends boolean = false>(
+    parameters: {
+      organizationId: string;
+      search?: string;
+      limit?: string;
+      offset?: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "organizationId" },
+            { in: "query", key: "search" },
+            { in: "query", key: "limit" },
+            { in: "query", key: "offset" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).get<
+      GetV1AdminOrganizationsByOrganizationIdInsightsResponses,
+      GetV1AdminOrganizationsByOrganizationIdInsightsErrors,
+      ThrowOnError
+    >({
+      url: "/v1/admin/organizations/{organizationId}/insights",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
+   * Get bounded platform activity and AI usage
+   *
+   * Returns 30 UTC calendar days of completed gateway usage across organizations, using the same raw and retained accounting as organization reports. Includes accounting coverage, 30 daily totals, at most eight organizations ranked by requests, and distinct users with sign-in or telemetry activity. Does not hydrate features, billing or members.
+   */
+  public getV1AdminDashboard<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<GetV1AdminDashboardResponses, GetV1AdminDashboardErrors, ThrowOnError>({
+      url: "/v1/admin/dashboard",
+      ...options,
     });
   }
 
@@ -1434,7 +1617,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Get a bounded admin organization page
    *
-   * Returns one bounded page of organizations plus required pagination metadata. Search runs across the global organization set without changing the global overview totals.
+   * Returns one bounded page of organizations plus required pagination metadata. Set includeFeatures=0 to skip feature resolution and omit capabilities and featureStates; read them per organization when needed. Search runs across the global organization set without changing the global overview totals.
    */
   public getV1AdminOrganizations<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -1442,6 +1625,7 @@ export class DenClient extends HeyApiClient {
       limit?: string;
       offset?: string;
       search?: string;
+      includeFeatures?: "0" | "1";
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -1454,6 +1638,7 @@ export class DenClient extends HeyApiClient {
             { in: "query", key: "limit" },
             { in: "query", key: "offset" },
             { in: "query", key: "search" },
+            { in: "query", key: "includeFeatures" },
           ],
         },
       ],
@@ -3000,6 +3185,175 @@ export class DenClient extends HeyApiClient {
         ...params,
       },
     );
+  }
+
+  /**
+   * Get the status of remote sessions
+   *
+   * Returns the compact status of up to ten of the member's remote sessions: Cloud sessions by sessionId, desktop and registered client tasks by commandId. Pass each version received; an unchanged session returns only its ref and version. waitMs holds the call until one changes or every one has settled. Same result as the remote-session:status capability.
+   */
+  public postV1RemoteSessionsStatus<ThrowOnError extends boolean = false>(
+    parameters: {
+      remoteSessionStatusRequest: RemoteSessionStatusRequest;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "remoteSessionStatusRequest", map: "body" }] }]);
+    return (options?.client ?? this.client).post<
+      PostV1RemoteSessionsStatusResponses,
+      PostV1RemoteSessionsStatusErrors,
+      ThrowOnError
+    >({
+      url: "/v1/remote-sessions/status",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    });
+  }
+
+  /**
+   * Read a remote session
+   *
+   * Returns a page of a remote session's transcript by sessionId, or a desktop task's receipt by commandId or requestId. A desktop that has not answered within about 20 seconds returns state pending with a requestId to read later. Same result as the remote-session:read capability.
+   */
+  public postV1RemoteSessionsRead<ThrowOnError extends boolean = false>(
+    parameters?: {
+      messageId?: string;
+      sessionId?: string;
+      commandId?: string;
+      requestId?: string;
+      workspaceId?: string;
+      from?: "start" | "end";
+      cursor?: string;
+      limit?: number;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "body", key: "messageId" },
+            { in: "body", key: "sessionId" },
+            { in: "body", key: "commandId" },
+            { in: "body", key: "requestId" },
+            { in: "body", key: "workspaceId" },
+            { in: "body", key: "from" },
+            { in: "body", key: "cursor" },
+            { in: "body", key: "limit" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).post<
+      PostV1RemoteSessionsReadResponses,
+      PostV1RemoteSessionsReadErrors,
+      ThrowOnError
+    >({
+      url: "/v1/remote-sessions/read",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    });
+  }
+
+  /**
+   * Send a follow-up to a remote session
+   *
+   * Sends the member's follow-up prompt to one of their remote sessions. Returns an acceptance receipt, or state pending with a requestId when a desktop has not answered within about 20 seconds. Same result as the remote-session:send capability.
+   */
+  public postV1RemoteSessionsSend<ThrowOnError extends boolean = false>(
+    parameters: {
+      messageId?: string;
+      sessionId: string;
+      workspaceId?: string;
+      prompt: string;
+      model?: {
+        providerId: string;
+        modelId: string;
+        variant?: string;
+      };
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "body", key: "messageId" },
+            { in: "body", key: "sessionId" },
+            { in: "body", key: "workspaceId" },
+            { in: "body", key: "prompt" },
+            { in: "body", key: "model" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).post<
+      PostV1RemoteSessionsSendResponses,
+      PostV1RemoteSessionsSendErrors,
+      ThrowOnError
+    >({
+      url: "/v1/remote-sessions/send",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    });
+  }
+
+  /**
+   * Stop a remote session
+   *
+   * Stops one of the member's running remote sessions. For a desktop session pass messageId, the latest user turn, so a newer turn is never stopped. Same result as the remote-session:stop capability.
+   */
+  public postV1RemoteSessionsStop<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionId: string;
+      workspaceId?: string;
+      messageId?: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "body", key: "sessionId" },
+            { in: "body", key: "workspaceId" },
+            { in: "body", key: "messageId" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).post<
+      PostV1RemoteSessionsStopResponses,
+      PostV1RemoteSessionsStopErrors,
+      ThrowOnError
+    >({
+      url: "/v1/remote-sessions/stop",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    });
   }
 
   /**
@@ -10241,7 +10595,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Read a Google Drive file's text or binary content as the calling member
    *
-   * Reads a Drive file. Docs and Slides export as plain text; Sheets exports the first tab as CSV. For every spreadsheet tab or edits use the spreadsheet metadata and values capabilities. Downloaded content is bounded; binary files use standard base64 within the model-safety limit.
+   * Reads a Drive file. Docs and Slides export as plain text; Sheets exports the first tab as CSV. For every spreadsheet tab or edits use the spreadsheet metadata and values capabilities. Downloaded content is bounded; binary files use standard base64 within the model-safety limit. To analyze or edit a whole file (Office, PDF, large CSV), pull it into the workspace with the drive_pull_file tool instead.
    */
   public getV1CapabilitiesGoogleWorkspaceDriveFileByFileId<ThrowOnError extends boolean = false>(
     parameters: {

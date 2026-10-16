@@ -29,6 +29,7 @@ import {
 import { EXTERNAL_MCP_PRESETS } from "../capability-sources/external-mcp-presets.js"
 import { getConnectedAccount, getOrgOAuthClient } from "../capability-sources/oauth-credentials.js"
 import { db } from "../db.js"
+import { latestConfigObjectVersions } from "../config-object-versions.js"
 import { requestRead } from "../request-reads.js"
 import { env } from "../env.js"
 import { recordSkillUse } from "../capability-usage.js"
@@ -1321,20 +1322,7 @@ function groupReadinessObjects(rows: MarketplaceReadinessConfigObject[]) {
 }
 
 async function latestVersionsForReadiness(organizationId: OrganizationId, configObjectIds: ConfigObjectId[]) {
-  if (configObjectIds.length === 0) return new Map<string, ConfigObjectVersionRow>()
-  const rows = await db
-    .select()
-    .from(ConfigObjectVersionTable)
-    .where(and(
-      eq(ConfigObjectVersionTable.organizationId, organizationId),
-      inArray(ConfigObjectVersionTable.configObjectId, configObjectIds),
-    ))
-    .orderBy(desc(ConfigObjectVersionTable.createdAt), desc(ConfigObjectVersionTable.id))
-  const versions = new Map<string, ConfigObjectVersionRow>()
-  for (const row of rows) {
-    if (!versions.has(row.configObjectId)) versions.set(row.configObjectId, row)
-  }
-  return versions
+  return latestConfigObjectVersions(configObjectIds, organizationId)
 }
 
 export async function resolveMarketplacePluginCloudReadiness(input: {

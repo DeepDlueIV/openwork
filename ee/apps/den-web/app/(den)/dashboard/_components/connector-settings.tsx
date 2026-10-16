@@ -9,7 +9,7 @@ import { ApiKeySchemeAdvanced } from "./connector-setup-fields";
 import { ConfirmDialog } from "./item-list";
 import { credentialModeForAuth } from "./member-api-key";
 import { McpCredentialInput } from "./mcp-credential-input";
-import { ManualOAuthFields } from "./manual-oauth-fields";
+import { DETAILS_SUMMARY_CLASS, ManualOAuthFields } from "./manual-oauth-fields";
 import { EMPTY_OAUTH_ADDRESSES, manualOAuthDraft, publishedAddressesUnsaved } from "./manual-oauth-draft";
 import { apiKeyAuthSchemeInput, type ExternalMcpApiKeyAuthScheme, type ExternalMcpAuthType, type ExternalMcpCredentialMode, type ExternalMcpConnection, type McpIssuerReview, type UpdateMcpConnectionInput, useReviewMcpIssuer, useUpdateMcpConnection } from "./mcp-connections-data";
 
@@ -175,7 +175,7 @@ export function ConnectorSettingsForm({ connection, onSaved, lockedReason = null
             {lockedReason}
           </p>
         ) : null}
-        <DenButton type="submit" size="sm" className="!bg-[var(--dls-accent)] hover:!bg-[var(--dls-accent-hover)]" loading={updateConnection.isPending} disabled={disabled || lockedReason !== null}>{usingPublishedAddresses ? "Save and use these addresses" : "Save changes"}</DenButton>
+        <DenButton type="submit" size="sm" loading={updateConnection.isPending} disabled={disabled || lockedReason !== null}>{usingPublishedAddresses ? "Save and use these addresses" : "Save changes"}</DenButton>
       </div>
     </form>
     {connection.authType === "oauth" && !connection.manualOAuthEndpoints ? <ConnectorIssuerReview connection={connection} onSaved={onSaved} /> : null}
@@ -219,8 +219,8 @@ function ConnectorIssuerReview({ connection, onSaved }: { connection: ExternalMc
   }
 
   return (
-    <details className="group/issuer border-t border-[var(--dls-border)] px-5 py-3" open={connection.issuerReviewRequired === true}>
-      <summary className="flex cursor-pointer list-none items-center gap-1.5 text-[12px] font-medium text-[var(--dls-text-secondary)] [&::-webkit-details-marker]:hidden"><ChevronRight className="size-3.5 transition-transform group-open/issuer:rotate-90" aria-hidden />Authorization server selection</summary>
+    <details className="group/issuer border-t border-gray-100 px-5 py-3" open={connection.issuerReviewRequired === true}>
+      <summary className={DETAILS_SUMMARY_CLASS}><ChevronRight className="h-3.5 w-3.5 text-gray-500 transition-transform group-open/issuer:rotate-90" aria-hidden />Authorization server selection</summary>
       <div className="mt-3 flex flex-col gap-3">
       {connection.issuerReviewRequired ? <p className="text-[13px] text-gray-600">The sign-in server changed. An admin must review it.</p> : null}
       <DenButton type="button" variant="secondary" size="sm" loading={review.isPending} onClick={() => void inspect()}>Choose authorization server</DenButton>

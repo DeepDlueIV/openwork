@@ -96,8 +96,8 @@ export function OAuthAppFields({ secretRequired, saving, error, onSave, url, dis
       </div>
       {url ? <ManualOAuthFields url={url} draft={manualDraft} onChange={setManualDraft} hasClientSecret={Boolean(clientSecret.trim())} disabled={saving} discovery={discovery} /> : null}
       {error ? <p className="text-[12px] text-red-600" role="alert">{error}</p> : null}
-      <div className="flex justify-end border-t border-[var(--dls-border)] pt-3">
-        <DenButton type="submit" className="!bg-[var(--dls-accent)] hover:!bg-[var(--dls-accent-hover)]" loading={saving} disabled={!ready}>{usingPublishedAddresses ? "Save and use these addresses" : "Save changes"}</DenButton>
+      <div className="flex justify-end pt-1">
+        <DenButton type="submit" loading={saving} disabled={!ready}>{usingPublishedAddresses ? "Save and use these addresses" : "Save changes"}</DenButton>
       </div>
     </form>
   );

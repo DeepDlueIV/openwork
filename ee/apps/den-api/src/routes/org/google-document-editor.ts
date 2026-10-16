@@ -77,7 +77,7 @@ export function registerGoogleDocumentEditorRoutes<T extends { Variables: OrgRou
     if (!context || !(await organizationFeatureEnabled(context.organization.id, "workbotDocuments")) || !(await organizationFeatureEnabled(context.organization.id, "workbot"))) return c.json({ error: "feature_disabled", message: "Documents is off for this workspace." }, 403)
     await next()
   }
-  const description = (operationId: string, summary: string, schema: z.ZodType) => { const options: DescribeRouteOptions & { "x-mcp": false } = { operationId, tags: ["Documents"], "x-mcp": false, summary, responses: { 200: jsonResponse("Document result.", schema), 400: jsonResponse("Unsupported edit.", errorSchema), 409: jsonResponse("Reconnect or reload the changed file.", errorSchema) } }; return describeRoute(options) }
+  const description = (operationId: string, summary: string, schema: z.ZodType) => { const options: DescribeRouteOptions & { "x-mcp": false } = { operationId, tags: ["Documents"], "x-mcp": false, summary, description: `${summary}. Requires the member's connected Drive account and Documents rollout. File permissions and revision checks apply to each request.`, responses: { 200: jsonResponse("Document result.", schema), 400: jsonResponse("Unsupported edit.", errorSchema), 409: jsonResponse("Reconnect or reload the changed file.", errorSchema) } }; return describeRoute(options) }
   const authorize = async (c: Parameters<typeof requestGoogleAction>[0], connectionId?: string) => {
     const context = c.get("organizationContext")
     if (!context) return { ok: false, reply: c.json({ error: "unauthorized", message: "Sign in to your workspace." }, 401) } as const

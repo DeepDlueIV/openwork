@@ -28,6 +28,7 @@ test("free WOPI launch omits credentials from URLs, exposes no vendor config and
   assert.equal(url.searchParams.get("WOPISrc"), `https://api.example.com/v1/documents/wopi/files/${draft.id}`)
   assert.equal(session.editorUrl.includes(draft.ticket), false)
   assert.equal(session.accessToken, draft.ticket)
+  assert.equal(Date.parse(session.expiresAt), draft.expiresAt)
   assert.equal("config" in session, false)
   const info = engine.fileInfo(draft, 120)
   assert.equal(info.PostMessageOrigin, "https://workbot.example.com")

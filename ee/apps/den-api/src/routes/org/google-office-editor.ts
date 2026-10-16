@@ -50,7 +50,7 @@ export function registerGoogleOfficeEditorRoutes<T extends { Variables: OrgRoute
     await next()
   }
   const description = (operationId: string, summary: string, schema: z.ZodType, security?: []) => {
-    const options: DescribeRouteOptions & { "x-mcp": false } = { operationId, summary, tags: ["Documents"], "x-mcp": false, ...(security ? { security } : {}), responses: { 200: jsonResponse("Office editor result.", schema), 409: jsonResponse("Reopen or reconnect.", failureSchema), 503: jsonResponse("The editor is unavailable.", failureSchema) } }
+    const options: DescribeRouteOptions & { "x-mcp": false } = { operationId, summary, description: `${summary}. Temporary sessions are bound to the member and connected Drive account. WOPI callbacks authenticate with the short-lived editor ticket and recheck access.`, tags: ["Documents"], "x-mcp": false, ...(security ? { security } : {}), responses: { 200: jsonResponse("Office editor result.", schema), 409: jsonResponse("Reopen or reconnect.", failureSchema), 503: jsonResponse("The editor is unavailable.", failureSchema) } }
     return describeRoute(options)
   }
   const failure = (c: GoogleContext, message: string) => c.json({ error: "office_unavailable", message }, 409)
@@ -115,7 +115,7 @@ export function registerGoogleOfficeEditorRoutes<T extends { Variables: OrgRoute
       const input = c.req.valid("param"); const draft = await owned(c, input.sessionId, input.fileId)
       const auth = await selected(c, draft.connectionId); if (!auth.ok) return auth.reply
       const check = await metadata(c, auth.deps, draft.savedFileId ?? draft.fileId); if (!check.ok) return check.reply
-      return c.json({ expiresAt: draft.expiresAt, draftVersion: draft.draftVersion, saveRequestId: draft.saveRequestId, savedFileId: draft.savedFileId })
+      return c.json({ expiresAt: new Date(draft.expiresAt).toISOString(), draftVersion: draft.draftVersion, saveRequestId: draft.saveRequestId, savedFileId: draft.savedFileId })
     } catch (error) { return failure(c, error instanceof Error ? error.message : "Couldn't check the save.") }
   })
 

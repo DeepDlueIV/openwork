@@ -9517,6 +9517,8 @@ export class DenClient extends HeyApiClient {
 
   /**
    * Open a Drive document in the inline editor
+   *
+   * Open a Drive document in the inline editor. Requires the member's connected Drive account and Documents rollout. File permissions and revision checks apply to each request.
    */
   public openGoogleDriveDocumentEditor<ThrowOnError extends boolean = false>(
     parameters: {
@@ -9553,6 +9555,8 @@ export class DenClient extends HeyApiClient {
 
   /**
    * Save explicit inline edits to the same Drive file
+   *
+   * Save explicit inline edits to the same Drive file. Requires the member's connected Drive account and Documents rollout. File permissions and revision checks apply to each request.
    */
   public saveGoogleDriveDocumentEdits<ThrowOnError extends boolean = false>(
     parameters: {
@@ -9618,6 +9622,8 @@ export class DenClient extends HeyApiClient {
 
   /**
    * Preview a Drive PDF or image
+   *
+   * Preview a Drive PDF or image. Requires the member's connected Drive account and Documents rollout. File permissions and revision checks apply to each request.
    */
   public readGoogleDriveDocumentContent<ThrowOnError extends boolean = false>(
     parameters: {
@@ -9650,6 +9656,8 @@ export class DenClient extends HeyApiClient {
 
   /**
    * Open a document, spreadsheet or presentation editor
+   *
+   * Open a document, spreadsheet or presentation editor. Temporary sessions are bound to the member and connected Drive account. WOPI callbacks authenticate with the short-lived editor ticket and recheck access.
    */
   public openGoogleDriveOfficeEditor<ThrowOnError extends boolean = false>(
     parameters: {
@@ -9671,6 +9679,8 @@ export class DenClient extends HeyApiClient {
 
   /**
    * Check whether an Office save is ready
+   *
+   * Check whether an Office save is ready. Temporary sessions are bound to the member and connected Drive account. WOPI callbacks authenticate with the short-lived editor ticket and recheck access.
    */
   public getGoogleDriveOfficeEditorStatus<ThrowOnError extends boolean = false>(
     parameters: {
@@ -9703,6 +9713,8 @@ export class DenClient extends HeyApiClient {
 
   /**
    * Save an Office snapshot to Drive
+   *
+   * Save an Office snapshot to Drive. Temporary sessions are bound to the member and connected Drive account. WOPI callbacks authenticate with the short-lived editor ticket and recheck access.
    */
   public saveGoogleDriveOfficeEditor<ThrowOnError extends boolean = false>(
     parameters: {
@@ -9742,6 +9754,8 @@ export class DenClient extends HeyApiClient {
 
   /**
    * Discard the temporary Office session without changing Drive
+   *
+   * Discard the temporary Office session without changing Drive. Temporary sessions are bound to the member and connected Drive account. WOPI callbacks authenticate with the short-lived editor ticket and recheck access.
    */
   public closeGoogleDriveOfficeEditor<ThrowOnError extends boolean = false>(
     parameters: {
@@ -9774,6 +9788,8 @@ export class DenClient extends HeyApiClient {
 
   /**
    * Read metadata for one temporary editor session
+   *
+   * Read metadata for one temporary editor session. Temporary sessions are bound to the member and connected Drive account. WOPI callbacks authenticate with the short-lived editor ticket and recheck access.
    */
   public getOfficeFileInfo<ThrowOnError extends boolean = false>(
     parameters: {
@@ -9791,6 +9807,8 @@ export class DenClient extends HeyApiClient {
 
   /**
    * Manage a temporary editor session lock
+   *
+   * Manage a temporary editor session lock. Temporary sessions are bound to the member and connected Drive account. WOPI callbacks authenticate with the short-lived editor ticket and recheck access.
    */
   public lockOfficeFile<ThrowOnError extends boolean = false>(
     parameters: {
@@ -9808,6 +9826,8 @@ export class DenClient extends HeyApiClient {
 
   /**
    * Read one temporary editor file
+   *
+   * Read one temporary editor file. Temporary sessions are bound to the member and connected Drive account. WOPI callbacks authenticate with the short-lived editor ticket and recheck access.
    */
   public getOfficeFileContents<ThrowOnError extends boolean = false>(
     parameters: {
@@ -9829,6 +9849,8 @@ export class DenClient extends HeyApiClient {
 
   /**
    * Stage editor changes without writing to Drive
+   *
+   * Stage editor changes without writing to Drive. Temporary sessions are bound to the member and connected Drive account. WOPI callbacks authenticate with the short-lived editor ticket and recheck access.
    */
   public putOfficeFileContents<ThrowOnError extends boolean = false>(
     parameters: {

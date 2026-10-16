@@ -75,7 +75,7 @@ export function OfficeEditorTab({ item, editor, enabled, active, scope, toolbarH
   }, [session])
   const [now, setNow] = useState(Date.now)
   useEffect(() => { if (!session) return; const timer = setInterval(() => setNow(Date.now()), 30_000); return () => clearInterval(timer) }, [session])
-  const expired = !!session && session.expiresAt <= now
+  const expired = !!session && Date.parse(session.expiresAt) <= now
   const controller = useCollaboraController({ frame, session, ready: ready && enabled && !saving && !expired, canEdit: !!session?.canEdit && enabled && !saving && !expired, active })
   const save = async (closeAfter = false) => {
     if (!session || !enabled || saving || expired || !ready || !session.canEdit) return
@@ -114,7 +114,7 @@ export function OfficeEditorTab({ item, editor, enabled, active, scope, toolbarH
     {!session && query.isPending && <div className="ow-documents-skeleton" aria-label="Opening full editor" aria-busy="true"><div/><div/><div/></div>}
     {session && <DocumentToolbar controller={controller}/>}
     {session && <div className="ow-office-canvas" inert={saving || !enabled} aria-busy={saving}>
-      <form ref={form} method="post" action={collaboraWorkspaceUrl(session.editorUrl)} target={frameName} hidden><input type="hidden" name="access_token" value={session.accessToken}/><input type="hidden" name="access_token_ttl" value={session.expiresAt}/></form>
+      <form ref={form} method="post" action={collaboraWorkspaceUrl(session.editorUrl)} target={frameName} hidden><input type="hidden" name="access_token" value={session.accessToken}/><input type="hidden" name="access_token_ttl" value={Date.parse(session.expiresAt)}/></form>
       <iframe ref={frame} name={frameName} title={`Edit ${item.name}`} className="ow-office-frame" sandbox="allow-scripts allow-same-origin allow-forms allow-downloads allow-popups allow-modals" allow="clipboard-read; clipboard-write" allowFullScreen referrerPolicy="no-referrer"/>
     </div>}
   </section>

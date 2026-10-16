@@ -24339,7 +24339,7 @@ export type OpenGoogleDriveOfficeEditorResponses = {
     serverUrl: string;
     editorUrl: string;
     accessToken: string;
-    expiresAt: number;
+    expiresAt: string;
     saveAsCopy: boolean;
     canEdit: boolean;
     fileType: "docx" | "xlsx" | "pptx" | "odt" | "ods" | "odp";
@@ -24384,7 +24384,7 @@ export type GetGoogleDriveOfficeEditorStatusResponses = {
    * Office editor result.
    */
   200: {
-    expiresAt: number;
+    expiresAt: string;
     draftVersion: number;
     saveRequestId?: string;
     savedFileId?: string;

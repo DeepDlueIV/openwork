@@ -15,10 +15,10 @@ export const nativeOfficeFormats: Record<string, OfficeFileType> = {
 }
 export const officeMimeTypes = new Set([...Object.values(officeFormats).map(format => format.mimeType), ...Object.keys(nativeOfficeFormats)])
 export const officeSessionSchema = z.object({
-  id: z.string().uuid(), serverUrl: z.string().url(), editorUrl: z.string().url(), accessToken: z.string(), expiresAt: z.number(),
+  id: z.string().uuid(), serverUrl: z.string().url(), editorUrl: z.string().url(), accessToken: z.string(), expiresAt: z.iso.datetime(),
   saveAsCopy: z.boolean(), canEdit: z.boolean(), fileType: officeFileTypeSchema,
 })
-export const officeStatusSchema = z.object({ expiresAt: z.number(), draftVersion: z.number().int(), saveRequestId: z.string().uuid().optional(), savedFileId: z.string().optional() })
+export const officeStatusSchema = z.object({ expiresAt: z.iso.datetime(), draftVersion: z.number().int(), saveRequestId: z.string().uuid().optional(), savedFileId: z.string().optional() })
 export type OfficeSession = z.infer<typeof officeSessionSchema>
 export type OfficeStatus = z.infer<typeof officeStatusSchema>
 export type OfficeEditor = {

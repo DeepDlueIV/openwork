@@ -132,8 +132,10 @@ export function ModelSelect({ open, value, hideValue = false, onOpenChange, onCh
   const autoSelected = isAutoModel(value);
   const canChangeEffort = Boolean(selected && onBehaviorChange && !autoSelected && hasEffort);
   const effortValueLabel = autoSelected ? "Managed by Auto" : hasEffort ? controls.options.find((option) => option.value === behaviorValue)?.label ?? selectedBehavior.label : "Unavailable";
-  const select = (option: ModelOption) => choice.choose(option, () => {
-    onChange({ providerID: option.providerID, modelID: option.modelID });
+  const select = (option: ModelOption, behavior?: { variant: string | null }) => choice.choose(option, () => {
+    onChange({ providerID: option.providerID, modelID: option.modelID }, behavior?.variant);
+    // Setting the model keeps the variant when the model is unchanged, so apply it directly too.
+    if (behavior && !isAutoModel(option)) onBehaviorChange?.(behavior.variant);
     onOpenChange(false);
   });
   const openProvider = () => { setQuery(""); setEffort(false); onOpenChange(false); window.dispatchEvent(new Event(openProviderAuthEvent)); };

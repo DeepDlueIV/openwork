@@ -12,6 +12,7 @@ import { Command, CommandCollection, CommandGroup, CommandGroupLabel, CommandHea
 import { immutableModelPin, isAutoModel, isPinModelShortcut, markExplicitModelChoice, modelGroups, modelSource, modelStateLabel, modelSubtitle, modelTitle, orderedModelPins, retainedModelCopy, withAutoDefaultPin, MODEL_SOURCE_LABELS, type ModelGroup, type ModelPickerCatalogState, type RetainedModelSelection } from "./model-catalog";
 import { modelRefKey, useModelCollectionsStore } from "@/react-app/domains/session/models/model-collections-store";
 import { PickerNotice } from "./picker-notice";
+import { resolveSearchIntent, searchIntentLabel, searchModels } from "./model-search";
 import { useModelShortcutsStore } from "@/react-app/domains/shortcuts/model-shortcuts-store";
 import { formatChord, resolveShortcutOs } from "@/react-app/domains/shortcuts/shortcut-keys";
 
@@ -27,8 +28,10 @@ function ProviderMark({ model, description, retained = false }: { model: ModelRe
   </div>;
 }
 
+/** Search results, ranked in one unlabeled list. */
+const SEARCH_GROUP = "Search results";
 /** Groups that list several providers' models together; rows there name their provider. */
-const MIXED_GROUPS = new Set(["Pinned", "Recent", "OpenWork Models"]);
+const MIXED_GROUPS = new Set(["Pinned", "Recent", "OpenWork Models", SEARCH_GROUP]);
 
 function ModelLoadingRows({ rows = 3, label = "Loading models", still = false }: { rows?: number; label?: string; still?: boolean }) {
   // `still`: the rest of the list did not load; placeholders hold its place without suggesting it is loading.
@@ -42,7 +45,8 @@ export type ModelPickerListProps = {
   current: ModelRef;
   query: string;
   onQueryChange: (value: string) => void;
-  onSelect: (option: ModelOption) => void;
+  /** `behavior.variant` is set when the search named options such as "fast" or "high" that this model offers. */
+  onSelect: (option: ModelOption, behavior?: { variant: string | null }) => void;
   focusAlternative?: boolean;
   footer?: ReactNode;
   searchInputRef?: Ref<HTMLInputElement>;
@@ -93,7 +97,13 @@ function ModelPickerRows({ options, current, query, onQueryChange, onSelect, foc
     const os = resolveShortcutOs(undefined, typeof navigator === "undefined" ? "" : navigator.platform);
     return new Map(modelShortcuts.map((shortcut) => [modelRefKey({ providerID: shortcut.action.providerID, modelID: shortcut.action.modelID }), formatChord(shortcut.keys, os)]));
   }, [modelShortcuts]);
-  const groups = modelGroups(options, favorites, recent, query);
+  // Searching ranks every model in one list (best first); browsing keeps the groups.
+  const searching = query.trim().length > 0;
+  const search = useMemo(() => searching ? searchModels(options, query) : null, [searching, options, query]);
+  const groups: ModelGroup[] = search
+    ? search.matches.length ? [{ value: SEARCH_GROUP, items: search.matches.map((match) => match.option) }] : []
+    : modelGroups(options, favorites, recent, query);
+  const providerMiss = search?.provider && !search.provider.found ? search.provider : undefined;
   const pins = orderedModelPins(options, favorites);
   const pinned = new Set(pins.map(modelRefKey));
   const root = useRef<HTMLDivElement>(null);
@@ -102,7 +112,12 @@ function ModelPickerRows({ options, current, query, onQueryChange, onSelect, foc
   const [retryFailed, setRetryFailed] = useState(false);
   const blockedAuto = (option: ModelRef) => autoRow?.state !== undefined && autoRow.state !== "ready" && modelRefKey(option) === modelRefKey(autoRow.model);
   const canSelect = (option: ModelOption) => !option.disabled && !blockedAuto(option) && options.some((item) => modelRefKey(item) === modelRefKey(option) && !item.disabled);
-  const select = (option: ModelOption) => { if (canSelect(option)) onSelect(option); };
+  // Options typed in the search ("fast", "high") come along; a model that lacks one is still chosen.
+  const select = (option: ModelOption) => {
+    if (!canSelect(option)) return;
+    const variant = search ? resolveSearchIntent(option, search.intent).variant : undefined;
+    onSelect(option, variant === undefined ? undefined : { variant });
+  };
   const alternative = pins.find((option) => !isAutoModel(option) && modelRefKey(option) !== modelRefKey(current))
     ?? options.find((option) => !option.disabled && !isAutoModel(option) && modelRefKey(option) !== modelRefKey(current));
   const alternativeKey = alternative ? modelRefKey(alternative) : undefined;
@@ -165,8 +180,11 @@ function ModelPickerRows({ options, current, query, onQueryChange, onSelect, foc
           </div>
         </div> : null}
         {loading && !hasOptions ? <ModelLoadingRows /> : null}
+        {providerMiss && groups.length > 0 ? <p role="status" data-testid="model-search-provider-miss" className="px-4 pb-1 pt-3 text-xs text-muted-foreground">
+          {search?.modelWords.length ? `No “${search.modelWords.join(" ")}” on ${providerMiss.label}. Showing other providers.` : `${providerMiss.label} has no models here.`}
+        </p> : null}
         {!loading && groups.length === 0 && query.trim() ? <div role="status" className="flex flex-col items-center gap-1 px-4 py-7 text-center text-sm">
-          <p>No models match “{query.trim()}”</p><p className="text-muted-foreground">Try a shorter name, or search by provider.</p>
+          <p>No models match “{query.trim()}”</p><p className="text-muted-foreground">{providerMiss ? `${providerMiss.label} isn't connected in this workspace.` : "Try a shorter name, or search by provider."}</p>
           <Button size="sm" variant="outline" className="mt-2" onClick={clearSearch}>Clear search</Button>
         </div> : null}
         {empty ? <div role="status" className="flex flex-col items-center gap-1 px-4 py-7 text-center text-sm" data-testid="model-catalog-empty">
@@ -174,7 +192,7 @@ function ModelPickerRows({ options, current, query, onQueryChange, onSelect, foc
         </div> : null}
         <CommandList>
           {(group: ModelGroup) => <CommandGroup key={group.value} items={group.items}>
-            {group.value === mergedLabel ? null : <CommandGroupLabel className="flex min-h-7 items-center">{group.value}</CommandGroupLabel>}
+            {group.value === mergedLabel || group.value === SEARCH_GROUP ? null : <CommandGroupLabel className="flex min-h-7 items-center">{group.value}</CommandGroupLabel>}
             <CommandCollection>{(option: ModelOption) => {
               const key = modelRefKey(option);
               const name = modelTitle(option);
@@ -186,7 +204,8 @@ function ModelPickerRows({ options, current, query, onQueryChange, onSelect, foc
               // One line per model. A second line only reports state; the provider is named
               // only where a group mixes providers, since provider groups already say it.
               const state = autoState || isAutoModel(option) ? subtitle
-                : [modelStateLabel(option), active && failed ? "Availability not verified" : null].filter(Boolean).join(" · ");
+                : [modelStateLabel(option), active && failed ? "Availability not verified" : null,
+                  search ? searchIntentLabel(option, search.intent) : null].filter(Boolean).join(" · ");
               const provider = MIXED_GROUPS.has(group.value) && !isAutoModel(option) ? option.description?.trim() : undefined;
               const source = modelSource(option);
               const pinLabel = pinned.has(key) ? "Unpin" : "Pin to top";
@@ -209,7 +228,7 @@ function ModelPickerRows({ options, current, query, onQueryChange, onSelect, foc
                   <span className={`block truncate${active ? " font-medium" : ""}`} title={name}>{name}</span>
                   {state ? <span className="block truncate text-xs text-muted-foreground">{state}</span> : null}
                 </span>
-                {provider ? <span className="max-w-24 shrink-0 truncate text-xs text-muted-foreground">{provider}</span> : null}
+                {provider ? <span className="max-w-32 shrink-0 truncate text-xs text-muted-foreground">{provider}</span> : null}
                 {/* A fixed slot keeps trailing columns aligned; shown on pointer or focus (keyboard: ⇧P). */}
                 {!fixed && !blocked ? <Button type="button" variant="ghost" size="icon-sm" aria-label={`${pinLabel}: ${name}`} title={pinLabel}
                   className="size-6 shrink-0 text-muted-foreground opacity-0 transition-opacity duration-150 hover:text-foreground focus:opacity-100 group-hover/model:opacity-100 group-focus-within/model:opacity-100"
@@ -219,7 +238,8 @@ function ModelPickerRows({ options, current, query, onQueryChange, onSelect, foc
                 </Button> : null}
                 {shortcutLabels.get(key) ? <kbd data-testid="model-shortcut-key" className="shrink-0 rounded border border-border/70 bg-muted/40 px-1.5 py-0.5 font-mono text-[10px] leading-none text-muted-foreground">{shortcutLabels.get(key)}</kbd> : null}
                 {/* Only organization and gateway models are marked: a local model is the ordinary case. */}
-                {source !== "local" ? <span data-slot="model-source" className="flex size-4 shrink-0 items-center justify-center"><ModelSourceIcon model={option} /></span> : null}
+                {/* The slot is kept on every row so provider names and checks line up. */}
+                <span data-slot="model-source" className="flex size-4 shrink-0 items-center justify-center">{source !== "local" ? <ModelSourceIcon model={option} /> : null}</span>
                 <span data-slot="model-selection" className="flex size-4 shrink-0 items-center justify-center">{active ? <Check aria-hidden="true" className="size-4 text-foreground" /> : null}</span>
               </ActionContextMenu>;
             }}</CommandCollection>

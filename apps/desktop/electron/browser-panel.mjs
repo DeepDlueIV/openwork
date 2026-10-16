@@ -1297,6 +1297,11 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
     if (!["hidden", "floating", "side", "fullscreen"].includes(mode)) return false;
     const sessionId = normalizeSessionId(input.sessionId);
     browserPresentation = sessionId === registry.visibleSessionId() ? { sessionId, mode } : null;
+    if (mode !== "floating" && !browserViewVisible) {
+      const tab = getBrowserTab();
+      if (tab && backgroundWindow?.contentView.children.includes(tab.view) && !tab.background) detachBrowserView(tab.view);
+      releaseEmptyBackgroundWindow();
+    }
     return browserPresentation !== null;
   }
 
@@ -1319,6 +1324,18 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
         && !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && !mainWindow.isMinimized();
     };
     if (!usable()) return null;
+    // A detached WebContentsView has no compositor surface. Keep the selected
+    // floating page painting in the existing never-shown host, at its last
+    // viewport, without placing a native page over the conversation.
+    if (!browserViewVisible && browserPresentation?.mode === "floating") {
+      const host = backgroundBrowserWindow();
+      if (!host.contentView.children.includes(tab.view)) {
+        const bounds = tab.view.getBounds();
+        detachBrowserView(tab.view);
+        host.contentView.addChildView(tab.view);
+        tab.view.setBounds({ x: 0, y: 0, width: bounds.width || 800, height: bounds.height || 600 });
+      }
+    }
     const image = await tab.view.webContents.capturePage(undefined, { stayHidden: true });
     if (!usable() || image.isEmpty()) return null;
     const size = image.getSize();

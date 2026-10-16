@@ -29,8 +29,8 @@ async function repairLegacyCommandFile(filePath: string, content: string): Promi
     return { ...parsed, changed: false };
   }
 
-  const nextContent = buildFrontmatter(normalizeCommandFrontmatter(parsed.data)) + parsed.body.replace(/^
-?/, "\n");
+  const bodyWithNewline = parsed.body.startsWith("\n") ? parsed.body : "\n" + parsed.body;
+  const nextContent = buildFrontmatter(normalizeCommandFrontmatter(parsed.data)) + bodyWithNewline;
   await writeFile(filePath, nextContent, "utf8");
   return {
     data: normalizeCommandFrontmatter(parsed.data),

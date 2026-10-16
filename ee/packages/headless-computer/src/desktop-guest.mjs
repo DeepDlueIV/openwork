@@ -66,7 +66,13 @@ const server = createServer(async (request, response) => {
       await computer.interact({ action: "resume" });
       return json(response, 200, { ok: true });
     }
-    if (request.url === "/browser/task" || request.url === "/computer/task") {
+    if (request.url === "/stop") {
+      // Pause first, including when Stop overtakes a not-yet-started task.
+      // Only the person's existing Continue action can release input again.
+      await computer.interact({ action: "stop" });
+      return json(response, 200, { ok: true, paused: true });
+    }
+    if (["/browser/task", "/computer/task", "/computer/program"].includes(request.url)) {
       return json(response, 200, await computer.task(request.url, body));
     }
     return json(response, 404, { error: "not_found" });

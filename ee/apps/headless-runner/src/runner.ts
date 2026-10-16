@@ -778,7 +778,7 @@ export class Runner {
               : taskTools && turn && TASK_TOOL_NAMES.has(call.name)
                 ? this.runTaskTool(turn, call.name, call.input, { credentials, at: issuedAt })
               : call.name === "desktop" && store.getSession(sessionId)?.desktop && computer?.desktopRun
-                ? await computer.desktopRun(sessionId, call.input).catch((error: unknown) => ({ output: error instanceof Error ? error.message : "Desktop unavailable", isError: true }))
+                ? await computer.desktopRun(sessionId, call.input, signal).catch((error: unknown) => ({ output: error instanceof Error ? error.message : "Desktop unavailable", isError: true }))
               : computer?.toolNames.has(call.name)
                 ? await computer.run(sessionId, call.name, call.input).catch((error: unknown) => ({
                     output: `The computer didn't respond: ${error instanceof Error ? error.message : "unknown error"}. Its outcome is unknown; check before repeating it.`,

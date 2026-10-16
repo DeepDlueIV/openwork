@@ -28,7 +28,13 @@ const provider = {
     files: {
       ...fake.blocks!.files!,
       write: async (_box: unknown, path: string, bytes: Uint8Array) => {
-        await remote(`printf %s ${shellQuote(gzipSync(bytes).toString("base64"))} | base64 -d | gzip -d > ${shellQuote(path)}`)
+        const encoded = gzipSync(bytes).toString("base64")
+        const upload = `${path}.proof-upload`
+        await remote(`: > ${shellQuote(upload)}`)
+        for (let offset = 0; offset < encoded.length; offset += 64 * 1024) {
+          await remote(`printf %s ${shellQuote(encoded.slice(offset, offset + 64 * 1024))} >> ${shellQuote(upload)}`)
+        }
+        await remote(`base64 -d ${shellQuote(upload)} | gzip -d > ${shellQuote(path)}; rm ${shellQuote(upload)}`)
       },
     },
   },
@@ -110,5 +116,22 @@ await keys(watch.url, [0xff09, 0xff0d])
 const unchanged = await see()
 assert.match(unchanged.text, /Saved: Controlled through VNC/)
 assert.doesNotMatch(unchanged.text, /Saved: Read-only must not save/)
+const program = z.object({ ok: z.literal(true), value: z.object({ saved: z.literal(true) }), metrics: z.object({ actions: z.number() }) }).parse(await desktop.call(box, "/computer/program", {
+  sessionId: "vnc-proof", surface: "browser", tabId,
+  code: `await tools.ui.fill({target:{name:"Title"},text:"Saved through a Workbot program"}); await tools.ui.click({target:{name:"Save"}}); await tools.ui.waitFor({target:{text:"Saved: Saved through a Workbot program",exact:false}}); return {saved:true};`,
+}))
+assert.ok(program.metrics.actions >= 2)
+assert.match((await see()).text, /Saved: Saved through a Workbot program/)
+const waiting = desktop.call(box, "/computer/program", {
+  sessionId: "vnc-proof", surface: "browser", tabId,
+  code: `await tools.ui.waitFor({target:{name:"A control that never appears"},timeoutMs:15000}); return {unexpected:true};`,
+})
+await new Promise(resolve => setTimeout(resolve, 500))
+assert.deepEqual(await desktop.call(box, "/stop", {}), { ok: true, paused: true })
+const stopped = z.object({ ok: z.literal(false), error: z.object({ code: z.literal("program_stopped") }) }).parse(await waiting)
+assert.equal(stopped.error.code, "program_stopped")
+await assert.rejects(browser("observe", { tabId }))
+await desktop.call(box, "/continue", {})
+assert.match((await see()).text, /Saved: Saved through a Workbot program/)
 await remote(`kill $(cat ${fixture}/pid); rm -r ${fixture}`)
-console.log(JSON.stringify({ signedBrowserStream: true, signedDesktopStream: true, oneUseTickets: true, sharedBrowserTool: true, manualKeyboardSave: true, serverReadOnlyEnforced: true, takeoverPausesAgent: true }))
+console.log(JSON.stringify({ signedBrowserStream: true, signedDesktopStream: true, oneUseTickets: true, sharedBrowserTool: true, manualKeyboardSave: true, serverReadOnlyEnforced: true, takeoverPausesAgent: true, boundedBrowserProgram: true, stopCancelsProgram: true }))

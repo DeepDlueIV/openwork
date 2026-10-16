@@ -53,9 +53,10 @@ export class Desktop {
   async call(box: SandboxHandle, path: string, body: unknown): Promise<unknown> {
     const run = this.provider.blocks?.run
     if (!run) throw new Error("Desktop access is unavailable.")
+    const seconds = path === "/stop" ? 10 : 125
     const result = await run(box, {
-      command: `sudo curl -sS --fail-with-body --max-time 125 -X POST -H "Authorization: Bearer $(sudo cat ${STATE}/token)" -H 'Content-Type: application/json' --data ${shellQuote(JSON.stringify(body))} http://127.0.0.1:6080${path}`,
-      timeoutMs: 130_000,
+      command: `sudo curl -sS --fail-with-body --max-time ${seconds} -X POST -H "Authorization: Bearer $(sudo cat ${STATE}/token)" -H 'Content-Type: application/json' --data ${shellQuote(JSON.stringify(body))} http://127.0.0.1:6080${path}`,
+      timeoutMs: (seconds + 5) * 1000,
     })
     if (result.exitCode !== 0) throw new Error("The desktop operation didn't finish. Check the view before retrying.")
     return JSON.parse(result.stdout)

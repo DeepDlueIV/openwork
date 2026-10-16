@@ -16,7 +16,7 @@ export async function workbotComputerWorld(seed: Seed) {
     await web.client.send("Page.navigate", { url: `${workbot.workbotUrl}/computer` });
     return {
       web,
-      setEnabled: (value: boolean) => enableWorkbot(workbot.den, { computerUse: value, remoteComputers: value }),
+      setEnabled: (value: boolean, workspaceAssistant = false) => enableWorkbot(workbot.den, { computerUse: value, remoteComputers: value, workbotDocuments: true, workbotWorkspaceAssistant: workspaceAssistant }),
       call: signed.call,
       async [Symbol.asyncDispose]() { await stack.disposeAsync(); },
     };

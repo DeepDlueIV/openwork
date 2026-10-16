@@ -75,21 +75,39 @@ export class Computers {
     this.desktopTools = this.desktop ? [DESKTOP_TOOL] : []
   }
 
-  async desktopRun(sessionId: string, input: Record<string, unknown>): Promise<ToolResult> {
+  async desktopRun(sessionId: string, input: Record<string, unknown>, signal?: AbortSignal): Promise<ToolResult> {
     const parsed = z.object({ view: z.enum(["browser", "computer"]), operation: z.string().max(64), args: z.record(z.string(), z.unknown()) }).strict().parse(input)
-    if (!this.desktop) throw new Error("Desktop access is not configured.")
+    const desktop = this.desktop
+    if (!desktop) throw new Error("Desktop access is not configured.")
+    signal?.throwIfAborted()
     const box = await this.vm(sessionId)
+    let stopping: Promise<unknown> | undefined
+    const stop = () => {
+      stopping ??= desktop.call(box, "/stop", {})
+      void stopping.catch(() => {})
+    }
     try {
-      await this.desktop.start(box)
-      const raw = await this.desktop.call(box, parsed.view === "browser" ? "/browser/task" : "/computer/task", {
-        sessionId, ...(parsed.view === "browser" ? { operation: parsed.operation } : { name: parsed.operation }), args: parsed.args,
-      })
-      const result = z.object({ ok: z.boolean().optional(), isError: z.boolean().optional(), image: z.object({ data: z.string(), mediaType: z.string().optional() }).optional(), content: z.array(z.object({ type: z.string(), text: z.string().optional(), data: z.string().optional(), mimeType: z.string().optional() })).optional() }).loose().parse(raw)
+      await desktop.start(box)
+      signal?.addEventListener("abort", stop, { once: true })
+      if (signal?.aborted) { stop(); signal.throwIfAborted() }
+      const program = parsed.operation === "computer_run"
+        ? z.object({ code: z.string().min(1).max(32_000), tabId: z.string().optional(), input: z.json().optional(), timeoutMs: z.number().int().min(1000).max(60_000).optional() }).strict().parse(parsed.args)
+        : null
+      const raw = await desktop.call(box, program ? "/computer/program" : parsed.view === "browser" ? "/browser/task" : "/computer/task", program
+        ? { ...program, sessionId, surface: parsed.view }
+        : { sessionId, ...(parsed.view === "browser" ? { operation: parsed.operation } : { name: parsed.operation }), args: parsed.args })
+      signal?.throwIfAborted()
+      const result = z.object({ ok: z.boolean().optional(), isError: z.boolean().optional(), image: z.object({ data: z.string(), mediaType: z.string().optional(), mimeType: z.string().optional() }).optional(), images: z.array(z.object({ data: z.string(), mimeType: z.string() })).optional(), content: z.array(z.object({ type: z.string(), text: z.string().optional(), data: z.string().optional(), mimeType: z.string().optional() })).optional() }).loose().parse(raw)
       const images = result.content?.flatMap(part => part.type === "image" && part.data ? [{ mediaType: part.mimeType ?? "image/png", data: part.data }] : []) ?? []
-      if (result.image) images.push({ mediaType: result.image.mediaType ?? "image/png", data: result.image.data })
-      const { image, content, ...text } = result
+      if (result.image) images.push({ mediaType: result.image.mediaType ?? result.image.mimeType ?? "image/png", data: result.image.data })
+      for (const image of result.images ?? []) images.push({ mediaType: image.mimeType, data: image.data })
+      const { image, images: programImages, content, ...text } = result
       return { output: content ? content.filter(part => part.type === "text").map(part => part.text ?? "").join("\n") : JSON.stringify(text), isError: result.isError === true || result.ok === false, ...(images.length ? { images } : {}) }
-    } finally { this.release(sessionId) }
+    } finally {
+      signal?.removeEventListener("abort", stop)
+      try { if (stopping) await stopping }
+      finally { this.release(sessionId) }
+    }
   }
 
   async desktopViewer(sessionId: string, input: { view: DesktopView; control: boolean; origin: string }) {

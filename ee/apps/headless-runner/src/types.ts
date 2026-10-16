@@ -97,7 +97,7 @@ export type SessionComputer = {
   /** The snapshot new computers boot from, for logs. */
   image: string
   desktopTools?: ToolSpec[]
-  desktopRun?(sessionId: string, input: Record<string, unknown>): Promise<ToolResult>
+  desktopRun?(sessionId: string, input: Record<string, unknown>, signal?: AbortSignal): Promise<ToolResult>
   desktopViewer?(sessionId: string, input: { view: "browser" | "computer"; control: boolean; origin: string }): Promise<{ state: "paused" } | { state: "connected"; url: string; expiresAt: number; paused: boolean }>
   desktopAction?(sessionId: string, action: "continue" | "pause" | "resume"): Promise<{ ok: boolean }>
   run(sessionId: string, name: string, input: Record<string, unknown>): Promise<ToolResult>

@@ -24,17 +24,26 @@ test("a member opens and edits a Drive document while unavailable access stays b
     evidence.recordAssertionEvidence("Drive browsing and editing remain separate from chat", "The file opens as a tab and marks local changes without sending a message", world.messages().length === 0);
     await user.screenshot();
   });
-  await step("a member without a Drive connection cannot see file content", async () => {
-    await user.click({ role: "button", label: "Close Project brief.txt" });
-    await user.click({ role: "button", label: "Discard changes" });
+  await step("revoked Drive access closes every cached document", async () => {
     world.revokeDrive();
+    await user.click({ role: "button", label: /^Files$/ });
     await user.click({ role: "button", label: "Refresh documents" });
     await user.see({ text: "Connect Google Drive to browse and open your documents. Drive read permission is required." });
     await user.notSee({ role: "textbox", label: "Document text" });
     await user.see({ role: "link", label: "Connect Google Drive" });
     await user.notSee({ text: "Project brief.txt" });
     await user.notSee({ text: "Budget notes.txt" });
-    evidence.recordAssertionEvidence("The connection boundary hides the editor", "Drive sign-in is required before any document is opened", (await probe.dom(".ow-editor-plain")).elements.length === 0);
+    await user.notSee({ text: "Revised project overview" });
+    expect((await probe.dom(".ow-document-editor")).elements).toHaveLength(0);
+    evidence.recordAssertionEvidence("Revocation clears open documents", "No document editor or cached filename remains visible", (await probe.dom(".ow-document-editor")).elements.length === 0);
+    await user.screenshot();
+  });
+  await step("restored Drive access opens the saved version without retained editor data", async () => {
+    world.restoreDrive();
+    await user.click({ role: "button", label: "Try again" });
+    await user.click({ role: "button", label: "Project brief.txt" });
+    await user.see({ role: "textbox", label: "Document text" }, { value: "Project overview" });
+    evidence.recordAssertionEvidence("Restored access fetches the saved document again", "The saved version replaces the discarded revoked session", (await probe.dom(".ow-editor-plain")).elements.length === 1);
     await user.screenshot();
   });
 });

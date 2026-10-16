@@ -84,10 +84,8 @@ export async function patchExcel(bytes: Uint8Array, save: Extract<DocumentSave, 
   const lastRow = Math.max(dimensions?.lastRow ?? 1, ...save.changes.map(change => change.row))
   const lastColumn = Math.max(dimensions?.lastColumn ?? 1, ...save.changes.map(change => change.column))
   xml = xml.replace(/<dimension\b[^>]*\/>/, `<dimension ref="A1:${columnLetters(lastColumn)}${lastRow}"/>`)
-  // Excel recalculates existing formula caches after a cell changes.
-  const workbookXml = await readZipTextEntry(bytes, entries, "xl/workbook.xml")
+  // Preserve the workbook’s calculation policy: untouched formulas have not been audited.
   const replacements = new Map([[sheet.path, xml]])
-  if (workbookXml) replacements.set("xl/workbook.xml", /<calcPr\b/.test(workbookXml) ? workbookXml.replace(/<calcPr\b[^>]*\/?\s*>/, current => current.replace(/\s(?:fullCalcOnLoad|forceFullCalc)=["'][^"']*["']/g, "").replace("<calcPr", '<calcPr fullCalcOnLoad="1" forceFullCalc="1"')) : workbookXml.replace("</workbook>", '<calcPr fullCalcOnLoad="1" forceFullCalc="1"/></workbook>'))
   return patchPackage(bytes, replacements)
 }
 

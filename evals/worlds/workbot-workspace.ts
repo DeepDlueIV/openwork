@@ -73,6 +73,6 @@ export async function workbotWorkspace(_seed: Seed, { place }: { place: Place })
     const url = vite.resolvedUrls?.local[0];
     if (!url) throw new Error("Workbot fixture did not start");
     const web = resources.use(await chrome({ host: place.host(), name: "workbot-workspace", startUrl: `${url}documents?assistant=off`, headless: true }));
-    return { web, url, messages: () => [...messages], opened: () => [...opened], revokeDrive: () => { driveDenied = true; }, async [Symbol.asyncDispose]() { await resources.disposeAsync(); } };
+    return { web, url, messages: () => [...messages], opened: () => [...opened], revokeDrive: () => { driveDenied = true; }, restoreDrive: () => { driveDenied = false; }, async [Symbol.asyncDispose]() { await resources.disposeAsync(); } };
   } catch (error) { await resources.disposeAsync(); throw error; }
 }

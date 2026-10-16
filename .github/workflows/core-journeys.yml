@@ -54,12 +54,7 @@ jobs:
         with:
           oauth-handoff: "true"
       - name: Build local Den dependencies
-        shell: bash
-        run: |
-          pnpm --filter @openwork/types build
-          pnpm --filter @openwork-ee/den-db build
-          pnpm --filter @openwork/email build
-          pnpm dev:den:mysql
+        uses: ./.github/actions/den-deps
       - name: Run the journey
         timeout-minutes: 20
         env:

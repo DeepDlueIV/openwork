@@ -5,6 +5,7 @@ export default defineConfig({
   // exports whose production runtime target lives in dist.
   entry: {
     "google-drive-upload": "src/google-drive-upload.ts",
+    "managed-provider-config": "src/managed-provider-config.ts",
     "cloud-model-fast": "src/cloud-model-fast.ts",
     "mcp-app-timing": "src/mcp-app-timing.ts",
     "connection-action-app": "src/connection-action-app.ts",

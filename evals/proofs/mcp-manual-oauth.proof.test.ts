@@ -4,7 +4,7 @@ import { isRecord, manualOAuth } from "../worlds/mcp-manual-oauth.ts";
 
 const test = spec.world(manualOAuth, { timeout: 600_000, needs: { commands: ["bun", "pnpm"], placement: "local" }, resources: { surfaces: ["web"], services: ["den"] } });
 
-test("an admin explicitly saves published sign-in addresses before a public client can connect", async ({ world, user, probe, step }) => {
+test("an admin explicitly saves published sign-in addresses before a public client can connect", async ({ world, user, probe, step, evidence }) => {
   const baseline = process.env.EXP_MCPMANUAL_BASELINE === "1";
   await step("strict discovery refuses inconsistent metadata before any authorization", async () => {
     await user.reload();
@@ -23,9 +23,13 @@ test("an admin explicitly saves published sign-in addresses before a public clie
       await person.screenshot();
       await person.click({ text: "Technical details" });
       await person.see({ text: baseline ? /^MCP_MCP_INITIALIZE$/ : /^MCP_OAUTH_ISSUER_MISMATCH$/ });
-      expect(world.requests.some(request => request.path === "/.well-known/oauth-authorization-server/mcp/team")).toBe(true);
-      expect(world.requests.some(request => request.path === "/authorize" || request.authorized)).toBe(false);
-      expect(world.exchanges()).toBe(0);
+      const metadataFetched = world.requests.some(request => request.path === "/.well-known/oauth-authorization-server/mcp/team");
+      const authorizationAttempted = world.requests.some(request => request.path === "/authorize" || request.authorized);
+      const exchanges = world.exchanges();
+      evidence.recordAssertionEvidence(baseline ? "Fetched dev reproduces the old generic issuer failure" : "Issuer mismatch is actionable and still fails closed", `path-suffixed metadata fetched=${metadataFetched}; authorization attempted=${authorizationAttempted}; token exchanges=${exchanges}`, metadataFetched && !authorizationAttempted && exchanges === 0);
+      expect(metadataFetched).toBe(true);
+      expect(authorizationAttempted).toBe(false);
+      expect(exchanges).toBe(0);
     } finally { await user.on(tab).navigate("about:blank"); tab.client.close(); }
   });
   if (baseline) return;
@@ -47,8 +51,11 @@ test("an admin explicitly saves published sign-in addresses before a public clie
     await user.notSee({ role: "button", label: "Confirm addresses in form" });
     await user.see({ testId: "manual-oauth-authorization-endpoint" }, { value: "" });
     await user.see({ testId: "manual-oauth-token-endpoint" }, { value: "" });
-    expect(await world.connection()).toMatchObject({ manualOAuthEndpoints: null, oauthClientHasSecret: false });
-    expect(world.exchanges()).toBe(0);
+    const stopped = await world.connection();
+    const stoppedExchanges = world.exchanges();
+    evidence.recordAssertionEvidence("The failure leaves saved configuration untouched", `saved manualOAuthEndpoints=${JSON.stringify(isRecord(stopped) ? stopped.manualOAuthEndpoints : undefined)}; oauthClientHasSecret=${String(isRecord(stopped) && stopped.oauthClientHasSecret)}; token exchanges=${stoppedExchanges}`, isRecord(stopped) && stopped.manualOAuthEndpoints === null && stopped.oauthClientHasSecret === false && stoppedExchanges === 0);
+    expect(stopped).toMatchObject({ manualOAuthEndpoints: null, oauthClientHasSecret: false });
+    expect(stoppedExchanges).toBe(0);
     await user.wheelAt({ x: 1100, y: 800, deltaY: 900 });
     expect(await world.advancedHealthy()).toBe(true);
     await screenshot(world.web, { caption: "Option E step 1 — sign-in stopped, addresses not applied" });
@@ -83,7 +90,10 @@ test("an admin explicitly saves published sign-in addresses before a public clie
     await user.notSee({ testId: "manual-oauth-authorization-endpoint-source" });
     await user.notSee({ testId: "manual-oauth-token-endpoint-source" });
     await user.see({ role: "button", label: "Save changes" });
-    expect(await world.connection()).toMatchObject({ manualOAuthEndpoints: null });
+    const afterUndo = await world.connection();
+    const sameHostWarning = warning.includes("(same host as the MCP server)") && !warning.includes("client secret");
+    evidence.recordAssertionEvidence("Review is a reversible draft edit, never automatic trust", `same-host warning shown without a client-secret claim=${sameHostWarning}; saved manualOAuthEndpoints after Undo=${JSON.stringify(isRecord(afterUndo) ? afterUndo.manualOAuthEndpoints : undefined)}; token exchanges=${world.exchanges()}`, sameHostWarning && isRecord(afterUndo) && afterUndo.manualOAuthEndpoints === null && world.exchanges() === 0);
+    expect(afterUndo).toMatchObject({ manualOAuthEndpoints: null });
   });
   await step("published addresses on a different host lead with the amber warning", async () => {
     world.setPublishedDifferentHost(true);
@@ -91,10 +101,14 @@ test("an admin explicitly saves published sign-in addresses before a public clie
     await user.click({ role: "button", label: "Review published addresses" });
     await user.see({ role: "button", label: "Save and use these addresses" });
     expect(await world.warningText()).toContain(`Different host: your users' sign-in codes will go to localhost:${new URL(world.origin).port}, not the MCP server's host (${new URL(world.origin).host}).`);
-    expect(await world.warningHost()).toBe(`localhost:${new URL(world.origin).port}`);
+    const warnedHost = await world.warningHost();
+    const saveEnabled = await world.saveEnabled();
+    const unsaved = await world.connection();
+    evidence.recordAssertionEvidence("A different host warns without blocking or applying", `warning host=${warnedHost}; Save enabled=${saveEnabled}; saved manualOAuthEndpoints=${JSON.stringify(isRecord(unsaved) ? unsaved.manualOAuthEndpoints : undefined)}`, warnedHost === `localhost:${new URL(world.origin).port}` && saveEnabled && isRecord(unsaved) && unsaved.manualOAuthEndpoints === null);
+    expect(warnedHost).toBe(`localhost:${new URL(world.origin).port}`);
     expect(await world.warningText()).not.toContain("client secret");
-    expect(await world.saveEnabled()).toBe(true);
-    expect(await world.connection()).toMatchObject({ manualOAuthEndpoints: null });
+    expect(saveEnabled).toBe(true);
+    expect(unsaved).toMatchObject({ manualOAuthEndpoints: null });
     await user.wheelAt({ x: 1100, y: 800, deltaY: 900 });
     expect(await world.advancedHealthy()).toBe(true);
     await screenshot(world.web, { caption: "Option E different-host variant — published values remain unsaved" });
@@ -111,6 +125,10 @@ test("an admin explicitly saves published sign-in addresses before a public clie
     await probe.eventually(() => world.connection(), { within: 40_000, label: "saved exact manual endpoint pair", until: row => isRecord(row) && isRecord(row.manualOAuthEndpoints) });
     expect(await world.connection()).toMatchObject({ manualOAuthEndpoints: { authorizationEndpoint: `${world.origin}/authorize`, tokenEndpoint: `${world.origin}/token` }, oauthClientId: "exp-mcpmanual-client", oauthClientHasSecret: false, connectedForMe: false });
     const memberListing = await probe.api(world.den.members.member, "/v1/mcp-connections?scope=usable");
+    const savedRow = await world.connection();
+    const savedPair = isRecord(savedRow) && isRecord(savedRow.manualOAuthEndpoints) ? savedRow.manualOAuthEndpoints : undefined;
+    const memberSeesPrivate = memberListing.text.includes("manualOAuthEndpoints") || memberListing.text.includes("oauthClientHasSecret");
+    evidence.recordAssertionEvidence("Save is the only configuration boundary", `saved pair=${JSON.stringify(savedPair)}; member listing exposes endpoints or secret flag=${memberSeesPrivate}; token exchanges=${world.exchanges()}`, savedPair?.authorizationEndpoint === `${world.origin}/authorize` && savedPair?.tokenEndpoint === `${world.origin}/token` && !memberSeesPrivate && world.exchanges() === 0);
     expect(memberListing.text).not.toContain("manualOAuthEndpoints");
     expect(memberListing.text).not.toContain("oauthClientHasSecret");
     expect(world.exchanges()).toBe(0);
@@ -154,7 +172,10 @@ test("an admin explicitly saves published sign-in addresses before a public clie
     expect(discoveryCount()).toBe(before);
     expect(world.requests.some(request => request.rpc === "tools/list" && request.authorized)).toBe(true);
     expect(world.requests.some(request => request.path === "/login")).toBe(false);
-    expect(world.requests.filter(request => request.path === "/token")).toEqual([expect.objectContaining({ resource: `${world.origin}/mcp/team`, secretSent: false })]);
+    const tokenRequests = world.requests.filter(request => request.path === "/token");
+    const authorizedToolsList = world.requests.some(request => request.rpc === "tools/list" && request.authorized);
+    evidence.recordAssertionEvidence("Ready is backed by real authenticated tools/list", `token requests=${JSON.stringify(tokenRequests.map(({ resource, secretSent }) => ({ resource, secretSent })))}; metadata requests since save=${discoveryCount() - before}; authenticated tools/list=${authorizedToolsList}; tools=${JSON.stringify(isRecord(tools.body) ? tools.body.tools : undefined)}`, tokenRequests.length === 1 && tokenRequests[0]?.secretSent === false && tokenRequests[0]?.resource === `${world.origin}/mcp/team` && discoveryCount() === before && authorizedToolsList);
+    expect(tokenRequests).toEqual([expect.objectContaining({ resource: `${world.origin}/mcp/team`, secretSent: false })]);
   });
   await step("changing an exact endpoint invalidates all member grants and pending transactions", async () => {
     const startMember = async () => {
@@ -188,6 +209,9 @@ test("an admin explicitly saves published sign-in addresses before a public clie
     expect(rejected.status).toBe(400);
     expect(world.exchanges()).toBe(2);
     const member = await probe.api(world.den.members.member, "/v1/mcp-connections?scope=usable");
+    const memberSignedOut = member.text.includes('"connectedForMe":false');
+    const memberSeesPrivate = member.text.includes("client_secret") || member.text.includes("manualOAuthEndpoints");
+    evidence.recordAssertionEvidence("Changing either endpoint signs members out", `update reconnectionRequired=${String(isRecord(updated.body) && updated.body.reconnectionRequired)}; stale callback HTTP ${rejected.status}; token exchanges=${world.exchanges()}; member signed out=${memberSignedOut}; member sees secret or endpoints=${memberSeesPrivate}`, isRecord(updated.body) && updated.body.reconnectionRequired === true && rejected.status === 400 && world.exchanges() === 2 && memberSignedOut && !memberSeesPrivate);
     expect(member.text).toContain('"connectedForMe":false');
     expect(member.text).not.toContain("client_secret");
     expect(member.text).not.toContain("manualOAuthEndpoints");
@@ -195,8 +219,10 @@ test("an admin explicitly saves published sign-in addresses before a public clie
   await step("the admin API rejects unsafe pairs and declarative upsert preserves explicit settings", async () => {
     const body = { name: "exp-mcpmanual-declarative", url: `${world.origin}/mcp/team`, authType: "oauth", credentialMode: "per_member", oauthClient: { clientId: "exp-mcpmanual-client" }, access: { orgWide: true } };
     const endpoints = { authorizationEndpoint: `${world.origin}/authorize`, tokenEndpoint: `${world.origin}/token` };
+    const rejectedStatuses: number[] = [];
     for (const manualOAuthEndpoints of [{ authorizationEndpoint: endpoints.authorizationEndpoint }, { tokenEndpoint: endpoints.tokenEndpoint }, { ...endpoints, tokenEndpoint: "http://identity.example/token" }, { ...endpoints, tokenEndpoint: "https://user:secret@identity.example/token" }, { ...endpoints, tokenEndpoint: "https://identity.example/token#fragment" }]) {
       const rejected = await world.api("/v1/mcp-connections", { method: "POST", body: JSON.stringify({ ...body, manualOAuthEndpoints }) });
+      rejectedStatuses.push(rejected.response.status);
       expect(rejected.response.status, rejected.text).toBe(400);
     }
     const path = "/v1/mcp-connections/by-key/exp-mcpmanual-declarative";
@@ -210,6 +236,7 @@ test("an admin explicitly saves published sign-in addresses before a public clie
     const cleared = await world.api(path, { method: "PUT", body: JSON.stringify({ ...body, manualOAuthEndpoints: null }) });
     expect(cleared.response.status, cleared.text).toBe(200);
     expect(cleared.body).toMatchObject({ manualOAuthEndpoints: null });
+    evidence.recordAssertionEvidence("Manual configuration is validated and declaratively round-trips", `unsafe pairs HTTP ${rejectedStatuses.join(",")}; by-key create/update/clear HTTP ${created.response.status}/${updated.response.status}/${cleared.response.status}; metadata requests since save=${discoveryCount() - before}`, rejectedStatuses.length === 5 && rejectedStatuses.every(status => status === 400) && created.response.status === 201 && updated.response.status === 200 && cleared.response.status === 200 && isRecord(cleared.body) && cleared.body.manualOAuthEndpoints === null && discoveryCount() === before);
     expect(discoveryCount()).toBe(before);
   });
   await step("a non-admin creator cannot read or overwrite administrator-configured sign-in addresses", async () => {
@@ -235,8 +262,12 @@ test("an admin explicitly saves published sign-in addresses before a public clie
     expect(renamed.text).not.toContain("private-admin-");
     if (!isRecord(renamed.body)) throw new Error("Renamed connection missing");
     const denied = await world.memberApi(path, { method: "PUT", body: JSON.stringify({ ...memberBody, access: saved.body.access, expectedUpdatedAt: renamed.body.updatedAt, manualOAuthEndpoints: { ...addresses, tokenEndpoint: `${world.origin}/replacement` } }) });
+    const kept = (await world.api(path)).body;
+    const keptPair = isRecord(kept) && isRecord(kept.manualOAuthEndpoints) ? kept.manualOAuthEndpoints : undefined;
+    const creatorSaw = [listed.text, renamed.text].some(text => text.includes("private-admin-") || text.includes("manualOAuthEndpoints"));
+    evidence.recordAssertionEvidence("Creator status does not grant access to private OAuth settings", `creator listing/rename exposes addresses=${creatorSaw}; creator replace HTTP ${denied.response.status}; admin pair after attempt=${JSON.stringify(keptPair)}`, !creatorSaw && denied.response.status === 403 && keptPair?.authorizationEndpoint === addresses.authorizationEndpoint && keptPair?.tokenEndpoint === addresses.tokenEndpoint);
     expect(denied.response.status, denied.text).toBe(403);
-    expect((await world.api(path)).body).toMatchObject({ manualOAuthEndpoints: addresses });
+    expect(kept).toMatchObject({ manualOAuthEndpoints: addresses });
   });
   await step("member discovery omits credential-bearing addresses from inconsistent metadata", async () => {
     world.setPublishedCredentialQuery(true);
@@ -257,6 +288,9 @@ test("an admin explicitly saves published sign-in addresses before a public clie
     const safeAdmin = await world.api("/v1/mcp-connections/discover", { method: "POST", body: JSON.stringify({ url: `${world.origin}/mcp/team` }) });
     expect(safeAdmin.body).toHaveProperty("publishedSignInAddresses");
     const member = await world.memberApi("/v1/mcp-connections/discover", { method: "POST", body: JSON.stringify({ url: `${world.origin}/mcp/team` }) });
+    const leaked = [discovered.text, admin.text].some(text => text.includes("exp-mcpmanual-metadata-private") || text.includes("access_token=") || text.includes("client_secret="));
+    const suggests = (body: unknown) => isRecord(body) && "publishedSignInAddresses" in body;
+    evidence.recordAssertionEvidence("Unverified metadata cannot disclose URL-embedded credentials", `credential-bearing metadata: member suggestions=${suggests(discovered.body)}, admin suggestions=${suggests(admin.body)}, credential text leaked=${leaked}; safe metadata: admin suggestions=${suggests(safeAdmin.body)}, member suggestions=${suggests(member.body)}; token exchanges=${world.exchanges()}`, !suggests(discovered.body) && !suggests(admin.body) && !leaked && suggests(safeAdmin.body) && !suggests(member.body) && world.exchanges() === 2);
     expect(member.body).not.toHaveProperty("publishedSignInAddresses");
   });
 });

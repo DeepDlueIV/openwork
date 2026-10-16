@@ -33,9 +33,14 @@ export function WorkbotComputer() {
     const controller = new AbortController();
     let failures = 0;
     const connect = async () => {
+      if (disposed) return;
+      const request = new AbortController();
+      const abort = () => request.abort();
+      controller.signal.addEventListener("abort", abort, { once: true });
+      const timeout = setTimeout(abort, 195_000);
       try {
         const { response, payload } = await host.requestJson("/v1/workbot/computer/viewer", {
-          method: "POST", body: JSON.stringify({ view, control }), signal: AbortSignal.any([controller.signal, AbortSignal.timeout(195_000)]),
+          method: "POST", body: JSON.stringify({ view, control }), signal: request.signal,
         }, 195_000);
         if (disposed) return;
         if (!response.ok) {
@@ -71,6 +76,9 @@ export function WorkbotComputer() {
         });
       } catch {
         if (!disposed) { setConnected(false); setError("Couldn't connect to your computer. Try reconnecting."); }
+      } finally {
+        clearTimeout(timeout);
+        controller.signal.removeEventListener("abort", abort);
       }
     };
     setError(null); setConnected(false); void connect();

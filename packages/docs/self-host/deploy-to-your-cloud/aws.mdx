@@ -28,6 +28,10 @@ For exact CLI commands, values, DNS/TLS choices, migration troubleshooting, veri
 
 ## ECS Fargate with Terraform
 
+These instructions and contract-v1 results apply to **direct Terraform users**.
+The managed-deployments installer is decoupled onto its own frozen pre-contract
+module; its existing customer behavior and provider pins do not change here.
+
 ### What it deploys
 
 If you run containers on ECS Fargate rather than Kubernetes, the Terraform module creates an ECS cluster (or uses yours), Den API and Den web as Fargate services behind an HTTPS Application Load Balancer, private RDS for MySQL, optional ElastiCache for Redis, and AWS Secrets Manager references. One standalone migration task must finish with exit 0 before API or web rollout. Application replicas do not run migrations. A small native Lambda invocation starts the task and observes completion; no local-exec provisioner is required.
@@ -61,7 +65,7 @@ Existing inputs remain, including the deprecated nested `database.deletion_prote
 
 ### State guidance
 
-Use Terraform or OpenTofu **>= 1.11, < 2.0** with encrypted, access-controlled remote state. An S3 root backend should set `encrypt = true` and `use_lockfile = true`; do not create a new DynamoDB locking table. The reusable module configures neither a provider nor a backend and ships no cross-registry lock file. Generate and retain the root lock with your chosen tool. A deliberate narrow provider-range exception uses AWS `>= 5.100, < 7.0`: existing managed installations keep their pinned 5.100 provider while 6.x is live-tested. The managed root explicitly retains legacy secret mode, so no customer keys rotate and no major provider upgrade is forced.
+Use Terraform or OpenTofu **>= 1.11, < 2.0** with encrypted, access-controlled remote state. An S3 root backend should set `encrypt = true` and `use_lockfile = true`; do not create a new DynamoDB locking table. The reusable module configures neither a provider nor a backend and ships no cross-registry lock file. Generate and retain the root lock with your chosen tool. This direct-user module uses the live-tested AWS `~> 6.69` provider line and random `~> 3.9`; the previous cross-major compatibility exception is no longer needed. The managed AWS installer instead uses a frozen pre-contract module with its original provider lock and behavior. It does not inherit these direct-module changes. Packaging, bootstrap permissions/re-approval, legacy maintenance fencing and version semantics for a future installer adoption are separate owner-reviewed work.
 
 For new installs, use `write_only_secrets = true` with persistent core values supplied through the ephemeral `secret_values_wo` input: RDS and Secrets Manager write-only fields keep those values out of new state snapshots. Write-only mode is the new default. Existing installations must explicitly set `write_only_secrets = false` before upgrading to retain their current keys/state, or securely preserve and supply the **exact existing** keys and DB password before converting. Missing ephemeral values fail validation before changes, rather than silently regenerating auth/encryption keys. Never regenerate an encryption key during an infrastructure upgrade. Optional integration secrets retain their state-backed compatibility path; restrict state history accordingly. Secret settings belong in `extra_secrets`, not plain `extra_environment`.
 

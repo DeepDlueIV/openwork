@@ -4,7 +4,7 @@ locals {
   web_url  = "https://${var.domain_name}"
   api_url  = "https://${local.api_host}"
   region   = split(":", aws_cloudwatch_log_group.api.arn)[3] # works on AWS provider v5 and v6
-  # Preserve the managed installer's existing release input without floating tags.
+  # Known release pairs for direct users, selected without floating tags.
   release_images = {
     "0.18.57" = {
       api = "ghcr.io/different-ai/openwork-den-api@sha256:9a1d036b2f39c67544c9f78cb3e966ddcc1b0296aa61af7eebd04308afdad6d0"

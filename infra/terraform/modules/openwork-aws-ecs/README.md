@@ -1,5 +1,8 @@
 # openwork-aws-ecs (Terraform)
 
+For **direct Terraform users**. The managed AWS installer uses a separate frozen
+pre-contract module, not this implementation; its customer behavior is unchanged.
+
 ## What it deploys
 
 Runs a private, single-organization OpenWork control plane (Den) on AWS
@@ -35,8 +38,9 @@ document every setting you can add through `extra_environment`.
 Contract-v1 offline checks: Terraform 1.16.5 / AWS provider 6.69.1 and
 OpenTofu 1.11.14 / AWS provider 6.69.0, 2026-10-15, 37 tests each (including write-only existing-database coverage).
 The contract-v1 rows below are separate from historical task-local-migration runs.
-A second module suite also passed with AWS 5.100.0 / random 3.7.2; the managed
-root's read-only lock/validate/tests passed 3/3 and its neutral contract 5/5.
+An earlier AWS 5.100.0 / random 3.7.2 run is historical evidence, not the current
+supported provider range. The decoupled managed root keeps its original pins
+and is checked independently against its frozen pre-contract module.
 
 What has been applied end to end in an AWS test account with
 `examples/complete`, and what has not:
@@ -235,8 +239,8 @@ marker or schema-range protocol. If the legacy fence cannot be enforced, stay
 in maintenance rather than running a second migrator.
 
 **Digest migration:** `openwork_version = "0.18.57"` or `"0.18.58"` selects the
-corresponding built-in API/web index digests. The 0.18.57 pair preserves the
-managed installer's existing release input without floating tags. Other releases require `den_api_image` and `den_web_image`
+corresponding built-in API/web index digests. The 0.18.57 pair remains available to
+direct users without floating tags. Other releases require `den_api_image` and `den_web_image`
 with `@sha256` digests. Tags are rejected, including custom optional service
 images when enabled. Existing image override names remain unchanged; pin their
 current digest before upgrading. Gateway, runner and Workbot runtime behavior
@@ -288,16 +292,19 @@ terraform {
 ```
 
 Require Terraform **>= 1.11, < 2.0** or OpenTofu **>= 1.11, < 2.0**.
-**Deliberate narrow C4 provider-range exception:** AWS uses
-`>= 5.100, < 7.0`, not one `~>` range, so existing managed deployments can keep
-their pinned AWS 5.100.0 while AWS 6.x remains live-tested. One pessimistic
-range cannot include both majors. Random uses `~> 3.7, >= 3.7.2`, preserving the
-managed root's 3.7.2 pin as well as the tested 3.9.1 path. The managed root
-explicitly keeps `write_only_secrets = false` so existing keys stay unchanged;
-this is not an automatic credential migration or a forced provider upgrade.
-Its new HTTP provider lock entry and mocks cover the CA download without real
-network calls in tests. The installer, runner, bootstrap and health agent are
-not changed. Changes to this consumer need its owner's review.
+This module is for **direct Terraform users** and requires AWS `~> 6.69`,
+random `~> 3.9`, archive `~> 2.7` and HTTP `~> 3.5`. The temporary AWS 5.x/6.x
+compatibility-range exception has been removed.
+
+The managed AWS installer does **not** consume this module. It uses its own
+frozen pre-contract copy under
+`infra/managed-deployments/aws/terraform/modules/openwork-aws-ecs`, retaining
+its original behavior and AWS 5.100.0 / random 3.7.2 / archive 2.8.1 lock.
+Its earlier legacy-mode adapter, extra HTTP lock entry and migration mocks are
+not needed. The standalone live results here do not certify a managed-installer
+upgrade. Adopting the new module requires separate owner-reviewed work for
+supporting-file packaging, bootstrap permissions/re-approval, a legacy fence
+and update/version handling. See the managed-deployments README for provenance.
 
 No provider lock file is shipped in this reusable module. Generate your root
 or example lock with the tool you use (`terraform init` / `tofu init`), then

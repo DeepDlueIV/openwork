@@ -4,6 +4,7 @@
   --doc-muted: var(--wb-muted, var(--muted-foreground));
   --doc-chip: var(--wb-chip, var(--muted));
   --doc-line: var(--wb-hairline, var(--border));
+  --doc-focus: color-mix(in srgb, var(--doc-text) 60%, var(--doc-bg));
   color: var(--doc-text); background: var(--doc-bg); display: flex; flex: 1; min-width: 0; min-height: 0; font: 13px/1.5 system-ui, sans-serif;
 }
 .ow-documents * { box-sizing: border-box; }
@@ -11,7 +12,7 @@
 .ow-documents button { border: 0; background: transparent; cursor: pointer; border-radius: 6px; padding: 8px; }
 .ow-documents button:hover, .ow-documents button[aria-pressed=true], .ow-documents [data-selected=true] { background: var(--doc-chip); }
 .ow-documents button:disabled { cursor: default; opacity: .5; }
-.ow-documents :is(button, a, input, select):focus-visible { outline: 2px solid var(--doc-text); outline-offset: 2px; }
+.ow-documents :is(button, a, input, select, textarea):focus-visible { outline: 2px solid var(--doc-focus); outline-offset: 2px; }
 .ow-documents a { color: inherit; text-underline-offset: 3px; }
 .ow-documents-sidebar { width: 190px; flex-shrink: 0; padding: 24px 12px; border-right: 1px solid var(--doc-line); }
 .ow-documents-source { display: flex; gap: 10px; align-items: center; font-size: 15px; font-weight: 600; padding: 0 12px 24px; }
@@ -20,7 +21,9 @@
 .ow-documents-toolbar { display: flex; align-items: center; gap: 12px; }
 .ow-documents-toolbar > button { display: flex; }
 .ow-documents-search { display: flex; align-items: center; gap: 10px; padding: 4px 8px 4px 14px; border-radius: 24px; background: var(--doc-chip); flex: 1; min-width: 0; max-width: 720px; }
+.ow-documents-search:focus-within { box-shadow: 0 0 0 2px var(--doc-focus); }
 .ow-documents-search input { background: transparent; border: 0; width: 100%; min-width: 40px; padding: 7px 2px; }
+.ow-documents-search input:focus-visible { outline: none; } /* The search pill supplies the focus ring. */
 .ow-documents-search svg { flex-shrink: 0; color: var(--doc-muted); }
 .ow-documents-layout { display: flex; border: 1px solid var(--doc-line); border-radius: 8px; }
 .ow-documents-layout button { display: flex; }
@@ -69,9 +72,23 @@
 .ow-documents-workspace { display: flex; flex-direction: column; flex: 1; min-width: 0; min-height: 0; }
 .ow-documents [hidden] { display: none !important; }
 .ow-document-tabs { display: flex; align-items: center; flex-shrink: 0; gap: 2px; min-height: 44px; border-bottom: 1px solid var(--doc-line); overflow-x: auto; padding: 0 12px; }
-.ow-document-tabs button { display: flex; align-items: center; gap: 8px; flex-shrink: 0; max-width: 220px; border-radius: 6px 6px 0 0; height: 38px; padding: 8px 14px; }
-.ow-document-tabs button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ow-document-tabs button[aria-current=page] { background: var(--doc-chip); font-weight: 600; }
+.ow-document-tabs .ow-document-tab-files { flex-shrink: 0; border-radius: 6px 6px 0 0; height: 38px; padding: 8px 14px; }
+.ow-document-tab { position: relative; display: flex; align-items: center; flex-shrink: 0; max-width: 240px; height: 38px; border-radius: 6px 6px 0 0; padding-right: 4px; }
+.ow-document-tab:hover, .ow-document-tab[data-active=true], .ow-document-tab-files[aria-current=page] { background: var(--doc-chip); }
+.ow-document-tab[data-active=true] .ow-document-tab-open, .ow-document-tab-files[aria-current=page] { font-weight: 600; }
+.ow-document-tabs .ow-document-tab-open { display: flex; align-items: center; gap: 8px; min-width: 0; height: 100%; padding: 8px 8px 8px 12px; cursor: grab; }
+.ow-document-tabs .ow-document-tab-open:active { cursor: grabbing; }
+.ow-document-tab-open svg { flex-shrink: 0; }
+.ow-document-tab-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ow-document-tab-dirty { flex-shrink: 0; width: 6px; height: 6px; border-radius: 50%; background: var(--doc-text); }
+.ow-document-tabs .ow-document-tab-close { display: grid; place-items: center; flex-shrink: 0; width: 28px; height: 28px; padding: 0; color: var(--doc-muted); }
+.ow-document-tabs .ow-document-tab-close:hover { color: var(--doc-text); background: color-mix(in srgb, var(--doc-text) 10%, transparent); }
+.ow-document-tabs button:focus-visible { outline-offset: -3px; }
+.ow-document-tab[data-dragging=true] { opacity: .45; }
+.ow-document-tab[data-drop]::after { content: ""; position: absolute; top: 5px; bottom: 5px; width: 2px; border-radius: 2px; background: var(--doc-focus); pointer-events: none; }
+.ow-document-tab[data-drop=before]::after { left: -2px; }
+.ow-document-tab[data-drop=after]::after { right: -2px; }
+.ow-documents-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 .ow-documents-location { margin-bottom: 4px; background: transparent !important; }
 .ow-documents-location[aria-current=page] { background: var(--doc-chip) !important; }
 .ow-documents-recent-heading { font-size: 12px; font-weight: 500; color: var(--doc-muted); padding: 28px 8px 10px; margin: 0; }
@@ -98,7 +115,8 @@
 .ow-documents .ow-editor-grid thead th { top: 0; z-index: 2; }
 .ow-documents .ow-editor-grid th:first-child { width: 48px; min-width: 48px; max-width: 48px; }
 .ow-documents .ow-editor-grid input { border: 0; background: transparent; width: 100%; height: 100%; padding: 4px 8px; color: var(--doc-text); }
-.ow-documents .ow-editor-grid td[data-active=true] { box-shadow: inset 0 0 0 2px var(--doc-text); }
+.ow-documents .ow-editor-grid td[data-active=true] { box-shadow: inset 0 0 0 2px var(--doc-focus); }
+.ow-documents .ow-editor-grid input:focus-visible { outline-offset: -2px; }
 .ow-editor-sheets { display: flex; flex-wrap: wrap; align-items: center; padding: 6px 12px; border-top: 1px solid var(--doc-line); }
 .ow-editor-sheets nav { display: flex; flex: 1; overflow-x: auto; }
 .ow-editor-sheets button[aria-current=page] { background: var(--doc-chip); }
@@ -109,6 +127,7 @@
 .ow-editor-paper p.ow-editor-heading { font-size: 22px; font-weight: 600; margin-top: 24px; }
 .ow-editor-paper [contenteditable=true]:focus { outline: 1px solid var(--doc-line); border-radius: 2px; }
 .ow-editor-plain { flex: 1; min-height: 300px; resize: none; padding: 24px; background: var(--doc-bg); border: 0; font: 13px/1.7 monospace !important; }
+.ow-editor-plain:focus-visible { outline-offset: -2px; }
 .ow-editor-preview { border: 0; width: 100%; height: 100%; min-height: 500px; }
 .ow-editor-image { flex: 1; overflow: auto; display: grid; place-items: center; padding: 24px; }
 .ow-editor-image img { max-width: 100%; height: auto; }

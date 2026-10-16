@@ -10,7 +10,7 @@ provider/editor contracts without embedding Workbot.
   The sidebar is not a fabricated list or local browsing history.
 - My Drive and folder breadcrumbs, folder-scoped search, pagination,
   list/grid views and name/date sorting of loaded files.
-- Files open in internal tabs. Switching file tabs retains unsaved edits.
+- Files open in internal tabs with close buttons and an unsaved-change dot. Switching or reordering tabs retains unsaved edits; closing an edited tab offers save, keep editing, or discard. Drag tabs to reorder, or focus a tab and use Alt+Shift+Left/Right. Delete closes the focused tab. The Files tab stays fixed.
   Closing a dirty file or leaving Documents asks whether to keep/discard edits.
   Page unload uses the browser's unsaved-changes protection.
 - Missing/expired Drive access shows Connect/Reconnect through Den's existing

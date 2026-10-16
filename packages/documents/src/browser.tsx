@@ -4,6 +4,7 @@ import { useInfiniteQuery, useQuery } from "@tanstack/react-query"
 import { Clock, ChevronRight, ExternalLink, FileText, FileSpreadsheet, Image, Presentation, Folder, Grid2X2, Info, List, Lock, RefreshCw, Search, X } from "lucide-react"
 import { useCallback, useMemo, useRef, useState, type FormEvent } from "react"
 import { DocumentEditorTab } from "./editor"
+import { DocumentTabs, type DocumentTabControls, type DocumentTabControlsChange } from "./document-tabs"
 import type { DocumentsEditor } from "./model"
 import { DocumentsError, documentType, type DocumentItem, type DocumentsProvider } from "./index"
 
@@ -37,10 +38,32 @@ function ItemIcon({ item }: { item: DocumentItem }) {
 /** A host-independent browser; providers own metadata reads and safe file-opening URLs. */
 export function DocumentsBrowser({ provider, editor, scope, enabled, connectionsHref, onDirtyChange }: DocumentsBrowserProps) {
   const dirtyTabs = useRef(new Set<string>())
-  const updateDirty = useCallback((id: string, dirty: boolean) => { if (dirty) dirtyTabs.current.add(id); else dirtyTabs.current.delete(id); onDirtyChange?.(dirtyTabs.current.size > 0) }, [onDirtyChange])
+  const [dirtyIds, setDirtyIds] = useState<ReadonlySet<string>>(new Set())
+  const updateDirty = useCallback((id: string, dirty: boolean) => {
+    if (dirtyTabs.current.has(id) === dirty) return
+    if (dirty) dirtyTabs.current.add(id); else dirtyTabs.current.delete(id)
+    setDirtyIds(new Set(dirtyTabs.current))
+    onDirtyChange?.(dirtyTabs.current.size > 0)
+  }, [onDirtyChange])
+  const [busyIds, setBusyIds] = useState<ReadonlySet<string>>(new Set())
+  const updateSaving = useCallback((id: string, saving: boolean) => setBusyIds(current => {
+    if (current.has(id) === saving) return current
+    const next = new Set(current); if (saving) next.add(id); else next.delete(id)
+    return next
+  }), [])
+  const closeControls = useRef(new Map<string, DocumentTabControls>())
+  const registerControls = useCallback<DocumentTabControlsChange>((id, controls) => { if (controls) closeControls.current.set(id, controls); else closeControls.current.delete(id) }, [])
   const [view, setView] = useState<"recent" | "folder">("recent")
   const [opened, setOpened] = useState<DocumentItem[]>([])
+  // Reordering editor DOM nodes can reload an iframe. Only reorder navigation.
+  const [tabOrder, setTabOrder] = useState<string[]>([])
+  const tabOrderRef = useRef(tabOrder)
+  tabOrderRef.current = tabOrder
+  const tabsRow = useRef<HTMLDivElement>(null)
+  const orderedTabs = tabOrder.flatMap(id => { const item = opened.find(file => file.id === id); return item ? [item] : [] })
   const [activeTab, setActiveTab] = useState("files")
+  const activeTabRef = useRef(activeTab)
+  activeTabRef.current = activeTab
   const [actionsHost, setActionsHost] = useState<HTMLDivElement | null>(null)
   const [folders, setFolders] = useState([{ id: "root", name: provider.rootLabel }])
   const [draft, setDraft] = useState("")
@@ -80,10 +103,27 @@ export function DocumentsBrowser({ provider, editor, scope, enabled, connections
   const navigate = (index: number) => { setView("folder"); setActiveTab("files"); setOrder("name"); setFolders(current => current.slice(0, index + 1)); setSelected(null); setSearch(""); setDraft("") }
   const open = (item: DocumentItem) => {
     if (item.kind === "folder") { setView("folder"); setActiveTab("files"); setOrder("name"); setFolders(current => [...(view === "recent" ? [{ id: "root", name: provider.rootLabel }] : current), { id: item.id, name: item.name }]); setSearch(""); setDraft(""); setSelected(null) }
-    else if (editor) { setOpened(current => current.some(file => file.id === item.id) ? current : [...current, item]); setActiveTab(item.id) }
+    else if (editor) { setOpened(current => current.some(file => file.id === item.id) ? current : [...current, item]); setTabOrder(current => current.includes(item.id) ? current : [...current, item.id]); setActiveTab(item.id) }
     else setSelected(item)
   }
   const submit = (event: FormEvent) => { event.preventDefault(); setSearch(draft.trim()); setSelected(null) }
+  const requestClose = (id: string) => {
+    if (busyIds.has(id)) return
+    if (dirtyTabs.current.has(id)) setActiveTab(id)
+    closeControls.current.get(id)?.requestClose()
+  }
+  const close = (id: string) => {
+    const order = tabOrderRef.current
+    const index = order.indexOf(id)
+    const neighbor = order[index + 1] ?? order[index - 1] ?? "files"
+    const tab = tabsRow.current?.querySelector(`[data-document-id="${CSS.escape(id)}"]`)
+    const restoreFocus = activeTabRef.current === id || !!tab?.contains(document.activeElement)
+    setActiveTab(current => current === id ? neighbor : current)
+    setOpened(current => current.filter(item => item.id !== id))
+    setTabOrder(current => current.filter(tab => tab !== id))
+    if (restoreFocus) requestAnimationFrame(() => tabsRow.current?.querySelector<HTMLButtonElement>(neighbor === "files" ? ".ow-document-tab-files" : `[data-document-id="${CSS.escape(neighbor)}"] .ow-document-tab-open`)?.focus())
+    void query.refetch(); void recent.refetch()
+  }
   const needsConnection = query.error instanceof DocumentsError && query.error.code === "needs_connection"
   const flagOff = query.error instanceof DocumentsError && ["workbot_documents_not_enabled", "feature_disabled"].includes(query.error.code)
   const blocked = query.error instanceof DocumentsError && [401, 403, 409].includes(query.error.status)
@@ -98,7 +138,7 @@ export function DocumentsBrowser({ provider, editor, scope, enabled, connections
       {enabled && recentItems.slice(0, 8).map(item => <button type="button" className="ow-documents-recent-file" key={item.id} onClick={() => open(item)}><ItemIcon item={item} /><span>{item.name}</span></button>)}
     </aside>
     <div className="ow-documents-workspace">
-      <div className="ow-document-tabs-row"><nav className="ow-document-tabs" aria-label="Open documents"><button type="button" aria-current={activeTab === "files" ? "page" : undefined} onClick={() => setActiveTab("files")}>Files</button>{opened.map(item => <button type="button" key={item.id} aria-current={activeTab === item.id ? "page" : undefined} onClick={() => setActiveTab(item.id)}><FileText size={14} aria-hidden /><span>{item.name}</span></button>)}</nav><div className="ow-document-actions" ref={setActionsHost}/></div>
+      <div className="ow-document-tabs-row" ref={tabsRow}><DocumentTabs items={orderedTabs} activeId={activeTab} dirtyIds={dirtyIds} busyIds={busyIds} onSelect={setActiveTab} onClose={requestClose} onReorder={setTabOrder}/><div className="ow-document-actions" ref={setActionsHost}/></div>
     <div className="ow-documents-main" hidden={activeTab !== "files"}>
       <header className="ow-documents-toolbar">
         <form onSubmit={submit} role="search" className="ow-documents-search"><Search size={16} strokeWidth={1.5} aria-hidden /><input aria-label={`Search ${folder.name}`} placeholder={`Search in ${folder.name}`} value={draft} maxLength={500} onChange={event => setDraft(event.target.value)} /><button type="submit">Search</button></form>
@@ -121,7 +161,7 @@ export function DocumentsBrowser({ provider, editor, scope, enabled, connections
           {visible && selected && <aside className="ow-documents-detail" aria-label="Document details"><div className="ow-documents-detail-heading"><Info size={16} aria-hidden /><span>Details</span><button type="button" aria-label="Close document details" onClick={() => setSelected(null)}><X size={16} /></button></div><ItemIcon item={selected} /><h2>{selected.name}</h2><dl><dt>Type</dt><dd>{documentType(selected)}</dd><dt>Last modified</dt><dd>{date(selected.modifiedTime)}</dd><dt>Size</dt><dd>{size(selected.size)}</dd></dl>{selected.openUrl ? <a className="ow-documents-open" href={selected.openUrl} target="_blank" rel="noopener noreferrer">Open in {provider.label}<ExternalLink size={14} aria-hidden /></a> : <p>This file has no available link.</p>}</aside>}
         </div></>}
     </div>
-    {editor && opened.map(item => <DocumentEditorTab toolbarHost={actionsHost} key={item.id} item={item} editor={editor} enabled={enabled} active={activeTab === item.id} scope={scope} connectionsHref={connectionsHref} onDirtyChange={updateDirty} onClose={() => { setOpened(current => current.filter(file => file.id !== item.id)); setActiveTab("files"); void query.refetch(); void recent.refetch() }} />)}
+    {editor && opened.map(item => <DocumentEditorTab toolbarHost={actionsHost} key={item.id} item={item} editor={editor} enabled={enabled} active={activeTab === item.id} scope={scope} connectionsHref={connectionsHref} onDirtyChange={updateDirty} onSavingChange={updateSaving} onControlsChange={registerControls} onClose={() => close(item.id)} />)}
     </div>
   </section>
 }

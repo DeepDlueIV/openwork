@@ -2002,7 +2002,10 @@ export function createRuntimeManager({
   async function engineRestart() {
     const projectDir = engineState.projectDir;
     if (!projectDir) {
-      throw new Error("OpenCode is not configured for a local workspace");
+      // V2 belongs to the server, which starts before a workspace is selected.
+      // That normal startup path has no legacy engine projectDir to restart.
+      await openworkServerRestart();
+      return snapshotEngineState(engineState);
     }
     return engineStart(projectDir, {
       runtime: engineState.runtime,

@@ -10,6 +10,7 @@ export const meSchema = z.object({
   email: z.string(),
   organizationName: z.string(),
   enabled: z.boolean(),
+  computer: z.boolean().default(false),
   /** Workbot's Calendar tab (on while Workbot is on); older servers omit it. */
   calendar: z.boolean().default(false),
   /** The organization runs Automations in the cloud, so the Calendar can create them. */
@@ -62,6 +63,7 @@ export function createHost(me: Me): WorkbotHost {
     appIcons: (name) => appIconCandidates(name, me.denUrl),
     homeHref: me.denUrl ? `${me.denUrl}/dashboard` : "/",
     calendar: me.calendar,
+    computer: me.computer,
     canSchedule: me.canSchedule,
     connectionsHref: me.denUrl ? `${me.denUrl}/dashboard/your-connections` : null,
     sideChats: me.sideChats,

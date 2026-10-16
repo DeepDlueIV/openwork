@@ -28292,6 +28292,9 @@
           "canSchedule": {
             "type": "boolean"
           },
+          "computer": {
+            "type": "boolean"
+          },
           "calendar": {
             "type": "boolean"
           },

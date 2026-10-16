@@ -46,6 +46,7 @@ export type WorkbotFile = RunnerSavedFile
 export type WorkbotDeps = {
   /** The headless runner, or null when this deployment has none. */
   client: HeadlessRunnerClient | null
+  desktop?: boolean
   /** Whether Workbot may set up recurring work (Automations on the headless runner) for this organization. */
   canSchedule: (organizationId: string) => Promise<boolean>
   /**
@@ -179,6 +180,7 @@ async function ensureSession(actor: WorkbotActor, timeZone: string, deps: Workbo
     // work to background tasks; the runner offers each only on request.
     files: true,
     computer: true,
+    desktop: deps.desktop === true,
     reactions: true,
     tasks: true,
     owner: workbotOwner(actor.organizationId, actor.memberId),
@@ -472,6 +474,7 @@ export async function deleteWorkbotFile(actor: WorkbotActor, fileId: string, dep
 /** Workbot for one host: every operation, bound to its runner and scheduling check. `chat` null is the main chat. */
 export function createWorkbot(deps: WorkbotDeps) {
   return {
+    ensureComputer: (actor: WorkbotActor) => ensureSession(actor, "UTC", deps),
     readThread: (actor: WorkbotActor, input: { turns?: number; chat?: WorkbotChat } = {}) => readWorkbotThread(actor, input, deps),
     hello: (actor: WorkbotActor, input: { timeZone?: string }) => startWorkbotGreeting(actor, input, deps),
     send: (actor: WorkbotActor, input: { id: string; text: string; timeZone?: string; attachments?: string[]; chat?: WorkbotChat }) =>

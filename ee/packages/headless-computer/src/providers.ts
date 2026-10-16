@@ -7,6 +7,8 @@ export type ComputerProviderConfig = {
   snapshot?: string
   apiUrl?: string
   target?: string
+  sandboxClass?: "container" | "linux-vm"
+  desktop?: boolean
 }
 
 /** Provider SDKs load only when the runner opts into that provider. */
@@ -20,6 +22,7 @@ export async function createComputerProvider(config: ComputerProviderConfig): Pr
   return createDaytonaProvider({
     apiKey: config.apiKey, apiUrl: config.apiUrl ?? "https://app.daytona.io/api", target: config.target,
     snapshot: config.snapshot, image: "ubuntu:24.04", resources: { cpu: 2, memoryGb: 4, diskGb: 8 },
-    helperCreateTimeoutMs: 120_000, pollIntervalMs: 100, platform: { os: "linux", isolation: "container" },
+    helperCreateTimeoutMs: 120_000, pollIntervalMs: 100, platform: { os: "linux", isolation: config.sandboxClass === "linux-vm" ? "vm" : "container" },
+    supportsPause: config.sandboxClass === "linux-vm",
   })
 }

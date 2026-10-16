@@ -26,6 +26,7 @@ export const denSessionSchema = z.object({
   memberId: z.string(),
   enabled: z.boolean(),
   canSchedule: z.boolean(),
+  computer: z.boolean().default(false),
   /** Workbot's Calendar tab is on (while Workbot is on). Older Dens omit it: off. */
   calendar: z.boolean().optional(),
   /** Side chats are on for this person. A Den from before side chats doesn't say: off. */

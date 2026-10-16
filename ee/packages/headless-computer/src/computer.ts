@@ -3,6 +3,7 @@ import { posix } from "node:path"
 import { ensureRunning, isSandboxError, SCOPE_LABEL, withBlocks, type RunSpec, type SandboxHandle, type SandboxProvider, type SandboxSpec } from "@openwork/sandbox"
 import { z } from "zod"
 import type { ComputerFile, ComputerFiles, FileReader, ToolResult, ToolSpec } from "./types.js"
+import { Desktop, type DesktopView } from "./desktop.js"
 
 /** One provider-neutral Linux computer per conversation. Jobs own idle policy and files; adapters own transport. */
 export type ComputerOptions = {
@@ -11,6 +12,7 @@ export type ComputerOptions = {
   scope?: string
   idlePauseMs: number
   keepDays: number
+  desktop?: boolean
 }
 
 const WORKSPACE = "/workspace"
@@ -54,6 +56,8 @@ export class Computers {
   readonly prompt = COMPUTER_PROMPT
   readonly tools: ToolSpec[] = COMPUTER_TOOLS
   readonly toolNames: ReadonlySet<string> = COMPUTER_TOOL_NAMES
+  readonly desktopTools: ToolSpec[]
+  private readonly desktop?: Desktop
 
   /**
    * `files` is the conversation's kept files (uploads in, outputs out); without it the computer only runs commands.
@@ -65,6 +69,49 @@ export class Computers {
     this.snapshot = this.provider.currentImage()?.id ?? "configured image"
     this.files = deps.files
     this.readFile = deps.readFile
+    this.desktop = options.desktop ? new Desktop(this.provider) : undefined
+    this.desktopTools = this.desktop ? [{ name: "desktop", description: "Use the browser and native computer on the same visible desktop. Browser operation: open, tabs, observe, act, close; computer operation: computer_open, computer_observe, computer_act, computer_end. Pass the operation's arguments in args. Observe before acting and reuse the returned observation id. The person sees the same desktop in Workbot's Computer tab.", inputSchema: { type: "object", properties: { view: { type: "string", enum: ["browser", "computer"] }, operation: { type: "string" }, args: { type: "object", additionalProperties: true } }, required: ["view", "operation", "args"], additionalProperties: false } }] : []
+  }
+
+  async desktopRun(sessionId: string, input: Record<string, unknown>): Promise<ToolResult> {
+    const parsed = z.object({ view: z.enum(["browser", "computer"]), operation: z.string().max(64), args: z.record(z.string(), z.unknown()) }).strict().parse(input)
+    if (!this.desktop) throw new Error("Desktop access is not configured.")
+    const box = await this.vm(sessionId)
+    await this.desktop.start(box)
+    const raw = await this.desktop.call(box, parsed.view === "browser" ? "/browser/task" : "/computer/task", {
+      sessionId, ...(parsed.view === "browser" ? { operation: parsed.operation } : { name: parsed.operation }), args: parsed.args,
+    })
+    const result = z.object({ ok: z.boolean().optional(), isError: z.boolean().optional(), image: z.object({ data: z.string(), mediaType: z.string().optional() }).optional(), content: z.array(z.object({ type: z.string(), text: z.string().optional(), data: z.string().optional(), mimeType: z.string().optional() })).optional() }).loose().parse(raw)
+    const images = result.content?.flatMap(part => part.type === "image" && part.data ? [{ mediaType: part.mimeType ?? "image/png", data: part.data }] : []) ?? []
+    if (result.image) images.push({ mediaType: result.image.mediaType ?? "image/png", data: result.image.data })
+    const { image, content, ...text } = result
+    return { output: JSON.stringify(content?.filter(part => part.type === "text") ?? text), isError: result.isError === true || result.ok === false, ...(images.length ? { images } : {}) }
+  }
+
+  async desktopViewer(sessionId: string, input: { view: DesktopView; control: boolean; origin: string }) {
+    if (!this.desktop) throw new Error("Desktop access is not configured.")
+    const pending = this.vms.get(sessionId)
+    const existing = pending ? await this.provider.inspect(await pending) : await this.provider.find({ idempotencyKey: this.slug(sessionId), labels: this.spec(sessionId).labels })
+    if (existing?.state === "stopped" || existing?.state === "stopping") return { state: "paused" as const }
+    const box = await this.vm(sessionId)
+    try { return { state: "connected" as const, ...await this.desktop.viewer(box, input) } }
+    finally { this.release(sessionId) }
+  }
+
+  async desktopAction(sessionId: string, action: "continue" | "pause" | "resume") {
+    if (!this.desktop) throw new Error("Desktop access is not configured.")
+    const pending = this.vms.get(sessionId)
+    const existing = action === "pause" ? pending ? await this.provider.inspect(await pending) : await this.provider.find({ idempotencyKey: this.slug(sessionId), labels: this.spec(sessionId).labels }) : null
+    if (action === "pause" && (!existing || existing.state === "stopped" || existing.state === "stopping")) return { ok: true }
+    const box = existing ?? await this.vm(sessionId)
+    if (action === "pause") {
+      if (!this.provider.blocks?.pause) throw new Error("This computer does not support pause.")
+      await this.provider.blocks.pause(box, { timeoutMs: 30_000 })
+    } else if (action === "continue") {
+      await this.desktop.call(box, "/continue", {})
+    } else await this.desktop.start(box)
+    this.release(sessionId)
+    return { ok: true }
   }
 
   /** Runs one of the computer's tools (`bash` or `look`) for a conversation. */

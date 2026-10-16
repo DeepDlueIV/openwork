@@ -90,6 +90,7 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
         maxTokenTtlMs: RUN_TOKEN_TTL_MS,
       }),
       canSchedule: async () => member.den.canSchedule,
+      desktop: member.den.computer,
       model: async () => member.den.model,
     })
 
@@ -129,10 +130,38 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
       organizationName: who.organization.name,
       enabled: who.enabled,
       calendar: who.enabled && who.calendar === true,
+      computer: who.enabled && who.computer,
       canSchedule: who.enabled && who.canSchedule,
       sideChats: who.enabled && who.sideChats,
       denUrl: config.denWebUrl ?? (await den.webUrl().catch(() => null)),
     })
+  })
+
+  // No sandbox ids or preview credentials are accepted from the page: the member determines the computer.
+  app.post("/v1/workbot/computer/:operation", async (c) => {
+    const member = c.get("member")
+    c.header("Cache-Control", "no-store")
+    if (!member.den.enabled || !member.den.computer) return c.json({ error: "feature_disabled" }, 403)
+    const operation = c.req.param("operation")
+    if (operation !== "viewer" && operation !== "action") return c.json({ error: "not_found" }, 404)
+    const workbot = workbotFor(member)
+    const sessionId = await workbot.ensureComputer(actorOf(member))
+    const client = createHeadlessRunnerClient({ config: runnerFor(member), fetch, mintToken: async () => ({ token: "" }), maxTokenTtlMs: RUN_TOKEN_TTL_MS })
+    const raw: unknown = await c.req.json().catch(() => null)
+    try {
+      if (operation === "viewer") {
+        const body = z.object({ view: z.enum(["browser", "computer"]), control: z.boolean().default(false) }).strict().safeParse(raw)
+        if (!body.success) return c.json({ error: "invalid_request" }, 400)
+        if (body.data.control) await workbot.stop(actorOf(member))
+        const result = await client.desktopViewer(sessionId, { ...body.data, origin: new URL(config.publicUrl).origin })
+        return result.ok ? c.json(result.value) : c.json({ error: "desktop_unavailable", message: "Your computer is unavailable. Try reconnecting." }, 409)
+      }
+      const body = z.object({ action: z.enum(["continue", "pause", "resume"]) }).strict().safeParse(raw)
+      if (!body.success) return c.json({ error: "invalid_request" }, 400)
+      if (body.data.action === "pause") await workbot.stop(actorOf(member))
+      const result = await client.desktopAction(sessionId, body.data.action)
+      return result.ok ? c.json({ ok: true }) : c.json({ error: "desktop_unavailable" }, 409)
+    } catch { return c.json({ error: "desktop_unavailable", message: "Your computer is unavailable. Try reconnecting." }, 409) }
   })
 
   /**

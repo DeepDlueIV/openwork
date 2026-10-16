@@ -6670,6 +6670,7 @@ export type WorkbotSession = {
   memberId: string;
   enabled: boolean;
   canSchedule: boolean;
+  computer?: boolean;
   calendar?: boolean;
   sideChats: boolean;
   model?: string | null;

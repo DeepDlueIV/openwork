@@ -21,6 +21,8 @@ export type WorkbotHost = {
   homeHref: string
   /** Workbot's Calendar tab is on for this person (on while Workbot is on). */
   calendar?: boolean
+  /** Shared browser and computer desktop, enabled by the organization flags. */
+  computer?: boolean
   /** The organization runs Automations in the cloud, so the Calendar can create them. Off when unset. */
   canSchedule?: boolean
   /** Where the person connects their own Google or Microsoft account, for the Calendar's connect links. */

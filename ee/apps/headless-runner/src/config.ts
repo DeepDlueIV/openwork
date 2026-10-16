@@ -73,6 +73,8 @@ const configSchema = z.object({
   DAYTONA_API_KEY: z.string().min(1).optional(),
   DAYTONA_API_URL: safeUrl.default("https://app.daytona.io/api"),
   DAYTONA_TARGET: z.string().min(1).optional(),
+  HEADLESS_COMPUTER_CLASS: z.enum(["container", "linux-vm"]).default("container"),
+  HEADLESS_COMPUTER_DESKTOP: z.enum(["true", "false"]).default("false"),
   HEADLESS_COMPUTER_SCOPE: z.string().min(1).optional(),
   FREESTYLE_API_KEY: z
     .string()
@@ -158,6 +160,8 @@ function computerConfig(value: z.infer<typeof configSchema>): Config["computer"]
     apiKey,
     apiUrl: value.DAYTONA_API_URL,
     target: value.DAYTONA_TARGET,
+    sandboxClass: value.HEADLESS_COMPUTER_CLASS,
+    desktop: value.HEADLESS_COMPUTER_DESKTOP === "true",
     scope: value.HEADLESS_COMPUTER_SCOPE,
     snapshot: value.HEADLESS_COMPUTER_SNAPSHOT,
     idlePauseMs: value.HEADLESS_COMPUTER_PAUSE_SECONDS * 1000,

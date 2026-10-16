@@ -22,7 +22,7 @@ resource "azurerm_container_app_custom_domain" "web" {
   count = local.bind_custom_domains ? 1 : 0
 
   name                                     = local.web_host
-  container_app_id                         = azurerm_container_app.web.id
+  container_app_id                         = azapi_resource.web.id
   container_app_environment_certificate_id = azurerm_container_app_environment_certificate.this[0].id
   certificate_binding_type                 = "SniEnabled"
 }
@@ -31,7 +31,7 @@ resource "azurerm_container_app_custom_domain" "api" {
   count = local.bind_custom_domains ? 1 : 0
 
   name                                     = local.api_host
-  container_app_id                         = azurerm_container_app.api.id
+  container_app_id                         = azapi_resource.api.id
   container_app_environment_certificate_id = azurerm_container_app_environment_certificate.this[0].id
   certificate_binding_type                 = "SniEnabled"
 }

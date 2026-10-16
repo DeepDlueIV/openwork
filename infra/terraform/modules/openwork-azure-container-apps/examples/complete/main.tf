@@ -12,7 +12,7 @@ terraform {
     }
     azapi = {
       source  = "Azure/azapi"
-      version = "~> 2.10"
+      version = "~> 2.13"
     }
   }
 }
@@ -86,6 +86,10 @@ resource "azurerm_subnet" "database" {
 
 module "openwork" {
   source = "../.."
+  providers = {
+    azapi             = azapi
+    azapi.secret_read = azapi
+  }
 
   name                = var.name
   resource_group_name = var.resource_group_name
@@ -119,6 +123,7 @@ output "bootstrap_code" {
   sensitive = true
 }
 output "app_names" { value = module.openwork.app_names }
+output "bootstrap_secret_name" { value = module.openwork.bootstrap_secret_name }
 output "database_server_name" { value = module.openwork.database_server_name }
 output "migration_job_id" { value = module.openwork.migration_job_id }
 output "migration_execution_id" { value = module.openwork.migration_execution_id }

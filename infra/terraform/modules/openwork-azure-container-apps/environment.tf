@@ -9,6 +9,7 @@ locals {
   environment_id             = local.create_environment ? azurerm_container_app_environment.this[0].id : var.container_app_environment_id
   environment_default_domain = local.create_environment ? azurerm_container_app_environment.this[0].default_domain : data.azurerm_container_app_environment.existing[0].default_domain
   environment_verification   = local.create_environment ? azurerm_container_app_environment.this[0].custom_domain_verification_id : data.azurerm_container_app_environment.existing[0].custom_domain_verification_id
+  app_location               = local.create_environment ? local.location : data.azurerm_container_app_environment.existing[0].location
 
   create_log_workspace    = local.create_environment && var.create_log_analytics_workspace
   log_analytics_workspace = local.create_log_workspace ? azurerm_log_analytics_workspace.this[0].id : (var.log_analytics_workspace_id != "" ? var.log_analytics_workspace_id : null)

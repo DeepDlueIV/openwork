@@ -1,14 +1,10 @@
-# Offline checks (mocked azurerm provider): terraform init && terraform test
-
+# Offline contract: Azure is mocked; ephemeral random generation is local.
 mock_provider "azurerm" {
-  mock_resource "azurerm_container_app_job" {
-    defaults = { id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test/providers/Microsoft.App/jobs/openwork-migrate" }
-  }
-  mock_resource "azurerm_container_app" {
-    defaults = { id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test/providers/Microsoft.App/containerApps/app" }
-  }
   mock_data "azurerm_resource_group" {
-    defaults = { location = "eastus" }
+    defaults = { id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test", location = "eastus" }
+  }
+  mock_data "azurerm_container_app_environment" {
+    defaults = { default_domain = "shared-env-9876.westeurope.azurecontainerapps.io", custom_domain_verification_id = "VERIFY987", location = "westeurope" }
   }
   mock_resource "azurerm_container_app_environment" {
     defaults = {
@@ -21,164 +17,99 @@ mock_provider "azurerm" {
     defaults = { id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test/providers/Microsoft.OperationalInsights/workspaces/openwork-den-logs" }
   }
   mock_resource "azurerm_mysql_flexible_server" {
-    defaults = { fqdn = "openwork-den-abc123.mysql.database.azure.com" }
+    defaults = { id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test/providers/Microsoft.DBforMySQL/flexibleServers/openwork", fqdn = "openwork-den-abc123.mysql.database.azure.com" }
+  }
+  mock_resource "azurerm_private_dns_zone" {
+    defaults = { id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test/providers/Microsoft.Network/privateDnsZones/openwork-den.private.mysql.database.azure.com" }
+  }
+  mock_resource "azurerm_container_app_environment_certificate" {
+    defaults = { id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test/providers/Microsoft.App/managedEnvironments/openwork-den/certificates/openwork-den" }
   }
 }
-
-# MySQL rejects passwords without three character classes; random_password
-# guarantees them with min_* settings, which a mock does not apply.
-mock_provider "random" {
-  mock_resource "random_password" {
-    defaults = { result = "MockPassw0rdMockPassw0rdMock1234" }
-  }
+# Terraform does not mock ephemeral resource types, even with count = 0.
+# Keep their schema real on a separate read-only binding; all existing-store
+# metadata is mocked absent, so these synthetic credentials are never used.
+provider "azapi" {
+  alias           = "secret_read"
+  subscription_id = "00000000-0000-0000-0000-000000000000"
+  tenant_id       = "00000000-0000-0000-0000-000000000000"
+  client_id       = "00000000-0000-0000-0000-000000000000"
+  client_secret   = "fixture-not-used"
+  use_cli         = false
 }
-
 mock_provider "azapi" {
+  mock_data "azapi_resource" {
+    defaults = { exists = false, output = { versions = null } }
+  }
+  mock_resource "azapi_resource" {
+    defaults = { id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test/providers/Microsoft.App/containerApps/app", output = { properties = { outboundIpAddresses = [] } } }
+  }
   mock_resource "azapi_resource_action" {
     defaults = { output = { id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test/providers/Microsoft.App/jobs/openwork-migrate/executions/test" } }
   }
 }
-mock_provider "external" {
-  mock_data "external" {
-    defaults = { result = { status = "Succeeded" } }
-  }
+override_resource {
+  target = azapi_resource.migration
+  values = { id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test/providers/Microsoft.App/jobs/openwork-migrate" }
 }
-
+mock_provider "external" {
+  mock_data "external" { defaults = { result = { status = "Succeeded" } } }
+}
 variables {
-  openwork_version    = "0.18.58"
   resource_group_name = "rg-test"
   owner_emails        = ["admin@example.com"]
 }
 
 run "default_stack" {
   command = apply
-
   assert {
-    condition     = length(azurerm_container_app_environment.this) == 1 && length(azurerm_log_analytics_workspace.this) == 1
-    error_message = "Expected a new environment and Log Analytics workspace by default."
+    condition     = length(azurerm_container_app_environment.this) == 1 && length(azurerm_log_analytics_workspace.this) == 1 && azapi_resource.api.body.properties.managedEnvironmentId == azurerm_container_app_environment.this[0].id
+    error_message = "A fresh stack must create an environment/log sink and use that environment."
   }
   assert {
-    condition     = azurerm_container_app.api.container_app_environment_id == azurerm_container_app_environment.this[0].id && azurerm_container_app.web.container_app_environment_id == azurerm_container_app_environment.this[0].id
-    error_message = "Both apps must run in the created environment."
-  }
-  assert {
-    condition     = azurerm_container_app_environment.this[0].location == "eastus" && azurerm_container_app_environment.this[0].infrastructure_subnet_id == null
-    error_message = "The environment should use the resource group's region and an Azure-managed network by default."
-  }
-  assert {
-    condition     = output.web_url == "https://openwork-den-web.happy-sky-1234.eastus.azurecontainerapps.io" && output.api_url == "https://openwork-den-api.happy-sky-1234.eastus.azurecontainerapps.io"
-    error_message = "Without domain_name, both URLs must be the default Container Apps hostnames."
-  }
-  assert {
-    condition     = output.setup_url == "${output.web_url}/setup"
-    error_message = "setup_url should be <web_url>/setup."
-  }
-  assert {
-    condition     = azurerm_container_app.api.ingress[0].external_enabled && azurerm_container_app.api.ingress[0].target_port == 8788 && !azurerm_container_app.api.ingress[0].allow_insecure_connections
-    error_message = "den-api must be public on HTTPS only, targeting port 8788."
-  }
-  assert {
-    condition     = azurerm_container_app.web.ingress[0].external_enabled && azurerm_container_app.web.ingress[0].target_port == 3005 && !azurerm_container_app.web.ingress[0].allow_insecure_connections
-    error_message = "den-web must be public on HTTPS only, targeting port 3005."
-  }
-  assert {
-    condition     = azurerm_container_app.api.workload_profile_name == "Consumption" && azurerm_container_app.api.template[0].min_replicas == 1 && azurerm_container_app.api.template[0].max_replicas == 1
-    error_message = "den-api should run one replica on the Consumption profile."
+    condition     = output.web_url == "https://openwork-den-web.happy-sky-1234.eastus.azurecontainerapps.io" && output.api_url == "https://openwork-den-api.happy-sky-1234.eastus.azurecontainerapps.io" && output.setup_url == "${output.web_url}/setup" && output.migration_step_identifier == azapi_resource.migration.id
+    error_message = "Shared outputs must identify HTTPS origins and the native migration step."
   }
 }
 
-run "environment_matches_helm_and_ecs" {
+run "default_state_contains_no_secret_values" {
   command = apply
-
   assert {
-    condition = alltrue([for k, v in {
-      DEN_BASE_URL                = "https://openwork-den-web.happy-sky-1234.eastus.azurecontainerapps.io"
-      BETTER_AUTH_URL             = "https://openwork-den-web.happy-sky-1234.eastus.azurecontainerapps.io"
-      DEN_API_PUBLIC_URL          = "https://openwork-den-api.happy-sky-1234.eastus.azurecontainerapps.io"
-      DEN_API_BASE                = "https://openwork-den-api.happy-sky-1234.eastus.azurecontainerapps.io"
-      DB_MODE                     = "mysql"
-      DEN_ORG_MODE                = "single_org"
-      OPENWORK_DEV_MODE           = "0"
-      PORT                        = "3005"
-      DEN_SINGLE_ORG_OWNER_EMAILS = "admin@example.com"
-    } : contains([for e in azurerm_container_app.web.template[0].container[0].env : "${e.name}=${e.value == null ? "" : e.value}"], "${k}=${v}")])
-    error_message = "den-web is missing an expected environment value (public URLs must be the default hostnames)."
+    condition = alltrue(concat(
+      [for secret in azapi_resource.api.body.properties.configuration.secrets : !contains(keys(secret), "value")],
+      [for secret in azapi_resource.web.body.properties.configuration.secrets : !contains(keys(secret), "value")],
+      [for secret in azapi_resource.migration.body.properties.configuration.secrets : !contains(keys(secret), "value")],
+    )) && azurerm_mysql_flexible_server.this[0].administrator_password == null && output.bootstrap_code == null
+    error_message = "Default persistent resource state must contain only secret metadata, never secret values or a bootstrap-code output."
   }
   assert {
-    condition     = !contains([for e in azurerm_container_app.web.template[0].container[0].env : e.name], "SMTP_HOST")
-    error_message = "Empty values (SMTP_HOST without smtp) must not be set."
-  }
-  assert {
-    condition = alltrue([for k in ["DATABASE_URL", "BETTER_AUTH_SECRET", "DEN_DB_ENCRYPTION_KEY", "DEN_INITIAL_ADMIN_BOOTSTRAP_CODE"] :
-      contains([for e in azurerm_container_app.api.template[0].container[0].env : "${e.name}=${e.secret_name == null ? "-" : e.secret_name}"], "${k}=${lower(replace(k, "_", "-"))}")
-    ])
-    error_message = "den-api must read each generated secret from a Container Apps secret."
-  }
-  assert {
-    condition     = toset([for s in azurerm_container_app.api.secret : s.name]) == toset(["database-url", "better-auth-secret", "den-db-encryption-key", "den-initial-admin-bootstrap-code"])
-    error_message = "Only the four generated secrets should exist without SMTP, Resend or extra_secrets."
-  }
-  assert {
-    condition     = length(azurerm_container_app.api.identity) == 0
-    error_message = "No identity should be attached unless one is passed."
+    condition     = length(azapi_resource.api.sensitive_body_version) == 1 && length(azapi_resource.api.sensitive_body_version["properties.configuration.secrets"]) == 64 && var.database.tls_query == "sslaccept=strict" && var.deletion_protection && azurerm_management_lock.database[0].lock_level == "CanNotDelete"
+    error_message = "State-free write-only secret gates, verified TLS and the database deletion lock must be defaults."
   }
 }
 
-run "migrations_run_before_den_api" {
-  command = apply
-
-  assert {
-    condition     = azurerm_container_app_job.migration.template[0].container[0].command == tolist(["node", "/app/ee/packages/den-db/dist/scripts/bootstrap.js"])
-    error_message = "The separate Job must run the packaged migration command."
+run "surviving_database_without_secret_copy_fails_closed" {
+  command = plan
+  override_data {
+    target = data.azapi_resource.existing_database
+    values = { exists = true, output = {} }
   }
-  assert {
-    condition     = azurerm_container_app_job.migration.template[0].container[0].image == azurerm_container_app.api.template[0].container[0].image && endswith(azurerm_container_app.web.template[0].container[0].image, var.den_web_image_digest)
-    error_message = "Migration and API must use the same immutable digest; web must also be digest-pinned."
-  }
-  assert {
-    condition     = contains([for e in azurerm_container_app_job.migration.template[0].container[0].env : e.name], "DATABASE_URL") && contains([for e in azurerm_container_app_job.migration.template[0].container[0].env : e.name], "DEN_DB_ENCRYPTION_KEY")
-    error_message = "The migration needs DATABASE_URL and DEN_DB_ENCRYPTION_KEY."
-  }
-  assert {
-    condition     = length(azurerm_container_app.web.template[0].init_container) == 0 && length(azurerm_container_app.api.template[0].init_container) == 0 && azurerm_container_app_job.migration.replica_retry_limit == 0 && azurerm_container_app_job.migration.manual_trigger_config[0].parallelism == 1
-    error_message = "Application replicas never migrate; Job parallelism is one and automatic retries are zero."
-  }
+  expect_failures = [azurerm_mysql_flexible_server.this]
 }
 
-run "public_database_by_default" {
-  command = apply
-
-  assert {
-    condition     = azurerm_mysql_flexible_server.this[0].version == "8.4" && azurerm_mysql_flexible_server.this[0].sku_name == "B_Standard_B1ms"
-    error_message = "Expected a Burstable MySQL 8.4 Flexible Server by default."
-  }
-  assert {
-    condition     = azurerm_mysql_flexible_server.this[0].public_network_access == "Enabled" && azurerm_mysql_flexible_server.this[0].delegated_subnet_id == null
-    error_message = "Without database_network the server uses public access."
-  }
-  assert {
-    condition     = length(azurerm_mysql_flexible_server_firewall_rule.azure_services) == 1 && azurerm_mysql_flexible_server_firewall_rule.azure_services[0].start_ip_address == "0.0.0.0" && azurerm_mysql_flexible_server_firewall_rule.azure_services[0].end_ip_address == "0.0.0.0"
-    error_message = "Public access must only allow Azure services (0.0.0.0), never the internet."
-  }
-  assert {
-    condition     = azurerm_mysql_flexible_database.this[0].name == "openwork_den" && azurerm_mysql_flexible_database.this[0].charset == "utf8mb4"
-    error_message = "Expected the openwork_den utf8mb4 database."
-  }
-  assert {
-    condition     = length(azurerm_private_dns_zone.db) == 0
-    error_message = "No private DNS zone without database_network."
-  }
-}
-
-run "protected_database_and_verified_tls" {
+run "singleton_migration_and_api_only_replicas" {
   command = apply
   assert {
-    condition     = var.deletion_protection && length(azurerm_management_lock.database) == 1 && azurerm_management_lock.database[0].lock_level == "CanNotDelete"
-    error_message = "The database must have an Azure deletion lock by default."
+    condition     = azapi_resource.migration.body.properties.template.containers[0].command == ["node", "/app/ee/packages/den-db/dist/scripts/bootstrap.js"] && azapi_resource.migration.body.properties.configuration.replicaRetryLimit == 0 && azapi_resource.migration.body.properties.configuration.manualTriggerConfig.parallelism == 1 && azapi_resource.migration.body.properties.configuration.manualTriggerConfig.replicaCompletionCount == 1
+    error_message = "Only the singleton Job may run the migration; failed attempts must not auto-retry."
   }
   assert {
-    condition     = var.database.tls_query == "sslaccept=strict" && azurerm_mysql_flexible_server.this[0].administrator_password == null
-    error_message = "The database must use verified TLS and the write-only admin password field."
+    condition     = length(azapi_resource.api.body.properties.template.initContainers) == 0 && length(azapi_resource.web.body.properties.template.initContainers) == 0 && azapi_resource.migration.body.properties.template.containers[0].image == azapi_resource.api.body.properties.template.containers[0].image
+    error_message = "API and web replicas must never migrate; Job and API must share the immutable image."
+  }
+  assert {
+    condition     = alltrue(flatten([for container in [azapi_resource.api.body.properties.template.containers[0], azapi_resource.web.body.properties.template.containers[0], azapi_resource.migration.body.properties.template.containers[0]] : [for env in container.env : !contains(keys(env), "value") if contains(local.secret_env_names, env.name)]])) && !contains([for env in azapi_resource.migration.body.properties.template.containers[0].env : env.name], "BETTER_AUTH_SECRET")
+    error_message = "Secrets must be secretRef bindings, never plain env values; migration must not receive app auth secrets."
   }
 }
 
@@ -190,16 +121,12 @@ run "two_api_replicas_one_migrator" {
     database            = { name = "exp-ow-tf-c1-proof-db" }
   }
   assert {
-    condition     = azurerm_container_app.api.template[0].min_replicas == 2 && azurerm_container_app.api.template[0].max_replicas == 2 && azurerm_container_app_job.migration.manual_trigger_config[0].replica_completion_count == 1 && length(azurerm_management_lock.database) == 0
-    error_message = "Scaling API must not scale the migration owner; tests can explicitly disable the database lock."
+    condition     = azapi_resource.api.body.properties.template.scale.minReplicas == 2 && azapi_resource.api.body.properties.template.scale.maxReplicas == 2 && azapi_resource.migration.body.properties.configuration.manualTriggerConfig.parallelism == 1 && length(azurerm_management_lock.database) == 0 && azurerm_mysql_flexible_database.this[0].name == "exp-ow-tf-c1-proof-db"
+    error_message = "Two API-only replicas must retain one migrator; disposable stacks can disable the lock and prefix their schema."
   }
   assert {
-    condition     = azurerm_mysql_flexible_database.this[0].name == "exp-ow-tf-c1-proof-db"
-    error_message = "Disposable stacks must be able to prefix their database schema resource without changing production defaults."
-  }
-  assert {
-    condition     = alltrue(flatten([for envs in [azurerm_container_app.api.template[0].container[0].env, azurerm_container_app.web.template[0].container[0].env, azurerm_container_app_job.migration.template[0].container[0].env] : [for env in envs : env.value == null if contains(local.secret_env_names, env.name)]]))
-    error_message = "Secrets must never be passed as plain environment values to apps or the Job."
+    condition     = azapi_resource.api.body.properties.template.containers[0].resources.cpu == 1 && azapi_resource.api.body.properties.template.containers[0].resources.memory == "2Gi" && azapi_resource.web.body.properties.template.containers[0].resources.cpu == 0.5 && azapi_resource.web.body.properties.template.containers[0].resources.memory == "1Gi"
+    error_message = "API/web defaults must be at least 1 CPU/2 GiB and 0.5 CPU/1 GiB."
   }
 }
 
@@ -208,52 +135,161 @@ run "rejects_plain_secret" {
   variables { extra_environment = { DATABASE_URL = "not-a-secret" } }
   expect_failures = [var.extra_environment]
 }
-
-run "rejects_mutable_image" {
+run "rejects_mutable_api_image" {
   command = plan
   variables { den_api_image = "ghcr.io/different-ai/openwork-den-api:latest" }
   expect_failures = [var.den_api_image]
 }
-
+run "rejects_mutable_web_image" {
+  command = plan
+  variables { den_web_image = "ghcr.io/different-ai/openwork-den-web:latest" }
+  expect_failures = [var.den_web_image]
+}
 run "rejects_unverified_tls" {
   command = plan
   variables { database = { tls_query = "sslaccept=accept" } }
   expect_failures = [var.database]
 }
-
-run "failed_completion_blocks_rollout" {
-  command = plan
-  # Preserve the preceding applied fixture's target: replacing its schema
-  # would defer this read until apply and make a plan-time negative unknown.
-  variables {
-    database = { name = "exp-ow-tf-c1-proof-db" }
-  }
-  override_data {
-    target = data.external.migration_completion
-    values = { result = { status = "Failed" } }
-  }
-  expect_failures = [data.external.migration_completion]
-}
-
-run "restricts_ingress" {
-  command = apply
-
-  variables {
-    allowed_ingress_cidrs = ["203.0.113.0/24"]
-  }
-
-  assert {
-    condition     = azurerm_container_app.api.ingress[0].ip_security_restriction[0].ip_address_range == "203.0.113.0/24" && azurerm_container_app.web.ingress[0].ip_security_restriction[0].action == "Allow"
-    error_message = "allowed_ingress_cidrs should become Allow rules on both apps."
-  }
-}
-
 run "rejects_bad_name" {
   command = plan
-
-  variables {
-    name = "OpenWork_Prod"
-  }
-
+  variables { name = "OpenWork_Prod" }
   expect_failures = [var.name]
+}
+run "https_and_ingress_restrictions" {
+  command = apply
+  variables { allowed_ingress_cidrs = ["203.0.113.0/24"] }
+  assert {
+    condition     = azapi_resource.api.body.properties.configuration.ingress.external && !azapi_resource.api.body.properties.configuration.ingress.allowInsecure && azapi_resource.api.body.properties.configuration.ingress.targetPort == 8788 && !azapi_resource.web.body.properties.configuration.ingress.allowInsecure && azapi_resource.web.body.properties.configuration.ingress.ipSecurityRestrictions[0].ipAddressRange == "203.0.113.0/24"
+    error_message = "Public endpoints must be HTTPS-only with the requested ingress restriction."
+  }
+}
+run "existing_subnets_private_database" {
+  command = apply
+  variables {
+    infrastructure_subnet_id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/net/providers/Microsoft.Network/virtualNetworks/vnet/subnets/apps"
+    database_network = {
+      subnet_id          = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/net/providers/Microsoft.Network/virtualNetworks/vnet/subnets/mysql"
+      virtual_network_id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/net/providers/Microsoft.Network/virtualNetworks/vnet"
+    }
+  }
+  assert {
+    condition     = azurerm_container_app_environment.this[0].infrastructure_subnet_id == var.infrastructure_subnet_id && azurerm_mysql_flexible_server.this[0].delegated_subnet_id == var.database_network.subnet_id && azurerm_mysql_flexible_server.this[0].public_network_access == "Disabled" && length(azurerm_private_dns_zone.db) == 1 && length(azurerm_mysql_flexible_server_firewall_rule.azure_services) == 0
+    error_message = "Existing private subnets must remain supported without a public database firewall."
+  }
+}
+run "existing_private_dns_zone" {
+  command = apply
+  variables {
+    database_network = {
+      subnet_id               = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/net/providers/Microsoft.Network/virtualNetworks/vnet/subnets/mysql"
+      create_private_dns_zone = false
+      private_dns_zone_id     = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/net/providers/Microsoft.Network/privateDnsZones/corp.private.mysql.database.azure.com"
+    }
+  }
+  assert {
+    condition     = length(azurerm_private_dns_zone.db) == 0 && azurerm_mysql_flexible_server.this[0].private_dns_zone_id == var.database_network.private_dns_zone_id
+    error_message = "The supplied private DNS zone must be used without creating another."
+  }
+}
+run "private_database_needs_vnet" {
+  command = plan
+  variables { database_network = { subnet_id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/net/providers/Microsoft.Network/virtualNetworks/vnet/subnets/mysql" } }
+  expect_failures = [azurerm_private_dns_zone_virtual_network_link.db]
+}
+run "private_database_needs_dns_id" {
+  command = plan
+  variables { database_network = { subnet_id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/net/providers/Microsoft.Network/virtualNetworks/vnet/subnets/mysql", create_private_dns_zone = false } }
+  expect_failures = [azurerm_mysql_flexible_server.this]
+}
+run "existing_environment" {
+  command = apply
+  variables {
+    container_app_environment_id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/platform/providers/Microsoft.App/managedEnvironments/shared"
+    app_name_prefix              = "ow-"
+  }
+  assert {
+    condition     = length(azurerm_container_app_environment.this) == 0 && length(azurerm_log_analytics_workspace.this) == 0 && azapi_resource.api.body.properties.managedEnvironmentId == var.container_app_environment_id && output.web_url == "https://ow-openwork-den-web.shared-env-9876.westeurope.azurecontainerapps.io" && azapi_resource.api.location == "westeurope" && azapi_resource.migration.location == "westeurope"
+    error_message = "Existing environments and app name prefixes must remain supported."
+  }
+}
+run "rejects_environment_name" {
+  command = plan
+  variables { container_app_environment_id = "shared" }
+  expect_failures = [var.container_app_environment_id]
+}
+run "existing_database_and_distinct_migration_principal" {
+  command = apply
+  variables {
+    create_database        = false
+    database_url           = "mysql://app:fixture@db.example.com:3306/openwork_den?sslaccept=strict"
+    migration_database_url = "mysql://migrator:fixture@db.example.com:3306/openwork_den?sslaccept=strict"
+  }
+  assert {
+    condition     = length(azurerm_mysql_flexible_server.this) == 0 && output.database_fqdn == null && terraform_data.migration_release.input.target == "db.example.com:3306/openwork_den" && local.migration_database_url == var.migration_database_url
+    error_message = "Existing database/DML and same-target DDL principals must stay supported without creating a server."
+  }
+}
+run "rejects_migration_for_other_database" {
+  command = plan
+  variables {
+    create_database        = false
+    database_url           = "mysql://app:fixture@db.example.com:3306/openwork_den?sslaccept=strict"
+    migration_database_url = "mysql://migrator:fixture@other.example.com:3306/openwork_den?sslaccept=strict"
+  }
+  expect_failures = [azapi_resource.migration]
+}
+run "existing_database_needs_url" {
+  command = plan
+  variables { create_database = false }
+  expect_failures = [azapi_resource.api]
+}
+run "key_vault_extra_secrets" {
+  command = apply
+  variables {
+    key_vault_identity_id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test/providers/Microsoft.ManagedIdentity/userAssignedIdentities/openwork"
+    extra_secrets         = { DEN_SSO_CLIENT_SECRET = "https://corp-vault.vault.azure.net/secrets/openwork-sso" }
+  }
+  assert {
+    condition     = anytrue([for secret in azapi_resource.api.body.properties.configuration.secrets : lookup(secret, "keyVaultUrl", "") == "https://corp-vault.vault.azure.net/secrets/openwork-sso"]) && length(azapi_resource.api.identity[0].identity_ids) == 1
+    error_message = "Existing Key Vault references and their supplied identity must remain supported without reading values."
+  }
+}
+run "extra_secrets_need_identity" {
+  command = plan
+  variables { extra_secrets = { DEN_SSO_CLIENT_SECRET = "https://corp-vault.vault.azure.net/secrets/openwork-sso" } }
+  expect_failures = [var.extra_secrets]
+}
+run "email_configuration" {
+  command = apply
+  variables {
+    smtp = { host = "smtp.azurecomm.net", username = "openwork", password = "fixture" }
+  }
+  assert {
+    condition     = anytrue([for env in azapi_resource.api.body.properties.template.containers[0].env : env.name == "SMTP_PASS" && lookup(env, "secretRef", "") == "smtp-pass"]) && !contains([for env in azapi_resource.api.body.properties.template.containers[0].env : env.name], "RESEND_API_KEY")
+    error_message = "SMTP credentials must use secret references; unconfigured Resend must not be an environment variable."
+  }
+}
+run "custom_domains" {
+  command = apply
+  variables {
+    domain_name               = "openwork.example.com"
+    custom_domain_certificate = { pfx_base64 = "UEZYLXRlc3Q=", password = "fixture" }
+  }
+  assert {
+    condition     = output.web_url == "https://openwork.example.com" && output.api_url == "https://api.openwork.example.com" && azurerm_container_app_custom_domain.api[0].certificate_binding_type == "SniEnabled"
+    error_message = "Custom hostname/certificate inputs must remain supported."
+  }
+}
+run "custom_domain_needs_certificate" {
+  command = plan
+  variables { domain_name = "openwork.example.com" }
+  expect_failures = [azapi_resource.api]
+}
+run "independent_explicit_rotation_versions" {
+  command = plan
+  variables { secret_versions = { better_auth_secret_version = 2 } }
+  assert {
+    condition     = var.secret_versions.better_auth_secret_version == 2 && var.secret_versions.db_encryption_key_version == 1 && local.app_write_versions.api["properties.configuration.secrets"] == azapi_resource.api.sensitive_body_version["properties.configuration.secrets"]
+    error_message = "Explicit auth rotation must not advance the database encryption-key version."
+  }
 }

@@ -14,9 +14,14 @@ output "setup_url" {
 }
 
 output "bootstrap_code" {
-  description = "Code to enter at /setup with an owner email."
-  value       = local.bootstrap_code
+  description = "Deprecated: always null, because persisting the bootstrap code would put a secret in state. Read the Container App managed secret locally instead."
+  value       = null
   sensitive   = true
+}
+
+output "bootstrap_secret_name" {
+  description = "Managed secret name to read locally from the API app for one-time setup; never its value."
+  value       = "den-initial-admin-bootstrap-code"
 }
 
 output "default_hostnames" {
@@ -43,12 +48,12 @@ output "container_app_environment_id" {
 }
 
 output "app_names" {
-  value = { den_api = azurerm_container_app.api.name, den_web = azurerm_container_app.web.name }
+  value = { den_api = azapi_resource.api.name, den_web = azapi_resource.web.name }
 }
 
 output "outbound_ip_addresses" {
   description = "Outbound IPs of den-api, for allowlists on anything else it must reach (an existing database, internal MCP servers)."
-  value       = azurerm_container_app.api.outbound_ip_addresses
+  value       = azapi_resource.api.output.properties.outboundIpAddresses
 }
 
 output "database_identifier" {
@@ -58,12 +63,12 @@ output "database_identifier" {
 
 output "migration_job_id" {
   description = "Singleton migration Job ARM resource ID."
-  value       = azurerm_container_app_job.migration.id
+  value       = azapi_resource.migration.id
 }
 
 output "migration_step_identifier" {
   description = "Cross-cloud contract alias for the native migration Job identifier."
-  value       = azurerm_container_app_job.migration.id
+  value       = azapi_resource.migration.id
 }
 
 output "migration_execution_id" {

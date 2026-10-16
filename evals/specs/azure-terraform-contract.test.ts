@@ -4,8 +4,9 @@ import { spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const directory = new URL("../../infra/terraform/modules/openwork-azure-container-apps/", import.meta.url).pathname;
+const directory = fileURLToPath(new URL("../../infra/terraform/modules/openwork-azure-container-apps/", import.meta.url));
 
 test("Azure migration observer waits for the exact execution and fails closed without starting or retrying jobs", async ({ evidence }) => {
   const temporary = mkdtempSync(join(tmpdir(), "azure-migration-observer-"));

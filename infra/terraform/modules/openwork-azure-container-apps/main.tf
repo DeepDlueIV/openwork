@@ -30,29 +30,32 @@ locals {
   database_url = var.create_database ? format(
     "mysql://%s:%s@%s:3306/%s?%s",
     azurerm_mysql_flexible_server.this[0].administrator_login,
-    random_password.db[0].result,
+    local.database_password,
     azurerm_mysql_flexible_server.this[0].fqdn,
     azurerm_mysql_flexible_database.this[0].name,
     var.database.tls_query,
   ) : var.database_url
 
-  bootstrap_code = var.initial_admin_bootstrap_code != "" ? var.initial_admin_bootstrap_code : random_password.bootstrap_code.result
+  database_password_candidate = var.database_admin_password != "" ? var.database_admin_password : ephemeral.random_password.secrets["db"].result
+  database_password           = var.secret_versions.database_password_version == try(local.saved_versions.database_password_version, 1) ? try(regex("^mysql://[^:]+:([^@]+)@", local.saved_secrets["database-url"])[0], local.database_password_candidate) : local.database_password_candidate
+  bootstrap_code              = var.initial_admin_bootstrap_code != "" ? var.initial_admin_bootstrap_code : ephemeral.random_password.secrets["bootstrap_code"].result
 
   # Mirrors the env the openwork-ee Helm chart puts in its ConfigMap and the
   # openwork-aws-ecs module sets; both apps receive the same set.
   environment = { for k, v in merge({
-    CI                                 = "true"
-    NODE_ENV                           = "production"
-    OPENWORK_DEV_MODE                  = "0"
-    DB_MODE                            = "mysql"
-    DEN_ORG_MODE                       = "single_org"
-    DEN_SINGLE_ORG_NAME                = var.org_name
-    DEN_SINGLE_ORG_SLUG                = var.org_slug
-    DEN_SINGLE_ORG_OWNER_EMAILS        = join(",", var.owner_emails)
-    DEN_SINGLE_ORG_ALLOW_PUBLIC_SIGNUP = local.bool[var.allow_public_signup]
-    DEN_REQUIRE_EMAIL_VERIFICATION     = local.bool[var.require_email_verification]
-    DEN_BASE_URL                       = local.web_url
-    BETTER_AUTH_URL                    = local.web_url
+    CI                                  = "true"
+    NODE_ENV                            = "production"
+    OPENWORK_DEV_MODE                   = "0"
+    OPENWORK_DEPLOYMENT_SECRETS_VERSION = jsonencode(var.secret_versions)
+    DB_MODE                             = "mysql"
+    DEN_ORG_MODE                        = "single_org"
+    DEN_SINGLE_ORG_NAME                 = var.org_name
+    DEN_SINGLE_ORG_SLUG                 = var.org_slug
+    DEN_SINGLE_ORG_OWNER_EMAILS         = join(",", var.owner_emails)
+    DEN_SINGLE_ORG_ALLOW_PUBLIC_SIGNUP  = local.bool[var.allow_public_signup]
+    DEN_REQUIRE_EMAIL_VERIFICATION      = local.bool[var.require_email_verification]
+    DEN_BASE_URL                        = local.web_url
+    BETTER_AUTH_URL                     = local.web_url
     # Set explicitly: Den would otherwise derive api.<web host>, which does
     # not exist for the default Container Apps hostnames. den-web returns it
     # to desktops from /api/runtime-config.
@@ -83,30 +86,25 @@ locals {
     nonsensitive(var.resend_api_key != "") ? ["RESEND_API_KEY"] : [],
   )
 
-  secret_values = {
+  generated_secret_values = {
     DATABASE_URL                     = local.database_url
-    BETTER_AUTH_SECRET               = random_password.better_auth.result
-    DEN_DB_ENCRYPTION_KEY            = random_password.db_encryption.result
+    BETTER_AUTH_SECRET               = var.better_auth_secret != "" ? var.better_auth_secret : ephemeral.random_password.secrets["better_auth"].result
+    DEN_DB_ENCRYPTION_KEY            = var.db_encryption_key != "" ? var.db_encryption_key : ephemeral.random_password.secrets["db_encryption"].result
     DEN_INITIAL_ADMIN_BOOTSTRAP_CODE = local.bootstrap_code
     SMTP_PASS                        = var.smtp.password
     RESEND_API_KEY                   = var.resend_api_key
+    REGISTRY_PASSWORD                = var.registry_password
   }
 
   # Env var name => Container Apps secret name (lowercase, hyphens).
   secret_env = { for k in concat(local.secret_env_names, keys(var.extra_secrets)) : k => lower(replace(k, "_", "-")) }
 }
 
-resource "random_password" "better_auth" {
-  length  = 48
-  special = false
-}
-
-resource "random_password" "db_encryption" {
-  length  = 48
-  special = false
-}
-
-resource "random_password" "bootstrap_code" {
-  length  = 24
-  special = false
+ephemeral "random_password" "secrets" {
+  for_each    = toset(["db", "better_auth", "db_encryption", "bootstrap_code"])
+  length      = each.key == "db" ? 32 : (each.key == "bootstrap_code" ? 24 : 48)
+  special     = false
+  min_upper   = 1
+  min_lower   = 1
+  min_numeric = 1
 }

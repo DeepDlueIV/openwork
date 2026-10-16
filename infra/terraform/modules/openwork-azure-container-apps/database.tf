@@ -7,16 +7,6 @@ locals {
   create_dns_zone  = local.database_private && try(var.database_network.create_private_dns_zone, false)
 }
 
-resource "random_password" "db" {
-  count = var.create_database ? 1 : 0
-
-  length      = 32
-  special     = false # embedded in DATABASE_URL
-  min_upper   = 1     # Azure requires three character classes
-  min_lower   = 1
-  min_numeric = 1
-}
-
 # Server names are global (<name>.mysql.database.azure.com).
 resource "random_string" "db_suffix" {
   count = var.create_database ? 1 : 0
@@ -61,11 +51,10 @@ resource "azurerm_mysql_flexible_server" "this" {
   sku_name            = var.database.sku_name
   zone                = var.database.zone
   administrator_login = "openwork"
-  # Keep the existing random resource address/value: contract adoption must not
-  # rotate the password. Container Apps secret values still require state; see
-  # the state guidance for this provider limitation.
-  administrator_password_wo         = random_password.db[0].result
-  administrator_password_wo_version = 1
+  # Ephemeral input never enters plan/state. Later runs do not write it unless
+  # the explicit password version changes (or the database is replaced).
+  administrator_password_wo         = local.database_password
+  administrator_password_wo_version = var.secret_versions.database_password_version
   backup_retention_days             = var.database.backup_retention_days
   tags                              = var.tags
 
@@ -89,6 +78,10 @@ resource "azurerm_mysql_flexible_server" "this" {
   depends_on = [azurerm_private_dns_zone_virtual_network_link.db]
 
   lifecycle {
+    precondition {
+      condition     = !data.azapi_resource.existing_database[0].exists || data.azapi_resource.existing_api.exists || (data.azapi_resource.existing_migration.exists && var.migration_database_url == "") || var.database_password_recovery_acknowledged
+      error_message = "A database exists but no cloud credential copy can be recovered. Stop and preserve/reset its password explicitly before acknowledging recovery; do not regenerate silently."
+    }
     precondition {
       condition     = !local.database_private || local.create_dns_zone || try(var.database_network.private_dns_zone_id, "") != ""
       error_message = "database_network with create_private_dns_zone = false needs private_dns_zone_id."

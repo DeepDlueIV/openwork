@@ -237,10 +237,35 @@ variable "org_slug" {
 }
 
 variable "initial_admin_bootstrap_code" {
-  description = "One-time /setup code. Empty generates one (see the bootstrap_code output)."
+  description = "One-time /setup code. Empty generates an ephemeral value written only to the cloud secret store. Read it locally from the app; it is not an output value."
   type        = string
   default     = ""
   sensitive   = true
+  ephemeral   = true
+}
+
+variable "better_auth_secret" {
+  description = "Optional preserved auth secret for adopting an existing prototype. Empty generates on creation; later applies do not overwrite without a version bump."
+  type        = string
+  default     = ""
+  sensitive   = true
+  ephemeral   = true
+}
+
+variable "db_encryption_key" {
+  description = "Optional preserved encryption key for adoption. Never change/rotate without a reviewed re-encryption procedure."
+  type        = string
+  default     = ""
+  sensitive   = true
+  ephemeral   = true
+}
+
+variable "database_admin_password" {
+  description = "Optional preserved managed-database password for adoption. Written only through write-only fields."
+  type        = string
+  default     = ""
+  sensitive   = true
+  ephemeral   = true
 }
 
 variable "allow_public_signup" {
@@ -293,6 +318,10 @@ variable "extra_secrets" {
   validation {
     condition     = length(var.extra_secrets) == 0 || var.key_vault_identity_id != ""
     error_message = "extra_secrets requires key_vault_identity_id."
+  }
+  validation {
+    condition     = alltrue([for name in keys(var.extra_secrets) : !contains(["DATABASE_URL", "BETTER_AUTH_SECRET", "DEN_DB_ENCRYPTION_KEY", "DEN_INITIAL_ADMIN_BOOTSTRAP_CODE", "SMTP_PASS", "RESEND_API_KEY", "REGISTRY_PASSWORD"], name)])
+    error_message = "extra_secrets adds distinct names; use the dedicated inputs/version counters for managed core secrets."
   }
 }
 
@@ -405,6 +434,31 @@ variable "database" {
   validation {
     condition     = var.database.tls_query == "sslaccept=strict"
     error_message = "database.tls_query must be sslaccept=strict (verified TLS); insecure legacy settings are no longer accepted."
+  }
+}
+
+variable "database_password_recovery_acknowledged" {
+  description = "Recovery-only acknowledgement for a surviving managed database with no recoverable cloud credential copy. Preserve its password through database_admin_password, or deliberately reset it with an explicit version bump. Never enable for routine applies."
+  type        = bool
+  default     = false
+}
+
+variable "secret_versions" {
+  description = "Explicit write-only rotation gates. Later applies/upgrades do not rotate values. Bump only the intended counter; never bump db_encryption_key_version without a reviewed re-encryption procedure."
+  type = object({
+    database_password_version      = optional(number, 1)
+    better_auth_secret_version     = optional(number, 1)
+    db_encryption_key_version      = optional(number, 1)
+    bootstrap_code_version         = optional(number, 1)
+    smtp_password_version          = optional(number, 1)
+    resend_api_key_version         = optional(number, 1)
+    registry_password_version      = optional(number, 1)
+    migration_database_url_version = optional(number, 1)
+  })
+  default = {}
+  validation {
+    condition     = alltrue([for version in values(var.secret_versions) : version >= 1 && version == floor(version)])
+    error_message = "Secret version counters must be positive integers."
   }
 }
 

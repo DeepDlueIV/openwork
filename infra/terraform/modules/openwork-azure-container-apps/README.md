@@ -23,8 +23,8 @@ Workbot, runners, Slack and OpenWork Web are not deployed. Existing product flag
 | --- | --- | --- | --- |
 | 2026-10-13 | Terraform 1.16, OpenTofu 1.11; AzureRM 5.0 / 5.9 | Legacy init-container module, 0.18.58, private MySQL, setup/browser/isolated desktop, destroy | Passed; not proof of the new Job topology |
 | 2026-10-14 | Terraform 1.16.5 / OpenTofu 1.11.14; AzureRM 5.9 | Legacy module, 0.18.58 to dev, one API replica, retained administrator/org, browser/desktop, destroy | Passed; not a two-replica result |
-| 2026-10-15 | Terraform 1.16.5 / OpenTofu 1.11.14; AzureRM 5.10, AzAPI 2.13, external 2.4, random 3.9 | Contract mocked tests, 26 runs on each tool | Passed |
-| 2026-10-15 | Same providers | New Job module, two-replica release-to-dev live conformance | NotRun; do not infer live support from mock tests |
+| 2026-10-15 | Terraform 1.16.5 / OpenTofu 1.11.14; AzureRM 5.10, AzAPI 2.13, external 2.4, random 3.9 | Contract mocked tests, 27 runs on each tool | Passed |
+| 2026-10-15 | Same providers | State-free defaults, two API replicas, 0.18.58 to dev ae7483e; setup, retained data/secrets/session, browser and isolated Electron | Passed; 15 managed resources destroyed, permanent log purge and empty inventories verified |
 
 ## Support level
 
@@ -50,6 +50,10 @@ The database lock protects out-of-band deletions. **Terraform destroy removes it
 ```hcl
 module "openwork" {
   source = "github.com/different-ai/openwork//infra/terraform/modules/openwork-azure-container-apps?ref=<reviewed-commit>"
+  providers = {
+    azapi             = azapi
+    azapi.secret_read = azapi
+  }
 
   openwork_version    = "0.18.58"
   owner_emails        = ["admin@example.com"]
@@ -64,9 +68,11 @@ module "openwork" {
 }
 ```
 
+Declare `Azure/azapi ~> 2.13` in your root and pass the same authenticated provider to both bindings above (or a separate trusted secret-read configuration). The module declares aliases but configures no providers. `examples/complete` includes the complete root setup. The separate read binding also permits Terraform's mock tests to keep ephemeral-resource schemas real without making any cloud calls.
+
 The default image pair is pinned to 0.18.58 digests, not resolved from mutable tags. For another release provide **both** image digest overrides (or full digest-pinned image references) together with its `openwork_version` label. Tag-only legacy overrides are deliberately rejected; replace them with their verified manifest digest.
 
-After apply, check API `/ready` and web `/api/ready`: migration completion is gated, but ARM app creation still precedes app health. Read the sensitive `bootstrap_code` locally, open `setup_url`, and create the first administrator with an allowed email. Set OpenWork Desktop's control plane URL to `web_url`; `/api/runtime-config` advertises the API origin.
+After apply, check API `/ready` and web `/api/ready`: migration completion is gated, but ARM app creation still precedes app health. Read `den-initial-admin-bootstrap-code` locally from the API app's managed secrets (prefer the portal; for CLI, select only that name from `az containerapp secret list --show-values`, not the entire secret collection), open `setup_url`, and create the first administrator with an allowed email. Do not paste the secret into logs or chat. `bootstrap_code` is now a deprecated null output so it cannot persist a credential in state; `bootstrap_secret_name` identifies the cloud secret. Set OpenWork Desktop's control plane URL to `web_url`; `/api/runtime-config` advertises the API origin.
 
 ## Upgrade notes
 
@@ -80,13 +86,24 @@ After apply, check API `/ready` and web `/api/ready`: migration completion is ga
 
 Fresh installs have no legacy migrators, but still need one coordinator per physical schema. API digest, database identifier or sensitive connection-URL hash changes replace the native start action; a receipt for a previous database is never reused just because its display identifier stayed the same. `migration_deployment_id` permits a deliberate same-image attempt after operator inspection; never set it to a timestamp. Scaling app replicas does not create another migration execution.
 
-**Secrets are preserved:** existing `random_password` resource addresses and values are unchanged. Adoption does not regenerate auth/encryption/bootstrap/database secrets. The admin password now uses AzureRM's write-only argument with the existing value; its random source and Container Apps secret copies still live in state. Do not remove/import/recreate random resources to adopt this change. Existing database URLs must change from unverified `sslaccept=accept` to `sslaccept=strict`; conflicting TLS parameters are rejected.
+**Adopting an older unmerged prototype is not a direct apply.** This module was not released; app/Job resource ownership changes from AzureRM to AzAPI to avoid AzureRM's readable secret fields. Before adopting an existing installation, preserve its current cloud secret values, freeze/fence legacy migration owners as above, forget the old app state bindings without destroying cloud resources and import those exact resources into the AzAPI addresses. Supply the unchanged values through the ephemeral `better_auth_secret`, `db_encryption_key`, `database_admin_password` and `initial_admin_bootstrap_code` inputs for the adoption apply. Do not let generated defaults replace an existing encryption key. Keep a protected recovery copy outside Terraform and verify an unchanged-secret plan before proceeding. New installations use state-free defaults automatically. Existing database URLs must use `sslaccept=strict`; conflicting or unverified TLS settings are rejected.
 
 ## State guidance
 
 Use encrypted, access-controlled remote state and restrict state/plan/log access. Azure Blob state supports backend locking; configure the backend in the root, never inside this reusable module. If using an S3 backend, use `use_lockfile = true`, not DynamoDB locking.
 
-AzureRM's Container Apps app/Job secret fields are not write-only, so auth/encryption/database credentials remain in state. The MySQL `_wo` field avoids another provider copy but does not erase the preserved random source. No unreviewed generation change is made: losing the encryption key makes stored credentials unreadable. Extra Key Vault references keep their values outside Terraform; grant the supplied user-assigned identity vault access yourself.
+**State-free secrets are the default, not an opt-in.** Ephemeral random values feed AzAPI `sensitive_body` and AzureRM's MySQL `administrator_password_wo`. Persistent app/Job bodies hold only secret names/references and non-secret deployment hashes. Existing values are recovered through ephemeral cloud reads. Independent `secret_versions.*_version` counters select deliberate rotations; full-resource PUTs resend the existing values through a write-only collection gate because Azure rejects name-only secret collections. No generated password resource or bootstrap-code value is persisted. Readable secret export operations are not Terraform data sources. Extra Key Vault references keep their values outside Terraform too; grant the supplied user-assigned identity vault access yourself. Optional custom-domain PFX material still uses the AzureRM certificate resource's sensitive arguments; that non-default provider path can retain certificate material in state and needs protected state or separately managed certificates.
+
+## Secrets and later runs
+
+- Later applies and image upgrades **do not rotate secrets or sign anyone out**. When rotation counters are unchanged, ephemeral reads recover the existing cloud values, including for a partially created app, rather than distributing newly generated credentials.
+- Rotation happens only through an explicit `secret_versions.*_version` bump or a forced replacement of the corresponding resource. Keep counters positive and monotonic. **Never rotate the database encryption key without a reviewed re-encryption procedure.** Database-password rotation updates its URL copies too; perform rotations in maintenance and verify all consumers before reopening traffic. Forced app/Job/database replacement is not routine maintenance.
+- The **Container Apps managed secret store is the only durable copy** of generated values (or Key Vault for supplied references). Protect it and keep secure recovery backups, including the database encryption key; state is not a secret backup. Restrict cloud secret-read/start access to trusted operators. Never log backup values.
+- Manual edits to cloud secret values are not detected or reconciled by write-only fields. Changing an input value alone is not a rotation request; bump the intended version deliberately.
+- Losing state, deleting the cloud secret store or forcing replacement can regenerate values and make existing encrypted data unreadable. Protect and back up state metadata as well as the secret store; recover existing values before any re-creation.
+- Both **Terraform and OpenTofu require >= 1.11, < 2.0** for ephemeral/write-only support.
+
+The default app stores contain four core secrets; optional email/registry secrets are added only when configured. The migration container receives only its database/encryption bindings and optional registry credentials, never app auth or email secrets. If a database survived a failed first apply before any cloud credential copy existed, the module fails closed. Preserve its password through the ephemeral input or deliberately reset it with a version bump, then use `database_password_recovery_acknowledged` for that recovery only. Do not acknowledge blindly. Changing an existing database URL also requires its explicit secret-version bump.
 
 No module lock file is shipped. Generate locks in your root/example separately for the chosen tool: `terraform init` or `tofu init`. Their registry addresses and checksums can differ; do not reuse one tool's lock in read-only mode for the other without generating compatible entries. Commit the appropriate root lock; do not publish provider caches or state.
 
@@ -101,14 +118,17 @@ No module lock file is shipped. Generate locks in your root/example separately f
 | `den_api_image_digest` | `sha266:0942e02a8e2033151e982f51b24926fe5090807b7f7480d77f2c4fc5b806737e` | 0.18.58 API / migration pin |
 | `den_web_image_digest` | `sha266:b1543b2bb36df0a7c75d7dc18cdd773eb2e87df268169dcb1e284439299ada3f` | 0.18.58 web pin |
 | `registry`, `registry_password` | `null`, sensitive `""` | Existing private registry identity or username/password |
-| `container_app_environment_id`, `infrastructure_subnet_id` | `""`, `""` | Existing environment or subnet for new environment |
+| `container_app_environment_id`, `infrastructure_subnet_id` | `""`, `""` | Existing environment or subnet for new environment; apps/Job inherit an existing environment's actual region |
 | `internal_load_balancer_enabled`, `workload_profile_name` | `false`, `Consumption` | Internal-only ingress; workload profile |
 | `create_log_analytics_workspace`, `log_analytics_workspace_id`, `log_retention_days` | `true`, `""`, `30` | New/existing log sink and retention |
 | `app_name_prefix`, `user_assigned_identity_ids` | `""`, `[]` | App name namespace; preauthorized identities |
 | `domain_name`, `api_domain_name`, `custom_domain_certificate` | `""`, `""`, `null` | Default HTTPS hosts or custom hostnames and sensitive PFX |
 | `allowed_ingress_cidrs` | `[]` | Empty permits all HTTPS ingress |
 | `org_name`, `org_slug` | `OpenWork`, `default` | Organization display name and slug |
-| `initial_admin_bootstrap_code` | Generated, preserved | Sensitive one-time setup code |
+| `initial_admin_bootstrap_code` | Ephemeral generation, preserved in cloud | Ephemeral optional one-time setup code |
+| `better_auth_secret`, `db_encryption_key`, `database_admin_password` | Ephemeral generation, preserved in cloud | Ephemeral preservation inputs for adoption; never state outputs |
+| `secret_versions` | All `*_version` counters `1` | Explicit independent database/auth/encryption/bootstrap/SMTP/Resend/registry/migration-URL rotation gates |
+| `database_password_recovery_acknowledged` | `false` | Recovery-only acknowledgement after explicitly preserving/resetting a surviving database's credential; never a routine-apply option |
 | `allow_public_signup`, `require_email_verification` | `false`, `false` | Public enrollment and email requirement |
 | `automations_enabled`, `dashboards_enabled`, `openwork_web_url` | `false`, `false`, `""` | Preserved legacy product inputs |
 | `extra_environment`, `extra_secrets`, `key_vault_identity_id` | `{}`, `{}`, `""` | Non-secret env; env-to-Key-Vault-ID map; preauthorized identity |
@@ -128,7 +148,7 @@ No module lock file is shipped. Generate locks in your root/example separately f
 | --- | --- |
 | `web_url`, `api_url` | Public HTTPS origins |
 | `database_identifier`, `migration_step_identifier`, `migration_job_id`, `migration_execution_id` | Shared contract database and exact migration identities |
-| `setup_url`, `bootstrap_code` | Setup page and sensitive one-time code |
+| `setup_url`, `bootstrap_secret_name`, `bootstrap_code` | Setup page, cloud secret name and deprecated null code output (no secret value in state) |
 | `default_hostnames`, `custom_domain_dns_records` | App CNAME targets and Azure DNS verification records |
 | `container_app_environment_id`, `app_names`, `outbound_ip_addresses` | Runtime infrastructure and outbound allowlist |
 | `database_fqdn`, `database_server_name`, `log_analytics_workspace_id` | Preserved existing monitoring outputs |
@@ -136,14 +156,21 @@ No module lock file is shipped. Generate locks in your root/example separately f
 ## Tests
 
 ```bash
-terraform init -backend=false && terraform validate && terraform test
-# In a separate tool-specific root/cache, or regenerate the local lock:
-tofu init -backend=false && tofu validate && tofu test
+# Validate through the supported root, which binds the secret-read alias.
+terraform -chdir=examples/complete init -backend=false
+terraform -chdir=examples/complete validate
+terraform init -backend=false && terraform test
+# Repeat with OpenTofu, regenerating its local root/example locks:
+tofu -chdir=examples/complete init -backend=false
+tofu -chdir=examples/complete validate
+tofu init -backend=false && tofu test
 ```
 
 Mocks never contact Azure. `evals/specs/azure-terraform-contract.test.ts` negative-controls the read-only completion observer without requiring Azure access. Run the module HCL suite with both CLI commands above; the normal application CI lane does not install Terraform/OpenTofu. Live attached-Den specs stay local because CI has no live deployment.
 
 ## Cost notes
+
+Regional capacity may reject new environments with `ManagedEnvironmentCapacityHeavyUsageError`. The conformance run's first eastus attempt failed this way; after full failed-stack cleanup, one fresh eastus retry succeeded. No existing environment was reused and no region switch was needed. An alternate authorized region may be necessary for another deployment; clean up the failed attempt before switching.
 
 The earlier one-replica test measured under USD 1 estimated for a short session, not a settled bill. Rough always-on East US defaults were estimated at USD 2–4/day before logs/traffic; these are not production quotes. Two API replicas increase consumption. The migration Job is short-lived; Azure may retain execution history. Use Azure pricing and your plan's actual reservations before committing spend.
 

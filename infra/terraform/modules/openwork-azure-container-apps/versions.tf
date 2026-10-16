@@ -11,8 +11,9 @@ terraform {
       version = "~> 3.6"
     }
     azapi = {
-      source  = "Azure/azapi"
-      version = "~> 2.10"
+      source                = "Azure/azapi"
+      version               = "~> 2.13"
+      configuration_aliases = [azapi.secret_read]
     }
     external = {
       source  = "hashicorp/external"

@@ -123,7 +123,8 @@ module "network" {
 }
 
 module "platform" {
-  source = "../../../terraform/modules/openwork-aws-ecs"
+  # Frozen installer implementation; the shared module is for direct users.
+  source = "./modules/openwork-aws-ecs"
 
   name             = module.contract.name
   openwork_version = var.openwork_version

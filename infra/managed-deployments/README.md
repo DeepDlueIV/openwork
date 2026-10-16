@@ -13,13 +13,33 @@ aws/
   terraform/         AWS root: contract + network + platform + health agent
     modules/network/       AWS "network" building block
     modules/health-agent/  AWS "health agent" building block
+    modules/openwork-aws-ecs/  Frozen pre-contract AWS platform
 tools/               Release build and publication (provider argument)
 tests/               Installer, runner and health agent tests
 ```
 
-The platform building block for AWS is the existing
-`infra/terraform/modules/openwork-aws-ecs` module, so a managed install and a
-hand-run Terraform install deploy the same thing.
+The managed AWS platform is a frozen pre-contract copy at
+`aws/terraform/modules/openwork-aws-ecs`. It is intentionally independent of
+`infra/terraform/modules/openwork-aws-ecs`, which evolves for direct Terraform
+users. Existing managed installs keep their prior resource definitions, task-local
+migration behavior, secrets, image selection and provider pins.
+
+## Frozen AWS platform boundary
+
+The complete snapshot is byte-identical to the shared module at source commit
+`47dd6753da15a0144011cb00e65e39c0a5f2e9d7`, Git tree
+`e8598102dcf7d5e59db5885949815cf56f4960f1`. The release builder packages its ten
+operational Terraform files under the managed root, excluding examples/tests,
+and never packages the independently evolving direct-user module. A regression
+test checks the pinned whole snapshot and the actual archive file bytes; the
+existing Python workflow discovers and runs this regression test as well.
+
+This is a compatibility boundary, not adoption of the newer module's security
+or migration lifecycle. Do not refresh the snapshot as part of unrelated module
+work. A separate owner-reviewed installer migration must handle supporting-file
+packaging, deployment-scoped Lambda/IAM/log permissions and customer re-approval,
+legacy maintenance/drain fencing, and update/version semantics. Until then,
+bootstrap, runner, health agent, provider pins and existing state remain unchanged.
 
 ## The contract every cloud implements
 

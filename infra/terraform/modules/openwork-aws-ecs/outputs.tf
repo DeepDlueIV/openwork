@@ -25,7 +25,7 @@ output "setup_url" {
 
 output "bootstrap_code" {
   description = "Code to enter at /setup with an owner email."
-  value       = local.bootstrap_code
+  value       = var.write_only_secrets ? null : local.bootstrap_code
   sensitive   = true
 }
 
@@ -100,6 +100,16 @@ output "target_group_arns" {
 output "database_identifier" {
   description = "RDS instance identifier, for health monitoring. Null with database_url."
   value       = var.create_database ? aws_db_instance.this[0].identifier : null
+}
+
+output "migration_step_identifier" {
+  description = "Standalone ECS migration task definition; API replicas never migrate."
+  value       = aws_ecs_task_definition.migrate.arn
+}
+
+output "migration_result" {
+  description = "Migration task ARN, intended image and terminal exit result."
+  value       = jsondecode(aws_lambda_invocation.migrate.result)
 }
 
 output "certificate_arn" {

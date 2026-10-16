@@ -42,8 +42,9 @@ const included = [
   "infra/managed-deployments/aws/runner/runner.py",
   "infra/managed-deployments/aws/health/health_agent.py",
   ...files("infra/managed-deployments/contract", terraform),
-  ...files("infra/managed-deployments/aws/terraform", terraform),
-  ...files("infra/terraform/modules/openwork-aws-ecs", (name) => name.endsWith(".tf")).filter((path) => !path.includes("/examples/") && !path.includes("/tests/")),
+  // The managed root owns its frozen module. Never pull the independently
+  // evolving direct-user module (or examples/tests) into an installer release.
+  ...files("infra/managed-deployments/aws/terraform", terraform).filter((path) => !path.includes("/examples/") && !path.includes("/tests/")),
 ];
 const stage = mkdtempSync(resolve(tmpdir(), "openwork-managed-release-"));
 try {
@@ -56,7 +57,10 @@ try {
     checksums[relative(stage, destination)] = createHash("sha256").update(readFileSync(destination)).digest("hex");
   }
   writeFileSync(resolve(stage, "release.json"), JSON.stringify({ provider, version, protocolVersion: 1, files: checksums }, null, 2) + "\n");
-  execFileSync("tar", ["-czf", resolve(output, "bundle.tar.gz"), "-C", stage, "infra", "release.json"]);
+  execFileSync("tar", ["-czf", resolve(output, "bundle.tar.gz"), "-C", stage, "infra", "release.json"], {
+    // macOS must not add unmanifested AppleDouble/xattr sidecars to a release.
+    env: { ...process.env, COPYFILE_DISABLE: "1" },
+  });
   const digest = (name) => createHash("sha256").update(readFileSync(resolve(output, name))).digest("hex");
   writeFileSync(resolve(output, "manifest.json"), JSON.stringify({ provider, version, protocolVersion: 1, bundleSha256: digest("bundle.tar.gz"), templateSha256: digest("cloudformation.json") }, null, 2) + "\n");
   console.log(`Built ${provider} installer ${version}: ${output}`);

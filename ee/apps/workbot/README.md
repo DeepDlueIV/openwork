@@ -71,10 +71,11 @@ Workbot. Enable it through Den's existing Features controls; there is no separat
 Workbot environment switch.
 
 Recent and My Drive use the member's real Drive API v3 connection. Missing
-access offers Connect/Reconnect. Google Sheets, Excel, Google Docs, Word and
-UTF-8 text open in internal tabs with explicit save-to-original-file actions;
-PDFs/images preview inline. Other formats link to the original editor. This is
-bounded cell/text editing, not full Office layout or collaboration parity.
+access offers Connect/Reconnect. Word and Excel open in the self-hosted,
+open-source Collabora editor, with explicit Save to Drive. Native Google Docs
+and Sheets open as exported Office copies; their first save creates a new Office
+file and preserves the Google original. UTF-8 text supports inline editing;
+PDFs/images preview inline. Other formats link to the original editor.
 
 The host protects dirty tabs before navigation. Den independently checks the
 feature, membership, OAuth read/write scopes and the exact Google connection.

@@ -40,15 +40,30 @@ for (const { title, mode } of cases) {
     probe = probe.on(world.app);
     agent = agent.on(world.app);
     const mount = `/workspace/${encodeURIComponent(world.workspace.workspaceId)}/opencode2/api`;
-    const read = async (path: string): Promise<unknown> => {
+    const read = async (path: string, envelope = false): Promise<unknown> => {
       const response = await probe.desktopApi(`${mount}${path}`);
       expect(response.status).toBe(200);
-      return record(response.body).data;
+      return envelope ? response.body : record(response.body).data;
     };
     const messages = async () => {
-      const value = await read(`/session/${world.session.sessionId}/message`);
-      if (!Array.isArray(value)) throw new Error("Expected engine messages");
-      return value.map((entry: unknown) => {
+      const value: unknown[] = [];
+      const seen = new Set<string>();
+      let cursor: string | undefined;
+      let paged = false;
+      do {
+        const query = new URLSearchParams({ limit: "200", ...(cursor ? { cursor } : {}) });
+        const page = record(await read(`/session/${world.session.sessionId}/message?${query}`, true));
+        if (!Array.isArray(page.data)) throw new Error("Expected engine messages");
+        value.push(...page.data);
+        paged ||= "cursor" in page;
+        const next = page.cursor ? record(page.cursor).next : null;
+        cursor = typeof next === "string" ? next : undefined;
+        if (cursor && seen.has(cursor)) throw new Error("Engine message cursor did not advance");
+        if (cursor) seen.add(cursor);
+      } while (cursor);
+      // Native pages are newest first; the continuity claim compares history
+      // in chronological order, including across page boundaries.
+      return (paged ? value.toReversed() : value).map((entry: unknown) => {
         const message = record(entry);
         // Native user messages store text on the message; assistant replies
         // carry content parts. Context entries also include model-only rows.

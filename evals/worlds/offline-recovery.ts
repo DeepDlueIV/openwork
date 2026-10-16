@@ -9,6 +9,7 @@ type OfflineFault = {
   prompts: number;
   stops: number;
   probes: number;
+  remoteCatalogs: number;
   setOffline(value: boolean): void;
 };
 declare global { interface Window { __offlineRecoveryFault?: OfflineFault } }
@@ -43,7 +44,7 @@ async function createOfflineRecoveryWorld(seed: Seed, onlineModel: boolean) {
   const registration = await addInitScript(app.client, browserScript((providerId, modelId, onlineModel) => {
     const original = window.fetch.bind(window);
     const fault: OfflineFault = window.__offlineRecoveryFault = {
-      disconnected: false, prompts: 0, stops: 0, probes: 0,
+      disconnected: false, prompts: 0, stops: 0, probes: 0, remoteCatalogs: 0,
       setOffline(value) {
         this.disconnected = value;
         window.dispatchEvent(new Event(value ? "offline" : "online"));
@@ -63,7 +64,7 @@ async function createOfflineRecoveryWorld(seed: Seed, onlineModel: boolean) {
       const response = await original(input, init);
       // The model witness runs locally. Its catalog advertises the remote URL
       // an online provider has, while its actual requests stay deterministic.
-      if (onlineModel && engineRequest && method === "GET" && /\/(?:provider|model)$/.test(url.pathname) && response.ok) {
+      if (onlineModel && engineRequest && method === "GET" && /\/(?:provider|model|config\/providers)$/.test(url.pathname) && response.ok) {
         const text = await response.clone().text();
         try {
           const body: unknown = JSON.parse(text);
@@ -71,6 +72,7 @@ async function createOfflineRecoveryWorld(seed: Seed, onlineModel: boolean) {
             if (!value || typeof value !== "object") return;
             const remoteApi = { id: modelId, url: "https://report-model.example.test/v1", npm: "@ai-sdk/openai-compatible" };
             if (Reflect.get(value, "id") === providerId) {
+              fault.remoteCatalogs++;
               const options: unknown = Reflect.get(value, "options");
               Reflect.set(value, "options", { ...(options && typeof options === "object" ? options : {}), baseURL: remoteApi.url });
               const models: unknown = Reflect.get(value, "models");
@@ -104,7 +106,7 @@ async function createOfflineRecoveryWorld(seed: Seed, onlineModel: boolean) {
     counts: () => seed.evalIn(app, () => {
       const state = window.__offlineRecoveryFault;
       if (!state) throw new Error("The connectivity fault is not installed");
-      return { prompts: state.prompts, stops: state.stops, probes: state.probes };
+      return { prompts: state.prompts, stops: state.stops, probes: state.probes, remoteCatalogs: state.remoteCatalogs };
     }),
     modelRequests: () => witness.agentRequests({ promptMarker: RETRY_PROMPT }),
     async [Symbol.asyncDispose]() { await registration.dispose(); },

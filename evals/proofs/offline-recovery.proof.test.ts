@@ -24,6 +24,9 @@ test("a member keeps completed work and explicitly continues after losing their 
       within: 15_000, label: "the enabled recovery switch has reached the conversation", until: (value) => value.elements.length === 1,
     });
     await user.see("composer", { editable: true });
+    await probe.eventually(() => world.counts(), {
+      within: 15_000, label: "the connected catalog advertises the online provider endpoint", until: (value) => value.remoteCatalogs > 0,
+    });
     await user.type("composer", SAVED_PROMPT);
     await user.click("Run task");
     await user.see({ text: SAVED_REPLY }, { timeoutMs: 90_000 });

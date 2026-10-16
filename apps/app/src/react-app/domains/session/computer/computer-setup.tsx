@@ -8,8 +8,8 @@ import { cn } from "@/lib/utils"
 import type { ComputerBusy } from "./computer-control"
 
 const permissions: Array<{ id: ComputerPermission; title: string; purpose: string }> = [
-  { id: "accessibility", title: "Accessibility", purpose: "Use app controls, the mouse and the keyboard in the window you approve." },
-  { id: "screenRecording", title: "Screen Recording", purpose: "See that window. macOS may call it Screen & System Audio Recording." },
+  { id: "accessibility", title: "Accessibility", purpose: "Use app controls, the mouse and the keyboard in Mac apps." },
+  { id: "screenRecording", title: "Screen Recording", purpose: "See app windows. macOS may call it Screen & System Audio Recording." },
 ]
 // After opening a pane, give macOS a moment before offering the stale-entry fix.
 const STUCK_AFTER_MS = 15_000
@@ -36,7 +36,7 @@ function Row({ done, waiting, title, detail, children, testId }: { done: boolean
  * One live checklist: both macOS permissions and this chat's allowance. Every
  * status comes from a fresh helper probe; guidance never grants anything.
  */
-export function ComputerSetup({ snapshot, readError, actionError, busy, onPermission, onReset, onRefresh, onAllow, onAlways, onClose }: {
+export function ComputerSetup({ snapshot, readError, actionError, busy, onPermission, onReset, onRefresh, onClose }: {
   snapshot: ComputerSnapshot | null
   readError: string
   actionError: string
@@ -44,8 +44,6 @@ export function ComputerSetup({ snapshot, readError, actionError, busy, onPermis
   onPermission: (permission: ComputerPermission) => void
   onReset: (permission: ComputerPermission) => void
   onRefresh: () => void
-  onAllow: () => void
-  onAlways: () => void
   onClose: () => void
 }) {
   const [opened, setOpened] = useState<Partial<Record<ComputerPermission, number>>>({})
@@ -55,9 +53,8 @@ export function ComputerSetup({ snapshot, readError, actionError, busy, onPermis
   const startedDone = useRef<boolean | null>(null)
   const verified = readError ? undefined : snapshot?.permissions
   const granted = snapshot?.readiness === "ready"
-  const allowed = Boolean(snapshot?.allowed)
   const entry = snapshot?.entry.name ?? "OpenWork"
-  const done = granted && allowed
+  const done = granted
   if (startedDone.current === null && snapshot && !readError) startedDone.current = done
   const nextPermission = permissions.find((permission) => verified?.[permission.id] !== true)?.id
 
@@ -114,14 +111,6 @@ export function ComputerSetup({ snapshot, readError, actionError, busy, onPermis
                   </Row>
                 )
               })}
-              <Row testId="session-computer-permission-chat" done={allowed} waiting={false} title="Allow this chat" detail={snapshot?.alwaysAllowed ? "Always allowed: every chat can use this Mac." : "Only this chat, saved until you revoke it. Always allow covers every chat."}>
-                {!allowed ? (
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    <Button size="sm" variant={granted ? "default" : "outline"} disabled={busy !== null || !snapshot} aria-busy={busy === "allow"} data-testid="session-computer-setup-allow" onClick={onAllow}>Allow for this chat</Button>
-                    <Button size="sm" variant="ghost" disabled={busy !== null || !snapshot} aria-busy={busy === "always"} data-testid="session-computer-setup-always" onClick={onAlways}>Always allow</Button>
-                  </div>
-                ) : null}
-              </Row>
             </ol>
           )}
         {readError ? <p role="alert" className="text-xs text-red-11">Couldn't check this Mac. {readError}</p> : null}
@@ -129,8 +118,7 @@ export function ComputerSetup({ snapshot, readError, actionError, busy, onPermis
         {!done ? (
           <details className="text-xs leading-relaxed text-muted-foreground">
             <summary className="cursor-pointer text-foreground">What these permissions allow</summary>
-            <p className="mt-2">macOS grants them to {entry}, which runs the OpenWork Computer Use helper. The agent still sees only the one window you approve, and its content goes to your AI model provider. If macOS offers Quit &amp; Reopen, choose Later: this list checks again on its own.</p>
-            <p className="mt-2">Allowing a chat doesn't approve purchases, sending messages or deleting files. You can take over or stop anytime, and Stop &amp; revoke turns the chat off. macOS permissions stay on until you turn them off in System Settings.</p>
+            <p className="mt-2">macOS grants them to {entry}, which runs the OpenWork Computer Use helper. The agent still sees the app window it is using, and its content goes to your AI model provider. If macOS offers Quit &amp; Reopen, choose Later: this list checks again on its own.</p>
           </details>
         ) : null}
         <DialogFooter>

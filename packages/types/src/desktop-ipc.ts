@@ -346,7 +346,7 @@ export type ComputerPermission = "accessibility" | "screenRecording";
 /** The agent needs computer use this chat does not have yet: setup, or the person's allowance. */
 export type ComputerRequest = {
   id: string;
-  reason: "setup" | "allow";
+  reason: "setup";
   appId?: string;
   purpose?: string;
 };
@@ -356,9 +356,6 @@ export type ComputerSnapshot = {
   revision: number;
   /** Usable right now (allowed and not paused after an automatic stop this turn). */
   enabled: boolean;
-  /** The person allowed this chat (or Always allow); saved across restarts. */
-  allowed: boolean;
-  alwaysAllowed: boolean;
   /** The app macOS lists in System Settings for these permissions; `ours` when OpenWork can reset it. */
   entry: { name: string; ours: boolean };
   request: ComputerRequest | null;
@@ -449,13 +446,10 @@ export type DesktopCommandMap = {
     args: [input: { sessionId: string; id: string; action: "approve" | "deny" | "takeover" | "resume"; windowId?: number }];
     result: void;
   };
-  computerConfigure: { args: [input: { sessionId: string; expectedRevision: number; enabled: boolean }]; result: ComputerSnapshot };
-  computerStop: { args: [input: { sessionId: string; expectedRevision: number }]; result: ComputerSnapshot };
-  computerAlwaysAllow: { args: [input: { sessionId: string; allowed: boolean }]; result: ComputerSnapshot };
   computerSetup: { args: [permission: ComputerPermission]; result: { setupId: string } };
   computerDismissSetup: { args: [setupId?: string]; result: void };
   computerHalt: { args: [sessionId: string]; result: ComputerSnapshot };
-  computerAnswerRequest: { args: [input: { sessionId: string; answer: "allow" | "always" | "dismiss" }]; result: ComputerSnapshot };
+  computerAnswerRequest: { args: [input: { sessionId: string; answer: "dismiss" }]; result: ComputerSnapshot };
   computerSetFeatureEnabled: { args: [enabled: boolean]; result: boolean };
   computerResetPermission: { args: [permission: ComputerPermission]; result: { setupId: string } };
   computerEndTurn: { args: [sessionId: string]; result: boolean };

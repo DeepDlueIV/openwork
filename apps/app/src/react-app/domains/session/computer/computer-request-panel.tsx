@@ -19,11 +19,10 @@ function appLabel(appId: string | undefined) {
  */
 export function ComputerRequestPanel({ sessionId, request }: { sessionId: string; request: ComputerRequest }) {
   const openSetup = useComputerStore((state) => state.openSetup)
-  const [busy, setBusy] = useState<"allow" | "always" | "dismiss" | null>(null)
+  const [busy, setBusy] = useState<"dismiss" | null>(null)
   const [error, setError] = useState("")
-  const setup = request.reason === "setup"
 
-  async function answer(next: "allow" | "always" | "dismiss") {
+  async function answer(next: "dismiss") {
     if (busy) return
     setBusy(next)
     setError("")
@@ -44,11 +43,9 @@ export function ComputerRequestPanel({ sessionId, request }: { sessionId: string
             <Monitor size={16} strokeWidth={1.9} />
           </div>
           <div className="min-w-0">
-            <div className="text-[13px] font-medium leading-5 text-dls-text">The agent wants to use {appLabel(request.appId)}</div>
+            <div className="text-[13px] font-medium leading-5 text-dls-text">Set up computer use</div>
             <div className="mt-0.5 text-[12px] leading-5 text-dls-secondary">
-              {setup
-                ? "Computer use needs two macOS permissions first. It takes about a minute, and the agent carries on when you're done."
-                : "Allow computer use in this chat? You'll see the agent's cursor on screen and can take over or stop anytime."}
+              Turn on the macOS permissions to continue working in {appLabel(request.appId)}.
             </div>
             {request.purpose ? <div className="mt-1 line-clamp-2 text-[12px] leading-5 text-dls-secondary">{request.purpose}</div> : null}
             {error ? <div role="alert" className="mt-1 text-[12px] leading-5 text-red-11">{error}</div> : null}
@@ -58,18 +55,7 @@ export function ComputerRequestPanel({ sessionId, request }: { sessionId: string
           <Button type="button" variant="ghost" size="sm" disabled={busy !== null} aria-busy={busy === "dismiss"} data-testid="session-computer-request-dismiss" onClick={() => void answer("dismiss")}>
             Not now
           </Button>
-          {setup ? (
-            <Button type="button" size="sm" data-testid="session-computer-request-setup" onClick={() => openSetup(sessionId)}>
-              Set up
-            </Button>
-          ) : <>
-            <Button type="button" variant="outline" size="sm" disabled={busy !== null} aria-busy={busy === "always"} data-testid="session-computer-request-always" onClick={() => void answer("always")}>
-              Always allow
-            </Button>
-            <Button type="button" size="sm" disabled={busy !== null} aria-busy={busy === "allow"} data-testid="session-computer-request-allow" onClick={() => void answer("allow")}>
-              Allow for this chat
-            </Button>
-          </>}
+          <Button type="button" size="sm" data-testid="session-computer-request-setup" onClick={() => openSetup(sessionId)}>Set up</Button>
         </div>
       </div>
     </div>

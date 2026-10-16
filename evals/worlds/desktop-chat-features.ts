@@ -31,7 +31,15 @@ export async function browserFloatingViewWorld(seed: Seed) {
     throw new Error("The embedded OpenWork server is unavailable.");
   }
   const origin = info.baseUrl.replace(/\/+$/, "");
-  return { ...world, origin, pageUrl: `${origin}/?floating-browser=release-notes` };
+  const thumbnail = async (tabId: string) => {
+    const value = await seed.evalIn(world.app, browserScript(async (id: string) => {
+      const capture = window.__OPENWORK_ELECTRON__.browser?.thumbnail;
+      return typeof capture === "function" ? capture(id) : null;
+    }, [tabId]), { awaitPromise: true });
+    if (!value || typeof value !== "object" || !("url" in value) || typeof value.url !== "string") return null;
+    return { url: value.url };
+  };
+  return { ...world, origin, thumbnail, pageUrl: `${origin}/?floating-browser=release-notes` };
 }
 
 /** Computer use on this Mac. Readiness comes from the real helper and macOS permissions; nothing is faked. */

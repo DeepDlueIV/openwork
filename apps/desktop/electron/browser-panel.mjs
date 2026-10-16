@@ -882,7 +882,7 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
     allowed: browserTaskAllowed,
     openTab: openBrowserTab,
     navigate: (tab, url) => tab.view.webContents.loadURL(url),
-    changed: (tabId, activity) => { const tab = getBrowserTab(tabId); if (tab) { tab.browserTask = activity; sendBrowserState(); } },
+    changed: (tabId, activity) => { const tab = getBrowserTab(tabId); if (tab) { tab.thumbnailRevision = (tab.thumbnailRevision ?? 0) + 1; tab.browserTask = activity; sendBrowserState(); } },
     siteTools: (args) => webMcpBroker.listTools(args),
     runSiteTool: (args, options) => webMcpBroker.executeTool(args, options),
   });
@@ -952,6 +952,7 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
       domReady: false, emulation: Promise.resolve(),
       /** @type {((error: Error | null) => void) | null} */
       finishSuspension: null,
+      thumbnailRevision: 0,
       webMcpRevision: 0,
       documentGeneration: 0,
       /** @type {import("@openwork/browser-tabs").BrowserPanelTab["loadError"]} */
@@ -1011,6 +1012,7 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
       } };
     });
     view.webContents.on("did-start-navigation", (_event, targetUrl, isInPlace, isMainFrame) => {
+      if (isMainFrame) tab.thumbnailRevision = (tab.thumbnailRevision ?? 0) + 1;
       if (isMainFrame || !isInPlace) {
         invalidateWebMcpTab(tab);
         sendBrowserState();
@@ -1304,10 +1306,14 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
   async function captureBrowserThumbnail(tabId) {
     const id = typeof tabId === "string" ? tabId : null;
     const tab = id ? getBrowserTab(id) : null;
+    if (!tab || tab.view.webContents.isDestroyed()) return null;
     const owner = id ? registry.ownerOf(id) : null;
+    const revision = tab.thumbnailRevision;
+    const url = tab.view.webContents.getURL();
     const usable = () => {
       const mainWindow = window();
-      return !!tab && getBrowserTab(id) === tab && !tab.suspending && !tab.background && !tab.view.webContents.isDestroyed()
+      return getBrowserTab(id) === tab && !tab.view.webContents.isDestroyed() && tab.thumbnailRevision === revision
+        && tab.view.webContents.getURL() === url && !tab.view.webContents.isLoadingMainFrame() && !tab.suspending && !tab.background
         && registry.ownerOf(id) === owner && owner === registry.visibleSessionId() && registry.onScreenTabId() === id
         && tab.browserTask?.status !== "paused" && !showsErrorPage(tab)
         && !!mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible() && !mainWindow.isMinimized();
@@ -1322,7 +1328,7 @@ export function createBrowserPanel({ getWindow, remoteDebugPort, onDeepLink, che
     const height = Math.max(1, Math.floor(size.height * scale));
     const jpeg = image.resize({ width, height, quality: "good" }).toJPEG(60);
     if (jpeg.byteLength > 512 * 1024) return null;
-    return { tabId: id, dataUrl: `data:image/jpeg;base64,${jpeg.toString("base64")}`, width, height, capturedAt: Date.now() };
+    return { tabId: id, url, dataUrl: `data:image/jpeg;base64,${jpeg.toString("base64")}`, width, height, capturedAt: Date.now() };
   }
 
   function setVisibleSession(sessionId) {

@@ -159,6 +159,31 @@ test("a person moves the page the agent opened between the side, a floating card
     );
     await user.screenshot();
   });
+  await step("after: a page under the person's control has no floating screenshot", async () => {
+    await user.click({ testId: "browser-floating-preview" });
+    await headerMode("side");
+    await user.click({ role: "button", label: "Take over" });
+    await user.see({ role: "button", label: "Resume browser" });
+    await user.click({ testId: "browser-mode-float" });
+    await user.see(card);
+    await user.notSee({ testId: "browser-floating-thumbnail" });
+    evidence.recordAssertionEvidence("Takeover withholds the page preview", "The card remains available while the person controls the page, and it contains no screenshot.", (await probe.dom('[data-testid="browser-floating-thumbnail"]')).elements.length === 0);
+    await user.screenshot();
+  });
+
+  await step("after: resuming and navigating keeps the same tab and captures only its current page", async () => {
+    await user.click({ testId: "browser-floating-preview" });
+    await user.click({ role: "button", label: "Resume browser" });
+    await user.type({ placeholder: "Enter URL..." }, `${world.origin}/?floating-browser=updated`, { replace: true });
+    await user.press("Enter");
+    await user.click({ testId: "browser-mode-float" });
+    await user.see({ testId: "browser-floating-thumbnail" }, { timeoutMs: 30_000 });
+    const current = await probe.eventually(() => world.thumbnail(tabId), { within: WITHIN, until: (value) => Boolean(value?.url.includes("floating-browser=updated")), label: "the preview names the current page" });
+    expect(current?.url).toBe(`${world.origin}/?floating-browser=updated`);
+    evidence.recordAssertionEvidence("The floating preview follows navigation", "After resuming and navigating, the same tab returns to the floating card with a screenshot of its current URL.", current?.url === `${world.origin}/?floating-browser=updated`);
+    await user.screenshot();
+  });
+
   await step("turning the rollout off returns the same page to the standard side panel", async () => {
     await world.setCapabilities({ browserFloatingView: false });
     await probe.eventually(() => probe.dom('[data-testid="session-browser-toggle"]'), { within: 60_000, until: (dom) => dom.elements.length === 0, label: "the admin rollout refresh removes the Browser button" });

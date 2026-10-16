@@ -72,15 +72,17 @@ export function useBrowserPresentationController({
     if (!enabled) return;
     const browser = getElectronBrowser();
     if (!browser) return;
+    let disposed = false;
     const apply = (state: BrowserStatePayload) => {
+      if (disposed) return;
       const sessionTabs = browserTabsForSession(state.tabs ?? [], sessionKey);
       setNativeActiveTabId(activeBrowserTabIdForSession(state, sessionKey, sessionTabs));
     };
     const unsubscribe = browser.onStateChange?.(apply);
     void browser.getState?.().then((state) => {
       if (state) apply(state);
-    });
-    return unsubscribe;
+    }).catch(() => undefined);
+    return () => { disposed = true; unsubscribe?.(); };
   }, [enabled, sessionKey]);
 
   const browserTabs = React.useMemo(

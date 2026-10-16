@@ -6,14 +6,13 @@ import type { ComputerPresentation } from "@openwork/types/desktop-ipc"
 
 import { desktopBridge } from "@/app/lib/desktop"
 import { Button } from "@/components/ui/button"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { cn } from "@/lib/utils"
 
 type Observation = Omit<ComputerPresentation, "phase" | "frame"> & {
   phase: ComputerPresentation["phase"] | "unavailable" | "stopping"
   frame?: NonNullable<ComputerPresentation["frame"]> & { key: string }
 }
-type Interaction = "approve" | "deny" | "takeover" | "resume"
+type Interaction = "takeover" | "resume"
 const inputLabels: Record<string, string> = { move: "Moving", click: "Click", double_click: "Double click", triple_click: "Triple click", drag: "Dragging", scroll: "Scrolling", key: "Key press", type: "Typing", press: "Press", set_value: "Editing" }
 const pausedPhases = ["paused", "person_interacting", "ready_to_continue", "requery_required"]
 
@@ -63,7 +62,6 @@ export function ComputerPanel({ sessionId, slot, enabled, canStop, controlsBusy,
   const [busy, setBusy] = useState<Interaction | null>(null)
   const [minimized, setMinimized] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
-  const [selectedWindow, setSelectedWindow] = useState("")
   const [now, setNow] = useState(Date.now)
   const [loadedFrame, setLoadedFrame] = useState<string | null>(null)
   const [failedFrame, setFailedFrame] = useState<string | null>(null)
@@ -158,7 +156,6 @@ export function ComputerPanel({ sessionId, slot, enabled, canStop, controlsBusy,
         if (!sameScope) {
           const newSession = latest.current?.id !== next.id
           scope.current = nextScope
-          setSelectedWindow("")
           setActionError("")
           if (newSession) { monitor.current.minimized = false; setMinimized(false) }
         }
@@ -286,22 +283,7 @@ export function ComputerPanel({ sessionId, slot, enabled, canStop, controlsBusy,
   const title = `Computer${presentation.appName ? ` · ${presentation.appName}` : ""}`
 
   const screen = choosing ? (
-    <div className="min-h-0 space-y-3 overflow-y-auto px-4 py-4 text-xs text-muted-foreground" data-testid="session-computer-window-chooser">
-      <div>
-        <h2 className="font-medium text-foreground">Choose a window</h2>
-        {presentation.task ? <p className="mt-1 line-clamp-2">{presentation.task}</p> : null}
-      </div>
-      <Select value={selectedWindow || null} disabled={disabled} onValueChange={(value) => setSelectedWindow(value ?? "")}>
-        <SelectTrigger className="w-full" aria-label="Window to use"><SelectValue placeholder="Choose a window…" /></SelectTrigger>
-        <SelectContent>
-          {presentation.windows?.map((item) => <SelectItem key={item.id} value={String(item.id)}>{item.title || "Untitled window"}</SelectItem>)}
-        </SelectContent>
-      </Select>
-      <div className="flex flex-wrap justify-end gap-2">
-        <Button size="sm" variant="ghost" disabled={disabled} onClick={() => void interact("deny")}>Not now</Button>
-        <Button size="sm" disabled={disabled || !presentation.windows?.some((item) => String(item.id) === selectedWindow)} aria-busy={busy === "approve"} onClick={() => void interact("approve", Number(selectedWindow))}>Open window</Button>
-      </div>
-    </div>
+    <p className="px-4 py-4 text-xs text-muted-foreground">Opening the app window…</p>
   ) : (
     <div
       ref={setViewport}
@@ -360,7 +342,7 @@ export function ComputerPanel({ sessionId, slot, enabled, canStop, controlsBusy,
       >
         {busy === "takeover" ? "Pausing..." : busy === "resume" ? "Continuing..." : paused ? "Continue" : "Take over"}
       </Button> : null}
-      <Button size="sm" variant="ghost" className="text-red-11 hover:text-red-11" data-testid="session-computer-panel-stop" disabled={controlsBusy || !canStop} aria-busy={stopping} title="Stop this task. The chat stays allowed for your next message." onClick={onStop}>{stopping ? "Stopping..." : "Stop"}</Button>
+      <Button size="sm" variant="ghost" className="text-red-11 hover:text-red-11" data-testid="session-computer-panel-stop" disabled={controlsBusy || !canStop} aria-busy={stopping} title="Stop this task. The next message can start a new task." onClick={onStop}>{stopping ? "Stopping..." : "Stop"}</Button>
     </footer>
     {unavailable || actionError || stopError || cleanupPending ? <p role="alert" className="max-h-24 shrink-0 overflow-y-auto border-t border-border px-3 py-2 text-[11px] leading-relaxed text-amber-11">{stopError || actionError || (cleanupPending ? "Stopping is not yet confirmed. Access stays off while release is checked." : "View unavailable. Work may still be running; Stop is available.")}</p> : null}
   </>

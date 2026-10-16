@@ -35,9 +35,12 @@ function isSnap(value: unknown): value is BrowserFloatingSnap {
  * stacks requests.
  */
 function useBrowserThumbnail(tab: BrowserPanelTab): BrowserThumbnail | null {
-  const [thumbnail, setThumbnail] = React.useState<BrowserThumbnail | null>(null);
+  const [thumbnail, setThumbnail] = React.useState<{ token: object; image: BrowserThumbnail } | null>(null);
   const [visible, setVisible] = React.useState(() => document.visibilityState === "visible");
   const capturable = tab.status === "ready" && tab.browserTask?.status !== "paused";
+  // A navigation, reload, takeover or hidden window retires the previous image
+  // synchronously, including when the same tab later becomes capturable again.
+  const token = React.useMemo(() => ({}), [tab.id, tab.url, capturable, visible]);
 
   React.useEffect(() => {
     const update = () => setVisible(document.visibilityState === "visible");
@@ -53,9 +56,10 @@ function useBrowserThumbnail(tab: BrowserPanelTab): BrowserThumbnail | null {
     const run = async () => {
       try {
         const next = await capture(tab.id);
-        if (!disposed && next) setThumbnail(next);
+        if (!disposed) setThumbnail(next && next.url === tab.url ? { token, image: next } : null);
       } catch {
-        // A failed capture keeps the last preview; the card still reports state.
+        // Withhold a preview whose freshness could not be confirmed.
+        if (!disposed) setThumbnail(null);
       } finally {
         if (!disposed) timer = window.setTimeout(() => void run(), THUMBNAIL_INTERVAL_MS);
       }
@@ -65,10 +69,10 @@ function useBrowserThumbnail(tab: BrowserPanelTab): BrowserThumbnail | null {
       disposed = true;
       if (timer !== null) window.clearTimeout(timer);
     };
-  }, [capturable, tab.id, tab.url, visible]);
+  }, [capturable, tab.id, tab.url, token, visible]);
 
   // Never show another page's preview, or a page the person now controls.
-  return thumbnail?.tabId === tab.id && tab.browserTask?.status !== "paused" ? thumbnail : null;
+  return visible && capturable && thumbnail?.token === token && thumbnail.image.tabId === tab.id && thumbnail.image.url === tab.url ? thumbnail.image : null;
 }
 
 type BrowserFloatingCardProps = {

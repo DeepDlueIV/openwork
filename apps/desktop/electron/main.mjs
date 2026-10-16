@@ -171,9 +171,6 @@ const applicationMenu = createApplicationMenu({
 
 let browserPanel = null;
 
-// Always allow and each allowed chat are the person's own choices, kept in app
-// data outside every workspace so an agent can never grant itself access.
-const computerAllowsPath = () => path.join(app.getPath("userData"), "computer-use-allows.json");
 // The System Settings entry macOS lists for computer use: OpenWork when
 // packaged, or the terminal/editor that started a development build.
 let computerPermissionEntry = null;
@@ -192,20 +189,6 @@ const computerControl = createComputerControl({
       app.focus({ steal: true });
     },
   }),
-  standing: {
-    read: async () => {
-      try {
-        const saved = JSON.parse(await readFile(computerAllowsPath(), "utf8"));
-        return { always: saved?.always === true, chats: Array.isArray(saved?.chats) ? saved.chats.filter((id) => typeof id === "string") : [] };
-      } catch { return { always: false, chats: [] }; }
-    },
-    write: async (state) => {
-      const target = computerAllowsPath();
-      const temporary = `${target}.${process.pid}.tmp`;
-      await writeFile(temporary, JSON.stringify(state), "utf8");
-      await rename(temporary, target);
-    },
-  },
   permissionEntry: async () => {
     const entry = await readComputerPermissionEntry();
     return { name: entry.name, ours: entry.ours };
@@ -1954,18 +1937,6 @@ const desktopCommandHandlers = {
         action: input?.action,
         ...(input?.windowId !== undefined ? { windowId: input.windowId } : {}),
       });
-  },
-  "computerConfigure": async (event, input) => {
-      assertComputerSender(event);
-      return computerControl.configure({ sessionId: String(input?.sessionId ?? ""), expectedRevision: input?.expectedRevision, enabled: input?.enabled });
-  },
-  "computerStop": async (event, input) => {
-      assertComputerSender(event);
-      return computerControl.stop({ sessionId: String(input?.sessionId ?? ""), expectedRevision: input?.expectedRevision });
-  },
-  "computerAlwaysAllow": async (event, input) => {
-      assertComputerSender(event);
-      return computerControl.alwaysAllow({ sessionId: String(input?.sessionId ?? ""), allowed: input?.allowed });
   },
   "computerSetup": async (event, permission) => {
       assertComputerSender(event);

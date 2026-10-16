@@ -59,6 +59,7 @@ export type BrowserPresentationMode = "hidden" | "floating" | "side" | "fullscre
 
 export type BrowserThumbnail = {
   tabId: string;
+  url: string;
   dataUrl: string;
   width: number;
   height: number;

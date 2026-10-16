@@ -112,3 +112,21 @@ signs the helper app; desktop dev and packaged builds run it automatically.
 Pointer input relies on an availability-checked lookup of the private
 `CGEventSetWindowLocation` symbol; without it, pointer actions fail explicitly
 while accessible controls keep working.
+
+## Experimental access model
+
+The desktop rollout grants application access without chat or window prompts.
+System permissions still come from macOS. Editable controls do not expose their
+raw Accessibility values to the model; ordinary visible content remains in the
+screenshot. Protected controls that identify
+themselves through Accessibility are omitted and masked; a custom control
+that does not identify its sensitive content cannot be recognized reliably.
+Computer use reads the selected app's visible content and is not a general
+credential-redaction boundary.
+
+Member command, file and website permissions describe structured tools. They
+do not classify every operation a native app can perform through its UI.
+The computer rollout therefore grants broader GUI access; enabling it requires
+reviewing that access model, rather than assuming those structured rules sandbox
+the app session. Take over, Stop, window boundaries and rollout cancellation
+remain enforced.

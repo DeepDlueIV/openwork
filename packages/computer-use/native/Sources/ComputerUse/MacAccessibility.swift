@@ -149,7 +149,10 @@ struct ElementRecord {
                 "actions": actions.isEmpty ? [] : ["press"], "settable": settable,
                 "bounds": ["x": x, "y": y, "width": w, "height": h]]
         }
-        if let value { result["value"] = value }
+        // Custom password widgets may be ordinary editable controls in AX.
+        // Keep raw values inside the helper for stale-state checks. The model
+        // reads normal field content from the image, never a hidden AX value.
+        if !settable, !Self.textRoles.contains(role), let value { result["value"] = value }
         return result
     }
 }

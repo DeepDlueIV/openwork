@@ -286,7 +286,7 @@
                 true,
                 false
               ],
-              "description": "Desktop: computer use: Let agents use Mac apps directly, with a floating live view, a visible cursor, and Take over and Stop controls. Enabling this rollout provides access without chat or window consent prompts. Renders DEN_FEATURE_COMPUTER_USE."
+              "description": "Desktop: computer use: Let agents use Mac apps directly, with a floating live view, a visible cursor, and Take over and Stop controls. Enabling this rollout provides access without chat or window consent prompts. GUI access is experimental and is not sandboxed by structured-tool permission rules. Renders DEN_FEATURE_COMPUTER_USE."
             },
             "browserFloatingView": {
               "enum": [

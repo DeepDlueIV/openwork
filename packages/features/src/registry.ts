@@ -237,7 +237,7 @@ export const FEATURES = defineFeatures({
   },
   computerUse: {
     label: "Desktop: computer use",
-    description: "Let agents use Mac apps directly, with a floating live view, a visible cursor, and Take over and Stop controls. Enabling this rollout provides access without chat or window consent prompts.",
+    description: "Let agents use Mac apps directly, with a floating live view, a visible cursor, and Take over and Stop controls. Enabling this rollout provides access without chat or window consent prompts. GUI access is experimental and is not sandboxed by structured-tool permission rules.",
     since: "2026-10",
     deployments: everywhere,
     default: false,

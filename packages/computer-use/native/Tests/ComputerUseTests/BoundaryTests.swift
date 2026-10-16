@@ -1,8 +1,28 @@
 import XCTest
 import Darwin
+import ApplicationServices
 @testable import ComputerUse
 
 final class BoundaryTests: XCTestCase {
+    func testEditableAccessibilityValuesAreNeverSerializedToTheModel() throws {
+        let frame = CGRect(x: 0, y: 0, width: 320, height: 240)
+        for role in ElementRecord.textRoles.union(["AXUnknown", "AXCell"]) {
+            let record = ElementRecord(ref: "e1", element: AXUIElementCreateApplication(getpid()), role: role,
+                label: "Custom field", value: "private-field-value", frame: frame, actions: [], settable: true,
+                enabled: true, protected: false)
+            for compact in [false, true] {
+                let payload = try record.payload(bounds: frame, width: 320, height: 240, compact: compact)
+                XCTAssertNil(payload["value"], role)
+                XCTAssertEqual(payload["ref"] as? String, "e1")
+                XCTAssertEqual(payload["settable"] as? Bool, true)
+            }
+        }
+        let text = ElementRecord(ref: "e2", element: AXUIElementCreateApplication(getpid()), role: "AXStaticText",
+            label: "Document", value: "Readable document content", frame: frame, actions: [], settable: false,
+            enabled: true, protected: false)
+        XCTAssertEqual(try text.payload(bounds: frame, width: 320, height: 240, compact: true)["value"] as? String, "Readable document content")
+    }
+
     func testMalformedInputNeverBecomesAnAction() throws {
         let invalid: [[String: Any]] = [
             ["type": "click", "x": true, "y": 1],

@@ -6,7 +6,9 @@ fallback. Earlier engine choices no longer change the runtime.
 
 ## Bringing over earlier chats
 
-When local v1 history has not been copied, OpenWork offers **Import chats**.
+When local v1 history has not been copied, OpenWork requires **Import chats**
+before continuing. The server blocks chat API access even if a client bypasses
+the dialog. Existing snooze preferences do not bypass this upgrade.
 The notice opens a consent dialog; copying starts only after its **Import chats**
 button is selected. `POST /engine/v1-history/import` requires the host token and
 explicit confirmation. `GET /engine/status` reports progress and the saved result.
@@ -14,8 +16,9 @@ Existing v2 chats are kept. Chats pause while copying; closing OpenWork preserve
 progress, and startup resumes the interrupted copy before opening v2 history.
 A successful receipt survives restart and dismisses the one-time offer.
 
-The progress dialog can move to a banner with **Continue using OpenWork** and
-reopen through **Show progress**. Errors offer **Try again**. Running v2 tasks
+The upgrade and progress dialogs cannot be dismissed until copying completes.
+Errors keep chat access blocked and offer **Try again**. A failed initial status
+read is retried so startup timing cannot hide the upgrade. Running v2 tasks
 must finish before copying begins. Diagnostics use passive registration evidence;
 they never query native MCP status, which can activate workspace connectors.
 

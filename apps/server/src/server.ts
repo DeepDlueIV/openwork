@@ -642,7 +642,10 @@ export async function startServer(
           const workspace = await resolveWorkspaceWithoutBootstrap(config, mount.workspaceId);
           const connection = engineV2Preview.connection();
           if (!connection) {
-            return finalize(jsonResponse({ error: "engine_v2_preview_not_running" }, 503));
+            const status = engineV2Preview.status();
+            return finalize(jsonResponse(status.v1HistoryAvailable || status.migration.state === "running"
+              ? { error: "history_migration_required", message: "Import your earlier chats into OpenCode v2 before continuing." }
+              : { error: "engine_v2_preview_not_running" }, 503));
           }
           proxyService = "opencode";
           proxyBaseUrl = connection.url;

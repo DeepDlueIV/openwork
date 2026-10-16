@@ -875,7 +875,7 @@ export function createEngineV2Preview(options: {
   }
 
   function connection(): { url: string; username: string; password: string } | undefined {
-    if (v1HistoryCopyStartedAt !== undefined || migration.state === "running") return undefined;
+    if (hasV1History() || v1HistoryCopyStartedAt !== undefined || migration.state === "running") return undefined;
     if (!running || !sidecar) {
       if (!stopping && !startPromise && Date.now() - lastStartFailureAt >= START_RETRY_MS) void start().catch(recordStartError);
       return undefined;

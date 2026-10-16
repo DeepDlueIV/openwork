@@ -34,7 +34,10 @@ test("app boots with a control route and meaningful visible content", async ({ w
     const sessions = await probe.desktopApi(`/workspace/${workspaceId}/opencode2/api/session`);
     expect(sessions.status).toBe(200);
     expect(sessions.body).toMatchObject({ data: [] });
-    const plugins = await world.packagedPlugins();
+    const plugins = await probe.eventually(() => world.packagedPlugins(), {
+      within: 60_000, label: "the packaged context plugin is active",
+      until: plugins => plugins.some(plugin => plugin.id === "openwork.context" && plugin.status === "active"),
+    });
     expect(plugins).toEqual(expect.arrayContaining([{ id: "openwork.context", status: "active" }]));
   } else {
     expect(world.workspace?.workspaceId).toBeTruthy();

@@ -637,6 +637,8 @@ export default {
   "chat_import.later": "Later",
   "chat_import.not_copied_one": "1 chat couldn't be copied and wasn't imported.",
   "chat_import.not_copied_other": "{left} chats couldn't be copied and weren't imported.",
+  "chat_import.required_title": "Upgrade your earlier chats to continue",
+  "chat_import.required_body": "OpenWork now uses OpenCode v2. Import your earlier chats before continuing. Your original history stays on this computer, and interrupted imports resume after restart.",
   "chat_import.notice": "Bring over your earlier chats.",
   "chat_import.progress_copied": "{done} of {total} chats copied",
   "chat_import.progress_note": "Chats are paused while history is copied. You can restart and resume without losing progress.",

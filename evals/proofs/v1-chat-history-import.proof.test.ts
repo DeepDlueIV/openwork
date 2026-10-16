@@ -13,7 +13,7 @@ const test = spec.world(v1ChatHistory, {
 });
 
 // The offer's wording belongs to the app; match its meaning, not one exact sentence.
-const OFFER = /earlier chats|previous chats|chats from (OpenCode )?v1|chat upgrade/i;
+const OFFER = /Upgrade your earlier chats to continue/i;
 const ACCEPT = /^(Bring (them |chats )?over|Import( chats| earlier chats| them)?|Upgrade)$/i;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -60,16 +60,20 @@ test("a person with chats from OpenCode v1 brings them into OpenWork once and re
     await user.see({ text: OFFER }, { timeoutMs: 60_000 });
     await user.see({ role: "button", text: ACCEPT });
     await user.notSee({ testId: `sidebar-session-${first.id}` });
-    const listed = (await v2SessionIds()).filter(id => fixtureIds.includes(id));
+    await user.press("Escape");
+    await user.see({ testId: "chat-import-notice" });
+    await user.notSee({ role: "button", text: /later|skip/i });
+    const blocked = await probe.desktopApi(`/workspace/${workspaceId}/opencode2/api/session`);
+    expect(blocked.status).toBe(503);
+    expect(blocked.body).toMatchObject({ error: "history_migration_required" });
     const migration = migrationOf(before);
     await user.screenshot();
     evidence.recordAssertionEvidence(
       "the offer appears while none of the earlier chats are in OpenWork yet",
-      `v1HistoryAvailable ${String(before.v1HistoryAvailable)}; import ${String(migration.state)}; ${listed.length} of ${fixtureIds.length} earlier chats on v2; "${first.title}" not in the sidebar`,
-      migration.state === "idle" && listed.length === 0,
+      `v1HistoryAvailable ${String(before.v1HistoryAvailable)}; import ${String(migration.state)}; chat API blocked until migration; "${first.title}" not in the sidebar`,
+      migration.state === "idle" && blocked.status === 503,
     );
     expect(migration.state).toBe("idle");
-    expect(listed).toEqual([]);
   });
 
   await step("the person accepts the offer and every earlier chat is copied once", async () => {
@@ -92,6 +96,7 @@ test("a person with chats from OpenCode v1 brings them into OpenWork once and re
   });
 
   await step("after: the earlier chats are listed and open with their messages", async () => {
+    await user.click({ role: "button", text: /^(Done|Close)$/i });
     await user.see({ testId: `sidebar-session-${first.id}` }, { timeoutMs: 60_000 });
     await user.click({ testId: `sidebar-session-${first.id}` });
     await user.see({ text: first.reply }, { timeoutMs: 60_000 });

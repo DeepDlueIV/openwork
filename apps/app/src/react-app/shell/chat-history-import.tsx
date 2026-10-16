@@ -12,7 +12,6 @@ import { isDesktopRuntime } from "@/app/lib/runtime-env";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   AlertDialog,
-  AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
   AlertDialogFooter,
@@ -25,13 +24,12 @@ import { Progress } from "@/components/ui/progress";
 import { toast } from "@/components/ui/sonner";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
-import { resolveExtensionIconSrc } from "@/react-app/design-system/extension-icon-src";
 import { resolveOpenworkConnection } from "./openwork-connection";
 
 /**
  * The one-time import of chats from the retired OpenCode v1 engine. A notice
- * offers it while v1 chats remain on disk; consent, progress and the outcome
- * stay visible app-wide, and a running import can continue in the background.
+ * requires it while v1 history remains without a completed receipt. Consent,
+ * progress and retry stay visible until the upgrade finishes.
  */
 
 export const CHAT_HISTORY_IMPORTED_EVENT = "openwork-history-imported";
@@ -102,10 +100,6 @@ function requestChatImport(client: ChatImportClient) {
     return;
   }
   useChatImportStore.setState({ consent: { client, submitting: false, error: null } });
-}
-
-function cancelChatImport() {
-  useChatImportStore.setState((state) => (state.consent?.submitting ? state : { consent: null }));
 }
 
 async function confirmChatImport() {
@@ -209,11 +203,9 @@ function ImportProgressBar(props: { migration: EngineV2MigrationStatus }) {
 
 function ImportConsentDialog(props: { consent: ConsentState }) {
   const { consent } = props;
-  // Start on Cancel, not the disclosure: Enter should never start an import by accident.
-  const cancelRef = useRef<HTMLButtonElement>(null);
   return (
-    <AlertDialog open onOpenChange={(open) => { if (!open) cancelChatImport(); }}>
-      <AlertDialogContent data-testid="chat-import-consent" initialFocus={cancelRef}>
+    <AlertDialog open>
+      <AlertDialogContent data-testid="chat-import-consent">
         <AlertDialogHeader>
           <AlertDialogTitle>{t("chat_import.consent_title")}</AlertDialogTitle>
           <AlertDialogDescription>{t("chat_import.consent_body")}</AlertDialogDescription>
@@ -230,7 +222,7 @@ function ImportConsentDialog(props: { consent: ConsentState }) {
           </ul>
         </details>
         <AlertDialogFooter>
-          <AlertDialogCancel ref={cancelRef} disabled={consent.submitting}>{t("common.cancel")}</AlertDialogCancel>
+
           <Button data-testid="chat-import-confirm" disabled={consent.submitting} onClick={() => void confirmChatImport()}>
             {t("chat_import.import")}
           </Button>
@@ -245,7 +237,7 @@ function ImportProgressDialog(props: { progress: ProgressState }) {
   const { migration } = progress;
   const running = migration.state === "running";
   return (
-    <Dialog open onOpenChange={(open) => { if (!open) closeImportProgress(); }}>
+    <Dialog open onOpenChange={(open) => { if (!open && migration.state === "completed") closeImportProgress(); }}>
       <DialogContent showCloseButton={false} data-testid="chat-import-progress" data-state-kind={migration.state}>
         <DialogHeader>
           <DialogTitle>
@@ -268,16 +260,11 @@ function ImportProgressDialog(props: { progress: ProgressState }) {
         {migration.state === "error" ? <p className="text-xs text-muted-foreground">{t("chat_import.error_note")}</p> : null}
         <DialogFooter>
           {running ? (
-            <Button variant="outline" onClick={closeImportProgress}>
-              {t("chat_import.continue_in_background")}
-            </Button>
+            <span className="text-sm text-muted-foreground">{t("chat_import.progress_note")}</span>
           ) : migration.state === "completed" ? (
             <Button onClick={closeImportProgress}>{t("chat_import.done")}</Button>
           ) : (
-            <>
-              <Button variant="outline" disabled={progress.retrying} onClick={closeImportProgress}>{t("common.close")}</Button>
-              <Button disabled={progress.retrying} onClick={() => void retryChatImport()}>{t("chat_import.try_again")}</Button>
-            </>
+            <Button disabled={progress.retrying} onClick={() => void retryChatImport()}>{t("chat_import.try_again")}</Button>
           )}
         </DialogFooter>
       </DialogContent>
@@ -432,10 +419,12 @@ function useImportCandidate(): ImportCandidate | null {
   useEffect(() => {
     if (!isDesktopRuntime()) return;
     let cancelled = false;
-    void (async () => {
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    const readStatus = async () => {
       try {
         const connection = await resolveOpenworkConnection();
-        if (cancelled || !connection.normalizedBaseUrl || !connection.resolvedToken) return;
+        if (cancelled) return;
+        if (!connection.normalizedBaseUrl || !connection.resolvedToken) throw new Error("Local server not ready");
         const client = createOpenworkServerClient({
           baseUrl: connection.normalizedBaseUrl,
           token: connection.resolvedToken,
@@ -446,61 +435,39 @@ function useImportCandidate(): ImportCandidate | null {
         observeChatImport(client, status);
         setCandidate({ client, status });
       } catch {
-        // No notice when the local server can't be read.
+        // Startup can race the local server. Keep trying so an upgrade cannot
+        // disappear for this launch because the first status read failed.
+        if (!cancelled) retryTimer = setTimeout(() => void readStatus(), 2_000);
       }
-    })();
-    return () => { cancelled = true; };
+    };
+    void readStatus();
+    return () => { cancelled = true; clearTimeout(retryTimer); };
   }, []);
   return candidate;
-}
-
-const IMPORT_SNOOZE_KEY = "openwork.chatImport.snoozedUntil";
-const IMPORT_SNOOZE_MS = 3 * 24 * 60 * 60_000;
-
-function readImportSnooze(): number {
-  try {
-    const value = Number(window.localStorage.getItem(IMPORT_SNOOZE_KEY));
-    return Number.isFinite(value) ? value : 0;
-  } catch {
-    return 0;
-  }
-}
-
-function snoozeImport(now = Date.now()) {
-  try { window.localStorage.setItem(IMPORT_SNOOZE_KEY, String(now + IMPORT_SNOOZE_MS)); } catch { /* best effort */ }
 }
 
 /** Offer the import while v1 chats remain on disk and no import has finished or is running. */
 export function shouldOfferChatImport(
   status: Pick<EngineStatus, "v1HistoryAvailable" | "migration">,
-  options: { now: number; snoozedUntil: number },
 ): boolean {
   return status.v1HistoryAvailable
     && status.migration?.state !== "running"
-    && status.migration?.state !== "completed"
-    && options.snoozedUntil <= options.now;
+    && status.migration?.state !== "completed";
 }
 
-function ChatImportNotice(props: { candidate: ImportCandidate; onLater: () => void }) {
+function ChatImportNotice(props: { candidate: ImportCandidate }) {
   return (
-    <ImportFloatingRegion>
-      <div
-        role="status"
-        data-testid="chat-import-notice"
-        className="pointer-events-auto flex max-w-xl items-center gap-3 rounded-2xl bg-popover px-4 py-3 text-popover-foreground shadow-[var(--dls-card-shadow)] ring-1 ring-foreground/5"
-      >
-        <img src={resolveExtensionIconSrc("/openwork-mark.svg")} alt="" className="size-4 shrink-0 opacity-80 dark:invert" />
-        <p className="min-w-0 flex-1 text-sm">{t("chat_import.notice")}</p>
-        <div className="flex shrink-0 items-center gap-2">
-          <Button type="button" size="xs" variant="ghost" onClick={props.onLater}>
-            {t("chat_import.later")}
-          </Button>
-          <Button type="button" size="xs" onClick={() => requestChatImport(props.candidate.client)}>
-            {t("chat_import.import")}
-          </Button>
-        </div>
-      </div>
-    </ImportFloatingRegion>
+    <AlertDialog open>
+      <AlertDialogContent data-testid="chat-import-notice">
+        <AlertDialogHeader>
+          <AlertDialogTitle>{t("chat_import.required_title")}</AlertDialogTitle>
+          <AlertDialogDescription>{t("chat_import.required_body")}</AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <Button onClick={() => requestChatImport(props.candidate.client)}>{t("chat_import.import")}</Button>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 
@@ -509,20 +476,18 @@ export function ChatHistoryImportOverlay() {
   const progress = useChatImportStore((state) => state.progress);
   useImportLifecycle(progress);
   const candidate = useImportCandidate();
-  const [snoozedUntil, setSnoozedUntil] = useState(readImportSnooze);
   // Once an import starts, the status read at launch no longer applies.
   const [importStarted, setImportStarted] = useState(false);
   useEffect(() => {
     if (progress) setImportStarted(true);
   }, [progress]);
   const offerImport = candidate !== null && !importStarted && !consent && !progress
-    && shouldOfferChatImport(candidate.status, { now: Date.now(), snoozedUntil });
+    && shouldOfferChatImport(candidate.status);
   return (
     <>
       {offerImport ? (
         <ChatImportNotice
           candidate={candidate}
-          onLater={() => { snoozeImport(); setSnoozedUntil(readImportSnooze()); }}
         />
       ) : null}
       {consent ? <ImportConsentDialog consent={consent} /> : null}

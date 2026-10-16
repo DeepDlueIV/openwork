@@ -366,9 +366,9 @@ async function desktopWorld(seed: Seed, place: Place, { feature }: { feature: bo
 
         await seed.evalIn(app, browserScript(async () => {
           if (!window.__OPENWORK_ELECTRON__?.invokeDesktop) throw new Error("The desktop restart bridge is unavailable");
-          await window.__OPENWORK_ELECTRON__.invokeDesktop("engineRestart");
+          await window.__OPENWORK_ELECTRON__.invokeDesktop("engineRestart", {});
           return true;
-        }), { awaitPromise: true, timeoutMs: 120_000 });
+        }, []), { awaitPromise: true, timeoutMs: 120_000 });
         const deadline = Date.now() + 120_000;
         while (Date.now() < deadline) {
           const { body } = await localServer(app, "/engine/status");

@@ -43,7 +43,8 @@ daytona snapshot create workbot-desktop --image "$COMPUTER_IMAGE_DIGEST" \
 Daytona's image-to-VM conversion clears setuid bits. The image includes a root
 oneshot unit, ordered before Daytona's command daemon, to restore the packaged
 `sudo` and Chromium sandbox helpers on boot. The command and GUI users remain
-unprivileged; Chromium keeps its native sandbox enabled.
+unprivileged; Chromium keeps its native sandbox enabled. Desktop startup also
+reapplies shared-folder default ACLs, which the image conversion does not retain.
 
 Configure the existing headless runner (these are operator capabilities, not
 organization rollout flags):

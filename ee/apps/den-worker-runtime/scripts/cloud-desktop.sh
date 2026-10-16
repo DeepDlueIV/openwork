@@ -5,6 +5,11 @@ display="$2"
 case "$display" in :[0-9]|:[0-9][0-9]|:[0-9][0-9][0-9]) ;; *) echo "Invalid cloud display" >&2; exit 1 ;; esac
 command -v chromium >/dev/null
 command -v Xvfb >/dev/null
+# OCI-to-VM conversion does not preserve default ACLs. Reapply the desktop
+# image's shared-folder policy before launching apps or accepting uploads.
+if [ -f /usr/local/share/openwork-desktop/configure-files.sh ]; then
+  bash /usr/local/share/openwork-desktop/configure-files.sh
+fi
 mkdir -p "$state"
 chmod 0700 "$state"
 chown -R openwork-browser:openwork-browser "$state"

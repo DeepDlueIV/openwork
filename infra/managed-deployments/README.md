@@ -36,7 +36,7 @@ runner behavior updates, without adopting the direct module's contract lifecycle
 ## Frozen AWS platform boundary
 
 The complete snapshot is byte-identical to the shared module at source commit
-`c68ea1549ea5338d421a1a2552004992581e11cb`, Git tree
+`8b586b13ab89b78379fbecd8ddb9c7c7caba31f8`, Git tree
 `561d5b63514a13df471ad7458eae2b620cfc5803`. This refresh includes the current
 runner behavior rather than reverting to an older installer snapshot. The
 release builder packages its ten operational Terraform files under the managed

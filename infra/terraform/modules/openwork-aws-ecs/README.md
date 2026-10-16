@@ -27,12 +27,6 @@ It sets the same environment the [`openwork-ee` Helm chart](../../../../packagin
 sets on Kubernetes, so the chart's README and `ee/apps/den-api/.env.example`
 document every setting you can add through `extra_environment`.
 
-## Support level
-
-> **Status: tested for the core deployment (Den API, Den web, RDS, ALB);
-> the headless runner, Workbot and Slack are still draft.** Pin the module
-> to a commit and report anything that fails in your environment.
-
 ## Tested scenarios
 
 Contract-v1 offline checks: Terraform 1.16.5 / AWS provider 6.69.1 and
@@ -65,6 +59,20 @@ What has been applied end to end in an AWS test account with
 | Existing ECS cluster, ALB or HTTPS listener | Not run live (offline tests only) | | |
 | Headless runner, Workbot, Slack assistant | Not run live | | |
 | Upgrades across more than one release, rollback | Not run | | |
+
+## Support level
+
+> OpenWork's Terraform modules are **beta**. If you hit an issue:
+> - **Customers with a support agreement:** contact your OpenWork team through your usual support channel.
+> - **Everyone else:** [open a GitHub issue](https://github.com/different-ai/openwork/issues/new/choose).
+> - **Security issues:** report them privately ([SECURITY.md](https://github.com/different-ai/openwork/blob/dev/SECURITY.md)).
+
+Only the recorded core scenarios above are qualified. Optional headless runner,
+Workbot and Slack paths remain unqualified by the contract-v1 live run. Pin a
+reviewed source commit; the contract improvements are not available on `dev`
+until the [AWS module review](https://github.com/different-ai/openwork/pull/5967)
+lands. The shared [module contract](../../MODULE_CONTRACT.md) describes the
+baseline and known limits, not a production load or legacy-upgrade guarantee.
 
 ## Before you start
 

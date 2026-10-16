@@ -38,12 +38,6 @@ If you run containers on ECS Fargate rather than Kubernetes, the Terraform modul
 
 API defaults to 1 vCPU / 2 GiB and web to 0.5 vCPU / 1 GiB. Managed RDS deletion protection defaults on. The 0.18.57/0.18.58 API/web defaults are digest-pinned; other versions and enabled optional services require digest-pinned image overrides. Database TLS verifies the certificate chain using the public regional RDS CA bundle, loaded before Node starts. The application's current MySQL parser does not enable mysql2's separate hostname identity check; full hostname verification remains an application follow-up, not a claim of this module.
 
-### Support level
-
-<Note>
-  The core deployment is tested end to end in an AWS test account on releases 0.18.57 and 0.18.58: tasks in private subnets behind a NAT gateway, two Den API tasks, an upgrade from one release to the next with data kept, and OpenWork Desktop signing in and running a chat. Member invites were delivered through Amazon SES SMTP. The headless runner, Workbot and Slack options, and a certificate created through Route 53, have not been applied live yet and are still a draft. The [module README](https://github.com/different-ai/openwork/tree/dev/infra/terraform/modules/openwork-aws-ecs) lists each tested scenario. Pin the module to a commit, and open an issue or pull request for anything that fails in your environment.
-</Note>
-
 ### Tested scenarios
 
 | Scenario | Tools / release | Result | Date |
@@ -56,6 +50,23 @@ API defaults to 1 vCPU / 2 GiB and web to 0.5 vCPU / 1 GiB. Managed RDS deletion
 | Core secret values absent from actual state after release, reapply and upgrade | Write-only mode | Passed | 2026-10-15 |
 | Fresh browser and isolated native desktop sign-in on the preserved database | dev ef455ca | Passed | 2026-10-15 |
 | Destroy with protection explicitly disabled; independent absence and snapshot cleanup | Disposable contract-v1 stack | Passed | 2026-10-15 |
+
+### Support level
+
+<Warning>
+  OpenWork's Terraform modules are **beta**. If you hit an issue:
+
+  - **Customers with a support agreement:** contact your OpenWork team through your usual support channel.
+  - **Everyone else:** [open a GitHub issue](https://github.com/different-ai/openwork/issues/new/choose).
+  - **Security issues:** report them privately ([SECURITY.md](https://github.com/different-ai/openwork/blob/dev/SECURITY.md)).
+</Warning>
+
+The table records the tested core only, not production load, backup restoration,
+legacy handover, or every optional component. Pin a reviewed source commit.
+Contract improvements remain under [AWS module review](https://github.com/different-ai/openwork/pull/5967)
+until that review lands on `dev`; the managed installer remains separate.
+See the [shared module contract](https://github.com/different-ai/openwork/blob/dev/infra/terraform/MODULE_CONTRACT.md)
+for baseline checks and known limits.
 
 ### Upgrade notes
 

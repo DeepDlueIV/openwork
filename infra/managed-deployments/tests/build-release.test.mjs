@@ -101,7 +101,7 @@ test("GCP CLI cannot disable registry verification or use unsupported options", 
 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const modulePath = "infra/managed-deployments/aws/terraform/modules/openwork-aws-ecs";
-// Current dev at c68ea1549ea5338d421a1a2552004992581e11cb, including runner updates.
+// Current dev at 8b586b13ab89b78379fbecd8ddb9c7c7caba31f8, including runner updates.
 // Pin the whole snapshot, never the moving shared module or a network lookup.
 const frozenTree = "561d5b63514a13df471ad7458eae2b620cfc5803";
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");

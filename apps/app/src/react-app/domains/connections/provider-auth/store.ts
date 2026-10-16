@@ -1641,7 +1641,7 @@ export function createProviderAuthStore(options: CreateProviderAuthStoreOptions)
       }
 
       const host = options.openworkServer.getSnapshot().openworkServerClient;
-      if (isDesktopRuntime() && options.selectedWorkspaceDisplay().workspaceType !== "remote" && host && isLoopbackOpenworkServerUrl(host.baseUrl)) {
+      if (isDesktopRuntime() && host && isLoopbackOpenworkServerUrl(host.baseUrl)) {
         try {
           const metadata = await host.localProviderKeyMetadata();
           if (metadata.providers.some((provider) => provider.providerId === resolved)) throw new Error("Disconnect the saved device API key in AI Providers before switching this provider to sign-in.");
@@ -1903,7 +1903,7 @@ export function createProviderAuthStore(options: CreateProviderAuthStoreOptions)
         await ensureProjectProviderDisabledState(providerId, false);
       }
       const host = options.openworkServer.getSnapshot().openworkServerClient;
-      const deviceKey = isDesktopRuntime() && options.selectedWorkspaceDisplay().workspaceType !== "remote" && host && isLoopbackOpenworkServerUrl(host.baseUrl) && ["anthropic", "openai", "google", "openrouter"].includes(providerId);
+      const deviceKey = isDesktopRuntime() && host && isLoopbackOpenworkServerUrl(host.baseUrl) && ["anthropic", "openai", "google", "openrouter"].includes(providerId);
       let stored = false;
       if (deviceKey) {
         try { await host.saveLocalProviderKey(providerId, trimmed); stored = true; }
@@ -2576,7 +2576,7 @@ export function createProviderAuthStore(options: CreateProviderAuthStoreOptions)
       }
 
       const host = options.openworkServer.getSnapshot().openworkServerClient;
-      if (isDesktopRuntime() && options.selectedWorkspaceDisplay().workspaceType !== "remote" && host && isLoopbackOpenworkServerUrl(host.baseUrl)) {
+      if (isDesktopRuntime() && host && isLoopbackOpenworkServerUrl(host.baseUrl)) {
         try { await host.deleteLocalProviderKey(resolved); }
         catch (error) { if (!(error instanceof OpenworkServerError) || error.status !== 404) throw error; }
       }

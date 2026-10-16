@@ -2654,7 +2654,7 @@ function SettingsRouteContent(props: SettingsSurfaceProps = {}) {
         key={`${cloudSession.baseUrl}:${cloudSession.activeOrganization?.id}:${sharingProvider.id}`}
         provider={sharingProvider}
         organizationId={cloudSession.isSignedIn ? cloudSession.activeOrganization?.id ?? null : null}
-        client={selectedWorkspace?.workspaceType === "remote" ? null : autoClient}
+        client={autoClient}
         onOpenDen={openProvidersInDen}
         onClose={() => setSharingProvider(null)}
         onShared={(result) => {

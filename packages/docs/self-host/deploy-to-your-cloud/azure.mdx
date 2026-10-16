@@ -37,7 +37,7 @@ The experimental module deploys Den API and web as HTTPS-only Container Apps, a 
 | Date | Tools / release | Result |
 | --- | --- | --- |
 | 2026-10-13–14 | Terraform 1.16 / OpenTofu 1.11; legacy module, 0.18.58 to dev, one API replica | Setup, browser, isolated desktop, retained organization and teardown Passed; not proof of the new Job topology |
-| 2026-10-15 | Terraform 1.16.5 / OpenTofu 1.11.14, AzureRM 5.10 / AzAPI 2.13 | Contract offline suite Passed, 32 mocked runs each |
+| 2026-10-16 | Terraform 1.16.5 / OpenTofu 1.11.14, AzureRM 5.10 / AzAPI 2.13 | Contract offline suite Passed, 32 mocked runs each; registry-specific example locks |
 | 2026-10-15 | Default state-free secrets; two API replicas; 0.18.58 to dev ae7483e | Setup, browser, isolated Electron and retained data/core secrets/session Passed; 15 resources destroyed and log purge verified |
 
 ### Support level
@@ -60,7 +60,7 @@ Additional prototype hardening restricts `extra_environment` to its documented p
 
 Use encrypted remote state with restricted access and locking, configured in your root module. For S3 state use `use_lockfile = true`, not DynamoDB. **State-free secrets are the default:** ephemeral values feed native AzAPI write-only secret properties and MySQL's write-only administrator password. State holds secret names/references and version gates, not generated values. `bootstrap_code` is deprecated and null; read the API app's managed `den-initial-admin-bootstrap-code` secret locally for setup, never through a state output. Existing Key Vault reference values remain outside state. Optional PFX certificate arguments can still be retained by the AzureRM certificate provider; that non-default path needs protected state or externally managed certificates.
 
-The default Azure `CanNotDelete` lock protects out-of-band database deletion; **Terraform destroy can remove its own lock**, so it is not a Terraform `prevent_destroy` guarantee. Separate production database state where needed. No lock file is shipped inside the reusable module; generate and keep a root lock for your chosen tool rather than assuming Terraform and OpenTofu registries have identical checksums.
+The default Azure `CanNotDelete` lock protects out-of-band database deletion; **Terraform destroy can remove its own lock**, so it is not a Terraform `prevent_destroy` guarantee. Separate production database state where needed. The reusable module has no lock file, but its executable complete example commits pinned provider versions and signed-release checksums. Use its `.terraform.lock.hcl` for Terraform; for OpenTofu, copy the supplied `opentofu.lock.hcl` over that file first. Initialize the selected root with `-lockfile=readonly`. Keep one tool's lock per deployment root: registry namespaces and package checksums differ.
 
 ### Secrets and later runs
 

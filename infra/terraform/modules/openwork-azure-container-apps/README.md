@@ -23,7 +23,7 @@ Workbot, runners, Slack and OpenWork Web are not deployed. Existing product flag
 | --- | --- | --- | --- |
 | 2026-10-13 | Terraform 1.16, OpenTofu 1.11; AzureRM 5.0 / 5.9 | Legacy init-container module, 0.18.58, private MySQL, setup/browser/isolated desktop, destroy | Passed; not proof of the new Job topology |
 | 2026-10-14 | Terraform 1.16.5 / OpenTofu 1.11.14; AzureRM 5.9 | Legacy module, 0.18.58 to dev, one API replica, retained administrator/org, browser/desktop, destroy | Passed; not a two-replica result |
-| 2026-10-15 | Terraform 1.16.5 / OpenTofu 1.11.14; AzureRM 5.10, AzAPI 2.13, external 2.4, random 3.9 | Contract mocked tests, 32 runs on each tool | Passed |
+| 2026-10-16 | Terraform 1.16.5 / OpenTofu 1.11.14; AzureRM 5.10, AzAPI 2.13, external 2.4, random 3.9 | Contract mocked tests, 32 runs on each tool; registry-specific example locks | Passed |
 | 2026-10-15 | Same providers | State-free defaults, two API replicas, 0.18.58 to dev ae7483e; setup, retained data/secrets/session, browser and isolated Electron | Passed; 15 managed resources destroyed, permanent log purge and empty inventories verified |
 
 ## Support level
@@ -42,7 +42,7 @@ The database lock protects out-of-band deletions. **Terraform destroy removes it
 - Register `Microsoft.App`, `Microsoft.DBforMySQL`, `Microsoft.Network` and `Microsoft.OperationalInsights` once, using a subscription administrator.
 - Recommended: an existing VNet, a `/27` or larger Container Apps subnet delegated to `Microsoft.App/environments`, and a separate MySQL subnet delegated to `Microsoft.DBforMySQL/flexibleServers`. Private access cannot be added to an existing server later.
 - Azure creates its own `ME_...` infrastructure resource group; environment deletion owns its teardown.
-- Apps and Job need outbound image-registry access. Private mirrors must also use `image@sha266:digest` and `registry` credentials/identity.
+- Apps and Job need outbound image-registry access. Private mirrors must also use `image@sha256:digest` and `registry` credentials/identity.
 - No domain is required: default `azurecontainerapps.io` hostnames have trusted Microsoft HTTPS certificates. Custom domains require DNS verification and a PFX covering both hosts.
 
 ## Usage
@@ -107,7 +107,7 @@ Use encrypted, access-controlled remote state and restrict state/plan/log access
 
 The default app stores contain four core secrets; optional email/registry secrets are added only when configured. The migration container receives only its database/encryption bindings and optional registry credentials, never app auth or email secrets. If a database survived a failed first apply before any cloud credential copy existed, the module fails closed. Preserve its password through the ephemeral input or deliberately reset it with a version bump, then use `database_password_recovery_acknowledged` for that recovery only. Do not acknowledge blindly. Changing an existing database URL also requires its explicit secret-version bump.
 
-No module lock file is shipped. Generate locks in your root/example separately for the chosen tool: `terraform init` or `tofu init`. Their registry addresses and checksums can differ; do not reuse one tool's lock in read-only mode for the other without generating compatible entries. Commit the appropriate root lock; do not publish provider caches or state.
+The reusable module has no lock file; the executable `examples/complete` root **does commit provider selections and signed-release checksums**. Its `.terraform.lock.hcl` is for Terraform. For OpenTofu, first copy `opentofu.lock.hcl` to `.terraform.lock.hcl` in that example root, then run `tofu init -lockfile=readonly`. The separate registry-specific locks pin AzAPI 2.13.0, AzureRM 5.10.0, external 2.4.2 and random 3.9.1. Do not combine the two registry namespaces: each CLI removes the other's unused entries. Choose one tool per deployment root and commit its selected lock; update it deliberately, never publish provider caches or state.
 
 ## Inputs and defaults
 
@@ -117,8 +117,8 @@ No module lock file is shipped. Generate locks in your root/example separately f
 | `openwork_version` | `0.18.58` | Release label; non-default requires both explicit pins |
 | `name`, `location`, `tags` | `openwork`, group region, `{}` | Resource prefix, region, Azure labels |
 | `den_api_image`, `den_web_image` | `""` | Full image@digest overrides, including mirrors |
-| `den_api_image_digest` | `sha266:0942e02a8e2033151e982f51b24926fe5090807b7f7480d77f2c4fc5b806737e` | 0.18.58 API / migration pin |
-| `den_web_image_digest` | `sha266:b1543b2bb36df0a7c75d7dc18cdd773eb2e87df268169dcb1e284439299ada3f` | 0.18.58 web pin |
+| `den_api_image_digest` | `sha256:0942e02a8e2033151e982f51b24926fe5090807b7f7480d77f2c4fc5b806737e` | 0.18.58 API / migration pin |
+| `den_web_image_digest` | `sha256:b1543b2bb36df0a7c75d7dc18cdd773eb2e87df268169dcb1e284439299ada3f` | 0.18.58 web pin |
 | `registry`, `registry_password` | `null`, sensitive `""` | Existing private registry identity or username/password |
 | `container_app_environment_id`, `infrastructure_subnet_id` | `""`, `""` | Existing environment or subnet for new environment; apps/Job inherit an existing environment's actual region |
 | `internal_load_balancer_enabled`, `workload_profile_name` | `false`, `Consumption` | Internal-only ingress; workload profile |
@@ -159,11 +159,12 @@ No module lock file is shipped. Generate locks in your root/example separately f
 
 ```bash
 # Validate through the supported root, which binds the secret-read alias.
-terraform -chdir=examples/complete init -backend=false
+terraform -chdir=examples/complete init -backend=false -lockfile=readonly
 terraform -chdir=examples/complete validate
 terraform init -backend=false && terraform test
-# Repeat with OpenTofu, regenerating its local root/example locks:
-tofu -chdir=examples/complete init -backend=false
+# Select the committed OpenTofu lock before switching tools in this example:
+cp examples/complete/opentofu.lock.hcl examples/complete/.terraform.lock.hcl
+tofu -chdir=examples/complete init -backend=false -lockfile=readonly
 tofu -chdir=examples/complete validate
 tofu init -backend=false && tofu test
 ```

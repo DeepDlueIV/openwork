@@ -1513,7 +1513,24 @@ importers:
         specifier: ^8.5.0
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(tsx@4.23.1)(typescript@5.9.3)(yaml@2.9.0)
 
-  packages/computer-use: {}
+  packages/computer-use:
+    dependencies:
+      typescript:
+        specifier: 5.9.3
+        version: 5.9.3
+    devDependencies:
+      '@openwork/codemode':
+        specifier: workspace:*
+        version: link:../codemode
+      effect:
+        specifier: 4.0.0-beta.83
+        version: 4.0.0-beta.83
+      tsup:
+        specifier: ^8.5.0
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.23)(tsx@4.23.1)(typescript@5.9.3)(yaml@2.9.0)
+      zod:
+        specifier: ^4.3.6
+        version: 4.3.6
 
   packages/connect-link:
     dependencies:

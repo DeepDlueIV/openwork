@@ -159,3 +159,79 @@ and resume the VM through the provider, then request `/after`. This checks a
 browser fill followed by a desktop keyboard save, shared takeover, screenshot
 coordinates at browser zoom, and memory preservation. It uses synthetic data;
 it is a focused provider diagnostic, separate from the Web rollout UI proof.
+
+## UI programs and shortcuts
+
+With `computerUse` enabled, `computer_run` executes one bounded JavaScript
+program against the conversation's selected computer or built-in browser. It
+uses the same Stop/takeover controls and organization policy as direct tools.
+There is no extra application consent step. The `remoteComputers` rollout is
+also required when the selected computer is a VM.
+
+```js
+// computer_run({ surface: "browser", code: ... })
+await tools.ui.open({ url: "https://example.com/projects" });
+await tools.ui.waitFor({ target: { role: "textbox", name: "Search" } });
+await tools.ui.fill({
+  target: { role: "textbox", name: "Search" },
+  text: "Website refresh",
+});
+const project = await tools.ui.scrollUntil({
+  target: { role: "button", name: "Website refresh" },
+  container: { role: "region", name: "Projects" },
+  maxPages: 6,
+});
+if (!project.found) return project;
+await tools.ui.click({ target: project.target });
+return await tools.ui.observe({ screenshot: true });
+```
+
+`open`, `observe`, `find`, `exists`, `click`, `fill`, `fillForm`, `setChecked`,
+`select`, `key`, `findText`, `menu`, `waitFor`, `scroll` and `scrollUntil` run
+inside the program. `act` exposes the existing low-level action contract for
+visual fallbacks. Targets accept `role`, `name`, `text`, `exact` (default true)
+and `nth`; ambiguous targets fail before dispatch. Fields are replaced by
+default; `fill({..., append: true})` appends. `setChecked` verifies the desired
+state and does not toggle an already-correct checkbox. `findText` handles a
+native Find field's focus transition; browser text is searched directly.
+Menu and select helpers need controls exposed by the app's accessibility tree
+or browser DOM. Unsupported custom controls return a diagnostic; inspect an
+image and use `act` rather than guessing.
+
+A program defaults to 30 seconds, accepts a timeout up to 60 seconds, and is
+limited to 80 helper calls and 32 KB of returned program data. The desktop
+session persists between programs; variables do not. Supply JSON through
+`input`, and return only what the next decision needs. The interpreter has no
+ambient filesystem, network, process, module or page-script access. Screenshots
+are attached separately, and input receipts and timing counters accompany the
+result. A failure never replays completed input. If a receipt is uncertain,
+observe and decide what remains instead of resubmitting the whole program.
+
+Semantic operations reuse a fresh post-action observation. Visual actions still
+need image coordinates and a current screenshot. A program waiting on a known
+UI condition keeps polling locally, and stops when the feature is disabled,
+the chat is stopped, its target changes, or its caller cancels.
+
+### Linux VM execution
+
+The X11 driver starts an owner-only Unix-socket worker on the existing VM.
+Typing chunks and action batches run inside that worker with one provider
+request; a separate cancellation request stops remaining input and releases
+held buttons/modifiers. The worker exits after two idle minutes and restarts
+on demand. A lost response after dispatch is never retried automatically.
+
+To enable semantic Linux controls, install `python3-gi`, `gir1.2-atspi-2.0` and
+`at-spi2-core`, enable the app's accessibility bridge, and run provider commands
+in the same user/session-bus environment as the desktop. For GTK, that normally
+means `GTK_MODULES=atk-bridge`, `NO_AT_BRIDGE=0` and the desktop's
+`DBUS_SESSION_BUS_ADDRESS`. Without AT-SPI, the existing screenshot, keyboard
+and pointer operations remain available. Observations report whether semantic
+controls are available; applications that do not expose controls need visual
+fallbacks.
+
+The real X11 fixture in `apps/desktop/test/computer-shortcuts-x11.mjs` proves
+semantic fill, idempotent checkbox setting, save, scrolling, physical typing
+in one provider request, cancellation and rollout rollback. It requires an
+isolated Xvfb/DBus desktop running `fixtures/computer-shortcuts-gtk.py` and
+`OPENWORK_TEST_COMPUTER_CONTAINER`; it never connects to a production VM.
+The browser proof is `evals/proofs/computer-shortcuts.proof.test.ts`.

@@ -101,6 +101,8 @@ function deadline(ms) {
  * controller across all chats and computers, deliberately conservative.
  * @param {{
  *   adapters: ComputerAdapter[],
+ *   runProgram?: (request: import("@openwork/computer-use/runtime").ProgramRequest, host: import("@openwork/computer-use/runtime").ProgramHost, signal: AbortSignal) => Promise<import("@openwork/computer-use/runtime").ProgramResult>,
+ *   browserTask?: (request: { sessionId: string, operation: string, args: Record<string, unknown> }, options: { signal: AbortSignal }) => Promise<unknown>,
  *   readRemoteFeatureEnabled?: () => Promise<boolean>,
  *   standing?: { read: () => Promise<SavedChoices>, write: (state: SavedChoices) => Promise<void> },
  *   presence?: { name: string, color: string } | null,
@@ -110,7 +112,7 @@ function deadline(ms) {
  *   cleanupMs?: number, operationMs?: number, pollMs?: number, idleMs?: number, now?: () => number,
  * }} options
  */
-export function createComputerControl({ adapters, readRemoteFeatureEnabled = async () => false, standing = { read: async () => ({ targets: {} }), write: async (_state) => {} }, presence = null,
+export function createComputerControl({ adapters, runProgram, browserTask, readRemoteFeatureEnabled = async () => false, standing = { read: async () => ({ targets: {} }), write: async (_state) => {} }, presence = null,
   permissionEntry = async () => ({ name: "OpenWork", ours: false }), onRequest = () => {},
   cleanupMs = 3000, operationMs = 120_000, pollMs = 750, idleMs = 90_000, requestMs = 600_000, now = Date.now }) {
   const targets = new Map();
@@ -130,6 +132,7 @@ export function createComputerControl({ adapters, readRemoteFeatureEnabled = asy
   for (const value of [cleanupMs, operationMs, pollMs, idleMs, requestMs]) if (!Number.isSafeInteger(value) || value < 1 || value > 2_147_483_647) throw new Error("Computer time limits must be positive bounded milliseconds.");
   const grants = new Map();
   const requests = new Map();
+  const programs = new Map();
   let lease = null;
   let featureEnabled = false;
   let featureGeneration = 0;
@@ -148,6 +151,7 @@ export function createComputerControl({ adapters, readRemoteFeatureEnabled = asy
     current.observationGeneration = (current.observationGeneration ?? 0) + 1;
   }
   function advance(grant) {
+    programs.get(grant.sessionId)?.controller.abort(new Error("Computer control stopped or changed."));
     grant.controller.abort(new Error("Computer use was turned off, revoked, or restarted."));
     grant.controller = new AbortController();
     return ++grant.revision;
@@ -576,7 +580,7 @@ export function createComputerControl({ adapters, readRemoteFeatureEnabled = asy
               if (!postStillOwned(call) || current.needsObservation) return postWarning(result, "handoff_required", "human_takeover");
               // One read in this exact tool call, never a repeated input or a
               // continuation across a person takeover. Watch frames are unrelated.
-              const observation = await current.transport.callTool("computer_observe", { session_id: current.nativeId, include_image: true }, { signal: active });
+              const observation = await current.transport.callTool("computer_observe", { session_id: current.nativeId, include_image: call.includePostImage !== false }, { signal: active });
               progress(); assertUiActive(current);
               if (!postStillOwned(call)) return postWarning(result, "observation_withheld", "human_takeover");
               const observed = stateOf(observation);
@@ -840,6 +844,7 @@ export function createComputerControl({ adapters, readRemoteFeatureEnabled = asy
       if (featureEnabled !== (enabled === true)) featureGeneration++;
       featureEnabled = enabled === true;
       if (featureEnabled) return true;
+      for (const program of programs.values()) program.controller.abort(new Error("Computer use was turned off."));
       for (const request of requests.values()) request.settle("unavailable");
       if (lease) {
         lease.expectedClose = true;
@@ -861,6 +866,7 @@ export function createComputerControl({ adapters, readRemoteFeatureEnabled = asy
       enabled = authorized;
       if (remoteEnabled !== (enabled === true)) remoteGeneration++;
       remoteEnabled = enabled === true;
+      if (!remoteEnabled) for (const program of programs.values()) if (program.remote) program.controller.abort(new Error("Remote computers were turned off."));
       for (const request of requests.values()) request.wake();
       if (!remoteEnabled && lease?.adapter.placement === "remote") {
         lease.expectedClose = true;
@@ -893,12 +899,47 @@ export function createComputerControl({ adapters, readRemoteFeatureEnabled = asy
       for (const target of targets.values()) if (typeof target.dismissSetup === "function") await target.dismissSetup(typeof setupId === "string" ? setupId : undefined);
     },
     /**
+     * Run bounded UI code under the same flag, chat and stop generation as
+     * direct tools. Browser calls still pass through their normal task host.
+     * @param {import("@openwork/computer-use/runtime").ProgramRequest & ChatInput} input
+     * @param {{ signal?: AbortSignal }} options
+     */
+    async program(input, { signal = new AbortController().signal } = {}) {
+      if (!featureEnabled || closed || resetting || !runProgram) return { ok: false, error: { code: "computer_unavailable", message: "Computer use is not enabled." } };
+      if (!input || !["computer", "browser"].includes(input.surface) || typeof input.code !== "string" || input.code.length > 32_000
+        || input.timeoutMs !== undefined && (!Number.isInteger(input.timeoutMs) || input.timeoutMs < 1000 || input.timeoutMs > 60_000)) return { ok: false, error: { code: "invalid_arguments", message: "Provide a surface, bounded code and a timeout from 1000 to 60000 milliseconds." } };
+      const grant = await grantFor(input.sessionId);
+      if (!grant.enabled) return { ok: false, error: { code: "computer_stopped", message: "Computer use stopped for this turn. Continue with the person's next message." } };
+      if (programs.has(grant.sessionId)) return { ok: false, error: { code: "program_busy", message: "A program is already running in this chat." } };
+      const generation = featureGeneration;
+      const revision = grant.revision;
+      const remote = input.surface === "computer" && targetFor(grant).placement === "remote";
+      const remoteRevision = remoteGeneration;
+      const controller = new AbortController();
+      const current = { controller, remote };
+      const active = AbortSignal.any([signal, controller.signal, grant.controller.signal]);
+      const check = () => {
+        active.throwIfAborted();
+        if (!featureEnabled || generation !== featureGeneration || revision !== grant.revision || closed || resetting || remote && remoteRevision !== remoteGeneration) throw new Error("The computer program stopped or its target changed.");
+      };
+      programs.set(grant.sessionId, current);
+      try {
+        check();
+        return await runProgram(input, {
+          computer: async (name, args, callSignal) => { check(); const result = await api.execute({ sessionId: grant.sessionId, name, args }, { signal: AbortSignal.any([active, callSignal]), includePostImage: false }); check(); return result; },
+          browser: async (operation, args, callSignal) => { check(); if (!browserTask) throw new Error("The browser is unavailable."); const result = await browserTask({ sessionId: grant.sessionId, operation, args }, { signal: AbortSignal.any([active, callSignal]) }); check(); return result; },
+        }, active);
+      } catch {
+        return { ok: false, error: { code: "program_stopped", message: "The program stopped. Previously dispatched actions were not replayed." }, mayHaveActed: true };
+      } finally { if (programs.get(grant.sessionId) === current) programs.delete(grant.sessionId); }
+    },
+    /**
      * Tool calls from the engine, scoped to the requesting chat by the bridge.
      * @param {ChatInput & { name?: string, args?: Record<string, unknown> }} input
-     * @param {{ signal?: AbortSignal }} options
+     * @param {{ signal?: AbortSignal, includePostImage?: boolean }} options
      * @returns {Promise<ComputerResult>}
      */
-    async execute({ sessionId, name, args } = {}, { signal = new AbortController().signal } = {}) {
+    async execute({ sessionId, name, args } = {}, { signal = new AbortController().signal, includePostImage = true } = {}) {
       let limit = null;
       try {
         if (!Object.hasOwn(COMPUTER_TOOLS, name)) return failure("unknown_tool", "This computer tool does not exist.");
@@ -933,7 +974,7 @@ export function createComputerControl({ adapters, readRemoteFeatureEnabled = asy
           }
         }
         if (!featureEnabled || generation !== featureGeneration || grant.adapter.placement === "remote" && remoteRevision !== remoteGeneration) return failure("computer_unavailable", "Computer use was turned off while this request was waiting. Nothing was dispatched.");
-        const call = { name, args: structuredClone(args), grant, revision: grant.revision, featureGeneration: generation, remoteGeneration: remoteRevision, remoteTarget: grant.adapter.placement === "remote" };
+        const call = { name, includePostImage, args: structuredClone(args), grant, revision: grant.revision, featureGeneration: generation, remoteGeneration: remoteRevision, remoteTarget: grant.adapter.placement === "remote" };
         // The operation budget starts once the person has answered.
         limit = deadline(operationMs);
         return deliverResult(call, await run(call, signal, limit));

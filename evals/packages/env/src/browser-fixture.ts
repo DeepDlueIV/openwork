@@ -61,6 +61,19 @@ if(location.pathname!='/fallback'){
 }
 </script>`;
 
+const shortcutsPage = `<!doctype html><meta charset="utf-8"><title>Computer toolkit project</title>
+<style>body{font:16px system-ui;margin:24px}label,button{margin:8px;display:block}#projects{height:200px;overflow:auto;border:1px solid #888;padding:8px}#projects button{width:90%;height:32px}#filters[hidden]{display:none}</style>
+<h1>Computer toolkit project</h1><button id="show">Show filters</button>
+<section id="filters" hidden><label>Draft title<input aria-label="Draft title"></label><label><input type="checkbox" aria-label="Include details">Include details</label><label>Report period<select aria-label="Report period"><option>Daily</option><option>Weekly</option></select></label></section>
+<div id="projects" role="region" aria-label="Projects"></div><p id="selection">No project selected</p><button id="save">Save draft</button><p id="status">Nothing saved</p>
+<script>
+let selected='';let saves=0;
+document.querySelector('#show').onclick=()=>{document.querySelector('#filters').hidden=false;document.querySelector('#show').remove();};
+document.querySelector('input[aria-label="Draft title"]').oninput=event=>fetch('/input',{method:'POST',body:event.target.value});
+const list=document.querySelector('#projects');for(let i=1;i<=80;i++){const button=document.createElement('button');button.textContent='Project '+i;button.onclick=()=>{selected=button.textContent;document.querySelector('#selection').textContent='Selected '+selected;};list.append(button);}
+document.querySelector('#save').onclick=async()=>{const period=document.querySelector('select').value;const details=document.querySelector('input[type="checkbox"]').checked;await fetch('/record',{method:'POST',body:JSON.stringify({method:'shortcuts:'+period+':'+details+':'+selected,count:++saves})});document.querySelector('#status').textContent='Saved '+saves;};
+</script>`;
+
 const frameInputWitness = `for(const type of ['mousemove','mousedown','mouseup','click'])document.addEventListener(type,event=>{
   fetch('http://127.0.0.1:'+location.port+'/frame-input',{method:'POST',mode:'no-cors',body:JSON.stringify({page:location.pathname,type,x:event.clientX,y:event.clientY,target:event.target.tagName,trusted:event.isTrusted})});
 },true);`;
@@ -270,6 +283,7 @@ export async function startBrowserFixture(app: Surface, { requireSignIn = true }
       const title=url.searchParams.get('viewport-probe')||(url.pathname==='/'?'home':url.pathname.slice(1));
       let document=page.replace('<title>Browser task fixture</title>','<title>Project '+title.replace(/[^a-z-]/g,'')+'</title>');
       if(url.pathname==='/'||url.pathname==='/allowed')document=document.replace('<style>','<link id="project-stylesheet" rel="stylesheet" data-document-id="'+pageRequests.length+'" href="http://localhost:'+server.address().port+'/project.css?documentId='+pageRequests.length+'"><style>');
+      if(url.pathname==='/shortcuts'){res.end(${browserScriptValue(shortcutsPage)});return;}
       res.end(['/frames','/origin-policy'].includes(url.pathname)?framesPage:url.pathname.startsWith('/origin-policy-')?originPolicyPage:url.pathname.startsWith('/frame-')?framePage:document);
     });
     server.listen(0,'0.0.0.0',()=>writeFileSync(${browserScriptValue(ready)},JSON.stringify({pid:process.pid,port:server.address().port})));

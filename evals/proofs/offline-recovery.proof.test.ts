@@ -33,7 +33,7 @@ test("a member keeps completed work and explicitly continues after losing their 
     await user.see("Run task");
   });
 
-  await step("after: offline requests keep the draft and completed report, with one connection warning", async () => {
+  await step("after: one offline warning above the composer keeps the draft and completed report visible", async () => {
     const before = await world.counts();
     await world.offline(true);
     await user.see({ text: "You’re offline" });

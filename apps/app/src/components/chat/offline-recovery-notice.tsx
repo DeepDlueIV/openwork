@@ -12,7 +12,7 @@ export function OfflineRecoveryNotice(props: {
   onContinue: () => void;
 }) {
   if (!props.issue && !props.held) return null;
-  return <TaskRecovery state="paused" testId="offline-recovery"
+  return <TaskRecovery state="paused" emphasized={Boolean(props.issue)} testId="offline-recovery"
     title={props.issue === "offline" ? "You’re offline" : props.issue ? "Can’t reach online services" : "Connection restored"}
     technicalDetails={props.stopUnconfirmed ? "The task could not be confirmed stopped. Check its status before continuing. Some steps may already have completed."
       : props.interrupted ? "The local task stopped retrying. Some steps may already have completed; continuing checks the conversation before doing what remains." : undefined}

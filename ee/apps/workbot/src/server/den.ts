@@ -180,8 +180,13 @@ export function createDen(options: { apiUrl: string; publicUrl: string }) {
       return authorized(input.method, `/v1/workbot/calendar${input.path}`, accessToken, input.body)
     },
     /** Read-only Documents requests; Den enforces the feature and exact route allowlist. */
-    async documents(accessToken: string, path: string) {
-      return authorized("GET", `/v1/workbot/documents${path}`, accessToken)
+    async documents(accessToken: string, path: string, method: "GET" | "POST" = "GET", body?: unknown) {
+      return authorized(method, `/v1/workbot/documents${path}`, accessToken, body)
+    },
+    async documentContent(accessToken: string, path: string) {
+      const response = await fetch(`${options.apiUrl}/v1/workbot/documents${path}`, { headers: { authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(TIMEOUT_MS) })
+      if (response.status === 401) throw new DenSignedOutError()
+      return response
     },
     /** Den's web app, from its sign-in issuer, for links back to OpenWork and app logos. */
     async webUrl() {

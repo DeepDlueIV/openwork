@@ -166,7 +166,7 @@
                 true,
                 false
               ],
-              "description": "Workbot Documents: Members browse and search their connected Google Drive files and folders in Workbot, and open documents in Drive. Renders DEN_FEATURE_WORKBOT_DOCUMENTS."
+              "description": "Workbot Documents: Members browse recent Google Drive files and folders in Workbot, open documents in tabs, and save supported text and spreadsheet edits to Drive. Renders DEN_FEATURE_WORKBOT_DOCUMENTS."
             },
             "automationCalendar": {
               "enum": [

@@ -106,7 +106,12 @@ function ChatScreen({ host, navigation }: { host: WorkbotHost; navigation: ChatN
   const [pending, setPending] = useState<Pending[]>([]);
   const [turnWindow, setTurnWindow] = useState(PAGE_TURNS);
   const [filesOpen, setFilesOpen] = useState(false);
-  const [tab, setTab] = useWorkbotTab();
+  const [documentsDirty, setDocumentsDirty] = useState(false);
+  const [leavingDocuments, setLeavingDocuments] = useState<WorkbotTab | null>(null);
+  const [tab, setTab] = useWorkbotTab((next) => {
+    if (documentsDirty && next !== "documents") { setLeavingDocuments(next); return false; }
+    return true;
+  });
   const [preview, setPreview] = useState<WorkbotAttachment | null>(null);
   // The welcome shows once, while there's no conversation yet; leaving it, Workbot starts the conversation itself.
   // "pending" until the conversation is first read: then it shows (no conversation yet) or never does. Side chats
@@ -229,8 +234,9 @@ function ChatScreen({ host, navigation }: { host: WorkbotHost; navigation: ChatN
           files={null}
           nav={<WorkbotNav tab={tab} onTab={setTab} />}
         />
+        {leavingDocuments && <div className="border-t border-[var(--wb-hairline)] px-4 py-2 text-[13px]" role="status">You have unsaved document edits. <button type="button" className="ml-3 underline" onClick={() => setLeavingDocuments(null)}>Keep editing</button><button type="button" className="ml-3 underline" onClick={() => { const next = leavingDocuments; setLeavingDocuments(null); setDocumentsDirty(false); setTab(next, true); }}>Discard edits and leave Documents</button></div>}
         <div className="flex min-h-0 flex-1 border-t border-[#01162712]">
-          {tab === "documents" ? <WorkbotDocuments /> : <WorkbotCalendar connectionsHref={host.connectionsHref ?? null} assistantName={data?.name ?? "Workbot"} />}
+          {tab === "documents" ? <WorkbotDocuments onDirtyChange={setDocumentsDirty} /> : <WorkbotCalendar connectionsHref={host.connectionsHref ?? null} assistantName={data?.name ?? "Workbot"} />}
         </div>
       </div>
     );
@@ -465,15 +471,22 @@ function tabFromLocation(): WorkbotTab {
 }
 
 /** Home (the conversation) and Calendar, as paths so a reload or a shared link opens the same tab. */
-function useWorkbotTab() {
+function useWorkbotTab(beforeLeave?: (next: WorkbotTab) => boolean) {
+  const beforeLeaveRef = useRef(beforeLeave);
+  beforeLeaveRef.current = beforeLeave;
   const [tab, setTabState] = useState<WorkbotTab>(tabFromLocation);
   useEffect(() => {
-    const sync = () => setTabState(tabFromLocation());
+    const sync = () => {
+      const next = tabFromLocation();
+      if (beforeLeaveRef.current?.(next) === false) { window.history.pushState(null, "", "/documents"); return; }
+      setTabState(next);
+    };
     window.addEventListener("popstate", sync);
     return () => window.removeEventListener("popstate", sync);
   }, []);
-  const setTab = (next: WorkbotTab) => {
+  const setTab = (next: WorkbotTab, discard = false) => {
     if (next === tab) return;
+    if (!discard && beforeLeaveRef.current?.(next) === false) return;
     window.history.pushState(null, "", next === "home" ? "/" : `/${next}`);
     setTabState(next);
   };

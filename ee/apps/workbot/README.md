@@ -65,14 +65,19 @@ A web service in the same region as the headless runner (it reaches the runner's
 
 ## Documents
 
-The Documents tab mounts the reusable `@openwork/documents` browser through a
-small host adapter in `@openwork-ee/workbot-ui`. It is behind `workbotDocuments`,
-off by default, and requires Workbot too. Enable it per organization through
-Den's existing Features controls; do not add a Workbot environment switch.
+The Documents tab mounts the reusable `@openwork/documents` workspace through
+`@openwork-ee/workbot-ui`. `workbotDocuments` is off by default and also requires
+Workbot. Enable it through Den's existing Features controls; there is no separate
+Workbot environment switch.
 
-The first version browses/searches the member's default connected Google Drive,
-with folder breadcrumbs, list/grid views, pagination and details. Files open in
-Google Drive in a new browser tab. Browsing reads metadata only and makes no
-Drive changes. Den independently checks the flag, current membership and read
-scope for every proxied request. See `packages/documents/README.md` for the
-provider contract and later scope.
+Recent and My Drive use the member's real Drive API v3 connection. Missing
+access offers Connect/Reconnect. Google Sheets, Excel, Google Docs, Word and
+UTF-8 text open in internal tabs with explicit save-to-original-file actions;
+PDFs/images preview inline. Other formats link to the original editor. This is
+bounded cell/text editing, not full Office layout or collaboration parity.
+
+The host protects dirty tabs before navigation. Den independently checks the
+feature, membership, OAuth read/write scopes and the exact Google connection.
+The editor preserves unrelated file parts and refuses unsupported unsafe edits.
+See `packages/documents/README.md` for the package contract, format limits,
+permission requirements and concurrency boundaries.

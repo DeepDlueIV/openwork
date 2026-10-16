@@ -562,8 +562,6 @@ import type {
   ListGmailLabelsResponses,
   ListWorkbotConnectionsErrors,
   ListWorkbotConnectionsResponses,
-  ListWorkbotDocumentsErrors,
-  ListWorkbotDocumentsResponses,
   Microsoft365CalendarCancelBody,
   Microsoft365CalendarDeleteBody,
   Microsoft365CalendarEventBody,
@@ -581,6 +579,8 @@ import type {
   MintAutomationRunnerTokenResponses,
   MoveMicrosoft365MailMessageErrors,
   MoveMicrosoft365MailMessageResponses,
+  OpenGoogleDriveDocumentEditorErrors,
+  OpenGoogleDriveDocumentEditorResponses,
   OrganizationWebOriginApproveBody,
   PatchApiAuthScimV2GroupsByGroupIdErrors,
   PatchApiAuthScimV2GroupsByGroupIdResponses,
@@ -987,10 +987,14 @@ import type {
   PutV1TeamsByKeyByExternalKeyResponses,
   PutV1TeamsByTeamIdPermissionSetErrors,
   PutV1TeamsByTeamIdPermissionSetResponses,
+  ReadGoogleDriveDocumentContentErrors,
+  ReadGoogleDriveDocumentContentResponses,
   RemoteSessionStatusRequest,
   RenamePermissionSetBody,
   RunAutomationNowErrors,
   RunAutomationNowResponses,
+  SaveGoogleDriveDocumentEditsErrors,
+  SaveGoogleDriveDocumentEditsResponses,
   SaveWorkflowErrors,
   SaveWorkflowResponses,
   SendGmailDraftErrors,
@@ -9496,6 +9500,139 @@ export class DenClient extends HeyApiClient {
   }
 
   /**
+   * Open a Drive document in the inline editor
+   */
+  public openGoogleDriveDocumentEditor<ThrowOnError extends boolean = false>(
+    parameters: {
+      fileId: string;
+      sheetId?: string;
+      startRow?: number;
+      connectionId?: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "fileId" },
+            { in: "query", key: "sheetId" },
+            { in: "query", key: "startRow" },
+            { in: "query", key: "connectionId" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).get<
+      OpenGoogleDriveDocumentEditorResponses,
+      OpenGoogleDriveDocumentEditorErrors,
+      ThrowOnError
+    >({
+      url: "/v1/documents/google-drive/files/{fileId}/editor",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
+   * Save explicit inline edits to the same Drive file
+   */
+  public saveGoogleDriveDocumentEdits<ThrowOnError extends boolean = false>(
+    parameters: {
+      fileId: string;
+      body:
+        | {
+            kind: "spreadsheet";
+            connectionId: string;
+            revision: string;
+            sheetId: string;
+            changes: Array<{
+              row: number;
+              column: number;
+              value: string;
+              formula?: boolean;
+            }>;
+          }
+        | {
+            kind: "document";
+            connectionId: string;
+            revision: string;
+            changes: Array<{
+              sectionId: string;
+              runId: string;
+              value: string;
+            }>;
+          }
+        | {
+            kind: "text";
+            connectionId: string;
+            revision: string;
+            text: string;
+          };
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "fileId" },
+            { key: "body", map: "body" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).post<
+      SaveGoogleDriveDocumentEditsResponses,
+      SaveGoogleDriveDocumentEditsErrors,
+      ThrowOnError
+    >({
+      url: "/v1/documents/google-drive/files/{fileId}/editor",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    });
+  }
+
+  /**
+   * Preview a Drive PDF or image
+   */
+  public readGoogleDriveDocumentContent<ThrowOnError extends boolean = false>(
+    parameters: {
+      fileId: string;
+      connectionId: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "fileId" },
+            { in: "query", key: "connectionId" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).get<
+      ReadGoogleDriveDocumentContentResponses,
+      ReadGoogleDriveDocumentContentErrors,
+      ThrowOnError
+    >({
+      url: "/v1/documents/google-drive/files/{fileId}/content",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
    * Send an existing Gmail draft
    *
    * Sends the existing draft unchanged, including To/Cc/Bcc, reply threading and attachments. Create or inspect the draft first. Requires gmail.compose or gmail.modify (gmail.send alone does not authorize drafts.send). A successful response contains the actual sent message id and threadId, not the old draft message ID. Uses only the calling member's selected connected Google account. Perform writes only when explicitly requested by the user; capability discovery or selection is not authorization. Never automatically retry an uncertain write.
@@ -10630,6 +10767,8 @@ export class DenClient extends HeyApiClient {
       query?: string;
       maxResults?: number;
       pageToken?: string;
+      orderBy?: "folder,name_natural" | "recency desc" | "modifiedTime desc";
+      filesOnly?: "true" | "false";
       modifiedAfter?: string;
       folderId?: string;
     },
@@ -10643,6 +10782,8 @@ export class DenClient extends HeyApiClient {
             { in: "query", key: "query" },
             { in: "query", key: "maxResults" },
             { in: "query", key: "pageToken" },
+            { in: "query", key: "orderBy" },
+            { in: "query", key: "filesOnly" },
             { in: "query", key: "modifiedAfter" },
             { in: "query", key: "folderId" },
           ],
@@ -15888,19 +16029,6 @@ export class DenClient extends HeyApiClient {
       ListWorkbotConnectionsErrors,
       ThrowOnError
     >({ url: "/v1/workbot/connections", ...options });
-  }
-
-  /**
-   * Browse the member's connected Google Drive documents
-   *
-   * Read-only folder and search metadata through the member's Google connection. Requires Workbot, Workbot Documents and mcp:read; the destination enforces connector access and Google permissions. No file bytes or download credentials are returned.
-   */
-  public listWorkbotDocuments<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
-    return (options?.client ?? this.client).get<
-      ListWorkbotDocumentsResponses,
-      ListWorkbotDocumentsErrors,
-      ThrowOnError
-    >({ url: "/v1/workbot/documents/v1/capabilities/google-workspace/drive-files", ...options });
   }
 
   /**

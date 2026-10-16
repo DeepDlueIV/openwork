@@ -156,13 +156,20 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
     const { status, payload } = await den.calendar(member.accessToken, { method, path: `${path}${url.search}`, body })
     return new Response(JSON.stringify(payload), { status, headers: { "content-type": "application/json" } })
   }
-  app.get("/v1/workbot/documents/*", async (c) => {
+  app.on(["GET", "POST"], "/v1/workbot/documents/*", bodyLimit({ maxSize: 2 * 1024 * 1024 }), async (c) => {
     const member = c.get("member")
     if (!member.den.enabled || member.den.documents !== true) return c.json({ error: "workbot_documents_not_enabled" }, 403)
     const url = new URL(c.req.url)
     const path = url.pathname.slice("/v1/workbot/documents".length)
-    if (path !== "/v1/capabilities/google-workspace/drive-files") return c.json({ error: "not_found" }, 404)
-    const { status, payload } = await den.documents(member.accessToken, `${path}${url.search}`)
+    const editor = /^\/v1\/documents\/google-drive\/files\/[A-Za-z0-9_-]{1,512}\/(editor|content)$/.exec(path)
+    const method = c.req.method === "POST" ? "POST" : "GET"
+    if (!(method === "GET" && path === "/v1/capabilities/google-workspace/drive-files") && !(editor && (method === "GET" || editor[1] === "editor"))) return c.json({ error: "not_found" }, 404)
+    if (editor?.[1] === "content") {
+      const response = await den.documentContent(member.accessToken, `${path}${url.search}`)
+      return new Response(response.body, { status: response.status, headers: { "content-type": response.headers.get("content-type") ?? "application/octet-stream", "cache-control": "no-store", "x-content-type-options": "nosniff", "content-security-policy": "default-src 'none'; sandbox" } })
+    }
+    const body: unknown = method === "POST" ? await c.req.json().catch(() => null) : undefined
+    const { status, payload } = await den.documents(member.accessToken, `${path}${url.search}`, method, body)
     return new Response(JSON.stringify(payload), { status, headers: { "content-type": "application/json", "cache-control": "no-store" } })
   })
 

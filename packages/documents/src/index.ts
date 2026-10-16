@@ -11,7 +11,7 @@ export type DocumentItem = {
   openUrl: string | null
 }
 export type DocumentsPage = { items: DocumentItem[]; nextCursor: string | null; incomplete: boolean }
-export type DocumentsRequest = { folderId: string; query: string; cursor?: string; signal?: AbortSignal }
+export type DocumentsRequest = { view?: "recent" | "folder"; folderId: string; query: string; cursor?: string; signal?: AbortSignal }
 export type DocumentsProvider = {
   id: string
   label: string
@@ -52,7 +52,8 @@ export function googleDriveProvider(transport: DocumentsTransport): DocumentsPro
     async list(input) {
       const params = new URLSearchParams({ maxResults: "25" })
       // Search within the displayed folder, matching the breadcrumb's scope.
-      params.set("folderId", input.folderId)
+      if (input.view === "recent") { params.set("orderBy", "recency desc"); params.set("filesOnly", "true") }
+      else { params.set("folderId", input.folderId); params.set("orderBy", "folder,name_natural") }
       if (input.query.trim()) params.set("query", input.query.trim())
       if (input.cursor) params.set("pageToken", input.cursor)
       const { response, payload } = await transport(`/v1/capabilities/google-workspace/drive-files?${params}`, input.signal)
@@ -92,3 +93,6 @@ export function documentType(item: DocumentItem): string {
   }
   return native[item.mimeType] ?? (item.mimeType.startsWith("image/") ? "Image" : item.mimeType.startsWith("text/") ? "Text" : "File")
 }
+
+export { googleDocumentsEditor } from "./google-editor"
+export type { DocumentsEditor } from "./model"

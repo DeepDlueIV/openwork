@@ -1,4 +1,5 @@
 import { z } from "zod"
+import type { OfficeEditor } from "./onlyoffice"
 
 export const documentIdSchema = z.string().min(1).max(512).regex(/^[A-Za-z0-9_-]+$/)
 export const editorCellSchema = z.object({ row: z.number().int().min(1), column: z.number().int().min(1), text: z.string(), formula: z.string().optional() })
@@ -22,6 +23,7 @@ export const documentSaveSchema = z.discriminatedUnion("kind", [
 export type DocumentSave = z.infer<typeof documentSaveSchema>
 export type EditorRequest = { sheetId?: string; startRow?: number; connectionId?: string }
 export type DocumentsEditor = {
+  office?: OfficeEditor
   open(fileId: string, input?: EditorRequest, signal?: AbortSignal): Promise<EditorDocument>
   save(fileId: string, changes: DocumentSave): Promise<void>
   contentUrl(fileId: string): string

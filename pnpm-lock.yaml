@@ -1526,6 +1526,9 @@ importers:
       '@openwork/workbook':
         specifier: workspace:*
         version: link:../workbook
+      jose:
+        specifier: 6.2.8
+        version: 6.2.8
       lucide-react:
         specifier: ^0.577.0
         version: 0.577.0(react@19.2.8)

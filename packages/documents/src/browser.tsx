@@ -124,3 +124,5 @@ export function DocumentsBrowser({ provider, editor, scope, enabled, connections
     </div>
   </section>
 }
+
+export { OnlyOfficeEditorTab } from "./onlyoffice-editor"

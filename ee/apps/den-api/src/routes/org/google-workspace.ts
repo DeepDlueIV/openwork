@@ -31,6 +31,7 @@ import {
 } from "../../capability-sources/google-workspace-api.js"
 import { getOrgOAuthClient, type ConnectedAccountRow } from "../../capability-sources/oauth-credentials.js"
 import { clientSelectedFeatures, getNativeOAuthProvider, providerScopesSatisfy, resolveProviderScopes } from "../../capability-sources/provider-registry.js"
+import { registerGoogleOfficeEditorRoutes } from "./google-office-editor.js"
 import { registerGoogleDocumentEditorRoutes } from "./google-document-editor.js"
 import { registerGoogleDriveFileRoutes } from "./google-drive-files.js"
 import { registerGoogleDriveUploadRoutes } from "./google-drive-uploads.js"
@@ -749,6 +750,7 @@ export function registerGoogleWorkspaceRoutes<T extends { Variables: OrgRouteVar
   registerGoogleDriveUploadRoutes(app, actionDependencies)
   registerGoogleDriveFileRoutes(app, actionDependencies)
   registerGoogleDocumentEditorRoutes(app, actionDependencies)
+  registerGoogleOfficeEditorRoutes(app, actionDependencies)
   registerGmailManagementRoutes(app, actionDependencies)
   registerGoogleProductivityManagementRoutes(app, actionDependencies)
 

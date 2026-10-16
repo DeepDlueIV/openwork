@@ -14,6 +14,8 @@ import type {
   CancelAutomationRunResponses,
   CancelMicrosoft365CalendarEventErrors,
   CancelMicrosoft365CalendarEventResponses,
+  CloseGoogleDriveOfficeEditorErrors,
+  CloseGoogleDriveOfficeEditorResponses,
   CreateAutomationErrors,
   CreateAutomationResponses,
   CreateCloudAutomationErrors,
@@ -135,6 +137,8 @@ import type {
   DownloadGoogleDriveFileByLinkResponses,
   DownloadHostGoogleDriveFileErrors,
   DownloadHostGoogleDriveFileResponses,
+  DownloadOnlyOfficeSourceErrors,
+  DownloadOnlyOfficeSourceResponses,
   ExternalMcpConnectionAccessInput,
   ExternalMcpConnectionByKeyUpsertInput,
   ExternalMcpConnectionToolPolicyInput,
@@ -177,6 +181,8 @@ import type {
   GetGoogleCalendarEventResponses,
   GetGoogleDriveFileMetadataErrors,
   GetGoogleDriveFileMetadataResponses,
+  GetGoogleDriveOfficeEditorStatusErrors,
+  GetGoogleDriveOfficeEditorStatusResponses,
   GetGoogleSheetsValuesErrors,
   GetGoogleSheetsValuesResponses,
   GetGoogleSpreadsheetErrors,
@@ -581,6 +587,8 @@ import type {
   MoveMicrosoft365MailMessageResponses,
   OpenGoogleDriveDocumentEditorErrors,
   OpenGoogleDriveDocumentEditorResponses,
+  OpenGoogleDriveOfficeEditorErrors,
+  OpenGoogleDriveOfficeEditorResponses,
   OrganizationWebOriginApproveBody,
   PatchApiAuthScimV2GroupsByGroupIdErrors,
   PatchApiAuthScimV2GroupsByGroupIdResponses,
@@ -933,6 +941,8 @@ import type {
   PostV1WorkflowsByConfigObjectIdVersionsResponses,
   PostV1WorkflowsTestErrors,
   PostV1WorkflowsTestResponses,
+  PrepareGoogleDriveOfficeSaveErrors,
+  PrepareGoogleDriveOfficeSaveResponses,
   PrepareHostGoogleDriveUploadSessionErrors,
   PrepareHostGoogleDriveUploadSessionResponses,
   PutApiAuthScimV2GroupsByGroupIdErrors,
@@ -989,12 +999,16 @@ import type {
   PutV1TeamsByTeamIdPermissionSetResponses,
   ReadGoogleDriveDocumentContentErrors,
   ReadGoogleDriveDocumentContentResponses,
+  ReceiveOnlyOfficeSnapshotErrors,
+  ReceiveOnlyOfficeSnapshotResponses,
   RemoteSessionStatusRequest,
   RenamePermissionSetBody,
   RunAutomationNowErrors,
   RunAutomationNowResponses,
   SaveGoogleDriveDocumentEditsErrors,
   SaveGoogleDriveDocumentEditsResponses,
+  SaveGoogleDriveOfficeEditorErrors,
+  SaveGoogleDriveOfficeEditorResponses,
   SaveWorkflowErrors,
   SaveWorkflowResponses,
   SendGmailDraftErrors,
@@ -9627,6 +9641,197 @@ export class DenClient extends HeyApiClient {
       ThrowOnError
     >({
       url: "/v1/documents/google-drive/files/{fileId}/content",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
+   * Open the full Word or Excel editor
+   */
+  public openGoogleDriveOfficeEditor<ThrowOnError extends boolean = false>(
+    parameters: {
+      fileId: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "fileId" }] }]);
+    return (options?.client ?? this.client).post<
+      OpenGoogleDriveOfficeEditorResponses,
+      OpenGoogleDriveOfficeEditorErrors,
+      ThrowOnError
+    >({
+      url: "/v1/documents/google-drive/files/{fileId}/office",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
+   * Check whether an Office save is ready
+   */
+  public getGoogleDriveOfficeEditorStatus<ThrowOnError extends boolean = false>(
+    parameters: {
+      fileId: string;
+      sessionId: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "fileId" },
+            { in: "path", key: "sessionId" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).get<
+      GetGoogleDriveOfficeEditorStatusResponses,
+      GetGoogleDriveOfficeEditorStatusErrors,
+      ThrowOnError
+    >({
+      url: "/v1/documents/google-drive/files/{fileId}/office/{sessionId}",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
+   * Prepare an Office snapshot for an explicit save
+   */
+  public prepareGoogleDriveOfficeSave<ThrowOnError extends boolean = false>(
+    parameters: {
+      fileId: string;
+      sessionId: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "fileId" },
+            { in: "path", key: "sessionId" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).post<
+      PrepareGoogleDriveOfficeSaveResponses,
+      PrepareGoogleDriveOfficeSaveErrors,
+      ThrowOnError
+    >({
+      url: "/v1/documents/google-drive/files/{fileId}/office/{sessionId}/flush",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
+   * Save an Office snapshot to Drive
+   */
+  public saveGoogleDriveOfficeEditor<ThrowOnError extends boolean = false>(
+    parameters: {
+      fileId: string;
+      sessionId: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "fileId" },
+            { in: "path", key: "sessionId" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).post<
+      SaveGoogleDriveOfficeEditorResponses,
+      SaveGoogleDriveOfficeEditorErrors,
+      ThrowOnError
+    >({
+      url: "/v1/documents/google-drive/files/{fileId}/office/{sessionId}/save",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
+   * Discard the temporary Office session without changing Drive
+   */
+  public closeGoogleDriveOfficeEditor<ThrowOnError extends boolean = false>(
+    parameters: {
+      fileId: string;
+      sessionId: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "fileId" },
+            { in: "path", key: "sessionId" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).post<
+      CloseGoogleDriveOfficeEditorResponses,
+      CloseGoogleDriveOfficeEditorErrors,
+      ThrowOnError
+    >({
+      url: "/v1/documents/google-drive/files/{fileId}/office/{sessionId}/close",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
+   * Download one signed Office session source
+   */
+  public downloadOnlyOfficeSource<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionId: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionId" }] }]);
+    return (options?.client ?? this.client).get<
+      DownloadOnlyOfficeSourceResponses,
+      DownloadOnlyOfficeSourceErrors,
+      ThrowOnError
+    >({
+      url: "/v1/documents/onlyoffice/sessions/{sessionId}/source",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
+   * Retain a signed editor snapshot without writing to Drive
+   */
+  public receiveOnlyOfficeSnapshot<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionId: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionId" }] }]);
+    return (options?.client ?? this.client).post<
+      ReceiveOnlyOfficeSnapshotResponses,
+      ReceiveOnlyOfficeSnapshotErrors,
+      ThrowOnError
+    >({
+      url: "/v1/documents/onlyoffice/sessions/{sessionId}/callback",
       ...options,
       ...params,
     });

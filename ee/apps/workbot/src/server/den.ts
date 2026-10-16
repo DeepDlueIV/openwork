@@ -179,7 +179,7 @@ export function createDen(options: { apiUrl: string; publicUrl: string }) {
     async calendar(accessToken: string, input: { method: "GET" | "POST" | "PATCH"; path: string; body?: unknown }) {
       return authorized(input.method, `/v1/workbot/calendar${input.path}`, accessToken, input.body)
     },
-    /** Read-only Documents requests; Den enforces the feature and exact route allowlist. */
+    /** Documents reads and explicit editor actions; Den enforces the feature and exact route allowlist. */
     async documents(accessToken: string, path: string, method: "GET" | "POST" = "GET", body?: unknown) {
       return authorized(method, `/v1/workbot/documents${path}`, accessToken, body)
     },

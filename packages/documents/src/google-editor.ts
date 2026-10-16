@@ -1,5 +1,6 @@
 import { z } from "zod"
 import { DocumentsError } from "./index"
+import { onlyOfficeEditor } from "./onlyoffice"
 import { editorDocumentSchema, type DocumentsEditor } from "./model"
 
 type EditorTransport = (path: string, init?: RequestInit) => Promise<{ response: Response; payload: unknown }>
@@ -11,6 +12,7 @@ export function googleDocumentsEditor(transport: EditorTransport, contentUrl: (p
     throw new DocumentsError(response.status, error.success ? error.data.error : "request_failed", error.success && error.data.message ? error.data.message : "The document request failed. Your unsaved changes are kept here.")
   }
   return {
+    office: onlyOfficeEditor(async (path, init) => { const { response, payload } = await transport(path, init); check(response, payload); return payload }, fileId => `${path(fileId)}/office`),
     async open(fileId, input = {}, signal) {
       const params = new URLSearchParams()
       if (input.sheetId) params.set("sheetId", input.sheetId)

@@ -21,6 +21,14 @@
     "./office": {
       "types": "./src/office.ts",
       "default": "./src/office.ts"
+    },
+    "./onlyoffice": {
+      "types": "./src/onlyoffice.ts",
+      "default": "./src/onlyoffice.ts"
+    },
+    "./onlyoffice-server": {
+      "types": "./src/onlyoffice-server.ts",
+      "default": "./src/onlyoffice-server.ts"
     }
   },
   "sideEffects": [
@@ -32,7 +40,8 @@
   "dependencies": {
     "zod": "^4.3.6",
     "lucide-react": "^0.577.0",
-    "@openwork/workbook": "workspace:*"
+    "@openwork/workbook": "workspace:*",
+    "jose": "6.2.8"
   },
   "peerDependencies": {
     "react": "catalog:",

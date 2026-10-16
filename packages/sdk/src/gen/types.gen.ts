@@ -24136,6 +24136,335 @@ export type ReadGoogleDriveDocumentContentResponses = {
   200: unknown;
 };
 
+export type OpenGoogleDriveOfficeEditorData = {
+  body?: never;
+  path: {
+    fileId: string;
+  };
+  query?: never;
+  url: "/v1/documents/google-drive/files/{fileId}/office";
+};
+
+export type OpenGoogleDriveOfficeEditorErrors = {
+  /**
+   * Reopen or reconnect.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The editor is unavailable.
+   */
+  503: {
+    error: string;
+    message: string;
+  };
+};
+
+export type OpenGoogleDriveOfficeEditorError =
+  OpenGoogleDriveOfficeEditorErrors[keyof OpenGoogleDriveOfficeEditorErrors];
+
+export type OpenGoogleDriveOfficeEditorResponses = {
+  /**
+   * Office editor result.
+   */
+  200: {
+    id: string;
+    serverUrl: string;
+    expiresAt: number;
+    saveAsCopy: boolean;
+    canEdit: boolean;
+    config: {
+      documentType: "word" | "cell";
+      document: {
+        key: string;
+        title: string;
+        fileType: "docx" | "xlsx";
+        url: string;
+        permissions: {
+          edit: boolean;
+          download: boolean;
+          print: boolean;
+          copy: boolean;
+        };
+      };
+      editorConfig: {
+        mode: "edit" | "view";
+        callbackUrl: string;
+        user: {
+          id: string;
+          name: string;
+        };
+        customization: {
+          autosave: boolean;
+          forcesave: boolean;
+          macros: false;
+          plugins: false;
+        };
+        plugins: {
+          autostart: Array<string>;
+          pluginsData: Array<string>;
+        };
+      };
+      token: string;
+      width: "100%";
+      height: "100%";
+      type: "desktop";
+    };
+  };
+};
+
+export type OpenGoogleDriveOfficeEditorResponse =
+  OpenGoogleDriveOfficeEditorResponses[keyof OpenGoogleDriveOfficeEditorResponses];
+
+export type GetGoogleDriveOfficeEditorStatusData = {
+  body?: never;
+  path: {
+    fileId: string;
+    sessionId: string;
+  };
+  query?: never;
+  url: "/v1/documents/google-drive/files/{fileId}/office/{sessionId}";
+};
+
+export type GetGoogleDriveOfficeEditorStatusErrors = {
+  /**
+   * Reopen or reconnect.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The editor is unavailable.
+   */
+  503: {
+    error: string;
+    message: string;
+  };
+};
+
+export type GetGoogleDriveOfficeEditorStatusError =
+  GetGoogleDriveOfficeEditorStatusErrors[keyof GetGoogleDriveOfficeEditorStatusErrors];
+
+export type GetGoogleDriveOfficeEditorStatusResponses = {
+  /**
+   * Office editor result.
+   */
+  200: {
+    expiresAt: number;
+    ready: boolean;
+    pending: boolean;
+    savedFileId?: string;
+    error?: string;
+  };
+};
+
+export type GetGoogleDriveOfficeEditorStatusResponse =
+  GetGoogleDriveOfficeEditorStatusResponses[keyof GetGoogleDriveOfficeEditorStatusResponses];
+
+export type PrepareGoogleDriveOfficeSaveData = {
+  body?: never;
+  path: {
+    fileId: string;
+    sessionId: string;
+  };
+  query?: never;
+  url: "/v1/documents/google-drive/files/{fileId}/office/{sessionId}/flush";
+};
+
+export type PrepareGoogleDriveOfficeSaveErrors = {
+  /**
+   * Reopen or reconnect.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The editor is unavailable.
+   */
+  503: {
+    error: string;
+    message: string;
+  };
+};
+
+export type PrepareGoogleDriveOfficeSaveError =
+  PrepareGoogleDriveOfficeSaveErrors[keyof PrepareGoogleDriveOfficeSaveErrors];
+
+export type PrepareGoogleDriveOfficeSaveResponses = {
+  /**
+   * Office editor result.
+   */
+  200: {
+    ok: true;
+  };
+};
+
+export type PrepareGoogleDriveOfficeSaveResponse =
+  PrepareGoogleDriveOfficeSaveResponses[keyof PrepareGoogleDriveOfficeSaveResponses];
+
+export type SaveGoogleDriveOfficeEditorData = {
+  body?: never;
+  path: {
+    fileId: string;
+    sessionId: string;
+  };
+  query?: never;
+  url: "/v1/documents/google-drive/files/{fileId}/office/{sessionId}/save";
+};
+
+export type SaveGoogleDriveOfficeEditorErrors = {
+  /**
+   * Reopen or reconnect.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The editor is unavailable.
+   */
+  503: {
+    error: string;
+    message: string;
+  };
+};
+
+export type SaveGoogleDriveOfficeEditorError =
+  SaveGoogleDriveOfficeEditorErrors[keyof SaveGoogleDriveOfficeEditorErrors];
+
+export type SaveGoogleDriveOfficeEditorResponses = {
+  /**
+   * Office editor result.
+   */
+  200: {
+    fileId: string;
+  };
+};
+
+export type SaveGoogleDriveOfficeEditorResponse =
+  SaveGoogleDriveOfficeEditorResponses[keyof SaveGoogleDriveOfficeEditorResponses];
+
+export type CloseGoogleDriveOfficeEditorData = {
+  body?: never;
+  path: {
+    fileId: string;
+    sessionId: string;
+  };
+  query?: never;
+  url: "/v1/documents/google-drive/files/{fileId}/office/{sessionId}/close";
+};
+
+export type CloseGoogleDriveOfficeEditorErrors = {
+  /**
+   * Reopen or reconnect.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The editor is unavailable.
+   */
+  503: {
+    error: string;
+    message: string;
+  };
+};
+
+export type CloseGoogleDriveOfficeEditorError =
+  CloseGoogleDriveOfficeEditorErrors[keyof CloseGoogleDriveOfficeEditorErrors];
+
+export type CloseGoogleDriveOfficeEditorResponses = {
+  /**
+   * Office editor result.
+   */
+  200: {
+    ok: true;
+  };
+};
+
+export type CloseGoogleDriveOfficeEditorResponse =
+  CloseGoogleDriveOfficeEditorResponses[keyof CloseGoogleDriveOfficeEditorResponses];
+
+export type DownloadOnlyOfficeSourceData = {
+  body?: never;
+  path: {
+    sessionId: string;
+  };
+  query?: never;
+  url: "/v1/documents/onlyoffice/sessions/{sessionId}/source";
+};
+
+export type DownloadOnlyOfficeSourceErrors = {
+  /**
+   * Reopen or reconnect.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The editor is unavailable.
+   */
+  503: {
+    error: string;
+    message: string;
+  };
+};
+
+export type DownloadOnlyOfficeSourceError = DownloadOnlyOfficeSourceErrors[keyof DownloadOnlyOfficeSourceErrors];
+
+export type DownloadOnlyOfficeSourceResponses = {
+  /**
+   * Office editor result.
+   */
+  200: unknown;
+};
+
+export type ReceiveOnlyOfficeSnapshotData = {
+  body?: never;
+  path: {
+    sessionId: string;
+  };
+  query?: never;
+  url: "/v1/documents/onlyoffice/sessions/{sessionId}/callback";
+};
+
+export type ReceiveOnlyOfficeSnapshotErrors = {
+  /**
+   * Reopen or reconnect.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The editor is unavailable.
+   */
+  503: {
+    error: string;
+    message: string;
+  };
+};
+
+export type ReceiveOnlyOfficeSnapshotError = ReceiveOnlyOfficeSnapshotErrors[keyof ReceiveOnlyOfficeSnapshotErrors];
+
+export type ReceiveOnlyOfficeSnapshotResponses = {
+  /**
+   * Office editor result.
+   */
+  200: {
+    error: number;
+  };
+};
+
+export type ReceiveOnlyOfficeSnapshotResponse =
+  ReceiveOnlyOfficeSnapshotResponses[keyof ReceiveOnlyOfficeSnapshotResponses];
+
 export type SendGmailDraftData = {
   body: {
     /**

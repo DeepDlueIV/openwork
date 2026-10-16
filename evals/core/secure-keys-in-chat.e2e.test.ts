@@ -19,7 +19,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-test("an admin adds a key-protected service and an AI Gateway provider by entering keys privately in chat", async ({ world, user, probe, step }) => {
+test("an admin adds a key-protected service and an AI Gateway provider by entering keys privately in chat", async ({ world, user, probe, step, evidence }) => {
   await step("before: the agent sets up the service without its key and a private field appears in the chat", async () => {
     await world.scriptConnection();
     await user.type("composer", CONNECT_PROMPT, { verify: true });
@@ -87,6 +87,8 @@ test("an admin adds a key-protected service and an AI Gateway provider by enteri
     expect(calls.length).toBeGreaterThan(0);
     expect(modelSaw).toBe(0);
     expect(leaks).toBe(0);
+    evidence.recordAssertionEvidence("Private keys stay out of chat, model requests and server logs",
+      `${calls.length} model requests checked; ${modelSaw} private sentinels seen; ${leaks} transcript/log leaks.`, modelSaw === 0 && leaks === 0);
   });
 
   await step("a member without Manage connections cannot change the shared key", async () => {

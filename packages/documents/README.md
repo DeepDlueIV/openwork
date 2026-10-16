@@ -1,60 +1,86 @@
 # Connected documents
 
-`@openwork/documents` provides a document browser that a host can reuse without
-embedding Workbot, its sign-in, or Google credentials. Workbot mounts it in its
-Documents tab, next to Calendar.
+`@openwork/documents` is a reusable document workspace. Workbot supplies its
+signed-in transport and identity; other hosts can use the same browser and
+provider/editor contracts without embedding Workbot.
 
-## First version
+## Documents workspace
 
-- Google Drive: My Drive, nested folders, breadcrumbs, search within the current
-  folder, paginated results, folders first, name/date sorting of loaded files,
-  list/grid views, file details and opening the file in Google Drive in a new tab.
-- Loading, empty, failed, connection-blocked and feature-disabled states.
-- Read-only metadata. Browsing does not send documents into chat, download file
-  bytes, or grant Workbot permission to edit a file.
-- Opening a file uses the browser's Google sign-in. This is not an embedded
-  document editor or a document-content preview.
+- Recent files from Drive API v3, ordered by `recency desc`, excluding folders.
+  The sidebar is not a fabricated list or local browsing history.
+- My Drive and folder breadcrumbs, folder-scoped search, pagination,
+  list/grid views and name/date sorting of loaded files.
+- Files open in internal tabs. Switching file tabs retains unsaved edits.
+  Closing a dirty file or leaving Documents asks whether to keep/discard edits.
+  Page unload uses the browser's unsaved-changes protection.
+- Missing/expired Drive access shows Connect/Reconnect through Den's existing
+  connections page. Returning to the page rechecks the listing.
+- Explicit Save to Drive writes to the original file; no background writes.
 
-Shared drives, shared-with-me, recent/starred/trash views, an account picker,
-content previews, uploads, edits, moving, sharing and deleting are later slices.
-Drive shortcuts open at Google; they are not navigable folders in this version.
+| File | Inline support | Save path |
+| --- | --- | --- |
+| Google Sheet | Worksheets, paged A–Z cell grid, cell/formula bar editing, bounded table paste | Sheets `batchUpdate` changes only edited cells' `userEnteredValue`; existing formatting and other cells stay intact |
+| Excel `.xlsx` | Same paged cell grid and worksheet navigation | Patches edited XML cells in the original ZIP package, retaining unrelated styles, charts, images and other sheets |
+| Google Doc | Formatted text-run editing across document tabs | Docs `batchUpdate` uses `requiredRevisionId`, targeted ranges and the original run's text styles |
+| Word `.docx` | Formatted text-run editing | Replaces selected `<w:t>` values in the original package, retaining other parts and run formatting |
+| UTF-8 text | Plain text editing, up to 1 MB | Replaces the original Drive file content after revision checks |
+| PDF and common raster images | Read-only inline preview | No edits |
+| Other formats | Link to original editor | No edits |
+
+This is bounded cell/text editing, not a complete Word/Excel layout, chart or
+formatting editor, or a collaborative Office engine. Native Doc tables/images
+and complex Word layouts remain in the source and are not rendered by the text
+editor. Signed/macro Office packages, protected/shared-formula worksheets,
+merged-cell edits, and Word tracked changes/fields are refused where an edit
+could be unsafe. Office inputs retain the shared workbook package's ZIP/XML
+limits (12 MB compressed, 10 MB inflated, 128 entries).
+
+Values stay literal by default. A person must explicitly choose Save as formula;
+the existing workbook safety checks reject known external-data/command formulas.
+HTML pasted into document text is treated as plain text. No document HTML or
+SVG is executed. Previews allowlist PDF/PNG/JPEG/GIF/WebP and use a sandbox.
 
 ## Package boundary
 
-- `@openwork/documents`: provider-neutral `DocumentItem`, `DocumentsPage`,
-  `DocumentsProvider`, the Google Drive adapter, response validation and URL safety.
-- `@openwork/documents/react`: `DocumentsBrowser`, accepting a provider,
-  authenticated cache scope, feature availability and a connections link.
-- `@openwork/documents/styles.css`: scoped styles using host semantic variables
-  (Workbot's `--wb-*`, with OpenWork semantic-token fallbacks).
+- `@openwork/documents`: metadata provider contract, Google Drive adapter and
+  authenticated editor client.
+- `@openwork/documents/model`: platform-neutral, Zod-validated editor/read/save
+  contracts. No authentication or React.
+- `@openwork/documents/office`: bounded, targeted XLSX/DOCX package edits, using
+  existing `@openwork/workbook` primitives.
+- `@openwork/documents/react`: `DocumentsBrowser` and its file editors.
+- `@openwork/documents/styles.css`: scoped semantic styles.
 
-Import styles once. Render inside a TanStack Query provider. Supply an identity
-scope containing the organization and authenticated person; remount the browser
-when identity or provider changes. The browser has no global host singleton.
-The host owns authentication and transport; provider adapters translate their
-service's metadata into the shared contract. Another service implements the same
-`DocumentsProvider` rather than branching Workbot's UI around Google APIs.
+A host imports styles, renders inside TanStack Query, supplies its authenticated
+organization/person cache scope, feature availability, connection URL and
+`DocumentsEditor` transport. It should honor `onDirtyChange` before unmounting
+the workspace. Remount on identity/provider changes. Drafts remain in component
+memory, not browser storage, chat, or model context. Another storage provider
+implements the metadata/editor contracts rather than changing Workbot's UI.
 
-The Drive adapter uses Den's existing file-list/search route, including its
-pagination and incomplete-search signal. It accepts no Google access token.
-Only HTTPS links on `drive.google.com` and `docs.google.com` may open from Google
-metadata. File names render as text. No remote thumbnails or HTML are rendered.
+## Authority and rollout
 
-## Workbot integration and rollout
+`workbotDocuments` remains off by default on cloud and self-hosted, and requires
+Workbot. Both the Workbot site and Den independently check availability. Den's
+proxy allowlists metadata reads and the editor/content route families; writes
+require `mcp:write`. Direct editor routes also require both flags, authenticated
+organization membership, connector policy and Google permission.
 
-`workbotDocuments` is off by default on cloud and self-hosted deployments.
-Den's Workbot session exposes `documents = workbot && workbotDocuments`.
-Older hosts/Dens omit it and stay off. The tab remains visible with a lock and
-an explanation when off (DESIGN P4).
+Editor reads resolve and pin the actual connection ID. Every later page/read/save
+uses that exact connection, so a changed default cannot silently switch accounts.
+Drive read access is required to browse. Existing-file edits require the relevant
+connector/account write grants and Google's `capabilities.canEdit`. Credentials
+stay on the server. All responses are `no-store`; content is excluded from MCP
+capability discovery and audit evidence.
 
-The Workbot site forwards exactly one GET metadata route under
-`/v1/workbot/documents`; Den independently verifies the OAuth grant, active
-membership, `mcp:read`, Workbot and Documents features on every request. It
-creates its own signed internal principal and reuses the existing Drive route's
-connector authorization. Client-supplied identity or internal headers are never
-forwarded. Disabling the feature rejects subsequent reads without changing chat,
-Calendar, stored files, or the person's Drive. Responses use `no-store`.
+Every save rechecks its revision and current permissions. Native Docs additionally
+uses Google's atomic revision write control. Drive binary uploads and Sheets
+cell writes have a check-then-write concurrency window; they are not atomic
+compare-and-swap and not a replacement for Google's live collaboration engine.
+A detected conflict retains the draft, with an explicit reload/discard action.
+Uncertain saves are never retried automatically. Disabling a feature stops new
+reads/writes without deleting Drive files or changing Calendar/chat behavior.
 
-Design: P1/P2 (data over explanatory copy), P4 (locked availability), P6/S2
-(compact file rows), S5 (only a person's action opens a document), C6 (recovery),
-V1/V2 (host typography and tokens).
+Design: P1/P2 (data and state), P4 (blocked presence and connection recovery),
+P6/S2 (compact files), S5 (user opens a file), C6 (recoverable failure), V1/V2
+(host typography and semantic tokens).

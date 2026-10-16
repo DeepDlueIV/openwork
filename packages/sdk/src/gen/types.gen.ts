@@ -23916,6 +23916,226 @@ export type DownloadGoogleDriveFileByLinkResponses = {
 export type DownloadGoogleDriveFileByLinkResponse =
   DownloadGoogleDriveFileByLinkResponses[keyof DownloadGoogleDriveFileByLinkResponses];
 
+export type OpenGoogleDriveDocumentEditorData = {
+  body?: never;
+  path: {
+    fileId: string;
+  };
+  query?: {
+    sheetId?: string;
+    startRow?: number;
+    connectionId?: string;
+  };
+  url: "/v1/documents/google-drive/files/{fileId}/editor";
+};
+
+export type OpenGoogleDriveDocumentEditorErrors = {
+  /**
+   * Unsupported edit.
+   */
+  400: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Reconnect or reload the changed file.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+};
+
+export type OpenGoogleDriveDocumentEditorError =
+  OpenGoogleDriveDocumentEditorErrors[keyof OpenGoogleDriveDocumentEditorErrors];
+
+export type OpenGoogleDriveDocumentEditorResponses = {
+  /**
+   * Document result.
+   */
+  200:
+    | {
+        connectionId: string;
+        fileId: string;
+        name: string;
+        revision: string;
+        canEdit: boolean;
+        notice?: string;
+        kind: "spreadsheet";
+        source: "google" | "xlsx";
+        sheets: Array<{
+          id: string;
+          name: string;
+          rows: number;
+          columns: number;
+        }>;
+        activeSheetId: string;
+        startRow: number;
+        endRow: number;
+        cells: Array<{
+          row: number;
+          column: number;
+          text: string;
+          formula?: string;
+        }>;
+      }
+    | {
+        connectionId: string;
+        fileId: string;
+        name: string;
+        revision: string;
+        canEdit: boolean;
+        notice?: string;
+        kind: "document";
+        source: "google" | "docx";
+        sections: Array<{
+          id: string;
+          name: string;
+          paragraphs: Array<{
+            id: string;
+            heading?: boolean;
+            runs: Array<{
+              id: string;
+              text: string;
+              bold?: boolean;
+              italic?: boolean;
+              underline?: boolean;
+            }>;
+          }>;
+        }>;
+      }
+    | {
+        connectionId: string;
+        fileId: string;
+        name: string;
+        revision: string;
+        canEdit: boolean;
+        notice?: string;
+        kind: "text";
+        text: string;
+      }
+    | {
+        connectionId: string;
+        fileId: string;
+        name: string;
+        revision: string;
+        canEdit: boolean;
+        notice?: string;
+        kind: "preview";
+        mimeType: string;
+      };
+};
+
+export type OpenGoogleDriveDocumentEditorResponse =
+  OpenGoogleDriveDocumentEditorResponses[keyof OpenGoogleDriveDocumentEditorResponses];
+
+export type SaveGoogleDriveDocumentEditsData = {
+  body:
+    | {
+        kind: "spreadsheet";
+        connectionId: string;
+        revision: string;
+        sheetId: string;
+        changes: Array<{
+          row: number;
+          column: number;
+          value: string;
+          formula?: boolean;
+        }>;
+      }
+    | {
+        kind: "document";
+        connectionId: string;
+        revision: string;
+        changes: Array<{
+          sectionId: string;
+          runId: string;
+          value: string;
+        }>;
+      }
+    | {
+        kind: "text";
+        connectionId: string;
+        revision: string;
+        text: string;
+      };
+  path: {
+    fileId: string;
+  };
+  query?: never;
+  url: "/v1/documents/google-drive/files/{fileId}/editor";
+};
+
+export type SaveGoogleDriveDocumentEditsErrors = {
+  /**
+   * Unsupported edit.
+   */
+  400: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Reconnect or reload the changed file.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+};
+
+export type SaveGoogleDriveDocumentEditsError =
+  SaveGoogleDriveDocumentEditsErrors[keyof SaveGoogleDriveDocumentEditsErrors];
+
+export type SaveGoogleDriveDocumentEditsResponses = {
+  /**
+   * Document result.
+   */
+  200: {
+    ok: true;
+  };
+};
+
+export type SaveGoogleDriveDocumentEditsResponse =
+  SaveGoogleDriveDocumentEditsResponses[keyof SaveGoogleDriveDocumentEditsResponses];
+
+export type ReadGoogleDriveDocumentContentData = {
+  body?: never;
+  path: {
+    fileId: string;
+  };
+  query: {
+    connectionId: string;
+  };
+  url: "/v1/documents/google-drive/files/{fileId}/content";
+};
+
+export type ReadGoogleDriveDocumentContentErrors = {
+  /**
+   * Unsupported edit.
+   */
+  400: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Reconnect or reload the changed file.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+};
+
+export type ReadGoogleDriveDocumentContentError =
+  ReadGoogleDriveDocumentContentErrors[keyof ReadGoogleDriveDocumentContentErrors];
+
+export type ReadGoogleDriveDocumentContentResponses = {
+  /**
+   * Document result.
+   */
+  200: unknown;
+};
+
 export type SendGmailDraftData = {
   body: {
     /**
@@ -25972,6 +26192,8 @@ export type GetV1CapabilitiesGoogleWorkspaceDriveFilesData = {
      */
     maxResults?: number;
     pageToken?: string;
+    orderBy?: "folder,name_natural" | "recency desc" | "modifiedTime desc";
+    filesOnly?: "true" | "false";
     /**
      * Only files modified after this RFC3339 timestamp; follow nextPageToken to enumerate all matching files.
      */
@@ -33374,36 +33596,6 @@ export type ListWorkbotConnectionsResponses = {
 };
 
 export type ListWorkbotConnectionsResponse = ListWorkbotConnectionsResponses[keyof ListWorkbotConnectionsResponses];
-
-export type ListWorkbotDocumentsData = {
-  body?: never;
-  path?: never;
-  query?: never;
-  url: "/v1/workbot/documents/v1/capabilities/google-workspace/drive-files";
-};
-
-export type ListWorkbotDocumentsErrors = {
-  /**
-   * Sign in again.
-   */
-  401: UnauthorizedError;
-  /**
-   * Documents is off or the grant cannot read documents.
-   */
-  403: {
-    error: string;
-    message?: string;
-  };
-};
-
-export type ListWorkbotDocumentsError = ListWorkbotDocumentsErrors[keyof ListWorkbotDocumentsErrors];
-
-export type ListWorkbotDocumentsResponses = {
-  /**
-   * The Drive file page, including pagination and incomplete-search state.
-   */
-  200: unknown;
-};
 
 export type CreateWorkbotRunTokenData = {
   body: {

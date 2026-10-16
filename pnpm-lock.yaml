@@ -624,6 +624,9 @@ importers:
       '@openwork/connect-link':
         specifier: workspace:*
         version: link:../../../packages/connect-link
+      '@openwork/documents':
+        specifier: workspace:*
+        version: link:../../../packages/documents
       '@openwork/email':
         specifier: workspace:*
         version: link:../../../packages/email
@@ -1520,6 +1523,9 @@ importers:
 
   packages/documents:
     dependencies:
+      '@openwork/workbook':
+        specifier: workspace:*
+        version: link:../workbook
       lucide-react:
         specifier: ^0.577.0
         version: 0.577.0(react@19.2.8)

@@ -146,7 +146,7 @@ export const FEATURES = defineFeatures({
   },
   workbotDocuments: {
     label: "Workbot Documents",
-    description: "Members browse and search their connected Google Drive files and folders in Workbot, and open documents in Drive.",
+    description: "Members browse recent Google Drive files and folders in Workbot, open documents in tabs, and save supported text and spreadsheet edits to Drive.",
     since: "2026-10",
     deployments: everywhere,
     default: false,

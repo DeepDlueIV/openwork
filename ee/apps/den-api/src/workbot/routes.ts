@@ -4,6 +4,7 @@ import { normalizeDenTypeId } from "@openwork-ee/utils/typeid"
 import type { Context, Hono } from "hono"
 import { describeRoute, type DescribeRouteOptions } from "hono-openapi"
 import { z } from "zod"
+import { bodyLimit } from "hono/body-limit"
 import { DEN_MCP_OAUTH_RESOURCE } from "../auth.js"
 import { cloudAutomationRuntime } from "../automations/headless-runtime.js"
 import { db } from "../db.js"
@@ -346,18 +347,15 @@ export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono
     },
   )
 
-  // A single read-only route, never an arbitrary proxy or a file-content endpoint.
-  app.get(
-    "/v1/workbot/documents/v1/capabilities/google-workspace/drive-files",
+  app.on(
+    ["GET", "POST"],
+    "/v1/workbot/documents/*",
+    bodyLimit({ maxSize: 2 * 1024 * 1024 }),
     describeWorkbotRoute({
-      tags: ["Workbot"], operationId: "listWorkbotDocuments", "x-mcp": false,
-      summary: "Browse the member's connected Google Drive documents",
-      description: "Read-only folder and search metadata through the member's Google connection. Requires Workbot, Workbot Documents and mcp:read; the destination enforces connector access and Google permissions. No file bytes or download credentials are returned.",
-      responses: {
-        200: jsonResponse("The Drive file page, including pagination and incomplete-search state.", z.unknown()),
-        401: jsonResponse("Sign in again.", unauthorizedSchema),
-        403: jsonResponse("Documents is off or the grant cannot read documents.", signedOutSchema),
-      },
+      tags: ["Workbot"], operationId: "workbotDocumentsProxy", "x-mcp": false,
+      summary: "Browse, open and explicitly save connected documents",
+      description: "Allowlisted Drive metadata and inline-editor routes only. Rechecks membership, scopes and both feature flags; signed internal re-entry retains connector authorization. File bytes and document contents never enter chat.",
+      responses: { 200: jsonResponse("The document route's response.", z.unknown()), 403: jsonResponse("Documents is disabled or this scope is missing.", signedOutSchema) },
     }),
     tokenRoute,
     async (c) => {
@@ -365,22 +363,25 @@ export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono
       if (resolved instanceof Response) return resolved
       const auditBlocked = await attributeWorkbot(c, resolved)
       if (auditBlocked) return auditBlocked
+      const inner = c.req.path.slice("/v1/workbot/documents".length)
+      const editor = /^\/v1\/documents\/google-drive\/files\/[A-Za-z0-9_-]{1,512}\/(editor|content)$/.exec(inner)
+      const read = c.req.method === "GET"
+      if (!(read && inner === "/v1/capabilities/google-workspace/drive-files") && !(editor && (read || editor[1] === "editor"))) return c.json({ error: "not_found" }, 404)
       const features = await getOrganizationFeatures(resolved.organization.id)
-      if (!features.workbot || !features.workbotDocuments) {
-        return c.json({ error: "workbot_documents_not_enabled", message: "Documents is off for this workspace." }, 403)
-      }
-      if (!resolved.scopes.has(DEN_MCP_READ_SCOPE)) return c.json({ error: "insufficient_scope" }, 403)
+      if (!features.workbot || !features.workbotDocuments) return c.json({ error: "workbot_documents_not_enabled", message: "Documents is off for this workspace." }, 403)
+      if (!resolved.scopes.has(read ? DEN_MCP_READ_SCOPE : DEN_MCP_WRITE_SCOPE)) return c.json({ error: "insufficient_scope" }, 403)
       const url = new URL(c.req.url)
-      const headers = new Headers({
-        accept: "application/json",
-        "x-den-internal-mcp-principal": createInternalMcpPrincipalHeader({
-          userId: resolved.principal.userId,
-          organizationId: resolved.principal.organizationId,
-          credentialId: resolved.credentialId,
-        }),
-      })
-      const response = await app.fetch(new Request(new URL(`/v1/capabilities/google-workspace/drive-files${url.search}`, "http://den-api.local"), { headers }))
-      return new Response(response.body, { status: response.status, headers: { "content-type": "application/json", "cache-control": "no-store" } })
+      const headers = new Headers({ accept: "application/json", "x-den-internal-mcp-principal": createInternalMcpPrincipalHeader({ userId: resolved.principal.userId, organizationId: resolved.principal.organizationId, credentialId: resolved.credentialId }) })
+      let body: string | undefined
+      if (!read) {
+        // The destination's bodyLimit is also authoritative, including for a forged Content-Length.
+        if (Number(c.req.header("content-length")) > 2 * 1024 * 1024) return c.json({ error: "file_too_large" }, 413)
+        body = await c.req.text()
+        if (Buffer.byteLength(body) > 2 * 1024 * 1024) return c.json({ error: "file_too_large" }, 413)
+        headers.set("content-type", "application/json")
+      }
+      const response = await app.fetch(new Request(new URL(`${inner}${url.search}`, "http://den-api.local"), { method: c.req.method, headers, body }))
+      return new Response(response.body, { status: response.status, headers: { "content-type": response.headers.get("content-type") ?? "application/json", "cache-control": "no-store", "x-content-type-options": "nosniff", ...(editor?.[1] === "content" ? { "content-security-policy": "default-src 'none'; sandbox" } : {}) } })
     },
   )
 

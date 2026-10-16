@@ -14,7 +14,7 @@ Build the ordinary OpenWork runtime image using
 layer from its pinned image digest:
 
 ```sh
-docker build -f ee/apps/den-worker-runtime/Dockerfile.daytona-desktop \
+docker build --platform linux/amd64 -f ee/apps/den-worker-runtime/Dockerfile.daytona-desktop \
   --build-arg OPENWORK_RUNTIME_IMAGE=<registry/runtime@sha256:digest> \
   -t <registry/cloud-desktop:version> .
 ```

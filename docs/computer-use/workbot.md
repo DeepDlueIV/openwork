@@ -24,10 +24,12 @@ with the existing `bash` and `look` tools available on the same machine.
 
 Build `ee/packages/headless-computer/Dockerfile.desktop` using a pinned
 `node:24-bookworm-slim@sha256:…` base, push it to your registry, and create a
-Daytona Linux VM snapshot from the resulting image digest:
+Daytona Linux VM snapshot from the resulting image digest.
+[Daytona’s snapshot requirements](https://www.daytona.io/docs/en/snapshots/)
+require an AMD64 image and an existing image reference for Linux VMs:
 
 ```sh
-docker build -f ee/packages/headless-computer/Dockerfile.desktop \
+docker build --platform linux/amd64 -f ee/packages/headless-computer/Dockerfile.desktop \
   --build-arg OPENWORK_COMPUTER_BASE_IMAGE="$PINNED_NODE_IMAGE" \
   -t "$COMPUTER_IMAGE" .
 docker push "$COMPUTER_IMAGE"

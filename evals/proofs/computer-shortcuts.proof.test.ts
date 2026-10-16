@@ -32,6 +32,10 @@ test("an agent fills a report, finds a project and saves once in one UI program"
       await tools.ui.setChecked({target:{role:"checkbox",name:"Include details"},checked:true});
       await tools.ui.setChecked({target:{role:"checkbox",name:"Include details"},checked:true});
       await tools.ui.select({target:{role:"combobox",name:"Report period"},option:"Weekly"});
+      const listView=await tools.ui.observe({});
+      const clipped=listView.elements.find(element=>element.role==="button" && element.name.startsWith("Project ") && element.visible && element.needsReveal);
+      if(!clipped) return {missingClippedRow:true};
+      await tools.ui.click({target:{role:"button",name:clipped.name}});
       const project=await tools.ui.scrollUntil({target:{role:"button",name:"Project 60"},container:{role:"region",name:"Projects"},maxPages:8});
       if(!project.found) return project;
       await tools.ui.click({target:project.target});

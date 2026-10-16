@@ -35,6 +35,7 @@ const node = z.object({
   ref: z.string(), name: z.string(), role: z.string(), bounds,
   disabled: z.boolean(), editable: z.boolean(), press: z.boolean(), settable: z.boolean(),
   checked: z.boolean().optional(), value: z.string().optional(), visible: z.boolean().optional(),
+  needsReveal: z.boolean().optional(),
   options: z.array(z.object({ value: z.string(), label: z.string(), disabled: z.boolean() })).optional(),
 })
 type Selector = z.infer<typeof selector>
@@ -69,6 +70,7 @@ function normalizeNode(raw: unknown): Node | null {
     ...(typeof value.checked === "boolean" ? { checked: value.checked } : ["checkbox", "switch", "radio"].includes(role) && value.value !== undefined ? { checked: value.value === true || value.value === 1 || value.value === "1" } : {}),
     ...(typeof value.value === "string" ? { value: value.value } : {}),
     ...(typeof value.visible === "boolean" ? { visible: value.visible } : {}),
+    ...(value.needsReveal === true ? { needsReveal: true } : {}),
     ...(Array.isArray(value.options) ? { options: value.options.flatMap(option => {
       const parsed = z.object({value:z.string(),label:z.string(),disabled:z.boolean().default(false)}).safeParse(option)
       return parsed.success ? [parsed.data] : []
@@ -196,7 +198,7 @@ export async function runComputerProgram(request: ProgramRequest, host: ProgramH
   const reveal = async (target: Selector) => {
     let element = ready(await find(target))
     const view = latest
-    if (request.surface === "browser" && view && (element.visible === false || element.bounds.x < 0 || element.bounds.y < 0 || element.bounds.x + element.bounds.width > view.width || element.bounds.y + element.bounds.height > view.height)) {
+    if (request.surface === "browser" && view && (element.needsReveal || element.visible === false || element.bounds.x < 0 || element.bounds.y < 0 || element.bounds.x + element.bounds.width > view.width || element.bounds.y + element.bounds.height > view.height)) {
       await act({ type: "reveal", ref: element.ref }); element = ready(await find(target))
     }
     return element

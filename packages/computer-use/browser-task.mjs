@@ -109,7 +109,7 @@ function observePage(id, query = null) {
     }
     nodes.set(ref, element);
     snapshots.set(element, JSON.stringify(control));
-    elements.push({ ref, ...control, visible: right > left && bottom > top, bounds: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } });
+    elements.push({ ref, ...control, visible: right > left && bottom > top, needsReveal: left > rect.left || top > rect.top || right < rect.right || bottom < rect.bottom, bounds: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } });
   }
   const observation = { id, nodes, bounds: new Map(elements.map(({ ref, bounds }) => [ref, bounds])), activeElement: document.activeElement,
     used: false, createdAt: performance.now(), describe, snapshots, width: innerWidth, height: innerHeight, x: scrollX, y: scrollY };

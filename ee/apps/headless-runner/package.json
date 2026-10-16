@@ -14,8 +14,10 @@
     "smoke": "tsx scripts/smoke.ts",
     "test:computer-config": "tsx --test scripts/computer-config.test.ts",
     "test:sql-store": "tsx --test scripts/sql-store.test.ts",
+    "test:error-reporting": "tsx --test scripts/error-reporting.test.ts",
     "worker:types": "wrangler types",
     "worker:typecheck": "wrangler types && tsc -p tsconfig.worker.json --noEmit",
+    "worker:compat": "tsx scripts/compat-check.ts",
     "worker:e2e": "pnpm --filter @openwork-ee/headless-protocol build && tsx scripts/owner-cells-e2e.ts",
     "worker:e2e:celld": "pnpm --filter @openwork-ee/headless-protocol build && tsx scripts/owner-cells-e2e.ts --celld",
     "test:conversation": "tsx --test scripts/conversation.test.ts"

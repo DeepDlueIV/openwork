@@ -40,5 +40,5 @@ MySQL and Redis, Node 24).
 comes back from signing in through `https://chat.openworklabs.com/auth/app/callback`, which iOS and Android open only
 in this app once Workbot serves its team ID and signing certificates (`WORKBOT_IOS_TEAM_ID`,
 `WORKBOT_ANDROID_CERT_SHA256`). Any other build is the development app `com.openworklabs.workbot.dev` ("Workbot Dev"),
-which signs in to a Workbot on this computer: plain http only reaches localhost, and only a local Workbot accepts its
-sign-in return.
+which can connect to a Workbot on this computer for local development. Phone sign-in requires the production build
+and its verified HTTPS app links; local Workbot rejects development custom-scheme callbacks.

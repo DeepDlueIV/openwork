@@ -16,6 +16,7 @@ import { z } from "zod"
 import type { AppEnv, Member } from "./auth.js"
 import type { Config } from "./config.js"
 import type { Den } from "./den.js"
+import { observedRunnerFetch, reportError } from "./error-reporting.js"
 
 /**
  * The Workbot API the page talks to (`/v1/workbot/...`). Every route needs a signed-in member, and Den's answer
@@ -73,6 +74,7 @@ function actorOf(member: Member): WorkbotActor {
 export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config; den: Den; member: MiddlewareHandler<AppEnv>; sameOrigin: MiddlewareHandler }) {
   const { config, den } = input
   const sent = new Map<string, number[]>()
+  const runnerFetch = observedRunnerFetch()
 
   /**
    * The runner, told whose conversations these are: on celld that is the person's own cell (all their chats and
@@ -85,7 +87,7 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
     createWorkbot({
       client: createHeadlessRunnerClient({
         config: runnerFor(member),
-        fetch,
+        fetch: runnerFetch,
         mintToken: async ({ readOnly }) => ({ token: await den.runToken(member.accessToken, { readOnly }) }),
         maxTokenTtlMs: RUN_TOKEN_TTL_MS,
       }),
@@ -396,8 +398,9 @@ export function registerWorkbotRoutes(app: Hono<AppEnv>, input: { config: Config
             if (event) await stream.writeSSE({ data: JSON.stringify(event) })
           }
         }
-      } catch {
-        // The page reconnects; nothing to report.
+      } catch (error) {
+        // The page reconnects. Only a break Workbot didn't cause itself (the page leaving, the time limit) is a fault.
+        if (!upstream.signal.aborted && !stream.aborted) reportError("events_relay_failed", error)
       } finally {
         clearTimeout(deadline)
         upstream.abort()

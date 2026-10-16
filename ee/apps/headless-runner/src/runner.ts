@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto"
+import type { ErrorReporter } from "./error-reporting.js"
 import type { SessionEvents } from "./events.js"
 import { FILE_TOOLS, FILE_TOOL_NAMES, runFileTool } from "./files.js"
 import type { McpConnector, ToolSession } from "./mcp.js"
@@ -107,6 +108,8 @@ export type RunnerOptions = {
   files?: SavedFiles
   /** A Linux computer per conversation; without it the bash and look tools are not offered. */
   computer?: SessionComputer
+  /** Turns that end `failed` are reported here (codes and ids only); without it, nothing is reported. */
+  errors?: ErrorReporter
   now?: () => number
   /** Waits between repeated steps; tests pass a fake. Rejects with the signal's reason when the turn is stopped. */
   sleep?: (ms: number, signal: AbortSignal) => Promise<void>
@@ -566,6 +569,8 @@ export class Runner {
     let repeatStartedAt = 0
     let askedToStop = false
     let waitBeforeNextStep = 0
+    /** What a turn that failed unexpectedly threw, for its error report (its type and stack, never its content). */
+    let thrown: unknown
     const clock = this.options.now ?? Date.now
     const sleep = this.options.sleep ?? abortableSleep
     console.log(`[headless-runner] turn started ${JSON.stringify({ sessionId, messageId })}`)
@@ -842,6 +847,7 @@ export class Runner {
       }
       store.setTurnStatus(sessionId, messageId, "failed", "max_steps_exceeded")
     } catch (error) {
+      thrown = error
       const reason = signal.reason instanceof Error ? signal.reason.message : null
       closeUnanswered(reason === "turn_timeout" ? "The turn timed out before this tool call returned." : "The turn was stopped before this tool call returned.")
       if (reason === "aborted") store.setTurnStatus(sessionId, messageId, "aborted")
@@ -888,6 +894,14 @@ export class Runner {
           ...turn?.usage,
         })}`,
       )
+      if (turn?.status === "failed") {
+        void this.options.errors?.report({
+          kind: "turn_failed",
+          code: turn.error ?? "runner_error",
+          tags: { sessionId, messageId, turnKind: kind, steps, toolCalls },
+          error: thrown,
+        })
+      }
     }
   }
 }

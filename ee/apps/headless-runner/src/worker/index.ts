@@ -1,7 +1,9 @@
 import { timingSafeEqual } from "node:crypto"
-import { Hono } from "hono"
+import { Hono, type Context } from "hono"
+import { routePath } from "hono/route"
 import { z } from "zod"
 import { loadConfig, type Config } from "../config.js"
+import { createErrorReporter, type ErrorReporter } from "../error-reporting.js"
 import { createRuntime, gatewayModelCatalog } from "../runtime.js"
 import { Store } from "../store.js"
 import { durableObjectSql } from "./sql.js"
@@ -107,8 +109,32 @@ router.use("/v1/*", async (c, next) => {
   if (actual.length !== expected.length || !timingSafeEqual(actual, expected)) return c.json({ error: "unauthorized" }, 401)
   await next()
 })
+const reporters = new WeakMap<Config, ErrorReporter>()
+/** Reports a router failure (the route and error type, never the request); a no-op without HEADLESS_SENTRY_DSN. */
+function reportRouterError(c: Context<{ Bindings: CellEnv }>, error: Error) {
+  let config: Config
+  try {
+    config = configFor(c.env)
+  } catch {
+    // The configuration itself is what failed: there is nowhere configured to report to.
+    return
+  }
+  let reporter = reporters.get(config)
+  if (!reporter) {
+    reporter = createErrorReporter(config.errorReporting)
+    reporters.set(config, reporter)
+  }
+  if (!reporter.enabled) return
+  const sent = reporter.report({ code: "request_failed", tags: { route: routePath(c), method: c.req.method }, error })
+  try {
+    c.executionCtx.waitUntil(sent)
+  } catch {
+    // No execution context (tests): the report still runs on its own.
+  }
+}
 router.onError((error, c) => {
   console.error("[headless-cells] request failed", { path: c.req.path, error: error.message })
+  reportRouterError(c, error)
   return c.json({ error: "internal_error" }, 500)
 })
 const catalogs = new WeakMap<Config, ReturnType<typeof gatewayModelCatalog>>()

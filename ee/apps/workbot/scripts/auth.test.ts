@@ -270,3 +270,16 @@ test("the phone app's session refreshes once for parallel requests and comes bac
   assert.deepEqual(w.calls.revoke, ["refresh-1"])
   assert.equal(out.headers.getSetCookie().length, 0)
 })
+
+
+test("loopback deployments never issue phone sign-in codes to an unverified callback", () => {
+  const local = loadConfig({
+    WORKBOT_PUBLIC_URL: "http://localhost:3020",
+    WORKBOT_DEN_API_URL: "http://localhost:8790",
+    WORKBOT_RUNNER_URL: "http://runner",
+    WORKBOT_RUNNER_TOKEN: "runner-token-runner-token-runner-0001",
+    WORKBOT_SESSION_SECRET: "local-workbot-test-session-secret-long-enough",
+  })
+  assert.deepEqual(local.appRedirectUris, [])
+  assert.deepEqual(config.appRedirectUris, [APP_REDIRECT])
+})

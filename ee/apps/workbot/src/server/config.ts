@@ -16,6 +16,12 @@ const origin = (allowInternal: boolean) =>
     return z.NEVER
   })
 
+/** Empty means unset, as an env file's `NAME=` line usually intends. */
+const optionalText = z
+  .string()
+  .optional()
+  .transform((value) => value?.trim() || undefined)
+
 const schema = z.object({
   /** Where people reach Workbot, e.g. https://chat.openworklabs.com. Den sends them back to `${this}/auth/callback`. */
   WORKBOT_PUBLIC_URL: origin(false),
@@ -45,6 +51,15 @@ const schema = z.object({
    * with its sign-in return address (assetlinks.json).
    */
   WORKBOT_ANDROID_CERT_SHA256: z.string().optional(),
+  /**
+   * Optional error reports to Sentry (see error-reporting.ts). Unset, nothing is sent anywhere: self-hosted
+   * installs ship without one. The release defaults to `workbot@<WORKBOT_VERSION>`.
+   */
+  WORKBOT_SENTRY_DSN: optionalText.pipe(z.url().optional()),
+  WORKBOT_SENTRY_ENVIRONMENT: optionalText,
+  WORKBOT_SENTRY_RELEASE: optionalText,
+  /** Set by the Workbot image at build time. */
+  WORKBOT_VERSION: optionalText,
 })
 
 /** The Workbot phone app (its production build). */
@@ -54,15 +69,10 @@ export const WORKBOT_APP_ID = "com.openworklabs.workbot"
  * Workbot app they verified (/.well-known); any other app can't receive it, and a browser just shows the page.
  */
 export const WORKBOT_APP_CALLBACK_PATH = "/auth/app/callback"
-/**
- * The development build's return address: a private-use scheme, which another app could also claim, so it's only
- * accepted by a Workbot on this machine.
- */
-export const WORKBOT_DEV_APP_REDIRECT_URI = "com.openworklabs.workbot.dev:/auth/callback"
-
 function appRedirectUris(publicUrl: string): string[] {
-  const own = `${publicUrl}${WORKBOT_APP_CALLBACK_PATH}`
-  return LOOPBACK_HOSTS.has(new URL(publicUrl).hostname) ? [own, WORKBOT_DEV_APP_REDIRECT_URI] : [own]
+  // A loopback address cannot establish app-link ownership. Never send OAuth
+  // codes to a private-use scheme, including on a development server.
+  return publicUrl.startsWith("https:") ? [`${publicUrl}${WORKBOT_APP_CALLBACK_PATH}`] : []
 }
 
 const CERT_SHA256 = /^([0-9A-F]{2}:){31}[0-9A-F]{2}$/
@@ -90,6 +100,8 @@ export type Config = {
   appRedirectUris: string[]
   /** What verifies the Workbot app as the owner of its return address; nothing is served for what's unset. */
   appLinks: { iosTeamId: string | null; androidCertSha256: string[] }
+  /** Where error reports go; null (no DSN) sends none. */
+  errorReporting: { dsn: string; environment?: string; release?: string } | null
 }
 
 export function loadConfig(env: Record<string, string | undefined> = process.env): Config {
@@ -111,5 +123,12 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     secureCookies: value.WORKBOT_PUBLIC_URL.startsWith("https:"),
     appRedirectUris: appRedirectUris(value.WORKBOT_PUBLIC_URL),
     appLinks: { iosTeamId: value.WORKBOT_IOS_TEAM_ID ?? null, androidCertSha256: certFingerprints(value.WORKBOT_ANDROID_CERT_SHA256) },
+    errorReporting: value.WORKBOT_SENTRY_DSN
+      ? {
+          dsn: value.WORKBOT_SENTRY_DSN,
+          environment: value.WORKBOT_SENTRY_ENVIRONMENT,
+          release: value.WORKBOT_SENTRY_RELEASE ?? (value.WORKBOT_VERSION && value.WORKBOT_VERSION !== "dev" ? `workbot@${value.WORKBOT_VERSION}` : undefined),
+        }
+      : null,
   }
 }

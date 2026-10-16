@@ -6,13 +6,13 @@ import { DenButton } from "../app/(den)/_components/ui/button";
 import { AdminDashboard } from "./admin/admin-dashboard";
 import { DenSelect } from "../app/(den)/_components/ui/select";
 import { Copy, Pencil, Trash2 } from "lucide-react";
-import { FEATURE_KEYS, mapFeatures, type FeatureKey } from "@openwork/features";
+import { mapFeatures } from "@openwork/features";
 import { denApiCredentials, denBrowserEndpoint } from "../app/(den)/_lib/den-api-origin";
 import { withStoredBearer } from "./admin/admin-request";
 import { adminOrganizationHref, useAdminListLocation, type AdminDataSection } from "./admin/admin-list-location";
 import { AdminDeferredContent } from "./admin/admin-deferred-content";
 import { AdminAccessScreen } from "./admin/admin-access-screen";
-import { AdminOrganizationFeatureControls, type AdminFeatureState, type AdminOrganizationFeatures } from "./admin/admin-organization-feature-controls";
+import { parseAdminOrganizationFeatures, type AdminOrganizationFeatures } from "./admin/admin-organization-feature-controls";
 
 type AccessState = "ready" | "signed-out" | "forbidden" | "error";
 
@@ -133,33 +133,6 @@ type AdminUser = {
   billing: AdminBillingStatus | null;
   organizations: AdminUserOrganization[];
 };
-
-const ADMIN_FEATURE_SOURCES = ["unavailable", "killed", "lock", "override", "everyone"] as const;
-
-function parseAdminFeatureSource(value: unknown): AdminFeatureState["source"] {
-  return ADMIN_FEATURE_SOURCES.find((source) => source === value) ?? "everyone";
-}
-
-/** Server featureStates, falling back to the effective capabilities map from older servers. */
-function parseAdminOrganizationFeatures(featureStates: unknown, capabilities: unknown): AdminOrganizationFeatures {
-  const states = isRecord(featureStates) ? featureStates : {};
-  const effective = isRecord(capabilities) ? capabilities : {};
-  return mapFeatures((key) => {
-    const state = states[key];
-    if (!isRecord(state)) {
-      const enabled = effective[key] === true;
-      return { enabled, source: "everyone", everyone: enabled, killed: false, override: null, overrideApplies: true };
-    }
-    return {
-      enabled: state.enabled === true,
-      source: parseAdminFeatureSource(state.source),
-      everyone: state.everyone === true,
-      killed: state.killed === true,
-      override: typeof state.override === "boolean" ? state.override : null,
-      overrideApplies: state.overrideApplies === true,
-    };
-  });
-}
 
 type AdminOpenWorkWebAccess = {
   hasAccess: boolean;
@@ -1398,9 +1371,6 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
   const [savingOrgId, setSavingOrgId] = useState<string | null>(null);
   const [freeSeatsDialog, setFreeSeatsDialog] = useState<{ org: AdminOrganization; totalFreeSeats: string } | null>(null);
   const [savingFreeSeatsOrgId, setSavingFreeSeatsOrgId] = useState<string | null>(null);
-  const [organizationFeatures, setOrganizationFeatures] = useState<Record<string, AdminOrganizationFeatures>>({});
-  const [savingCapabilityOrgId, setSavingCapabilityOrgId] = useState<string | null>(null);
-  const [capabilityError, setCapabilityError] = useState<{ orgId: string; message: string } | null>(null);
   const [openworkWebAccessDialog, setOpenWorkWebAccessDialog] = useState<{ org: AdminOrganization; enabled: boolean; reason: string } | null>(null);
   const [savingOpenWorkWebAccessOrgId, setSavingOpenWorkWebAccessOrgId] = useState<string | null>(null);
   const [openworkWebAccessError, setOpenWorkWebAccessError] = useState<{ orgId: string; message: string } | null>(null);
@@ -1482,7 +1452,6 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
       }
 
       setIncludeBilling(parsed.summary.billingLoaded);
-      setOrganizationFeatures({});
       payloadRef.current = parsed;
       setAccessState("ready");
       setPayload(parsed);
@@ -2001,68 +1970,6 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
     }
   }, [freeSeatsDialog]);
 
-  const setOrganizationFeaturesLocally = useCallback((orgId: string, features: AdminOrganizationFeatures) => {
-    setOrganizationFeatures((current) => ({ ...current, [orgId]: features }));
-  }, []);
-
-  const loadOrganizationFeatures = useCallback(async (orgId: string, signal: AbortSignal) => {
-    const { response, payload: nextPayload } = await requestJson(`/v1/admin/organizations/${encodeURIComponent(orgId)}/capabilities`, signal);
-    if (signal.aborted) return;
-    if (response.status === 401 || response.status === 403) {
-      setAccessState(response.status === 401 ? "signed-out" : "forbidden");
-      setPayload(null);
-      return;
-    }
-    if (!response.ok) throw new Error(getErrorMessage(nextPayload, `Could not load features (${response.status}).`));
-    if (!isRecord(nextPayload) || !isRecord(nextPayload.featureStates)) throw new Error("The server returned incomplete feature data. Retry to load features.");
-    setOrganizationFeaturesLocally(orgId, parseAdminOrganizationFeatures(nextPayload.featureStates, nextPayload.capabilities));
-  }, [setOrganizationFeaturesLocally]);
-
-  // value: true/false sets an override for this organization; null makes it follow the deployment-wide state again.
-  const saveOrganizationFeature = useCallback(async (org: AdminOrganization, key: FeatureKey, value: boolean | null) => {
-    const previous = organizationFeatures[org.id] ?? org.features;
-    if (!previous) return;
-    setSavingCapabilityOrgId(org.id);
-    setError(null);
-    setCapabilityError(null);
-    // Optimistic: show the change immediately, roll back if the PUT fails.
-    setOrganizationFeaturesLocally(org.id, {
-      ...previous,
-      [key]: {
-        ...previous[key],
-        enabled: value ?? previous[key].everyone,
-        override: value,
-        source: value === null ? "everyone" : "override",
-      },
-    });
-
-    try {
-      const { response, payload: nextPayload } = await putJson(`/v1/admin/organizations/${org.id}/capabilities`, {
-        capabilities: { [key]: value }
-      });
-
-      if (!response.ok) {
-        setOrganizationFeaturesLocally(org.id, previous);
-        const message = getErrorMessage(nextPayload, `Could not update features for ${org.name}.`);
-        setError(message);
-        setCapabilityError({ orgId: org.id, message });
-        return;
-      }
-      // The server's answer is the truth (locks, defaults), not the optimistic guess.
-      if (isRecord(nextPayload) && isRecord(nextPayload.featureStates)) {
-        const features = parseAdminOrganizationFeatures(nextPayload.featureStates, nextPayload.capabilities);
-        setOrganizationFeaturesLocally(org.id, features);
-      }
-    } catch (nextError) {
-      setOrganizationFeaturesLocally(org.id, previous);
-      const message = nextError instanceof Error ? nextError.message : "Unknown network error";
-      setError(message);
-      setCapabilityError({ orgId: org.id, message });
-    } finally {
-      setSavingCapabilityOrgId(null);
-    }
-  }, [organizationFeatures, setOrganizationFeaturesLocally]);
-
   const saveOpenWorkWebAccess = useCallback(async () => {
     if (!openworkWebAccessDialog) {
       return;
@@ -2519,14 +2426,10 @@ export function DenAdminPanel({ initialPayload, section }: { initialPayload: unk
                     </div>
                   </div>
 
-                  <AdminOrganizationFeatureControls
-                    organizationId={org.id}
-                    features={organizationFeatures[org.id] ?? org.features}
-                    loadFeatures={loadOrganizationFeatures}
-                    saving={savingCapabilityOrgId === org.id}
-                    error={capabilityError?.orgId === org.id ? capabilityError.message : null}
-                    onChange={(key, enabled) => void saveOrganizationFeature(org, key, enabled)}
-                  />
+                  <Link href={adminOrganizationHref(org.id, routeSearch, routePage, "features")} prefetch={false}
+                    data-testid="admin-organization-features-link" className="mt-4 inline-block text-sm font-medium text-slate-700 underline-offset-2 hover:underline">
+                    Features
+                  </Link>
 
                   <div className="mt-4 border-t border-slate-200 pt-4" data-testid="admin-openwork-web-access">
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">

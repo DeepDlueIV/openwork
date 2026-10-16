@@ -41,8 +41,8 @@ and the phone never holds Den tokens:
    code to the app's return address: `/auth/app/callback` on Workbot itself, which iOS and Android open only in the
    Workbot app they verified against `/.well-known/apple-app-site-association` and `/.well-known/assetlinks.json`.
    Anyone can start a sign-in with a challenge of their own, so the code never goes to an address another app could
-   claim. The development build's `com.openworklabs.workbot.dev:/auth/callback` is accepted only by a Workbot on
-   localhost.
+   claim. Private-use schemes are rejected on every deployment, including localhost; phone sign-in requires
+   an HTTPS deployment with verified app links.
 3. The app trades the code and its verifier at `POST /auth/app/token` for a Workbot session, encrypted with
    `WORKBOT_SESSION_SECRET` like the cookie, and sends it as `Authorization: Bearer`. When the Den tokens inside are refreshed, the response
    carries the new session in `Workbot-Session`; `POST /auth/app/refresh` renews it before it expires, and
@@ -63,6 +63,8 @@ refused with `workbot_mobile_not_enabled`.
 | `WORKBOT_IOS_TEAM_ID` | unset | The Workbot app's Apple team ID, served in `apple-app-site-association` so iOS returns sign-in to the app. Unset: the iPhone app can't finish signing in |
 | `WORKBOT_ANDROID_CERT_SHA256` | unset | SHA-256 fingerprints of the Android app's signing certificates, comma-separated, served in `assetlinks.json`. Unset: the Android app can't finish signing in |
 | `PORT` / `WORKBOT_PORT` | `3020` | |
+| `WORKBOT_SENTRY_DSN` | unset | Optional Sentry error reports from the server: route errors, sign-in and token refresh failures, `den_unavailable`, runner unreachable or 5xx, live-event relay failures. Stable codes only, never messages, tokens or cookies. Unset sends nothing |
+| `WORKBOT_SENTRY_ENVIRONMENT`, `WORKBOT_SENTRY_RELEASE` | unset, `workbot@<WORKBOT_VERSION>` | Tags on those reports |
 
 On Den, set `DEN_WORKBOT_URL` (den-api) to the same address as `WORKBOT_PUBLIC_URL`; den-web's `/workbot` redirects
 there. Then turn Workbot on per organization: the admin panel, or the `den_set_org_capability` admin tool.

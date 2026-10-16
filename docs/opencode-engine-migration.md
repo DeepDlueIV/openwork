@@ -71,15 +71,11 @@ restart resumes the retained workspace and committed batches. Conversion and
 payload restoration have their own restart checkpoints. Errors never blacklist
 a chat or mark a partial copy complete.
 
-Existing v2 messages are preserved. For earlier reduced copies, the migration
-reconstructs the retired trimmer's selected scalar values without trimming the
-new copy. It restores a scalar only when its current value exactly matches that
-legacy omission. Other edits, newer v2-only messages, session metadata and event
-history are retained. Missing historical messages are inserted in source order
-before newer v2 messages; an atomic, durable ordering map keeps restart from
-changing that order. Event sequence allocation never rewinds. An edited omission
-that cannot be reconciled safely stops with an actionable error and preserves
-both versions for reconciliation.
+Existing v2 chats are skipped without changing their messages, metadata, order,
+or event history. A new session and its migration checkpoint are created in one
+transaction. Only that checkpoint lets the migration resume writing the session;
+a matching session ID alone does not. New messages retain the native converter's
+order, and event sequence allocation never rewinds.
 
 Every original v1 message and part is also retained byte-for-byte in the target's
 `openwork_v1_message` and `openwork_v1_part` archive tables, keyed by the snapshot's
@@ -117,9 +113,10 @@ Implementation was checked against the native engine at the repository pin,
 test against the pinned real engine. It creates a 260 MiB single tool output,
 Unicode text, base64 and percent-encoded files, and multiple transfer batches.
 It kills a worker after a committed batch, resumes from another process,
-repairs a legacy omission, restores a missing message, preserves newer v2
-messages and historical edits, checks the original database digest, and opens
-the result through a fresh native engine. Without a binary it explicitly skips.
+checks complete payloads and the original database digest, leaves existing v2
+chats untouched, and opens the result through a fresh native engine. It also
+checks graceful shutdown and automatic startup recovery. Without a binary it
+explicitly skips.
 
 ```sh
 OPENWORK_OPENCODE2_BIN="$(command -v opencode2)" pnpm --filter openwork-server test:history-migration

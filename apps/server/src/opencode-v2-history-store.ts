@@ -30,10 +30,6 @@ export function numberField(row: unknown, key: string): number {
   return typeof value === "number" || typeof value === "bigint" ? Number(value) : 0;
 }
 
-export const LEGACY_OMISSION = "Left out when this chat was upgraded to OpenCode v2 because it was too large. The full version is in OpenCode v1.";
-const LEGACY_FILE = Buffer.from(LEGACY_OMISSION).toString("base64");
-const LEGACY_URL = `data:text/plain;base64,${LEGACY_FILE}`;
-const LEGACY_TARGET = 128 * 1024 ** 2;
 const VALUE_THRESHOLD = 4096;
 const BATCH_ROWS = 64;
 
@@ -51,48 +47,18 @@ function transaction(db: HistoryDatabase, run: () => void): void {
 
 const yieldTurn = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 
-/** Reconstruct only the *selection* made by the retired trimmer, for provenance
- * checks during repair. Changes a TEMP probe, never the source or the new copy. */
-function legacySelection(db: HistoryDatabase, sessionId: string): Set<string> {
-  const rows = db.prepare(`SELECT 'part' AS tbl, id, length(data) AS size FROM part WHERE session_id = ?1
-    UNION ALL SELECT 'message', id, length(data) FROM message WHERE session_id = ?1 ORDER BY size DESC`).all(sessionId);
-  let size = rows.reduce<number>((total, row) => total + numberField(row, "size"), 0);
-  const selected = new Set<string>();
-  db.exec("CREATE TEMP TABLE IF NOT EXISTS legacy_probe (data TEXT)");
-  for (const row of rows) {
-    if (size <= LEGACY_TARGET) break;
-    const table = stringField(row, "tbl") === "part" ? "part" : "message";
-    const id = stringField(row, "id");
-    db.exec("DELETE FROM temp.legacy_probe");
-    db.prepare(`INSERT INTO temp.legacy_probe SELECT data FROM ${table} WHERE id = ?`).run(id);
-    const paths = db.prepare(`SELECT fullkey AS path, key FROM legacy_probe, json_tree(data)
-      WHERE type = 'text' AND length(atom) >= ?`).all(VALUE_THRESHOLD);
-    for (const entry of paths) {
-      const path = stringField(entry, "path");
-      selected.add(`${table}:${id}:${path}`);
-      if (stringField(entry, "key") === "url" && path.endsWith(".url")) {
-        db.prepare("UPDATE temp.legacy_probe SET data = json_replace(data, ?, ?, ?, 'text/plain')")
-          .run(path, LEGACY_URL, `${path.slice(0, -4)}.mime`);
-      } else db.prepare("UPDATE temp.legacy_probe SET data = json_replace(data, ?, ?)").run(path, LEGACY_OMISSION);
-    }
-    size -= numberField(row, "size") - numberField(db.prepare("SELECT length(data) AS size FROM temp.legacy_probe").get(), "size");
-  }
-  return selected;
-}
-
 /** Native conversion reads a whole session into JS. Substitute reversible,
  * unique payload references first; SQLite keeps the full values off that heap.
  * Each session and its payload map commit together, making restart idempotent. */
 export async function externalizeHistory(db: HistoryDatabase, signal?: AbortSignal): Promise<void> {
   db.exec(`CREATE TABLE IF NOT EXISTS openwork_payload (
-    token TEXT PRIMARY KEY, value TEXT NOT NULL, legacy TEXT NOT NULL, prefix TEXT NOT NULL);
+    token TEXT PRIMARY KEY, value TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS openwork_externalized (session_id TEXT PRIMARY KEY)`);
   const sessions = db.prepare("SELECT id FROM session ORDER BY id").all();
   for (const session of sessions) {
     signal?.throwIfAborted();
     const sessionId = stringField(session, "id");
     if (db.prepare("SELECT 1 FROM openwork_externalized WHERE session_id = ?").get(sessionId)) continue;
-    const selected = legacySelection(db, sessionId);
     transaction(db, () => {
       for (const table of ["message", "part"]) {
         const rows = db.prepare(`SELECT id FROM ${table} WHERE session_id = ? ORDER BY id`).all(sessionId);
@@ -103,7 +69,6 @@ export async function externalizeHistory(db: HistoryDatabase, signal?: AbortSign
           for (const entry of paths) {
             const path = stringField(entry, "path");
             const token = `OWPAYLOAD${randomBytes(24).toString("hex")}END`;
-            const omitted = selected.has(`${table}:${id}:${path}`);
             const header = stringField(db.prepare(`SELECT CASE WHEN ? = 'url' AND json_extract(data, ?) LIKE 'data:%,%'
               THEN substr(json_extract(data, ?), 1, instr(json_extract(data, ?), ',')) ELSE '' END AS header
               FROM ${table} WHERE id = ?`).get(stringField(entry, "key"), path, path, path, id), "header");
@@ -111,22 +76,19 @@ export async function externalizeHistory(db: HistoryDatabase, signal?: AbortSign
             // survives that normalization, and also survives tool file URIs.
             if (header) {
               const encodedToken = Buffer.from(token).toString("base64");
-              db.prepare(`INSERT INTO openwork_payload SELECT ?, substr(json_extract(data, ?), ?), ?, ? FROM ${table} WHERE id = ?`)
-                .run(encodedToken, path, header.length + 1, omitted ? LEGACY_FILE : "", header, id);
+              db.prepare(`INSERT INTO openwork_payload SELECT ?, substr(json_extract(data, ?), ?) FROM ${table} WHERE id = ?`)
+                .run(encodedToken, path, header.length + 1, id);
               if (!header.endsWith(";base64,")) encodeDataUrl(db, encodedToken);
-              if (!omitted) db.prepare("UPDATE openwork_payload SET legacy = value WHERE token = ?").run(encodedToken);
               const normalizedHeader = header.endsWith(";base64,") ? header : `${header.slice(0, -1)};base64,`;
               db.prepare(`UPDATE ${table} SET data = json_replace(data, ?, ?) WHERE id = ?`).run(path, normalizedHeader + encodedToken, id);
               // Tool file URLs keep their original encoding; keep a separate
               // full-URI mapping ahead of the normalized attachment mapping.
               const uriToken = normalizedHeader + encodedToken;
-              db.prepare(`INSERT INTO openwork_payload SELECT ?, json_extract(data, ?), ?, '' FROM original.${table} WHERE id = ?`)
-                .run(uriToken, path, omitted ? LEGACY_URL : "", id);
-              if (!omitted) db.prepare("UPDATE openwork_payload SET legacy = value WHERE token = ?").run(uriToken);
+              db.prepare(`INSERT INTO openwork_payload SELECT ?, json_extract(data, ?) FROM original.${table} WHERE id = ?`)
+                .run(uriToken, path, id);
             } else {
-              db.prepare(`INSERT INTO openwork_payload SELECT ?, json_extract(data, ?), ?, '' FROM ${table} WHERE id = ?`)
-                .run(token, path, omitted ? LEGACY_OMISSION : "", id);
-              if (!omitted) db.prepare("UPDATE openwork_payload SET legacy = value WHERE token = ?").run(token);
+              db.prepare(`INSERT INTO openwork_payload SELECT ?, json_extract(data, ?) FROM ${table} WHERE id = ?`)
+                .run(token, path, id);
               db.prepare(`UPDATE ${table} SET data = json_replace(data, ?, ?) WHERE id = ?`).run(path, token, id);
             }
           }
@@ -179,11 +141,9 @@ function encodeDataUrl(db: HistoryDatabase, token: string): void {
 }
 
 /** Rehydrate native projections within SQLite, never JSON.parse/stringify a
- * full message. Also retain exact legacy scalar candidates for safe repair. */
+ * full message. */
 export async function restoreHistoryPayloads(db: HistoryDatabase, signal?: AbortSignal): Promise<void> {
-  db.exec(`CREATE TABLE IF NOT EXISTS openwork_restored (message_id TEXT PRIMARY KEY);
-    CREATE TABLE IF NOT EXISTS openwork_legacy_value (message_id TEXT, path TEXT, value TEXT NOT NULL,
-      PRIMARY KEY (message_id, path))`);
+  db.exec("CREATE TABLE IF NOT EXISTS openwork_restored (message_id TEXT PRIMARY KEY)");
   let cursor = "";
   while (true) {
     const rows = db.prepare("SELECT id FROM session_message WHERE id > ? ORDER BY id LIMIT ?").all(cursor, BATCH_ROWS);
@@ -193,17 +153,10 @@ export async function restoreHistoryPayloads(db: HistoryDatabase, signal?: Abort
       const id = stringField(row, "id"); cursor = id;
       if (db.prepare("SELECT 1 FROM openwork_restored WHERE message_id = ?").get(id)) continue;
       transaction(db, () => {
-        db.prepare(`INSERT OR IGNORE INTO openwork_legacy_value SELECT ?, t.fullkey, t.atom FROM session_message m, json_tree(m.data) t
-          WHERE m.id = ? AND t.type = 'text' AND instr(t.atom, 'OWPAYLOAD') > 0`).run(id, id);
-        // Base64 attachment references do not contain the unencoded prefix.
-        db.prepare(`INSERT OR IGNORE INTO openwork_legacy_value SELECT ?, t.fullkey, t.atom FROM session_message m, json_tree(m.data) t
-          WHERE m.id = ? AND t.type = 'text' AND EXISTS (SELECT 1 FROM openwork_payload p WHERE instr(t.atom, p.token) > 0)`).run(id, id);
         const tokens = db.prepare(`SELECT token FROM openwork_payload WHERE instr((SELECT data FROM session_message WHERE id = ?), token) > 0
           ORDER BY length(token) DESC`).all(id);
         for (const item of tokens) {
           const token = stringField(item, "token");
-          db.prepare(`UPDATE openwork_legacy_value SET value = replace(value, ?, (SELECT legacy FROM openwork_payload WHERE token = ?))
-            WHERE message_id = ? AND instr(value, ?) > 0`).run(token, token, id, token);
           db.prepare(`UPDATE session_message SET data = replace(data, ?,
             (SELECT substr(json_quote(value), 2, length(json_quote(value)) - 2) FROM openwork_payload WHERE token = ?)) WHERE id = ?`)
             .run(token, token, id);
@@ -253,14 +206,10 @@ export async function copyHistoryBatches(options: {
       time_created INTEGER, time_updated INTEGER, data TEXT NOT NULL, PRIMARY KEY (source_key, id));
     CREATE TABLE IF NOT EXISTS openwork_v1_part (source_key TEXT, id TEXT, message_id TEXT, session_id TEXT,
       time_created INTEGER, time_updated INTEGER, data TEXT NOT NULL, PRIMARY KEY (source_key, id));
-    CREATE TABLE IF NOT EXISTS openwork_v1_session (source_key TEXT, id TEXT, data TEXT NOT NULL, PRIMARY KEY (source_key, id));
-    CREATE TABLE IF NOT EXISTS openwork_history_order (source_key TEXT, id TEXT, seq INTEGER NOT NULL, PRIMARY KEY (source_key, id))`);
+    CREATE TABLE IF NOT EXISTS openwork_v1_session (source_key TEXT, id TEXT, data TEXT NOT NULL, PRIMARY KEY (source_key, id))`);
   db.exec("PRAGMA foreign_keys = ON");
   transaction(db, () => {
     db.exec(`INSERT OR IGNORE INTO project (${projectColumns}) SELECT ${projectColumns} FROM converted.project`);
-    db.prepare(`INSERT OR IGNORE INTO session_v2 (${sessionColumns}) SELECT ${sessionColumns} FROM converted.session_v2 s
-      WHERE s.id IN (SELECT id FROM original.session) AND NOT EXISTS
-        (SELECT 1 FROM openwork_history_copy c WHERE c.source_key = ? AND c.session_id = s.id AND c.completed = 1)`).run(options.sourceKey);
   });
   const sessions = db.prepare("SELECT id FROM converted.session_v2 WHERE id IN (SELECT id FROM original.session) ORDER BY id").all();
   let imported = 0;
@@ -270,24 +219,15 @@ export async function copyHistoryBatches(options: {
     const id = stringField(session, "id");
     const checkpoint = db.prepare("SELECT cursor, completed FROM openwork_history_copy WHERE source_key = ? AND session_id = ?").get(options.sourceKey, id);
     if (numberField(checkpoint, "completed")) { skipped++; options.progress(id, "skipped"); continue; }
-    // Reserve one stable ordering for the whole repair, persisted with its
-    // checkpoint. Historical messages precede v2-only messages; their relative
-    // order and payloads survive. Positive sequence numbers remain valid native
-    // cursors. An interruption never computes a different prefix on resume.
+    // An existing v2 chat is independent history. Only a checkpoint created
+    // atomically with a new session grants this run ownership of its messages.
+    if (!checkpoint && db.prepare("SELECT 1 FROM session_v2 WHERE id = ?").get(id)) {
+      skipped++; options.progress(id, "skipped"); continue;
+    }
     transaction(db, () => {
       if (checkpoint) return;
+      db.prepare(`INSERT INTO session_v2 (${sessionColumns}) SELECT ${sessionColumns} FROM converted.session_v2 WHERE id = ?`).run(id);
       db.prepare("INSERT INTO openwork_history_copy (source_key, session_id) VALUES (?, ?)").run(options.sourceKey, id);
-      db.prepare(`INSERT INTO openwork_history_order SELECT ?, id, row_number() OVER (ORDER BY seq)
-        FROM converted.session_message WHERE session_id = ?`).run(options.sourceKey, id);
-      db.prepare(`INSERT INTO openwork_history_order SELECT ?1, t.id,
-        (SELECT count(*) FROM converted.session_message WHERE session_id = ?2) + row_number() OVER (ORDER BY t.seq)
-        FROM main.session_message t WHERE t.session_id = ?2 AND NOT EXISTS (SELECT 1 FROM converted.session_message s WHERE s.id = t.id)`)
-        .run(options.sourceKey, id);
-      const shift = numberField(db.prepare(`SELECT coalesce(max(seq), 0) + count(*) +
-        (SELECT count(*) FROM converted.session_message WHERE session_id = ?1) + 1 AS shift FROM session_message WHERE session_id = ?1`).get(id), "shift");
-      db.prepare("UPDATE session_message SET seq = seq + ? WHERE session_id = ?").run(shift, id);
-      db.prepare(`UPDATE session_message SET seq = (SELECT seq FROM openwork_history_order o WHERE o.source_key = ? AND o.id = session_message.id)
-        WHERE session_id = ?`).run(options.sourceKey, id);
     });
     let cursor = checkpoint ? numberField(checkpoint, "cursor") : -1;
     while (true) {
@@ -297,16 +237,13 @@ export async function copyHistoryBatches(options: {
       transaction(db, () => {
         for (const message of batch) {
           const messageId = stringField(message, "id");
-          const existing = db.prepare("SELECT session_id, type FROM session_message WHERE id = ?").get(messageId);
+          const existing = db.prepare("SELECT 1 FROM session_message WHERE id = ?").get(messageId);
           if (existing) {
-            if (stringField(existing, "session_id") !== id || stringField(existing, "type") !== stringField(db.prepare("SELECT type FROM converted.session_message WHERE id = ?").get(messageId), "type")) {
-              throw new Error("History message identity conflict; existing v2 messages were preserved.");
-            }
-            repairMessage(db, messageId);
+            const same = db.prepare(`SELECT 1 FROM main.session_message t JOIN converted.session_message s ON s.id = t.id
+              WHERE t.id = ? AND t.session_id = s.session_id AND t.type = s.type AND t.seq = s.seq AND t.data = s.data`).get(messageId);
+            if (!same) throw new Error("History message identity conflict; existing v2 messages were preserved.");
           } else {
-            const select = columns(db, "session_message", "main").map(column => column === "seq"
-              ? "(SELECT seq FROM openwork_history_order WHERE source_key = ? AND id = m.id)" : `m.${identifier(column)}`).join(", ");
-            db.prepare(`INSERT INTO session_message (${messageColumns}) SELECT ${select} FROM converted.session_message m WHERE m.id = ?`).run(options.sourceKey, messageId);
+            db.prepare(`INSERT INTO session_message (${messageColumns}) SELECT ${messageColumns} FROM converted.session_message WHERE id = ?`).run(messageId);
           }
           cursor = numberField(message, "seq");
         }
@@ -355,33 +292,4 @@ export async function copyHistoryBatches(options: {
     options.progress(id, "imported");
   }
   return { imported, skipped };
-}
-
-function repairMessage(db: HistoryDatabase, id: string): void {
-  const paths = db.prepare(`SELECT t.fullkey AS path FROM session_message m, json_tree(m.data) t
-    WHERE m.id = ? AND t.type = 'text' AND (instr(t.atom, ?) > 0 OR instr(t.atom, ?) > 0)`).all(id, LEGACY_OMISSION, LEGACY_FILE);
-  for (const entry of paths) {
-    const path = stringField(entry, "path");
-    if (db.prepare(`SELECT 1 FROM converted.session_message s JOIN main.session_message t ON s.id = t.id
-      WHERE s.id = ? AND (json_type(s.data, ?) IS NULL OR json_extract(s.data, ?) = json_extract(t.data, ?))`)
-      .get(id, path, path, path)) continue;
-    // Never replace an edited historical field. Equality with the reconstructed
-    // old scalar is the provenance check; only the omitted scalar is restored.
-    const match = db.prepare(`SELECT 1 FROM session_message m JOIN converted.openwork_legacy_value l ON l.message_id = m.id AND l.path = ?
-      JOIN converted.session_message s ON s.id = m.id WHERE m.id = ? AND json_extract(m.data, ?) = l.value
-        AND json_type(s.data, ?) = 'text'`).get(path, id, path, path);
-    if (!match) throw new Error("A previously trimmed message was edited or its source changed. Its v2 version was preserved; repair needs reconciliation.");
-    db.prepare(`UPDATE session_message SET data = json_replace(data, ?,
-      (SELECT json_extract(data, ?) FROM converted.session_message WHERE id = ?)) WHERE id = ?`).run(path, path, id, id);
-    // The retired trimmer also changed the MIME of inline files.
-    const parent = path.slice(0, path.lastIndexOf("."));
-    if (path.endsWith(".data") || path.endsWith(".uri") || path.endsWith(".url")) {
-      const mimePath = `${parent}.mime`;
-      db.prepare(`UPDATE session_message SET data = json_replace(data, ?,
-        (SELECT json_extract(data, ?) FROM converted.session_message WHERE id = ?))
-        WHERE id = ? AND json_extract(data, ?) = 'text/plain'
-          AND (SELECT json_type(data, ?) FROM converted.session_message WHERE id = ?) = 'text'`)
-        .run(mimePath, mimePath, id, id, mimePath, mimePath, id);
-    }
-  }
 }

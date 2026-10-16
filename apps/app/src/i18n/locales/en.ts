@@ -652,7 +652,7 @@ export default {
   "engine_migration.change_permissions": "Chat permissions and undo history reset. Review permissions before continuing a migrated chat.",
   "engine_migration.change_plugins": "v1 plugins need v2-compatible replacements.",
   "engine_migration.change_sync": "Later v1 changes don't sync to chats already copied.",
-  "engine_migration.consent_body": "Copies your full OpenCode v1 history into v2 on this computer and restores content left out of earlier copies. Your v1 chats and newer v2 messages are kept. V2 chats pause until copying finishes.",
+  "engine_migration.consent_body": "Copies your full OpenCode v1 history into v2 on this computer. Your v1 chats stay as they are, and chats already in v2 are kept. V2 chats pause until copying finishes.",
   "engine_migration.consent_title": "Migrate chats to OpenCode v2?",
   "engine_migration.continue_in_background": "Continue using OpenWork",
   "engine_migration.done": "Done",

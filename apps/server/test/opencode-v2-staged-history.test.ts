@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { test } from "node:test";
 import { createManagedOpencodeV2Server } from "../src/managed-opencode-v2.js";
 import { migrateOpencodeV1History, type EngineV2MigrationStatus } from "../src/opencode-v2-migration.js";
-import { LEGACY_OMISSION, numberField, openHistoryDatabase, stringField } from "../src/opencode-v2-history-store.js";
+import { numberField, openHistoryDatabase, stringField } from "../src/opencode-v2-history-store.js";
 import { createEngineV2Preview, readEngineV2PreviewState } from "../src/engine-v2-preview.js";
 import type { ServerConfig } from "../src/types.js";
 
@@ -63,7 +63,7 @@ async function digest(path: string) {
   return hash.digest("hex");
 }
 
-test("a staged copy resumes committed batches, restores old omissions, and retains newer v2 messages", { skip: !bin, timeout: 300_000 }, async () => {
+test("a complete large-thread copy resumes committed batches and repeated runs preserve v2 messages", { skip: !bin, timeout: 300_000 }, async () => {
   if (!bin) return;
   const directory = await mkdtemp(join(tmpdir(), "openwork-staged-history-"));
   const targetRoot = join(directory, "v2");
@@ -106,16 +106,9 @@ test("a staged copy resumes committed batches, restores old omissions, and retai
       assert.equal(stringField(target.prepare("SELECT json_extract(data, '$.text') AS value FROM session_message WHERE id = ?").get(id("msg", 1)), "value"), "Keep this prompt. " + "界🦆\"\\\n".repeat(1000));
       assert.equal(stringField(target.prepare("SELECT json_extract(data, '$.files[0].data') AS value FROM session_message WHERE id = ?").get(id("msg", 1)), "value"), Buffer.from("image-payload".repeat(600)).toString("base64"));
       assert.equal(stringField(target.prepare("SELECT json_extract(data, '$.files[1].data') AS value FROM session_message WHERE id = ?").get(id("msg", 1)), "value"), Buffer.from("界🦆 /%".repeat(2000)).toString("base64"));
-      // Reproduce a copy made by the retired trimmer: it had no staged-copy
-      // receipt, only the omission in its native projection.
-      target.exec("DELETE FROM openwork_history_copy; DELETE FROM openwork_history_order");
-      target.prepare("UPDATE session_message SET data = json_replace(data, '$.content[1].state.content[0].text', ?) WHERE id = ?").run(LEGACY_OMISSION, assistantId);
-      target.prepare("UPDATE session_message SET data = json_replace(data, '$.content[1].state.input.document', ?, '$.content[1].state.content[1].uri', ?, '$.content[1].state.content[1].mime', 'text/plain') WHERE id = ?")
-        .run(LEGACY_OMISSION, "data:text/plain;base64," + Buffer.from(LEGACY_OMISSION).toString("base64"), assistantId);
       target.prepare("UPDATE session_message SET data = json_set(data, '$.metadata.userNote', 'Keep this v2 edit') WHERE id = ?").run(assistantId);
-      target.prepare("DELETE FROM session_message WHERE id = ?").run(id("msg", 100));
       const newer = id("msg", 999);
-      const newerData = JSON.stringify({ text: "A newer v2 message must survive repair", time: { created: 1000 } });
+      const newerData = JSON.stringify({ text: "A newer v2 message must survive another migration", time: { created: 1000 } });
       target.prepare("INSERT INTO session_message (id, session_id, type, seq, time_created, time_updated, data) VALUES (?, ?, 'user', 1000, 1000, 1000, ?)").run(newer, sessionId, newerData);
       target.prepare("UPDATE event_sequence SET seq = 1001 WHERE aggregate_id = ?").run(sessionId);
       target.close();
@@ -138,7 +131,7 @@ test("a staged copy resumes committed batches, restores old omissions, and retai
     const read = await engine.fetchJson(`/api/session/${sessionId}/message?limit=1&order=desc`, { directory });
     assert.equal(read.status, 200, JSON.stringify(read.json));
     const appended = await engine.fetchJson(`/api/session/${sessionId}/synthetic`, { method: "POST", directory,
-      body: { text: "A new native event after repair", metadata: {}, resume: false } });
+      body: { text: "A new native event after migration", metadata: {}, resume: false } });
     assert.equal(appended.status, 200, JSON.stringify(appended.json));
   } finally {
     await engine?.close();
@@ -146,9 +139,9 @@ test("a staged copy resumes committed batches, restores old omissions, and retai
   }
 });
 
-test("an edited omission is preserved and shared active engines prevent an offline copy", { skip: !bin, timeout: 60_000 }, async () => {
+test("active engines block the copy and existing v2 chats are left untouched", { skip: !bin, timeout: 60_000 }, async () => {
   if (!bin) return;
-  const directory = await mkdtemp(join(tmpdir(), "openwork-history-conflict-"));
+  const directory = await mkdtemp(join(tmpdir(), "openwork-history-existing-"));
   const rootDir = join(directory, "v2");
   let engine: Awaited<ReturnType<typeof createManagedOpencodeV2Server>> | undefined;
   try {
@@ -161,20 +154,26 @@ test("an edited omission is preserved and shared active engines prevent an offli
     assert.equal(status?.state, "error");
     assert.match(status?.error ?? "", /Another OpenCode v2 engine/);
     assert.equal((await engine.health()).healthy, true);
+    const created = await engine.fetchJson("/api/session", { method: "POST", directory,
+      body: { id: sessionId, title: "An existing v2 chat", location: { directory } } });
+    assert.equal(created.status, 200, JSON.stringify(created.json));
     await engine.close(); engine = undefined;
-    await migrateOpencodeV1History(request);
-    assert.equal(status?.state, "completed", status?.error);
     let db = await openHistoryDatabase(request.targetDatabase);
-    const edited = LEGACY_OMISSION + "\nA newer v2 edit to this field";
-    db.exec("DELETE FROM openwork_history_copy; DELETE FROM openwork_history_order");
-    db.prepare("UPDATE session_message SET data = json_replace(data, '$.content[1].state.content[0].text', ?) WHERE id = ?").run(edited, assistantId);
+    const existingData = JSON.stringify({ text: "Only in v2", time: { created: 1000 } });
+    db.prepare("INSERT INTO session_message (id, session_id, type, seq, time_created, time_updated, data) VALUES (?, ?, 'user', 50, 1000, 1000, ?)")
+      .run(id("msg", 999), sessionId, existingData);
     db.close();
     await migrateOpencodeV1History(request);
-    assert.equal(status?.state, "error");
-    assert.match(status?.error ?? "", /preserved; repair needs reconciliation/);
+    assert.equal(status?.state, "completed", status?.error);
+    assert.equal(status?.imported, 0);
+    assert.equal(status?.skipped, 1);
     db = await openHistoryDatabase(request.targetDatabase);
-    try { assert.equal(stringField(db.prepare("SELECT json_extract(data, '$.content[1].state.content[0].text') AS value FROM session_message WHERE id = ?").get(assistantId), "value"), edited); }
-    finally { db.close(); }
+    try {
+      assert.equal(stringField(db.prepare("SELECT title FROM session_v2 WHERE id = ?").get(sessionId), "title"), "An existing v2 chat");
+      assert.equal(numberField(db.prepare("SELECT count(*) AS n FROM session_message").get(), "n"), 1);
+      assert.equal(stringField(db.prepare("SELECT data FROM session_message WHERE id = ?").get(id("msg", 999)), "data"), existingData);
+      assert.equal(numberField(db.prepare("SELECT seq FROM session_message WHERE id = ?").get(id("msg", 999)), "seq"), 50);
+    } finally { db.close(); }
   } finally { await engine?.close(); await rm(directory, { recursive: true, force: true }); }
 });
 

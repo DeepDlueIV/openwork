@@ -2,6 +2,7 @@
 // It speaks the same seven-tool contract as the macOS helper, so the broker,
 // consent, handoff and the floating Computer view work unchanged. Providers
 // supply only a small driver: windows, screenshots and input.
+import { isDeepStrictEqual } from "node:util";
 import { randomUUID } from "node:crypto";
 import { COMPUTER_PROTOCOL } from "./computer-control.mjs";
 
@@ -86,8 +87,9 @@ export function createRemoteComputerAdapter({ id, label, driver, now = Date.now 
       // screen, where an overlapping unapproved window could appear.
       async function captureWindow(region, options = {}) {
         const current = session;
+        const generation = current.generation;
         const check = () => {
-          if (closed || !live() || session !== current || current.paused) throw new Error("The computer session ended or paused.");
+          if (closed || !live() || session !== current || current.generation !== generation || current.paused) throw new Error("The computer session ended or paused.");
         };
         check();
         const window = current.window;
@@ -114,6 +116,7 @@ export function createRemoteComputerAdapter({ id, label, driver, now = Date.now 
       function close(reason) {
         if (!session || session.closed) return;
         session.closed = true;
+        session.generation++;
         session.decide?.({ action: "deny" });
         publishState("closed", { status: reason });
         clearTimeout(frameTimer);
@@ -150,23 +153,29 @@ export function createRemoteComputerAdapter({ id, label, driver, now = Date.now 
         },
         async computer_open_session(args, options) {
           if (live()) return failure("session_open", "A session is already open. Keep using it, or close it first. Nothing was dispatched.");
+          if (!["observe", "control", "assist"].includes(args.mode) || typeof args.app_id !== "string" || !args.app_id || typeof args.purpose !== "string" || !args.purpose || args.purpose.length > 500) return failure("invalid_arguments", "Provide an app, mode and task purpose.");
           if (args.mode === "assist") return failure("mode_unsupported", "This computer has no accessibility controls. Use control (mouse and keyboard) or observe. Nothing was dispatched.");
           const windows = args.app_id === "desktop"
             ? [{ id: 1, title: "Whole screen", app: "desktop", region: await serial(() => driver.screen()), whole: true }]
             : (await serial(() => driver.windows())).filter((window) => window.app === args.app_id);
+          options.signal.throwIfAborted();
+          if (closed) throw new Error("Computer use ended while finding the app.");
           if (!windows.length) return failure("app_not_found", "That app has no open window on this computer. Call computer_discover again. Nothing was dispatched.");
           session = { id: randomUUID(), uiId: randomUUID(), appId: args.app_id, appName: args.app_id === "desktop" ? "Whole screen" : args.app_id, mode: args.mode,
-            purpose: args.purpose, window: null, paused: false, closed: false, expiresAt: now() + SESSION_SECONDS * 1000, actions: 0,
+            purpose: args.purpose, generation: 0, window: null, paused: false, closed: false, expiresAt: now() + SESSION_SECONDS * 1000, actions: 0,
             observations: new Map(), receipts: new Map(), decide: null };
           const current = session;
-          // The person approves the exact window in the Computer view.
+          // The broker selects the window automatically under the rollout.
+          let abort;
           const decision = await new Promise((resolve, reject) => {
             current.decide = resolve;
-            const abort = () => reject(options.signal.reason);
+            abort = () => reject(options.signal.reason);
             options.signal.addEventListener("abort", abort, { once: true });
+            if (options.signal.aborted) { abort(); return; }
             publish({ kind: "state", id: current.uiId, phase: "approval", appID: current.appId, ...(args.pid ? { pid: args.pid } : {}), appName: current.appName,
               mode: current.mode, task: current.purpose, windows: windows.map(({ id, title }) => ({ id, title })) });
-          }).finally(() => { current.decide = null; });
+          }).finally(() => { current.decide = null; options.signal.removeEventListener("abort", abort); });
+          options.signal.throwIfAborted();
           if (decision.action !== "approve" || current.closed) {
             session = null;
             return failure("access_denied", "The person did not approve a window. Nothing was dispatched. Do not retry unless they ask.");
@@ -174,6 +183,8 @@ export function createRemoteComputerAdapter({ id, label, driver, now = Date.now 
           current.window = windows.find((window) => window.id === decision.windowId);
           if (!current.window) { close("The window choice changed."); return failure("access_denied", "Choose a current window. Nothing was dispatched."); }
           if (!current.window.whole) await serial(() => driver.focus(current.window.id));
+          options.signal.throwIfAborted();
+          if (closed || current.closed) throw new Error("Computer use ended while opening the app.");
           publishState("working");
           return text({ ...status(), ok: true, state: "active" });
         },
@@ -215,17 +226,18 @@ export function createRemoteComputerAdapter({ id, label, driver, now = Date.now 
           if (session.paused) return text({ ...status(), ok: false, code: "paused" }, true);
           if (session.mode === "observe") return failure("mode_unsupported", "This session can only observe. Close it and open one in control mode.");
           // At most once: a repeated request returns its first receipt.
+          if (typeof args.request_id !== "string" || !args.request_id || args.request_id.length > 256) return failure("invalid_arguments", "A bounded request identity is required.");
+          const input = { observation_id: args.observation_id, action: args.action, actions: args.actions };
           const previous = session.receipts.get(args.request_id);
-          if (previous) return previous;
+          if (previous) return isDeepStrictEqual(previous.input, input) ? previous.receipt : failure("request_conflict", "This request identity already belongs to different input. Nothing was dispatched.");
           const observation = session.observations.get(args.observation_id);
           if (!observation || now() - observation.at > OBSERVATION_MS) return failure("observation_expired", "That observation expired. Observe again; nothing was dispatched.");
-          session.observations.delete(args.observation_id);
           const actions = args.actions ?? [args.action];
+          if (!Array.isArray(actions) || actions.length < 1 || actions.length > 8 || actions.some((action) => !action || typeof action !== "object" || !["move", "click", "double_click", "triple_click", "scroll", "drag", "type", "key", "wait"].includes(action.type)
+            || action.type === "type" && (typeof action.text !== "string" || !action.text || action.text.length > 8000)
+            || action.type === "key" && (typeof action.key !== "string" || !action.key)
+            || action.modifiers !== undefined && (!Array.isArray(action.modifiers) || action.modifiers.some((modifier) => !["control", "command", "shift", "option"].includes(modifier))))) return failure("invalid_arguments", "Provide one to eight supported actions with valid input. Nothing was dispatched.");
           if (session.actions + actions.length > MAX_ACTIONS) return failure("action_limit", "This session reached its action limit. Close it and open a new one.");
-          if (actions.some((action) => action.type === "press" || action.type === "set_value")) {
-            return failure("unsupported_action", "This computer has no accessibility refs. Use click and type with image coordinates. Nothing was dispatched.");
-          }
-          if (!Array.isArray(actions) || actions.length < 1 || actions.length > 8) return failure("invalid_arguments", "Provide one to eight actions. Nothing was dispatched.");
           if (actions.some((action) => !action || (action.x !== undefined || action.y !== undefined || ["move", "click", "double_click", "triple_click", "scroll"].includes(action.type)) && !within(observation, action)
             || action.path !== undefined && (!Array.isArray(action.path) || action.path.length < 2 || action.path.some((point) => !within(observation, point)))
             || action.type === "drag" && !action.path)) return failure("out_of_bounds", "Every input point must stay inside the approved observation. Nothing was dispatched.");
@@ -237,44 +249,48 @@ export function createRemoteComputerAdapter({ id, label, driver, now = Date.now 
             const point = action.x !== undefined && action.y !== undefined ? inputPoint(action.x, action.y) : null;
             return { ...action, ...(point ?? {}), ...(action.path ? { path: action.path.map((step) => inputPoint(step.x, step.y)) } : {}) };
           });
-          session.actions += actions.length;
+          const current = session;
+          const generation = current.generation;
+          const active = () => !closed && live() && session === current && !current.paused && current.generation === generation && !options.signal.aborted;
+          const entry = { input: structuredClone(input), receipt: failure("dispatch_uncertain", "Input is in flight or was interrupted. Observe before continuing.") };
+          current.receipts.set(args.request_id, entry);
+          current.observations.delete(args.observation_id);
+          current.actions += actions.length;
+          /** @type {{ completed: number, attempted: boolean, error?: string }} */
+          const progress = { completed: 0, attempted: false };
           const result = await serial(async () => {
-            options.signal.throwIfAborted();
-            if (!live() || session.paused || closed) throw new Error("The computer session ended or paused.");
+            if (!active()) throw new Error("The computer session ended or paused.");
             await verifyRegion(observation);
-            options.signal.throwIfAborted();
-            if (!session.window.whole) await driver.focus(session.window.id);
-            options.signal.throwIfAborted();
-            if (!live() || session.paused || closed) throw new Error("The computer session ended or paused before input.");
-            let completed = 0;
-            let attempted = false;
+            if (!active()) throw new Error("The computer session ended or paused.");
+            if (!current.window.whole) await driver.focus(current.window.id);
+            if (!active()) throw new Error("The computer session ended or paused before input.");
             for (const action of steps) {
               // A remote command already in flight may settle, but no later
               // action (or text chunk) starts after takeover, stop or abort.
               const characters = action.type === "type" ? Array.from(action.text ?? "") : [];
               const chunks = characters.length ? Array.from({ length: Math.ceil(characters.length / 32) }, (_, index) => ({ ...action, text: characters.slice(index * 32, (index + 1) * 32).join("") })) : [action];
               for (const chunk of chunks) {
-                if (options.signal.aborted || !live() || session.paused || closed) return { completed, attempted, error: "Computer use paused or stopped before the remaining input." };
-                attempted = true;
-                const result = await driver.input([chunk], session.window.whole ? {} : { windowId: session.window.id });
-                if (result.completed !== 1) return { completed, attempted, error: result.error ?? "The window refused input." };
+                if (!active()) return { ...progress, error: "Computer use paused or stopped before the remaining input." };
+                progress.attempted = true;
+                const result = await driver.input([chunk], current.window.whole ? {} : { windowId: current.window.id });
+                if (result.completed !== 1) return { ...progress, error: result.error ?? "The window refused input." };
               }
-              completed++;
+              progress.completed++;
             }
-            return { completed, attempted };
+            return progress;
 
-          });
-          for (const action of actions.slice(0, Math.max(1, result.completed))) {
+          }).catch((error) => ({ ...progress, error: error instanceof Error ? error.message : "Input was interrupted." }));
+          for (const action of actions.slice(0, result.completed)) {
             const x = action.x !== undefined ? action.x / observation.width : action.path?.at(-1) ? action.path.at(-1).x / observation.width : undefined;
             const y = action.y !== undefined ? action.y / observation.height : action.path?.at(-1) ? action.path.at(-1).y / observation.height : undefined;
-            publish({ kind: "input", id: session.uiId, sequence: ++inputSequence, at: now(), action: action.type === "wait" ? "move" : action.type, phase: "dispatched",
+            publish({ kind: "input", id: current.uiId, sequence: ++inputSequence, at: now(), action: action.type === "wait" ? "move" : action.type, phase: "dispatched",
               ...(x !== undefined && x >= 0 && x <= 1 ? { x } : {}), ...(y !== undefined && y >= 0 && y <= 1 ? { y } : {}) });
           }
           const receipt = result.completed === actions.length
             ? text({ ok: true, status: "dispatched", completed: actions.length, next: "observe" })
             : text({ ok: true, status: "partial", completed: result.completed, failed: result.completed, skipped: actions.length - result.completed - 1,
               may_have_acted: result.attempted, next: "observe", message: result.error ?? "A step failed." });
-          session.receipts.set(args.request_id, receipt);
+          entry.receipt = receipt;
           return receipt;
         },
         async computer_session_status(args) {
@@ -307,8 +323,8 @@ export function createRemoteComputerAdapter({ id, label, driver, now = Date.now 
           if (!session || session.uiId !== uiId) return;
           if (action === "approve" || action === "deny") { session.decide?.({ action, windowId }); return; }
           if (action === "watch") { watchUntil = visible ? now() + WATCH_MS : 0; scheduleFrames(); return; }
-          if (action === "takeover" && !session.paused) { session.paused = true; publishState("paused"); return; }
-          if (action === "resume" && session.paused) { session.paused = false; session.observations.clear(); publishState("working"); return; }
+          if (action === "takeover" && !session.paused) { session.generation++; session.paused = true; session.observations.clear(); publishState("paused"); return; }
+          if (action === "resume" && session.paused) { session.generation++; session.paused = false; session.observations.clear(); publishState("working"); return; }
           if (action === "stop") close("Stopped by the person.");
         },
         async close() {

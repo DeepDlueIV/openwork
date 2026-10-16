@@ -1,6 +1,6 @@
 # Computer use adapters
 
-Computer use drives one approved app window on a *computer*. A computer is an
+Computer use gives the agent access to a *computer* when its rollout is enabled. A computer is an
 adapter: this Mac (the native helper) or a remote machine such as a Freestyle
 or Daytona Linux VM. Each chat picks one in the Computer popover and keeps it.
 
@@ -9,10 +9,10 @@ or Daytona Linux VM. Each chat picks one in the Computer popover and keeps it.
 | Layer | File | Knows about |
 |---|---|---|
 | Agent tools (`computer_*`) | `apps/server/src/opencode-plugins/openwork-computer-use.ts` | Nothing about computers; forwards to the desktop |
-| Broker | `apps/desktop/electron/computer-control.mjs` | Consent per chat, Always allow, one session at a time, handoff, receipts, post-action observations, the in-chat request |
+| Broker | `apps/desktop/electron/computer-control.mjs` | Rollout-controlled access, one session at a time, handoff, receipts, post-action observations, the in-chat request |
 | Adapter contract | `ComputerAdapter` in the broker | `id`, `label`, `placement` (`local`/`remote`), `readiness()`, optional `setup()`, `connect()` returning a transport for the seven native tools plus `openwork/ui` notifications |
 | This Mac | `computer-local.mjs` + `packages/computer-use` | macOS permissions, the Swift helper |
-| Remote runtime | `computer-remote.mjs` | Turns a small driver into the full contract: sessions, window approval, observation ids, at-most-once receipts, batched actions, zoom, take over/continue, watch frames |
+| Remote runtime | `computer-remote.mjs` | Turns a small driver into the full contract: sessions, automatic window selection, observation ids, at-most-once receipts, batched actions, zoom, take over/continue, watch frames |
 | Linux driver | `computer-x11-driver.mjs` | xdotool and ImageMagick over two VM primitives: run a command, read a file |
 | Provider bindings | `computer-targets.mjs` | How to reach a VM through `@openwork/sandbox` (`blocks.run`, `blocks.files`) |
 
@@ -26,7 +26,7 @@ Both are registry features (`packages/features/src/registry.ts`), off by default
 and read by the desktop from Den like every other feature:
 
 - `computerUse`: the Computer button, the tools and the broker. Turning it off
-  ends any running session at once; saved allowances stay.
+  ends any running session.
 - `remoteComputers`: VMs in the computer list. Off, VMs are hidden, a chat that
   chose a VM uses this computer, and a VM session ends at once; each chat's
   saved choice returns when the feature is back on. Requires `computerUse`
@@ -63,10 +63,7 @@ Xvfb :99 -screen 0 1280x800x24 -nolisten tcp -auth "$HOME/.Xauthority"
 Run the desktop apps and remote commands as that same account, with access to
 its authority file. Display access control stays enabled and TCP listening is
 disabled. Existing Freestyle worlds use their configured display on `:99`.
-Readiness reports what is missing. Checked live on a Freestyle VM
-(Ubuntu, xterm): discover, window approval, observe, a typed command that ran
-in the VM, zoom, status and close, each step under 1.5 s. The Computer popover then lists the
-VM next to this Mac; allow the chat as usual and ask for the task.
+Readiness reports what is missing. The Computer popover lists configured VMs beside this Mac. Ask for the task; app windows are selected automatically without chat or window consent prompts. On Linux and Windows, an available VM is the default target when no computer was previously chosen.
 
 ## Differences from this Mac
 
@@ -76,7 +73,7 @@ VM next to this Mac; allow the chat as usual and ask for the task.
   shortcuts work; discovery says so.
 - No macOS permissions or presence overlay; the floating Computer view shows the
   VM's window, and Take over pauses the agent there.
-- App-window input is delivered to the approved X11 window, rather than global screen coordinates. Apps that ignore synthetic window events may require an explicitly approved whole-screen session; scope is never widened automatically.
+- The rollout grants access to the configured VM. Input uses normal XTest mouse and keyboard events, so ordinary Linux apps receive clicks and text. App sessions focus the selected window and translate image coordinates to its position; desktop sessions use the whole screen. This is computer access, not an X11 window security boundary.
 - Input dispatch checks takeover between actions and between short text chunks.
 - One session at a time across all computers, as on this Mac.
 

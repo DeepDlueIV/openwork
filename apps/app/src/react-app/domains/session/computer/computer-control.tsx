@@ -51,7 +51,7 @@ export function ComputerControl({ sessionId }: { sessionId: string }) {
   useEffect(() => {
     void readLatest()
     const update = () => { if (document.visibilityState === "visible") void readLatest() }
-    const timer = window.setInterval(() => { if (open || setupOpen || request || working) update() }, 1_500)
+    const timer = window.setInterval(() => { if (open || setupOpen || request || working || !snapshot || snapshot.readiness === "unsupported") update() }, 1_500)
     window.addEventListener("focus", update)
     document.addEventListener("visibilitychange", update)
     return () => {
@@ -59,7 +59,7 @@ export function ComputerControl({ sessionId }: { sessionId: string }) {
       window.removeEventListener("focus", update)
       document.removeEventListener("visibilitychange", update)
     }
-  }, [open, setupOpen, request, working])
+  }, [open, setupOpen, request, working, snapshot?.readiness])
 
   async function act(action: "halt" | "reset" | ComputerPermission, permission?: ComputerPermission) {
     if (changing.current) return

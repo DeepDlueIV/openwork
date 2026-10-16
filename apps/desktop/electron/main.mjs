@@ -172,9 +172,8 @@ const applicationMenu = createApplicationMenu({
 
 let browserPanel = null;
 
-// Always allow and each allowed chat are the person's own choices, kept in app
-// data outside every workspace so an agent can never grant itself access.
-const computerAllowsPath = () => path.join(app.getPath("userData"), "computer-use-targets.json");
+// Keep each chat's chosen computer in app data outside the workspace.
+const computerTargetsPath = () => path.join(app.getPath("userData"), "computer-use-targets.json");
 // The System Settings entry macOS lists for computer use: OpenWork when
 // packaged, or the terminal/editor that started a development build.
 let computerPermissionEntry = null;
@@ -207,14 +206,14 @@ const computerControl = createComputerControl({
   standing: {
     read: async () => {
       try {
-        const saved = JSON.parse(await readFile(computerAllowsPath(), "utf8"));
+        const saved = JSON.parse(await readFile(computerTargetsPath(), "utf8"));
         return {
           targets: saved?.targets && typeof saved.targets === "object" ? saved.targets : {},
         };
       } catch { return { targets: {} }; }
     },
     write: async (state) => {
-      const target = computerAllowsPath();
+      const target = computerTargetsPath();
       const temporary = `${target}.${process.pid}.tmp`;
       await writeFile(temporary, JSON.stringify(state), "utf8");
       await rename(temporary, target);

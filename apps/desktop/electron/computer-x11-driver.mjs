@@ -157,7 +157,9 @@ print(json.dumps(windows))
         const result = await run(`mkdir -p ${quote(directory)} && import -silent -window ${drawable} -crop ${geometry} +repage${resize} png:${quote(file)} && identify -format '%w %h' ${quote(file)}`);
       if (result.exitCode !== 0) throw new Error(result.stderr.trim().slice(0, 300) || "The screenshot failed.");
       const [width, height] = result.stdout.trim().split(/\s+/).map(Number);
+      if (![width, height].every((value) => Number.isSafeInteger(value) && value > 0 && value <= 8192)) throw new Error("The VM returned an invalid screenshot size.");
       const png = await machine.read(file, timeoutMs);
+      if (!png.byteLength || png.byteLength > 16 * 1024 * 1024) throw new Error("The screenshot is empty or too large.");
       return { png, width, height };
       } finally { await run(`rm -f ${quote(file)}`).catch(() => {}); }
     },

@@ -201,7 +201,8 @@ export function createComputerControl({ adapters, readRemoteFeatureEnabled = asy
       grant = grants.get(sessionId);
       if (!grant) {
         // Each chat remembers the computer it last used; one that went away falls back to the first.
-        const adapter = targets.get(state.targets.get(sessionId) ?? "") ?? defaultTarget;
+        const preferred = process.platform === "darwin" ? defaultTarget : [...targets.values()].find((target) => target.placement === "remote") ?? defaultTarget;
+        const adapter = targets.get(state.targets.get(sessionId) ?? "") ?? preferred;
         grant = { sessionId, revision: 0, controller: new AbortController(), enabled: true, windows: new Map(), adapter };
         grants.set(sessionId, grant);
       }

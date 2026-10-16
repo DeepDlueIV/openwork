@@ -59,7 +59,7 @@ async function createOfflineRecoveryWorld(seed: Seed, onlineModel: boolean) {
       }
       const engineRequest = /\/opencode(?:2)?\//.test(url.pathname);
       if (engineRequest && method === "POST" && /\/(?:prompt(?:_async)?|message|command|shell)$/.test(url.pathname)) fault.prompts++;
-      if (engineRequest && method === "POST" && url.pathname.endsWith("/abort")) fault.stops++;
+      if (engineRequest && method === "POST" && /\/(?:abort|interrupt)$/.test(url.pathname)) fault.stops++;
       const response = await original(input, init);
       // The model witness runs locally. Its catalog advertises the remote URL
       // an online provider has, while its actual requests stay deterministic.
@@ -69,10 +69,15 @@ async function createOfflineRecoveryWorld(seed: Seed, onlineModel: boolean) {
           const body: unknown = JSON.parse(text);
           const visit = (value: unknown) => {
             if (!value || typeof value !== "object") return;
-            if (Reflect.get(value, "id") === modelId && Reflect.get(value, "providerID") === providerId) {
-              const api: unknown = Reflect.get(value, "api");
-              if (api && typeof api === "object") Reflect.set(api, "url", "https://report-model.example.test/v1");
+            const remoteApi = { id: modelId, url: "https://report-model.example.test/v1", npm: "@ai-sdk/openai-compatible" };
+            if (Reflect.get(value, "id") === providerId) {
+              const options: unknown = Reflect.get(value, "options");
+              Reflect.set(value, "options", { ...(options && typeof options === "object" ? options : {}), baseURL: remoteApi.url });
+              const models: unknown = Reflect.get(value, "models");
+              const model: unknown = models && typeof models === "object" ? Reflect.get(models, modelId) : null;
+              if (model && typeof model === "object") Reflect.set(model, "api", remoteApi);
             }
+            if (Reflect.get(value, "id") === modelId && Reflect.get(value, "providerID") === providerId) Reflect.set(value, "api", remoteApi);
             for (const entry of Object.values(value)) visit(entry);
           };
           visit(body);

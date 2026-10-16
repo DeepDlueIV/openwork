@@ -8,7 +8,10 @@ import { getModelBehaviorSummary } from "@/app/lib/model-behavior";
 import type { ModelRef, ProviderListItem } from "@/app/types";
 import { t } from "@/i18n";
 
-type ProviderModel = ProviderListItem["models"][string];
+type ProviderModel = ProviderListItem["models"][string] & {
+  /** Effective transport endpoint; provider overrides take precedence over the model catalog. */
+  endpoint?: string;
+};
 
 export type ProviderCatalog = Record<string, Record<string, ProviderModel>>;
 
@@ -33,7 +36,11 @@ export function useModelBehavior(input: UseModelBehaviorInput) {
     if (!providerList?.all) return;
     const next: ProviderCatalog = {};
     for (const provider of providerList.all) {
-      next[provider.id] = { ...(provider.models ?? {}) };
+      const configuredEndpoint = provider.options?.baseURL;
+      next[provider.id] = Object.fromEntries(Object.entries(provider.models ?? {}).map(([id, model]) => [id, {
+        ...model,
+        endpoint: typeof configuredEndpoint === "string" && configuredEndpoint.trim() ? configuredEndpoint : model.api?.url,
+      }]));
     }
     setProviderCatalog(next);
   }, [providerList]);

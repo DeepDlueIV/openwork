@@ -20,6 +20,9 @@ test("a member keeps completed work and explicitly continues after losing their 
 
   await step("the organization enables recovery and the member completes a report", async () => {
     await world.enable();
+    await probe.eventually(() => probe.dom("[data-offline-recovery-enabled]"), {
+      within: 15_000, label: "the enabled recovery switch has reached the conversation", until: (value) => value.elements.length === 1,
+    });
     await user.see("composer", { editable: true });
     await user.type("composer", SAVED_PROMPT);
     await user.click("Run task");
@@ -93,9 +96,12 @@ const localTest = spec.world(localOfflineRecoveryWorld, {
   resources: { surfaces: ["appWeb"], services: ["den", "mock"] }, timeout: 480_000,
 });
 
-localTest("a member can still use a local model while internet services are offline", async ({ world, user, step, evidence }) => {
+localTest("a member can still use a local model while internet services are offline", async ({ world, user, probe, step, evidence }) => {
   await step("the member enables recovery and loses internet connectivity", async () => {
     await world.enable();
+    await probe.eventually(() => probe.dom("[data-offline-recovery-enabled]"), {
+      within: 15_000, label: "the enabled recovery switch has reached the conversation", until: (value) => value.elements.length === 1,
+    });
     await user.see("composer", { editable: true });
     await world.offline(true);
     await user.see({ text: "You’re offline" });

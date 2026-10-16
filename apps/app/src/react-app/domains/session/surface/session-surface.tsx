@@ -1508,11 +1508,11 @@ export function SessionSurface(props: SessionSurfaceProps) {
   const chatStreaming = needsStop || sending || liveStatus.type === "busy" || liveStatus.type === "retry";
   const selectedProviderModel = props.providerCatalog?.[sessionModel.selectedModel.providerID]?.[sessionModel.selectedModel.modelID];
   const onlineModel = Boolean(props.gatewayProviderIds?.has(sessionModel.selectedModel.providerID)
-    || selectedProviderModel?.api?.url && !isLocalNetworkEndpoint(selectedProviderModel.api.url));
+    || selectedProviderModel?.endpoint && !isLocalNetworkEndpoint(selectedProviderModel.endpoint));
   const retryModel = snapshot?.session.model;
   const retryProviderModel = retryModel ? props.providerCatalog?.[retryModel.providerID]?.[retryModel.id] : selectedProviderModel;
   const retryOnlineModel = retryModel ? Boolean(props.gatewayProviderIds?.has(retryModel.providerID)
-    || retryProviderModel?.api?.url && !isLocalNetworkEndpoint(retryProviderModel.api.url)) : onlineModel;
+    || retryProviderModel?.endpoint && !isLocalNetworkEndpoint(retryProviderModel.endpoint)) : onlineModel;
   const offlineRecovery = useSessionOfflineRecovery({
     owner: sessionOwner, engineUrl: props.opencodeBaseUrl, onlineModel: retryOnlineModel,
     retrying: liveStatus.type === "retry", idle: liveStatus.type === "idle",
@@ -3424,6 +3424,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
   return (
     <DevProfiler id="SessionSurface">
     <div
+      data-offline-recovery-enabled={offlineRecovery.enabled ? "" : undefined}
       data-session-surface-id={props.sessionId}
       data-session-surface-workspace-id={props.workspaceId}
       onPointerDownCapture={handleFindSurfaceInteraction}

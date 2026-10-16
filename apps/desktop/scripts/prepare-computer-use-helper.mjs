@@ -1,5 +1,6 @@
+import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { chmodSync, copyFileSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -118,7 +119,25 @@ if (process.platform !== "darwin") {
   process.exit(0);
 }
 
-if (!force && existsSync(join(appPath, "Contents", "MacOS", helperExecutableName))) {
+// A cached helper is usable only for these exact native sources and target.
+// SwiftPM handles incremental compilation when the fingerprint changes.
+const fingerprint = createHash("sha256").update(process.arch);
+function hashSources(directory) {
+  for (const entry of readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+    const source = join(directory, entry.name);
+    fingerprint.update(source.slice(packagePath.length));
+    if (entry.isDirectory()) hashSources(source);
+    else fingerprint.update(readFileSync(source));
+  }
+}
+hashSources(join(packagePath, "Sources"));
+for (const source of [join(packagePath, "Package.swift"), join(packagePath, "Package.resolved"), fileURLToPath(import.meta.url), iconPath]) {
+  if (existsSync(source)) fingerprint.update(readFileSync(source));
+}
+const sourceHash = fingerprint.digest("hex");
+const fingerprintPath = join(appPath, "Contents", "Resources", "source.sha256");
+const cachedHash = existsSync(fingerprintPath) ? readFileSync(fingerprintPath, "utf8").trim() : "";
+if (!force && cachedHash === sourceHash && existsSync(join(appPath, "Contents", "MacOS", helperExecutableName))) {
   process.stdout.write(JSON.stringify({ ok: true, skipped: true, appPath }, null, 2) + "\n");
   process.exit(0);
 }
@@ -151,6 +170,7 @@ copyFileSync(builtExecutable, join(appPath, "Contents", "MacOS", helperExecutabl
 if (existsSync(iconPath)) {
   copyFileSync(iconPath, join(appPath, "Contents", "Resources", "AppIcon.icns"));
 }
+writeFileSync(fingerprintPath, sourceHash, "utf8");
 chmodSync(join(appPath, "Contents", "MacOS", helperExecutableName), 0o755);
 signHelperApp();
 

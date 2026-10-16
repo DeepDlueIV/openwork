@@ -21,8 +21,10 @@ test("RECOVERY-01 a member sees older commands finish and a missed question afte
   await step("after: newer answers arrive on a fresh connection", async () => {
     await world.act("catchUp");
     await world.act("interrupt");
+    const connected = await probe.eventually(() => world.recovery(), {
+      within: 15_000, label: "the second recovery connection", until: (value) => value.streams === 2,
+    });
     await user.see({ text: "Later answer 150." }, { timeoutMs: 15_000 });
-    const connected = await world.recovery();
     evidence.recordAssertionEvidence("The newer answers arrive on the second connection", JSON.stringify(connected), connected.streams === 2);
     await user.screenshot();
   });

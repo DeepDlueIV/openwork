@@ -46,12 +46,14 @@ for (const { title, mode } of cases) {
       return record(response.body).data;
     };
     const messages = async () => {
-      const value = await read(`/session/${world.session.sessionId}/context`);
+      const value = await read(`/session/${world.session.sessionId}/message`);
       if (!Array.isArray(value)) throw new Error("Expected engine messages");
       return value.map((entry: unknown) => {
         const message = record(entry);
-        const parts = message.content;
-        if (!Array.isArray(parts)) throw new Error("Expected message parts");
+        // Native user messages store text on the message; assistant replies
+        // carry content parts. Context entries also include model-only rows.
+        const parts = Array.isArray(message.content) ? message.content
+          : typeof message.text === "string" ? [{ type: "text", text: message.text }] : [];
         return { id: String(message.id), role: String(message.type), parts: parts.map(record) };
       });
     };

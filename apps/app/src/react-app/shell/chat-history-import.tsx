@@ -130,7 +130,7 @@ function observeChatImport(client: ChatImportClient, status: EngineStatus) {
     updateProgress({ migration });
     return;
   }
-  if (migration.state === "running") {
+  if (migration.state === "running" || migration.state === "error") {
     useChatImportStore.setState({ progress: { client, migration, view: "dialog", retrying: false } });
   }
 }

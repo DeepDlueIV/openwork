@@ -19,7 +19,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-test("an admin adds a key-protected service and an AI Gateway provider by entering keys privately in chat", async ({ world, user, probe, step }) => {
+test("an admin adds a key-protected service and an AI Gateway provider by entering keys privately in chat", async ({ world, user, probe, step, evidence }) => {
   await step("before: the agent sets up the service without its key and a private field appears in the chat", async () => {
     await world.scriptConnection();
     await user.type("composer", CONNECT_PROMPT, { verify: true });
@@ -73,8 +73,11 @@ test("an admin adds a key-protected service and an AI Gateway provider by enteri
     await user.see({ text: "Status service: key saved" }, { timeoutMs: 60_000 });
     await user.see({ text: world.proof }, { timeoutMs: 120_000 });
     const accepted = world.wire.filter((entry) => entry.identity === world.fingerprint(world.keys.status) && entry.status === 200);
+    const toolCalls = accepted.filter((entry) => entry.method === "tools/call").length;
     expect(accepted.length).toBeGreaterThan(0);
-    expect(accepted.some((entry) => entry.method === "tools/call")).toBe(true);
+    expect(toolCalls).toBeGreaterThan(0);
+    evidence.recordAssertionEvidence("The saved key lets the service answer a tool call",
+      JSON.stringify({ accepted: accepted.length, toolCalls }), accepted.length > 0 && toolCalls > 0);
     await user.screenshot();
   });
 
@@ -87,6 +90,8 @@ test("an admin adds a key-protected service and an AI Gateway provider by enteri
     expect(calls.length).toBeGreaterThan(0);
     expect(modelSaw).toBe(0);
     expect(leaks).toBe(0);
+    evidence.recordAssertionEvidence("Private keys stay out of the transcript, model requests, and server log",
+      JSON.stringify({ modelCalls: calls.length, modelSaw, leaks }), calls.length > 0 && modelSaw === 0 && leaks === 0);
   });
 
   await step("a member without Manage connections cannot change the shared key", async () => {

@@ -367,6 +367,16 @@
       "bun": "./src/den/connection-state.ts",
       "browser": "./src/den/connection-state.ts",
       "default": "./dist/den/connection-state.js"
+    },
+    "./managed-provider-config": {
+      "types": {
+        "openwork-build": "./dist/types/src/managed-provider-config.d.ts",
+        "default": "./src/managed-provider-config.ts"
+      },
+      "development": "./src/managed-provider-config.ts",
+      "bun": "./src/managed-provider-config.ts",
+      "browser": "./src/managed-provider-config.ts",
+      "default": "./dist/managed-provider-config.js"
     }
   },
   "files": [

@@ -31,6 +31,7 @@ test("an admin adds a key-protected service and an AI Gateway provider by enteri
     expect(cards).toHaveLength(1);
     const created = await world.connection();
     expect(isRecord(created) && created.connected).toBe(false);
+    evidence.recordAssertionEvidence("The service waits for a privately entered key", `Private key cards: ${cards.length}; connected: ${isRecord(created) && created.connected}`, cards.length === 1 && (isRecord(created) && created.connected) === false);
     await user.screenshot();
   });
 
@@ -39,11 +40,14 @@ test("an admin adds a key-protected service and an AI Gateway provider by enteri
       { name: "postMcpConnections", body: { name: "Smuggled", url: world.statusUrl, authType: "apikey", credentialMode: "shared", apiKey: world.keys.wrong, access: { orgWide: true } } },
       { name: "postLlmProviders", body: { name: "Smuggled provider", providerId: "openai", apiKey: world.keys.wrong } },
     ];
+    const refusals: boolean[] = [];
     for (const { name, body } of smuggled) {
       const attempt = await world.agentMcp("execute_capability", { name, body });
       expect(isRecord(attempt.body) ? attempt.body.error : null, name).toBe("secure_entry_required");
       expect(attempt.text.includes(world.keys.wrong)).toBe(false);
+      refusals.push(isRecord(attempt.body) && attempt.body.error === "secure_entry_required" && !attempt.text.includes(world.keys.wrong));
     }
+    evidence.recordAssertionEvidence("An agent cannot submit a key on the person's behalf", `${refusals.filter(Boolean).length}/${smuggled.length} submissions refused without repeating the key`, refusals.length === smuggled.length && refusals.every(Boolean));
   });
 
   await step("typing keeps the key hidden; it shows only while typing and asked for", async () => {
@@ -52,7 +56,9 @@ test("an admin adds a key-protected service and an AI Gateway provider by enteri
     await user.click({ role: "button", label: "Show while typing" });
     expect((await probe.dom(`${card} input[type="text"]`)).elements).toHaveLength(1);
     await user.click({ role: "button", label: "Hide" });
-    expect((await probe.dom(`${card} input[type="password"]`)).elements).toHaveLength(1);
+    const masked = (await probe.dom(`${card} input[type="password"]`)).elements;
+    expect(masked).toHaveLength(1);
+    evidence.recordAssertionEvidence("The person can reveal the key while typing and hide it again", `Masked fields after Hide: ${masked.length}`, masked.length === 1);
     await user.screenshot();
   });
 
@@ -64,6 +70,7 @@ test("an admin adds a key-protected service and an AI Gateway provider by enteri
     expect(rejected.length).toBeGreaterThan(0);
     const after = await world.connection();
     expect(isRecord(after) && after.connected).toBe(false);
+    evidence.recordAssertionEvidence("A rejected key leaves the service disconnected", `Rejected requests: ${rejected.length}; connected: ${isRecord(after) && after.connected}`, rejected.length > 0 && (isRecord(after) && after.connected) === false);
     await user.screenshot();
   });
 
@@ -101,6 +108,7 @@ test("an admin adds a key-protected service and an AI Gateway provider by enteri
     const attempt = await world.memberSavesSharedKey(id);
     expect(attempt.response.status).toBe(403);
     expect(attempt.text.includes(world.keys.wrong)).toBe(false);
+    evidence.recordAssertionEvidence("A member without access cannot replace the shared key", `Save response: ${attempt.response.status}; key repeated: ${attempt.text.includes(world.keys.wrong)}`, attempt.response.status === 403 && !attempt.text.includes(world.keys.wrong));
   });
 
   await step("the admin adds an AI Gateway provider the same way", async () => {
@@ -125,6 +133,7 @@ test("an admin adds a key-protected service and an AI Gateway provider by enteri
     expect(provider?.text.includes(world.keys.gateway)).toBe(false);
     const modelSaw = (await world.mock.agentRequests()).filter((call) => call.privateSentinelSeen).length;
     expect(modelSaw).toBe(0);
+    evidence.recordAssertionEvidence("The gateway provider becomes ready without exposing its key", `Shared credential ready: ${ready}; model requests containing a key: ${modelSaw}`, ready && !provider?.text.includes(world.keys.gateway) && modelSaw === 0);
     await user.screenshot();
   });
 
@@ -145,7 +154,9 @@ test("an admin adds a key-protected service and an AI Gateway provider by enteri
     await user.see({ text: "Team OpenRouter: key saved" });
     const status = await world.connection();
     expect(isRecord(status) && status.connected).toBe(true);
-    expect((await probe.dom(`${card} input`)).elements).toHaveLength(0);
+    const fields = (await probe.dom(`${card} input`)).elements;
+    expect(fields).toHaveLength(0);
+    evidence.recordAssertionEvidence("Turning off in-chat key entry preserves saved connections", `Connected: ${isRecord(status) && status.connected}; key entry fields: ${fields.length}`, isRecord(status) && status.connected === true && fields.length === 0);
     await user.screenshot();
   });
 });

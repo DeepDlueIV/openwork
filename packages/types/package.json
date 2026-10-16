@@ -341,6 +341,22 @@
       "development": "./src/den/agent-permissions.ts",
       "bun": "./src/den/agent-permissions.ts",
       "default": "./dist/den/agent-permissions.js"
+    },
+    "./den/admin-organization": {
+      "types": {
+        "openwork-build": "./dist/types/src/den/admin-organization.d.ts",
+        "default": "./src/den/admin-organization.ts"
+      },
+      "development": "./src/den/admin-organization.ts",
+      "default": "./src/den/admin-organization.ts"
+    },
+    "./den/admin-free-auto": {
+      "types": {
+        "openwork-build": "./dist/types/src/den/admin-free-auto.d.ts",
+        "default": "./src/den/admin-free-auto.ts"
+      },
+      "development": "./src/den/admin-free-auto.ts",
+      "default": "./src/den/admin-free-auto.ts"
     }
   },
   "files": [

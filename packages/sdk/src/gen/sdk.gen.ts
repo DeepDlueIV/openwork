@@ -183,14 +183,24 @@ import type {
   GetMcpWellKnownOauthProtectedResourceResponses,
   GetReadyErrors,
   GetReadyResponses,
+  GetV1AdminDashboardErrors,
+  GetV1AdminDashboardResponses,
   GetV1AdminFeaturesErrors,
   GetV1AdminFeaturesResponses,
+  GetV1AdminFreeAutoConversionsErrors,
+  GetV1AdminFreeAutoConversionsResponses,
   GetV1AdminFreeAutoUsageErrors,
   GetV1AdminFreeAutoUsageResponses,
   GetV1AdminMetricsErrors,
   GetV1AdminMetricsResponses,
   GetV1AdminOrganizationsByOrganizationIdCapabilitiesErrors,
   GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses,
+  GetV1AdminOrganizationsByOrganizationIdErrors,
+  GetV1AdminOrganizationsByOrganizationIdInsightsErrors,
+  GetV1AdminOrganizationsByOrganizationIdInsightsResponses,
+  GetV1AdminOrganizationsByOrganizationIdResponses,
+  GetV1AdminOrganizationsByOrganizationIdUsageErrors,
+  GetV1AdminOrganizationsByOrganizationIdUsageResponses,
   GetV1AdminOrganizationsErrors,
   GetV1AdminOrganizationsResponses,
   GetV1AdminOverviewErrors,
@@ -1112,6 +1122,170 @@ export class DenClient extends HeyApiClient {
   }
 
   /**
+   * Get observed behavior after the free Auto limit
+   *
+   * Cohorts by personal-limit observation date, deduplicated by known account or anonymous client-reported journey. Counts subsequent sign-ins, new accounts, and positively paid subscriptions started within 30 days of a limit. Guest links use a random client correlation ID, never IP matching. Historical guest behavior is not backfilled. Search and stage affect the bounded 50-row list, not cohort totals.
+   */
+  public getV1AdminFreeAutoConversions<ThrowOnError extends boolean = false>(
+    parameters?: {
+      days?: number;
+      page?: number;
+      search?: string;
+      stage?: "all" | "signed-in" | "new-account" | "subscribed" | "unlinked";
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "days" },
+            { in: "query", key: "page" },
+            { in: "query", key: "search" },
+            { in: "query", key: "stage" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).get<
+      GetV1AdminFreeAutoConversionsResponses,
+      GetV1AdminFreeAutoConversionsErrors,
+      ThrowOnError
+    >({
+      url: "/v1/admin/free-auto/conversions",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
+   * Get an organization and a bounded member page
+   *
+   * Returns organization identity, plan, seats and active memberships. Members are searched and paginated on the server. Does not calculate usage or resolve feature maps.
+   */
+  public getV1AdminOrganizationsByOrganizationId<ThrowOnError extends boolean = false>(
+    parameters: {
+      organizationId: string;
+      search?: string;
+      limit?: string;
+      offset?: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "organizationId" },
+            { in: "query", key: "search" },
+            { in: "query", key: "limit" },
+            { in: "query", key: "offset" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).get<
+      GetV1AdminOrganizationsByOrganizationIdResponses,
+      GetV1AdminOrganizationsByOrganizationIdErrors,
+      ThrowOnError
+    >({
+      url: "/v1/admin/organizations/{organizationId}",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
+   * Get organization usage and a bounded member page
+   *
+   * Returns the organization's last 30 UTC days of gateway usage, with requests, reported tokens, recorded cost and accounting coverage. Member usage is bounded to the requested member page; organization totals include all members, including removed members. Raw and retained usage use the same accounting as the organization dashboard.
+   */
+  public getV1AdminOrganizationsByOrganizationIdUsage<ThrowOnError extends boolean = false>(
+    parameters: {
+      organizationId: string;
+      search?: string;
+      limit?: string;
+      offset?: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "organizationId" },
+            { in: "query", key: "search" },
+            { in: "query", key: "limit" },
+            { in: "query", key: "offset" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).get<
+      GetV1AdminOrganizationsByOrganizationIdUsageResponses,
+      GetV1AdminOrganizationsByOrganizationIdUsageErrors,
+      ThrowOnError
+    >({
+      url: "/v1/admin/organizations/{organizationId}/usage",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
+   * Get organization activity, people and model insights
+   *
+   * Returns two 30-day UTC usage periods, 30 daily totals, at most eight people and eight models ranked by requests. Adoption counts current non-setup memberships with recorded gateway use. Totals include historical members, preserve unknown accounting coverage and never read prompts or conversation content.
+   */
+  public getV1AdminOrganizationsByOrganizationIdInsights<ThrowOnError extends boolean = false>(
+    parameters: {
+      organizationId: string;
+      search?: string;
+      limit?: string;
+      offset?: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "organizationId" },
+            { in: "query", key: "search" },
+            { in: "query", key: "limit" },
+            { in: "query", key: "offset" },
+          ],
+        },
+      ],
+    );
+    return (options?.client ?? this.client).get<
+      GetV1AdminOrganizationsByOrganizationIdInsightsResponses,
+      GetV1AdminOrganizationsByOrganizationIdInsightsErrors,
+      ThrowOnError
+    >({
+      url: "/v1/admin/organizations/{organizationId}/insights",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
+   * Get bounded platform activity and AI usage
+   *
+   * Returns 30 UTC calendar days of completed gateway usage across organizations, using the same raw and retained accounting as organization reports. Includes accounting coverage, 30 daily totals, at most eight organizations ranked by requests, and distinct users with sign-in or telemetry activity. Does not hydrate features, billing or members.
+   */
+  public getV1AdminDashboard<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<GetV1AdminDashboardResponses, GetV1AdminDashboardErrors, ThrowOnError>({
+      url: "/v1/admin/dashboard",
+      ...options,
+    });
+  }
+
+  /**
    * Add a platform admin
    *
    * Adds an email address to the platform admin allowlist. Body: { email: string, note?: string | null }.
@@ -1443,7 +1617,7 @@ export class DenClient extends HeyApiClient {
   /**
    * Get a bounded admin organization page
    *
-   * Returns one bounded page of organizations plus required pagination metadata. Search runs across the global organization set without changing the global overview totals.
+   * Returns one bounded page of organizations plus required pagination metadata. Set includeFeatures=0 to skip feature resolution and omit capabilities and featureStates; read them per organization when needed. Search runs across the global organization set without changing the global overview totals.
    */
   public getV1AdminOrganizations<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -1451,6 +1625,7 @@ export class DenClient extends HeyApiClient {
       limit?: string;
       offset?: string;
       search?: string;
+      includeFeatures?: "0" | "1";
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -1463,6 +1638,7 @@ export class DenClient extends HeyApiClient {
             { in: "query", key: "limit" },
             { in: "query", key: "offset" },
             { in: "query", key: "search" },
+            { in: "query", key: "includeFeatures" },
           ],
         },
       ],

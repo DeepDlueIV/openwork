@@ -1,4 +1,5 @@
 import * as crypto from "node:crypto";
+import { recordFreeAutoSignIn } from "@openwork-ee/den-db";
 import { readOrganizationMetadata } from "@openwork/types/den/managed-models-policy";
 import { invalidateTeamInferenceOAuth, revokeMemberGatewayCredentials } from "./llm/inference-provider-lifecycle.js";
 import { ensureMemberGatewayKey } from "./gateway-keys.js";
@@ -922,6 +923,8 @@ export const auth = betterAuth({
         // Every sign-in path that creates a session row: session.created in
         // the session's organization (src/audit/domain/sessions.ts).
         after: async (session, context) => {
+          await recordFreeAutoSignIn(db, { userId: normalizeDenTypeId("user", session.userId), now: session.createdAt })
+            .catch(() => logger.warn("Free Auto sign-in behavior could not be recorded."));
           await runAuditHook("session.create", () => recordSessionCreated(session, auditSessionMethod(context)));
         },
       },

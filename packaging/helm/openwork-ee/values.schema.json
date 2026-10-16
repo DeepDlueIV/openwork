@@ -278,6 +278,26 @@
               ],
               "description": "Team page: Browser and Models tabs: Each team's page, and Everyone's, gets a Browser tab for the pages agents and the built-in browser can open, and a Models tab with the AI providers the team can use, its spend limits and its default model. Renders DEN_FEATURE_TEAM_PAGE_TABS."
             },
+            "computerUse": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Desktop: computer use: A Computer button in the chat header lets the agent work in one app window the person approves on this Mac. The person allows it once per chat or always, watches a floating live view, can take over or stop at any time, and sees the agent's cursor on screen. Renders DEN_FEATURE_COMPUTER_USE."
+            },
+            "browserFloatingView": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Desktop: floating and full-screen browser: The built-in browser can float as a small live card over the chat, sit beside it, or fill the window, with a Browser button in the chat header that shows when it needs the person. Renders DEN_FEATURE_BROWSER_FLOATING_VIEW."
+            },
             "inviteLinkVerifiesEmail": {
               "enum": [
                 "",

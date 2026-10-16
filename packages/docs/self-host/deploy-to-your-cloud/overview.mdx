@@ -10,12 +10,43 @@ OpenWork's primary private-cloud shape uses the published Helm chart, a managed 
     Deploy on EKS or ECS Fargate with Amazon RDS for MySQL.
   </Card>
   <Card title="Azure" icon="cloud" href="/self-host/deploy-to-your-cloud/azure">
-    Deploy on AKS with Azure Database for MySQL.
+    Deploy on AKS or Container Apps (draft) with Azure Database for MySQL.
   </Card>
   <Card title="Google Cloud" icon="cloud" href="/self-host/deploy-to-your-cloud/google-cloud">
     Deploy on GKE or Cloud Run with Cloud SQL for MySQL.
   </Card>
 </CardGroup>
+
+## Terraform modules (beta)
+
+<Warning>
+  OpenWork's Terraform modules are **beta**. If you hit an issue:
+
+  - **Customers with a support agreement:** contact your OpenWork team through your usual support channel.
+  - **Everyone else:** [open a GitHub issue](https://github.com/different-ai/openwork/issues/new/choose).
+  - **Security issues:** report them privately ([SECURITY.md](https://github.com/different-ai/openwork/blob/dev/SECURITY.md)).
+
+  Pin the module source to a reviewed commit and check its tested scenarios,
+  upgrade notes, and known limitations before deploying. Do not include secrets
+  or private state in reports.
+</Warning>
+
+These cloud-native options deploy the core Den web and Den API services without
+Kubernetes. They do not imply support for every optional Helm component or the
+hosted managed installer. Each option has the same beta support level, but its
+availability and tested scope differ:
+
+| Cloud | What the module deploys | Support and availability | Guide and source |
+| --- | --- | --- | --- |
+| AWS | ECS Fargate services, HTTPS ALB, RDS for MySQL, Secrets Manager, and a dedicated migration task | **Beta**; module on `dev`, deployment-contract improvements under review | [AWS guide](/self-host/deploy-to-your-cloud/aws), [module](https://github.com/different-ai/openwork/tree/dev/infra/terraform/modules/openwork-aws-ecs), [deployment-contract review](https://github.com/different-ai/openwork/pull/6065) |
+| Google Cloud | Cloud Run services, Cloud SQL for MySQL, Secret Manager, and a dedicated migration job | **Beta**; module and deployment-contract improvements under review, not yet on `dev` | [Google Cloud guide](/self-host/deploy-to-your-cloud/google-cloud), [module review](https://github.com/different-ai/openwork/pull/5971), [deployment-contract review](https://github.com/different-ai/openwork/pull/6061) |
+| Azure | Container Apps services, MySQL Flexible Server, secret references, and a dedicated migration job | **Beta**; module under review, not yet on `dev` | [Azure guide](/self-host/deploy-to-your-cloud/azure), [module review](https://github.com/different-ai/openwork/pull/5929) |
+
+The [shared module contract](https://github.com/different-ai/openwork/blob/dev/infra/terraform/MODULE_CONTRACT.md)
+describes migration ordering, secrets preservation, tool compatibility, and the
+per-cloud limits. A successful core smoke run is not production load, backup
+restoration, or legacy-upgrade certification. Follow the source revision's README
+for exact inputs and test coverage; an unmerged review is not a released module.
 
 ## Managed installation from hosted OpenWork
 

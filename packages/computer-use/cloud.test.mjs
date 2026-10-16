@@ -5,12 +5,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createCloudComputer } from "./cloud.mjs";
 
-async function fixture(t) {
+async function fixture(t, applications) {
   let allowed = true;
   const commands = [];
   let screenRead = async () => ({ exitCode: 0, stdout: "1280 800", stderr: "" });
   const directory = await mkdtemp(join(tmpdir(), "cloud-computer-test-"));
-  const computer = await createCloudComputer({ directory, enabled: async () => allowed, machine: {
+  const computer = await createCloudComputer({ directory, enabled: async () => allowed, applications, machine: {
     async run(command) {
       commands.push(command);
       if (command.includes('echo "missing:')) return { exitCode: 0, stdout: "missing:\ndisplay:ok", stderr: "" };
@@ -69,4 +69,36 @@ test("the model cannot resume a human takeover through either tool family", asyn
   const f = await fixture(t);
   await f.computer.interact({ action: "takeover" });
   for (const path of ["/computer/task", "/browser/task"]) await assert.rejects(f.computer.task(path, { sessionId: "a", name: "computer_discover", operation: "tabs" }), { code: "paused" });
+});
+
+test("application launches respect rollout revocation and human takeover", async t => {
+  const launches = [];
+  const f = await fixture(t, { list: async () => ({ apps: [] }), launch: async args => { launches.push(args.app); return { launched: true }; } });
+  const launch = () => f.computer.task("/computer/task", { sessionId: "a", name: "computer_launch", args: { app: "blender" } });
+  f.allow(false);
+  await assert.rejects(launch(), { code: "feature_disabled" });
+  f.allow(true);
+  await f.computer.interact({ action: "takeover" });
+  await assert.rejects(launch(), { code: "paused" });
+  assert.deepEqual(launches, []);
+  await f.computer.interact({ action: "resume" });
+  await launch();
+  assert.deepEqual(launches, ["blender"]);
+});
+
+test("taking control cancels an app launch waiting on discovery", async t => {
+  let arrived;
+  const checked = new Promise(resolve => { arrived = resolve; });
+  let aborted = false;
+  const f = await fixture(t, { list: async () => ({}), launch: async (_args, signal) => {
+    arrived();
+    await new Promise(resolve => signal.addEventListener("abort", () => { aborted = true; resolve(); }, { once: true }));
+    signal.throwIfAborted();
+  } });
+  const launched = f.computer.task("/computer/task", { sessionId: "a", name: "computer_launch", args: { app: "blender" } });
+  const rejected = assert.rejects(launched);
+  await checked;
+  await f.computer.interact({ action: "takeover" });
+  await rejected;
+  assert.equal(aborted, true);
 });

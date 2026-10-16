@@ -70,6 +70,54 @@ streams and structured tools operate the same broad desktop. Browser processes
 run as an unprivileged account with Chromium's sandbox and a protected X cookie.
 Workbot's model and connected-app tokens are not passed to the desktop.
 
+## Useful applications
+
+The desktop image includes a practical set of applications on the same display:
+
+| Application | Useful work |
+| --- | --- |
+| Blender | 3D modeling, animation and CPU rendering |
+| LibreOffice Writer, Calc, Impress and Draw | Documents, spreadsheets, presentations, diagrams and PDF edits |
+| GIMP and Inkscape | Photo editing, illustrations, SVG and graphics |
+| Evince and VLC | Inspect PDF, audio and video outputs |
+| Thunar, Mousepad and Xterm | Files, text/code editing and Linux commands |
+
+The existing command tools also include Python data/document libraries, FFmpeg,
+ImageMagick, OCR and document conversion. The non-desktop headless image keeps
+its lighter LibreOffice packages; GUI apps are installed only in the desktop image.
+
+**Applications** in the bottom taskbar, **Super+Space**, or a desktop right-click
+opens the app menu. The taskbar switches between open windows. Uploaded files
+are in `/workspace/files`; save deliverables in `/workspace/out`. The desktop's
+Uploads, Outputs and Downloads shortcuts point to these shared folders. Both
+the command user and GUI user can save outputs without making broker secrets
+readable. App profiles live in `/home/openwork-browser` and survive VM pause/resume.
+
+Workbot's `desktop` tool exposes `computer_apps {}` to discover app availability,
+package versions, supported formats, paths and environment guidance, and
+`computer_launch {app:"blender"}` to launch an app. Pass an optional absolute
+`path` to open a file. A launch receipt is followed by a fresh desktop observation;
+it does not prove the application is ready or the file saved. Older snapshots
+report missing apps honestly and need an operator rebuild to add them. Existing
+computers are never replaced automatically. Launches use the same input rail
+and takeover pause as browser and native actions, with no extra consent screen.
+
+Blender uses Mesa software OpenGL; Cycles renders run on CPU. This image does
+not supply a GPU. Its initial scene uses CPU Cycles with denoising off so builds
+without OpenImageDenoiser can render. Start with small scenes and previews. For Blender and multiple
+large apps, size the snapshot explicitly (for example 4 CPUs, 8 GiB memory,
+32 GiB disk); the smaller example above is intended for light desktop work.
+Use the snapshot's pinned image digest to reproduce its package versions.
+
+This follows the published [OpenAI dot computer model](https://learn.chatgpt.com/docs/dots/computers-and-apps):
+a persistent cloud computer with its own software, files and browser sessions,
+with explicit takeover and return of control. OpenAI's public
+[Linux environment recipe](https://developers.openai.com/api/docs/guides/tools-computer-use-integration#prepare-an-environment)
+also uses an ordinary user, a shared X11 display, screenshots and browser viewing.
+OpenWork retains its authenticated session transport and credential isolation.
+The application selection here is OpenWork's; OpenAI does not document its
+dot's installed package list on those pages.
+
 Focused checks:
 
 ```sh
@@ -82,3 +130,10 @@ pnpm --dir ee/packages/headless-computer exec tsx --conditions=development \
 The Workbot journey proves rollout, navigation and recovery through the real
 signed-in application. The CLI diagnostic operates a dedicated prepared VM and
 checks actual signed RFB streams; it does not provision or delete a sandbox.
+
+For image acceptance, copy `ee/packages/headless-computer/scripts/prove-desktop-apps.mjs`
+into a dedicated prepared test guest, start its desktop, then run it as root with
+`DISPLAY=:99 XAUTHORITY=/workspace/.openwork-desktop/cloud-desktop/.Xauthority node prove-desktop-apps.mjs --dedicated-guest`.
+It checks the installed catalog, launches four GUI apps, saves text through the
+editor and renders a small Blender scene on CPU. It leaves its outputs and
+desktop screenshot under `/workspace/out/desktop-apps-proof-…` for inspection.

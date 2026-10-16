@@ -78,15 +78,17 @@ export class Computers {
     const parsed = z.object({ view: z.enum(["browser", "computer"]), operation: z.string().max(64), args: z.record(z.string(), z.unknown()) }).strict().parse(input)
     if (!this.desktop) throw new Error("Desktop access is not configured.")
     const box = await this.vm(sessionId)
-    await this.desktop.start(box)
-    const raw = await this.desktop.call(box, parsed.view === "browser" ? "/browser/task" : "/computer/task", {
-      sessionId, ...(parsed.view === "browser" ? { operation: parsed.operation } : { name: parsed.operation }), args: parsed.args,
-    })
-    const result = z.object({ ok: z.boolean().optional(), isError: z.boolean().optional(), image: z.object({ data: z.string(), mediaType: z.string().optional() }).optional(), content: z.array(z.object({ type: z.string(), text: z.string().optional(), data: z.string().optional(), mimeType: z.string().optional() })).optional() }).loose().parse(raw)
-    const images = result.content?.flatMap(part => part.type === "image" && part.data ? [{ mediaType: part.mimeType ?? "image/png", data: part.data }] : []) ?? []
-    if (result.image) images.push({ mediaType: result.image.mediaType ?? "image/png", data: result.image.data })
-    const { image, content, ...text } = result
-    return { output: content ? content.filter(part => part.type === "text").map(part => part.text ?? "").join("\n") : JSON.stringify(text), isError: result.isError === true || result.ok === false, ...(images.length ? { images } : {}) }
+    try {
+      await this.desktop.start(box)
+      const raw = await this.desktop.call(box, parsed.view === "browser" ? "/browser/task" : "/computer/task", {
+        sessionId, ...(parsed.view === "browser" ? { operation: parsed.operation } : { name: parsed.operation }), args: parsed.args,
+      })
+      const result = z.object({ ok: z.boolean().optional(), isError: z.boolean().optional(), image: z.object({ data: z.string(), mediaType: z.string().optional() }).optional(), content: z.array(z.object({ type: z.string(), text: z.string().optional(), data: z.string().optional(), mimeType: z.string().optional() })).optional() }).loose().parse(raw)
+      const images = result.content?.flatMap(part => part.type === "image" && part.data ? [{ mediaType: part.mimeType ?? "image/png", data: part.data }] : []) ?? []
+      if (result.image) images.push({ mediaType: result.image.mediaType ?? "image/png", data: result.image.data })
+      const { image, content, ...text } = result
+      return { output: content ? content.filter(part => part.type === "text").map(part => part.text ?? "").join("\n") : JSON.stringify(text), isError: result.isError === true || result.ok === false, ...(images.length ? { images } : {}) }
+    } finally { this.release(sessionId) }
   }
 
   async desktopViewer(sessionId: string, input: { view: DesktopView; control: boolean; origin: string }) {
@@ -183,7 +185,7 @@ export class Computers {
   private async exec(sessionId: string, command: string, timeoutSeconds: number) {
     const box = await this.vm(sessionId)
     return this.execute(box, {
-      command: `cd ${WORKSPACE} 2>/dev/null || cd ~; exec bash -c "$WORKBOT_COMMAND"`,
+      command: `${this.desktop ? "umask 002; " : ""}cd ${WORKSPACE} 2>/dev/null || cd ~; exec bash -c "$WORKBOT_COMMAND"`,
       env: { WORKBOT_COMMAND: command, PATH: GUEST_PATH, HOME: "/home/ubuntu", LANG: "C.UTF-8" },
       timeoutMs: timeoutSeconds * 1000,
     })
@@ -249,7 +251,7 @@ export class Computers {
         done.add(file.id)
         continue
       }
-      await this.blocks.files.write(vm, path.path, found.bytes, { timeoutMs: 30_000 })
+      await this.blocks.files.write(vm, path.path, found.bytes, { timeoutMs: 30_000, ...(this.desktop ? { mode: 0o664 } : {}) })
       done.add(file.id)
       copied.push(path.path)
     }

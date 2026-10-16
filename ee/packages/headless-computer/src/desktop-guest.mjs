@@ -5,6 +5,7 @@ import { randomBytes, timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { WebSocketServer, WebSocket } from "ws";
 import { createCloudComputer } from "@openwork/computer-use/cloud";
+import { createDesktopApplications } from "./desktop-apps.mjs";
 
 const directory = process.env.WORKBOT_DESKTOP_STATE;
 if (!directory) throw new Error("WORKBOT_DESKTOP_STATE is required");
@@ -13,7 +14,10 @@ let until = 0;
 const tickets = new Map();
 const sockets = new Set();
 const transports = new Map();
-const computer = await createCloudComputer({ directory, display: ":99", enabled: async () => Date.now() < until });
+process.umask(0o002);
+const computer = await createCloudComputer({ directory, display: ":99", enabled: async () => Date.now() < until,
+  applications: createDesktopApplications({ directory: `${directory}/apps`, display: ":99" }),
+});
 const json = (response, status, payload) => {
   response.writeHead(status, { "content-type": "application/json", "cache-control": "no-store" });
   response.end(JSON.stringify(payload));

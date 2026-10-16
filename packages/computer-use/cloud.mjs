@@ -11,7 +11,7 @@ const execute = promisify(execFile);
 const failure = (code, error) => Object.assign(new Error(error), { code });
 
 /** One member-owned VM, one input lease, and the existing browser and computer contracts. */
-export async function createCloudComputer({ directory, display = ":99", enabled, machine, browserEndpoint, onActivity = () => {} }) {
+export async function createCloudComputer({ directory, display = ":99", enabled, machine, browserEndpoint, applications, onActivity = () => {} }) {
   await mkdir(directory, { recursive: true, mode: 0o700 });
   let owner = null;
   let paused = false;
@@ -85,6 +85,16 @@ export async function createCloudComputer({ directory, display = ":99", enabled,
           return result;
         }
         if (path !== "/computer/task") throw failure("not_found", "Unknown computer operation.");
+        if (applications && ["computer_apps", "computer_launch"].includes(body.name)) {
+          // Application launches use the same input rail as browser/native input.
+          // Releasing the native lease invalidates coordinates from before launch.
+          if (body.name === "computer_launch" && owner) await control.endTurn({ sessionId: owner });
+          browser.invalidate();
+          assertActive();
+          const result = body.name === "computer_apps" ? await applications.list() : await applications.launch(body.args, current.signal);
+          assertActive();
+          return { content: [{ type: "text", text: JSON.stringify(result) }] };
+        }
         browser.invalidate();
         const result = await control.execute(body, { signal: current.signal });
         assertActive();

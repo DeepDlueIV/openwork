@@ -13,8 +13,9 @@ as_browser() {
   # The desktop must not inherit the worker's host, model or activity tokens.
   env -i PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin HOME=/home/openwork-browser \
     USER=openwork-browser LOGNAME=openwork-browser LANG=C.UTF-8 \
-    DISPLAY="$display" XAUTHORITY="$XAUTHORITY" runuser -u openwork-browser -- "$@"
+    DISPLAY="$display" XAUTHORITY="$XAUTHORITY" LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe runuser -u openwork-browser -- "$@"
 }
+umask 002
 if [ ! -s "$XAUTHORITY" ]; then
   touch "$XAUTHORITY"
   chmod 0600 "$XAUTHORITY"
@@ -32,6 +33,11 @@ until xdotool getdisplaygeometry >/dev/null 2>&1; do
 done
 if ! xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null | grep -q 'window id'; then
   as_browser setsid -f openbox >"$state/window-manager.log" 2>&1 < /dev/null
+fi
+# A taskbar and Applications menu are installed by the Workbot desktop image.
+# Older snapshots still open their browser without claiming extra apps exist.
+if command -v tint2 >/dev/null && ! pgrep -u openwork-browser -x tint2 >/dev/null; then
+  as_browser setsid -f tint2 >"$state/taskbar.log" 2>&1 < /dev/null
 fi
 if ! curl --fail --silent --max-time 2 http://127.0.0.1:9222/json/version >/dev/null; then
   # The browser runs as an unprivileged user with Chromium's sandbox enabled.

@@ -1156,19 +1156,27 @@ const LoadingMessage = React.memo(({ elapsedSeconds, starting, backgroundShells 
   /** Commands left running in the background share this line while the turn runs. */
   backgroundShells?: BackgroundShell[]
   backgroundStale?: boolean
-}) => (
+}) => {
+  const background = backgroundShells.length > 0 ? (
+    <>
+      <span aria-hidden="true"> · </span>
+      <BackgroundTasksLabel shells={backgroundShells} stale={backgroundStale} shimmer={false} />
+    </>
+  ) : null
+  return (
     <Message className="mx-auto flex w-full max-w-3xl flex-col items-start gap-2 px-2 md:px-10">
       <div role={starting ? "status" : undefined} data-loading-message={starting ? "starting" : "working"} className="py-1 text-sm text-muted-foreground">
-        <span className="ow-text-shimmer tabular-nums">{starting ? "Starting…" : `Working ${formatElapsedSeconds(elapsedSeconds)}`}</span>
-        {backgroundShells.length > 0 ? (
-          <>
-            <span aria-hidden="true"> · </span>
-            <BackgroundTasksLabel shells={backgroundShells} stale={backgroundStale} />
-          </>
-        ) : null}
+        {/* One shimmer sweeps the whole line, so Working and the count move as
+            one. A count the connection cannot confirm stays outside it, still. */}
+        <span className="ow-text-shimmer tabular-nums">
+          {starting ? "Starting…" : `Working ${formatElapsedSeconds(elapsedSeconds)}`}
+          {backgroundStale ? null : background}
+        </span>
+        {backgroundStale ? background : null}
       </div>
     </Message>
-))
+  )
+})
 
 LoadingMessage.displayName = "LoadingMessage"
 

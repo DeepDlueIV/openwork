@@ -273,7 +273,6 @@ contextBridge.exposeInMainWorld("__OPENWORK_ELECTRON__", {
     closeSessionTabs(sessionId) { return ipcRenderer.invoke("openwork:browser:closeSessionTabs", sessionId); },
     selectTab(tabId) { return ipcRenderer.invoke("openwork:browser:selectTab", tabId); },
     reorderTabs(tabIds) { return ipcRenderer.invoke("openwork:browser:reorderTabs", tabIds); },
-    approve(tabId, approvalId, allowed) { return ipcRenderer.invoke("openwork:browser:approve", tabId, approvalId, allowed); },
     taskControl(tabId, action) { return ipcRenderer.invoke("openwork:browser:taskControl", tabId, action); },
     setProxy(proxy) { return ipcRenderer.invoke("openwork:browser:setProxy", proxy); },
     setControlEnabled(enabled) { return ipcRenderer.invoke("openwork:browser:setControlEnabled", enabled); },

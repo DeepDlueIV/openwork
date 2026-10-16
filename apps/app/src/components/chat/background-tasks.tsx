@@ -66,12 +66,17 @@ type BackgroundTasksProps = {
   stale?: boolean
 }
 
+type BackgroundTasksLabelProps = BackgroundTasksProps & {
+  /** Off when the label sits inside a line whose one shimmer already covers it. */
+  shimmer?: boolean
+}
+
 /**
  * "2 running background tasks": commands the agent left running. Same
  * shimmer as the turn's "Working" line. The list stays one hover (or focus)
  * away: each command and how long it has been running.
  */
-export const BackgroundTasksLabel = React.memo(function BackgroundTasksLabel({ shells, stale = false }: BackgroundTasksProps) {
+export const BackgroundTasksLabel = React.memo(function BackgroundTasksLabel({ shells, stale = false, shimmer = true }: BackgroundTasksLabelProps) {
   const [open, setOpen] = React.useState(false)
   const [now, setNow] = React.useState(() => Date.now())
   React.useEffect(() => {
@@ -85,7 +90,7 @@ export const BackgroundTasksLabel = React.memo(function BackgroundTasksLabel({ s
       <Tooltip open={open} onOpenChange={setOpen}>
         <TooltipTrigger
           render={<span tabIndex={0} />}
-          className={cn("cursor-default rounded-sm tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring/50", !stale && "ow-text-shimmer")}
+          className={cn("cursor-default rounded-sm tabular-nums outline-none focus-visible:ring-2 focus-visible:ring-ring/50", shimmer && !stale && "ow-text-shimmer")}
         >
           {runningBackgroundTasksLabel(shells.length)}
         </TooltipTrigger>

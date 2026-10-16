@@ -156,13 +156,584 @@ export type ForbiddenError = {
   message?: string;
 };
 
+export type AdminFreeAutoConversions = {
+  from: string;
+  to: string;
+  generatedAt: string;
+  attributionDays: 30;
+  firstRecordedAt: string | null;
+  totals: {
+    reachedLimit: number;
+    signedIn: number;
+    newAccounts: number;
+    subscribed: number;
+    unlinkedGuests: number;
+  };
+  daily: Array<{
+    date: string;
+    reachedLimit: number;
+    signedIn: number;
+    newAccounts: number;
+    subscribed: number;
+  }>;
+  rows: Array<{
+    id: string;
+    userId: string | null;
+    name: string | null;
+    email: string | null;
+    startedAsGuest: boolean;
+    exhaustedAt: string;
+    signedInAt: string | null;
+    signedUpAt: string | null;
+    subscribedAt: string | null;
+  }>;
+  page: {
+    page: number;
+    pageSize: 50;
+    total: number;
+    hasMore: boolean;
+  };
+};
+
+export type AdminOrganizationDetail = {
+  organization: {
+    id: string;
+    name: string;
+    slug: string | null;
+    createdAt: string;
+    planTier: string;
+    seatLimit: number;
+    memberCount: number;
+  };
+  members: Array<{
+    id: string;
+    userId: string | null;
+    name: string | null;
+    email: string | null;
+    role: string;
+    joinedAt: string | null;
+  }>;
+  page: {
+    limit: number;
+    offset: number;
+    search: string;
+    total: number;
+    returned: number;
+    hasMore: boolean;
+    durationMs: number;
+  };
+  generatedAt: string;
+};
+
 export type NotFoundError = {
   error: string;
   message?: string;
 };
 
+export type AdminOrganizationUsage = {
+  organization: {
+    id: string;
+    name: string;
+    slug: string | null;
+    createdAt: string;
+    planTier: string;
+    seatLimit: number;
+    memberCount: number;
+  };
+  members: Array<{
+    id: string;
+    userId: string | null;
+    name: string | null;
+    email: string | null;
+    role: string;
+    joinedAt: string | null;
+  }>;
+  page: {
+    limit: number;
+    offset: number;
+    search: string;
+    total: number;
+    returned: number;
+    hasMore: boolean;
+    durationMs: number;
+  };
+  generatedAt: string;
+  usage: {
+    from: string;
+    to: string;
+    totals: {
+      requests: number;
+      tokens: number;
+      costMicroUsd: number;
+      unreportedRequests: number | null;
+      unpricedRequests: number | null;
+    };
+    members: Array<{
+      requests: number;
+      tokens: number;
+      costMicroUsd: number;
+      unreportedRequests: number | null;
+      unpricedRequests: number | null;
+      memberId: string;
+    }>;
+  };
+};
+
+export type AdminOrganizationInsights = {
+  organization: {
+    id: string;
+    name: string;
+    slug: string | null;
+    createdAt: string;
+    planTier: string;
+    seatLimit: number;
+    memberCount: number;
+  };
+  members: Array<{
+    id: string;
+    userId: string | null;
+    name: string | null;
+    email: string | null;
+    role: string;
+    joinedAt: string | null;
+  }>;
+  page: {
+    limit: number;
+    offset: number;
+    search: string;
+    total: number;
+    returned: number;
+    hasMore: boolean;
+    durationMs: number;
+  };
+  generatedAt: string;
+  insights: {
+    from: string;
+    to: string;
+    previousFrom: string;
+    previousTo: string;
+    current: {
+      requests: number;
+      tokens: number;
+      costMicroUsd: number;
+      unreportedRequests: number | null;
+      unpricedRequests: number | null;
+      activeMembers: number;
+      successfulRequests: number;
+      lastActiveDay: string | null;
+    };
+    previous: {
+      requests: number;
+      tokens: number;
+      costMicroUsd: number;
+      unreportedRequests: number | null;
+      unpricedRequests: number | null;
+      activeMembers: number;
+      successfulRequests: number;
+      lastActiveDay: string | null;
+    };
+    daily: [
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+    ];
+    people: Array<{
+      requests: number;
+      tokens: number;
+      costMicroUsd: number;
+      unreportedRequests: number | null;
+      unpricedRequests: number | null;
+      activeMembers: number;
+      successfulRequests: number;
+      lastActiveDay: string | null;
+      memberId: string;
+      userId: string | null;
+      name: string | null;
+      email: string | null;
+      currentMember: boolean;
+    }>;
+    models: Array<{
+      requests: number;
+      tokens: number;
+      costMicroUsd: number;
+      unreportedRequests: number | null;
+      unpricedRequests: number | null;
+      successfulRequests: number;
+      lastActiveDay: string | null;
+      id: string;
+      name: string;
+      provider: string;
+    }>;
+  };
+};
+
+export type AdminDashboard = {
+  from: string;
+  to: string;
+  generatedAt: string;
+  activeUsers: {
+    today: number;
+    days7: number;
+    days30: number;
+  };
+  activeOrganizations: number;
+  totals: {
+    requests: number;
+    tokens: number;
+    costMicroUsd: number;
+    unreportedRequests: number | null;
+    unpricedRequests: number | null;
+  };
+  daily: Array<{
+    requests: number;
+    tokens: number;
+    costMicroUsd: number;
+    unreportedRequests: number | null;
+    unpricedRequests: number | null;
+    date: string;
+  }>;
+  organizations: Array<{
+    requests: number;
+    tokens: number;
+    costMicroUsd: number;
+    unreportedRequests: number | null;
+    unpricedRequests: number | null;
+    id: string;
+    name: string;
+  }>;
+};
+
 export type AdminFeature = {
   key:
+    | "offlineRecovery"
+    | "rememberLastOrganization"
     | "secureSecretFields"
     | "memberListToolbars"
     | "appBuildProgress"
@@ -227,7 +798,9 @@ export type AdminUsersPageResponse = {
 
 export type AdminOrganizationsPageResponse = {
   organizations: Array<{
-    capabilities: {
+    capabilities?: {
+      offlineRecovery: boolean;
+      rememberLastOrganization: boolean;
       secureSecretFields: boolean;
       memberListToolbars: boolean;
       appBuildProgress: boolean;
@@ -265,7 +838,25 @@ export type AdminOrganizationsPageResponse = {
     /**
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
-    featureStates: {
+    featureStates?: {
+      offlineRecovery: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      rememberLastOrganization: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       secureSecretFields: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -572,6 +1163,8 @@ export type AdminOverviewResponse = {
   }>;
   organizations: Array<{
     capabilities: {
+      offlineRecovery: boolean;
+      rememberLastOrganization: boolean;
       secureSecretFields: boolean;
       memberListToolbars: boolean;
       appBuildProgress: boolean;
@@ -610,6 +1203,24 @@ export type AdminOverviewResponse = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates: {
+      offlineRecovery: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      rememberLastOrganization: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       secureSecretFields: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -3101,6 +3712,58 @@ export type GoogleDriveDownloadInfo = {
   };
 };
 
+export type GoogleDriveDownloadLink = {
+  ok: true;
+  file: {
+    id: string;
+    name: string;
+    mimeType: string;
+    /**
+     * Google Docs, Sheets, Slides or Drawings file, pulled as an export.
+     */
+    native: boolean;
+    /**
+     * Pass back as baseRevision when replacing this file, so newer Drive changes are never overwritten silently.
+     */
+    revision: string | null;
+    md5Checksum: string | null;
+    size: number | null;
+    modifiedTime: string | null;
+    webViewLink: string | null;
+    parents: Array<string>;
+  };
+  download: {
+    format: string | null;
+    mimeType: string;
+    /**
+     * Extension the saved file needs, for exports.
+     */
+    extension: string | null;
+    /**
+     * Exact bytes for stored files; unknown until downloaded for exports.
+     */
+    size: number | null;
+    exported: boolean;
+    maxBytes: number;
+  };
+  /**
+   * Secret bearer URL for this one file, valid for five minutes. Do not print, share, log or persist it.
+   */
+  downloadUrl: string;
+  expiresAt: string;
+  /**
+   * The same download as an MCP resource link.
+   */
+  resourceLink: {
+    type: "resource_link";
+    uri: string;
+    name: string;
+    mimeType: string;
+    size?: number;
+  };
+  instructions: string;
+};
+
 export type GoogleWorkspaceDriveFileSummary = {
   id: string;
   name: string;
@@ -3647,6 +4310,15 @@ export type Microsoft365TeamsMessageBody = {
 };
 
 export type ExternalMcpRequirementsDiscovery = {
+  /**
+   * Settings-view-only unverified suggestions; never applied until an administrator saves manual sign-in settings.
+   */
+  publishedSignInAddresses?: Array<{
+    authorizationEndpoint: string;
+    tokenEndpoint: string;
+    advertisedIssuer: string;
+    metadataIssuer: string;
+  }>;
   status: "ready" | "manual_action_required" | "unsupported" | "unreachable";
   server: {
     url: string;
@@ -3826,6 +4498,17 @@ export type ExternalMcpConnectionResponse = {
   setupRequired?: boolean;
   access: ExternalMcpConnectionAccessSummary | null;
   oauthClientId?: string | null;
+  /**
+   * Whether a client secret is configured. Only returned with explicit connection-settings view permission; never the secret itself.
+   */
+  oauthClientHasSecret?: boolean;
+  /**
+   * Only returned with explicit connection-settings view permission; omitted from usable member listings, including for the connection creator.
+   */
+  manualOAuthEndpoints?: {
+    authorizationEndpoint: string;
+    tokenEndpoint: string;
+  } | null;
   oauthCallbackUrl?: string | null;
   oauthSharedCallbackUrl?: string | null;
   oauthClientMetadataUrl?: string | null;
@@ -4094,6 +4777,17 @@ export type ExternalMcpConnectionCreatedResponse = {
   setupRequired?: boolean;
   access: ExternalMcpConnectionAccessSummary | null;
   oauthClientId?: string | null;
+  /**
+   * Whether a client secret is configured. Only returned with explicit connection-settings view permission; never the secret itself.
+   */
+  oauthClientHasSecret?: boolean;
+  /**
+   * Only returned with explicit connection-settings view permission; omitted from usable member listings, including for the connection creator.
+   */
+  manualOAuthEndpoints?: {
+    authorizationEndpoint: string;
+    tokenEndpoint: string;
+  } | null;
   oauthCallbackUrl?: string | null;
   oauthSharedCallbackUrl?: string | null;
   oauthClientMetadataUrl?: string | null;
@@ -4169,6 +4863,17 @@ export type ExternalMcpConnectionUpdatedResponse = {
   setupRequired?: boolean;
   access: ExternalMcpConnectionAccessSummary | null;
   oauthClientId?: string | null;
+  /**
+   * Whether a client secret is configured. Only returned with explicit connection-settings view permission; never the secret itself.
+   */
+  oauthClientHasSecret?: boolean;
+  /**
+   * Only returned with explicit connection-settings view permission; omitted from usable member listings, including for the connection creator.
+   */
+  manualOAuthEndpoints?: {
+    authorizationEndpoint: string;
+    tokenEndpoint: string;
+  } | null;
   oauthCallbackUrl?: string | null;
   oauthSharedCallbackUrl?: string | null;
   oauthClientMetadataUrl?: string | null;
@@ -4203,6 +4908,13 @@ export type ExternalMcpConnectionByKeyUpsertInput = {
     clientSecret?: string;
     tokenEndpointAuthMethod?: "client_secret_basic" | "client_secret_post";
   };
+  /**
+   * Administrator-pinned authorization and token URLs. Both required; null restores strict discovery. Changing them clears saved sign-ins.
+   */
+  manualOAuthEndpoints?: {
+    authorizationEndpoint: string;
+    tokenEndpoint: string;
+  } | null;
   authorizationServerIssuer?: string | null;
   requestedScopes?: Array<string>;
   access?: ExternalMcpConnectionAccessInput;
@@ -4229,6 +4941,7 @@ export type ExternalMcpOAuthConfigurationRequiredError = {
 export type ExternalMcpOAuthIssuerMismatchError = {
   error: "mcp_oauth_issuer_mismatch";
   message: string;
+  diagnostic?: ExternalMcpDiagnostic;
 };
 
 export type ExternalMcpConnectStartConflictError =
@@ -6160,6 +6873,210 @@ export type GetV1AdminFreeAutoUsageResponses = {
 
 export type GetV1AdminFreeAutoUsageResponse = GetV1AdminFreeAutoUsageResponses[keyof GetV1AdminFreeAutoUsageResponses];
 
+export type GetV1AdminFreeAutoConversionsData = {
+  body?: never;
+  path?: never;
+  query?: {
+    days?: number;
+    page?: number;
+    search?: string;
+    stage?: "all" | "signed-in" | "new-account" | "subscribed" | "unlinked";
+  };
+  url: "/v1/admin/free-auto/conversions";
+};
+
+export type GetV1AdminFreeAutoConversionsErrors = {
+  /**
+   * Invalid query.
+   */
+  400: InvalidRequestError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Platform admin access required.
+   */
+  403: ForbiddenError;
+};
+
+export type GetV1AdminFreeAutoConversionsError =
+  GetV1AdminFreeAutoConversionsErrors[keyof GetV1AdminFreeAutoConversionsErrors];
+
+export type GetV1AdminFreeAutoConversionsResponses = {
+  /**
+   * Free Auto conversions returned.
+   */
+  200: AdminFreeAutoConversions;
+};
+
+export type GetV1AdminFreeAutoConversionsResponse =
+  GetV1AdminFreeAutoConversionsResponses[keyof GetV1AdminFreeAutoConversionsResponses];
+
+export type GetV1AdminOrganizationsByOrganizationIdData = {
+  body?: never;
+  path: {
+    organizationId: string;
+  };
+  query?: {
+    search?: string;
+    limit?: string;
+    offset?: string;
+  };
+  url: "/v1/admin/organizations/{organizationId}";
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdErrors = {
+  /**
+   * Invalid organization id or pagination query.
+   */
+  400: InvalidRequestError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Platform admin access required.
+   */
+  403: ForbiddenError;
+  /**
+   * Organization not found.
+   */
+  404: NotFoundError;
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdError =
+  GetV1AdminOrganizationsByOrganizationIdErrors[keyof GetV1AdminOrganizationsByOrganizationIdErrors];
+
+export type GetV1AdminOrganizationsByOrganizationIdResponses = {
+  /**
+   * Organization detail returned.
+   */
+  200: AdminOrganizationDetail;
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdResponse =
+  GetV1AdminOrganizationsByOrganizationIdResponses[keyof GetV1AdminOrganizationsByOrganizationIdResponses];
+
+export type GetV1AdminOrganizationsByOrganizationIdUsageData = {
+  body?: never;
+  path: {
+    organizationId: string;
+  };
+  query?: {
+    search?: string;
+    limit?: string;
+    offset?: string;
+  };
+  url: "/v1/admin/organizations/{organizationId}/usage";
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdUsageErrors = {
+  /**
+   * Invalid organization id or pagination query.
+   */
+  400: InvalidRequestError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Platform admin access required.
+   */
+  403: ForbiddenError;
+  /**
+   * Organization not found.
+   */
+  404: NotFoundError;
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdUsageError =
+  GetV1AdminOrganizationsByOrganizationIdUsageErrors[keyof GetV1AdminOrganizationsByOrganizationIdUsageErrors];
+
+export type GetV1AdminOrganizationsByOrganizationIdUsageResponses = {
+  /**
+   * Organization detail returned.
+   */
+  200: AdminOrganizationUsage;
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdUsageResponse =
+  GetV1AdminOrganizationsByOrganizationIdUsageResponses[keyof GetV1AdminOrganizationsByOrganizationIdUsageResponses];
+
+export type GetV1AdminOrganizationsByOrganizationIdInsightsData = {
+  body?: never;
+  path: {
+    organizationId: string;
+  };
+  query?: {
+    search?: string;
+    limit?: string;
+    offset?: string;
+  };
+  url: "/v1/admin/organizations/{organizationId}/insights";
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdInsightsErrors = {
+  /**
+   * Invalid organization id or pagination query.
+   */
+  400: InvalidRequestError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Platform admin access required.
+   */
+  403: ForbiddenError;
+  /**
+   * Organization not found.
+   */
+  404: NotFoundError;
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdInsightsError =
+  GetV1AdminOrganizationsByOrganizationIdInsightsErrors[keyof GetV1AdminOrganizationsByOrganizationIdInsightsErrors];
+
+export type GetV1AdminOrganizationsByOrganizationIdInsightsResponses = {
+  /**
+   * Organization detail returned.
+   */
+  200: AdminOrganizationInsights;
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdInsightsResponse =
+  GetV1AdminOrganizationsByOrganizationIdInsightsResponses[keyof GetV1AdminOrganizationsByOrganizationIdInsightsResponses];
+
+export type GetV1AdminDashboardData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/admin/dashboard";
+};
+
+export type GetV1AdminDashboardErrors = {
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Platform admin access required.
+   */
+  403: ForbiddenError;
+};
+
+export type GetV1AdminDashboardError = GetV1AdminDashboardErrors[keyof GetV1AdminDashboardErrors];
+
+export type GetV1AdminDashboardResponses = {
+  /**
+   * Platform dashboard returned.
+   */
+  200: AdminDashboard;
+};
+
+export type GetV1AdminDashboardResponse = GetV1AdminDashboardResponses[keyof GetV1AdminDashboardResponses];
+
 export type PostV1AdminAdminsData = {
   body?: never;
   path?: never;
@@ -6667,6 +7584,8 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
    */
   200: {
     capabilities: {
+      offlineRecovery: boolean;
+      rememberLastOrganization: boolean;
       secureSecretFields: boolean;
       memberListToolbars: boolean;
       appBuildProgress: boolean;
@@ -6705,6 +7624,24 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates: {
+      offlineRecovery: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      rememberLastOrganization: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       secureSecretFields: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -6999,6 +7936,8 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       id: string;
     };
     capabilities: {
+      offlineRecovery: boolean;
+      rememberLastOrganization: boolean;
       secureSecretFields: boolean;
       memberListToolbars: boolean;
       appBuildProgress: boolean;
@@ -7037,6 +7976,24 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates: {
+      offlineRecovery: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      rememberLastOrganization: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       secureSecretFields: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -7406,6 +8363,10 @@ export type GetV1AdminOrganizationsData = {
     limit?: string;
     offset?: string;
     search?: string;
+    /**
+     * Set to 0 to omit capabilities and featureStates. Fetch one organization's features when its editor is opened. Defaults to 1 for existing clients.
+     */
+    includeFeatures?: "0" | "1";
   };
   url: "/v1/admin/organizations";
 };
@@ -22852,6 +23813,149 @@ export type DownloadHostGoogleDriveFileResponses = {
 export type DownloadHostGoogleDriveFileResponse =
   DownloadHostGoogleDriveFileResponses[keyof DownloadHostGoogleDriveFileResponses];
 
+export type CreateGoogleDriveDownloadLinkData = {
+  body: {
+    fileId: string;
+    /**
+     * Google Docs, Sheets, Slides and Drawings only: export format, such as xlsx or csv for a Sheet, docx, md, txt or pdf for a Doc, pptx for Slides. Defaults to the Office format.
+     */
+    format?: string;
+  };
+  path?: never;
+  query?: never;
+  url: "/v1/capabilities/google-workspace/drive-download-links";
+};
+
+export type CreateGoogleDriveDownloadLinkErrors = {
+  /**
+   * Folder, unsupported Google file type or invalid format.
+   */
+  400:
+    | InvalidRequestError
+    | {
+        error: string;
+        message: string;
+      };
+  /**
+   * Sign in first.
+   */
+  401: UnauthorizedError;
+  /**
+   * Organization policy blocks the selected connection.
+   */
+  403: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Connect Google with Drive read access, or the file is in the trash.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The file is larger than the pull size limit.
+   */
+  413: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Google refused or did not return the file; the message gives Google's reason.
+   */
+  502: {
+    error: string;
+    message: string;
+  };
+};
+
+export type CreateGoogleDriveDownloadLinkError =
+  CreateGoogleDriveDownloadLinkErrors[keyof CreateGoogleDriveDownloadLinkErrors];
+
+export type CreateGoogleDriveDownloadLinkResponses = {
+  /**
+   * Short-lived bearer download URL, as JSON and as an MCP resource link, with the file's revision; no file content.
+   */
+  200: GoogleDriveDownloadLink;
+};
+
+export type CreateGoogleDriveDownloadLinkResponse =
+  CreateGoogleDriveDownloadLinkResponses[keyof CreateGoogleDriveDownloadLinkResponses];
+
+export type DownloadGoogleDriveFileByLinkData = {
+  body?: never;
+  path?: never;
+  query: {
+    token: string;
+  };
+  url: "/v1/direct-downloads/google-workspace/drive-link";
+};
+
+export type DownloadGoogleDriveFileByLinkErrors = {
+  /**
+   * Folder, unsupported Google file type or invalid format.
+   */
+  400:
+    | InvalidRequestError
+    | {
+        error: string;
+        message: string;
+      };
+  /**
+   * Sign in first.
+   */
+  401: UnauthorizedError;
+  /**
+   * Organization policy blocks the selected connection.
+   */
+  403: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Unknown or expired link.
+   */
+  404: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Connect Google with Drive read access, or the file is in the trash.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The file is larger than the pull size limit.
+   */
+  413: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Google refused or did not return the file; the message gives Google's reason.
+   */
+  502: {
+    error: string;
+    message: string;
+  };
+};
+
+export type DownloadGoogleDriveFileByLinkError =
+  DownloadGoogleDriveFileByLinkErrors[keyof DownloadGoogleDriveFileByLinkErrors];
+
+export type DownloadGoogleDriveFileByLinkResponses = {
+  /**
+   * File bytes.
+   */
+  200: Blob | File;
+};
+
+export type DownloadGoogleDriveFileByLinkResponse =
+  DownloadGoogleDriveFileByLinkResponses[keyof DownloadGoogleDriveFileByLinkResponses];
+
 export type SendGmailDraftData = {
   body: {
     /**
@@ -26087,6 +27191,13 @@ export type PostV1McpConnectionsData = {
           clientSecret?: string;
           tokenEndpointAuthMethod?: "client_secret_basic" | "client_secret_post";
         };
+        /**
+         * Administrator-pinned authorization and token URLs. Both required; null restores strict discovery. Changing them clears saved sign-ins.
+         */
+        manualOAuthEndpoints?: {
+          authorizationEndpoint: string;
+          tokenEndpoint: string;
+        } | null;
         authorizationServerIssuer?: string | null;
         requestedScopes?: Array<string>;
         access?: ExternalMcpConnectionAccessInput;
@@ -26601,6 +27712,13 @@ export type PutV1McpConnectionsByConnectionIdData = {
       clientSecret?: string;
       tokenEndpointAuthMethod?: "client_secret_basic" | "client_secret_post";
     };
+    /**
+     * Administrator-pinned authorization and token URLs. Both required; null restores strict discovery. Changing them clears saved sign-ins.
+     */
+    manualOAuthEndpoints?: {
+      authorizationEndpoint: string;
+      tokenEndpoint: string;
+    } | null;
     authorizationServerIssuer?: string | null;
     requestedScopes?: Array<string>;
     access: ExternalMcpConnectionAccessInput;

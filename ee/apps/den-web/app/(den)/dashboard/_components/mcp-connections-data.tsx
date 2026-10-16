@@ -111,16 +111,19 @@ export type ExternalMcpConnection = {
   setupRequired?: boolean;
   access: ExternalMcpAccessSummary | null;
   oauthClientId?: string | null;
+  oauthClientHasSecret?: boolean;
   oauthCallbackUrl?: string | null;
   oauthSharedCallbackUrl?: string | null;
   oauthClientMetadataUrl?: string | null;
   oauthCallbackMode?: "shared-v1" | "isolated-v1" | "legacy-v1" | null;
   oauthRegistrationSource?: "pre-registered" | "client-metadata" | "dynamic" | null;
+  manualOAuthEndpoints?: { authorizationEndpoint: string; tokenEndpoint: string } | null;
   authorizationServerIssuer?: string | null;
   requestedScopes?: string[];
 };
 
 export type McpRequirementsDiscovery = {
+  publishedSignInAddresses?: Array<{ authorizationEndpoint: string; tokenEndpoint: string; advertisedIssuer: string; metadataIssuer: string }>;
   status: "ready" | "manual_action_required" | "unsupported" | "unreachable";
   server: {
     url: string;
@@ -702,6 +705,7 @@ export type CreateMcpConnectionInput = {
     clientId: string;
     clientSecret?: string;
   };
+  manualOAuthEndpoints?: { authorizationEndpoint: string; tokenEndpoint: string } | null;
   authorizationServerIssuer?: string | null;
   requestedScopes?: string[];
   access: McpConnectionAccessInput;
@@ -731,6 +735,7 @@ export type UpdateMcpConnectionInput = {
     clientId: string;
     clientSecret?: string;
   };
+  manualOAuthEndpoints?: { authorizationEndpoint: string; tokenEndpoint: string } | null;
   authorizationServerIssuer?: string | null;
   requestedScopes?: string[];
   access: McpConnectionAccessInput;

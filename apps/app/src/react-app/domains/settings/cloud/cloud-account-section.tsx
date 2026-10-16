@@ -1,5 +1,8 @@
 /** @jsxImportSource react */
+import { useQuery } from "@tanstack/react-query";
+import { useNavigate } from "react-router";
 import { ArrowUpRight, Building2, Check, LogOut, Loader2 } from "lucide-react";
+import { markOrgSelectionPending } from "@/app/lib/den-sign-in-intent";
 
 import {
   formatDenOrgRoleLabel,
@@ -7,10 +10,7 @@ import {
 } from "../../../../app/lib/den";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  SettingsNotice,
-  SettingsSectionHeaderDescription,
-} from "../settings-section";
+import { SettingsNotice } from "../settings-section";
 import { t } from "@/i18n";
 import { useCloudSession } from "./cloud-session-provider";
 import { useOrgListWindow } from "../../cloud/use-org-list-window";
@@ -42,9 +42,26 @@ export function CloudAccountSection({
   onRefreshOrgs,
   onSignOut,
 }: CloudAccountSectionProps) {
-  const { user } = useCloudSession();
+  const { user, client, baseUrl, authToken } = useCloudSession();
+  const navigate = useNavigate();
   const activeOrg = orgs.find((org) => org.id === activeOrgId) ?? null;
   const controlsDisabled = authBusy || sessionBusy;
+  const memoryFeature = useQuery({
+    queryKey: ["den", "org-memory-feature", baseUrl, user?.id, activeOrgId],
+    queryFn: () => client.getOrgFeatures(activeOrgId),
+    enabled: Boolean(authToken && user && activeOrgId && orgs.length > 1),
+    staleTime: 60_000,
+    retry: false,
+    select: (features) => features.rememberLastOrganization === true,
+  });
+  const switchOrganization = activeOrg && orgs.length > 1 && memoryFeature.data === true
+    ? () => {
+        // Deliberate switching always opens the picker; remembering a choice
+        // must never remove the member's way to change it.
+        markOrgSelectionPending(activeOrg);
+        navigate("/onboarding");
+      }
+    : undefined;
 
   return (
     <section className="flex flex-col gap-y-6">
@@ -95,7 +112,11 @@ export function CloudAccountSection({
           onRefresh={onRefreshOrgs}
         />
       ) : activeOrg ? (
-        <ConnectedOrg org={activeOrg} />
+        <ConnectedOrg
+          org={activeOrg}
+          onSwitchOrganization={switchOrganization}
+          disabled={controlsDisabled || orgsBusy}
+        />
       ) : orgsBusy ? (
         <div className="flex items-center gap-2 text-sm text-dls-secondary">
           <Loader2 size={14} className="animate-spin" />
@@ -109,10 +130,14 @@ export function CloudAccountSection({
 }
 
 /* ------------------------------------------------------------------ */
-/*  Connected org: read-only display                                   */
+/*  Connected org and explicit organization switching                  */
 /* ------------------------------------------------------------------ */
 
-function ConnectedOrg({ org }: { org: DenOrgSummary }) {
+function ConnectedOrg({ org, onSwitchOrganization, disabled }: {
+  org: DenOrgSummary;
+  onSwitchOrganization?: () => void;
+  disabled: boolean;
+}) {
   return (
     <div className="flex items-center gap-3 rounded-xl border border-dls-border bg-dls-surface px-4 py-3">
       <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-green-3 text-green-11">
@@ -124,7 +149,13 @@ function ConnectedOrg({ org }: { org: DenOrgSummary }) {
           {formatDenOrgRoleLabel(org.role)} &middot; Connected
         </div>
       </div>
-      <Check size={16} className="shrink-0 text-green-11" />
+      {onSwitchOrganization ? (
+        <Button variant="outline" size="sm" onClick={onSwitchOrganization} disabled={disabled}>
+          Switch organization
+        </Button>
+      ) : (
+        <Check size={16} className="shrink-0 text-green-11" />
+      )}
     </div>
   );
 }
@@ -179,7 +210,7 @@ function OrgPicker({
         Select an organization
       </div>
       <div className="text-xs text-dls-secondary">
-        Choose the organization to use with this workspace. Sign out to switch later.
+        Choose the organization to use with this workspace.
       </div>
       {orgs.length > 10 ? (
         <Input

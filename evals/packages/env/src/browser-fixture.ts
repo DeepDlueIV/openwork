@@ -158,7 +158,7 @@ if(req.method==='POST'&&url.pathname.endsWith('/chat/completions')){
     if(results.length===0)call={name:'browser_tabs',arguments:'{}'};
     if(results.length===1)call={name:'browser_open',arguments:JSON.stringify({url:'http://127.0.0.1:'+server.address().port+'/briefing'})};
     const opened=results[1]?JSON.parse(results[1].content):null;
-    if(opened?.ok===false)final=opened.code==='user_denied'?'Browser access was denied; I did not read the project briefing.':'Browser access failed; I could not read the project briefing.';
+    if(opened?.ok===false)final='Browser access failed; I could not read the project briefing.';
     if(results.length===2&&opened?.ok===true&&opened.tabId)call={name:'browser_observe',arguments:JSON.stringify({tabId:opened.tabId})};
     const observed=results[2]?JSON.parse(results[2].content):null;
     if(observed?.ok===true&&observed.tabId===opened?.tabId&&typeof observed.text==='string'){

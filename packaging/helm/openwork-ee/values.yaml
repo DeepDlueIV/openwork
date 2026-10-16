@@ -26,6 +26,8 @@ config:
   #   "false" off for everyone; /admin shows "Set by deployment config"
   # The /admin kill switch still turns a feature off, even when locked on.
   features:
+    offlineRecovery: ""            # default off · Show compact App connection failures and a discreet offline indicator in OpenCode v2 conversations.
+    rememberLastOrganization: ""   # default off · Return to the last organization used by the same account on this server after signing in again. Invite and installation links keep their selected organization.
     secureSecretFields: ""         # default off · When an agent sets up a connection, plugin or AI Gateway provider that needs keys, people enter them in private fields in the chat and the agent continues once they are saved. Key fields across OpenWork and OpenWork Cloud can be shown while typing and show saved keys as Replace rows.
     memberListToolbars: ""         # default off · Filter members, teams and roles beside their add action, with compact member rows and secondary actions in the list menu.
     appBuildProgress: ""           # default off · While an agent creates or changes an MCP App, the chat shows each stage it goes through (finding and checking tools, writing the App, building and verifying it) as a checklist with a progress bar.

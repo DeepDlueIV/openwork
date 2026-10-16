@@ -33,8 +33,9 @@ export async function workbotWorkspace(_seed: Seed, { place }: { place: Place })
           const documents = !documentsOff && referring.searchParams.get("documents") !== "off";
           const denied = driveDenied || referring.searchParams.get("access") === "denied";
           const json = (body: unknown, status = 200) => { res.statusCode = status; res.setHeader("content-type", "application/json"); res.end(JSON.stringify(body)); };
-          if (url.pathname === "/v1/workbot/me") return json({ name: "Alex", email: "alex@example.test", userId: "user_example", organizationId: "org_example", organizationName: "Example", enabled: true, calendar: true, documents, workspaceAssistant: enabled, canSchedule: false, sideChats: false, denUrl: "https://workspace.example.test" });
+          if (url.pathname === "/v1/workbot/me") return json({ name: "Alex", email: "alex@example.test", userId: "user_example", organizationId: "org_example", organizationName: "Example", enabled: true, calendar: true, documents, workspaceAssistant: enabled, canSchedule: false, sideChats: referring.searchParams.get("sideChats") === "on", denUrl: "https://workspace.example.test" });
           if (url.pathname === "/v1/workbot") return json({ available: true, name: "Workbot", organizationName: "Example", status: "idle", turns, hasEarlier: false, filesEnabled: false });
+          if (url.pathname === "/v1/workbot/chats") return json({ main: null, side: [{ id: "sidechat000000001", title: "Document questions", createdAt: Date.now(), updatedAt: Date.now() }] });
           if (url.pathname === "/v1/workbot/events") { res.statusCode = 200; res.setHeader("content-type", "text/event-stream"); res.end(": fixture\n\n"); return; }
           if (url.pathname === "/v1/workbot/messages" && req.method === "POST") {
             let body = ""; for await (const chunk of req) body += chunk;

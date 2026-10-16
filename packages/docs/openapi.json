@@ -2447,6 +2447,7 @@
               "slackWorkbotReplies",
               "workbot",
               "workbotDocuments",
+              "workbotWorkspaceAssistant",
               "automationCalendar",
               "permissions",
               "teamRoles",
@@ -2686,6 +2687,9 @@
                     "workbotDocuments": {
                       "type": "boolean"
                     },
+                    "workbotWorkspaceAssistant": {
+                      "type": "boolean"
+                    },
                     "automationCalendar": {
                       "type": "boolean"
                     },
@@ -2753,6 +2757,7 @@
                     "slackWorkbotReplies",
                     "workbot",
                     "workbotDocuments",
+                    "workbotWorkspaceAssistant",
                     "automationCalendar",
                     "permissions",
                     "teamRoles",
@@ -3725,6 +3730,62 @@
                         "overrideApplies"
                       ]
                     },
+                    "workbotWorkspaceAssistant": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "automationCalendar": {
                       "type": "object",
                       "properties": {
@@ -4528,6 +4589,7 @@
                     "slackWorkbotReplies",
                     "workbot",
                     "workbotDocuments",
+                    "workbotWorkspaceAssistant",
                     "automationCalendar",
                     "permissions",
                     "teamRoles",
@@ -4962,6 +5024,9 @@
                     "workbotDocuments": {
                       "type": "boolean"
                     },
+                    "workbotWorkspaceAssistant": {
+                      "type": "boolean"
+                    },
                     "automationCalendar": {
                       "type": "boolean"
                     },
@@ -5029,6 +5094,7 @@
                     "slackWorkbotReplies",
                     "workbot",
                     "workbotDocuments",
+                    "workbotWorkspaceAssistant",
                     "automationCalendar",
                     "permissions",
                     "teamRoles",
@@ -6001,6 +6067,62 @@
                         "overrideApplies"
                       ]
                     },
+                    "workbotWorkspaceAssistant": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "automationCalendar": {
                       "type": "object",
                       "properties": {
@@ -6804,6 +6926,7 @@
                     "slackWorkbotReplies",
                     "workbot",
                     "workbotDocuments",
+                    "workbotWorkspaceAssistant",
                     "automationCalendar",
                     "permissions",
                     "teamRoles",
@@ -28302,6 +28425,9 @@
           "documents": {
             "type": "boolean"
           },
+          "workspaceAssistant": {
+            "type": "boolean"
+          },
           "sideChats": {
             "type": "boolean"
           },
@@ -30833,6 +30959,9 @@
                         "workbotDocuments": {
                           "type": "boolean"
                         },
+                        "workbotWorkspaceAssistant": {
+                          "type": "boolean"
+                        },
                         "automationCalendar": {
                           "type": "boolean"
                         },
@@ -30900,6 +31029,7 @@
                         "slackWorkbotReplies",
                         "workbot",
                         "workbotDocuments",
+                        "workbotWorkspaceAssistant",
                         "automationCalendar",
                         "permissions",
                         "teamRoles",
@@ -31872,6 +32002,62 @@
                             "overrideApplies"
                           ]
                         },
+                        "workbotWorkspaceAssistant": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "automationCalendar": {
                           "type": "object",
                           "properties": {
@@ -32675,6 +32861,7 @@
                         "slackWorkbotReplies",
                         "workbot",
                         "workbotDocuments",
+                        "workbotWorkspaceAssistant",
                         "automationCalendar",
                         "permissions",
                         "teamRoles",
@@ -32858,6 +33045,9 @@
                         "workbotDocuments": {
                           "type": "boolean"
                         },
+                        "workbotWorkspaceAssistant": {
+                          "type": "boolean"
+                        },
                         "automationCalendar": {
                           "type": "boolean"
                         },
@@ -32925,6 +33115,7 @@
                         "slackWorkbotReplies",
                         "workbot",
                         "workbotDocuments",
+                        "workbotWorkspaceAssistant",
                         "automationCalendar",
                         "permissions",
                         "teamRoles",
@@ -33897,6 +34088,62 @@
                             "overrideApplies"
                           ]
                         },
+                        "workbotWorkspaceAssistant": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "automationCalendar": {
                           "type": "object",
                           "properties": {
@@ -34700,6 +34947,7 @@
                         "slackWorkbotReplies",
                         "workbot",
                         "workbotDocuments",
+                        "workbotWorkspaceAssistant",
                         "automationCalendar",
                         "permissions",
                         "teamRoles",
@@ -81053,6 +81301,146 @@
               "maxLength": 2048
             },
             "required": true
+          }
+        ]
+      }
+    },
+    "/v1/documents/google-drive/files/{fileId}/metadata": {
+      "get": {
+        "operationId": "getGoogleDriveDocumentMetadata",
+        "tags": [
+          "Documents"
+        ],
+        "x-mcp": false,
+        "summary": "Resolve an authorized Drive document link without downloading content",
+        "description": "Requires organization membership, Workbot and Documents, and the member’s currently authorized Drive connection. Reads recheck provider access. Writes require current grants, explicit edits and a matching revision.",
+        "responses": {
+          "200": {
+            "description": "Document result.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512,
+                      "pattern": "^[A-Za-z0-9_-]+$"
+                    },
+                    "name": {
+                      "type": "string"
+                    },
+                    "mimeType": {
+                      "type": "string"
+                    },
+                    "modifiedTime": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "size": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "openUrl": {
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "mimeType",
+                    "modifiedTime",
+                    "size",
+                    "openUrl"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unsupported edit.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Reconnect or reload the changed file.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "message"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "in": "path",
+            "name": "fileId",
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "required": true
+          }
+        ],
+        "security": [
+          {
+            "denApiKey": []
+          },
+          {
+            "bearerAuth": []
           }
         ]
       }

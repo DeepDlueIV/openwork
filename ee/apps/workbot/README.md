@@ -90,3 +90,26 @@ feature, membership, OAuth read/write scopes and the exact Google connection.
 The editor preserves unrelated file parts and refuses unsupported unsafe edits.
 See `packages/documents/README.md` for the package contract, format limits,
 permission requirements and concurrency boundaries.
+
+## Workspace assistant
+
+`workbotWorkspaceAssistant` is off by default on cloud and self-hosted installs.
+With Workbot on, it adds the compact navigation drawer and floating composer to
+Documents and Calendar. Documents also requires `workbotDocuments`; Calendar
+retains its existing feature checks. The drawer reads recent files through the
+same authenticated Drive provider as Documents.
+
+At Send, the user can include or exclude the current view. The bounded snapshot
+contains the open Drive file's ID, name, type and unsaved status, or the calendar
+range, time zone and selected event/automation. It contains no document bytes or
+unsaved text. Workbot reads saved content using the member's existing connected
+apps and permissions; visible metadata grants no access. The snapshot remains
+with that turn for transcript display, editing and retry. After a native Google
+file is saved as an Office copy, context follows the confirmed copy’s file ID.
+
+Canonical Google document links in replies offer an explicit open action in
+Documents. Metadata resolves through Den again before the file opens; links
+never navigate automatically. Other links keep their usual external behavior.
+The Documents browser remains mounted while the user switches surfaces, keeping
+local drafts intact. Turning the assistant off removes contextual actions and
+rejects new context requests without unmounting an already-open editor.

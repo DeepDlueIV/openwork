@@ -749,6 +749,7 @@ export type AdminFeature = {
     | "slackWorkbotReplies"
     | "workbot"
     | "workbotDocuments"
+    | "workbotWorkspaceAssistant"
     | "automationCalendar"
     | "permissions"
     | "teamRoles"
@@ -818,6 +819,7 @@ export type AdminOrganizationsPageResponse = {
       slackWorkbotReplies: boolean;
       workbot: boolean;
       workbotDocuments: boolean;
+      workbotWorkspaceAssistant: boolean;
       automationCalendar: boolean;
       permissions: boolean;
       teamRoles: boolean;
@@ -988,6 +990,15 @@ export type AdminOrganizationsPageResponse = {
         overrideApplies: boolean;
       };
       workbotDocuments: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotWorkspaceAssistant: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -1202,6 +1213,7 @@ export type AdminOverviewResponse = {
       slackWorkbotReplies: boolean;
       workbot: boolean;
       workbotDocuments: boolean;
+      workbotWorkspaceAssistant: boolean;
       automationCalendar: boolean;
       permissions: boolean;
       teamRoles: boolean;
@@ -1372,6 +1384,15 @@ export type AdminOverviewResponse = {
         overrideApplies: boolean;
       };
       workbotDocuments: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotWorkspaceAssistant: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6672,6 +6693,7 @@ export type WorkbotSession = {
   canSchedule: boolean;
   calendar?: boolean;
   documents?: boolean;
+  workspaceAssistant?: boolean;
   sideChats: boolean;
   model?: string | null;
 };
@@ -7644,6 +7666,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       slackWorkbotReplies: boolean;
       workbot: boolean;
       workbotDocuments: boolean;
+      workbotWorkspaceAssistant: boolean;
       automationCalendar: boolean;
       permissions: boolean;
       teamRoles: boolean;
@@ -7814,6 +7837,15 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       workbotDocuments: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotWorkspaceAssistant: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -8016,6 +8048,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       slackWorkbotReplies: boolean;
       workbot: boolean;
       workbotDocuments: boolean;
+      workbotWorkspaceAssistant: boolean;
       automationCalendar: boolean;
       permissions: boolean;
       teamRoles: boolean;
@@ -8186,6 +8219,15 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       workbotDocuments: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotWorkspaceAssistant: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -24038,6 +24080,52 @@ export type DownloadGoogleDriveFileByLinkResponses = {
 
 export type DownloadGoogleDriveFileByLinkResponse =
   DownloadGoogleDriveFileByLinkResponses[keyof DownloadGoogleDriveFileByLinkResponses];
+
+export type GetGoogleDriveDocumentMetadataData = {
+  body?: never;
+  path: {
+    fileId: string;
+  };
+  query?: never;
+  url: "/v1/documents/google-drive/files/{fileId}/metadata";
+};
+
+export type GetGoogleDriveDocumentMetadataErrors = {
+  /**
+   * Unsupported edit.
+   */
+  400: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Reconnect or reload the changed file.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+};
+
+export type GetGoogleDriveDocumentMetadataError =
+  GetGoogleDriveDocumentMetadataErrors[keyof GetGoogleDriveDocumentMetadataErrors];
+
+export type GetGoogleDriveDocumentMetadataResponses = {
+  /**
+   * Document result.
+   */
+  200: {
+    id: string;
+    name: string;
+    mimeType: string;
+    modifiedTime: string | null;
+    size: number | null;
+    openUrl: string | null;
+  };
+};
+
+export type GetGoogleDriveDocumentMetadataResponse =
+  GetGoogleDriveDocumentMetadataResponses[keyof GetGoogleDriveDocumentMetadataResponses];
 
 export type OpenGoogleDriveDocumentEditorData = {
   body?: never;

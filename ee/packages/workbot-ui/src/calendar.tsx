@@ -1,5 +1,6 @@
 "use client";
 
+import type { WorkbotViewContext } from "@openwork/types/workbot-context";
 import {
   addDays,
   buildAutomationCalendarItems,
@@ -640,7 +641,7 @@ function weekdaysOnly(days: LocalDate[], automations: AutomationCalendarItem[], 
   return busy ? days : days.filter((day) => weekdayOf(day) !== 0 && weekdayOf(day) !== 6);
 }
 
-export function WorkbotCalendar({ connectionsHref, assistantName }: { connectionsHref: string | null; assistantName: string }) {
+export function WorkbotCalendar({ connectionsHref, assistantName, onContextChange }: { connectionsHref: string | null; assistantName: string; onContextChange?(context: WorkbotViewContext | null): void }) {
   const zone = timeZone();
   const sources = useCalendarSources();
   const [now, setNow] = useState(() => Date.now());
@@ -684,6 +685,12 @@ export function WorkbotCalendar({ connectionsHref, assistantName }: { connection
   const selectedItem = selection?.kind === "automation" ? list.data?.items.find((entry) => entry.automation.id === selection.automationId) ?? null : null;
   const selectedBlock = selection?.kind === "automation" ? items.find((item) => item.key === selection.itemKey) ?? null : null;
   const selectedMeeting = selection?.kind === "meeting" ? meetings.find((event) => event.key === selection.key) ?? null : null;
+  useEffect(() => {
+    const selected = selectedMeeting
+      ? { kind: "meeting" as const, provider: selectedMeeting.provider, id: selectedMeeting.providerEventId, title: selectedMeeting.title.slice(0, 512) || "Untitled event" }
+      : selectedItem ? { kind: "automation" as const, id: selectedItem.automation.id, title: selectedItem.automation.name.slice(0, 512) || "Untitled automation" } : undefined;
+    onContextChange?.({ kind: "calendar", view, start: range.start, end: range.end, timeZone: zone, ...(selected ? { selected } : {}) });
+  }, [onContextChange, selectedMeeting, selectedItem, view, range.start, range.end, zone]);
   const connected = PROVIDERS.filter((provider) => meetingQueries[provider].data);
   const meetingSource = connected.length === 2 ? "Google Calendar and Outlook" : connected[0] === "microsoft" ? "Outlook Calendar" : "Google Calendar";
   const label = view === "week" && days.length === 5 ? `${formatDate(days[0]!, "en-US", { month: "short", day: "numeric" })} – ${days[4]!.month === days[0]!.month ? formatDate(days[4]!, "en-US", { day: "numeric" }) : formatDate(days[4]!, "en-US", { month: "short", day: "numeric" })}` : formatRangeLabel(range, anchor, "en-US");

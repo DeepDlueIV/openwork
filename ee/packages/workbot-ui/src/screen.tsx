@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowUp, Check, CircleAlert, Copy, FileText, Lock, Pencil } from "lucide-react";
-import { useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from "react";
+import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from "react";
 import { setWorkbotHost, workbotHost, type WorkbotHost } from "./host";
 import { OpenWorkMark } from "./mark";
 import { ChatsButton, ChatsDrawer, chatTitle, RemoveChatButton, SideChatTitle, useChatLocation } from "./chats";
@@ -31,6 +31,9 @@ import { PreviewPanel } from "./preview";
 import { Welcome } from "./welcome";
 import { WorkbotCalendar } from "./calendar";
 import { WorkbotDocuments } from "./documents";
+import { workbotViewContextSchema, type WorkbotViewContext } from "@openwork/types/workbot-context";
+import type { DocumentOpenRequest } from "@openwork/documents";
+import { SentContext, WorkspaceAssistant, WorkspaceMenu, WorkspaceNavigationContext } from "./workspace";
 import { useQueryClient } from "@tanstack/react-query";
 
 /**
@@ -41,6 +44,7 @@ import { useQueryClient } from "@tanstack/react-query";
 type Pending = {
   id: string;
   text: string;
+  context?: WorkbotViewContext;
   sentAt: number;
   /** Files still uploading, shown from the tray until the turn exists. */
   uploads: Upload[];
@@ -67,7 +71,8 @@ type ChatNavigation = {
 export function WorkbotScreen({ host }: { host: WorkbotHost }) {
   setWorkbotHost(host);
   const sideChats = host.sideChats === true;
-  const [chat, openChat] = useChatLocation(sideChats);
+  const [workspaceDrafts, setWorkspaceDrafts] = useState(false);
+  const [chat, openChat] = useChatLocation(sideChats, workspaceDrafts ? () => false : undefined);
   const [chatsOpen, setChatsOpen] = useState(false);
   const chats = useWorkbotChats(sideChats);
   const refetchChats = chats.refetch;
@@ -81,7 +86,7 @@ export function WorkbotScreen({ host }: { host: WorkbotHost }) {
   return (
     <WorkbotChatProvider value={chat}>
       {/* Each chat starts fresh: its own unsent messages, files to send and open file. */}
-      <ChatScreen key={chat ?? "main"} host={host} navigation={navigation} />
+      <ChatScreen key={`${host.identity?.organizationId ?? ""}:${host.identity?.principalId ?? ""}:${chat ?? "main"}`} host={host} navigation={navigation} onDraftsChange={setWorkspaceDrafts} />
       {sideChats ? (
         <ChatsDrawer
           open={chatsOpen}
@@ -99,19 +104,37 @@ export function WorkbotScreen({ host }: { host: WorkbotHost }) {
 }
 
 /** One chat: the main chat, or one of the person's side chats. */
-function ChatScreen({ host, navigation }: { host: WorkbotHost; navigation: ChatNavigation | null }) {
+function ChatScreen({ host, navigation, onDraftsChange }: { host: WorkbotHost; navigation: ChatNavigation | null; onDraftsChange(dirty: boolean): void }) {
   const { user } = host;
   const side = navigation?.chat != null;
   const queryClient = useQueryClient();
   const [pending, setPending] = useState<Pending[]>([]);
   const [turnWindow, setTurnWindow] = useState(PAGE_TURNS);
   const [filesOpen, setFilesOpen] = useState(false);
+  // Once activated, keep this shell mounted even when the flag is revoked: draft editors must survive.
+  const [workspaceShell, setWorkspaceShell] = useState(host.workspaceAssistant === true);
+  useEffect(() => { if (host.workspaceAssistant) setWorkspaceShell(true); }, [host.workspaceAssistant]);
+  const [documentContext, setDocumentContext] = useState<WorkbotViewContext | null>(null);
+  const [calendarContext, setCalendarContext] = useState<WorkbotViewContext | null>(null);
+  const [includeContext, setIncludeContext] = useState(true);
+  const [openDocument, setOpenDocument] = useState<DocumentOpenRequest>();
   const [documentsDirty, setDocumentsDirty] = useState(false);
+  const reportDocumentDirty = useCallback((dirty: boolean) => { setDocumentsDirty(dirty); onDraftsChange(dirty); }, [onDraftsChange]);
+  useEffect(() => () => onDraftsChange(false), [onDraftsChange]);
   const [leavingDocuments, setLeavingDocuments] = useState<WorkbotTab | null>(null);
   const [tab, setTab] = useWorkbotTab((next) => {
-    if (documentsDirty && next !== "documents") { setLeavingDocuments(next); return false; }
+    if (!workspaceShell && documentsDirty && next !== "documents") { setLeavingDocuments(next); return false; }
     return true;
-  });
+  }, workspaceShell);
+  const [documentsVisited, setDocumentsVisited] = useState(tab === "documents");
+  const [calendarVisited, setCalendarVisited] = useState(tab === "calendar");
+  useEffect(() => { if (tab === "documents") setDocumentsVisited(true); if (tab === "calendar") setCalendarVisited(true); }, [tab]);
+  const currentContext = tab === "documents" ? documentContext : tab === "calendar" ? calendarContext : null;
+  const navigateDocument = (fileId: string) => {
+    if (!host.workspaceAssistant || !host.documents) return;
+    setOpenDocument({ fileId, requestId: newMessageId() });
+    setTab("documents");
+  };
   const [preview, setPreview] = useState<WorkbotAttachment | null>(null);
   // The welcome shows once, while there's no conversation yet; leaving it, Workbot starts the conversation itself.
   // "pending" until the conversation is first read: then it shows (no conversation yet) or never does. Side chats
@@ -173,9 +196,12 @@ function ChatScreen({ host, navigation }: { host: WorkbotHost; navigation: ChatN
   const submit = (text: string, retry?: Pending) => {
     const trimmed = text.trim();
     const id = retry?.id ?? newMessageId();
+    const candidate = retry ? retry.context : includeContext ? currentContext : undefined;
+    const parsed = workbotViewContextSchema.safeParse(candidate);
+    const context = host.workspaceAssistant && parsed.success && (parsed.data.kind === "calendar" || host.documents) ? parsed.data : undefined;
     const fromTray = retry ? { taken: retry.uploads, settled: Promise.resolve(retry.uploads.flatMap((upload) => (upload.saved ? [upload.saved] : []))) } : uploads.take();
     if (!trimmed && fromTray.taken.length === 0) return;
-    setPending((current) => [...current.filter((entry) => entry.id !== id), { id, text: trimmed, sentAt: Date.now(), uploads: fromTray.taken, failed: null }]);
+    setPending((current) => [...current.filter((entry) => entry.id !== id), { id, text: trimmed, context, sentAt: Date.now(), uploads: fromTray.taken, failed: null }]);
     const fail = (message: string) => setPending((current) => current.map((entry) => (entry.id === id ? { ...entry, failed: message } : entry)));
     // The message waits for its files, then goes out with their ids.
     void fromTray.settled.then((saved) => {
@@ -183,7 +209,7 @@ function ChatScreen({ host, navigation }: { host: WorkbotHost; navigation: ChatN
         fail("A file didn't upload.");
         return;
       }
-      send.mutate({ id, text: trimmed, attachments: saved.map((file) => file.id) }, {
+      send.mutate({ id, text: trimmed, context, attachments: saved.map((file) => file.id) }, {
         onError: (error) => fail(error.message),
         onSuccess: () => void queryClient.invalidateQueries({ queryKey: workbotFilesKey }),
       });
@@ -204,6 +230,7 @@ function ChatScreen({ host, navigation }: { host: WorkbotHost; navigation: ChatN
     const from = turns.findIndex((entry) => entry.id === turn.id);
     const replaced = from === -1 ? [turn.id] : turns.slice(from).map((entry) => entry.id);
     const id = newMessageId();
+    const context = host.workspaceAssistant && (turn.context?.kind === "calendar" || host.documents) ? turn.context : undefined;
     setEditErrors((current) => {
       if (!(turn.id in current)) return current;
       const next = { ...current };
@@ -211,9 +238,9 @@ function ChatScreen({ host, navigation }: { host: WorkbotHost; navigation: ChatN
       return next;
     });
     setHidden((current) => new Set([...current, ...replaced]));
-    setPending((current) => [...current, { id, text: trimmed, sentAt: Date.now(), uploads: [], failed: null }]);
+    setPending((current) => [...current, { id, text: trimmed, context, sentAt: Date.now(), uploads: [], failed: null }]);
     editMessage.mutate(
-      { id: turn.id, newId: id, text: trimmed, attachments: turn.attachments.map((file) => file.id) },
+      { id: turn.id, newId: id, text: trimmed, context, attachments: turn.attachments.map((file) => file.id) },
       {
         onError: (error) => {
           setHidden((current) => new Set([...current].filter((entry) => !replaced.includes(entry))));
@@ -224,6 +251,62 @@ function ChatScreen({ host, navigation }: { host: WorkbotHost; navigation: ChatN
     );
   };
 
+  if (workspaceShell) {
+    const name = data?.name ?? "Workbot";
+    const busy = data?.status === "busy" || pending.some(entry => !entry.failed);
+    const empty = !data?.turns.length && !pending.length;
+    const starting = empty && (start.isPending || greetingAwaited);
+    const conversation = data ? <Conversation
+      turns={hidden.size ? data.turns.filter(turn => !hidden.has(turn.id)) : data.turns}
+      canChange={!busy} onEdit={editTurn} editErrors={editErrors} pending={pending} live={stream.live}
+      hasEarlier={data.hasEarlier} loadingEarlier={thread.isFetching && turnWindow > data.turns.length}
+      onLoadEarlier={() => setTurnWindow(current => Math.min(200, current + PAGE_TURNS))}
+      onRetry={entry => submit(entry.text, entry)}
+      onRetryTurn={turn => {
+        if (turn.greeting) { setGreetingAwaited(true); start.mutate(); return; }
+        retry.mutate(turn.id, { onError: error => setEditErrors(current => ({ ...current, [turn.id]: error.message })) });
+      }}
+      onSuggestion={text => submit(text)} starting={starting} intro={null}
+    /> : null;
+    const composer = <Composer name={name} busy={busy} stopping={stop.isPending} filesEnabled={filesEnabled}
+      uploads={uploads.uploads} onFiles={addFiles} onRemoveUpload={uploads.remove} onRetryUpload={uploads.retry}
+      onSend={text => submit(text)} onStop={() => stop.mutate()} autoFocus={false} disabled={!data} />;
+    const firstName = user?.name?.trim().split(/\s+/)[0] ?? null;
+    const home = thread.isPending ? <div className="flex flex-1 items-center justify-center" aria-busy="true" aria-label="Loading conversation"><span className="h-5 w-40 rounded bg-[var(--wb-chip)]" /></div>
+      : !data ? <div className="flex flex-1 flex-col items-center justify-center gap-3 px-5 text-center text-[13px] text-[var(--wb-muted)]" role="status"><p>Couldn't load your conversation.</p><button type="button" className="rounded-lg px-3 py-2 underline focus-visible:shadow-[var(--wb-focus)]" onClick={() => void thread.refetch()}>Try again</button></div>
+      : welcome === "showing" ? <Welcome name={name} firstName={firstName} onBegin={() => { if (start.isIdle) { setGreetingAwaited(true); start.mutate(); } }} onDone={() => setWelcome("done")} />
+      : empty && side ? <SideChatStart name={name} organizationName={data.organizationName}>{composer}</SideChatStart>
+      : empty && !starting ? <FirstOpen name={name} organizationName={data.organizationName} firstName={firstName} onSuggestion={text => submit(text)} error={start.isError ? <ErrorLine action={{ label: "Try again", onClick: () => { setGreetingAwaited(true); start.mutate(); } }}>{HELLO_FAILED}</ErrorLine> : null}>{composer}</FirstOpen>
+      : <>{conversation}<div className="flex shrink-0 justify-center px-3 pb-4 pt-3"><div className={COLUMN}>{composer}</div></div></>;
+    return <OpenFileContext.Provider value={setPreview}>
+      <WorkspaceNavigationContext.Provider value={host.workspaceAssistant && host.documents ? navigateDocument : null}>
+        <div className="workbot flex h-dvh flex-col bg-[var(--wb-bg)] antialiased" data-workbot-workspace>
+          <WorkbotHeader name={name} organizationName={data?.organizationName ?? ""} userName={user?.name ?? null}
+            files={filesEnabled ? <FilesButton open={filesOpen} onOpen={() => setFilesOpen(true)} /> : null}
+            chats={host.workspaceAssistant ? <WorkspaceMenu page={tab} onPage={setTab} onDocument={navigateDocument} drafts={documentsDirty} onChats={navigation?.openChats} /> : navigation ? <ChatsButton onOpen={navigation.openChats} /> : null}
+            nav={host.workspaceAssistant ? null : <WorkbotNav tab={tab} onTab={setTab} />}
+            remove={navigation?.chat && data && data.turns.length > 0 ? <RemoveChatButton disabled={documentsDirty} chatId={navigation.chat} title={navigation.title} onRemoved={() => navigation.openChat(null)} /> : null}
+            title={navigation?.chat ? <SideChatTitle title={navigation.title} disabled={documentsDirty} onBack={() => navigation.openChat(null)} /> : undefined}
+          />
+          <div className="flex min-h-0 min-w-0 flex-1">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col" style={{ display: tab === "home" ? undefined : "none" }} hidden={tab !== "home"}>{home}</div>
+          <div className="flex min-h-0 min-w-0 flex-1 border-t border-[var(--wb-hairline)]" style={{ display: tab === "documents" ? undefined : "none" }} hidden={tab !== "documents"}>
+            {(documentsVisited || tab === "documents") && <WorkbotDocuments onDirtyChange={reportDocumentDirty} onContextChange={setDocumentContext} openDocument={openDocument} />}
+          </div>
+          <div className="flex min-h-0 min-w-0 flex-1 border-t border-[var(--wb-hairline)]" style={{ display: tab === "calendar" ? undefined : "none" }} hidden={tab !== "calendar"}>
+            {host.calendar && (calendarVisited || tab === "calendar") && <WorkbotCalendar connectionsHref={host.connectionsHref ?? null} assistantName={name} onContextChange={setCalendarContext} />}
+          </div>
+          </div>
+          {previewFile && <PreviewPanel file={previewFile} onClose={() => setPreview(null)} />}
+          </div>
+          <div hidden={!host.workspaceAssistant || tab === "home"}><WorkspaceAssistant name={name} context={currentContext} includeContext={includeContext} onIncludeContext={setIncludeContext}
+            composer={composer} conversation={conversation} onDocument={navigateDocument} unavailable={!data} sentCount={pending.length} active={host.workspaceAssistant === true && tab !== "home"} /></div>
+          {filesEnabled && <FilesPanel open={filesOpen} onClose={() => setFilesOpen(false)} assistantName={name} onOpenFile={file => { setFilesOpen(false); setPreview(file); }} />}
+        </div>
+      </WorkspaceNavigationContext.Provider>
+    </OpenFileContext.Provider>;
+  }
   if ((tab === "calendar" && host.calendar) || tab === "documents") {
     return (
       <div className="workbot flex h-dvh flex-col bg-[var(--wb-bg)] antialiased">
@@ -471,7 +554,7 @@ function tabFromLocation(): WorkbotTab {
 }
 
 /** Home (the conversation) and Calendar, as paths so a reload or a shared link opens the same tab. */
-function useWorkbotTab(beforeLeave?: (next: WorkbotTab) => boolean) {
+function useWorkbotTab(beforeLeave?: (next: WorkbotTab) => boolean, preserveSearch = false) {
   const beforeLeaveRef = useRef(beforeLeave);
   beforeLeaveRef.current = beforeLeave;
   const [tab, setTabState] = useState<WorkbotTab>(tabFromLocation);
@@ -487,7 +570,7 @@ function useWorkbotTab(beforeLeave?: (next: WorkbotTab) => boolean) {
   const setTab = (next: WorkbotTab, discard = false) => {
     if (next === tab) return;
     if (!discard && beforeLeaveRef.current?.(next) === false) return;
-    window.history.pushState(null, "", next === "home" ? "/" : `/${next}`);
+    window.history.pushState(null, "", `${next === "home" ? "/" : `/${next}`}${preserveSearch ? window.location.search : ""}`);
     setTabState(next);
   };
   return [tab, setTab] as const;
@@ -531,7 +614,7 @@ function WorkbotHeader(props: {
   const names = apps.map((app) => app.name);
   return (
     <header className="flex h-13 shrink-0 items-center justify-between gap-3 px-4 sm:px-5">
-      {props.title ?? (
+      {props.title ? <div className="flex min-w-0 items-center gap-2">{props.chats}{props.title}{props.nav}</div> : (
         <div className="flex min-w-0 items-center gap-2" title={organizationName}>
           {props.chats}
           <Mark name={name} size="header" />
@@ -976,6 +1059,7 @@ function OwnMessage(props: {
 
   return (
     <div className="flex flex-col items-end gap-1">
+      <SentContext context={turn.context} />
       <UserBubble text={turn.text} reaction={turn.reaction} action={<EditButton disabled={!props.canChange} onClick={() => setMode("editing")} />} />
       {error ? <ErrorLine align="end">{error}</ErrorLine> : null}
     </div>
@@ -1090,6 +1174,7 @@ function PendingView({ entry, onRetry, waiting }: { entry: Pending; onRetry: () 
     <>
       <SentAttachments attachments={attachments} localUrls={urls} />
       {/* Holds Edit's place while sending, so the bubble doesn't move when its turn arrives. */}
+      <SentContext context={entry.context} />
       <UserBubble text={entry.text} muted={Boolean(entry.failed)} action={entry.failed ? undefined : <EditButton disabled />} />
       {entry.failed ? (
         <ErrorLine align="end" action={{ label: "Send again", onClick: onRetry }}>{entry.failed}</ErrorLine>
@@ -1633,6 +1718,8 @@ function OutputFiles({ files }: { files: WorkbotAttachment[] }) {
 
 function Composer(props: {
   name: string;
+  autoFocus?: boolean;
+  disabled?: boolean;
   busy: boolean;
   stopping: boolean;
   filesEnabled: boolean;
@@ -1656,7 +1743,7 @@ function Composer(props: {
   }, [text]);
 
   const sendNow = () => {
-    if (!canSend) return;
+    if (!canSend || props.disabled) return;
     props.onSend(text);
     setText("");
     input.current?.focus();
@@ -1692,7 +1779,8 @@ function Composer(props: {
           ref={input}
           value={text}
           rows={1}
-          autoFocus
+          autoFocus={props.autoFocus ?? true}
+          disabled={props.disabled}
           onChange={(event) => setText(event.target.value)}
           onKeyDown={onKeyDown}
           onPaste={onPaste}
@@ -1703,7 +1791,7 @@ function Composer(props: {
         <button
           type="button"
           onClick={showStop ? props.onStop : sendNow}
-          disabled={showStop ? props.stopping : !canSend}
+          disabled={props.disabled || (showStop ? props.stopping : !canSend)}
           aria-label={showStop ? "Stop" : "Send"}
           aria-keyshortcuts={showStop ? "Escape" : "Enter"}
           title={showStop ? "Stop (esc)" : "Send (⏎)"}

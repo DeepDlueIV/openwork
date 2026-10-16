@@ -20,7 +20,7 @@ const sheetWriteScopes = [...writeScopes, scope + "spreadsheets"]
 const connectionSchema = z.string().regex(/^(google-workspace|emc_[A-Za-z0-9]+)$/)
 const params = z.object({ fileId: documentIdSchema })
 const query = z.object({ sheetId: z.string().max(200).optional(), startRow: z.coerce.number().int().min(1).max(1_048_526).default(1), connectionId: connectionSchema.optional() }).strict()
-const fileSchema = z.object({ id: documentIdSchema, name: z.string(), mimeType: z.string(), version: z.string(), headRevisionId: z.string().optional(), size: z.string().optional(), trashed: z.boolean().optional(), capabilities: z.object({ canEdit: z.boolean().optional() }).optional() })
+const fileSchema = z.object({ id: documentIdSchema, name: z.string(), mimeType: z.string(), version: z.string(), headRevisionId: z.string().optional(), size: z.string().optional(), modifiedTime: z.string().optional(), webViewLink: z.string().optional(), trashed: z.boolean().optional(), capabilities: z.object({ canEdit: z.boolean().optional() }).optional() })
 const XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 const DOCX = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 const DOC = "application/vnd.google-apps.document"
@@ -28,7 +28,7 @@ const SHEET = "application/vnd.google-apps.spreadsheet"
 const MAX_BYTES = 12 * 1024 * 1024
 const base = "/v1/documents/google-drive/files/:fileId"
 const errorSchema = z.object({ error: z.string(), message: z.string() })
-const readFile = (fileId: string) => { const url = new URL(`${env.googleApiBaseUrl ?? "https://www.googleapis.com"}/drive/v3/files/${fileId}`); url.searchParams.set("fields", "id,name,mimeType,version,headRevisionId,size,trashed,capabilities(canEdit)"); url.searchParams.set("supportsAllDrives", "true"); return url }
+const readFile = (fileId: string) => { const url = new URL(`${env.googleApiBaseUrl ?? "https://www.googleapis.com"}/drive/v3/files/${fileId}`); url.searchParams.set("fields", "id,name,mimeType,version,headRevisionId,size,modifiedTime,webViewLink,trashed,capabilities(canEdit)"); url.searchParams.set("supportsAllDrives", "true"); return url }
 const googleUrl = (host: string, path: string) => new URL(`${env.googleApiBaseUrl ?? host}${path}`)
 const conflict = (c: Parameters<typeof requestGoogleAction>[0]) => c.json({ error: "drive_conflict", message: "This file changed in Drive. Your edits are kept here; reload the file before saving again." }, 409)
 const failure = (c: Parameters<typeof requestGoogleAction>[0], message: string) => c.json({ error: "document_unavailable", message }, 400)
@@ -96,6 +96,19 @@ export function registerGoogleDocumentEditorRoutes<T extends { Variables: OrgRou
   }
   const media = async (c: Parameters<typeof requestGoogleAction>[0], selected: GoogleWorkspaceActionDependencies, fileId: string) => { const url = readFile(fileId); url.searchParams.delete("fields"); url.searchParams.set("alt", "media"); return requestGoogleAction(c, selected, readScopes, url) }
   const readDoc = async (c: Parameters<typeof requestGoogleAction>[0], selected: GoogleWorkspaceActionDependencies, fileId: string) => { const url = googleUrl("https://docs.googleapis.com", `/v1/documents/${fileId}`); url.searchParams.set("includeTabsContent", "true"); const result = await requestGoogleAction(c, selected, readScopes, url); if (!result.ok) return result; const data = docSchema.safeParse(await readGoogleActionJson(result.response)); return data.success ? { ok: true, data: data.data } as const : { ok: false, reply: failure(c, "Google could not return this document.") } as const }
+
+  const itemSchema = z.object({ id: documentIdSchema, name: z.string(), mimeType: z.string(), modifiedTime: z.string().nullable(), size: z.number().nullable(), openUrl: z.string().nullable() })
+  app.get(`${base}/metadata`, description("getGoogleDriveDocumentMetadata", "Resolve an authorized Drive document link without downloading content", itemSchema), orgMemberRoute(), guard, paramValidator(params), queryValidator(z.object({}).strict()), async c => {
+    const context = c.get("organizationContext")
+    if (!context || !(await organizationFeatureEnabled(context.organization.id, "workbotWorkspaceAssistant"))) return c.json({ error: "feature_disabled", message: "Opening document links is off for this workspace." }, 403)
+    const { fileId } = c.req.valid("param")
+    const auth = await authorize(c); if (!auth.ok) return auth.reply
+    const meta = await metadata(c, auth.selected, fileId); if (!meta.ok) return meta.reply
+    const file = meta.file
+    const size = file.size === undefined ? null : Number(file.size)
+    c.header("cache-control", "no-store")
+    return c.json({ id: file.id, name: file.name, mimeType: file.mimeType, modifiedTime: file.modifiedTime ?? null, size: size !== null && Number.isSafeInteger(size) && size >= 0 ? size : null, openUrl: file.webViewLink ?? `https://drive.google.com/file/d/${encodeURIComponent(file.id)}/view` })
+  })
 
   app.get(`${base}/editor`, description("openGoogleDriveDocumentEditor", "Open a Drive document in the inline editor", editorDocumentSchema), orgMemberRoute(), guard, paramValidator(params), queryValidator(query), async c => {
     const { fileId } = c.req.valid("param"); const input = c.req.valid("query")

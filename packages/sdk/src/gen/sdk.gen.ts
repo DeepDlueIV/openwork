@@ -179,6 +179,8 @@ import type {
   GetGoogleCalendarEventResponses,
   GetGoogleDocumentOutlineErrors,
   GetGoogleDocumentOutlineResponses,
+  GetGoogleDriveDocumentMetadataErrors,
+  GetGoogleDriveDocumentMetadataResponses,
   GetGoogleDriveFileMetadataErrors,
   GetGoogleDriveFileMetadataResponses,
   GetGoogleDriveOfficeEditorStatusErrors,
@@ -9516,6 +9518,29 @@ export class DenClient extends HeyApiClient {
       ThrowOnError
     >({
       url: "/v1/direct-downloads/google-workspace/drive-link",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
+   * Resolve an authorized Drive document link without downloading content
+   *
+   * Requires organization membership, Workbot and Documents, and the member’s currently authorized Drive connection. Reads recheck provider access. Writes require current grants, explicit edits and a matching revision.
+   */
+  public getGoogleDriveDocumentMetadata<ThrowOnError extends boolean = false>(
+    parameters: {
+      fileId: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "fileId" }] }]);
+    return (options?.client ?? this.client).get<
+      GetGoogleDriveDocumentMetadataResponses,
+      GetGoogleDriveDocumentMetadataErrors,
+      ThrowOnError
+    >({
+      url: "/v1/documents/google-drive/files/{fileId}/metadata",
       ...options,
       ...params,
     });

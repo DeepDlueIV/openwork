@@ -6,21 +6,27 @@
   "description": "Bounded, dependency-light .xlsx reading and writing that runs in Node, Bun, and the browser.",
   "exports": {
     ".": {
-      "types": "./src/index.ts",
+      "types": {
+        "openwork-build": "./dist/types/src/index.d.ts",
+        "default": "./src/index.ts"
+      },
       "development": "./src/index.ts",
-      "default": "./src/index.ts"
+      "default": "./dist/index.js"
     }
   },
   "files": [
-    "src"
+    "src",
+    "dist"
   ],
   "scripts": {
+    "build": "tsup src/index.ts --format esm --target es2022 --clean && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
     "htmlparser2": "8.0.2"
   },
   "devDependencies": {
+    "tsup": "^8.5.0",
     "typescript": "^5.6.3"
   }
 }

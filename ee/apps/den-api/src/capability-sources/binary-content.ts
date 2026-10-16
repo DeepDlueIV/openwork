@@ -24,3 +24,42 @@ export function decodeFileContent(
     return { kind: "binary", contentBase64: Buffer.from(bytes).toString("base64"), byteSize: bytes.length }
   }
 }
+
+/** Reads at most maxBytes, so an oversized provider body never sits in memory whole. */
+export async function readBoundedBytes(response: Response, maxBytes: number): Promise<{ bytes: Uint8Array; truncated: boolean }> {
+  if (!response.body) return { bytes: new Uint8Array(0), truncated: false }
+  const reader = response.body.getReader()
+  const chunks: Uint8Array[] = []
+  let length = 0
+  let truncated = false
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      const room = maxBytes - length
+      if (value.byteLength > room) {
+        chunks.push(value.subarray(0, room))
+        length += room
+        truncated = true
+        break
+      }
+      chunks.push(value)
+      length += value.byteLength
+    }
+  } finally {
+    if (truncated) await reader.cancel().catch(() => {})
+    reader.releaseLock()
+  }
+  const bytes = new Uint8Array(length)
+  let offset = 0
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return { bytes, truncated }
+}
+
+/** Text from a read that may stop mid-character: a trailing partial character is dropped. */
+export function decodeTruncatedText(bytes: Uint8Array, fatal: boolean): string {
+  return new TextDecoder("utf-8", { fatal }).decode(bytes, { stream: true })
+}

@@ -292,11 +292,20 @@ export async function evaluate<T>(
   return runtimeResultValue(payload) as Awaited<T>;
 }
 
+/**
+ * The page ran the call and its own code threw. CDP answered, so this is the
+ * call's result, not a stalled transport: re-attaching cannot change it, even
+ * when the page's message says "timed out".
+ */
+export class CdpPageError extends Error {
+  override name = "CdpPageError";
+}
+
 function runtimeResultValue(payload: unknown): unknown {
   if (!isRecord(payload)) throw new Error("CDP returned a malformed evaluation result");
   if (isRecord(payload.exceptionDetails)) {
     const exception = payload.exceptionDetails.exception;
-    throw new Error(
+    throw new CdpPageError(
       (isRecord(exception) && stringField(exception.description)) ||
         stringField(payload.exceptionDetails.text) ||
         "Evaluation failed.",

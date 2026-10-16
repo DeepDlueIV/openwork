@@ -28,7 +28,7 @@ import {
 import { db } from "./db.js"
 import { buildGeneratedMcpApp, type GeneratedArtifactViewBuildResult } from "./generated-artifact-view-builder.js"
 import type { McpMemberIdentity } from "./mcp/external-capabilities.js"
-import { buildMarketplaceCapabilityName, listAccessibleMarketplaceCapabilityReferences, parseMarketplaceCapabilityName } from "./mcp/marketplace-capabilities.js"
+import { buildMarketplaceCapabilityName, listAccessibleMarketplaceCapabilityReferences, listAccessibleMarketplaceCapabilityReferencesFor, parseMarketplaceCapabilityName } from "./mcp/marketplace-capabilities.js"
 import {
   PluginArchAuthorizationError,
   requirePluginArchResourceRole,
@@ -408,6 +408,12 @@ async function accessibleAppPlugins(input: McpAppAccessInput): Promise<Map<strin
   return apps
 }
 
+/** The Plugin through which the member reaches one App, checked for that App only. */
+async function accessibleAppPlugin(input: McpAppAccessInput & { appId: string }): Promise<string | undefined> {
+  const references = await timeMcpApp("den.app-access-check", () => listAccessibleMarketplaceCapabilityReferencesFor({ ...input, configObjectId: input.appId }))
+  return references.find((reference) => reference.objectType === "app")?.pluginId
+}
+
 /**
  * Apps the member may use, read without their compiled revisions: every
  * catalog, index, and search lookup would otherwise load each App's HTML.
@@ -479,11 +485,16 @@ export async function isActiveMcpApp(input: { organizationId: string; appId: str
 
 async function accessibleRevisionUncached(input: McpAppAccessInput & { appId: string }) {
   const id = appId(input.appId)
-  const pluginId = (await accessibleAppPlugins(input)).get(id)
-  if (!pluginId) return notFound()
   const organizationId = normalizeDenTypeId("organization", input.organizationId)
-  if (!await activeApp(organizationId, id)) return notFound()
-  const current = await latestRevision(organizationId, id)
+  // Read together: each is a database round trip on every App request. Nothing
+  // from the App or its revision is used unless the member can reach its Plugin.
+  const [pluginId, active, current] = await Promise.all([
+    accessibleAppPlugin(input),
+    activeApp(organizationId, id),
+    latestRevision(organizationId, id),
+  ])
+  if (!pluginId) return notFound()
+  if (!active) return notFound()
   const payload = current && compiledRevision(current)
   if (!current || !payload) return notFound()
   return { id, pluginId, organizationId, current, payload }

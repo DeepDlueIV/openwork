@@ -42,6 +42,8 @@ export interface MockAgentWorkload {
   rateLimitAttempts?: number;
   /** Chat Completions: return this many HTTP 500s before serving the workload. */
   serverErrorAttempts?: number;
+  /** Chat Completions: always reject this workload with a non-retryable HTTP 400 carrying this message. */
+  terminalErrorMessage?: string;
   /** Chat Completions: match the latest user message and count only its tool rounds. */
   latestUserTurn?: boolean;
   promptMarker: string;
@@ -68,6 +70,8 @@ export interface MockAgentRequest {
   model: string;
   advertisedToolNames?: string[];
   toolResultCodes?: unknown;
+  /** Whether any value registered with /admin/private-sentinels appeared anywhere in this model request. */
+  privateSentinelSeen?: boolean;
   reasoningEffort?: string | null;
   promptMarker: string | null;
   matchedMarkers: string[];
@@ -548,6 +552,7 @@ export async function startMockMcp(options: StartMockMcpOptions = {}): Promise<M
       completions.push({
         model: completion.model,
         toolResultCodes: completion.toolResultCodes,
+        privateSentinelSeen: completion.privateSentinelSeen === true,
         advertisedToolNames: Array.isArray(completion.advertisedToolNames)
           ? completion.advertisedToolNames.filter((value): value is string => typeof value === "string") : undefined,
         reasoningEffort: typeof completion.reasoningEffort === "string" ? completion.reasoningEffort : null,

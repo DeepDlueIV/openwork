@@ -13,11 +13,12 @@
     "evidence:judge": "node packages/test-evidence/bin/test-evidence-judge.mjs",
     "design:review": "node packages/test-evidence/bin/test-evidence-design-review.mjs",
     "provision:org-connector-two-members": "node scripts/provision-org-connector-two-members.ts",
-    "lint:layers": "depcruise --config .dependency-cruiser.cjs --ignore-known .dependency-cruiser-known-violations.json packages specs worlds bin docs-shots runner scripts ../scenarios",
-    "check": "pnpm run check:browser && pnpm run lint:layers && node scripts/spec-channel-ratchet.mjs && node scripts/spec-boundary-ratchet.mjs",
+    "lint:layers": "depcruise --config .dependency-cruiser.cjs --ignore-known .dependency-cruiser-known-violations.json packages core proofs worlds bin docs-shots runner scripts ../scenarios",
+    "check": "pnpm run check:browser && pnpm run lint:layers && pnpm run lint:specs",
+    "lint:specs": "node scripts/spec-lint/cli.ts",
+    "test:framework": "vitest run --config vitest.config.ts --project pr scripts",
     "typecheck": "node scripts/typecheck.mjs",
     "typecheck:spec-layer": "tsc -p tsconfig.primitives.json",
-    "test:core": "vitest run --config vitest.config.ts --project pr specs/thread-approvals-replay.test.ts specs/effective-permissions-attribution.test.ts specs/pdf-attachments-model-routing.test.ts specs/route-session-list.test.ts",
     "check:browser": "node scripts/check-browser-code.mjs"
   },
   "dependencies": {

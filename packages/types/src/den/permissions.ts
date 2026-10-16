@@ -88,13 +88,6 @@ export const PERMISSIONS = {
     defaultOn: OWNER_ONLY,
     sensitive: true,
   },
-  "install_links.update": {
-    area: "organization",
-    label: "Rotate install links",
-    description: "Replace existing desktop install links. Creating a link stays open to every member.",
-    defaultOn: ADMIN,
-    sensitive: true,
-  },
 
   // Members and teams
   "invitations.manage": {
@@ -149,6 +142,19 @@ export const PERMISSIONS = {
     area: "access",
     label: "Manage permissions",
     description: "Change Member, Admin and team permissions.",
+    defaultOn: OWNER_ONLY,
+    sensitive: true,
+  },
+  "agent_permissions.view": {
+    area: "access",
+    label: "View agent permissions",
+    description: "See what agents can do on members' computers, for everyone and per team.",
+    defaultOn: ADMIN,
+  },
+  "agent_permissions.manage": {
+    area: "access",
+    label: "Manage agent permissions",
+    description: "Change which commands, file edits, websites, local skills and MCP servers agents can use, for everyone and per team.",
     defaultOn: OWNER_ONLY,
     sensitive: true,
   },

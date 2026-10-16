@@ -103,7 +103,7 @@ export async function gatewayEnvironment(upstreamUrl: string) {
   } };
 }
 
-export async function startAcmeGateway(stack: AsyncDisposableStack, databaseUrl: string, settings: Awaited<ReturnType<typeof gatewayEnvironment>>) {
+export async function startAcmeGateway(stack: AsyncDisposableStack, databaseUrl: string, settings: { baseUrl: string; env: Record<string, string> }) {
   const child = spawn(process.execPath, ["--conditions=development", "--import", "tsx", "src/server.ts"], {
     cwd: fileURLToPath(new URL("../../ee/apps/gateway", import.meta.url)),
     env: { PATH: process.env.PATH, HOME: process.env.HOME, NODE_ENV: "test", OPENWORK_DEV_MODE: "1",

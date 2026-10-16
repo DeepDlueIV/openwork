@@ -786,7 +786,35 @@ function listItems(payload: unknown) {
   return (isRecord(payload) && Array.isArray(payload.items) ? payload.items : []).filter(isRecord);
 }
 
-/** Every plugin with its contents: one list request plus `/resolved` per plugin. */
+/**
+ * Each plugin's `/resolved` body, keyed by id, from one request (at most 100
+ * ids). A Den without `/v1/resolved-plugins` gets one request per plugin.
+ */
+async function requestPluginsContents(ids: string[]): Promise<Map<string, unknown>> {
+  if (ids.length === 0) return new Map();
+  const { response, payload } = await requestJson(
+    `/v1/resolved-plugins?pluginIds=${ids.map((id) => encodeURIComponent(id)).join(",")}`,
+    { method: "GET" },
+    20000,
+  );
+  if (response.status === 404) {
+    return new Map(await Promise.all(ids.map(async (id) => [id, pluginContentsPayload(await requestPluginContents(id))] as const)));
+  }
+  if (!response.ok) {
+    throw new Error(getErrorMessage(payload, `Failed to load plugin contents (${response.status}).`));
+  }
+  const plugins = isRecord(payload) && isRecord(payload.plugins) ? payload.plugins : {};
+  const failures = isRecord(payload) && isRecord(payload.failures) ? payload.failures : {};
+  return new Map(ids.map((id) => {
+    const failure = failures[id];
+    if (isRecord(failure)) {
+      throw new Error(getErrorMessage(failure, `Failed to load plugin contents (${String(failure.status)}).`));
+    }
+    return [id, plugins[id]];
+  }));
+}
+
+/** Every plugin with its contents: one list request plus one `/v1/resolved-plugins` request. */
 export function usePlugins({ enabled = true }: { enabled?: boolean } = {}) {
   return useQuery({
     enabled,
@@ -797,11 +825,13 @@ export function usePlugins({ enabled = true }: { enabled?: boolean } = {}) {
         throw new Error(getErrorMessage(payload, `Failed to load plugins (${response.status}).`));
       }
 
-      const plugins = await Promise.all(listItems(payload).map(async (item) => {
+      const items = listItems(payload);
+      const contents = await requestPluginsContents(items.flatMap((item) => asString(item.id) ?? []));
+      return items.flatMap((item) => {
         const id = asString(item.id);
-        return id ? buildDenPlugin(item, pluginContentsPayload(await requestPluginContents(id))) : null;
-      }));
-      return plugins.filter((plugin): plugin is DenPlugin => Boolean(plugin));
+        const plugin = id ? buildDenPlugin(item, contents.get(id)) : null;
+        return plugin ? [plugin] : [];
+      });
     },
   });
 }

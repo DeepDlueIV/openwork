@@ -1,5 +1,6 @@
+import { buildManagedProviderConfig } from "@openwork/types/managed-provider-config"
 import { createHash } from "node:crypto"
-import { catalogModelVariants, materializeLegacyFastProviders } from "@openwork/types/cloud-model-fast"
+import { materializeLegacyFastProviders } from "@openwork/types/cloud-model-fast"
 import type { GatewayProviderSummary } from "@openwork/types/den/gateway"
 import { and, asc, eq, inArray, isNull, sql } from "@openwork-ee/den-db/drizzle"
 import {
@@ -164,23 +165,7 @@ function materializationCacheKey(workerId: WorkerId, instanceUrl: string): strin
   return `${workerId}\u0000${instanceUrl}`
 }
 const unsupportedLogFingerprintByWorker = new Map<WorkerId, string>()
-const modelConfigPassthroughKeys = [
-  "family",
-  "release_date",
-  "attachment",
-  "reasoning",
-  "temperature",
-  "tool_call",
-  "interleaved",
-  "cost",
-  "limit",
-  "modalities",
-  "status",
-  "options",
-  "headers",
-  "provider",
-  "variants",
-]
+
 
 /**
  * The member a Cloud worker belongs to: the user who created it, while they are
@@ -481,74 +466,18 @@ function providerEnvEntries(provider: CloudProviderMaterializationProvider): Env
   return entries
 }
 
-function buildModelConfig(model: CloudProviderMaterializationProvider["models"][number], providerNpm: unknown) {
-  const next: JsonRecord = {
-    id: model.modelId,
-    name: model.name,
-  }
-
-  for (const key of modelConfigPassthroughKeys) {
-    const value = model.modelConfig[key]
-    if (value !== undefined) {
-      next[key] = value
-    }
-  }
-
-  const variants = catalogModelVariants(model.modelConfig, providerNpm)
-  if (variants) next.variants = variants
-  return next
-}
-
-function buildProviderConfig(provider: CloudProviderMaterializationProvider) {
-  const models: JsonRecord = {}
-  const sortedModels = [...provider.models].sort((left, right) => left.modelId.localeCompare(right.modelId))
-  for (const model of sortedModels) {
-    models[model.modelId] = buildModelConfig(model, provider.providerConfig.npm)
-  }
-
-  // Same runtime names and SDK option bindings the desktop receives.
+function buildProviderConfig(provider: CloudProviderMaterializationProvider): JsonRecord {
   const runtime = toRuntimeProviderEnv({
     id: provider.id,
     source: provider.source,
     providerConfig: provider.providerConfig,
     apiKeys: decodeProviderCredential(provider.apiKey).apiKeys,
   })
-  const config: JsonRecord = {
-    id: provider.providerId,
-    name: provider.name,
-    env: runtimeProviderEnvNames(provider),
-  }
-
-  if (Object.keys(models).length > 0 || provider.source !== "openwork") {
-    config.models = models
-  }
-
-  const npm = readString(provider.providerConfig.npm)
-  if (npm) {
-    config.npm = npm
-  }
-
-  const api = readString(provider.providerConfig.api)
-  if (api) {
-    config.api = api
-  }
-
-  const options = runtime.providerConfig.options
-  if (isRecord(options)) {
-    config.options = options
-  }
-
-  const whitelist = readStringList(provider.providerConfig.whitelist)
-  if (Array.isArray(provider.providerConfig.whitelist)) {
-    config.whitelist = whitelist
-  }
-
-  const blacklist = readStringList(provider.providerConfig.blacklist)
-  if (blacklist.length > 0) {
-    config.blacklist = blacklist
-  }
-
-  return config
+  return buildManagedProviderConfig({
+    ...provider,
+    providerConfig: runtime.providerConfig,
+    models: provider.models.map((model) => ({ id: model.modelId, name: model.name, config: model.modelConfig })),
+  })
 }
 
 function providerHasRequiredCredential(provider: CloudProviderMaterializationProvider, envEntries: EnvEntry[]) {

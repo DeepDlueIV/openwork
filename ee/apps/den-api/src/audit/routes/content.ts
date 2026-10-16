@@ -101,6 +101,12 @@ export const contentAuditRoutes: readonly AuditRouteDeclaration[] = [
   runner("POST", "/v1/remote-session-requests/:id/claim", "tenant_change", "remote_session.request.claim", "remote_session.execution", "remote_session_request", "id", { notes: `${REMOTE_SESSION_JOB} Response carries follow-up prompt input.` }),
   runner("POST", "/v1/remote-session-requests/:id/complete", "tenant_change", "remote_session.request.complete", "remote_session.execution", "remote_session_request", "id", { notes: `${REMOTE_SESSION_JOB} A send atomically records its receipt and resets the command for the new turn; immutable retries never reset newer progress.` }),
 
+  // The member's own remote sessions from OpenWork's apps: the same executor as MCP remote-session:*.
+  member("POST", "/v1/remote-sessions/status", "tenant_signal", "remote_session.status.check", "remote_session.execution", "remote_session", null, { notes: "Frequent, bounded status check of at most ten of the member's own remote sessions (optional wait up to 20 s). Returns state and a short answer preview, no transcript." }),
+  member("POST", "/v1/remote-sessions/read", "tenant_access", "remote_session.transcript.read", "remote_session.execution", "remote_session", null, { notes: "Returns the member's own remote session transcript; a desktop session's page is answered by its runner through remote_session_request. Same executor as MCP remote-session:read." }),
+  member("POST", "/v1/remote-sessions/send", "tenant_job", "remote_session.follow_up.send", "remote_session.execution", "remote_session", null, { jobOutcome: "Desktop: runner callbacks POST /v1/remote-session-requests/:id/{claim,complete} and /v1/remote-session-commands/:id/session. Cloud: not_recorded: the turn runs on the member's OpenWork Web worker.", notes: "Same executor as MCP remote-session:send." }),
+  member("POST", "/v1/remote-sessions/stop", "tenant_job", "remote_session.run.stop", "remote_session.execution", "remote_session", null, { jobOutcome: "Desktop: runner callbacks POST /v1/remote-session-requests/:id/{claim,complete}. Cloud: not_recorded: the abort is synchronous on the member's OpenWork Web worker.", notes: "Same executor as MCP remote-session:stop." }),
+
   // Workflows and artifact views
   member("GET", "/v1/workflows", "tenant_read", "workflow.list", "workflow.management", "workflow", null, { notes: `Metadata, schemas and capability names only. ${MCP_NATIVE}` }),
   member("POST", "/v1/workflows", "tenant_change", "workflow.create", "workflow.management", "workflow", null, { notes: `saveWorkflow (may create the default My Workflows Plugin). ${MCP_NATIVE}` }),
@@ -146,6 +152,8 @@ export const contentAuditRoutes: readonly AuditRouteDeclaration[] = [
   member("DELETE", "/v1/plugins/:pluginId/config-objects/:configObjectId", "tenant_change", "plugin.config_object.remove", "plugin.configuration", "plugin", "pluginId", { notes: `Duplicate route for the mutation behind DELETE /v1/config-objects/:configObjectId/plugins/:pluginId. ${MCP_NATIVE}` }),
   // Not audited: see HIGH_VOLUME_EXCLUSIONS in ./types.ts (ENG-683).
   highVolume("GET", "/v1/plugins/:pluginId/resolved", "plugin.resolved.read", "plugin.configuration", "plugin", "pluginId"),
+  highVolume("GET", "/v1/resolved-plugins", "plugin.resolved.batch_read", "plugin.configuration", "plugin", null),
+  highVolume("GET", "/v1/org/inventory-revision", "organization.inventory_revision.read", "organization.inventory", "organization", null),
   member("GET", "/v1/plugins/:pluginId/access", "tenant_read", "plugin.access_grant.list", "plugin.configuration", "plugin", "pluginId", { notes: MCP_NATIVE }),
   member("POST", "/v1/plugins/:pluginId/access", "tenant_change", "plugin.access_grant.create", "plugin.configuration", "plugin", "pluginId", { notes: MCP_NATIVE }),
   member("DELETE", "/v1/plugins/:pluginId/access/:grantId", "tenant_change", "plugin.access_grant.revoke", "plugin.configuration", "plugin_access_grant", "grantId", { notes: MCP_NATIVE }),

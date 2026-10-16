@@ -8,7 +8,7 @@ import { underlineTabClassName } from "../../../_components/ui/tabs";
 import { DenPageHeader } from "../../../_components/ui/page-header";
 import { DenSkeleton } from "../../../_components/ui/skeleton";
 import { ItemPanel, ItemRowsSkeleton } from "../../_components/item-list";
-import { getAnalyticsRoute, getModelsAnalyticsRoute, getLibraryUsageRoute, getWorkflowRunsRoute } from "../../../_lib/den-org";
+import { getAnalyticsRoute, getModelsAnalyticsRoute, getLibraryUsageRoute, getWorkflowRunsRoute, orgFeatureEnabled } from "../../../_lib/den-org";
 import { useOrgDashboard } from "../../_providers/org-dashboard-provider";
 import { useDenFlow } from "../../../_providers/den-flow-provider";
 import { useLibraryUsageAvailable } from "../library-usage/use-library-usage";
@@ -33,7 +33,7 @@ export function AnalyticsPageHeader({ orgSlug, active, title, action, caption }:
   const libraryUsage = useLibraryUsageAvailable();
   const pages = [
     { id: "adoption", label: "Usage & adoption", href: getAnalyticsRoute(orgSlug), icon: BarChart3 },
-    ...(runtimeConfig.orgMode === "single_org" ? [] : [{ id: "models", label: "Models & usage", href: getModelsAnalyticsRoute(orgSlug), icon: null }]),
+    ...(runtimeConfig.orgMode === "single_org" || !orgFeatureEnabled(orgContext, "modelsAnalyticsUi") ? [] : [{ id: "models", label: "Models & usage", href: getModelsAnalyticsRoute(orgSlug), icon: null }]),
     ...(libraryUsage ? [{ id: "library", label: "Plugins & connectors", href: getLibraryUsageRoute(orgSlug), icon: Blocks }] : []),
     ...(orgContext?.capabilities.workflows && orgContext.entitlements.analytics ? [{ id: "workflows", label: "Workflow Runs", href: getWorkflowRunsRoute(orgSlug), icon: ScrollText }] : []),
   ];

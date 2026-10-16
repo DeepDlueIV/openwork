@@ -10,7 +10,7 @@ import { DenCard } from "../../_components/ui/card";
 import { DashboardPageTemplate } from "../../_components/ui/dashboard-page-template";
 import { DenNotice } from "../../_components/ui/notice";
 import { type TabItem, UnderlineTabs } from "../../_components/ui/tabs";
-import { getInferenceRoute, getAiGatewayRoute, getNewAiGatewayProviderRoute, getOrgAccessFlags, type DenOrgAccessFlags } from "../../_lib/den-org";
+import { getInferenceRoute, getAiGatewayRoute, getNewAiGatewayProviderRoute, getOrgAccessFlags, orgFeatureEnabled, type DenOrgAccessFlags } from "../../_lib/den-org";
 import { canOpenGatewayArea, gatewayAreaLockedMessage, type GatewayDashboardArea } from "../_lib/gateway-dashboard-access";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
 import { useGatewayDashboardAccess } from "./gateway-dashboard-capability-guard";
@@ -160,6 +160,7 @@ export function AiGatewayScreen({ providerContent, pageContent, pageTab }: { pro
                           orgSlug={orgSlug}
                           teams={orgContext.teams}
                           members={orgContext.members}
+                          providerLimits={orgFeatureEnabled(orgContext, "gatewayProviderUsageLimits")}
                         />
                       </>
                     ) : null}

@@ -33,7 +33,7 @@ export type BrowserPanelTab = {
   browserApproval?: { id: string; title: string; message: string; detail: string; approveLabel?: string } | null;
   loadError?:
     | { code: "policy_unavailable" | "organization_policy_denied"; message: string }
-    | { code: "page_load_failed"; message: string; url: string; errorCode: number; errorDescription: string }
+    | { code: "page_load_failed" | "blocked_by_organization"; message: string; url: string; errorCode: number; errorDescription: string }
     | null;
   browserTask?: { status: "idle" | "running" | "paused" | "needs_attention"; operation: string | null };
   siteToolCount: number;

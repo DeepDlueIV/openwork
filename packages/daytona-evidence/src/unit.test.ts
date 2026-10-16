@@ -16,7 +16,7 @@ test("API errors never echo long token-like values", async () => {
   await assert.rejects(api.getSnapshot("s"), (error: Error) => !error.message.includes("a".repeat(40)) && error.message.includes("[redacted]"));
 });
 
-test("cleanup only removes expired evidence snapshots and sandboxes it owns", async () => {
+test("cleanup only removes unused or surplus evidence snapshots and sandboxes it owns", async () => {
   const now = Date.parse("2026-10-13T12:00:00Z");
   const hoursAgo = (hours: number) => new Date(now - hours * 3600_000).toISOString();
   const snapshots = [
@@ -30,19 +30,39 @@ test("cleanup only removes expired evidence snapshots and sandboxes it owns", as
     { id: "8", name: "ow-dy-base-ubuntu2404-v1", state: "active", createdAt: hoursAgo(1) },
     { id: "9", name: `ow-dy-checkpoint-v1-${"a".repeat(32)}`, state: "active", createdAt: hoursAgo(15) },
     { id: "10", name: `ow-dy-checkpoint-v1-${"b".repeat(32)}`, state: "active", createdAt: hoursAgo(11) },
+    { id: "11", name: "ow-dy-evidence-web-v1-reused", state: "active", createdAt: hoursAgo(30), lastUsedAt: hoursAgo(1) },
+    ...Array.from({ length: 30 }, (_, index) => ({
+      id: `c${index}`, name: `ow-dy-checkpoint-v1-${String(index).padStart(32, "c")}`, state: "active", createdAt: hoursAgo(0.5),
+    })),
   ];
   const sandboxes: Record<string, { id: string; name: string; state: string; labels: Record<string, string>; createdAt: string }[]> = {
-    "openwork-daytona-evidence-v1": [{ id: "a", name: "world-old", state: "started", labels: {}, createdAt: hoursAgo(3) }, { id: "b", name: "world-new", state: "started", labels: {}, createdAt: hoursAgo(1) }],
+    "openwork-daytona-evidence-v1": [{ id: "a", name: "world-old", state: "stopped", labels: { kind: "openwork-daytona-evidence-v1" }, createdAt: hoursAgo(3) }, { id: "b", name: "world-new", state: "started", labels: {}, createdAt: hoursAgo(1) }],
     "openwork-daytona-builder-v1": [],
-    "openwork-daytona-checkpoint-copy-v1": [{ id: "c", name: "copy-old", state: "started", labels: {}, createdAt: hoursAgo(5) }],
+    "openwork-daytona-checkpoint-copy-v1": [{ id: "c", name: "copy-old", state: "stopped", labels: { kind: "openwork-daytona-checkpoint-copy-v1" }, createdAt: hoursAgo(5) }],
   };
   const fake = { listSnapshots: async () => snapshots,
-    listSandboxes: async (match: Record<string, string>) => sandboxes[match.kind] ?? [],
+    listSandboxes: async () => Object.values(sandboxes).flat(),
     deleteSnapshot: async () => { throw new Error("dry run must not delete"); },
     deleteSandbox: async () => { throw new Error("dry run must not delete"); } };
   // A structural fake of the two list calls and two deletes cleanup uses.
   const result = await cleanupDaytonaEvidence(Object.assign(Object.create(DaytonaApi.prototype), fake), { dryRun: true, now });
-  assert.deepEqual(result, { deletedSnapshots: ["ow-dy-evidence-web-v1-old", `ow-dy-checkpoint-v1-${"a".repeat(32)}`, "ow-dy-evidence-image-v1-older", "ow-dy-base-ubuntu2404-v1"], deletedSandboxes: ["world-old", "copy-old"] });
+  assert.deepEqual(result, { deletedSnapshots: ["ow-dy-evidence-web-v1-old", "ow-dy-evidence-image-v1-older", "ow-dy-base-ubuntu2404-v1", `ow-dy-checkpoint-v1-${"a".repeat(32)}`, `ow-dy-checkpoint-v1-${"b".repeat(32)}`], deletedSandboxes: ["world-old", "copy-old"] });
+});
+
+test("sandbox listings follow Daytona's cursor instead of page numbers", async () => {
+  const requests: string[] = [];
+  const sandbox = (id: string) => ({ id, name: id, state: "started", labels: {} });
+  const api = new DaytonaApi({ apiKey: "k", apiUrl: "https://x.test/api", region: "r" }, async (input) => {
+    const url = new URL(String(input));
+    requests.push(url.search);
+    const body = url.searchParams.get("cursor") === "next"
+      ? { items: [sandbox("b")], nextCursor: null }
+      : { items: [sandbox("a")], nextCursor: "next" };
+    return new Response(JSON.stringify(body), { status: 200 });
+  });
+  assert.deepEqual((await api.listSandboxes()).map((item) => item.id), ["a", "b"]);
+  assert.equal(requests.length, 2);
+  assert.match(requests[1] ?? "", /cursor=next/);
 });
 
 test("trailing slashes are trimmed in linear time", () => {

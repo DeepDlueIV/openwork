@@ -42,7 +42,6 @@ export type DenOrgInvitation = {
   status: string;
   expiresAt: string | null;
   createdAt: string | null;
-  inviteToken: string | null;
 };
 
 export type DenOrgTeam = {
@@ -131,6 +130,10 @@ export type DenOrgAccessFlags = {
   canViewPermissions: boolean;
   /** `permissions.manage`: change Member, Admin and team permissions. */
   canManagePermissions: boolean;
+  /** `agent_permissions.view`: what agents can do on members' computers. */
+  canViewAgentPermissions: boolean;
+  /** `agent_permissions.manage`: change what agents can do on members' computers. */
+  canManageAgentPermissions: boolean;
   /** `api_keys.view` */
   canViewApiKeys: boolean;
   /** `api_keys.manage` */
@@ -588,6 +591,8 @@ export function getOrgAccessFlags(roleValue: string, isOwner: boolean, permissio
     canManageAdminTeams: can("teams.manage_admin"),
     canViewPermissions: can("permissions.view"),
     canManagePermissions: can("permissions.manage"),
+    canViewAgentPermissions: can("agent_permissions.view"),
+    canManageAgentPermissions: can("agent_permissions.manage"),
     canViewApiKeys: can("api_keys.view"),
     canManageApiKeys: can("api_keys.manage"),
     canViewScim: can("scim.view"),
@@ -695,6 +700,33 @@ export function getMembersRoute(orgSlug?: string | null): string {
 
 export function getTeamRoute(orgSlug: string | null | undefined, teamId: string): string {
   return `${getMembersRoute(orgSlug)}/teams/${encodeURIComponent(teamId)}`;
+}
+
+/** A team's Agents tab: what agents can do for people in the team. */
+export function getTeamAgentsRoute(orgSlug: string | null | undefined, teamId: string): string {
+  return `${getTeamRoute(orgSlug, teamId)}?tab=agents`;
+}
+
+/** Members › Teams › Everyone: every member, including people in no team. */
+export function getEveryoneRoute(orgSlug?: string | null): string {
+  return `${getMembersRoute(orgSlug)}/teams/everyone`;
+}
+
+export function getEveryoneAgentsRoute(orgSlug?: string | null): string {
+  return `${getEveryoneRoute(orgSlug)}?tab=agents`;
+}
+
+/** Everyone's Browser tab: the pages agents and the built-in browser can open, for every member. */
+export function getEveryoneBrowserRoute(orgSlug?: string | null): string {
+  return `${getEveryoneRoute(orgSlug)}?tab=browser`;
+}
+
+export function getMembersTeamsRoute(orgSlug?: string | null): string {
+  return `${getMembersRoute(orgSlug)}?tab=teams`;
+}
+
+export function getNewRoleRoute(orgSlug?: string | null): string {
+  return `${getMembersRoute(orgSlug)}/roles/new`;
 }
 
 export function getWorkflowRunsRoute(orgSlug?: string | null): string {
@@ -1099,7 +1131,6 @@ export function parseOrgContextPayload(payload: unknown): DenOrgContext | null {
             status,
             expiresAt: asIsoString(entry.expiresAt),
             createdAt: asIsoString(entry.createdAt),
-            inviteToken: asString(entry.inviteToken),
           } satisfies DenOrgInvitation;
         })
         .filter((entry): entry is DenOrgInvitation => entry !== null)

@@ -33,6 +33,7 @@ import {
 import { diagnoseMcpToolDenies, listMcpFromRuntimeSnapshot } from "./mcp.js";
 import { readEffectiveRuntimeOpencodeConfig, readRuntimeMcpConfigRevisions } from "./runtime-opencode-config-store.js";
 import { localManagedMcpAppIdentity } from "./local-managed-mcp.js";
+import { externalFetch } from "./server-fetch.js";
 
 async function listMcp(serverConfig: ServerConfig, workspaceId: string, workspaceRoot: string) {
   // Account-scoped gateways live in the engine-global runtime layer. Resolve
@@ -57,6 +58,11 @@ type McpAppCsp = {
 };
 
 export type McpAppToolResult = CallToolResult & { hostAction?: ConnectionActionIntent };
+
+/** Result _meta key the host trusts to decide whether a result may be kept. */
+export const MCP_APP_READ_ONLY_RESULT_META = "openwork/readOnly";
+/** Result _meta key naming the verified server and credential revision a result came from, so a kept result never crosses either. */
+export const MCP_APP_PROVIDER_IDENTITY_META = "openwork/providerIdentity";
 
 export async function supportsHostConnectionActions(serverName: string, config: Record<string, unknown>, toolName: string, resourceUri: string): Promise<boolean> {
   if (serverName !== "openwork-cloud" && serverName !== "openwork") return false;
@@ -117,7 +123,9 @@ function liveLaunches(config: ServerConfig) {
 
 export function releaseMcpAppLaunch(serverConfig: ServerConfig, workspaceId: string, launchId: string): boolean {
   const launches = liveLaunches(serverConfig);
-  return launches.get(launchId)?.workspaceId === workspaceId && launches.delete(launchId);
+  const released = launches.get(launchId)?.workspaceId === workspaceId && launches.delete(launchId);
+  if (released) closeLaunchSessions(launchId);
+  return released;
 }
 
 function staleLaunch(): McpAppHostError {
@@ -365,10 +373,19 @@ function connectionFailure(error: unknown): string {
   return "connection or protocol negotiation failed";
 }
 
-async function withRemoteClient<T>(
-  config: Record<string, unknown>,
-  run: (client: Client) => Promise<T>,
-): Promise<T> {
+/** Authentication and access failures need human action, never a retry. Provider text is not relayed. */
+function remoteAccessError(error: unknown): McpAppHostError | null {
+  if (error instanceof UnauthorizedError
+    || ((error instanceof StreamableHTTPError || error instanceof SseError) && error.code === 401)) {
+    return new McpAppHostError("mcp_auth_required", "This App's connection needs authentication. Check its sign-in in connection settings before reopening the App.");
+  }
+  if ((error instanceof StreamableHTTPError || error instanceof SseError) && error.code === 403) {
+    return new McpAppHostError("mcp_access_denied", "Access to this App's connection was denied. Ask your connection administrator to review your access before reopening the App.");
+  }
+  return null;
+}
+
+async function connectRemoteClient(config: Record<string, unknown>): Promise<Client> {
   const url = remoteUrl(config);
   if (!url) throw new McpAppHostError("unsupported_transport", "MCP Apps currently require a configured remote HTTP MCP server.");
   try {
@@ -402,22 +419,13 @@ async function withRemoteClient<T>(
   const failures: string[] = [];
   for (const [index, createTransport] of attempts.entries()) {
     const client = new Client({ name: "openwork-mcp-app-host", version: "1.0.0" }, clientOptions());
-    let connected = false;
     try {
       await timeMcpApp("desktop.client-connect", () => client.connect(createTransport()));
-      connected = true;
-      return await run(client);
+      return client;
     } catch (error) {
-      // Authentication and access failures need human action, not another
-      // transport or a transient discovery retry. Never relay provider text.
-      if (error instanceof UnauthorizedError
-        || ((error instanceof StreamableHTTPError || error instanceof SseError) && error.code === 401)) {
-        throw new McpAppHostError("mcp_auth_required", "This App's connection needs authentication. Check its sign-in in connection settings before reopening the App.");
-      }
-      if ((error instanceof StreamableHTTPError || error instanceof SseError) && error.code === 403) {
-        throw new McpAppHostError("mcp_access_denied", "Access to this App's connection was denied. Ask your connection administrator to review your access before reopening the App.");
-      }
-      if (connected) throw error;
+      await client.close().catch(() => undefined);
+      const denied = remoteAccessError(error);
+      if (denied) throw denied;
       failures.push(`${index === 0 ? "Streamable HTTP POST" : "Legacy SSE fallback"}: ${connectionFailure(error)}`);
       // MCP 2025-11-25 backwards compatibility applies only to a rejected
       // InitializeRequest, not auth/network errors or the initialized notification.
@@ -425,14 +433,91 @@ async function withRemoteClient<T>(
       if (index !== 0 || client.getServerVersion() !== undefined
         || !(error instanceof StreamableHTTPError)
         || (error.code !== 400 && error.code !== 404 && error.code !== 405)) break;
-    } finally {
-      await client.close().catch(() => undefined);
     }
   }
   throw new McpAppHostError(
     "mcp_unreachable",
     failures.join("; "),
   );
+}
+
+async function withRemoteClient<T>(
+  config: Record<string, unknown>,
+  run: (client: Client) => Promise<T>,
+): Promise<T> {
+  const client = await connectRemoteClient(config);
+  try {
+    return await run(client);
+  } catch (error) {
+    throw remoteAccessError(error) ?? error;
+  } finally {
+    await client.close().catch(() => undefined);
+  }
+}
+
+// One connected client per live launch, so an open App's follow-up calls skip
+// the connect handshake. Tools are still listed on every call, because their
+// visibility and approval annotations authorize it.
+const LAUNCH_SESSION_IDLE_MS = 60_000;
+const MAX_LAUNCH_SESSIONS = 32;
+type LaunchSession = {
+  client: Promise<Client>;
+  inFlight: number;
+  idle?: ReturnType<typeof setTimeout>;
+};
+const launchSessions = new Map<string, LaunchSession>();
+const LAUNCH_SESSION_REFUSALS = new Set([
+  "tool_requires_approval", "tool_denied", "tool_not_found", "tool_not_visible",
+  "tool_resource_mismatch", "mcp_app_refresh_denied", "result_too_large", "inactive_session",
+]);
+
+function closeLaunchSession(key: string): void {
+  const session = launchSessions.get(key);
+  if (!session) return;
+  launchSessions.delete(key);
+  if (session.idle) clearTimeout(session.idle);
+  void session.client.then((client) => client.close()).catch(() => undefined);
+}
+
+function closeLaunchSessions(launchId: string): void {
+  for (const key of [...launchSessions.keys()]) if (key.startsWith(`${launchId}\n`)) closeLaunchSession(key);
+}
+
+async function withLaunchSession<T>(
+  key: string,
+  config: Record<string, unknown>,
+  run: (client: Client) => Promise<T>,
+): Promise<T> {
+  let session = launchSessions.get(key);
+  if (!session) {
+    const created: LaunchSession = { client: connectRemoteClient(config), inFlight: 0 };
+    created.client.catch(() => { if (launchSessions.get(key) === created) launchSessions.delete(key); });
+    launchSessions.set(key, created);
+    while (launchSessions.size > MAX_LAUNCH_SESSIONS) {
+      const oldest = launchSessions.keys().next().value;
+      if (oldest === undefined) break;
+      closeLaunchSession(oldest);
+    }
+    session = created;
+  }
+  const current = session;
+  if (current.idle) clearTimeout(current.idle);
+  current.idle = undefined;
+  current.inFlight += 1;
+  try {
+    return await run(await current.client);
+  } catch (error) {
+    // Only a refusal OpenWork made on purpose keeps the session; any other
+    // failure, including a wrapped call or resource-read failure, reconnects.
+    if (!(error instanceof McpAppHostError) || !LAUNCH_SESSION_REFUSALS.has(error.code)) closeLaunchSession(key);
+    throw remoteAccessError(error) ?? error;
+  } finally {
+    current.inFlight -= 1;
+    if (current.inFlight === 0 && launchSessions.get(key) === current) {
+      current.idle = setTimeout(() => closeLaunchSession(key), LAUNCH_SESSION_IDLE_MS);
+      current.idle.unref?.();
+    }
+  }
 }
 
 async function listTools(client: Client): Promise<Tool[]> {
@@ -496,6 +581,8 @@ function connectCatalogError(diagnostic: Exclude<ConnectMcpCatalogDiagnostic, "r
   return new McpAppHostError(`connect_catalog_${diagnostic}`, messages[diagnostic]);
 }
 
+const CONNECT_CATALOG_RECOVERY_BUDGET_MS = 1_000;
+
 async function privateConnectMcpConfigUntimed(input: {
   serverConfig: ServerConfig;
   workspaceId: string;
@@ -510,7 +597,16 @@ async function privateConnectMcpConfigUntimed(input: {
     { connectionId: input.connectionId, serverName: input.serverName },
   );
   if (!descriptor) {
-    const refreshed = await refreshOpenWorkConnectMcpAppHostCatalog(input.serverConfig, input.workspaceId);
+    let refreshed = await refreshOpenWorkConnectMcpAppHostCatalog(input.serverConfig, input.workspaceId);
+    if (refreshed.diagnostic === "discovery_unavailable") {
+      // One immediate discovery-only recovery, with one shared deadline for
+      // its handshake and read. Never add backoff or replay a provider tool.
+      const deadline = AbortSignal.timeout(CONNECT_CATALOG_RECOVERY_BUDGET_MS);
+      refreshed = await refreshOpenWorkConnectMcpAppHostCatalog(input.serverConfig, input.workspaceId, (url, init) => externalFetch(url, {
+        ...init,
+        signal: init?.signal ? AbortSignal.any([init.signal, deadline]) : deadline,
+      }));
+    }
     if (refreshed.diagnostic !== "ready" && refreshed.diagnostic !== "empty") {
       throw connectCatalogError(refreshed.diagnostic);
     }
@@ -996,6 +1092,8 @@ export async function callMcpAppTool(input: {
   expectedResourceDigest?: string;
   arguments?: Record<string, unknown>;
   approved?: boolean;
+  /** Run every check for a call that needs no approval, then return without calling the tool. */
+  checkOnly?: boolean;
   /** Required for conversation leases; the HTTP host checks current ownership/archive state. */
   assertSessionActive?: () => Promise<void>;
 }): Promise<McpAppToolResult> {
@@ -1037,7 +1135,7 @@ export async function callMcpAppTool(input: {
     return item.config;
   };
   const config = await currentConfig();
-  return await withRemoteClient(config, async (client) => {
+  return await withLaunchSession(`${launchId}\n${launch.fingerprint}`, config, async (client) => {
     const tools = await listTools(client);
     const original = tools.find((candidate) => candidate.name === launch.toolName);
     if (!original || !toolVisibility(original, "app") || toolUiResourceUri(original) !== launch.resourceUri) throw staleLaunch();
@@ -1094,6 +1192,18 @@ export async function callMcpAppTool(input: {
     }
     await currentConfig();
     assertLive();
+    // The configured server and credential revision this launch verified: the
+    // launch fingerprint already hashes its configuration, auth headers and
+    // private credential revision, so any credential change gives a new identity.
+    const providerIdentity = createHash("sha256").update(JSON.stringify([input.serverName, remoteUrl(config)?.href ?? null, launch.fingerprint])).digest("hex");
+    // For a cached read: the call would be allowed now without approval, so
+    // the host may show the result it kept from this same server. Nothing reaches the tool.
+    if (input.checkOnly) {
+      if (input.approved === true || toolRequiresApproval(tool) || hostConnectionAction) {
+        throw new McpAppHostError("tool_requires_approval", "Only a read-only App tool's kept result can be shown.");
+      }
+      return { content: [], _meta: { [MCP_APP_READ_ONLY_RESULT_META]: true, [MCP_APP_PROVIDER_IDENTITY_META]: providerIdentity } };
+    }
     // A provider that rejects the call (for example JSON-RPC -32602 for a
     // missing required argument) must reach the member as that rejection,
     // not as an unhandled 500 "Unexpected server error". The text is
@@ -1104,7 +1214,11 @@ export async function callMcpAppTool(input: {
     if (new TextEncoder().encode(JSON.stringify(result)).byteLength > MAX_RESULT_BYTES) {
       throw new McpAppHostError("result_too_large", "The MCP App tool result exceeds the 1 MiB host limit.");
     }
-    const sanitized = CallToolResultSchema.parse(stripProviderHostActions(result));
+    const parsed = CallToolResultSchema.parse(stripProviderHostActions(result));
+    // Whether the tool ran without needing approval: read-only and not
+    // destructive. The host keeps only such results for instant reopening.
+    // Set here, never taken from the provider.
+    const sanitized = { ...parsed, _meta: { ...parsed._meta, [MCP_APP_READ_ONLY_RESULT_META]: !toolRequiresApproval(tool), [MCP_APP_PROVIDER_IDENTITY_META]: providerIdentity } };
     if (!hostConnectionAction || sanitized.isError) return sanitized;
     await currentConfig();
     await input.assertSessionActive?.();

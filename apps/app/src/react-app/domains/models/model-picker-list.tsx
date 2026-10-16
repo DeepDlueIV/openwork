@@ -1,11 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
 import { Building, Check, Cloud, Laptop, Lock } from "lucide-react";
-import { resolveExtensionIconSrc } from "@/react-app/design-system/extension-icon-src";
 import type { ModelOption, ModelRef } from "@/app/types";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ActionContextMenu } from "@/components/ui/action-context-menu";
-import { ProviderIcon } from "@/react-app/design-system/provider-icon";
+import { OpenWorkMark, ProviderIcon } from "@/react-app/design-system/provider-icon";
 import { AutoPickerRecovery, useObservedAutoAccessSnapshot } from "@/react-app/domains/cloud/auto-access-ui";
 import { autoNotOffered, autoPickerCopy, autoQuietlyUnavailable, freeAutoSwitchedOff, type AutoPickerState } from "@/app/lib/inference-access";
 import type { MenuAction } from "@/components/ui/action-menu-model";
@@ -24,7 +23,7 @@ export function ModelSourceIcon({ model }: { model: ModelRef & { source?: ModelO
 
 function ProviderMark({ model, description, retained = false }: { model: ModelRef; description?: string; retained?: boolean }) {
   return <div data-slot="model-provider-mark" className="flex size-4 shrink-0 items-center justify-center">
-    {isAutoModel(model) ? <img src={resolveExtensionIconSrc("/openwork-mark.svg")} alt="OpenWork" className="size-4" /> : <ProviderIcon providerId={retained ? undefined : model.providerID} providerName={description} size={16} />}
+    {isAutoModel(model) ? <OpenWorkMark className="size-4 text-dls-accent dark:text-foreground" /> : <ProviderIcon providerId={retained ? undefined : model.providerID} providerName={description} size={16} />}
   </div>;
 }
 

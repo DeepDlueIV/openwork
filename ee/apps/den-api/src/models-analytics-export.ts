@@ -5,10 +5,11 @@ import { modelsAnalyticsEventSchema, readModelsAnalyticsSettings } from "@openwo
 import type { Hono } from "hono"
 import { z } from "zod"
 import { db } from "./db.js"
+import { requireFeature } from "./features.js"
 import { postModelsAnalytics } from "./models-analytics-egress.js"
 import { describeRoute } from "hono-openapi"
 import { jsonValidator, orgPermissionRoute } from "./middleware/index.js"
-import { forbiddenSchema, invalidRequestSchema, jsonResponse, unauthorizedSchema } from "./openapi.js"
+import { forbiddenSchema, invalidRequestSchema, jsonResponse, notFoundSchema, unauthorizedSchema } from "./openapi.js"
 import type { OrgRouteVariables } from "./routes/org/shared.js"
 
 const configSchema = z.object({
@@ -79,8 +80,9 @@ export function registerModelsAnalyticsExportRoutes<T extends { Variables: OrgRo
         400: jsonResponse("Invalid request, or Langfuse could not be reached with these credentials.", invalidRequestSchema),
         401: jsonResponse("Sign-in required.", unauthorizedSchema),
         403: jsonResponse("The caller lacks the Manage task analytics permission, or task analytics are not enabled.", analyticsUnavailableSchema),
+        404: jsonResponse("Task analytics surface is disabled.", notFoundSchema),
       },
-    }), orgPermissionRoute("analytics.manage"), jsonValidator(configSchema), async (c) => {
+    }), orgPermissionRoute("analytics.manage"), requireFeature("taskAnalyticsUi"), jsonValidator(configSchema), async (c) => {
       const orgId = c.get("organizationContext").organization.id
       if (!(await readModelsAnalyticsSettings(db, orgId)).enabled) return c.json({ error: "models_analytics_unavailable" }, 403)
       const config = c.req.valid("json")
@@ -109,8 +111,9 @@ export function registerModelsAnalyticsExportRoutes<T extends { Variables: OrgRo
       200: jsonResponse("Export disconnected.", okSchema),
       401: jsonResponse("Sign-in required.", unauthorizedSchema),
       403: jsonResponse("The caller lacks the Manage task analytics permission.", forbiddenSchema),
+      404: jsonResponse("Task analytics surface is disabled.", notFoundSchema),
     },
-  }), orgPermissionRoute("analytics.manage"), async (c) => {
+  }), orgPermissionRoute("analytics.manage"), requireFeature("taskAnalyticsUi"), async (c) => {
     await db.update(Settings).set({ export_enabled: false, langfuse_public_key: null, langfuse_secret_key: null, langfuse_host: null, export_enabled_at: null })
       .where(eq(Settings.org_id, c.get("organizationContext").organization.id))
     return c.json({ ok: true })
@@ -119,6 +122,7 @@ export function registerModelsAnalyticsExportRoutes<T extends { Variables: OrgRo
 
 // The event store is the outbox. Stable span IDs make retries idempotent;
 // failures never run on the chat request path. Recheck access on every batch.
+// UI rollout flags gate only the routes above, never an existing destination.
 export function startModelsAnalyticsExportLoop() {
   let running = false
   const timer = setInterval(async () => {

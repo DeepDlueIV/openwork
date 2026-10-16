@@ -145,7 +145,7 @@ function DenButtonContent({
                 <div
                     className={[
                         noIconLoading ? "invisible" : undefined,
-                        "flex flex-row gap-2 items-center",
+                        "flex min-w-0 flex-row gap-2 items-center",
                     ]
                         .filter(Boolean)
                         .join(" ")}

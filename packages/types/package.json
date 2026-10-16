@@ -155,6 +155,14 @@
       "development": "./src/den/permissions.ts",
       "default": "./src/den/permissions.ts"
     },
+    "./den/agent-permissions": {
+      "types": {
+        "openwork-build": "./dist/types/src/den/agent-permissions.d.ts",
+        "default": "./src/den/agent-permissions.ts"
+      },
+      "development": "./src/den/agent-permissions.ts",
+      "default": "./src/den/agent-permissions.ts"
+    },
     "./den/desktop-policies": {
       "types": {
         "openwork-build": "./dist/types/src/den/desktop-policies.d.ts",
@@ -260,6 +268,22 @@
       "development": "./src/den/workbot-settings.ts",
       "default": "./src/den/workbot-settings.ts"
     },
+    "./den/default-model": {
+      "types": {
+        "openwork-build": "./dist/types/src/den/default-model.d.ts",
+        "default": "./src/den/default-model.ts"
+      },
+      "development": "./src/den/default-model.ts",
+      "default": "./src/den/default-model.ts"
+    },
+    "./den/credential-prompt": {
+      "types": {
+        "openwork-build": "./dist/types/src/den/credential-prompt.d.ts",
+        "default": "./src/den/credential-prompt.ts"
+      },
+      "development": "./src/den/credential-prompt.ts",
+      "default": "./src/den/credential-prompt.ts"
+    },
     "./den/mcp-connection-action": {
       "types": {
         "openwork-build": "./dist/types/src/den/mcp-connection-action.d.ts",
@@ -308,6 +332,41 @@
       "development": "./src/den/desktop-policies.ts",
       "bun": "./src/den/desktop-policies.ts",
       "default": "./dist/den/desktop-policies.js"
+    },
+    "./den/agent-permissions-runtime": {
+      "types": {
+        "openwork-build": "./dist/types/src/den/agent-permissions.d.ts",
+        "default": "./src/den/agent-permissions.ts"
+      },
+      "development": "./src/den/agent-permissions.ts",
+      "bun": "./src/den/agent-permissions.ts",
+      "default": "./dist/den/agent-permissions.js"
+    },
+    "./den/admin-organization": {
+      "types": {
+        "openwork-build": "./dist/types/src/den/admin-organization.d.ts",
+        "default": "./src/den/admin-organization.ts"
+      },
+      "development": "./src/den/admin-organization.ts",
+      "default": "./src/den/admin-organization.ts"
+    },
+    "./den/admin-free-auto": {
+      "types": {
+        "openwork-build": "./dist/types/src/den/admin-free-auto.d.ts",
+        "default": "./src/den/admin-free-auto.ts"
+      },
+      "development": "./src/den/admin-free-auto.ts",
+      "default": "./src/den/admin-free-auto.ts"
+    },
+    "./managed-provider-config": {
+      "types": {
+        "openwork-build": "./dist/types/src/managed-provider-config.d.ts",
+        "default": "./src/managed-provider-config.ts"
+      },
+      "development": "./src/managed-provider-config.ts",
+      "bun": "./src/managed-provider-config.ts",
+      "browser": "./src/managed-provider-config.ts",
+      "default": "./dist/managed-provider-config.js"
     }
   },
   "files": [

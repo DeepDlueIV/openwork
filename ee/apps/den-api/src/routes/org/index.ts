@@ -2,6 +2,8 @@ import type { Hono } from "hono"
 import type { RequestIdVariables } from "hono/request-id"
 import { delegatedRoute } from "../../middleware/index.js"
 import { registerOrgActivityRoutes } from "./activity.js"
+import { registerOrgAgentPermissionRoutes } from "./agent-permissions.js"
+import { registerOrgDefaultModelRoutes } from "./default-model.js"
 import { registerOrgApiKeyRoutes } from "./api-keys.js"
 import { registerManagedDeploymentRoutes } from "./managed-deployments.js"
 import { registerOrgAuditRoutes } from "./audit.js"
@@ -16,6 +18,7 @@ import { registerOrgMcpAppCatalogRoutes } from "./mcp-app-catalog.js"
 import { registerDeleteOrganizationRoutes } from "./delete-organization.js"
 import { registerOrgDesktopPolicyRoutes } from "./desktop-policies.js"
 import { registerOrgEgressDiagnosticRoutes } from "./egress-diagnostics.js"
+import { registerOrgInventoryRevisionRoutes } from "./inventory-revision.js"
 import { registerOrgInvitationRoutes } from "./invitations.js"
 import { registerGoogleWorkspaceRoutes } from "./google-workspace.js"
 import { registerOrgInstallLinkRoutes } from "./install-links.js"
@@ -67,6 +70,7 @@ function extractLegacyOrgProxyTarget(pathname: string) {
 export function registerOrgRoutes<T extends { Variables: OrgRouteVariables & RequestIdVariables }>(app: Hono<T>) {
   registerOrgCoreRoutes(app)
   registerOrgActivityRoutes(app)
+  registerOrgInventoryRevisionRoutes(app)
   registerManagedDeploymentRoutes(app)
   registerDeleteOrganizationRoutes(app)
   registerOrgApiKeyRoutes(app)
@@ -77,6 +81,7 @@ export function registerOrgRoutes<T extends { Variables: OrgRouteVariables & Req
   registerOrgWorkflowRoutes(app)
   registerOrgMcpAppCatalogRoutes(app)
   registerOrgDesktopPolicyRoutes(app)
+  registerOrgAgentPermissionRoutes(app)
   registerOrgEgressDiagnosticRoutes(app)
   registerOrgInferenceRoutes(app)
   registerModelsAnalyticsRoutes(app)
@@ -99,6 +104,7 @@ export function registerOrgRoutes<T extends { Variables: OrgRouteVariables & Req
   registerOrgTeamRoutes(app)
   registerOrgWebOriginRoutes(app)
   registerOrgWorkbotSettingsRoutes(app)
+  registerOrgDefaultModelRoutes(app)
 
   app.all("/v1/orgs/:orgId/*", delegatedRoute, async (c) => {
     const url = new URL(c.req.raw.url)

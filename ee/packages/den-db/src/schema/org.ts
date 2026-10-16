@@ -20,6 +20,8 @@ export const DesktopHandoffGrantTable = mysqlTable(
   ],
 )
 
+// Unused since install pages stopped carrying tokens. Kept until a follow-up
+// migration drops it, so this release can still be rolled back.
 export const DesktopConnectGrantTable = mysqlTable(
   "desktop_connect_grant",
   {
@@ -215,6 +217,8 @@ export const WorkspaceClaimCodeTable = mysqlTable(
   ],
 )
 
+// Unused since install pages stopped carrying tokens. Kept until a follow-up
+// migration drops it, so this release can still be rolled back.
 export const InstallLinkTable = mysqlTable(
   "install_link",
   {

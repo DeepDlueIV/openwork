@@ -1,15 +1,27 @@
 // Pure helpers for Library usage, kept free of database imports so they can be unit tested.
-
-/** Loads of the same skill by the same member inside this window count once. */
-export const SKILL_USE_DEDUPE_WINDOW_MS = 15 * 60_000
-
-export function skillUseDedupeKey(use: { orgMembershipId: string; configObjectId: string; at?: Date }): string {
-  const at = use.at ?? new Date()
-  return `skill:${use.orgMembershipId}:${use.configObjectId}:${Math.floor(at.getTime() / SKILL_USE_DEDUPE_WINDOW_MS)}`
-}
+import type { CapabilityUsageSource } from "@openwork-ee/den-db/schema"
 
 export const libraryUsageKinds = ["skills", "plugins", "connectors"] as const
 export type LibraryUsageKind = (typeof libraryUsageKinds)[number]
+
+/** What a usage breakdown can group by: the skill, plugin or connector, the member, and the UTC day. */
+export const libraryUsageDimensions = ["item", "member", "day"] as const
+export type LibraryUsageDimension = (typeof libraryUsageDimensions)[number]
+
+/** Uses per source (agent, workflow, automation, app, artifact); a missing key is zero. */
+export type LibraryUsageSourceCounts = Partial<Record<CapabilityUsageSource, number>>
+
+const DAY_MS = 86_400_000
+
+/**
+ * The last `days` UTC calendar days, today included. Day boundaries are UTC
+ * like every other Analytics read, and match the daily rollup buckets.
+ */
+export function libraryUsageWindow(days: number, now = new Date()): { from: Date; fromDate: string; toDate: string } {
+  const today = Math.floor(now.getTime() / DAY_MS) * DAY_MS
+  const from = new Date(today - (days - 1) * DAY_MS)
+  return { from, fromDate: from.toISOString().slice(0, 10), toDate: new Date(today).toISOString().slice(0, 10) }
+}
 
 /** One skill, plugin or connector and how it was used in the window. */
 export type LibraryUsageRow = {
@@ -36,34 +48,26 @@ export type LibraryUsageReport = {
 
 export type LibraryItem = { id: string; name: string; detail: string | null; pluginId: string | null; tracksFailures: boolean }
 
-/** One member's use of one item in the window, from any source. */
-export type UsageFact = { itemId: string; memberId: string | null; uses: number; failures: number; lastUsedAt: Date | null }
+/** One item's totals in the window across every source; people are distinct members, counted by the database. */
+export type ItemUsageTotals = { itemId: string; uses: number; people: number; failures: number; lastUsedAt: Date | null }
 
 /**
  * Joins every live item with its usage. Unused items come back with zeros, so
- * "nobody uses this" is a row, not an absence. Facts for items that no longer
- * exist are ignored. People are distinct members across all sources. Most used first.
+ * "nobody uses this" is a row, not an absence. Totals for items that no longer
+ * exist are ignored. Most used first.
  */
-export function buildLibraryUsageRows(items: readonly LibraryItem[], facts: readonly UsageFact[]): LibraryUsageRow[] {
-  const totals = new Map<string, { uses: number; failures: number; members: Set<string>; lastUsedAt: Date | null }>()
-  for (const fact of facts) {
-    const entry = totals.get(fact.itemId) ?? { uses: 0, failures: 0, members: new Set<string>(), lastUsedAt: null }
-    entry.uses += fact.uses
-    entry.failures += fact.failures
-    if (fact.memberId && fact.uses > 0) entry.members.add(fact.memberId)
-    if (fact.lastUsedAt && (!entry.lastUsedAt || fact.lastUsedAt > entry.lastUsedAt)) entry.lastUsedAt = fact.lastUsedAt
-    totals.set(fact.itemId, entry)
-  }
+export function buildLibraryUsageRows(items: readonly LibraryItem[], totals: readonly ItemUsageTotals[]): LibraryUsageRow[] {
+  const byItem = new Map(totals.map((entry) => [entry.itemId, entry]))
   return items
     .map((item) => {
-      const used = totals.get(item.id)
+      const used = byItem.get(item.id)
       return {
         id: item.id,
         name: item.name,
         detail: item.detail,
         pluginId: item.pluginId,
         uses: used?.uses ?? 0,
-        people: used?.members.size ?? 0,
+        people: used?.people ?? 0,
         failures: item.tracksFailures ? used?.failures ?? 0 : null,
         lastUsedAt: used?.lastUsedAt ? used.lastUsedAt.toISOString() : null,
       }

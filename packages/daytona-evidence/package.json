@@ -10,7 +10,8 @@
     "./cleanup": "./src/cleanup.ts",
     "./checkpoints": "./src/checkpoints.ts",
     "./credentials": "./src/credentials.ts",
-    "./review-provider": "./src/review-provider.ts"
+    "./review-provider": "./src/review-provider.ts",
+    "./previews": "./src/previews.ts"
   },
   "engines": {
     "node": ">=24"

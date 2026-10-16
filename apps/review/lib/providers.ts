@@ -14,6 +14,6 @@ export function reviewProvider(id: EvidenceProviderId): ReviewPreviewProvider {
 }
 
 /** The provider for new previews, from OPENWORK_EVIDENCE_PROVIDER (unset means Freestyle). Throws when misconfigured. */
-export function selectedReviewProvider(): ReviewPreviewProvider {
-  return providers[evidenceProviderFromEnv()];
+export function selectedReviewProvider(id?: EvidenceProviderId): ReviewPreviewProvider {
+  return providers[id ?? evidenceProviderFromEnv()];
 }

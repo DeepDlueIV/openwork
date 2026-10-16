@@ -201,7 +201,7 @@ export function NativeProviderSettings({ providerKey, clientProviderId, create, 
               <McpCredentialInput kind="identifier" name={`${providerKey}-oauth-client-id`} data-testid="native-provider-client-id" value={clientId} onChange={(event) => setClientId(event.target.value)} placeholder={provider.clientIdPlaceholder} />
             </Field>
             <Field label="Client secret">
-              <McpCredentialInput kind="secret" name={`${providerKey}-oauth-client-secret`} data-testid="native-provider-client-secret" value={clientSecret} onChange={(event) => setClientSecret(event.target.value)} placeholder={provider.secretPlaceholder} />
+              <McpCredentialInput kind="secret" name={`${providerKey}-oauth-client-secret`} data-testid="native-provider-client-secret" value={clientSecret} onChange={setClientSecret} placeholder={provider.secretPlaceholder} />
             </Field>
           </div>
         ) : null}

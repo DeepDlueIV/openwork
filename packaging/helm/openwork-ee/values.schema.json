@@ -26,7 +26,7 @@
                 true,
                 false
               ],
-              "description": "Offline connection recovery: Show a shared offline warning, pause affected online requests, and let people continue interrupted tasks after reconnecting. Renders DEN_FEATURE_OFFLINE_RECOVERY."
+              "description": "Connection failure presentation: Show compact App connection failures and a discreet offline indicator in OpenCode v2 conversations. Renders DEN_FEATURE_OFFLINE_RECOVERY."
             },
             "rememberLastOrganization": {
               "enum": [

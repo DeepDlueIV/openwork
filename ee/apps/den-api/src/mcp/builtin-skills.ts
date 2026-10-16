@@ -219,6 +219,15 @@ description: |
 
 Work on a local copy with shell tools; never paste file bytes or base64 into a tool call or reply.
 
+## Search first; keep file contents on disk
+
+For both OpenWork tools and shell-only clients such as Workbot:
+
+1. Inspect the file's structure first: sheet names and columns, document headings, or page count.
+2. Search or filter locally for the user's question, then read only the matching paragraphs, rows, cell ranges or pages, with enough surrounding context to understand them.
+3. Keep tool output bounded: print selected excerpts or computed summaries, not the whole file or its full extracted text. Tools may scan the entire file internally; only relevant results belong in the conversation. If the request covers the whole document, process it in bounded sections and combine summaries.
+4. Extract Word or PDF text to a local file before searching it. Expand the excerpts only when needed; do not dump a document into context to find the relevant section.
+
 ## Pick the tool
 
 | Need | Use |
@@ -239,7 +248,7 @@ Work on a local copy with shell tools; never paste file bytes or base64 into a t
 ## With a shell but no OpenWork tools (Workbot computer, coding agents)
 
 1. Execute \`createGoogleDriveDownloadLink\` with the file ID. It returns a \`downloadUrl\` (also as an MCP resource link) that works for five minutes: save it with \`curl -fsSL -o <file> '<downloadUrl>'\` and check the size and md5. Never print or share the URL.
-2. Edit with bash as below.
+2. Follow the search-first steps above, then inspect and edit with bash as below. Keep the downloaded file and full extracted text on disk.
 3. Only when asked to save: execute \`createGoogleDriveUploadSession\` with \`fileId\`, \`baseRevision\` (the link result's revision), \`name\`, \`size\` and \`mimeType\`, then upload with \`curl -fsS -X PUT -H 'Content-Type: <mimeType>' --data-binary @<file> '<uploadUrl>'\`. For a new file or a copy, omit \`fileId\`; \`convertTo\` keeps a copy as a Google file.
 
 ## Bash recipes
@@ -249,11 +258,11 @@ Drive file names can hold spaces, quotes and other shell characters. Put the pat
 - Set the path: \`f='drive/Supplier entry.xlsx'\`
 - What is it: \`file -- "$f"; ls -l -- "$f"\`
 - Spreadsheet overview: \`python3 -c "import openpyxl,sys; wb=openpyxl.load_workbook(sys.argv[1], read_only=True); [print(ws.title, ws.max_row, ws.max_column) for ws in wb]" "$f"\`
-- Read a sheet: pandas \`read_excel(sys.argv[1], sheet_name=..., nrows=20)\` with the path passed as \`"$f"\`; print only what you need.
+- Read a sheet: pandas \`read_excel(sys.argv[1], sheet_name=..., usecols=..., nrows=20)\` with the path passed as \`"$f"\`; filter rows locally for the question and print only the relevant columns and a bounded number of matches.
 - Edit cells and keep formatting: openpyxl \`load_workbook(path)\`, set cells, \`save(path)\`, with the path from \`sys.argv\`. openpyxl drops charts, images and pivot tables from files it saves: check first, and use LibreOffice (\`soffice --headless --convert-to xlsx -- "$f"\`) or the Sheets values capabilities for those files.
-- CSV: \`head -- "$f"\`, \`wc -l -- "$f"\`, csvkit or pandas.
-- Word: \`python-docx\`, or \`pandoc -t markdown -- "$f"\` to read.
-- PDF: \`pdftotext -layout -- "$f" - | head -100\`, \`pdfinfo -- "$f"\`.
+- CSV: inspect headers with pandas, then select columns and filter rows locally (use chunks for large files); print a bounded set of matches or aggregate results.
+- Word: extract locally with \`pandoc -t markdown -o "$f.extracted.md" -- "$f"\`, then search bounded excerpts with \`rg -n -i -F -m 10 -C 3 -- 'search phrase' "$f.extracted.md" | cut -c 1-500 | head -80\`. With \`python-docx\`, filter paragraphs or table rows locally before printing excerpts. Choose a new extraction path if it already exists.
+- PDF: inspect \`pdfinfo -- "$f"\`, extract locally with \`pdftotext -layout -- "$f" "$f.extracted.txt"\`, then search it using the same bounded \`rg\` recipe. Choose a new extraction path if it already exists. Read selected pages or use OCR for relevant scanned pages when text extraction is insufficient.
 - Install a missing tool with pip or apt when the computer allows it.
 
 Tell the user what changed and where it was saved, with the Drive link from the push result.

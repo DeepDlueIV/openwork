@@ -23,7 +23,7 @@ function safeUrl(value) {
 
 // Runs in Electron's isolated world. It has DOM access but no page globals,
 // Node, IPC, browser profile or network tools. References never enter page DOM.
-function observePage(id) {
+function observePage(id, query = null) {
   const key = "__openworkBrowserObservation";
   const nodes = new Map();
   const elements = [];
@@ -46,7 +46,9 @@ function observePage(id) {
      * multiple?: boolean, options?: { value: string, label: string, selected: boolean, disabled: boolean }[], optionsTruncated?: boolean,
      * selectedValues?: string[], valid?: boolean, validationMessage?: string, description?: string }} */
     const state = {
-      tag: element.tagName.toLowerCase(), role,
+      tag: element.tagName.toLowerCase(), role: role || (input ? ["checkbox", "radio"].includes(element.type) ? element.type : ["button", "submit", "reset"].includes(element.type) ? "button" : element.type === "search" ? "searchbox" : "textbox" :
+        { BUTTON: "button", A: "link", TEXTAREA: "textbox", SELECT: "combobox", H1: "heading", H2: "heading", H3: "heading", H4: "heading", TR: "row", TABLE: "table" }[element.tagName]) ||
+        (element.scrollHeight > element.clientHeight + 4 && /auto|scroll/.test(getComputedStyle(element).overflowY) ? "region" : "text"),
       name: text(referenced("aria-labelledby") || element.getAttribute("aria-label") ||
         (input || textarea || select ? [...(element.labels || [])].map(labelText).join(" ") : "") ||
         (input && ["submit", "button", "reset"].includes(element.type) ? element.value : "") ||
@@ -80,24 +82,39 @@ function observePage(id) {
     if (description && !sensitive) state.description = text(description, 1000);
     return state;
   };
-  const candidates = document.querySelectorAll('a[href],button,input,textarea,select,[role="button"],[role="link"],[role="textbox"],[role="combobox"],[role="checkbox"],[role="radio"],[role="switch"],[role="option"],[role="listbox"],[contenteditable]:not([contenteditable="false"])');
+  const candidates = document.querySelectorAll('a[href],button,input,textarea,select,[role],h1,h2,h3,h4,p,label,tr,table,main,aside,section,div,[contenteditable]:not([contenteditable="false"])');
+  const scrollRegions = [];
+  let scanned = 0, truncated = false;
   const snapshots = new Map();
   for (const element of candidates) {
     if (!(element instanceof HTMLElement)) continue;
-    if (elements.length >= 200) break;
+    if (++scanned > 6000 || elements.length >= 500) { truncated = true; break; }
     const rect = element.getBoundingClientRect();
     const style = getComputedStyle(element);
-    if (!rect.width || !rect.height || style.visibility !== "visible" || style.display === "none" || rect.right <= 0 || rect.bottom <= 0 || rect.x >= innerWidth || rect.y >= innerHeight) continue;
+    if (!rect.width || !rect.height || style.visibility !== "visible" || style.display === "none") continue;
+    const scrollable = element.scrollHeight > element.clientHeight + 4 && /auto|scroll/.test(style.overflowY);
+    if (element.tagName === "DIV" && !element.hasAttribute("role") && !element.isContentEditable && !scrollable) continue;
+    if (scrollable) scrollRegions.push([element.getAttribute("aria-label") || element.id, element.scrollTop, element.scrollHeight, element.clientHeight]);
     const ref = `e${elements.length + 1}`;
     const control = describe(element);
+    if (query) {
+      const match = (actual, expected) => !expected || (query.exact === false ? actual.toLowerCase().includes(expected.toLowerCase()) : actual.toLowerCase() === expected.toLowerCase());
+      if (!match(control.role, query.role) || !match(control.name, query.name) || !match(control.name, query.text)) continue;
+    }
+    let left = Math.max(0, rect.left), top = Math.max(0, rect.top), right = Math.min(innerWidth, rect.right), bottom = Math.min(innerHeight, rect.bottom);
+    for (let parent = element.parentElement; parent && right > left && bottom > top; parent = parent.parentElement) {
+      const parentStyle = getComputedStyle(parent), clip = parent.getBoundingClientRect();
+      if (/auto|scroll|hidden|clip/.test(parentStyle.overflowX)) { left = Math.max(left, clip.left); right = Math.min(right, clip.right); }
+      if (/auto|scroll|hidden|clip/.test(parentStyle.overflowY)) { top = Math.max(top, clip.top); bottom = Math.min(bottom, clip.bottom); }
+    }
     nodes.set(ref, element);
     snapshots.set(element, JSON.stringify(control));
-    elements.push({ ref, ...control, bounds: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } });
+    elements.push({ ref, ...control, visible: right > left && bottom > top, needsReveal: left > rect.left || top > rect.top || right < rect.right || bottom < rect.bottom, bounds: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } });
   }
   const observation = { id, nodes, bounds: new Map(elements.map(({ ref, bounds }) => [ref, bounds])), activeElement: document.activeElement,
     used: false, createdAt: performance.now(), describe, snapshots, width: innerWidth, height: innerHeight, x: scrollX, y: scrollY };
   globalThis[key] = observation;
-  return { title: document.title.slice(0, 300), text: (document.body?.innerText || "").slice(0, 16000), elements,
+  return { truncated, scrollRegions, title: document.title.slice(0, 300), text: (document.body?.innerText || "").slice(0, 16000), elements,
     viewport: { width: innerWidth, height: innerHeight }, scroll: { x: scrollX, y: scrollY }, hasPasswordField: [...document.querySelectorAll('input[type="password"],input[autocomplete="one-time-code"]')].some((element) => { const rect = element.getBoundingClientRect(); return rect.width > 0 && rect.height > 0; }),
     webmcp: "modelContext" in document ? "available" : "check_site_tools",
     limitations: ["DOM references cover the top document and open controls; use a fresh image for frames or canvas."] };
@@ -125,10 +142,11 @@ function prepareAction(id, action) {
     const style = getComputedStyle(element);
     if (!bounds || style.visibility !== "visible" || style.display === "none" || !["x", "y", "width", "height"].every((key) => rect[key] === bounds[key])) throw new Error("stale_observation");
     x = rect.x + rect.width / 2; y = rect.y + rect.height / 2;
-    if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) throw new Error("element_outside_viewport");
+    if (action.type !== "reveal" && (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight)) throw new Error("element_outside_viewport");
     const hit = document.elementFromPoint(x, y);
-    if (!hit || (hit !== element && !element.contains(hit))) throw new Error("element_obscured");
+    if (action.type !== "reveal" && (!hit || (hit !== element && !element.contains(hit)))) throw new Error("element_obscured");
   }
+  if (action.type === "reveal" && !element) throw new Error("stale_element");
   if (action.type === "fill") {
     const editable = element instanceof HTMLTextAreaElement || element?.isContentEditable || (element instanceof HTMLInputElement && ["text", "search", "email", "url", "tel", "number", "date", "time", "datetime-local", "month", "week"].includes(element.type));
     if (!editable || state.describe(element).readOnly) throw new Error("not_editable");
@@ -348,13 +366,13 @@ export function createBrowserTaskHost({ getTab, tabsFor, ownerOf, activeFor, isV
     state.observation = null;
     if (closed) { state.controller?.abort(); states.delete(tabId); }
   }
-  async function observe(tab, includeImage, signal) {
+  async function observe(tab, includeImage, signal, query = null) {
     const state = stateFor(tab.tabId);
     state.observation = null;
     const revision = tab.webMcpRevision;
     const url = tab.view.webContents.getURL();
     const id = randomUUID();
-    const page = await isolated(tab.view.webContents, observePage, id);
+    const page = await isolated(tab.view.webContents, observePage, id, query);
     let image, digest;
     if (includeImage) {
       if (page.hasPasswordField) fail("sign_in_required", "This page needs sign-in. Take over and sign in directly in the browser, then resume.");
@@ -369,7 +387,7 @@ export function createBrowserTaskHost({ getTab, tabsFor, ownerOf, activeFor, isV
     return { ok: true, tabId: tab.tabId, observationId: id, url: safeUrl(url), trust: TRUST, ...page, ...(image ? { image } : {}) };
   }
   /**
-   * @param {{ sessionId?: string, operation?: string, args?: { tabId?: string, url?: string, provider?: string, includeImage?: boolean, observationId?: string, toolId?: string, input?: unknown, action?: { type?: string, ref?: string, text?: string, checked?: boolean, values?: string[], key?: string, x?: number, y?: number, deltaY?: number } } }} request
+   * @param {{ sessionId?: string, operation?: string, args?: { tabId?: string, url?: string, provider?: string, includeImage?: boolean, query?: {role?: string, name?: string, text?: string, exact?: boolean}, observationId?: string, toolId?: string, input?: unknown, action?: { type?: string, ref?: string, text?: string, checked?: boolean, values?: string[], key?: string, x?: number, y?: number, deltaY?: number } } }} request
    * @param {{ signal?: AbortSignal }} options
    */
   async function request({ sessionId, operation, args = {} } = {}, { signal } = {}) {
@@ -445,7 +463,7 @@ export function createBrowserTaskHost({ getTab, tabsFor, ownerOf, activeFor, isV
         }
         requestSignal.throwIfAborted();
         publish(tab.tabId, "running", operation);
-        if (operation === "observe") return observe(tab, args.includeImage === true, requestSignal);
+        if (operation === "observe") return observe(tab, args.includeImage === true, requestSignal, args.query);
         if (operation === "site_tools") return siteTools({ tabId: tab.tabId, sessionId });
         if (operation === "site_tool") {
           state.observation = null;
@@ -469,7 +487,7 @@ export function createBrowserTaskHost({ getTab, tabsFor, ownerOf, activeFor, isV
         const observed = state.observation;
         if (!observed || observed.id !== args.observationId || observed.revision !== tab.webMcpRevision || observed.url !== tab.view.webContents.getURL()) fail("stale_observation", "Observe the current page before acting.");
         const action = structuredClone(args.action);
-        if (!action || !["click", "fill", "select", "set_checked", "key", "scroll"].includes(action.type)) fail("invalid_action", "Use click, fill, select, set_checked, key or scroll.");
+        if (!action || !["click", "fill", "select", "set_checked", "key", "scroll", "reveal"].includes(action.type)) fail("invalid_action", "Use click, fill, select, set_checked, key or scroll.");
         if (action.type === "click" && !action.ref && !observed.digest) fail("image_required", "Observe with includeImage before clicking image coordinates.");
         if (action.type === "fill" && (typeof action.text !== "string" || action.text.length > 8000 || !action.ref)) fail("invalid_action", "Fill needs an observed editable reference and text of at most 8000 characters.");
         if (action.type === "select" && (!action.ref || !Array.isArray(action.values) || action.values.length > 200 || !action.values.every(value => typeof value === "string" && value.length <= 8000))) fail("invalid_action", "Select needs an observed select reference and an array of option values.");
@@ -480,7 +498,7 @@ export function createBrowserTaskHost({ getTab, tabsFor, ownerOf, activeFor, isV
         if (!await allowed(observed.url) || state.observation !== observed || observed.revision !== tab.webMcpRevision || observed.url !== tab.view.webContents.getURL()) fail("page_changed", "The page changed or access was blocked while preparing the action. Observe again.");
         requestSignal.throwIfAborted();
         if (action.type === "click" && !action.ref && imageDigest(await captureObservation(tab.view.webContents, observed.viewport)) !== observed.digest) fail("stale_observation", "The image changed. Observe again before choosing coordinates.");
-        if (action.type === "fill" || action.type === "select") {
+        if (action.type === "fill" || action.type === "select" || action.type === "reveal") {
           // DOM-backed form edits must release the same native input lease as
           // keyboard and pointer events on the shared cloud desktop.
           await beforeInput(tab);
@@ -501,6 +519,12 @@ export function createBrowserTaskHost({ getTab, tabsFor, ownerOf, activeFor, isV
         publish(tab.tabId, "running", action.type);
         const contents = tab.view.webContents;
         dispatched = !point.unchanged;
+        if (action.type === "reveal") await isolated(contents, (id, ref) => {
+          const state = globalThis.__openworkBrowserObservation;
+          const element = state?.id === id ? state.nodes.get(ref) : null;
+          if (!element?.isConnected) throw new Error("stale_element");
+          element.scrollIntoView({ block: "center", inline: "nearest", behavior: "instant" });
+        }, observed.id, action.ref);
         if (action.type === "fill" || action.type === "select") {
           const prepared = await isolated(contents, applyFormAction, observed.id, action);
           if (action.type === "fill" && !prepared.inserted) {

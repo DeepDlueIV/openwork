@@ -5,13 +5,6 @@
 import { randomUUID } from "node:crypto";
 
 const quote = (value) => `'${String(value).replaceAll("'", "'\\''")}'`;
-const KEYS = {
-  enter: "Return", return: "Return", escape: "Escape", esc: "Escape", tab: "Tab", backspace: "BackSpace", delete: "Delete", space: "space",
-  arrowup: "Up", arrowdown: "Down", arrowleft: "Left", arrowright: "Right", up: "Up", down: "Down", left: "Left", right: "Right",
-  home: "Home", end: "End", pageup: "Page_Up", pagedown: "Page_Down",
-};
-// Shortcuts written for a Mac work on Linux: command sends control.
-const MODIFIERS = { command: "ctrl", control: "ctrl", shift: "shift", option: "alt" };
 const TOOLS = ["xdotool", "import", "python3"];
 
 /**
@@ -24,15 +17,74 @@ const TOOLS = ["xdotool", "import", "python3"];
  */
 export function createX11Driver({ machine, display = ":99", timeoutMs = 20_000 }) {
   const validDisplay = /^:\d{1,3}(\.\d)?$/.test(display);
-  const directory = `/tmp/openwork-computer-${randomUUID().slice(0, 8)}`;
+  const directory = `/tmp/openwork-computer-${randomUUID()}`;
   const run = (script, ms = timeoutMs) => {
     if (!validDisplay) throw new Error("Use an X display such as :99.");
     return machine.run(`export DISPLAY=${display}; ${script}`, ms);
   };
-  const key = (name, modifiers = []) => {
-    const base = KEYS[String(name).toLowerCase()] ?? (String(name).length === 1 ? String(name) : String(name));
-    if (!/^[A-Za-z0-9_+\-.,;:'"/\\=[\]`]{1,24}$/.test(base)) throw new Error(`Unsupported key ${name}.`);
-    return [...modifiers.map((modifier) => MODIFIERS[modifier] ?? "ctrl"), base].join("+");
+  const socketPath = `${directory}/input.sock`;
+  let worker = null;
+  const bootstrap = async () => {
+    if (!worker) worker = (async () => {
+      // Server development can load the cloud host while computer use is off,
+      // before build artifacts exist. Resolve embedded bytes only on first use.
+      const { computerWorkerSource } = await import("./dist/worker.js");
+      const workerSource = Buffer.from(computerWorkerSource).toString("base64");
+      return run(`python3 -c ${quote(`import base64, os, pathlib, socket, subprocess, time
+root = pathlib.Path(${JSON.stringify(directory)})
+root.mkdir(mode=0o700, exist_ok=True)
+source = root / "worker.py"
+source.write_bytes(base64.b64decode(${JSON.stringify(workerSource)}))
+os.chmod(source, 0o600)
+endpoint = ${JSON.stringify(socketPath)}
+def ready():
+    client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    client.settimeout(0.2)
+    try:
+        client.connect(endpoint)
+        return True
+    except (FileNotFoundError, ConnectionRefusedError): return False
+    finally: client.close()
+if ready(): raise SystemExit(0)
+pathlib.Path(endpoint).unlink(missing_ok=True)
+subprocess.Popen(["python3", str(source), ${JSON.stringify(socketPath)}], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+for _ in range(250):
+    if ready(): break
+    time.sleep(0.02)
+else: raise RuntimeError("The VM input worker did not start")`)} `, 10_000);
+    })().then((result) => {
+      if (result.exitCode !== 0) throw new Error("The VM input worker could not start.");
+    }).catch((error) => { worker = null; throw error; });
+    await worker;
+  };
+  const rpc = async (request) => {
+    const script = `import json, socket
+request = ${JSON.stringify(JSON.stringify(request))}
+client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+client.settimeout(${Math.max(1, timeoutMs / 1000)})
+try: client.connect(${JSON.stringify(socketPath)})
+except (FileNotFoundError, ConnectionRefusedError):
+    print(json.dumps({"code":"worker_unavailable","completed":0,"attempted":False}))
+else:
+    try:
+        client.sendall((request + "\\n").encode())
+        with client.makefile("rb") as stream: print(stream.readline(1048576).decode())
+    finally: client.close()`;
+    const result = await run(`python3 -c ${quote(script)}`, timeoutMs + 1000);
+    if (result.exitCode !== 0) throw new Error("The VM operation returned no receipt. Do not repeat input without observing.");
+    return JSON.parse(result.stdout);
+  };
+  const callWorker = async (request) => {
+    await bootstrap();
+    let result = await rpc(request);
+    if (result.code === "worker_unavailable") {
+      // A failed connect dispatched nothing; a missing response after send is
+      // uncertain and is never retried. Idle workers are restarted on demand.
+      worker = null;
+      await bootstrap();
+      result = await rpc(request);
+    }
+    return result;
   };
   const integer = (value) => {
     const number = Math.round(Number(value));
@@ -45,40 +97,6 @@ export function createX11Driver({ machine, display = ":99", timeoutMs = 20_000 }
     if (!Number.isSafeInteger(id) || id <= 0) throw new Error("Unknown window.");
     return id;
   };
-  const withModifiers = (modifiers = [], command) => {
-    const keys = modifiers.map((modifier) => MODIFIERS[modifier] ?? "ctrl");
-    return keys.length ? `(trap 'xdotool keyup ${keys.join(" ")}' EXIT; xdotool keydown ${keys.join(" ")} && ${command})` : command;
-  };
-  /** One shell line per step; markers report how far a batch got. */
-  function step(action, targetId) {
-    const pointer = (x, y) => `xdotool mousemove ${targetId === undefined ? "" : `--window ${windowId(targetId)} `}${integer(x)} ${integer(y)}`;
-    switch (action.type) {
-      case "move": return pointer(action.x, action.y);
-      case "click": case "double_click": case "triple_click": {
-        const repeat = action.type === "click" ? 1 : action.type === "double_click" ? 2 : 3;
-        return withModifiers(action.modifiers, `${pointer(action.x, action.y)} click --repeat ${repeat} --delay 80 1`);
-      }
-      case "drag": {
-        const [first, ...rest] = action.path ?? [];
-        if (!first || !rest.length) throw new Error("A drag needs at least two points.");
-        const drag = [`${pointer(first.x, first.y)} mousedown 1`, ...rest.map((point) => pointer(point.x, point.y))].join(" && ");
-        return `(trap 'xdotool mouseup 1' EXIT; ${drag})`;
-      }
-      case "scroll": {
-        // X11 wheel buttons: 4 up, 5 down, 6 left, 7 right; one notch is about 100 pixels.
-        const vertical = Math.min(24, Math.round(Math.abs(Number(action.delta_y ?? 0)) / 100));
-        const horizontal = Math.min(24, Math.round(Math.abs(Number(action.delta_x ?? 0)) / 100));
-        const parts = [pointer(action.x, action.y)];
-        if (vertical) parts.push(`xdotool click --repeat ${vertical} --delay 30 ${Number(action.delta_y) > 0 ? 4 : 5}`);
-        if (horizontal) parts.push(`xdotool click --repeat ${horizontal} --delay 30 ${Number(action.delta_x) > 0 ? 6 : 7}`);
-        return parts.join(" && ");
-      }
-      case "type": return `xdotool type --delay 12 -- ${quote(action.text ?? "")}`;
-      case "key": return `xdotool key --clearmodifiers ${quote(key(action.key, action.modifiers))}`;
-      case "wait": return `sleep ${Math.min(3, Math.max(0.05, Number(action.ms ?? 0) / 1000)).toFixed(2)}`;
-      default: throw new Error(`Unsupported action ${action.type}.`);
-    }
-  }
 
   return {
     platform: "linux",
@@ -166,17 +184,24 @@ print(json.dumps(windows))
         return { png, width, height };
       } finally { await run(`rm -f ${quote(file)}`).catch(() => {}); }
     },
-    async input(steps, { windowId: targetId } = {}) {
-      // Lines run in order and stop at the first failure; markers count the finished steps.
-      // The rollout grants access to the configured VM. XTest input reaches
-      // real apps, including apps that ignore XSendEvent. Window-relative
-      // motion is translated by X11; keyboard input uses the focused window.
-      const command = (action) => step(action, targetId);
-      const lines = steps.map((action, index) => `${command(action)} || { echo "failed:${index}"; exit 0; }; echo "done:${index}"`);
-      const result = await run(lines.join("\n"));
-      const done = [...result.stdout.matchAll(/done:(\d+)/g)].length;
-      const failed = result.stdout.match(/failed:(\d+)/);
-      return { completed: done, ...(failed || result.exitCode !== 0 ? { error: `Step ${(failed ? Number(failed[1]) : done) + 1} failed: ${result.stderr.trim().slice(0, 200) || "xdotool refused it"}.` } : {}) };
+    interruptibleInput: true,
+    async accessibility(region, { observationId, windowId: targetId }) {
+      const result = await callWorker({ operation: "observe", id: randomUUID(), observationId, region, ...(targetId === undefined ? {} : { windowId: targetId }) });
+      return Array.isArray(result.elements) ? result : { elements: [], capability: "unavailable" };
+    },
+    async input(steps, { windowId: targetId, observationId, signal } = {}) {
+      signal?.throwIfAborted();
+      const id = randomUUID();
+      // Cancellation uses an independent worker connection and can interrupt an
+      // in-flight provider command. The worker remembers cancel-before-start.
+      const cancel = () => { void rpc({ operation: "cancel", id }).catch(() => {}); };
+      signal?.addEventListener("abort", cancel, { once: true });
+      try {
+        await bootstrap();
+        signal?.throwIfAborted();
+        const result = await callWorker({ operation: "input", id, steps, timeoutMs, ...(targetId === undefined ? {} : { windowId: windowId(targetId) }), ...(observationId ? { observationId } : {}) });
+        return { completed: result.completed ?? 0, attempted: result.attempted !== false, ...(result.error ? { error: result.error } : {}) };
+      } finally { signal?.removeEventListener("abort", cancel); }
     },
   };
 }

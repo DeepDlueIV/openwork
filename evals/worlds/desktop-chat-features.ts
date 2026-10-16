@@ -8,7 +8,7 @@ import { enableOrganizationCapabilities } from "./organization-capabilities.ts";
  * Desktop features follow the active organization's features (`GET /v1/org`),
  * so the switch is the same platform-admin capability route other worlds use.
  */
-async function featureDesktop(seed: Seed, name: string, capabilities: Record<string, true>, title: string) {
+export async function featureDesktop(seed: Seed, name: string, capabilities: Record<string, true>, title: string) {
   const den = await seed.den({ org: { name: "Desktop features studio", admin: { name: "Workspace Owner" } } });
   const organizationId = await enableOrganizationCapabilities(seed, den.admin, capabilities);
   const app = await seed.desktop({ name, den, as: "admin" });

@@ -112,7 +112,8 @@ jobs:
         run: node --test .github/scripts/pr-proof-review-build.test.mjs
       - name: Test desktop and cloud computer access and interruption
         run: |
-          node --test apps/desktop/electron/computer-control.test.mjs apps/desktop/electron/computer-remote.test.mjs packages/computer-use/cloud.test.mjs
+          pnpm --filter @openwork/computer-use build
+          node --test apps/desktop/electron/computer-control.test.mjs apps/desktop/electron/computer-remote.test.mjs packages/computer-use/cloud.test.mjs apps/desktop/electron/computer-program.test.mjs
           pnpm --dir evals exec vitest run --config vitest.config.ts --project pr ../apps/server/test/computer-use-tools.vitest.test.ts ../apps/server/test/cloud-computer-lifecycle.vitest.test.ts
       - name: Test packaged smoke engine diagnosis and kept logs
         run: |

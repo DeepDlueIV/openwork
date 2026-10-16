@@ -26,7 +26,9 @@ const WATCH_MS = 1_500;
  *   screen: () => Promise<Region>,
  *   focus: (windowId: number) => Promise<void>,
  *   screenshot: (region: Region, options?: { maxWidth?: number, windowId?: number }) => Promise<{ png: Uint8Array, width: number, height: number }>,
- *   input: (steps: RemoteAction[], options?: { windowId?: number }) => Promise<{ completed: number, error?: string }>,
+ *   interruptibleInput?: boolean,
+ *   accessibility?: (region: Region, options: { observationId: string, windowId?: number }) => Promise<{ elements: Array<Record<string, unknown>>, capability: string, truncated?: boolean }>,
+ *   input: (steps: RemoteAction[], options?: { windowId?: number, observationId?: string, signal?: AbortSignal }) => Promise<{ completed: number, error?: string }>,
  * }} ComputerDriver
  */
 
@@ -56,6 +58,7 @@ export function createRemoteComputerAdapter({ id, label, driver, now = Date.now 
       let frameSequence = 0;
       let watchUntil = 0;
       let frameTimer = null;
+      let inputController = null;
       // Driver calls never overlap: frames, observations and input share one line.
       /** @template T @param {() => Promise<T>} work @returns {Promise<T>} */
       const serial = (work) => {
@@ -115,6 +118,7 @@ export function createRemoteComputerAdapter({ id, label, driver, now = Date.now 
 
       function close(reason) {
         if (!session || session.closed) return;
+        inputController?.abort(new Error("Computer input stopped."));
         session.closed = true;
         session.generation++;
         session.decide?.({ action: "deny" });
@@ -149,7 +153,7 @@ export function createRemoteComputerAdapter({ id, label, driver, now = Date.now 
             modes: ["observe", "control"], permissions: { accessibility: true, screenRecording: true },
             keyboard: { modifiers: ["control", "shift", "option", "command"], note: "Linux: use control for shortcuts; command is sent as control, option as alt." },
             limits: { session_seconds: SESSION_SECONDS, actions: MAX_ACTIONS, batch: 8, observation_seconds: OBSERVATION_MS / 1000 },
-            note: "This computer has no accessibility tree: act with coordinates from the observation image." });
+            note: "Observations include semantic controls when AT-SPI is available. Otherwise use coordinates from the observation image." });
         },
         async computer_open_session(args, options) {
           if (live()) return failure("session_open", "A session is already open. Keep using it, or close it first. Nothing was dispatched.");
@@ -192,13 +196,19 @@ export function createRemoteComputerAdapter({ id, label, driver, now = Date.now 
           if (!live() || args.session_id !== session.id) return failure("session_unavailable", "No session is open. Call computer_open first.");
           if (session.paused) return text({ ...status(), ok: false, code: "paused" }, true);
           const window = session.window.whole ? session.window : await serial(refreshWindow);
-          const shot = await serial(() => captureWindow(window.region, { maxWidth: 1600 }));
+          const shot = args.include_image === false ? { width: window.region.width, height: window.region.height, png: null } : await serial(() => captureWindow(window.region, { maxWidth: 1600 }));
           const observationId = randomUUID();
-          session.observations.set(observationId, { at: now(), region: window.region, scale: window.region.width / shot.width, width: shot.width, height: shot.height });
+          const semantics = driver.accessibility ? await serial(() => driver.accessibility(window.region, { observationId, ...(!window.whole ? { windowId: window.id } : {}) })) : { elements: [], capability: "unavailable" };
+          const scaleX = shot.width / window.region.width, scaleY = shot.height / window.region.height;
+          const elements = semantics.elements.map((element) => {
+            const bounds = element.bounds;
+            return { ...element, ...(bounds && typeof bounds === "object" && "x" in bounds && "y" in bounds && "width" in bounds && "height" in bounds ? { bounds: { x: Number(bounds.x) * scaleX, y: Number(bounds.y) * scaleY, width: Number(bounds.width) * scaleX, height: Number(bounds.height) * scaleY } } : {}) };
+          });
+          session.observations.set(observationId, { at: now(), region: window.region, scale: window.region.width / shot.width, width: shot.width, height: shot.height, hasImage: args.include_image !== false });
           for (const key of [...session.observations.keys()].slice(0, -8)) session.observations.delete(key);
           return { content: [
             { type: "text", text: JSON.stringify({ ok: true, observation_id: observationId, width: shot.width, height: shot.height, window_title: window.title,
-              elements: [], expires_in_seconds: OBSERVATION_MS / 1000, note: "Coordinates are image pixels of this observation." }) },
+              elements, accessibility: semantics.capability, truncated: semantics.truncated === true, expires_in_seconds: OBSERVATION_MS / 1000, note: "Coordinates are image pixels of this observation." }) },
             ...(args.include_image === false ? [] : [{ type: "image", data: base64(shot.png), mimeType: "image/png" }]),
           ] };
         },
@@ -233,10 +243,13 @@ export function createRemoteComputerAdapter({ id, label, driver, now = Date.now 
           const observation = session.observations.get(args.observation_id);
           if (!observation || now() - observation.at > OBSERVATION_MS) return failure("observation_expired", "That observation expired. Observe again; nothing was dispatched.");
           const actions = args.actions ?? [args.action];
-          if (!Array.isArray(actions) || actions.length < 1 || actions.length > 8 || actions.some((action) => !action || typeof action !== "object" || !["move", "click", "double_click", "triple_click", "scroll", "drag", "type", "key", "wait"].includes(action.type)
+          if (!Array.isArray(actions) || actions.length < 1 || actions.length > 8 || actions.some((action) => !action || typeof action !== "object" || !["move", "click", "double_click", "triple_click", "scroll", "drag", "type", "key", "wait", "press", "set_value"].includes(action.type)
             || action.type === "type" && (typeof action.text !== "string" || !action.text || action.text.length > 8000)
+            || ["press", "set_value"].includes(action.type) && (!driver.accessibility || typeof action.ref !== "string" || action.ref.length > 256)
+            || action.type === "set_value" && (typeof action.text !== "string" || action.text.length > 8000)
             || action.type === "key" && (typeof action.key !== "string" || !action.key)
             || action.modifiers !== undefined && (!Array.isArray(action.modifiers) || action.modifiers.some((modifier) => !["control", "command", "shift", "option"].includes(modifier))))) return failure("invalid_arguments", "Provide one to eight supported actions with valid input. Nothing was dispatched.");
+          if (observation.hasImage === false && actions.some((action) => ["move", "click", "double_click", "triple_click", "scroll", "drag"].includes(action.type))) return failure("image_required", "Coordinate input needs an image observation. Nothing was dispatched.");
           if (session.actions + actions.length > MAX_ACTIONS) return failure("action_limit", "This session reached its action limit. Close it and open a new one.");
           if (actions.some((action) => !action || (action.x !== undefined || action.y !== undefined || ["move", "click", "double_click", "triple_click", "scroll"].includes(action.type)) && !within(observation, action)
             || action.path !== undefined && (!Array.isArray(action.path) || action.path.length < 2 || action.path.some((point) => !within(observation, point)))
@@ -264,6 +277,14 @@ export function createRemoteComputerAdapter({ id, label, driver, now = Date.now 
             if (!active()) throw new Error("The computer session ended or paused.");
             if (!current.window.whole) await driver.focus(current.window.id);
             if (!active()) throw new Error("The computer session ended or paused before input.");
+            if (driver.interruptibleInput) {
+              inputController = new AbortController();
+              progress.attempted = true;
+              try {
+                const result = await driver.input(steps, { ...(current.window.whole ? {} : { windowId: current.window.id }), observationId: args.observation_id, signal: AbortSignal.any([options.signal, inputController.signal]) });
+                return { completed: result.completed, attempted: true, ...(result.error ? { error: result.error } : {}) };
+              } finally { inputController = null; }
+            }
             for (const action of steps) {
               // A remote command already in flight may settle, but no later
               // action (or text chunk) starts after takeover, stop or abort.
@@ -323,7 +344,7 @@ export function createRemoteComputerAdapter({ id, label, driver, now = Date.now 
           if (!session || session.uiId !== uiId) return;
           if (action === "approve" || action === "deny") { session.decide?.({ action, windowId }); return; }
           if (action === "watch") { watchUntil = visible ? now() + WATCH_MS : 0; scheduleFrames(); return; }
-          if (action === "takeover" && !session.paused) { session.generation++; session.paused = true; session.observations.clear(); publishState("paused"); return; }
+          if (action === "takeover" && !session.paused) { inputController?.abort(new Error("The person took over.")); session.generation++; session.paused = true; session.observations.clear(); publishState("paused"); return; }
           if (action === "resume" && session.paused) { session.generation++; session.paused = false; session.observations.clear(); publishState("working"); return; }
           if (action === "stop") close("Stopped by the person.");
         },

@@ -72,6 +72,7 @@ node --input-type=module -e 'await import("./evals/packages/cdp/src/index.ts")'
 (node apps/desktop/scripts/prepare-sidecar.mjs --force --outdir apps/desktop/resources/sidecars && node apps/desktop/scripts/prepare-computer-use-helper.mjs --force --outdir apps/desktop/resources/helpers) &
 DESKTOP_BUILD=$!
 ${world === "acme-web" ? "pnpm --filter @openwork-ee/den-api run build:workspace-dependencies" : "pnpm --filter @openwork/headless-threads build"}
+pnpm --filter @openwork/computer-use build
 pnpm --filter openwork-server build
 wait "$DESKTOP_BUILD"
 ` : "pnpm --filter @openwork/types build\npnpm --filter @openwork/enterprise-mcp-client build"}

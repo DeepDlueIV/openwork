@@ -517,7 +517,8 @@ export async function bootWorkbotOnDaytona(stack: AsyncDisposableStack, place: P
     log: (line) => console.error(`[preview-workbot] ${line}`),
   });
   stack.defer(() => upstream.stop().catch(() => undefined));
-  const built = await execInSandbox(exec, sandboxId, "cd /workspace && pnpm --filter @openwork-ee/workbot build > /tmp/workbot-build.log 2>&1; status=$?; tail -20 /tmp/workbot-build.log; exit $status", {
+  const desktopBuild = options.computerSnapshot ? " && pnpm --filter @openwork-ee/headless-computer build" : "";
+  const built = await execInSandbox(exec, sandboxId, `cd /workspace && (pnpm --filter @openwork-ee/workbot build${desktopBuild}) > /tmp/workbot-build.log 2>&1; status=$?; tail -20 /tmp/workbot-build.log; exit $status`, {
     timeoutMs: 900_000, context: "Workbot build",
   });
   if (built.code !== 0) throw new Error(`Workbot build failed in the sandbox: ${built.stdout.slice(-800)}`);

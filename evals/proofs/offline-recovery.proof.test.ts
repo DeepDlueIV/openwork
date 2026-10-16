@@ -46,7 +46,14 @@ test("a member keeps completed work and explicitly continues after losing their 
     expect(after.prompts).toBe(before.prompts);
     const notices = await probe.dom('[data-testid="offline-recovery"]');
     expect(notices.elements).toHaveLength(1);
-    evidence.recordAssertionEvidence("One offline warning keeps the draft and sends no prompt", JSON.stringify({ before, after, notices: notices.elements.length }), after.prompts === before.prompts && notices.elements.length === 1);
+    const notice = notices.elements[0];
+    const send = (await probe.dom('button[aria-label="Run task"]')).elements[0];
+    if (!notice || !send) throw new Error("The connection notification and Send must both remain visible");
+    expect(notice.rect.right).toBeLessThanOrEqual(notices.viewportWidth);
+    expect(notice.rect.bottom).toBeLessThanOrEqual(send.rect.top);
+    expect(notice.rect.top).toBeGreaterThan(send.rect.top / 2);
+    if (notices.viewportWidth >= 768) expect(notice.rect.left).toBeGreaterThan(notices.viewportWidth / 2);
+    evidence.recordAssertionEvidence("One floating offline warning keeps the draft and leaves Send clear", JSON.stringify({ before, after, notices: notices.elements.length, notice: notice.rect, send: send.rect }), after.prompts === before.prompts && notices.elements.length === 1);
     await user.screenshot();
   });
 

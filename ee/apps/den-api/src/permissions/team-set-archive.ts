@@ -1,5 +1,6 @@
 import { and, eq, inArray, isNull } from "@openwork-ee/den-db/drizzle"
 import { MemberTable, PermissionSetTable, PermissionSetTeamTable, TeamTable } from "@openwork-ee/den-db/schema"
+import { organizationFeatureEnabled } from "../features.js"
 import type { TeamMutationTransaction } from "../organization-team-roles.js"
 
 type OrganizationId = typeof TeamTable.$inferSelect.organizationId
@@ -14,6 +15,9 @@ type MemberId = typeof MemberTable.$inferSelect.id
  * how it maps groups, alongside clearing those teams' Admin designation: the
  * retained teams keep their members but grant nothing until the owner sets
  * their permissions again. `actorMemberId` is null for SCIM-driven changes.
+ *
+ * With Shared roles on, a set left with no team is kept (roles outlive the
+ * teams that use them and are only archived when deleted); only the links go.
  *
  * The permission_set rows are locked FOR UPDATE before their links, the same
  * order permission set edits and archives use, so these never deadlock.
@@ -52,6 +56,8 @@ export async function archiveTeamPermissionSets(tx: TeamMutationTransaction, inp
     .update(PermissionSetTeamTable)
     .set({ removedAt: input.at, removedByOrgMembershipId: input.actorMemberId })
     .where(inArray(PermissionSetTeamTable.id, links.map((link) => link.id)))
+
+  if (await organizationFeatureEnabled(input.organizationId, "sharedRoles")) return
 
   const setIds = [...new Set(links.map((link) => link.permissionSetId))]
   const stillLinked = new Set((await tx

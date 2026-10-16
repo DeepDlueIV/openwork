@@ -18,7 +18,7 @@ import {
 } from "@openwork/types/mcp-app"
 import { z } from "zod"
 import type { McpAppEntry } from "../mcp-apps.js"
-import { buildMarketplaceCapabilityName } from "./marketplace-capabilities.js"
+import { buildMarketplaceCapabilityName } from "./marketplace-capability-name.js"
 import { DEN_MCP_READ_SCOPE, DEN_MCP_WRITE_SCOPE } from "./scopes.js"
 import { scoreText, tokenize, type CapabilityMatch } from "./search.js"
 
@@ -29,6 +29,46 @@ import { scoreText, tokenize, type CapabilityMatch } from "./search.js"
  * never hides the App's MCP URL, which is how those clients use the App.
  */
 export const MCP_APP_SHOWN_NOTE = "If you are in OpenWork, the person now sees this App right above your reply: answer in one or two sentences and do not repeat what it shows."
+
+// Add gateway documentation without changing the shared validators. Cloning
+// the array definition retains its size limit and unique-name refinement.
+const toolDeclarations = createMcpAppInputSchema.shape.tools.unwrap()
+const toolDeclaration = toolDeclarations.element
+const documentedTools = toolDeclarations.clone({
+  ...toolDeclarations.def,
+  element: toolDeclaration.extend({
+    name: toolDeclaration.shape.name.describe("Name exposed by this App and used to select this tool in app.callServerTool."),
+    description: toolDeclaration.shape.description.describe("What this tool does for the person using the App, including any changes it makes."),
+    capability: toolDeclaration.shape.capability.describe("Exact capability name returned by search_capabilities: a saved Workflow, connection tool, or read-only OpenWork GET action."),
+    mode: toolDeclaration.shape.mode.describe("input (default) passes the caller's arguments; live runs a saved Workflow using server-supplied input.runtime and accepts only an optional timeZone."),
+  }),
+})
+const authoringShape = {
+  title: createMcpAppInputSchema.shape.title.describe("Short human-readable title naming the App's outcome, not a generic label such as Dashboard."),
+  description: createMcpAppInputSchema.shape.description.describe("One sentence describing what the person sees and does in the App."),
+  reactSource: createMcpAppInputSchema.shape.reactSource.describe("Complete React source default-exporting a component receiving { app, input, result, hostContext }. React is injected; use no imports. Follow skill:build-an-app's source and tool-call rules."),
+  cssSource: createMcpAppInputSchema.shape.cssSource.describe("Complete CSS source using host theme variables and responsive container rules. Omit on creation for empty CSS; omit on update to keep existing CSS."),
+  textFallback: createMcpAppInputSchema.shape.textFallback.describe("Readable plain-text alternative describing what the App shows, for hosts that cannot render it; usually one or two sentences."),
+  tools: documentedTools.optional().describe("Complete set of tools the App may call. Omit or use [] for a self-contained new App; omit on update to keep existing tools, or use [] to remove them."),
+}
+const prepareAppInputSchema = prepareMcpAppInputSchema.extend({
+  title: authoringShape.title,
+  description: authoringShape.description,
+  tools: authoringShape.tools,
+})
+const createAppInputSchema = createMcpAppInputSchema.extend({
+  ...authoringShape,
+  pluginId: createMcpAppInputSchema.shape.pluginId.describe("Existing Plugin ID (plg_...) to contain the App; omit to create a new private Plugin named after the App. Sharing that Plugin shares the App and its bound Workflows."),
+  preparationId: createMcpAppInputSchema.shape.preparationId.describe("UUID returned by prepare_app, correlating this build with its preparation in chat. It grants no access and does not skip validation; older clients may omit it."),
+})
+const appId = readMcpAppInputSchema.shape.appId.describe("App ID (cob_...) from search_capabilities or an App result's app.appId; not its Plugin ID, revision ID, or capability name.")
+const updateAppInputSchema = updateMcpAppInputSchema.extend({
+  ...authoringShape,
+  description: updateMcpAppInputSchema.shape.description.describe("Replacement description of what the person sees and does; omit to keep the current description, or pass an empty string to clear it."),
+  appId,
+  expectedRevisionId: updateMcpAppInputSchema.shape.expectedRevisionId.describe("Latest revision ID (cov_...) from read_app's app.revisionId. The update fails if someone has published another revision since that read."),
+})
+const readAppInputSchema = readMcpAppInputSchema.extend({ appId })
 
 const appResultSchema = z.object({
   app: mcpAppSummarySchema,
@@ -135,8 +175,8 @@ export function registerAppBuilderTools(input: {
   }
   input.server.registerTool("prepare_app", {
     title: "Prepare an App",
-    description: "Start building an App before writing its source. Choose a clear title, briefly describe the view and interactions you will write, and select exact tools from search_capabilities, or no tools for a self-contained App. Verifies available tool bindings and returns their input schemas, an opinionated React/CSS starter, and the steps to finish. Does not run tools, create a Plugin, or publish an App. Then adapt the starter following create_app's authoring rules and call create_app directly with the returned preparationId. Requires mcp:write.",
-    inputSchema: prepareMcpAppInputSchema,
+    description: "Prepare an App before writing its source, using a title naming its outcome, a description of what the person sees and does, and exact tools from search_capabilities (none for a self-contained App). Returns preparationId for create_app, title, verified tools with inputSchema/readOnly/kind/mode, starter { reactSource, cssSource }, and nextSteps. The starter pattern is lookup when all tools read, action when one changes data, or standalone with no tools; nextSteps identifies tools not yet wired. Does not run tools, create a Plugin, or publish an App. Requires mcp:write. Follow skill:build-an-app for authoring rules.",
+    inputSchema: prepareAppInputSchema,
     outputSchema: prepareMcpAppOutputSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, async (request) => {
@@ -151,16 +191,12 @@ export function registerAppBuilderTools(input: {
   input.server.registerTool("create_app", {
     title: "Create an App",
     description: [
-      "Create an App, which is its own MCP server, from complete React/CSS source, a readable textFallback, and the tools it needs. It needs no Workflow, output schema, or Automation.",
-      "Start with prepare_app, adapt its starter and verified schemas, then pass its preparationId here so OpenWork can show the real creation steps. This call independently checks bindings, compiles source, and saves the App; preparationId is only for progress correlation. Older clients may omit it.",
-      "Each tool has a snake_case name, a description, and one exact capability from search_capabilities: a saved Workflow, a connection tool, or an OpenWork action that reads (GET). To change data, bind a saved Workflow that makes the change. Use mode live for a Workflow that reads input.runtime. Tools run as the person using the App.",
-      "reactSource default-exports a component receiving { app, input, result, hostContext }: input is the launch input, and result is the launch CallToolResult (read result?.structuredContent), undefined until delivered. React is injected: use React.useState and other React APIs without imports. Do not use fetch, browser or host globals, timers, dynamic code, external resources, URL-bearing elements, or <form>, <svg>, <style>, or <math> elements; use labeled inputs and type=button controls.",
-      "Call only declared tools, with app.callServerTool({ name, arguments }): a Workflow or connection tool takes the capability's arguments, an OpenWork action { path, query, body }, and a live Workflow only an optional { timeZone }. Show a blocked state if app.getHostCapabilities()?.serverTools is absent.",
-      "Call read-only tools (OpenWork action reads, live Workflows, and connection tools whose match says readOnly: true) when the App opens or its inputs change; if the host refuses one because it needs approval (its error mentions approval), offer a button that makes that call. Give every other tool its own button that makes only that call: OpenWork allows one call per click. Show other errors with what happened and what to do next.",
-      "Keep it compact: one focal action, explicit loading, empty, error, and blocked states, and no internal scrolling or automatic navigation.",
-      "It goes in a new private Plugin named after it unless the user names an existing pluginId; the Workflows its tools run join that Plugin, and sharing the Plugin shares the App.",
+      "Create and publish an App as its own MCP server from complete React/CSS source, textFallback, and declared tools. Read skill:build-an-app for required source, host, approval, caching, and tool-call rules before writing source; start with prepare_app and pass its preparationId (optional for older clients). This call rechecks bindings, compiles source, and saves the App; no Workflow, output schema, or Automation is required.",
+      "Bind exact capabilities from search_capabilities: saved Workflows, connection tools, or read-only OpenWork GET actions. To change OpenWork data, bind a saved Workflow. Tools run as the person using the App. Load read-only data on open after the launch result arrives; changes and approval-required calls need their own button, one call per click.",
+      "Creates a new private Plugin unless pluginId selects an existing one. Bound Workflows join that Plugin; sharing it shares the App and those Workflows. Requires mcp:write.",
+      "Returns app (summary including appId, pluginId, revisionId and tools, not source), input (empty launch input), mcpUrl, and usually launch { connectionId, toolName, resourceUri, arguments }. launch is omitted when the App is beyond OpenWork's connection limit; mcpUrl still works in MCP clients. OpenWork opens an available App in a sidebar tab; other hosts receive its MCP URL and text fallback. Reply briefly.",
     ].join(" "),
-    inputSchema: createMcpAppInputSchema,
+    inputSchema: createAppInputSchema,
     outputSchema: appResultSchema,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, async (request) => {
@@ -183,10 +219,11 @@ export function registerAppBuilderTools(input: {
     title: "Update an App",
     description: [
       "Update an existing App with complete replacement React source, title, and textFallback, following create_app's rules.",
-      "First read_app, and copy its revisionId to expectedRevisionId. Omit cssSource, description, or tools to keep the current ones, or pass complete replacements.",
+      "First read_app, and copy its app.revisionId to expectedRevisionId. Omit cssSource, description, or tools to keep the current ones, or pass complete replacements. Follow skill:build-an-app's source and tool-call rules.",
       "Publishes an immutable revision in the same Plugin and MCP server; newly bound Workflows join that Plugin, so everyone it is shared with can run them. Requires editor access and the mcp:write scope.",
+      "Returns app (updated summary, not source), input (empty launch input), mcpUrl, and launch { connectionId, toolName, resourceUri, arguments } unless OpenWork's connection limit prevents opening it. The MCP URL remains usable. OpenWork opens an available App in a sidebar tab.",
     ].join(" "),
-    inputSchema: updateMcpAppInputSchema,
+    inputSchema: updateAppInputSchema,
     outputSchema: appResultSchema,
     annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
   }, async (request) => {
@@ -200,9 +237,9 @@ export function registerAppBuilderTools(input: {
     }
   })
   input.server.registerTool("read_app", {
-    title: "Read an App for editing",
-    description: "Read an App's latest summary, declared tools, and React/CSS source before editing. Requires mcp:read and editor access, not merely permission to open the App. Does not open or run the App.",
-    inputSchema: readMcpAppInputSchema,
+    title: "Read an App",
+    description: "Read an App before editing. Returns app (latest summary including appId, pluginId, revisionId, title, description, textFallback, tools and launch resource/server identifiers), reactSource, and cssSource. Use app.revisionId as update_app's expectedRevisionId; tools are summaries, not input schemas. Requires mcp:read and editor access, not merely permission to open the App. Does not open or run the App.",
+    inputSchema: readAppInputSchema,
     outputSchema: readMcpAppOutputSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
   }, async (request) => {

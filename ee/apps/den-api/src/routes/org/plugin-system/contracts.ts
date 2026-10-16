@@ -27,6 +27,7 @@ export const pluginArchRoutePaths = {
   pluginConfigObject: `${orgBasePath}/plugins/:pluginId/config-objects/:configObjectId`,
   pluginMcpConnections: `${orgBasePath}/plugins/:pluginId/mcp-connections`,
   pluginResolved: `${orgBasePath}/plugins/:pluginId/resolved`,
+  resolvedPlugins: `${orgBasePath}/resolved-plugins`,
   pluginReleases: `${orgBasePath}/plugins/:pluginId/releases`,
   pluginAccess: `${orgBasePath}/plugins/:pluginId/access`,
   pluginAccessGrant: `${orgBasePath}/plugins/:pluginId/access/:grantId`,

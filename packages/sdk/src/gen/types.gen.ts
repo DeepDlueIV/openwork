@@ -156,30 +156,612 @@ export type ForbiddenError = {
   message?: string;
 };
 
+export type AdminFreeAutoConversions = {
+  from: string;
+  to: string;
+  generatedAt: string;
+  attributionDays: 30;
+  firstRecordedAt: string | null;
+  totals: {
+    reachedLimit: number;
+    signedIn: number;
+    newAccounts: number;
+    subscribed: number;
+    unlinkedGuests: number;
+  };
+  daily: Array<{
+    date: string;
+    reachedLimit: number;
+    signedIn: number;
+    newAccounts: number;
+    subscribed: number;
+  }>;
+  rows: Array<{
+    id: string;
+    userId: string | null;
+    name: string | null;
+    email: string | null;
+    startedAsGuest: boolean;
+    exhaustedAt: string;
+    signedInAt: string | null;
+    signedUpAt: string | null;
+    subscribedAt: string | null;
+  }>;
+  page: {
+    page: number;
+    pageSize: 50;
+    total: number;
+    hasMore: boolean;
+  };
+};
+
+export type AdminOrganizationDetail = {
+  organization: {
+    id: string;
+    name: string;
+    slug: string | null;
+    createdAt: string;
+    planTier: string;
+    seatLimit: number;
+    memberCount: number;
+  };
+  members: Array<{
+    id: string;
+    userId: string | null;
+    name: string | null;
+    email: string | null;
+    role: string;
+    joinedAt: string | null;
+  }>;
+  page: {
+    limit: number;
+    offset: number;
+    search: string;
+    total: number;
+    returned: number;
+    hasMore: boolean;
+    durationMs: number;
+  };
+  generatedAt: string;
+};
+
 export type NotFoundError = {
   error: string;
   message?: string;
 };
 
+export type AdminOrganizationUsage = {
+  organization: {
+    id: string;
+    name: string;
+    slug: string | null;
+    createdAt: string;
+    planTier: string;
+    seatLimit: number;
+    memberCount: number;
+  };
+  members: Array<{
+    id: string;
+    userId: string | null;
+    name: string | null;
+    email: string | null;
+    role: string;
+    joinedAt: string | null;
+  }>;
+  page: {
+    limit: number;
+    offset: number;
+    search: string;
+    total: number;
+    returned: number;
+    hasMore: boolean;
+    durationMs: number;
+  };
+  generatedAt: string;
+  usage: {
+    from: string;
+    to: string;
+    totals: {
+      requests: number;
+      tokens: number;
+      costMicroUsd: number;
+      unreportedRequests: number | null;
+      unpricedRequests: number | null;
+    };
+    members: Array<{
+      requests: number;
+      tokens: number;
+      costMicroUsd: number;
+      unreportedRequests: number | null;
+      unpricedRequests: number | null;
+      memberId: string;
+    }>;
+  };
+};
+
+export type AdminOrganizationInsights = {
+  organization: {
+    id: string;
+    name: string;
+    slug: string | null;
+    createdAt: string;
+    planTier: string;
+    seatLimit: number;
+    memberCount: number;
+  };
+  members: Array<{
+    id: string;
+    userId: string | null;
+    name: string | null;
+    email: string | null;
+    role: string;
+    joinedAt: string | null;
+  }>;
+  page: {
+    limit: number;
+    offset: number;
+    search: string;
+    total: number;
+    returned: number;
+    hasMore: boolean;
+    durationMs: number;
+  };
+  generatedAt: string;
+  insights: {
+    from: string;
+    to: string;
+    previousFrom: string;
+    previousTo: string;
+    current: {
+      requests: number;
+      tokens: number;
+      costMicroUsd: number;
+      unreportedRequests: number | null;
+      unpricedRequests: number | null;
+      activeMembers: number;
+      successfulRequests: number;
+      lastActiveDay: string | null;
+    };
+    previous: {
+      requests: number;
+      tokens: number;
+      costMicroUsd: number;
+      unreportedRequests: number | null;
+      unpricedRequests: number | null;
+      activeMembers: number;
+      successfulRequests: number;
+      lastActiveDay: string | null;
+    };
+    daily: [
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+      {
+        requests: number;
+        tokens: number;
+        costMicroUsd: number;
+        unreportedRequests: number | null;
+        unpricedRequests: number | null;
+        activeMembers: number;
+        successfulRequests: number;
+        lastActiveDay: string | null;
+        date: string;
+      },
+    ];
+    people: Array<{
+      requests: number;
+      tokens: number;
+      costMicroUsd: number;
+      unreportedRequests: number | null;
+      unpricedRequests: number | null;
+      activeMembers: number;
+      successfulRequests: number;
+      lastActiveDay: string | null;
+      memberId: string;
+      userId: string | null;
+      name: string | null;
+      email: string | null;
+      currentMember: boolean;
+    }>;
+    models: Array<{
+      requests: number;
+      tokens: number;
+      costMicroUsd: number;
+      unreportedRequests: number | null;
+      unpricedRequests: number | null;
+      successfulRequests: number;
+      lastActiveDay: string | null;
+      id: string;
+      name: string;
+      provider: string;
+    }>;
+  };
+};
+
+export type AdminDashboard = {
+  from: string;
+  to: string;
+  generatedAt: string;
+  activeUsers: {
+    today: number;
+    days7: number;
+    days30: number;
+  };
+  activeOrganizations: number;
+  totals: {
+    requests: number;
+    tokens: number;
+    costMicroUsd: number;
+    unreportedRequests: number | null;
+    unpricedRequests: number | null;
+  };
+  daily: Array<{
+    requests: number;
+    tokens: number;
+    costMicroUsd: number;
+    unreportedRequests: number | null;
+    unpricedRequests: number | null;
+    date: string;
+  }>;
+  organizations: Array<{
+    requests: number;
+    tokens: number;
+    costMicroUsd: number;
+    unreportedRequests: number | null;
+    unpricedRequests: number | null;
+    id: string;
+    name: string;
+  }>;
+};
+
 export type AdminFeature = {
   key:
+    | "googleDocumentTools"
+    | "offlineRecovery"
+    | "rememberLastOrganization"
+    | "secureSecretFields"
+    | "memberListToolbars"
+    | "appBuildProgress"
+    | "modelsAnalyticsUi"
+    | "taskAnalyticsUi"
+    | "desktopPolicyScreenRemoval"
     | "teamMembershipCache"
+    | "managedDeploymentsGcp"
+    | "managedDeploymentsMcp"
     | "managedDeployments"
-    | "denFlatPageHeaders"
-    | "dashboardActivity"
-    | "libraryIntegrated"
-    | "libraryUsage"
-    | "modelsAnalytics"
-    | "orgManagedDashboards"
     | "slackAssistant"
     | "slackWorkbotReplies"
-    | "headlessAutomations"
     | "workbot"
-    | "calendarPolish"
     | "automationCalendar"
     | "permissions"
+    | "teamRoles"
+    | "sharedRoles"
+    | "agentPermissions"
     | "engineV2Upgrade"
-    | "remoteSessionEvents";
+    | "remoteSessionEvents"
+    | "backgroundShellTasks"
+    | "orgDefaultModel"
+    | "gatewayProviderUsageLimits"
+    | "teamAccessRows"
+    | "teamPageTabs"
+    | "inviteLinkVerifiesEmail"
+    | "remoteSessionSubagents";
   label: string;
   description: string;
   since: string;
@@ -217,24 +799,37 @@ export type AdminUsersPageResponse = {
 
 export type AdminOrganizationsPageResponse = {
   organizations: Array<{
-    capabilities: {
+    capabilities?: {
+      googleDocumentTools: boolean;
+      offlineRecovery: boolean;
+      rememberLastOrganization: boolean;
+      secureSecretFields: boolean;
+      memberListToolbars: boolean;
+      appBuildProgress: boolean;
+      modelsAnalyticsUi: boolean;
+      taskAnalyticsUi: boolean;
+      desktopPolicyScreenRemoval: boolean;
       teamMembershipCache: boolean;
+      managedDeploymentsGcp: boolean;
+      managedDeploymentsMcp: boolean;
       managedDeployments: boolean;
-      denFlatPageHeaders: boolean;
-      dashboardActivity: boolean;
-      libraryIntegrated: boolean;
-      libraryUsage: boolean;
-      modelsAnalytics: boolean;
-      orgManagedDashboards: boolean;
       slackAssistant: boolean;
       slackWorkbotReplies: boolean;
-      headlessAutomations: boolean;
       workbot: boolean;
-      calendarPolish: boolean;
       automationCalendar: boolean;
       permissions: boolean;
+      teamRoles: boolean;
+      sharedRoles: boolean;
+      agentPermissions: boolean;
       engineV2Upgrade: boolean;
       remoteSessionEvents: boolean;
+      backgroundShellTasks: boolean;
+      orgDefaultModel: boolean;
+      gatewayProviderUsageLimits: boolean;
+      teamAccessRows: boolean;
+      teamPageTabs: boolean;
+      inviteLinkVerifiesEmail: boolean;
+      remoteSessionSubagents: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -245,7 +840,88 @@ export type AdminOrganizationsPageResponse = {
     /**
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
-    featureStates: {
+    featureStates?: {
+      googleDocumentTools: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      offlineRecovery: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      rememberLastOrganization: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      secureSecretFields: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      memberListToolbars: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      appBuildProgress: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      modelsAnalyticsUi: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      taskAnalyticsUi: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      desktopPolicyScreenRemoval: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       teamMembershipCache: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -255,61 +931,25 @@ export type AdminOrganizationsPageResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
+      managedDeploymentsGcp: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      managedDeploymentsMcp: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       managedDeployments: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      denFlatPageHeaders: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      dashboardActivity: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      libraryIntegrated: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      libraryUsage: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      modelsAnalytics: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      orgManagedDashboards: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -336,25 +976,7 @@ export type AdminOrganizationsPageResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      headlessAutomations: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
       workbot: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      calendarPolish: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -381,6 +1003,33 @@ export type AdminOrganizationsPageResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
+      teamRoles: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      sharedRoles: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      agentPermissions: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       engineV2Upgrade: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -391,6 +1040,69 @@ export type AdminOrganizationsPageResponse = {
         overrideApplies: boolean;
       };
       remoteSessionEvents: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      backgroundShellTasks: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      orgDefaultModel: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      gatewayProviderUsageLimits: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      teamAccessRows: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      teamPageTabs: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      inviteLinkVerifiesEmail: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      remoteSessionSubagents: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -462,23 +1174,36 @@ export type AdminOverviewResponse = {
   }>;
   organizations: Array<{
     capabilities: {
+      googleDocumentTools: boolean;
+      offlineRecovery: boolean;
+      rememberLastOrganization: boolean;
+      secureSecretFields: boolean;
+      memberListToolbars: boolean;
+      appBuildProgress: boolean;
+      modelsAnalyticsUi: boolean;
+      taskAnalyticsUi: boolean;
+      desktopPolicyScreenRemoval: boolean;
       teamMembershipCache: boolean;
+      managedDeploymentsGcp: boolean;
+      managedDeploymentsMcp: boolean;
       managedDeployments: boolean;
-      denFlatPageHeaders: boolean;
-      dashboardActivity: boolean;
-      libraryIntegrated: boolean;
-      libraryUsage: boolean;
-      modelsAnalytics: boolean;
-      orgManagedDashboards: boolean;
       slackAssistant: boolean;
       slackWorkbotReplies: boolean;
-      headlessAutomations: boolean;
       workbot: boolean;
-      calendarPolish: boolean;
       automationCalendar: boolean;
       permissions: boolean;
+      teamRoles: boolean;
+      sharedRoles: boolean;
+      agentPermissions: boolean;
       engineV2Upgrade: boolean;
       remoteSessionEvents: boolean;
+      backgroundShellTasks: boolean;
+      orgDefaultModel: boolean;
+      gatewayProviderUsageLimits: boolean;
+      teamAccessRows: boolean;
+      teamPageTabs: boolean;
+      inviteLinkVerifiesEmail: boolean;
+      remoteSessionSubagents: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -490,6 +1215,87 @@ export type AdminOverviewResponse = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates: {
+      googleDocumentTools: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      offlineRecovery: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      rememberLastOrganization: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      secureSecretFields: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      memberListToolbars: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      appBuildProgress: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      modelsAnalyticsUi: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      taskAnalyticsUi: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      desktopPolicyScreenRemoval: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       teamMembershipCache: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -499,61 +1305,25 @@ export type AdminOverviewResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
+      managedDeploymentsGcp: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      managedDeploymentsMcp: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       managedDeployments: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      denFlatPageHeaders: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      dashboardActivity: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      libraryIntegrated: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      libraryUsage: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      modelsAnalytics: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      orgManagedDashboards: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -580,25 +1350,7 @@ export type AdminOverviewResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      headlessAutomations: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
       workbot: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      calendarPolish: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -625,6 +1377,33 @@ export type AdminOverviewResponse = {
         override: boolean | null;
         overrideApplies: boolean;
       };
+      teamRoles: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      sharedRoles: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      agentPermissions: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       engineV2Upgrade: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -635,6 +1414,69 @@ export type AdminOverviewResponse = {
         overrideApplies: boolean;
       };
       remoteSessionEvents: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      backgroundShellTasks: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      orgDefaultModel: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      gatewayProviderUsageLimits: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      teamAccessRows: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      teamPageTabs: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      inviteLinkVerifiesEmail: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      remoteSessionSubagents: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -791,6 +1633,22 @@ export type UpdateCurrentUserProfileResponse = {
   };
 };
 
+export type DenDesktopAgentPermissions = {
+  rules: Array<{
+    action: string;
+    resource: string;
+    effect: "allow" | "ask" | "deny";
+    source: string;
+  }>;
+};
+
+export type DenDesktopConfigDefaultModel = {
+  providerID: string;
+  modelID: string;
+  source: "team" | "organization";
+  teamName?: string;
+};
+
 export type CurrentUserDesktopConfigResponse = {
   allowCustomProviders?: boolean;
   allowZenModel?: boolean;
@@ -838,6 +1696,8 @@ export type CurrentUserDesktopConfigResponse = {
   connectEnabled?: boolean;
   onboardingPrompts?: Array<string>;
   onboardingPromptDescriptions?: Array<string>;
+  agentPermissions?: DenDesktopAgentPermissions;
+  defaultModel?: DenDesktopConfigDefaultModel;
 };
 
 export type AutomationRunnerTokenResponse = {
@@ -1086,6 +1946,58 @@ export type AutomationRunReceipt = {
   events: Array<AutomationRunEvent>;
 };
 
+export type RemoteSessionStatusResult = {
+  threads: Array<
+    | {
+        ref: string;
+        changed: true;
+        version: string;
+        target: "cloud" | "desktop";
+        state: "starting" | "running" | "waiting" | "idle" | "error";
+        waitingFor: "permission" | "question" | null;
+        title: string | null;
+        computerId: string | null;
+        computerLabel: string | null;
+        sessionId: string | null;
+        workspaceId: string | null;
+        messageCount: number | null;
+        preview: string | null;
+        error: {
+          code: string;
+          message: string;
+        } | null;
+        observedAt: number | null;
+      }
+    | {
+        ref: string;
+        changed: false;
+        version: string;
+        stale?: boolean;
+      }
+  >;
+  retryAfterMs: number | null;
+};
+
+export type RemoteSessionError = {
+  error: string;
+  message?: string;
+  retryable?: boolean;
+  [key: string]: unknown;
+};
+
+export type RemoteSessionStatusRequest = {
+  threads: Array<{
+    commandId?: string;
+    sessionId?: string;
+    version?: string;
+  }>;
+  waitMs?: number;
+};
+
+export type RemoteSessionResult = {
+  [key: string]: unknown;
+};
+
 export type OrganizationResponse = {
   organization: {
     [key: string]: unknown;
@@ -1203,7 +2115,6 @@ export type OrganizationContextResponse = {
       | "branding.update"
       | "web_origins.view"
       | "web_origins.manage"
-      | "install_links.update"
       | "invitations.manage"
       | "members.update"
       | "members.delete"
@@ -1212,6 +2123,8 @@ export type OrganizationContextResponse = {
       | "teams.manage_admin"
       | "permissions.view"
       | "permissions.manage"
+      | "agent_permissions.view"
+      | "agent_permissions.manage"
       | "sharing.manage_all"
       | "sharing.share_org_wide"
       | "sso.view"
@@ -1255,8 +2168,6 @@ export type OrganizationContextResponse = {
       | "marketplaces.manage"
       | "plugins.import"
       | "connectors.manage"
-      | "dashboards.view"
-      | "dashboards.manage"
     >;
     [key: string]: unknown;
   };
@@ -1332,6 +2243,10 @@ export type DashboardActivityEntry = {
 
 export type DashboardActivity = {
   activity: Array<DashboardActivityEntry>;
+};
+
+export type InventoryRevision = {
+  revision: string | null;
 };
 
 export type DeleteOrganizationResponse = {
@@ -1526,69 +2441,6 @@ export type WorkflowRunListResponse = {
   nextCursor: string | null;
 };
 
-export type DashboardElement = {
-  serverName: string;
-  connectionId?: string;
-  toolName: string;
-  projectedToolName: string;
-  resourceUri: string;
-  title: string;
-  launchArguments?: {
-    [key: string]: unknown;
-  };
-  requiresApproval?: boolean;
-  organizationAutoLaunch?: boolean;
-};
-
-export type Dashboard = {
-  id: string;
-  organizationId: string;
-  name: string;
-  elements: Array<DashboardElement>;
-  createdByOrgMembershipId: string;
-  createdAt: string;
-  updatedAt: string;
-};
-
-export type DashboardListResponse = {
-  items: Array<Dashboard>;
-};
-
-export type DashboardResponse = {
-  item: Dashboard;
-};
-
-export type DashboardAccessGrant = {
-  id: string;
-  orgMembershipId: string | null;
-  teamId: string | null;
-  orgWide: boolean;
-  role: "viewer" | "editor" | "manager";
-  createdByOrgMembershipId: string;
-  createdAt: string;
-  removedAt: string | null;
-};
-
-export type DashboardAccessListResponse = {
-  items: Array<DashboardAccessGrant>;
-};
-
-export type DashboardAccessResponse = {
-  ok: true;
-  item: DashboardAccessGrant;
-};
-
-export type MeDashboard = {
-  id: string;
-  name: string;
-  elements: Array<DashboardElement>;
-  updatedAt: string;
-};
-
-export type MeDashboardListResponse = {
-  items: Array<MeDashboard>;
-};
-
 export type BuiltMcpApp = {
   serverName: string;
   connectionId: string;
@@ -1657,6 +2509,63 @@ export type DesktopPolicyListResponse = {
   }>;
 };
 
+export type AgentPermissionSetting = {
+  decision?: "allow" | "ask" | "deny";
+  allow?: Array<string>;
+  block?: Array<string>;
+};
+
+export type AgentPermissionSettings = {
+  commands?: AgentPermissionSetting;
+  fileEdits?: AgentPermissionSetting;
+  websites?: AgentPermissionSetting;
+  webSearch?: AgentPermissionSetting;
+  localSkills?: AgentPermissionSetting;
+  localMcpServers?: AgentPermissionSetting;
+};
+
+export type AgentPermissionPolicy = {
+  teamId: string | null;
+  name: string;
+  memberCount: number | null;
+  settings: AgentPermissionSettings;
+  updatedAt: string | null;
+};
+
+export type AgentPermissionPolicyList = {
+  everyone: AgentPermissionPolicy;
+  teams: Array<AgentPermissionPolicy>;
+  canEdit: boolean;
+};
+
+export type AgentPermissionPolicyResponse = {
+  policy: AgentPermissionPolicy;
+};
+
+export type AgentPermissionPolicyWrite = {
+  settings: AgentPermissionSettings;
+};
+
+export type InferenceStatus = {
+  enabled: boolean;
+  tier: "tier1" | "tier2";
+  memberCount: number;
+  proxyBaseUrl: string;
+  upstreamProviderConfigured: boolean;
+  subscribed?: boolean;
+  buckets: Array<{
+    windowType: "five_hour" | "weekly" | "monthly";
+    windowStartAt: string;
+    windowEndAt: string;
+    limitAmount: number;
+    usedAmount: number;
+  }>;
+};
+
+export type InferenceStatusResponse = {
+  inference: InferenceStatus;
+};
+
 export type InferenceAccessResponse = {
   access: {
     kind: "free" | "paid" | "exhausted" | "unavailable";
@@ -1690,29 +2599,39 @@ export type InferenceAccessResponse = {
   };
 };
 
-export type InferenceStatus = {
-  enabled: boolean;
-  tier: "tier1" | "tier2";
-  memberCount: number;
-  proxyBaseUrl: string;
-  upstreamProviderConfigured: boolean;
-  subscribed?: boolean;
-  buckets: Array<{
-    windowType: "five_hour" | "weekly" | "monthly";
-    windowStartAt: string;
-    windowEndAt: string;
-    limitAmount: number;
-    usedAmount: number;
-  }>;
-};
-
-export type InferenceStatusResponse = {
-  inference: InferenceStatus;
-};
-
 export type InferenceProviderMissingError = {
   error: "openrouter_management_api_key_missing";
   message: string;
+};
+
+export type LibraryUsageSourceCounts = {
+  agent?: number;
+  workflow?: number;
+  automation?: number;
+  app?: number;
+  artifact?: number;
+};
+
+export type LibraryUsageBreakdownRow = {
+  itemId: string | null;
+  memberId: string | null;
+  date: string | null;
+  uses: number;
+  people: number;
+  failures: number | null;
+  lastUsedAt: string | null;
+  sources: LibraryUsageSourceCounts;
+};
+
+export type LibraryUsageBreakdown = {
+  kind: "skills" | "plugins" | "connectors";
+  days: number;
+  from: string;
+  to: string;
+  timezone: "UTC";
+  groupBy: Array<"item" | "member" | "day">;
+  trackingSince: string | null;
+  rows: Array<LibraryUsageBreakdownRow>;
 };
 
 export type LibraryUsageRow = {
@@ -1940,20 +2859,26 @@ export type InvitationNotPendingError = {
   status: string;
 };
 
-export type CreateInstallLinkResponse = {
-  token: string;
+export type InvitationLinkResponse = {
   /**
-   * Share this page: it downloads the OpenWork desktop app for this organization.
+   * Den TypeID with 'inv_' prefix and a 26-character base32 suffix.
+   */
+  invitationId: string;
+  inviteLink: string;
+  expiresAt: string;
+};
+
+export type CreateInstallLinkResponse = {
+  /**
+   * Share this page: people sign in and download the OpenWork desktop app for their organization.
    */
   installPageUrl: string;
-  /**
-   * Open on a computer that already has OpenWork installed to point the desktop app at this organization. Short-lived; mint a new link when it expires.
-   */
-  connectUrl: string;
-  connectExpiresAt: string;
 };
 
 export type CreateInstallLinkRequest = {
+  /**
+   * Ignored. Install pages carry no token, so there is nothing to rotate.
+   */
   rotate?: boolean;
 };
 
@@ -1967,62 +2892,6 @@ export type AuthenticatedInstallConfig = {
   iconUrl?: string | null;
   desktopVersion: string;
   distribution: "cloud" | "enterprise";
-};
-
-export type InstallExperienceConfig = {
-  appName?: string;
-  clientName: string;
-  webUrl: string;
-  apiUrl: string;
-  requireSignin: boolean;
-  logoUrl: string | null;
-  iconUrl?: string | null;
-  connectUrl: string;
-  connectExpiresAt: string;
-  activationUrl: string;
-  activationExpiresAt: string;
-  desktopVersion: string;
-  distribution: "cloud" | "enterprise";
-};
-
-export type InstallLinkNotFoundError = {
-  error: "install_link_not_found";
-};
-
-export type ConnectLinkClaims = {
-  iss: string;
-  aud: "openwork-desktop-connect";
-  iat: number;
-  exp: number;
-  jti: string;
-  v: 1;
-  org: {
-    name: string;
-  };
-  brand: {
-    appName: string;
-    logoUrl: string | null;
-    iconUrl: string | null;
-  };
-  den: {
-    baseUrl: string;
-    apiBaseUrl?: string | null;
-  };
-  requireSignin: boolean;
-};
-
-export type DesktopConnectGrantStatusResponse = {
-  status: "pending" | "connected";
-  claims: ConnectLinkClaims;
-  expiresAt: string;
-};
-
-export type DesktopConnectGrantFailure = {
-  error: "connect_grant_invalid" | "connect_grant_expired" | "connect_grant_replayed";
-};
-
-export type DesktopConnectGrantResponse = {
-  claims: ConnectLinkClaims;
 };
 
 export type LlmProviderResponse = {
@@ -2486,6 +3355,10 @@ export type PermissionSetAppliesToSummary =
   | {
       kind: "team";
       team: PermissionSetTeam | null;
+      teams: Array<PermissionSetTeam>;
+      /**
+       * People in any of the set's teams, each counted once.
+       */
       memberCount: number;
     };
 
@@ -2493,7 +3366,14 @@ export type PermissionSetSummary = {
   id: string;
   name: string;
   kind: "member_default" | "admin_default" | "team";
+  /**
+   * The first team the set applies to. Kept for older clients; see teams.
+   */
   team: PermissionSetTeam | null;
+  /**
+   * Every team the set applies to now. More than one only with Shared roles.
+   */
+  teams: Array<PermissionSetTeam>;
   allowedCount: number;
   createdAt: string;
   appliesTo: PermissionSetAppliesToSummary;
@@ -2558,9 +3438,13 @@ export type PermissionSetAppliesTo =
   | {
       kind: "team";
       team: PermissionSetTeam | null;
+      teams: Array<PermissionSetTeam>;
+      /**
+       * People in any of the set's teams, each counted once.
+       */
       memberCount: number;
       /**
-       * Names and emails of the team's members. Null unless the caller holds teams.view; memberCount is always returned.
+       * Names and emails of the people in the set's teams. Null unless the caller holds teams.view; memberCount is always returned.
        */
       members: Array<PermissionPerson> | null;
     };
@@ -2569,7 +3453,14 @@ export type PermissionSetDetail = {
   id: string;
   name: string;
   kind: "member_default" | "admin_default" | "team";
+  /**
+   * The first team the set applies to. Kept for older clients; see teams.
+   */
   team: PermissionSetTeam | null;
+  /**
+   * Every team the set applies to now. More than one only with Shared roles.
+   */
+  teams: Array<PermissionSetTeam>;
   allowedCount: number;
   createdAt: string;
   archivedAt: string | null;
@@ -2600,9 +3491,17 @@ export type PermissionSetConflictError = {
 
 export type CreatePermissionSetBody = {
   /**
-   * The team this set applies to. A team can have one active permission set; it can't be changed later.
+   * The one team this set applies to, named "<team name> Permissions". A team can have one active permission set. Required unless Shared roles is on and name is given.
    */
-  teamId: string;
+  teamId?: string;
+  /**
+   * Shared roles: the role's name. Required when teamId is left out.
+   */
+  name?: string;
+  /**
+   * Shared roles: teams that get this role now. Each team's current custom role is replaced. Left out or empty, the role starts with no team.
+   */
+  teamIds?: Array<string>;
   /**
    * Initial status per key. Keys left out, or set to deny, start denied.
    */
@@ -2613,6 +3512,29 @@ export type CreatePermissionSetBody = {
     key: string;
     status: "allow" | "deny";
   }>;
+};
+
+export type DefaultPermissionSetError = {
+  error: "default_permission_set";
+  message: string;
+};
+
+export type RenamePermissionSetBody = {
+  /**
+   * The role's new name.
+   */
+  name: string;
+};
+
+export type TeamPermissionSetResponse = {
+  set: PermissionSetDetail | null;
+};
+
+export type TeamPermissionSetBody = {
+  /**
+   * The custom role (team permission set) the team gets, replacing its current one. Null leaves the team with no custom role.
+   */
+  permissionSetId: string | null;
 };
 
 export type UpdatePermissionSetPermissionsBody = {
@@ -2649,11 +3571,6 @@ export type PermissionHistoryPage = {
   nextCursor: string | null;
 };
 
-export type DefaultPermissionSetError = {
-  error: "default_permission_set";
-  message: string;
-};
-
 export type PermissionKeyStatus = {
   permission: PermissionDefinition;
   sets: Array<{
@@ -2661,6 +3578,7 @@ export type PermissionKeyStatus = {
     name: string;
     kind: "member_default" | "admin_default" | "team";
     team: PermissionSetTeam | null;
+    teams: Array<PermissionSetTeam>;
     status: "allow" | "deny";
     locked: boolean;
   }>;
@@ -2769,6 +3687,101 @@ export type GoogleDriveUploadSessionResponse = {
   method: "PUT";
   size: number;
   chunkSize: 8388608;
+  /**
+   * Present when the upload replaces an existing file's content.
+   */
+  replaces?: {
+    fileId: string;
+    previousRevision: string | null;
+  };
+  instructions: string;
+};
+
+export type GoogleDriveDownloadInfo = {
+  ok: true;
+  file: {
+    id: string;
+    name: string;
+    mimeType: string;
+    /**
+     * Google Docs, Sheets, Slides or Drawings file, pulled as an export.
+     */
+    native: boolean;
+    /**
+     * Pass back as baseRevision when replacing this file, so newer Drive changes are never overwritten silently.
+     */
+    revision: string | null;
+    md5Checksum: string | null;
+    size: number | null;
+    modifiedTime: string | null;
+    webViewLink: string | null;
+    parents: Array<string>;
+  };
+  download: {
+    format: string | null;
+    mimeType: string;
+    /**
+     * Extension the saved file needs, for exports.
+     */
+    extension: string | null;
+    /**
+     * Exact bytes for stored files; unknown until downloaded for exports.
+     */
+    size: number | null;
+    exported: boolean;
+    maxBytes: number;
+  };
+};
+
+export type GoogleDriveDownloadLink = {
+  ok: true;
+  file: {
+    id: string;
+    name: string;
+    mimeType: string;
+    /**
+     * Google Docs, Sheets, Slides or Drawings file, pulled as an export.
+     */
+    native: boolean;
+    /**
+     * Pass back as baseRevision when replacing this file, so newer Drive changes are never overwritten silently.
+     */
+    revision: string | null;
+    md5Checksum: string | null;
+    size: number | null;
+    modifiedTime: string | null;
+    webViewLink: string | null;
+    parents: Array<string>;
+  };
+  download: {
+    format: string | null;
+    mimeType: string;
+    /**
+     * Extension the saved file needs, for exports.
+     */
+    extension: string | null;
+    /**
+     * Exact bytes for stored files; unknown until downloaded for exports.
+     */
+    size: number | null;
+    exported: boolean;
+    maxBytes: number;
+  };
+  /**
+   * Secret bearer URL for this one file, valid for five minutes. Do not print, share, log or persist it.
+   */
+  downloadUrl: string;
+  expiresAt: string;
+  /**
+   * The same download as an MCP resource link.
+   */
+  resourceLink: {
+    type: "resource_link";
+    uri: string;
+    name: string;
+    mimeType: string;
+    size?: number;
+  };
   instructions: string;
 };
 
@@ -3318,6 +4331,15 @@ export type Microsoft365TeamsMessageBody = {
 };
 
 export type ExternalMcpRequirementsDiscovery = {
+  /**
+   * Settings-view-only unverified suggestions; never applied until an administrator saves manual sign-in settings.
+   */
+  publishedSignInAddresses?: Array<{
+    authorizationEndpoint: string;
+    tokenEndpoint: string;
+    advertisedIssuer: string;
+    metadataIssuer: string;
+  }>;
   status: "ready" | "manual_action_required" | "unsupported" | "unreachable";
   server: {
     url: string;
@@ -3497,6 +4519,17 @@ export type ExternalMcpConnectionResponse = {
   setupRequired?: boolean;
   access: ExternalMcpConnectionAccessSummary | null;
   oauthClientId?: string | null;
+  /**
+   * Whether a client secret is configured. Only returned with explicit connection-settings view permission; never the secret itself.
+   */
+  oauthClientHasSecret?: boolean;
+  /**
+   * Only returned with explicit connection-settings view permission; omitted from usable member listings, including for the connection creator.
+   */
+  manualOAuthEndpoints?: {
+    authorizationEndpoint: string;
+    tokenEndpoint: string;
+  } | null;
   oauthCallbackUrl?: string | null;
   oauthSharedCallbackUrl?: string | null;
   oauthClientMetadataUrl?: string | null;
@@ -3765,6 +4798,17 @@ export type ExternalMcpConnectionCreatedResponse = {
   setupRequired?: boolean;
   access: ExternalMcpConnectionAccessSummary | null;
   oauthClientId?: string | null;
+  /**
+   * Whether a client secret is configured. Only returned with explicit connection-settings view permission; never the secret itself.
+   */
+  oauthClientHasSecret?: boolean;
+  /**
+   * Only returned with explicit connection-settings view permission; omitted from usable member listings, including for the connection creator.
+   */
+  manualOAuthEndpoints?: {
+    authorizationEndpoint: string;
+    tokenEndpoint: string;
+  } | null;
   oauthCallbackUrl?: string | null;
   oauthSharedCallbackUrl?: string | null;
   oauthClientMetadataUrl?: string | null;
@@ -3840,6 +4884,17 @@ export type ExternalMcpConnectionUpdatedResponse = {
   setupRequired?: boolean;
   access: ExternalMcpConnectionAccessSummary | null;
   oauthClientId?: string | null;
+  /**
+   * Whether a client secret is configured. Only returned with explicit connection-settings view permission; never the secret itself.
+   */
+  oauthClientHasSecret?: boolean;
+  /**
+   * Only returned with explicit connection-settings view permission; omitted from usable member listings, including for the connection creator.
+   */
+  manualOAuthEndpoints?: {
+    authorizationEndpoint: string;
+    tokenEndpoint: string;
+  } | null;
   oauthCallbackUrl?: string | null;
   oauthSharedCallbackUrl?: string | null;
   oauthClientMetadataUrl?: string | null;
@@ -3874,6 +4929,13 @@ export type ExternalMcpConnectionByKeyUpsertInput = {
     clientSecret?: string;
     tokenEndpointAuthMethod?: "client_secret_basic" | "client_secret_post";
   };
+  /**
+   * Administrator-pinned authorization and token URLs. Both required; null restores strict discovery. Changing them clears saved sign-ins.
+   */
+  manualOAuthEndpoints?: {
+    authorizationEndpoint: string;
+    tokenEndpoint: string;
+  } | null;
   authorizationServerIssuer?: string | null;
   requestedScopes?: Array<string>;
   access?: ExternalMcpConnectionAccessInput;
@@ -3900,6 +4962,7 @@ export type ExternalMcpOAuthConfigurationRequiredError = {
 export type ExternalMcpOAuthIssuerMismatchError = {
   error: "mcp_oauth_issuer_mismatch";
   message: string;
+  diagnostic?: ExternalMcpDiagnostic;
 };
 
 export type ExternalMcpConnectStartConflictError =
@@ -4251,6 +5314,25 @@ export type PluginArchPluginDetailResponse = {
   item: PluginArchPlugin;
 };
 
+export type PluginArchResolvedPluginsResponse = {
+  /**
+   * Each visible plugin's resolved contents, keyed by plugin id: the body GET /v1/plugins/:pluginId/resolved returns.
+   */
+  plugins: {
+    [key: string]: PluginArchPluginMembershipListResponse;
+  };
+  /**
+   * Requested plugins the caller cannot view (403) or that do not exist (404), keyed by plugin id, with the error GET /v1/plugins/:pluginId/resolved returns.
+   */
+  failures: {
+    [key: string]: {
+      status: 403 | 404;
+      error: string;
+      message: string;
+    };
+  };
+};
+
 export type PluginArchPluginMcpRequirementConfigureResponse = {
   ok: true;
   item: {
@@ -4283,6 +5365,37 @@ export type PluginArchPluginMcpRequirementConfigureResponse = {
       yourConnections: string;
     };
   };
+  credentialPrompt?: {
+    schemaVersion: "1";
+    kind: "credential_prompt";
+    target:
+      | {
+          type: "mcp_connection_key";
+          connectionId: string;
+        }
+      | {
+          type: "plugin_connection_key";
+          pluginId: string;
+          configObjectId: string;
+          serverName: string;
+          connectionId: string;
+        }
+      | {
+          type: "gateway_provider_key";
+          inferenceProviderId: string;
+          credentialSetId: string;
+        }
+      | {
+          type: "gateway_provider_credential";
+          inferenceProviderId: string;
+          credentialSetId: string;
+          credentialKind: "aws_keys" | "gcp_service_account" | "api_key_map";
+          envNames?: Array<string>;
+        };
+    name: string;
+    destination: string | null;
+  };
+  nextStep?: string;
 };
 
 export type GithubPluginMcpImportServer = {
@@ -5475,6 +6588,53 @@ export type WorkbotSettingsInput = {
   model: string | null;
 };
 
+export type DefaultModelChoice = {
+  providerId: string;
+  modelId: string;
+};
+
+export type DefaultModelTeam = {
+  teamId: string;
+  name: string;
+  memberCount: number;
+  model: DefaultModelChoice | null;
+  conflictingMemberCount: number;
+};
+
+export type DefaultModelSettings = {
+  everyone: DefaultModelChoice | null;
+  teams: Array<DefaultModelTeam>;
+  canEdit: boolean;
+};
+
+export type DefaultModelOption = {
+  providerId: string;
+  modelId: string;
+  providerName: string;
+  modelName: string;
+  logoProviderId: string;
+  source: "openwork" | "gateway" | "provider";
+};
+
+export type DefaultModelOptions = {
+  options: Array<DefaultModelOption>;
+  unavailableSources: Array<"openwork" | "gateway" | "provider">;
+};
+
+export type DefaultModelUnknownModelError = {
+  error: "unknown_model";
+  message: string;
+};
+
+export type DefaultModelSourceUnavailableError = {
+  error: "model_source_unavailable";
+  message: string;
+};
+
+export type DefaultModelWrite = {
+  model: DefaultModelChoice | null;
+};
+
 export type WorkbotSession = {
   user: {
     id: string;
@@ -5491,7 +6651,6 @@ export type WorkbotSession = {
   canSchedule: boolean;
   calendar?: boolean;
   sideChats: boolean;
-  calendarPolish?: boolean;
   model?: string | null;
 };
 
@@ -5734,6 +6893,210 @@ export type GetV1AdminFreeAutoUsageResponses = {
 };
 
 export type GetV1AdminFreeAutoUsageResponse = GetV1AdminFreeAutoUsageResponses[keyof GetV1AdminFreeAutoUsageResponses];
+
+export type GetV1AdminFreeAutoConversionsData = {
+  body?: never;
+  path?: never;
+  query?: {
+    days?: number;
+    page?: number;
+    search?: string;
+    stage?: "all" | "signed-in" | "new-account" | "subscribed" | "unlinked";
+  };
+  url: "/v1/admin/free-auto/conversions";
+};
+
+export type GetV1AdminFreeAutoConversionsErrors = {
+  /**
+   * Invalid query.
+   */
+  400: InvalidRequestError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Platform admin access required.
+   */
+  403: ForbiddenError;
+};
+
+export type GetV1AdminFreeAutoConversionsError =
+  GetV1AdminFreeAutoConversionsErrors[keyof GetV1AdminFreeAutoConversionsErrors];
+
+export type GetV1AdminFreeAutoConversionsResponses = {
+  /**
+   * Free Auto conversions returned.
+   */
+  200: AdminFreeAutoConversions;
+};
+
+export type GetV1AdminFreeAutoConversionsResponse =
+  GetV1AdminFreeAutoConversionsResponses[keyof GetV1AdminFreeAutoConversionsResponses];
+
+export type GetV1AdminOrganizationsByOrganizationIdData = {
+  body?: never;
+  path: {
+    organizationId: string;
+  };
+  query?: {
+    search?: string;
+    limit?: string;
+    offset?: string;
+  };
+  url: "/v1/admin/organizations/{organizationId}";
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdErrors = {
+  /**
+   * Invalid organization id or pagination query.
+   */
+  400: InvalidRequestError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Platform admin access required.
+   */
+  403: ForbiddenError;
+  /**
+   * Organization not found.
+   */
+  404: NotFoundError;
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdError =
+  GetV1AdminOrganizationsByOrganizationIdErrors[keyof GetV1AdminOrganizationsByOrganizationIdErrors];
+
+export type GetV1AdminOrganizationsByOrganizationIdResponses = {
+  /**
+   * Organization detail returned.
+   */
+  200: AdminOrganizationDetail;
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdResponse =
+  GetV1AdminOrganizationsByOrganizationIdResponses[keyof GetV1AdminOrganizationsByOrganizationIdResponses];
+
+export type GetV1AdminOrganizationsByOrganizationIdUsageData = {
+  body?: never;
+  path: {
+    organizationId: string;
+  };
+  query?: {
+    search?: string;
+    limit?: string;
+    offset?: string;
+  };
+  url: "/v1/admin/organizations/{organizationId}/usage";
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdUsageErrors = {
+  /**
+   * Invalid organization id or pagination query.
+   */
+  400: InvalidRequestError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Platform admin access required.
+   */
+  403: ForbiddenError;
+  /**
+   * Organization not found.
+   */
+  404: NotFoundError;
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdUsageError =
+  GetV1AdminOrganizationsByOrganizationIdUsageErrors[keyof GetV1AdminOrganizationsByOrganizationIdUsageErrors];
+
+export type GetV1AdminOrganizationsByOrganizationIdUsageResponses = {
+  /**
+   * Organization detail returned.
+   */
+  200: AdminOrganizationUsage;
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdUsageResponse =
+  GetV1AdminOrganizationsByOrganizationIdUsageResponses[keyof GetV1AdminOrganizationsByOrganizationIdUsageResponses];
+
+export type GetV1AdminOrganizationsByOrganizationIdInsightsData = {
+  body?: never;
+  path: {
+    organizationId: string;
+  };
+  query?: {
+    search?: string;
+    limit?: string;
+    offset?: string;
+  };
+  url: "/v1/admin/organizations/{organizationId}/insights";
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdInsightsErrors = {
+  /**
+   * Invalid organization id or pagination query.
+   */
+  400: InvalidRequestError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Platform admin access required.
+   */
+  403: ForbiddenError;
+  /**
+   * Organization not found.
+   */
+  404: NotFoundError;
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdInsightsError =
+  GetV1AdminOrganizationsByOrganizationIdInsightsErrors[keyof GetV1AdminOrganizationsByOrganizationIdInsightsErrors];
+
+export type GetV1AdminOrganizationsByOrganizationIdInsightsResponses = {
+  /**
+   * Organization detail returned.
+   */
+  200: AdminOrganizationInsights;
+};
+
+export type GetV1AdminOrganizationsByOrganizationIdInsightsResponse =
+  GetV1AdminOrganizationsByOrganizationIdInsightsResponses[keyof GetV1AdminOrganizationsByOrganizationIdInsightsResponses];
+
+export type GetV1AdminDashboardData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/admin/dashboard";
+};
+
+export type GetV1AdminDashboardErrors = {
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * Platform admin access required.
+   */
+  403: ForbiddenError;
+};
+
+export type GetV1AdminDashboardError = GetV1AdminDashboardErrors[keyof GetV1AdminDashboardErrors];
+
+export type GetV1AdminDashboardResponses = {
+  /**
+   * Platform dashboard returned.
+   */
+  200: AdminDashboard;
+};
+
+export type GetV1AdminDashboardResponse = GetV1AdminDashboardResponses[keyof GetV1AdminDashboardResponses];
 
 export type PostV1AdminAdminsData = {
   body?: never;
@@ -6242,23 +7605,36 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
    */
   200: {
     capabilities: {
+      googleDocumentTools: boolean;
+      offlineRecovery: boolean;
+      rememberLastOrganization: boolean;
+      secureSecretFields: boolean;
+      memberListToolbars: boolean;
+      appBuildProgress: boolean;
+      modelsAnalyticsUi: boolean;
+      taskAnalyticsUi: boolean;
+      desktopPolicyScreenRemoval: boolean;
       teamMembershipCache: boolean;
+      managedDeploymentsGcp: boolean;
+      managedDeploymentsMcp: boolean;
       managedDeployments: boolean;
-      denFlatPageHeaders: boolean;
-      dashboardActivity: boolean;
-      libraryIntegrated: boolean;
-      libraryUsage: boolean;
-      modelsAnalytics: boolean;
-      orgManagedDashboards: boolean;
       slackAssistant: boolean;
       slackWorkbotReplies: boolean;
-      headlessAutomations: boolean;
       workbot: boolean;
-      calendarPolish: boolean;
       automationCalendar: boolean;
       permissions: boolean;
+      teamRoles: boolean;
+      sharedRoles: boolean;
+      agentPermissions: boolean;
       engineV2Upgrade: boolean;
       remoteSessionEvents: boolean;
+      backgroundShellTasks: boolean;
+      orgDefaultModel: boolean;
+      gatewayProviderUsageLimits: boolean;
+      teamAccessRows: boolean;
+      teamPageTabs: boolean;
+      inviteLinkVerifiesEmail: boolean;
+      remoteSessionSubagents: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -6270,6 +7646,87 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates: {
+      googleDocumentTools: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      offlineRecovery: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      rememberLastOrganization: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      secureSecretFields: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      memberListToolbars: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      appBuildProgress: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      modelsAnalyticsUi: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      taskAnalyticsUi: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      desktopPolicyScreenRemoval: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       teamMembershipCache: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -6279,61 +7736,25 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
+      managedDeploymentsGcp: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      managedDeploymentsMcp: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       managedDeployments: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      denFlatPageHeaders: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      dashboardActivity: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      libraryIntegrated: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      libraryUsage: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      modelsAnalytics: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      orgManagedDashboards: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6360,25 +7781,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      headlessAutomations: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
       workbot: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      calendarPolish: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6405,6 +7808,33 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
+      teamRoles: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      sharedRoles: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      agentPermissions: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       engineV2Upgrade: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -6415,6 +7845,69 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       remoteSessionEvents: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      backgroundShellTasks: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      orgDefaultModel: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      gatewayProviderUsageLimits: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      teamAccessRows: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      teamPageTabs: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      inviteLinkVerifiesEmail: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      remoteSessionSubagents: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6474,23 +7967,36 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       id: string;
     };
     capabilities: {
+      googleDocumentTools: boolean;
+      offlineRecovery: boolean;
+      rememberLastOrganization: boolean;
+      secureSecretFields: boolean;
+      memberListToolbars: boolean;
+      appBuildProgress: boolean;
+      modelsAnalyticsUi: boolean;
+      taskAnalyticsUi: boolean;
+      desktopPolicyScreenRemoval: boolean;
       teamMembershipCache: boolean;
+      managedDeploymentsGcp: boolean;
+      managedDeploymentsMcp: boolean;
       managedDeployments: boolean;
-      denFlatPageHeaders: boolean;
-      dashboardActivity: boolean;
-      libraryIntegrated: boolean;
-      libraryUsage: boolean;
-      modelsAnalytics: boolean;
-      orgManagedDashboards: boolean;
       slackAssistant: boolean;
       slackWorkbotReplies: boolean;
-      headlessAutomations: boolean;
       workbot: boolean;
-      calendarPolish: boolean;
       automationCalendar: boolean;
       permissions: boolean;
+      teamRoles: boolean;
+      sharedRoles: boolean;
+      agentPermissions: boolean;
       engineV2Upgrade: boolean;
       remoteSessionEvents: boolean;
+      backgroundShellTasks: boolean;
+      orgDefaultModel: boolean;
+      gatewayProviderUsageLimits: boolean;
+      teamAccessRows: boolean;
+      teamPageTabs: boolean;
+      inviteLinkVerifiesEmail: boolean;
+      remoteSessionSubagents: boolean;
       /**
        * Compatibility field, always true. AI Gateway is available to every organization; deployment configuration and authorization still apply.
        *
@@ -6502,6 +8008,87 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
      * Per feature for this organization: whether it is on and why (not part of this deployment, kill switch, operator lock, organization override, or the deployment-wide on/off state), and whether an organization override would take effect.
      */
     featureStates: {
+      googleDocumentTools: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      offlineRecovery: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      rememberLastOrganization: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      secureSecretFields: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      memberListToolbars: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      appBuildProgress: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      modelsAnalyticsUi: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      taskAnalyticsUi: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      desktopPolicyScreenRemoval: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       teamMembershipCache: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -6511,61 +8098,25 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
+      managedDeploymentsGcp: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      managedDeploymentsMcp: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       managedDeployments: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      denFlatPageHeaders: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      dashboardActivity: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      libraryIntegrated: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      libraryUsage: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      modelsAnalytics: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      orgManagedDashboards: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6592,25 +8143,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
-      headlessAutomations: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
       workbot: {
-        enabled: boolean;
-        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
-        everyone: boolean;
-        killed: boolean;
-        lock: boolean | null;
-        override: boolean | null;
-        overrideApplies: boolean;
-      };
-      calendarPolish: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6637,6 +8170,33 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         override: boolean | null;
         overrideApplies: boolean;
       };
+      teamRoles: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      sharedRoles: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      agentPermissions: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
       engineV2Upgrade: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
@@ -6647,6 +8207,69 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       remoteSessionEvents: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      backgroundShellTasks: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      orgDefaultModel: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      gatewayProviderUsageLimits: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      teamAccessRows: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      teamPageTabs: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      inviteLinkVerifiesEmail: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      remoteSessionSubagents: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6781,6 +8404,10 @@ export type GetV1AdminOrganizationsData = {
     limit?: string;
     offset?: string;
     search?: string;
+    /**
+     * Set to 0 to omit capabilities and featureStates. Fetch one organization's features when its editor is opened. Defaults to 1 for existing clients.
+     */
+    includeFeatures?: "0" | "1";
   };
   url: "/v1/admin/organizations";
 };
@@ -8963,6 +10590,217 @@ export type CancelAutomationRunResponses = {
 
 export type CancelAutomationRunResponse = CancelAutomationRunResponses[keyof CancelAutomationRunResponses];
 
+export type PostV1RemoteSessionsStatusData = {
+  body: RemoteSessionStatusRequest;
+  path?: never;
+  query?: never;
+  url: "/v1/remote-sessions/status";
+};
+
+export type PostV1RemoteSessionsStatusErrors = {
+  /**
+   * The request or its arguments were invalid.
+   */
+  400: InvalidRequestError | RemoteSessionError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * The task is unknown, the organization was not found, or the feature is off.
+   */
+  404:
+    | NotFoundError
+    | {
+        error: string;
+        feature?: string;
+      };
+  /**
+   * The task cannot do that now.
+   */
+  409: RemoteSessionError;
+  /**
+   * The computer or cloud workspace that runs the task can't be reached right now; retry.
+   */
+  503: RemoteSessionError;
+};
+
+export type PostV1RemoteSessionsStatusError = PostV1RemoteSessionsStatusErrors[keyof PostV1RemoteSessionsStatusErrors];
+
+export type PostV1RemoteSessionsStatusResponses = {
+  /**
+   * The status of each session.
+   */
+  200: RemoteSessionStatusResult;
+};
+
+export type PostV1RemoteSessionsStatusResponse =
+  PostV1RemoteSessionsStatusResponses[keyof PostV1RemoteSessionsStatusResponses];
+
+export type PostV1RemoteSessionsReadData = {
+  body: {
+    messageId?: string;
+    sessionId?: string;
+    commandId?: string;
+    requestId?: string;
+    workspaceId?: string;
+    from?: "start" | "end";
+    cursor?: string;
+    limit?: number;
+  };
+  path?: never;
+  query?: never;
+  url: "/v1/remote-sessions/read";
+};
+
+export type PostV1RemoteSessionsReadErrors = {
+  /**
+   * The request or its arguments were invalid.
+   */
+  400: InvalidRequestError | RemoteSessionError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * The task is unknown, the organization was not found, or the feature is off.
+   */
+  404:
+    | NotFoundError
+    | {
+        error: string;
+        feature?: string;
+      };
+  /**
+   * The task cannot do that now.
+   */
+  409: RemoteSessionError;
+  /**
+   * The computer or cloud workspace that runs the task can't be reached right now; retry.
+   */
+  503: RemoteSessionError;
+};
+
+export type PostV1RemoteSessionsReadError = PostV1RemoteSessionsReadErrors[keyof PostV1RemoteSessionsReadErrors];
+
+export type PostV1RemoteSessionsReadResponses = {
+  /**
+   * The transcript page or receipt.
+   */
+  200: RemoteSessionResult;
+};
+
+export type PostV1RemoteSessionsReadResponse =
+  PostV1RemoteSessionsReadResponses[keyof PostV1RemoteSessionsReadResponses];
+
+export type PostV1RemoteSessionsSendData = {
+  body: {
+    messageId?: string;
+    sessionId: string;
+    workspaceId?: string;
+    prompt: string;
+    model?: {
+      providerId: string;
+      modelId: string;
+      variant?: string;
+    };
+  };
+  path?: never;
+  query?: never;
+  url: "/v1/remote-sessions/send";
+};
+
+export type PostV1RemoteSessionsSendErrors = {
+  /**
+   * The request or its arguments were invalid.
+   */
+  400: InvalidRequestError | RemoteSessionError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * The task is unknown, the organization was not found, or the feature is off.
+   */
+  404:
+    | NotFoundError
+    | {
+        error: string;
+        feature?: string;
+      };
+  /**
+   * The task cannot do that now.
+   */
+  409: RemoteSessionError;
+  /**
+   * The computer or cloud workspace that runs the task can't be reached right now; retry.
+   */
+  503: RemoteSessionError;
+};
+
+export type PostV1RemoteSessionsSendError = PostV1RemoteSessionsSendErrors[keyof PostV1RemoteSessionsSendErrors];
+
+export type PostV1RemoteSessionsSendResponses = {
+  /**
+   * The follow-up was accepted or is pending.
+   */
+  200: RemoteSessionResult;
+};
+
+export type PostV1RemoteSessionsSendResponse =
+  PostV1RemoteSessionsSendResponses[keyof PostV1RemoteSessionsSendResponses];
+
+export type PostV1RemoteSessionsStopData = {
+  body: {
+    sessionId: string;
+    workspaceId?: string;
+    messageId?: string;
+  };
+  path?: never;
+  query?: never;
+  url: "/v1/remote-sessions/stop";
+};
+
+export type PostV1RemoteSessionsStopErrors = {
+  /**
+   * The request or its arguments were invalid.
+   */
+  400: InvalidRequestError | RemoteSessionError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * The task is unknown, the organization was not found, or the feature is off.
+   */
+  404:
+    | NotFoundError
+    | {
+        error: string;
+        feature?: string;
+      };
+  /**
+   * The task cannot do that now.
+   */
+  409: RemoteSessionError;
+  /**
+   * The computer or cloud workspace that runs the task can't be reached right now; retry.
+   */
+  503: RemoteSessionError;
+};
+
+export type PostV1RemoteSessionsStopError = PostV1RemoteSessionsStopErrors[keyof PostV1RemoteSessionsStopErrors];
+
+export type PostV1RemoteSessionsStopResponses = {
+  /**
+   * Whether the session stopped, or a pending requestId.
+   */
+  200: RemoteSessionResult;
+};
+
+export type PostV1RemoteSessionsStopResponse =
+  PostV1RemoteSessionsStopResponses[keyof PostV1RemoteSessionsStopResponses];
+
 export type DeleteV1OrgData = {
   body?: never;
   path?: never;
@@ -9173,13 +11011,6 @@ export type GetV1OrgActivityErrors = {
    * Only workspace owners and admins can read dashboard activity.
    */
   403: ForbiddenError;
-  /**
-   * The organization was not found, or dashboard activity is off.
-   */
-  404: {
-    error: "feature_disabled";
-    feature: string;
-  };
 };
 
 export type GetV1OrgActivityError = GetV1OrgActivityErrors[keyof GetV1OrgActivityErrors];
@@ -9192,6 +11023,32 @@ export type GetV1OrgActivityResponses = {
 };
 
 export type GetV1OrgActivityResponse = GetV1OrgActivityResponses[keyof GetV1OrgActivityResponses];
+
+export type GetV1OrgInventoryRevisionData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/org/inventory-revision";
+};
+
+export type GetV1OrgInventoryRevisionErrors = {
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+};
+
+export type GetV1OrgInventoryRevisionError = GetV1OrgInventoryRevisionErrors[keyof GetV1OrgInventoryRevisionErrors];
+
+export type GetV1OrgInventoryRevisionResponses = {
+  /**
+   * The current inventory revision.
+   */
+  200: InventoryRevision;
+};
+
+export type GetV1OrgInventoryRevisionResponse =
+  GetV1OrgInventoryRevisionResponses[keyof GetV1OrgInventoryRevisionResponses];
 
 export type GetV1ManagedDeploymentsConfigurationData = {
   body?: never;
@@ -9257,6 +11114,8 @@ export type GetV1ManagedDeploymentsConfigurationResponses = {
       provider: "aws" | "azure" | "gcp";
       available: boolean;
       version: string | null;
+      reason?: "ready" | "not_configured" | "invalid_configuration" | "not_supported" | "feature_disabled";
+      missingFields?: Array<string>;
     }>;
     updateMode: "approval";
   };
@@ -9324,144 +11183,265 @@ export type GetV1ManagedDeploymentsResponses = {
    * List the organization's managed deployments
    */
   200: {
-    deployments: Array<{
-      id: string;
-      name: string;
-      provider: "aws" | "azure" | "gcp";
-      target: {
-        accountId: string;
-        region:
-          | "us-east-1"
-          | "us-east-2"
-          | "us-west-2"
-          | "eu-west-1"
-          | "eu-central-1"
-          | "ap-southeast-1"
-          | "ap-southeast-2";
-        route53ZoneId: string;
-        network?:
-          | {
-              mode: "dedicated";
-            }
-          | {
-              mode: "existing";
-              vpcId: string;
-              serviceSubnetIds: Array<string>;
-              loadBalancerSubnetIds: Array<string>;
-              ecsClusterArn?: string;
-            };
-      };
-      domainName: string;
-      ownerEmail: string;
-      size: "small";
-      updateMode: "approval";
-      createdAt: string;
-      webUrl: string;
-      consoleUrl: string;
-      installedVersion: string | null;
-      availableVersion: string | null;
-      updateAvailable: boolean;
-      health: {
-        state: "operational" | "degraded" | "down" | "not_reporting" | "awaiting_report";
-        reportedAt: string | null;
-        version: string | null;
-        checks: Array<{
-          id:
-            | "api_health"
-            | "database_ready"
-            | "web_available"
-            | "services_running"
-            | "load_balancer_targets"
-            | "database_instance"
-            | "database_storage"
-            | "database_backups"
-            | "certificate";
-          status: "ok" | "warning" | "failing" | "unknown";
-          value?: number;
-          total?: number;
-          code?:
-            | "http_error"
-            | "unreachable"
-            | "slow"
-            | "not_running"
-            | "unhealthy"
-            | "unavailable"
-            | "permission_denied"
-            | "low_storage"
-            | "stale_backup"
-            | "backups_disabled"
-            | "not_issued"
-            | "expiring"
-            | "expired";
-        }>;
-      };
-      run: {
-        id: string;
-        kind: "install" | "update" | "retry";
-        version: string;
-        state: "awaiting_approval" | "provisioning" | "ready" | "failed";
-        createdAt: string;
-        lastSeenAt: string | null;
-        expiresAt: string;
-        expired: boolean;
-        events: Array<{
-          sequence: number;
-          step:
-            | "runner_connected"
-            | "release_verified"
-            | "account_verified"
-            | "infrastructure_applied"
-            | "services_ready"
-            | "health_verified";
-          outcome: "succeeded" | "failed";
-          errorCode?:
-            | "release_verification_failed"
-            | "network_check_failed"
-            | "infrastructure_failed"
-            | "certificate_failed"
-            | "service_unhealthy"
-            | "health_check_failed"
-            | "runner_failed";
-          receivedAt: string;
-        }>;
-      } | null;
-    }>;
+    deployments: Array<
+      | {
+          id: string;
+          name: string;
+          domainName: string;
+          ownerEmail: string;
+          size: "small";
+          updateMode: "approval";
+          createdAt: string;
+          webUrl: string;
+          consoleUrl: string;
+          installedVersion: string | null;
+          availableVersion: string | null;
+          updateAvailable: boolean;
+          health: {
+            state: "operational" | "degraded" | "down" | "not_reporting" | "awaiting_report";
+            reportedAt: string | null;
+            version: string | null;
+            checks: Array<{
+              id:
+                | "api_health"
+                | "database_ready"
+                | "web_available"
+                | "services_running"
+                | "load_balancer_targets"
+                | "database_instance"
+                | "database_storage"
+                | "database_backups"
+                | "certificate";
+              status: "ok" | "warning" | "failing" | "unknown";
+              value?: number;
+              total?: number;
+              code?:
+                | "http_error"
+                | "unreachable"
+                | "slow"
+                | "not_running"
+                | "unhealthy"
+                | "unavailable"
+                | "permission_denied"
+                | "low_storage"
+                | "stale_backup"
+                | "backups_disabled"
+                | "not_issued"
+                | "expiring"
+                | "expired";
+            }>;
+          };
+          run: {
+            id: string;
+            kind: "install" | "update" | "retry";
+            version: string;
+            state: "awaiting_approval" | "provisioning" | "ready" | "failed";
+            createdAt: string;
+            lastSeenAt: string | null;
+            expiresAt: string;
+            expired: boolean;
+            events: Array<{
+              sequence: number;
+              step:
+                | "runner_connected"
+                | "release_verified"
+                | "account_verified"
+                | "infrastructure_applied"
+                | "services_ready"
+                | "health_verified";
+              outcome: "succeeded" | "failed";
+              errorCode?:
+                | "release_verification_failed"
+                | "network_check_failed"
+                | "infrastructure_failed"
+                | "certificate_failed"
+                | "service_unhealthy"
+                | "health_check_failed"
+                | "runner_failed";
+              receivedAt: string;
+            }>;
+          } | null;
+          provider: "aws";
+          target: {
+            accountId: string;
+            region:
+              | "us-east-1"
+              | "us-east-2"
+              | "us-west-2"
+              | "eu-west-1"
+              | "eu-central-1"
+              | "ap-southeast-1"
+              | "ap-southeast-2";
+            route53ZoneId: string;
+            network?:
+              | {
+                  mode: "dedicated";
+                }
+              | {
+                  mode: "existing";
+                  vpcId: string;
+                  serviceSubnetIds: Array<string>;
+                  loadBalancerSubnetIds: Array<string>;
+                  ecsClusterArn?: string;
+                };
+          };
+        }
+      | {
+          id: string;
+          name: string;
+          domainName: string;
+          ownerEmail: string;
+          size: "small";
+          updateMode: "approval";
+          createdAt: string;
+          webUrl: string;
+          consoleUrl: string;
+          installedVersion: string | null;
+          availableVersion: string | null;
+          updateAvailable: boolean;
+          health: {
+            state: "operational" | "degraded" | "down" | "not_reporting" | "awaiting_report";
+            reportedAt: string | null;
+            version: string | null;
+            checks: Array<{
+              id:
+                | "api_health"
+                | "database_ready"
+                | "web_available"
+                | "services_running"
+                | "load_balancer_targets"
+                | "database_instance"
+                | "database_storage"
+                | "database_backups"
+                | "certificate";
+              status: "ok" | "warning" | "failing" | "unknown";
+              value?: number;
+              total?: number;
+              code?:
+                | "http_error"
+                | "unreachable"
+                | "slow"
+                | "not_running"
+                | "unhealthy"
+                | "unavailable"
+                | "permission_denied"
+                | "low_storage"
+                | "stale_backup"
+                | "backups_disabled"
+                | "not_issued"
+                | "expiring"
+                | "expired";
+            }>;
+          };
+          run: {
+            id: string;
+            kind: "install" | "update" | "retry";
+            version: string;
+            state: "awaiting_approval" | "provisioning" | "ready" | "failed";
+            createdAt: string;
+            lastSeenAt: string | null;
+            expiresAt: string;
+            expired: boolean;
+            events: Array<{
+              sequence: number;
+              step:
+                | "runner_connected"
+                | "release_verified"
+                | "account_verified"
+                | "infrastructure_applied"
+                | "services_ready"
+                | "health_verified";
+              outcome: "succeeded" | "failed";
+              errorCode?:
+                | "release_verification_failed"
+                | "network_check_failed"
+                | "infrastructure_failed"
+                | "certificate_failed"
+                | "service_unhealthy"
+                | "health_check_failed"
+                | "runner_failed";
+              receivedAt: string;
+            }>;
+          } | null;
+          provider: "gcp";
+          target: {
+            projectId: string;
+            projectNumber: string;
+            region:
+              | "us-central1"
+              | "us-east1"
+              | "us-east4"
+              | "us-west1"
+              | "us-west2"
+              | "europe-west1"
+              | "europe-west2"
+              | "europe-west3"
+              | "asia-southeast1"
+              | "australia-southeast1";
+            dnsZoneName: string;
+          };
+        }
+    >;
   };
 };
 
 export type GetV1ManagedDeploymentsResponse = GetV1ManagedDeploymentsResponses[keyof GetV1ManagedDeploymentsResponses];
 
 export type PostV1ManagedDeploymentsData = {
-  body: {
-    name: string;
-    domainName: string;
-    ownerEmail: string;
-    size?: "small";
-    provider: "aws";
-    target: {
-      accountId: string;
-      region:
-        | "us-east-1"
-        | "us-east-2"
-        | "us-west-2"
-        | "eu-west-1"
-        | "eu-central-1"
-        | "ap-southeast-1"
-        | "ap-southeast-2";
-      route53ZoneId: string;
-      network?:
-        | {
-            mode: "dedicated";
-          }
-        | {
-            mode: "existing";
-            vpcId: string;
-            serviceSubnetIds: Array<string>;
-            loadBalancerSubnetIds: Array<string>;
-            ecsClusterArn?: string;
-          };
-    };
-  };
+  body:
+    | {
+        name: string;
+        domainName: string;
+        ownerEmail: string;
+        size?: "small";
+        provider: "aws";
+        target: {
+          accountId: string;
+          region:
+            | "us-east-1"
+            | "us-east-2"
+            | "us-west-2"
+            | "eu-west-1"
+            | "eu-central-1"
+            | "ap-southeast-1"
+            | "ap-southeast-2";
+          route53ZoneId: string;
+          network?:
+            | {
+                mode: "dedicated";
+              }
+            | {
+                mode: "existing";
+                vpcId: string;
+                serviceSubnetIds: Array<string>;
+                loadBalancerSubnetIds: Array<string>;
+                ecsClusterArn?: string;
+              };
+        };
+      }
+    | {
+        name: string;
+        domainName: string;
+        ownerEmail: string;
+        size?: "small";
+        provider: "gcp";
+        target: {
+          projectId: string;
+          projectNumber: string;
+          region:
+            | "us-central1"
+            | "us-east1"
+            | "us-east4"
+            | "us-west1"
+            | "us-west2"
+            | "europe-west1"
+            | "europe-west2"
+            | "europe-west3"
+            | "asia-southeast1"
+            | "australia-southeast1";
+          dnsZoneName: string;
+        };
+      };
   path?: never;
   query?: never;
   url: "/v1/managed-deployments";
@@ -9518,108 +11498,204 @@ export type PostV1ManagedDeploymentsResponses = {
   /**
    * Create a managed deployment
    */
-  200: {
-    id: string;
-    name: string;
-    provider: "aws" | "azure" | "gcp";
-    target: {
-      accountId: string;
-      region:
-        | "us-east-1"
-        | "us-east-2"
-        | "us-west-2"
-        | "eu-west-1"
-        | "eu-central-1"
-        | "ap-southeast-1"
-        | "ap-southeast-2";
-      route53ZoneId: string;
-      network?:
-        | {
-            mode: "dedicated";
-          }
-        | {
-            mode: "existing";
-            vpcId: string;
-            serviceSubnetIds: Array<string>;
-            loadBalancerSubnetIds: Array<string>;
-            ecsClusterArn?: string;
-          };
-    };
-    domainName: string;
-    ownerEmail: string;
-    size: "small";
-    updateMode: "approval";
-    createdAt: string;
-    webUrl: string;
-    consoleUrl: string;
-    installedVersion: string | null;
-    availableVersion: string | null;
-    updateAvailable: boolean;
-    health: {
-      state: "operational" | "degraded" | "down" | "not_reporting" | "awaiting_report";
-      reportedAt: string | null;
-      version: string | null;
-      checks: Array<{
-        id:
-          | "api_health"
-          | "database_ready"
-          | "web_available"
-          | "services_running"
-          | "load_balancer_targets"
-          | "database_instance"
-          | "database_storage"
-          | "database_backups"
-          | "certificate";
-        status: "ok" | "warning" | "failing" | "unknown";
-        value?: number;
-        total?: number;
-        code?:
-          | "http_error"
-          | "unreachable"
-          | "slow"
-          | "not_running"
-          | "unhealthy"
-          | "unavailable"
-          | "permission_denied"
-          | "low_storage"
-          | "stale_backup"
-          | "backups_disabled"
-          | "not_issued"
-          | "expiring"
-          | "expired";
-      }>;
-    };
-    run: {
-      id: string;
-      kind: "install" | "update" | "retry";
-      version: string;
-      state: "awaiting_approval" | "provisioning" | "ready" | "failed";
-      createdAt: string;
-      lastSeenAt: string | null;
-      expiresAt: string;
-      expired: boolean;
-      events: Array<{
-        sequence: number;
-        step:
-          | "runner_connected"
-          | "release_verified"
-          | "account_verified"
-          | "infrastructure_applied"
-          | "services_ready"
-          | "health_verified";
-        outcome: "succeeded" | "failed";
-        errorCode?:
-          | "release_verification_failed"
-          | "network_check_failed"
-          | "infrastructure_failed"
-          | "certificate_failed"
-          | "service_unhealthy"
-          | "health_check_failed"
-          | "runner_failed";
-        receivedAt: string;
-      }>;
-    } | null;
-  };
+  200:
+    | {
+        id: string;
+        name: string;
+        domainName: string;
+        ownerEmail: string;
+        size: "small";
+        updateMode: "approval";
+        createdAt: string;
+        webUrl: string;
+        consoleUrl: string;
+        installedVersion: string | null;
+        availableVersion: string | null;
+        updateAvailable: boolean;
+        health: {
+          state: "operational" | "degraded" | "down" | "not_reporting" | "awaiting_report";
+          reportedAt: string | null;
+          version: string | null;
+          checks: Array<{
+            id:
+              | "api_health"
+              | "database_ready"
+              | "web_available"
+              | "services_running"
+              | "load_balancer_targets"
+              | "database_instance"
+              | "database_storage"
+              | "database_backups"
+              | "certificate";
+            status: "ok" | "warning" | "failing" | "unknown";
+            value?: number;
+            total?: number;
+            code?:
+              | "http_error"
+              | "unreachable"
+              | "slow"
+              | "not_running"
+              | "unhealthy"
+              | "unavailable"
+              | "permission_denied"
+              | "low_storage"
+              | "stale_backup"
+              | "backups_disabled"
+              | "not_issued"
+              | "expiring"
+              | "expired";
+          }>;
+        };
+        run: {
+          id: string;
+          kind: "install" | "update" | "retry";
+          version: string;
+          state: "awaiting_approval" | "provisioning" | "ready" | "failed";
+          createdAt: string;
+          lastSeenAt: string | null;
+          expiresAt: string;
+          expired: boolean;
+          events: Array<{
+            sequence: number;
+            step:
+              | "runner_connected"
+              | "release_verified"
+              | "account_verified"
+              | "infrastructure_applied"
+              | "services_ready"
+              | "health_verified";
+            outcome: "succeeded" | "failed";
+            errorCode?:
+              | "release_verification_failed"
+              | "network_check_failed"
+              | "infrastructure_failed"
+              | "certificate_failed"
+              | "service_unhealthy"
+              | "health_check_failed"
+              | "runner_failed";
+            receivedAt: string;
+          }>;
+        } | null;
+        provider: "aws";
+        target: {
+          accountId: string;
+          region:
+            | "us-east-1"
+            | "us-east-2"
+            | "us-west-2"
+            | "eu-west-1"
+            | "eu-central-1"
+            | "ap-southeast-1"
+            | "ap-southeast-2";
+          route53ZoneId: string;
+          network?:
+            | {
+                mode: "dedicated";
+              }
+            | {
+                mode: "existing";
+                vpcId: string;
+                serviceSubnetIds: Array<string>;
+                loadBalancerSubnetIds: Array<string>;
+                ecsClusterArn?: string;
+              };
+        };
+      }
+    | {
+        id: string;
+        name: string;
+        domainName: string;
+        ownerEmail: string;
+        size: "small";
+        updateMode: "approval";
+        createdAt: string;
+        webUrl: string;
+        consoleUrl: string;
+        installedVersion: string | null;
+        availableVersion: string | null;
+        updateAvailable: boolean;
+        health: {
+          state: "operational" | "degraded" | "down" | "not_reporting" | "awaiting_report";
+          reportedAt: string | null;
+          version: string | null;
+          checks: Array<{
+            id:
+              | "api_health"
+              | "database_ready"
+              | "web_available"
+              | "services_running"
+              | "load_balancer_targets"
+              | "database_instance"
+              | "database_storage"
+              | "database_backups"
+              | "certificate";
+            status: "ok" | "warning" | "failing" | "unknown";
+            value?: number;
+            total?: number;
+            code?:
+              | "http_error"
+              | "unreachable"
+              | "slow"
+              | "not_running"
+              | "unhealthy"
+              | "unavailable"
+              | "permission_denied"
+              | "low_storage"
+              | "stale_backup"
+              | "backups_disabled"
+              | "not_issued"
+              | "expiring"
+              | "expired";
+          }>;
+        };
+        run: {
+          id: string;
+          kind: "install" | "update" | "retry";
+          version: string;
+          state: "awaiting_approval" | "provisioning" | "ready" | "failed";
+          createdAt: string;
+          lastSeenAt: string | null;
+          expiresAt: string;
+          expired: boolean;
+          events: Array<{
+            sequence: number;
+            step:
+              | "runner_connected"
+              | "release_verified"
+              | "account_verified"
+              | "infrastructure_applied"
+              | "services_ready"
+              | "health_verified";
+            outcome: "succeeded" | "failed";
+            errorCode?:
+              | "release_verification_failed"
+              | "network_check_failed"
+              | "infrastructure_failed"
+              | "certificate_failed"
+              | "service_unhealthy"
+              | "health_check_failed"
+              | "runner_failed";
+            receivedAt: string;
+          }>;
+        } | null;
+        provider: "gcp";
+        target: {
+          projectId: string;
+          projectNumber: string;
+          region:
+            | "us-central1"
+            | "us-east1"
+            | "us-east4"
+            | "us-west1"
+            | "us-west2"
+            | "europe-west1"
+            | "europe-west2"
+            | "europe-west3"
+            | "asia-southeast1"
+            | "australia-southeast1";
+          dnsZoneName: string;
+        };
+      };
 };
 
 export type PostV1ManagedDeploymentsResponse =
@@ -9758,111 +11834,220 @@ export type PostV1ManagedDeploymentsByDeploymentIdLaunchResponses = {
    * Prepare an install, retry or approved update
    */
   200: {
-    deployment: {
-      id: string;
-      name: string;
-      provider: "aws" | "azure" | "gcp";
-      target: {
-        accountId: string;
-        region:
-          | "us-east-1"
-          | "us-east-2"
-          | "us-west-2"
-          | "eu-west-1"
-          | "eu-central-1"
-          | "ap-southeast-1"
-          | "ap-southeast-2";
-        route53ZoneId: string;
-        network?:
-          | {
-              mode: "dedicated";
-            }
-          | {
-              mode: "existing";
-              vpcId: string;
-              serviceSubnetIds: Array<string>;
-              loadBalancerSubnetIds: Array<string>;
-              ecsClusterArn?: string;
-            };
-      };
-      domainName: string;
-      ownerEmail: string;
-      size: "small";
-      updateMode: "approval";
-      createdAt: string;
-      webUrl: string;
-      consoleUrl: string;
-      installedVersion: string | null;
-      availableVersion: string | null;
-      updateAvailable: boolean;
-      health: {
-        state: "operational" | "degraded" | "down" | "not_reporting" | "awaiting_report";
-        reportedAt: string | null;
-        version: string | null;
-        checks: Array<{
-          id:
-            | "api_health"
-            | "database_ready"
-            | "web_available"
-            | "services_running"
-            | "load_balancer_targets"
-            | "database_instance"
-            | "database_storage"
-            | "database_backups"
-            | "certificate";
-          status: "ok" | "warning" | "failing" | "unknown";
-          value?: number;
-          total?: number;
-          code?:
-            | "http_error"
-            | "unreachable"
-            | "slow"
-            | "not_running"
-            | "unhealthy"
-            | "unavailable"
-            | "permission_denied"
-            | "low_storage"
-            | "stale_backup"
-            | "backups_disabled"
-            | "not_issued"
-            | "expiring"
-            | "expired";
-        }>;
-      };
-      run: {
-        id: string;
-        kind: "install" | "update" | "retry";
-        version: string;
-        state: "awaiting_approval" | "provisioning" | "ready" | "failed";
-        createdAt: string;
-        lastSeenAt: string | null;
-        expiresAt: string;
-        expired: boolean;
-        events: Array<{
-          sequence: number;
-          step:
-            | "runner_connected"
-            | "release_verified"
-            | "account_verified"
-            | "infrastructure_applied"
-            | "services_ready"
-            | "health_verified";
-          outcome: "succeeded" | "failed";
-          errorCode?:
-            | "release_verification_failed"
-            | "network_check_failed"
-            | "infrastructure_failed"
-            | "certificate_failed"
-            | "service_unhealthy"
-            | "health_check_failed"
-            | "runner_failed";
-          receivedAt: string;
-        }>;
-      } | null;
-    };
+    deployment:
+      | {
+          id: string;
+          name: string;
+          domainName: string;
+          ownerEmail: string;
+          size: "small";
+          updateMode: "approval";
+          createdAt: string;
+          webUrl: string;
+          consoleUrl: string;
+          installedVersion: string | null;
+          availableVersion: string | null;
+          updateAvailable: boolean;
+          health: {
+            state: "operational" | "degraded" | "down" | "not_reporting" | "awaiting_report";
+            reportedAt: string | null;
+            version: string | null;
+            checks: Array<{
+              id:
+                | "api_health"
+                | "database_ready"
+                | "web_available"
+                | "services_running"
+                | "load_balancer_targets"
+                | "database_instance"
+                | "database_storage"
+                | "database_backups"
+                | "certificate";
+              status: "ok" | "warning" | "failing" | "unknown";
+              value?: number;
+              total?: number;
+              code?:
+                | "http_error"
+                | "unreachable"
+                | "slow"
+                | "not_running"
+                | "unhealthy"
+                | "unavailable"
+                | "permission_denied"
+                | "low_storage"
+                | "stale_backup"
+                | "backups_disabled"
+                | "not_issued"
+                | "expiring"
+                | "expired";
+            }>;
+          };
+          run: {
+            id: string;
+            kind: "install" | "update" | "retry";
+            version: string;
+            state: "awaiting_approval" | "provisioning" | "ready" | "failed";
+            createdAt: string;
+            lastSeenAt: string | null;
+            expiresAt: string;
+            expired: boolean;
+            events: Array<{
+              sequence: number;
+              step:
+                | "runner_connected"
+                | "release_verified"
+                | "account_verified"
+                | "infrastructure_applied"
+                | "services_ready"
+                | "health_verified";
+              outcome: "succeeded" | "failed";
+              errorCode?:
+                | "release_verification_failed"
+                | "network_check_failed"
+                | "infrastructure_failed"
+                | "certificate_failed"
+                | "service_unhealthy"
+                | "health_check_failed"
+                | "runner_failed";
+              receivedAt: string;
+            }>;
+          } | null;
+          provider: "aws";
+          target: {
+            accountId: string;
+            region:
+              | "us-east-1"
+              | "us-east-2"
+              | "us-west-2"
+              | "eu-west-1"
+              | "eu-central-1"
+              | "ap-southeast-1"
+              | "ap-southeast-2";
+            route53ZoneId: string;
+            network?:
+              | {
+                  mode: "dedicated";
+                }
+              | {
+                  mode: "existing";
+                  vpcId: string;
+                  serviceSubnetIds: Array<string>;
+                  loadBalancerSubnetIds: Array<string>;
+                  ecsClusterArn?: string;
+                };
+          };
+        }
+      | {
+          id: string;
+          name: string;
+          domainName: string;
+          ownerEmail: string;
+          size: "small";
+          updateMode: "approval";
+          createdAt: string;
+          webUrl: string;
+          consoleUrl: string;
+          installedVersion: string | null;
+          availableVersion: string | null;
+          updateAvailable: boolean;
+          health: {
+            state: "operational" | "degraded" | "down" | "not_reporting" | "awaiting_report";
+            reportedAt: string | null;
+            version: string | null;
+            checks: Array<{
+              id:
+                | "api_health"
+                | "database_ready"
+                | "web_available"
+                | "services_running"
+                | "load_balancer_targets"
+                | "database_instance"
+                | "database_storage"
+                | "database_backups"
+                | "certificate";
+              status: "ok" | "warning" | "failing" | "unknown";
+              value?: number;
+              total?: number;
+              code?:
+                | "http_error"
+                | "unreachable"
+                | "slow"
+                | "not_running"
+                | "unhealthy"
+                | "unavailable"
+                | "permission_denied"
+                | "low_storage"
+                | "stale_backup"
+                | "backups_disabled"
+                | "not_issued"
+                | "expiring"
+                | "expired";
+            }>;
+          };
+          run: {
+            id: string;
+            kind: "install" | "update" | "retry";
+            version: string;
+            state: "awaiting_approval" | "provisioning" | "ready" | "failed";
+            createdAt: string;
+            lastSeenAt: string | null;
+            expiresAt: string;
+            expired: boolean;
+            events: Array<{
+              sequence: number;
+              step:
+                | "runner_connected"
+                | "release_verified"
+                | "account_verified"
+                | "infrastructure_applied"
+                | "services_ready"
+                | "health_verified";
+              outcome: "succeeded" | "failed";
+              errorCode?:
+                | "release_verification_failed"
+                | "network_check_failed"
+                | "infrastructure_failed"
+                | "certificate_failed"
+                | "service_unhealthy"
+                | "health_check_failed"
+                | "runner_failed";
+              receivedAt: string;
+            }>;
+          } | null;
+          provider: "gcp";
+          target: {
+            projectId: string;
+            projectNumber: string;
+            region:
+              | "us-central1"
+              | "us-east1"
+              | "us-east4"
+              | "us-west1"
+              | "us-west2"
+              | "europe-west1"
+              | "europe-west2"
+              | "europe-west3"
+              | "asia-southeast1"
+              | "australia-southeast1";
+            dnsZoneName: string;
+          };
+        };
     kind: "install" | "update" | "retry";
     approvalUrl: string | null;
     command: string | null;
+    handoff?:
+      | {
+          action: "open_link";
+          url: string;
+          command: null;
+          instructions: string;
+        }
+      | {
+          action: "run_in_cloud_shell";
+          url: string;
+          command: string;
+          instructions: string;
+        };
     expiresAt: string;
   };
 };
@@ -9871,14 +12056,19 @@ export type PostV1ManagedDeploymentsByDeploymentIdLaunchResponse =
   PostV1ManagedDeploymentsByDeploymentIdLaunchResponses[keyof PostV1ManagedDeploymentsByDeploymentIdLaunchResponses];
 
 export type PostV1ManagedDeploymentsByDeploymentIdRunsByRunIdEnrollData = {
-  body: {
-    headers: {
-      authorization: string;
-      "x-amz-date": string;
-      "x-amz-security-token": string;
-      "x-openwork-proof": string;
-    };
-  };
+  body:
+    | {
+        headers: {
+          authorization: string;
+          "x-amz-date": string;
+          "x-amz-security-token": string;
+          "x-openwork-proof": string;
+        };
+      }
+    | {
+        provider: "gcp";
+        idToken: string;
+      };
   path: {
     deploymentId: string;
     runId: string;
@@ -12531,362 +14721,6 @@ export type DeleteV1WorkflowsByConfigObjectIdSnapshotsByReceiptIdContentResponse
 export type DeleteV1WorkflowsByConfigObjectIdSnapshotsByReceiptIdContentResponse =
   DeleteV1WorkflowsByConfigObjectIdSnapshotsByReceiptIdContentResponses[keyof DeleteV1WorkflowsByConfigObjectIdSnapshotsByReceiptIdContentResponses];
 
-export type GetV1DashboardsData = {
-  body?: never;
-  path?: never;
-  query?: never;
-  url: "/v1/dashboards";
-};
-
-export type GetV1DashboardsErrors = {
-  /**
-   * The caller must be signed in.
-   */
-  401: UnauthorizedError;
-  /**
-   * Only workspace owners and admins can list dashboards.
-   */
-  403: ForbiddenError;
-};
-
-export type GetV1DashboardsError = GetV1DashboardsErrors[keyof GetV1DashboardsErrors];
-
-export type GetV1DashboardsResponses = {
-  /**
-   * Dashboards returned successfully.
-   */
-  200: DashboardListResponse;
-};
-
-export type GetV1DashboardsResponse = GetV1DashboardsResponses[keyof GetV1DashboardsResponses];
-
-export type PostV1DashboardsData = {
-  body: {
-    name: string;
-    elements?: Array<DashboardElement>;
-  };
-  path?: never;
-  query?: never;
-  url: "/v1/dashboards";
-};
-
-export type PostV1DashboardsErrors = {
-  /**
-   * The dashboard request was invalid.
-   */
-  400: InvalidRequestError;
-  /**
-   * The caller must be signed in.
-   */
-  401: UnauthorizedError;
-  /**
-   * Only workspace owners and admins can create dashboards.
-   */
-  403: ForbiddenError;
-};
-
-export type PostV1DashboardsError = PostV1DashboardsErrors[keyof PostV1DashboardsErrors];
-
-export type PostV1DashboardsResponses = {
-  /**
-   * Dashboard created successfully.
-   */
-  201: DashboardResponse;
-};
-
-export type PostV1DashboardsResponse = PostV1DashboardsResponses[keyof PostV1DashboardsResponses];
-
-export type DeleteV1DashboardsByDashboardIdData = {
-  body?: never;
-  path: {
-    /**
-     * Den TypeID with 'dsb_' prefix and a 26-character base32 suffix.
-     */
-    dashboardId: string;
-  };
-  query?: never;
-  url: "/v1/dashboards/{dashboardId}";
-};
-
-export type DeleteV1DashboardsByDashboardIdErrors = {
-  /**
-   * The caller must be signed in.
-   */
-  401: UnauthorizedError;
-  /**
-   * Only workspace owners and admins can delete dashboards.
-   */
-  403: ForbiddenError;
-  /**
-   * The dashboard was not found.
-   */
-  404: NotFoundError;
-};
-
-export type DeleteV1DashboardsByDashboardIdError =
-  DeleteV1DashboardsByDashboardIdErrors[keyof DeleteV1DashboardsByDashboardIdErrors];
-
-export type DeleteV1DashboardsByDashboardIdResponses = {
-  /**
-   * Dashboard deleted successfully.
-   */
-  204: void;
-};
-
-export type DeleteV1DashboardsByDashboardIdResponse =
-  DeleteV1DashboardsByDashboardIdResponses[keyof DeleteV1DashboardsByDashboardIdResponses];
-
-export type GetV1DashboardsByDashboardIdData = {
-  body?: never;
-  path: {
-    /**
-     * Den TypeID with 'dsb_' prefix and a 26-character base32 suffix.
-     */
-    dashboardId: string;
-  };
-  query?: never;
-  url: "/v1/dashboards/{dashboardId}";
-};
-
-export type GetV1DashboardsByDashboardIdErrors = {
-  /**
-   * The caller must be signed in.
-   */
-  401: UnauthorizedError;
-  /**
-   * Only workspace owners and admins can view dashboards.
-   */
-  403: ForbiddenError;
-  /**
-   * The dashboard was not found.
-   */
-  404: NotFoundError;
-};
-
-export type GetV1DashboardsByDashboardIdError =
-  GetV1DashboardsByDashboardIdErrors[keyof GetV1DashboardsByDashboardIdErrors];
-
-export type GetV1DashboardsByDashboardIdResponses = {
-  /**
-   * Dashboard returned successfully.
-   */
-  200: DashboardResponse;
-};
-
-export type GetV1DashboardsByDashboardIdResponse =
-  GetV1DashboardsByDashboardIdResponses[keyof GetV1DashboardsByDashboardIdResponses];
-
-export type PatchV1DashboardsByDashboardIdData = {
-  body: {
-    name?: string;
-    elements?: Array<DashboardElement>;
-  };
-  path: {
-    /**
-     * Den TypeID with 'dsb_' prefix and a 26-character base32 suffix.
-     */
-    dashboardId: string;
-  };
-  query?: never;
-  url: "/v1/dashboards/{dashboardId}";
-};
-
-export type PatchV1DashboardsByDashboardIdErrors = {
-  /**
-   * The dashboard request was invalid.
-   */
-  400: InvalidRequestError;
-  /**
-   * The caller must be signed in.
-   */
-  401: UnauthorizedError;
-  /**
-   * Only workspace owners and admins can update dashboards.
-   */
-  403: ForbiddenError;
-  /**
-   * The dashboard was not found.
-   */
-  404: NotFoundError;
-};
-
-export type PatchV1DashboardsByDashboardIdError =
-  PatchV1DashboardsByDashboardIdErrors[keyof PatchV1DashboardsByDashboardIdErrors];
-
-export type PatchV1DashboardsByDashboardIdResponses = {
-  /**
-   * Dashboard updated successfully.
-   */
-  200: DashboardResponse;
-};
-
-export type PatchV1DashboardsByDashboardIdResponse =
-  PatchV1DashboardsByDashboardIdResponses[keyof PatchV1DashboardsByDashboardIdResponses];
-
-export type GetV1DashboardsByDashboardIdAccessData = {
-  body?: never;
-  path: {
-    /**
-     * Den TypeID with 'dsb_' prefix and a 26-character base32 suffix.
-     */
-    dashboardId: string;
-  };
-  query?: never;
-  url: "/v1/dashboards/{dashboardId}/access";
-};
-
-export type GetV1DashboardsByDashboardIdAccessErrors = {
-  /**
-   * The caller must be signed in.
-   */
-  401: UnauthorizedError;
-  /**
-   * Only workspace owners and admins can list dashboard access.
-   */
-  403: ForbiddenError;
-  /**
-   * The dashboard was not found.
-   */
-  404: NotFoundError;
-};
-
-export type GetV1DashboardsByDashboardIdAccessError =
-  GetV1DashboardsByDashboardIdAccessErrors[keyof GetV1DashboardsByDashboardIdAccessErrors];
-
-export type GetV1DashboardsByDashboardIdAccessResponses = {
-  /**
-   * Dashboard access grants returned successfully.
-   */
-  200: DashboardAccessListResponse;
-};
-
-export type GetV1DashboardsByDashboardIdAccessResponse =
-  GetV1DashboardsByDashboardIdAccessResponses[keyof GetV1DashboardsByDashboardIdAccessResponses];
-
-export type PostV1DashboardsByDashboardIdAccessData = {
-  body: {
-    /**
-     * Den TypeID with 'om_' prefix and a 26-character base32 suffix.
-     */
-    orgMembershipId?: string;
-    /**
-     * Den TypeID with 'tem_' prefix and a 26-character base32 suffix.
-     */
-    teamId?: string;
-    orgWide?: boolean;
-    role: "viewer" | "editor" | "manager";
-  };
-  path: {
-    /**
-     * Den TypeID with 'dsb_' prefix and a 26-character base32 suffix.
-     */
-    dashboardId: string;
-  };
-  query?: never;
-  url: "/v1/dashboards/{dashboardId}/access";
-};
-
-export type PostV1DashboardsByDashboardIdAccessErrors = {
-  /**
-   * The grant request was invalid.
-   */
-  400: InvalidRequestError;
-  /**
-   * The caller must be signed in.
-   */
-  401: UnauthorizedError;
-  /**
-   * Only workspace owners and admins can grant dashboard access.
-   */
-  403: ForbiddenError;
-  /**
-   * The dashboard, member, or team was not found.
-   */
-  404: NotFoundError;
-};
-
-export type PostV1DashboardsByDashboardIdAccessError =
-  PostV1DashboardsByDashboardIdAccessErrors[keyof PostV1DashboardsByDashboardIdAccessErrors];
-
-export type PostV1DashboardsByDashboardIdAccessResponses = {
-  /**
-   * Dashboard access granted successfully.
-   */
-  201: DashboardAccessResponse;
-};
-
-export type PostV1DashboardsByDashboardIdAccessResponse =
-  PostV1DashboardsByDashboardIdAccessResponses[keyof PostV1DashboardsByDashboardIdAccessResponses];
-
-export type DeleteV1DashboardsByDashboardIdAccessByGrantIdData = {
-  body?: never;
-  path: {
-    /**
-     * Den TypeID with 'dsb_' prefix and a 26-character base32 suffix.
-     */
-    dashboardId: string;
-    /**
-     * Den TypeID with 'dsg_' prefix and a 26-character base32 suffix.
-     */
-    grantId: string;
-  };
-  query?: never;
-  url: "/v1/dashboards/{dashboardId}/access/{grantId}";
-};
-
-export type DeleteV1DashboardsByDashboardIdAccessByGrantIdErrors = {
-  /**
-   * The caller must be signed in.
-   */
-  401: UnauthorizedError;
-  /**
-   * Only workspace owners and admins can revoke dashboard access.
-   */
-  403: ForbiddenError;
-  /**
-   * The dashboard or grant was not found.
-   */
-  404: NotFoundError;
-};
-
-export type DeleteV1DashboardsByDashboardIdAccessByGrantIdError =
-  DeleteV1DashboardsByDashboardIdAccessByGrantIdErrors[keyof DeleteV1DashboardsByDashboardIdAccessByGrantIdErrors];
-
-export type DeleteV1DashboardsByDashboardIdAccessByGrantIdResponses = {
-  /**
-   * Dashboard access revoked successfully.
-   */
-  204: void;
-};
-
-export type DeleteV1DashboardsByDashboardIdAccessByGrantIdResponse =
-  DeleteV1DashboardsByDashboardIdAccessByGrantIdResponses[keyof DeleteV1DashboardsByDashboardIdAccessByGrantIdResponses];
-
-export type GetV1MeDashboardsData = {
-  body?: never;
-  path?: never;
-  query?: never;
-  url: "/v1/me/dashboards";
-};
-
-export type GetV1MeDashboardsErrors = {
-  /**
-   * The caller must be signed in.
-   */
-  401: UnauthorizedError;
-};
-
-export type GetV1MeDashboardsError = GetV1MeDashboardsErrors[keyof GetV1MeDashboardsErrors];
-
-export type GetV1MeDashboardsResponses = {
-  /**
-   * Granted dashboards returned successfully.
-   */
-  200: MeDashboardListResponse;
-};
-
-export type GetV1MeDashboardsResponse = GetV1MeDashboardsResponses[keyof GetV1MeDashboardsResponses];
-
 export type GetV1McpAppsData = {
   body?: never;
   path?: never;
@@ -12909,7 +14743,7 @@ export type GetV1McpAppsError = GetV1McpAppsErrors[keyof GetV1McpAppsErrors];
 
 export type GetV1McpAppsResponses = {
   /**
-   * Apps built in OpenWork that can be added to a dashboard.
+   * Apps built in OpenWork the member can use.
    */
   200: BuiltMcpAppListResponse;
 };
@@ -13233,6 +15067,162 @@ export type PostV1DesktopPoliciesResponses = {
 
 export type PostV1DesktopPoliciesResponse = PostV1DesktopPoliciesResponses[keyof PostV1DesktopPoliciesResponses];
 
+export type GetV1AgentPermissionsData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/agent-permissions";
+};
+
+export type GetV1AgentPermissionsErrors = {
+  /**
+   * The caller must be signed in.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller needs the agent_permissions.view permission.
+   */
+  403: ForbiddenError;
+  /**
+   * Agent permissions are not turned on for this organization.
+   */
+  404: NotFoundError;
+};
+
+export type GetV1AgentPermissionsError = GetV1AgentPermissionsErrors[keyof GetV1AgentPermissionsErrors];
+
+export type GetV1AgentPermissionsResponses = {
+  /**
+   * Agent permissions returned successfully.
+   */
+  200: AgentPermissionPolicyList;
+};
+
+export type GetV1AgentPermissionsResponse = GetV1AgentPermissionsResponses[keyof GetV1AgentPermissionsResponses];
+
+export type PutV1AgentPermissionsEveryoneData = {
+  body: AgentPermissionPolicyWrite;
+  path?: never;
+  query?: never;
+  url: "/v1/agent-permissions/everyone";
+};
+
+export type PutV1AgentPermissionsEveryoneErrors = {
+  /**
+   * A permission or pattern was not valid.
+   */
+  400: InvalidRequestError;
+  /**
+   * The caller must be signed in.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller needs the agent_permissions.manage permission and a recent sign-in.
+   */
+  403: ForbiddenError;
+  /**
+   * Agent permissions are not turned on for this organization.
+   */
+  404: NotFoundError;
+};
+
+export type PutV1AgentPermissionsEveryoneError =
+  PutV1AgentPermissionsEveryoneErrors[keyof PutV1AgentPermissionsEveryoneErrors];
+
+export type PutV1AgentPermissionsEveryoneResponses = {
+  /**
+   * Everyone's agent permissions saved.
+   */
+  200: AgentPermissionPolicyResponse;
+};
+
+export type PutV1AgentPermissionsEveryoneResponse =
+  PutV1AgentPermissionsEveryoneResponses[keyof PutV1AgentPermissionsEveryoneResponses];
+
+export type DeleteV1AgentPermissionsTeamsByTeamIdData = {
+  body?: never;
+  path: {
+    /**
+     * Den TypeID with 'tem_' prefix and a 26-character base32 suffix.
+     */
+    teamId: string;
+  };
+  query?: never;
+  url: "/v1/agent-permissions/teams/{teamId}";
+};
+
+export type DeleteV1AgentPermissionsTeamsByTeamIdErrors = {
+  /**
+   * The caller must be signed in.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller needs the agent_permissions.manage permission and a recent sign-in.
+   */
+  403: ForbiddenError;
+  /**
+   * The team was not found, or agent permissions are not turned on for this organization.
+   */
+  404: NotFoundError;
+};
+
+export type DeleteV1AgentPermissionsTeamsByTeamIdError =
+  DeleteV1AgentPermissionsTeamsByTeamIdErrors[keyof DeleteV1AgentPermissionsTeamsByTeamIdErrors];
+
+export type DeleteV1AgentPermissionsTeamsByTeamIdResponses = {
+  /**
+   * The team's overrides were removed.
+   */
+  204: void;
+};
+
+export type DeleteV1AgentPermissionsTeamsByTeamIdResponse =
+  DeleteV1AgentPermissionsTeamsByTeamIdResponses[keyof DeleteV1AgentPermissionsTeamsByTeamIdResponses];
+
+export type PutV1AgentPermissionsTeamsByTeamIdData = {
+  body: AgentPermissionPolicyWrite;
+  path: {
+    /**
+     * Den TypeID with 'tem_' prefix and a 26-character base32 suffix.
+     */
+    teamId: string;
+  };
+  query?: never;
+  url: "/v1/agent-permissions/teams/{teamId}";
+};
+
+export type PutV1AgentPermissionsTeamsByTeamIdErrors = {
+  /**
+   * A permission or pattern was not valid.
+   */
+  400: InvalidRequestError;
+  /**
+   * The caller must be signed in.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller needs the agent_permissions.manage permission and a recent sign-in.
+   */
+  403: ForbiddenError;
+  /**
+   * The team was not found, or agent permissions are not turned on for this organization.
+   */
+  404: NotFoundError;
+};
+
+export type PutV1AgentPermissionsTeamsByTeamIdError =
+  PutV1AgentPermissionsTeamsByTeamIdErrors[keyof PutV1AgentPermissionsTeamsByTeamIdErrors];
+
+export type PutV1AgentPermissionsTeamsByTeamIdResponses = {
+  /**
+   * The team's agent permissions saved.
+   */
+  200: AgentPermissionPolicyResponse;
+};
+
+export type PutV1AgentPermissionsTeamsByTeamIdResponse =
+  PutV1AgentPermissionsTeamsByTeamIdResponses[keyof PutV1AgentPermissionsTeamsByTeamIdResponses];
+
 export type GetV1DiagnosticsEgressData = {
   body?: never;
   path?: never;
@@ -13447,6 +15437,33 @@ export type PutV1DiagnosticsEgressTokenResponses = {
 
 export type PutV1DiagnosticsEgressTokenResponse =
   PutV1DiagnosticsEgressTokenResponses[keyof PutV1DiagnosticsEgressTokenResponses];
+
+export type GetV1InferenceAnalyticsUsageData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/inference/analytics/usage";
+};
+
+export type GetV1InferenceAnalyticsUsageErrors = {
+  /**
+   * Models analytics surface is disabled.
+   */
+  404: NotFoundError;
+};
+
+export type GetV1InferenceAnalyticsUsageError =
+  GetV1InferenceAnalyticsUsageErrors[keyof GetV1InferenceAnalyticsUsageErrors];
+
+export type GetV1InferenceAnalyticsUsageResponses = {
+  /**
+   * Models usage limits.
+   */
+  200: InferenceStatusResponse;
+};
+
+export type GetV1InferenceAnalyticsUsageResponse =
+  GetV1InferenceAnalyticsUsageResponses[keyof GetV1InferenceAnalyticsUsageResponses];
 
 export type GetV1InferenceFreeProviderData = {
   body?: never;
@@ -13727,6 +15744,16 @@ export type GetV1InferenceAnalyticsSettingsData = {
   url: "/v1/inference/analytics/settings";
 };
 
+export type GetV1InferenceAnalyticsSettingsErrors = {
+  /**
+   * Task analytics surface is disabled.
+   */
+  404: NotFoundError;
+};
+
+export type GetV1InferenceAnalyticsSettingsError =
+  GetV1InferenceAnalyticsSettingsErrors[keyof GetV1InferenceAnalyticsSettingsErrors];
+
 export type GetV1InferenceAnalyticsSettingsResponses = {
   /**
    * Task analytics settings
@@ -13756,6 +15783,16 @@ export type PatchV1InferenceAnalyticsSettingsData = {
   query?: never;
   url: "/v1/inference/analytics/settings";
 };
+
+export type PatchV1InferenceAnalyticsSettingsErrors = {
+  /**
+   * Task analytics surface is disabled.
+   */
+  404: NotFoundError;
+};
+
+export type PatchV1InferenceAnalyticsSettingsError =
+  PatchV1InferenceAnalyticsSettingsErrors[keyof PatchV1InferenceAnalyticsSettingsErrors];
 
 export type PatchV1InferenceAnalyticsSettingsResponses = {
   /**
@@ -13861,6 +15898,16 @@ export type GetV1InferenceAnalyticsActivityData = {
   url: "/v1/inference/analytics/activity";
 };
 
+export type GetV1InferenceAnalyticsActivityErrors = {
+  /**
+   * Task analytics surface is disabled.
+   */
+  404: NotFoundError;
+};
+
+export type GetV1InferenceAnalyticsActivityError =
+  GetV1InferenceAnalyticsActivityErrors[keyof GetV1InferenceAnalyticsActivityErrors];
+
 export type GetV1InferenceAnalyticsActivityResponses = {
   /**
    * Task activity
@@ -13924,6 +15971,16 @@ export type GetV1InferenceAnalyticsConsumptionData = {
   url: "/v1/inference/analytics/consumption";
 };
 
+export type GetV1InferenceAnalyticsConsumptionErrors = {
+  /**
+   * Task analytics surface is disabled.
+   */
+  404: NotFoundError;
+};
+
+export type GetV1InferenceAnalyticsConsumptionError =
+  GetV1InferenceAnalyticsConsumptionErrors[keyof GetV1InferenceAnalyticsConsumptionErrors];
+
 export type GetV1InferenceAnalyticsConsumptionResponses = {
   /**
    * Model consumption
@@ -13947,6 +16004,57 @@ export type GetV1InferenceAnalyticsConsumptionResponses = {
 
 export type GetV1InferenceAnalyticsConsumptionResponse =
   GetV1InferenceAnalyticsConsumptionResponses[keyof GetV1InferenceAnalyticsConsumptionResponses];
+
+export type GetV1LibraryUsageData = {
+  body?: never;
+  path?: never;
+  query: {
+    kind: "skills" | "plugins" | "connectors";
+    days?: "7" | "30" | "90";
+    groupBy?: string;
+    memberId?: string;
+    teamId?: string;
+    itemId?: string;
+  };
+  url: "/v1/library-usage";
+};
+
+export type GetV1LibraryUsageErrors = {
+  /**
+   * Invalid query
+   */
+  400: InvalidRequestError;
+  /**
+   * Sign-in required
+   */
+  401: UnauthorizedError;
+  /**
+   * View usage analytics permission required
+   */
+  403: ForbiddenError;
+  /**
+   * The team is not in this organization
+   */
+  404: NotFoundError;
+  /**
+   * Too many rows; narrow the window, grouping or filters
+   */
+  422: {
+    error: "library_usage_too_many_rows";
+    message: string;
+  };
+};
+
+export type GetV1LibraryUsageError = GetV1LibraryUsageErrors[keyof GetV1LibraryUsageErrors];
+
+export type GetV1LibraryUsageResponses = {
+  /**
+   * Library usage breakdown
+   */
+  200: LibraryUsageBreakdown;
+};
+
+export type GetV1LibraryUsageResponse = GetV1LibraryUsageResponses[keyof GetV1LibraryUsageResponses];
 
 export type GetV1LibraryUsageByKindData = {
   body?: never;
@@ -13995,6 +16103,10 @@ export type PostV1InferenceAnalyticsLangfuseTestErrors = {
     error: string;
     message?: string;
   };
+  /**
+   * Task analytics surface is disabled.
+   */
+  404: NotFoundError;
 };
 
 export type PostV1InferenceAnalyticsLangfuseTestError =
@@ -14039,6 +16151,10 @@ export type PostV1InferenceAnalyticsLangfuseConnectErrors = {
     error: string;
     message?: string;
   };
+  /**
+   * Task analytics surface is disabled.
+   */
+  404: NotFoundError;
 };
 
 export type PostV1InferenceAnalyticsLangfuseConnectError =
@@ -14072,6 +16188,10 @@ export type DeleteV1InferenceAnalyticsLangfuseErrors = {
    * The caller lacks the Manage task analytics permission.
    */
   403: ForbiddenError;
+  /**
+   * Task analytics surface is disabled.
+   */
+  404: NotFoundError;
 };
 
 export type DeleteV1InferenceAnalyticsLangfuseError =
@@ -14700,6 +16820,10 @@ export type PostV1InvitationsData = {
   body: {
     email: string;
     role: string;
+    /**
+     * Team to join when the invitation is accepted. Requires Manage teams and every permission the team grants. Omit to preserve a refreshed invitation's team; null clears it.
+     */
+    teamId?: string | null;
   };
   path?: never;
   query?: never;
@@ -14800,6 +16924,54 @@ export type PostV1InvitationsByInvitationIdCancelResponses = {
 export type PostV1InvitationsByInvitationIdCancelResponse =
   PostV1InvitationsByInvitationIdCancelResponses[keyof PostV1InvitationsByInvitationIdCancelResponses];
 
+export type GetV1InvitationsByInvitationIdLinkData = {
+  body?: never;
+  path: {
+    /**
+     * Den TypeID with 'inv_' prefix and a 26-character base32 suffix.
+     */
+    invitationId: string;
+  };
+  query?: never;
+  url: "/v1/invitations/{invitationId}/link";
+};
+
+export type GetV1InvitationsByInvitationIdLinkErrors = {
+  /**
+   * The invitation link path parameters were invalid.
+   */
+  400: InvalidRequestError;
+  /**
+   * The caller must be signed in to read invitation links.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller needs the permissions required to resend this invitation and a recent sign-in.
+   */
+  403: ForbiddenError;
+  /**
+   * The invitation or organization could not be found.
+   */
+  404: NotFoundError;
+  /**
+   * The invitation is no longer pending or has expired; resend it to issue a new link.
+   */
+  409: InvitationNotPendingError;
+};
+
+export type GetV1InvitationsByInvitationIdLinkError =
+  GetV1InvitationsByInvitationIdLinkErrors[keyof GetV1InvitationsByInvitationIdLinkErrors];
+
+export type GetV1InvitationsByInvitationIdLinkResponses = {
+  /**
+   * Invitation link returned successfully.
+   */
+  200: InvitationLinkResponse;
+};
+
+export type GetV1InvitationsByInvitationIdLinkResponse =
+  GetV1InvitationsByInvitationIdLinkResponses[keyof GetV1InvitationsByInvitationIdLinkResponses];
+
 export type PostV1OrgsByOrganizationIdInstallLinksData = {
   body: CreateInstallLinkRequest;
   path: {
@@ -14815,21 +16987,13 @@ export type PostV1OrgsByOrganizationIdInstallLinksErrors = {
    */
   400: InvalidRequestError;
   /**
-   * The caller must be signed in to create install links.
+   * The caller must be signed in to get the install page.
    */
   401: UnauthorizedError;
-  /**
-   * Rotating existing links needs the Rotate install links permission.
-   */
-  403: ForbiddenError;
   /**
    * The organization could not be found.
    */
   404: NotFoundError;
-  /**
-   * The member has created too many install links.
-   */
-  429: RateLimitedError;
 };
 
 export type PostV1OrgsByOrganizationIdInstallLinksError =
@@ -14837,7 +17001,7 @@ export type PostV1OrgsByOrganizationIdInstallLinksError =
 
 export type PostV1OrgsByOrganizationIdInstallLinksResponses = {
   /**
-   * Install link created successfully.
+   * Install page resolved successfully.
    */
   200: CreateInstallLinkResponse;
 };
@@ -14917,23 +17081,13 @@ export type GetV1MeInstallByPlatformResponse =
 export type GetV1InstallConfigData = {
   body?: never;
   path?: never;
-  query: {
-    token: string;
-  };
+  query?: never;
   url: "/v1/install-config";
 };
 
 export type GetV1InstallConfigErrors = {
   /**
-   * The install-link token was invalid.
-   */
-  400: InvalidRequestError;
-  /**
-   * The install link was missing, expired, or revoked.
-   */
-  404: InstallLinkNotFoundError;
-  /**
-   * Too many install-link attempts.
+   * Too many install configuration requests.
    */
   429: RateLimitedError;
 };
@@ -14944,177 +17098,19 @@ export type GetV1InstallConfigResponses = {
   /**
    * Install configuration resolved successfully.
    */
-  200: InstallExperienceConfig;
+  200: AuthenticatedInstallConfig;
 };
 
 export type GetV1InstallConfigResponse = GetV1InstallConfigResponses[keyof GetV1InstallConfigResponses];
-
-export type PostV1InstallConnectStatusData = {
-  body: {
-    code: string;
-  };
-  path?: never;
-  query?: never;
-  url: "/v1/install-connect/status";
-};
-
-export type PostV1InstallConnectStatusErrors = {
-  /**
-   * The connection code body was invalid.
-   */
-  400: InvalidRequestError;
-  /**
-   * The connection code was not found.
-   */
-  404: DesktopConnectGrantFailure;
-  /**
-   * The connection code expired.
-   */
-  410: DesktopConnectGrantFailure;
-  /**
-   * Too many connection attempts.
-   */
-  429: RateLimitedError;
-};
-
-export type PostV1InstallConnectStatusError = PostV1InstallConnectStatusErrors[keyof PostV1InstallConnectStatusErrors];
-
-export type PostV1InstallConnectStatusResponses = {
-  /**
-   * Desktop connection status resolved successfully.
-   */
-  200: DesktopConnectGrantStatusResponse;
-};
-
-export type PostV1InstallConnectStatusResponse =
-  PostV1InstallConnectStatusResponses[keyof PostV1InstallConnectStatusResponses];
-
-export type PostV1InstallConnectPreviewData = {
-  body: {
-    code: string;
-  };
-  path?: never;
-  query?: never;
-  url: "/v1/install-connect/preview";
-};
-
-export type PostV1InstallConnectPreviewErrors = {
-  /**
-   * The connection code body was invalid.
-   */
-  400: InvalidRequestError;
-  /**
-   * The connection code was not found.
-   */
-  404: DesktopConnectGrantFailure;
-  /**
-   * The connection code was already consumed.
-   */
-  409: DesktopConnectGrantFailure;
-  /**
-   * The connection code expired.
-   */
-  410: DesktopConnectGrantFailure;
-  /**
-   * Too many connection attempts.
-   */
-  429: RateLimitedError;
-};
-
-export type PostV1InstallConnectPreviewError =
-  PostV1InstallConnectPreviewErrors[keyof PostV1InstallConnectPreviewErrors];
-
-export type PostV1InstallConnectPreviewResponses = {
-  /**
-   * Desktop connection resolved successfully.
-   */
-  200: DesktopConnectGrantResponse;
-};
-
-export type PostV1InstallConnectPreviewResponse =
-  PostV1InstallConnectPreviewResponses[keyof PostV1InstallConnectPreviewResponses];
-
-export type PostV1InstallConnectExchangeData = {
-  body: {
-    code: string;
-  };
-  path?: never;
-  query?: never;
-  url: "/v1/install-connect/exchange";
-};
-
-export type PostV1InstallConnectExchangeErrors = {
-  /**
-   * The connection code body was invalid.
-   */
-  400: InvalidRequestError;
-  /**
-   * The connection code was not found.
-   */
-  404: DesktopConnectGrantFailure;
-  /**
-   * The connection code was already consumed.
-   */
-  409: DesktopConnectGrantFailure;
-  /**
-   * The connection code expired.
-   */
-  410: DesktopConnectGrantFailure;
-  /**
-   * Too many connection attempts.
-   */
-  429: RateLimitedError;
-};
-
-export type PostV1InstallConnectExchangeError =
-  PostV1InstallConnectExchangeErrors[keyof PostV1InstallConnectExchangeErrors];
-
-export type PostV1InstallConnectExchangeResponses = {
-  /**
-   * Desktop connection resolved successfully.
-   */
-  200: DesktopConnectGrantResponse;
-};
-
-export type PostV1InstallConnectExchangeResponse =
-  PostV1InstallConnectExchangeResponses[keyof PostV1InstallConnectExchangeResponses];
 
 export type GetV1InstallByPlatformData = {
   body?: never;
   path: {
     platform: string;
   };
-  query: {
-    token: string;
-  };
+  query?: never;
   url: "/v1/install/{platform}";
 };
-
-export type GetV1InstallByPlatformErrors = {
-  /**
-   * The install-link token or platform was invalid.
-   */
-  400: InvalidRequestError;
-  /**
-   * The install link was missing, expired, or revoked.
-   */
-  404: InstallLinkNotFoundError;
-  /**
-   * Too many installer download attempts.
-   */
-  429: RateLimitedError;
-};
-
-export type GetV1InstallByPlatformError = GetV1InstallByPlatformErrors[keyof GetV1InstallByPlatformErrors];
-
-export type GetV1InstallByPlatformResponses = {
-  /**
-   * Mounted desktop artifact returned successfully.
-   */
-  200: string;
-};
-
-export type GetV1InstallByPlatformResponse = GetV1InstallByPlatformResponses[keyof GetV1InstallByPlatformResponses];
 
 export type DeleteV1LlmProvidersByKeyByExternalKeyData = {
   body?: never;
@@ -16076,6 +18072,7 @@ export type GetV1GatewayUsageLimitPoliciesResponses = {
       hardLimit: boolean;
       allowRequestReset: boolean;
       revision: number;
+      providerId?: string | null;
       limits: Array<{
         timeframe: "day" | "week" | "month";
         costLimitMicroUsd: number;
@@ -16097,6 +18094,7 @@ export type GetV1GatewayUsageLimitPoliciesResponse =
 export type PostV1GatewayUsageLimitPoliciesData = {
   body: {
     name: string;
+    providerId?: string | null;
     hardLimit?: boolean;
     allowRequestReset?: boolean;
     limits: Array<{
@@ -16167,6 +18165,7 @@ export type PostV1GatewayUsageLimitPoliciesResponses = {
     hardLimit: boolean;
     allowRequestReset: boolean;
     revision: number;
+    providerId?: string | null;
     limits: Array<{
       timeframe: "day" | "week" | "month";
       costLimitMicroUsd: number;
@@ -16187,6 +18186,7 @@ export type PostV1GatewayUsageLimitPoliciesResponse =
 export type PatchV1GatewayUsageLimitPoliciesByPolicyIdData = {
   body: {
     name: string;
+    providerId?: string | null;
     hardLimit?: boolean;
     allowRequestReset?: boolean;
     limits: Array<{
@@ -16260,6 +18260,7 @@ export type PatchV1GatewayUsageLimitPoliciesByPolicyIdResponses = {
     hardLimit: boolean;
     allowRequestReset: boolean;
     revision: number;
+    providerId?: string | null;
     limits: Array<{
       timeframe: "day" | "week" | "month";
       costLimitMicroUsd: number;
@@ -16346,6 +18347,7 @@ export type PostV1GatewayUsageLimitPoliciesByPolicyIdArchiveResponses = {
     hardLimit: boolean;
     allowRequestReset: boolean;
     revision: number;
+    providerId?: string | null;
     limits: Array<{
       timeframe: "day" | "week" | "month";
       costLimitMicroUsd: number;
@@ -16432,6 +18434,7 @@ export type PostV1GatewayUsageLimitPoliciesByPolicyIdRestoreResponses = {
     hardLimit: boolean;
     allowRequestReset: boolean;
     revision: number;
+    providerId?: string | null;
     limits: Array<{
       timeframe: "day" | "week" | "month";
       costLimitMicroUsd: number;
@@ -16599,6 +18602,7 @@ export type PostV1GatewayUsageLimitPoliciesByPolicyIdAssignmentsResponses = {
     hardLimit: boolean;
     allowRequestReset: boolean;
     revision: number;
+    providerId?: string | null;
     limits: Array<{
       timeframe: "day" | "week" | "month";
       costLimitMicroUsd: number;
@@ -16684,6 +18688,7 @@ export type DeleteV1GatewayUsageLimitPoliciesByPolicyIdAssignmentsByAssignmentId
     hardLimit: boolean;
     allowRequestReset: boolean;
     revision: number;
+    providerId?: string | null;
     limits: Array<{
       timeframe: "day" | "week" | "month";
       costLimitMicroUsd: number;
@@ -16889,6 +18894,51 @@ export type GetV1GatewayUsageLimitsMeResponses = {
       allowRequestReset: boolean;
       canRequestReset: boolean;
       resetRequestStatus: "pending" | "approved" | "denied" | "expired" | null;
+      providerId?: string | null;
+    }>;
+    providers?: Array<{
+      providerId: string;
+      providerName: string;
+      state: "within_limit" | "over_limit" | "blocked";
+      buckets: Array<{
+        id: string;
+        timeframe: "day" | "week" | "month";
+        policyId: string;
+        policyName: string;
+        policyRevision?: number;
+        provenance?: Array<
+          | {
+              kind: "organization";
+              assignmentId: string;
+              memberId: null;
+              teamId: null;
+            }
+          | {
+              kind: "direct";
+              assignmentId: string;
+              memberId: string;
+              teamId: null;
+            }
+          | {
+              kind: "team";
+              assignmentId: string;
+              memberId: null;
+              teamId: string;
+              teamName: string;
+            }
+        >;
+        baseAllowanceMicroUsd: number;
+        extensionMicroUsd: number;
+        allowanceMicroUsd: number;
+        usedMicroUsd: number;
+        remainingMicroUsd: number;
+        resetAt: string;
+        hardLimit: boolean;
+        allowRequestReset: boolean;
+        canRequestReset: boolean;
+        resetRequestStatus: "pending" | "approved" | "denied" | "expired" | null;
+        providerId?: string | null;
+      }>;
     }>;
   };
 };
@@ -17014,6 +19064,51 @@ export type GetV1GatewayUsageLimitsMembersByMemberIdResponses = {
       allowRequestReset: boolean;
       canRequestReset: boolean;
       resetRequestStatus: "pending" | "approved" | "denied" | "expired" | null;
+      providerId?: string | null;
+    }>;
+    providers?: Array<{
+      providerId: string;
+      providerName: string;
+      state: "within_limit" | "over_limit" | "blocked";
+      buckets: Array<{
+        id: string;
+        timeframe: "day" | "week" | "month";
+        policyId: string;
+        policyName: string;
+        policyRevision?: number;
+        provenance?: Array<
+          | {
+              kind: "organization";
+              assignmentId: string;
+              memberId: null;
+              teamId: null;
+            }
+          | {
+              kind: "direct";
+              assignmentId: string;
+              memberId: string;
+              teamId: null;
+            }
+          | {
+              kind: "team";
+              assignmentId: string;
+              memberId: null;
+              teamId: string;
+              teamName: string;
+            }
+        >;
+        baseAllowanceMicroUsd: number;
+        extensionMicroUsd: number;
+        allowanceMicroUsd: number;
+        usedMicroUsd: number;
+        remainingMicroUsd: number;
+        resetAt: string;
+        hardLimit: boolean;
+        allowRequestReset: boolean;
+        canRequestReset: boolean;
+        resetRequestStatus: "pending" | "approved" | "denied" | "expired" | null;
+        providerId?: string | null;
+      }>;
     }>;
   };
 };
@@ -17093,6 +19188,8 @@ export type GetV1GatewayUsageLimitResetRequestsResponses = {
       bucketId: string;
       timeframe: "day" | "week" | "month";
       policyName: string;
+      providerId?: string | null;
+      providerName?: string | null;
       reason: string;
       status: "pending" | "approved" | "denied" | "expired";
       createdAt: string;
@@ -17184,6 +19281,8 @@ export type PostV1GatewayUsageLimitResetRequestsResponses = {
     bucketId: string;
     timeframe: "day" | "week" | "month";
     policyName: string;
+    providerId?: string | null;
+    providerName?: string | null;
     reason: string;
     status: "pending" | "approved" | "denied" | "expired";
     createdAt: string;
@@ -17271,6 +19370,8 @@ export type GetV1GatewayUsageLimitResetRequestsMeResponses = {
       bucketId: string;
       timeframe: "day" | "week" | "month";
       policyName: string;
+      providerId?: string | null;
+      providerName?: string | null;
       reason: string;
       status: "pending" | "approved" | "denied" | "expired";
       createdAt: string;
@@ -17363,6 +19464,8 @@ export type PostV1GatewayUsageLimitResetRequestsByIdApproveResponses = {
     bucketId: string;
     timeframe: "day" | "week" | "month";
     policyName: string;
+    providerId?: string | null;
+    providerName?: string | null;
     reason: string;
     status: "pending" | "approved" | "denied" | "expired";
     createdAt: string;
@@ -17449,6 +19552,8 @@ export type PostV1GatewayUsageLimitResetRequestsByIdDenyResponses = {
     bucketId: string;
     timeframe: "day" | "week" | "month";
     policyName: string;
+    providerId?: string | null;
+    providerName?: string | null;
     reason: string;
     status: "pending" | "approved" | "denied" | "expired";
     createdAt: string;
@@ -17910,6 +20015,37 @@ export type PostV1InferenceProvidersResponses = {
    */
   201: {
     inferenceProvider: GatewayProviderDetails;
+    credentialPrompt?: {
+      schemaVersion: "1";
+      kind: "credential_prompt";
+      target:
+        | {
+            type: "mcp_connection_key";
+            connectionId: string;
+          }
+        | {
+            type: "plugin_connection_key";
+            pluginId: string;
+            configObjectId: string;
+            serverName: string;
+            connectionId: string;
+          }
+        | {
+            type: "gateway_provider_key";
+            inferenceProviderId: string;
+            credentialSetId: string;
+          }
+        | {
+            type: "gateway_provider_credential";
+            inferenceProviderId: string;
+            credentialSetId: string;
+            credentialKind: "aws_keys" | "gcp_service_account" | "api_key_map";
+            envNames?: Array<string>;
+          };
+      name: string;
+      destination: string | null;
+    };
+    nextStep?: string;
   };
 };
 
@@ -20832,6 +22968,102 @@ export type GetV1PermissionsSetsByPermissionSetIdResponses = {
 export type GetV1PermissionsSetsByPermissionSetIdResponse =
   GetV1PermissionsSetsByPermissionSetIdResponses[keyof GetV1PermissionsSetsByPermissionSetIdResponses];
 
+export type PatchV1PermissionsSetsByPermissionSetIdData = {
+  body: RenamePermissionSetBody;
+  path: {
+    /**
+     * Den TypeID with 'pms_' prefix and a 26-character base32 suffix.
+     */
+    permissionSetId: string;
+  };
+  query?: never;
+  url: "/v1/permissions/sets/{permissionSetId}";
+};
+
+export type PatchV1PermissionsSetsByPermissionSetIdErrors = {
+  /**
+   * The body or id was invalid, or the set is Member or Admin permissions.
+   */
+  400: InvalidRequestError | DefaultPermissionSetError;
+  /**
+   * The caller must be signed in.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller lacks permissions.manage or needs a recent sign-in.
+   */
+  403: ForbiddenError | PermissionDeniedError;
+  /**
+   * The permission set or organization was not found, or Permissions or Shared roles is turned off.
+   */
+  404: PermissionsNotFoundError;
+  /**
+   * The permission set is archived.
+   */
+  409: PermissionSetConflictError;
+};
+
+export type PatchV1PermissionsSetsByPermissionSetIdError =
+  PatchV1PermissionsSetsByPermissionSetIdErrors[keyof PatchV1PermissionsSetsByPermissionSetIdErrors];
+
+export type PatchV1PermissionsSetsByPermissionSetIdResponses = {
+  /**
+   * Role renamed; its current state is returned.
+   */
+  200: PermissionSetResponse;
+};
+
+export type PatchV1PermissionsSetsByPermissionSetIdResponse =
+  PatchV1PermissionsSetsByPermissionSetIdResponses[keyof PatchV1PermissionsSetsByPermissionSetIdResponses];
+
+export type PutV1TeamsByTeamIdPermissionSetData = {
+  body: TeamPermissionSetBody;
+  path: {
+    /**
+     * Den TypeID with 'tem_' prefix and a 26-character base32 suffix.
+     */
+    teamId: string;
+  };
+  query?: never;
+  url: "/v1/teams/{teamId}/permission-set";
+};
+
+export type PutV1TeamsByTeamIdPermissionSetErrors = {
+  /**
+   * The body or id was invalid, or the set is Member or Admin permissions.
+   */
+  400: InvalidRequestError | DefaultPermissionSetError;
+  /**
+   * The caller must be signed in.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller lacks permissions.manage, needs a recent sign-in, tried to turn on a permission they don't have, or tried to change Admin permissions without being the owner or an admin.
+   */
+  403: ForbiddenError | PermissionDeniedError | PermissionEditError;
+  /**
+   * The team, permission set or organization was not found, or Permissions or Shared roles is turned off.
+   */
+  404: PermissionsNotFoundError;
+  /**
+   * The permission set is archived.
+   */
+  409: PermissionSetConflictError;
+};
+
+export type PutV1TeamsByTeamIdPermissionSetError =
+  PutV1TeamsByTeamIdPermissionSetErrors[keyof PutV1TeamsByTeamIdPermissionSetErrors];
+
+export type PutV1TeamsByTeamIdPermissionSetResponses = {
+  /**
+   * The team's custom role was set; the role's current state is returned, or null when the team has none.
+   */
+  200: TeamPermissionSetResponse;
+};
+
+export type PutV1TeamsByTeamIdPermissionSetResponse =
+  PutV1TeamsByTeamIdPermissionSetResponses[keyof PutV1TeamsByTeamIdPermissionSetResponses];
+
 export type PutV1PermissionsSetsByPermissionSetIdPermissionsData = {
   body: UpdatePermissionSetPermissionsBody;
   path: {
@@ -21306,7 +23538,7 @@ export type PostV1OauthProvidersByProviderIdDisconnectResponse =
 export type CreateGoogleDriveUploadSessionData = {
   body: {
     /**
-     * File basename; no file bytes or local paths.
+     * File basename; no file bytes or local paths. Ignored when replacing a file.
      */
     name: string;
     /**
@@ -21315,6 +23547,21 @@ export type CreateGoogleDriveUploadSessionData = {
     size: number;
     mimeType?: string;
     folderId?: string;
+    /**
+     * Replace this existing file's content instead of creating a file. It keeps its ID, link, sharing and comments; the previous version stays in Drive's version history for 30 days.
+     */
+    fileId?: string;
+    /**
+     * Required with fileId: the revision your copy was downloaded from. Refused with drive_conflict when Drive changed since; download the newer version and reapply the edits, or save a new file.
+     */
+    baseRevision?: string;
+    /**
+     * New files only: save the uploaded Office file as this native Google Docs, Sheets or Slides type.
+     */
+    convertTo?:
+      | "application/vnd.google-apps.spreadsheet"
+      | "application/vnd.google-apps.document"
+      | "application/vnd.google-apps.presentation";
   };
   path?: never;
   query?: never;
@@ -21323,9 +23570,14 @@ export type CreateGoogleDriveUploadSessionData = {
 
 export type CreateGoogleDriveUploadSessionErrors = {
   /**
-   * Invalid upload metadata.
+   * Invalid upload metadata, or a Google Docs, Sheets or Slides file cannot be replaced by an upload.
    */
-  400: InvalidRequestError;
+  400:
+    | InvalidRequestError
+    | {
+        error: string;
+        message: string;
+      };
   /**
    * Sign in first.
    */
@@ -21338,11 +23590,13 @@ export type CreateGoogleDriveUploadSessionErrors = {
     message: string;
   };
   /**
-   * Connect Google with Drive write access.
+   * Connect Google with Drive write access, or the file changed in Drive since baseRevision (drive_conflict) or is in the trash.
    */
   409: {
     error: string;
     message: string;
+    currentRevision?: string | null;
+    modifiedTime?: string | null;
   };
   /**
    * Google did not confirm upload preparation.
@@ -21369,7 +23623,7 @@ export type CreateGoogleDriveUploadSessionResponse =
 export type PrepareHostGoogleDriveUploadSessionData = {
   body: {
     /**
-     * File basename; no file bytes or local paths.
+     * File basename; no file bytes or local paths. Ignored when replacing a file.
      */
     name: string;
     /**
@@ -21378,6 +23632,21 @@ export type PrepareHostGoogleDriveUploadSessionData = {
     size: number;
     mimeType?: string;
     folderId?: string;
+    /**
+     * Replace this existing file's content instead of creating a file. It keeps its ID, link, sharing and comments; the previous version stays in Drive's version history for 30 days.
+     */
+    fileId?: string;
+    /**
+     * Required with fileId: the revision your copy was downloaded from. Refused with drive_conflict when Drive changed since; download the newer version and reapply the edits, or save a new file.
+     */
+    baseRevision?: string;
+    /**
+     * New files only: save the uploaded Office file as this native Google Docs, Sheets or Slides type.
+     */
+    convertTo?:
+      | "application/vnd.google-apps.spreadsheet"
+      | "application/vnd.google-apps.document"
+      | "application/vnd.google-apps.presentation";
     connectionId?: string;
   };
   path?: never;
@@ -21387,9 +23656,14 @@ export type PrepareHostGoogleDriveUploadSessionData = {
 
 export type PrepareHostGoogleDriveUploadSessionErrors = {
   /**
-   * Invalid upload metadata.
+   * Invalid upload metadata, or a Google Docs, Sheets or Slides file cannot be replaced by an upload.
    */
-  400: InvalidRequestError;
+  400:
+    | InvalidRequestError
+    | {
+        error: string;
+        message: string;
+      };
   /**
    * Sign in first.
    */
@@ -21402,11 +23676,13 @@ export type PrepareHostGoogleDriveUploadSessionErrors = {
     message: string;
   };
   /**
-   * Connect Google with Drive write access.
+   * Connect Google with Drive write access, or the file changed in Drive since baseRevision (drive_conflict) or is in the trash.
    */
   409: {
     error: string;
     message: string;
+    currentRevision?: string | null;
+    modifiedTime?: string | null;
   };
   /**
    * Google did not confirm upload preparation.
@@ -21429,6 +23705,297 @@ export type PrepareHostGoogleDriveUploadSessionResponses = {
 
 export type PrepareHostGoogleDriveUploadSessionResponse =
   PrepareHostGoogleDriveUploadSessionResponses[keyof PrepareHostGoogleDriveUploadSessionResponses];
+
+export type DescribeHostGoogleDriveDownloadData = {
+  body?: never;
+  path: {
+    fileId: string;
+  };
+  query?: {
+    /**
+     * Google Docs, Sheets, Slides and Drawings only: export format, such as xlsx or csv for a Sheet, docx, md, txt or pdf for a Doc, pptx for Slides. Defaults to the Office format.
+     */
+    format?: string;
+    connectionId?: string;
+  };
+  url: "/v1/direct-downloads/google-workspace/drive-files/{fileId}";
+};
+
+export type DescribeHostGoogleDriveDownloadErrors = {
+  /**
+   * Folder, unsupported Google file type or invalid format.
+   */
+  400:
+    | InvalidRequestError
+    | {
+        error: string;
+        message: string;
+      };
+  /**
+   * Sign in first.
+   */
+  401: UnauthorizedError;
+  /**
+   * Organization policy blocks the selected connection.
+   */
+  403: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Connect Google with Drive read access, or the file is in the trash.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The file is larger than the pull size limit.
+   */
+  413: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Google refused or did not return the file; the message gives Google's reason.
+   */
+  502: {
+    error: string;
+    message: string;
+  };
+};
+
+export type DescribeHostGoogleDriveDownloadError =
+  DescribeHostGoogleDriveDownloadErrors[keyof DescribeHostGoogleDriveDownloadErrors];
+
+export type DescribeHostGoogleDriveDownloadResponses = {
+  /**
+   * Pull plan; no file content.
+   */
+  200: GoogleDriveDownloadInfo;
+};
+
+export type DescribeHostGoogleDriveDownloadResponse =
+  DescribeHostGoogleDriveDownloadResponses[keyof DescribeHostGoogleDriveDownloadResponses];
+
+export type DownloadHostGoogleDriveFileData = {
+  body?: never;
+  path: {
+    fileId: string;
+  };
+  query?: {
+    /**
+     * Google Docs, Sheets, Slides and Drawings only: export format, such as xlsx or csv for a Sheet, docx, md, txt or pdf for a Doc, pptx for Slides. Defaults to the Office format.
+     */
+    format?: string;
+    connectionId?: string;
+  };
+  url: "/v1/direct-downloads/google-workspace/drive-files/{fileId}/content";
+};
+
+export type DownloadHostGoogleDriveFileErrors = {
+  /**
+   * Folder, unsupported Google file type or invalid format.
+   */
+  400:
+    | InvalidRequestError
+    | {
+        error: string;
+        message: string;
+      };
+  /**
+   * Sign in first.
+   */
+  401: UnauthorizedError;
+  /**
+   * Organization policy blocks the selected connection.
+   */
+  403: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Connect Google with Drive read access, or the file is in the trash.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The file is larger than the pull size limit.
+   */
+  413: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Google refused or did not return the file; the message gives Google's reason.
+   */
+  502: {
+    error: string;
+    message: string;
+  };
+};
+
+export type DownloadHostGoogleDriveFileError =
+  DownloadHostGoogleDriveFileErrors[keyof DownloadHostGoogleDriveFileErrors];
+
+export type DownloadHostGoogleDriveFileResponses = {
+  /**
+   * File bytes.
+   */
+  200: Blob | File;
+  /**
+   * Requested byte range.
+   */
+  206: Blob | File;
+};
+
+export type DownloadHostGoogleDriveFileResponse =
+  DownloadHostGoogleDriveFileResponses[keyof DownloadHostGoogleDriveFileResponses];
+
+export type CreateGoogleDriveDownloadLinkData = {
+  body: {
+    fileId: string;
+    /**
+     * Google Docs, Sheets, Slides and Drawings only: export format, such as xlsx or csv for a Sheet, docx, md, txt or pdf for a Doc, pptx for Slides. Defaults to the Office format.
+     */
+    format?: string;
+  };
+  path?: never;
+  query?: never;
+  url: "/v1/capabilities/google-workspace/drive-download-links";
+};
+
+export type CreateGoogleDriveDownloadLinkErrors = {
+  /**
+   * Folder, unsupported Google file type or invalid format.
+   */
+  400:
+    | InvalidRequestError
+    | {
+        error: string;
+        message: string;
+      };
+  /**
+   * Sign in first.
+   */
+  401: UnauthorizedError;
+  /**
+   * Organization policy blocks the selected connection.
+   */
+  403: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Connect Google with Drive read access, or the file is in the trash.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The file is larger than the pull size limit.
+   */
+  413: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Google refused or did not return the file; the message gives Google's reason.
+   */
+  502: {
+    error: string;
+    message: string;
+  };
+};
+
+export type CreateGoogleDriveDownloadLinkError =
+  CreateGoogleDriveDownloadLinkErrors[keyof CreateGoogleDriveDownloadLinkErrors];
+
+export type CreateGoogleDriveDownloadLinkResponses = {
+  /**
+   * Short-lived bearer download URL, as JSON and as an MCP resource link, with the file's revision; no file content.
+   */
+  200: GoogleDriveDownloadLink;
+};
+
+export type CreateGoogleDriveDownloadLinkResponse =
+  CreateGoogleDriveDownloadLinkResponses[keyof CreateGoogleDriveDownloadLinkResponses];
+
+export type DownloadGoogleDriveFileByLinkData = {
+  body?: never;
+  path?: never;
+  query: {
+    token: string;
+  };
+  url: "/v1/direct-downloads/google-workspace/drive-link";
+};
+
+export type DownloadGoogleDriveFileByLinkErrors = {
+  /**
+   * Folder, unsupported Google file type or invalid format.
+   */
+  400:
+    | InvalidRequestError
+    | {
+        error: string;
+        message: string;
+      };
+  /**
+   * Sign in first.
+   */
+  401: UnauthorizedError;
+  /**
+   * Organization policy blocks the selected connection.
+   */
+  403: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Unknown or expired link.
+   */
+  404: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Connect Google with Drive read access, or the file is in the trash.
+   */
+  409: {
+    error: string;
+    message: string;
+  };
+  /**
+   * The file is larger than the pull size limit.
+   */
+  413: {
+    error: string;
+    message: string;
+  };
+  /**
+   * Google refused or did not return the file; the message gives Google's reason.
+   */
+  502: {
+    error: string;
+    message: string;
+  };
+};
+
+export type DownloadGoogleDriveFileByLinkError =
+  DownloadGoogleDriveFileByLinkErrors[keyof DownloadGoogleDriveFileByLinkErrors];
+
+export type DownloadGoogleDriveFileByLinkResponses = {
+  /**
+   * File bytes.
+   */
+  200: Blob | File;
+};
+
+export type DownloadGoogleDriveFileByLinkResponse =
+  DownloadGoogleDriveFileByLinkResponses[keyof DownloadGoogleDriveFileByLinkResponses];
 
 export type SendGmailDraftData = {
   body: {
@@ -23140,6 +25707,263 @@ export type UpdateGoogleDriveFileMetadataResponses = {
 export type UpdateGoogleDriveFileMetadataResponse =
   UpdateGoogleDriveFileMetadataResponses[keyof UpdateGoogleDriveFileMetadataResponses];
 
+export type GetGoogleDocumentOutlineData = {
+  body?: never;
+  path: {
+    documentId: string;
+  };
+  query?: never;
+  url: "/v1/capabilities/google-workspace/documents/{documentId}/outline";
+};
+
+export type GetGoogleDocumentOutlineErrors = {
+  /**
+   * Invalid bounded request.
+   */
+  400: InvalidRequestError;
+  /**
+   * Sign in first.
+   */
+  401: UnauthorizedError;
+  /**
+   * Feature disabled or tab unavailable.
+   */
+  404: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * Connect with the required permissions, or read the changed document again.
+   */
+  409: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * Request exceeds 64 KiB.
+   */
+  413: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * Google did not confirm the operation.
+   */
+  502: {
+    error: string;
+    message?: string;
+  };
+};
+
+export type GetGoogleDocumentOutlineError = GetGoogleDocumentOutlineErrors[keyof GetGoogleDocumentOutlineErrors];
+
+export type GetGoogleDocumentOutlineResponses = {
+  /**
+   * Google-confirmed result.
+   */
+  200: {
+    ok: true;
+    documentId: string;
+    title: string;
+    revisionId: string | null;
+    bodyTextOnly: true;
+    suggestionsOmitted: boolean;
+    tabs: Array<{
+      tabId: string;
+      title: string;
+      parentTabId: string | null;
+      headings: Array<{
+        startIndex: number;
+        text: string;
+        style: string;
+      }>;
+    }>;
+    headingsTruncated: boolean;
+  };
+};
+
+export type GetGoogleDocumentOutlineResponse =
+  GetGoogleDocumentOutlineResponses[keyof GetGoogleDocumentOutlineResponses];
+
+export type ReadGoogleDocumentTextData = {
+  body?: never;
+  path: {
+    documentId: string;
+  };
+  query: {
+    /**
+     * A tab ID returned by getGoogleDocumentOutline, including child tabs.
+     */
+    tabId: string;
+    /**
+     * Google UTF-16 offset. For another page, use nextStartIndex with the same revisionId and query.
+     */
+    startIndex?: number;
+    /**
+     * Maximum total UTF-16 text characters returned to the assistant.
+     */
+    maxCharacters?: number;
+    /**
+     * Optional literal, case-insensitive search within body paragraphs and tables in this tab. Returns matching excerpts, not the whole document.
+     */
+    query?: string;
+    /**
+     * Pass the revision from the previous page to stop if the saved document changed. Null on read-only accounts; those reads cannot guarantee stable pagination.
+     */
+    revisionId?: string;
+  };
+  url: "/v1/capabilities/google-workspace/documents/{documentId}/text";
+};
+
+export type ReadGoogleDocumentTextErrors = {
+  /**
+   * Invalid bounded request.
+   */
+  400: InvalidRequestError;
+  /**
+   * Sign in first.
+   */
+  401: UnauthorizedError;
+  /**
+   * Feature disabled or tab unavailable.
+   */
+  404: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * Connect with the required permissions, or read the changed document again.
+   */
+  409: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * Request exceeds 64 KiB.
+   */
+  413: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * Google did not confirm the operation.
+   */
+  502: {
+    error: string;
+    message?: string;
+  };
+};
+
+export type ReadGoogleDocumentTextError = ReadGoogleDocumentTextErrors[keyof ReadGoogleDocumentTextErrors];
+
+export type ReadGoogleDocumentTextResponses = {
+  /**
+   * Google-confirmed result.
+   */
+  200: {
+    ok: true;
+    documentId: string;
+    title: string;
+    revisionId: string | null;
+    bodyTextOnly: true;
+    suggestionsOmitted: boolean;
+    tabId: string;
+    passages: Array<{
+      startIndex: number;
+      endIndex: number;
+      text: string;
+    }>;
+    nextStartIndex: number | null;
+  };
+};
+
+export type ReadGoogleDocumentTextResponse = ReadGoogleDocumentTextResponses[keyof ReadGoogleDocumentTextResponses];
+
+export type ReplaceGoogleDocumentTextData = {
+  body: {
+    tabId: string;
+    /**
+     * Required revisionId from a fresh outline or text read by this same connected account. A stale revision is never merged automatically.
+     */
+    revisionId: string;
+    /**
+     * UTF-16 offset of the exact passage being changed; add its offset within the returned excerpt.
+     */
+    startIndex: number;
+    /**
+     * Exact, case-sensitive saved text at startIndex, inside one paragraph. Cannot cross table cells, embedded objects, or paragraph boundaries.
+     */
+    expectedText: string;
+    /**
+     * User-requested replacement. Empty string deletes the matched passage. This edits the native Google Doc, not an unsaved local draft; require the user's explicit request before calling.
+     */
+    replacement: string;
+  };
+  path: {
+    documentId: string;
+  };
+  query?: never;
+  url: "/v1/capabilities/google-workspace/documents/{documentId}/replace-text";
+};
+
+export type ReplaceGoogleDocumentTextErrors = {
+  /**
+   * Invalid bounded request.
+   */
+  400: InvalidRequestError;
+  /**
+   * Sign in first.
+   */
+  401: UnauthorizedError;
+  /**
+   * Feature disabled or tab unavailable.
+   */
+  404: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * Connect with the required permissions, or read the changed document again.
+   */
+  409: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * Request exceeds 64 KiB.
+   */
+  413: {
+    error: string;
+    message?: string;
+  };
+  /**
+   * Google did not confirm the operation.
+   */
+  502: {
+    error: string;
+    message?: string;
+  };
+};
+
+export type ReplaceGoogleDocumentTextError = ReplaceGoogleDocumentTextErrors[keyof ReplaceGoogleDocumentTextErrors];
+
+export type ReplaceGoogleDocumentTextResponses = {
+  /**
+   * Google-confirmed result.
+   */
+  200: {
+    ok: true;
+    documentId: string;
+    tabId: string;
+    revisionId: string;
+    replacedCharacters: number;
+    insertedCharacters: number;
+  };
+};
+
+export type ReplaceGoogleDocumentTextResponse =
+  ReplaceGoogleDocumentTextResponses[keyof ReplaceGoogleDocumentTextResponses];
+
 export type PostV1DirectUploadsGoogleWorkspaceDriveFilesData = {
   body?: never;
   path?: never;
@@ -24665,6 +27489,13 @@ export type PostV1McpConnectionsData = {
           clientSecret?: string;
           tokenEndpointAuthMethod?: "client_secret_basic" | "client_secret_post";
         };
+        /**
+         * Administrator-pinned authorization and token URLs. Both required; null restores strict discovery. Changing them clears saved sign-ins.
+         */
+        manualOAuthEndpoints?: {
+          authorizationEndpoint: string;
+          tokenEndpoint: string;
+        } | null;
         authorizationServerIssuer?: string | null;
         requestedScopes?: Array<string>;
         access?: ExternalMcpConnectionAccessInput;
@@ -25179,6 +28010,13 @@ export type PutV1McpConnectionsByConnectionIdData = {
       clientSecret?: string;
       tokenEndpointAuthMethod?: "client_secret_basic" | "client_secret_post";
     };
+    /**
+     * Administrator-pinned authorization and token URLs. Both required; null restores strict discovery. Changing them clears saved sign-ins.
+     */
+    manualOAuthEndpoints?: {
+      authorizationEndpoint: string;
+      tokenEndpoint: string;
+    } | null;
     authorizationServerIssuer?: string | null;
     requestedScopes?: Array<string>;
     access: ExternalMcpConnectionAccessInput;
@@ -26804,6 +29642,40 @@ export type GetV1PluginsByPluginIdResolvedResponses = {
 
 export type GetV1PluginsByPluginIdResolvedResponse =
   GetV1PluginsByPluginIdResolvedResponses[keyof GetV1PluginsByPluginIdResolvedResponses];
+
+export type GetV1ResolvedPluginsData = {
+  body?: never;
+  path?: never;
+  query: {
+    /**
+     * Comma-separated plugin ids, at most 100.
+     */
+    pluginIds: string;
+  };
+  url: "/v1/resolved-plugins";
+};
+
+export type GetV1ResolvedPluginsErrors = {
+  /**
+   * The plugin ids were invalid.
+   */
+  400: InvalidRequestError;
+  /**
+   * The caller must be signed in to view resolved plugins.
+   */
+  401: UnauthorizedError;
+};
+
+export type GetV1ResolvedPluginsError = GetV1ResolvedPluginsErrors[keyof GetV1ResolvedPluginsErrors];
+
+export type GetV1ResolvedPluginsResponses = {
+  /**
+   * Resolved plugins returned successfully.
+   */
+  200: PluginArchResolvedPluginsResponse;
+};
+
+export type GetV1ResolvedPluginsResponse = GetV1ResolvedPluginsResponses[keyof GetV1ResolvedPluginsResponses];
 
 export type PostV1PluginsByPluginIdMcpConnectionsData = {
   body: {
@@ -30151,6 +33023,165 @@ export type PutV1OrgWorkbotSettingsResponses = {
 };
 
 export type PutV1OrgWorkbotSettingsResponse = PutV1OrgWorkbotSettingsResponses[keyof PutV1OrgWorkbotSettingsResponses];
+
+export type GetV1OrgDefaultModelData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/org/default-model";
+};
+
+export type GetV1OrgDefaultModelErrors = {
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller lacks the View OpenWork Models settings permission.
+   */
+  403: ForbiddenError;
+  /**
+   * The organization or team was not found, or the organization default model is off.
+   */
+  404: NotFoundError;
+};
+
+export type GetV1OrgDefaultModelError = GetV1OrgDefaultModelErrors[keyof GetV1OrgDefaultModelErrors];
+
+export type GetV1OrgDefaultModelResponses = {
+  /**
+   * Default models returned.
+   */
+  200: DefaultModelSettings;
+};
+
+export type GetV1OrgDefaultModelResponse = GetV1OrgDefaultModelResponses[keyof GetV1OrgDefaultModelResponses];
+
+export type GetV1OrgDefaultModelOptionsData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/org/default-model/options";
+};
+
+export type GetV1OrgDefaultModelOptionsErrors = {
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller lacks the View OpenWork Models settings permission.
+   */
+  403: ForbiddenError;
+  /**
+   * The organization or team was not found, or the organization default model is off.
+   */
+  404: NotFoundError;
+};
+
+export type GetV1OrgDefaultModelOptionsError =
+  GetV1OrgDefaultModelOptionsErrors[keyof GetV1OrgDefaultModelOptionsErrors];
+
+export type GetV1OrgDefaultModelOptionsResponses = {
+  /**
+   * Models returned.
+   */
+  200: DefaultModelOptions;
+};
+
+export type GetV1OrgDefaultModelOptionsResponse =
+  GetV1OrgDefaultModelOptionsResponses[keyof GetV1OrgDefaultModelOptionsResponses];
+
+export type PutV1OrgDefaultModelEveryoneData = {
+  body: DefaultModelWrite;
+  path?: never;
+  query?: never;
+  url: "/v1/org/default-model/everyone";
+};
+
+export type PutV1OrgDefaultModelEveryoneErrors = {
+  /**
+   * The model is not one the organization has, or the request was invalid.
+   */
+  400: DefaultModelUnknownModelError | InvalidRequestError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller lacks the Manage OpenWork Models permission or needs to sign in again.
+   */
+  403: ForbiddenError;
+  /**
+   * The organization or team was not found, or the organization default model is off.
+   */
+  404: NotFoundError;
+  /**
+   * The model's provider could not be read to check the model.
+   */
+  503: DefaultModelSourceUnavailableError;
+};
+
+export type PutV1OrgDefaultModelEveryoneError =
+  PutV1OrgDefaultModelEveryoneErrors[keyof PutV1OrgDefaultModelEveryoneErrors];
+
+export type PutV1OrgDefaultModelEveryoneResponses = {
+  /**
+   * Default models saved.
+   */
+  200: DefaultModelSettings;
+};
+
+export type PutV1OrgDefaultModelEveryoneResponse =
+  PutV1OrgDefaultModelEveryoneResponses[keyof PutV1OrgDefaultModelEveryoneResponses];
+
+export type PutV1OrgDefaultModelTeamsByTeamIdData = {
+  body: DefaultModelWrite;
+  path: {
+    /**
+     * Den TypeID with 'tem_' prefix and a 26-character base32 suffix.
+     */
+    teamId: string;
+  };
+  query?: never;
+  url: "/v1/org/default-model/teams/{teamId}";
+};
+
+export type PutV1OrgDefaultModelTeamsByTeamIdErrors = {
+  /**
+   * The model is not one the organization has, or the request was invalid.
+   */
+  400: DefaultModelUnknownModelError | InvalidRequestError;
+  /**
+   * Authentication required.
+   */
+  401: UnauthorizedError;
+  /**
+   * The caller lacks the Manage OpenWork Models permission or needs to sign in again.
+   */
+  403: ForbiddenError;
+  /**
+   * The organization or team was not found, or the organization default model is off.
+   */
+  404: NotFoundError;
+  /**
+   * The model's provider could not be read to check the model.
+   */
+  503: DefaultModelSourceUnavailableError;
+};
+
+export type PutV1OrgDefaultModelTeamsByTeamIdError =
+  PutV1OrgDefaultModelTeamsByTeamIdErrors[keyof PutV1OrgDefaultModelTeamsByTeamIdErrors];
+
+export type PutV1OrgDefaultModelTeamsByTeamIdResponses = {
+  /**
+   * Default models saved.
+   */
+  200: DefaultModelSettings;
+};
+
+export type PutV1OrgDefaultModelTeamsByTeamIdResponse =
+  PutV1OrgDefaultModelTeamsByTeamIdResponses[keyof PutV1OrgDefaultModelTeamsByTeamIdResponses];
 
 export type GetV1McpConnectionsByConnectionIdSlackAssistantData = {
   body?: never;

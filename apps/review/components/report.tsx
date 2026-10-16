@@ -8,6 +8,7 @@ import type { ReviewEvidence, ReviewReport } from "@openwork/review";
 import { LaunchPreview } from "./launch-preview";
 import { CheckpointProvider } from "./open-checkpoint";
 import { StatusIcon } from "./status-icon";
+import type { PreviewProviderOption } from "../lib/preview-options";
 
 type Verdict = ReturnType<typeof summarizeReview>["verdict"];
 
@@ -42,10 +43,11 @@ export function Judgments({ items }: { items: ReviewEvidence["judgments"] }) {
   );
 }
 
-export function Report({ report, id, connected, providerLabel, checkpointProviders }: {
+export function Report({ report, id, connected, providerLabel, checkpointProviders, previewProviders }: {
   report: ReviewReport; id: string; connected: boolean;
   /** The provider new previews launch on, e.g. "Freestyle". */
   providerLabel: string;
+  previewProviders?: readonly PreviewProviderOption[];
   /** Providers whose saved checkpoints this server can open. */
   checkpointProviders: readonly string[];
 }) {
@@ -112,7 +114,7 @@ export function Report({ report, id, connected, providerLabel, checkpointProvide
         )}
       </div>
       <aside id="sandbox-panel" className="sandbox-sidebar" aria-label="Your sandbox" hidden={!sandboxOpen}>
-        <LaunchPreview id={id} connected={connected} providerLabel={providerLabel} />
+        <LaunchPreview id={id} connected={connected} providerLabel={providerLabel} providers={previewProviders} />
       </aside>
       <div className="report-body">
         <div className="filter-bar" aria-label="Filter evidence">

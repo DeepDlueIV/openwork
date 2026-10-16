@@ -228,7 +228,7 @@
         "tab": "Dashboards",
         "pages": [
           "dashboards/overview",
-          "cloud/share-with-your-team/dashboards"
+          "dashboards/build-an-mcp-app"
         ]
       },
       {
@@ -257,6 +257,7 @@
             "group": "Policies and operations",
             "pages": [
               "cloud/share-with-your-team/desktop-policies",
+              "cloud/share-with-your-team/agent-permissions",
               "cloud/share-with-your-team/team-prompt-cards",
               "cloud/security-and-operations",
               "cloud/enterprise"
@@ -383,6 +384,10 @@
     {
       "source": "/dashboards",
       "destination": "/dashboards/overview"
+    },
+    {
+      "source": "/cloud/share-with-your-team/dashboards",
+      "destination": "/dashboards/build-an-mcp-app"
     },
     {
       "source": "/sso",

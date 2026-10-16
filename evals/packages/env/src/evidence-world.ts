@@ -7,6 +7,11 @@ const CREDENTIALS: Record<EvidenceProviderId, string[]> = {
   daytona: ["DAYTONA_API_KEY"],
 };
 
+/** The provider evidence worlds use: OPENWORK_EVIDENCE_PROVIDER, Freestyle when unset. */
+export function evidenceWorldProvider(): EvidenceProviderId {
+  return evidenceProviderFromEnv();
+}
+
 /** Credentials the selected provider needs to run an evidence world, for a spec's `needs.env`. */
 export function evidenceWorldCredentials(provider: EvidenceProviderId = evidenceProviderFromEnv()): string[] {
   return CREDENTIALS[provider];

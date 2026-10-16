@@ -42,7 +42,6 @@ export type DenOrgInvitation = {
   status: string;
   expiresAt: string | null;
   createdAt: string | null;
-  inviteToken: string | null;
 };
 
 export type DenOrgTeam = {
@@ -131,6 +130,10 @@ export type DenOrgAccessFlags = {
   canViewPermissions: boolean;
   /** `permissions.manage`: change Member, Admin and team permissions. */
   canManagePermissions: boolean;
+  /** `agent_permissions.view`: what agents can do on members' computers. */
+  canViewAgentPermissions: boolean;
+  /** `agent_permissions.manage`: change what agents can do on members' computers. */
+  canManageAgentPermissions: boolean;
   /** `api_keys.view` */
   canViewApiKeys: boolean;
   /** `api_keys.manage` */
@@ -206,10 +209,6 @@ export type DenOrgAccessFlags = {
   canManageAllShared: boolean;
   /** `sharing.share_org_wide` */
   canShareWithEveryone: boolean;
-  /** `dashboards.view` */
-  canViewDashboards: boolean;
-  /** `dashboards.manage` */
-  canManageDashboards: boolean;
   /** Owner only. */
   canTransferOwnership: boolean;
   /** Owner only. */
@@ -356,7 +355,6 @@ export type DenOrgEntitlements = {
 export type DenOrgCapabilities = {
   /** Effective organization rollout and deployment visibility, separate from capture entitlement. */
   auditLogs: boolean;
-  orgManagedDashboards: boolean;
   installLinks: boolean;
   mcpConnections: boolean;
   /** Apps built in OpenWork are served as their own MCP servers; absent (off) on older servers. */
@@ -593,6 +591,8 @@ export function getOrgAccessFlags(roleValue: string, isOwner: boolean, permissio
     canManageAdminTeams: can("teams.manage_admin"),
     canViewPermissions: can("permissions.view"),
     canManagePermissions: can("permissions.manage"),
+    canViewAgentPermissions: can("agent_permissions.view"),
+    canManageAgentPermissions: can("agent_permissions.manage"),
     canViewApiKeys: can("api_keys.view"),
     canManageApiKeys: can("api_keys.manage"),
     canViewScim: can("scim.view"),
@@ -632,8 +632,6 @@ export function getOrgAccessFlags(roleValue: string, isOwner: boolean, permissio
     canManageSyncSources: can("connectors.manage"),
     canManageAllShared: can("sharing.manage_all"),
     canShareWithEveryone: can("sharing.share_org_wide"),
-    canViewDashboards: can("dashboards.view"),
-    canManageDashboards: can("dashboards.manage"),
     canTransferOwnership: resolvedIsOwner,
     canDeleteOrganization: resolvedIsOwner,
     canStartSeatCheckout: can("billing.manage"),
@@ -702,6 +700,33 @@ export function getMembersRoute(orgSlug?: string | null): string {
 
 export function getTeamRoute(orgSlug: string | null | undefined, teamId: string): string {
   return `${getMembersRoute(orgSlug)}/teams/${encodeURIComponent(teamId)}`;
+}
+
+/** A team's Agents tab: what agents can do for people in the team. */
+export function getTeamAgentsRoute(orgSlug: string | null | undefined, teamId: string): string {
+  return `${getTeamRoute(orgSlug, teamId)}?tab=agents`;
+}
+
+/** Members › Teams › Everyone: every member, including people in no team. */
+export function getEveryoneRoute(orgSlug?: string | null): string {
+  return `${getMembersRoute(orgSlug)}/teams/everyone`;
+}
+
+export function getEveryoneAgentsRoute(orgSlug?: string | null): string {
+  return `${getEveryoneRoute(orgSlug)}?tab=agents`;
+}
+
+/** Everyone's Browser tab: the pages agents and the built-in browser can open, for every member. */
+export function getEveryoneBrowserRoute(orgSlug?: string | null): string {
+  return `${getEveryoneRoute(orgSlug)}?tab=browser`;
+}
+
+export function getMembersTeamsRoute(orgSlug?: string | null): string {
+  return `${getMembersRoute(orgSlug)}?tab=teams`;
+}
+
+export function getNewRoleRoute(orgSlug?: string | null): string {
+  return `${getMembersRoute(orgSlug)}/roles/new`;
 }
 
 export function getWorkflowRunsRoute(orgSlug?: string | null): string {
@@ -1106,7 +1131,6 @@ export function parseOrgContextPayload(payload: unknown): DenOrgContext | null {
             status,
             expiresAt: asIsoString(entry.expiresAt),
             createdAt: asIsoString(entry.createdAt),
-            inviteToken: asString(entry.inviteToken),
           } satisfies DenOrgInvitation;
         })
         .filter((entry): entry is DenOrgInvitation => entry !== null)
@@ -1227,12 +1251,11 @@ export function orgFeatureEnabled(orgContext: Pick<DenOrgContext, "features"> | 
 
 function parseOrgCapabilities(value: unknown): DenOrgCapabilities {
   if (!isRecord(value)) {
-    return { auditLogs: false, orgManagedDashboards: false, installLinks: false, mcpConnections: false, appMcpServers: false, workflows: true, openworkWeb: false, cloud: false, workbot: false };
+    return { auditLogs: false, installLinks: false, mcpConnections: false, appMcpServers: false, workflows: true, openworkWeb: false, cloud: false, workbot: false };
   }
 
   return {
     auditLogs: value.auditLogs === true,
-    orgManagedDashboards: value.orgManagedDashboards === true,
     installLinks: value.installLinks === true,
     mcpConnections: value.mcpConnections === true,
     appMcpServers: value.appMcpServers === true,

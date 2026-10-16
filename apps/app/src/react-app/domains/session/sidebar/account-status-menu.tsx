@@ -37,9 +37,14 @@ import {
   buildDenAuthUrl,
   clearDenSession,
   createDenClient,
+  HOSTED_DEFAULT_DEN_BASE_URL,
   readDenBootstrapConfig,
   readDenSettings,
 } from "../../../../app/lib/den";
+import {
+  formatControlPlaneHost,
+  isDefaultControlPlaneUrl,
+} from "../../settings/cloud/control-plane-url";
 import { markDesktopSignInInitiated } from "../../../../app/lib/den-sign-in-intent";
 import { exchangeHandoffAndSignIn } from "../../../../app/lib/den-handoff";
 import { parseManualAuthInput } from "../../../../app/lib/manual-auth-input";
@@ -285,13 +290,18 @@ export function AccountStatusMenu(props: AccountStatusMenuProps) {
     status: denAuth.status,
     hasUser: user !== null,
   });
+  // A self-hosted server is named by its host, as on the sign-in page.
+  const denBaseUrl = readDenSettings().baseUrl;
+  const serverLabel = isDefaultControlPlaneUrl(denBaseUrl, HOSTED_DEFAULT_DEN_BASE_URL)
+    ? "OpenWork Cloud"
+    : formatControlPlaneHost(denBaseUrl);
   const accountLabel = signedIn
     ? user.name?.trim() || user.email
-    : restoringSession ? "OpenWork Cloud" : "Sign in";
+    : restoringSession ? serverLabel : "Sign in";
   // The sidebar row shows the name only; the email stays inside the account
   // menu so it is not permanently on screen (matches Claude Code and Codex).
   const accountDetail = signedIn
-    ? "OpenWork Cloud"
+    ? serverLabel
     : restoringSession ? "Restoring your session" : "Sync with OpenWork Cloud";
 
   const runtimeStatus = props.showConnectionStatus

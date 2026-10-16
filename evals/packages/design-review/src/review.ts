@@ -1,4 +1,4 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, rename, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { layoutFileName, parseLayoutSnapshot, type LayoutSnapshot } from "./layout.ts";
 import { critiqueScreenshot, loadDesignRubric, type AskVision, type DesignRubric } from "./critique.ts";
@@ -10,6 +10,8 @@ export interface ReviewDesignOptions {
   vision?: { ask: AskVision; model: string } | null;
   bypassCache?: boolean;
   rubric?: DesignRubric;
+  /** Atomically retain completed notes before each model call, even if CI kills this process. */
+  checkpoint?: boolean;
 }
 
 interface ScreenshotEntry { fileName: string; caption: string; hash: string; route: string }
@@ -162,19 +164,43 @@ function collapseRepeats(notes: Record<string, DesignNote[]>): void {
  * the run's judgments or verdict.
  */
 export async function reviewTestRunDesign(testRunDir: string, options: ReviewDesignOptions = {}): Promise<DesignReviewFile> {
-  const value: unknown = JSON.parse(await readFile(join(testRunDir, "test-run.json"), "utf8"));
-  if (!isRecord(value)) throw new Error(`Invalid test run: ${testRunDir}`);
+  const parsed: unknown = JSON.parse(await readFile(join(testRunDir, "test-run.json"), "utf8"));
+  if (!isRecord(parsed)) throw new Error(`Invalid test run: ${testRunDir}`);
+  const value = parsed;
   const vision = options.vision
     ? { ...options.vision, rubric: options.rubric ?? await loadDesignRubric() }
     : null;
   const notes: Record<string, DesignNote[]> = {};
   const screens: Record<string, { caption: string; route: string }> = {};
   const errors: string[] = [];
+  async function save(pending?: string): Promise<DesignReviewFile> {
+    // Collapse a copy: checkpointing must not repeatedly mutate earlier notes.
+    const completed = structuredClone(notes);
+    collapseRepeats(completed);
+    const review: DesignReviewFile = {
+      schemaVersion: 1,
+      gitSha: typeof value.gitSha === "string" ? value.gitSha : null,
+      reviewedAt: new Date().toISOString(),
+      model: vision?.model ?? null,
+      rubric: vision?.rubric.hash ?? null,
+      specFile: typeof value.specFile === "string" ? value.specFile : null,
+      screens,
+      notes: completed,
+      errors: pending ? [...errors, `${pending}: advisory critique not completed`] : [...errors],
+    };
+    const target = join(testRunDir, DESIGN_REVIEW_FILE);
+    const temporary = `${target}.tmp`;
+    await writeFile(temporary, `${JSON.stringify(review, null, 2)}\n`, "utf8");
+    await rename(temporary, target);
+    return review;
+  }
   for (const shot of screenshots(value)) {
     screens[shot.fileName] = { caption: shot.caption, route: shot.route };
     const layout = await readLayout(testRunDir, shot.fileName);
     const measured = layout ? checkLayout(layout) : [];
     let judged: DesignNote[] = [];
+    notes[shot.fileName] = measured;
+    if (options.checkpoint) await save(vision ? shot.caption : undefined);
     if (vision) {
       try {
         const png = await readFile(join(testRunDir, shot.fileName));
@@ -191,21 +217,9 @@ export async function reviewTestRunDesign(testRunDir: string, options: ReviewDes
       .filter((note) => !note.rule.startsWith("layout.") && !restatesMeasured(note, measured) && !insideImage(note, layout))
       .map((note) => withHooks(note, layout))]
       .sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
+    if (options.checkpoint) await save();
   }
-  collapseRepeats(notes);
-  const review: DesignReviewFile = {
-    schemaVersion: 1,
-    gitSha: typeof value.gitSha === "string" ? value.gitSha : null,
-    reviewedAt: new Date().toISOString(),
-    model: vision?.model ?? null,
-    rubric: vision?.rubric.hash ?? null,
-    specFile: typeof value.specFile === "string" ? value.specFile : null,
-    screens,
-    notes,
-    errors,
-  };
-  await writeFile(join(testRunDir, DESIGN_REVIEW_FILE), `${JSON.stringify(review, null, 2)}\n`, "utf8");
-  return review;
+  return save();
 }
 
 /** Markdown for a job summary or a terminal: one line per note, grouped by screenshot. */

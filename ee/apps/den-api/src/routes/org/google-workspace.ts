@@ -8,7 +8,7 @@ import type { DenTypeId } from "@openwork-ee/utils/typeid"
 import { env } from "../../env.js"
 import { cloudTransportRoute, jsonValidator, orgMemberRoute, paramValidator, queryValidator } from "../../middleware/index.js"
 import { invalidRequestSchema, jsonResponse, unauthorizedSchema } from "../../openapi.js"
-import { decodeFileContent } from "../../capability-sources/binary-content.js"
+import { decodeFileContent, decodeTruncatedText, readBoundedBytes } from "../../capability-sources/binary-content.js"
 import { buildGmailDraftRaw, gmailDraftUrl, gmailThreadUrl, normalizeGmailHeaderValue, readGmailDraftIds } from "../../capability-sources/gmail.js"
 import type { GmailDraftAttachment, GmailDraftQuote } from "../../capability-sources/gmail.js"
 import { gmailFileInputPreflight, gmailFileInputPreflightSchema } from "../../capability-sources/gmail-file-input.js"
@@ -31,10 +31,12 @@ import {
 } from "../../capability-sources/google-workspace-api.js"
 import { getOrgOAuthClient, type ConnectedAccountRow } from "../../capability-sources/oauth-credentials.js"
 import { clientSelectedFeatures, getNativeOAuthProvider, providerScopesSatisfy, resolveProviderScopes } from "../../capability-sources/provider-registry.js"
+import { registerGoogleDriveFileRoutes } from "./google-drive-files.js"
 import { registerGoogleDriveUploadRoutes } from "./google-drive-uploads.js"
 import { isGoogleAuthorizationFailure, parseGoogleError } from "./google-workspace-actions.js"
 import { registerGmailManagementRoutes } from "./gmail-management.js"
 import { registerGoogleProductivityManagementRoutes } from "./google-productivity-management.js"
+import { registerGoogleDocumentRoutes } from "./google-documents.js"
 import { listTeamsForMember } from "../../orgs.js"
 import { readInternalCapabilityConnectorId } from "../../session.js"
 import type { OrgRouteVariables } from "./shared.js"
@@ -49,6 +51,8 @@ const DRIVE_FOLDER_MIME_TYPE = "application/vnd.google-apps.folder"
 const GOOGLE_WORKSPACE_API_TIMEOUT_MS = 30_000
 const MAX_DRIVE_FILE_CONTENT_BYTES = 64 * 1024
 const DRIVE_TEXT_CHARACTER_LIMIT = 200_000
+// UTF-8 needs at most four bytes per character.
+const DRIVE_TEXT_BYTE_LIMIT = DRIVE_TEXT_CHARACTER_LIMIT * 4
 const DIRECT_UPLOAD_MAX_BYTES = 4 * 1024 * 1024
 const DIRECT_UPLOAD_BODY_MAX_BYTES = DIRECT_UPLOAD_MAX_BYTES + (256 * 1024)
 const DIRECT_UPLOAD_MAX_FILES = 10
@@ -738,10 +742,13 @@ async function executeGmailDraft(
 export function registerGoogleWorkspaceRoutes<T extends { Variables: OrgRouteVariables }>(app: Hono<T>) {
   app.use("/v1/capabilities/google-workspace/*", contextStorage())
   app.use("/v1/direct-uploads/google-workspace/*", contextStorage())
+  app.use("/v1/direct-downloads/google-workspace/*", contextStorage())
   const actionDependencies = { token: googleWorkspaceToken, fetch: googleWorkspaceApiFetch }
   registerGoogleDriveUploadRoutes(app, actionDependencies)
+  registerGoogleDriveFileRoutes(app, actionDependencies)
   registerGmailManagementRoutes(app, actionDependencies)
   registerGoogleProductivityManagementRoutes(app, actionDependencies)
+  registerGoogleDocumentRoutes(app, actionDependencies)
 
   app.post(
     "/v1/direct-uploads/google-workspace/drive-files",
@@ -1250,8 +1257,10 @@ export function registerGoogleWorkspaceRoutes<T extends { Variables: OrgRouteVar
         return c.json({ error: token.kind, message: token.message }, token.kind === "policy_blocked" ? 403 : 409)
       }
       const permissionMessage = driveReadPermissionMessage(token.account)
-      if (permissionMessage) {
-        return c.json({ error: "needs_connection", message: permissionMessage }, 409)
+      // A previously granted Google scope is not permission after the admin removes it from this connector.
+      const enabledRead = token.enabledScopes.some((scope) => scope === DRIVE_READ_SCOPE || scope === DRIVE_FULL_SCOPE)
+      if (permissionMessage || !enabledRead) {
+        return c.json({ error: "needs_connection", message: permissionMessage ?? "An organization admin must enable Read all Drive files in connector setup, then reconnect Google Workspace." }, 409)
       }
 
       const query = c.req.valid("query")
@@ -1289,7 +1298,7 @@ export function registerGoogleWorkspaceRoutes<T extends { Variables: OrgRouteVar
     describeRoute({
       tags: ["Capability Sources"],
       summary: "Read a Google Drive file's text or binary content as the calling member",
-      description: "Reads a Drive file. Docs and Slides export as plain text; Sheets exports the first tab as CSV. For every spreadsheet tab or edits use the spreadsheet metadata and values capabilities. Downloaded content is bounded; binary files use standard base64 within the model-safety limit.",
+      description: "Reads a Drive file. Docs and Slides export as plain text; Sheets exports the first tab as CSV. For every spreadsheet tab or edits use the spreadsheet metadata and values capabilities. Downloaded content is bounded; binary files use standard base64 within the model-safety limit. To analyze or edit a whole file (Office, PDF, large CSV), pull it into the workspace with the drive_pull_file tool instead, or with createGoogleDriveDownloadLink from a shell.",
       responses: {
         200: jsonResponse("Google Drive file returned.", driveFileResponseSchema),
         400: jsonResponse("The Drive item is not a readable file.", invalidRequestSchema),
@@ -1313,8 +1322,9 @@ export function registerGoogleWorkspaceRoutes<T extends { Variables: OrgRouteVar
         return c.json({ error: token.kind, message: token.message }, token.kind === "policy_blocked" ? 403 : 409)
       }
       const permissionMessage = driveReadPermissionMessage(token.account)
-      if (permissionMessage) {
-        return c.json({ error: "needs_connection", message: permissionMessage }, 409)
+      const enabledRead = token.enabledScopes.some((scope) => scope === DRIVE_READ_SCOPE || scope === DRIVE_FULL_SCOPE)
+      if (permissionMessage || !enabledRead) {
+        return c.json({ error: "needs_connection", message: permissionMessage ?? "An organization admin must enable Read all Drive files in connector setup, then reconnect Google Workspace." }, 409)
       }
 
       const { fileId } = c.req.valid("param")
@@ -1378,8 +1388,10 @@ export function registerGoogleWorkspaceRoutes<T extends { Variables: OrgRouteVar
         return error.status === 409 ? c.json(error.body, 409) : c.json(error.body, 502)
       }
 
-      if (isGoogleAppsFile) {
-        const content = truncateText(await contentResponse.text(), DRIVE_TEXT_CHARACTER_LIMIT)
+      // Never hold more than the text limit could need: a large text file is cut, not buffered whole.
+      const { bytes, truncated } = await readBoundedBytes(contentResponse, DRIVE_TEXT_BYTE_LIMIT)
+      if (isGoogleAppsFile || (truncated && isDeclaredTextFile(file.mimeType))) {
+        const content = truncateText(decodeTruncatedText(bytes, false), DRIVE_TEXT_CHARACTER_LIMIT)
         return c.json({
           ok: true,
           file: {
@@ -1387,17 +1399,26 @@ export function registerGoogleWorkspaceRoutes<T extends { Variables: OrgRouteVar
             content: content.text,
             contentBase64: null,
             encoding: "text",
-            truncated: content.truncated,
+            truncated: truncated || content.truncated,
             contentUnavailableReason: null,
           },
         })
       }
 
-      const bytes = new Uint8Array(await contentResponse.arrayBuffer())
-      const content = decodeFileContent(bytes, {
-        maxTextCharacters: DRIVE_TEXT_CHARACTER_LIMIT,
-        maxBinaryBytes: MAX_DRIVE_FILE_CONTENT_BYTES,
-      })
+      let content: ReturnType<typeof decodeFileContent>
+      if (truncated) {
+        // Past the text limit: readable UTF-8 is returned cut off; anything else is too large for inline content.
+        try {
+          content = { kind: "text", content: truncateText(decodeTruncatedText(bytes, true), DRIVE_TEXT_CHARACTER_LIMIT).text, truncated: true }
+        } catch {
+          content = { kind: "too_large", byteSize: bytes.byteLength }
+        }
+      } else {
+        content = decodeFileContent(bytes, {
+          maxTextCharacters: DRIVE_TEXT_CHARACTER_LIMIT,
+          maxBinaryBytes: MAX_DRIVE_FILE_CONTENT_BYTES,
+        })
+      }
       if (content.kind === "text") {
         return c.json({
           ok: true,

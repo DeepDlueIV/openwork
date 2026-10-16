@@ -1,4 +1,6 @@
+import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
+import { EVIDENCE_KIND } from "./kinds.ts";
 import { readAsset } from "@openwork/freestyle/assets";
 import { checkoutRecipe } from "@openwork/freestyle/build-recipes";
 import { dependencyFingerprint, digest, sourceTree, type ObserveBuild, type SourceEntry } from "@openwork/freestyle/cache";
@@ -7,6 +9,7 @@ import {
   EVIDENCE_CONTROLLER_FILES, EVIDENCE_DEPENDENCIES_RECIPE, EVIDENCE_TOOLS_RECIPE,
 } from "@openwork/freestyle/evidence-builder";
 import { DaytonaApi, DaytonaApiError, type Sandbox } from "./api.ts";
+import { boundedDiagnostic, inspectGuest, requireLocalEvidenceReady } from "./health.ts";
 
 /**
  * Daytona builds the same evidence world as Freestyle, with the same steps inside
@@ -79,16 +82,26 @@ touch ${root}.ready
     const state = (await api.exec(sandbox, `if test -f ${root}.failed; then echo failed; elif test -f ${root}.ready; then echo ready; else echo building; fi`)).output.trim();
     if (state === "ready") return;
     if (state === "failed") {
-      if (options.diagnostic) {
-        const runtime = stage.startsWith("evidence-world") ? (await api.exec(sandbox, "journalctl -u openwork-evidence --no-pager -n 100")).output : "";
-        await options.diagnostic(stage, `${await api.readFile(sandbox, `${root}.log`) ?? ""}${runtime}`);
-      }
+      await reportBuildFailure(api, sandbox, stage, options);
       throw new Error(`Daytona ${stage} failed. Private builder log: ${root}.log`);
     }
     await delay(3_000);
   }
-  if (options.diagnostic) await options.diagnostic(stage, await api.readFile(sandbox, `${root}.log`) ?? "");
+  await reportBuildFailure(api, sandbox, stage, options);
   throw new Error(`Daytona ${stage} exceeded ${Math.round(deadlineMs / 60_000)} minutes`);
+}
+
+async function reportBuildFailure(api: DaytonaApi, sandbox: Sandbox, stage: string, options: DaytonaBuildOptions) {
+  const diagnostic = options.diagnostic;
+  if (!diagnostic) return;
+  await boundedDiagnostic(async () => {
+    const tail = (await api.exec(sandbox, `tail -c 16384 ${ROOT}/${stage}.log`, 5)).output;
+    const patterns = { dependency: /ERR_PNPM|Cannot find (?:package|module)|MODULE_NOT_FOUND/, typecheck: /error TS[0-9]+:/,
+      disk: /No space left on device/, memory: /out of memory|Killed|oom[-_ ]kill/i, startup: /did not become ready|did not answer|EADDRINUSE|ECONNREFUSED/ };
+    const events = Object.entries(patterns).filter(([, pattern]) => pattern.test(tail)).map(([name]) => name);
+    const health = stage.startsWith("evidence-world") ? await inspectGuest(api, sandbox).catch(() => undefined) : undefined;
+    await diagnostic(stage, JSON.stringify({ stage, events, health: health ?? "unavailable", privateLog: `${ROOT}/${stage}.log` }));
+  });
 }
 
 /**
@@ -96,13 +109,15 @@ touch ${root}.ready
  * builder VM and save it. The builder's unique name is the lock between
  * concurrent builds (a dev warm-up and several PRs).
  */
-export async function ensureLayer(api: DaytonaApi, input: {
+interface LayerInput {
   name: string; stage: string; parent: () => Promise<string>;
   prepare: (sandbox: Sandbox) => Promise<void>;
   /** Save memory too (running processes). Otherwise files only, from a stopped VM. */
   withMemory: boolean;
   observe: ObserveBuild; labels?: Record<string, string>;
-}): Promise<string> {
+}
+
+export async function ensureLayer(api: DaytonaApi, input: LayerInput): Promise<string> {
   const start = performance.now();
   const builderName = `ow-dy-build-${digest(input.name).slice(0, 24)}`;
   const deadline = Date.now() + 45 * 60_000;
@@ -134,8 +149,10 @@ export async function ensureLayer(api: DaytonaApi, input: {
       if (error instanceof DaytonaApiError && (error.status === 409 || /already exists/i.test(error.message))) { await delay(2_000); continue; }
       throw error;
     }
+    let diagnosticSandbox = created;
     try {
       const sandbox = await api.waitForSandbox(created.id, ["started"]);
+      diagnosticSandbox = sandbox;
       const prepareStart = performance.now();
       await input.prepare(sandbox);
       input.observe({ stage: `${input.stage}-prepare`, durationMs: Math.round(performance.now() - prepareStart) });
@@ -150,6 +167,9 @@ export async function ensureLayer(api: DaytonaApi, input: {
       input.observe({ stage: `${input.stage}-snapshot`, durationMs: Math.round(performance.now() - snapshotStart) });
       input.observe({ stage: input.stage, durationMs: Math.round(performance.now() - start), cacheHit: false });
       return input.name;
+    } catch (error) {
+      if (input.stage === "daytona-world") await diagnoseGuestFailure(api, diagnosticSandbox, input.stage);
+      throw error;
     } finally {
       // Awaited: a failing CI step exits right after, and a builder left running holds the lock.
       await api.deleteSandbox(created.id).catch(() => undefined);
@@ -213,7 +233,8 @@ systemctl start openwork-evidence-gateway openwork-evidence-cdp`;
  * world and apply the change when only hot-reloadable files changed, otherwise
  * build in full from the warm dev image.
  */
-export async function ensureEvidenceTemplate(sha: string, api = new DaytonaApi(), options: DaytonaBuildOptions = {}): Promise<DaytonaEvidenceTemplate> {
+async function buildEvidenceWorld<Result>(sha: string, api: DaytonaApi, options: DaytonaBuildOptions,
+  buildLayer: (input: LayerInput) => Promise<Result>): Promise<{ result: Result; runtimeFingerprint: string }> {
   if (!/^[a-f0-9]{40}$/.test(sha)) throw new Error("A full pushed source SHA is required");
   const devShaPromise = options.imageSha ? Promise.resolve(options.imageSha) : devHead(options.sourceFetch);
   const devEntriesPromise = devShaPromise.then((devSha) => devSha === sha ? null : sourceTree(devSha, options.sourceFetch));
@@ -225,7 +246,7 @@ export async function ensureEvidenceTemplate(sha: string, api = new DaytonaApi()
   const runtimeFingerprint = evidenceRuntimeFingerprint(entries);
   const state: { mode: "fast" | "full"; restart: string[] } = { mode: "full", restart: [] };
   let allowFast = true;
-  const build = () => ensureLayer(api, { name: templateName(runtimeFingerprint), stage: "daytona-world", observe, withMemory: true, labels: { sourceSha: sha },
+  const build = () => buildLayer({ name: templateName(runtimeFingerprint), stage: "daytona-world", observe, withMemory: true, labels: { sourceSha: sha },
     parent: async () => {
       const devSha = await devShaPromise;
       const devEntries = (await devEntriesPromise) ?? entries;
@@ -253,6 +274,7 @@ node ${ROOT}/evidence-control.mjs refresh ${state.restart.join(" ")}
 printf %s ${runtimeFingerprint} > ${ROOT}/runtime-fingerprint
 printf %s ${sha} > ${ROOT}/built-from-sha
 `, options, 4 * 60_000);
+        await requireLocalEvidenceReady(api, sandbox);
         return;
       }
       for (const [index, name] of EVIDENCE_CONTROLLER_FILES.entries()) await api.writeFile(sandbox, `${ROOT}/${name}`, controller[index]);
@@ -277,16 +299,74 @@ ${GATEWAY_UNITS}
 df -h /
 free -m
 `, options);
+      await requireLocalEvidenceReady(api, sandbox);
     },
   });
-  let name: string;
+  let result: Result;
   try {
-    name = await build();
+    result = await build();
   } catch (error) {
     if (state.mode !== "fast") throw error;
     observe({ stage: "fast path failed; building in full", durationMs: 0, reason: error instanceof Error ? error.message : String(error) });
     allowFast = false;
-    name = await build();
+    result = await build();
   }
-  return { name, runtimeFingerprint };
+  return { result, runtimeFingerprint };
+}
+
+/** Dev warm-up and reusable previews still save their running template under the layer lock. */
+export async function ensureEvidenceTemplate(sha: string, api = new DaytonaApi(), options: DaytonaBuildOptions = {}): Promise<DaytonaEvidenceTemplate> {
+  const built = await buildEvidenceWorld(sha, api, options, (input) => ensureLayer(api, input));
+  return { name: built.result, runtimeFingerprint: built.runtimeFingerprint };
+}
+
+export type DaytonaEvidenceLaunch = DaytonaEvidenceTemplate | { sandbox: Sandbox; runtimeFingerprint: string };
+
+/**
+ * PR-only world: reuse an active template if present, otherwise prepare a unique
+ * test-owned VM and hand it directly to the launcher. Never mutate a shared
+ * builder or save a disposable template. Base/image builds retain their locks.
+ */
+export async function prepareEvidenceWorld(sha: string, api = new DaytonaApi(), options: DaytonaBuildOptions = {}): Promise<DaytonaEvidenceLaunch> {
+  const built = await buildEvidenceWorld(sha, api, options, (input) => prepareWorldLayer(api, input, sha));
+  return { ...built.result, runtimeFingerprint: built.runtimeFingerprint };
+}
+
+export async function prepareWorldLayer(api: DaytonaApi, input: LayerInput, sourceSha: string): Promise<{ name: string } | { sandbox: Sandbox }> {
+  const start = performance.now();
+  const existing = await api.getSnapshot(input.name);
+  if (existing?.state === "active") {
+    input.observe({ stage: input.stage, durationMs: Math.round(performance.now() - start), cacheHit: true });
+    return { name: existing.name };
+  }
+  // A concurrent warm-up owns its builder and snapshot. Do not wait on, adopt,
+  // delete, or change either: this run gets an independent VM from its parent.
+  const parent = await input.parent();
+  const created = await api.createSandbox({ name: `ow-dy-evidence-${randomUUID().replaceAll("-", "")}`, snapshot: parent,
+    labels: { kind: EVIDENCE_KIND, sourceSha }, autoStopMinutes: 30, autoDeleteMinutes: 0 });
+  let diagnosticSandbox = created;
+  try {
+    const sandbox = await api.waitForSandbox(created.id, ["started"]);
+    diagnosticSandbox = sandbox;
+    const prepareStart = performance.now();
+    await input.prepare(sandbox);
+    input.observe({ stage: `${input.stage}-prepare`, durationMs: Math.round(performance.now() - prepareStart) });
+    // Match template preparation: do not carry build filesystem caches into
+    // the journey's later memory checkpoints.
+    await api.execChecked(sandbox, "sh -c 'sync && echo 3 > /proc/sys/vm/drop_caches'");
+    input.observe({ stage: input.stage, durationMs: Math.round(performance.now() - start), cacheHit: false,
+      reason: "ephemeral PR world; template save omitted" });
+    return { sandbox };
+  } catch (error) {
+    await diagnoseGuestFailure(api, diagnosticSandbox, "daytona-world-prepare");
+    await api.deleteSandbox(created.id).catch(() => undefined);
+    throw error;
+  }
+}
+
+async function diagnoseGuestFailure(api: DaytonaApi, sandbox: Sandbox, stage: string) {
+  await boundedDiagnostic(async () => {
+    const health = await inspectGuest(api, sandbox).catch(() => undefined);
+    console.error(JSON.stringify({ stage, health: health ?? "unavailable" }));
+  });
 }

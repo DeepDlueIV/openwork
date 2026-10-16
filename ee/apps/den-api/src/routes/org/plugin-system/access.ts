@@ -396,6 +396,91 @@ export async function resolvePluginArchPluginRoles(context: PluginArchActorConte
   return roles
 }
 
+/** Resolves the caller's role for many config objects with the same rules as resolvePluginArchResourceRole. */
+export async function resolvePluginArchConfigObjectRoles(context: PluginArchActorContext, configObjectIds: ConfigObjectId[]) {
+  const roles = new Map<ConfigObjectId, PluginArchRole>()
+  const organizationId = context.organizationContext.organization.id
+  if (configObjectIds.length === 0) return roles
+  const existing = await db.select({ id: ConfigObjectTable.id })
+    .from(ConfigObjectTable)
+    .where(and(eq(ConfigObjectTable.organizationId, organizationId), inArray(ConfigObjectTable.id, configObjectIds)))
+  const existingIds = existing.map((row) => row.id)
+  if (existingIds.length === 0) return roles
+
+  if (await canManageAllPluginArchResources(context)) {
+    for (const configObjectId of existingIds) roles.set(configObjectId, "manager")
+    return roles
+  }
+
+  const memberId = context.organizationContext.currentMember.id
+  const teamIds = context.memberTeams.map((team) => team.id)
+  const directGrants = await db
+    .select({
+      configObjectId: ConfigObjectAccessGrantTable.configObjectId,
+      orgMembershipId: ConfigObjectAccessGrantTable.orgMembershipId,
+      orgWide: ConfigObjectAccessGrantTable.orgWide,
+      removedAt: ConfigObjectAccessGrantTable.removedAt,
+      role: ConfigObjectAccessGrantTable.role,
+      teamId: ConfigObjectAccessGrantTable.teamId,
+    })
+    .from(ConfigObjectAccessGrantTable)
+    .where(and(
+      inArray(ConfigObjectAccessGrantTable.configObjectId, existingIds),
+      eq(ConfigObjectAccessGrantTable.organizationId, organizationId),
+    ))
+  const grantsByConfigObject = groupGrantsBy(directGrants, (grant) => grant.configObjectId)
+
+  const unresolvedIds: ConfigObjectId[] = []
+  for (const configObjectId of existingIds) {
+    const role = resolvePluginArchGrantRole({ grants: grantsByConfigObject.get(configObjectId) ?? [], memberId, teamIds })
+    if (role) roles.set(configObjectId, role)
+    else unresolvedIds.push(configObjectId)
+  }
+  if (unresolvedIds.length === 0) {
+    return roles
+  }
+
+  // Without a direct grant, any containing plugin the caller owns or is
+  // granted makes the config object viewable. Catalog access does not count.
+  const memberships = await db
+    .select({ configObjectId: PluginConfigObjectTable.configObjectId, pluginId: PluginConfigObjectTable.pluginId })
+    .from(PluginConfigObjectTable)
+    .where(and(inArray(PluginConfigObjectTable.configObjectId, unresolvedIds), isNull(PluginConfigObjectTable.removedAt)))
+  if (memberships.length === 0) {
+    return roles
+  }
+  const pluginRows = await db.select({ id: PluginTable.id, createdByOrgMembershipId: PluginTable.createdByOrgMembershipId })
+    .from(PluginTable)
+    .where(and(eq(PluginTable.organizationId, organizationId), inArray(PluginTable.id, [...new Set(memberships.map((membership) => membership.pluginId))])))
+  if (pluginRows.length === 0) {
+    return roles
+  }
+  const pluginGrants = await db
+    .select({
+      orgMembershipId: PluginAccessGrantTable.orgMembershipId,
+      orgWide: PluginAccessGrantTable.orgWide,
+      pluginId: PluginAccessGrantTable.pluginId,
+      removedAt: PluginAccessGrantTable.removedAt,
+      role: PluginAccessGrantTable.role,
+      teamId: PluginAccessGrantTable.teamId,
+    })
+    .from(PluginAccessGrantTable)
+    .where(and(
+      inArray(PluginAccessGrantTable.pluginId, pluginRows.map((plugin) => plugin.id)),
+      eq(PluginAccessGrantTable.organizationId, organizationId),
+    ))
+  const grantsByPlugin = groupGrantsBy(pluginGrants, (grant) => grant.pluginId)
+  const reachablePluginIds = new Set(pluginRows
+    .filter((plugin) => plugin.createdByOrgMembershipId === memberId
+      || resolvePluginArchGrantRole({ grants: grantsByPlugin.get(plugin.id) ?? [], memberId, teamIds }) !== null)
+    .map((plugin) => plugin.id))
+
+  for (const membership of memberships) {
+    if (reachablePluginIds.has(membership.pluginId)) roles.set(membership.configObjectId, "viewer")
+  }
+  return roles
+}
+
 export async function resolvePluginArchResourceRole(input: ResourceLookupInput) {
   if (!(await resourceExistsInOrganization(input))) {
     return null

@@ -16,8 +16,8 @@ export interface CheckpointCapability {
 }
 
 /**
- * Worlds that can snapshot themselves advertise it under this key. Today only
- * Freestyle evidence worlds do; checkpoints requested on other worlds are skipped
+ * Worlds that can snapshot themselves advertise it under this key: the Freestyle
+ * and Daytona evidence worlds do; checkpoints requested on other worlds are skipped
  * with a warning and the test runs normally. Specs never branch on placement.
  */
 export const checkpointCapability = Symbol.for("openwork.checkpointCapability");

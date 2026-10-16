@@ -258,6 +258,8 @@ export function registerOrgWorkflowRoutes<T extends { Variables: OrgRouteVariabl
       redirectUriBase: env.apiPublicUrl ?? "http://127.0.0.1",
       generatedArtifactViewsEnabled: env.generatedArtifactViewsEnabled,
       organizationFeatures: await getOrganizationFeatures(context.organization.id),
+      // Den web and REST callers run saved Workflows here.
+      usageSource: "workflow",
     })
     const buildTools = () => buildCapabilityToolTree(capabilityContext)
     const actorContext = { organizationContext: context, memberTeams: teams, session: c.get("session") }

@@ -90,6 +90,20 @@ export interface EngineV2MigrationStatus {
   error?: string;
   /** Where the v2 chat database was copied before this migration wrote to it. */
   backupPath?: string;
+  /** Chats left in v1 because they could not be copied; older servers omit it. */
+  notCopied?: Array<{ id: string; title: string }>;
+  /** Chats copied without their largest outputs and attachments; older servers omit it. */
+  trimmed?: Array<{ id: string; title: string }>;
+  /** This run picks up a migration OpenWork closed before it finished. */
+  resumed?: boolean;
+}
+
+function parseChats(value: unknown): Array<{ id: string; title: string }> {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((chat: unknown) =>
+    chat && typeof chat === "object" && "id" in chat && typeof chat.id === "string"
+      ? [{ id: chat.id, title: "title" in chat && typeof chat.title === "string" ? chat.title : "" }]
+      : []);
 }
 
 function parseEngineV2Migration(value: unknown): EngineV2MigrationStatus | undefined {
@@ -105,6 +119,9 @@ function parseEngineV2Migration(value: unknown): EngineV2MigrationStatus | undef
     ...(phase ? { phase } : {}),
     ...("startedAt" in value && typeof value.startedAt === "string" ? { startedAt: value.startedAt } : {}),
     ...("backupPath" in value && typeof value.backupPath === "string" ? { backupPath: value.backupPath } : {}),
+    ...("notCopied" in value ? { notCopied: parseChats(value.notCopied) } : {}),
+    ...("trimmed" in value ? { trimmed: parseChats(value.trimmed) } : {}),
+    ...("resumed" in value && value.resumed === true ? { resumed: true } : {}),
     error: "error" in value && typeof value.error === "string" ? value.error : undefined };
 }
 
@@ -1657,6 +1674,10 @@ export function createOpenworkServerClient(options: { baseUrl: string; token?: s
       const suffix = query.size ? `?${query.toString()}` : "";
       return requestJson<OpenworkConnectState>(baseUrl, `/experimental/connect/state${suffix}`, { token, hostToken, timeoutMs: timeouts.config });
     },
+    /** Has the server read the member's organization policy from Den again, as it does at sign-in. */
+    refreshManagedPolicy: async () => {
+      await requestJson<unknown>(baseUrl, "/managed-policy", { token, hostToken, timeoutMs: timeouts.config });
+    },
     putDenIdentity: async (body: { baseUrl: string; token: string; orgId: string }, signal?: AbortSignal) => {
       await requestJson<unknown>(baseUrl, "/den-session/identity", { hostToken, method: "PUT", body, signal, timeoutMs: timeouts.config });
     },
@@ -2089,6 +2110,7 @@ export function createOpenworkServerClient(options: { baseUrl: string; token?: s
         expectedResourceDigest?: string;
         arguments?: Record<string, unknown>;
         approved?: boolean;
+        checkOnly?: boolean;
       },
     ) => requestJson<OpenworkMcpAppToolResult>(
       baseUrl,

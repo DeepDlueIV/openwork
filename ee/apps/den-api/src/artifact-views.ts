@@ -202,6 +202,26 @@ export async function listArtifactViewsForScript(input: {
   return rows.map((row) => serializeView(row, revisions.get(row.id) ?? []))
 }
 
+/** listArtifactViewsForScript for many Workflows the caller can already read, keyed by Workflow. */
+export async function listArtifactViewsForScripts(input: {
+  context: PluginArchActorContext
+  configObjectIds: DenTypeId<"configObject">[]
+}): Promise<Map<string, GeneratedArtifactView[]>> {
+  const views = new Map<string, GeneratedArtifactView[]>()
+  if (input.configObjectIds.length === 0) return views
+  const rows = await db.select().from(ArtifactViewTable).where(and(
+    eq(ArtifactViewTable.organization_id, input.context.organizationContext.organization.id),
+    inArray(ArtifactViewTable.config_object_id, input.configObjectIds),
+  )).orderBy(desc(ArtifactViewTable.updated_at), desc(ArtifactViewTable.id))
+  const revisions = await batchedRevisionRows(rows)
+  for (const row of rows) {
+    const workflowViews = views.get(row.config_object_id) ?? []
+    workflowViews.push(serializeView(row, revisions.get(row.id) ?? []))
+    views.set(row.config_object_id, workflowViews)
+  }
+  return views
+}
+
 export async function loadArtifactViewRevision(input: {
   context: PluginArchActorContext
   artifactViewId: string

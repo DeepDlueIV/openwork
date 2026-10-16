@@ -9,21 +9,28 @@ import {
   useState,
 } from "react";
 import { flushSync } from "react-dom";
+import { useQueryClient } from "@tanstack/react-query";
+import { permissionsQueryKeys } from "../_components/permissions-query-keys";
 import { usePathname, useRouter } from "next/navigation";
 import { useDenFlow } from "../../_providers/den-flow-provider";
 import { getErrorMessage, getOrgLimitError, getOrgPaymentRequiredError, getRequestError, isReauthRequiredError, requestJson, WORKSPACE_REAUTH_SECURITY_MESSAGE } from "../../_lib/den-flow";
 import { ReauthDialog } from "../../_components/reauth-dialog";
+import { DenSecretRevealProvider } from "../../_components/ui/secret-input";
 import {
   type DenOrgContext,
   type DenOrgSummary,
+  PENDING_ORG_INVITATION_STORAGE_KEY,
+  PENDING_WORKSPACE_CLAIM_STORAGE_KEY,
   getOrgDashboardRoute,
   getOrgAccessFlags,
+  orgFeatureEnabled,
   parseOrgContextPayload,
   parseOrgListPayload,
   roleIncludesCanonicalRole,
   permissionLockReason,
 } from "../../_lib/den-org";
-import { shouldOpenOrgSelection } from "../../_lib/org-selection";
+import { consumeOrgSelectionRequest, shouldOpenOrgSelection } from "../../_lib/org-selection";
+import { restoreRememberedOrganization, setActiveOrganizationAndRemember } from "../../_lib/org-memory";
 import { ORG_SCOPE_HEADER, OrganizationNotFoundError, getRequestOrgScope, setRequestOrgScope } from "../../_lib/org-scope";
 
 type OrgDashboardContextValue = {
@@ -45,9 +52,12 @@ type OrgDashboardContextValue = {
   updateOrganizationSettings: (input: { name?: string; allowedEmailDomains?: string[] | null; allowedDesktopVersions?: string[] | null; requireSso?: boolean; brandAppName?: string | null; brandLogoUrl?: string | null; brandIconUrl?: string | null; brandAccentColor?: string | null }) => Promise<void>;
   deleteOrganization: () => Promise<void>;
   switchOrganization: (slug: string) => void;
-  inviteMember: (input: { email: string; role: string }) => Promise<void>;
+  /** teamId (teamRoles): invite into a custom role by adding the pending member to its team. */
+  inviteMember: (input: { email: string; role: string; teamId?: string | null }) => Promise<void>;
   startSeatCheckout: () => Promise<void>;
   cancelInvitation: (invitationId: string) => Promise<void>;
+  /** The join link of a pending invitation; GET /v1/org never includes join tokens. */
+  getInvitationLink: (invitationId: string) => Promise<string>;
   updateMemberRole: (memberId: string, role: string) => Promise<void>;
   removeMember: (memberId: string) => Promise<void>;
   transferOwnership: (memberId: string) => Promise<void>;
@@ -78,8 +88,9 @@ export function OrgDashboardProvider({
   children: React.ReactNode;
 }) {
   const router = useRouter();
+  const queryClient = useQueryClient();
   const pathname = usePathname();
-  const { user, sessionHydrated, signOut, runtimeConfig, runtimeConfigLoaded, setupOrganizationId } = useDenFlow();
+  const { user, sessionHydrated, signOut, runtimeConfig, runtimeConfigLoaded, setupPending, setupOrganizationId } = useDenFlow();
   const [orgDirectory, setOrgDirectory] = useState<DenOrgSummary[]>([]);
   const [orgContext, setOrgContext] = useState<DenOrgContext | null>(null);
   const [orgSelectionOpen, setOrgSelectionOpen] = useState(false);
@@ -152,7 +163,7 @@ export function OrgDashboardProvider({
   }
 
   async function loadOrgDirectory() {
-    const { response, payload } = await requestJson("/v1/me/orgs", { method: "GET" }, 12000);
+    const { response, payload } = await requestJson("/v1/me/orgs", { method: "GET", cache: "no-store" }, 12000);
     if (!response.ok) {
       throw new Error(getErrorMessage(payload, `Failed to load organizations (${response.status}).`));
     }
@@ -178,7 +189,7 @@ export function OrgDashboardProvider({
   async function loadOrgContext(organizationId: string) {
     const { response, payload } = await requestJson(
       "/v1/org",
-      { method: "GET", headers: { [ORG_SCOPE_HEADER]: organizationId } },
+      { method: "GET", headers: { [ORG_SCOPE_HEADER]: organizationId }, cache: "no-store" },
       12000,
     );
     if (!response.ok) {
@@ -222,7 +233,9 @@ export function OrgDashboardProvider({
       return;
     }
     const generation = ++orgLoadRef.current.generation;
-    const isCurrent = () => generation === orgLoadRef.current.generation;
+    const userId = user?.id ?? null;
+    const isCurrent = () => orgLoadRef.current.mounted
+      && generation === orgLoadRef.current.generation && orgLoadRef.current.userId === userId;
     if (!user) {
       orgLoadRef.current.organizationId = null;
       orgLoadRef.current.switching = false;
@@ -245,6 +258,29 @@ export function OrgDashboardProvider({
     try {
       let directoryPayload = await loadOrgDirectory();
       if (!isCurrent()) return;
+      // Always consume the handshake, including required-picker and setup loads.
+      const selectionRequested = consumeOrgSelectionRequest();
+      // A direct dashboard visit may restore only when no explicit/session org
+      // or post-auth chooser request owns this load. Never replace a linked org.
+      if (!displayedOrgId && !directoryPayload.orgs.some((entry) => entry.isActive)
+        && !selectionRequested && !setupPending && !isSingleOrgMode
+        && !window.sessionStorage.getItem(PENDING_ORG_INVITATION_STORAGE_KEY)
+        && !window.sessionStorage.getItem(PENDING_WORKSPACE_CLAIM_STORAGE_KEY)) {
+        const remembered = await restoreRememberedOrganization({
+          userId: user.id,
+          organizations: directoryPayload.orgs,
+          loadContext: loadOrgContext,
+          setActive: (organizationId) => setActiveOrganization({ organizationId }),
+          isCurrent,
+        });
+        if (!isCurrent()) return;
+        if (remembered) {
+          directoryPayload = {
+            ...directoryPayload,
+            orgs: directoryPayload.orgs.map((entry) => ({ ...entry, isActive: entry.id === remembered.id })),
+          };
+        }
+      }
       // A tab's unfinished setup owns its org even when another tab switches the session.
       const displayedOrg = displayedOrgId
         ? directoryPayload.orgs.find((entry) => entry.id === displayedOrgId) ?? null
@@ -299,7 +335,7 @@ export function OrgDashboardProvider({
       // Single-org deployments never surface the picker; otherwise the
       // org-selection module decides from the directory plus any pending
       // sign-in request.
-      if (!setupOrganizationId && !isSingleOrgMode && shouldOpenOrgSelection(directoryPayload.orgs)) {
+      if (!setupOrganizationId && !isSingleOrgMode && shouldOpenOrgSelection(directoryPayload.orgs, selectionRequested)) {
         orgLoadRef.current.organizationId = null;
         setRequestOrgScope(null);
         setOrgDirectory(directoryPayload.orgs);
@@ -539,7 +575,9 @@ export function OrgDashboardProvider({
     }
 
     const generation = ++orgLoadRef.current.generation;
-    const isCurrent = () => generation === orgLoadRef.current.generation;
+    const userId = user?.id ?? null;
+    const isCurrent = () => orgLoadRef.current.mounted
+      && generation === orgLoadRef.current.generation && orgLoadRef.current.userId === userId;
     orgLoadRef.current.switching = true;
     orgLoadRef.current.organizationId = targetOrg.id;
     // Unmount scoped consumers before changing the shared request header, not
@@ -556,8 +594,14 @@ export function OrgDashboardProvider({
       try {
         if (!isCurrent()) return;
         setRequestOrgScope(targetOrg.id);
-        await setActiveOrganization({ organizationId: targetOrg.id });
-        if (!isCurrent()) return;
+        // A slow/failed details request must not lose the acknowledged choice;
+        // a newer switch/account must never overwrite it with a stale response.
+        if (!await setActiveOrganizationAndRemember({
+          userId: user.id,
+          organizationId: targetOrg.id,
+          setActive: (organizationId) => setActiveOrganization({ organizationId }),
+          isCurrent,
+        })) return;
         const context = await loadOrgContext(targetOrg.id);
         if (!isCurrent()) return;
         setOrgDirectory((current) => current.map((entry) => ({ ...entry, isActive: entry.id === context.organization.id })));
@@ -672,13 +716,16 @@ export function OrgDashboardProvider({
     });
   }
 
-  async function inviteMember(input: { email: string; role: string }) {
+  async function inviteMember(input: { email: string; role: string; teamId?: string | null }) {
     const access = getCurrentAccess();
     if (!access.canInviteMembers) {
       throw new Error("You don't have permission to invite members.");
     }
     const invitationRole = access.canManageRoles ? input.role : "member";
     ensureRoleCanBeAssigned(invitationRole);
+    if (input.teamId && !access.canManageTeams) {
+      throw new Error(permissionLockReason("teams.manage"));
+    }
 
     await runMutation("invite-member", async () => {
       ensureActiveOrganizationSelected();
@@ -686,7 +733,7 @@ export function OrgDashboardProvider({
         "/v1/invitations",
         {
           method: "POST",
-          body: JSON.stringify({ email: input.email, role: invitationRole }),
+          body: JSON.stringify({ email: input.email, role: invitationRole, ...(input.teamId !== undefined ? { teamId: input.teamId } : {}) }),
         },
         12000,
       );
@@ -703,6 +750,7 @@ export function OrgDashboardProvider({
         }
         throw getRequestError(payload, response, `Failed to invite member (${response.status}).`);
       }
+
     });
   }
 
@@ -760,6 +808,35 @@ export function OrgDashboardProvider({
         throw getRequestError(payload, response, `Failed to cancel invitation (${response.status}).`);
       }
     });
+  }
+
+  async function getInvitationLink(invitationId: string): Promise<string> {
+    if (!getCurrentAccess().canInviteMembers) {
+      throw new Error(permissionLockReason("invitations.manage"));
+    }
+
+    const result: { inviteLink: string | null } = { inviteLink: null };
+    await runReauthableAction("invitation-link", async () => {
+      ensureActiveOrganizationSelected();
+      const { response, payload } = await requestJson(
+        `/v1/invitations/${encodeURIComponent(invitationId)}/link`,
+        { method: "GET" },
+        12000,
+      );
+
+      if (!response.ok) {
+        throw getRequestError(payload, response, `Failed to get the invite link (${response.status}).`);
+      }
+
+      result.inviteLink = payload && typeof payload === "object" && "inviteLink" in payload && typeof payload.inviteLink === "string"
+        ? payload.inviteLink
+        : null;
+    });
+
+    if (!result.inviteLink) {
+      throw new Error("The invite link response did not include a link.");
+    }
+    return result.inviteLink;
   }
 
   async function updateMemberRole(memberId: string, role: string) {
@@ -890,6 +967,9 @@ export function OrgDashboardProvider({
       if (response.status !== 204 && !response.ok) {
         throw getRequestError(payload, response, `Failed to delete team (${response.status}).`);
       }
+      // Deletion removes role links in Den, not reusable shared roles. Refresh the
+      // cached sets/details too, so switching tabs cannot resurrect a deleted team.
+      if (activeOrgId) await queryClient.invalidateQueries({ queryKey: permissionsQueryKeys.all(activeOrgId) });
     });
   }
 
@@ -935,7 +1015,7 @@ export function OrgDashboardProvider({
       orgLoadRef.current.generation += 1;
       orgLoadRef.current.switching = false;
     };
-  }, [router, sessionHydrated, user?.id, isSingleOrgMode, setupOrganizationId]);
+  }, [router, sessionHydrated, user?.id, isSingleOrgMode, setupPending, setupOrganizationId]);
 
   const value: OrgDashboardContextValue = {
     orgSlug: activeOrg?.slug ?? null,
@@ -959,6 +1039,7 @@ export function OrgDashboardProvider({
     inviteMember,
     startSeatCheckout,
     cancelInvitation,
+    getInvitationLink,
     updateMemberRole,
     removeMember,
     transferOwnership,
@@ -970,6 +1051,7 @@ export function OrgDashboardProvider({
 
   return (
     <OrgDashboardContext.Provider value={value}>
+      <DenSecretRevealProvider enabled={orgFeatureEnabled(orgContext, "secureSecretFields")}>
       {setupOrganizationId && (orgContext?.organization.id !== setupOrganizationId
         || activeOrgId !== setupOrganizationId || getRequestOrgScope() !== setupOrganizationId) ? (
         <div className="grid min-h-[420px] place-content-center gap-3 px-6 text-sm text-gray-600" data-testid="setup-workspace-restoring">
@@ -977,6 +1059,7 @@ export function OrgDashboardProvider({
           {!orgBusy ? <button type="button" onClick={() => void refreshOrgData()} className="font-medium text-gray-900 underline underline-offset-4">Retry setup workspace</button> : null}
         </div>
       ) : children}
+      </DenSecretRevealProvider>
       <ReauthDialog
         open={reauthDialogOpen}
         user={user}

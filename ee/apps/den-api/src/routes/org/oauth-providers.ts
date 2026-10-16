@@ -43,7 +43,7 @@ import {
 } from "../../capability-sources/oauth-credentials.js"
 import { normalizeEntraTenantId, readProviderTenantId } from "../../capability-sources/oauth-tenant.js"
 import { getExternalMcpConnection, listUsableNativeProviderConnections } from "../../capability-sources/external-mcp-connections.js"
-import { resolveDefaultNativeProviderCredentialId, resolveManageableNativeProviderCredentialId } from "../../capability-sources/native-provider-connections.js"
+import { resolveDefaultNativeProviderCredentialId, resolveManageableNativeProviderCredentialId, resolveNativeProviderReconnectState } from "../../capability-sources/native-provider-connections.js"
 import { listTeamsForMember } from "../../orgs.js"
 import type { MemberTeamSummary } from "../../orgs.js"
 import { ensureFreshPrivilegedSession } from "../../privileged-session.js"
@@ -620,6 +620,7 @@ export function registerOAuthProviderRoutes<T extends { Variables: OrgRouteVaria
       const auditBlocked = await attributeOAuthCallbackMember(c, { organizationId: statePayload.organizationId, memberId: statePayload.orgMembershipId })
       if (auditBlocked) return auditBlocked
 
+      let grantedScopes: string[] = []
       try {
         const tokens = await exchangeCodeForTokens({
           provider,
@@ -635,6 +636,7 @@ export function registerOAuthProviderRoutes<T extends { Variables: OrgRouteVaria
           requestId: c.get("requestId"),
         })
 
+        grantedScopes = tokens.scope ? tokens.scope.split(" ") : resolveProviderScopes(provider, clientSelectedFeatures(provider, client.extra))
         const saved = await completeConnectedAccountForActiveMember({
           organizationId: statePayload.organizationId,
           orgMembershipId: statePayload.orgMembershipId,
@@ -646,10 +648,16 @@ export function registerOAuthProviderRoutes<T extends { Variables: OrgRouteVaria
           refreshToken: tokens.refresh_token ?? null,
           tokenType: tokens.token_type ?? null,
           expiresAt: tokens.expires_in ? new Date(Date.now() + tokens.expires_in * 1000) : null,
-          scopes: tokens.scope ? tokens.scope.split(" ") : resolveProviderScopes(provider, clientSelectedFeatures(provider, client.extra)),
+          scopes: grantedScopes,
           pendingCodeVerifier: null,
         })
         if (!saved) {
+          console.warn("native_oauth_connect_callback_not_persisted", {
+            requestId: c.get("requestId"),
+            organizationId: statePayload.organizationId,
+            providerId,
+            code: "connection_request_superseded",
+          })
           return c.html(connectCallbackPage({
             ok: false,
             name: provider.displayName,
@@ -689,6 +697,25 @@ export function registerOAuthProviderRoutes<T extends { Variables: OrgRouteVaria
           message: "OpenWork could not finish the OAuth connection. Try Connect again; if it still fails, contact support with the diagnostic reference.",
           referenceId: requestId,
         }), 400)
+      }
+
+      // The grant is stored, but a member whose provider withheld a required
+      // permission would be asked to reconnect forever. Say which one, once.
+      const { missingScopes } = resolveNativeProviderReconnectState(provider, client.extra, grantedScopes)
+      if (missingScopes.length > 0) {
+        const requestId = c.get("requestId")
+        console.warn("native_oauth_connect_callback_scopes_incomplete", {
+          requestId,
+          organizationId: statePayload.organizationId,
+          providerId,
+          missingScopes,
+        })
+        return c.html(connectCallbackPage({
+          ok: false,
+          name: provider.displayName,
+          message: `You signed in, but ${provider.displayName} did not grant: ${missingScopes.join(", ")}. Ask your administrator to grant these permissions to the OpenWork app with your identity provider, or to turn off the matching features, then connect again.`,
+          referenceId: requestId,
+        }), 200)
       }
 
       return c.html(connectCallbackPage({ ok: true, name: provider.displayName }))

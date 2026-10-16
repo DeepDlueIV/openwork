@@ -259,6 +259,38 @@ export function resolveOpenworkServerConfigPath(env = process.env) {
   return openworkServerConfigPath({ env });
 }
 
+/**
+ * Files any earlier OpenWork Desktop run leaves behind. If none exist when the
+ * app starts, this is a brand-new install, not an update.
+ * @param {{ userDataDir: string, serverConfigPath: string, env?: NodeJS.ProcessEnv }} input
+ * @returns {string[]}
+ */
+export function openworkInstallMarkerPaths({ userDataDir, serverConfigPath, env = process.env }) {
+  const serverDir = path.dirname(serverConfigPath);
+  const runtimeDb = env.OPENWORK_RUNTIME_DB?.trim() ? path.resolve(env.OPENWORK_RUNTIME_DB.trim()) : path.join(serverDir, "runtime.sqlite");
+  return [
+    serverConfigPath,
+    runtimeDb,
+    path.join(path.dirname(runtimeDb), "engine-v2-preview.json"),
+    env.OPENWORK_SERVER_TOKEN_STORE_PATH?.trim() ? path.resolve(env.OPENWORK_SERVER_TOKEN_STORE_PATH.trim()) : path.join(userDataDir, "openwork-server-tokens.json"),
+    env.OPENWORK_SERVER_STATE_PATH?.trim() ? path.resolve(env.OPENWORK_SERVER_STATE_PATH.trim()) : path.join(userDataDir, "openwork-server-state.json"),
+    path.join(userDataDir, "openwork-workspaces.json"),
+    path.join(userDataDir, "workspace-state.json"),
+    path.join(userDataDir, "app-recovery.v1.json"),
+  ];
+}
+
+/**
+ * New installs start on OpenCode v2; updates keep the engine they had. An
+ * explicit OPENWORK_ENGINE_V2_PREVIEW (dev, evals) always wins.
+ * @param {{ markerPaths: string[], exists?: (filePath: string) => boolean, env?: NodeJS.ProcessEnv }} input
+ * @returns {"v2" | undefined}
+ */
+export function resolveFreshInstallEngine({ markerPaths, exists = existsSync, env = process.env }) {
+  if (env.OPENWORK_ENGINE_V2_PREVIEW?.trim()) return undefined;
+  return markerPaths.some((filePath) => exists(filePath)) ? undefined : "v2";
+}
+
 export function seedWorkspacePathsForEmbeddedServer(workspacePaths, serverConfigExists) {
   return serverConfigExists ? [] : workspacePaths;
 }
@@ -1361,6 +1393,7 @@ export function createRuntimeManager({
   desktopRoot,
   listLocalWorkspacePaths,
   localManagedMcpVaultKey,
+  driveFileApproval = undefined,
   anonymousInference = undefined,
   workspaceMkdir = mkdir,
   workspacePlatform = process.platform,
@@ -1396,6 +1429,11 @@ export function createRuntimeManager({
   }
 
   const userDataDir = app.getPath("userData");
+  // Decided once, before this process writes any OpenWork state, so a server
+  // restart in the same session does not mistake its own files for an update.
+  const freshInstallEngine = resolveFreshInstallEngine({
+    markerPaths: openworkInstallMarkerPaths({ userDataDir, serverConfigPath: resolveOpenworkServerConfigPath(process.env) }),
+  });
   const sidecarDirs = [
     path.join(desktopRoot, "resources", "sidecars"),
     process.resourcesPath ? path.join(process.resourcesPath, "sidecars") : null,
@@ -1898,6 +1936,7 @@ export function createRuntimeManager({
       port: portSelection.port,
       corsOrigins: ["*"],
       approvalMode: "auto",
+      driveFileApproval,
       configPath: serverConfigPath,
       workspaces: workspacePaths,
       token: tokens.clientToken,
@@ -1910,6 +1949,7 @@ export function createRuntimeManager({
       opencodeCwd: managedOpencodeWorkdir(),
       localManagedMcpVaultKey,
       anonymousInference,
+      freshInstallEngine,
     });
     inProcessServer = handle;
     openworkServerState.managedOpencodeExecution = handle.managedOpencodeExecution ?? null;

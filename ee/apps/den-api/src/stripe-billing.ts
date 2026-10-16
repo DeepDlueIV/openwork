@@ -1,4 +1,5 @@
 import { peopleMemberCondition } from "./setup-agent-members.js"
+import { recordFreeAutoPurchase } from "./free-auto-purchases.js"
 import Stripe from "stripe"
 import { and, eq, isNotNull, isNull, sql } from "@openwork-ee/den-db/drizzle"
 import {
@@ -1341,6 +1342,9 @@ export async function syncStripeCheckoutSession(input: { organizationId: OrgId; 
   if (row?.type === INFERENCE_SUBSCRIPTION_TYPE && ACTIVE_STATUSES.has(subscriptionStatus(subscription.status))) {
     await activatePurchasedInference(row.organization_id)
   }
+  if (session.payment_status === "paid" && (session.amount_total ?? 0) > 0) {
+    await recordFreeAutoPurchase({ subscription, row, paidAt: new Date() })
+  }
   return row
 }
 
@@ -1428,6 +1432,17 @@ async function expireNonWebSubscriptionAfterPaymentFailure(
   }
 }
 
+/** Analytics failures never fail invoice settlement or cause another billing mutation. */
+async function recordPaidInvoiceConversion(subscription: Stripe.Subscription, row: typeof OrgSubscriptionTable.$inferSelect | null, invoiceId: string) {
+  try {
+    const invoice = await stripe().invoices.retrieve(invoiceId)
+    if (invoice.status === "paid" && invoice.amount_paid > 0
+      && stripeResourceId(invoice.parent?.subscription_details?.subscription) === subscription.id) {
+      await recordFreeAutoPurchase({ subscription, row, paidAt: fromUnixSeconds(invoice.status_transitions.paid_at) ?? new Date() })
+    }
+  } catch { logger.warn("Free Auto paid invoice behavior could not be recorded.") }
+}
+
 async function syncPaymentStateFromInvoiceEvent(input: {
   invoice: Stripe.Invoice
   eventType: "invoice.paid" | "invoice.payment_failed"
@@ -1448,7 +1463,11 @@ async function syncPaymentStateFromInvoiceEvent(input: {
     // may also track a different subscription of the same type (a replacement
     // the customer already paid for), so nothing here may expire it on behalf
     // of the subscription this invoice belongs to.
-    return syncCurrentStripeSubscription(subscription.id, input.eventId)
+    const row = await syncCurrentStripeSubscription(subscription.id, input.eventId)
+    if (input.eventType === "invoice.paid") {
+      await recordPaidInvoiceConversion(subscription, row, input.invoice.id)
+    }
+    return row
   }
 
   const latestInvoiceId = stripeResourceId(subscription.latest_invoice)
@@ -1480,6 +1499,9 @@ async function syncPaymentStateFromInvoiceEvent(input: {
     .set({ payment_failed: paymentFailed, last_event_id: input.eventId, updated_at: new Date() })
     .where(eq(OrgSubscriptionTable.id, row.id))
 
+  if (currentInvoice.status === "paid" && currentInvoice.amount_paid > 0) {
+    await recordFreeAutoPurchase({ subscription, row, paidAt: fromUnixSeconds(currentInvoice.status_transitions.paid_at) ?? new Date() })
+  }
   return { ...row, payment_failed: paymentFailed }
 }
 
@@ -1600,6 +1622,9 @@ async function applyStripeWebhookEvent(event: Stripe.Event) {
         }
         if (row?.type === INFERENCE_SUBSCRIPTION_TYPE && ACTIVE_STATUSES.has(subscriptionStatus(subscription.status))) {
           await activatePurchasedInference(row.organization_id)
+        }
+        if (session.payment_status === "paid" && (session.amount_total ?? 0) > 0) {
+          await recordFreeAutoPurchase({ subscription, row, paidAt: new Date(event.created * 1000) })
         }
         if (row?.type === WEB_SUBSCRIPTION_TYPE && isEligibleOpenWorkWebSubscriptionStatus(subscription.status)) {
           await syncWebSubscriptionQuantityAfterMemberChange({

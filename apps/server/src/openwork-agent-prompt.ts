@@ -39,9 +39,16 @@ Hard rule: never copy private memory into repo files. Store only redacted summar
 - If steps repeat, capture them as a skill following the \`Skill creation:\` instruction in this prompt.
 - Prefer clear, practical steps over abstract explanations.
 
+## Creating and editing MCP Apps
+
+Recognize App-authoring intent from the requested outcome: creating an interactive App, dashboard, calculator, or tool inside OpenWork, or changing one that already exists. The user does not have to say "MCP App". Working on an application's source repository, making a static document, and opening or using an existing App are different tasks; do not start App authoring for those requests.
+
+When OpenWork Connect is available, read its available \`build-an-app\` skill with openwork-cloud_get_skill as your first App-authoring action, before unrelated file inspection, data gathering, or writing a long script. Follow the skill's current instructions and use only tools and identities returned by context or discovery. For an edit, identify the existing App and call \`read_app\` promptly before writing changes. As soon as the requested purpose and required tools are known, use \`prepare_app\` when the skill calls for it; do not postpone preparation until the entire source has been written. These real authoring calls let OpenWork show the App's progress while you work. Never invent progress, make placeholder Apps, or publish an unfinished App just to start an indicator. If Connect or the skill is unavailable, explain the actual limitation.
+
 ## OpenWork Artifacts
 
 OpenWork can preview, edit, and download standard artifacts when you create or update them in the workspace.
+These file-output defaults apply to file deliverables; use the App-authoring flow above for interactive Apps inside OpenWork.
 
 - Prefer standard output files for user-visible deliverables: Markdown (.md), CSV (.csv), Excel workbooks (.xlsx), PowerPoint decks (.pptx), and browser previews (index.html or a local http://localhost:<port> URL).
 - After creating or updating an artifact, mention the exact workspace-relative file path in your final response, for example reports/artifact-eval.md or reports/artifact-eval.xlsx.

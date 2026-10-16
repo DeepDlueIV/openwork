@@ -1,16 +1,20 @@
 import { createHash } from "node:crypto"
+import { isDenTypeId } from "@openwork-ee/utils/typeid"
 import { and, asc, desc, eq, inArray, isNotNull, isNull, or } from "drizzle-orm"
 import {
+  GATEWAY_DEFAULT_USAGE_SCOPE,
   gatewaySafeMoney,
   gatewayUsagePeriod,
   gatewayUsageTimeframes,
-  gatewayWinningPolicies,
+  gatewayWinningPoliciesByScope,
+  type GatewayProviderUsage,
   type GatewayUsageLimitPolicy,
   type GatewayUsageStatus,
   type GatewayUsageProvenance,
 } from "@openwork/types/den/gateway-usage-limits"
 import type { createDenDb } from "./client"
 import { GatewayUsageError } from "./gateway-usage-errors"
+import { GatewayProviderTable } from "./schema/inference-providers"
 import { MemberTable } from "./schema/org"
 import { TeamMemberTable, TeamTable } from "./schema/teams"
 import {
@@ -90,8 +94,9 @@ export async function usagePolicies(
     .from(A)
     .where(and(eq(A.organizationId, organizationId), inArray(A.policyId, ids)))
   return rows.map(
-    (row): GatewayUsageLimitPolicy => ({
+    ({ inferenceProviderId, ...row }): GatewayUsageLimitPolicy => ({
       ...row,
+      providerId: inferenceProviderId ?? null,
       archivedAt: row.archivedAt?.toISOString() ?? null,
       limits: limits
         .filter((entry) => entry.policyId === row.id)
@@ -108,7 +113,21 @@ export async function usagePolicies(
   )
 }
 
+/** One scope's winners (the default scope unless `providerScope` is given). */
 export async function effectiveUsagePolicies(
+  tx: UsageReader,
+  scope: GatewayUsageScope,
+  lock = false,
+  providerScope: string = GATEWAY_DEFAULT_USAGE_SCOPE,
+) {
+  return (await effectiveUsagePolicyScopes(tx, scope, lock)).get(providerScope) ?? []
+}
+
+/**
+ * Winners for every scope the member has policies in, keyed by scope
+ * ('' = default, otherwise the Gateway provider id). Scopes never mix.
+ */
+export async function effectiveUsagePolicyScopes(
   tx: UsageReader,
   scope: GatewayUsageScope,
   lock = false,
@@ -154,7 +173,14 @@ export async function effectiveUsagePolicies(
   for (const { assignment, policy, limit } of rows) {
     let entry = candidates.get(policy.id)
     if (!entry) {
-      entry = { ...policy, archivedAt: null, limits: [], assignments: [] }
+      const { inferenceProviderId, ...fields } = policy
+      entry = {
+        ...fields,
+        providerId: inferenceProviderId ?? null,
+        archivedAt: null,
+        limits: [],
+        assignments: [],
+      }
       candidates.set(policy.id, entry)
     }
     if (!entry.limits.some((item) => item.timeframe === limit.timeframe))
@@ -170,7 +196,23 @@ export async function effectiveUsagePolicies(
         organization: assignment.organization === true,
       })
   }
-  return gatewayWinningPolicies([...candidates.values()]).map((winner) => ({
+  const byScope = new Map<string, UsageWinner[]>()
+  for (const [key, winners] of gatewayWinningPoliciesByScope([...candidates.values()]))
+    byScope.set(
+      key,
+      winners.map((winner) => withProvenance(winner, scope.memberId, names)),
+    )
+  return byScope
+}
+
+export type UsageWinner = ReturnType<typeof withProvenance>
+
+function withProvenance(
+  winner: { policy: GatewayUsageLimitPolicy; limit: GatewayUsageLimitPolicy["limits"][number] },
+  memberId: GatewayUsageScope["memberId"],
+  names: Map<string, string>,
+) {
+  return {
     ...winner,
     provenance: winner.policy.assignments
       .map(
@@ -186,7 +228,7 @@ export async function effectiveUsagePolicies(
               ? {
                   kind: "direct",
                   assignmentId: assignment.id,
-                  memberId: scope.memberId,
+                  memberId,
                   teamId: null,
                 }
               : {
@@ -198,17 +240,23 @@ export async function effectiveUsagePolicies(
                 },
       )
       .sort((a, b) => a.assignmentId.localeCompare(b.assignmentId)),
-  }))
+  }
 }
 
+/**
+ * One member's bucket for a timeframe window. `providerScope` null matches every
+ * scope (used to mark history for the member as a whole); '' is the default.
+ */
 export function bucketWindow(
   scope: GatewayUsageScope,
   timeframe: UsageBucket["timeframe"],
   start: Date,
+  providerScope: string | null = GATEWAY_DEFAULT_USAGE_SCOPE,
 ) {
   return and(
     eq(B.organizationId, scope.organizationId),
     eq(B.memberId, scope.memberId),
+    providerScope === null ? undefined : eq(B.providerScope, providerScope),
     eq(B.timeframe, timeframe),
     eq(B.startAt, start),
   )
@@ -218,16 +266,19 @@ export function projectedBucket(
   scope: GatewayUsageScope,
   timeframe: UsageBucket["timeframe"],
   now: Date,
+  providerScope: string = GATEWAY_DEFAULT_USAGE_SCOPE,
 ): UsageBucket {
   const period = gatewayUsagePeriod(timeframe, now)
   return {
+    // Default bucket ids keep their pre-provider shape.
     id: createHash("sha256")
       .update(
-        `${scope.organizationId}/${scope.memberId}/${timeframe}/${period.start.toISOString()}`,
+        `${scope.organizationId}/${scope.memberId}/${timeframe}/${period.start.toISOString()}${providerScope ? `/${providerScope}` : ""}`,
       )
       .digest("hex"),
     organizationId: scope.organizationId,
     memberId: scope.memberId,
+    providerScope,
     timeframe,
     startAt: period.start,
     resetAt: period.end,
@@ -252,14 +303,24 @@ export async function currentUsage(
   now: Date,
   lock = false,
   readUnlimitedCounters = true,
+  providerScope: string = GATEWAY_DEFAULT_USAGE_SCOPE,
+  knownWinners?: UsageWinner[],
 ) {
-  const winners = await effectiveUsagePolicies(tx, scope, lock)
-  const windows = gatewayUsageTimeframes.map((frame) => projectedBucket(scope, frame, now))
+  const winners = knownWinners ?? (await effectiveUsagePolicies(tx, scope, lock, providerScope))
+  const windows = gatewayUsageTimeframes.map((frame) =>
+    projectedBucket(scope, frame, now, providerScope),
+  )
   if (!winners.length && !readUnlimitedCounters) return { winners, buckets: windows, stored: [] }
   const query = tx
     .select()
     .from(B)
-    .where(or(...windows.map((bucket) => bucketWindow(scope, bucket.timeframe, bucket.startAt))))
+    .where(
+      or(
+        ...windows.map((bucket) =>
+          bucketWindow(scope, bucket.timeframe, bucket.startAt, providerScope),
+        ),
+      ),
+    )
   const stored = await (lock
     ? query.orderBy(asc(B.timeframe), asc(B.startAt)).for("update")
     : query)
@@ -313,14 +374,29 @@ export function usageSnapshot(
         historyUnknown,
         extensionMicroUsd,
         extensionUsed,
+        providerScope,
         ...bucket
       }) => ({
         ...bucket,
+        // Default snapshots stay identical to the pre-provider shape for older readers.
+        ...(providerScope ? { providerScope } : {}),
         startAt: bucket.startAt.toISOString(),
         resetAt: bucket.resetAt.toISOString(),
       }),
     ),
   }
+}
+
+export function usageState(
+  views: GatewayUsageStatus["buckets"],
+): GatewayUsageStatus["state"] {
+  return !views.length
+    ? "unlimited"
+    : views.some((b) => b.hardLimit && b.usedMicroUsd >= b.allowanceMicroUsd)
+      ? "blocked"
+      : views.some((b) => b.usedMicroUsd >= b.allowanceMicroUsd)
+        ? "over_limit"
+        : "within_limit"
 }
 
 export async function readUsageStatus(
@@ -329,9 +405,19 @@ export async function readUsageStatus(
   now: Date,
   lock = false,
   admission = false,
+  providerScope: string = GATEWAY_DEFAULT_USAGE_SCOPE,
+  knownWinners?: UsageWinner[],
 ) {
   await activeUsageMember(tx, scope, lock)
-  const current = await currentUsage(tx, scope, now, lock, !admission)
+  const current = await currentUsage(
+    tx,
+    scope,
+    now,
+    lock,
+    !admission,
+    providerScope,
+    knownWinners,
+  )
   const [tracking] = await tx
     .select()
     .from(T)
@@ -379,6 +465,7 @@ export async function readUsageStatus(
         bucket.usedMicroUsd >= allowanceMicroUsd &&
         requestStatus !== "pending",
       resetRequestStatus: requestStatus,
+      ...(providerScope ? { providerId: providerScope } : {}),
     })
   }
   const oldest = [...current.buckets].sort((a, b) => a.startAt.getTime() - b.startAt.getTime())[0]
@@ -396,13 +483,7 @@ export async function readUsageStatus(
     serverTime: now.toISOString(),
     organizationId: scope.organizationId,
     memberId: scope.memberId,
-    state: !views.length
-      ? "unlimited"
-      : views.some((b) => b.hardLimit && b.usedMicroUsd >= b.allowanceMicroUsd)
-        ? "blocked"
-        : views.some((b) => b.usedMicroUsd >= b.allowanceMicroUsd)
-          ? "over_limit"
-          : "within_limit",
+    state: usageState(views),
     coverage: {
       complete: historicalUnknownReason === null && incompleteRequests === 0 && settlementReady,
       unpricedRequests: oldest?.unpricedRequests ?? 0,
@@ -420,4 +501,69 @@ export async function readUsageStatus(
     buckets: views,
   }
   return { usage, snapshot: usageSnapshot(current.buckets, now, tracking?.epochVersion ?? 0) }
+}
+
+/** Display names for Gateway providers in one organization; removed providers are absent. */
+export async function usageProviderNames(
+  tx: UsageReader,
+  organizationId: GatewayUsageScope["organizationId"],
+  providerIds: string[],
+) {
+  const ids = [
+    ...new Set(providerIds.filter((id) => isDenTypeId("inferenceProvider", id))),
+  ]
+  if (!ids.length) return new Map<string, string>()
+  const rows = await tx
+    .select({ id: GatewayProviderTable.id, name: GatewayProviderTable.name })
+    .from(GatewayProviderTable)
+    .where(
+      and(
+        eq(GatewayProviderTable.organization_id, organizationId),
+        inArray(GatewayProviderTable.id, ids),
+      ),
+    )
+  return new Map<string, string>(rows.map((row) => [row.id, row.name]))
+}
+
+/**
+ * The member's default status plus one entry per provider limit that governs
+ * them. Provider entries are only built when per-provider limits are on.
+ */
+export async function readUsageStatusWithProviders(
+  tx: UsageReader,
+  scope: GatewayUsageScope,
+  now: Date,
+  options: { lock?: boolean; providerLimits: boolean },
+): Promise<GatewayUsageStatus> {
+  const lock = options.lock ?? false
+  const scopes = options.providerLimits
+    ? await effectiveUsagePolicyScopes(tx, scope, lock)
+    : new Map<string, UsageWinner[]>()
+  const { usage } = await readUsageStatus(
+    tx,
+    scope,
+    now,
+    lock,
+    false,
+    GATEWAY_DEFAULT_USAGE_SCOPE,
+    options.providerLimits ? (scopes.get(GATEWAY_DEFAULT_USAGE_SCOPE) ?? []) : undefined,
+  )
+  if (!options.providerLimits) return usage
+  const providerIds = [...scopes.keys()].filter((key) => key !== GATEWAY_DEFAULT_USAGE_SCOPE).sort()
+  const names = await usageProviderNames(tx, scope.organizationId, providerIds)
+  const providers: GatewayProviderUsage[] = []
+  for (const providerId of providerIds) {
+    const status = (
+      await readUsageStatus(tx, scope, now, lock, false, providerId, scopes.get(providerId))
+    ).usage
+    const state = status.state
+    if (state === "unlimited") continue
+    providers.push({
+      providerId,
+      providerName: names.get(providerId) ?? "Removed provider",
+      state,
+      buckets: status.buckets,
+    })
+  }
+  return { ...usage, providers }
 }

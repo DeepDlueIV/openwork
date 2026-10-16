@@ -25,7 +25,7 @@ test("without stored state, every feature follows its registry default", () => {
 })
 
 test("precedence: unavailable, kill switch, lock, override, everyone", () => {
-  const key = "orgManagedDashboards"
+  const key = "permissions"
   assert.equal(resolveFeature(key, { ...base, rollouts: { [key]: { enabled: true, killed: false } } }).enabled, true)
   const overridden = resolveFeature(key, { ...base, overrides: { [key]: true } })
   assert.equal(overridden.enabled, true)
@@ -57,7 +57,7 @@ test("every key maps to a unique DEN_FEATURE_ name", () => {
   const names = FEATURE_KEYS.map(featureLockEnvName)
   for (const name of names) assert.match(name, /^DEN_FEATURE_[A-Z0-9]+(?:_[A-Z0-9]+)*$/)
   assert.equal(new Set(names).size, names.length)
-  assert.equal(featureLockEnvName("orgManagedDashboards"), "DEN_FEATURE_ORG_MANAGED_DASHBOARDS")
+  assert.equal(featureLockEnvName("slackWorkbotReplies"), "DEN_FEATURE_SLACK_WORKBOT_REPLIES")
 })
 
 test("environment: self_hosted by default, strict values, unknown keys warn", () => {

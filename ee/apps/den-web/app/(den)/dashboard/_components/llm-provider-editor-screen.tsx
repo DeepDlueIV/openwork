@@ -14,6 +14,7 @@ import { DenBrandMark } from "../../_components/ui/brand-mark";
 import { DenButton } from "../../_components/ui/button";
 import { DenCombobox } from "../../_components/ui/combobox";
 import { DenInput } from "../../_components/ui/input";
+import { DenSecretInput } from "../../_components/ui/secret-input";
 import { DenSelectableRow } from "../../_components/ui/selectable-row";
 import { DenStickyActionBar } from "../../_components/ui/sticky-action-bar";
 import { UnderlineTabs } from "../../_components/ui/tabs";
@@ -829,25 +830,37 @@ export function LlmProviderEditorScreen({
                                             </span>
                                         ) : null}
                                      </span>
-                                     <DenInput
-                                        type={isAzureResourceName ? "text" : "password"}
-                                        value={apiKeyValues[envName] ?? ""}
-                                        onChange={(event) =>
-                                            setApiKeyValues((current) => ({
-                                                ...current,
-                                                [envName]: isAzureResourceName
-                                                    ? normalizeAzureResourceNameInput(event.target.value)
-                                                    : event.target.value,
-                                            }))
-                                        }
-                                        placeholder={
-                                            configured
-                                                ? "Leave blank to keep current value"
-                                                : isAzureResourceName
-                                                  ? "Paste the resource name or Azure Foundry project URL"
-                                                  : `Paste the ${envName} value`
-                                        }
-                                    />
+                                     {isAzureResourceName ? (
+                                        <DenInput
+                                            type="text"
+                                            value={apiKeyValues[envName] ?? ""}
+                                            onChange={(event) =>
+                                                setApiKeyValues((current) => ({
+                                                    ...current,
+                                                    [envName]: normalizeAzureResourceNameInput(event.target.value),
+                                                }))
+                                            }
+                                            placeholder={
+                                                configured
+                                                    ? "Leave blank to keep current value"
+                                                    : "Paste the resource name or Azure Foundry project URL"
+                                            }
+                                        />
+                                    ) : (
+                                        <DenSecretInput
+                                            autoComplete="new-password"
+                                            value={apiKeyValues[envName] ?? ""}
+                                            onChange={(value) =>
+                                                setApiKeyValues((current) => ({
+                                                    ...current,
+                                                    [envName]: value,
+                                                }))
+                                            }
+                                            saved={configured}
+                                            placeholder={`Paste the ${envName} value`}
+                                            savedPlaceholder="Leave blank to keep current value"
+                                        />
+                                    )}
                                 </label>
                             );
                         })}
@@ -857,15 +870,13 @@ export function LlmProviderEditorScreen({
                         <span className="text-[14px] font-medium text-gray-700">
                             API key / credential
                         </span>
-                        <DenInput
-                            type="password"
+                        <DenSecretInput
+                            autoComplete="new-password"
                             value={apiKey}
-                            onChange={(event) => setApiKey(event.target.value)}
-                            placeholder={
-                                provider?.hasApiKey
-                                    ? "Leave blank to keep current credential"
-                                    : "Paste the provider credential"
-                            }
+                            onChange={setApiKey}
+                            saved={provider?.hasApiKey === true}
+                            placeholder="Paste the provider credential"
+                            savedPlaceholder="Leave blank to keep current credential"
                         />
                     </label>
                 );

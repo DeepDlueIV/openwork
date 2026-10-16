@@ -20,7 +20,7 @@ import { useOrgDashboard } from "../_providers/org-dashboard-provider";
 import { FilterInput } from "./item-list";
 import type { PermissionStatus } from "./permissions-data";
 
-const ENTERPRISE_CONTACT_URL =
+export const ENTERPRISE_CONTACT_URL =
   process.env.NEXT_PUBLIC_ENTERPRISE_CONTACT_URL || "https://openworklabs.com/enterprise#book";
 
 export type PermissionsAccess =

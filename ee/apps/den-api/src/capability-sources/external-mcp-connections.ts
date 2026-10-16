@@ -987,6 +987,48 @@ export type UpdateExternalMcpConnectionResult =
  * replacement have a deterministic winner. Direct grants are replaced without
  * touching marketplace-derived grants.
  */
+export type SetSharedApiKeyResult =
+  | { status: "saved"; connection: ExternalMcpConnectionRow; previousApiKey: string | null }
+  | { status: "not_found" | "not_shared_api_key" | "marketplace_managed" }
+
+/**
+ * Writes only the shared API key of an existing API-key connection. The URL,
+ * auth type, sharing and every other setting stay as saved, so a key entered
+ * for a connection is never sent anywhere its owner did not already choose.
+ */
+export async function setExternalMcpSharedApiKey(input: {
+  organizationId: OrganizationId
+  connectionId: ExternalMcpConnectionId
+  apiKey: string | null
+}): Promise<SetSharedApiKeyResult> {
+  return db.transaction(async (tx) => {
+    const [existing] = await tx.select().from(ExternalMcpConnectionTable)
+      .where(and(eq(ExternalMcpConnectionTable.organizationId, input.organizationId), eq(ExternalMcpConnectionTable.id, input.connectionId)))
+      .limit(1).for("update")
+    if (!existing) return { status: "not_found" }
+    if (existing.kind !== "external_mcp" || existing.authType !== "apikey" || existing.credentialMode !== "shared") return { status: "not_shared_api_key" }
+    const bindings = await tx.select({ id: PluginMcpRequirementBindingTable.id })
+      .from(PluginMcpRequirementBindingTable)
+      .innerJoin(PluginTable, eq(PluginMcpRequirementBindingTable.pluginId, PluginTable.id))
+      .where(and(
+        eq(PluginMcpRequirementBindingTable.organizationId, input.organizationId),
+        eq(PluginMcpRequirementBindingTable.externalMcpConnectionId, input.connectionId),
+        eq(PluginTable.status, "active"),
+        isNull(PluginTable.deletedAt),
+      ))
+      .limit(1)
+    if (bindings.length > 0) return { status: "marketplace_managed" }
+    const changes = {
+      apiKey: input.apiKey,
+      readinessCredentialBinding: input.apiKey ? randomUUID() : null,
+      readinessCheck: null,
+      updatedAt: new Date(Math.max(Date.now(), existing.updatedAt.getTime() + 1)),
+    }
+    await tx.update(ExternalMcpConnectionTable).set(changes).where(eq(ExternalMcpConnectionTable.id, existing.id))
+    return { status: "saved", connection: { ...existing, ...changes }, previousApiKey: existing.apiKey }
+  })
+}
+
 export async function updateExternalMcpConnection(
   input: UpdateExternalMcpConnectionInput,
 ): Promise<UpdateExternalMcpConnectionResult> {
@@ -1046,6 +1088,7 @@ export async function updateExternalMcpConnection(
     }
 
     const identityChanged = normalizeExternalMcpIdentityUrl(existing.url) !== normalizeExternalMcpIdentityUrl(input.url)
+      || (Boolean(existing.oauthConfiguration?.manualOAuthEndpoints || input.oauthConfiguration?.manualOAuthEndpoints) && new URL(existing.url).href !== new URL(input.url).href)
       || existing.authType !== input.authType
       || existing.credentialMode !== input.credentialMode
       || apiKeyAuthSchemeChanged
@@ -1076,10 +1119,12 @@ export async function updateExternalMcpConnection(
     const existingClient = clientRows[0]
     const existingClientExtra = normalizeOAuthClientExtra(existingClient?.extra)
     const clientWasSdkRegistered = isSdkRegisteredOAuthClient(existingClientExtra)
+    const manualEndpointsChanged = input.oauthConfiguration !== undefined
+      && !isDeepStrictEqual(existing.oauthConfiguration?.manualOAuthEndpoints, input.oauthConfiguration?.manualOAuthEndpoints)
     const clientRegistrationInvalidated = identityChanged
       || issuerChanged
-      || (callbackModeChanged && clientWasSdkRegistered)
-    const credentialsInvalidated = identityChanged || issuerChanged || callbackModeChanged
+      || ((callbackModeChanged || manualEndpointsChanged) && clientWasSdkRegistered)
+    const credentialsInvalidated = identityChanged || issuerChanged || callbackModeChanged || manualEndpointsChanged
     const clientIdChanged = Boolean(input.oauthClient && existingClient?.clientId !== input.oauthClient.clientId)
     const clientSecretChanged = Boolean(
       input.oauthClient?.clientSecret !== undefined
@@ -1144,7 +1189,7 @@ export async function updateExternalMcpConnection(
           expiresAt: null,
           pendingCodeVerifier: null,
           credentialHealth: null,
-          ...(identityChanged || issuerChanged ? { oauthIssuerReviewRequiredAt: null } : {}),
+          ...(identityChanged || issuerChanged || manualEndpointsChanged ? { oauthIssuerReviewRequiredAt: null } : {}),
           connectedAt: input.authType === "none" ? input.validatedAt ?? changedAt : null,
           updatedAt: changedAt,
         })

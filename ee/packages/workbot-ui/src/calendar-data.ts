@@ -172,12 +172,11 @@ export function useAutomationModels(options: { includeCloudDefault: boolean }) {
     staleTime: 5 * 60_000,
   });
   const host = workbotHost();
-  const polish = host.calendarPolish === true;
   const identity = host.identity;
   const settings = useQuery({
     queryKey: [...calendarKey, "organization-default-model", host.homeHref, identity?.organizationId ?? null, identity?.principalId ?? null],
     queryFn: () => calendarJson(workbotSettingsSchema, "/v1/org/workbot-settings"),
-    enabled: polish && options.includeCloudDefault && identity !== undefined,
+    enabled: options.includeCloudDefault && identity !== undefined,
     retry: false,
     staleTime: 0,
     gcTime: 0,
@@ -188,13 +187,12 @@ export function useAutomationModels(options: { includeCloudDefault: boolean }) {
   const authorizedSettings = identity && !settings.isError && !settings.isFetching ? settings.data : undefined;
   const models = useMemo(() => {
     const available = automationModelOptions(query.data?.llmProviders ?? [], { includeFreeStarter: false, includeCloudDefault: options.includeCloudDefault });
-    if (!polish) return available;
     const resolvedId = authorizedSettings?.modelAvailable ? authorizedSettings.model ?? authorizedSettings.defaultModel : authorizedSettings?.defaultModel;
     const resolvedName = authorizedSettings?.models.find((model) => model.id === resolvedId)?.name;
     return available.map((option) => option.accessKind === "cloud_default"
       ? { ...option, modelName: resolvedName ? `Organization default (${resolvedName})` : "Organization default" }
       : option);
-  }, [options.includeCloudDefault, query.data, polish, authorizedSettings]);
+  }, [options.includeCloudDefault, query.data, authorizedSettings]);
   return { models, isLoading: query.isLoading, error: query.error };
 }
 

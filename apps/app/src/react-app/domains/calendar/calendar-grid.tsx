@@ -36,7 +36,6 @@ export type CalendarSelection =
   | null
 
 type GridProps = {
-  polish?: boolean
   range: CalendarRange
   timeZone: string
   now: number
@@ -124,7 +123,7 @@ function AutomationBlock(props: { item: AutomationCalendarItem; timeZone: string
   )
 }
 
-function MeetingBlock(props: { polish?: boolean; event: CalendarEvent; timeZone: string; selected: boolean; compact?: boolean; fill?: boolean; onSelect: () => void }) {
+function MeetingBlock(props: { event: CalendarEvent; timeZone: string; selected: boolean; compact?: boolean; fill?: boolean; onSelect: () => void }) {
   const { event } = props
   const source = CALENDAR_PROVIDER_LABEL[event.provider]
   return (
@@ -138,12 +137,10 @@ function MeetingBlock(props: { polish?: boolean; event: CalendarEvent; timeZone:
       className={cn(meetingBlockClass(props.selected), props.fill && "h-full")}
       onClick={props.onSelect}
     >
-      {props.polish ? (
-        <span className="flex min-w-0 items-start gap-1.5 font-medium">
-          <img aria-hidden="true" alt="" data-calendar-provider-logo={event.provider} className="size-3 shrink-0" src={resolveExtensionIconSrc(event.provider === "google" ? "/ext-google-workspace.svg" : "/ext-microsoft-365.svg")} />
-          <span className="min-w-0 flex-1 truncate">{event.title}</span>
-        </span>
-      ) : <span className="truncate font-medium">{event.title} <span className="font-normal text-muted-foreground">{source}</span></span>}
+      <span className="flex min-w-0 items-start gap-1.5 font-medium">
+        <img aria-hidden="true" alt="" data-calendar-provider-logo={event.provider} className="size-3 shrink-0" src={resolveExtensionIconSrc(event.provider === "google" ? "/ext-google-workspace.svg" : "/ext-microsoft-365.svg")} />
+        <span className="min-w-0 flex-1 truncate">{event.title}</span>
+      </span>
       {props.compact || event.timing.kind !== "timed" ? null : (
         <span className="truncate text-muted-foreground">{formatTime(event.timing.start, props.timeZone)}</span>
       )}
@@ -223,7 +220,6 @@ export function CalendarTimeGrid(props: GridProps) {
             <div key={`all-day-${day.year}-${day.month}-${day.day}`} className="flex min-w-0 flex-col gap-0.5 border-l border-border p-0.5">
               {allDay.filter((event) => allDayCovers(event, day)).map((event) => (
                 <MeetingBlock
-                  polish={props.polish}
                   key={event.key}
                   event={event}
                   timeZone={props.timeZone}
@@ -300,7 +296,6 @@ export function CalendarTimeGrid(props: GridProps) {
                         />
                       ) : (
                         <MeetingBlock
-                          polish={props.polish}
                           event={block.event}
                           timeZone={props.timeZone}
                           compact={compact}
@@ -372,7 +367,6 @@ export function CalendarMonthGrid(props: GridProps & { anchorMonth: number; onOp
               />
             ) : (
               <MeetingBlock
-                polish={props.polish}
                 key={entry.event.key}
                 event={entry.event}
                 timeZone={props.timeZone}

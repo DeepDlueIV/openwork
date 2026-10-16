@@ -44,7 +44,6 @@ const sessionSchema = z.object({
   calendar: z.boolean().optional(),
   /** The person can start side chats next to their main chat (while Workbot is on). */
   sideChats: z.boolean(),
-  calendarPolish: z.boolean().optional(),
   /**
    * The model Workbot's turns run on: the organization's default model. Null, and
    * omitted by older Dens, means the headless runner's default.
@@ -237,7 +236,6 @@ export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono
         canSchedule,
         calendar: features.workbot,
         sideChats: features.workbot,
-        calendarPolish: features.workbot && features.calendarPolish,
         model,
       })
     },

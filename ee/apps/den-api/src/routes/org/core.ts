@@ -733,12 +733,10 @@ export function registerOrgCoreRoutes<T extends { Variables: OrgRouteVariables }
         capabilities: {
           auditLogs: env.auditVisibilityEnabled,
           gatewayDashboard: true,
-          // Protocol capability: clients must see this explicit signal before
-          // calling the dashboard routes. Older Den versions omit the field,
-          // allowing newer Desktop builds to fail closed during a staggered
-          // rollout instead of calling an endpoint that does not exist yet.
-          // Per-organization and default-off: platform admins enable it in /admin.
-          orgManagedDashboards: features.orgManagedDashboards,
+          // Organization Dashboards were removed (2026-10). Published desktop
+          // builds call the old dashboard routes only when this is true, so it
+          // stays pinned to false.
+          orgManagedDashboards: false,
           // Compatibility field for published clients: Connect is always on.
           mcpConnections: true,
           // Building your own Apps is on for every organization unless the

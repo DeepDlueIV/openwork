@@ -171,7 +171,6 @@ function isSameTab(left: PanelTab, right: PanelTab) {
       left.canGoBack === right.canGoBack &&
       left.canGoForward === right.canGoForward &&
       left.ownerSessionId === right.ownerSessionId &&
-      JSON.stringify(left.browserApproval) === JSON.stringify(right.browserApproval) &&
       JSON.stringify(left.loadError) === JSON.stringify(right.loadError) &&
       JSON.stringify(left.browserTask) === JSON.stringify(right.browserTask) &&
       left.siteToolCount === right.siteToolCount &&

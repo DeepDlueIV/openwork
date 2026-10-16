@@ -13,7 +13,7 @@ import { requestAdmin, sendAdmin } from "../admin-request";
 /**
  * Deployment-wide state of every feature in packages/features/src/registry.ts:
  * on or off for everyone, and the kill switch. Per-organization overrides stay
- * on each organization's row in the Overview.
+ * on the organization's Features tab.
  */
 
 type AdminFeature = {
@@ -99,7 +99,7 @@ function FeatureRow({ feature, onChange }: { feature: AdminFeature; onChange: (n
         </p>
         {error ? <p className="mt-1 text-[13px] text-red-700">{error}</p> : null}
       </div>
-      <div className="flex shrink-0 items-center gap-3">
+      <div className="flex min-w-0 flex-wrap items-center gap-3 sm:shrink-0">
         <DenSegmented
           aria-label={`${feature.label} for everyone`}
           options={ON_OFF.map((option) => ({ ...option, disabled: controlsDisabled }))}

@@ -4,6 +4,7 @@ import { deleteCookie, getCookie, setCookie } from "hono/cookie"
 import { z } from "zod"
 import type { Config } from "./config.js"
 import { DenSignedOutError, type Den, type DenSession } from "./den.js"
+import { reportError } from "./error-reporting.js"
 import { createSealer, MAX_COOKIE_VALUE, randomToken, sessionSchema, type Tokens } from "./sealed.js"
 
 /**
@@ -121,8 +122,11 @@ export function createAuth(input: { config: Pick<Config, "publicUrl" | "secureCo
       if (getCookie(c, sessionCookie)) deleteCookie(c, sessionCookie, cookieOptions)
       return c.json({ error: "signed_out" }, 401)
     }
+    // Which call failed, so a refresh failure is reported as one rather than as Den being unavailable.
+    let stage: "refresh" | "session" = "refresh"
     try {
       const { tokens, changed } = await freshTokens(session)
+      stage = "session"
       const current = { ...session, tokens }
       if (changed) writeSession(c, current)
       const value = await denSession(session.id, tokens.accessToken)
@@ -133,6 +137,7 @@ export function createAuth(input: { config: Pick<Config, "publicUrl" | "secureCo
         return c.json({ error: "signed_out" }, 401)
       }
       console.error("[workbot] den unavailable", { error: error instanceof Error ? error.message : "unknown" })
+      reportError(stage === "refresh" ? "token_refresh_failed" : "den_unavailable", error, { response: "den_unavailable" })
       return c.json({ error: "den_unavailable" }, 503)
     }
     await next()
@@ -158,6 +163,7 @@ export function createAuth(input: { config: Pick<Config, "publicUrl" | "secureCo
         return c.redirect(await den.authorizeUrl({ state, verifier }), 302)
       } catch (error) {
         console.error("[workbot] sign-in unavailable", { error: error instanceof Error ? error.message : "unknown" })
+        reportError("sign_in_unavailable", error)
         return c.html(page("Workbot can't reach OpenWork", "Signing in isn't working right now. Try again in a minute.", { href: "/auth/login", label: "Try again" }), 503)
       }
     })
@@ -177,6 +183,8 @@ export function createAuth(input: { config: Pick<Config, "publicUrl" | "secureCo
         return c.redirect(login.returnTo, 302)
       } catch (error) {
         console.error("[workbot] sign-in failed", { error: error instanceof Error ? error.message : "unknown" })
+        // Den refusing the code (a reused or expired link) is tagged apart from Den failing.
+        reportError("sign_in_failed", error, { reason: error instanceof DenSignedOutError ? "rejected" : "error" })
         return c.html(page("Let's try that again", "OpenWork didn't finish signing you in.", { href: "/auth/login", label: "Sign in" }), 400)
       }
     })

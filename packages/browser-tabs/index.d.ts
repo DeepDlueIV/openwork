@@ -30,7 +30,6 @@ export type BrowserPanelTab = {
   canGoForward: boolean;
   /** Conversation (session) that opened the tab; null for shared/legacy tabs. */
   ownerSessionId: string | null;
-  browserApproval?: { id: string; title: string; message: string; detail: string; approveLabel?: string } | null;
   loadError?:
     | { code: "policy_unavailable" | "organization_policy_denied"; message: string }
     | { code: "page_load_failed" | "blocked_by_organization"; message: string; url: string; errorCode: number; errorDescription: string }

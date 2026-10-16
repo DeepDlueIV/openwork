@@ -13,6 +13,7 @@ import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { appendEngineOutputTail, createEngineStartupLineReader } from "./engine-output.js";
 import { buildOpenWorkV2Instructions } from "./opencode-v2-instructions.js";
+import { acquireEngineHistoryLease } from "./opencode-v2-history-lock.js";
 
 export { installOpencodeV2Binary } from "./opencode-v2-binary.js";
 
@@ -382,6 +383,7 @@ export async function createManagedOpencodeV2Server(
   // Cloud skills use Connect on demand, just like v1. No generated Cloud
   // skill directory is registered with the native engine.
   await writeConfig();
+  const historyLease = await acquireEngineHistoryLease(options.rootDir);
   const child = spawn(options.bin, ["serve", "--hostname", hostname, "--port", String(port)], {
     env: {
       ...inherited,
@@ -407,6 +409,7 @@ export async function createManagedOpencodeV2Server(
   child.once("close", () => {
     closed = true;
     lines.stop();
+    void historyLease.release();
   });
   child.stdout.on("data", (chunk) => {
     const text = String(chunk);
@@ -419,6 +422,8 @@ export async function createManagedOpencodeV2Server(
   child.on("error", (error) => {
     spawnError = error;
   });
+  try { await historyLease.child(child.pid); }
+  catch (error) { child.kill(); await historyLease.release(); throw error; }
 
   async function fetchJson(path: string, init: OpencodeV2RequestInit = {}): Promise<{ status: number; json: unknown }> {
     if (!url) throw new Error("OpenCode v2 has not announced its listener");
@@ -489,7 +494,7 @@ export async function createManagedOpencodeV2Server(
   async function close(): Promise<void> {
     lines.stop();
     if (child.connected) child.disconnect();
-    if (child.exitCode !== null || child.signalCode !== null) return;
+    if (child.exitCode !== null || child.signalCode !== null) { await historyLease.release(); return; }
     const exit = new Promise<void>((resolve) => child.once("exit", () => resolve()));
     child.kill("SIGTERM");
     const exited = await Promise.race([
@@ -500,6 +505,7 @@ export async function createManagedOpencodeV2Server(
       child.kill("SIGKILL");
       await exit;
     }
+    await historyLease.release();
   }
 
   const managed: ManagedOpencodeV2Server = {

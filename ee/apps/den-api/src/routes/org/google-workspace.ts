@@ -31,6 +31,8 @@ import {
 } from "../../capability-sources/google-workspace-api.js"
 import { getOrgOAuthClient, type ConnectedAccountRow } from "../../capability-sources/oauth-credentials.js"
 import { clientSelectedFeatures, getNativeOAuthProvider, providerScopesSatisfy, resolveProviderScopes } from "../../capability-sources/provider-registry.js"
+import { registerGoogleOfficeEditorRoutes } from "./google-office-editor.js"
+import { registerGoogleDocumentEditorRoutes } from "./google-document-editor.js"
 import { registerGoogleDriveFileRoutes } from "./google-drive-files.js"
 import { registerGoogleDriveUploadRoutes } from "./google-drive-uploads.js"
 import { isGoogleAuthorizationFailure, parseGoogleError } from "./google-workspace-actions.js"
@@ -236,6 +238,8 @@ const driveFilesQuerySchema = z.object({
   query: z.string().trim().min(1).max(500).optional().describe("Optional text to search in Drive file names and full text. Omit to list files."),
   maxResults: z.coerce.number().int().min(1).max(25).default(10).describe("Maximum files to return, capped at 25."),
   pageToken: z.string().min(1).max(2048).optional(),
+  orderBy: z.enum(["folder,name_natural", "recency desc", "modifiedTime desc"]).optional(),
+  filesOnly: z.enum(["true", "false"]).optional(),
   modifiedAfter: z.string().datetime({ offset: true }).optional().describe("Only files modified after this RFC3339 timestamp; follow nextPageToken to enumerate all matching files."),
   folderId: z.string().min(1).max(512).regex(/^[A-Za-z0-9_-]+$/).optional().describe("Limit to direct children of this folder."),
 })
@@ -308,7 +312,7 @@ const shareDriveFileResponseSchema = z.object({
 }).meta({ ref: "GoogleWorkspaceShareDriveFileResponse" })
 
 export type GoogleWorkspaceAccessToken =
-  | { kind: "ok"; accessToken: string; account: ConnectedAccountRow; enabledScopes: string[]; enabledFeatures?: string[] }
+  | { kind: "ok"; accessToken: string; account: ConnectedAccountRow; enabledScopes: string[]; enabledFeatures?: string[]; connectionId?: string }
   | { kind: "needs_connection"; message: string }
   | { kind: "google_api_error"; message: string }
   | NativeProviderPolicyError
@@ -438,7 +442,7 @@ async function googleWorkspaceToken(input: {
   const client = await getOrgOAuthClient(input.organizationId, credentialProviderId)
   const enabledFeatures = client ? clientSelectedFeatures(provider, client.extra) : []
   const enabledScopes = client ? resolveProviderScopes(provider, enabledFeatures) : []
-  return { kind: "ok", accessToken: token.accessToken, account: token.account, enabledScopes, enabledFeatures }
+  return { kind: "ok", accessToken: token.accessToken, account: token.account, enabledScopes, enabledFeatures, connectionId: credentialProviderId }
 }
 
 async function googleApiError(operation: string, response: Response) {
@@ -746,6 +750,8 @@ export function registerGoogleWorkspaceRoutes<T extends { Variables: OrgRouteVar
   const actionDependencies = { token: googleWorkspaceToken, fetch: googleWorkspaceApiFetch }
   registerGoogleDriveUploadRoutes(app, actionDependencies)
   registerGoogleDriveFileRoutes(app, actionDependencies)
+  registerGoogleDocumentEditorRoutes(app, actionDependencies)
+  registerGoogleOfficeEditorRoutes(app, actionDependencies)
   registerGmailManagementRoutes(app, actionDependencies)
   registerGoogleProductivityManagementRoutes(app, actionDependencies)
   registerGoogleDocumentRoutes(app, actionDependencies)
@@ -1266,6 +1272,8 @@ export function registerGoogleWorkspaceRoutes<T extends { Variables: OrgRouteVar
       const query = c.req.valid("query")
       const url = new URL(`${driveApiBase()}/drive/v3/files`)
       const filters = [query.query ? buildDriveSearchQuery(query.query) : "trashed = false"]
+      if (query.filesOnly === "true") filters.push("mimeType != 'application/vnd.google-apps.folder'")
+      if (query.orderBy) url.searchParams.set("orderBy", query.orderBy)
       if (query.modifiedAfter) filters.push(`modifiedTime > '${query.modifiedAfter}'`)
       if (query.folderId) filters.push(`'${query.folderId}' in parents`)
       url.searchParams.set("q", filters.join(" and "))

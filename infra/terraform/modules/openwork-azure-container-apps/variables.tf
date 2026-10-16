@@ -377,8 +377,8 @@ variable "database_url" {
   default     = ""
   sensitive   = true
   validation {
-    condition     = var.database_url == "" || (can(regex("[?&]sslaccept=strict(&|$)", var.database_url)) && !can(regex("[?&](sslmode|ssl-mode)=", var.database_url)))
-    error_message = "database_url must use sslaccept=strict without conflicting SSL mode parameters."
+    condition     = var.database_url == "" || (can(regex("^mysql://[^?#]+[?]sslaccept=strict(&|$)", var.database_url)) && length(regexall("[?&]sslaccept=", var.database_url)) == 1 && !can(regex("[?&](sslmode|ssl-mode)=", var.database_url)))
+    error_message = "database_url must start its query with one sslaccept=strict parameter and contain no conflicting SSL modes."
   }
 }
 
@@ -388,8 +388,8 @@ variable "migration_database_url" {
   default     = ""
   sensitive   = true
   validation {
-    condition     = var.migration_database_url == "" || (can(regex("[?&]sslaccept=strict(&|$)", var.migration_database_url)) && !can(regex("[?&](sslmode|ssl-mode)=", var.migration_database_url)))
-    error_message = "migration_database_url must use sslaccept=strict without conflicting SSL mode parameters."
+    condition     = var.migration_database_url == "" || (can(regex("^mysql://[^?#]+[?]sslaccept=strict(&|$)", var.migration_database_url)) && length(regexall("[?&]sslaccept=", var.migration_database_url)) == 1 && !can(regex("[?&](sslmode|ssl-mode)=", var.migration_database_url)))
+    error_message = "migration_database_url must start its query with one sslaccept=strict parameter and contain no conflicting SSL modes."
   }
 }
 

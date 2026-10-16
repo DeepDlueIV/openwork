@@ -150,6 +150,16 @@ run "rejects_unverified_tls" {
   variables { database = { tls_query = "sslaccept=accept" } }
   expect_failures = [var.database]
 }
+run "rejects_fragment_or_encoded_tls_parameter_bypass" {
+  command = plan
+  variables {
+    create_database        = false
+    database_url           = "mysql://app:fixture@db.example.com:3306/openwork_den#fragment?sslaccept=strict"
+    migration_database_url = "mysql://migrator:fixture@db.example.com:3306/openwork_den?%73slaccept=accept&nested=?sslaccept=strict"
+  }
+  expect_failures = [var.database_url, var.migration_database_url]
+}
+
 run "rejects_bad_name" {
   command = plan
   variables { name = "OpenWork_Prod" }

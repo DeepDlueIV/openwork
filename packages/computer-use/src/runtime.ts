@@ -17,7 +17,7 @@ export type ProgramRequest = {
 export type JsonValue = null | string | number | boolean | readonly JsonValue[] | { readonly [key: string]: JsonValue }
 export type ProgramResult = {
   ok: boolean; value?: JsonValue; error?: { message: string; code?: string; kind?: string };
-  receipts: Array<{ index: number; status: string; completed?: number }>;
+  receipts: Array<{ index: number; status: string; completed?: number; failed?: number; skipped?: number }>;
   mayHaveActed: boolean; metrics: { durationMs: number; transportCalls: number; observations: number; actions: number }; images: ProgramImage[];
 }
 export type ProgramImage = { type: "image"; data: string; mimeType: string }
@@ -110,15 +110,16 @@ export async function runComputerProgram(request: ProgramRequest, host: ProgramH
   let observations = 0
   let actions = 0
   const started = performance.now()
-  const receipts: Array<{ index: number; status: string; completed?: number }> = []
+  const receipts: ProgramResult["receipts"] = []
   const metrics = () => ({ durationMs: Math.round(performance.now() - started), transportCalls, observations, actions })
-  const invoke = async (name: string, args: Record<string, unknown>) => {
+  const invoke = async (name: string, args: Record<string, unknown>, receipt?: ProgramResult["receipts"][number]) => {
     signal.throwIfAborted()
     transportCalls++
     const raw = request.surface === "browser" ? await host.browser(name, { ...args, ...(tabId ? { tabId } : {}) }, signal) : await host.computer(name, args, signal)
-    signal.throwIfAborted()
     if (request.surface === "browser") {
       const result = record.parse(raw)
+      if (receipt) receipt.status = result.ok === true ? result.dispatched === false ? "unchanged" : "dispatched" : result.mayHaveChangedState === true ? "unconfirmed" : "failed"
+      signal.throwIfAborted()
       if (typeof result.tabId === "string") tabId = result.tabId
       const bitmap = z.object({ data: z.string(), mimeType: z.string() }).safeParse(result.image)
       if (bitmap.success) images = [{ type: "image", ...bitmap.data }]
@@ -131,6 +132,12 @@ export async function runComputerProgram(request: ProgramRequest, host: ProgramH
       if (part.type !== "text") return []
       try { const parsed = record.safeParse(JSON.parse(part.text)); return parsed.success ? [parsed.data] : [] } catch { return [] }
     })
+    if (receipt) for (const value of payloads) {
+      if (typeof value.status === "string") receipt.status = value.status
+      else if (value.ok === false) receipt.status = "failed"
+      for (const key of ["completed", "failed", "skipped"] as const) if (typeof value[key] === "number") receipt[key] = value[key]
+    }
+    signal.throwIfAborted()
     const bitmap = result.data.content.filter((part): part is ProgramImage => part.type === "image")
     if (bitmap.length) images = bitmap.slice(-1)
     for (const value of payloads) {
@@ -168,8 +175,9 @@ export async function runComputerProgram(request: ProgramRequest, host: ProgramH
     actions++
     // Record before transport: a lost response must never authorize a replay.
     mayHaveActed = true
-    const value = await invoke(request.surface === "browser" ? "act" : "computer_act", request.surface === "browser" ? { observationId: observation.observationId, action } : { observation_id: observation.observationId, action })
-    receipts.push({ index: receipts.length, status: "dispatched", ...(typeof value.completed === "number" ? { completed: value.completed } : {}) })
+    const receipt = { index: receipts.length, status: "unconfirmed" }
+    receipts.push(receipt)
+    const value = await invoke(request.surface === "browser" ? "act" : "computer_act", request.surface === "browser" ? { observationId: observation.observationId, action } : { observation_id: observation.observationId, action }, receipt)
     if (request.surface === "computer" && typeof value.observation_id === "string") { latest = normalize(value); latestQuery = null; observations++ }
     return value
   }
@@ -259,8 +267,10 @@ export async function runComputerProgram(request: ProgramRequest, host: ProgramH
     open: add("Open a website or app on this program's surface. Access follows the enabled rollout; no application approval is requested.", z.object({ url: z.url().optional(), appId: z.string().max(256).optional(), mode: z.enum(["observe", "assist", "control"]).default("control"), purpose: z.string().max(500).default("Complete the requested task") }).strict(), async (args) => {
       const input = request.surface === "browser" ? { url: args.url ?? issue("invalid_url", "Provide a website URL.") } : { app_id: args.appId ?? issue("missing_app", "Provide an appId from discovery, or desktop for a Linux VM."), mode: args.mode, purpose: args.purpose }
       latest = null; images = []; mayHaveActed = true; actions++
-      await invoke(request.surface === "browser" ? "open" : "computer_open", input)
-      receipts.push({ index: receipts.length, status: "dispatched" })
+      const receipt = { index: receipts.length, status: "unconfirmed" }
+      receipts.push(receipt)
+      await invoke(request.surface === "browser" ? "open" : "computer_open", input, receipt)
+      receipt.status = "dispatched"
       return observe(false)
     }),
     observe: add("Read current controls and text; request an image for visual decisions. Images are attached outside the program result.", z.object({ screenshot: z.boolean().default(false) }).strict(), ({ screenshot }) => observe(screenshot)),

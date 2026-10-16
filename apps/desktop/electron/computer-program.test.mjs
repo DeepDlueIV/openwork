@@ -67,6 +67,23 @@ test("images are attached outside program JSON and failed input is never replaye
   assert.equal(inputs, 1);
   assert.deepEqual(result.images, []);
   assert.equal(result.mayHaveActed, true);
+  assert.deepEqual(result.receipts, [{ index: 0, status: "unconfirmed" }]);
+});
+
+test("native partial receipts survive a failed program without replay", async () => {
+  let inputs = 0;
+  const text = value => ({content:[{type:"text",text:JSON.stringify(value)}]});
+  const result = await runComputerProgram({surface:"computer",code:'await tools.ui.act({action:{type:"key",key:"enter"}}); return true;'}, {
+    browser: async () => { throw new Error("Wrong surface"); },
+    computer: async name => {
+      if(name === "computer_observe") return text({ok:true,observation_id:"fresh",width:800,height:600,elements:[]});
+      inputs++;
+      return text({ok:true,status:"partial",completed:0,failed:0,skipped:0,may_have_acted:true,message:"Input interrupted"});
+    },
+  }, new AbortController().signal);
+  assert.equal(result.ok,false);
+  assert.equal(inputs,1);
+  assert.deepEqual(result.receipts,[{index:0,status:"partial",completed:0,failed:0,skipped:0}]);
 });
 
 test("code has no ambient filesystem, process or network access", async () => {

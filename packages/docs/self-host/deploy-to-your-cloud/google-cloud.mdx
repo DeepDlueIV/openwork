@@ -72,7 +72,12 @@ The live run used new-deployment write-only mode, db-g1-small and default HTTPS 
 
 ### Support level
 
-**Preview:** pin to a reviewed commit. Requires Terraform or OpenTofu `>= 1.11, < 2.0`. The module's bounded providers are Google `~> 8.7` and Random `~> 3.9`. Workbot, the runner, Slack and OpenWork Web/gateway are outside this change. A dedicated job orders one deployment; it does not implement a database mutex, dirty marker or coordination across independent deployments.
+> OpenWork's Terraform modules are **beta**. If you hit an issue:
+> - **Customers with a support agreement:** contact your OpenWork team through your usual support channel.
+> - **Everyone else:** [open a GitHub issue](https://github.com/different-ai/openwork/issues/new/choose).
+> - **Security issues:** report them privately ([SECURITY.md](https://github.com/different-ai/openwork/blob/dev/SECURITY.md)).
+
+Follow the shared [module contract](https://github.com/different-ai/openwork/blob/dev/infra/terraform/MODULE_CONTRACT.md) and pin to a reviewed commit. Requires Terraform or OpenTofu `>= 1.11, < 2.0`. The module's bounded providers are Google `~> 8.7` and Random `~> 3.9`. Workbot, the runner, Slack and OpenWork Web/gateway are outside this change. A dedicated job orders one deployment; it does not implement a database mutex, dirty marker or coordination across independent deployments.
 
 Defaults: API **1 vCPU / 2 GiB**, web **1 vCPU / 1 GiB**, one warm instance per service, maximum three; Cloud SQL **db-g1-small (1.7 GB)** with 10 GB disk and backups. The old micro tier exhausted its reported memory quota at idle. Database, services and job have deletion protection by default; explicitly turn it off only for disposable stacks. The deprecated nested `database.deletion_protection` override retains precedence.
 

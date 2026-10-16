@@ -29,7 +29,12 @@ The live run used new-deployment write-only mode and db-g1-small, no VPC/load ba
 
 ## Support level
 
-**Preview.** Pin the module to a reviewed commit. Existing-database, email-delivery, failure-recovery, sustained-load and production-sizing coverage is not implied by a disposable smoke test. The dedicated job is a deployment-ordering gate, **not** a database mutex, dirty marker or cross-deployment serialization protocol. Keep one deployment coordinator per physical database.
+> OpenWork's Terraform modules are **beta**. If you hit an issue:
+> - **Customers with a support agreement:** contact your OpenWork team through your usual support channel.
+> - **Everyone else:** [open a GitHub issue](https://github.com/different-ai/openwork/issues/new/choose).
+> - **Security issues:** report them privately ([SECURITY.md](https://github.com/different-ai/openwork/blob/dev/SECURITY.md)).
+
+Follow the shared [module contract](https://github.com/different-ai/openwork/blob/dev/infra/terraform/MODULE_CONTRACT.md). Pin the module to a reviewed commit. Existing-database, email-delivery, failure-recovery, sustained-load and production-sizing coverage is not implied by a disposable smoke test. The dedicated job is a deployment-ordering gate, **not** a database mutex, dirty marker or cross-deployment serialization protocol. Keep one deployment coordinator per physical database.
 
 Requires Terraform **>= 1.11, < 2.0** or OpenTofu **>= 1.11, < 2.0**. Provider constraints are `google ~> 8.7`, `random ~> 3.9`. No provider or backend configuration lives in the reusable module.
 

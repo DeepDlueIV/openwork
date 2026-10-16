@@ -141,6 +141,7 @@ config:
     sandboxDisk: ""
     sandboxPublic: ""
     sandboxAutoStopInterval: ""
+    sandboxAutoPauseInterval: "5"
     sandboxAutoArchiveInterval: ""
     sandboxAutoDeleteInterval: ""
     signedPreviewExpiresSeconds: "86400"

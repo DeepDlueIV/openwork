@@ -66,7 +66,8 @@ stop/start behavior. Viewing or operating the desktop contributes to worker
 activity; an active view does not silently time out while the user is working.
 Daytona also receives `autoPauseInterval=5` and `autoStopInterval=0`, independently
 of Den's idle loop. Set `DAYTONA_SANDBOX_AUTO_PAUSE_INTERVAL` to adjust that
-provider backstop. VM instances omit container-only auto-archive. A positive
+provider backstop, or `config.daytona.sandboxAutoPauseInterval` in Helm. VM
+instances omit container-only auto-archive. A positive
 `DAYTONA_SANDBOX_AUTO_DELETE_INTERVAL` enables a renewable inactivity lease for
 retained VM disks; durable Web instances keep their existing disabled default.
 Paused microVMs release CPU/RAM billing; disks still incur storage charges.

@@ -126,6 +126,9 @@ data:
   {{ with .Values.config.daytona.sandboxAutoStopInterval }}
   DAYTONA_SANDBOX_AUTO_STOP_INTERVAL: {{ . | quote }}
   {{ end }}
+  {{ with .Values.config.daytona.sandboxAutoPauseInterval }}
+  DAYTONA_SANDBOX_AUTO_PAUSE_INTERVAL: {{ . | quote }}
+  {{ end }}
   {{ with .Values.config.daytona.sandboxAutoArchiveInterval }}
   DAYTONA_SANDBOX_AUTO_ARCHIVE_INTERVAL: {{ . | quote }}
   {{ end }}

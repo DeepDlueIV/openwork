@@ -104,7 +104,9 @@ jobs:
       - name: Test on-demand PR proof review builds
         run: node --test .github/scripts/pr-proof-review-build.test.mjs
       - name: Test desktop computer consent and revocation
-        run: node --test apps/desktop/electron/computer-control.test.mjs apps/desktop/electron/computer-remote.test.mjs
+        run: |
+          node --test apps/desktop/electron/computer-control.test.mjs apps/desktop/electron/computer-remote.test.mjs
+          pnpm --dir evals exec vitest run --config vitest.config.ts --project pr ../apps/server/test/computer-use-tools.vitest.test.ts
       - name: Test packaged smoke engine diagnosis and kept logs
         run: |
           node --test apps/desktop/test/engine-diagnosis.test.mjs

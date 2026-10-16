@@ -6,6 +6,7 @@ import { getReactQueryClient } from "../../../infra/query-client";
 import { readGatewayUsageScope } from "@/app/lib/gateway-usage-scope";
 import { refreshGatewayUsageAfterCompletion } from "../../cloud/gateway-usage-refresh";
 import { gatewayUsageQueryPrefix } from "../../cloud/gateway-usage-state";
+import { mergeReplyMetadata, replyModelFromInfo } from "./reply-model";
 import { closeSessionBrowserTabs } from "@/app/lib/desktop";
 import { captureAnalyticsEvent, takeTaskRunStart } from "@/app/lib/analytics";
 import { trackTaskCompleted, trackTaskFailed } from "@/app/lib/den-telemetry";
@@ -59,6 +60,23 @@ import {
   type PendingDelta,
 } from "./session-transcript-deltas";
 import { startSyncStreamLifecycle, type SyncStreamPhase } from "./sync-stream-lifecycle";
+import {
+  BACKGROUND_SHELL_FINISHED_EVENT,
+  BACKGROUND_SHELL_STARTED_EVENT,
+  SHELL_CREATED_EVENT,
+  SHELL_DELETED_EVENT,
+  SHELL_EXITED_EVENT,
+  backgroundShellIdFromToolMetadata,
+  readEngineShell,
+  type EngineShell,
+} from "@/app/lib/background-shell-tasks";
+import {
+  addBackgroundShell,
+  clearBackgroundShellSession,
+  resyncBackgroundShells,
+  settleBackgroundShell,
+  useBackgroundShellStore,
+} from "../status/background-shell-store";
 
 export { type SyncStreamPhase } from "./sync-stream-lifecycle";
 export {
@@ -107,6 +125,8 @@ type SyncEntry = {
   liveSessionIds: Set<string>;
   statusReconcileTimer: ReturnType<typeof setTimeout> | null;
   statusReconcileAbort: AbortController | null;
+  // Consecutive failed status reads; paces the active poll (see activeSessionStatusReconcileDelayMs).
+  statusReconcileFailures: number;
   runActiveObservedAt: Map<string, number>;
   assistantMessageCompletedAt: Map<string, number>;
   gatewayUsageRuns: Map<string, { scope: number; key: string; providerId: string | null; completed: boolean }>;
@@ -115,6 +135,10 @@ type SyncEntry = {
   nativeTerminalSessions: Set<string>;
   permissionReconciles: Map<string, AbortController>;
   titleRecovery: SessionTitleRecovery | null;
+  /** `shell.created` details, so a background call's start can name its command. */
+  shellInfo: Map<string, EngineShell>;
+  /** In-flight running-command reads; disposal aborts them. */
+  backgroundShellReads: Set<AbortController>;
 };
 
 type DeltaFlushScheduler = (
@@ -147,8 +171,31 @@ const backgroundDeltaFlushMs = 100;
 // terminal status edge. This is a reconciliation cadence, not a completion
 // timeout: elapsed time never marks a task done.
 const activeSessionStatusReconcileIntervalMs = 250;
+// A failed read leaves the run state untouched (it is not evidence that work
+// stopped), so without backoff an unreachable engine — for example the one
+// the user just switched away from — would be polled at 4 Hz indefinitely.
+const activeSessionStatusReconcileMaxBackoffMs = 15_000;
 
 type SessionStatusSource = "stream" | "connect-reconcile" | "active-reconcile" | "snapshot";
+
+/** Which OpenCode engine a sync entry (or a status read) belongs to. */
+export type SessionSyncEngine = "v1" | "v2";
+
+function syncEngine(baseUrl: string): SessionSyncEngine {
+  return isOpencodeV2BaseUrl(baseUrl) ? "v2" : "v1";
+}
+
+/**
+ * Keep the fast cadence until the read is flagged degraded (a transient blip
+ * still settles within a second), then back off exponentially.
+ */
+export function activeSessionStatusReconcileDelayMs(consecutiveFailures: number): number {
+  if (consecutiveFailures < reconcileFailureDegradedThreshold) return activeSessionStatusReconcileIntervalMs;
+  return Math.min(
+    activeSessionStatusReconcileMaxBackoffMs,
+    1_000 * 2 ** (consecutiveFailures - reconcileFailureDegradedThreshold),
+  );
+}
 
 function developerDiagnosticsEnabled() {
   if (typeof window === "undefined") return false;
@@ -230,6 +277,10 @@ let sessionStatusFetcher = defaultSessionStatusFetcher;
 const defaultSessionPermissionFetcher = async (baseUrl: string, token: string, sessionID: string, signal: AbortSignal) =>
   unwrap(await createSyncClient(baseUrl, token).v2.session.permission.list({ sessionID }, { signal })).data;
 let sessionPermissionFetcher = defaultSessionPermissionFetcher;
+type RunningShellFetcher = (baseUrl: string, openworkToken: string, signal: AbortSignal) => Promise<EngineShell[]>;
+const defaultRunningShellFetcher: RunningShellFetcher = async (baseUrl, token, signal) =>
+  unwrap(await createClientV2(baseUrl, undefined, { token }).listRunningShells({ signal }));
+let runningShellFetcher = defaultRunningShellFetcher;
 
 const defaultDeltaFlushScheduler: DeltaFlushScheduler = (lane, run) => {
   if (
@@ -424,6 +475,25 @@ function isTrackedSession(entry: SyncEntry, sessionId: string) {
   return (entry.trackedSessionRefs.get(sessionId) ?? 0) > 0 || entry.retainedSessionTimers.has(sessionId);
 }
 
+function admitRelatedSession(entry: SyncEntry, sessionId: string) {
+  if (!isTrackedSession(entry, sessionId)) retainSession(entry.input, entry, sessionId);
+}
+
+function discoverTaskSessions(entry: SyncEntry, parentId: string) {
+  if (!isTrackedSession(entry, parentId)) return;
+  const records = useSessionActivityStore.getState().recordsByWorkspaceId[entry.input.workspaceId];
+  const visited = new Set([parentId]);
+  const parents = [parentId];
+  for (const parent of parents) {
+    for (const child of records?.[parent]?.childSessionIds ?? []) {
+      if (visited.has(child)) continue;
+      visited.add(child);
+      admitRelatedSession(entry, child);
+      parents.push(child);
+    }
+  }
+}
+
 function getSessionUpdatedInfo(event: OpencodeEvent) {
   if (event.type !== "session.updated") return null;
   const props = event.properties;
@@ -588,6 +658,9 @@ function disposeWorkspaceSync(key: string, entry: SyncEntry) {
   entry.statusReconcileAbort = null;
   for (const controller of entry.permissionReconciles.values()) controller.abort();
   entry.permissionReconciles.clear();
+  for (const controller of entry.backgroundShellReads) controller.abort();
+  entry.backgroundShellReads.clear();
+  entry.shellInfo.clear();
   entry.liveSessionIds.clear();
   entry.runActiveObservedAt.clear();
   entry.assistantMessageCompletedAt.clear();
@@ -878,7 +951,7 @@ function toUIPart(part: Part): UIMessage["parts"][number] | null {
       type: "text",
       text: part.name ? `@${part.name}` : "@agent",
       state: "done",
-      providerMetadata: { opencode: { partId: part.id } },
+      providerMetadata: { opencode: { partId: part.id, ...(part.name ? { agentMention: part.name } : {}) } },
     };
   }
   if (part.type === "step-start") return { type: "step-start" };
@@ -901,7 +974,7 @@ function upsertMessage(messages: UIMessage[], next: UIMessage) {
   const index = messages.findIndex((message) => message.id === next.id);
   if (next.metadata !== undefined) {
     const existing = messages[index];
-    const merged = existing ? { ...existing, ...next, parts: next.parts.length > 0 ? next.parts : existing.parts } : next;
+    const merged = existing ? { ...existing, ...next, metadata: mergeReplyMetadata(existing.metadata, next.metadata), parts: next.parts.length > 0 ? next.parts : existing.parts } : next;
     return upsertMessageByChronology(messages, merged);
   }
   if (index === -1) return [...messages, next];
@@ -931,10 +1004,167 @@ function upsertPart(messages: UIMessage[], messageId: string, partId: string, ne
   });
 }
 
+const SHELL_INFO_LIMIT = 200;
+
+function eventRecord(event: OpencodeEvent): Record<string, unknown> {
+  const props = event.properties;
+  return props && typeof props === "object" && !Array.isArray(props) ? { ...props } : {};
+}
+
+function stringField(record: Record<string, unknown>, key: string): string {
+  const value = record[key];
+  return typeof value === "string" ? value : "";
+}
+
+/**
+ * Background commands (`backgroundShellTasks`): a background tool call adds
+ * one, and its exit, deletion or completion notice settles it. A foreground
+ * call never reports a running shell id, so it is never added.
+ */
+function applyBackgroundShellEvent(entry: SyncEntry, workspaceId: string, event: OpencodeEvent) {
+  const store = useBackgroundShellStore.getState();
+  if (!store.enabled || !isOpencodeV2BaseUrl(entry.input.baseUrl)) return;
+  const props = eventRecord(event);
+  if (event.type === SHELL_CREATED_EVENT) {
+    const shell = readEngineShell(props);
+    if (!shell?.sessionID) return;
+    entry.shellInfo.delete(shell.id);
+    entry.shellInfo.set(shell.id, shell);
+    if (entry.shellInfo.size > SHELL_INFO_LIMIT) {
+      const oldest = entry.shellInfo.keys().next().value;
+      if (oldest !== undefined) entry.shellInfo.delete(oldest);
+    }
+    return;
+  }
+  if (event.type === SHELL_EXITED_EVENT || event.type === SHELL_DELETED_EVENT) {
+    const id = stringField(props, "id");
+    if (!id) return;
+    entry.shellInfo.delete(id);
+    store.update(workspaceId, (book) => settleBackgroundShell(book, id));
+    return;
+  }
+  if (event.type === BACKGROUND_SHELL_FINISHED_EVENT) {
+    const id = stringField(props, "shellID");
+    if (id) store.update(workspaceId, (book) => settleBackgroundShell(book, id));
+    return;
+  }
+  if (event.type === BACKGROUND_SHELL_STARTED_EVENT) {
+    const id = stringField(props, "shellID");
+    const sessionId = sessionIdFromProperties(props);
+    if (!id || !sessionId) return;
+    const info = entry.shellInfo.get(id);
+    const startedAt = typeof props.startedAt === "number" ? props.startedAt : Date.now();
+    store.update(workspaceId, (book) => addBackgroundShell(book, {
+      id,
+      sessionId,
+      command: stringField(props, "command") || info?.command || "",
+      startedAt: info?.startedAt || startedAt,
+      observedAt: Date.now(),
+    }));
+  }
+}
+
+function isBackgroundShellEvent(event: OpencodeEvent) {
+  return event.type === SHELL_CREATED_EVENT || event.type === SHELL_EXITED_EVENT || event.type === SHELL_DELETED_EVENT
+    || event.type === BACKGROUND_SHELL_STARTED_EVENT || event.type === BACKGROUND_SHELL_FINISHED_EVENT;
+}
+
+// Background shell ids each conversation's loaded history reports, keyed by
+// workspace and session. They let a resync count a listed command while its
+// conversation is busy, when the listing alone cannot tell it from a
+// foreground one.
+const historyBackgroundShellIds = new Map<string, Set<string>>();
+
+function historyBackgroundShellKey(workspaceId: string, sessionId: string) {
+  return JSON.stringify([workspaceId, sessionId]);
+}
+
+function rememberHistoryBackgroundShells(workspaceId: string, snapshot: OpenworkSessionHistory) {
+  const ids = new Set<string>();
+  for (const message of snapshot.messages) {
+    for (const part of message.parts) {
+      if (part.type !== "tool" || !("metadata" in part.state)) continue;
+      const shellId = backgroundShellIdFromToolMetadata(part.state.metadata);
+      if (shellId) ids.add(shellId);
+    }
+  }
+  const key = historyBackgroundShellKey(workspaceId, snapshot.session.id);
+  if (ids.size === 0) return;
+  const known = historyBackgroundShellIds.get(key) ?? new Set<string>();
+  for (const id of ids) known.add(id);
+  historyBackgroundShellIds.delete(key);
+  historyBackgroundShellIds.set(key, known);
+  if (historyBackgroundShellIds.size > SHELL_INFO_LIMIT) {
+    const oldest = historyBackgroundShellIds.keys().next().value;
+    if (oldest !== undefined) historyBackgroundShellIds.delete(oldest);
+  }
+}
+
+/**
+ * Converge background commands on the engine's list of running commands.
+ * The event stream is volatile, so an exit sent while it was down is lost;
+ * this read is the source of truth on connect, revalidation and session open.
+ */
+async function reconcileBackgroundShells(entry: SyncEntry, scope: "all" | string) {
+  if (!useBackgroundShellStore.getState().enabled || !isOpencodeV2BaseUrl(entry.input.baseUrl)) return;
+  const controller = new AbortController();
+  entry.backgroundShellReads.add(controller);
+  const startedAt = Date.now();
+  try {
+    const listed = await runningShellFetcher(entry.input.baseUrl, entry.openworkToken,
+      AbortSignal.any([controller.signal, AbortSignal.timeout(10_000)]));
+    if (controller.signal.aborted || syncs.get(syncKey(entry.input)) !== entry) return;
+    const workspaceId = entry.input.workspaceId;
+    const records = useSessionActivityStore.getState().recordsByWorkspaceId[workspaceId] ?? {};
+    useBackgroundShellStore.getState().update(workspaceId, (book) => resyncBackgroundShells(book, {
+      listed,
+      startedAt,
+      sessionIds: scope === "all" ? "all" : new Set([scope]),
+      admit: (shell) => {
+        if (historyBackgroundShellIds.get(historyBackgroundShellKey(workspaceId, shell.sessionID))?.has(shell.id)) return true;
+        // A running conversation may be waiting on this very command in the
+        // foreground; one this app has never seen has no known state.
+        const record = records[shell.sessionID];
+        return record !== undefined && !record.runActive;
+      },
+    }));
+  } catch {
+    // A failed read is not evidence that anything ended. Keep the last state.
+  } finally {
+    entry.backgroundShellReads.delete(controller);
+  }
+}
+
+/**
+ * Apply the `backgroundShellTasks` switch. Turning it on reads every
+ * workspace's running commands at once instead of waiting for a reconnect.
+ */
+export function setBackgroundShellTasksEnabled(enabled: boolean) {
+  const store = useBackgroundShellStore.getState();
+  if (store.enabled === enabled) return;
+  store.setEnabled(enabled);
+  if (!enabled) {
+    historyBackgroundShellIds.clear();
+    for (const entry of syncs.values()) entry.shellInfo.clear();
+    return;
+  }
+  for (const entry of syncs.values()) void reconcileBackgroundShells(entry, "all");
+  // History read while the feature was off left completion notices out.
+  // Read open conversations again so their rows appear where they belong.
+  const queryClient = getReactQueryClient();
+  void queryClient.invalidateQueries({ queryKey: ["react-session-snapshot"] });
+  void queryClient.invalidateQueries({ queryKey: ["react-session-latest"] });
+}
+
 function applyEvent(entry: SyncEntry, workspaceId: string, event: OpencodeEvent) {
   observeModelsTaskEvent(workspaceId, event);
   const queryClient = getReactQueryClient();
   const input = entry.input;
+
+  if (isBackgroundShellEvent(event)) {
+    applyBackgroundShellEvent(entry, workspaceId, event);
+    return;
+  }
 
   // Native durable sequence numbers order lifecycle edges across successor
   // executions. A replayed terminal must never settle a newer run.
@@ -986,6 +1216,10 @@ function applyEvent(entry: SyncEntry, workspaceId: string, event: OpencodeEvent)
   if (event.type === "session.created") {
     const session = getSessionCreatedInfo(event);
     if (!session) return;
+    if (session.parentID && isTrackedSession(entry, session.parentID)) {
+      admitRelatedSession(entry, session.id);
+      discoverTaskSessions(entry, session.id);
+    }
     for (const listener of entry.sessionCreatedListeners.keys()) listener(session);
     return;
   }
@@ -1040,6 +1274,8 @@ function applyEvent(entry: SyncEntry, workspaceId: string, event: OpencodeEvent)
     void closeSessionBrowserTabs(sessionId);
     entry.titleRecovery?.resolve(sessionId);
     useSessionActivityStore.getState().removeSession(workspaceId, sessionId);
+    useBackgroundShellStore.getState().update(workspaceId, (book) => clearBackgroundShellSession(book, sessionId));
+    historyBackgroundShellIds.delete(historyBackgroundShellKey(workspaceId, sessionId));
     useWorkbenchStore.getState().closeTab({ workspaceId, sessionId });
     stopTrackingLiveSession(entry, sessionId);
     for (const listener of entry.sessionDeletedListeners.keys()) listener(sessionId);
@@ -1237,9 +1473,12 @@ function applyEvent(entry: SyncEntry, workspaceId: string, event: OpencodeEvent)
     const next = {
       id: info.id,
       role: info.role,
-      ...(typeof created === "number" || typeof info.parentID === "string"
-        ? { metadata: { opencode: { ...(typeof created === "number" ? { created } : {}), ...(typeof completed === "number" ? { completed } : {}), ...(typeof info.parentID === "string" ? { parentID: info.parentID } : {}) } } }
-        : {}),
+      metadata: { opencode: {
+        ...(typeof created === "number" ? { created } : {}),
+        ...(typeof completed === "number" ? { completed } : {}),
+        ...(typeof info.parentID === "string" ? { parentID: info.parentID } : {}),
+        ...(replyModelFromInfo(info) ? { replyModel: replyModelFromInfo(info) } : {}),
+      } },
       parts: [],
     } satisfies UIMessage;
     queryClient.setQueryData<UIMessage[]>(transcriptKey(workspaceId, info.sessionID), (current = []) =>
@@ -1247,6 +1486,7 @@ function applyEvent(entry: SyncEntry, workspaceId: string, event: OpencodeEvent)
     );
     useSessionActivityStore.getState().observeTranscript(workspaceId, info.sessionID,
       queryClient.getQueryData<UIMessage[]>(transcriptKey(workspaceId, info.sessionID)) ?? []);
+    discoverTaskSessions(entry, info.sessionID);
     return;
   }
 
@@ -1367,6 +1607,7 @@ function applyEvent(entry: SyncEntry, workspaceId: string, event: OpencodeEvent)
     if (pending) entry.pendingDeltas.delete(pendingKey);
     useSessionActivityStore.getState().observeTranscript(workspaceId, part.sessionID,
       queryClient.getQueryData<UIMessage[]>(transcriptKey(workspaceId, part.sessionID)) ?? []);
+    discoverTaskSessions(entry, part.sessionID);
     return;
   }
 
@@ -1378,9 +1619,12 @@ function applyEvent(entry: SyncEntry, workspaceId: string, event: OpencodeEvent)
       field?: string;
       delta?: string;
     };
-    if (!props.sessionID || !props.messageID || !props.partID || !props.delta) return;
-    clearSessionRetry(entry, workspaceId, props.sessionID);
-    useSessionActivityStore.getState().markAssistantOutput(workspaceId, props.sessionID, props.messageID, { allowUnknownMessageRole: true });
+    if (!props.sessionID || !props.messageID || !props.partID || typeof props.delta !== "string" || !props.delta) return;
+    const activity = useSessionActivityStore.getState();
+    if (activity.recordsByWorkspaceId[workspaceId]?.[props.sessionID]?.runActive) {
+      clearSessionRetry(entry, workspaceId, props.sessionID);
+    }
+    activity.markAssistantOutput(workspaceId, props.sessionID, props.messageID, { allowUnknownMessageRole: true, markDeltaProgress: true });
     if (!isTrackedSession(entry, props.sessionID)) return;
     // Note: we do NOT trust `props.field` to disambiguate reasoning vs
     // text. Opencode emits `field: "text"` for both kinds; the actual
@@ -1465,10 +1709,12 @@ function commitDeltas(entry: SyncEntry, workspaceId: string, items: PendingDelta
   }
 
   for (const [sessionId, items] of bySession) {
+    let applied = false;
     queryClient.setQueryData<UIMessage[]>(
       transcriptKey(workspaceId, sessionId),
       (current = []) => {
         const result = applyPendingDeltasToTranscript(current, items);
+        applied = result.unapplied.length < items.length;
         for (const item of result.unapplied) {
           // The declaration event is the source of truth for text versus
           // reasoning. Hold early deltas until that event arrives instead of
@@ -1486,8 +1732,11 @@ function commitDeltas(entry: SyncEntry, workspaceId: string, items: PendingDelta
         return result.messages;
       },
     );
-    useSessionActivityStore.getState().observeTranscript(workspaceId, sessionId,
-      queryClient.getQueryData<UIMessage[]>(transcriptKey(workspaceId, sessionId)) ?? []);
+    const activity = useSessionActivityStore.getState();
+    if (applied && activity.recordsByWorkspaceId[workspaceId]?.[sessionId]?.runActive) {
+      activity.observeTranscript(workspaceId, sessionId,
+        queryClient.getQueryData<UIMessage[]>(transcriptKey(workspaceId, sessionId)) ?? []);
+    }
   }
 }
 
@@ -1686,9 +1935,15 @@ async function reconcileSessionRunStatuses(
   // Capture one revision instead of copying every historical sequence on each
   // poll. A same-clock native edge still invalidates this read for its session.
   const sequenceRevision = entry.nativeSequenceRevision;
+  // Activity records are keyed by workspace and session, not by engine. While
+  // another engine's sync is in use for this workspace (chats were switched to
+  // it), the rest of the workspace's records belong to that engine: this
+  // engine's status read cannot settle them. It still settles what it tracks.
+  const workspaceRecordsOwned = !hasActiveOtherEngineSync(entry);
   if (source === "connect-reconcile") {
     const records = useSessionActivityStore.getState().recordsByWorkspaceId[input.workspaceId] ?? {};
-    for (const sessionId of new Set([...Object.keys(records), ...entry.trackedSessionRefs.keys()])) {
+    const candidates = workspaceRecordsOwned ? Object.keys(records) : [];
+    for (const sessionId of new Set([...candidates, ...entry.trackedSessionRefs.keys()])) {
       void reconcileSessionPermissions(entry, sessionId);
       void refreshSessionTodos(input.workspaceId, sessionId);
     }
@@ -1703,11 +1958,13 @@ async function reconcileSessionRunStatuses(
     // presenting a confident ticking "Working" row. Aborted fetches are
     // lifecycle noise (dispose, generation rotation), not failures.
     if (!signal.aborted) {
+      entry.statusReconcileFailures += 1;
       useWorkspaceSyncStreamStore.getState().publishReconcileFailure(key);
     }
     return;
   }
   if (signal.aborted) return;
+  entry.statusReconcileFailures = 0;
   const streamStore = useWorkspaceSyncStreamStore.getState();
   const recovered = (streamStore.reconcileHealthByKey[key]?.consecutiveFailures ?? 0) > 0;
   streamStore.publishReconcileSuccess(key, startedAt);
@@ -1724,7 +1981,7 @@ async function reconcileSessionRunStatuses(
   for (const [sessionId, status] of Object.entries(statuses)) {
     if (source === "connect-reconcile" || isLiveStatus(status)) sessionIds.add(sessionId);
   }
-  const knownSessionIds = source === "connect-reconcile"
+  const knownSessionIds = source === "connect-reconcile" && workspaceRecordsOwned
     ? Object.keys(records)
     : [...entry.trackedSessionRefs.keys(), ...entry.retainedSessionTimers.keys()];
   for (const sessionId of knownSessionIds) {
@@ -1738,6 +1995,9 @@ async function reconcileSessionRunStatuses(
       source,
     });
   }
+  // With run states settled, background commands can be told from foreground
+  // ones. Steady-state polls stay status-only.
+  if (source === "connect-reconcile") void reconcileBackgroundShells(entry, "all");
 }
 
 function clearActiveSessionStatusReconcileTimer(entry: SyncEntry) {
@@ -1775,7 +2035,33 @@ function scheduleActiveSessionStatusReconciliation(entry: SyncEntry) {
       if (entry.statusReconcileAbort === controller) entry.statusReconcileAbort = null;
       scheduleActiveSessionStatusReconciliation(entry);
     });
-  }, activeSessionStatusReconcileIntervalMs);
+  }, activeSessionStatusReconcileDelayMs(entry.statusReconcileFailures));
+}
+
+/** Another engine's sync for the same workspace is referenced by a live owner. */
+function hasActiveOtherEngineSync(entry: SyncEntry) {
+  const engine = syncEngine(entry.input.baseUrl);
+  for (const other of syncs.values()) {
+    if (other === entry || other.refs <= 0 || other.input.workspaceId !== entry.input.workspaceId) continue;
+    if (syncEngine(other.input.baseUrl) !== engine) return true;
+  }
+  return false;
+}
+
+/**
+ * Chat routing moved this workspace to another engine. A released entry that
+ * only retained sessions would keep polling the engine the app no longer
+ * shows, and its idle reads would settle conversations (including migrated
+ * ones, which keep their ids) that now run on the other engine. Switching
+ * back reconnects and reconciles a fresh entry.
+ */
+function retireOtherEngineSyncs(input: SyncOptions) {
+  const engine = syncEngine(input.baseUrl);
+  for (const [key, entry] of syncs) {
+    if (entry.refs > 0 || entry.input.workspaceId !== input.workspaceId) continue;
+    if (syncEngine(entry.input.baseUrl) === engine) continue;
+    disposeWorkspaceSync(key, entry);
+  }
 }
 
 /**
@@ -1814,17 +2100,9 @@ if (typeof window !== "undefined") {
   window.addEventListener("online", revalidateWorkspaceSyncs);
 }
 
-export function __revalidateWorkspaceSyncsForTest() {
-  revalidateWorkspaceSyncs();
-}
-
-export function __resetWorkspaceSyncReconcileHealthForTest() {
-  lastReconcileSuccessAtByKey.clear();
-  useWorkspaceSyncStreamStore.setState({ reconcileHealthByKey: {} });
-}
-
 export function ensureWorkspaceSessionSync(input: SyncOptions) {
   const key = syncKey(input);
+  retireOtherEngineSyncs(input);
   const existing = syncs.get(key);
   if (existing) {
     existing.input = input;
@@ -1868,6 +2146,7 @@ export function ensureWorkspaceSessionSync(input: SyncOptions) {
     liveSessionIds: new Set(),
     statusReconcileTimer: null,
     statusReconcileAbort: null,
+    statusReconcileFailures: 0,
     runActiveObservedAt: new Map(),
     assistantMessageCompletedAt: new Map(),
     gatewayUsageRuns: new Map(),
@@ -1876,6 +2155,8 @@ export function ensureWorkspaceSessionSync(input: SyncOptions) {
     nativeTerminalSessions: new Set(),
     permissionReconciles: new Map(),
     titleRecovery: null,
+    shellInfo: new Map(),
+    backgroundShellReads: new Set(),
   };
   created.titleRecovery = createSessionTitleRecovery({
     fetch: async (sessionId) => {
@@ -1947,7 +2228,8 @@ export function seedSessionStatus(
   workspaceId: string,
   sessionId: string,
   incomingStatus: SessionStatus,
-  options: { snapshotStartedAt: number },
+  /** `engine` is the engine the status was read from; only its syncs adopt the run. */
+  options: { snapshotStartedAt: number; engine?: SessionSyncEngine },
 ) {
   const queryClient = getReactQueryClient();
   const { snapshotStartedAt } = options;
@@ -1978,9 +2260,12 @@ export function seedSessionStatus(
   queryClient.setQueryData(statusKey(workspaceId, sessionId), status);
   if (isLiveStatus(status)) {
     for (const entry of syncs.values()) {
-      if (entry.input.workspaceId === workspaceId) {
-        trackLiveSession(entry, sessionId, status, "snapshot");
-      }
+      if (entry.input.workspaceId !== workspaceId) continue;
+      // Another engine's sync cannot validate this run: its status read does
+      // not list it, so it would settle a live run as idle, invalidate the
+      // transcript, and adopt it again from the refetch on every poll.
+      if (options.engine && syncEngine(entry.input.baseUrl) !== options.engine) continue;
+      trackLiveSession(entry, sessionId, status, "snapshot");
     }
   }
 }
@@ -2007,7 +2292,11 @@ async function refreshSessionTodos(workspaceId: string, sessionId: string) {
   await queryClient.invalidateQueries({ queryKey });
 }
 
-export function seedSessionState(workspaceId: string, snapshot: OpenworkSessionHistory, options: { preview?: boolean } = {}) {
+export function seedSessionState(
+  workspaceId: string,
+  snapshot: OpenworkSessionHistory,
+  options: { preview?: boolean; engine?: SessionSyncEngine } = {},
+) {
   // A reverted window cannot establish which messages are still visible.
   if (options.preview && snapshot.session.revert?.messageID) return;
   const queryClient = getReactQueryClient();
@@ -2059,6 +2348,7 @@ export function seedSessionState(workspaceId: string, snapshot: OpenworkSessionH
   if (snapshot.status !== undefined && typeof snapshotStartedAt === "number") {
     seedSessionStatus(workspaceId, snapshot.session.id, snapshot.status, {
       snapshotStartedAt,
+      engine: options.engine,
     });
   }
 
@@ -2086,6 +2376,17 @@ export function seedSessionState(workspaceId: string, snapshot: OpenworkSessionH
   useSessionActivityStore.getState().observeTranscript(workspaceId, snapshot.session.id, transcript, true, {
     snapshotStartedAt,
   });
+  const backgroundShells = useBackgroundShellStore.getState().enabled;
+  if (backgroundShells) rememberHistoryBackgroundShells(workspaceId, snapshot);
+  for (const entry of syncs.values()) {
+    if (entry.input.workspaceId !== workspaceId) continue;
+    discoverTaskSessions(entry, snapshot.session.id);
+    // Opening a conversation (or refreshing it after a run) reads which of its
+    // background commands still run, now that its run state is seeded.
+    if (backgroundShells && (!options.engine || syncEngine(entry.input.baseUrl) === options.engine)) {
+      void reconcileBackgroundShells(entry, snapshot.session.id);
+    }
+  }
 }
 
 /**
@@ -2167,6 +2468,7 @@ export function trackWorkspaceSessionSync(input: SyncOptions, sessionId: string 
     normalizedSessionId,
     (entry.trackedSessionRefs.get(normalizedSessionId) ?? 0) + 1,
   );
+  discoverTaskSessions(entry, normalizedSessionId);
 
   return () => {
     const current = entry.trackedSessionRefs.get(normalizedSessionId) ?? 0;
@@ -2214,6 +2516,7 @@ export function __createWorkspaceSessionSyncForTest(input: SyncOptions) {
     liveSessionIds: new Set(),
     statusReconcileTimer: null,
     statusReconcileAbort: null,
+    statusReconcileFailures: 0,
     runActiveObservedAt: new Map(),
     assistantMessageCompletedAt: new Map(),
     gatewayUsageRuns: new Map(),
@@ -2222,6 +2525,8 @@ export function __createWorkspaceSessionSyncForTest(input: SyncOptions) {
     nativeTerminalSessions: new Set(),
     permissionReconciles: new Map(),
     titleRecovery: null,
+    shellInfo: new Map(),
+    backgroundShellReads: new Set(),
   });
   return () => {
     const entry = syncs.get(key);
@@ -2230,21 +2535,10 @@ export function __createWorkspaceSessionSyncForTest(input: SyncOptions) {
       if (entry.statusReconcileTimer) clearTimeout(entry.statusReconcileTimer);
       entry.statusReconcileAbort?.abort();
       for (const controller of entry.permissionReconciles.values()) controller.abort();
+      for (const controller of entry.backgroundShellReads) controller.abort();
     }
     syncs.delete(key);
   };
-}
-
-export function __hasWorkspaceSessionSyncForTest(input: SyncOptions) {
-  return syncs.has(syncKey(input));
-}
-
-export function __disposeWorkspaceSessionSyncForTest(input: SyncOptions) {
-  const key = syncKey(input);
-  const entry = syncs.get(key);
-  if (!entry) return;
-  entry.refs = 0;
-  disposeWorkspaceSync(key, entry);
 }
 
 export function __applySessionSyncEventForTest(input: SyncOptions, event: OpencodeEvent) {
@@ -2253,25 +2547,11 @@ export function __applySessionSyncEventForTest(input: SyncOptions, event: Openco
   applyEvent(entry, input.workspaceId, event);
 }
 
-export function __queueSessionSyncDeltaForTest(input: SyncOptions, delta: PendingDelta) {
+export function __setWorkspaceSessionSyncRunningShellFetcherForTest(fetcher: RunningShellFetcher | null) {
+  runningShellFetcher = fetcher ?? defaultRunningShellFetcher;
+}
+
+export function __reconcileBackgroundShellsForTest(input: SyncOptions, scope: "all" | string) {
   const entry = syncs.get(syncKey(input));
-  if (!entry) return;
-  entry.deltaFlushBuffer.push(delta);
-  scheduleDeltaFlush(entry, input.workspaceId);
-}
-
-export function __setSessionSyncDeltaFlushSchedulerForTest(scheduler: DeltaFlushScheduler | null) {
-  deltaFlushScheduler = scheduler ?? defaultDeltaFlushScheduler;
-}
-
-export function __setWorkspaceSessionSyncSubscriptionFactoryForTest(factory: SyncSubscriptionFactory | null) {
-  syncSubscriptionFactory = factory ?? defaultSyncSubscriptionFactory;
-}
-
-export function __setWorkspaceSessionSyncStatusFetcherForTest(fetcher: SessionStatusFetcher | null) {
-  sessionStatusFetcher = fetcher ?? defaultSessionStatusFetcher;
-}
-
-export function __setWorkspaceSessionSyncPermissionFetcherForTest(fetcher: typeof defaultSessionPermissionFetcher | null) {
-  sessionPermissionFetcher = fetcher ?? defaultSessionPermissionFetcher;
+  return entry ? reconcileBackgroundShells(entry, scope) : Promise.resolve();
 }

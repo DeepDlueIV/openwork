@@ -1,3 +1,4 @@
+import { credentialPromptSchema } from "@openwork/types/den/credential-prompt"
 import {
   accessRoleValues,
   configObjectCreatedViaValues,
@@ -161,7 +162,6 @@ export const configObjectParamsSchema = idParamSchema("configObjectId", "configO
 export const configObjectVersionParamsSchema = configObjectParamsSchema.extend(idParamSchema("versionId", "configObjectVersion").shape)
 export const configObjectAccessGrantParamsSchema = configObjectParamsSchema.extend(idParamSchema("grantId", "configObjectAccessGrant").shape)
 export const pluginParamsSchema = idParamSchema("pluginId", "plugin")
-export const pluginConfigObjectParamsSchema = pluginParamsSchema.extend(idParamSchema("configObjectId", "configObject").shape)
 export const pluginAccessGrantParamsSchema = pluginParamsSchema.extend(idParamSchema("grantId", "pluginAccessGrant").shape)
 export const marketplaceParamsSchema = idParamSchema("marketplaceId", "marketplace")
 export const marketplacePluginParamsSchema = marketplaceParamsSchema.extend(idParamSchema("pluginId", "plugin").shape)
@@ -892,12 +892,6 @@ export const connectorSourceTombstoneSchema = z.object({
   createdAt: z.string().datetime({ offset: true }),
 }).meta({ ref: "PluginArchConnectorSourceTombstone" })
 
-export const githubWebhookHeadersSchema = z.object({
-  xHubSignature256: z.string().trim().min(1),
-  xGithubEvent: githubWebhookEventSchema,
-  xGithubDelivery: z.string().trim().min(1),
-}).meta({ ref: "PluginArchGithubWebhookHeaders" })
-
 export const githubWebhookPayloadSchema = z.object({
   after: z.string().trim().min(1).optional(),
   installation: z.object({
@@ -933,8 +927,6 @@ export const githubConnectorSyncJobSchema = z.object({
   ref: z.string().trim().min(1),
   headSha: z.string().trim().min(1),
 }).meta({ ref: "PluginArchGithubConnectorSyncJob" })
-
-export const githubWebhookRawBodySchema = z.string().min(1).meta({ ref: "PluginArchGithubWebhookRawBody" })
 
 export const githubWebhookAcceptedResponseSchema = z.object({
   ok: z.literal(true),
@@ -999,6 +991,20 @@ export const pluginListResponseSchema = pluginArchListResponseSchema("PluginArch
 export const pluginDetailResponseSchema = pluginArchDetailResponseSchema("PluginArchPluginDetailResponse", pluginSchema)
 export const pluginMutationResponseSchema = pluginArchMutationResponseSchema("PluginArchPluginMutationResponse", pluginSchema)
 export const pluginMembershipListResponseSchema = pluginArchListResponseSchema("PluginArchPluginMembershipListResponse", pluginMembershipSchema)
+export const resolvedPluginsQuerySchema = z.object({
+  pluginIds: z.string()
+    .transform((value) => [...new Set(value.split(",").map((id) => id.trim()).filter(Boolean))])
+    .pipe(z.array(pluginIdSchema).min(1).max(100))
+    .describe("Comma-separated plugin ids, at most 100."),
+})
+export const resolvedPluginsResponseSchema = z.object({
+  plugins: z.record(z.string(), pluginMembershipListResponseSchema).describe("Each visible plugin's resolved contents, keyed by plugin id: the body GET /v1/plugins/:pluginId/resolved returns."),
+  failures: z.record(z.string(), z.object({
+    status: z.union([z.literal(403), z.literal(404)]),
+    error: z.string(),
+    message: z.string(),
+  })).describe("Requested plugins the caller cannot view (403) or that do not exist (404), keyed by plugin id, with the error GET /v1/plugins/:pluginId/resolved returns."),
+}).meta({ ref: "PluginArchResolvedPluginsResponse" })
 export const pluginMembershipDetailResponseSchema = pluginArchDetailResponseSchema("PluginArchPluginMembershipDetailResponse", pluginMembershipSchema)
 export const pluginMembershipMutationResponseSchema = pluginArchMutationResponseSchema("PluginArchPluginMembershipMutationResponse", pluginMembershipSchema)
 export const marketplaceListResponseSchema = pluginArchListResponseSchema("PluginArchMarketplaceListResponse", marketplaceSchema)
@@ -1025,14 +1031,29 @@ export const marketplaceResolvedResponseSchema = pluginArchMutationResponseSchem
   }),
 )
 
+const githubPluginMcpImportSkippedReasonSchema = z.enum(["headers_unsupported", "invalid_config", "invalid_url", "local_unsupported", "missing_url", "native_connector", "unsupported_auth"])
+
+const githubPluginMcpImportMappingSchema = z.object({
+  displayName: z.string(),
+  kind: z.enum(["native", "preset"]),
+  providerId: z.string(),
+}).nullable().describe("The provider OpenWork already knows for this declared connector: a native connector (Google Workspace, Microsoft 365) or a connection preset.")
+
+const githubPluginMcpImportReuseSchema = z.object({
+  connectionId: z.string(),
+  connectionName: z.string(),
+}).nullable().describe("The organization's existing connection this server uses instead of a new one. Only reported to organization admins.")
+
 const githubPluginMcpImportServerSchema = z.object({
   authType: z.literal("oauth").nullable(),
   connectionId: z.string().nullable(),
+  mapsTo: githubPluginMcpImportMappingSchema,
   name: z.string(),
   pluginKey: z.string(),
   pluginName: z.string(),
+  reuse: githubPluginMcpImportReuseSchema,
   serverKey: z.string(),
-  skippedReason: z.enum(["headers_unsupported", "invalid_config", "invalid_url", "local_unsupported", "missing_url", "unsupported_auth"]).nullable(),
+  skippedReason: githubPluginMcpImportSkippedReasonSchema.nullable(),
   sourceSchemaVersion: z.string().nullable(),
   sourcePath: z.string(),
   supported: z.boolean(),
@@ -1084,6 +1105,8 @@ export const githubPluginMcpImportResponseSchema = pluginArchMutationResponseSch
   z.object({
     imported: z.array(z.object({
       connectionId: z.string(),
+      connectionName: z.string(),
+      existingConnection: z.boolean().describe("True when the server uses a connection the organization already had."),
       name: z.string(),
       url: z.string(),
     })),
@@ -1093,20 +1116,37 @@ export const githubPluginMcpImportResponseSchema = pluginArchMutationResponseSch
       sourcePath: z.string(),
     })),
     marketplaceId: marketplaceIdSchema.nullable(),
+    mode: z.enum(["created", "updated"]),
     plugin: pluginSchema,
-    skipped: z.array(z.object({
+    removed: z.array(z.object({
+      configObjectId: configObjectIdSchema,
       name: z.string(),
-      reason: z.enum(["headers_unsupported", "invalid_config", "invalid_url", "local_unsupported", "missing_url", "unsupported_auth"]),
+      objectType: z.enum(["mcp", "skill"]),
+      sourcePath: z.string(),
+    })).describe("Skills and MCP servers imported earlier that were deleted upstream; they are removed from the plugin and archived, not deleted."),
+    skipped: z.array(z.object({
+      mapsTo: githubPluginMcpImportMappingSchema,
+      name: z.string(),
+      reason: githubPluginMcpImportSkippedReasonSchema,
+      reuse: githubPluginMcpImportReuseSchema,
     })),
     skippedSkills: z.array(z.object({
       name: z.string(),
       reason: z.enum(["invalid_skill"]),
       sourcePath: z.string(),
     })),
+    unchanged: z.array(z.object({
+      name: z.string(),
+      objectType: z.enum(["mcp", "skill"]),
+    })),
+    updatedSkills: z.array(z.object({
+      configObjectId: configObjectIdSchema,
+      name: z.string(),
+      sourcePath: z.string(),
+    })),
   }),
 )
-export const pluginMcpRequirementConfigureResponseSchema = pluginArchMutationResponseSchema(
-  "PluginArchPluginMcpRequirementConfigureResponse",
+const pluginMcpRequirementConfigureItemSchema = (
   z.object({
     binding: z.object({
       id: pluginMcpRequirementBindingIdSchema,
@@ -1127,8 +1167,15 @@ export const pluginMcpRequirementConfigureResponseSchema = pluginArchMutationRes
     links: z.object({
       yourConnections: z.string(),
     }),
-  }),
+  })
 )
+/** With secure keys in chat on, an API-key requirement set up without its key also returns credentialPrompt. */
+export const pluginMcpRequirementConfigureResponseSchema = z.object({
+  ok: z.literal(true),
+  item: pluginMcpRequirementConfigureItemSchema,
+  credentialPrompt: credentialPromptSchema.optional(),
+  nextStep: z.string().optional(),
+}).meta({ ref: "PluginArchPluginMcpRequirementConfigureResponse" })
 export const marketplacePluginListResponseSchema = pluginArchListResponseSchema("PluginArchMarketplacePluginListResponse", marketplacePluginSchema)
 export const marketplacePluginMutationResponseSchema = pluginArchMutationResponseSchema("PluginArchMarketplacePluginMutationResponse", marketplacePluginSchema)
 export const accessGrantListResponseSchema = pluginArchListResponseSchema("PluginArchAccessGrantListResponse", accessGrantSchema)

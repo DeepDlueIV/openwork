@@ -1,9 +1,9 @@
 import { processBlankSlateProfile, resolveBlankSlateLaunch } from "./blank-slate-profile.mjs";
 import { DESKTOP_POLICY_ENFORCEMENT_ENABLED } from "@openwork/types/den/desktop-policies-runtime";
-import { execFileSync, spawn } from "node:child_process";
+import { execFile, execFileSync, spawn } from "node:child_process";
 import { createServer } from "node:http";
 import net from "node:net";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import {
   cp,
   mkdir,
@@ -23,20 +23,11 @@ import { globalOpencodeConfigDir, workspaceOpencodeConfigCandidates } from "@ope
 import { configureFakeMediaForTests, installMediaPermissionHandlers } from "./media-permissions.mjs";
 import { registerMigrationIpc } from "./migration.mjs";
 import { createRuntimeManager, createSystemCaCertificateVerifyProc } from "./runtime.mjs";
-import { registerUpdaterIpc } from "./updater.mjs";
-import {
-  checkComputerUsePermissions,
-  getComputerUseMcpCommand,
-  getComputerUseState,
-  computerUseAction,
-  listRunningApps,
-  openComputerUseSetupApp,
-} from "./computer-use.mjs";
+import { registerUpdaterIpc, resolveAppVersion } from "./updater.mjs";
 import { createUiControlServer } from "./ui-control-server.mjs";
 import { createApplicationMenu } from "./app-menu.mjs";
 import { createNativeContextMenus } from "./context-menu.mjs";
 import { applyBrandAppName } from "./brand-app-name.mjs";
-import { createBrowserLoginSync } from "./browser-login-sync.mjs";
 import { createBrowserPanel } from "./browser-panel.mjs";
 import { createWorkspaceStore } from "./workspace-store.mjs";
 import {
@@ -60,11 +51,11 @@ import { resolveWorkspaceFileLaunch } from "./workspace-file-access.mjs";
 import { resolveAppIdentifier, resolveUserDataPath } from "./dev-profile.mjs";
 import { fetchAgentContextDiagnosticsResponse } from "./agent-context-diagnostics-fetch.mjs";
 import { fetchFiniteDesktopHttp } from "./finite-http-fetch.mjs";
-import { createDesktopTransferRegistry, downloadBinaryToPath, uploadMultipartFromBytes } from "./binary-transfer.mjs";
+import { createDesktopTransferRegistry } from "./binary-transfer.mjs";
 import {
   createLinuxDesktopIntegration,
 } from "./linux-desktop-integration.mjs";
-import { createDesktopAutomationRunner, normalizeRunnerBaseUrl } from "./automation-runner.mjs";
+import { automationRunnerDisabledReason, createComputerDescriber, createDesktopAutomationRunner, normalizeRunnerBaseUrl } from "./automation-runner.mjs";
 import {
   desktopActivationRequired,
   enterprisePreactivationCommandAllowed,
@@ -82,6 +73,8 @@ import {
 } from "./brand-icon-windows.mjs";
 import { resetMacDockIcon } from "./brand-icon-darwin.mjs";
 import { createDesktopVaultKeyProvider } from "./secure-vault-key.mjs";
+import { desktopFreeBootstrapEligible } from "./desktop-free-eligibility.mjs";
+import { applyDesktopFreeBuildSettings } from "./desktop-free-release.mjs";
 import {
   clearOpenworkSentrySession,
   initOpenworkSentry,
@@ -116,7 +109,6 @@ const {
   Notification: ElectronNotification,
   session,
   shell,
-  systemPreferences,
 } = require("electron");
 const pty = require(["node", "pty"].join("-"));
 const NATIVE_DEEP_LINK_EVENT = "openwork:deep-link-native";
@@ -474,6 +466,10 @@ function scheduleBlankSlateProfileCleanup() {
 }
 let brandIconApplySequence = 0;
 let brandIconRuntimeState = { applied: false, sourceUrl: null, reason: null };
+
+function websiteRulesInForcePath() {
+  return path.join(app.getPath("userData"), "agent-permissions-website-rules-in-force");
+}
 
 function brandIconCachePath() {
   return path.join(app.getPath("userData"), "brand-icon.png");
@@ -988,9 +984,9 @@ if (process.platform === "darwin" && INITIAL_APP_ICON_IMAGE && !INITIAL_APP_ICON
   app.dock.setIcon(INITIAL_APP_ICON_IMAGE);
 }
 
-// Expose Chrome DevTools Protocol so the opencode-chrome-devtools plugin can
-// drive the built-in browser panel.  Use OPENWORK_ELECTRON_REMOTE_DEBUG_PORT to
-// pin a specific port; otherwise probe for a free one starting at 9223.
+// Expose the Chrome DevTools Protocol for local debugging and test harnesses.
+// Use OPENWORK_ELECTRON_REMOTE_DEBUG_PORT to pin a specific port; otherwise
+// probe for a free one starting at 9223.
 // Must resolve before app.commandLine.appendSwitch (before `ready`).
 function probePort(port) {
   return new Promise((resolve) => {
@@ -1020,8 +1016,8 @@ if (remoteDebugPort > 0) {
   app.commandLine.appendSwitch("remote-debugging-port", String(remoteDebugPort));
   app.commandLine.appendSwitch("remote-debugging-address", "127.0.0.1");
 }
-// Make the resolved port available to the embedded server so it flows into
-// agent instructions via ensureOpenworkAgent → resolveAgentTemplate.
+// Publish the resolved port; child processes (and the shells they spawn)
+// inherit it through the environment.
 process.env.OPENWORK_ELECTRON_REMOTE_DEBUG_PORT = String(remoteDebugPort);
 if (isDevMode && !app.isPackaged) {
   const cdpAddress = remoteDebugPort > 0 ? `http://127.0.0.1:${remoteDebugPort}` : "disabled";
@@ -1074,13 +1070,9 @@ const IDLE_ENGINE_INFO = Object.freeze({
 
 const IDLE_OPENWORK_SERVER_INFO = Object.freeze({
   running: false,
-  remoteAccessEnabled: false,
   host: null,
   port: null,
   baseUrl: null,
-  connectUrl: null,
-  mdnsUrl: null,
-  lanUrl: null,
   clientToken: null,
   ownerToken: null,
   hostToken: null,
@@ -1113,6 +1105,30 @@ browserPanel = createBrowserPanel({
   remoteDebugPort,
   getWindow: () => mainWindow,
   onDeepLink: (urls) => queueDeepLinks(urls),
+  // Whether website rules were ever in force on this computer. Kept across
+  // restarts and sign-outs, so the browser opens no page before the first
+  // verified answer; computers that never had them see no change.
+  websiteRulesWereInForce: existsSync(websiteRulesInForcePath()),
+  onWebsiteRulesInForce: () => {
+    try {
+      writeFileSync(websiteRulesInForcePath(), "1", { mode: 0o600 });
+    } catch {
+      // Without the record the next start opens pages until rules arrive, as before.
+    }
+  },
+  // The member's website rules, read from the local OpenWork server (which
+  // verifies them with Den), never taken from the app window.
+  readWebsiteRules: async () => {
+    const server = await runtimeManager.openworkServerInfo();
+    if (!server.baseUrl || !(server.clientToken ?? server.ownerToken)) throw new Error("OpenWork server unavailable");
+    // loopback-fetch: the policy service is the locally managed OpenWork server.
+    const response = await fetch(`${server.baseUrl}/managed-policy/website-rules`, {
+      headers: { Authorization: `Bearer ${server.clientToken ?? server.ownerToken}` }, signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) throw new Error("Website rules unavailable");
+    const payload = await response.json();
+    return Array.isArray(payload?.rules) ? payload.rules : [];
+  },
   checkPolicy: async (input) => {
     if (!DESKTOP_POLICY_ENFORCEMENT_ENABLED) return;
     let code = "policy_unavailable";
@@ -1143,26 +1159,6 @@ const workspaceStore = createWorkspaceStore({
 });
 
 const desktopTransfers = createDesktopTransferRegistry();
-
-async function runDesktopTransfer(event, input, operation) {
-  return desktopTransfers.run(event, input?.transferId, async (signal) => {
-    // Both authorities come from app-owned state in userData; workspace-
-    // writable configuration must never widen where a transfer may write.
-    const [authorizedRoots, allowedUrlPrefixes] = await Promise.all([
-      workspaceStore.listLocalWorkspacePaths(),
-      workspaceStore.listRemoteWorkspaceUrlPrefixes(),
-    ]);
-    return await operation(input, {
-      authorizedRoots,
-      allowedUrlPrefixes,
-      // App-owned staging keeps in-flight downloads outside every authorized
-      // workspace root until they complete.
-      stagingDir: path.join(app.getPath("userData"), "binary-transfers"),
-      fetcher: electronNet.fetch,
-      signal,
-    });
-  });
-}
 
 const connectLinkReplayGuard = createConnectLinkReplayGuard({
   filePath: path.join(app.getPath("userData"), "connect-link-seen.json"),
@@ -1287,42 +1283,6 @@ async function isDirectory(targetPath) {
   }
 }
 
-function sanitizeCommandName(raw) {
-  const trimmed = String(raw ?? "").trim().replace(/^\/+/, "");
-  if (!trimmed) return null;
-  const safe = Array.from(trimmed)
-    .filter((char) => /[A-Za-z0-9_-]/.test(char))
-    .join("");
-  return safe || null;
-}
-
-function escapeYamlScalar(value) {
-  return JSON.stringify(String(value ?? ""));
-}
-
-function serializeCommandFrontmatter(command) {
-  const template = String(command?.template ?? "").trim();
-  if (!template) {
-    throw new Error("command.template is required");
-  }
-
-  let output = "---\n";
-  if (typeof command?.description === "string" && command.description.trim()) {
-    output += `description: ${escapeYamlScalar(command.description.trim())}\n`;
-  }
-  if (typeof command?.agent === "string" && command.agent.trim()) {
-    output += `agent: ${escapeYamlScalar(command.agent.trim())}\n`;
-  }
-  if (typeof command?.model === "string" && command.model.trim()) {
-    output += `model: ${escapeYamlScalar(command.model.trim())}\n`;
-  }
-  if (command?.subtask === true) {
-    output += "subtask: true\n";
-  }
-  output += `---\n\n${template}\n`;
-  return output;
-}
-
 function validateSkillName(raw) {
   const trimmed = String(raw ?? "").trim();
   if (!trimmed || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(trimmed)) {
@@ -1331,10 +1291,37 @@ function validateSkillName(raw) {
   return trimmed;
 }
 
+// Apply the build opt-out before the runtime captures inherited environment values.
+await applyDesktopFreeBuildSettings({ appVersion: resolveAppVersion(app) });
 const runtimeManager = createRuntimeManager({
   app,
   desktopRoot: path.resolve(__dirname, ".."),
   listLocalWorkspacePaths: () => workspaceStore.listLocalWorkspacePaths(),
+  // This callback stays in Electron's main process. Engine tools and shell
+  // commands cannot approve a Drive write by replaying a token or HTTP reply.
+  driveFileApproval: async ({ action, path: filePath, name, fileId, webViewLink, mode }) => {
+    const win = await createMainWindow();
+    const saving = action === "push";
+    const label = saving ? (mode === "copy" ? "Save a copy" : "Save to Drive") : action === "pull" ? "Download from Drive" : "Discard local edits";
+    const identity = `Google Drive: ${name}\nFile ID: ${fileId}${webViewLink ? `\n${webViewLink}` : ""}`;
+    const { response } = await dialog.showMessageBox(win, {
+      type: "question",
+      message: action === "overwrite" ? `Replace the local copy of ${name}?` : `${label}: ${name}`,
+      detail: saving
+        ? `${identity}\n\n${filePath}\n\n${mode === "copy" ? "Creates a new file next to the original in Google Drive." : "Replaces the file in Google Drive. People with access to it will see your changes."}`
+        : `${identity}\n\n${filePath}\n\n${action === "pull" ? "Downloads this file from your connected account into the workspace." : "Discards the local edits and downloads the current Google Drive file."}`,
+      buttons: ["Cancel", label], defaultId: 0, cancelId: 0, noLink: true,
+    });
+    return response === 1;
+  },
+  anonymousInference: {
+    // Signed-out Auto has no device identity: like OpenCode Zen, the gateway limits it by IP.
+    desktop: {
+      // app.getVersion() is Electron's own version in development builds.
+      currentVersion: resolveAppVersion(app),
+      eligible: () => desktopFreeBootstrapEligible(DESKTOP_DISTRIBUTION, workspaceStore.readDesktopBootstrapConfigSync()),
+    },
+  },
   // When OPENWORK_ENCRYPTION_KEY is set, skip the safeStorage provider so it does not shadow the documented env override used by CI/headless/enterprise.
   localManagedMcpVaultKey: process.env.OPENWORK_ENCRYPTION_KEY?.trim()
     ? undefined
@@ -1352,14 +1339,32 @@ const legacyRunnerBaseUrls = [
     : null,
   `${DEFAULT_DEN_BASE_URL}/api/den`,
 ].map((value) => normalizeRunnerBaseUrl(value)).filter(Boolean);
+const automationRunnerDisabledBy = automationRunnerDisabledReason(process.env);
+if (automationRunnerDisabledBy) {
+  console.info(`[automation-runner] disabled by ${automationRunnerDisabledBy}; renderer runner configuration will be ignored`);
+}
 const desktopAutomationRunner = createDesktopAutomationRunner({
+  disabledReason: automationRunnerDisabledBy,
   // v1 credentials predate token audiences. Keep them usable during the Den
   // rollout only for endpoints trusted before the renderer starts issuing IPC.
   legacyBaseUrls: legacyRunnerBaseUrls,
+  getJournalRoot: () => path.join(app.getPath("userData"), "session-runner"),
   getLocalRuntime: async () => {
     const server = await runtimeManager.openworkServerInfo();
     return { baseUrl: server.baseUrl, token: server.clientToken ?? server.ownerToken };
   },
+  // Remote-session callers choose a computer by this label, then a workspace and model.
+  describeComputer: createComputerDescriber({
+    platform: process.platform,
+    appVersion: resolveAppVersion(app),
+    hostname: () => os.hostname(),
+    readComputerName: () => new Promise((resolve, reject) => {
+      execFile("/usr/sbin/scutil", ["--get", "ComputerName"], { timeout: 2_000 }, (error, stdout) => {
+        if (error) reject(error);
+        else resolve(String(stdout));
+      });
+    }),
+  }),
   log: (state) => console.info(`[automation-runner] ${state}`),
   onCredentialRejected: () => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -1438,7 +1443,6 @@ const quitSequencer = createQuitSequencer({
   stop: async () => {
     showShutdownScreen();
     desktopAutomationRunner.stop();
-    browserLoginSync.shutdown();
     await Promise.all([
       disposeRuntimeBeforeQuit(),
       uiControlServer.stop(),
@@ -1475,13 +1479,12 @@ async function bootRuntimeForSelectedWorkspace() {
     ? list.workspaces.find((entry) => entry?.id === selectedId)
     : list.workspaces[0];
   const workspaceRoot = String(workspace?.path ?? "").trim();
-  if (!workspaceRoot || workspace?.workspaceType === "remote") {
+  if (!workspaceRoot) {
     return { ok: true, skipped: true, reason: "no-local-workspace" };
   }
 
   const workspacePaths = [];
   for (const entry of list.workspaces) {
-    if (entry?.workspaceType === "remote") continue;
     const workspacePath = String(entry?.path ?? "").trim();
     if (workspacePath && !workspacePaths.includes(workspacePath)) workspacePaths.push(workspacePath);
   }
@@ -1498,7 +1501,7 @@ async function bootRuntimeForSelectedWorkspace() {
   } catch (error) {
     const fallback = list.workspaces.find((entry) => {
       const candidatePath = String(entry?.path ?? "").trim();
-      return entry?.workspaceType !== "remote" && candidatePath && candidatePath !== workspaceRoot;
+      return candidatePath && candidatePath !== workspaceRoot;
     });
     const fallbackRoot = String(fallback?.path ?? "").trim();
     if (!fallback || !fallbackRoot) throw error;
@@ -1527,14 +1530,24 @@ async function bootRuntimeForSelectedWorkspace() {
   return { ok: true, skipped: false, engine, openworkServer, workspaceId: bootWorkspace.id ?? null };
 }
 
-function ensureRuntimeBootstrap() {
-  if (!runtimeBootstrapPromise) {
-    runtimeBootstrapPromise = bootRuntimeForSelectedWorkspace().catch((error) => ({
-      ok: false,
-      error: error instanceof Error ? error.message : String(error),
-    }));
-  }
+function startRuntimeBootstrap() {
+  runtimeBootstrapPromise = bootRuntimeForSelectedWorkspace().catch((error) => ({
+    ok: false,
+    error: error instanceof Error ? error.message : String(error),
+  }));
   return runtimeBootstrapPromise;
+}
+
+function ensureRuntimeBootstrap() {
+  const attempt = runtimeBootstrapPromise ?? startRuntimeBootstrap();
+  return attempt.then((result) => {
+    // A failed boot is reported once. The next request, such as Reload on the
+    // error screen, starts a fresh attempt instead of replaying this failure.
+    if (result?.ok === false && runtimeBootstrapPromise === attempt) {
+      runtimeBootstrapPromise = null;
+    }
+    return result;
+  });
 }
 
 function resolveOpencodeConfigPath(scope, projectDir) {
@@ -1573,56 +1586,6 @@ async function writeOpencodeConfig(scope, projectDir, content) {
   await mkdir(path.dirname(targetPath), { recursive: true });
   await writeFile(targetPath, content, "utf8");
   return execResult(true, `Wrote ${targetPath}`);
-}
-
-function resolveCommandsDir(scope, projectDir) {
-  if (scope === "workspace") {
-    if (!String(projectDir ?? "").trim()) {
-      throw new Error("projectDir is required");
-    }
-    return path.join(projectDir, ".opencode", "commands");
-  }
-  if (scope === "global") {
-    return path.join(globalOpencodeRoot(), "commands");
-  }
-  throw new Error("scope must be 'workspace' or 'global'");
-}
-
-async function listCommandNames(scope, projectDir) {
-  const commandsDir = resolveCommandsDir(scope, projectDir);
-  if (!(await isDirectory(commandsDir))) {
-    return [];
-  }
-  const entries = await readdir(commandsDir, { withFileTypes: true });
-  return entries
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".md"))
-    .map((entry) => entry.name.replace(/\.md$/, ""))
-    .sort();
-}
-
-async function writeCommandFile(scope, projectDir, command) {
-  const safeName = sanitizeCommandName(command?.name);
-  if (!safeName) {
-    throw new Error("command.name is required");
-  }
-  const commandsDir = resolveCommandsDir(scope, projectDir);
-  await mkdir(commandsDir, { recursive: true });
-  const filePath = path.join(commandsDir, `${safeName}.md`);
-  await writeFile(filePath, serializeCommandFrontmatter({ ...command, name: safeName }), "utf8");
-  return execResult(true, `Wrote ${filePath}`);
-}
-
-async function deleteCommandFile(scope, projectDir, name) {
-  const safeName = sanitizeCommandName(name);
-  if (!safeName) {
-    throw new Error("name is required");
-  }
-  const commandsDir = resolveCommandsDir(scope, projectDir);
-  const filePath = path.join(commandsDir, `${safeName}.md`);
-  if (await pathExists(filePath)) {
-    await rm(filePath, { force: true });
-  }
-  return execResult(true, `Deleted ${filePath}`);
 }
 
 async function collectProjectSkillRoots(projectDir) {
@@ -1792,10 +1755,6 @@ async function ensureProjectSkillRoot(projectDir) {
   return modern;
 }
 
-function engineDoctor(options = {}) {
-  return runtimeManager.engineDoctor(options);
-}
-
 function activeWindowFromEvent(event) {
   return BrowserWindow.fromWebContents(event.sender) ?? mainWindow ?? undefined;
 }
@@ -1838,20 +1797,8 @@ const desktopCommandHandlers = {
   "workspaceCreate": async (event, ...args) => {
       return workspaceStore.createWorkspace(args[0] ?? {});
   },
-  "workspaceCreateRemote": async (event, ...args) => {
-      return workspaceStore.createRemoteWorkspace(args[0] ?? {});
-  },
-  "workspaceUpdateRemote": async (event, ...args) => {
-      return workspaceStore.updateRemoteWorkspace(args[0] ?? {});
-  },
-  "workspaceUpdateDisplayName": async (event, ...args) => {
-      return workspaceStore.updateWorkspaceDisplayName(args[0] ?? {});
-  },
   "workspaceForget": async (event, ...args) => {
       return workspaceStore.forgetWorkspace(String(args[0] ?? "").trim());
-  },
-  "workspaceAddAuthorizedRoot": async (event, ...args) => {
-      return workspaceStore.addAuthorizedRoot(args[0] ?? {});
   },
   "workspaceOpenworkRead": async (event, ...args) => {
       return workspaceStore.readWorkspaceOpenworkConfig(String(args[0]?.workspacePath ?? "").trim());
@@ -1862,36 +1809,10 @@ const desktopCommandHandlers = {
         args[0]?.config ?? workspaceStore.defaultWorkspaceOpenworkConfig(""),
       );
   },
-  "workspaceExportConfig": async (event, ...args) => {
-      return workspaceStore.exportConfig(args[0] ?? {});
-  },
-  "workspaceImportConfig": async (event, ...args) => {
-      return workspaceStore.importConfig(args[0] ?? {});
-  },
-  "opencodeCommandList": async (event, ...args) => {
-      return listCommandNames(String(args[0]?.scope ?? "").trim(), String(args[0]?.projectDir ?? "").trim());
-  },
-  "opencodeCommandWrite": async (event, ...args) => {
-      return writeCommandFile(
-        String(args[0]?.scope ?? "").trim(),
-        String(args[0]?.projectDir ?? "").trim(),
-        args[0]?.command ?? {},
-      );
-  },
-  "opencodeCommandDelete": async (event, ...args) => {
-      return deleteCommandFile(
-        String(args[0]?.scope ?? "").trim(),
-        String(args[0]?.projectDir ?? "").trim(),
-        String(args[0]?.name ?? "").trim(),
-      );
-  },
   "engineStart": async (event, ...args) => {
       const projectDir = String(args[0] ?? "").trim();
       const options = args[1] ?? {};
       return runtimeManager.engineStart(projectDir, options);
-  },
-  "prepareFreshRuntime": async (event, ...args) => {
-      return runtimeManager.prepareFreshRuntime();
   },
   "runtimeBootstrap": async (event, ...args) => {
       return ensureRuntimeBootstrap();
@@ -1907,12 +1828,6 @@ const desktopCommandHandlers = {
   },
   "engineInfo": async (event, ...args) => {
       return runtimeManager.engineInfo();
-  },
-  "engineDoctor": async (event, ...args) => {
-      return engineDoctor(args[0]);
-  },
-  "engineInstall": async (event, ...args) => {
-      return runtimeManager.engineInstall();
   },
   "appBuildInfo": async (event, ...args) => {
       return {
@@ -1961,33 +1876,6 @@ const desktopCommandHandlers = {
         return ["node", path.resolve(__dirname, "../../..", "packages/openwork-ui-mcp/index.mjs")];
       }
       return ["npx", "-y", "openwork-ui-mcp"];
-  },
-  "getComputerUseState": async () => getComputerUseState(),
-  "computerUseAction": async (event, value) => {
-    if (!mainWindow || event.sender !== mainWindow.webContents || event.senderFrame !== mainWindow.webContents.mainFrame) throw new Error("Computer Use controls require the main OpenWork window.");
-    return computerUseAction(value);
-  },
-  "getComputerUseMcpCommand": async (event, ...args) => {
-      return getComputerUseMcpCommand();
-  },
-  "checkComputerUsePermissions": async (event, ...args) => {
-      // Read permissions in the same child-process context as setup.
-      return checkComputerUsePermissions();
-  },
-  "listRunningApps": async (event, ...args) => {
-      // Running regular macOS apps for composer @App mentions.
-      return listRunningApps();
-  },
-  "openComputerUsePermissionSetup": async (event, ...args) => {
-      // Open the GUI app. Returns immediately — React shows "verify" CTA.
-      await openComputerUseSetupApp();
-      // Return a fresh check so the UI shows the current state.
-      return checkComputerUsePermissions();
-  },
-  "openComputerUsePermissionSettings": async (event, ...args) => {
-      // Legacy: open the setup app (same as above).
-      await openComputerUseSetupApp();
-      return checkComputerUsePermissions();
   },
   "getOpenworkUiMcpEnvironment": async (event, ...args) => {
       return {
@@ -2086,9 +1974,6 @@ const desktopCommandHandlers = {
         },
       });
   },
-  "sandboxCleanupOpenworkContainers": async (event, ...args) => {
-      return runtimeManager.sandboxCleanupOpenworkContainers();
-  },
   "openworkServerInfo": async (event, ...args) => {
       return runtimeManager.openworkServerInfo();
   },
@@ -2124,15 +2009,6 @@ const desktopCommandHandlers = {
       });
       if (result.canceled) return null;
       return options.multiple ? result.filePaths : (result.filePaths[0] ?? null);
-  },
-  "saveFile": async (event, ...args) => {
-      const options = args[0] ?? {};
-      const result = await dialog.showSaveDialog(activeWindowFromEvent(event), {
-        title: options.title,
-        defaultPath: options.defaultPath,
-        filters: options.filters,
-      });
-      return result.canceled ? null : (result.filePath ?? null);
   },
   "importSkill": async (event, ...args) => {
       const projectDir = String(args[0] ?? "").trim();
@@ -2226,14 +2102,8 @@ const desktopCommandHandlers = {
   "resetOpenworkState": async (event, ...args) => {
       return workspaceStore.resetOpenworkState();
   },
-  "resetOpencodeCache": async (event, ...args) => {
-      return { removed: [], missing: [], errors: [] };
-  },
   "opencodeMcpAuth": async (event, ...args) => {
       return runtimeManager.opencodeMcpAuth(String(args[0] ?? "").trim(), String(args[1] ?? "").trim());
-  },
-  "setWindowDecorations": async (event, ...args) => {
-      return undefined;
   },
   "__openPath": async (event, ...args) => {
       const target = String(args[0] ?? "").trim();
@@ -2272,22 +2142,6 @@ const desktopCommandHandlers = {
         return error && error.trim() ? error : undefined;
       }
       return `Could not find "${target}" on disk.`;
-  },
-  "__getFileIcon": async (event, ...args) => {
-      const target = String(args[0] ?? "").trim();
-      if (!target) return null;
-      const requestedSize = args[1];
-      /** @type {"small" | "normal" | "large"} */
-      let validSize = "normal";
-      if (requestedSize === "small" || requestedSize === "normal" || requestedSize === "large") {
-        validSize = requestedSize;
-      }
-      try {
-        const image = await app.getFileIcon(target, { size: validSize });
-        return image.isEmpty() ? null : image.toDataURL();
-      } catch {
-        return null;
-      }
   },
   "__applyBrandAppName": async (event, ...args) => {
     currentDisplayAppName = applyBrandAppName(
@@ -2437,12 +2291,6 @@ const desktopCommandHandlers = {
       return cancellable && init.transferId
         ? desktopTransfers.run(event, init.transferId, fetchResponse)
         : fetchResponse(undefined);
-  },
-  "__uploadMultipart": async (event, ...args) => {
-      return runDesktopTransfer(event, args[0] ?? {}, uploadMultipartFromBytes);
-  },
-  "__downloadBinary": async (event, ...args) => {
-      return runDesktopTransfer(event, args[0] ?? {}, downloadBinaryToPath);
   },
   "__cancelTransfer": async (event, ...args) => {
       return desktopTransfers.cancel(event, args[0]);
@@ -2711,10 +2559,21 @@ async function createMainWindow() {
     return { action: "deny" };
   });
 
+  // A link clicked in the inline PDF viewer reaches both handlers below for
+  // the same navigation (`did-start-navigation` first, then `will-navigate`),
+  // so open each blocked URL once instead of in two browser tabs.
+  let lastRoutedNavigation = null;
+  const routeBlockedNavigationOnce = (url) => {
+    const now = Date.now();
+    if (lastRoutedNavigation?.url === url && now - lastRoutedNavigation.at < 1000) return;
+    lastRoutedNavigation = { url, at: now };
+    browserPanel.routeBlockedMainWindowNavigation(url);
+  };
+
   mainWindow.webContents.on("will-navigate", (event, url) => {
     if (browserPanel.isMainWindowAllowedNavigation(url)) return;
     event.preventDefault();
-    browserPanel.routeBlockedMainWindowNavigation(url);
+    routeBlockedNavigationOnce(url);
   });
 
   // `will-navigate` does NOT fire for CDP `Page.navigate` (it behaves like
@@ -2726,12 +2585,17 @@ async function createMainWindow() {
   mainWindow.webContents.on("did-start-navigation", (_event, url, isInPlace, isMainFrame) => {
     if (!isMainFrame || isInPlace) return;
     if (browserPanel.isMainWindowAllowedNavigation(url)) return;
-    try {
-      mainWindow?.webContents.stop();
-    } catch {
-      // best effort — routing below still gives the user a way back
-    }
-    browserPanel.routeBlockedMainWindowNavigation(url);
+    // Stopping inside this event aborts the main process for navigations the
+    // PDF viewer starts (`chrome.tabs.update` on a link click), so cancel the
+    // load on the next tick instead.
+    setImmediate(() => {
+      try {
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.stop();
+      } catch {
+        // best effort — routing below still gives the user a way back
+      }
+    });
+    routeBlockedNavigationOnce(url);
   });
 
   const startUrl = process.env.OPENWORK_ELECTRON_START_URL?.trim() || process.env.ELECTRON_START_URL?.trim();
@@ -2767,17 +2631,6 @@ ipcMain.handle("openwork:shell:relaunch", async () => {
   app.quit();
 });
 ipcMain.handle("openwork:system:architecture", async () => resolveArchitectureInfo());
-ipcMain.handle("openwork:system:microphoneStatus", async () => {
-  if (process.platform !== "darwin") return { platform: process.platform, status: "not-mac" };
-  return { platform: process.platform, status: systemPreferences.getMediaAccessStatus("microphone") };
-});
-ipcMain.handle("openwork:system:askMicrophoneAccess", async () => {
-  if (process.platform !== "darwin") return { platform: process.platform, granted: true, status: "not-mac" };
-  const before = systemPreferences.getMediaAccessStatus("microphone");
-  const granted = await systemPreferences.askForMediaAccess("microphone");
-  const after = systemPreferences.getMediaAccessStatus("microphone");
-  return { platform: process.platform, before, after, granted };
-});
 
 // ── Terminal IPC ────────────────────────────────────────────────────────
 ipcMain.handle("openwork:terminal:create", async (event, options = {}) => {
@@ -2844,41 +2697,6 @@ if (isDevMode && !app.isPackaged) {
     return open;
   });
 }
-const browserLoginEvalSeam = !app.isPackaged && process.env.OPENWORK_EVAL_BROWSER_LOGIN_SYNC === "1";
-const browserLoginSync = createBrowserLoginSync({
-  statePath: path.join(app.getPath("userData"), "browser-login-sync.json"),
-  initialPolicyAllowed:
-    DESKTOP_DISTRIBUTION.flavor === "public"
-    && initialRunnerBootstrap.requireSignin !== true,
-  confirmUserAction: browserLoginEvalSeam
-    ? async () => true
-    : async ({ action, source, sites = [] }) => {
-      const sourceLabel = source ? `${source.label} · ${source.profile}` : "Supported browser profiles on this computer";
-      /** @type {import("electron").MessageBoxOptions} */
-      const options = {
-        type: "warning",
-        buttons: [action === "resume" ? "Resume sync" : action === "configure" ? "Enable sync" : action === "discover" ? "Look for browsers" : "Read sites", "Cancel"],
-        defaultId: 1,
-        cancelId: 1,
-        title: action === "resume" ? "Resume browser login sync?" : action === "configure" ? "Enable browser login sync?" : action === "discover" ? "Look for browser profiles?" : "Read logins from this browser?",
-        message: sourceLabel,
-        detail: action === "resume"
-          ? "OpenWork will resume reading the sites you selected from this profile. It never changes the source browser."
-          : action === "configure"
-            ? `OpenWork will keep reading login cookies for these sites until you pause or disconnect: ${sites.join(", ")}. It never changes the source browser.`
-            : action === "discover"
-              ? "OpenWork will look only for supported browser profile locations. It will not read cookie databases until you choose a profile and confirm again."
-              : "OpenWork will read login metadata from this profile so you can choose sites. Nothing syncs until you confirm those sites, and the source browser is never changed.",
-        noLink: true,
-      };
-      const result = mainWindow
-        ? await dialog.showMessageBox(mainWindow, options)
-        : await dialog.showMessageBox(options);
-      return result.response === 0;
-    },
-});
-browserLoginSync.registerIpc(ipcMain, { evalSeam: browserLoginEvalSeam });
-
 registerMigrationIpc({ app, ipcMain });
 const { ensureAutoUpdater } = registerUpdaterIpc({
   app,
@@ -2994,10 +2812,7 @@ or use: pnpm dev:worktree`);
       });
     }
     if (!desktopActivationRequired(DESKTOP_DISTRIBUTION, bootstrapConfig)) {
-      runtimeBootstrapPromise = bootRuntimeForSelectedWorkspace().catch((error) => ({
-        ok: false,
-        error: error instanceof Error ? error.message : String(error),
-      }));
+      startRuntimeBootstrap();
     }
 
     queueDeepLinks(forwardedDeepLinks(process.argv));

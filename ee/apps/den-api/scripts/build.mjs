@@ -44,16 +44,30 @@ function writeGeneratedVersionFile(latestAppVersion) {
   )
 }
 
-function run(command, args) {
+function run(command, args, env = process.env) {
   const result = spawnSync(command, args, {
     cwd: serviceDir,
-    env: process.env,
+    env,
     stdio: "inherit",
   })
 
   if (result.status !== 0) {
     process.exit(result.status ?? 1)
   }
+}
+
+// Even with shared declaration boundaries, den-api exceeds Node's default
+// heap cap. Raise only the tsc heap; an explicit
+// --max-old-space-size in NODE_OPTIONS, or DEN_API_TSC_MAX_OLD_SPACE_MB, wins.
+export const tscHeapEnvFlag = "DEN_API_TSC_MAX_OLD_SPACE_MB"
+export const defaultTscHeapMb = 6144
+
+export function tscBuildEnv(env = process.env) {
+  const nodeOptions = env.NODE_OPTIONS?.trim() ?? ""
+  if (/--max-old-space-size[= ]/.test(nodeOptions)) return env
+  const override = Number.parseInt(env[tscHeapEnvFlag] ?? "", 10)
+  const heapMb = Number.isInteger(override) && override > 0 ? override : defaultTscHeapMb
+  return { ...env, NODE_OPTIONS: [nodeOptions, `--max-old-space-size=${heapMb}`].filter(Boolean).join(" ") }
 }
 
 export function envFlagEnabled(value) {
@@ -99,7 +113,7 @@ function productionExportTarget(value) {
   return undefined
 }
 
-export function missingProductionWorkspaceExports(packageDir = serviceDir) {
+function missingWorkspaceExports(packageDir, checkExport) {
   const visited = new Set()
   const missing = []
 
@@ -121,10 +135,8 @@ export function missingProductionWorkspaceExports(packageDir = serviceDir) {
         : [[".", exports]]
 
       for (const [subpath, value] of exportEntries) {
-        const target = productionExportTarget(value)
-        if (target && !existsSync(path.resolve(dependencyDir, target))) {
-          missing.push(`${dependency}${subpath === "." ? "" : subpath.slice(1)}: ${target}`)
-        }
+        const problem = checkExport(value, dependencyDir)
+        if (problem) missing.push(`${dependency}${subpath === "." ? "" : subpath.slice(1)}: ${problem}`)
       }
       visit(dependencyDir)
     }
@@ -134,8 +146,28 @@ export function missingProductionWorkspaceExports(packageDir = serviceDir) {
   return missing.sort()
 }
 
+export function missingProductionWorkspaceExports(packageDir = serviceDir) {
+  return missingWorkspaceExports(packageDir, (value, dependencyDir) => {
+    const target = productionExportTarget(value)
+    return target && !existsSync(path.resolve(dependencyDir, target)) ? target : undefined
+  })
+}
+
+export function missingProductionWorkspaceTypes(packageDir = serviceDir) {
+  return missingWorkspaceExports(packageDir, (value, dependencyDir) => {
+    const types = value?.types
+    if (!types) {
+      const target = productionExportTarget(value)
+      return /\.tsx?$/.test(target ?? "") ? "missing openwork-build declaration export" : undefined
+    }
+    const target = typeof types === "string" ? types : types["openwork-build"]
+    if (!target?.endsWith(".d.ts")) return "missing openwork-build declaration export"
+    return existsSync(path.resolve(dependencyDir, target)) ? undefined : target
+  })
+}
+
 function verifyProductionWorkspaceExports() {
-  const missing = missingProductionWorkspaceExports()
+  const missing = [...missingProductionWorkspaceExports(), ...missingProductionWorkspaceTypes()]
   if (missing.length > 0) {
     throw new Error(`Workspace production exports are missing:\n${missing.map((entry) => `- ${entry}`).join("\n")}`)
   }
@@ -173,7 +205,7 @@ function main() {
 
   run(pnpmCommand, ["run", "build:workspace-dependencies"])
   verifyProductionWorkspaceExports()
-  run(pnpmCommand, ["exec", "tsc", "-p", "tsconfig.json"])
+  run(pnpmCommand, ["exec", "tsc", "-p", "tsconfig.build.json"], tscBuildEnv())
   maybeUploadSentrySourcemaps()
 }
 

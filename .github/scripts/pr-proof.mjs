@@ -1,8 +1,12 @@
 import { createHash } from "node:crypto";
+import { existsSync, readdirSync } from "node:fs";
 
-const SPEC = /^evals\/specs\/.+\.e2e\.test\.ts$/;
-const PACKAGED_SPEC = /^evals\/specs\/packaged-[^/]+\.e2e\.test\.ts$/;
-const DAYTONA_SPEC = "evals/specs/windows-published-preview.e2e.test.ts";
+// Journeys live in evals/core (maintained) or
+// evals/proofs (one-off agent proofs); a file can move between them and keeps
+// its basename, so lanes compare journeys by basename.
+const SPEC = /^evals\/(?:(?:specs|core)\/.+\.e2e|proofs\/.+\.proof)\.test\.ts$/;
+const PACKAGED_SPEC = /^evals\/(?:specs|core)\/(packaged-[^/]+)\.e2e\.test\.ts$/;
+const specBasename = spec => spec.slice(spec.lastIndexOf("/") + 1);
 // A spec opts into checkpoints with the Vitest tag, e.g. `{ tags: ["checkpoints"] }`.
 const CHECKPOINTS_TAG = /\btags\s*:\s*\[[^\]]*["'`]checkpoints["'`]/;
 
@@ -14,7 +18,17 @@ export function checkpointTagged(source) {
 /** The packaged smoke journey a packaged spec runs as (its file name without the suffix). */
 export function packagedJourney(spec) {
   if (!safePath(spec) || !PACKAGED_SPEC.test(spec)) throw new Error("Invalid packaged proof spec path.");
-  return spec.slice("evals/specs/".length, -".e2e.test.ts".length);
+  return PACKAGED_SPEC.exec(spec)[1];
+}
+
+// Packaged journeys that need a signed macOS bundle; packaged-smoke-macos.mjs
+// builds and runs them. Any other packaged-* journey would run through the
+// Linux packaged-smoke.mjs, which boots only app-smoke and rejects other names.
+const MACOS_PACKAGED_JOURNEYS = new Set(["packaged-update-install"]);
+
+/** Runner operating system a packaged proof spec needs: "macos" or "linux". */
+export function packagedProofOs(spec) {
+  return MACOS_PACKAGED_JOURNEYS.has(packagedJourney(spec)) ? "macos" : "linux";
 }
 
 export function safePath(path) {
@@ -23,41 +37,65 @@ export function safePath(path) {
     && path.split("/").every(part => part.length > 0 && part !== "." && part !== "..");
 }
 
-// Every E2E spec the PR added or changed is a proof of its work. Nothing is
-// required; a PR that touches no spec simply produces no proof evidence.
-export function selectProof(files) {
+// Core journeys run on every PR that changes more than docs. Their end-state
+// checkpoint is the PR's hands-on preview in the review app.
+const repoRoot = new URL("../../", import.meta.url);
+const journeyPath = name => ["core", "specs", "proofs"].map(folder => `evals/${folder}/${name}`).find(path => existsSync(new URL(path, repoRoot))) ?? `evals/core/${name}`;
+export const CORE_SPECS = [journeyPath("core-chat.e2e.test.ts")];
+const docsOnlyFile = path => path.startsWith("packages/docs/") || path.endsWith(".md");
+
+// Every core journey runs on each PR that changes more than docs, once, in this
+// workflow. Packaged journeys need packaged binaries: app-smoke runs in packaged
+// smoke on every PR, and packaged-update-install (macOS) only when it changes.
+const PACKAGED_ONLY = /^(packaged-[^/]+|app-smoke)\.e2e\.test\.ts$/;
+export function everyCoreJourney(root = repoRoot) {
+  const directory = new URL("evals/core/", root);
+  if (!existsSync(directory)) return [];
+  return readdirSync(directory).filter(name => name.endsWith(".e2e.test.ts") && !PACKAGED_ONLY.test(name)).map(name => `evals/core/${name}`);
+}
+
+// Every E2E spec the PR added or changed is a proof of its work, plus every
+// core journey unless the PR only touches docs.
+export function selectProof(files, coreJourneys = everyCoreJourney()) {
   if (!Array.isArray(files) || files.some(file => !safePath(file.filename) || (file.previous_filename !== undefined && !safePath(file.previous_filename))))
     throw new Error("Missing or unsafe changed-file listing; proof selection is unavailable.");
   if (new Set(files.map(file => file.filename)).size !== files.length) throw new Error("Duplicate changed files; proof selection is unavailable.");
-  const specs = files
+  const changed = files
     .filter(file => ["added", "modified", "renamed", "changed", "copied"].includes(file.status) && SPEC.test(file.filename))
-    .map(file => file.filename).sort();
+    .map(file => file.filename);
+  const core = files.some(file => !docsOnlyFile(file.filename)) ? [...new Set([...CORE_SPECS, ...coreJourneys])] : [];
+  const specs = [...new Set([...changed, ...core])].sort();
   return { specs };
 }
 
-export function proofLanes(specs, { event, current, repo, actor, triggeringActor }, tagged = () => false) {
-  const liveSpecs = specs.filter(spec => ["evals/specs/live-stream-continuity.e2e.test.ts", "evals/specs/engine-live-chat.e2e.test.ts"].includes(spec));
+export function proofLanes(allSpecs, { event, current, repo, actor, triggeringActor }, tagged = () => false) {
+  // Forks and Dependabot cannot reach the Freestyle credential; they skip the
+  // core journeys instead of failing selection. A changed checkpoint spec still fails below.
+  const specs = trustedProofContext({ event, current, repo, actor, triggeringActor }) ? allSpecs : allSpecs.filter(spec => !CORE_SPECS.includes(spec));
   // Packaged specs boot a packaged desktop binary, which only the packaged
   // smoke runner builds; running them against a dev build always fails.
   const packagedSpecs = specs.filter(spec => PACKAGED_SPEC.test(spec));
-  // Windows release proof requires a Daytona Windows VM and a real installer.
-  // It cannot be rerouted to local Linux to obtain a green but meaningless run.
-  const daytonaSpecs = specs.filter(spec => spec === DAYTONA_SPEC);
+  // Core journeys get their own slim job: the app runs in Freestyle, the runner only drives it.
+  const coreSpecs = specs.filter(spec => CORE_SPECS.includes(spec));
   // Checkpoint runs need the Freestyle credential, so they use the protected lane.
-  const checkpointSpecs = specs.filter(spec => !liveSpecs.includes(spec) && !packagedSpecs.includes(spec) && !daytonaSpecs.includes(spec) && tagged(spec));
-  const normalSpecs = specs.filter(spec => !liveSpecs.includes(spec) && !packagedSpecs.includes(spec) && !daytonaSpecs.includes(spec) && !checkpointSpecs.includes(spec));
-  if (liveSpecs.length || daytonaSpecs.length || checkpointSpecs.length) {
-    const repository = event?.repository;
-    const sameRepo = candidate => Number.isSafeInteger(repository?.id) && repository.id > 0
-      && repository.full_name === repo && candidate?.id === repository.id
-      && candidate.full_name === repo && candidate.fork === false;
-    const identities = [actor, triggeringActor, event?.pull_request?.user?.login, current?.user?.login];
-    if (![event?.pull_request, current].every(pr => sameRepo(pr?.head?.repo) && sameRepo(pr?.base?.repo))
-      || identities.some(login => typeof login !== "string" || !login || login.toLowerCase() === "dependabot[bot]")) {
-      throw new Error("Live PR proof is unsupported for forks, untrusted repository metadata, or Dependabot. A maintainer must move the reviewed change to a same-repository PR (organization members run automatically; other contributors need pr-slow-specs approval); do not bypass or skip the selected live or Windows spec.");
+  const checkpointSpecs = specs.filter(spec => !coreSpecs.includes(spec) && !packagedSpecs.includes(spec) && tagged(spec));
+  const normalSpecs = specs.filter(spec => !coreSpecs.includes(spec) && !packagedSpecs.includes(spec) && !checkpointSpecs.includes(spec));
+  if (checkpointSpecs.length) {
+    if (!trustedProofContext({ event, current, repo, actor, triggeringActor })) {
+      throw new Error("Checkpoint PR proof is unsupported for forks, untrusted repository metadata, or Dependabot. A maintainer must move the reviewed change to a same-repository PR (organization members run automatically; other contributors need pr-slow-specs approval); do not bypass or skip the selected checkpoint spec.");
     }
   }
-  return { normalSpecs, liveSpecs, packagedSpecs, daytonaSpecs, checkpointSpecs };
+  return { coreSpecs, normalSpecs, packagedSpecs, checkpointSpecs };
+}
+
+function trustedProofContext({ event, current, repo, actor, triggeringActor }) {
+  const repository = event?.repository;
+  const sameRepo = candidate => Number.isSafeInteger(repository?.id) && repository.id > 0
+    && repository.full_name === repo && candidate?.id === repository.id
+    && candidate.full_name === repo && candidate.fork === false;
+  const identities = [actor, triggeringActor, event?.pull_request?.user?.login, current?.user?.login];
+  return [event?.pull_request, current].every(pr => sameRepo(pr?.head?.repo) && sameRepo(pr?.base?.repo))
+    && identities.every(login => typeof login === "string" && login.length > 0 && login.toLowerCase() !== "dependabot[bot]");
 }
 
 export async function changedFiles(api, repo, pr, expectedCount) {
@@ -80,4 +118,32 @@ export function proofKey(spec) {
 export function proofArtifact(spec, attempt) {
   if (!Number.isSafeInteger(attempt) || attempt < 1) throw new Error("Invalid proof attempt.");
   return `pr-proof-${attempt}-${proofKey(spec)}`;
+}
+
+const PROOF_ARTIFACT = /^pr-proof-([1-9]\d{0,3})-([a-f0-9]{64})$/;
+
+/**
+ * The proof artifact to publish for each selected spec: its newest attempt, up to
+ * `attempt`. "Re-run failed jobs" keeps the passing jobs' records from the earlier
+ * attempt (every attempt of a run tests the same commit), so one report can mix
+ * attempts. Returns a map of artifact name to spec, or the reason to publish nothing.
+ */
+export function proofArtifactsForAttempt(artifacts, specs, attempt) {
+  if (!Number.isSafeInteger(attempt) || attempt < 1) throw new Error("Invalid proof attempt.");
+  const specByKey = new Map(specs.map(spec => [proofKey(spec), spec]));
+  const names = new Map();
+  const newest = new Map();
+  for (const artifact of artifacts) {
+    const name = artifact?.name;
+    if (typeof name !== "string" || !name.startsWith("pr-proof-")) continue;
+    const match = PROOF_ARTIFACT.exec(name);
+    const spec = match ? specByKey.get(match[2]) : undefined;
+    const from = match ? Number(match[1]) : 0;
+    if (!spec || from > attempt) return { reason: "unexpected proof artifact is present" };
+    names.set(name, (names.get(name) ?? 0) + 1);
+    if ((newest.get(spec)?.from ?? 0) < from) newest.set(spec, { from, name });
+  }
+  if (newest.size !== specByKey.size || [...newest.values()].some(({ name }) => names.get(name) !== 1))
+    return { reason: "required proof artifact is missing or duplicated" };
+  return { expected: new Map([...newest].map(([spec, { name }]) => [name, spec])) };
 }

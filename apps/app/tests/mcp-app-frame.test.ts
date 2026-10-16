@@ -17,6 +17,7 @@ import {
 import { formatMcpAppDiagnostic, safeMcpAppDiagnosticMessage } from "../src/components/chat/mcp-app-diagnostics"
 import type { McpAppSandboxViewProps } from "../src/components/chat/mcp-app-frame"
 import * as mcpAppOrigin from "../src/components/chat/mcp-app-origin"
+import { markCloudCredentialRefreshed } from "../src/react-app/domains/connections/cloud-credential-revision"
 
 GlobalRegistrator.register({ url: "https://web.example/" })
 afterAll(() => GlobalRegistrator.unregister())
@@ -169,6 +170,27 @@ async function startupFixture(options: Pick<McpAppSandboxViewProps, "presentatio
 }
 
 describe("MCP App startup scheduling", () => {
+  test("cached HTML exposes pending tools, waits for a live lease, and never reuses cached authority", async () => {
+    const host = await startupFixture()
+    const live = Promise.withResolvers<{ origin: mcpAppOrigin.McpAppOrigin; app: OpenworkMcpAppResource }>()
+    const call = spyOn(host.client, "callMcpAppTool").mockResolvedValue({ content: [] })
+    const actionContext = { requestId: 1, signal: new AbortController().signal,
+      sendNotification: async () => {}, sendRequest: async () => { throw new Error("Unexpected request") } }
+    try {
+      await host.renderView({ app: fixture({ toolName: "render-0", launchId: undefined }), resolveLiveActions: () => live.promise })
+      await host.notify(0, "ui/notifications/sandbox-proxy-ready")
+      expect(host.bridges[0].oncalltool).toBeDefined()
+      const pending = host.bridges[0].oncalltool?.({ name: "read_detail" }, actionContext)
+      expect(call).not.toHaveBeenCalled()
+      await act(async () => live.resolve({ origin: { client: host.client, workspaceId: "workspace-0", sessionId: null, readOnly: false },
+        app: fixture({ toolName: "render-0", launchId: "fresh-live-lease" }) }))
+      await expect(pending).resolves.toEqual({ content: [] })
+      expect(call.mock.calls[0][1]).toMatchObject({ launchId: "fresh-live-lease", name: "read_detail" })
+      expect(call.mock.calls[0][1].approved).toBeUndefined()
+      expect(host.failures).toEqual([])
+    } finally { call.mockRestore(); await host.dispose() }
+  })
+
   test("starts at most two Apps across workspaces and advances FIFO only after initialization", async () => {
     const host = await startupFixture()
     try {
@@ -1161,6 +1183,72 @@ describe("MCP App resolution", () => {
       await host.dispose()
       timerSpy.mockRestore()
     }
+  })
+
+  const credentialScope = { serverBaseUrl: "https://server.example", workspaceId: "fixture" }
+
+  test.each([false, true])("recovers a Cloud authentication failure on matching credential refresh (installation before failure: %j)", async early => {
+    const host = resolutionFixture(true)
+    const pending = Promise.withResolvers<{ app: OpenworkMcpAppResource | null }>()
+    const timer = spyOn(window, "setTimeout")
+    host.resolveSpy.mockImplementationOnce(() => pending.promise).mockResolvedValue({ app: fixture() })
+    const reject = () => pending.reject(new OpenworkServerError(401, "mcp_auth_required", "This App's connection needs authentication."))
+    try {
+      await host.render()
+      if (!early) await act(async () => { reject() })
+      expect(host.resolveSpy).toHaveBeenCalledTimes(1)
+      expect(host.container.querySelector("iframe")).toBeNull()
+      expect(timer.mock.calls.some(([, delay]) => delay === 1_000 || delay === 3_000)).toBe(false)
+      await act(async () => {
+        markCloudCredentialRefreshed({ ...credentialScope, workspaceId: "other-workspace" })
+        markCloudCredentialRefreshed({ ...credentialScope, serverBaseUrl: "https://other.example" })
+      })
+      expect(host.resolveSpy).toHaveBeenCalledTimes(1)
+      await act(async () => { markCloudCredentialRefreshed(credentialScope) })
+      if (early) {
+        expect(host.resolveSpy).toHaveBeenCalledTimes(1)
+        await act(async () => { reject() })
+      }
+      expect(host.resolveSpy).toHaveBeenCalledTimes(2)
+      expect(host.resolveSpy.mock.calls[1]).toEqual(host.resolveSpy.mock.calls[0])
+      expect(host.container.querySelector('[role="status"]')).toBeNull()
+      expect(host.container.querySelector("iframe")).not.toBeNull()
+      await act(async () => { markCloudCredentialRefreshed(credentialScope) })
+      expect(host.resolveSpy).toHaveBeenCalledTimes(2)
+      expect(host.callSpy).not.toHaveBeenCalled()
+    } finally { await host.dispose(); timer.mockRestore() }
+  })
+
+  test.each(["access-denied", "other-failure", "local-provider", "healthy", "unmounted"])("credential refresh leaves %s chat views alone", async scenario => {
+    const host = resolutionFixture(scenario !== "local-provider")
+    if (scenario === "healthy") host.resolveSpy.mockResolvedValue({ app: fixture() })
+    else host.resolveSpy.mockRejectedValue(new OpenworkServerError(
+      scenario === "access-denied" ? 403 : 401,
+      scenario === "access-denied" ? "mcp_access_denied" : scenario === "other-failure" ? "unexpected_failure" : "mcp_auth_required",
+      "This view is unavailable.",
+    ))
+    try {
+      await host.render()
+      if (scenario === "unmounted") await host.unmountFrame()
+      await act(async () => { markCloudCredentialRefreshed(credentialScope) })
+      expect(host.resolveSpy).toHaveBeenCalledTimes(1)
+      expect(host.callSpy).not.toHaveBeenCalled()
+    } finally { await host.dispose() }
+  })
+
+  test("a still-rejected chat view waits for another credential installation after one retry", async () => {
+    const host = resolutionFixture(true)
+    host.resolveSpy.mockRejectedValue(new OpenworkServerError(401, "mcp_auth_required", "Sign in to this connection."))
+    try {
+      await host.render()
+      await act(async () => { markCloudCredentialRefreshed(credentialScope) })
+      expect(host.resolveSpy).toHaveBeenCalledTimes(2)
+      await act(async () => { await Promise.resolve() })
+      expect(host.resolveSpy).toHaveBeenCalledTimes(2)
+      await act(async () => { markCloudCredentialRefreshed(credentialScope) })
+      expect(host.resolveSpy).toHaveBeenCalledTimes(3)
+      expect(host.callSpy).not.toHaveBeenCalled()
+    } finally { await host.dispose() }
   })
 
   test.each([

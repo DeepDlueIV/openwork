@@ -1,3 +1,4 @@
+import { BuiltMcpAppPanel } from "../../apps/built-mcp-app-panel";
 /** @jsxImportSource react */
 import * as React from "react";
 import {
@@ -6,6 +7,8 @@ import {
   ArrowRight,
   Globe,
   Loader2,
+  MessagesSquare,
+  ShieldOff,
   Plus,
   RotateCw,
   X,
@@ -27,6 +30,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { ArtifactIcon } from "../artifacts/artifact-icon";
 import { AppArtifact } from "../../apps/app-artifact";
 import { ArtifactPanel } from "../artifacts/artifact-panel";
+import { RemoteThreadPanel } from "../remote-threads/remote-thread-panel";
 import {
   type BrowserPanelTab,
   usePanelTabStore,
@@ -39,20 +43,17 @@ import type { OpenTarget } from "../artifacts/open-target";
 import { useSidePanelTabs } from "./use-side-panel-tabs";
 import { handlePanelEscape, PanelEmpty } from "./panel-empty";
 import {
-  computeBounds,
   getElectronBrowser,
   getNativeMenuPoint,
   hasNativeBrowserOccluder,
 } from "./utils";
-import { LoginSyncCard } from "../../browser-logins/login-sync-card";
-import { createBrowserBoundsSync } from "./browser-bounds-sync";
+import { computeBrowserBounds, createBrowserBoundsSync } from "./browser-bounds-sync";
 
 type SidePanelProps = {
   sessionId: string;
   client: OpenworkServerClient | null;
   workspaceId: string | null;
   workspaceRoot: string;
-  isRemoteWorkspace?: boolean;
   onClose: () => void;
   onOpenExtensions?: () => void;
 };
@@ -147,7 +148,7 @@ function SidePanelTab({ tab, active, onSelect, onClose }: SidePanelTabProps) {
             ) : (
               <Globe />
             )
-          ) : tab.type === "app" ? <Blocks /> : (
+          ) : (tab.type === "app" || tab.type === "mcp-app") ? <Blocks /> : tab.type === "remote-thread" ? <MessagesSquare /> : (
             <ArtifactIcon type={tab.preview} />
           )}
           <span className="min-w-0 flex-1 truncate text-left">{tab.label}</span>
@@ -177,6 +178,7 @@ function BrowserPanelContent({
   const suspended = tab.status === "suspended";
   const busy = tab.status === "suspending" || tab.status === "restoring";
   const pageFailure = tab.loadError?.code === "page_load_failed" ? tab.loadError : null;
+  const blockedSite = tab.loadError?.code === "blocked_by_organization" ? tab.loadError : null;
   const [urlInput, setUrlInput] = React.useState(tab.url);
   const urlFocusedRef = React.useRef(false);
   const contentRef = React.useRef<HTMLDivElement>(null);
@@ -262,7 +264,7 @@ function BrowserPanelContent({
 
     const syncBounds = () => {
       if (!ready || disposed) return;
-      boundsSync.sync(computeBounds(content), window.devicePixelRatio, hasNativeBrowserOccluder());
+      boundsSync.sync(computeBrowserBounds(content), window.devicePixelRatio, hasNativeBrowserOccluder());
     };
 
     const invalidateBounds = () => {
@@ -459,7 +461,7 @@ function BrowserPanelContent({
           <X />
         </Button>
       </div>
-      {tab.loadError && !pageFailure ? (
+      {tab.loadError && !pageFailure && !blockedSite ? (
         <div data-browser-shortcut-tab={tab.id} role="alert" className="shrink-0 border-b border-border bg-muted px-3 py-2 text-xs">
           {tab.loadError.message}
         </div>
@@ -467,7 +469,9 @@ function BrowserPanelContent({
       <div className="relative min-h-0 flex-1 overflow-hidden">
         {isAvailable ? (
           <div ref={contentRef} data-browser-shortcut-tab={tab.id} className="h-full overflow-hidden">
-            {pageFailure && !suspended ? (
+            {blockedSite && !suspended ? (
+              <BlockedSitePage url={blockedSite.url} message={blockedSite.message} errorDescription={blockedSite.errorDescription} />
+            ) : pageFailure && !suspended ? (
               <div className="flex h-full items-center justify-center p-6" data-testid="browser-page-load-error">
                 <TaskRecovery
                   compact
@@ -515,7 +519,6 @@ export function SidePanel({
   client,
   workspaceId,
   workspaceRoot,
-  isRemoteWorkspace = false,
   onClose,
   onOpenExtensions,
 }: SidePanelProps) {
@@ -712,7 +715,7 @@ export function SidePanel({
           event.stopPropagation();
         }}
       >
-        <div className="shrink-0 border-b border-border bg-background mac:bg-background/80 mac:backdrop-blur-2xl mac:backdrop-saturate-150">
+        {!(tabs.length === 1 && activeTab?.type === "mcp-app") ? <div className="shrink-0 border-b border-border bg-background mac:bg-background/80 mac:backdrop-blur-2xl mac:backdrop-saturate-150">
           <div className="flex h-10 items-center gap-1 border-b border-border/60 px-2">
             <div className="no-scrollbar min-w-0 flex-1 overflow-x-auto">
               <PanelTabList
@@ -758,7 +761,7 @@ export function SidePanel({
               </Button>
             ) : null}
           </div>
-        </div>
+        </div> : null}
         {!activeTab ? (
           <PanelEmpty
             onOpenBrowser={isBrowserAvailable ? createTab : undefined}
@@ -766,10 +769,11 @@ export function SidePanel({
           />
         ) : null}
         {activeTab?.type === "browser" ? (
-          <>
-            <LoginSyncCard />
-            <BrowserPanelContent sessionId={sessionId} tab={activeTab} onClose={onClose} />
-          </>
+          <BrowserPanelContent sessionId={sessionId} tab={activeTab} onClose={onClose} />
+        ) : activeTab?.type === "mcp-app" ? (
+          <BuiltMcpAppPanel key={activeTab.id} tab={activeTab} onClose={onClose} />
+        ) : activeTab?.type === "remote-thread" ? (
+          <div className="min-h-0 flex-1 overflow-hidden"><RemoteThreadPanel key={activeTab.id} tab={activeTab} /></div>
         ) : activeTab?.type === "app" ? (
           <div className="min-h-0 flex-1 overflow-hidden"><AppArtifact key={activeTab.id} appId={activeTab.appId} revisionId={activeTab.revisionId} receiptId={activeTab.receiptId} onClose={onClose} /></div>
         ) : activeTab?.type === "artifact" ? (
@@ -780,12 +784,35 @@ export function SidePanel({
               client={client}
               workspaceId={workspaceId}
               workspaceRoot={workspaceRoot}
-              isRemoteWorkspace={isRemoteWorkspace}
               onClose={onClose}
             />
           </div>
         ) : null}
       </div>
     </TooltipProvider>
+  );
+}
+
+function siteHost(url: string): string {
+  try {
+    return new URL(url).host || url;
+  } catch {
+    return url;
+  }
+}
+
+/** A site the organization's website rules block, shown like a browser's own blocked-site page. */
+function BlockedSitePage({ url, message, errorDescription }: { url: string; message: string; errorDescription: string }) {
+  return (
+    <div className="flex h-full items-center justify-center p-6" data-testid="browser-blocked-site" role="alert">
+      <div className="flex max-w-sm flex-col items-start gap-3">
+        <ShieldOff className="size-8 text-muted-foreground" aria-hidden="true" strokeWidth={1.5} />
+        <h2 className="text-lg font-medium text-foreground">
+          <span className="break-all">{siteHost(url)}</span> is blocked
+        </h2>
+        <p className="text-sm text-muted-foreground">{message}</p>
+        <p className="font-mono text-xs text-muted-foreground">{errorDescription}</p>
+      </div>
+    </div>
   );
 }

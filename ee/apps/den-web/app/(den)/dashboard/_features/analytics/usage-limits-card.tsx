@@ -1,3 +1,5 @@
+"use client";
+
 import type { InferenceUsageBucket } from "../../../_lib/inference-status";
 import { analyticsSurfaceClass } from "./analytics-layout";
 
@@ -37,7 +39,7 @@ export function UsageLimitsCard({ buckets }: { buckets: InferenceUsageBucket[] }
   return <section aria-label="Usage limits" className="grid gap-3">
     <div className="flex flex-wrap items-baseline justify-between gap-2">
       <h2 className="text-sm font-semibold text-[#07192C]">Shared usage limits</h2>
-      <p className="text-xs text-[#637291]">Included in your plan · Shared across active members</p>
+      <p className="text-xs text-[#637291]">Included in your plan, shared across active members</p>
     </div>
     <div className="grid gap-3.5 sm:grid-cols-3">
       {ordered.map((bucket) => {
@@ -46,7 +48,7 @@ export function UsageLimitsCard({ buckets }: { buckets: InferenceUsageBucket[] }
           <p className="text-xs font-medium text-[#637291]">{WINDOW_LABEL[bucket.windowType]}</p>
           <p className="mt-3 text-[26px] font-semibold tracking-tight text-[#07192C] tabular-nums">{remaining.toFixed(1)}% <span className="text-sm font-normal text-[#637291]">left</span></p>
           <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#edf0f5]" role="progressbar" aria-label={`${WINDOW_LABEL[bucket.windowType]} remaining`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={remaining}>
-            <div className={`h-full rounded-full transition-[width] ${remaining <= 10 ? "bg-amber-500" : "bg-[#6F3DFF]"}`} style={{ width: `${remaining}%` }} />
+            <div className={`h-full rounded-full transition-[width] ${remaining <= 10 ? "bg-[var(--ow-warning)]" : "bg-[var(--dls-accent)]"}`} style={{ width: `${remaining}%` }} />
           </div>
           <p className="mt-2.5 text-xs text-[#637291]">{formatResetLabel(bucket)}</p>
         </div>;

@@ -26,7 +26,7 @@ export function LibraryPluginCreateScreen() {
 
   return (
     <ItemPage testId="plugin-create">
-      <ItemHeader back={{ href: getLibraryRoute(orgSlug), label: "My Library" }} title={startWithSkill ? "Create a skill" : "Create a plugin"} />
+      <ItemHeader compact back={{ href: getLibraryRoute(orgSlug), label: "My Library" }} title={startWithSkill ? "Create a skill" : "Create a plugin"} />
       <PluginCreateForm
         connections={ownConnections}
         startWith={startWithSkill ? "skill" : undefined}
@@ -47,7 +47,7 @@ export function AdminPluginCreateScreen() {
 
   return (
     <ItemPage testId="plugin-create">
-      <ItemHeader back={{ href: getPluginsRoute(orgSlug), label: "Plugins" }} title="Create a plugin" />
+      <ItemHeader compact back={{ href: getPluginsRoute(orgSlug), label: "Plugins" }} title="Create a plugin" />
       <PluginCreateForm
         connections={connections}
         cancelHref={getPluginsRoute(orgSlug)}

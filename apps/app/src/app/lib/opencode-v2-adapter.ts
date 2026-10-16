@@ -1,6 +1,8 @@
 import type {
+  Agent,
   ApiError,
   AssistantMessage,
+  ConfigProvidersResponse,
   FilePart,
   Model,
   Part,
@@ -24,6 +26,22 @@ import type { McpStatusMap, OpencodeEvent } from "../types";
 import { normalizeDirectoryPath } from "../utils";
 import { dispatchProviderCatalogChanged } from "./provider-events";
 import { isLegacyThread, legacyHistoryBase } from "./legacy-thread";
+import { attachmentMarker, attachmentNoteFilenames, composeV2Prompt, splitV2Prompt, wrapPastedText, type PromptAttachment } from "./v2-prompt-context";
+import {
+  BACKGROUND_SHELL_FINISHED_EVENT,
+  BACKGROUND_SHELL_NOTICE_KEY,
+  BACKGROUND_SHELL_STARTED_EVENT,
+  SHELL_CREATED_EVENT,
+  SHELL_DELETED_EVENT,
+  SHELL_EXITED_EVENT,
+  backgroundShellIdFromToolMetadata,
+  backgroundShellNoticeLabel,
+  backgroundShellTasksEnabled,
+  readBackgroundShellCompletion,
+  readEngineShell,
+  type BackgroundShellNotice,
+  type EngineShell,
+} from "./background-shell-tasks";
 
 type RequestOptions = {
   signal?: AbortSignal;
@@ -50,6 +68,7 @@ type PromptPart = {
   text?: unknown;
   synthetic?: unknown;
   metadata?: unknown;
+  filename?: unknown;
 };
 
 function selectedSkill(part: PromptPart): Record<string, unknown> | null {
@@ -60,12 +79,86 @@ function selectedSkill(part: PromptPart): Record<string, unknown> | null {
   return id && /^(?:skill|plugin):/.test(id) ? null : selection;
 }
 
-/** The exact native prompt body, also used to correlate text-only user acknowledgements. */
+type SkillResolution = { ids: string[] } | { missing: string } | { ambiguous: string; candidates: string[] };
+
+/**
+ * The engine keys a skill by its folder, the name OpenWork lists and inserts,
+ * while its display name comes from frontmatter and need not be unique (a
+ * renamed copy keeps it). Match the folder first; fall back to a display name
+ * only when exactly one skill carries it.
+ */
+function resolveSelectedSkills(selections: readonly Record<string, unknown>[], registry: readonly unknown[]): SkillResolution {
+  const ids: string[] = [];
+  for (const selection of selections) {
+    const id = readString(selection, "id");
+    const name = readString(selection, "name");
+    const wanted = id ?? name;
+    let matches = wanted ? registry.filter((skill) => readString(skill, "id") === wanted) : [];
+    if (!id && name && matches.length === 0) matches = registry.filter((skill) => readString(skill, "name") === name);
+    const label = name ?? id ?? "(unknown)";
+    if (matches.length > 1) return { ambiguous: label, candidates: matches.flatMap((skill) => readString(skill, "id") ?? []) };
+    const resolved = readString(matches[0], "id");
+    if (!resolved) return { missing: label };
+    if (!ids.includes(resolved)) ids.push(resolved);
+  }
+  return { ids };
+}
+
+function isPastedText(part: PromptPart): boolean {
+  return isRecord(part.metadata) && part.metadata.openworkPastedText === true;
+}
+
+function partText(part: PromptPart): string | null {
+  return part.type === "text" && typeof part.text === "string" ? part.text : null;
+}
+
+/**
+ * The exact native prompt body. The person's words keep their order, pasted
+ * text stays marked, and hidden parts follow in one context block so the
+ * transcript can show the words without them (see v2-prompt-context).
+ */
 export function v2PromptText(parts: readonly PromptPart[]): string {
-  return parts
-    .filter((part) => part.type === "text" && typeof part.text === "string" && !selectedSkill(part))
-    .map((part) => typeof part.text === "string" ? part.text : "")
-    .join("");
+  const attached = new Set(parts.flatMap((part) => {
+    const text = partText(part);
+    return text !== null && part.synthetic === true ? attachmentNoteFilenames(text) : [];
+  }));
+  const words = parts.flatMap((part) => {
+    if (part.type === "file" && typeof part.filename === "string" && attached.has(part.filename)) return [attachmentMarker(part.filename)];
+    const text = partText(part);
+    if (text === null || part.synthetic === true) return [];
+    return [isPastedText(part) ? wrapPastedText(text) : text];
+  }).join("");
+  const context = parts.flatMap((part) => {
+    const text = partText(part);
+    return text !== null && part.synthetic === true && !selectedSkill(part) ? [text] : [];
+  });
+  return composeV2Prompt(words, context);
+}
+
+function attachmentNames(metadata: unknown): string[] {
+  const attachments = isRecord(metadata) ? metadata.openworkAttachments : undefined;
+  if (!Array.isArray(attachments)) return [];
+  return attachments.flatMap((item) => {
+    const filename = readString(item, "filename");
+    return filename ? [filename] : [];
+  });
+}
+
+/**
+ * What a user turn shows: its words and attachment names. Correlates an
+ * optimistic send with the native turn, whose ID v2 assigns itself, using the
+ * sent parts on one side and the transcript's parts on the other.
+ */
+export function v2AcknowledgementText(parts: readonly PromptPart[]): string {
+  const words = parts.flatMap((part) => {
+    const text = partText(part);
+    return text !== null && part.synthetic !== true ? [text] : [];
+  }).join("");
+  const files = new Set(parts.flatMap((part) => {
+    if (part.type === "file") return typeof part.filename === "string" && part.filename ? [part.filename] : [];
+    return part.type === "text" && part.synthetic === true ? attachmentNames(part.metadata) : [];
+  }));
+  return [words, ...[...files].sort()].join("\n");
 }
 
 type PromptParameters = SessionParameters & {
@@ -163,6 +256,10 @@ export type V2MappedMessage = {
       completed?: number;
     };
     error?: AssistantMessage["error"];
+    model?: ModelBinding & { variant?: string };
+    modelID?: string;
+    providerID?: string;
+    resolvedModel?: { id: string; providerID?: string; name?: string };
   };
   parts: Part[];
 };
@@ -381,6 +478,10 @@ function mapV2Session(value: unknown, directory: string | undefined, eventCreate
   const updated = readNumber(time, "updated") ?? readNumber(source, "updated") ?? created;
   const archived = readNumber(time, "archived");
   const parentID = readString(source, "parentID");
+  const model = readRecord(source, "model");
+  const modelID = readString(model, "id") ?? readString(model, "modelID");
+  const providerID = readString(model, "providerID");
+  const variant = readString(model, "variant");
   const revert = readRecord(source, "revert");
   const revertMessageID = revert && readString(revert, "messageID");
   const origin = readRecord(readRecord(source, "metadata"), "openworkLegacyHistory");
@@ -402,6 +503,9 @@ function mapV2Session(value: unknown, directory: string | undefined, eventCreate
       ...(archived === undefined ? {} : { archived }),
     },
     ...(parentID ? { parentID } : {}),
+    ...(providerID && modelID ? {
+      model: { providerID, id: modelID, ...(variant ? { variant } : {}) },
+    } : {}),
     ...(revertMessageID ? { revert: { messageID: revertMessageID } } : {}),
     ...(legacyReference && isLegacyThread(legacyReference) ? { openworkLegacyReference: legacyReference } : {}),
   };
@@ -442,6 +546,12 @@ function toolMetadata(
   callID: string,
   associations: TaskSessionAssociations,
 ): Record<string, unknown> {
+  // Engine progress replaces a running call's saved metadata, so a reload can
+  // find only the results plugin's per-call details. Rebuild the call list.
+  if (tool === "execute" && !Array.isArray(metadata.toolCalls) && Array.isArray(metadata.openworkToolDetails)) {
+    return { ...metadata, toolCalls: metadata.openworkToolDetails.flatMap((detail) => isRecord(detail) && typeof detail.tool === "string"
+      ? [{ tool: detail.tool, status: detail.status, ...(detail.input === undefined ? {} : { input: detail.input }) }] : []) };
+  }
   if (tool !== "subagent") return metadata;
   const explicit = readString(metadata, "sessionId")?.trim() || readString(metadata, "sessionID")?.trim();
   if (explicit) rememberTaskSession(associations, parentSessionID, messageID, callID, explicit);
@@ -500,6 +610,50 @@ function toolOutput(value: unknown, result?: unknown): string {
   }
 }
 
+/** The first `message` in a (possibly nested) script error payload. */
+function scriptErrorMessage(text: string, depth = 0): string | null {
+  if (depth > 3) return null;
+  const start = text.indexOf("{");
+  if (start < 0) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text.slice(start));
+  } catch {
+    return null;
+  }
+  if (!isRecord(parsed)) return null;
+  for (const key of ["message", "error"]) {
+    const value = readString(parsed, key);
+    if (!value) continue;
+    const inner = value.includes("{") ? scriptErrorMessage(value, depth + 1) : null;
+    if (inner) return inner;
+    if (key === "message" && !value.trim().startsWith("{")) return value.trim();
+  }
+  return null;
+}
+
+/**
+ * App-builder steps reconstructed from a finished script's recorded
+ * `{ tool, status, input }` calls. A rejected call carries the script's error
+ * (Den's reason). A successful call's real result was not recorded, and the
+ * script's return value is whatever the model chose to return, so it is
+ * marked `unrecorded` rather than guessed.
+ */
+function appEntriesFromScript(calls: unknown, output: unknown): Record<string, unknown>[] {
+  if (!Array.isArray(calls)) return [];
+  const appCalls = calls.filter((call): call is Record<string, unknown> => isRecord(call)
+    && /[._](?:prepare_app|create_app|update_app)$/.test(readString(call, "tool") ?? ""));
+  if (appCalls.length === 0) return [];
+  const text = typeof output === "string" ? output : "";
+  const failures = appCalls.filter((call) => readString(call, "status") === "error").length;
+  return appCalls.map((call) => {
+    const tool = (readString(call, "tool") ?? "").replace(/\.([^.]*)$/, "_$1");
+    const input = readRecord(call, "input") ?? {};
+    if (readString(call, "status") === "completed") return { tool, input, status: "completed", output: { unrecorded: true } };
+    return { tool, input, status: "error", error: (failures === 1 ? scriptErrorMessage(text) : null) ?? "The App step failed. See the script result." };
+  });
+}
+
 /**
  * Code Mode runs OpenWork Cloud calls inside one `execute`, whose part keeps
  * only `{ tool, status, input }` per call. The server's v2 plugin
@@ -508,22 +662,56 @@ function toolOutput(value: unknown, result?: unknown): string {
  * a direct call, so the chat's existing connection card finds it.
  */
 export function codeModeConnectionParts(part: ToolPart): ToolPart[] {
-  if (part.metadata?.openworkV2CodeMode !== true || part.state.status !== "completed") return [];
-  const { metadata, time } = part.state;
-  const entries = metadata?.openworkMcpResults;
-  if (!Array.isArray(entries)) return [];
+  if (part.metadata?.openworkV2CodeMode !== true || !("metadata" in part.state) || !("time" in part.state)) return [];
+  const { metadata } = part.state;
+  const appTool = (tool: string) => /_(?:search_capabilities|prepare_app|create_app|update_app)$/.test(tool);
+  const appCallId = (tool: string, index: number) => `${part.callID}:app:${tool}:${index}`;
+  if (part.state.status === "running" || part.state.status === "error") {
+    const outerError = part.state.status === "error" ? part.state.error : null;
+    const startedAt = part.state.time.start;
+    const calls = metadata?.toolCalls;
+    if (!Array.isArray(calls)) return [];
+    const occurrences = new Map<string, number>();
+    return calls.flatMap((call): ToolPart[] => {
+      if (!isRecord(call)) return [];
+      const tool = readString(call, "tool")?.replace(/\.([^.]*)$/, "_$1");
+      if (!tool || !appTool(tool)) return [];
+      const index = occurrences.get(tool) ?? 0;
+      occurrences.set(tool, index + 1);
+      const callID = appCallId(tool, index);
+      const base = { id: callID, callID, messageID: part.messageID, sessionID: part.sessionID, type: "tool" as const, tool };
+      if (outerError && (call.status === "error" || call.status === "running")) return [{ ...base, state: { status: "error", input: readRecord(call, "input") ?? {}, error: readString(call, "error") ?? outerError ?? "The MCP call failed. See the Code Mode result.", metadata: {}, time: { start: startedAt, end: part.state.status === "error" ? part.state.time.end : startedAt } } }];
+      if (call.status !== "running") return [];
+      // Running inner calls are real engine events; results arrive at execute completion.
+      return [{ ...base, state: { status: "running", input: readRecord(call, "input") ?? {}, title: tool, metadata: {}, time: { start: startedAt } } }];
+    });
+  }
+  if (part.state.status !== "completed") return [];
+  const time = part.state.time;
+  const recorded = metadata?.openworkMcpResults;
+  // When the results plugin recorded nothing (an engine whose inner call
+  // names it did not recognise), rebuild the App steps from the script's own
+  // call list so a rejected build ends as failed instead of "checking"
+  // forever, and the preparation id still links retries into one card.
+  const entries = Array.isArray(recorded) && recorded.length > 0
+    ? recorded
+    : appEntriesFromScript(metadata?.toolCalls, part.state.output);
+  if (entries.length === 0) return [];
+  const occurrences = new Map<string, number>();
   return entries.flatMap((entry, index): ToolPart[] => {
     if (!isRecord(entry)) return [];
     const tool = readString(entry, "tool");
     if (!tool) return [];
-    const callID = `${part.callID}:mcp:${index}`;
+    const occurrence = occurrences.get(tool) ?? 0;
+    occurrences.set(tool, occurrence + 1);
+    const callID = appTool(tool) ? appCallId(tool, occurrence) : `${part.callID}:mcp:${index}`;
     const base = { id: callID, messageID: part.messageID, sessionID: part.sessionID, type: "tool" as const, callID, tool };
     const input = readRecord(entry, "input") ?? {};
     const status = readString(entry, "status");
     if (status === "completed") {
       const output = toolOutput(undefined, entry.output);
       return [{ ...base, state: { status, input, output, title: tool, time,
-        metadata: { openworkMcpResult: { content: [{ type: "text", text: output }], structuredContent: entry.output } } } }];
+        metadata: { openworkMcpResult: isRecord(entry.output) && Array.isArray(entry.output.content) ? entry.output : { content: [{ type: "text", text: output }], structuredContent: entry.output, ...(isRecord(entry.output) && isRecord(entry.output.launch) ? { _meta: { "openwork/mcpApp": entry.output.launch } } : {}) } } } }];
     }
     const error = readString(entry, "error");
     return status === "error" && error ? [{ ...base, state: { status, input, error, metadata: {}, time } }] : [];
@@ -644,6 +832,71 @@ function mapV2MessageParts(
   }];
 }
 
+function mapV2ReplyModel(value: Record<string, unknown>) {
+  const model = readRecord(value, "model");
+  const modelID = readString(value, "modelID") ?? readString(model, "id") ?? readString(model, "modelID");
+  const providerID = readString(value, "providerID") ?? readString(model, "providerID");
+  const variant = readString(model, "variant");
+  const resolved = readRecord(value, "resolvedModel");
+  const resolvedID = readString(resolved, "modelID") ?? readString(resolved, "id") ?? readString(value, "resolvedModelID");
+  const resolvedProviderID = readString(resolved, "providerID") ?? readString(value, "resolvedProviderID");
+  const name = readString(resolved, "name");
+  return {
+    ...(modelID ? { modelID } : {}),
+    ...(providerID ? { providerID } : {}),
+    ...(modelID && providerID ? { model: { id: modelID, providerID, ...(variant ? { variant } : {}) } } : {}),
+    ...(resolvedID ? { resolvedModel: { id: resolvedID, ...(resolvedProviderID ? { providerID: resolvedProviderID } : {}), ...(name ? { name } : {}) } } : {}),
+  };
+}
+
+/**
+ * A native user turn stores the whole prompt string. Return the parts v1 keeps
+ * for the same send: the words, pasted text marked as pasted, and hidden
+ * context as a synthetic part whose attachments the transcript shows as files.
+ */
+function mapV2UserPart(part: Part): Part[] {
+  if (part.type !== "text") return [part];
+  const { segments, context, attachments } = splitV2Prompt(part.text);
+  if (!context && !segments.some((segment) => segment.kind !== "text")) return [part];
+  // A marked attachment shows where it was attached; the rest follow the words.
+  const unplaced: PromptAttachment[] = [...attachments];
+  const words = segments.map((segment, index): Part => {
+    const id = index === 0 ? part.id : `${part.id}:${index}`;
+    if (segment.kind !== "attachment") {
+      return { ...part, id, text: segment.text, ...(segment.kind === "pasted" ? { metadata: { openworkPastedText: true } } : {}) };
+    }
+    const at = unplaced.findIndex((item) => item.filename === segment.filename);
+    const placed = at < 0 ? [] : unplaced.splice(at, 1);
+    return { ...part, id, text: "", synthetic: true, ...(placed.length ? { metadata: { openworkAttachments: placed } } : {}) };
+  });
+  return context === null ? words : [...words, {
+    ...part,
+    id: `${part.id}:context`,
+    text: context,
+    synthetic: true,
+    ...(unplaced.length ? { metadata: { openworkAttachments: unplaced } } : {}),
+  }];
+}
+
+/**
+ * A background command's completion notice as a compact transcript row. The
+ * engine's own text is `<shell …>output</shell>` for the model; the person
+ * sees one plain sentence, and the row keeps its details in part metadata.
+ */
+function backgroundShellNoticeMessage(id: string, sessionID: string, created: number, notice: BackgroundShellNotice): V2MappedMessage {
+  return {
+    info: { id, sessionID, role: "system", time: { created } },
+    parts: [{
+      id: `${id}:0`,
+      messageID: id,
+      sessionID,
+      type: "text",
+      text: backgroundShellNoticeLabel(notice),
+      metadata: { [BACKGROUND_SHELL_NOTICE_KEY]: notice },
+    }],
+  };
+}
+
 function mapV2Message(
   value: unknown,
   sessionID: string,
@@ -652,16 +905,28 @@ function mapV2Message(
   if (!isRecord(value)) return null;
   // Native instruction/catalog updates belong to the model context, not the
   // visible conversation. Filter by role so identical user text is preserved.
-  if (messageRole(value) === "system") return null;
+  // The one exception is a background command's completion notice, which the
+  // chat shows as a short row while `backgroundShellTasks` is on.
+  if (messageRole(value) === "system") {
+    const notice = backgroundShellTasksEnabled() ? readBackgroundShellCompletion(value) : null;
+    const id = readString(value, "id") ?? readString(value, "messageID");
+    if (!notice || !id) return null;
+    const created = readNumber(readRecord(value, "time"), "created") ?? readNumber(value, "timestamp") ?? 0;
+    return backgroundShellNoticeMessage(id, readString(value, "sessionID") ?? sessionID, created, notice);
+  }
   const id = readString(value, "id") ?? readString(value, "messageID");
   if (!id) return null;
   const time = readRecord(value, "time");
   const created = readNumber(time, "created") ?? readNumber(value, "timestamp") ?? 0;
   const completed = readNumber(time, "completed");
   const resolvedSessionID = readString(value, "sessionID") ?? sessionID;
-  const parts = mapV2MessageParts(value, id, resolvedSessionID, created, taskSessions);
   const role = messageRole(value);
-  const error = readRecord(value, "error");
+  const nativeParts = mapV2MessageParts(value, id, resolvedSessionID, created, taskSessions);
+  const parts = role === "user" ? nativeParts.flatMap(mapV2UserPart) : nativeParts;
+  const rawError = readRecord(value, "error");
+  // v2 marks a stopped step with { type: "aborted", message: "Step interrupted" }.
+  // The person stopped it themselves, so it is not a failure worth a row.
+  const error = readString(rawError, "type") === "aborted" ? undefined : rawError;
   return {
     info: {
       id,
@@ -671,6 +936,7 @@ function mapV2Message(
         created,
         ...(completed === undefined ? {} : { completed }),
       },
+      ...(role === "assistant" ? mapV2ReplyModel(value) : {}),
       ...(role === "assistant" && error
         ? { error: mapV2SessionError(error) }
         : {}),
@@ -806,6 +1072,30 @@ function mapV2Model(value: unknown): Model | null {
     options: {},
     headers: {},
     release_date: released === undefined ? "" : new Date(released).toISOString(),
+  };
+}
+
+/**
+ * Map a native v2 `/api/agent` row onto the v1 SDK `Agent` the picker expects.
+ * Use the API `id` as `name` — selection and `POST …/session/:id/agent` speak ids
+ * (`build`, `plan`), not the display title (`Build`, `Plan`).
+ */
+export function mapV2Agent(value: unknown): Agent | null {
+  if (!isRecord(value)) return null;
+  const id = readString(value, "id");
+  if (!id) return null;
+  const mode = readString(value, "mode");
+  if (mode !== "subagent" && mode !== "primary" && mode !== "all") return null;
+  const description = readString(value, "description");
+  const color = readString(value, "color");
+  return {
+    name: id,
+    mode,
+    hidden: value.hidden === true,
+    permission: [],
+    options: {},
+    ...(description ? { description } : {}),
+    ...(color ? { color } : {}),
   };
 }
 
@@ -1083,7 +1373,27 @@ export function createV2EventTranslationState(): V2EventTranslationState {
 
 function updateToolStreamMetadata(stream: ToolStream, properties: Record<string, unknown>): void {
   const metadata = readRecord(properties, "metadata") ?? readRecord(properties, "structured");
-  if (metadata) stream.metadata = metadata;
+  if (!metadata) return;
+  const previous = stream.metadata;
+  if (stream.tool !== "execute") { stream.metadata = metadata; return; }
+  stream.metadata = { ...previous, ...metadata };
+  // Native progress reports call lists as invocation-ordered prefixes. A
+  // later partial update must not erase retained results or regress a call.
+  for (const key of ["toolCalls", "openworkToolDetails"]) {
+    const oldCalls = previous[key];
+    const newCalls = metadata[key];
+    if (!Array.isArray(oldCalls) || !Array.isArray(newCalls)) continue;
+    stream.metadata[key] = Array.from({ length: Math.max(oldCalls.length, newCalls.length) }, (_, ordinal) => {
+      const old = oldCalls[ordinal];
+      const next = newCalls[ordinal];
+      if (!isRecord(old)) return next;
+      if (!isRecord(next)) return old;
+      if (old.tool !== next.tool || (key === "openworkToolDetails"
+        && (old.invocationId !== next.invocationId || old.ordinal !== next.ordinal))) return old;
+      if ((old.status === "completed" || old.status === "error") && next.status === "running") return old;
+      return { ...old, ...next };
+    });
+  }
 }
 
 export function translateV2Event(
@@ -1105,10 +1415,39 @@ export function translateV2Event(
     } }] : null;
   }
 
+  if (type === SHELL_CREATED_EVENT) {
+    // Forward the engine's own Shell.Info; readers parse it with readEngineShell.
+    const info = readRecord(properties, "info");
+    return info && readEngineShell(info) ? [{ type: SHELL_CREATED_EVENT, properties: info }] : null;
+  }
+
+  if (type === SHELL_EXITED_EVENT || type === SHELL_DELETED_EVENT) {
+    const id = readString(properties, "id");
+    if (!id) return null;
+    return [{ type, properties: {
+      id,
+      ...(type === SHELL_EXITED_EVENT ? { status: readString(properties, "status"), exit: readNumber(properties, "exit") ?? null } : {}),
+    } }];
+  }
+
   if (type === "session.inbox.enqueued") {
     const messageID = readString(properties, "inboxID");
     const item = readRecord(properties, "item");
     const payload = readRecord(item, "payload");
+    const finished = readString(item, "type") === "synthetic" ? readBackgroundShellCompletion(payload) : null;
+    if (sessionID && finished) {
+      const created = readNumber(value, "created") ?? readNumber(properties, "timestamp") ?? Date.now();
+      const notice = messageID && backgroundShellTasksEnabled()
+        ? backgroundShellNoticeMessage(messageID, sessionID, created, finished)
+        : null;
+      return [
+        { type: BACKGROUND_SHELL_FINISHED_EVENT, properties: { sessionID, shellID: finished.shellId, outcome: finished.outcome, exit: finished.exit } },
+        ...(notice ? [
+          { type: "message.updated", properties: { info: notice.info } },
+          ...notice.parts.map((part): OpencodeEvent => ({ type: "message.part.updated", properties: { part } })),
+        ] : []),
+      ];
+    }
     if (!sessionID || !messageID || readString(item, "type") !== "user" || !payload) return null;
     // The inbox ID becomes the persisted user-message ID on delivery. Using
     // it here lets the live row reconcile with history without duplicating it.
@@ -1238,6 +1577,7 @@ export function translateV2Event(
             id: messageID,
             sessionID,
             role: "assistant",
+            ...mapV2ReplyModel(properties),
             time: { created: stream.start },
           },
         },
@@ -1280,7 +1620,14 @@ export function translateV2Event(
     };
     delete stream.text;
     clearV2SessionTranslation(state, stream.sessionID);
-    return [{ type: "message.part.updated", properties: { part } }];
+    const modelInfo = mapV2ReplyModel(properties);
+    return [
+      ...(Object.keys(modelInfo).length ? [{ type: "message.updated", properties: { info: {
+        id: stream.messageID, sessionID: stream.sessionID, role: "assistant", ...modelInfo,
+        time: { created: stream.start },
+      } } }] : []),
+      { type: "message.part.updated", properties: { part } },
+    ];
   }
 
   if (type === "session.tool.input.started" || type === "session.next.tool.input.started") {
@@ -1315,6 +1662,7 @@ export function translateV2Event(
             id: messageID,
             sessionID,
             role: "assistant",
+            ...mapV2ReplyModel(properties),
             time: { created: toolEventTimestamp(value, properties) },
           },
         },
@@ -1364,20 +1712,32 @@ export function translateV2Event(
     const start = stream.start ?? toolEventTimestamp(value, properties);
     stream.start = start;
     stream.raw = "";
-    return [{
-      type: "message.part.updated",
-      properties: { part: runningToolPart(stream, start, state.taskSessions) },
-    }];
+    const part = runningToolPart(stream, start, state.taskSessions);
+    return [part, ...codeModeConnectionParts(part)].map(next => ({ type: "message.part.updated", properties: { part: next } }));
   }
 
   if (type === "session.tool.success" || type === "session.next.tool.success") {
     const stream = resolveToolStream(properties, state);
-    if (!stream) return null;
+    // A background shell call succeeds at once with its shell id. Report it
+    // even when this stream joined after the call began (no tool stream).
+    const shellID = backgroundShellIdFromToolMetadata(readRecord(properties, "metadata") ?? readRecord(properties, "structured"));
+    const background: OpencodeEvent[] = sessionID && shellID && (!stream || stream.tool === "shell" || stream.tool === "bash")
+      ? [{ type: BACKGROUND_SHELL_STARTED_EVENT, properties: {
+        sessionID,
+        shellID,
+        command: typeof stream?.input.command === "string" ? stream.input.command : null,
+        startedAt: stream?.start ?? toolEventTimestamp(value, properties),
+      } }]
+      : [];
+    if (!stream) return background.length ? background : null;
     updateToolStreamMetadata(stream, properties);
     const part = completedToolPart(stream, properties, toolEventTimestamp(value, properties), state.taskSessions);
     state.tools.set(toolStreamKey(stream.sessionID, stream.callID), null);
     clearV2SessionTranslation(state, stream.sessionID);
-    return [part, ...codeModeConnectionParts(part)].map((next) => ({ type: "message.part.updated", properties: { part: next } }));
+    return [
+      ...[part, ...codeModeConnectionParts(part)].map((next): OpencodeEvent => ({ type: "message.part.updated", properties: { part: next } })),
+      ...background,
+    ];
   }
 
   if (type === "session.tool.failed" || type === "session.next.tool.failed") {
@@ -1387,7 +1747,7 @@ export function translateV2Event(
     const part = failedToolPart(stream, properties, toolEventTimestamp(value, properties), state.taskSessions);
     state.tools.set(toolStreamKey(stream.sessionID, stream.callID), null);
     clearV2SessionTranslation(state, stream.sessionID);
-    return [{ type: "message.part.updated", properties: { part } }];
+    return [part, ...codeModeConnectionParts(part)].map(next => ({ type: "message.part.updated", properties: { part: next } }));
   }
 
   if (type === "permission.asked" || type === "permission.v2.asked") {
@@ -1724,6 +2084,12 @@ export function isOpencodeV2Client(client: ReturnType<typeof createClient>): cli
   return v2Clients.has(client);
 }
 
+export type SetSessionModelParameters = {
+  sessionID: string;
+  model: { providerID: string; modelID: string };
+  variant?: string | null;
+};
+
 export function createClientV2(
   opencode2BaseUrl: string,
   directory: string | undefined,
@@ -1764,6 +2130,52 @@ export function createClientV2(
     return { payload: await readPayload(response), request: transportRequest, response };
   };
 
+  // The engine fails every prompt whose agent it does not define, such as
+  // v1's `openwork` kept by migrated chats and their forks, or a saved v1
+  // pick. Those run on the default agent, which the engine lists first.
+  // Agents are re-read only for a name the latest read did not answer, and a
+  // chat is checked once per client, so later sends cost no request.
+  let agentCatalog: Agent[] = [];
+  let agentsMissingFromCatalog = new Set<string>();
+  const readAgentCatalog = async (signal?: AbortSignal): Promise<TransportResult> => {
+    const result = await request("GET", "/api/agent", undefined, signal);
+    if (result.response.ok) {
+      agentCatalog = responseItems(result.payload).flatMap((item) => {
+        const agent = mapV2Agent(item);
+        return agent ? [agent] : [];
+      });
+      agentsMissingFromCatalog = new Set();
+    }
+    return result;
+  };
+  const checkedAgentSessions = new Set<string>();
+  const resolvePromptAgent = async (
+    sessionID: string,
+    picked: string | undefined,
+    signal?: AbortSignal,
+  ): Promise<{ agent?: string; known: boolean } | { failed: TransportResult }> => {
+    if (!picked && checkedAgentSessions.has(sessionID)) return { known: true };
+    let current: string | undefined;
+    if (!picked) {
+      const session = await request("GET", `/api/session/${encodeURIComponent(sessionID)}`, undefined, signal);
+      if (!session.response.ok) return { failed: session };
+      current = readString(responseData(session.payload), "agent");
+    }
+    const wanted = picked ?? current;
+    if (!wanted) return { known: true };
+    if (!agentCatalog.some((agent) => agent.name === wanted) && !agentsMissingFromCatalog.has(wanted)) {
+      const agents = await readAgentCatalog(signal);
+      if (!agents.response.ok) return { failed: agents };
+      if (agentCatalog.length && !agentCatalog.some((agent) => agent.name === wanted)) agentsMissingFromCatalog.add(wanted);
+    }
+    // A starting engine can list no agents yet; keep the choice then.
+    if (!agentCatalog.length) return { agent: picked, known: false };
+    const agent = agentCatalog.some((candidate) => candidate.name === wanted)
+      ? wanted
+      : agentCatalog.find((candidate) => candidate.mode !== "subagent" && !candidate.hidden)?.name ?? "build";
+    return { agent: agent === current ? undefined : agent, known: true };
+  };
+
   const listSessionPermissions = async (
     parameters: SessionParameters,
     options?: RequestOptions,
@@ -1793,6 +2205,9 @@ export function createClientV2(
       "POST",
       `/api/session/${encodeURIComponent(parameters.sessionID)}/permission/${encodeURIComponent(parameters.requestID)}/reply`,
       {
+        // OpenCode v2 2.0.26 reads `decision` and refuses a body without it;
+        // earlier v2 builds read `reply`, and extra keys are ignored.
+        decision: parameters.reply ?? "once",
         reply: parameters.reply ?? "once",
         ...(parameters.message ? { message: parameters.message } : {}),
       },
@@ -1868,7 +2283,7 @@ export function createClientV2(
   ): Promise<FieldsResult<QuestionRequest[]>> => {
     if (isLegacyThread(parameters.sessionID)) return localResult(baseUrl, "/legacy-history", []);
     const path = parameters.sessionID
-      ? `/api/session/${encodeURIComponent(parameters.sessionID)}/form` : "/api/form/request";
+      ? `/api/session/${encodeURIComponent(parameters.sessionID)}/form` : "/api/form";
     const result = await request("GET", path, undefined, options?.signal);
     if (!result.response.ok) return failedResult(result);
     const questions = responseItems(result.payload).flatMap((item) => {
@@ -1904,7 +2319,7 @@ export function createClientV2(
     const question = questionFormsByID.get(parameters.requestID);
     if (!question) return {
       error: { name: "QuestionNotFound", requestID: parameters.requestID },
-      request: new Request(`${baseUrl}/api/form/request`),
+      request: new Request(`${baseUrl}/api/form`),
       response: new Response(null, { status: 404 }),
     };
     const answer = parameters.answers ? Object.fromEntries(question.fields.map((field, index) => {
@@ -1912,8 +2327,8 @@ export function createClientV2(
         field.options.find((option) => option.label === label)?.value ?? label);
       return [field.key, field.multiple ? values : values[0] ?? ""];
     })) : undefined;
-    const result = await request("POST",
-      `/api/session/${encodeURIComponent(question.request.sessionID)}/form/${encodeURIComponent(parameters.requestID)}/${answer ? "reply" : "cancel"}`,
+    const result = await request(answer ? "POST" : "DELETE",
+      `/api/session/${encodeURIComponent(question.request.sessionID)}/form/${encodeURIComponent(parameters.requestID)}${answer ? "/reply" : ""}`,
       answer ? { answer } : undefined, options?.signal);
     if (!result.response.ok) return failedResult(result);
     questionFormsByID.delete(parameters.requestID);
@@ -2112,6 +2527,22 @@ export function createClientV2(
       }
       return successfulResult(result, statuses);
     },
+    setModel: async (
+      parameters: SetSessionModelParameters,
+      options?: RequestOptions,
+    ): Promise<FieldsResult<Record<string, never>>> => {
+      const modelResult = await request(
+        "POST",
+        `/api/session/${encodeURIComponent(parameters.sessionID)}/model`,
+        { model: {
+          providerID: parameters.model.providerID,
+          id: parameters.model.modelID,
+          ...(parameters.variant === undefined ? {} : { variant: parameters.variant ?? "default" }),
+        } },
+        options?.signal,
+      );
+      return modelResult.response.ok ? successfulResult(modelResult, {}) : failedResult(modelResult);
+    },
     promptAsync: async (
       parameters: PromptParameters,
       options?: RequestOptions,
@@ -2132,19 +2563,23 @@ export function createClientV2(
       if (selections.length) {
         // Resolve against the same workspace's live registry, never guess an ID
         // from prose or silently fall back to asking the model to load a skill.
-        const catalog = await request("GET", "/api/skill", undefined, options?.signal);
-        if (!catalog.response.ok) return failedResult(catalog);
-        for (const selection of selections) {
-          const id = readString(selection, "id");
-          const name = readString(selection, "name");
-          const matches = responseItems(catalog.payload).filter((skill) => id
-            ? readString(skill, "id") === id : Boolean(name) && readString(skill, "name") === name);
-          const resolvedID = matches.length === 1 ? readString(matches[0], "id") : undefined;
-          if (!resolvedID) {
-            return unsupportedResult(baseUrl, "skill.attachment", `Selected skill ${name ?? id ?? "(unknown)"} is unavailable or ambiguous in OpenCode v2. Nothing was sent.`);
-          }
-          if (!skills.some((skill) => skill.id === resolvedID)) skills.push({ id: resolvedID });
+        // A folder the engine has just opened, or a skill written a moment ago,
+        // can be missing from the first read, so look again briefly first.
+        let resolution: SkillResolution = { missing: "(unknown)" };
+        for (const delay of [0, 250, 750, 1_500]) {
+          if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+          const catalog = await request("GET", "/api/skill", undefined, options?.signal);
+          if (!catalog.response.ok) return failedResult(catalog);
+          resolution = resolveSelectedSkills(selections, responseItems(catalog.payload));
+          if (!("missing" in resolution)) break;
         }
+        if ("missing" in resolution) {
+          return unsupportedResult(baseUrl, "skill.attachment", `Selected skill ${resolution.missing} is not available in OpenCode v2. Nothing was sent.`);
+        }
+        if ("ambiguous" in resolution) {
+          return unsupportedResult(baseUrl, "skill.attachment", `Selected skill ${resolution.ambiguous} matches more than one skill in OpenCode v2 (${resolution.candidates.join(", ")}). Rename one, then send again. Nothing was sent.`);
+        }
+        skills.push(...resolution.ids.map((id) => ({ id })));
         // The pinned native prompt materializes attachments without running the
         // skill tool's permission check. Ask the engine (including its policy
         // hooks) rather than treating catalog membership as authorization.
@@ -2161,20 +2596,34 @@ export function createClientV2(
           return unsupportedResult(baseUrl, "skill.attachment", message);
         }
       }
-      const modelResult = await request(
-        "POST",
-        `/api/session/${encodeURIComponent(parameters.sessionID)}/model`,
-        { model: {
-          providerID: parameters.model.providerID,
-          id: parameters.model.modelID,
-          ...(parameters.variant === undefined ? {} : { variant: parameters.variant }),
-        } },
-        options?.signal,
-      );
+      const [modelResult, agentResolution] = await Promise.all([
+        request(
+          "POST",
+          `/api/session/${encodeURIComponent(parameters.sessionID)}/model`,
+          { model: {
+            providerID: parameters.model.providerID,
+            id: parameters.model.modelID,
+            ...(parameters.variant === undefined ? {} : { variant: parameters.variant }),
+          } },
+          options?.signal,
+        ),
+        resolvePromptAgent(parameters.sessionID, parameters.agent, options?.signal),
+      ]);
       if (!modelResult.response.ok) return failedResult(modelResult);
+      if ("failed" in agentResolution) return failedResult(agentResolution.failed);
+      if (agentResolution.agent) {
+        const agentResult = await request(
+          "POST",
+          `/api/session/${encodeURIComponent(parameters.sessionID)}/agent`,
+          { agent: agentResolution.agent },
+          options?.signal,
+        );
+        if (!agentResult.response.ok) return failedResult(agentResult);
+      }
+      if (agentResolution.known) checkedAgentSessions.add(parameters.sessionID);
       if (parameters.system !== undefined) {
         const instructions = await request("PUT",
-          `/api/session/${encodeURIComponent(parameters.sessionID)}/instructions/entries/openwork-context`,
+          `/api/experimental/session/${encodeURIComponent(parameters.sessionID)}/instructions/entries/openwork-context`,
           { value: parameters.system }, options?.signal);
         if (!instructions.response.ok) return failedResult(instructions);
       }
@@ -2216,8 +2665,8 @@ export function createClientV2(
       }
       if (!parameters.title) return getSession(parameters, options);
       const result = await request(
-        "POST",
-        `/api/session/${encodeURIComponent(parameters.sessionID)}/rename`,
+        "PATCH",
+        `/api/session/${encodeURIComponent(parameters.sessionID)}`,
         { title: parameters.title },
         options?.signal,
       );
@@ -2264,7 +2713,7 @@ export function createClientV2(
       parameters: SessionParameters,
       options?: RequestOptions,
     ): Promise<FieldsResult<Session>> => {
-      const result = await request("POST", `/api/session/${encodeURIComponent(parameters.sessionID)}/revert/clear`, undefined, options?.signal);
+      const result = await request("DELETE", `/api/session/${encodeURIComponent(parameters.sessionID)}/revert`, undefined, options?.signal);
       return result.response.ok ? getSession(parameters, options) : failedResult(result);
     },
     summarize: async (): Promise<FieldsResult<boolean>> => unsupportedResult(baseUrl, "session.summarize"),
@@ -2272,14 +2721,61 @@ export function createClientV2(
     command: async (): Promise<FieldsResult<Record<string, never>>> => unsupportedResult(baseUrl, "session.command"),
   };
 
+  const listProviders = async (
+    _parameters: DirectoryParameters = {},
+    options?: RequestOptions,
+  ): Promise<FieldsResult<ProviderListResponse>> => {
+    const modelsResult = await request("GET", "/api/model", undefined, options?.signal);
+    if (!modelsResult.response.ok) return failedResult(modelsResult);
+    const [defaultsResult, providersResult] = await Promise.all([
+      request("GET", "/api/model/default", undefined, options?.signal),
+      request("GET", "/api/provider", undefined, options?.signal),
+    ]);
+    const providerNames = new Map<string, string>();
+    if (providersResult.response.ok) {
+      for (const provider of responseItems(providersResult.payload)) {
+        if (!isRecord(provider)) continue;
+        const id = readString(provider, "id");
+        const name = readString(provider, "name");
+        if (id && name) providerNames.set(id, name);
+      }
+    }
+    const models = responseItems(modelsResult.payload).flatMap((item) => {
+      const mapped = mapV2Model(item);
+      return mapped ? [mapped] : [];
+    });
+    const providersByID = new Map<string, Provider>();
+    for (const model of models) {
+      const current = providersByID.get(model.providerID);
+      if (current) {
+        current.models[model.id] = model;
+        continue;
+      }
+      providersByID.set(model.providerID, {
+        id: model.providerID,
+        name: providerNames.get(model.providerID) ?? model.providerID,
+        source: "config",
+        env: [],
+        options: {},
+        models: { [model.id]: model },
+      });
+    }
+    const all = [...providersByID.values()];
+    return successfulResult(modelsResult, {
+      all,
+      connected: all.map((provider) => provider.id),
+      default: defaultsResult.response.ok ? mapDefaultModels(defaultsResult.payload) : {},
+    });
+  };
+
   const adapter = {
     global: {
       health: async (options?: RequestOptions): Promise<FieldsResult<{ healthy: boolean; version: string }>> => {
-        const result = await request("GET", "/api/health", undefined, options?.signal);
+        const result = await request("GET", "/api/info", undefined, options?.signal);
         if (!result.response.ok) return failedResult(result);
         const data = responseData(result.payload);
         return successfulResult(result, {
-          healthy: isRecord(data) && data.healthy === true,
+          healthy: isRecord(data) && typeof data.version === "string" && typeof data.pid === "number",
           version: readString(data, "version") ?? "v2",
         });
       },
@@ -2287,57 +2783,28 @@ export function createClientV2(
     session,
     config: {
       get: async (): Promise<FieldsResult<Record<string, never>>> => localResult(baseUrl, "/api/config", {}),
-    },
-    provider: {
-      list: async (
-        _parameters: DirectoryParameters = {},
+      // v2 only lists usable providers, so the connected list and the full
+      // provider list are the same read.
+      providers: async (
+        parameters: DirectoryParameters = {},
         options?: RequestOptions,
-      ): Promise<FieldsResult<ProviderListResponse>> => {
-        const modelsResult = await request("GET", "/api/model", undefined, options?.signal);
-        if (!modelsResult.response.ok) return failedResult(modelsResult);
-        const [defaultsResult, providersResult] = await Promise.all([
-          request("GET", "/api/model/default", undefined, options?.signal),
-          request("GET", "/api/provider", undefined, options?.signal),
-        ]);
-        const providerNames = new Map<string, string>();
-        if (providersResult.response.ok) {
-          for (const provider of responseItems(providersResult.payload)) {
-            if (!isRecord(provider)) continue;
-            const id = readString(provider, "id");
-            const name = readString(provider, "name");
-            if (id && name) providerNames.set(id, name);
-          }
-        }
-        const models = responseItems(modelsResult.payload).flatMap((item) => {
-          const mapped = mapV2Model(item);
-          return mapped ? [mapped] : [];
-        });
-        const providersByID = new Map<string, Provider>();
-        for (const model of models) {
-          const current = providersByID.get(model.providerID);
-          if (current) {
-            current.models[model.id] = model;
-            continue;
-          }
-          providersByID.set(model.providerID, {
-            id: model.providerID,
-            name: providerNames.get(model.providerID) ?? model.providerID,
-            source: "config",
-            env: [],
-            options: {},
-            models: { [model.id]: model },
-          });
-        }
-        const all = [...providersByID.values()];
-        return successfulResult(modelsResult, {
-          all,
-          connected: all.map((provider) => provider.id),
-          default: defaultsResult.response.ok ? mapDefaultModels(defaultsResult.payload) : {},
-        });
+      ): Promise<FieldsResult<ConfigProvidersResponse>> => {
+        const result = await listProviders(parameters, options);
+        if (!result.data) return { error: result.error, request: result.request, response: result.response };
+        return { data: { providers: result.data.all, default: result.data.default }, request: result.request, response: result.response };
       },
     },
+    provider: {
+      list: (parameters?: DirectoryParameters, options?: RequestOptions) => listProviders(parameters, options),
+    },
     app: {
-      agents: async (): Promise<FieldsResult<never[]>> => localResult(baseUrl, "/api/agent", []),
+      agents: async (
+        _parameters: DirectoryParameters = {},
+        options?: RequestOptions,
+      ): Promise<FieldsResult<Agent[]>> => {
+        const result = await readAgentCatalog(options?.signal);
+        return result.response.ok ? successfulResult(result, agentCatalog) : failedResult(result);
+      },
     },
     command: {
       list: async (): Promise<FieldsResult<never[]>> => localResult(baseUrl, "/api/command", []),
@@ -2415,7 +2882,24 @@ export function createClientV2(
   Object.assign(compatibilityClient.mcp, adapter.mcp);
   Object.assign(compatibilityClient.event, adapter.event);
   v2Clients.add(compatibilityClient);
-  return Object.assign(compatibilityClient, {
+  /**
+   * Commands still running in this engine location, across conversations.
+   * Exited commands are not listed, so this is the truth to resync against
+   * after the volatile event stream may have dropped an exit.
+   */
+  const listRunningShells = async (options?: RequestOptions): Promise<FieldsResult<EngineShell[]>> => {
+    const query = directory ? `?${new URLSearchParams({ "location[directory]": directory }).toString()}` : "";
+    const result = await request("GET", `/api/shell${query}`, undefined, options?.signal);
+    if (!result.response.ok) return failedResult(result);
+    if (!Array.isArray(responseData(result.payload))) return failedResult({ ...result, payload: { name: "InvalidV2ShellListResponse" } });
+    return successfulResult(result, responseItems(result.payload).flatMap((item) => {
+      const shell = readEngineShell(item);
+      return shell && shell.status === "running" ? [shell] : [];
+    }));
+  };
+
+  const client = Object.assign(compatibilityClient, {
+    listRunningShells,
     listSessionsPage: session.list, listMessagesPage: session.messages,
     prepareLegacyConversion: async (sessionID: string, signal?: AbortSignal) => {
       const result = await request("GET", `/legacy-history/session/${encodeURIComponent(sessionID)}/prepare`, undefined, signal);
@@ -2439,6 +2923,11 @@ export function createClientV2(
     replySessionQuestion: (parameters: SessionParameters & { requestID: string; answers: string[][] }, options?: RequestOptions) =>
       settleQuestion(parameters, options),
   });
+  // The SDK exposes session through a getter; its object is augmented above,
+  // not reassigned. Reflect that runtime augmentation in the returned type.
+  return client as typeof client & {
+    session: typeof client.session & Pick<typeof adapter.session, "setModel">;
+  };
 }
 
 export type OpencodeV2Client = ReturnType<typeof createClientV2>;

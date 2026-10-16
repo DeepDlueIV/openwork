@@ -23,7 +23,7 @@ export function ModelUsageList({ models, isLoading }: {
               <span className="shrink-0 tabular-nums text-[#637291]">{model.sessions}</span>
             </div>
             <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-[#EBEEF4]">
-              <div className="h-full rounded-full bg-[#6F3DFF]" style={{ width: `${(model.sessions / max) * 100}%` }} />
+              <div className="h-full rounded-full bg-[var(--dls-accent)]" style={{ width: `${(model.sessions / max) * 100}%` }} />
             </div>
           </div>
         ))}

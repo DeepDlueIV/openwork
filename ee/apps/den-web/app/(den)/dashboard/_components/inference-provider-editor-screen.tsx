@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AlertDialog } from "@base-ui/react/alert-dialog";
-import { Check, Globe, LockKeyhole, Plus, Search, User, Users } from "lucide-react";
+import { Globe, LockKeyhole, Plus, Search, User, Users } from "lucide-react";
 import type { GatewayAccessGrantWrite, GatewayCredentialSetWrite } from "@openwork/types/den/gateway";
 import { createAuditOperationContext, type AuditOperationContext } from "@openwork/types/den/audit";
 import { DenBrandMark } from "../../_components/ui/brand-mark";
@@ -12,17 +12,22 @@ import { DenButton, buttonVariants } from "../../_components/ui/button";
 import { DenCombobox } from "../../_components/ui/combobox";
 import { DenInput } from "../../_components/ui/input";
 import { DenNotice } from "../../_components/ui/notice";
+import { DenSecretInput } from "../../_components/ui/secret-input";
 import { DenSegmented } from "../../_components/ui/segmented";
+import { DenSkeleton } from "../../_components/ui/skeleton";
 import { DenStickyActionBar } from "../../_components/ui/sticky-action-bar";
 import { DenSwitch } from "../../_components/ui/switch";
-import { DenTextarea } from "../../_components/ui/textarea";
 import { getAiGatewayProvidersRoute, getNewAiGatewayProviderRoute } from "../../_lib/den-org";
+import { gatewayMemberSignInMethod } from "@openwork/types/den/inference";
 import { useOrgDashboard } from "../_providers/org-dashboard-provider";
+import { ConfirmDialog } from "./item-list";
 import { deleteGatewayResource, deleteInferenceProvider, saveGatewayResource, saveInferenceProvider, useInferenceProvider, useOrgInferenceProviders } from "./inference-provider-data";
 import {
-  accessFromGrants, buildInferenceProviderRequestBody, getAwsKeysError, getReusableAwsKeyProviders, getNewInferenceProviderSettings, getRequiredSettingKeys, getSettingLabel,
-  isAmazonBedrockNpm, isAwsRegion, isGoogleVertexNpm, isSupportedGatewayNpm, supportsMemberCredentialMode, type AwsKeysInput,
+  accessFromGrants, buildInferenceProviderRequestBody, EMPTY_AWS_SSO, getAwsKeysError, getAwsSsoError, getMemberSignInBrand, getMemberSignInMethod, getReusableAwsKeyProviders, getNewInferenceProviderSettings, getRequiredSettingKeys, getSettingLabel,
+  isAmazonBedrockNpm, isAwsRegion, isGoogleVertexNpm, isMicrosoftTenantId, isSupportedGatewayNpm, MEMBER_SIGN_IN_DOC_URLS, trimAwsSso, type AwsKeysInput, type AwsSsoInput,
 } from "./inference-provider-request";
+import { LITELLM_PROVIDER_ID } from "./litellm-provider-data";
+import { LiteLlmProviderScreen } from "./litellm-provider-screen";
 import { formatProviderTimestamp, getProviderDocUrl, getProviderEnvNames, getProviderIconSlug, getProviderNpmPackage, requestLlmProviderCatalogDetail, type DenModelsDevProviderDetail } from "./llm-provider-data";
 import { normalizeAzureResourceNameInput } from "./llm-provider-guided";
 import type { ProviderAccessValue } from "./llm-provider-pickers";
@@ -33,6 +38,12 @@ const LABEL = "mt-3 block text-[12px] font-medium text-gray-700";
 const MONO_INPUT = "font-mono text-[12px]";
 const EMPTY_AWS_KEYS: AwsKeysInput = { accessKeyId: "", secretAccessKey: "", sessionToken: "" };
 const SETTING_PLACEHOLDERS: Record<string, string> = { region: "us-east-1" };
+const AWS_SSO_FIELDS: Array<{ key: keyof AwsSsoInput; label: string; placeholder: string }> = [
+  { key: "startUrl", label: "AWS access portal URL", placeholder: "https://d-xxxxxxxxxx.awsapps.com/start" },
+  { key: "region", label: "IAM Identity Center region", placeholder: "us-east-1" },
+  { key: "accountId", label: "AWS account ID", placeholder: "123456789012" },
+  { key: "roleName", label: "Permission set name", placeholder: "BedrockInference" },
+];
 
 function Radio({ testId, checked, label, onSelect }: { testId: string; checked: boolean; label: string; onSelect: () => void }) {
   return (
@@ -50,6 +61,8 @@ export function InferenceProviderEditorScreen({ inferenceProviderId, catalogProv
   const { provider, busy, error, reload } = useInferenceProvider(orgId, inferenceProviderId ?? null);
   const [detail, setDetail] = useState<DenModelsDevProviderDetail | null>(null);
   const [catalogError, setCatalogError] = useState<string | null>(null);
+  const [catalogBusy, setCatalogBusy] = useState(true);
+  const [catalogAttempt, setCatalogAttempt] = useState(0);
   const [providerId, setProviderId] = useState(catalogProviderId ?? "");
   const [name, setName] = useState("");
   const [modelIds, setModelIds] = useState<string[]>([]);
@@ -65,11 +78,14 @@ export function InferenceProviderEditorScreen({ inferenceProviderId, catalogProv
   const { inferenceProviders } = useOrgInferenceProviders(orgId);
   const [oauthClientId, setOauthClientId] = useState("");
   const [oauthClientSecret, setOauthClientSecret] = useState("");
+  const [oauthTenantId, setOauthTenantId] = useState("");
+  const [awsSso, setAwsSso] = useState<AwsSsoInput>(EMPTY_AWS_SSO);
   const [rotationAcknowledged, setRotationAcknowledged] = useState(false);
   const [callbackCopied, setCallbackCopied] = useState(false);
   const [replacingKey, setReplacingKey] = useState(false);
   const [access, setAccess] = useState<ProviderAccessValue>({ allMembers: true, memberIds: [], teamIds: [] });
   const [adding, setAdding] = useState<"person" | "team" | null>(null);
+  const [removingAccess, setRemovingAccess] = useState<{ type: "team" | "member"; id: string; name: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -90,6 +106,8 @@ export function InferenceProviderEditorScreen({ inferenceProviderId, catalogProv
     setCredentialMode(provider.credentialSets[0]?.credentialMode ?? provider.credentialMode);
     setOauthClientId(provider.credentialSets[0]?.oauthClientId ?? provider.oauthClientId ?? "");
     setOauthClientSecret("");
+    setOauthTenantId(provider.credentialSets[0]?.oauthTenantId ?? "");
+    setAwsSso(provider.credentialSets[0]?.awsSso ?? EMPTY_AWS_SSO);
     setApiKey("");
     setApiKeyValues({});
     setServiceAccountJson("");
@@ -102,9 +120,11 @@ export function InferenceProviderEditorScreen({ inferenceProviderId, catalogProv
 
   useEffect(() => {
     setDetail(null);
-    if (!orgId || !providerId) return;
-    let cancelled = false;
     setCatalogError(null);
+    // LiteLLM models come from the organization's own proxy, not the shared catalog.
+    if (!orgId || !providerId || providerId === LITELLM_PROVIDER_ID) { setCatalogBusy(false); return; }
+    let cancelled = false;
+    setCatalogBusy(true);
     void requestLlmProviderCatalogDetail(orgId, providerId)
       .then((result) => {
         if (cancelled) return;
@@ -117,9 +137,10 @@ export function InferenceProviderEditorScreen({ inferenceProviderId, catalogProv
           }
         }
       })
-      .catch(() => { if (!cancelled) setCatalogError("Could not load this provider's models. Existing configuration has not changed."); });
+      .catch(() => { if (!cancelled) setCatalogError("Could not load this provider's models. Existing configuration has not changed."); })
+      .finally(() => { if (!cancelled) setCatalogBusy(false); });
     return () => { cancelled = true; };
-  }, [orgId, providerId, inferenceProviderId]);
+  }, [orgId, providerId, inferenceProviderId, catalogAttempt]);
 
   const npm = detail ? getProviderNpmPackage(detail.config) : null;
   const vertex = isGoogleVertexNpm(npm);
@@ -127,17 +148,22 @@ export function InferenceProviderEditorScreen({ inferenceProviderId, catalogProv
   const reusableKeyProviders = !inferenceProviderId && bedrock ? getReusableAwsKeyProviders(inferenceProviders) : [];
   const reuseSource = reusableKeyProviders.find((entry) => entry.id === reuseKeysFrom) ?? null;
   const envNames = detail ? getProviderEnvNames(detail.config) : [];
-  const memberSignInSupported = supportsMemberCredentialMode(providerId);
+  const signInMethod = getMemberSignInMethod(providerId);
+  const offeredSignInMethod = gatewayMemberSignInMethod(providerId);
+  const memberSignInSupported = signInMethod !== null;
   const configuredSet = provider?.credentialSets[0] ?? null;
   const invalidatesCredentials = Boolean(configuredSet && (
     configuredSet.credentialMode !== credentialMode ||
-    (credentialMode === "member" && (oauthClientId.trim() !== (configuredSet.oauthClientId ?? "") || oauthClientSecret.trim()))
+    (credentialMode === "member" && (oauthClientId.trim() !== (configuredSet.oauthClientId ?? "") || oauthClientSecret.trim()
+      || (signInMethod === "microsoft" && oauthTenantId.trim().toLowerCase() !== (configuredSet.oauthTenantId ?? ""))
+      || (signInMethod === "aws_sso" && JSON.stringify(trimAwsSso(awsSso)) !== JSON.stringify(configuredSet.awsSso ?? EMPTY_AWS_SSO))))
   ));
-  const keySaved = Boolean(configuredSet?.configured && configuredSet.credentialMode === credentialMode) && !replacingKey;
+  const keySaved = Boolean(configuredSet?.configured && configuredSet.credentialMode === credentialMode);
   const displayName = detail?.name ?? provider?.name ?? "provider";
   const formInput = {
     name, providerId, modelIds: allowAllModels ? [] : modelIds, credentialMode, status: "active" as const,
     settings, envNames, apiKey, apiKeyValues, serviceAccountJson, oauthClientId, oauthClientSecret, access,
+    ...(signInMethod === "microsoft" ? { oauthTenantId } : {}), ...(signInMethod === "aws_sso" ? { awsSso } : {}),
     ...(bedrock ? { awsKeys, reuseCredentialFrom: reuseSource?.id ?? null } : {}),
   };
   const models = detail?.models ?? [];
@@ -171,11 +197,13 @@ export function InferenceProviderEditorScreen({ inferenceProviderId, catalogProv
     if (groupModels.length) {
       await saveGatewayResource(provider.id, group.id, { resource: "model-groups", body: { name: group.name, description: group.description, modelIds: groupModels, status: "active" } }, auditContext);
     }
-    const { credential, apiKeys, oauthClientId: clientId, oauthClientSecret: clientSecret } = buildInferenceProviderRequestBody(formInput);
+    const { credential, apiKeys, oauthClientId: clientId, oauthClientSecret: clientSecret, oauthTenantId: tenantId, awsSso: ssoSettings } = buildInferenceProviderRequestBody(formInput);
     if (credential || apiKeys || credentialMode === "member" || set.credentialMode !== credentialMode) {
       const body: GatewayCredentialSetWrite = { name: set.name, credentialMode, status: "active", credential, apiKeys };
       if (clientId !== undefined) body.oauthClientId = clientId;
       if (clientSecret !== undefined) body.oauthClientSecret = clientSecret;
+      if (tenantId !== undefined) body.oauthTenantId = tenantId;
+      if (ssoSettings !== undefined) body.awsSso = ssoSettings;
       await saveGatewayResource(provider.id, set.id, { resource: "credential-sets", body }, auditContext);
     }
     const desired: GatewayAccessGrantWrite["audience"][] = [
@@ -196,10 +224,12 @@ export function InferenceProviderEditorScreen({ inferenceProviderId, catalogProv
   async function save() {
     setSaveError(null);
     if (invalidatesCredentials && !rotationAcknowledged) return setSaveError("Confirm that members will need to reconnect before saving this change.");
+    if (catalogError) return setSaveError("Retry the provider catalog before saving.");
     if (!detail || detail.id !== providerId) return setSaveError("Wait for the provider catalog to load.");
+    if (!detail.models.length) return setSaveError("No models are available in this provider's catalog. Retry the catalog before saving.");
     if (!isSupportedGatewayNpm(npm)) return setSaveError("This provider is not supported by AI Gateway.");
     if (!allowAllModels && !modelIds.length) return setSaveError("Pick at least one model, or choose all models.");
-    for (const key of getRequiredSettingKeys(npm)) if (!settings[key]?.trim()) return setSaveError(`${getSettingLabel(key)} is required.`);
+    for (const key of getRequiredSettingKeys(npm, providerId)) if (!settings[key]?.trim()) return setSaveError(`${getSettingLabel(key, providerId)} is required.`);
     if (bedrock && !isAwsRegion(settings.region?.trim() ?? "")) return setSaveError("Enter an AWS region code such as us-east-1.");
     const awsKeysError = bedrock && !reuseSource ? getAwsKeysError(awsKeys) : null;
     if (awsKeysError) return setSaveError(awsKeysError);
@@ -208,8 +238,17 @@ export function InferenceProviderEditorScreen({ inferenceProviderId, catalogProv
       const hasKey = vertex ? Boolean(serviceAccountJson.trim()) : bedrock ? Boolean(reuseSource || (awsKeys.accessKeyId.trim() && awsKeys.secretAccessKey.trim())) : envNames.length > 1 ? Object.values(apiKeyValues).some((value) => value.trim()) : Boolean(apiKey.trim());
       if (!hasKey) return setSaveError("Paste a key before sharing these models.");
     }
-    if (credentialMode === "member" && (!memberSignInSupported || !oauthClientId.trim() || (!oauthClientSecret.trim() && !configuredSet?.hasOauthClientSecret))) {
-      return setSaveError("People sign in needs a Google OAuth client ID and secret.");
+    if (credentialMode === "member") {
+      if (!signInMethod) return setSaveError("People can't sign in to this provider with their own account.");
+      if (signInMethod === "aws_sso") {
+        const ssoError = getAwsSsoError(awsSso);
+        if (ssoError) return setSaveError(ssoError);
+      } else {
+        if (signInMethod === "microsoft" && !isMicrosoftTenantId(oauthTenantId)) return setSaveError("Enter the Microsoft Entra directory (tenant) ID.");
+        if (!oauthClientId.trim() || (!oauthClientSecret.trim() && !configuredSet?.hasOauthClientSecret)) {
+          return setSaveError(signInMethod === "microsoft" ? "People sign in needs the Entra application (client) ID and a client secret." : "People sign in needs a Google OAuth client ID and secret.");
+        }
+      }
     }
     setSaving(true);
     const auditContext = createAuditOperationContext();
@@ -248,8 +287,17 @@ export function InferenceProviderEditorScreen({ inferenceProviderId, catalogProv
   }
 
   if (inferenceProviderId && !provider) {
-    return <div className="p-8">{busy ? "Loading provider..." : <DenNotice tone="error" message={error ?? "Provider not found."} />}</div>;
+    return (
+      <div className={embedded ? undefined : "mx-auto max-w-[860px] px-6 py-6"}>
+        <Link href={getAiGatewayProvidersRoute(orgSlug)} className="text-[12px] text-gray-500 hover:text-gray-900">Back to AI Providers</Link>
+        {busy ? <div className="mt-3 flex flex-col gap-3" aria-busy="true" aria-label="Loading provider" data-testid="gateway-provider-loading">
+          <DenSkeleton className="mb-2 h-7 w-48" />
+          {[0, 1, 2].map((index) => <div key={index} className={CARD}><DenSkeleton className="h-4 w-24" /><DenSkeleton className="mt-3 h-8 w-full" /><DenSkeleton className="mt-3 h-8 w-full" /></div>)}
+        </div> : <DenNotice className="mt-4" tone="error" message={error ? "Could not load this provider. Retry or return to AI Providers." : "Provider not found. Return to AI Providers."} action={<DenButton size="sm" variant="secondary" onClick={() => void reload()}>Retry</DenButton>} />}
+      </div>
+    );
   }
+  if (provider?.providerId === LITELLM_PROVIDER_ID) return <LiteLlmProviderScreen provider={provider} reload={reload} embedded={embedded} />;
 
   const teams = orgContext?.teams ?? [];
   const members = orgContext?.members ?? [];
@@ -268,7 +316,6 @@ export function InferenceProviderEditorScreen({ inferenceProviderId, catalogProv
         <Heading className="text-[20px] font-medium tracking-[-0.02em] text-gray-900" data-testid="gateway-provider-title">{provider ? provider.name : `Add ${displayName}`}</Heading>
       </div>
       {saveError ? <DenNotice tone="error" message={saveError} className="mt-4" /> : null}
-      {catalogError ? <DenNotice tone="error" message={catalogError} className="mt-4" /> : null}
       {provider?.catalogWarning ? <DenNotice tone="warning" message={provider.catalogWarning} className="mt-4" /> : null}
 
       <section className={`${CARD} mt-5`} aria-labelledby="gateway-key-heading">
@@ -277,32 +324,45 @@ export function InferenceProviderEditorScreen({ inferenceProviderId, catalogProv
           { value: "org", label: "Shared API key" },
           { value: "member", label: "Each member signs in", disabled: !memberSignInSupported },
         ]} onChange={changeCredentialMode} />
-        {!memberSignInSupported ? <p className="mt-3 flex items-center gap-2 text-sm text-[var(--dls-text-secondary)]"><LockKeyhole aria-hidden="true" className="size-4" strokeWidth={1.5} />Google sign-in is unavailable for this provider.</p> : null}
-        {getRequiredSettingKeys(npm).map((key) => (
+        {!memberSignInSupported ? <p className="mt-3 flex items-center gap-2 text-sm text-[var(--dls-text-secondary)]" data-testid="gateway-member-sign-in-locked"><LockKeyhole aria-hidden="true" className="size-4" strokeWidth={1.5} />{offeredSignInMethod ? `${getMemberSignInBrand(offeredSignInMethod)} sign-in isn't turned on for your organization yet. Ask an OpenWork platform admin to turn it on.` : "People can't sign in to this provider with their own account."}</p> : null}
+        {getRequiredSettingKeys(npm, providerId).map((key) => (
           <label key={key} className={LABEL}>
-            {getSettingLabel(key)}
+            {getSettingLabel(key, providerId)}
             <DenInput className={`mt-1.5 ${MONO_INPUT}`} readOnly={Boolean(provider)} value={settings[key] ?? ""} placeholder={SETTING_PLACEHOLDERS[key]} data-testid={`gateway-setting-${key}`}
               onChange={(event) => setSettings((current) => ({ ...current, [key]: key === "resourceName" ? normalizeAzureResourceNameInput(event.target.value) : event.target.value }))} />
           </label>
         ))}
         {invalidatesCredentials ? <label className="mt-3 flex items-center gap-3"><DenSwitch checked={rotationAcknowledged} onChange={setRotationAcknowledged} aria-label="Confirm credential invalidation" /><span>Revoke this set’s credentials and pending sign-ins on save; members must reconnect.</span></label> : null}
-        {credentialMode === "member" ? (
+        {credentialMode === "member" && signInMethod === "aws_sso" ? (
+          <>
+            {AWS_SSO_FIELDS.map((field) => (
+              <label key={field.key} className={LABEL}>{field.label}
+                <DenInput className={`mt-1.5 ${MONO_INPUT}`} data-testid={`gateway-aws-sso-${field.key}`} value={awsSso[field.key]} autoComplete="off" placeholder={field.placeholder}
+                  onChange={(event) => { const value = event.target.value; setAwsSso((current) => ({ ...current, [field.key]: value })); setRotationAcknowledged(false); }} />
+              </label>
+            ))}
+            <Link href={MEMBER_SIGN_IN_DOC_URLS.aws_sso} target="_blank" rel="noopener noreferrer" className={buttonVariants({ variant: "secondary", size: "sm", className: "mt-3 w-fit" })}>Read setup instructions</Link>
+          </>
+        ) : credentialMode === "member" ? (
           <>
             {provider?.oauthCallbackUrl ? <div className="flex flex-wrap items-center gap-3 border-b border-[var(--dls-border)] py-3">
-              <div className="flex min-w-0 flex-1 flex-col gap-1"><p className="text-sm font-medium">OAuth callback URL</p><code className="break-all text-xs text-[var(--dls-text-secondary)]">{provider.oauthCallbackUrl}</code></div>
+              <div className="flex min-w-0 flex-1 flex-col gap-1"><p className="text-sm font-medium">{signInMethod === "microsoft" ? "Redirect URI" : "OAuth callback URL"}</p><code className="break-all text-xs text-[var(--dls-text-secondary)]">{provider.oauthCallbackUrl}</code></div>
               <DenButton size="sm" variant="secondary" onClick={() => {
                 const callback = provider.oauthCallbackUrl;
                 if (!callback) return;
                 if (!navigator.clipboard) { setSaveError("Clipboard access is unavailable. Select and copy the displayed URL manually."); return; }
                 void navigator.clipboard.writeText(callback).then(() => setCallbackCopied(true)).catch(() => setSaveError("Could not copy the callback. Select and copy the displayed URL manually."));
               }}>{callbackCopied ? "Callback copied" : "Copy callback URL"}</DenButton>
-            </div> : <DenNotice className="mt-3" tone="neutral" message={provider ? "Callback unavailable. Ask your deployment administrator to configure the public Den API origin." : "Save this provider to obtain its exact OAuth callback URL, then register it in your Google Web OAuth client before members connect."} />}
-            <label className={LABEL}>OAuth client ID<DenInput className={`mt-1.5 ${MONO_INPUT}`} data-testid="gateway-oauth-client-id" value={oauthClientId} autoComplete="off" onChange={(event) => { setOauthClientId(event.target.value); setRotationAcknowledged(false); }} /></label>
-            <label className={LABEL}>OAuth client secret {configuredSet?.hasOauthClientSecret ? "(configured)" : ""}<DenInput className={`mt-1.5 ${MONO_INPUT}`} type="password" data-testid="gateway-oauth-client-secret" value={oauthClientSecret} autoComplete="new-password" onChange={(event) => { setOauthClientSecret(event.target.value); setRotationAcknowledged(false); }} placeholder={configuredSet?.hasOauthClientSecret ? "Saved — enter a replacement to change it" : undefined} /></label>
-            <Link href="https://openworklabs.com/docs/ai-gateway/google-agent-platform" target="_blank" rel="noopener noreferrer" className={buttonVariants({ variant: "secondary", size: "sm", className: "mt-3 w-fit" })}>Read setup instructions</Link>
+            </div> : <DenNotice className="mt-3" tone="neutral" message={provider ? "Callback unavailable. Ask your deployment administrator to configure the public Den API origin." : signInMethod === "microsoft"
+              ? "Save this provider to get its exact redirect URI, then add it to your Entra app registration as a Web redirect URI before members connect."
+              : "Save this provider to obtain its exact OAuth callback URL, then register it in your Google Web OAuth client before members connect."} />}
+            {signInMethod === "microsoft" ? <label className={LABEL}>Directory (tenant) ID<DenInput className={`mt-1.5 ${MONO_INPUT}`} data-testid="gateway-oauth-tenant-id" value={oauthTenantId} autoComplete="off" placeholder="00000000-0000-0000-0000-000000000000" onChange={(event) => { setOauthTenantId(event.target.value); setRotationAcknowledged(false); }} /></label> : null}
+            <label className={LABEL}>{signInMethod === "microsoft" ? "Application (client) ID" : "OAuth client ID"}<DenInput className={`mt-1.5 ${MONO_INPUT}`} data-testid="gateway-oauth-client-id" value={oauthClientId} autoComplete="off" onChange={(event) => { setOauthClientId(event.target.value); setRotationAcknowledged(false); }} /></label>
+            <label className={LABEL}>{signInMethod === "microsoft" ? "Client secret" : "OAuth client secret"} {configuredSet?.hasOauthClientSecret ? "(configured)" : ""}<DenSecretInput className={`mt-1.5 ${MONO_INPUT}`} data-testid="gateway-oauth-client-secret" value={oauthClientSecret} autoComplete="new-password" onChange={(value) => { setOauthClientSecret(value); setRotationAcknowledged(false); }} saved={configuredSet?.hasOauthClientSecret === true} savedPlaceholder="Saved — enter a replacement to change it" replaceTestId="gateway-oauth-client-secret-replace" /></label>
+            <Link href={MEMBER_SIGN_IN_DOC_URLS[signInMethod ?? "google"]} target="_blank" rel="noopener noreferrer" className={buttonVariants({ variant: "secondary", size: "sm", className: "mt-3 w-fit" })}>Read setup instructions</Link>
           </>
         ) : vertex ? (
-          <label className={LABEL}>Service account JSON<DenTextarea className={`mt-1.5 ${MONO_INPUT}`} data-testid="gateway-service-account" value={serviceAccountJson} onChange={(event) => setServiceAccountJson(event.target.value)} placeholder={configuredSet?.configured ? "Saved — paste a replacement to change it" : "Paste the key file"} /></label>
+          <label className={LABEL}>Service account JSON<DenSecretInput multiline className={`mt-1.5 ${MONO_INPUT}`} data-testid="gateway-service-account" value={serviceAccountJson} onChange={setServiceAccountJson} saved={configuredSet?.configured === true} placeholder="Paste the key file" savedPlaceholder="Saved — paste a replacement to change it" replaceTestId="gateway-service-account-replace" /></label>
         ) : bedrock ? (
           <>
             {reusableKeyProviders.length ? (
@@ -320,29 +380,21 @@ export function InferenceProviderEditorScreen({ inferenceProviderId, catalogProv
             ) : null}
             {reuseSource ? null : <>
             <label className={LABEL}>Access key ID<DenInput className={`mt-1.5 ${MONO_INPUT}`} data-testid="gateway-aws-access-key-id" value={awsKeys.accessKeyId} autoComplete="off" onChange={(event) => setAwsKeys((current) => ({ ...current, accessKeyId: event.target.value }))} placeholder={configuredSet?.configured ? "Saved — enter replacement keys to change them" : "AKIA…"} /></label>
-            <label className={LABEL}>Secret access key<DenInput className={`mt-1.5 ${MONO_INPUT}`} type="password" data-testid="gateway-aws-secret-access-key" value={awsKeys.secretAccessKey} autoComplete="new-password" onChange={(event) => setAwsKeys((current) => ({ ...current, secretAccessKey: event.target.value }))} /></label>
-            <label className={LABEL}>Session token (optional)<DenInput className={`mt-1.5 ${MONO_INPUT}`} type="password" data-testid="gateway-aws-session-token" value={awsKeys.sessionToken} autoComplete="new-password" onChange={(event) => setAwsKeys((current) => ({ ...current, sessionToken: event.target.value }))} /></label>
+            <label className={LABEL}>Secret access key<DenSecretInput className={`mt-1.5 ${MONO_INPUT}`} data-testid="gateway-aws-secret-access-key" value={awsKeys.secretAccessKey} autoComplete="new-password" onChange={(value) => setAwsKeys((current) => ({ ...current, secretAccessKey: value }))} /></label>
+            <label className={LABEL}>Session token (optional)<DenSecretInput className={`mt-1.5 ${MONO_INPUT}`} data-testid="gateway-aws-session-token" value={awsKeys.sessionToken} autoComplete="new-password" onChange={(value) => setAwsKeys((current) => ({ ...current, sessionToken: value }))} /></label>
             </>}
           </>
         ) : envNames.length > 1 ? (
           envNames.map((envName) => (
-            <label key={envName} className={LABEL}>{envName}<DenInput className={`mt-1.5 ${MONO_INPUT}`} type="password" value={apiKeyValues[envName] ?? ""} onChange={(event) => setApiKeyValues((current) => ({ ...current, [envName]: event.target.value }))} /></label>
+            <label key={envName} className={LABEL}>{envName}<DenSecretInput className={`mt-1.5 ${MONO_INPUT}`} autoComplete="new-password" value={apiKeyValues[envName] ?? ""} onChange={(value) => setApiKeyValues((current) => ({ ...current, [envName]: value }))} /></label>
           ))
         ) : (
           <label className={LABEL}>
             API key
-            <span className="mt-1.5 flex items-center gap-2">
-              <span className="min-w-0 flex-1">
-                <DenInput className={MONO_INPUT} type={keySaved ? "text" : "password"} data-testid="gateway-provider-api-key" readOnly={keySaved}
-                  value={keySaved ? "••••••••••••••••••••••••••••••••" : apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder="Paste the key" />
-              </span>
-              {configuredSet?.configured ? (
-                <>
-                  <DenButton size="sm" variant="secondary" type="button" data-testid="gateway-provider-replace-key" onClick={() => { setReplacingKey((current) => !current); setApiKey(""); }}>{replacingKey ? "Keep saved key" : "Replace key"}</DenButton>
-                  <Check className="h-4 w-4 text-emerald-600" aria-label="Key saved" />
-                </>
-              ) : null}
-            </span>
+            <DenSecretInput className={`mt-1.5 ${MONO_INPUT}`} data-testid="gateway-provider-api-key" autoComplete="new-password"
+              value={apiKey} onChange={setApiKey} placeholder="Paste the key"
+              saved={keySaved} alwaysShowSaved
+              replacing={replacingKey} onReplacingChange={setReplacingKey} replaceTestId="gateway-provider-replace-key" />
           </label>
         )}
       </section>
@@ -370,7 +422,7 @@ export function InferenceProviderEditorScreen({ inferenceProviderId, catalogProv
                     <span className="block text-[12px] text-gray-500">{team ? `${team.memberIds.length} members, future members included` : teamId}</span>
                   </span>
                   <span className="text-[11px] text-gray-400">{grantMeta({ type: "team", teamId })}</span>
-                  <DenButton size="sm" variant="destructive" type="button" onClick={() => setAccess((current) => ({ ...current, teamIds: current.teamIds.filter((id) => id !== teamId) }))}>Revoke</DenButton>
+                  <DenButton size="sm" variant="secondary" type="button" disabled={saving} aria-label={`Remove access for ${team?.name ?? "team"}`} onClick={() => setRemovingAccess({ type: "team", id: teamId, name: team?.name ?? "this team" })}>Remove</DenButton>
                 </li>
               );
             })}
@@ -384,15 +436,15 @@ export function InferenceProviderEditorScreen({ inferenceProviderId, catalogProv
                     <span className="block text-[12px] text-gray-500">{member?.user.email ?? memberId}</span>
                   </span>
                   <span className="text-[11px] text-gray-400">{grantMeta({ type: "member", memberId })}</span>
-                  <DenButton size="sm" variant="destructive" type="button" onClick={() => setAccess((current) => ({ ...current, memberIds: current.memberIds.filter((id) => id !== memberId) }))}>Revoke</DenButton>
+                  <DenButton size="sm" variant="secondary" type="button" disabled={saving} aria-label={`Remove access for ${member?.user.name ?? "person"}`} onClick={() => setRemovingAccess({ type: "member", id: memberId, name: member?.user.name ?? "this person" })}>Remove</DenButton>
                 </li>
               );
             })}
           </ul>
         ) : null}
         <div className="mt-3 flex flex-wrap items-center gap-2">
-          <button type="button" data-testid="gateway-access-add-person" onClick={() => setAdding(adding === "person" ? null : "person")} className="inline-flex items-center gap-1 rounded-full border border-gray-200 px-2.5 py-1 text-[11px] font-medium text-gray-600 hover:bg-gray-50"><Plus className="h-3 w-3" aria-hidden="true" />Add person</button>
-          <button type="button" data-testid="gateway-access-add-team" onClick={() => setAdding(adding === "team" ? null : "team")} className="inline-flex items-center gap-1 rounded-full border border-gray-200 px-2.5 py-1 text-[11px] font-medium text-gray-600 hover:bg-gray-50"><Plus className="h-3 w-3" aria-hidden="true" />Add team</button>
+          <DenButton size="sm" variant="secondary" icon={Plus} type="button" disabled={saving} data-testid="gateway-access-add-person" onClick={() => setAdding(adding === "person" ? null : "person")}>Add person</DenButton>
+          <DenButton size="sm" variant="secondary" icon={Plus} type="button" disabled={saving} data-testid="gateway-access-add-team" onClick={() => setAdding(adding === "team" ? null : "team")}>Add team</DenButton>
           {adding ? (
             <div className="w-[280px]">
               <DenCombobox ariaLabel={adding === "team" ? "Team" : "Person"} value="" options={adding === "team" ? teamOptions : memberOptions}
@@ -406,8 +458,25 @@ export function InferenceProviderEditorScreen({ inferenceProviderId, catalogProv
         </div>
       </section>
 
-      <section className={`${CARD} mt-3`} aria-labelledby="gateway-models-heading">
+      <ConfirmDialog
+        confirm={removingAccess ? {
+          title: `Remove access for ${removingAccess.name}?`,
+          description: `${removingAccess.type === "team" ? `Members of ${removingAccess.name}` : removingAccess.name} will lose this direct access to ${displayName} when you save. Access granted another way stays unchanged. You can add them back.`,
+          action: "Remove access",
+        } : null}
+        destructive
+        onClose={() => setRemovingAccess(null)}
+        onConfirm={() => {
+          if (!removingAccess) return;
+          const removal = removingAccess;
+          setAccess((current) => ({ ...current, ...(removal.type === "team" ? { teamIds: current.teamIds.filter((id) => id !== removal.id) } : { memberIds: current.memberIds.filter((id) => id !== removal.id) }) }));
+        }}
+      />
+
+      <section className={`${CARD} mt-3`} aria-labelledby="gateway-models-heading" aria-busy={catalogBusy}>
         <h2 id="gateway-models-heading" className={CARD_TITLE}>Models</h2>
+        {catalogError ? <div data-testid="gateway-models-error"><DenNotice tone="error" presentation="inline" message={catalogError} className="mt-3" action={<DenButton size="sm" variant="secondary" data-testid="gateway-models-retry" onClick={() => { setSaveError(null); setCatalogAttempt((current) => current + 1); }}>Retry</DenButton>} /></div> : null}
+        {!catalogBusy && !catalogError && detail && !models.length ? <div data-testid="gateway-models-empty"><DenNotice tone="neutral" presentation="inline" message="No models are available in this provider's catalog." className="mt-3" action={<DenButton size="sm" variant="secondary" data-testid="gateway-models-retry" onClick={() => { setSaveError(null); setCatalogAttempt((current) => current + 1); }}>Retry</DenButton>} /></div> : null}
         <div className="mt-3 flex gap-2">
           <Radio testId="gateway-models-all" checked={allowAllModels} label={`All ${displayName} models`} onSelect={() => setAllowAllModels(true)} />
           <Radio testId="gateway-models-pick" checked={!allowAllModels} label="Only the ones I pick" onSelect={() => { setAllowAllModels(false); if (!provider) setModelIds([]); }} />
@@ -416,10 +485,10 @@ export function InferenceProviderEditorScreen({ inferenceProviderId, catalogProv
           <div className="mt-3 rounded-[10px] bg-gray-50 p-2">
             <div className="flex items-center gap-3">
               <div className="w-[200px]"><DenInput type="search" icon={Search} value={modelQuery} onChange={(event) => setModelQuery(event.target.value)} placeholder="Filter models" className="h-8 bg-white text-[12px]" /></div>
-              <span className="text-[12px] text-gray-500" data-testid="gateway-models-count">{modelIds.length} of {models.length} selected</span>
+              {!catalogBusy && !catalogError ? <span className="text-[12px] text-gray-500" data-testid="gateway-models-count">{modelIds.length} of {models.length} selected</span> : null}
               <span className="ml-auto flex items-center gap-3 text-[12px]">
-                <button type="button" data-testid="gateway-models-select-all" className="font-medium text-gray-700 hover:text-gray-900" onClick={() => setModelIds(models.map((model) => model.id))}>Select all</button>
-                <button type="button" data-testid="gateway-models-clear" className="font-medium text-gray-700 hover:text-gray-900" onClick={() => setModelIds([])}>Clear</button>
+                <button type="button" data-testid="gateway-models-select-all" disabled={catalogBusy || Boolean(catalogError) || !models.length} className="font-medium text-gray-700 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-50" onClick={() => setModelIds(models.map((model) => model.id))}>Select all</button>
+                <button type="button" data-testid="gateway-models-clear" disabled={catalogBusy || Boolean(catalogError) || !models.length} className="font-medium text-gray-700 hover:text-gray-900 disabled:cursor-not-allowed disabled:opacity-50" onClick={() => setModelIds([])}>Clear</button>
               </span>
             </div>
             <ul className="mt-2 max-h-[320px] overflow-y-auto">
@@ -436,7 +505,8 @@ export function InferenceProviderEditorScreen({ inferenceProviderId, catalogProv
                   </li>
                 );
               })}
-              {!models.length ? <li className="px-2 py-3 text-[12px] text-gray-500">Loading models…</li> : null}
+              {catalogBusy ? Array.from({ length: 4 }, (_, index) => <li key={index} className="flex items-center gap-3 px-2 py-1.5" data-testid="gateway-models-loading"><DenSkeleton className="size-4" /><DenSkeleton className="size-5 rounded" /><DenSkeleton className="h-4 flex-1" /><DenSkeleton className="h-3 w-20" /></li>) : null}
+              {!catalogBusy && !catalogError && models.length > 0 && !filteredModels.length ? <li className="px-2 py-3 text-[12px] text-gray-500" data-testid="gateway-models-filter-empty">No models match that filter. Try another name.</li> : null}
             </ul>
           </div>
         ) : null}

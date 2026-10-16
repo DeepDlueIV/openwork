@@ -9,6 +9,7 @@ import { z } from "zod"
 import type {
   EnterpriseMcpAuthorization,
   EnterpriseMcpAbandonAuthorizationInput,
+  EnterpriseMcpCallListedToolInput,
   EnterpriseMcpCallToolInput,
   EnterpriseMcpClient,
   EnterpriseMcpClientOptions,
@@ -27,7 +28,9 @@ import type {
   EnterpriseMcpReadResourceInput,
 } from "./contracts.js"
 import { EnterpriseMcpClientError, EnterpriseMcpLifecycleDeadlineError, EnterpriseMcpToolResultError } from "./errors.js"
+import { ENTERPRISE_MCP_REQUESTED_SCOPES_LIMIT } from "./contracts.js"
 import { EnterpriseMcpOAuthProvider } from "./oauth-provider.js"
+import { createOAuthLoginDiscoveryFetch } from "./oauth-login-discovery.js"
 import { createEnterpriseMcpRequestObserver, type EnterpriseMcpRequestObserver } from "./request-observer.js"
 import { createEnterpriseMcpTokenResponseCompat } from "./token-response-compat.js"
 import { collectEnterpriseMcpTools } from "./tool-catalog.js"
@@ -53,7 +56,7 @@ const oauthConfigurationSchema = z.object({
   applicationType: z.enum(["web", "native"]),
   clientMetadataUrl: clientMetadataUrlSchema.optional(),
   authorizationServerIssuer: z.string().trim().url().optional(),
-  requestedScopes: z.array(z.string().trim().min(1)).max(128).optional(),
+  requestedScopes: z.array(z.string().trim().min(1)).max(ENTERPRISE_MCP_REQUESTED_SCOPES_LIMIT).optional(),
 })
 const toolNameSchema = z.string().trim().min(1)
 const resourceUriSchema = z.string().trim().min(1).max(ENTERPRISE_MCP_RESOURCE_URI_LIMIT_BYTES).refine(
@@ -92,13 +95,17 @@ type Session = {
 
 function requestInit(authorization: EnterpriseMcpAuthorization): RequestInit | undefined {
   if (authorization.type !== "api-key") return undefined
-  return { headers: { authorization: `Bearer ${authorization.token}` } }
+  return { headers: { authorization: `${authorization.scheme === "token" ? "Token" : "Bearer"} ${authorization.token}` } }
 }
 
 function validateConnection(connection: EnterpriseMcpConnection): URL {
   const parsed = connectionSchema.parse({ id: connection.id, serverUrl: connection.serverUrl })
   if (connection.authorization.type === "api-key" && !connection.authorization.token.trim()) {
     throw new Error("An API key connection requires a non-empty token.")
+  }
+  if (connection.authorization.type === "api-key" && connection.authorization.scheme !== undefined
+    && connection.authorization.scheme !== "bearer" && connection.authorization.scheme !== "token") {
+    throw new Error("An API key connection requires a supported Authorization scheme.")
   }
   const url = new URL(parsed.serverUrl)
   if (url.protocol !== "https:" && url.protocol !== "http:") {
@@ -242,7 +249,9 @@ export function createEnterpriseMcpClient(options: EnterpriseMcpClientOptions): 
     controller.signal.addEventListener("abort", () => clearTimeout(timeout), { once: true })
 
     const compatibleFetch = createEnterpriseMcpTokenResponseCompat({
-      fetch: configuredFetch,
+      fetch: input.connection.authorization.type === "oauth" && input.flow.kind === "connect"
+        ? createOAuthLoginDiscoveryFetch({ fetch: configuredFetch, serverUrl })
+        : configuredFetch,
       onTranslation: (translation) => emitDiagnostic({
         kind: "request",
         connectionId: input.connection.id,
@@ -290,7 +299,7 @@ export function createEnterpriseMcpClient(options: EnterpriseMcpClientOptions): 
       authProvider: input.flow.kind === "callback" && oauthProvider
         ? { token: async () => (await oauthProvider.tokens())?.access_token }
         : oauthProvider,
-      fetch: observer.fetch,
+      fetch: oauthProvider ? oauthProvider.exclusiveRefreshFetch(observer.fetch) : observer.fetch,
       requestInit: requestInit(input.connection.authorization),
     })
     const capabilities = {
@@ -674,6 +683,32 @@ export function createEnterpriseMcpClient(options: EnterpriseMcpClientOptions): 
         redirectUri: input.redirectUri,
         operationPhase: "tool-execution",
         operation: async (session) => {
+          const result = await session.client.callTool({
+            name: toolName,
+            arguments: input.arguments,
+          }, session.requestOptions)
+          if ("isError" in result && result.isError) throw new EnterpriseMcpToolResultError(result)
+          return result
+        },
+      })
+    },
+
+    async callListedTool(input: EnterpriseMcpCallListedToolInput) {
+      const toolName = configurationValue(() => toolNameSchema.parse(input.toolName))
+      configurationValue(() => assertEnterpriseMcpToolArguments(input.arguments))
+      return runConnectedOperation({
+        connection: input.connection,
+        redirectUri: input.redirectUri,
+        operationPhase: "tool-execution",
+        operation: async (session) => {
+          const tools = await collectEnterpriseMcpTools({
+            requestOptions: session.requestOptions,
+            listPage: (cursor, options) => session.client.listTools(
+              cursor ? { cursor } : undefined,
+              options,
+            ),
+          })
+          await input.beforeCall(tools)
           const result = await session.client.callTool({
             name: toolName,
             arguments: input.arguments,

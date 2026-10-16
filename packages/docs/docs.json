@@ -32,7 +32,8 @@
     "instructions": [
       "For agents: install the OpenWork desktop app with `brew install --cask openwork` (macOS) or from https://openworklabs.com/download. Do not run `npx openwork`; the npm package named `openwork` is a different project.",
       "Connect an agent to OpenWork with the MCP Gateway: `claude mcp add --transport http openwork https://api.openworklabs.com/mcp/agent`. Teams sign up at https://app.openworklabs.com?mode=sign-up.",
-      "Step-by-step agent guide: https://openworklabs.com/docs/start-here/use-openwork-from-an-ai-agent.md"
+      "Step-by-step agent guide: https://openworklabs.com/docs/start-here/use-openwork-from-an-ai-agent.md",
+      "OpenWork in Slack is private alpha for approved organizations. Setup guide: https://openworklabs.com/docs/slack/overview.md. Agent skill: https://openworklabs.com/.well-known/agent-skills/set-up-openwork-slack/SKILL.md."
     ]
   },
   "navigation": {
@@ -96,7 +97,6 @@
             "group": "Do work with it",
             "pages": [
               "start-here/do-work-with-it/control-the-browser",
-              "start-here/do-work-with-it/use-desktop-apps",
               "start-here/do-work-with-it/cross-chat-memory",
               "start-here/do-work-with-it/work-with-excel-workbooks",
               "start-here/do-work-with-it/workflows"
@@ -118,6 +118,34 @@
         ]
       },
       {
+        "tab": "Integrations",
+        "pages": [
+          "integrations/overview",
+          "integrations/mcp",
+          "integrations/client-plugins",
+          {
+            "group": "OpenCode — ready",
+            "pages": [
+              "model-context-protocol/opencode-plugin"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Slack",
+        "pages": [
+          {
+            "group": "OpenWork in Slack (private alpha)",
+            "pages": [
+              "slack/overview",
+              "slack/set-up-the-slack-app",
+              "slack/connect-your-account",
+              "slack/troubleshooting"
+            ]
+          }
+        ]
+      },
+      {
         "tab": "AI Gateway",
         "pages": [
           {
@@ -125,7 +153,11 @@
             "pages": [
               "ai-gateway/overview",
               "ai-gateway/compare-litellm-bifrost",
-              "ai-gateway/google-agent-platform"
+              "ai-gateway/litellm",
+              "ai-gateway/how-requests-flow",
+              "ai-gateway/google-agent-platform",
+              "ai-gateway/amazon-bedrock",
+              "ai-gateway/microsoft-foundry"
             ]
           },
           {
@@ -176,6 +208,8 @@
             "group": "Connections",
             "pages": [
               "cloud/share-with-your-team/shared-mcp-connections",
+              "cloud/share-with-your-team/microsoft-365",
+              "cloud/share-with-your-team/google-cloud-cli",
               "cloud/share-with-your-team/mcp-server-compatibility"
             ]
           },
@@ -194,7 +228,7 @@
         "tab": "Dashboards",
         "pages": [
           "dashboards/overview",
-          "cloud/share-with-your-team/dashboards"
+          "dashboards/build-an-mcp-app"
         ]
       },
       {
@@ -223,6 +257,7 @@
             "group": "Policies and operations",
             "pages": [
               "cloud/share-with-your-team/desktop-policies",
+              "cloud/share-with-your-team/agent-permissions",
               "cloud/share-with-your-team/team-prompt-cards",
               "cloud/security-and-operations",
               "cloud/enterprise"
@@ -349,6 +384,10 @@
     {
       "source": "/dashboards",
       "destination": "/dashboards/overview"
+    },
+    {
+      "source": "/cloud/share-with-your-team/dashboards",
+      "destination": "/dashboards/build-an-mcp-app"
     },
     {
       "source": "/sso",

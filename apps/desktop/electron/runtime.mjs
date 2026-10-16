@@ -259,6 +259,38 @@ export function resolveOpenworkServerConfigPath(env = process.env) {
   return openworkServerConfigPath({ env });
 }
 
+/**
+ * Files any earlier OpenWork Desktop run leaves behind. If none exist when the
+ * app starts, this is a brand-new install, not an update.
+ * @param {{ userDataDir: string, serverConfigPath: string, env?: NodeJS.ProcessEnv }} input
+ * @returns {string[]}
+ */
+export function openworkInstallMarkerPaths({ userDataDir, serverConfigPath, env = process.env }) {
+  const serverDir = path.dirname(serverConfigPath);
+  const runtimeDb = env.OPENWORK_RUNTIME_DB?.trim() ? path.resolve(env.OPENWORK_RUNTIME_DB.trim()) : path.join(serverDir, "runtime.sqlite");
+  return [
+    serverConfigPath,
+    runtimeDb,
+    path.join(path.dirname(runtimeDb), "engine-v2-preview.json"),
+    env.OPENWORK_SERVER_TOKEN_STORE_PATH?.trim() ? path.resolve(env.OPENWORK_SERVER_TOKEN_STORE_PATH.trim()) : path.join(userDataDir, "openwork-server-tokens.json"),
+    env.OPENWORK_SERVER_STATE_PATH?.trim() ? path.resolve(env.OPENWORK_SERVER_STATE_PATH.trim()) : path.join(userDataDir, "openwork-server-state.json"),
+    path.join(userDataDir, "openwork-workspaces.json"),
+    path.join(userDataDir, "workspace-state.json"),
+    path.join(userDataDir, "app-recovery.v1.json"),
+  ];
+}
+
+/**
+ * New installs start on OpenCode v2; updates keep the engine they had. An
+ * explicit OPENWORK_ENGINE_V2_PREVIEW (dev, evals) always wins.
+ * @param {{ markerPaths: string[], exists?: (filePath: string) => boolean, env?: NodeJS.ProcessEnv }} input
+ * @returns {"v2" | undefined}
+ */
+export function resolveFreshInstallEngine({ markerPaths, exists = existsSync, env = process.env }) {
+  if (env.OPENWORK_ENGINE_V2_PREVIEW?.trim()) return undefined;
+  return markerPaths.some((filePath) => exists(filePath)) ? undefined : "v2";
+}
+
 export function seedWorkspacePathsForEmbeddedServer(workspacePaths, serverConfigExists) {
   return serverConfigExists ? [] : workspacePaths;
 }
@@ -422,13 +454,9 @@ function createOpenworkServerState() {
     // Sticky ports and persisted tokens make the connection details identical
     // across restarts, so clients need this to observe a new server lifetime.
     generation: null,
-    remoteAccessEnabled: false,
     host: null,
     port: null,
     baseUrl: null,
-    connectUrl: null,
-    mdnsUrl: null,
-    lanUrl: null,
     clientToken: null,
     ownerToken: null,
     hostToken: null,
@@ -446,13 +474,9 @@ export function snapshotOpenworkServerState(state) {
   return {
     running,
     generation: typeof state.generation === "number" ? state.generation : null,
-    remoteAccessEnabled: state.remoteAccessEnabled,
     host: state.host,
     port: state.port,
     baseUrl: state.baseUrl,
-    connectUrl: state.connectUrl,
-    mdnsUrl: state.mdnsUrl,
-    lanUrl: state.lanUrl,
     clientToken: state.clientToken,
     ownerToken: state.ownerToken,
     hostToken: state.hostToken,
@@ -473,22 +497,18 @@ export function snapshotOpenworkServerState(state) {
  * so a request for a different workspace retargets the running runtime
  * instead of restarting it. A restart here would abort every in-flight run,
  * including sessions still working in the workspace being left. Only an
- * explicit forceRestart or a host rebind (remote access change) gives up the
- * running server.
+ * explicit forceRestart gives up the running server.
  */
 export function resolveOpenworkServerReuse({
   forceRestart,
   inProcess,
   lifecycleState,
-  remoteAccessEnabled,
-  requestedRemoteAccess,
   currentProjectDir,
   requestedProjectDir,
   platform,
 }) {
   if (forceRestart === true) return { reuse: false, retarget: false };
   if (inProcess !== true || lifecycleState !== "healthy") return { reuse: false, retarget: false };
-  if (remoteAccessEnabled !== (requestedRemoteAccess === true)) return { reuse: false, retarget: false };
   const retarget =
     normalizeWorkspaceKey(currentProjectDir, platform) !== normalizeWorkspaceKey(requestedProjectDir, platform);
   return { reuse: true, retarget };
@@ -549,30 +569,6 @@ async function readJsonFile(targetPath, fallback) {
   } catch {
     return fallback;
   }
-}
-
-function selectLanAddress() {
-  const interfaces = os.networkInterfaces();
-  for (const entries of Object.values(interfaces)) {
-    for (const entry of entries ?? []) {
-      if (entry && entry.family === "IPv4" && entry.internal === false) {
-        return entry.address;
-      }
-    }
-  }
-  return null;
-}
-
-function buildConnectUrls(port) {
-  const hostname = os.hostname().trim();
-  const mdnsUrl = hostname ? `http://${hostname.replace(/\.local$/i, "")}.local:${port}` : null;
-  const lan = selectLanAddress();
-  const lanUrl = lan ? `http://${lan}:${port}` : null;
-  return {
-    connectUrl: lanUrl ?? mdnsUrl,
-    mdnsUrl,
-    lanUrl,
-  };
 }
 
 function targetTriple() {
@@ -1397,6 +1393,8 @@ export function createRuntimeManager({
   desktopRoot,
   listLocalWorkspacePaths,
   localManagedMcpVaultKey,
+  driveFileApproval = undefined,
+  anonymousInference = undefined,
   workspaceMkdir = mkdir,
   workspacePlatform = process.platform,
 }) {
@@ -1431,6 +1429,11 @@ export function createRuntimeManager({
   }
 
   const userDataDir = app.getPath("userData");
+  // Decided once, before this process writes any OpenWork state, so a server
+  // restart in the same session does not mistake its own files for an update.
+  const freshInstallEngine = resolveFreshInstallEngine({
+    markerPaths: openworkInstallMarkerPaths({ userDataDir, serverConfigPath: resolveOpenworkServerConfigPath(process.env) }),
+  });
   const sidecarDirs = [
     path.join(desktopRoot, "resources", "sidecars"),
     process.resourcesPath ? path.join(process.resourcesPath, "sidecars") : null,
@@ -1759,57 +1762,6 @@ export function createRuntimeManager({
     };
   }
 
-  function engineDoctor(options = {}) {
-    const resolved = resolveOpencodeBinary(options?.opencodeBinPath);
-    if (!resolved?.path) {
-      return {
-        found: false,
-        inPath: false,
-        resolvedPath: null,
-        resolvedSource: null,
-        version: null,
-        supportsServe: false,
-        notes: ["OpenCode binary not found in bundled sidecars or PATH."],
-        serveHelpStatus: null,
-        serveHelpStdout: null,
-        serveHelpStderr: null,
-      };
-    }
-
-    const versionResult = spawnSync(resolved.path, ["--version"], { encoding: "utf8" });
-    const helpResult = spawnSync(resolved.path, ["serve", "--help"], { encoding: "utf8" });
-    const notes = [`Using ${resolved.source}: ${resolved.path}`];
-    if (versionResult.status !== 0) {
-      notes.push("OpenCode version probe failed.");
-    }
-    if (helpResult.status !== 0) {
-      notes.push("OpenCode serve --help probe failed.");
-    }
-
-    return {
-      found: true,
-      inPath: resolved.source === "path",
-      resolvedPath: resolved.path,
-      resolvedSource: resolved.source,
-      version: versionResult.stdout?.trim() || versionResult.stderr?.trim() || null,
-      supportsServe: helpResult.status === 0,
-      notes,
-      serveHelpStatus: typeof helpResult.status === "number" ? helpResult.status : null,
-      serveHelpStdout: helpResult.stdout?.trim() || null,
-      serveHelpStderr: helpResult.stderr?.trim() || null,
-    };
-  }
-
-  async function pinnedOpencodeInstallCommand() {
-    const constantsPath = path.resolve(desktopRoot, "../../constants.json");
-    const payload = JSON.parse(await readFile(constantsPath, "utf8"));
-    const version = String(payload?.opencodeVersion ?? "").trim().replace(/^v/, "");
-    if (!version) {
-      throw new Error("constants.json is missing opencodeVersion");
-    }
-    return `curl -fsSL https://opencode.ai/install | bash -s -- --version ${version} --no-modify-path`;
-  }
-
   function killProcessId(pid, signal = "SIGTERM") {
     if (!Number.isFinite(pid) || pid <= 0 || pid === process.pid) return;
     try {
@@ -1925,7 +1877,7 @@ export function createRuntimeManager({
     }
     await stopChild(openworkServerState);
 
-    const host = options.remoteAccessEnabled ? "0.0.0.0" : "127.0.0.1";
+    const host = "127.0.0.1";
 
     const managedOpencode = options.manageOpencode ? resolveOpencodeBinary(options.opencodeBinPath) : null;
     openworkServerState.managedOpencodeBinPath = managedOpencode?.path ?? null;
@@ -1984,6 +1936,7 @@ export function createRuntimeManager({
       port: portSelection.port,
       corsOrigins: ["*"],
       approvalMode: "auto",
+      driveFileApproval,
       configPath: serverConfigPath,
       workspaces: workspacePaths,
       token: tokens.clientToken,
@@ -1995,6 +1948,8 @@ export function createRuntimeManager({
       opencodeBin: managedOpencode?.path ?? undefined,
       opencodeCwd: managedOpencodeWorkdir(),
       localManagedMcpVaultKey,
+      anonymousInference,
+      freshInstallEngine,
     });
     inProcessServer = handle;
     openworkServerState.managedOpencodeExecution = handle.managedOpencodeExecution ?? null;
@@ -2008,17 +1963,11 @@ export function createRuntimeManager({
     openworkServerState.inProcess = true;
     openworkServerGenerationCounter += 1;
     openworkServerState.generation = openworkServerGenerationCounter;
-    openworkServerState.remoteAccessEnabled = options.remoteAccessEnabled;
     openworkServerState.host = host;
     openworkServerState.port = boundPort;
     openworkServerState.baseUrl = baseUrl;
     openworkServerState.clientToken = tokens.clientToken;
     openworkServerState.hostToken = tokens.hostToken;
-
-    const connectUrls = options.remoteAccessEnabled ? buildConnectUrls(boundPort) : { connectUrl: null, mdnsUrl: null, lanUrl: null };
-    openworkServerState.connectUrl = connectUrls.connectUrl;
-    openworkServerState.mdnsUrl = connectUrls.mdnsUrl;
-    openworkServerState.lanUrl = connectUrls.lanUrl;
 
     // No health check needed -- startServer() resolves only after the listener is bound.
     let workspaceList = null;
@@ -2104,7 +2053,6 @@ export function createRuntimeManager({
         opencodeBaseUrl: engineState.baseUrl,
         opencodeUsername: engineState.opencodeUsername,
         opencodePassword: engineState.opencodePassword,
-        remoteAccessEnabled: options.remoteAccessEnabled,
         manageOpencode: options.manageOpencode === true,
         opencodeBinPath: options.opencodeBinPath,
       });
@@ -2159,8 +2107,6 @@ export function createRuntimeManager({
       forceRestart: options.forceRestart,
       inProcess: openworkServerState.inProcess,
       lifecycleState,
-      remoteAccessEnabled: openworkServerState.remoteAccessEnabled,
-      requestedRemoteAccess: options.openworkRemoteAccess,
       currentProjectDir: engineState.projectDir,
       requestedProjectDir: safeProjectDir,
       platform: workspacePlatform,
@@ -2217,7 +2163,6 @@ export function createRuntimeManager({
       await ensureOpenwork({
         projectDir: safeProjectDir,
         workspacePaths,
-        remoteAccessEnabled: options.openworkRemoteAccess === true,
         manageOpencode: true,
         opencodeBinPath: options.opencodeBinPath,
       });
@@ -2242,14 +2187,10 @@ export function createRuntimeManager({
     if (!projectDir) {
       throw new Error("OpenCode is not configured for a local workspace");
     }
-    const openworkRemoteAccess = typeof options.openworkRemoteAccess === "boolean"
-      ? options.openworkRemoteAccess
-      : openworkServerState.remoteAccessEnabled;
     return engineStart(projectDir, {
       runtime: engineState.runtime,
       workspacePaths: [projectDir],
       opencodeEnableExa: options.opencodeEnableExa,
-      openworkRemoteAccess,
       forceRestart: true,
     });
   }
@@ -2286,7 +2227,6 @@ export function createRuntimeManager({
       opencodeBaseUrl: shouldManageOpencode ? null : engineState.baseUrl,
       opencodeUsername: shouldManageOpencode ? null : engineState.opencodeUsername,
       opencodePassword: shouldManageOpencode ? null : engineState.opencodePassword,
-      remoteAccessEnabled: options.remoteAccessEnabled === true,
       manageOpencode: shouldManageOpencode,
       opencodeBinPath: engineState.opencodeBinPath ?? openworkServerState.managedOpencodeBinPath,
     });
@@ -2296,31 +2236,6 @@ export function createRuntimeManager({
     // switch uses — instead of tearing the running engine down.
     if (inProcessServer?.managedOpencode?.isAlive?.()) lifecycleState = "healthy";
     return info;
-  }
-
-  async function engineInstall() {
-    if (process.platform === "win32") {
-      return {
-        ok: false,
-        status: -1,
-        stdout: "",
-        stderr:
-          "Guided install is not supported on Windows yet. Install the OpenWork-pinned OpenCode version manually, then restart OpenWork.",
-      };
-    }
-
-    const installDir = path.join(app.getPath("home"), ".opencode", "bin");
-    const command = await pinnedOpencodeInstallCommand();
-    const result = await runShellCommand("bash", ["-lc", command], {
-      env: { ...(await buildChildEnv()), OPENCODE_INSTALL_DIR: installDir },
-      timeoutMs: 180_000,
-    });
-    return {
-      ok: result.status === 0,
-      status: result.status,
-      stdout: result.stdout,
-      stderr: result.stderr,
-    };
   }
 
   async function opencodeMcpAuth(projectDir, serverName) {
@@ -2383,8 +2298,6 @@ export function createRuntimeManager({
     dispose: () => withRuntimeLifecycle(() => stopAllRuntimeChildren()),
     runtimeStatus,
     engineInfo,
-    engineDoctor,
-    engineInstall,
     openworkServerInfo,
     openworkServerRestart: (options) => withRuntimeLifecycle(() => openworkServerRestart(options)),
     opencodeMcpAuth,

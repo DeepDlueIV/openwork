@@ -3,9 +3,13 @@ import { findMarketplaceByExternalKey } from "./store.js"
 import type { Context, Hono } from "hono"
 import { describeRoute } from "hono-openapi"
 import { z } from "zod"
+import { credentialPromptResponseFields, pluginConnectionKeyPrompt } from "../../../credential-prompt.js"
+import { organizationFeatureEnabled } from "../../../features.js"
+import { SECURE_ENTRY_REQUIRED } from "../../../middleware/refuse-machine-secrets.js"
 import { normalizeDenTypeId } from "@openwork-ee/utils/typeid"
 import { queryValidator, jsonValidator, orgMemberRoute, paramValidator, resolveMemberTeamsMiddleware } from "../../../middleware/index.js"
 import { emptyResponse, forbiddenSchema, invalidRequestSchema, jsonResponse, notFoundSchema, unauthorizedSchema } from "../../../openapi.js"
+import type { PermissionKey } from "@openwork/types/den/permissions"
 import type { OrgRouteVariables } from "../shared.js"
 import {
   accessGrantListResponseSchema,
@@ -110,13 +114,16 @@ import {
   pluginMutationResponseSchema,
   pluginParamsSchema,
   pluginUpdateSchema,
+  resolvedPluginsQuerySchema,
+  resolvedPluginsResponseSchema,
   resourceAccessGrantWriteSchema,
   teamParamsSchema,
   teamPluginAccessListResponseSchema,
 } from "./schemas.js"
-import { isPluginArchOrgAdmin, requirePluginArchCapability, type PluginArchActorContext, PluginArchAuthorizationError } from "./access.js"
+import { pluginArchHasPermission, requirePluginArchCapability, type PluginArchActorContext, PluginArchAuthorizationError } from "./access.js"
 import { pluginArchRoutePaths } from "./contracts.js"
-import { ensureOrganizationAdmin, orgAccessFailureStatus } from "../shared.js"
+import { orgAccessFailureStatus, permissionFailureHeaders, requirePermission } from "../shared.js"
+import { ensureFreshPrivilegedSession } from "../../../privileged-session.js"
 import { isAgentOAuthClientConnection, listMemberUsableConnectionFacts } from "../mcp-connections.js"
 import { listWorkflowLibraryItems } from "../../../workflow-library.js"
 import {
@@ -163,6 +170,7 @@ import {
   listMeLibraryPluginItems,
   listMeEffectivePluginAccess,
   listPluginMemberships,
+  listResolvedPlugins,
   listPlugins,
   listResourceAccess,
   listTeamEffectivePluginAccess,
@@ -225,12 +233,26 @@ function actorContext(c: OrgContext): PluginArchActorContext {
     throw new PluginArchRouteFailure(404, "organization_not_found", "Organization context not found.")
   }
 
+  const memberPermissions = c.get("memberPermissions")
   return {
     ...(c.get("apiKey") ? { apiKey: true } : {}),
+    ...(memberPermissions ? { memberPermissions } : {}),
     memberTeams: c.get("memberTeams") ?? [],
     organizationContext,
     session: c.get("session"),
   }
+}
+
+/**
+ * A non-sensitive permission plus today's recent sign-in requirement for this
+ * specific action (the key itself does not require one everywhere it is used).
+ */
+async function requirePermissionWithFreshSession(c: OrgContext, key: PermissionKey) {
+  const permission = await requirePermission(c, key)
+  if (!permission.ok) return c.json(permission.response, orgAccessFailureStatus(permission.response), permissionFailureHeaders(permission.response))
+  const fresh = ensureFreshPrivilegedSession(c)
+  if (!fresh.ok) return c.json(fresh.response, 403)
+  return null
 }
 
 function routeErrorResponse(c: OrgContext, error: unknown) {
@@ -252,9 +274,13 @@ async function configurePluginMcpConnectionResponse(c: OrgContext) {
     if (isAgentPluginMcpSecretSetup({ apiKey: body.apiKey, oauthClient: body.oauthClient, sessionId: c.get("session")?.id })) {
       return c.json({ error: "invalid_request", message: "Plugin MCP credentials cannot be set from the agent. Add them in the OpenWork Cloud dashboard under Connections." }, 400)
     }
-    const admin = ensureOrganizationAdmin(c, "Only workspace owners and admins can configure plugin MCP requirements.")
-    if (!admin.ok) return c.json(admin.response, orgAccessFailureStatus(admin.response))
-    return c.json({ ok: true, item: await configureMarketplacePluginMcpRequirement({
+    const denied = await requirePermissionWithFreshSession(c, "connections.manage")
+    if (denied) return denied
+    const organizationId = actorContext(c).organizationContext.organization.id
+    const secureEntry = await organizationFeatureEnabled(organizationId, "secureSecretFields")
+    if (secureEntry && c.get("apiKey") && body.apiKey) return c.json(SECURE_ENTRY_REQUIRED, 400)
+    const { awaitingKey, connectionRow, ...item } = await configureMarketplacePluginMcpRequirement({
+      awaitKey: secureEntry,
       authType: body.authType,
       apiKey: body.apiKey,
       configObjectId: body.configObjectId,
@@ -263,7 +289,9 @@ async function configurePluginMcpConnectionResponse(c: OrgContext) {
       oauthClient: body.oauthClient,
       pluginId: normalizeDenTypeId("plugin", params.pluginId),
       serverName: body.serverName,
-    }) })
+    })
+    const prompt = awaitingKey ? pluginConnectionKeyPrompt({ pluginId: item.binding.pluginId, configObjectId: item.binding.configObjectId, serverName: item.binding.serverName, connection: connectionRow }) : null
+    return c.json({ ok: true, item, ...(prompt ? credentialPromptResponseFields(prompt) : {}) })
   } catch (error) {
     return routeErrorResponse(c, error)
   }
@@ -729,7 +757,7 @@ export function registerPluginArchRoutes<T extends { Variables: OrgRouteVariable
         const context = actorContext(c)
         const body = validJson<PluginCreateBody>(c)
         await requirePluginArchCapability(context, "plugin.create")
-        if (body.orgWide === true && !isPluginArchOrgAdmin(context)) {
+        if (body.orgWide === true && !(await pluginArchHasPermission(context, "sharing.share_org_wide"))) {
           throw new PluginArchAuthorizationError(403, "forbidden", "Only organization owners and admins can create org-wide plugins.")
         }
         if ((body.components?.length ?? 0) > 0) {
@@ -908,7 +936,7 @@ export function registerPluginArchRoutes<T extends { Variables: OrgRouteVariable
     describeRoute({
       tags: ["Plugins"],
       summary: "Get resolved plugin",
-      description: "Lists active plugin memberships with the current config object projection for each item.",
+      description: "Lists active plugin memberships with the current config object projection for each item. Not recorded in organization audit logs: clients call it once per plugin on every load and sync, so it is excluded from audit capture as a high-volume read.",
       responses: {
         200: jsonResponse("Resolved plugin returned successfully.", pluginMembershipListResponseSchema),
         400: jsonResponse("The plugin path parameters were invalid.", invalidRequestSchema),
@@ -929,6 +957,23 @@ export function registerPluginArchRoutes<T extends { Variables: OrgRouteVariable
       } catch (error) {
         return routeErrorResponse(c, error)
       }
+    })
+
+  withPluginArchOrgContext(app, "get", pluginArchRoutePaths.resolvedPlugins,
+    queryValidator(resolvedPluginsQuerySchema),
+    describeRoute({
+      tags: ["Plugins"],
+      summary: "Get resolved plugins",
+      description: "Returns GET /v1/plugins/:pluginId/resolved for up to 100 plugins in one request, so a client loading every plugin's contents makes one call instead of one per plugin. Each visible plugin's body is the one the single-plugin route returns; plugins the caller cannot view or that do not exist are listed under failures with that route's error. Not recorded in organization audit logs, like the single-plugin route.",
+      responses: {
+        200: jsonResponse("Resolved plugins returned successfully.", resolvedPluginsResponseSchema),
+        400: jsonResponse("The plugin ids were invalid.", invalidRequestSchema),
+        401: jsonResponse("The caller must be signed in to view resolved plugins.", unauthorizedSchema),
+      },
+    }),
+    async (c: OrgContext) => {
+      const query = validQuery<z.infer<typeof resolvedPluginsQuerySchema>>(c)
+      return c.json(await listResolvedPlugins({ context: actorContext(c), pluginIds: query.pluginIds }))
     })
 
   withPluginArchOrgContext(app, "post", pluginArchRoutePaths.pluginMcpConnections,
@@ -966,7 +1011,7 @@ export function registerPluginArchRoutes<T extends { Variables: OrgRouteVariable
         const body = validJson<{
           githubUrl: string
         }>(c)
-        return c.json({ ok: true, item: await previewGithubPluginMcpImport({ githubUrl: body.githubUrl }) })
+        return c.json({ ok: true, item: await previewGithubPluginMcpImport({ context: actorContext(c), githubUrl: body.githubUrl }) })
       } catch (error) {
         return routeErrorResponse(c, error)
       }
@@ -1182,8 +1227,8 @@ export function registerPluginArchRoutes<T extends { Variables: OrgRouteVariable
     }),
     async (c: OrgContext) => {
       try {
-        const permission = ensureOrganizationAdmin(c, "Only organization admins can manage declarative resources.")
-        if (!permission.ok) return c.json(permission.response, orgAccessFailureStatus(permission.response))
+        const denied = await requirePermissionWithFreshSession(c, "marketplaces.manage")
+        if (denied) return denied
         if (c.req.header("If-Match") || c.req.header("If-None-Match")) return c.json({ error: "unsupported_precondition" }, 400)
         const context = actorContext(c)
         const { externalKey } = validParam<z.infer<typeof externalKeyParamsSchema>>(c)
@@ -1216,8 +1261,8 @@ export function registerPluginArchRoutes<T extends { Variables: OrgRouteVariable
       responses: { 200: jsonResponse("Idempotent deletion result.", declarativeDeleteSchema) } }),
     async (c: OrgContext) => {
       try {
-        const permission = ensureOrganizationAdmin(c, "Only organization admins can manage declarative resources.")
-        if (!permission.ok) return c.json(permission.response, orgAccessFailureStatus(permission.response))
+        const denied = await requirePermissionWithFreshSession(c, "marketplaces.manage")
+        if (denied) return denied
         const context = actorContext(c)
         const { externalKey } = validParam<z.infer<typeof externalKeyParamsSchema>>(c)
         const existing = await findMarketplaceByExternalKey(context, externalKey)

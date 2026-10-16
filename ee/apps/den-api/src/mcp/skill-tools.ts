@@ -25,31 +25,39 @@ export const SKILL_TOOL_ANNOTATIONS: ToolAnnotations = {
 }
 
 const remoteSkillDescriptorSchema = z.object({
-  name: z.string(),
-  title: z.string(),
-  description: z.string(),
-  capability: z.string(),
-  location: z.string(),
-  marketplaceName: z.string().optional(),
-  pluginName: z.string().optional(),
+  name: z.string().describe("Stable skill name accepted by get_skill."),
+  title: z.string().describe("Human-readable skill title."),
+  description: z.string().describe("Summary of what the skill does and when to use it."),
+  capability: z.string().describe("Exact capability identifier accepted by get_skill or execute_capability."),
+  location: z.string().describe("skill:// resource URI for this skill."),
+  marketplaceName: z.string().optional().describe("Source marketplace's display name, when known."),
+  pluginName: z.string().optional().describe("Source Plugin's display name, when known."),
 })
 
 export const LIST_SKILLS_OUTPUT_SCHEMA = z.object({
-  skills: z.array(remoteSkillDescriptorSchema),
-  total: z.number().int().nonnegative(),
-  hint: z.string().optional(),
+  skills: z.array(remoteSkillDescriptorSchema).describe("Authorized matching skill descriptors, capped by limit; does not include SKILL.md content."),
+  total: z.number().int().nonnegative().describe("Number of authorized matching skills before applying limit."),
+  hint: z.string().optional().describe("Guidance when the catalog is empty or the returned list is truncated."),
 })
 
 export const GET_SKILL_OUTPUT_SCHEMA = remoteSkillDescriptorSchema.extend({
-  provenance: z.string().optional(),
-  content: z.string(),
+  provenance: z.string().optional().describe("Source or attribution information for the skill, when available."),
+  content: z.string().describe("Complete authorized SKILL.md with normalized name and description frontmatter followed by the source instructions."),
 })
 
 export type ListSkillsPayload = z.infer<typeof LIST_SKILLS_OUTPUT_SCHEMA>
 export type GetSkillPayload = z.infer<typeof GET_SKILL_OUTPUT_SCHEMA>
 
 /** Authorized SKILL.md source for one descriptor, or null once it is gone. */
-export type RemoteSkillSource = { content: string; provenance?: string } | null
+/**
+ * The authorized SKILL.md, or why it is held back. A marketplace skill whose
+ * plugin still needs a connection set up is listed but its text is withheld;
+ * `blocked` carries the readiness hint and the action that unblocks it.
+ */
+export type RemoteSkillSource =
+  | { content: string; provenance?: string }
+  | { blocked: { status: string; message: string; action: unknown } }
+  | null
 
 /** Standard SKILL.md framing: normalized frontmatter, then the source body verbatim. */
 export function standardSkillMarkdown(skill: RemoteSkillDescriptor, source: string): string {
@@ -80,6 +88,28 @@ export function findRemoteSkill(skills: RemoteSkillDescriptor[], reference: stri
     ?? skills.find((skill) => skill.name === lowered)
 }
 
+function plainSkillName(value: string): string {
+  return value.split("/")
+    .map((part) => part.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, ""))
+    .filter(Boolean)
+    .join("/")
+}
+
+/**
+ * Skills by the name a person or agent would use: the title without the
+ * unique suffix list_skills adds ("task-management" for
+ * task-management-w925wxnt), optionally qualified by plugin
+ * ("productivity/task-management").
+ */
+export function findRemoteSkillsByPlainName(skills: RemoteSkillDescriptor[], reference: string): RemoteSkillDescriptor[] {
+  const wanted = plainSkillName(reference)
+  if (!wanted) return []
+  return skills.filter((skill) => {
+    const title = plainSkillName(skill.title)
+    return title === wanted || (skill.pluginName ? `${plainSkillName(skill.pluginName)}/${title}` === wanted : false)
+  })
+}
+
 /** Keep skills whose name, title, description, marketplace, or plugin contains every query token. */
 export function filterRemoteSkills(skills: RemoteSkillDescriptor[], query?: string): RemoteSkillDescriptor[] {
   const tokens = tokenize(query ?? "")
@@ -96,10 +126,10 @@ function jsonText(value: unknown): CallToolResult["content"] {
   return [{ type: "text", text: JSON.stringify(value, null, 2) }]
 }
 
-function skillErrorResult(error: "unknown_skill" | "skill_unavailable", name: string, message: string): CallToolResult {
+function skillErrorResult(error: "unknown_skill" | "skill_unavailable" | "skill_needs_setup", name: string, message: string, extra: Record<string, unknown> = {}): CallToolResult {
   return {
     isError: true,
-    content: jsonText({ error, name, message }),
+    content: jsonText({ error, name, message, ...extra }),
   }
 }
 
@@ -116,13 +146,14 @@ export function registerAgentSkillCatalogTools(input: {
       title: "List skills",
       description: [
         "List every skill available to the signed-in OpenWork member: the built-in Cloud skills plus each marketplace or plugin skill they may use.",
+        "Read-only; requires an active OpenWork membership. Returns skills (authorized matching descriptors, without SKILL.md content), total (matches before limit), and an optional hint for empty or truncated results.",
         "Needs no keywords. Each entry carries the stable name, the exact capability, the title and description, and the marketplace / plugin source when known.",
         "Pass the returned name or capability to get_skill to read that skill's SKILL.md. Use query only to narrow a long catalog.",
       ].join(" "),
       annotations: SKILL_TOOL_ANNOTATIONS,
       inputSchema: z.object({
-        query: z.string().trim().max(200).optional().describe("Optional keywords; keeps skills whose name, title, description, marketplace, or plugin contains every word. Omit to list everything."),
-        limit: z.number().int().min(1).max(LIST_SKILLS_MAX_LIMIT).optional().describe(`Max number of skills to return. Defaults to every match, at most ${LIST_SKILLS_MAX_LIMIT}.`),
+        query: z.string().trim().max(200).optional().describe("Keywords to narrow the authorized catalog; every search token must appear in the skill's name, title, description, marketplace, or plugin. Omit to browse without filtering."),
+        limit: z.number().int().min(1).max(LIST_SKILLS_MAX_LIMIT).optional().describe("Number of matching skill descriptors to include; total still counts all matches, so use query to narrow a truncated catalog."),
       }),
       outputSchema: LIST_SKILLS_OUTPUT_SCHEMA,
     },
@@ -147,8 +178,9 @@ export function registerAgentSkillCatalogTools(input: {
       title: "Get skill",
       description: [
         "Read one skill's authorized SKILL.md by its name or exact capability, as returned by list_skills or the skill index.",
-        "The text content is the complete SKILL.md; read it fully before following it.",
-        "Returns unknown_skill when nothing matches — call list_skills for the exact name.",
+        "Read-only; requires an active OpenWork membership and access to the skill. The text response is the complete SKILL.md; read it fully before following it.",
+        "Structured content returns the skill descriptor plus content (the complete normalized SKILL.md) and optional provenance; it does not execute the instructions.",
+        "Returns unknown_skill for missing or ambiguous references, skill_unavailable if the source is gone, or skill_needs_setup with status and action when a required connection is not ready. Call list_skills for an exact name or capability.",
       ].join(" "),
       annotations: SKILL_TOOL_ANNOTATIONS,
       inputSchema: z.object({
@@ -157,11 +189,21 @@ export function registerAgentSkillCatalogTools(input: {
       outputSchema: GET_SKILL_OUTPUT_SCHEMA,
     },
     async ({ name }) => {
-      const skill = findRemoteSkill(await input.listSkills(), name)
+      const skills = await input.listSkills()
+      const plainMatches = findRemoteSkill(skills, name) ? [] : findRemoteSkillsByPlainName(skills, name)
+      if (plainMatches.length > 1) {
+        return skillErrorResult("unknown_skill", name, `Several skills are named "${name}". Pass one of these capabilities.`, {
+          candidates: plainMatches.map((candidate) => ({ name: candidate.name, capability: candidate.capability, pluginName: candidate.pluginName ?? null })),
+        })
+      }
+      const skill = findRemoteSkill(skills, name) ?? plainMatches[0]
       if (!skill) {
         return skillErrorResult("unknown_skill", name, `No skill named "${name}" is available to you. Call list_skills for the exact name or capability.`)
       }
       const source = await input.readSkill(skill)
+      if (source && "blocked" in source) {
+        return skillErrorResult("skill_needs_setup", name, source.blocked.message, { status: source.blocked.status, action: source.blocked.action })
+      }
       if (!source) {
         return skillErrorResult("skill_unavailable", name, `Skill "${skill.name}" is no longer available. Call list_skills for the current catalog.`)
       }

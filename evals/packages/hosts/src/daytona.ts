@@ -5,6 +5,7 @@ import { setTimeout } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { selectedAppEnv } from "./app-env.ts";
 import { resolveEvalEngineValue } from "./eval-engine.ts";
+import { MOUSE_POINTER_CHROME_ARG } from "./types.ts";
 import type { ChromeSurfaceOptions, DenServiceHandle, DenServiceOptions, ElectronSurfaceOptions, Host, RetainedElectronSurface, ShareLinks, SurfaceHandle } from "./types.ts";
 
 export interface DaytonaExecResult {
@@ -668,8 +669,15 @@ export function createDaytonaHost(options: DaytonaHostOptions): DaytonaHost {
       // Explicit `pnpm world up --env KEY` app settings; the launcher keys set
       // below always win over a selected value.
       appendExtraEnv(env, selectedAppEnv());
+      // Same default as local surfaces: no Automation runner unless the
+      // caller opts in with OPENWORK_AUTOMATION_RUNNER=on.
+      env.set("OPENWORK_AUTOMATION_RUNNER", "off");
       if (opts.profile !== "blank") {
+        // Always explicit: a fresh eval profile looks like a new install, which
+        // would otherwise start on OpenCode v2 instead of the selected engine.
+        // A selected `--env OPENWORK_ENGINE_V2_PREVIEW` still wins.
         if (resolveEvalEngineValue(process.env.OPENWORK_EVAL_ENGINE) === "v2") env.set("OPENWORK_ENGINE_V2_PREVIEW", "1");
+        else if (!env.has("OPENWORK_ENGINE_V2_PREVIEW")) env.set("OPENWORK_ENGINE_V2_PREVIEW", "0");
         appendExtraEnv(env, opts.env);
       }
       env.set("DAYTONA_ELECTRON_LOG", logPath);
@@ -861,7 +869,7 @@ PYEOF`;
       `mkdir -p ${shellQuote(profileDir)}`,
       "CHROME_BIN=\"$(command -v chromium || command -v google-chrome || command -v google-chrome-stable || true)\"",
       "if [ -z \"$CHROME_BIN\" ]; then echo 'No chromium/google-chrome binary found in sandbox.' >&2; exit 127; fi",
-      `DISPLAY=:99 nohup "$CHROME_BIN" --headless=new --window-size=1280,900 --no-sandbox --disable-dev-shm-usage --ignore-gpu-blocklist --use-gl=swiftshader --enable-unsafe-swiftshader --remote-debugging-address=0.0.0.0 --remote-debugging-port=${port} --user-data-dir=${shellQuote(profileDir)} ${shellQuote(startUrl)} >${shellQuote(logPath)} 2>&1 &`,
+      `DISPLAY=:99 nohup "$CHROME_BIN" --headless=new --window-size=1280,900 --lang=en-US --disable-features=OverlayScrollbar,FluentOverlayScrollbar --no-sandbox --disable-dev-shm-usage --ignore-gpu-blocklist --use-gl=swiftshader --enable-unsafe-swiftshader --remote-debugging-address=0.0.0.0 --remote-debugging-port=${port} --user-data-dir=${shellQuote(profileDir)} ${opts.mouse ? `${shellQuote(MOUSE_POINTER_CHROME_ARG)} ` : ""}${shellQuote(startUrl)} >${shellQuote(logPath)} 2>&1 &`,
     ].join("; ");
 
     try {

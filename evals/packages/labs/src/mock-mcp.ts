@@ -42,6 +42,8 @@ export interface MockAgentWorkload {
   rateLimitAttempts?: number;
   /** Chat Completions: return this many HTTP 500s before serving the workload. */
   serverErrorAttempts?: number;
+  /** Chat Completions: always reject this workload with a non-retryable HTTP 400 carrying this message. */
+  terminalErrorMessage?: string;
   /** Chat Completions: match the latest user message and count only its tool rounds. */
   latestUserTurn?: boolean;
   promptMarker: string;
@@ -68,6 +70,8 @@ export interface MockAgentRequest {
   model: string;
   advertisedToolNames?: string[];
   toolResultCodes?: unknown;
+  /** Whether any value registered with /admin/private-sentinels appeared anywhere in this model request. */
+  privateSentinelSeen?: boolean;
   reasoningEffort?: string | null;
   promptMarker: string | null;
   matchedMarkers: string[];
@@ -118,8 +122,12 @@ export interface MockMcpHandle {
     tokenErrorDescription?: string;
   }): Promise<void>;
   resetOAuth(): Promise<void>;
-  /** Expire access tokens and hold refresh replies until explicitly released. */
-  holdRefreshResponses(): Promise<void>;
+  /**
+   * Expire access tokens and hold refresh replies until explicitly released.
+   * `keep-latest` models providers whose every refresh, including one that
+   * presents the previous refresh token, leaves only its new token usable.
+   */
+  holdRefreshResponses(options?: { rotation?: "reject-reuse" | "keep-latest" }): Promise<void>;
   pendingRefreshResponses(): Promise<{ id: number; status: number; tokenId: string }[]>;
   releaseRefreshResponse(id: number): Promise<void>;
   stop(): Promise<void>;
@@ -151,6 +159,8 @@ export interface StartMockMcpOptions {
   publicUrl?: string;
   /** Advertised OAuth/resource origin when the mock sits behind a proxy; defaults to the mock's own URL. */
   issuer?: string;
+  /** Protected resource declared in resource metadata; defaults to the issuer's /mcp URL. */
+  protectedResource?: string;
   /** Set RFC 9207 metadata explicitly; undefined omits it. Only true includes response iss. */
   authorizationResponseIssuerSupported?: boolean;
   profileId?: EnterpriseMcpProfileId;
@@ -446,6 +456,7 @@ export async function startMockMcp(options: StartMockMcpOptions = {}): Promise<M
         AUTO_APPROVE: "1",
         ...(options.authorizationResponseIssuerSupported === undefined ? {} : { MOCK_AUTHORIZATION_RESPONSE_ISSUER: options.authorizationResponseIssuerSupported ? "1" : "0" }),
         ...(options.allowUnauthenticatedMcp ? { MOCK_ALLOW_UNAUTHENTICATED_MCP: "1" } : {}),
+        ...(options.protectedResource ? { MOCK_PROTECTED_RESOURCE: options.protectedResource } : {}),
         ...(options.rejectDynamicRedirectUris ? { MOCK_REJECT_DCR_REDIRECT_URIS: options.rejectDynamicRedirectUris } : {}),
         ...(options.rejectTokenClientIds?.length ? { MOCK_REJECT_TOKEN_CLIENT_IDS: options.rejectTokenClientIds.join(",") } : {}),
         ...(options.extraToolCount ? { MOCK_EXTRA_TOOL_COUNT: String(options.extraToolCount) } : {}),
@@ -541,6 +552,7 @@ export async function startMockMcp(options: StartMockMcpOptions = {}): Promise<M
       completions.push({
         model: completion.model,
         toolResultCodes: completion.toolResultCodes,
+        privateSentinelSeen: completion.privateSentinelSeen === true,
         advertisedToolNames: Array.isArray(completion.advertisedToolNames)
           ? completion.advertisedToolNames.filter((value): value is string => typeof value === "string") : undefined,
         reasoningEffort: typeof completion.reasoningEffort === "string" ? completion.reasoningEffort : null,
@@ -656,8 +668,13 @@ export async function startMockMcp(options: StartMockMcpOptions = {}): Promise<M
       const response = await fetch(`${url}/admin/expire-oauth-tokens`, { method: "POST" });
       if (!response.ok) throw new Error(`Mock OAuth reset failed: HTTP ${response.status}`);
     },
-    async holdRefreshResponses() {
-      const response = await fetch(`${url}/admin/refresh-responses`, { method: "POST", signal: AbortSignal.timeout(5_000) });
+    async holdRefreshResponses(options = {}) {
+      const response = await fetch(`${url}/admin/refresh-responses`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(options),
+        signal: AbortSignal.timeout(5_000),
+      });
       if (!response.ok) throw new Error(`Mock refresh hold failed: HTTP ${response.status}`);
     },
     async pendingRefreshResponses() {

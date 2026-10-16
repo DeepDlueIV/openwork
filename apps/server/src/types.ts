@@ -1,8 +1,6 @@
 import type { WorkspaceWire } from "@openwork/types/workspace";
 
-export type WorkspaceType = "local" | "remote";
-
-export type RemoteType = "opencode" | "openwork";
+export type WorkspaceType = "local";
 
 export type ApprovalMode = "manual" | "auto";
 
@@ -20,14 +18,9 @@ export interface WorkspaceConfig {
   name?: string;
   preset?: string;
   workspaceType?: WorkspaceType;
-  remoteType?: RemoteType;
   baseUrl?: string;
   directory?: string;
   displayName?: string;
-  openworkHostUrl?: string;
-  openworkToken?: string;
-  openworkWorkspaceId?: string;
-  openworkWorkspaceName?: string;
   sandboxBackend?: string;
   sandboxRunId?: string;
   sandboxContainerName?: string;
@@ -41,14 +34,9 @@ export interface WorkspaceInfo {
   path: string;
   preset: string;
   workspaceType: WorkspaceType;
-  remoteType?: RemoteType;
   baseUrl?: string;
   directory?: string;
   displayName?: string;
-  openworkHostUrl?: string;
-  openworkToken?: string;
-  openworkWorkspaceId?: string;
-  openworkWorkspaceName?: string;
   sandboxBackend?: string;
   sandboxRunId?: string;
   sandboxContainerName?: string;
@@ -83,6 +71,22 @@ export interface ApprovalConfig {
 
 export type LocalManagedMcpVaultKeyProvider = () => Promise<Uint8Array>;
 
+export type DriveFileApprovalRequest = {
+  action: "push" | "overwrite" | "pull";
+  path: string;
+  fileId: string;
+  name: string;
+  webViewLink?: string | null;
+  mode?: "replace" | "copy";
+};
+
+/** What OpenWork Desktop tells the free Auto relay about this installation. */
+export type DesktopFreeHost = {
+  currentVersion: string;
+  /** Whether this build and its bootstrap may offer signed-out Auto (the public app on hosted OpenWork Cloud). */
+  eligible: () => boolean;
+};
+
 export interface ServerConfig {
   host: string;
   port: number;
@@ -105,8 +109,17 @@ export interface ServerConfig {
   logRequests: boolean;
   /** In-memory secure key custody supplied by an embedding host such as OpenWork Desktop. */
   localManagedMcpVaultKey?: LocalManagedMcpVaultKeyProvider;
+  /** In-process Desktop confirmation; never configured through HTTP, files or the engine environment. */
+  driveFileApproval?: (request: DriveFileApprovalRequest) => Promise<boolean>;
   /** Desktop-owned managed engines only; never enabled by remote clients. */
   resumeInterruptedTasks?: boolean;
+  anonymousInference?: { desktop: DesktopFreeHost };
+  /**
+   * Set by OpenWork Desktop only when this is a brand-new install (no earlier
+   * OpenWork state on disk). The server then starts on this engine unless an
+   * engine choice is already saved or OpenCode v1 history exists.
+   */
+  freshInstallEngine?: "v2";
 }
 
 export interface Capabilities {

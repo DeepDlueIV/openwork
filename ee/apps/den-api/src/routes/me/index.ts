@@ -6,6 +6,8 @@ import type { Hono } from "hono"
 import { describeRoute } from "hono-openapi"
 import { z } from "zod"
 import { OPENWORK_DOWNLOAD_URL } from "../../CONSTS.js"
+import { recordProfileUpdated } from "../../audit/domain/account.js"
+import { recordSessionOrganizationEntered } from "../../audit/domain/sessions.js"
 import { cache } from "../../cache.js"
 import { db } from "../../db.js"
 import { env } from "../../env.js"
@@ -15,8 +17,10 @@ import { normalizeOrganizationMetadata } from "../../organization-limits.js"
 import { resolveUserOrganizations, setSessionActiveOrganization, type UserOrgSummary } from "../../orgs.js"
 import type { AuthContextVariables } from "../../session.js"
 import { calculateDesktopPolicyForOrgMember } from "../../desktop-policies.js"
-import { memberFacingMcpConnectionsEnabled } from "../../capability-sources/external-mcp-rollout.js"
+import { readAgentPermissionRulesForMember } from "../../agent-permissions.js"
+import { desktopConfigDefaultModel } from "../../default-model.js"
 import { DenEmailSendError, sendEmail } from "../../utils/email/send-email.js"
+import { getOrganizationFeatures } from "../../features.js"
 
 const DOWNLOAD_LINK_RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000
 const DOWNLOAD_LINK_RATE_LIMIT_MAX = 5
@@ -292,6 +296,8 @@ export function registerMeRoutes<T extends { Variables: AuthContextVariables & P
         .set({ name, updatedAt })
         .where(eq(AuthUserTable.id, normalizeDenTypeId("user", user.id)))
       await cache.auth.deleteSessionsForUser(normalizeDenTypeId("user", user.id))
+      // account.profile_updated in every membership (direct update: no better-auth hook).
+      await recordProfileUpdated({ userId: user.id, before: user.name, after: name })
 
       return c.json({
         user: {
@@ -346,6 +352,10 @@ export function registerMeRoutes<T extends { Variables: AuthContextVariables & P
       const sessionId = normalizeDenTypeId("session", session.id)
       await setSessionActiveOrganization(sessionId, activeOrg.id)
       c.set("session", { ...session, activeOrganizationId: activeOrg.id })
+      // session.organization_entered in the destination organization only.
+      if (session.activeOrganizationId !== activeOrg.id) {
+        await recordSessionOrganizationEntered({ userId: user.id, organizationId: activeOrg.id, sessionId })
+      }
 
       return c.json({ activeOrgId: activeOrg.id, activeOrgSlug: activeOrg.slug })
     },
@@ -356,7 +366,7 @@ export function registerMeRoutes<T extends { Variables: AuthContextVariables & P
     describeRoute({
       tags: ["Users"],
       summary: "Get current user's desktop config",
-      description: "Returns the authenticated desktop app restrictions for the caller's active organization.",
+      description: "Returns the authenticated desktop app restrictions for the caller's active organization, including the caller's agent permissions as ordered OpenCode permission rules when the organization has agent permissions on, and the model new chats start with (defaultModel, applied by OpenCode v2 desktops only) when the organization has the default model feature on and has chosen one the caller can use.",
       responses: {
         200: jsonResponse("Current user desktop config returned successfully.", meDesktopConfigResponseSchema),
         401: jsonResponse("The caller must be signed in to read desktop config.", unauthorizedSchema),
@@ -371,14 +381,21 @@ export function registerMeRoutes<T extends { Variables: AuthContextVariables & P
         organizationId: organization.id,
         orgMemberId: currentMember.id,
       })
+      const features = await getOrganizationFeatures(organization.id)
+      const agentPermissions = features.agentPermissions
+        ? { rules: await readAgentPermissionRulesForMember({ organizationId: organization.id, orgMemberId: currentMember.id }) }
+        : undefined
+      // The model new chats start with; only v2 desktops apply it. A failure leaves desktops on their own default.
+      const defaultModel = await desktopConfigDefaultModel({ organizationId: organization.id, memberId: currentMember.id, featureOn: features.orgDefaultModel })
 
       return c.json({
         ...desktopPolicy,
         automationsEnabled: env.automations.enabled,
         dashboardEnabled: env.dashboardsEnabled,
-        connectEnabled: memberFacingMcpConnectionsEnabled(organization.metadata, {
-          gatingEnabled: env.mcpConnectionsGatingEnabled,
-        }),
+        // Compatibility field for published desktops: Connect is always on.
+        connectEnabled: true,
+        ...(agentPermissions ? { agentPermissions } : {}),
+        ...(defaultModel ? { defaultModel } : {}),
         ...(Array.isArray(metadata.allowedDesktopVersions)
           ? { allowedDesktopVersions: metadata.allowedDesktopVersions }
           : {}),

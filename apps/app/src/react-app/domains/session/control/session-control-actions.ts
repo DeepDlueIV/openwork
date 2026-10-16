@@ -2,9 +2,12 @@
 import { useCallback, useMemo } from "react";
 
 import { createClient, unwrap } from "../../../../app/lib/opencode";
+import { normalizeDirectoryPath } from "../../../../app/utils";
+import { setSessionModel } from "../../../../app/lib/opencode-session";
+import { createClientV2, isOpencodeV2BaseUrl } from "../../../../app/lib/opencode-v2-adapter";
 import { openworkCatalogModels, openworkModelsListArgsSchema, type OpenworkCatalogModel } from "@openwork/types/openwork-affordance";
 import type { OpenworkServerClient, OpenworkWorkspaceInfo } from "../../../../app/lib/openwork-server";
-import { deleteRouteSession } from "../../../shell/route-workspaces";
+import { deleteRouteSession, routeSessionEndpoint } from "../../../shell/route-workspaces";
 import type { ResolvedWorkspaceEndpoint } from "../../../../app/lib/workspace-endpoint";
 import { useControlAction, type OpenworkControlAction } from "../../../shell/control/control-provider";
 import { useCheckDesktopRestriction } from "../../cloud/desktop-config-provider";
@@ -12,6 +15,7 @@ import { useDenAuth } from "../../cloud/den-auth-provider";
 import { filterEntitledModelOptions } from "../../connections/provider-auth/provider-policy";
 import { filterCloudManagedModelOptions } from "../../connections/provider-auth/assigned-model-options";
 import { useSessionManagementStore } from "../sidebar/session-management-store";
+import { useSessionModelStore } from "../surface/session-model-store";
 import type { ArchiveSessionOptions, ArchiveSessionOutcome } from "../sidebar/use-session-archive";
 import { useSessionActivityStore } from "../status/session-activity-store";
 import { selectSessionAttention } from "../status/session-attention";
@@ -109,8 +113,13 @@ export function useSessionControlActions(input: UseSessionControlActionsInput) {
   const workspaceModels = useCallback(async (workspace: SessionControlWorkspace) => {
     const endpoint = endpointForWorkspace(workspace);
     if (!endpoint) throw new Error("Workspace runtime is not connected");
-    const client = createClient(endpoint.opencodeBaseUrl, workspace.path, { mode: "openwork", token: endpoint.token });
-    return openworkCatalogModels(unwrap(await client.provider.list({ directory: workspace.path })));
+    // Read the catalog from the engine chat runs on, as session creation does:
+    // v2's catalog can differ from v1's while both engines run.
+    const engine = await routeSessionEndpoint(endpoint);
+    const catalog = isOpencodeV2BaseUrl(engine.opencodeBaseUrl)
+      ? await createClientV2(engine.opencodeBaseUrl, workspace.path, { token: engine.token }).provider.list({ directory: workspace.path })
+      : await createClient(engine.opencodeBaseUrl, workspace.path, { mode: "openwork", token: engine.token }).provider.list({ directory: workspace.path });
+    return openworkCatalogModels(unwrap(catalog));
   }, [endpointForWorkspace]);
   useControlAction(useMemo<OpenworkControlAction>(() => ({
     id: "models.list",
@@ -290,6 +299,91 @@ export function useSessionControlActions(input: UseSessionControlActionsInput) {
     execute: openModelPicker,
   }), [openModelPicker, selectedWorkspaceId]);
   useControlAction(modelPickerControlAction);
+
+  const sessionSetModelControlAction = useMemo<OpenworkControlAction>(() => ({
+    id: "session.set_model",
+    label: "Set a session model",
+    description: "Rebind one existing session to an exact available providerId/modelId without opening it or starting inference. Requires an idle, unarchived session on OpenCode v2; any connected workspace can be targeted. Returns the verified new binding.",
+    sideEffect: "mutation",
+    requiresArgs: true,
+    args: [
+      { name: "sessionId", type: "string", required: true, description: "Session ID from session.list_sessions." },
+      { name: "workspaceId", type: "string", required: false, description: "Workspace ID or display name. Required when the session is not in the loaded inventory." },
+      { name: "providerId", type: "string", required: true, description: "Exact providerId from models.list." },
+      { name: "modelId", type: "string", required: true, description: "Exact modelId from models.list." },
+      { name: "variant", type: "string", required: false, description: "Optional reasoning / effort variant. Omit or pass null for the provider default." },
+    ],
+    execute: async (args) => {
+      const sessionId = stringArg(args, "sessionId");
+      const workspaceQuery = stringArg(args, "workspaceId");
+      const providerId = stringArg(args, "providerId");
+      const modelId = stringArg(args, "modelId");
+      const rawVariant = objectArgs(args).variant;
+      const variant = rawVariant === null ? null : typeof rawVariant === "string" ? rawVariant.trim() || null : undefined;
+      const requestedVariant = variant === "default" ? null : variant ?? null;
+      if (rawVariant !== undefined && rawVariant !== null && typeof rawVariant !== "string") {
+        return { ok: false, error: "variant must be a string or null." };
+      }
+      if (variant && variant.length > 60) return { ok: false, error: "variant must be at most 60 characters." };
+      if (!sessionId) return { ok: false, error: "sessionId is required" };
+      if (!providerId) return { ok: false, error: "providerId is required" };
+      if (!modelId) return { ok: false, error: "modelId is required" };
+
+      const targetWorkspace = workspaceQuery
+        ? workspaces.find((workspace) => workspace.id === workspaceQuery || workspaceLabel(workspace).toLowerCase() === workspaceQuery.toLowerCase())
+        : findSessionWorkspace(workspaces, sessionsByWorkspaceId, sessionId);
+      if (!targetWorkspace) return { ok: false, error: workspaceQuery ? "Workspace was not found; pass its exact id." : "Session was not found in the current session list; pass workspaceId." };
+      const endpoint = endpointForWorkspace(targetWorkspace);
+      if (!endpoint) return { ok: false, error: "Workspace runtime is not connected" };
+      const engine = await routeSessionEndpoint(endpoint);
+      if (!isOpencodeV2BaseUrl(engine.opencodeBaseUrl)) {
+        return { ok: false, error: "Session model reassignment requires the OpenCode v2 session API." };
+      }
+      const client = createClientV2(engine.opencodeBaseUrl, targetWorkspace.path, { token: engine.token });
+      const session = unwrap(await client.session.get({ sessionID: sessionId, directory: targetWorkspace.path }));
+      if (normalizeDirectoryPath(session.directory) !== normalizeDirectoryPath(targetWorkspace.path)) {
+        return { ok: false, error: "Session does not belong to the requested workspace." };
+      }
+      if ((session.time?.archived ?? 0) > 0) return { ok: false, error: "Archived sessions cannot be reassigned." };
+      const status = unwrap(await client.session.status({ directory: targetWorkspace.path }));
+      if (status[sessionId]?.type === "busy") return { ok: false, error: "Working sessions cannot be reassigned. Wait until the session is idle." };
+
+      const catalog = filterEntitledModelOptions(filterCloudManagedModelOptions(
+        (await workspaceModels(targetWorkspace)).map((model) => ({ ...model, providerID: model.providerId })),
+        isSignedIn,
+      ), {
+        restrictToCloud: checkDesktopRestriction({ restriction: "allowCustomProviders" }),
+        checkRestriction: checkDesktopRestriction,
+      });
+      const match = catalog.find((model) => model.providerId === providerId && model.modelId === modelId);
+      if (!match) return { ok: false, error: `Unavailable model: ${providerId}/${modelId}. Use models.list for this workspace.` };
+      await setSessionModel(client, sessionId, { providerID: providerId, modelID: modelId }, variant);
+      const rebound = unwrap(await client.session.get({ sessionID: sessionId, directory: targetWorkspace.path }));
+      const reboundVariant = rebound.model?.variant === "default" ? null : rebound.model?.variant ?? null;
+      if (rebound.model?.providerID !== providerId || rebound.model.id !== modelId
+        || reboundVariant !== requestedVariant) {
+        return { ok: false, error: "Session model readback did not match the requested binding." };
+      }
+      // The composer sends its remembered choice before each v2 prompt. Keep
+      // that choice in sync only after persistence is verified, or reopening
+      // this conversation could silently overwrite the recovered binding.
+      useSessionModelStore.getState().setModel(sessionId, { providerID: providerId, modelID: modelId }, reboundVariant);
+      useSessionModelStore.getState().setVariant(sessionId, reboundVariant);
+      return {
+        ok: true,
+        sessionId,
+        workspaceId: targetWorkspace.id,
+        model: {
+          providerId: rebound.model.providerID,
+          modelId: rebound.model.id,
+          variant: reboundVariant,
+          displayName: match.displayName,
+          providerName: match.providerName,
+        },
+      };
+    },
+  }), [checkDesktopRestriction, endpointForWorkspace, isSignedIn, sessionsByWorkspaceId, workspaceModels, workspaces]);
+  useControlAction(sessionSetModelControlAction);
 
   // ---------------------------------------------------------------------------
   // Session management control actions (pin, archive, groups)

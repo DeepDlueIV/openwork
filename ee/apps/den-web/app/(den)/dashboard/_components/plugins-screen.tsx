@@ -167,7 +167,6 @@ export function PluginsScreen() {
       icon={Puzzle}
       title="Plugin Directory"
       description="Discover and manage plugins — bundles of skills, hooks, MCP servers, agents, and commands — and the sources they are imported from."
-      colors={["#EDE9FE", "#4C1D95", "#7C3AED", "#C4B5FD"]}
     >
       <div className="mb-8 flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
         <div className="flex flex-col gap-4">

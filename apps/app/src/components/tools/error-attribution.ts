@@ -1,6 +1,7 @@
 import type { DynamicToolUIPart } from "ai"
 import { openworkCloudMcpConnectionActionSchema } from "@openwork/types/den/mcp-connection-action"
 import { connectionActionPayloadSchema, type ConnectionActionPayload } from "@openwork/types/connection-action-app"
+import { parseMcpAppResourceUri } from "@openwork/types/mcp-app"
 
 export type ToolErrorAttribution = {
   label: string
@@ -9,6 +10,7 @@ export type ToolErrorAttribution = {
 }
 
 export type ChatToolReconnectAction = {
+  credentialKind?: "personal_key";
   connectionId: string
   connectionName: string
   label: string
@@ -31,6 +33,18 @@ const OPENWORK_CLOUD_CAPABILITY_TOOLS = new Set([
   "openwork_get_skill",
   "openwork_connection_action",
 ])
+
+/**
+ * The tool name an App's own call result is read as. An App built in OpenWork is
+ * served by the desktop's private OpenWork Connect host, and each of its tools
+ * runs one OpenWork Cloud capability, so its failures carry the same connection
+ * cards as execute_capability. Any other App's results stay its own.
+ */
+export function appToolResultConnectionToolName(app: { serverName: string; resourceUri: string }, toolName: string): string {
+  return parseMcpAppResourceUri(app.resourceUri) && app.serverName.startsWith("openwork-app-host-connect-")
+    ? "openwork-cloud_execute_capability"
+    : toolName
+}
 
 export function isConnectionDiscoveryTool(toolName: string): boolean {
   return toolName === "openwork_search_capabilities" || toolName === "openwork-cloud_search_capabilities"
@@ -97,6 +111,11 @@ const CONNECTION_ACTION_LABELS = {
   contact_openwork: "Contact OpenWork support",
 }
 
+/** OpenWork Cloud's own capability tools, whose results the host may present natively. */
+export function isOpenworkCloudCapabilityTool(toolName: string): boolean {
+  return isConnectionTool(toolName)
+}
+
 function isConnectionTool(toolName: string): boolean {
   return OPENWORK_CLOUD_CAPABILITY_TOOLS.has(toolName) || /^openwork(?:-cloud)?_run_artifact_[A-Za-z0-9_-]+$/.test(toolName)
 }
@@ -159,7 +178,7 @@ function chatConnectionTarget(toolName: string, result: unknown, input?: unknown
   const targetId = target?.connectionId
   if (targetId && Array.isArray(parsed.matches) && parsed.matches.some(match => isRecord(match)
     && typeof match.connectionId === "string" && match.connectionId !== targetId)) return null
-  return target ? { connection: target, memberOAuth } : null
+  return target ? { connection: target, memberOAuth, memberPersonalKey: authType === "apikey" && credentialMode === "per_member" } : null
 }
 
 export function connectionCardPayloadFromChatToolResult(
@@ -171,6 +190,29 @@ export function connectionCardPayloadFromChatToolResult(
   return chatConnectionTarget(toolName, result, input, options)?.connection ?? null
 }
 
+/**
+ * The one connection an MCP tool result reports, read from the result itself,
+ * its structured content, its metadata, or the JSON in its text parts, with
+ * the part it was found in for the card to render.
+ */
+export function connectionCardFromMcpToolResult(
+  toolName: string,
+  value: unknown,
+  input?: unknown,
+): { connection: ConnectionActionPayload; output: unknown } | null {
+  const outputs: unknown[] = [value]
+  if (isRecord(value)) {
+    outputs.push(value.structuredContent, value._meta)
+    if (Array.isArray(value.content)) outputs.push(...value.content.filter(isRecord).filter(item => item.type === "text").map(item => item.text))
+  }
+  const matches = new Map<string, { connection: ConnectionActionPayload; output: unknown }>()
+  for (const output of outputs) {
+    const connection = connectionCardPayloadFromChatToolResult(toolName, output, input)
+    if (connection) matches.set(connection.connectionId, { connection, output })
+  }
+  return matches.size === 1 ? matches.values().next().value ?? null : null
+}
+
 export function reconnectActionFromChatToolResult(
   toolName: string,
   result: unknown,
@@ -178,15 +220,19 @@ export function reconnectActionFromChatToolResult(
   options?: ChatConnectionTargetOptions,
 ): ChatToolReconnectAction | null {
   const target = chatConnectionTarget(toolName, result, input, options)
-  if (!target?.memberOAuth) return null
+  if (!target || (!target.memberOAuth && !target.memberPersonalKey)) return null
   const { connection } = target
   if (connection.actor !== "member" || connection.action?.surface !== "openwork_your_connections"
-    || !((connection.state === "needs_connection" && connection.action.type === "connect")
-      || (connection.state === "reauth_required" && connection.action.type === "reconnect"))) return null
+    || !(target.memberPersonalKey
+      // A member-held key only ever uses the credential action, never an OAuth connect or reconnect.
+      ? connection.action.type === "update_credentials" && (connection.state === "needs_connection" || connection.state === "reauth_required")
+      : (connection.state === "needs_connection" && connection.action.type === "connect")
+        || (connection.state === "reauth_required" && connection.action.type === "reconnect"))) return null
   return {
     connectionId: connection.connectionId,
     connectionName: connection.connectionName,
-    label: connection.state === "needs_connection" ? "Connect" : "Reconnect",
+    label: target.memberPersonalKey ? connection.state === "reauth_required" ? "Replace key" : "Add key" : connection.state === "needs_connection" ? "Connect" : "Reconnect",
+    ...(target.memberPersonalKey ? { credentialKind: "personal_key" } : {}),
   }
 }
 

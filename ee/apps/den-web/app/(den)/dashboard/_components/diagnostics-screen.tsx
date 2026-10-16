@@ -11,7 +11,7 @@ export function DiagnosticsScreen() {
   const access = getOrgAccessFlags(
     orgContext?.currentMember.role ?? "member",
     orgContext?.currentMember.isOwner ?? false,
-    orgContext?.roles,
+    orgContext?.currentMember.permissions,
   );
 
   return (
@@ -19,9 +19,8 @@ export function DiagnosticsScreen() {
       icon={Activity}
       title="Diagnostics"
       description="Run controlled support checks from the same network path used by enterprise connectors."
-      colors={["#CFFAFE", "#0F172A", "#0E7490", "#F0FDFA"]}
     >
-      <EgressDiagnosticsCard canView={access.canViewSettings} canManage={access.canManageSettings} />
+      <EgressDiagnosticsCard canView={access.canViewEgressDiagnostics} canManage={access.canManageEgressDiagnostics} />
     </DashboardPageTemplate>
   );
 }

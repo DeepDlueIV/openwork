@@ -4,10 +4,11 @@ import {
   CalendarClock,
   Globe,
   Laptop,
-  LayoutDashboard,
   LibraryBig,
   LockKeyhole,
+  MessageCircle,
   ScrollText,
+  Server,
   Plug,
   SlidersHorizontal,
   Sparkles,
@@ -25,19 +26,22 @@ import {
   getBillingRoute,
   getDesktopPoliciesRoute,
   getDiagnosticsRoute,
+  getDeploymentsRoute,
   getLibraryRoute,
-  getManagedDashboardsRoute,
   getMarketplacesRoute,
   getMcpConnectionsRoute,
   getMembersRoute,
   getOrgSettingsRoute,
+  getPermissionsRoute,
   getPluginsRoute,
   getScimRoute,
   getSsoRoute,
   getToolTesterRoute,
   getWebRoute,
+  getWorkbotSettingsRoute,
 } from "../../_lib/den-org";
 import type { DenOrgMode } from "../../_lib/runtime-config";
+import { canOpenAdminRoute } from "./admin-route-access";
 
 export type DashboardNavChild = {
   href: string;
@@ -50,6 +54,8 @@ export type DashboardNavItem = {
   label: string;
   icon: LucideIcon;
   badge?: string;
+  /** Quiet dot beside the label when something here is waiting on the viewer. */
+  attention?: string;
   testId?: string;
   /** Extra pathname prefixes that select this entry. */
   matchHrefs?: string[];
@@ -77,6 +83,17 @@ export type BuildDashboardNavSectionsInput = {
   capabilities: DenOrgCapabilities;
   orgMode: DenOrgMode;
   runtimeConfigLoaded: boolean;
+  /** How many Library items wait on the viewer's sign-in. */
+  libraryNeedsSignIn?: number;
+  /** The organization has the `permissions` feature (orgFeatureEnabled). */
+  permissionsEnabled?: boolean;
+  /** teamRoles: roles live in Members › Roles, so Settings › Permissions steps aside. */
+  teamRoles?: boolean;
+  /** The managedDeployments feature is on for this organization. */
+  managedDeployments?: boolean;
+  /** Workbot is on: admins choose the organization's default model. */
+  workbotSettings?: boolean;
+  desktopPolicyScreenRemoved?: boolean;
 };
 
 export function buildDashboardNavSections({
@@ -84,14 +101,26 @@ export function buildDashboardNavSections({
   access,
   capabilities,
   runtimeConfigLoaded,
+  libraryNeedsSignIn = 0,
+  permissionsEnabled = false,
+  teamRoles = false,
+  managedDeployments = false,
+  workbotSettings = false,
+  desktopPolicyScreenRemoved = false,
 }: BuildDashboardNavSectionsInput): DashboardNavSection[] {
   const workflowsEnabled = capabilities.workflows;
   const showWeb = runtimeConfigLoaded && capabilities.openworkWeb;
   const workItems: DashboardNavItem[] = [
+    ...(capabilities.workbot
+      ? [{ href: "/workbot", label: "Workbot", icon: MessageCircle, testId: "dashboard-nav-workbot" }]
+      : []),
     {
       href: orgSlug ? getLibraryRoute(orgSlug) : "#",
       label: "My Library",
       icon: LibraryBig,
+      ...(libraryNeedsSignIn > 0
+        ? { attention: `${libraryNeedsSignIn} ${libraryNeedsSignIn === 1 ? "needs" : "need"} your sign-in` }
+        : {}),
     },
     ...(workflowsEnabled && orgSlug
       ? [{ href: getAutomationsRoute(orgSlug), label: "My Automations", icon: CalendarClock }]
@@ -101,39 +130,46 @@ export function buildDashboardNavSections({
       : []),
   ];
 
-  const manageItems: DashboardNavItem[] = access.isAdmin && orgSlug
+  // Admin-area entries appear only where the member holds the page's permission.
+  const canOpen = (href: string) => canOpenAdminRoute(href, access);
+  const manageItems: DashboardNavItem[] = orgSlug
     ? [
         { href: getPluginsRoute(orgSlug), label: "Plugins", icon: Box },
         { href: getMcpConnectionsRoute(orgSlug), label: "Connectors", icon: Plug, badge: "MCPs" },
-        ...(capabilities.orgManagedDashboards
-          ? [{ href: getManagedDashboardsRoute(orgSlug), label: "Dashboards", icon: LayoutDashboard }]
-          : []),
         { href: getAiGatewayRoute(orgSlug), label: "AI Gateway", icon: Sparkles },
-        { href: getDesktopPoliciesRoute(orgSlug), label: "Desktop policies", icon: Laptop },
-      ]
+        ...(!desktopPolicyScreenRemoved ? [{ href: getDesktopPoliciesRoute(orgSlug), label: "Desktop policies", icon: Laptop }] : []),
+        ...(workbotSettings ? [{ href: getWorkbotSettingsRoute(orgSlug), label: "Workbot", icon: MessageCircle, testId: "dashboard-nav-workbot-settings" }] : []),
+        ...(managedDeployments ? [{ href: getDeploymentsRoute(orgSlug), label: "Deployments", icon: Server }] : []),
+      ].filter((item) => canOpen(item.href))
     : [];
   const observabilityItems: DashboardNavItem[] = orgSlug
     ? [
-        ...(access.isAdmin ? [{ href: getAnalyticsRoute(orgSlug), label: "Analytics", icon: BarChart3 }] : []),
-        ...(capabilities.auditLogs ? [{ href: getAuditLogsRoute(orgSlug), label: "Audit logs", icon: access.isAdmin ? ScrollText : LockKeyhole, ...(access.isAdmin ? {} : { badge: "Admin access" }) }] : []),
+        ...(access.canViewUsageAnalytics ? [{ href: getAnalyticsRoute(orgSlug), label: "Analytics", icon: BarChart3 }] : []),
+        ...(capabilities.auditLogs
+          ? [{
+              href: getAuditLogsRoute(orgSlug),
+              label: "Audit logs",
+              icon: access.canViewAuditLogs ? ScrollText : LockKeyhole,
+              ...(access.canViewAuditLogs ? {} : { badge: "Locked" }),
+            }]
+          : []),
       ]
     : [];
   const settingsChildren: DashboardNavChild[] = orgSlug
     ? [
-        ...(access.canViewSettings
-          ? [
-              { href: getOrgSettingsRoute(orgSlug), label: "General" },
-              { href: getDiagnosticsRoute(orgSlug), label: "Diagnostics" },
-              { href: getBillingRoute(orgSlug), label: "Billing" },
-              { href: getApiKeysRoute(orgSlug), label: "API Keys" },
-              { href: getSsoRoute(orgSlug), label: "SSO" },
-              { href: getScimRoute(orgSlug), label: "SCIM" },
-            ]
-          : []),
-        ...(access.isAdmin
+        ...[
+          { href: getOrgSettingsRoute(orgSlug), label: "General" },
+          { href: getDiagnosticsRoute(orgSlug), label: "Diagnostics" },
+          { href: getBillingRoute(orgSlug), label: "Billing" },
+          { href: getApiKeysRoute(orgSlug), label: "API Keys" },
+        ].filter((item) => canOpen(item.href)),
+        ...permissionsNavChildren(orgSlug, access, permissionsEnabled, teamRoles ? { membersOpen: canOpen(getMembersRoute(orgSlug)) } : null),
+        ...(access.canViewSso ? [{ href: getSsoRoute(orgSlug), label: "SSO" }] : []),
+        ...(access.canViewScim ? [{ href: getScimRoute(orgSlug), label: "SCIM" }] : []),
+        ...(canOpen(getMarketplacesRoute(orgSlug))
           ? [{ href: getMarketplacesRoute(orgSlug), label: "Advanced" }]
           : []),
-        ...(capabilities.mcpConnections && access.isAdmin
+        ...(capabilities.mcpConnections && canOpen(getToolTesterRoute(orgSlug))
           ? [{ href: getToolTesterRoute(orgSlug), label: "Tool Tester" }]
           : []),
       ]
@@ -147,7 +183,7 @@ export function buildDashboardNavSections({
       }
     : null;
   const teamItems: DashboardNavItem[] = [
-    ...(access.isAdmin && orgSlug
+    ...(orgSlug && canOpen(getMembersRoute(orgSlug))
       ? [{ href: getMembersRoute(orgSlug), label: "Members", icon: Users }]
       : []),
     ...(settingsGroup ? [settingsGroup] : []),
@@ -161,22 +197,40 @@ export function buildDashboardNavSections({
   ];
 }
 
+/**
+ * Permissions appears for members who hold `permissions.view` while the feature
+ * is on. While it is off, people who could manage it keep a locked entry that
+ * says why (DESIGN.md P4); everyone else does not see it.
+ *
+ * With teamRoles, roles have one home, Members › Roles: the entry is dropped
+ * for people who can open Members, and named Roles for anyone who can't.
+ */
+function permissionsNavChildren(orgSlug: string, access: DenOrgAccessFlags, enabled: boolean, teamRoles: { membersOpen: boolean } | null): DashboardNavChild[] {
+  const href = getPermissionsRoute(orgSlug);
+  if (enabled && teamRoles) return access.canViewPermissions && !teamRoles.membersOpen ? [{ href, label: "Roles" }] : [];
+  if (enabled) return access.canViewPermissions ? [{ href, label: "Permissions" }] : [];
+  return access.canManagePermissions ? [{ href, label: "Permissions", badge: "Enterprise" }] : [];
+}
+
 // Alias order is ranking priority in the command palette.
 const PAGE_KEYWORDS: Record<string, string[]> = {
   Advanced: ["marketplace", "collections", "branding", "brand appearance"],
   "AI Gateway": ["llm", "provider", "gateway", "inference", "usage"],
-  Analytics: ["usage", "stats", "consumption", "workflow runs", "history", "langfuse"],
+  Analytics: ["usage", "stats", "workflow runs", "history"],
   "Audit logs": ["audit", "history", "operations", "changes", "security"],
   "API Keys": ["token", "secret"],
   Billing: ["plan", "invoice", "payment"],
   "Bring Your Own Keys (Legacy)": ["llm", "provider", "byok", "api key"],
   Connectors: ["mcp", "integrations", "servers", "connect"],
   "Desktop policies": ["policy", "mdm", "lock", "desktop"],
+  Deployments: ["aws", "self-hosted", "byoc", "install", "health", "status"],
   Dashboards: ["boards", "apps"],
   Diagnostics: ["health", "debug", "troubleshooting"],
   General: ["organization", "workspace"],
-  Members: ["people", "users", "invite", "teams", "roles"],
+  // Agent permissions live on Members › Teams (Everyone and each team's Agents tab).
+  Members: ["people", "users", "invite", "teams", "roles", "agent permissions", "commands", "websites", "allow list", "block list", "desktop", "prompt suggestions"],
   Models: ["llm", "provider", "byok", "api key"],
+  Permissions: ["access", "roles", "teams", "admin", "rbac"],
   "My Automations": ["schedule", "recurring", "tasks"],
   "My Library": ["skills", "plugins", "connections"],
   "OpenWork Models": ["llm", "provider", "managed", "inference"],
@@ -186,6 +240,7 @@ const PAGE_KEYWORDS: Record<string, string[]> = {
   Settings: ["organization", "workspace"],
   SSO: ["single sign on", "saml", "oidc"],
   "Tool Tester": ["tools", "test", "mcp"],
+  Workbot: ["model", "default model", "assistant", "slack", "automations"],
 };
 
 function keywordsFor(...labels: string[]): string[] {

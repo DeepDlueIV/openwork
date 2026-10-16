@@ -1,5 +1,5 @@
 import type { DenSession, DenFetchResult, FieldTypingOptions } from "@openwork/behaviors";
-import type { BrowserEvaluation, Surface, Target } from "@openwork/cdp";
+import type { BrowserEvaluation, Surface, Target, Viewport } from "@openwork/cdp";
 import type {
   MockHandle,
   Place,
@@ -8,7 +8,7 @@ import type {
 } from "@openwork/env";
 import type { ScreenshotArtifact, StepRecord, TestEvidenceRecorder, TestOutcome, TraceEntry } from "@openwork/test-evidence";
 import type { TestAPI } from "vitest";
-import type { EventuallyOptions } from "../eventually.ts";
+import type { EventuallyOptions } from "@openwork/env";
 
 export interface SeeOptions {
   timeoutMs?: number;
@@ -41,9 +41,12 @@ export interface User {
   type(target: Target, text: string, options?: TypeOptions): Promise<void>;
   press(key: string): Promise<void>;
   hover(target: Target): Promise<void>;
+  /** Trusted wheel input at an observed point, without locator auto-scrolling. */
+  wheelAt(input: { x: number; y: number; deltaY: number; deltaX?: number }): Promise<void>;
   see(target: Target, options?: SeeOptions): Promise<void>;
   notSee(target: Target, options?: { timeoutMs?: number }): Promise<void>;
   reload(): Promise<void>;
+  resizeViewport(viewport: Viewport): Promise<void>;
   navigate(url: string): Promise<void>;
   screenshot(): Promise<ScreenshotArtifact>;
   /**
@@ -68,7 +71,23 @@ export interface Agent {
   on(surface: Surface): Agent;
 }
 
+export interface CredentialInputState {
+  dialogPresent: boolean;
+  dialogExcludedFromCapture: boolean;
+  inputExcludedFromCapture: boolean;
+  inputType: string | null;
+  autoComplete: string | null;
+  empty: boolean;
+  inputContainsSecret: boolean;
+  bodyContainsSecret: boolean;
+  urlContainsSecret: boolean;
+  historyContainsSecret: boolean;
+  storageContainsSecret: boolean;
+  consoleContainsSecret: boolean;
+}
+
 export interface Probe {
+  credentialInputState(selector: string, candidate?: string): Promise<CredentialInputState>;
   /** Applied CSS-to-DIP page zoom from Chromium, not the stored zoom preference. */
   zoom(): Promise<number>;
   browserState(): Promise<import("@openwork/behaviors").BrowserState>;
@@ -82,6 +101,9 @@ export interface Probe {
   connectorCatalog(): ReturnType<typeof import("@openwork/behaviors").readConnectorCatalog>;
   storage(key: string): Promise<unknown>;
   storage<T>(key: string, pick: (value: unknown) => T): Promise<T>;
+  /** The app route as "#/workspace/...": the hash on the desktop, the path on the app in a browser. */
+  url(): Promise<string>;
+  linkTargets(selector: string): Promise<string[]>;
   hash(): Promise<string>;
   eval<T>(expression: BrowserEvaluation<T>, options?: ProbeEvalOptions): Promise<Awaited<T>>;
   eval<T>(surface: Surface, expression: BrowserEvaluation<T>, options?: ProbeEvalOptions): Promise<Awaited<T>>;

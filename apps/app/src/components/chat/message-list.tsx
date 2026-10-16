@@ -1,5 +1,10 @@
 "use memo";
 
+import { appBuildActivity, appBuildInProgress, appCreationRuns } from "@/react-app/domains/apps/app-creation-progress"
+import { useAppBuildProgressEnabled } from "@/react-app/domains/apps/use-app-build-progress-feature"
+import { BuiltAppPreviewSync } from "@/react-app/domains/apps/built-app-chat-preview"
+import { builtAppSummary } from "@/react-app/domains/apps/built-mcp-app-model"
+import { AppBuilderStep } from "./app-builder-step"
 import * as React from "react"
 import {
   AlertTriangle,
@@ -34,6 +39,12 @@ import { useOpenTargets } from "@/lib/target-provider"
 import { openTargetFromUrl } from "@/react-app/domains/session/artifacts/open-target"
 import { presentOpencodeSessionError, sessionErrorPresentationFromUIMessage } from "@/react-app/domains/session/sync/session-error"
 import { TaskRecovery } from "./task-recovery"
+import { BackgroundTaskNotice, BackgroundTasksLabel, BackgroundTasksMessage, backgroundShellNoticeFromMessage } from "./background-tasks"
+import { sessionBackgroundShells, useBackgroundShellStore, type BackgroundShell } from "@/react-app/domains/session/status/background-shell-store"
+import { messageAutoAccessWall } from "@/app/lib/inference-access"
+import { AutoAccessNotice } from "@/react-app/domains/cloud/auto-access-ui"
+import { rejectedRecoveryFromMessage } from "@/react-app/domains/session/sync/rejected-turn"
+import { replyModelLabel } from "@/react-app/domains/session/sync/reply-model"
 import { openModelPickerEvent } from "@/react-app/shell/new-providers-listener"
 import { ApplyPatchTool } from "@/components/tools/apply-patch"
 import { BashTool } from "@/components/tools/bash"
@@ -77,6 +88,10 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
 import { ImageAttachmentBadge } from "@/components/chat/image-attachment-badge"
+import { AttachmentFileChip, ComposerBadgeChip, ComposerPillChip, PastedTextChip } from "@/components/chat/composer-pill"
+import { agentBadge, fileMentionBadge } from "@/react-app/domains/session/surface/composer/composer-chips"
+import { isChatAttachmentUrl } from "@/react-app/domains/session/sync/attachment-file-part"
+import { readComposerPill, splitComposerPillText } from "@/react-app/domains/session/surface/composer/composer-pills"
 import { Image } from "@/components/ui/image"
 import {
   Message,
@@ -86,14 +101,20 @@ import {
 } from "@/components/ui/message"
 import { Tool } from "@/components/ui/tool"
 import { CapabilityCallLine } from "@/components/chat/capability-call-line"
-import { CodeModeTool } from "@/components/chat/code-mode-tool"
+import { CodeModeTool, isSilentCodeModePart } from "@/components/chat/code-mode-tool"
 import { ConnectionCard } from "@/components/chat/connection-card"
+import { CredentialPromptCard } from "@/components/chat/credential-prompt-card"
+import { credentialPromptCall } from "@/components/chat/credential-prompt"
 import { connectionFromChatToolPart } from "@/components/tools/error-attribution"
 import { isReservedConnectionQuestion, type ChatConnectionDecisionBinding } from "@/react-app/domains/session/surface/mcp-chat-reconnect"
 import { codeModeToolCalls } from "@/lib/code-mode-tools"
-import { hasPreservedMcpAppResult, isNativeConnectionAppLaunch, McpAppFrame } from "@/components/chat/mcp-app-frame"
+import { dedupeRenderedTurnErrors } from "@/react-app/domains/session/sync/transcript-reconcile"
+import { builtMcpAppId, hasPreservedMcpAppResult, isNativeConnectionAppLaunch, McpAppFrame } from "@/components/chat/mcp-app-frame"
 import { ReasoningBlock } from "@/components/chat/reasoning-block"
 import { SubagentRunLine } from "@/components/chat/subagent-run-line"
+import { RemoteThreadRunLine } from "@/components/chat/remote-thread-run-line"
+import { isRemoteThreadStatusCheck, remoteThreadFromToolPart, type RemoteThreadStart } from "@/lib/remote-session-thread"
+import { useRemoteThreadsEnabled, useReviveRemoteThread } from "@/react-app/domains/session/remote-threads/remote-thread-store"
 import { ToolAggregateGroup } from "@/components/chat/tool-aggregate-group"
 import {
   CurrentToolLifecycleProvider,
@@ -137,6 +158,18 @@ const SEARCH_HIGHLIGHT_MARK_CLASS = "rounded px-0.5 bg-amber-4/70 text-current"
 /** Above this many step rows a finished turn folds into one summary line. */
 const COLLAPSED_STEP_RUN_MIN_ROWS = 4
 
+const AppCreationPartsContext = React.createContext<ReadonlySet<string>>(new Set())
+/**
+ * While an App is being built (appBuildProgress), its panel is the one live
+ * thing in the chat: thinking and plain tool rows fold away and the panel
+ * shows the latest of them. Approvals, connection cards, questions and
+ * sub-agents still show.
+ */
+const AppPanelLiveContext = React.createContext(false)
+const AppPanelFoldContext = React.createContext(false)
+/** Remote task rows a folded turn shows below its fold; inside it they render nothing. */
+const NO_PINNED_REMOTE_THREADS: ReadonlySet<string> = new Set()
+const PinnedRemoteThreadsContext = React.createContext<ReadonlySet<string>>(NO_PINNED_REMOTE_THREADS)
 const ParentRunActiveContext = React.createContext(true)
 
 function MessageTimestamp({ message, className }: { message: UIMessage; className?: string }) {
@@ -223,18 +256,53 @@ function isReservedConnectionQuestionPart(part: ToolUIPart | DynamicToolUIPart):
 
 const ToolMessageInner = ({ part }: ToolMessageProps) => {
   const { connectorIdentities, onMcpReconnect, onMcpReopenAuthorization, connectionQuestionToolCallId, getConnectionDecision } = useMessageList()
+  const remoteThreads = useRemoteThreadsEnabled()
+  const pinnedRemoteThreads = React.useContext(PinnedRemoteThreadsContext)
+  // The agent following up on a task the chat shows makes it run again.
+  useReviveRemoteThread(remoteThreads && part.type === "dynamic-tool" ? part : null)
   const parentActive = React.useContext(ParentRunActiveContext)
   const resolveLifecycle = useCurrentToolLifecycleResolver()
   const lifecycle = resolveLifecycle(part.toolCallId, isToolPartInFlight(part))
   const connectionCardParts = React.useContext(ConnectionCardPartsContext)
+  const appCreationParts = React.useContext(AppCreationPartsContext)
+  const appPanelFold = React.useContext(AppPanelFoldContext)
+  if (appCreationParts.has(part.toolCallId)) return null
   if (part.toolCallId === connectionQuestionToolCallId || isReservedConnectionQuestionPart(part)) return null
+  const promptCall = credentialPromptCall(part)
+  const remoteStart = remoteThreads && part.type === "dynamic-tool" ? remoteThreadFromToolPart(part) : null
+  const calls = part.type === "dynamic-tool" ? codeModeToolCalls(part) : null
+  const remoteStarts = remoteThreads && calls && part.type === "dynamic-tool" ? (codeModeCallsWithResults(part) ?? []).flatMap((call) => {
+    const start = remoteThreadFromToolPart(call)
+    return start ? [{ start, call }] : []
+  }) : []
+  const foldTool = appPanelFold && lifecycle !== "waiting" && !connectionCardParts.has(part.toolCallId) && !promptCall && !isTaskToolPart(part)
+  if (foldTool && !remoteStart && remoteStarts.length === 0) return null
 
   // Delegated work has its own lifecycle, even after a parent follow-up/error.
   if (isTaskToolPart(part)) return <SubagentRunLine part={part} parentActive={parentActive} />
 
+  // So does a task started on another computer: it reads as a sub-agent.
+  if (remoteStart && part.type === "dynamic-tool") {
+    return pinnedRemoteThreads.has(part.toolCallId) ? null : <RemoteThreadRunLine start={remoteStart} part={part} />
+  }
+
   if (part.type === "dynamic-tool") {
-    const calls = codeModeToolCalls(part)
-    if (calls) return <CodeModeTool part={part} calls={calls} lifecycle={lifecycle} connectors={connectorIdentities} />
+    if (calls && remoteStarts.length > 0) {
+      const started = new Set(remoteStarts.map(({ call }) => call.toolCallId))
+      return (
+        <div className="flex min-w-0 flex-col gap-1">
+          {!foldTool && <CodeModeTool part={part} calls={calls.filter((call) => !started.has(call.toolCallId))} lifecycle={lifecycle} connectors={connectorIdentities} />}
+          {promptCall && <CredentialPromptCard part={promptCall} continueToolCallId={part.toolCallId} />}
+          {remoteStarts.filter(({ call }) => !pinnedRemoteThreads.has(call.toolCallId))
+            .map(({ start, call }) => <RemoteThreadRunLine key={start.key} start={start} part={call} />)}
+        </div>
+      )
+    }
+    if (calls) {
+      const script = <CodeModeTool part={part} calls={calls} lifecycle={lifecycle} connectors={connectorIdentities} />
+      // A key the script's Den call asked for is entered in the host's private field.
+      return promptCall ? <>{script}<CredentialPromptCard part={promptCall} continueToolCallId={part.toolCallId} /></> : script
+    }
   }
 
   if (lifecycle === "waiting") {
@@ -326,6 +394,11 @@ const ToolMessageInner = ({ part }: ToolMessageProps) => {
     return <ConnectionCard part={part} allowDiscovery={Boolean(getConnectionDecision?.(part.toolCallId))} />
   }
 
+  // A key an agent asked for is entered in the host's private field, never in chat.
+  if (part.type === "dynamic-tool" && promptCall) {
+    return <CredentialPromptCard part={promptCall} continueToolCallId={part.toolCallId} />
+  }
+
   // Failed calls use the same sentence line with the "failures are
   // instructions" treatment (inline Reconnect/Retry).
   if (part.type === "dynamic-tool") {
@@ -350,6 +423,20 @@ const ToolMessageInner = ({ part }: ToolMessageProps) => {
 
 const isEmptyMessage = (message: UIMessage): boolean => message.parts.length === 0
 
+function withoutSilentSteps(messages: UIMessage[], remoteThreads: boolean): UIMessage[] {
+  let changed = false
+  const next = messages.flatMap((message) => {
+    if (message.role !== "assistant") return [message]
+    // With tasks on other computers shown live, the agent's own checks on them are plumbing.
+    const parts = message.parts.filter((part) => !(part.type === "dynamic-tool"
+      && (isSilentCodeModePart(part) || remoteThreads && isRemoteThreadStatusCheck(part))))
+    if (parts.length === message.parts.length) return [message]
+    changed = true
+    return parts.length > 0 ? [{ ...message, parts }] : []
+  })
+  return changed ? next : messages
+}
+
 type RetryStatus = Extract<SessionStatus, { type: "retry" }>
 
 function isSessionErrorMessage(message: UIMessage) {
@@ -369,9 +456,9 @@ function FileMessage({ part, tone }: FileMessageProps) {
   const openArtifactPath = useOpenArtifactPath()
   const title = getFileTitle(part)
   const badge = getMediaBadge(part)
-  const isImage = part.mediaType.startsWith("image/") && Boolean(part.url)
-  const downloadUrl = getSafeFileDownloadUrl(part)
   const revealPath = getSafeFileRevealPath(part)
+  const isImage = part.mediaType.startsWith("image/") && Boolean(part.url) && !revealPath
+  const downloadUrl = getSafeFileDownloadUrl(part)
   const canReveal = isElectronRuntime() && Boolean(revealPath)
 
   const handleDownload = React.useCallback(() => {
@@ -406,8 +493,59 @@ function FileMessage({ part, tone }: FileMessageProps) {
     </>
   )
 
-  if (isImage && tone === "user") {
+  const actions = downloadUrl || canReveal ? (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            aria-label={`More actions for ${title}`}
+          >
+            <MoreHorizontal />
+          </Button>
+        }
+      />
+      <DropdownMenuContent align="end" className="min-w-44">
+        {downloadUrl ? (
+          <DropdownMenuItem onClick={handleDownload}>
+            <Download />
+            Download
+          </DropdownMenuItem>
+        ) : null}
+        {canReveal ? (
+          <DropdownMenuItem onClick={handleReveal}>
+            <FolderOpen />
+            Reveal in Finder
+          </DropdownMenuItem>
+        ) : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  ) : null
+
+  if (isImage && tone === "user" && !revealPath) {
     return <ImageAttachmentBadge src={part.url} alt={title} />
+  }
+
+  if (tone === "user" && revealPath && !isChatAttachmentUrl(part.url)) {
+    return (
+      <button type="button" className="inline rounded-lg align-middle" onClick={() => openArtifactPath(revealPath)} title={`Open ${title} in Artifacts`}>
+        <ComposerBadgeChip badge={fileMentionBadge(revealPath)} className="mx-0" />
+      </button>
+    )
+  }
+
+  if (tone === "user") {
+    return (
+      <AttachmentFileChip
+        filename={title}
+        mime={part.mediaType}
+        bytes={fileBytes(part)}
+        onOpen={revealPath ? () => openArtifactPath(revealPath) : undefined}
+        actions={actions}
+      />
+    )
   }
 
   if (isImage) {
@@ -438,36 +576,7 @@ function FileMessage({ part, tone }: FileMessageProps) {
       ) : (
         <div className="flex min-w-0 items-center gap-2 pe-2">{fileContent}</div>
       )}
-      {downloadUrl || canReveal ? (
-        <DropdownMenu>
-          <DropdownMenuTrigger
-            render={
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                aria-label={`More actions for ${title}`}
-              >
-                <MoreHorizontal />
-              </Button>
-            }
-          />
-          <DropdownMenuContent align="end" className="min-w-44">
-            {downloadUrl ? (
-              <DropdownMenuItem onClick={handleDownload}>
-                <Download />
-                Download
-              </DropdownMenuItem>
-            ) : null}
-            {canReveal ? (
-              <DropdownMenuItem onClick={handleReveal}>
-                <FolderOpen />
-                Reveal in Finder
-              </DropdownMenuItem>
-            ) : null}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      ) : null}
+      {actions}
     </div>
   )
 }
@@ -601,14 +710,35 @@ type UserMessageProps = {
   isStreaming: boolean
 }
 
-const USER_SKILL_TOKEN_RE = /(Load \[skill [^\]]+\] and follow its instructions\.|\[skill [^\]]+\])/
+function isPastedTextPart(part: UIMessage["parts"][number]) {
+  if (part.type !== "text") return false
+  const metadata = part.providerMetadata?.opencode
+  return Boolean(metadata && typeof metadata === "object" && "pastedText" in metadata && metadata.pastedText === true)
+}
 
-function UserSkillChip(props: { name: string }) {
-  return (
-    <span className="mx-0.5 inline-flex items-center rounded-full border border-violet-6/35 bg-violet-3/20 px-2.5 py-1 text-xs font-medium text-violet-11 align-middle" title={`Skill: ${props.name}`}>
-      {props.name}
-    </span>
-  )
+function fileBytes(part: FileUIPart) {
+  const metadata = part.providerMetadata?.opencode
+  const bytes = metadata && typeof metadata === "object" && "bytes" in metadata ? metadata.bytes : undefined
+  return typeof bytes === "number" ? bytes : undefined
+}
+
+/** Agent and file mentions keep their composer badge in the sent message. */
+function textPartMentionBadge(part: UIMessage["parts"][number]) {
+  if (part.type !== "text") return null
+  const metadata = part.providerMetadata?.opencode
+  if (!metadata || typeof metadata !== "object") return null
+  if ("agentMention" in metadata && typeof metadata.agentMention === "string") return agentBadge(metadata.agentMention)
+  if ("fileMention" in metadata && typeof metadata.fileMention === "string") return fileMentionBadge(metadata.fileMention)
+  return null
+}
+
+/** The pill a sent text part was tagged with in the composer, if any. */
+function textPartComposerPill(part: UIMessage["parts"][number]) {
+  if (part.type !== "text") return null
+  const metadata = part.providerMetadata?.opencode
+  return metadata && typeof metadata === "object" && "composerPill" in metadata
+    ? readComposerPill(metadata.composerPill)
+    : null
 }
 
 function renderPlainTextWithSearchHighlights(text: string, highlightQuery: string | undefined, keyPrefix: string) {
@@ -730,15 +860,18 @@ function renderPlainTextWithLinks(text: string, highlightQuery: string | undefin
   return nodes
 }
 
-function renderUserTextWithSkillChips(text: string, highlightQuery: string | undefined, references: SessionReferences | undefined) {
-  if (!USER_SKILL_TOKEN_RE.test(text)) return renderPlainTextWithLinks(text, highlightQuery, "text", references)
+function renderUserTextWithPills(text: string, highlightQuery: string | undefined, references: SessionReferences | undefined) {
+  const segments = splitComposerPillText(text)
+  if (segments.length === 1 && typeof segments[0] === "string") return renderPlainTextWithLinks(text, highlightQuery, "text", references)
   let offset = 0
-  return text.split(USER_SKILL_TOKEN_RE).map((segment) => {
-    const key = `${offset}:${segment}`
+  return segments.map((segment) => {
+    const key = `${offset}`
+    if (typeof segment !== "string") {
+      offset += 1
+      return <ComposerPillChip key={`pill:${key}`} pill={segment} />
+    }
     offset += segment.length
-    const skillMatch = segment.match(/^(?:Load )?\[skill ([^\]]+)\](?: and follow its instructions\.)?$/)
-    if (skillMatch?.[1]) return <UserSkillChip key={key} name={skillMatch[1]} />
-    return <React.Fragment key={key}>{renderPlainTextWithLinks(segment, highlightQuery, key, references)}</React.Fragment>
+    return <React.Fragment key={`text:${key}`}>{renderPlainTextWithLinks(segment, highlightQuery, key, references)}</React.Fragment>
   })
 }
 
@@ -760,21 +893,21 @@ function renderUserProse(text: string, highlightQuery: string | undefined, refer
     const exactId = Boolean(closing) && /^ses_[A-Za-z0-9][A-Za-z0-9_-]*$/.test(body)
     nodes.push(
       <React.Fragment key={`prose:${cursor}`}>
-        {renderUserTextWithSkillChips(text.slice(cursor, start), highlightQuery, references)}
+        {renderUserTextWithPills(text.slice(cursor, start), highlightQuery, references)}
       </React.Fragment>,
       <React.Fragment key={`inline-code:${start}`}>
-        {renderUserTextWithSkillChips(text.slice(start, end), highlightQuery, exactId ? references : undefined)}
+        {renderUserTextWithPills(text.slice(start, end), highlightQuery, exactId ? references : undefined)}
       </React.Fragment>
     )
     cursor = end
     if (!closing) break
   }
-  nodes.push(<React.Fragment key={`prose:${cursor}`}>{renderUserTextWithSkillChips(text.slice(cursor), highlightQuery, references)}</React.Fragment>)
+  nodes.push(<React.Fragment key={`prose:${cursor}`}>{renderUserTextWithPills(text.slice(cursor), highlightQuery, references)}</React.Fragment>)
   return nodes
 }
 
 function renderUserText(text: string, highlightQuery: string | undefined, references: SessionReferences | undefined) {
-  if (!references) return renderUserTextWithSkillChips(text, highlightQuery, undefined)
+  if (!references) return renderUserTextWithPills(text, highlightQuery, undefined)
   const nodes: React.ReactNode[] = []
   const blocks = /^(?:[ \t]*(?:>[ \t]*)*(?:(?:[-+*]|\d+[.)])[ \t]+)?(`{3,}|~{3,})[^\n]*(?:\n|$)|(?: {4}|\t)[^\n]*(?:\n|$))/gm
   let cursor = 0
@@ -794,7 +927,7 @@ function renderUserText(text: string, highlightQuery: string | undefined, refere
         {renderUserProse(text.slice(cursor, start), highlightQuery, references)}
       </React.Fragment>,
       <React.Fragment key={`code-block:${start}`}>
-        {renderUserTextWithSkillChips(text.slice(start, end), highlightQuery, undefined)}
+        {renderUserTextWithPills(text.slice(start, end), highlightQuery, undefined)}
       </React.Fragment>
     )
     cursor = end
@@ -808,6 +941,8 @@ const UserMessage = React.memo(
     const { onRevertToUserMessage, onForkAtMessage, forkingMessageId, onEditUserMessage, highlightQuery, readOnly } = useMessageList()
     const references = useSessionReferencesMaybe()
     const branching = forkingMessageId === message.id
+    const wall = messageAutoAccessWall(message.metadata)
+    const { sessionId, workspaceId } = useMessageList()
     const { onOpenTarget } = useOpenTargets()
     const openLink = (event: React.MouseEvent) => {
       if (event.defaultPrevented || !onOpenTarget || !(event.target instanceof Element)) return
@@ -825,10 +960,10 @@ const UserMessage = React.memo(
     const hasContent = inlineParts.length > 0
     const menuActions: MenuAction[] = []
     if (messageText) menuActions.push(
-      { type: "item", id: "edit", label: "Edit message", icon: <Pencil className="size-4" />, disabled: readOnly, onSelect: () => onEditUserMessage(message.id, messageText) },
+      { type: "item", id: "edit", label: "Edit message", icon: <Pencil className="size-4" />, disabled: readOnly || Boolean(wall), onSelect: () => onEditUserMessage(message.id, messageText) },
       { type: "item", id: "copy", label: "Copy", icon: <Copy className="size-4" />, onSelect: () => navigator.clipboard.writeText(messageText) },
     )
-    menuActions.push(
+    if (!wall) menuActions.push(
       { type: "item", id: "branch", label: branching ? "Branching..." : "Branch in new chat", icon: <Split className="size-4 rotate-90" />, disabled: Boolean(forkingMessageId), onSelect: () => onForkAtMessage(message.id) },
       { type: "item", id: "revert", label: "Revert", icon: <Undo2 className="size-4" />, disabled: readOnly, onSelect: () => onRevertToUserMessage(message.id) },
     )
@@ -847,7 +982,8 @@ const UserMessage = React.memo(
             className="!select-text"
             render={
               <div
-                className="group flex w-full flex-col items-end gap-1 !select-text"
+                className={cn("group flex w-full flex-col items-end gap-1 !select-text", wall && "opacity-50")}
+                data-unprocessed={wall ? "true" : undefined}
                 style={{ userSelect: "text" }}
               >
                 {hasContent ? (
@@ -857,6 +993,11 @@ const UserMessage = React.memo(
                     onClick={openLink}
                   >
                     {inlineParts.map((part, index) => {
+                      const pill = textPartComposerPill(part)
+                      if (pill) return <ComposerPillChip key={`pill-${index}`} pill={pill} />
+                      if (part.type === "text" && isPastedTextPart(part)) return <PastedTextChip key={`pasted-${index}`} text={part.text} />
+                      const mention = textPartMentionBadge(part)
+                      if (mention) return <ComposerBadgeChip key={`mention-${index}`} badge={mention} />
                       if (part.type === "text") {
                         return (
                           <span key={`text-${index}`} className="whitespace-pre-wrap">
@@ -885,7 +1026,7 @@ const UserMessage = React.memo(
                     })}
                   </MessageContent>
                 ) : null}
-                {!isStreaming && (
+                {!isStreaming && !wall && (
                   <MessageActions
                     className={cn(
                       "flex items-center gap-0 transition-opacity duration-150 group-hover:opacity-100 max-lg:opacity-100 pointer-coarse:opacity-100",
@@ -936,6 +1077,7 @@ const UserMessage = React.memo(
               </div>
             }
           />
+          {wall ? <div className="w-full"><AutoAccessNotice wall={wall} sessionId={sessionId} workspaceId={workspaceId} recovery={rejectedRecoveryFromMessage(message)} /></div> : null}
       </Message>
     )
   }
@@ -955,6 +1097,7 @@ const MessageComponent = React.memo(
   ({ message, isLastMessage, isStreaming, isLastStep, hideReasoning }: MessageComponentProps) => {
     if (isSessionErrorMessage(message)) {
       const presentation = sessionErrorPresentationFromUIMessage(message)
+      if (presentation?.autoAccessWall) return <TranscriptAutoAccessNotice wall={presentation.autoAccessWall} />
       return (
         <ErrorMessage
           error={getMessagesText([message]) || "Session failed"}
@@ -965,10 +1108,13 @@ const MessageComponent = React.memo(
           technicalDetails={presentation?.technicalDetails}
           gatewayConnectUrl={presentation?.kind === "gateway-auth-required" || presentation?.kind === "provider-credentials" ? presentation.connectUrl ?? null : undefined}
           gatewaySelectionRequired={presentation?.kind === "gateway-selection-required"}
-          changeModel={presentation !== null && ["provider-access-denied", "provider-unavailable", "rate-limited", "conversation-too-long", "attachment-unsupported"].includes(presentation.kind)}
+          changeModel={presentation !== null && ["provider-access-denied", "provider-unavailable", "provider-unreachable", "model-unavailable", "rate-limited", "conversation-too-long", "attachment-unsupported"].includes(presentation.kind)}
         />
       )
     }
+
+    const backgroundShellNotice = backgroundShellNoticeFromMessage(message)
+    if (backgroundShellNotice) return <BackgroundTaskNotice message={message} notice={backgroundShellNotice} />
 
     if (isEmptyMessage(message)) {
       return null
@@ -995,15 +1141,42 @@ const MessageComponent = React.memo(
   }
 )
 
+function TranscriptAutoAccessNotice({ wall }: { wall: NonNullable<ReturnType<typeof messageAutoAccessWall>> }) {
+  const { sessionId, workspaceId } = useMessageList()
+  return <div className="mx-auto w-full max-w-3xl px-2 md:px-10"><AutoAccessNotice wall={wall} sessionId={sessionId} workspaceId={workspaceId} /></div>
+}
+
 MessageComponent.displayName = "MessageComponent"
 
-const LoadingMessage = React.memo(({ elapsedSeconds, starting }: { elapsedSeconds: number; starting: boolean }) => (
+const NO_BACKGROUND_SHELLS: BackgroundShell[] = []
+
+const LoadingMessage = React.memo(({ elapsedSeconds, starting, backgroundShells = NO_BACKGROUND_SHELLS, backgroundStale = false }: {
+  elapsedSeconds: number
+  starting: boolean
+  /** Commands left running in the background share this line while the turn runs. */
+  backgroundShells?: BackgroundShell[]
+  backgroundStale?: boolean
+}) => {
+  const background = backgroundShells.length > 0 ? (
+    <>
+      <span aria-hidden="true"> · </span>
+      <BackgroundTasksLabel shells={backgroundShells} stale={backgroundStale} shimmer={false} />
+    </>
+  ) : null
+  return (
     <Message className="mx-auto flex w-full max-w-3xl flex-col items-start gap-2 px-2 md:px-10">
       <div role={starting ? "status" : undefined} data-loading-message={starting ? "starting" : "working"} className="py-1 text-sm text-muted-foreground">
-        <span className="ow-text-shimmer tabular-nums">{starting ? "Starting…" : `Working ${formatElapsedSeconds(elapsedSeconds)}`}</span>
+        {/* One shimmer sweeps the whole line, so Working and the count move as
+            one. A count the connection cannot confirm stays outside it, still. */}
+        <span className="ow-text-shimmer tabular-nums">
+          {starting ? "Starting…" : `Working ${formatElapsedSeconds(elapsedSeconds)}`}
+          {backgroundStale ? null : background}
+        </span>
+        {backgroundStale ? background : null}
       </div>
     </Message>
-))
+  )
+})
 
 LoadingMessage.displayName = "LoadingMessage"
 
@@ -1075,7 +1248,7 @@ interface ErrorMessageProps {
 }
 
 function ErrorMessage({ error, description, showDescriptionOnResume, resumePrompt, canRetry = true, technicalDetails, gatewayConnectUrl, gatewaySelectionRequired, changeModel }: ErrorMessageProps) {
-  const { onResumeInterrupted, developerMode, dispatchAction, sessionId } = useMessageList()
+  const { onResumeInterrupted, dispatchAction, sessionId } = useMessageList()
   const selection = error?.includes("gateway_selection_required") ? presentOpencodeSessionError(error) : null
   const displayError = selection?.title ?? error
   const displayDescription = selection?.description ?? description
@@ -1087,7 +1260,7 @@ function ErrorMessage({ error, description, showDescriptionOnResume, resumePromp
       description={showDescriptionOnResume && displayDescription
         ? <span data-testid="session-error-interruption-warning">{displayDescription}</span>
         : !resumePrompt ? displayDescription : null}
-      technicalDetails={developerMode ? displayDetails : null}
+      technicalDetails={displayDetails}
       onRetry={canRetry && resumable && resumePrompt ? () => onResumeInterrupted?.(resumePrompt) : undefined}
       retryTestId="session-error-resume"
       actions={gatewaySelectionRequired || selection || changeModel || gatewayConnectUrl !== undefined ? <>
@@ -1108,7 +1281,7 @@ interface RetryMessageProps {
 }
 
 const RetryMessage = React.memo(({ status }: RetryMessageProps) => {
-  const { dispatchAction, developerMode } = useMessageList()
+  const { dispatchAction } = useMessageList()
   const [seconds, setSeconds] = React.useState(() => retryDelaySeconds(status))
 
   React.useEffect(() => {
@@ -1130,12 +1303,18 @@ const RetryMessage = React.memo(({ status }: RetryMessageProps) => {
   const action = status.action
   const freeModelLimit = action?.reason === "free_tier_limit"
   const presentation = presentOpencodeSessionError({ name: "APIError", data: { message: status.message } })
+  // Transport failures are the engine reconnecting, not a failure yet: say so
+  // and show progress instead of echoing the raw fetch error.
+  const reconnecting = !freeModelLimit && !action
+    && ["network-unavailable", "provider-unreachable", "provider-connection-dropped"].includes(presentation.kind)
+  const progress = seconds > 0 ? `Attempt ${status.attempt}, next try in ${seconds}s` : `Attempt ${status.attempt}`
 
   return (
     <TaskRecovery state="retrying" testId="session-retrying"
-      title={`${(freeModelLimit ? "The free starter model is busy right now" : action?.title ?? presentation.title).replace(/[.!…]+$/, "")}. Retrying…`}
-      description={freeModelLimit ? "To keep working now, connect your own model provider." : action?.message}
-      technicalDetails={[info, ...(developerMode ? [presentation.technicalDetails] : [])].join("\n")}
+      title={reconnecting ? "Reconnecting to the model"
+        : `${(freeModelLimit ? "The free starter model is busy right now" : action?.title ?? presentation.title).replace(/[.!?…]+$/, "")}. Retrying…`}
+      description={freeModelLimit ? "To keep working now, connect your own model provider." : reconnecting ? progress : action?.message}
+      technicalDetails={[info, presentation.technicalDetails].join("\n")}
       actions={freeModelLimit ? <Button variant="ghost" size="xs"
         onClick={() => dispatchAction({ target: "settings", action: "open", section: "providers" })}>Connect a model provider</Button>
         : action?.link ? <Button variant="ghost" size="xs" onClick={openDesktopUrl.bind(null, action.link)}>{action.label}</Button> : null} />
@@ -1164,19 +1343,29 @@ function getRenderableMessage(message: UIMessage) {
  * Running steps only ever grow. When a finished step folds its live detail
  * before the next step's row arrives, the area briefly got shorter and the
  * chat jumped; holding the tallest height seen during the run keeps it still.
- * The hold ends when the turn folds (this element unmounts).
+ * The hold ends when the turn folds or the App panel replaces these steps.
  */
-function LiveSteps({ children }: { children: React.ReactNode }) {
+function LiveSteps({ children, active }: { children: React.ReactNode; active: boolean }) {
   const ref = React.useRef<HTMLDivElement>(null)
   React.useLayoutEffect(() => {
     const element = ref.current
-    if (!element || typeof ResizeObserver === "undefined") return
+    if (!element) return
+    // The hold only protects a running turn from the engine's own shrinks.
+    // A finished turn, or a group the person collapsed, may get shorter.
+    if (!active || typeof ResizeObserver === "undefined") {
+      element.style.minHeight = ""
+      return
+    }
     let tallest = 0
     const hold = () => {
       element.style.minHeight = ""
       const height = element.getBoundingClientRect().height
       if (height > tallest) tallest = height
       element.style.minHeight = `${tallest}px`
+    }
+    const release = () => {
+      tallest = 0
+      element.style.minHeight = ""
     }
     hold()
     const observer = new ResizeObserver(hold)
@@ -1187,11 +1376,16 @@ function LiveSteps({ children }: { children: React.ReactNode }) {
       hold()
     })
     mutations.observe(element, { childList: true })
+    element.addEventListener("pointerdown", release)
+    element.addEventListener("keydown", release)
     return () => {
       observer.disconnect()
       mutations.disconnect()
+      element.removeEventListener("pointerdown", release)
+      element.removeEventListener("keydown", release)
+      element.style.minHeight = ""
     }
-  }, [])
+  }, [active])
   return <div ref={ref} data-live-steps="" className="flex flex-col gap-2">{children}</div>
 }
 
@@ -1201,7 +1395,7 @@ function LiveSteps({ children }: { children: React.ReactNode }) {
  * unprompted; once the answer is in, the reasoning is available but out
  * of the way.
  */
-function CompletedStepRun({ label, children }: { label: string; children: React.ReactNode }) {
+function CompletedStepRun({ label, modelLabel, children }: { label: string; modelLabel?: string | null; children: React.ReactNode }) {
   const [open, setOpen] = React.useState(false)
 
   return (
@@ -1209,9 +1403,9 @@ function CompletedStepRun({ label, children }: { label: string; children: React.
       <div className="mx-auto flex w-full max-w-3xl px-2 md:px-10">
         <CollapsibleTrigger
           className="group flex cursor-pointer items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
-          aria-label={open ? `${label}. Hide steps` : `${label}. Show steps`}
+          aria-label={`${label}${modelLabel ? ` · ${modelLabel}` : ""}. ${open ? "Hide steps" : "Show steps"}`}
+          data-testid="completed-work-rail"
         >
-          <span>{label}</span>
           <ChevronRight
             aria-hidden="true"
             className={cn(
@@ -1219,6 +1413,8 @@ function CompletedStepRun({ label, children }: { label: string; children: React.
               open && "rotate-90"
             )}
           />
+          <span>{label}</span>
+          {modelLabel ? <span data-testid="reply-model"> · {modelLabel}</span> : null}
         </CollapsibleTrigger>
       </div>
       <CollapsibleContent className="h-(--collapsible-panel-height) overflow-hidden transition-[height] duration-150 ease-out data-starting-style:h-0 data-ending-style:h-0 [&[hidden]:not([hidden='until-found'])]:hidden">
@@ -1232,6 +1428,42 @@ interface AssistantMessageGroupProps {
   items: UIMessageWithIndex[]
   isLastGroup: boolean
   isStreaming: boolean
+  /** Newline-joined tool call ids of each built App's newest card in the conversation. */
+  newestAppCallIds: string
+}
+
+function isMcpAppFramePart(part: UIMessage["parts"][number]): part is DynamicToolUIPart {
+  return part.type === "dynamic-tool"
+    && (part.state === "output-available" || part.state === "output-error")
+    && hasPreservedMcpAppResult(part)
+    && !isNativeConnectionAppLaunch(part)
+}
+
+/**
+ * A script's calls with their results. A one-call script whose call kept no
+ * result of its own returned that call's result, as its row already shows.
+ */
+function codeModeCallsWithResults(part: DynamicToolUIPart): DynamicToolUIPart[] | null {
+  const calls = codeModeToolCalls(part)
+  const only = calls?.length === 1 ? calls[0] : undefined
+  if (!only || only.state !== "output-available" || only.output !== undefined || part.state !== "output-available") return calls
+  return [{ ...only, output: part.output }]
+}
+
+/** Tasks a group's steps started on other computers, directly or from a script. */
+function collectRemoteThreadStarts(items: UIMessageWithIndex[]) {
+  const starts = new Map<string, { start: RemoteThreadStart; part: DynamicToolUIPart }>()
+  for (const item of items) {
+    if (item.message.role !== "assistant" || isSessionErrorMessage(item.message)) continue
+    for (const part of item.message.parts) {
+      if (part.type !== "dynamic-tool") continue
+      for (const call of codeModeCallsWithResults(part) ?? [part]) {
+        const start = remoteThreadFromToolPart(call)
+        if (start && !starts.has(start.key)) starts.set(start.key, { start, part: call })
+      }
+    }
+  }
+  return [...starts.values()]
 }
 
 function collectMcpAppParts(items: UIMessageWithIndex[]): DynamicToolUIPart[] {
@@ -1239,32 +1471,56 @@ function collectMcpAppParts(items: UIMessageWithIndex[]): DynamicToolUIPart[] {
   for (const item of items) {
     if (item.message.role !== "assistant" || isSessionErrorMessage(item.message)) continue
     for (const part of item.message.parts) {
-      if (
-        part.type === "dynamic-tool"
-        && (part.state === "output-available" || part.state === "output-error")
-        && hasPreservedMcpAppResult(part)
-        && !isNativeConnectionAppLaunch(part)
-      ) {
-        parts.set(part.toolCallId, part)
-      }
+      if (isMcpAppFramePart(part)) parts.set(part.toolCallId, part)
     }
   }
   return [...parts.values()]
+}
+
+/**
+ * Every card of an App built in OpenWork opens the App's current revision, so
+ * only its newest card in the conversation stays live; earlier ones would load
+ * the same App again. A string keeps memoized groups stable while text streams.
+ */
+function newestBuiltAppCallIds(messages: UIMessage[]): string {
+  const newest = new Map<string, string>()
+  for (const message of messages) {
+    if (message.role !== "assistant" || isSessionErrorMessage(message)) continue
+    for (const part of message.parts) {
+      if (!isMcpAppFramePart(part)) continue
+      const appId = builtMcpAppId(part)
+      if (appId) newest.set(appId, part.toolCallId)
+    }
+  }
+  return [...newest.values()].sort().join("\n")
 }
 
 function MessageGroup({
   items,
   isLastGroup,
   isStreaming,
+  newestAppCallIds,
 }: AssistantMessageGroupProps) {
   const { onRevertToUserMessage, onForkAtMessage, forkingMessageId, showThinking, readOnly, getConnectionDecision } = useMessageList()
   const connectionCardParts = React.useMemo(() => connectionCardPartIds(items, getConnectionDecision), [items, getConnectionDecision])
+  const newestAppCalls = React.useMemo(() => new Set(newestAppCallIds.split("\n")), [newestAppCallIds])
   const lastItem = items[items.length - 1]
   // Branch/revert must target a real server-side message id. Synthetic
   // client-side messages (e.g. session errors) don't exist on the server and
   // silently corrupt fork/revert boundaries.
   const lastRealItem = items.findLast((item) => !isSessionErrorMessage(item.message))
-  const isLiveGroup = isStreaming && isLastGroup
+  const parentActive = React.useContext(ParentRunActiveContext)
+  const panelLive = React.useContext(AppPanelLiveContext) && isLastGroup
+  const creationLive = (parentActive || panelLive) && isLastGroup && !readOnly
+  const creationRuns = React.useMemo(() => appCreationRuns(items.map(item => item.message), creationLive), [items, creationLive])
+  const creationParts = React.useMemo(() => new Set(creationRuns.flatMap(run => [...(run.executions ?? []).map(part => part.toolCallId), ...(run.discoveries ?? []).map(part => part.toolCallId), ...(run.attempts ?? []).map(part => part.toolCallId), ...(run.preparation ? [run.preparation.toolCallId] : []), ...run.builds.map(part => part.toolCallId)])), [creationRuns])
+  const isLiveGroup = (isStreaming || (creationLive && creationRuns.length > 0)) && isLastGroup
+  const panelActivity = React.useMemo(
+    () => panelLive ? appBuildActivity(items.map(item => item.message), creationParts, showThinking) : null,
+    [panelLive, items, creationParts, showThinking],
+  )
+  const remoteThreads = useRemoteThreadsEnabled()
+  const remoteThreadStarts = React.useMemo(() => remoteThreads ? collectRemoteThreadStarts(items) : [], [items, remoteThreads])
 
   if (!lastItem || isMessageEmptyGroup(items)) {
     return null;
@@ -1272,6 +1528,7 @@ function MessageGroup({
 
   const renderableItems = getRenderableMessages(items)
   const lastTextMessage = getLastTextPart(lastItem.message)
+  const resolvedReplyModel = lastRealItem?.message.role === "assistant" ? replyModelLabel(lastRealItem.message) : null
   const mcpAppParts = collectMcpAppParts(items)
 
   // Leading messages without prose (tool/reasoning steps) render inline and
@@ -1294,6 +1551,16 @@ function MessageGroup({
       proseItems = [{ index: firstProse.index, message: split.answer }, ...proseItems.slice(1)]
     }
   }
+  const appFrame = (part: DynamicToolUIPart) => (
+    <Message
+      key={`mcp-app-${part.toolCallId}`}
+      className="mx-auto flex w-full max-w-3xl flex-col px-2 empty:hidden md:px-10"
+    >
+      {builtMcpAppId(part) && !newestAppCalls.has(part.toolCallId)
+        ? <p className="mt-2 text-xs text-muted-foreground">This App has a newer version below.</p>
+        : builtAppSummary(part) ? null : <McpAppFrame part={part} />}
+    </Message>
+  )
   // How long the turn spent working, from the first step to when the answer
   // finished (or started, for older history without a completed timestamp).
   // Server timestamps, so this survives a reload.
@@ -1334,6 +1601,14 @@ function MessageGroup({
   // A short finished run reads fine as a list, so only long ones fold away.
   const collapseSteps =
     !isLiveGroup && stepItems.length > 0 && stepRowCount > COLLAPSED_STEP_RUN_MIN_ROWS
+  // A task on another computer outlives the turn that started it and may still
+  // need the person, so its row stays in view below a folded run.
+  const pinnedRemoteThreads = collapseSteps ? remoteThreadStarts : []
+  const pinnedRemoteIds = pinnedRemoteThreads.length > 0 ? new Set(pinnedRemoteThreads.map(({ part }) => part.toolCallId)) : NO_PINNED_REMOTE_THREADS
+  const replyStartedAt = stepsStartedAt ?? (lastRealItem ? getMessageCreated(lastRealItem.message) : null)
+  const replySummaryLabel = replyStartedAt !== null && stepsEndedAt !== null && stepsEndedAt > replyStartedAt
+    ? `Worked for ${formatToolCallDuration(stepsEndedAt - replyStartedAt)}${stepRowCount ? ` · ${stepRowCount} ${stepRowCount === 1 ? "step" : "steps"}` : ""}`
+    : stepRowCount ? stepRunLabel : ""
   const foldedReasoning = collapseSteps
     ? proseReasoning.map((reasoning) => (
       <Message
@@ -1349,7 +1624,9 @@ function MessageGroup({
     const isLastMessage = isLastGroup && item.index === lastItem.index
 
     return (
-      <div key={item.message.id}>
+      // A message whose parts all render nothing (empty reasoning, step
+      // markers, hidden steps) must not take a slot in the list's spacing.
+      <div key={item.message.id} className="[&:not(:has(:is(span,p,img,svg,button,pre,a,li,iframe,video,canvas,input,textarea,hr,table)))]:hidden">
         <MessageComponent
           message={item.message}
           isLastMessage={isLastMessage}
@@ -1369,6 +1646,11 @@ function MessageGroup({
     let run: { parts: AnyToolPart[]; key: string } | null = null
     const flush = () => {
       if (!run) return
+      // Plain command, read and search runs fold into the App panel while it is live.
+      if (panelLive) {
+        run = null
+        return
+      }
       nodes.push(
         <div key={`aggregate-${run.key}`}>
           <Message className="mx-auto flex w-full max-w-3xl flex-col items-start gap-2 px-2 md:px-10">
@@ -1397,34 +1679,41 @@ function MessageGroup({
 
   return (
     <DevProfiler id={`MessageGroup:${lastItem.message.id}`}>
+      <AppCreationPartsContext.Provider value={creationParts}>
+      <AppPanelFoldContext.Provider value={panelLive}>
+      <PinnedRemoteThreadsContext.Provider value={pinnedRemoteIds}>
       <ConnectionCardPartsContext.Provider value={connectionCardParts}>
       <div className="flex flex-col gap-2 group/message-group">
       {/* The scroll area keeps the same 8px rhythm the parts inside a single
           message use, so a step row is spaced identically whether or not a
           message boundary happens to fall between it and the previous row. */}
+      {!isLiveGroup && resolvedReplyModel && !collapseSteps ? <div data-testid="completed-work-rail" className="mx-auto flex w-full max-w-3xl flex-wrap items-center gap-1 px-2 text-sm text-muted-foreground md:px-10">
+        {replySummaryLabel ? <span>{replySummaryLabel} · </span> : null}<span data-testid="reply-model">{resolvedReplyModel}</span>
+      </div> : null}
       {stepItems.length > 0 ? (
         collapseSteps ? (
-          <CompletedStepRun label={stepRunLabel}>
+          <CompletedStepRun label={resolvedReplyModel ? replySummaryLabel : stepRunLabel} modelLabel={resolvedReplyModel}>
             <div className="flex flex-col gap-2">
               {renderItems(stepItems, 0)}
               {foldedReasoning}
             </div>
           </CompletedStepRun>
         ) : (
-          <LiveSteps>
-            {renderItems(stepItems, 0)}
+          <LiveSteps active={isLiveGroup && !panelLive}>
+            {/* The App panel replaces ordinary steps. Release their held height
+                as they fold away, otherwise an empty rail pushes the panel down. */}
+            {renderItems(stepItems, 0, panelLive)}
           </LiveSteps>
         )
       ) : null}
-      {mcpAppParts.map((part) => (
-        <Message
-          key={`mcp-app-${part.toolCallId}`}
-          className="mx-auto flex w-full max-w-3xl flex-col px-2 empty:hidden md:px-10"
-        >
-          <McpAppFrame part={part} />
+      {creationRuns.map(run => <Message key={`creation-${run.id}`} className="mx-auto flex w-full max-w-3xl flex-col px-2 md:px-10"><AppBuilderStep run={run} startedAt={getMessageCreated(items[0]!.message)} completedAt={getMessageCompleted(lastItem.message)} activity={run === creationRuns.at(-1) ? panelActivity : null} active={creationLive && (run === creationRuns.at(-1) || Boolean(run.preparation && isToolPartInFlight(run.preparation)) || run.builds.some(isToolPartInFlight))} /></Message>)}
+      {mcpAppParts.map(appFrame)}
+      {pinnedRemoteThreads.map(({ start, part }) => (
+        <Message key={`remote-thread-${start.key}`} className="mx-auto flex w-full max-w-3xl flex-col px-2 md:px-10">
+          <RemoteThreadRunLine start={start} part={part} />
         </Message>
       ))}
-      {renderItems(proseItems, stepItems.length, collapseSteps)}
+      {renderItems(proseItems, stepItems.length, collapseSteps || panelLive)}
       {lastTextMessage && !isStreaming && (
         <div className={cn("mx-auto flex w-full max-w-3xl flex-wrap items-center gap-2 px-2 transition-opacity duration-150 group-hover/message-group:opacity-100 max-lg:opacity-100 pointer-coarse:opacity-100 md:px-8", forkingMessageId && forkingMessageId === lastRealItem?.message.id ? "opacity-100" : "opacity-0")}>
           <MessageActions className="flex gap-0">
@@ -1458,12 +1747,15 @@ function MessageGroup({
               </>
             ) : null}
           </MessageActions>
-          <MessageTimestamp message={lastItem.message} />
+           <MessageTimestamp message={lastItem.message} />
           {/* <MessageSources messages={items.map((item) => item.message)} /> */}
         </div>
       )}
       </div>
       </ConnectionCardPartsContext.Provider>
+      </PinnedRemoteThreadsContext.Provider>
+      </AppPanelFoldContext.Provider>
+      </AppCreationPartsContext.Provider>
     </DevProfiler>
   )
 }
@@ -1471,6 +1763,7 @@ function MessageGroup({
 function sameMessageGroupProps(left: AssistantMessageGroupProps, right: AssistantMessageGroupProps): boolean {
   return left.isLastGroup === right.isLastGroup
     && left.isStreaming === right.isStreaming
+    && left.newestAppCallIds === right.newestAppCallIds
     && left.items.length === right.items.length
     && left.items.every((item, index) => (
       item.index === right.items[index]?.index
@@ -1528,11 +1821,26 @@ export function shouldShowRunReconnecting(status: ThreadStatus, syncDegraded: bo
   return status === "submitted" || status === "streaming" || status === "retrying"
 }
 
-export function MessageList({ messages, messageIdReplacements, status, activityStatus, retryStatus, syncHealth, viewport, sessionErrorHandled = false }: MessageListProps) {
+export function MessageList({ messages: transcript, messageIdReplacements, status, activityStatus, retryStatus, syncHealth, viewport, sessionErrorHandled = false }: MessageListProps) {
   const { workspaceId, sessionId, onStopSubagentSession } = useMessageList()
+  const backgroundTasksEnabled = useBackgroundShellStore((state) => state.enabled)
+  const runningShells = useBackgroundShellStore((state) => state.booksByWorkspaceId[workspaceId]?.running)
+  const backgroundShells = React.useMemo(
+    () => backgroundTasksEnabled ? sessionBackgroundShells(runningShells, sessionId) : [],
+    [backgroundTasksEnabled, runningShells, sessionId],
+  )
+  // With the feature off, completion rows cached earlier must not change the
+  // transcript's grouping either.
+  const messages = React.useMemo(
+    () => backgroundTasksEnabled || !transcript.some((message) => message.role === "system")
+      ? transcript
+      : transcript.filter((message) => !backgroundShellNoticeFromMessage(message)),
+    [backgroundTasksEnabled, transcript],
+  )
   const [stoppingBackground, setStoppingBackground] = React.useState(false)
   const workspace = useWorkspaceMaybe()
   const tasks = React.useMemo(() => activeDelegatedTasks(messages), [messages])
+  const newestAppCallIds = React.useMemo(() => newestBuiltAppCallIds(messages), [messages])
   const delegatedIds = React.useMemo(() => [...new Set(messages.flatMap(message => message.parts)
     .filter(isToolUIPart).filter(isTaskToolPart).map(taskChildSessionId).filter((id): id is string => Boolean(id)))], [messages])
   const backgroundCount = useSessionActivityStore(state => delegatedIds.filter(id =>
@@ -1552,6 +1860,10 @@ export function MessageList({ messages, messageIdReplacements, status, activityS
   }))
   const isStreaming = status === "streaming" || status === "retrying"
   const runActive = status === "streaming" || status === "retrying"
+  const appBuildStaged = useAppBuildProgressEnabled()
+  const appRunActive = runActive || activityStatus === "thinking" || activityStatus === "responding" || activityStatus === "compacting" || activityStatus === "waiting"
+  // The App panel replaces the Working line and the thinking rows while it builds.
+  const appPanelLive = React.useMemo(() => appBuildStaged && (appRunActive || status === "submitted") && appBuildInProgress(messages), [appBuildStaged, appRunActive, status, messages])
   const syncDegraded = syncHealth?.degraded === true
   const activityActive = runActive || tasks.length > 0
   const runStartedAtRef = React.useRef<number | null>(null)
@@ -1590,7 +1902,14 @@ export function MessageList({ messages, messageIdReplacements, status, activityS
     return () => window.clearInterval(interval)
   }, [activityActive, runStartedAt, syncDegraded])
   const latestUserMessageId = React.useMemo(() => messages.findLast((message) => message.role === "user")?.id, [messages])
-  const items = React.useMemo(() => groupMessages(messages, status), [messages, status]);
+  // Steps that render nothing are removed before layout, so they leave no gap.
+  const remoteThreads = useRemoteThreadsEnabled()
+  const visibleMessages = React.useMemo(() => dedupeRenderedTurnErrors(withoutSilentSteps(messages, remoteThreads)), [messages, remoteThreads]);
+  const items = React.useMemo(() => groupMessages(visibleMessages, status), [visibleMessages, status]);
+  // groupMessages indexes the visible transcript. Comparing those positions
+  // with the unfiltered transcript marks the live turn historical as soon as
+  // a silent script or duplicate error is removed.
+  const lastVisibleIndex = visibleMessages.length - 1;
   const error = useSessionErrorMessage();
   const hasSessionErrorMessage = React.useMemo(() => messages.some(isSessionErrorMessage), [messages])
   const latestAssistantToolParts = React.useMemo(
@@ -1603,7 +1922,10 @@ export function MessageList({ messages, messageIdReplacements, status, activityS
     active: activityActive && activityStatus !== "error", waiting, retrying: status === "retrying" || Boolean(retryStatus),
     disconnected: syncDegraded, lastProgressAt, now: Date.now(),
   })
-  const showLoading = !waiting && !noNewActivity && !showReconnecting
+  // Silence alone never hides the line: a slow first token or a quiet tool is
+  // still a busy run. The effect below re-checks status in the background, and
+  // Reconnecting takes over only when the run can no longer be confirmed.
+  const showLoading = !waiting && !showReconnecting
     && shouldShowMessageListLoading(status, messages.length)
   const baseUrl = workspace?.opencodeBaseUrl
   React.useEffect(() => {
@@ -1617,7 +1939,9 @@ export function MessageList({ messages, messageIdReplacements, status, activityS
   )
 
   return (
-    <ParentRunActiveContext.Provider value={runActive}>
+    <ParentRunActiveContext.Provider value={appRunActive}>
+    <AppPanelLiveContext.Provider value={appPanelLive}>
+    <BuiltAppPreviewSync key={sessionId} messages={messages} active={runActive}>
     <CurrentToolLifecycleProvider
       activityStatus={activityStatus}
       currentToolCallIds={currentToolCallIds}
@@ -1637,15 +1961,16 @@ export function MessageList({ messages, messageIdReplacements, status, activityS
             <MemoizedMessageGroup
               key={item.messages[0]?.message.id ?? "empty-assistant-group"}
               items={item.messages}
-              isLastGroup={item.messages.at(-1)?.index === messages.length - 1}
-              isStreaming={isStreaming && item.messages.at(-1)?.index === messages.length - 1}
+              isLastGroup={item.messages.at(-1)?.index === lastVisibleIndex}
+              isStreaming={isStreaming && item.messages.at(-1)?.index === lastVisibleIndex}
+              newestAppCallIds={newestAppCallIds}
             />
           )
         }
 
-        const isLastMessage = item.index === messages.length - 1
+        const isLastMessage = item.index === lastVisibleIndex
         const isLastStep =
-          !messages[item.index + 1] || messages[item.index + 1].role !== item.message.role
+          !visibleMessages[item.index + 1] || visibleMessages[item.index + 1].role !== item.message.role
 
         return (
           <StandaloneMessage
@@ -1678,12 +2003,19 @@ export function MessageList({ messages, messageIdReplacements, status, activityS
             </button>
           ) : null}
         </div>}
-        {showLoading && <LoadingMessage elapsedSeconds={runElapsedSeconds} starting={status === "submitted"} />}
+        {/* One rule for commands left running in the background: while the turn
+            runs, the count joins its Working line; otherwise it takes that
+            line's place on its own. One line either way, so the chat does not
+            move when the turn ends and the count stays. */}
+        {showLoading && !appPanelLive && <LoadingMessage elapsedSeconds={runElapsedSeconds} starting={status === "submitted"} backgroundShells={backgroundShells} backgroundStale={syncDegraded} />}
         {showReconnecting && <ReconnectingMessage lastConfirmedAt={syncHealth?.lastConfirmedAt ?? null} />}
+        {!showLoading && backgroundShells.length > 0 && <BackgroundTasksMessage shells={backgroundShells} stale={syncDegraded} />}
         {retryStatus ? <RetryMessage status={retryStatus} /> : null}
         {error && !hasSessionErrorMessage && !sessionErrorHandled ? <ErrorMessage error={error} /> : null}
       </ProgressiveMessageList>
     </CurrentToolLifecycleProvider>
+    </BuiltAppPreviewSync>
+    </AppPanelLiveContext.Provider>
     </ParentRunActiveContext.Provider>
   )
 }

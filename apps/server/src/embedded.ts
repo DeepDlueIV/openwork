@@ -50,7 +50,11 @@ export type EmbeddedServerOptions = CliArgs & {
   opencodeCwd?: string;
   /** Secure key custody for the local managed MCP credential vault. */
   localManagedMcpVaultKey?: LocalManagedMcpVaultKeyProvider;
+  driveFileApproval?: ServerConfig["driveFileApproval"];
   resumeInterruptedTasks?: boolean;
+  anonymousInference?: ServerConfig["anonymousInference"];
+  /** Desktop marks a brand-new install so it starts on OpenCode v2. */
+  freshInstallEngine?: ServerConfig["freshInstallEngine"];
 };
 
 export type EmbeddedServerHandle = {
@@ -73,6 +77,9 @@ export type EmbeddedServerHandle = {
 export async function startEmbeddedServer(options: EmbeddedServerOptions): Promise<EmbeddedServerHandle> {
   const config = await resolveServerConfig(options);
   config.localManagedMcpVaultKey = options.localManagedMcpVaultKey;
+  config.driveFileApproval = options.driveFileApproval;
+  config.anonymousInference = options.anonymousInference;
+  config.freshInstallEngine = options.freshInstallEngine;
   config.resumeInterruptedTasks = options.resumeInterruptedTasks === true && options.manageOpencode === true && !config.opencodeBaseUrl;
   const logger = createServerLogger(config);
 
@@ -249,13 +256,6 @@ export async function startEmbeddedServer(options: EmbeddedServerOptions): Promi
     config.opencodeUsername = managedOpencode.username;
     config.opencodePassword = managedOpencode.password;
     for (const entry of config.workspaces) {
-      if (entry.workspaceType === "remote") {
-        entry.baseUrl ??= managedOpencode.url;
-        entry.opencodeUsername ??= managedOpencode.username;
-        entry.opencodePassword ??= managedOpencode.password;
-        entry.directory ??= entry.path;
-        continue;
-      }
       entry.baseUrl = managedOpencode.url;
       entry.opencodeUsername = managedOpencode.username;
       entry.opencodePassword = managedOpencode.password;

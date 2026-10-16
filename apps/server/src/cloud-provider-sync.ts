@@ -1,12 +1,13 @@
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import type { GatewayAuthorizationRequest, GatewayDesktopOauthStartResponse, GatewayUsableModel } from "@openwork/types/den/gateway";
-import { catalogModelVariants, CLOUD_MODEL_CONFIG_VERSION } from "@openwork/types/cloud-model-fast";
+import { CLOUD_MODEL_CONFIG_VERSION } from "@openwork/types/cloud-model-fast";
 
 import { enginePoolForConfig, rolloverOutcomeApplied, type RolloverOutcome } from "./engine-pool.js";
 import type { EnvService } from "./env-file.js";
 import { ApiError } from "./errors.js";
-import { selectPrimaryCredentialEnvName, syncManagedProviderAuth } from "./managed-provider-auth.js";
+import { syncManagedProviderAuth } from "./managed-provider-auth.js";
+import { buildManagedProviderConfig, readProviderEnvNames, selectPrimaryCredentialEnvName } from "@openwork/types/managed-provider-config";
 import { writeOpenworkRuntimeConfigFile } from "./openwork-runtime-config.js";
 import {
   hasOpenworkWorkspaceConfig,
@@ -67,6 +68,7 @@ export type CloudProviderSyncStatusProvider = {
   source: string | null;
   updatedAt: string | null;
   modelIds: string[];
+  pinnedModelIds: string[];
   importedAt: number;
   modelConfigVersion: number;
 };
@@ -142,6 +144,7 @@ type DenProvider = {
   updatedAt: string | null;
   providerConfig: JsonRecord;
   models: DenProviderModel[];
+  pinnedModelIds: string[];
 };
 
 type DenProviderConnection = DenProvider & {
@@ -241,23 +244,6 @@ export type CloudProviderSyncOptions = {
 
 const requestTimeoutMs = 8_000;
 const defaultIntervalMs = 5 * 60 * 1_000;
-const modelConfigPassthroughKeys = [
-  "family",
-  "release_date",
-  "attachment",
-  "reasoning",
-  "temperature",
-  "tool_call",
-  "interleaved",
-  "cost",
-  "limit",
-  "modalities",
-  "status",
-  "options",
-  "headers",
-  "provider",
-  "variants",
-];
 
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -336,6 +322,7 @@ function parseProvider(value: unknown, idPattern: RegExp = /^lpr_/i): DenProvide
     updatedAt: readOptionalString(value.updatedAt),
     providerConfig: parseJsonRecord(value.providerConfig),
     models,
+    pinnedModelIds: [...new Set(readStringList(value.pinnedModelIds))].filter((id) => models.some((model) => model.id === id)),
   };
 }
 
@@ -613,10 +600,6 @@ function runtimeProviderId(provider: DenProvider): string {
   return provider.source === "openwork" ? "openwork" : provider.id;
 }
 
-function readProviderEnvNames(providerConfig: JsonRecord): string[] {
-  return readStringList(providerConfig.env);
-}
-
 function upsertEnvEntry(entries: EnvEntry[], key: string, value: string): void {
   const trimmedKey = key.trim();
   const trimmedValue = value.trim();
@@ -660,45 +643,15 @@ function providerEnvEntries(provider: DenProviderConnection): EnvEntry[] {
   return entries;
 }
 
-function buildModelConfig(model: DenProviderModel, providerNpm: unknown): JsonRecord {
-  // Older Den responses included routing labels in the display name. Keep the
-  // wire ID and selection metadata, but don't expose those labels in the picker.
-  const selection = model.modelGroupName && model.credentialSetName ? ` (${model.modelGroupName} / ${model.credentialSetName})` : "";
-  const next: JsonRecord = {
-    id: model.id,
-    name: selection && model.name.endsWith(selection) ? model.name.slice(0, -selection.length) : model.name,
-  };
-  for (const key of modelConfigPassthroughKeys) {
-    const value = model.config[key];
-    if (value !== undefined) next[key] = value;
-  }
-  const variants = catalogModelVariants(model.config, providerNpm);
-  if (variants) next.variants = variants;
-  return next;
-}
-
 function buildProviderConfig(provider: DenProviderConnection): JsonRecord {
-  const models: JsonRecord = {};
-  for (const model of [...provider.models].sort((left, right) => left.id.localeCompare(right.id))) {
-    models[model.id] = buildModelConfig(model, provider.providerConfig.npm);
-  }
-  const config: JsonRecord = {
-    id: provider.providerId,
-    name: provider.name,
-    env: readProviderEnvNames(provider.providerConfig),
-  };
-  if (Object.keys(models).length > 0 || provider.source !== "openwork") config.models = models;
-
-  const npm = readRequiredString(provider.providerConfig.npm);
-  if (npm) config.npm = npm;
-  const api = readRequiredString(provider.providerConfig.api);
-  if (api) config.api = api;
-  if (isRecord(provider.providerConfig.options)) config.options = provider.providerConfig.options;
-  const whitelist = readStringList(provider.providerConfig.whitelist);
-  if (whitelist.length > 0) config.whitelist = whitelist;
-  const blacklist = readStringList(provider.providerConfig.blacklist);
-  if (blacklist.length > 0) config.blacklist = blacklist;
-  return config;
+  return buildManagedProviderConfig({
+    ...provider,
+    models: provider.models.map((model) => {
+      // Older Den responses included routing labels in the display name.
+      const selection = model.modelGroupName && model.credentialSetName ? ` (${model.modelGroupName} / ${model.credentialSetName})` : "";
+      return { ...model, name: selection && model.name.endsWith(selection) ? model.name.slice(0, -selection.length) : model.name };
+    }),
+  });
 }
 
 function prepareMaterialization(
@@ -1020,7 +973,7 @@ export class CloudProviderSync {
     return {
       hasSession: this.session !== null,
       lastRun: this.lastRun ? { ...this.lastRun } : null,
-      providers: this.providers.map((provider) => ({ ...provider, modelIds: [...provider.modelIds] })),
+      providers: this.providers.map((provider) => ({ ...provider, modelIds: [...provider.modelIds], pinnedModelIds: [...provider.pinnedModelIds] })),
       reloadPending: this.reloadPending,
       skippedProviders: this.skippedProviders.map((provider) => ({ ...provider })),
     };
@@ -1435,7 +1388,7 @@ export class CloudProviderSync {
       const hasStoredConfig = await hasOpenworkWorkspaceConfig(this.config, workspace.id);
       const openwork = hasStoredConfig
         ? await readOpenworkWorkspaceConfig(this.config, workspace.id)
-        : workspace.workspaceType !== "remote" && workspace.path.trim().length > 0
+        : workspace.path.trim().length > 0
           ? await readLegacyOpenworkConfig(openworkConfigPath(workspace.path))
           : null;
       if (!openwork) continue;
@@ -1464,6 +1417,7 @@ export class CloudProviderSync {
         source: entry.provider.source,
         updatedAt: entry.provider.updatedAt,
         modelIds: entry.provider.models.map((model) => model.id).sort(),
+        pinnedModelIds: entry.provider.pinnedModelIds,
         modelConfigVersion: CLOUD_MODEL_CONFIG_VERSION,
         importedAt,
       };

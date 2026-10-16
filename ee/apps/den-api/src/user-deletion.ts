@@ -5,6 +5,8 @@ import {
   AuthApiKeyTable,
   AuthSessionTable,
   AuthUserTable,
+  FreeAutoLimitEventTable,
+  FreeAutoPurchaseTable,
   DesktopHandoffGrantTable,
   ExternalIdentityTable,
   MemberTable,
@@ -17,7 +19,7 @@ import {
 } from "@openwork-ee/den-db/schema"
 import { cache } from "./cache.js"
 import { db } from "./db.js"
-import { revokeGoogleCredentials, revokeInferenceCredentialsForMembers } from "./llm/inference-provider-lifecycle.js"
+import { revokeUpstreamCredentials, revokeInferenceCredentialsForMembers } from "./llm/inference-provider-lifecycle.js"
 
 type UserId = typeof AuthUserTable.$inferSelect.id
 
@@ -55,10 +57,12 @@ export async function deleteGlobalAuthUser(userId: UserId) {
     await tx.delete(ScimSyncEventTable).where(eq(ScimSyncEventTable.userId, userId))
     await tx.update(MemberTable).set({ userId: null }).where(eq(MemberTable.userId, userId))
     await tx.update(WorkerTable).set({ created_by_user_id: null }).where(eq(WorkerTable.created_by_user_id, userId))
+    await tx.delete(FreeAutoLimitEventTable).where(eq(FreeAutoLimitEventTable.user_id, userId))
+    await tx.delete(FreeAutoPurchaseTable).where(eq(FreeAutoPurchaseTable.user_id, userId))
     await tx.delete(AuthUserTable).where(eq(AuthUserTable.id, userId))
     return { oauthConsents: consentRows, gatewayCredentials: credentials }
   })
-  await revokeGoogleCredentials(gatewayCredentials)
+  await revokeUpstreamCredentials(gatewayCredentials)
   await Promise.all(Array.from(new Set(memberships.map((membership) => membership.organizationId))).map((organizationId) => cache.org.deleteMembers(organizationId)))
   // Auth session cache hits intentionally avoid a DB liveness check; user deletion must clear
   // both token and session-id cache entries for every deleted session instead.

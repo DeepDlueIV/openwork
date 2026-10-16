@@ -8,7 +8,7 @@ import type { DenTypeId } from "@openwork-ee/utils/typeid"
 import { env } from "../../env.js"
 import { cloudTransportRoute, jsonValidator, orgMemberRoute, paramValidator, queryValidator } from "../../middleware/index.js"
 import { invalidRequestSchema, jsonResponse, unauthorizedSchema } from "../../openapi.js"
-import { decodeFileContent } from "../../capability-sources/binary-content.js"
+import { decodeFileContent, decodeTruncatedText, readBoundedBytes } from "../../capability-sources/binary-content.js"
 import { buildGmailDraftRaw, gmailDraftUrl, gmailThreadUrl, normalizeGmailHeaderValue, readGmailDraftIds } from "../../capability-sources/gmail.js"
 import type { GmailDraftAttachment, GmailDraftQuote } from "../../capability-sources/gmail.js"
 import { gmailFileInputPreflight, gmailFileInputPreflightSchema } from "../../capability-sources/gmail-file-input.js"
@@ -31,6 +31,9 @@ import {
 } from "../../capability-sources/google-workspace-api.js"
 import { getOrgOAuthClient, type ConnectedAccountRow } from "../../capability-sources/oauth-credentials.js"
 import { clientSelectedFeatures, getNativeOAuthProvider, providerScopesSatisfy, resolveProviderScopes } from "../../capability-sources/provider-registry.js"
+import { registerGoogleDriveFileRoutes } from "./google-drive-files.js"
+import { registerGoogleDriveUploadRoutes } from "./google-drive-uploads.js"
+import { isGoogleAuthorizationFailure, parseGoogleError } from "./google-workspace-actions.js"
 import { registerGmailManagementRoutes } from "./gmail-management.js"
 import { registerGoogleProductivityManagementRoutes } from "./google-productivity-management.js"
 import { listTeamsForMember } from "../../orgs.js"
@@ -47,6 +50,8 @@ const DRIVE_FOLDER_MIME_TYPE = "application/vnd.google-apps.folder"
 const GOOGLE_WORKSPACE_API_TIMEOUT_MS = 30_000
 const MAX_DRIVE_FILE_CONTENT_BYTES = 64 * 1024
 const DRIVE_TEXT_CHARACTER_LIMIT = 200_000
+// UTF-8 needs at most four bytes per character.
+const DRIVE_TEXT_BYTE_LIMIT = DRIVE_TEXT_CHARACTER_LIMIT * 4
 const DIRECT_UPLOAD_MAX_BYTES = 4 * 1024 * 1024
 const DIRECT_UPLOAD_BODY_MAX_BYTES = DIRECT_UPLOAD_MAX_BYTES + (256 * 1024)
 const DIRECT_UPLOAD_MAX_FILES = 10
@@ -414,12 +419,17 @@ async function googleWorkspaceToken(input: {
       ?? { kind: "needs_connection", message: CONNECT_GOOGLE_ACCOUNT_MESSAGE }
   }
 
-  const token = await getValidAccessToken({
-    provider,
-    credentialProviderId,
-    organizationId: input.organizationId,
-    orgMembershipId: input.orgMembershipId,
-  })
+  let token: Awaited<ReturnType<typeof getValidAccessToken>>
+  try {
+    token = await getValidAccessToken({
+      provider,
+      credentialProviderId,
+      organizationId: input.organizationId,
+      orgMembershipId: input.orgMembershipId,
+    })
+  } catch (error) {
+    return { kind: "google_api_error", message: error instanceof Error ? error.message : "Google OAuth token refresh failed." }
+  }
   if ("error" in token) {
     return { kind: "needs_connection", message: CONNECT_GOOGLE_ACCOUNT_MESSAGE }
   }
@@ -439,29 +449,13 @@ function isRecordValue(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
-function googleAuthorizationReasons(text: string): Set<string> {
-  const reasons = new Set<string>()
+function googleErrorReasons(text: string): Set<string> {
   try {
-    const payload: unknown = JSON.parse(text)
-    if (!isRecordValue(payload) || !isRecordValue(payload.error)) return reasons
-    const errors = Array.isArray(payload.error.errors) ? payload.error.errors : []
-    const details = Array.isArray(payload.error.details) ? payload.error.details : []
-    for (const value of [...errors, ...details]) {
-      if (isRecordValue(value) && typeof value.reason === "string") reasons.add(value.reason)
-    }
+    return parseGoogleError(JSON.parse(text)).reasons
   } catch {
     // Non-JSON provider errors retain the ordinary upstream-error path.
+    return new Set()
   }
-  return reasons
-}
-
-function isGoogleAuthorizationFailure(status: number, text: string): boolean {
-  if (status === 401) return true
-  if (status !== 403) return false
-  const reasons = googleAuthorizationReasons(text)
-  return reasons.has("authError")
-    || reasons.has("insufficientPermissions")
-    || reasons.has("ACCESS_TOKEN_SCOPE_INSUFFICIENT")
 }
 
 async function googleDriveApiError(
@@ -484,7 +478,7 @@ async function googleDriveApiError(
       },
     }
   }
-  if (!isGoogleAuthorizationFailure(response.status, text)) return { status: 502, body: error }
+  if (!isGoogleAuthorizationFailure(response.status, googleErrorReasons(text))) return { status: 502, body: error }
   return {
     status: 409,
     body: {
@@ -747,7 +741,10 @@ async function executeGmailDraft(
 export function registerGoogleWorkspaceRoutes<T extends { Variables: OrgRouteVariables }>(app: Hono<T>) {
   app.use("/v1/capabilities/google-workspace/*", contextStorage())
   app.use("/v1/direct-uploads/google-workspace/*", contextStorage())
+  app.use("/v1/direct-downloads/google-workspace/*", contextStorage())
   const actionDependencies = { token: googleWorkspaceToken, fetch: googleWorkspaceApiFetch }
+  registerGoogleDriveUploadRoutes(app, actionDependencies)
+  registerGoogleDriveFileRoutes(app, actionDependencies)
   registerGmailManagementRoutes(app, actionDependencies)
   registerGoogleProductivityManagementRoutes(app, actionDependencies)
 
@@ -757,7 +754,7 @@ export function registerGoogleWorkspaceRoutes<T extends { Variables: OrgRouteVar
       tags: ["Direct uploads"],
       security: [{ mcpAccessToken: [] }],
       summary: "Upload one multipart workspace file directly to Google Drive",
-      description: "Authenticated host transport for openwork-cloud-uploads. The route immediately forwards the file to Google and does not persist it or expose its bytes to the model.",
+      description: "Authenticated host transport for openwork-cloud-uploads. Uploads one non-empty file up to 4 MiB. Optional multipart connectionId selects a native Google Workspace connection (google-workspace or emc_...); unavailable selections never fall back to the default. The route immediately forwards the file to Google and does not persist it or expose its bytes to the model. Larger files use drive-upload-sessions when enabled.",
       responses: {
         200: jsonResponse("Google Drive file uploaded.", uploadDriveFileResponseSchema),
         400: jsonResponse("The multipart upload was invalid.", invalidRequestSchema),
@@ -777,10 +774,15 @@ export function registerGoogleWorkspaceRoutes<T extends { Variables: OrgRouteVar
       if (!files || files.length !== 1) {
         return c.json({ error: "invalid_request", message: "Upload exactly one non-empty file up to 4 MiB." }, 400)
       }
+      const connectionId = form.get("connectionId")
+      if (connectionId !== null && (typeof connectionId !== "string" || !/^(google-workspace|emc_[A-Za-z0-9]+)$/.test(connectionId))) {
+        return c.json({ error: "invalid_request", message: "connectionId must identify a native Google Workspace connection." }, 400)
+      }
       const payload = c.get("organizationContext")
       const token = await googleWorkspaceToken({
         organizationId: payload.organization.id,
         orgMembershipId: payload.currentMember.id,
+        connectionId: connectionId ?? undefined,
       })
       if (token.kind === "google_api_error") {
         return c.json({ error: "google_api_error", message: token.message }, 502)
@@ -1292,7 +1294,7 @@ export function registerGoogleWorkspaceRoutes<T extends { Variables: OrgRouteVar
     describeRoute({
       tags: ["Capability Sources"],
       summary: "Read a Google Drive file's text or binary content as the calling member",
-      description: "Reads a Drive file. Docs and Slides export as plain text; Sheets exports the first tab as CSV. For every spreadsheet tab or edits use the spreadsheet metadata and values capabilities. Downloaded content is bounded; binary files use standard base64 within the model-safety limit.",
+      description: "Reads a Drive file. Docs and Slides export as plain text; Sheets exports the first tab as CSV. For every spreadsheet tab or edits use the spreadsheet metadata and values capabilities. Downloaded content is bounded; binary files use standard base64 within the model-safety limit. To analyze or edit a whole file (Office, PDF, large CSV), pull it into the workspace with the drive_pull_file tool instead.",
       responses: {
         200: jsonResponse("Google Drive file returned.", driveFileResponseSchema),
         400: jsonResponse("The Drive item is not a readable file.", invalidRequestSchema),
@@ -1381,8 +1383,10 @@ export function registerGoogleWorkspaceRoutes<T extends { Variables: OrgRouteVar
         return error.status === 409 ? c.json(error.body, 409) : c.json(error.body, 502)
       }
 
-      if (isGoogleAppsFile) {
-        const content = truncateText(await contentResponse.text(), DRIVE_TEXT_CHARACTER_LIMIT)
+      // Never hold more than the text limit could need: a large text file is cut, not buffered whole.
+      const { bytes, truncated } = await readBoundedBytes(contentResponse, DRIVE_TEXT_BYTE_LIMIT)
+      if (isGoogleAppsFile || (truncated && isDeclaredTextFile(file.mimeType))) {
+        const content = truncateText(decodeTruncatedText(bytes, false), DRIVE_TEXT_CHARACTER_LIMIT)
         return c.json({
           ok: true,
           file: {
@@ -1390,17 +1394,26 @@ export function registerGoogleWorkspaceRoutes<T extends { Variables: OrgRouteVar
             content: content.text,
             contentBase64: null,
             encoding: "text",
-            truncated: content.truncated,
+            truncated: truncated || content.truncated,
             contentUnavailableReason: null,
           },
         })
       }
 
-      const bytes = new Uint8Array(await contentResponse.arrayBuffer())
-      const content = decodeFileContent(bytes, {
-        maxTextCharacters: DRIVE_TEXT_CHARACTER_LIMIT,
-        maxBinaryBytes: MAX_DRIVE_FILE_CONTENT_BYTES,
-      })
+      let content: ReturnType<typeof decodeFileContent>
+      if (truncated) {
+        // Past the text limit: readable UTF-8 is returned cut off; anything else is too large for inline content.
+        try {
+          content = { kind: "text", content: truncateText(decodeTruncatedText(bytes, true), DRIVE_TEXT_CHARACTER_LIMIT).text, truncated: true }
+        } catch {
+          content = { kind: "too_large", byteSize: bytes.byteLength }
+        }
+      } else {
+        content = decodeFileContent(bytes, {
+          maxTextCharacters: DRIVE_TEXT_CHARACTER_LIMIT,
+          maxBinaryBytes: MAX_DRIVE_FILE_CONTENT_BYTES,
+        })
+      }
       if (content.kind === "text") {
         return c.json({
           ok: true,

@@ -1,4 +1,5 @@
 import { peopleMemberCondition } from "./setup-agent-members.js"
+import { recordFreeAutoPurchase } from "./free-auto-purchases.js"
 import Stripe from "stripe"
 import { and, eq, isNotNull, isNull, sql } from "@openwork-ee/den-db/drizzle"
 import {
@@ -8,7 +9,7 @@ import {
   OrgSubscriptionTable,
   OrganizationTable,
 } from "@openwork-ee/den-db/schema"
-import { createDenTypeId } from "@openwork-ee/utils/typeid"
+import { createDenTypeId, normalizeDenTypeId } from "@openwork-ee/utils/typeid"
 import { ManagedModelsPolicyError } from "@openwork/types/den/managed-models-policy"
 import { db } from "./db.js"
 import { env } from "./env.js"
@@ -1341,6 +1342,9 @@ export async function syncStripeCheckoutSession(input: { organizationId: OrgId; 
   if (row?.type === INFERENCE_SUBSCRIPTION_TYPE && ACTIVE_STATUSES.has(subscriptionStatus(subscription.status))) {
     await activatePurchasedInference(row.organization_id)
   }
+  if (session.payment_status === "paid" && (session.amount_total ?? 0) > 0) {
+    await recordFreeAutoPurchase({ subscription, row, paidAt: new Date() })
+  }
   return row
 }
 
@@ -1428,6 +1432,17 @@ async function expireNonWebSubscriptionAfterPaymentFailure(
   }
 }
 
+/** Analytics failures never fail invoice settlement or cause another billing mutation. */
+async function recordPaidInvoiceConversion(subscription: Stripe.Subscription, row: typeof OrgSubscriptionTable.$inferSelect | null, invoiceId: string) {
+  try {
+    const invoice = await stripe().invoices.retrieve(invoiceId)
+    if (invoice.status === "paid" && invoice.amount_paid > 0
+      && stripeResourceId(invoice.parent?.subscription_details?.subscription) === subscription.id) {
+      await recordFreeAutoPurchase({ subscription, row, paidAt: fromUnixSeconds(invoice.status_transitions.paid_at) ?? new Date() })
+    }
+  } catch { logger.warn("Free Auto paid invoice behavior could not be recorded.") }
+}
+
 async function syncPaymentStateFromInvoiceEvent(input: {
   invoice: Stripe.Invoice
   eventType: "invoice.paid" | "invoice.payment_failed"
@@ -1448,7 +1463,11 @@ async function syncPaymentStateFromInvoiceEvent(input: {
     // may also track a different subscription of the same type (a replacement
     // the customer already paid for), so nothing here may expire it on behalf
     // of the subscription this invoice belongs to.
-    return syncCurrentStripeSubscription(subscription.id, input.eventId)
+    const row = await syncCurrentStripeSubscription(subscription.id, input.eventId)
+    if (input.eventType === "invoice.paid") {
+      await recordPaidInvoiceConversion(subscription, row, input.invoice.id)
+    }
+    return row
   }
 
   const latestInvoiceId = stripeResourceId(subscription.latest_invoice)
@@ -1480,10 +1499,65 @@ async function syncPaymentStateFromInvoiceEvent(input: {
     .set({ payment_failed: paymentFailed, last_event_id: input.eventId, updated_at: new Date() })
     .where(eq(OrgSubscriptionTable.id, row.id))
 
+  if (currentInvoice.status === "paid" && currentInvoice.amount_paid > 0) {
+    await recordFreeAutoPurchase({ subscription, row, paidAt: fromUnixSeconds(currentInvoice.status_transitions.paid_at) ?? new Date() })
+  }
   return { ...row, payment_failed: paymentFailed }
 }
 
-export async function handleStripeWebhook(input: { payload: string; signature: string | null }) {
+/**
+ * Audit attribution hook for a verified Stripe event. "before": our stored
+ * subscription row already maps the event to an organization and nothing has
+ * been applied yet (false aborts with StripeWebhookAuditBlockedError). "after":
+ * the event created the mapping (first checkout), so it is known only now.
+ */
+export type StripeWebhookOrganizationHook = (organizationId: OrgId, phase: "before" | "after") => Promise<boolean>
+
+export class StripeWebhookAuditBlockedError extends Error {
+  constructor() {
+    super("stripe_webhook_audit_unavailable")
+    this.name = "StripeWebhookAuditBlockedError"
+  }
+}
+
+function stripeEventSubscriptionId(event: Stripe.Event): string | null {
+  switch (event.type) {
+    case "checkout.session.async_payment_failed":
+    case "checkout.session.completed":
+    case "checkout.session.async_payment_succeeded":
+      return stripeResourceId(event.data.object.subscription)
+    case "customer.subscription.created":
+    case "customer.subscription.updated":
+    case "customer.subscription.deleted":
+      return event.data.object.id
+    case "invoice.paid":
+    case "invoice.payment_failed":
+      return stripeResourceId(event.data.object.parent?.subscription_details?.subscription)
+    default:
+      return null
+  }
+}
+
+/** The organization our stored subscription rows map a verified event to (never event metadata alone). */
+async function stripeEventOrganizationId(event: Stripe.Event): Promise<OrgId | null> {
+  const subscriptionId = stripeEventSubscriptionId(event)
+  if (subscriptionId) {
+    const row = await findOrgSubscriptionByStripeId(subscriptionId)
+    if (row) return row.organization_id
+  }
+  if ((event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded") && event.data.object.mode === "setup") {
+    const metadata = getBillingMetadata(event.data.object.metadata)
+    let metadataOrganizationId: OrgId | null = null
+    try { metadataOrganizationId = metadata.organizationId ? normalizeDenTypeId("organization", metadata.organizationId) : null } catch { metadataOrganizationId = null }
+    if (metadata.subscriptionType === SEAT_SUBSCRIPTION_TYPE && metadataOrganizationId) {
+      const row = await findSeatSubscriptionByOrg(metadataOrganizationId)
+      if (row && typeof event.data.object.customer === "string" && row.stripe_customer_id === event.data.object.customer) return row.organization_id
+    }
+  }
+  return null
+}
+
+export async function handleStripeWebhook(input: { payload: string; signature: string | null }, options: { onOrganization?: StripeWebhookOrganizationHook } = {}) {
   if (!env.stripe.webhookSecret) {
     throw new Error("stripe_webhook_secret_missing")
   }
@@ -1492,6 +1566,23 @@ export async function handleStripeWebhook(input: { payload: string; signature: s
   }
 
   const event = stripe().webhooks.constructEvent(input.payload, input.signature, env.stripe.webhookSecret)
+  let attributed = false
+  if (options.onOrganization) {
+    const organizationId = await stripeEventOrganizationId(event)
+    if (organizationId) {
+      if (!(await options.onOrganization(organizationId, "before"))) throw new StripeWebhookAuditBlockedError()
+      attributed = true
+    }
+  }
+  await applyStripeWebhookEvent(event)
+  if (options.onOrganization && !attributed) {
+    const organizationId = await stripeEventOrganizationId(event)
+    if (organizationId) await options.onOrganization(organizationId, "after")
+  }
+  return { received: true, type: event.type }
+}
+
+async function applyStripeWebhookEvent(event: Stripe.Event) {
   switch (event.type) {
     case "checkout.session.async_payment_failed": {
       const session = event.data.object as Stripe.Checkout.Session
@@ -1532,6 +1623,9 @@ export async function handleStripeWebhook(input: { payload: string; signature: s
         if (row?.type === INFERENCE_SUBSCRIPTION_TYPE && ACTIVE_STATUSES.has(subscriptionStatus(subscription.status))) {
           await activatePurchasedInference(row.organization_id)
         }
+        if (session.payment_status === "paid" && (session.amount_total ?? 0) > 0) {
+          await recordFreeAutoPurchase({ subscription, row, paidAt: new Date(event.created * 1000) })
+        }
         if (row?.type === WEB_SUBSCRIPTION_TYPE && isEligibleOpenWorkWebSubscriptionStatus(subscription.status)) {
           await syncWebSubscriptionQuantityAfterMemberChange({
             organizationId: row.organization_id,
@@ -1569,6 +1663,4 @@ export async function handleStripeWebhook(input: { payload: string; signature: s
       break
     }
   }
-
-  return { received: true, type: event.type }
 }

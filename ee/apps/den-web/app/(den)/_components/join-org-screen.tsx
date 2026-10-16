@@ -242,12 +242,13 @@ function InviteAuthPanel({
 
 export function JoinOrgScreen({ invitationId }: { invitationId: string }) {
   const router = useRouter();
-  const { user, sessionHydrated, signOut, desktopAuthRequested, desktopAuthScheme } = useDenFlow();
+  const { user, sessionHydrated, signOut, revalidateSession, desktopAuthRequested, desktopAuthScheme } = useDenFlow();
   const [preview, setPreview] = useState<DenInvitationPreview | null>(null);
   const [previewBusy, setPreviewBusy] = useState(true);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [joinBusy, setJoinBusy] = useState(false);
   const [joinError, setJoinError] = useState<string | null>(null);
+  const [sessionEnded, setSessionEnded] = useState(false);
   const [joinedOrg, setJoinedOrg] = useState<JoinedOrg | null>(null);
   const [acceptedAutoResolveFailure, setAcceptedAutoResolveFailure] = useState<AcceptedAutoResolveFailure | null>(null);
   const acceptedInvitationResolutionRef = useRef<string | null>(null);
@@ -426,6 +427,18 @@ export function JoinOrgScreen({ invitationId }: { invitationId: string }) {
         12000,
       );
 
+      if (response.status === 401) {
+        // No live session: it expired, was revoked, or was never created.
+        // Ask Den; a dead session drops the page back to the invite sign-in
+        // form instead of showing the raw "unauthorized" code (ENG-550).
+        if (!(await revalidateSession())) {
+          setSessionEnded(true);
+          return;
+        }
+        setJoinError("Could not join the organization. Try again.");
+        return;
+      }
+
       if (!response.ok) {
         setJoinError(getErrorMessage(payload, response.status === 404 ? "This invite could not be accepted." : `Could not join the organization (${response.status}).`));
         return;
@@ -460,7 +473,6 @@ export function JoinOrgScreen({ invitationId }: { invitationId: string }) {
   if (joinedOrg) {
     return (
       <JoinOrgSuccess
-        organizationId={joinedOrg.id}
         organizationName={joinedOrg.name}
         brand={joinedOrg.brand}
         desktopAuthRequested={desktopAuthRequested}
@@ -617,6 +629,8 @@ export function JoinOrgScreen({ invitationId }: { invitationId: string }) {
               </p>
             ) : null}
           </div>
+
+          {sessionEnded ? <InlineAlert>Your session ended. Sign in again to join.</InlineAlert> : null}
 
           <InviteAuthPanel preview={preview} initialMode="sign-up" />
 

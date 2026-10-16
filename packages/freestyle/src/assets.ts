@@ -7,8 +7,8 @@ import { readFile } from "node:fs/promises";
  * app bundles this package with Turbopack, which resolves each literal to its own
  * asset but compiled a computed path (a template string built from a file name) to
  * one fixed file: every script written into preview VMs became browser-health.mjs,
- * so builds started from the review app booted nothing. test/assets.test.ts
- * rejects computed paths anywhere in src/.
+ * so builds started from the review app booted nothing. Never use computed
+ * paths anywhere in src/.
  */
 const assets = {
   "acme-runtime.mjs": new URL("./acme-runtime.mjs", import.meta.url),
@@ -30,6 +30,9 @@ const assets = {
   "refresh.mjs": new URL("./refresh.mjs", import.meta.url),
   "resume.mjs": new URL("./resume.mjs", import.meta.url),
   "runtime.mjs": new URL("./runtime.mjs", import.meta.url),
+  "workbot-health.mjs": new URL("./workbot-health.mjs", import.meta.url),
+  "workbot-refresh.mjs": new URL("./workbot-refresh.mjs", import.meta.url),
+  "workbot-runtime.mjs": new URL("./workbot-runtime.mjs", import.meta.url),
 };
 
 export type ControllerAsset = keyof typeof assets;

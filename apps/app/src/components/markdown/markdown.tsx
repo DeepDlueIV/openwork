@@ -19,7 +19,7 @@ import {
   hasFencedCodeBlock,
   renderHighlightedMarkdownHtml,
   renderMarkdownHtml,
-  setCodeCopyButtonState,
+  setCopyButtonState,
   setCodeWrapButtonState,
   syncMarkdownImagePreviews,
   type MarkdownBlockHtml,
@@ -93,13 +93,13 @@ function MarkdownBlockInner({
   const videoCleanups = useRef(new Map<HTMLVideoElement, () => void>());
   const codeCopyResetTimers = useRef(new Map<HTMLButtonElement, number>());
   const codeWrapStates = useRef(new Map<number, boolean>());
-  const { openTargets, onOpenTarget, client, workspaceId, workspaceRoot } = useOpenTargets();
+  const { openTargets, onOpenTarget, client, workspaceId, workspaceRoot, sessionId } = useOpenTargets();
   const openArtifactPath = useOpenArtifactPath();
   useEffect(() => () => {
     videoCleanups.current.forEach((cleanup) => cleanup());
     videoCleanups.current.clear();
-  }, [client, workspaceId, workspaceRoot]);
-  const [linkMenu, setLinkMenu] = useState<{ target: OpenTarget; rect: DOMRect } | null>(null);
+  }, [client, workspaceId, workspaceRoot, sessionId]);
+  const [linkMenu, setLinkMenu] = useState<{ target: OpenTarget; anchor: HTMLElement } | null>(null);
   useEffect(() => setLinkMenu(null), [client, workspaceId, workspaceRoot]);
   const [imagePreview, setImagePreview] = useState<{ src: string; alt: string } | null>(null);
   const references = useSessionReferencesMaybe();
@@ -118,9 +118,9 @@ function MarkdownBlockInner({
   );
   const [highlightedHtml, setHighlightedHtml] = useState<{ text: string; html: string; resolveReference: typeof resolveReference } | null>(null);
 
-  const handleCodeBlockCopy = useCallback(async (button: HTMLButtonElement, code: string) => {
+  const handleCopy = useCallback(async (button: HTMLButtonElement, text: string) => {
     try {
-      await navigator.clipboard.writeText(code);
+      await navigator.clipboard.writeText(text);
     } catch {
       return;
     }
@@ -130,10 +130,10 @@ function MarkdownBlockInner({
       window.clearTimeout(previousTimer);
     }
 
-    setCodeCopyButtonState(button, true);
+    setCopyButtonState(button, true);
 
     const resetTimer = window.setTimeout(() => {
-      setCodeCopyButtonState(button, false);
+      setCopyButtonState(button, false);
       codeCopyResetTimers.current.delete(button);
     }, CODE_COPY_RESET_DELAY_MS);
     codeCopyResetTimers.current.set(button, resetTimer);
@@ -240,9 +240,13 @@ function MarkdownBlockInner({
       let cancelled = false;
       let objectUrl: string | null = null;
       const href = video.dataset.openworkVideoPath ?? "";
+      // A video that cannot load reads as its plain inline reference instead
+      // of an empty player in the middle of the sentence.
       const showError = () => {
-        const notice = video.parentElement?.querySelector("[data-openwork-video-error]");
-        if (notice instanceof HTMLElement) notice.hidden = false;
+        const box = video.closest("[data-openwork-video]");
+        const fallback = box?.querySelector(":scope > [data-openwork-video-fallback]");
+        if (!box || !(fallback instanceof HTMLElement)) return;
+        box.replaceWith(...Array.from(fallback.childNodes));
       };
       video.addEventListener("error", showError);
       videoCleanups.current.set(video, () => {
@@ -261,7 +265,7 @@ function MarkdownBlockInner({
         continue;
       }
       const target = openTargetForHref(href, openTargets, workspaceRoot);
-      void client.downloadWorkspaceFile(workspaceId, target?.exists === true ? target.value : path).then((result) => {
+      void client.downloadWorkspaceFile(workspaceId, target?.exists === true ? target.value : path, { sessionId }).then((result) => {
         if (cancelled) return;
         const extension = path.split(".").pop()?.toLowerCase();
         const fallbackType = extension === "webm" ? "video/webm" : extension === "ogv" ? "video/ogg" : extension === "mov" ? "video/quicktime" : "video/mp4";
@@ -271,7 +275,7 @@ function MarkdownBlockInner({
         video.src = url;
       }).catch(() => { if (!cancelled) showError(); });
     }
-  }, [client, workspaceId, workspaceRoot, openTargets, rendered]);
+  }, [client, workspaceId, workspaceRoot, sessionId, openTargets, rendered]);
 
   useEffect(() => {
     const root = rootRef.current;
@@ -312,7 +316,15 @@ function MarkdownBlockInner({
 
         const codeBlock = copyButton.closest("[data-openwork-code-block]");
         const code = codeBlock?.querySelector("code");
-        void handleCodeBlockCopy(copyButton, code?.textContent ?? "");
+        void handleCopy(copyButton, code?.textContent ?? "");
+        return;
+      }
+
+      const quoteCopyButton = event.target.closest("[data-openwork-quote-copy]");
+      if (quoteCopyButton instanceof HTMLButtonElement) {
+        event.preventDefault();
+        event.stopPropagation();
+        void handleCopy(quoteCopyButton, quoteCopyButton.dataset.openworkQuoteCopy ?? "");
         return;
       }
 
@@ -347,7 +359,7 @@ function MarkdownBlockInner({
         const href = chevron.dataset.openworkLinkChevron ?? "";
         const target = openTargetForHref(href, openTargets, workspaceRoot);
         if (target) {
-          setLinkMenu({ target, rect: chevron.getBoundingClientRect() });
+          setLinkMenu({ target, anchor: chevron });
         }
         return;
       }
@@ -383,7 +395,7 @@ function MarkdownBlockInner({
       if (target?.kind !== "file") return;
       event.preventDefault();
       event.stopPropagation();
-      setLinkMenu({ target, rect: link.getBoundingClientRect() });
+      setLinkMenu({ target, anchor: link });
     };
 
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -425,7 +437,7 @@ function MarkdownBlockInner({
       root.removeEventListener("contextmenu", handleContextMenu);
       root.removeEventListener("keydown", handleKeyDown);
     };
-  }, [handleCodeBlockCopy, onOpenTarget, openArtifactPath, openTargets, workspaceRoot, rendered, references, resolveReference, sessionReferences]);
+  }, [handleCopy, onOpenTarget, openArtifactPath, openTargets, workspaceRoot, rendered, references, resolveReference, sessionReferences]);
 
   if (isEmpty) {
     return null;
@@ -456,7 +468,7 @@ function MarkdownBlockInner({
         <LinkActionMenu
           key={linkMenu.target.value}
           target={linkMenu.target}
-          anchorRect={linkMenu.rect}
+          anchor={linkMenu.anchor}
           onOpenTarget={onOpenTarget}
           onClose={() => setLinkMenu(null)}
         />

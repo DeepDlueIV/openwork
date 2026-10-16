@@ -36,7 +36,7 @@ function LlmProviderList({ providers, orgSlug }: { providers: DenLlmProvider[]; 
   return (
     <DenList>
       {providers.map((provider) => {
-        const members = provider.access.members.length;
+        const members = provider.access.memberCount;
         const teams = provider.access.teams.length;
         const accessText = provider.access.allMembers
           ? "Everyone in the org"
@@ -57,7 +57,7 @@ function LlmProviderList({ providers, orgSlug }: { providers: DenLlmProvider[]; 
             chips={
               <>
                 <DenChip>{plural(provider.models.length, "model")}</DenChip>
-                {!provider.hasApiKey ? (
+                {!provider.hasApiKey && !provider.configRedacted ? (
                   <DenChip tone="warning" icon={KeyRound}>
                     Credential missing
                   </DenChip>
@@ -187,7 +187,6 @@ export function LlmProvidersScreen() {
       icon={KeyRound}
       title="Bring your Own Keys"
       description="Connect Anthropic, OpenAI, Azure or any models.dev provider with your own credentials, choose the exact models each one exposes, and grant access to the right people and teams."
-      colors={["#F3FFF9", "#0F766E", "#34D399", "#7DD3FC"]}
     >
       <DenCard data-testid="models-access-card" className="mb-8 grid gap-5">
         <DenSectionHeader

@@ -149,6 +149,7 @@ export async function createCloudComputer({ directory, display = ":99", enabled,
       }
       if (input.action === "resume") {
         if (busy) throw failure("busy", "Wait for the interrupted operation to finish before Continue.");
+        if (owner) await control.endTurn({ sessionId: owner });
         generation++; paused = false; browser.resume(); browser.invalidate();
         onActivity();
         return { ok: true, paused };

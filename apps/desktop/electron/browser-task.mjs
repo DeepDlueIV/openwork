@@ -1,4 +1,4 @@
-// The browser host owns task identity, the optional session allow, observations and dispatch.
+// The browser host owns task identity, observations and dispatch.
 // No model-specific API, arbitrary script execution, cookies or raw CDP surface.
 import { createHash, randomUUID } from "node:crypto";
 

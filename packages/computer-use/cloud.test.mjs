@@ -1,9 +1,23 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { cp, mkdtemp, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { createCloudComputer } from "./cloud.mjs";
+
+test("an unused cloud host loads before SDK build artifacts exist", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "cloud-source-import-"));
+  let computer;
+  try {
+    for (const name of await readdir(new URL("./", import.meta.url))) {
+      if (name === "package.json" || name.endsWith(".mjs") && !name.endsWith(".test.mjs")) await cp(new URL(name, import.meta.url), join(directory, name));
+    }
+    const { createCloudComputer } = await import(pathToFileURL(join(directory, "cloud.mjs")).href);
+    computer = await createCloudComputer({ directory: join(directory, "profile"), enabled: async () => false });
+    await assert.rejects(computer.task("/computer/program", { sessionId:"chat", surface:"computer", code:"return true;" }), { code:"feature_disabled" });
+  } finally { await computer?.close(); await rm(directory, { recursive:true, force:true }); }
+});
 
 async function fixture(t, applications) {
   let allowed = true;

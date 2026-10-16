@@ -3,7 +3,6 @@
 // shell command and read a file. Input goes through xdotool and screenshots
 // through ImageMagick, batched so one action costs one round trip.
 import { randomUUID } from "node:crypto";
-import { computerWorkerSource } from "./dist/worker.js";
 
 const quote = (value) => `'${String(value).replaceAll("'", "'\\''")}'`;
 const TOOLS = ["xdotool", "import", "python3"];
@@ -24,10 +23,14 @@ export function createX11Driver({ machine, display = ":99", timeoutMs = 20_000 }
     return machine.run(`export DISPLAY=${display}; ${script}`, ms);
   };
   const socketPath = `${directory}/input.sock`;
-  const workerSource = Buffer.from(computerWorkerSource).toString("base64");
   let worker = null;
   const bootstrap = async () => {
-    if (!worker) worker = run(`python3 -c ${quote(`import base64, os, pathlib, socket, subprocess, time
+    if (!worker) worker = (async () => {
+      // Server development can load the cloud host while computer use is off,
+      // before build artifacts exist. Resolve embedded bytes only on first use.
+      const { computerWorkerSource } = await import("./dist/worker.js");
+      const workerSource = Buffer.from(computerWorkerSource).toString("base64");
+      return run(`python3 -c ${quote(`import base64, os, pathlib, socket, subprocess, time
 root = pathlib.Path(${JSON.stringify(directory)})
 root.mkdir(mode=0o700, exist_ok=True)
 source = root / "worker.py"
@@ -48,7 +51,8 @@ subprocess.Popen(["python3", str(source), ${JSON.stringify(socketPath)}], stdin=
 for _ in range(250):
     if ready(): break
     time.sleep(0.02)
-else: raise RuntimeError("The VM input worker did not start")`)} `, 10_000).then((result) => {
+else: raise RuntimeError("The VM input worker did not start")`)} `, 10_000);
+    })().then((result) => {
       if (result.exitCode !== 0) throw new Error("The VM input worker could not start.");
     }).catch((error) => { worker = null; throw error; });
     await worker;

@@ -18,10 +18,15 @@ test("RECOVERY-01 a member sees older commands finish and a missed question afte
     evidence.recordAssertionEvidence("The original connection is established", JSON.stringify(before), before.streams === 1);
     await user.screenshot();
   });
-  await step("after: old commands settle even after a hundred and fifty newer answers arrived during the gap", async () => {
+  await step("after: newer answers arrive on a fresh connection", async () => {
     await world.act("catchUp");
     await world.act("interrupt");
     await user.see({ text: "Later answer 150." }, { timeoutMs: 15_000 });
+    const connected = await world.recovery();
+    evidence.recordAssertionEvidence("The newer answers arrive on the second connection", JSON.stringify(connected), connected.streams === 2);
+    await user.screenshot();
+  });
+  await step("after: old commands settle even after a hundred and fifty newer answers arrived during the gap", async () => {
     const recovered = await probe.eventually(() => world.recovery(), {
       within: 15_000, label: "the eight older command results", until: (value) => value.exactReads >= 8,
     });
@@ -39,6 +44,12 @@ test("RECOVERY-01 a member sees older commands finish and a missed question afte
     await user.see({ text: /printf recovery-command-7/ });
     evidence.recordAssertionEvidence("Eight older commands recover with at most four reads at once", JSON.stringify(recovered),
       recovered.exactReads >= 8 && recovered.maxConcurrent <= 4 && recovered.recentWindow === 24);
+    await user.wheelAt({ x: 900, y: 200, deltaY: -30_000 });
+    await probe.eventually(async () => {
+      const viewport = (await probe.dom('[data-workbench-pane="primary"] [data-thread-scroll]')).elements[0]?.rect;
+      const headers = (await probe.dom('[data-tool-aggregate][data-tool-lifecycle="completed"] > button')).elements;
+      return Boolean(viewport && headers.some(({ rect }) => rect.top >= viewport.top && rect.bottom <= viewport.bottom));
+    }, { within: 10_000, label: "the completed commands are in the screenshot", until: Boolean });
     await user.screenshot();
   });
   await step("after: the question missed during the interruption is ready without a new message or window focus", async () => {

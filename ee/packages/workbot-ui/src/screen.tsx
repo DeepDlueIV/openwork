@@ -30,6 +30,7 @@ import { OpenFileContext } from "./open-file";
 import { PreviewPanel } from "./preview";
 import { Welcome } from "./welcome";
 import { WorkbotCalendar } from "./calendar";
+import { WorkbotDocuments } from "./documents";
 import { useQueryClient } from "@tanstack/react-query";
 
 /**
@@ -218,7 +219,7 @@ function ChatScreen({ host, navigation }: { host: WorkbotHost; navigation: ChatN
     );
   };
 
-  if (tab === "calendar" && host.calendar) {
+  if ((tab === "calendar" && host.calendar) || tab === "documents") {
     return (
       <div className="workbot flex h-dvh flex-col bg-[var(--wb-bg)] antialiased">
         <WorkbotHeader
@@ -229,7 +230,7 @@ function ChatScreen({ host, navigation }: { host: WorkbotHost; navigation: ChatN
           nav={<WorkbotNav tab={tab} onTab={setTab} />}
         />
         <div className="flex min-h-0 flex-1 border-t border-[#01162712]">
-          <WorkbotCalendar connectionsHref={host.connectionsHref ?? null} assistantName={data?.name ?? "Workbot"} />
+          {tab === "documents" ? <WorkbotDocuments /> : <WorkbotCalendar connectionsHref={host.connectionsHref ?? null} assistantName={data?.name ?? "Workbot"} />}
         </div>
       </div>
     );
@@ -304,7 +305,7 @@ function ChatScreen({ host, navigation }: { host: WorkbotHost; navigation: ChatN
         chats={navigation && !chatId ? <ChatsButton onOpen={navigation.openChats} /> : null}
         title={navigation && chatId ? <SideChatTitle title={navigation.title} onBack={() => navigation.openChat(null)} /> : null}
         remove={navigation && chatId && data.turns.length > 0 ? <RemoveChatButton chatId={chatId} title={navigation.title} onRemoved={() => navigation.openChat(null)} /> : null}
-        nav={host.calendar && !chatId ? <WorkbotNav tab={tab} onTab={setTab} /> : null}
+        nav={!chatId ? <WorkbotNav tab={tab} onTab={setTab} /> : null}
       />
       <div className="flex min-h-0 flex-1">
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -456,10 +457,11 @@ function useConnectedApps() {
   return workbotHost().useConnectedApps();
 }
 
-type WorkbotTab = "home" | "calendar";
+type WorkbotTab = "home" | "calendar" | "documents";
 
 function tabFromLocation(): WorkbotTab {
-  return typeof window !== "undefined" && window.location.pathname.replace(/\/+$/, "") === "/calendar" ? "calendar" : "home";
+  const path = typeof window !== "undefined" ? window.location.pathname.replace(/\/+$/, "") : "";
+  return path === "/documents" ? "documents" : path === "/calendar" ? "calendar" : "home";
 }
 
 /** Home (the conversation) and Calendar, as paths so a reload or a shared link opens the same tab. */
@@ -472,7 +474,7 @@ function useWorkbotTab() {
   }, []);
   const setTab = (next: WorkbotTab) => {
     if (next === tab) return;
-    window.history.pushState(null, "", next === "calendar" ? "/calendar" : "/");
+    window.history.pushState(null, "", next === "home" ? "/" : `/${next}`);
     setTabState(next);
   };
   return [tab, setTab] as const;
@@ -482,7 +484,7 @@ function useWorkbotTab() {
 function WorkbotNav({ tab, onTab }: { tab: WorkbotTab; onTab: (tab: WorkbotTab) => void }) {
   return (
     <nav className="ml-4 flex items-center gap-0.5" aria-label="Workbot">
-      {(["home", "calendar"] as const).map((entry) => (
+      {(["home", ...(workbotHost().calendar ? ["calendar" as const] : []), "documents"] as const).map((entry) => (
         <button
           key={entry}
           type="button"
@@ -490,7 +492,7 @@ function WorkbotNav({ tab, onTab }: { tab: WorkbotTab; onTab: (tab: WorkbotTab) 
           onClick={() => onTab(entry)}
           className={`flex h-8 items-center rounded-lg px-3 text-[13px] leading-4 transition-colors duration-150 focus-visible:outline-none focus-visible:shadow-[var(--wb-focus)] ${tab === entry ? "bg-[#EDF0F2] font-semibold text-[#11181C]" : "font-medium text-[#687076] hover:text-[#11181C]"}`}
         >
-          {entry === "home" ? "Home" : "Calendar"}
+          {entry === "home" ? "Home" : entry === "calendar" ? "Calendar" : "Documents"}{entry === "documents" && !workbotHost().documents ? <Lock size={12} className="ml-1.5" aria-label="Unavailable" /> : null}
         </button>
       ))}
     </nav>

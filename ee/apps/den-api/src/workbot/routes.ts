@@ -42,6 +42,8 @@ const sessionSchema = z.object({
   canSchedule: z.boolean(),
   /** Workbot shows its Calendar tab: Workbot is on. Older Dens omit it. */
   calendar: z.boolean().optional(),
+  /** Connected document browsing; off on older Dens. */
+  documents: z.boolean().optional(),
   /** The person can start side chats next to their main chat (while Workbot is on). */
   sideChats: z.boolean(),
   /**
@@ -235,6 +237,7 @@ export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono
         enabled: features.workbot,
         canSchedule,
         calendar: features.workbot,
+        documents: features.workbot && features.workbotDocuments,
         sideChats: features.workbot,
         model,
       })
@@ -340,6 +343,44 @@ export function registerWorkbotRoutes<T extends { Variables: object }>(app: Hono
         return c.json(names.success ? { llmProviders: names.data.llmProviders } : { llmProviders: [] }, 200)
       }
       return new Response(JSON.stringify(payload), { status: response.status, headers: { "content-type": "application/json" } })
+    },
+  )
+
+  // A single read-only route, never an arbitrary proxy or a file-content endpoint.
+  app.get(
+    "/v1/workbot/documents/v1/capabilities/google-workspace/drive-files",
+    describeWorkbotRoute({
+      tags: ["Workbot"], operationId: "listWorkbotDocuments", "x-mcp": false,
+      summary: "Browse the member's connected Google Drive documents",
+      description: "Read-only folder and search metadata through the member's Google connection. Requires Workbot, Workbot Documents and mcp:read; the destination enforces connector access and Google permissions. No file bytes or download credentials are returned.",
+      responses: {
+        200: jsonResponse("The Drive file page, including pagination and incomplete-search state.", z.unknown()),
+        401: jsonResponse("Sign in again.", unauthorizedSchema),
+        403: jsonResponse("Documents is off or the grant cannot read documents.", signedOutSchema),
+      },
+    }),
+    tokenRoute,
+    async (c) => {
+      const resolved = await resolve(c.req.raw.headers)
+      if (resolved instanceof Response) return resolved
+      const auditBlocked = await attributeWorkbot(c, resolved)
+      if (auditBlocked) return auditBlocked
+      const features = await getOrganizationFeatures(resolved.organization.id)
+      if (!features.workbot || !features.workbotDocuments) {
+        return c.json({ error: "workbot_documents_not_enabled", message: "Documents is off for this workspace." }, 403)
+      }
+      if (!resolved.scopes.has(DEN_MCP_READ_SCOPE)) return c.json({ error: "insufficient_scope" }, 403)
+      const url = new URL(c.req.url)
+      const headers = new Headers({
+        accept: "application/json",
+        "x-den-internal-mcp-principal": createInternalMcpPrincipalHeader({
+          userId: resolved.principal.userId,
+          organizationId: resolved.principal.organizationId,
+          credentialId: resolved.credentialId,
+        }),
+      })
+      const response = await app.fetch(new Request(new URL(`/v1/capabilities/google-workspace/drive-files${url.search}`, "http://den-api.local"), { headers }))
+      return new Response(response.body, { status: response.status, headers: { "content-type": "application/json", "cache-control": "no-store" } })
     },
   )
 

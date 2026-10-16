@@ -1255,8 +1255,10 @@ export function registerGoogleWorkspaceRoutes<T extends { Variables: OrgRouteVar
         return c.json({ error: token.kind, message: token.message }, token.kind === "policy_blocked" ? 403 : 409)
       }
       const permissionMessage = driveReadPermissionMessage(token.account)
-      if (permissionMessage) {
-        return c.json({ error: "needs_connection", message: permissionMessage }, 409)
+      // A previously granted Google scope is not permission after the admin removes it from this connector.
+      const enabledRead = token.enabledScopes?.some((scope) => scope === DRIVE_READ_SCOPE || scope === DRIVE_FULL_SCOPE)
+      if (permissionMessage || !enabledRead) {
+        return c.json({ error: "needs_connection", message: permissionMessage ?? "An organization admin must enable Read all Drive files in connector setup, then reconnect Google Workspace." }, 409)
       }
 
       const query = c.req.valid("query")

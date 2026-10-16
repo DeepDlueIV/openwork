@@ -562,6 +562,8 @@ import type {
   ListGmailLabelsResponses,
   ListWorkbotConnectionsErrors,
   ListWorkbotConnectionsResponses,
+  ListWorkbotDocumentsErrors,
+  ListWorkbotDocumentsResponses,
   Microsoft365CalendarCancelBody,
   Microsoft365CalendarDeleteBody,
   Microsoft365CalendarEventBody,
@@ -15886,6 +15888,19 @@ export class DenClient extends HeyApiClient {
       ListWorkbotConnectionsErrors,
       ThrowOnError
     >({ url: "/v1/workbot/connections", ...options });
+  }
+
+  /**
+   * Browse the member's connected Google Drive documents
+   *
+   * Read-only folder and search metadata through the member's Google connection. Requires Workbot, Workbot Documents and mcp:read; the destination enforces connector access and Google permissions. No file bytes or download credentials are returned.
+   */
+  public listWorkbotDocuments<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      ListWorkbotDocumentsResponses,
+      ListWorkbotDocumentsErrors,
+      ThrowOnError
+    >({ url: "/v1/workbot/documents/v1/capabilities/google-workspace/drive-files", ...options });
   }
 
   /**

@@ -746,6 +746,7 @@ export type AdminFeature = {
     | "slackAssistant"
     | "slackWorkbotReplies"
     | "workbot"
+    | "workbotDocuments"
     | "automationCalendar"
     | "permissions"
     | "teamRoles"
@@ -812,6 +813,7 @@ export type AdminOrganizationsPageResponse = {
       slackAssistant: boolean;
       slackWorkbotReplies: boolean;
       workbot: boolean;
+      workbotDocuments: boolean;
       automationCalendar: boolean;
       permissions: boolean;
       teamRoles: boolean;
@@ -955,6 +957,15 @@ export type AdminOrganizationsPageResponse = {
         overrideApplies: boolean;
       };
       workbot: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotDocuments: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -1166,6 +1177,7 @@ export type AdminOverviewResponse = {
       slackAssistant: boolean;
       slackWorkbotReplies: boolean;
       workbot: boolean;
+      workbotDocuments: boolean;
       automationCalendar: boolean;
       permissions: boolean;
       teamRoles: boolean;
@@ -1309,6 +1321,15 @@ export type AdminOverviewResponse = {
         overrideApplies: boolean;
       };
       workbot: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotDocuments: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -6608,6 +6629,7 @@ export type WorkbotSession = {
   enabled: boolean;
   canSchedule: boolean;
   calendar?: boolean;
+  documents?: boolean;
   sideChats: boolean;
   model?: string | null;
 };
@@ -7577,6 +7599,7 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       slackAssistant: boolean;
       slackWorkbotReplies: boolean;
       workbot: boolean;
+      workbotDocuments: boolean;
       automationCalendar: boolean;
       permissions: boolean;
       teamRoles: boolean;
@@ -7720,6 +7743,15 @@ export type GetV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       workbot: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotDocuments: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -7919,6 +7951,7 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
       slackAssistant: boolean;
       slackWorkbotReplies: boolean;
       workbot: boolean;
+      workbotDocuments: boolean;
       automationCalendar: boolean;
       permissions: boolean;
       teamRoles: boolean;
@@ -8062,6 +8095,15 @@ export type PutV1AdminOrganizationsByOrganizationIdCapabilitiesResponses = {
         overrideApplies: boolean;
       };
       workbot: {
+        enabled: boolean;
+        source: "unavailable" | "killed" | "lock" | "override" | "everyone";
+        everyone: boolean;
+        killed: boolean;
+        lock: boolean | null;
+        override: boolean | null;
+        overrideApplies: boolean;
+      };
+      workbotDocuments: {
         enabled: boolean;
         source: "unavailable" | "killed" | "lock" | "override" | "everyone";
         everyone: boolean;
@@ -33373,6 +33415,36 @@ export type ListWorkbotConnectionsResponses = {
 };
 
 export type ListWorkbotConnectionsResponse = ListWorkbotConnectionsResponses[keyof ListWorkbotConnectionsResponses];
+
+export type ListWorkbotDocumentsData = {
+  body?: never;
+  path?: never;
+  query?: never;
+  url: "/v1/workbot/documents/v1/capabilities/google-workspace/drive-files";
+};
+
+export type ListWorkbotDocumentsErrors = {
+  /**
+   * Sign in again.
+   */
+  401: UnauthorizedError;
+  /**
+   * Documents is off or the grant cannot read documents.
+   */
+  403: {
+    error: string;
+    message?: string;
+  };
+};
+
+export type ListWorkbotDocumentsError = ListWorkbotDocumentsErrors[keyof ListWorkbotDocumentsErrors];
+
+export type ListWorkbotDocumentsResponses = {
+  /**
+   * The Drive file page, including pagination and incomplete-search state.
+   */
+  200: unknown;
+};
 
 export type CreateWorkbotRunTokenData = {
   body: {

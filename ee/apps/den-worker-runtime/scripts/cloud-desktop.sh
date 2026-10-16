@@ -22,7 +22,7 @@ if [ ! -s "$XAUTHORITY" ]; then
   chown openwork-browser:openwork-browser "$XAUTHORITY"
 fi
 if ! xdotool getdisplaygeometry >/dev/null 2>&1; then
-  as_browser Xvfb "$display" -screen 0 1280x800x24 -nolisten tcp -auth "$XAUTHORITY" >"$state/display.log" 2>&1 &
+  as_browser setsid -f Xvfb "$display" -screen 0 1280x800x24 -nolisten tcp -auth "$XAUTHORITY" >"$state/display.log" 2>&1 < /dev/null
 fi
 attempt=0
 until xdotool getdisplaygeometry >/dev/null 2>&1; do
@@ -31,13 +31,13 @@ until xdotool getdisplaygeometry >/dev/null 2>&1; do
   sleep 0.1
 done
 if ! xprop -root _NET_SUPPORTING_WM_CHECK 2>/dev/null | grep -q 'window id'; then
-  as_browser openbox >"$state/window-manager.log" 2>&1 &
+  as_browser setsid -f openbox >"$state/window-manager.log" 2>&1 < /dev/null
 fi
 if ! curl --fail --silent --max-time 2 http://127.0.0.1:9222/json/version >/dev/null; then
   # The browser runs as an unprivileged user with Chromium's sandbox enabled.
-  as_browser chromium --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 \
+  as_browser setsid -f chromium --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 \
     --user-data-dir="$state/profile" --window-size=1280,800 --force-device-scale-factor=1 --no-first-run \
-    --no-default-browser-check about:blank >"$state/browser.log" 2>&1 &
+    --no-default-browser-check about:blank >"$state/browser.log" 2>&1 < /dev/null
 fi
 attempt=0
 until curl --fail --silent --max-time 2 http://127.0.0.1:9222/json/version >/dev/null; do
@@ -53,8 +53,8 @@ if [ "${WORKBOT_DESKTOP_VNC:-0}" = 1 ]; then
     if ! python3 -c "import socket; socket.create_connection(('127.0.0.1', $port), 0.2).close()" >/dev/null 2>&1; then
       case "$port" in 5901|5903) set -- -id "$window" ;; *) set -- ;; esac
       case "$port" in 5902|5903) set -- "$@" -viewonly ;; esac
-      as_browser x11vnc -display "$display" -auth "$XAUTHORITY" -localhost -rfbport "$port" \
-        -nopw -forever -shared -noxdamage -quiet "$@" >"$state/vnc-$port.log" 2>&1 &
+      as_browser setsid -f x11vnc -display "$display" -auth "$XAUTHORITY" -localhost -rfbport "$port" \
+        -nopw -forever -shared -noxdamage -quiet "$@" >"$state/vnc-$port.log" 2>&1 < /dev/null
     fi
   done
 fi

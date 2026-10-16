@@ -4,6 +4,7 @@ import { ensureRunning, isSandboxError, SCOPE_LABEL, withBlocks, type RunSpec, t
 import { z } from "zod"
 import type { ComputerFile, ComputerFiles, FileReader, ToolResult, ToolSpec } from "./types.js"
 import { Desktop, type DesktopView } from "./desktop.js"
+import { DESKTOP_TOOL } from "./desktop-tool.js"
 
 /** One provider-neutral Linux computer per conversation. Jobs own idle policy and files; adapters own transport. */
 export type ComputerOptions = {
@@ -70,7 +71,7 @@ export class Computers {
     this.files = deps.files
     this.readFile = deps.readFile
     this.desktop = options.desktop ? new Desktop(this.provider) : undefined
-    this.desktopTools = this.desktop ? [{ name: "desktop", description: "Use the browser and native computer on the same visible desktop. Browser operation: open, tabs, observe, act, close; computer operation: computer_open, computer_observe, computer_act, computer_end. Pass the operation's arguments in args. Observe before acting and reuse the returned observation id. The person sees the same desktop in Workbot's Computer tab.", inputSchema: { type: "object", properties: { view: { type: "string", enum: ["browser", "computer"] }, operation: { type: "string" }, args: { type: "object", additionalProperties: true } }, required: ["view", "operation", "args"], additionalProperties: false } }] : []
+    this.desktopTools = this.desktop ? [DESKTOP_TOOL] : []
   }
 
   async desktopRun(sessionId: string, input: Record<string, unknown>): Promise<ToolResult> {
@@ -85,7 +86,7 @@ export class Computers {
     const images = result.content?.flatMap(part => part.type === "image" && part.data ? [{ mediaType: part.mimeType ?? "image/png", data: part.data }] : []) ?? []
     if (result.image) images.push({ mediaType: result.image.mediaType ?? "image/png", data: result.image.data })
     const { image, content, ...text } = result
-    return { output: JSON.stringify(content?.filter(part => part.type === "text") ?? text), isError: result.isError === true || result.ok === false, ...(images.length ? { images } : {}) }
+    return { output: content ? content.filter(part => part.type === "text").map(part => part.text ?? "").join("\n") : JSON.stringify(text), isError: result.isError === true || result.ok === false, ...(images.length ? { images } : {}) }
   }
 
   async desktopViewer(sessionId: string, input: { view: DesktopView; control: boolean; origin: string }) {

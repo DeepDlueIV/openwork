@@ -5,7 +5,7 @@ import { bootWorkbot, enableWorkbot, signInWorkbot } from "../../worlds/lib/work
 export async function workbotComputerWorld(seed: Seed) {
   const stack = new AsyncDisposableStack();
   try {
-    const workbot = await bootWorkbot(stack);
+    const workbot = await bootWorkbot(stack, undefined, { live: false, features: { workbotDocuments: true } });
     const signed = await signInWorkbot(workbot);
     await signed.call("/v1/workbot/messages", { method: "POST", body: JSON.stringify({ id: "desktop_proof_hello", text: "Hello" }) });
     const web = await seed.web({ den: workbot.den, headless: true, viewport: { width: 1440, height: 960 } });

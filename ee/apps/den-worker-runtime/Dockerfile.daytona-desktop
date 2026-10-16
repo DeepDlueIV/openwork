@@ -4,7 +4,7 @@ ARG OPENWORK_RUNTIME_IMAGE
 FROM ${OPENWORK_RUNTIME_IMAGE}
 USER root
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    chromium xvfb xauth x11-utils openbox xdotool imagemagick python3 dbus-x11 fonts-liberation util-linux \
+    chromium xvfb xauth x11-utils openbox xdotool imagemagick python3 dbus-x11 fonts-liberation util-linux x11vnc sudo \
     && useradd --create-home --shell /bin/sh openwork-browser \
     && rm -rf /var/lib/apt/lists/*
 COPY ee/apps/den-worker-runtime/scripts/cloud-desktop.sh /usr/local/bin/openwork-cloud-desktop

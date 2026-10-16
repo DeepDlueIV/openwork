@@ -476,6 +476,10 @@ function useWorkbotTab(beforeLeave?: (next: WorkbotTab) => boolean) {
   const beforeLeaveRef = useRef(beforeLeave);
   beforeLeaveRef.current = beforeLeave;
   const [tab, setTabState] = useState<WorkbotTab>(tabFromLocation);
+  const computerEnabled = workbotHost().computer === true;
+  useEffect(() => {
+    if (!computerEnabled && tab === "computer") { window.history.replaceState(null, "", "/"); setTabState("home"); }
+  }, [computerEnabled, tab]);
   useEffect(() => {
     const sync = () => {
       const next = tabFromLocation();

@@ -12,6 +12,7 @@ const secret = (await readFile(`${directory}/token`, "utf8")).trim();
 let until = 0;
 const tickets = new Map();
 const sockets = new Set();
+const transports = new Map();
 const computer = await createCloudComputer({ directory, display: ":99", enabled: async () => Date.now() < until });
 const json = (response, status, payload) => {
   response.writeHead(status, { "content-type": "application/json", "cache-control": "no-store" });
@@ -22,6 +23,14 @@ const authorized = request => {
   const expected = Buffer.from(`Bearer ${secret}`);
   return actual.length === expected.length && timingSafeEqual(actual, expected);
 };
+const listening = port => new Promise(resolve => {
+  const socket = connect({ host: "127.0.0.1", port });
+  socket.setTimeout(1000);
+  const done = ready => { socket.destroy(); resolve(ready); };
+  socket.once("connect", () => done(true));
+  socket.once("error", () => done(false));
+  socket.once("timeout", () => done(false));
+});
 const server = createServer(async (request, response) => {
   if (request.method !== "POST" || !authorized(request)) return json(response, 404, { error: "not_found" });
   try {
@@ -33,7 +42,11 @@ const server = createServer(async (request, response) => {
     const body = JSON.parse(raw);
     // Only the authenticated runner renews authority. An open VNC connection cannot renew itself.
     until = Date.now() + 90_000;
-    if (request.url === "/health") return json(response, 200, { ok: true });
+    if (request.url === "/health") {
+      const browser = await fetch("http://127.0.0.1:9222/json/version", { signal: AbortSignal.timeout(1500) }).then(async result => { await result.body?.cancel(); return result.ok; }).catch(() => false);
+      const ports = await Promise.all([5900, 5901, 5902, 5903].map(listening));
+      return json(response, browser && ports.every(Boolean) ? 200 : 503, { ok: browser && ports.every(Boolean), version: process.env.WORKBOT_DESKTOP_VERSION ?? "unknown" });
+    }
     if (request.url === "/viewer") {
       if (!["browser", "computer"].includes(body.view) || typeof body.origin !== "string") return json(response, 400, { error: "invalid_view" });
       if (body.control === true) await computer.interact({ action: "takeover" });
@@ -45,7 +58,7 @@ const server = createServer(async (request, response) => {
       return json(response, 200, { token, paused });
     }
     if (request.url === "/continue") {
-      for (const socket of sockets) socket.close(1000, "Control returned to Workbot");
+      for (const socket of sockets) { transports.get(socket)?.destroy(); socket.terminate(); }
       await computer.interact({ action: "resume" });
       return json(response, 200, { ok: true });
     }
@@ -57,7 +70,8 @@ const server = createServer(async (request, response) => {
 });
 const websocket = new WebSocketServer({ noServer: true, maxPayload: 1024 * 1024, perMessageDeflate: false });
 server.on("upgrade", (request, socket, head) => {
-  const token = /^\/vnc\/([A-Za-z0-9_-]{43})$/.exec(request.url ?? "")?.[1];
+  const path = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
+  const token = /^\/vnc\/([A-Za-z0-9_-]{43})$/.exec(path)?.[1];
   const ticket = tickets.get(token);
   tickets.delete(token);
   if (!ticket || ticket.expiresAt <= Date.now() || request.headers.origin !== ticket.origin || sockets.size >= 4) return socket.destroy();
@@ -66,8 +80,9 @@ server.on("upgrade", (request, socket, head) => {
     const port = ticket.view === "browser" ? (ticket.control ? 5901 : 5903) : (ticket.control ? 5900 : 5902);
     const tcp = connect({ host: "127.0.0.1", port });
     sockets.add(ws);
+    transports.set(ws, tcp);
     const deadline = setTimeout(() => ws.close(1000, "Renew viewer access"), 60_000);
-    const close = () => { clearTimeout(deadline); sockets.delete(ws); tcp.destroy(); ws.close(); };
+    const close = () => { clearTimeout(deadline); sockets.delete(ws); transports.delete(ws); tcp.destroy(); ws.close(); };
     tcp.on("data", data => { if (ws.readyState === WebSocket.OPEN) ws.send(data, { binary: true }); });
     ws.on("message", (data, binary) => {
       if (!binary || Date.now() >= until) return close();

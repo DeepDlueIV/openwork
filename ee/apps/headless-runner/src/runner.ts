@@ -627,6 +627,7 @@ export class Runner {
         this.options.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
         files ? FILES_PROMPT : "",
         computer?.prompt ?? "",
+        session?.desktop && computer?.desktopTools?.length ? "Use desktop to work in the visible browser and native applications. The organization enabled this computer: use it directly when needed. If the person takes control, wait for them to return it before continuing desktop operations." : "",
         tools || kind === "report" ? "" : "No OpenWork connection is available in this conversation, so connected apps cannot be reached.",
         session?.instructions ?? "",
         memorySection(store.memoryFiles(memoryOf ?? sessionId)),

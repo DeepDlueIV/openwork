@@ -65,3 +65,15 @@ test("idle policy uses stop when pause is absent", async () => {
   assert.equal((await provider.inspect(box)).state, "stopped")
   await computers.delete("idle")
 })
+
+test("desktop stays off on existing computers and opening a paused desktop does not wake it", async () => {
+  const f = fixture()
+  assert.deepEqual(f.computers.desktopTools, [])
+  const computers = new Computers({ provider: f.provider, idlePauseMs: 1000, keepDays: 1, desktop: true }, { readFile: async () => ({ text: "" }) })
+  const box = await computers.vm("paused-desktop")
+  await f.provider.stop(box, { timeoutMs: 1000 })
+  const starts = f.provider.fake.count("start")
+  assert.deepEqual(await computers.desktopViewer("paused-desktop", { view: "computer", control: false, origin: "https://chat.example.test" }), { state: "paused" })
+  assert.equal(f.provider.fake.count("start"), starts)
+  await computers.delete("paused-desktop")
+})

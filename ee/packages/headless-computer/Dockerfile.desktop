@@ -1,0 +1,16 @@
+# Build and push this image first; create a linux-vm Daytona snapshot from its registry digest.
+# The base is a pinned node:24-bookworm-slim digest, supplied by the operator.
+ARG OPENWORK_COMPUTER_BASE_IMAGE
+FROM ${OPENWORK_COMPUTER_BASE_IMAGE}
+USER root
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    bash sudo python3 python3-pip ca-certificates curl chromium xvfb xauth x11-utils \
+    openbox xdotool x11vnc util-linux dbus-x11 \
+    && usermod -l ubuntu -d /home/ubuntu -m node && groupmod -n ubuntu node \
+    && useradd --create-home --shell /bin/sh openwork-browser \
+    && printf 'ubuntu ALL=(ALL) NOPASSWD:ALL\n' > /etc/sudoers.d/ubuntu
+COPY ee/packages/headless-computer/src/image.ts /tmp/openwork-computer-image.ts
+RUN node --input-type=module -e "import { COMPUTER_INSTALL_SCRIPT } from '/tmp/openwork-computer-image.ts'; import { writeFileSync } from 'node:fs'; writeFileSync('/tmp/install-computer.sh', COMPUTER_INSTALL_SCRIPT)" \
+    && bash /tmp/install-computer.sh && rm /tmp/install-computer.sh /tmp/openwork-computer-image.ts
+USER ubuntu
+WORKDIR /workspace

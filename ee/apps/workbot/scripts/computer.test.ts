@@ -2,6 +2,7 @@ import assert from "node:assert/strict"
 import { test } from "node:test"
 import { Hono } from "hono"
 import { workbotOwner, workbotSessionId } from "@openwork-ee/workbot-server"
+import { createHeadlessRunnerClient } from "@openwork-ee/headless-protocol"
 import { createDen, denSessionSchema } from "../src/server/den.js"
 import { loadConfig } from "../src/server/config.js"
 import { registerWorkbotRoutes } from "../src/server/routes.js"
@@ -12,6 +13,22 @@ const member = (id: string, computer = true): Member => ({
   session: { id: `session_${id}`, userId: id, organizationId: "org", tokens: { accessToken: "synthetic", refreshToken: null, expiresAt: Date.now() + 60_000 }, createdAt: Date.now() },
   accessToken: "synthetic",
   den: denSessionSchema.parse({ user: { id, name: "Member", email: `${id}@example.test` }, organization: { id: "org", name: "Workspace", brandAppName: null }, memberId: id, enabled: true, canSchedule: false, computer }),
+})
+
+test("an explicit desktop off value preserves side chats on an older runner", async () => {
+  const bodies: unknown[] = []
+  const client = createHeadlessRunnerClient({
+    config: { url: "http://runner", token: "r".repeat(32) }, maxTokenTtlMs: 60_000, mintToken: async () => ({ token: "synthetic" }),
+    fetch: async (_url, init) => {
+      const body: unknown = JSON.parse(typeof init?.body === "string" ? init.body : "{}")
+      bodies.push(body)
+      const desktop = typeof body === "object" && body !== null && "desktop" in body
+      return new Response(JSON.stringify(desktop ? { error: "invalid_request" } : { id: "hs_sidechat_fixture" }), { status: desktop ? 400 : 200, headers: { "content-type": "application/json" } })
+    },
+  })
+  const saved = await client.putSession("hs_sidechat_fixture", { owner: "owner", ref: "sidechat", computer: true, desktop: false, strict: true })
+  assert.equal(saved.ok, true)
+  assert.deepEqual(bodies[1], { owner: "owner", ref: "sidechat", computer: true })
 })
 
 test("Computer access uses the signed-in member's conversation and refuses a caller-supplied target", async (t) => {

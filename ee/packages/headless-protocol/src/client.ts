@@ -275,6 +275,11 @@ export function createHeadlessRunnerClient(deps: HeadlessRunnerDeps) {
       }
       const extras = { ...(input.repeats ? { repeats: input.repeats } : {}), ...capabilityFields(input) }
       let { status, payload } = await request(deps, "PUT", sessionPath(id), { ...base, ...extras })
+      // An older runner has no desktop setting. Omitting an explicit off value preserves side-chat settings.
+      if (unknownSetting(status, payload) && input.desktop === false) {
+        const { desktop, ...compatible } = extras
+        ;({ status, payload } = await request(deps, "PUT", sessionPath(id), { ...base, ...compatible }))
+      }
       // A runner older than per-session capabilities or settings rejects them: keep the conversation, without them.
       if (unknownSetting(status, payload) && Object.keys(extras).length && !input.strict) ({ status, payload } = await request(deps, "PUT", sessionPath(id), base))
       const saved = z.object({ id: z.string() }).safeParse(payload)

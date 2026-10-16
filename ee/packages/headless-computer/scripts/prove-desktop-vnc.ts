@@ -1,6 +1,8 @@
 /** Exercise the production desktop bridge on a dedicated, already-created CLI-authenticated Daytona VM. */
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
+import { randomUUID } from "node:crypto"
+import { z } from "zod"
 import { gzipSync } from "node:zlib"
 import assert from "node:assert/strict"
 import { createFakeProvider } from "@openwork/sandbox/testing"
@@ -15,7 +17,7 @@ async function cli(args: string[]) {
   try { return (await execute("daytona", args, { maxBuffer: 8 * 1024 * 1024, timeout: 150_000 })).stdout }
   catch { throw new Error("Daytona proof command failed; inspect the owned sandbox.") }
 }
-const remote = (command: string) => cli(["exec", sandbox, "--", command])
+const remote = (command: string) => cli(["exec", sandbox, "--timeout", "135", "--", `(${command}) 2>/dev/null`])
 const fake = createFakeProvider()
 const provider = {
   ...fake,
@@ -40,8 +42,14 @@ const provider = {
 const desktop = new Desktop(provider)
 const box = await fake.create({ idempotencyKey: "desktop-proof", image: null, labels: {}, env: {}, storage: [], exposePorts: [] }, { timeoutMs: 1000 })
 await desktop.start(box)
+const fixture = `/tmp/openwork-vnc-proof-${randomUUID()}`
+const html = `<!doctype html><title>Workbot computer check</title><style>body{font:24px sans-serif;padding:60px}input,button{font:inherit;padding:12px}</style><h1>Workbot desktop</h1><label>Title <input id="entry"></label><button onclick="document.querySelector('#saved').textContent='Saved: '+document.querySelector('#entry').value">Save</button><p id="saved">Not saved</p>`
+const fixtureSource = `const fs=require('node:fs'); const server=require('node:http').createServer((_,res)=>res.end(${JSON.stringify(html)}));server.listen(0,'127.0.0.1',()=>fs.writeFileSync('${fixture}/port',String(server.address().port)));fs.writeFileSync('${fixture}/pid',String(process.pid));`
+await remote(`mkdir -p ${fixture}; printf %s ${shellQuote(Buffer.from(fixtureSource).toString("base64"))} | base64 -d > ${fixture}/server.cjs; setsid -f node ${fixture}/server.cjs > ${fixture}/server.log 2>&1 < /dev/null; for n in 1 2 3 4 5 6 7 8 9 10; do test -s ${fixture}/port && break; sleep 0.1; done`)
+const port = Number((await remote(`cat ${fixture}/port`)).trim())
+assert.ok(Number.isInteger(port) && port > 0)
 const browser = (operation: string, args: Record<string, unknown>) => desktop.call(box, "/browser/task", { sessionId: "vnc-proof", operation, args })
-const opened = await browser("open", { url: "http://127.0.0.1:8765/page" })
+const opened = await browser("open", { url: `http://127.0.0.1:${port}/` })
 assert.ok(typeof opened === "object" && opened !== null && "tabId" in opened)
 const tabId = Reflect.get(opened, "tabId")
 
@@ -61,5 +69,45 @@ for (const view of ["browser", "computer"] as const) {
   })
   assert.equal(replay, true)
 }
-await browser("observe", { tabId })
-console.log(JSON.stringify({ signedBrowserStream: true, signedDesktopStream: true, oneUseTickets: true, sharedBrowserTool: true }))
+const observation = z.object({ observationId: z.string(), elements: z.array(z.object({ ref: z.string(), name: z.string().optional() })), text: z.string() })
+const see = async () => observation.parse(await browser("observe", { tabId }))
+const fill = async (value: string) => {
+  const seen = await see()
+  const field = seen.elements.find(item => item.name === "Title")
+  assert.ok(field)
+  await browser("act", { tabId, observationId: seen.observationId, action: { type: "fill", ref: field.ref, text: value } })
+}
+async function keys(url: string, values: number[]) {
+  await new Promise<void>((resolve, reject) => {
+    const ws = new WebSocket(url, { origin: "http://localhost:3020" })
+    let buffer = Buffer.alloc(0), phase = 0
+    const timer = setTimeout(() => { ws.terminate(); reject(new Error("RFB input timed out")) }, 15_000)
+    ws.on("error", () => { clearTimeout(timer); reject(new Error("RFB input failed")) })
+    ws.on("message", data => {
+      const chunk = Buffer.isBuffer(data) ? data : Array.isArray(data) ? Buffer.concat(data) : Buffer.from(data)
+      buffer = Buffer.concat([buffer, chunk])
+      if (phase === 0 && buffer.length >= 12) { buffer = buffer.subarray(12); ws.send("RFB 003.008\n", { binary: true }); phase = 1 }
+      if (phase === 1 && buffer.length >= 1 && buffer.length >= buffer[0] + 1) { assert.ok(buffer.subarray(1, buffer[0] + 1).includes(1)); buffer = buffer.subarray(buffer[0] + 1); ws.send(Buffer.from([1])); phase = 2 }
+      if (phase === 2 && buffer.length >= 4) { assert.equal(buffer.readUInt32BE(0), 0); buffer = buffer.subarray(4); ws.send(Buffer.from([1])); phase = 3 }
+      if (phase === 3 && buffer.length >= 24 && buffer.length >= 24 + buffer.readUInt32BE(20)) {
+        assert.ok(buffer.readUInt16BE(0) > 640); assert.ok(buffer.readUInt16BE(2) > 400); phase = 4
+        for (const value of values) for (const down of [1, 0]) { const event = Buffer.alloc(8); event[0] = 4; event[1] = down; event.writeUInt32BE(value, 4); ws.send(event) }
+        setTimeout(() => { clearTimeout(timer); ws.close(); resolve() }, 500)
+      }
+    })
+  })
+}
+await fill("Controlled through VNC")
+const control = await desktop.viewer(box, { view: "browser", control: true, origin: "http://localhost:3020" })
+await assert.rejects(browser("observe", { tabId }))
+await keys(control.url, [0xff09, 0xff0d])
+await desktop.call(box, "/continue", {})
+assert.match((await see()).text, /Saved: Controlled through VNC/)
+await fill("Read-only must not save")
+const watch = await desktop.viewer(box, { view: "computer", control: false, origin: "http://localhost:3020" })
+await keys(watch.url, [0xff09, 0xff0d])
+const unchanged = await see()
+assert.match(unchanged.text, /Saved: Controlled through VNC/)
+assert.doesNotMatch(unchanged.text, /Saved: Read-only must not save/)
+await remote(`kill $(cat ${fixture}/pid); rm -r ${fixture}`)
+console.log(JSON.stringify({ signedBrowserStream: true, signedDesktopStream: true, oneUseTickets: true, sharedBrowserTool: true, manualKeyboardSave: true, serverReadOnlyEnforced: true, takeoverPausesAgent: true }))

@@ -18,6 +18,16 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "rememberLastOrganization": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Remember last organization: Return to the last organization used by the same account on this server after signing in again. Invite and installation links keep their selected organization. Renders DEN_FEATURE_REMEMBER_LAST_ORGANIZATION."
+            },
             "secureSecretFields": {
               "enum": [
                 "",

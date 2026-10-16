@@ -2426,6 +2426,7 @@
           "key": {
             "type": "string",
             "enum": [
+              "rememberLastOrganization",
               "secureSecretFields",
               "memberListToolbars",
               "appBuildProgress",
@@ -2627,6 +2628,9 @@
                 "capabilities": {
                   "type": "object",
                   "properties": {
+                    "rememberLastOrganization": {
+                      "type": "boolean"
+                    },
                     "secureSecretFields": {
                       "type": "boolean"
                     },
@@ -2716,6 +2720,7 @@
                     }
                   },
                   "required": [
+                    "rememberLastOrganization",
                     "secureSecretFields",
                     "memberListToolbars",
                     "appBuildProgress",
@@ -2749,6 +2754,62 @@
                 "featureStates": {
                   "type": "object",
                   "properties": {
+                    "rememberLastOrganization": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "secureSecretFields": {
                       "type": "object",
                       "properties": {
@@ -4263,6 +4324,7 @@
                     }
                   },
                   "required": [
+                    "rememberLastOrganization",
                     "secureSecretFields",
                     "memberListToolbars",
                     "appBuildProgress",
@@ -4659,6 +4721,9 @@
                 "capabilities": {
                   "type": "object",
                   "properties": {
+                    "rememberLastOrganization": {
+                      "type": "boolean"
+                    },
                     "secureSecretFields": {
                       "type": "boolean"
                     },
@@ -4748,6 +4813,7 @@
                     }
                   },
                   "required": [
+                    "rememberLastOrganization",
                     "secureSecretFields",
                     "memberListToolbars",
                     "appBuildProgress",
@@ -4781,6 +4847,62 @@
                 "featureStates": {
                   "type": "object",
                   "properties": {
+                    "rememberLastOrganization": {
+                      "type": "object",
+                      "properties": {
+                        "enabled": {
+                          "type": "boolean"
+                        },
+                        "source": {
+                          "type": "string",
+                          "enum": [
+                            "unavailable",
+                            "killed",
+                            "lock",
+                            "override",
+                            "everyone"
+                          ]
+                        },
+                        "everyone": {
+                          "type": "boolean"
+                        },
+                        "killed": {
+                          "type": "boolean"
+                        },
+                        "lock": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "override": {
+                          "anyOf": [
+                            {
+                              "type": "boolean"
+                            },
+                            {
+                              "type": "null"
+                            }
+                          ]
+                        },
+                        "overrideApplies": {
+                          "type": "boolean"
+                        }
+                      },
+                      "required": [
+                        "enabled",
+                        "source",
+                        "everyone",
+                        "killed",
+                        "lock",
+                        "override",
+                        "overrideApplies"
+                      ]
+                    },
                     "secureSecretFields": {
                       "type": "object",
                       "properties": {
@@ -6295,6 +6417,7 @@
                     }
                   },
                   "required": [
+                    "rememberLastOrganization",
                     "secureSecretFields",
                     "memberListToolbars",
                     "appBuildProgress",
@@ -30283,6 +30406,9 @@
                     "capabilities": {
                       "type": "object",
                       "properties": {
+                        "rememberLastOrganization": {
+                          "type": "boolean"
+                        },
                         "secureSecretFields": {
                           "type": "boolean"
                         },
@@ -30372,6 +30498,7 @@
                         }
                       },
                       "required": [
+                        "rememberLastOrganization",
                         "secureSecretFields",
                         "memberListToolbars",
                         "appBuildProgress",
@@ -30405,6 +30532,62 @@
                     "featureStates": {
                       "type": "object",
                       "properties": {
+                        "rememberLastOrganization": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "secureSecretFields": {
                           "type": "object",
                           "properties": {
@@ -31919,6 +32102,7 @@
                         }
                       },
                       "required": [
+                        "rememberLastOrganization",
                         "secureSecretFields",
                         "memberListToolbars",
                         "appBuildProgress",
@@ -32064,6 +32248,9 @@
                     "capabilities": {
                       "type": "object",
                       "properties": {
+                        "rememberLastOrganization": {
+                          "type": "boolean"
+                        },
                         "secureSecretFields": {
                           "type": "boolean"
                         },
@@ -32153,6 +32340,7 @@
                         }
                       },
                       "required": [
+                        "rememberLastOrganization",
                         "secureSecretFields",
                         "memberListToolbars",
                         "appBuildProgress",
@@ -32186,6 +32374,62 @@
                     "featureStates": {
                       "type": "object",
                       "properties": {
+                        "rememberLastOrganization": {
+                          "type": "object",
+                          "properties": {
+                            "enabled": {
+                              "type": "boolean"
+                            },
+                            "source": {
+                              "type": "string",
+                              "enum": [
+                                "unavailable",
+                                "killed",
+                                "lock",
+                                "override",
+                                "everyone"
+                              ]
+                            },
+                            "everyone": {
+                              "type": "boolean"
+                            },
+                            "killed": {
+                              "type": "boolean"
+                            },
+                            "lock": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "override": {
+                              "anyOf": [
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "overrideApplies": {
+                              "type": "boolean"
+                            }
+                          },
+                          "required": [
+                            "enabled",
+                            "source",
+                            "everyone",
+                            "killed",
+                            "lock",
+                            "override",
+                            "overrideApplies"
+                          ]
+                        },
                         "secureSecretFields": {
                           "type": "object",
                           "properties": {
@@ -33700,6 +33944,7 @@
                         }
                       },
                       "required": [
+                        "rememberLastOrganization",
                         "secureSecretFields",
                         "memberListToolbars",
                         "appBuildProgress",

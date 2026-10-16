@@ -35,6 +35,7 @@ const node = z.object({
   ref: z.string(), name: z.string(), role: z.string(), bounds,
   disabled: z.boolean(), editable: z.boolean(), press: z.boolean(), settable: z.boolean(),
   checked: z.boolean().optional(), value: z.string().optional(), visible: z.boolean().optional(),
+  options: z.array(z.object({ value: z.string(), label: z.string(), disabled: z.boolean() })).optional(),
 })
 type Selector = z.infer<typeof selector>
 type Node = z.infer<typeof node>
@@ -68,6 +69,10 @@ function normalizeNode(raw: unknown): Node | null {
     ...(typeof value.checked === "boolean" ? { checked: value.checked } : ["checkbox", "switch", "radio"].includes(role) && value.value !== undefined ? { checked: value.value === true || value.value === 1 || value.value === "1" } : {}),
     ...(typeof value.value === "string" ? { value: value.value } : {}),
     ...(typeof value.visible === "boolean" ? { visible: value.visible } : {}),
+    ...(Array.isArray(value.options) ? { options: value.options.flatMap(option => {
+      const parsed = z.object({value:z.string(),label:z.string(),disabled:z.boolean().default(false)}).safeParse(option)
+      return parsed.success ? [parsed.data] : []
+    }) } : {}),
   }
 }
 function matches(element: Node, target: Selector) {
@@ -206,7 +211,10 @@ export async function runComputerProgram(request: ProgramRequest, host: ProgramH
   const fill = async (target: Selector, text: string, append = false) => {
     const element = await reveal(target)
     if (!element.editable) return issue("not_editable", "The target is not an editable control.")
-    if (request.surface === "browser") await act({ type: "fill", ref: element.ref, text, replace: !append })
+    if (request.surface === "browser") {
+      if (append && element.value === undefined) return issue("state_unavailable", "Observe the current field value before appending.")
+      await act({ type: "fill", ref: element.ref, text: append ? element.value + text : text })
+    }
     else if (element.settable && !append) await act({ type: "set_value", ref: element.ref, text })
     else {
       await click(target)
@@ -263,13 +271,21 @@ export async function runComputerProgram(request: ProgramRequest, host: ProgramH
     setChecked: add("Set a checkbox to the requested state; do nothing if already correct.", z.object({ target: selector, checked: z.boolean() }).strict(), async ({ target, checked }) => {
       const current = ready(await find(target))
       if (current.checked === undefined) return issue("state_unavailable", "This control exposes no checked state.")
-      if (current.checked !== checked) await click(target)
+      if (current.checked !== checked) {
+        if (request.surface === "browser") { const element = await reveal(target); await act({ type: "set_checked", ref: element.ref, checked }) }
+        else await click(target)
+      }
       await pause(50)
       if ((await find(target, true, true))?.checked !== checked) return issue("state_not_confirmed", "The requested checkbox state was not confirmed; do not toggle it again blindly.", true)
       return { checked }
     }),
     select: add("Choose an option by its visible label in a browser select or native menu.", z.object({ target: selector, option: z.string().min(1).max(300) }).strict(), async ({ target, option }) => {
-      if (request.surface === "browser") { const element = await reveal(target); await act({ type: "select", ref: element.ref, option }) }
+      if (request.surface === "browser") {
+        const element = await reveal(target)
+        const options = element.options?.filter(value => !value.disabled && value.label === option) ?? []
+        if (options.length !== 1) return issue("option_unavailable", "Choose a unique enabled option label from the current observation.")
+        await act({ type: "select", ref: element.ref, values: [options[0].value] })
+      }
       else { await click(target); await waitFor({ role: "menuitem", name: option }, "enabled", 3000); await click({ role: "menuitem", name: option }) }
       return { selected: option }
     }),

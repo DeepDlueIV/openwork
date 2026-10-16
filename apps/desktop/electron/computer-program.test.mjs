@@ -15,7 +15,7 @@ function browserFixture() {
       calls.push(operation);
       if (operation === "open") return { ok: true, tabId: "owned" };
       if (operation === "observe") return { ok: true, observationId: String(++observationId), viewport: { width: 800, height: 600 }, text: saves ? "Saved 1" : "Ready", elements: [
-        { ref: "title", role: "textbox", name: "Title", bounds: { x: 10, y: 10, width: 300, height: 30 } },
+        { ref: "title", role: "textbox", name: "Title", value, bounds: { x: 10, y: 10, width: 300, height: 30 } },
         { ref: "details", role: "checkbox", name: "Details", checked, bounds: { x: 10, y: 50, width: 100, height: 30 } },
         { ref: "save", role: "button", name: "Save", bounds: { x: 10, y: 90, width: 100, height: 30 } },
         ...(saves ? [{ ref: "saved", role: "text", name: "Saved 1", bounds: { x: 10, y: 130, width: 100, height: 30 } }] : []),
@@ -26,6 +26,7 @@ function browserFixture() {
         const action = args.action;
         if (action.type === "fill") value = action.text;
         if (action.type === "click" && action.ref === "details") checked = !checked;
+        if (action.type === "set_checked" && action.ref === "details") checked = action.checked;
         if (action.type === "click" && action.ref === "save") saves++;
         return { ok: true, dispatched: true };
       }

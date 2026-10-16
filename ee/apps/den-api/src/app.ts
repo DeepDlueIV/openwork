@@ -428,7 +428,6 @@ const openApiOptions: Parameters<typeof generateSpecs>[1] = {
       { name: "Automations", description: "Scheduled Automations, their runs, and desktop runner presence." },
       { name: "Documents", description: "Connected Drive documents, inline editing and file-bound temporary Office sessions." },
       { name: "Workbot", description: "The signed-in member's single Workbot conversation." },
-      { name: "Documents", description: "Member-scoped document editing and temporary Office sessions." },
       { name: "Workflows", description: "Saved Workflows (Code Mode scripts), their versions, snapshots, and views." },
       { name: "Workflow Runs", description: "Durable Workflow run history." },
       { name: "Codemode Runs", description: "Generated Artifact views produced by Code Mode runs." },

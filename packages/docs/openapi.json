@@ -133,10 +133,6 @@
       "description": "The signed-in member's single Workbot conversation."
     },
     {
-      "name": "Documents",
-      "description": "Member-scoped document editing and temporary Office sessions."
-    },
-    {
       "name": "Workflows",
       "description": "Saved Workflows (Code Mode scripts), their versions, snapshots, and views."
     },

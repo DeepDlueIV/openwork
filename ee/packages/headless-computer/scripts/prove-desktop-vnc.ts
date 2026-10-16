@@ -133,5 +133,11 @@ assert.equal(stopped.error.code, "program_stopped")
 await assert.rejects(browser("observe", { tabId }))
 await desktop.call(box, "/continue", {})
 assert.match((await see()).text, /Saved: Saved through a Workbot program/)
+const nativeProgram = z.object({ ok: z.literal(true), value: z.object({ width: z.number().positive(), height: z.number().positive() }), images: z.array(z.object({ type: z.literal("image") })).min(1) }).parse(await desktop.call(box, "/computer/program", {
+  sessionId: "vnc-proof", surface: "computer",
+  code: `await tools.ui.open({appId:"desktop",mode:"control",purpose:"Verify the shared desktop"}); await tools.ui.observe({screenshot:true}); await tools.ui.act({action:{type:"key",key:"escape"}}); const view = await tools.ui.observe({screenshot:true}); return {width:view.width,height:view.height};`,
+}))
+assert.equal(nativeProgram.value.width, 1280)
+assert.equal(nativeProgram.value.height, 800)
 await remote(`kill $(cat ${fixture}/pid); rm -r ${fixture}`)
-console.log(JSON.stringify({ signedBrowserStream: true, signedDesktopStream: true, oneUseTickets: true, sharedBrowserTool: true, manualKeyboardSave: true, serverReadOnlyEnforced: true, takeoverPausesAgent: true, boundedBrowserProgram: true, stopCancelsProgram: true }))
+console.log(JSON.stringify({ signedBrowserStream: true, signedDesktopStream: true, oneUseTickets: true, sharedBrowserTool: true, manualKeyboardSave: true, serverReadOnlyEnforced: true, takeoverPausesAgent: true, boundedBrowserProgram: true, stopCancelsProgram: true, boundedNativeProgram: true }))

@@ -88,6 +88,9 @@ function observePage(id, query = null) {
   const snapshots = new Map();
   for (const element of candidates) {
     if (!(element instanceof HTMLElement)) continue;
+    // An associated label already supplies the control's accessible name.
+    // Returning it again makes ordinary name-based form targets ambiguous.
+    if (element instanceof HTMLLabelElement && element.control) continue;
     if (++scanned > 6000 || elements.length >= 500) { truncated = true; break; }
     const rect = element.getBoundingClientRect();
     const style = getComputedStyle(element);

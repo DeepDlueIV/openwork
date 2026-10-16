@@ -1,4 +1,5 @@
 /** @jsxImportSource react */
+import { useOfflineRecoveryFeature } from "@/react-app/domains/session/status/use-offline-recovery-feature";
 import { freeAutoSwitchedOff, modelForNewTask } from "@/app/lib/inference-access";
 import { useAutoAccess, useObservedAutoAccessSnapshot } from "@/react-app/domains/cloud/auto-access-ui";
 import { newSessionDraftSlot, newSessionDraftOwnerKey, openNewSessionDraft } from "@/react-app/domains/session/chat/new-session-destination";
@@ -438,6 +439,7 @@ export function SessionRoute() {
   const calendarFeature = useCalendarFeature(useAutomationsDenContext());
   useBackgroundShellTasksFeature();
   useAppBuildProgressFeature();
+  useOfflineRecoveryFeature();
   useRemoteSessionSubagentsFeature();
   const calendarSurfaceAvailable = automationsEnabled && denAuth.isSignedIn && calendarFeature.data === true;
   const calendarAvailabilityPending = denAuthChecking || (automationsEnabled && denAuth.isSignedIn && calendarFeature.isLoading);

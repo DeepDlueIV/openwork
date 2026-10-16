@@ -1,3 +1,4 @@
+import { isLocalNetworkEndpoint, onlineRequestsPaused } from "@/react-app/domains/session/status/offline-recovery-store";
 import type { OpenworkMcpAppResource, OpenworkServerClient } from "@/app/lib/openwork-server";
 import { startMcpAppTiming } from "@openwork/types/mcp-app-timing";
 
@@ -31,6 +32,10 @@ export function createMcpAppActions(
   const assertActive = () => {
     if (!active) throw new Error("This App view has closed or changed. Reopen it before using its actions.");
     if (origin.readOnly) throw new Error("This view is read-only and cannot perform App actions.");
+    if (onlineRequestsPaused() && (app.serverName.startsWith("openwork-cloud") || !isLocalNetworkEndpoint(origin.client.baseUrl))) {
+      throw new Error("Online actions are paused. Check your connection before trying again.");
+    }
+
     if (!app.launchId) throw new Error("This App has no live launch context. Update OpenWork and reopen the App.");
   };
   return {

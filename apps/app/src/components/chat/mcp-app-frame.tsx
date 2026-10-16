@@ -1,5 +1,6 @@
 "use client"
 
+import { checkOnlineConnection, isLocalNetworkEndpoint, useOfflineRecoveryStore } from "@/react-app/domains/session/status/offline-recovery-store";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import type { DynamicToolUIPart } from "ai"
 import { AppBridge, PostMessageTransport } from "@modelcontextprotocol/ext-apps/app-bridge"
@@ -372,6 +373,9 @@ export type McpAppSandboxViewProps = {
 export function McpAppSandboxView({ origin, app, resolveLiveActions, goesLiveInPlace = false, liveReady = false, toolName, inputArguments, result, connectionController, updateMode = "replace", onReady, unavailableNotice, onRequestTeardown, initialHeight, onHeightChange, presentation = "inline", onError, onRetry, onAppToolResult, openKey }: McpAppSandboxViewProps) {
   const openworkServerClient = origin.client
   const workspaceId = origin.workspaceId
+  const offline = useOfflineRecoveryStore((state) => state.enabled && state.issue !== null)
+    && (app.serverName.startsWith("openwork-cloud") || !isLocalNetworkEndpoint(origin.client.baseUrl));
+
   const readOnly = origin.readOnly
   // A saved Dashboard view that becomes live in place once its lease arrives.
   const savedLive = readOnly && Boolean(resolveLiveActions) && goesLiveInPlace
@@ -895,6 +899,7 @@ export function McpAppSandboxView({ origin, app, resolveLiveActions, goesLiveInP
     setError(null)
     setRetryAttempt((attempt) => attempt + 1)
   })
+  if (error && offline) return <p className="text-sm text-muted-foreground">View unavailable while offline</p>;
   if (error) return <McpAppDiagnosticNotice error={error} notice={unavailableNotice} onRetry={reload} />
   return (
     <>
@@ -954,6 +959,11 @@ function EmbeddedMcpAppFrame({ part, origin: surfaceOrigin }: { part: DynamicToo
   const origin = useMemo(() => nextOrigin, [nextOrigin?.client, nextOrigin?.workspaceId, nextOrigin?.sessionId, nextOrigin?.engine, nextOrigin?.readOnly])
   const openworkServerClient = origin?.client
   const workspaceId = origin?.workspaceId
+  const connectivityIssue = useOfflineRecoveryStore((state) => state.enabled && state.issue !== null);
+  const cloudView = part.toolName.startsWith("openwork-cloud_") || Boolean(gatewayMcpAppLaunch(preservedResult(part)?._meta))
+    || Boolean(origin && !isLocalNetworkEndpoint(origin.client.baseUrl));
+  const offline = connectivityIssue && cloudView;
+
   const nextResult = preservedResult(part)
   const nextResultSignature = mcpAppDiscoverySignature(nextResult)
   const resultCache = useRef<{ signature: string; value: PreservedMcpAppResult | null }>({
@@ -1015,6 +1025,7 @@ function EmbeddedMcpAppFrame({ part, origin: surfaceOrigin }: { part: DynamicToo
   const resolvedFor = useRef<object | null>(null)
 
   useEffect(() => {
+    if (offline) return;
     let cancelled = false
     const live = Promise.withResolvers<{ origin: McpAppOrigin; app: OpenworkMcpAppResource }>()
     // Discovery failure retires the preview through the existing error state.
@@ -1054,6 +1065,10 @@ function EmbeddedMcpAppFrame({ part, origin: surfaceOrigin }: { part: DynamicToo
         (cause) => {
           live.reject(cause)
           if (cancelled) return
+          if (/fetch failed|failed to fetch|network|connection|timed? out|timeout|ENOTFOUND|ECONNREFUSED/i.test(cause instanceof Error ? cause.message : String(cause))) {
+            void checkOnlineConnection(true);
+          }
+
           checkpoints.push(`resolve-failed+${Math.round(performance.now() - startedAt)}ms`)
           if (launch || isActionableMcpAppResolutionError(cause)) {
             const diagnostic: McpAppDiagnostic = {
@@ -1094,7 +1109,7 @@ function EmbeddedMcpAppFrame({ part, origin: surfaceOrigin }: { part: DynamicToo
       stopCredentialRetry?.()
       release()
     }
-  }, [draft, launch, openworkServerClient, part.toolName, result, workspaceId, origin, resolution])
+  }, [draft, launch, openworkServerClient, part.toolName, result, workspaceId, origin, resolution, offline])
 
   if (draft) return <AppChatArtifact key={`${draft.appId}:${draft.revisionId}:${draft.receiptId}`} {...draft} />
   const viewId = result?._meta?.artifactViewId
@@ -1107,6 +1122,7 @@ function EmbeddedMcpAppFrame({ part, origin: surfaceOrigin }: { part: DynamicToo
   }
   if (!result) return null
   if (!origin) return <p role="status">This artifact is missing its conversation origin. Reopen the conversation to use it.</p>
+  if (offline && (!app || error)) return <p className="text-sm text-muted-foreground">View unavailable while offline</p>;
   if (error) return <McpAppDiagnosticNotice error={error} notice={CHAT_MCP_APP_UNAVAILABLE_NOTICE} onRetry={() => setResolveToken((token) => token + 1)} />
   if (!app || resolvedFor.current !== resolution) return launch && resolvedFor.current !== resolution
     ? stagedLoading ? <McpAppLoading /> : <p role="status">Opening artifact…</p> : null

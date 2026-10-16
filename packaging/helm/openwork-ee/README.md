@@ -362,6 +362,7 @@ OpenWork Cloud. Don't change it on a customer install.
 <!-- BEGIN GENERATED features (pnpm features:sync) -->
 | `config.features.*` | Environment variable | Default | What it does |
 | --- | --- | --- | --- |
+| `offlineRecovery` | `DEN_FEATURE_OFFLINE_RECOVERY` | default off | Show a shared offline warning, pause affected online requests, and let people continue interrupted tasks after reconnecting. |
 | `rememberLastOrganization` | `DEN_FEATURE_REMEMBER_LAST_ORGANIZATION` | default off | Return to the last organization used by the same account on this server after signing in again. Invite and installation links keep their selected organization. |
 | `secureSecretFields` | `DEN_FEATURE_SECURE_SECRET_FIELDS` | default off | When an agent sets up a connection, plugin or AI Gateway provider that needs keys, people enter them in private fields in the chat and the agent continues once they are saved. Key fields across OpenWork and OpenWork Cloud can be shown while typing and show saved keys as Replace rows. |
 | `memberListToolbars` | `DEN_FEATURE_MEMBER_LIST_TOOLBARS` | default off | Filter members, teams and roles beside their add action, with compact member rows and secondary actions in the list menu. |

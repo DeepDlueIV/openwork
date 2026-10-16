@@ -53,6 +53,13 @@ function defineFeatures<const T extends Record<string, FeatureDefinition>>(featu
 const everywhere = ["cloud", "self_hosted"] as const
 
 export const FEATURES = defineFeatures({
+  offlineRecovery: {
+    label: "Offline connection recovery",
+    description: "Show a shared offline warning, pause affected online requests, and let people continue interrupted tasks after reconnecting.",
+    since: "2026-10",
+    deployments: everywhere,
+    default: false,
+  },
   rememberLastOrganization: {
     label: "Remember last organization",
     description: "Return to the last organization used by the same account on this server after signing in again. Invite and installation links keep their selected organization.",

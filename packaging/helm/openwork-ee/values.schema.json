@@ -18,6 +18,16 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "offlineRecovery": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Offline connection recovery: Show a shared offline warning, pause affected online requests, and let people continue interrupted tasks after reconnecting. Renders DEN_FEATURE_OFFLINE_RECOVERY."
+            },
             "rememberLastOrganization": {
               "enum": [
                 "",

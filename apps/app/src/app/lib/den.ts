@@ -1,5 +1,4 @@
 import { createDenClient as createGeneratedDenClient } from "@openwork/sdk";
-import { automationDetailSchema, automationListSchema, automationRunRangeSchema, automationRunReceiptSchema, automationRunSchema } from "@openwork/types/automations";
 import { builtMcpAppCatalogSchema, type BuiltMcpAppCatalogEntry } from "./built-mcp-app-catalog";
 import {
   normalizeDesktopConfig,
@@ -2888,7 +2887,9 @@ export function createDenClient(options: {
     },
   });
 
-  async function automationData<T>(pending: Promise<{ data?: T; error?: unknown; response?: Response }>): Promise<T> {
+  // Responses are typed, not validated, as before: an older Desktop must keep
+  // working when a newer Den adds fields or enum values.
+  async function automationData<T>(pending: Promise<{ data?: unknown; error?: unknown; response?: Response }>): Promise<T> {
     const { data, error, response } = await pending;
     if (!response) throw error ?? new Error("Den request failed.");
     if (!response.ok) {
@@ -2896,7 +2897,7 @@ export function createDenClient(options: {
       throw new DenApiError(response.status, code, getErrorMessage(error, `Request failed with ${response.status}.`), isRecord(error) ? error.details : undefined);
     }
     if (data === undefined) throw new DenApiError(502, "invalid_automation_payload", "Automation response was empty.");
-    return data;
+    return data as T;
   }
 
   function verifyInventory(payload: unknown, key: string, parsedCount: number, accept?: (item: unknown) => boolean) {
@@ -3241,7 +3242,7 @@ export function createDenClient(options: {
       orgId: string,
       options: { cursor?: string; limit?: number } = {},
     ): Promise<AutomationList> {
-      return automationListSchema.parse(await automationData(automationClient(orgId).listAutomations(options)));
+      return automationData<AutomationList>(automationClient(orgId).listAutomations(options));
     },
 
     /**
@@ -3251,7 +3252,7 @@ export function createDenClient(options: {
      */
     async getAutomationDesktopRunnerPresence(orgId: string): Promise<AutomationDesktopRunnerPresence | null> {
       try {
-        return await automationData(automationClient(orgId).getAutomationDesktopRunnerPresence());
+        return await automationData<AutomationDesktopRunnerPresence>(automationClient(orgId).getAutomationDesktopRunnerPresence());
       } catch (error) {
         if (error instanceof DenApiError && error.status === 404) return null;
         throw error;
@@ -3265,7 +3266,7 @@ export function createDenClient(options: {
      */
     async listAutomationRunners(orgId: string): Promise<AutomationExecutionTargetList | null> {
       try {
-        return await automationData(automationClient(orgId).listAutomationRunners());
+        return await automationData<AutomationExecutionTargetList>(automationClient(orgId).listAutomationRunners());
       } catch (error) {
         if (error instanceof DenApiError && error.status === 404) return null;
         throw error;
@@ -3273,9 +3274,8 @@ export function createDenClient(options: {
     },
 
     async mintAutomationRunnerToken(orgId: string, registration: AutomationDesktopRunnerRegistration): Promise<AutomationRunnerTokenResponse> {
-      if (registration.supportedExecutionTargets.length !== 1) throw new Error("A desktop runner must support exactly the desktop execution target.");
-      return automationData(automationClient(orgId).mintAutomationRunnerToken({
-        ...registration, supportedExecutionTargets: [registration.supportedExecutionTargets[0]],
+      return automationData<AutomationRunnerTokenResponse>(automationClient(orgId).mintAutomationRunnerToken({
+        ...registration, supportedExecutionTargets: ["desktop"],
       }));
     },
 
@@ -3289,12 +3289,12 @@ export function createDenClient(options: {
     },
 
     async createAutomation(orgId: string, input: CreateAutomation): Promise<AutomationDetail> {
-      return automationDetailSchema.parse(await automationData(automationClient(orgId).createAutomation({ body: input })));
+      return automationData<AutomationDetail>(automationClient(orgId).createAutomation({ body: input }));
     },
 
     /** Web creation surface: placement is fixed to OpenWork Cloud by the route. */
     async createCloudAutomation(orgId: string, input: CreateCloudAutomation): Promise<AutomationDetail> {
-      return automationDetailSchema.parse(await automationData(automationClient(orgId).createCloudAutomation(input)));
+      return automationData<AutomationDetail>(automationClient(orgId).createCloudAutomation(input));
     },
 
     async getWorkflow(orgId: string, configObjectId: string): Promise<WorkflowDetail> {
@@ -3307,7 +3307,7 @@ export function createDenClient(options: {
     },
 
     async getAutomation(orgId: string, automationId: string): Promise<AutomationDetail> {
-      return automationDetailSchema.parse(await automationData(automationClient(orgId).getAutomation({ id: automationId })));
+      return automationData<AutomationDetail>(automationClient(orgId).getAutomation({ id: automationId }));
     },
 
     async updateAutomation(
@@ -3315,24 +3315,24 @@ export function createDenClient(options: {
       automationId: string,
       input: UpdateAutomation,
     ): Promise<AutomationDetail> {
-      return automationDetailSchema.parse(await automationData(automationClient(orgId).updateAutomation({ id: automationId, ...input })));
+      return automationData<AutomationDetail>(automationClient(orgId).updateAutomation({ id: automationId, ...input }));
     },
 
     async activateAutomation(orgId: string, automationId: string): Promise<AutomationDetail> {
-      return automationDetailSchema.parse(await automationData(automationClient(orgId).activateAutomation({ id: automationId })));
+      return automationData<AutomationDetail>(automationClient(orgId).activateAutomation({ id: automationId }));
     },
 
     async deactivateAutomation(orgId: string, automationId: string): Promise<AutomationDetail> {
-      return automationDetailSchema.parse(await automationData(automationClient(orgId).deactivateAutomation({ id: automationId })));
+      return automationData<AutomationDetail>(automationClient(orgId).deactivateAutomation({ id: automationId }));
     },
 
     async archiveAutomation(orgId: string, automationId: string): Promise<AutomationDetail> {
-      return automationDetailSchema.parse(await automationData(automationClient(orgId).archiveAutomation({ id: automationId })));
+      return automationData<AutomationDetail>(automationClient(orgId).archiveAutomation({ id: automationId }));
     },
 
     /** `executionTarget` runs this one occurrence there instead of on the Automation's own target. */
     async runAutomationNow(orgId: string, automationId: string, options: RunAutomationNow = {}): Promise<AutomationRun> {
-      return automationRunSchema.parse((await automationData(automationClient(orgId).runAutomationNow({ id: automationId, ...options }))).run);
+      return (await automationData<{ run: AutomationRun }>(automationClient(orgId).runAutomationNow({ id: automationId, ...options }))).run;
     },
 
     async listAutomationRuns(
@@ -3340,15 +3340,15 @@ export function createDenClient(options: {
       automationId: string,
       options: { cursor?: string; limit?: number } = {},
     ): Promise<{ items: AutomationRun[]; nextCursor: string | null }> {
-      return automationRunRangeSchema.parse(await automationData(automationClient(orgId).listAutomationRuns({ id: automationId, ...options })));
+      return automationData<{ items: AutomationRun[]; nextCursor: string | null }>(automationClient(orgId).listAutomationRuns({ id: automationId, ...options }));
     },
 
     async getAutomationRun(orgId: string, runId: string): Promise<AutomationRunReceipt> {
-      return automationRunReceiptSchema.parse(await automationData(automationClient(orgId).getAutomationRun({ id: runId })));
+      return automationData<AutomationRunReceipt>(automationClient(orgId).getAutomationRun({ id: runId }));
     },
 
     async cancelAutomationRun(orgId: string, runId: string): Promise<AutomationRun> {
-      return automationRunSchema.parse((await automationData(automationClient(orgId).cancelAutomationRun({ id: runId }))).run);
+      return (await automationData<{ run: AutomationRun }>(automationClient(orgId).cancelAutomationRun({ id: runId }))).run;
     },
 
     /**
@@ -3359,7 +3359,7 @@ export function createDenClient(options: {
       orgId: string,
       options: { from: number; to: number; cursor?: string; limit?: number },
     ): Promise<AutomationRunRange> {
-      return automationRunRangeSchema.parse(await automationData(automationClient(orgId).listAutomationRunsInRange(options)));
+      return automationData<AutomationRunRange>(automationClient(orgId).listAutomationRunsInRange(options));
     },
 
     /**

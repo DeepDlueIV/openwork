@@ -278,6 +278,16 @@
               ],
               "description": "Invite links verify the invited email: Creating an account from an invitation link, emailed or shared by an admin, counts as verifying that email, so the invited person joins without entering an emailed code. Renders DEN_FEATURE_INVITE_LINK_VERIFIES_EMAIL."
             },
+            "remoteSessionSubagents": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Desktop: tasks on other computers as sub-agents: A task the agent starts on the cloud or another computer shows in the chat like a sub-agent: whether it is working, needs an answer or finished, and its conversation, which people can open, follow up on and stop. Renders DEN_FEATURE_REMOTE_SESSION_SUBAGENTS."
+            },
             "gatewayDashboard": {
               "enum": [
                 "",

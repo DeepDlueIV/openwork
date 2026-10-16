@@ -53,7 +53,10 @@ function agentMcpInstructions(appServers: boolean): string {
 export const AGENT_MCP_INSTRUCTIONS = agentMcpInstructions(true)
 export const LEGACY_AGENT_MCP_INSTRUCTIONS = agentMcpInstructions(false)
 
-export function createAgentMcpServer(options: { appServers?: boolean; remoteSessionEvents?: boolean } = {}): McpServer {
+/** Rolled out with `remote-session:status`; one rule, the details live in its description. */
+const REMOTE_SESSION_STATUS_INSTRUCTIONS = "To follow remote sessions, call remote-session:status with all of their commandIds or Cloud sessionIds and waitMs instead of calling remote-session:read repeatedly; read only for the transcript or the full answer."
+
+export function createAgentMcpServer(options: { appServers?: boolean; remoteSessionEvents?: boolean; remoteSessionStatus?: boolean } = {}): McpServer {
   const server = new McpServer({
     name: "openwork-den-api-agent",
     version: "1.0.0",
@@ -68,7 +71,8 @@ export function createAgentMcpServer(options: { appServers?: boolean; remoteSess
       resources: { listChanged: true, ...(options.remoteSessionEvents ? { subscribe: true } : {}) },
     },
     instructions: [options.appServers === false ? LEGACY_AGENT_MCP_INSTRUCTIONS : AGENT_MCP_INSTRUCTIONS,
-      ...(options.remoteSessionEvents ? [REMOTE_SESSION_RECEIPT_INSTRUCTIONS] : [])].join("\n"),
+      ...(options.remoteSessionEvents ? [REMOTE_SESSION_RECEIPT_INSTRUCTIONS] : []),
+      ...(options.remoteSessionStatus ? [REMOTE_SESSION_STATUS_INSTRUCTIONS] : [])].join("\n"),
   })
   server.registerResource("agent-guidance", AGENT_MCP_GUIDANCE_URI, {
     title: "OpenWork agent guidance",

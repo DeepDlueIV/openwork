@@ -1,6 +1,7 @@
 # OpenWork tests and test evidence
 
-All executable coverage lives in [`specs/**/*.test.ts`](./specs) and imports
+E2E coverage is nine core journeys in [`core/`](./core), listed in
+[`journeys.ts`](./journeys.ts), plus one-off PR proofs in [`proofs/`](./proofs). Specs import
 `test` from `@openwork/testkit`. Tests that drive Electron, Den, or another app
 surface use `.e2e.test.ts`. Unit tests of the eval packages themselves sit next
 to the module they test (`packages/*/src/**/*.test.ts`) and run in the same
@@ -14,7 +15,7 @@ Every PR to `dev` gets three things:
    desktop app"). Compiles everything, runs the unit tests, then packages the
    real desktop app and boots it once. Red here means a normal code problem.
 2. **The core journey** (`pr-proof.yml`: "Core journey"). One end-to-end test,
-   [`specs/core-chat.e2e.test.ts`](./specs/core-chat.e2e.test.ts): open the app
+   [`core/core-chat.e2e.test.ts`](./core/core-chat.e2e.test.ts): open the app
    signed in, send "Say hello", read the reply. It runs on every PR that changes
    more than docs. Any e2e spec your PR adds or changes also runs.
 3. **A preview card** on the PR. **Open preview** opens the app exactly where the
@@ -69,7 +70,7 @@ Use the skills in this order:
 3. `diagnose-a-red-run` when the run fails
 4. `open-a-pr`; CI runs the core journey and the changed specs on the PR head and publishes the evidence
 
-Demo-driven features start from a world script plus a spec in `evals/specs`.
+Demo-driven features start from a world script plus a core journey step or a proof.
 
 ## Experimental verification dictionary
 
@@ -107,7 +108,7 @@ Skills own mechanics; this README owns the map and vocabulary.
 
 | Task | Skill to load | When |
 | --- | --- | --- |
-| Author a spec | `write-a-spec` | Add executable coverage under `evals/specs`. |
+| Author a spec | `write-a-spec` | Add a step to a core journey in `evals/core`, or a proof in `evals/proofs`. |
 | Run tests | `run-tests` | Run a selected spec; the CLI chooses and reports placement. |
 | Failing or red run | `diagnose-a-red-run` | Classify a failure before changing code. |
 | Design notes on a PR | `fix-design-notes` | Read the design notes in the Evidence preview check, fix what they found, prove the note is gone. |
@@ -185,29 +186,6 @@ run. A selected skip, unknown result, zero matches, or missing JSON report is
 incomplete; any non-selected case that executes is a contract failure.
 Daytona slot IDs and refs remain advanced environment configuration.
 
-### Bounded world migration
-
-The audited migration covers only `CONT-01` (`chatStreamContinuityWeb`) in
-`specs/streamed-markdown-answer.e2e.test.ts`. (`SWITCH-10` was removed with its
-spec in October 2026.) The binding declares
-`resources: { surfaces: ["appWeb"], services: ["mock"] }` and boots through
-`seed.appWeb`, whose default is `headless: true`. The world reads no surface
-or headless environment selectors. CONT-01 tests ordinary app UI and has no
-native variant.
-
-The case asserts the runtime user agent contains `HeadlessChrome`, that the
-Electron bridge is absent, and that the app origin, server health, and selected
-engine routes match the fixture. Source SHA metadata is recorded and checked
-when available (required on Daytona); this is not a full source receipt or
-proof of uncommitted source contents.
-
-The other cases and legacy worlds in these mixed files, including
-`streamedMarkdown`, `streamedToolHistory`, and the existing live-tool switching
-setup, are untouched and explicitly deferred. Shared `worlds/chat.ts` and the
-rest of the legacy world inventory are outside this bounded migration. Running
-an entire mixed file still includes its legacy setup; selecting a migrated case
-does not certify or migrate the other cases.
-
 | Exit | Named test | Unfiltered E2E suite | Publish |
 | --- | --- | --- | --- |
 | `0` | Passed | Passed, or incomplete with expected skips | Published |
@@ -216,42 +194,30 @@ does not certify or migrate the other cases.
 
 See `run-tests` for environment requirements and the cold-boot verdict check.
 
-Every `evals/specs/*.e2e.test.ts` file on disk runs in the E2E lane. To stop a
+Every `evals/core/*.e2e.test.ts` and `evals/proofs/*.proof.test.ts` file on disk runs in the E2E lane. To stop a
 spec from running, delete it; history keeps the removed test available.
-
-### Live lane
-
-Surface and substrate are independent axes:
-
-| Surface | Launched substrate (world-owned, hermetic) | Attached live substrate |
-| --- | --- | --- |
-| App-less | `<slug>.test.ts` | `<slug>.live.test.ts` |
-| App-driving | `<slug>.e2e.test.ts` | Not yet paved |
-
-Run a live spec only by exact name and with explicit consent and endpoint values:
-
-```bash
-OPENWORK_EVAL_LIVE=1 OPENWORK_EVAL_LIVE_DEN_API_URL=https://api.openworklabs.com OPENWORK_EVAL_SECRET_LIVE_MAILBOX_EMAIL=<mailbox> pnpm evals:pr specs/prod-den-signup-invites.live.test.ts
-```
-
-The live Den is attached and never deleted. Timestamped plus-addressed identities,
-organizations, and invitations launched onto it are owned by the spec; cleanup is
-asserted even on failure, and any residue (including an account without a
-self-service deletion endpoint) must be documented with exact identities.
 
 ## Authoring contract
 
-The spec boundary ratchet (`scripts/spec-boundary-ratchet.mjs`) rejects new
-files that import product source (`../../apps|packages|ee`) or that never cross
-a product boundary (`app()`, `chrome()`, `server()`, `spec.world()`, or a
-world import); a file with no boundary is also called out for `node:fs` and
-`node:child_process`. Its `specs/boundary-ratchet.baseline.json`
-grandfathers legacy files and only shrinks. Cleanup deletes them, moves unit
-tests next to their module, or folds their assertions into a journey spec.
+Two kinds of e2e test live here:
+
+- **Core journeys** (`core/*.e2e.test.ts`): the nine journeys in `journeys.ts`.
+  If one breaks, customers notice the same day. They run on every PR and nightly,
+  and are never weakened to make a PR green. Adding one is a review decision.
+- **Proofs** (`proofs/*.proof.test.ts`): one-off evals an agent writes to prove
+  one change on one PR. They run on that PR and are not maintained; if one keeps
+  mattering, fold its steps into a core journey.
+
+`evals/specs` is retired. Unit and integration tests live next to the module
+they test; security rules are API tests in `ee/apps/den-api/test/api`.
+`pnpm --dir evals lint:specs` (`scripts/spec-lint`) enforces three rules with no
+baseline, and each error says what to do instead: `allowed-files`,
+`real-product` (no product-source imports, mocks, filesystem/database access or
+reaching into the app) and `honest` (no skips, sleeps or self-graded evidence;
+every test asserts something a person or client observes).
 
 - Import `test` from `@openwork/testkit`.
-- Name app-driving files `<slug>.e2e.test.ts`; app-less tests use `<slug>.test.ts`.
-- Live specs use `<slug>.live.test.ts`, never run in PR/E2E suites, and require a consent environment variable.
+- Name core journeys `core/<slug>.e2e.test.ts` and proofs `proofs/<slug>.proof.test.ts`; app-less unit tests live next to their module.
 - Acquire resources in dependency order with `needs()` → `server()` → `app()`.
 - Drive user-visible behavior and assert observable outcomes. Backend, file,
   and process checks may witness side effects but do not replace the journey.
@@ -336,9 +302,7 @@ change the ordering state.
 `seed.evalIn()` (`[seed:raw]`) and `probe.eval()` (`[probe:raw]`) are migration
 escape hatches. Both take type-checked browser callbacks and await promises automatically.
 `probe.eval` accepts `{ timeoutMs?: number }` after either `(callback)` or
-`(surface, callback)`. Raw JavaScript strings are rejected. New specs must not use them. The channel ratchet
-records current legacy usage per E2E file and fails on increases or stale
-baseline entries.
+`(surface, callback)`. Raw JavaScript strings are rejected. New specs must not use them; spec-lint rejects them in `core/` and `proofs/`.
 
 Before, composer reload coverage imported hosts, behaviors, CDP evaluation, and
 evidence APIs directly. After, the journey is only:
@@ -400,7 +364,7 @@ This is enforced by `pnpm --dir evals run lint:layers`.
 ## Composable packages and diagnostics
 
 The packages under [`packages/`](./packages) are independently consumable, but
-executable coverage is always assembled as a test under `specs/`.
+executable coverage is always assembled as a journey under `core/` or a proof under `proofs/`.
 
 | Package | Owns |
 | --- | --- |
@@ -494,13 +458,8 @@ the receipt. It requires the same exact script argument and refuses remote
 access, public hosts, and non-loopback host bindings.
 
 `evals/worlds/den-split-origin-kind.world.ts` attaches to the shared
-`openwork-kube-lab` kind substrate and owns only its local port-forwards. Run its
-opt-in proof on a machine with local Docker, kind, kubectl, and Helm:
-
-```bash
-OPENWORK_EVAL_E2E_TESTS=1 OPENWORK_EVAL_KIND_E2E=1 pnpm --dir evals exec vitest run --config vitest.config.ts --project e2e specs/world-kind-den.e2e.test.ts
-```
-
+`openwork-kube-lab` kind substrate and owns only its local port-forwards; it
+needs local Docker, kind, kubectl, and Helm (`pnpm world up den-split-origin-kind`).
 Daytona cannot host this substrate: its sandbox has no Docker binary or daemon,
 reports `CapEff: 0000000000000000`, and blocks `unshare -Urm`, so no container
 runtime can start kind there.
@@ -511,7 +470,7 @@ runtime can start kind there.
 
 Import the script's builder, create one disposal stack, and call the builder.
 Compose journeys from `@openwork/behaviors`; executable coverage belongs in
-`evals/specs`.
+`evals/core` or `evals/proofs`.
 
 ```ts
 import { bootAcmeDocs } from "../docs-shots/world.ts";

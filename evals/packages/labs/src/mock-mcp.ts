@@ -42,6 +42,8 @@ export interface MockAgentWorkload {
   rateLimitAttempts?: number;
   /** Chat Completions: return this many HTTP 500s before serving the workload. */
   serverErrorAttempts?: number;
+  /** Chat Completions: always reject this workload with a non-retryable HTTP 400 carrying this message. */
+  terminalErrorMessage?: string;
   /** Chat Completions: match the latest user message and count only its tool rounds. */
   latestUserTurn?: boolean;
   promptMarker: string;

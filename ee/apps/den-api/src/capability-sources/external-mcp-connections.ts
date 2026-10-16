@@ -1088,6 +1088,7 @@ export async function updateExternalMcpConnection(
     }
 
     const identityChanged = normalizeExternalMcpIdentityUrl(existing.url) !== normalizeExternalMcpIdentityUrl(input.url)
+      || (Boolean(existing.oauthConfiguration?.manualOAuthEndpoints || input.oauthConfiguration?.manualOAuthEndpoints) && new URL(existing.url).href !== new URL(input.url).href)
       || existing.authType !== input.authType
       || existing.credentialMode !== input.credentialMode
       || apiKeyAuthSchemeChanged
@@ -1118,10 +1119,12 @@ export async function updateExternalMcpConnection(
     const existingClient = clientRows[0]
     const existingClientExtra = normalizeOAuthClientExtra(existingClient?.extra)
     const clientWasSdkRegistered = isSdkRegisteredOAuthClient(existingClientExtra)
+    const manualEndpointsChanged = input.oauthConfiguration !== undefined
+      && !isDeepStrictEqual(existing.oauthConfiguration?.manualOAuthEndpoints, input.oauthConfiguration?.manualOAuthEndpoints)
     const clientRegistrationInvalidated = identityChanged
       || issuerChanged
-      || (callbackModeChanged && clientWasSdkRegistered)
-    const credentialsInvalidated = identityChanged || issuerChanged || callbackModeChanged
+      || ((callbackModeChanged || manualEndpointsChanged) && clientWasSdkRegistered)
+    const credentialsInvalidated = identityChanged || issuerChanged || callbackModeChanged || manualEndpointsChanged
     const clientIdChanged = Boolean(input.oauthClient && existingClient?.clientId !== input.oauthClient.clientId)
     const clientSecretChanged = Boolean(
       input.oauthClient?.clientSecret !== undefined
@@ -1186,7 +1189,7 @@ export async function updateExternalMcpConnection(
           expiresAt: null,
           pendingCodeVerifier: null,
           credentialHealth: null,
-          ...(identityChanged || issuerChanged ? { oauthIssuerReviewRequiredAt: null } : {}),
+          ...(identityChanged || issuerChanged || manualEndpointsChanged ? { oauthIssuerReviewRequiredAt: null } : {}),
           connectedAt: input.authType === "none" ? input.validatedAt ?? changedAt : null,
           updatedAt: changedAt,
         })

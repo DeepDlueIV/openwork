@@ -3602,7 +3602,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
       </div>
 
       <div ref={composerShellRef} className="shrink-0 px-0 pb-2 pt-2 max-lg:pb-0">
-        <OfflineRecoveryNotice issue={offlineRecovery.issue} checking={offlineRecovery.checking} held={offlineRecovery.held}
+        <OfflineRecoveryNotice active={props.isControlTarget} issue={offlineRecovery.issue} checking={offlineRecovery.checking} held={offlineRecovery.held}
           interrupted={offlineRecovery.stop === "stopped"} stopUnconfirmed={offlineRecovery.stop === "unconfirmed"}
           canContinue={!archived && archiveStateKnown && !chatStreaming && !resuming}
           onContinue={() => {

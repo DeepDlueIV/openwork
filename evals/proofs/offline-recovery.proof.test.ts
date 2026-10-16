@@ -33,7 +33,7 @@ test("a member keeps completed work and explicitly continues after losing their 
     await user.see("Run task");
   });
 
-  await step("after: one offline warning above the composer keeps the draft and completed report visible", async () => {
+  await step("after: one floating offline notification keeps the draft and completed report visible", async () => {
     const before = await world.counts();
     await world.offline(true);
     await user.see({ text: "You’re offline" });
@@ -59,6 +59,7 @@ test("a member keeps completed work and explicitly continues after losing their 
     expect(after.prompts).toBe(before.prompts);
     evidence.recordAssertionEvidence("Reconnection sends no prompt or external action", JSON.stringify({ before, after }), after.prompts === before.prompts);
     await user.click("Continue");
+    await user.notSee({ text: "Connection restored" });
     await user.screenshot();
   });
 

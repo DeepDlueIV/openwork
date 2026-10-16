@@ -315,6 +315,7 @@ const toast = Object.assign(
     info: (message: React.ReactNode, options?: ToastOptions) => showToast("info", message, options),
     warning: (message: React.ReactNode, options?: ToastOptions) => showToast("warning", message, options),
     error: (message: React.ReactNode, options?: ToastOptions) => showToast("error", message, options),
+    custom: sonnerToast.custom,
     undo: (message: React.ReactNode, options: UndoToastOptions) => showUndoToast(message, options),
     dismiss: (id?: string | number) => sonnerToast.dismiss(id),
   },

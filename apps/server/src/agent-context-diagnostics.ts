@@ -1608,16 +1608,12 @@ export async function runAgentContextDiagnostics(input: {
     }),
     diagnosticCheck({
       id: "engine-mcp-status",
-      status: engineReachableNow ? "passed" : "warning",
-      evidenceKind: engineReachableNow ? "observed" : "unavailable",
-      code: engineReachableNow ? "live_mcp_status_observed" : "live_mcp_status_unavailable",
-      message: engineReachableNow
-        ? "The engine's live MCP connection states were read; the registration evidence above reflects them."
-        : "Diagnostics did not read live MCP status because that read can activate workspace connectors. Registration evidence is unavailable.",
-      owner: "opencode-engine",
-      action: engineReachableNow
-        ? "No action is required."
-        : "Check the selected workspace engine health and rerun diagnostics.",
+      status: "warning",
+      evidenceKind: "derived",
+      code: "passive_mcp_registration_evidence",
+      message: "Only previously observed registration states are included. Diagnostics did not query live MCP status or activate workspace connectors.",
+      owner: "openwork-server",
+      action: "Use connection repair if the cached registration status reports a problem.",
       details: {
         effectiveMcpConfigurationObserved: false,
         mcpStatusApiReadPerformed: false,

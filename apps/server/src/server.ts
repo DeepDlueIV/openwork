@@ -1804,7 +1804,7 @@ function createRoutes(
           request: parsed.data,
           // Reading native MCP status may initialize untrusted workspace MCPs.
           // Diagnostics must not activate connectors or start the engine.
-          inspectRegistration: () => "not-recorded",
+          inspectRegistration: (name) => engineV2Preview.inspectMcpRegistration(workspace.path, name),
           engineReachable: false,
           dependencies: { signal: diagnosticsSignal },
         }));

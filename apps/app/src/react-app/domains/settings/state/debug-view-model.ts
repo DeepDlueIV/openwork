@@ -434,7 +434,15 @@ export function useDebugViewModel(options: UseDebugViewModelOptions) {
       collectedAt: new Date().toISOString(),
       app: appBuild ?? null,
       engine: engineInfoState,
-      engineStatus,
+      engineStatus: engineStatus ? {
+        running: engineStatus.running,
+        version: engineStatus.version,
+        pid: engineStatus.pid,
+        binSource: engineStatus.binSource,
+        providers: engineStatus.mirroredProviderIds.length,
+        models: engineStatus.catalogModelIds.length,
+        importState: engineStatus.migration?.state,
+      } : null,
       openworkServer: {
         hostInfo: openworkServerSnapshot.openworkServerHostInfo,
         diagnostics: openworkServerSnapshot.openworkServerDiagnostics,

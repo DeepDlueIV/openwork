@@ -1,3 +1,4 @@
+import type { McpRegistrationInspection, McpRegistrationStatus } from "./agent-context-diagnostics.js";
 import { createV2ContextBridge } from "./opencode-v2-context-bridge.js";
 import { ApiError } from "./errors.js";
 import { hasV1Chat, hasV1ChatsSince, opencodeV1DatabasePath, runOpencodeV1HistoryMigration, type EngineV2MigrationStatus } from "./opencode-v2-migration.js";
@@ -112,6 +113,7 @@ export interface RuntimeProviderRecordLike {
 export interface EngineV2Preview {
   start(): void;
   status(): EngineV2PreviewStatus;
+  inspectMcpRegistration(directory: string, name: string): McpRegistrationInspection;
   connection(): { url: string; username: string; password: string } | undefined;
   ensureWorkspaceReady(directory: string): Promise<void>;
   refreshProviders(): Promise<void>;
@@ -483,6 +485,7 @@ export function createEngineV2Preview(options: {
   let mirroredSpecs: OpencodeV2ProviderSpec[] = [];
   // One MCP reconciler per folder, keyed by directory.
   const mcpLocations = new Map<string, McpLocation>();
+  const observedMcp = new Map<string, { at: number; statuses: Map<string, string> }>();
   let mcpHealthTimer: ReturnType<typeof setInterval> | undefined;
   async function settleWorkspaceSkills(directory: string): Promise<void> {
     const active = sidecar;
@@ -543,6 +546,7 @@ export function createEngineV2Preview(options: {
     // the config; the connection starts afterwards and can fail (a local app
     // that was closed), and the engine never retries it on its own.
     const live = await readLiveMcpStatus(active, directory);
+    if (live) observedMcp.set(directory, { at: Date.now(), statuses: live });
     const backedOff = (name: string, fingerprint: string) => {
       const attempt = attempts.get(name);
       return !reconnect.has(name) && attempt?.fingerprint === fingerprint && Date.now() - attempt.at < waits.mcpRetryMs;
@@ -552,8 +556,10 @@ export function createEngineV2Preview(options: {
       const result = await active.fetchJson(`/api/experimental/mcp/${encodeURIComponent(name)}`, { method: "DELETE", directory, timeoutMs: 15_000 });
       if (result.status !== 204 && result.status !== 404) throw new Error(`OpenCode v2 MCP removal failed (${result.status})`);
       applied.delete(name);
+      observedMcp.get(directory)?.statuses.delete(name);
     };
     const register = async (name: string, mcpConfig: Record<string, unknown>, fingerprint: string) => {
+      observedMcp.get(directory)?.statuses.delete(name);
       // The engine connects before it answers (up to the startup timeout).
       const status = await active.fetchJson(`/api/experimental/mcp/${encodeURIComponent(name)}`, {
         method: "PUT", body: { config: mcpConfig }, directory, timeoutMs: 30_000,
@@ -567,6 +573,7 @@ export function createEngineV2Preview(options: {
       applied.set(name, fingerprint);
     };
     const restart = async (name: string, fingerprint: string) => {
+      observedMcp.get(directory)?.statuses.delete(name);
       // The engine ignores a PUT identical to the config it has, so a failed
       // connection is restarted with /connect. On a healthy client /connect
       // closes and reopens it, which is why only unhealthy ones get here.
@@ -628,6 +635,19 @@ export function createEngineV2Preview(options: {
     for (const [directory, location] of mcpLocations) {
       void syncWorkspaceMcp(location.workspaceId, directory).catch((error) => warn(`MCP: ${errorMessage(error)}`));
     }
+  }
+
+  // Diagnostics only reads observations from normal engine upkeep. It never
+  // initializes a workspace or asks the engine to activate configured MCPs.
+  function inspectMcpRegistration(directory: string, name: string): McpRegistrationInspection {
+    const observed = observedMcp.get(directory);
+    const statuses: Record<string, McpRegistrationStatus> = {
+      connected: "connected", disabled: "disabled", failed: "failed",
+      needs_auth: "needs-auth", needs_client_registration: "needs-client-registration",
+    };
+    const native = observed?.statuses.get(name);
+    const status = native && Object.hasOwn(statuses, native) ? statuses[native] : "not-recorded";
+    return { status, source: "engine_status", recordAgeMs: observed ? Date.now() - observed.at : null, errorSummary: null };
   }
 
   function hasV1History(): boolean {
@@ -726,6 +746,7 @@ export function createEngineV2Preview(options: {
     workspaceReadiness.clear();
     sidecar = undefined;
     mcpLocations.clear();
+    observedMcp.clear();
     if (mcpHealthTimer) clearInterval(mcpHealthTimer);
     mcpHealthTimer = undefined;
     running = false;
@@ -979,5 +1000,5 @@ export function createEngineV2Preview(options: {
     else void start().catch(recordStartError);
   }
   if (!options.deferStart) startWhenReady();
-  return { start: startWhenReady, migrateHistory, status, connection, ensureWorkspaceReady, refreshProviders, syncWorkspaceMcp, settleWorkspaceMcp, warmWorkspace, settleWorkspaceSkills, stop };
+  return { start: startWhenReady, migrateHistory, status, inspectMcpRegistration, connection, ensureWorkspaceReady, refreshProviders, syncWorkspaceMcp, settleWorkspaceMcp, warmWorkspace, settleWorkspaceSkills, stop };
 }

@@ -196,6 +196,10 @@ test("closing OpenWork pauses a copy and startup resumes it before serving v2", 
     await mkdir(directory, { recursive: true });
     await writeFile(join(directory, "engine-v2-preview.json"), JSON.stringify({ enabled: true, chatRouting: true, v1HistoryCopyStartedAt: 1 }));
     preview = createEngineV2Preview({ config, deferStart: true });
+    assert.deepEqual(preview.inspectMcpRegistration(directory, "unconfigured"), {
+      status: "not-recorded", source: "engine_status", recordAgeMs: null, errorSummary: null,
+    });
+    assert.equal(preview.status().running, false, "passive diagnostics does not start an engine");
     assert.equal(preview.status().migration.resumed, true);
     assert.equal(preview.connection(), undefined);
     preview.start();

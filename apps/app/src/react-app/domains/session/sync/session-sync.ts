@@ -1790,7 +1790,7 @@ function startSync(input: SyncOptions, entry: SyncEntry) {
     onConnected: (signal) => {
       // v2's event feed has no replay. Catch up messages even when the run
       // stayed busy (or was already idle) across the missing interval.
-      if (isOpencodeV2BaseUrl(input.baseUrl)) {
+      {
         for (const sessionId of new Set([...entry.trackedSessionRefs.keys(), ...entry.retainedSessionTimers.keys()])) {
           reconcileSessionMessages(entry, sessionId);
         }
@@ -2063,7 +2063,7 @@ async function reconcileSessionRunStatuses(
   const sequenceRevision = entry.nativeSequenceRevision;
   if (source === "connect-reconcile") {
     const records = useSessionActivityStore.getState().recordsByWorkspaceId[input.workspaceId] ?? {};
-    const candidates = workspaceRecordsOwned ? Object.keys(records) : [];
+    const candidates = Object.keys(records);
     for (const sessionId of new Set([...candidates, ...entry.trackedSessionRefs.keys(), ...entry.retainedSessionTimers.keys()])) {
       void reconcileSessionPermissions(entry, sessionId);
       void reconcileSessionQuestions(entry, sessionId);

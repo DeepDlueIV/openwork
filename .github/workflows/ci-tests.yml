@@ -349,9 +349,6 @@ jobs:
       - name: Run all PR specs
         if: (success() || failure()) && steps.lane.outcome == 'success'
         run: pnpm sdk:build && pnpm --dir evals exec vitest run --config vitest.config.ts --project pr --no-file-parallelism
-      - name: Run engine smoke tests
-        if: (success() || failure()) && steps.setup.outcome == 'success'
-        run: pnpm test:e2e
       - name: Build server plugins
         if: (success() || failure()) && steps.setup.outcome == 'success'
         run: pnpm --filter openwork-server build

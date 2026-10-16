@@ -22,6 +22,39 @@ import { openComposerModelPickerEvent } from "@/app/lib/inference-access";
 import { isAutoModel, modelTitle, nonDefaultModelSummary, type RetainedModelSelection } from "@/react-app/domains/models/model-catalog";
 import { useModelPickerCatalogStore } from "@/react-app/domains/session/models/model-collections-store";
 
+const chordClass = "hidden shrink-0 rounded border border-border/70 bg-muted/40 px-1.5 py-0.5 font-sans text-[10px] leading-none text-muted-foreground sm:inline-flex";
+
+/** The picker's settings for the current model and its two ways out, under one hairline. */
+export function ModelPickerFooter({ effortButtonRef, effortLabel, effortShortcut, canChangeEffort, onOpenEffort, fast, onConnectProvider, onAllModels }: {
+  effortButtonRef?: React.Ref<HTMLButtonElement>;
+  effortLabel: string;
+  effortShortcut: string;
+  canChangeEffort: boolean;
+  onOpenEffort: () => void;
+  fast?: { on: boolean; shortcut: string; disabled: boolean; onToggle: () => void };
+  onConnectProvider?: () => void;
+  onAllModels: () => void;
+}) {
+  return <div className="border-t border-border p-1.5" data-testid="model-behavior-rows">
+    <button ref={effortButtonRef} type="button" data-testid="model-effort" disabled={!canChangeEffort} onClick={onOpenEffort}
+      className="flex h-9 w-full cursor-pointer items-center gap-2.5 rounded-lg px-2 text-left text-sm hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:hover:bg-transparent">
+      <span className="min-w-0 flex-1">Effort</span>
+      <span className="max-w-32 truncate text-muted-foreground">{effortLabel}</span>
+      <kbd className={chordClass}>{effortShortcut}</kbd>
+      <ChevronRight className="size-4 shrink-0 text-muted-foreground" strokeWidth={1.5} />
+    </button>
+    {fast ? <div className="flex h-9 items-center gap-2.5 px-2 text-sm" title={FAST_PRICING_WARNING}>
+      <span className="min-w-0 flex-1">Fast mode</span>
+      <kbd className={chordClass}>{fast.shortcut}</kbd>
+      <Switch aria-label="Fast mode" size="sm" checked={fast.on} disabled={fast.disabled} onCheckedChange={fast.onToggle} />
+    </div> : null}
+    <div className="flex items-center justify-between pt-0.5">
+      {onConnectProvider ? <Button variant="ghost" size="sm" className="h-8 px-2 font-normal text-muted-foreground" onClick={onConnectProvider}>Connect more providers</Button> : <span />}
+      <Button variant="ghost" size="sm" className="h-8 px-2 font-normal text-muted-foreground" onClick={onAllModels}>All models</Button>
+    </div>
+  </div>;
+}
+
 interface ModelSelectProps {
   open: boolean;
   value: ModelRef;
@@ -128,24 +161,11 @@ export function ModelSelect({ open, value, hideValue = false, onOpenChange, onCh
         focusAlternative={focusAlternative} catalogState={catalogState} retainedSelection={retainedSelection} onConnectProvider={!restrictToCloud ? openProvider : undefined}
         onOpenProviderSettings={!checkRestriction({ restriction: "allowControlSettings" }) ? openSettings : undefined}
         onSetWorkspaceDefault={onSetWorkspaceDefault ?? setWorkspaceDefault} currentBehaviorValue={behaviorValue} openWorkModelsSyncing={autoVisible && openWorkModelsSyncing} onReloadWorkspace={onReloadWorkspace} onRetryAuto={catalogState.onRetry} footer={<>
-        <div className="border-t border-border px-2 py-1" data-testid="model-behavior-rows">
-          <button ref={effortButtonRef} type="button" data-testid="model-effort" disabled={!canChangeEffort} onClick={() => setEffort(true)}
-            className="flex h-10 w-full cursor-pointer items-center gap-3 rounded-md px-2 text-left text-sm hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:hover:bg-transparent">
-            <span className="min-w-0 flex-1 font-medium">Effort</span>
-            <span className="max-w-32 truncate text-muted-foreground">{effortValueLabel}</span>
-            <kbd className="hidden shrink-0 rounded border border-border/70 bg-muted/40 px-1.5 py-0.5 font-sans text-[10px] leading-none text-muted-foreground sm:inline-flex">{effortShortcutLabel}</kbd>
-            <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-          </button>
-          {selected && onBehaviorChange && !autoSelected && controls.hasFast ? <div className="flex h-10 items-center gap-3 px-2 text-sm" title={FAST_PRICING_WARNING}>
-            <span className="min-w-0 flex-1 font-medium">Fast mode</span>
-            <kbd className="hidden shrink-0 rounded border border-border/70 bg-muted/40 px-1.5 py-0.5 font-sans text-[10px] leading-none text-muted-foreground sm:inline-flex">{fastShortcutLabel}</kbd>
-            <Switch aria-label="Fast mode" size="sm" checked={controls.fast} disabled={controls.toggleValue === undefined} onCheckedChange={() => { if (controls.toggleValue !== undefined) onBehaviorChange(controls.toggleValue); }} />
-          </div> : null}
-        </div>
-        <div className="flex items-center justify-between border-t border-border px-2 py-1">
-          {!restrictToCloud ? <Button variant="ghost" size="sm" className="h-9 font-normal text-muted-foreground" onClick={openProvider}>Connect more providers</Button> : <span />}
-          <Button variant="ghost" size="sm" className="h-9 font-normal text-muted-foreground" onClick={() => { onOpenChange(false); window.dispatchEvent(new CustomEvent(openModelPickerEvent, { detail: { sessionId } })); }}>All models</Button>
-        </div>
+        <ModelPickerFooter effortButtonRef={effortButtonRef} effortLabel={effortValueLabel} effortShortcut={effortShortcutLabel} canChangeEffort={canChangeEffort} onOpenEffort={() => setEffort(true)}
+          fast={selected && onBehaviorChange && !autoSelected && controls.hasFast ? { on: controls.fast, shortcut: fastShortcutLabel, disabled: controls.toggleValue === undefined,
+            onToggle: () => { if (controls.toggleValue !== undefined) onBehaviorChange(controls.toggleValue); } } : undefined}
+          onConnectProvider={!restrictToCloud ? openProvider : undefined}
+          onAllModels={() => { onOpenChange(false); window.dispatchEvent(new CustomEvent(openModelPickerEvent, { detail: { sessionId } })); }} />
         <AutoAccessFooter available={autoVisible} syncing={autoVisible && openWorkModelsSyncing} />
       </>} />}
     </PopoverContent>

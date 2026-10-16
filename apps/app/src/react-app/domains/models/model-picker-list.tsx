@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode, type Ref } from "react";
-import { Building, Check, Cloud, Laptop, Lock } from "lucide-react";
+import { Building, Check, Cloud, Laptop, Lock, Pin, PinOff } from "lucide-react";
 import type { ModelOption, ModelRef } from "@/app/types";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -9,7 +9,7 @@ import { AutoPickerRecovery, useObservedAutoAccessSnapshot } from "@/react-app/d
 import { autoNotOffered, autoPickerCopy, autoQuietlyUnavailable, freeAutoSwitchedOff, type AutoPickerState } from "@/app/lib/inference-access";
 import type { MenuAction } from "@/components/ui/action-menu-model";
 import { Command, CommandCollection, CommandGroup, CommandGroupLabel, CommandHeader, CommandInput, CommandItem, CommandList, CommandPanel } from "@/components/ui/command";
-import { immutableModelPin, isAutoModel, isPinModelShortcut, markExplicitModelChoice, modelGroups, modelSource, modelSubtitle, modelTitle, orderedModelPins, retainedModelCopy, withAutoDefaultPin, MODEL_SOURCE_LABELS, type ModelGroup, type ModelPickerCatalogState, type RetainedModelSelection } from "./model-catalog";
+import { immutableModelPin, isAutoModel, isPinModelShortcut, markExplicitModelChoice, modelGroups, modelSource, modelStateLabel, modelSubtitle, modelTitle, orderedModelPins, retainedModelCopy, withAutoDefaultPin, MODEL_SOURCE_LABELS, type ModelGroup, type ModelPickerCatalogState, type RetainedModelSelection } from "./model-catalog";
 import { modelRefKey, useModelCollectionsStore } from "@/react-app/domains/session/models/model-collections-store";
 import { PickerNotice } from "./picker-notice";
 import { useModelShortcutsStore } from "@/react-app/domains/shortcuts/model-shortcuts-store";
@@ -27,10 +27,13 @@ function ProviderMark({ model, description, retained = false }: { model: ModelRe
   </div>;
 }
 
+/** Groups that list several providers' models together; rows there name their provider. */
+const MIXED_GROUPS = new Set(["Pinned", "Recent", "OpenWork Models"]);
+
 function ModelLoadingRows({ rows = 3, label = "Loading models", still = false }: { rows?: number; label?: string; still?: boolean }) {
   // `still`: the rest of the list did not load; placeholders hold its place without suggesting it is loading.
   return <div role="status" aria-label={label} data-testid={still ? "model-catalog-unloaded" : "model-catalog-loading"} className={still ? "px-2 pb-2 [&_[data-slot=skeleton]]:animate-none [&_[data-slot=skeleton]]:bg-gray-4" : "px-2 pb-2"}>
-    {Array.from({ length: rows }, (_, index) => index).map((index) => <div key={index} className="flex h-11 items-center gap-2 px-2"><Skeleton className="size-4 rounded" /><div className="flex flex-1 flex-col gap-1.5"><Skeleton className="h-2.5 w-36 rounded" /><Skeleton className="h-2.5 w-18 rounded" /></div><span className="size-4" /></div>)}
+    {Array.from({ length: rows }, (_, index) => index).map((index) => <div key={index} className="flex h-9 items-center gap-2.5 px-2"><Skeleton className="size-4 rounded" /><Skeleton className={`h-2.5 rounded ${index % 2 ? "w-28" : "w-36"}`} /></div>)}
   </div>;
 }
 
@@ -152,7 +155,7 @@ function ModelPickerRows({ options, current, query, onQueryChange, onSelect, foc
     <Command items={groups} filter={null} value={query} onValueChange={onQueryChange}>
       <CommandHeader><CommandInput ref={searchInputRef} autoFocus={autoFocusSearch} aria-label="Search all models" placeholder="Search models…" className="h-8 text-base sm:text-base md:text-base lg:text-sm" /></CommandHeader>
       {/* The list sizes to its rows so placeholders after it stay in view; this panel does the scrolling. */}
-      <CommandPanel className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain [&>[data-slot=scroll-area]]:h-auto">
+      <CommandPanel className="min-h-0 flex-1 overflow-y-auto overscroll-y-contain [scrollbar-width:thin] [&>[data-slot=scroll-area]]:h-auto">
         {retainedVisible ? <div data-testid="retained-selected-model" aria-disabled="true" aria-label={`${retainedName}, current model, ${retainedSubtitle}`} className="px-2 pt-2">
           <p className="flex h-7 items-center px-2 text-xs text-muted-foreground">{retainedLabel}</p>
           <div className="flex min-h-11 items-center gap-2 rounded-md px-2 py-1 text-sm opacity-55">
@@ -180,6 +183,12 @@ function ModelPickerRows({ options, current, query, onQueryChange, onSelect, foc
               const autoState = autoRow && modelRefKey(autoRow.model) === key ? autoRow.state : undefined;
               const blocked = !canSelect(option);
               const subtitle = autoState ? autoPickerCopy(autoState, false, undefined, autoRow?.code, autoRow?.resetsAt).subtitle : active && failed ? `${modelSubtitle(option)}${modelSubtitle(option) ? " · " : ""}availability not verified` : modelSubtitle(option);
+              // One line per model. A second line only reports state; the provider is named
+              // only where a group mixes providers, since provider groups already say it.
+              const state = autoState || isAutoModel(option) ? subtitle
+                : [modelStateLabel(option), active && failed ? "Availability not verified" : null].filter(Boolean).join(" · ");
+              const provider = MIXED_GROUPS.has(group.value) && !isAutoModel(option) ? option.description?.trim() : undefined;
+              const source = modelSource(option);
               const pinLabel = pinned.has(key) ? "Unpin" : "Pin to top";
               const actions: MenuAction[] = [
                 { type: "item", id: "pin", label: fixed ? "Pinned by your org" : pinLabel, webContent: fixed ? undefined : menuChord(pinLabel, "⇧P"), disabled: fixed || blocked, onSelect: () => toggle(option) },
@@ -191,18 +200,27 @@ function ModelPickerRows({ options, current, query, onQueryChange, onSelect, foc
                 value={`${key} ${name} ${subtitle}`} disabled={blocked}
                 data-model-key={key} data-checked={active} data-testid={`model-option-${option.providerID}-${option.modelID}`}
                 aria-label={`${name}, ${subtitle}, ${MODEL_SOURCE_LABELS[modelSource(option)]}${active ? ", current model" : ""}`}
-                tabIndex={blocked ? -1 : 0} className="group/model min-h-11 gap-2 rounded-md px-2 py-1 text-sm data-disabled:opacity-55"
+                tabIndex={blocked ? -1 : 0} className="group/model min-h-9 gap-2.5 rounded-lg px-2 py-1.5 text-sm data-disabled:opacity-55"
                 onFocus={() => setHighlighted(option)} onClick={() => select(option)}
                 onKeyDown={(event) => { if (event.key === "Enter" && event.target === event.currentTarget) { event.preventDefault(); select(option); } }}
               />}>
                 <ProviderMark model={option} description={option.description} />
-                <span data-slot="model-label" className="min-w-0 flex-1 leading-[18px]"><span className={`block truncate${active ? " font-medium" : ""}`} title={name}>{name}</span><span className="block text-sm text-muted-foreground">{subtitle}</span></span>
-                {!fixed && !blocked ? <Button type="button" variant="ghost" size="sm" aria-label={`${pinLabel}: ${name}`} className="h-7 px-2 text-xs opacity-0 group-hover/model:opacity-100 group-focus-within/model:opacity-100 group-data-highlighted/model:opacity-100 focus:opacity-100"
+                <span data-slot="model-label" className="min-w-0 flex-1 leading-5">
+                  <span className={`block truncate${active ? " font-medium" : ""}`} title={name}>{name}</span>
+                  {state ? <span className="block truncate text-xs text-muted-foreground">{state}</span> : null}
+                </span>
+                {provider ? <span className="max-w-24 shrink-0 truncate text-xs text-muted-foreground">{provider}</span> : null}
+                {/* A fixed slot keeps trailing columns aligned; shown on pointer or focus (keyboard: ⇧P). */}
+                {!fixed && !blocked ? <Button type="button" variant="ghost" size="icon-sm" aria-label={`${pinLabel}: ${name}`} title={pinLabel}
+                  className="size-6 shrink-0 text-muted-foreground opacity-0 transition-opacity duration-150 hover:text-foreground focus:opacity-100 group-hover/model:opacity-100 group-focus-within/model:opacity-100"
                   onPointerDown={(event) => { event.preventDefault(); event.stopPropagation(); }} onKeyDown={(event) => event.stopPropagation()}
-                  onClick={(event) => { event.preventDefault(); event.stopPropagation(); toggle(option); }}>{pinned.has(key) ? "Unpin" : "Pin"}</Button> : null}
+                  onClick={(event) => { event.preventDefault(); event.stopPropagation(); toggle(option); }}>
+                  {pinned.has(key) ? <PinOff aria-hidden="true" strokeWidth={1.5} className="size-3.5" /> : <Pin aria-hidden="true" strokeWidth={1.5} className="size-3.5" />}
+                </Button> : null}
                 {shortcutLabels.get(key) ? <kbd data-testid="model-shortcut-key" className="shrink-0 rounded border border-border/70 bg-muted/40 px-1.5 py-0.5 font-mono text-[10px] leading-none text-muted-foreground">{shortcutLabels.get(key)}</kbd> : null}
-                <span data-slot="model-source" className="flex size-4 shrink-0 items-center justify-center"><ModelSourceIcon model={option} /></span>
-                <span data-slot="model-selection" className="flex size-4 shrink-0 items-center justify-center">{active ? <Check aria-hidden="true" className="size-4 text-muted-foreground" /> : null}</span>
+                {/* Only organization and gateway models are marked: a local model is the ordinary case. */}
+                {source !== "local" ? <span data-slot="model-source" className="flex size-4 shrink-0 items-center justify-center"><ModelSourceIcon model={option} /></span> : null}
+                <span data-slot="model-selection" className="flex size-4 shrink-0 items-center justify-center">{active ? <Check aria-hidden="true" className="size-4 text-foreground" /> : null}</span>
               </ActionContextMenu>;
             }}</CommandCollection>
           </CommandGroup>}

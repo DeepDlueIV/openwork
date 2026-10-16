@@ -37,8 +37,13 @@ docker build --platform linux/amd64 -f ee/packages/headless-computer/Dockerfile.
   -t "$COMPUTER_IMAGE" .
 docker push "$COMPUTER_IMAGE"
 daytona snapshot create workbot-desktop --image "$COMPUTER_IMAGE_DIGEST" \
-  --sandbox-class linux-vm --cpu 2 --memory 4 --disk 12
+  --sandbox-class linux-vm --cpu 2 --memory 4 --disk 10
 ```
+
+Daytona's image-to-VM conversion clears setuid bits. The image includes a root
+oneshot unit, ordered before Daytona's command daemon, to restore the packaged
+`sudo` and Chromium sandbox helpers on boot. The command and GUI users remain
+unprivileged; Chromium keeps its native sandbox enabled.
 
 Configure the existing headless runner (these are operator capabilities, not
 organization rollout flags):

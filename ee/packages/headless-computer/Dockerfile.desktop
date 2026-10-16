@@ -16,5 +16,11 @@ COPY ee/packages/headless-computer/src/desktop-apps.mjs /usr/local/share/openwor
 COPY ee/packages/headless-computer/scripts/configure-desktop-files.sh /usr/local/share/openwork-desktop/configure-files.sh
 COPY ee/packages/headless-computer/scripts/install-desktop-apps.sh /tmp/install-desktop-apps.sh
 RUN bash /tmp/install-desktop-apps.sh && rm /tmp/install-desktop-apps.sh
+# Daytona's OCI-to-microVM import clears setuid bits. Restore only the two
+# packaged helpers as root before its unprivileged command daemon starts.
+COPY ee/packages/headless-computer/scripts/daytona-desktop-permissions.service /etc/systemd/system/daytona-desktop-permissions.service
+COPY ee/packages/headless-computer/scripts/daytona-desktop-permissions.conf /etc/systemd/system/daytona.service.d/desktop-permissions.conf
+RUN mkdir -p /etc/systemd/system/multi-user.target.wants \
+    && ln -s ../daytona-desktop-permissions.service /etc/systemd/system/multi-user.target.wants/daytona-desktop-permissions.service
 USER ubuntu
 WORKDIR /workspace

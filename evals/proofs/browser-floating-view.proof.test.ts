@@ -53,10 +53,8 @@ test("a person moves the page the agent opened between the side, a floating card
     await user.see(toggle, { timeoutMs: 30_000 });
     await headerMode("hidden");
     expect((await probe.browserState()).tabs.filter((tab) => tab.ownerSessionId === sessionId)).toEqual([]);
-    const opening = agent.run("browser.open_url", { url: world.pageUrl, provider: "builtin" });
-    await user.see({ role: "button", label: "Allow for this thread" }, { timeoutMs: 30_000 });
-    await user.click({ role: "button", label: "Allow for this thread" });
-    tabId = browserTabHandle(await opening).tabId;
+    tabId = browserTabHandle(await agent.run("browser.open_url", { url: world.pageUrl, provider: "builtin" })).tabId;
+    await user.notSee({ role: "button", label: "Allow for this thread" });
     await headerMode("side");
     const view = await pageView(true);
     sideWidth = view?.bounds.width ?? 0;
@@ -65,7 +63,7 @@ test("a person moves the page the agent opened between the side, a floating card
     await user.notSee(card);
     evidence.recordAssertionEvidence(
       "The agent's page opens beside the chat",
-      `After "Allow for this thread" the page opened in the side panel (${sideWidth}px wide); the header Browser button reads "side" and no floating card is shown.`,
+      `Without a consent prompt, the page opened in the side panel (${sideWidth}px wide); the header Browser button reads "side" and no floating card is shown.`,
       sideWidth > 0,
     );
     await user.screenshot();

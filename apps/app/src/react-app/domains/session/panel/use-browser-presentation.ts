@@ -62,7 +62,7 @@ export function useBrowserPresentationController({
   const activePanelTab = useActivePanelTab(sessionKey);
   const [nativeActiveTabId, setNativeActiveTabId] = React.useState<string | null>(null);
   const fullscreenReturnFocus = React.useRef<HTMLElement | null>(null);
-  const handledApprovals = React.useRef(new Set<string>());
+  const handledAttention = React.useRef(new Set<string>());
   const openBrowserSide = useOpenBrowserRailPane(sessionKey, false, setSidePanel);
   const selectTab = useSelectTab();
 
@@ -202,16 +202,16 @@ export function useBrowserPresentationController({
     }
   }, [enabled, presentation.mode, sessionKey, tab]);
 
-  // A browser approval is reviewed in the side panel's existing prompt, and an
+  // A page needing attention opens beside the chat, and an
   // agent that needs the page on screen to act brings it beside the chat.
   const attentionTab = browserTabs.find(browserNeedsPerson);
   const attentionId = attentionTab
-    ? attentionTab.browserApproval?.id ?? `${attentionTab.id}:${attentionTab.browserTask?.operation ?? "needs_attention"}`
+    ? `${attentionTab.id}:${attentionTab.browserTask?.operation ?? "needs_attention"}`
     : null;
   React.useEffect(() => {
-    if (!attentionId) handledApprovals.current.clear();
-    if (!enabled || !attentionTab || !attentionId || handledApprovals.current.has(attentionId)) return;
-    handledApprovals.current.add(attentionId);
+    if (!attentionId) handledAttention.current.clear();
+    if (!enabled || !attentionTab || !attentionId || handledAttention.current.has(attentionId)) return;
+    handledAttention.current.add(attentionId);
     if (mode === "side" || mode === "fullscreen") return;
     useBrowserPresentationStore.getState().setMode(sessionKey, "side");
     selectTab(sessionKey, attentionTab.id);

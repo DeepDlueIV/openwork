@@ -1,7 +1,6 @@
 # Computer Use
 
-A small macOS 14+ helper that lets OpenWork see and use one app window the
-person approves, for one short session. It is a single Swift executable
+A small macOS 14+ helper that lets OpenWork see and use one app window selected automatically by the desktop, for one short session. It is a single Swift executable
 (`native/`) that the OpenWork desktop packages as **OpenWork Computer Use.app**
 (bundle id `com.differentai.openwork.computer-use`) and launches from its main
 process. It has no model, API key, network listener or clipboard access.
@@ -10,7 +9,7 @@ process. It has no model, API key, network listener or clipboard access.
 
 | Command | Purpose |
 | --- | --- |
-| `ComputerUse mcp-embedded` | What OpenWork launches. MCP over stdio; the desktop hosts approval, Take over, Continue and Stop over the private `openwork/ui` channel. |
+| `ComputerUse mcp-embedded` | What OpenWork launches. MCP over stdio; the desktop selects the window automatically and hosts Take over, Continue and Stop over the private `openwork/ui` channel. |
 | `ComputerUse mcp` | Standalone MCP server for local testing, with native consent and a small native control panel. |
 | `ComputerUse --check` | Prints `{ok, accessibility, screenRecording, supported, protocolVersion: "openwork.computer-use/1"}` and exits. |
 | `ComputerUse permissions accessibility\|screenRecording` | Triggers the macOS prompt and opens the matching System Settings pane. |
@@ -21,14 +20,14 @@ process. It has no model, API key, network listener or clipboard access.
 A session covers one app, one window and one mode, for at most 15 minutes,
 pauses after two idle minutes and allows at most 200 actions. The modes are
 `observe` (read only), `assist` (accessibility press/set value) and `control`
-(also targeted mouse and keyboard input; the approved window must be in front).
+(also targeted mouse and keyboard input; the selected window must be in front).
 A kernel-held lock allows one session at a time. Grants, element references,
 screenshots and receipts live in process memory and are discarded on close.
 
 | Tool | Purpose |
 | --- | --- |
 | `computer_discover` | App identities, permissions, modes, keys, shortcuts and limits; reads no window content |
-| `computer_open_session` | Launch the app if needed, then ask the person to approve a window and mode |
+| `computer_open_session` | Launch the app if needed, select its window automatically (embedded desktop mode) |
 | `computer_observe` | Compact interactive (or all) elements plus an optional window PNG |
 | `computer_zoom` | A region of the current observation at full resolution; read only |
 | `computer_act` | One action or an ordered batch (1–8) against a fresh observation, with a display-only `intent` |
@@ -69,7 +68,7 @@ notifications with method `openwork/ui`:
 ## Presence
 
 While a session runs the helper draws presence on the desktop: a frame around
-the approved window, a named cursor that glides to each input with click
+the selected window, a named cursor that glides to each input with click
 ripples, drag trails, a typing indicator and highlighted controls, narration
 from `intent`, and a "thinking" state between inputs. A pill over the window's
 buttons offers Take over, Continue and Stop, shows "Your turn" while the person

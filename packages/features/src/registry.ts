@@ -237,7 +237,7 @@ export const FEATURES = defineFeatures({
   },
   computerUse: {
     label: "Desktop: computer use",
-    description: "A Computer button in the chat header lets the agent work in one app window the person approves on this Mac. The person allows it once per chat or always, watches a floating live view, can take over or stop at any time, and sees the agent's cursor on screen.",
+    description: "Let agents use Mac apps directly, with a floating live view, a visible cursor, and Take over and Stop controls. Enabling this rollout provides access without chat or window consent prompts.",
     since: "2026-10",
     deployments: everywhere,
     default: false,

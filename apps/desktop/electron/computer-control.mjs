@@ -129,7 +129,7 @@ export function createComputerControl({ adapter, presence = null,
     if (lease?.grant === grant) invalidateObservation(lease);
   }
   // An automatic stop (helper exit, failed handoff) pauses a chat for the rest
-  // of its turn. The next turn re-arms every chat the person allowed.
+  // of its turn. The next turn re-arms access automatically.
   async function rearm(sessionId) {
     if (closed || resetting) return;
     for (const grant of grants.values()) {
@@ -599,7 +599,7 @@ export function createComputerControl({ adapter, presence = null,
   }
   /**
    * One in-chat request per chat. It resolves "ready" once macOS permissions
-   * are granted and the chat is allowed, without another prompt.
+   * are granted, without another prompt.
    * @returns {Promise<"ready" | "dismissed" | "timeout" | "aborted" | "unavailable">}
    */
   function askPerson(grant, args, signal) {
@@ -626,7 +626,7 @@ export function createComputerControl({ adapter, presence = null,
           const status = await readiness();
           if (settled) break;
           if (["unsupported", "unavailable"].includes(status.readiness)) { current.settle("unavailable"); break; }
-          const reason = "setup";
+          const reason = /** @type {const} */ ("setup");
           if (reason !== current.reason || current.published !== true) { current.reason = reason; current.published = true; publish(); }
           if (status.readiness === "ready" && grant.enabled) { current.settle("ready"); break; }
           await new Promise((resolve) => { const timer = setTimeout(resolve, 1_500); timer.unref?.(); wake = () => { clearTimeout(timer); resolve(undefined); }; });
@@ -735,7 +735,7 @@ export function createComputerControl({ adapter, presence = null,
     async snapshot({ sessionId } = {}) { return view(await grantFor(sessionId), true); },
     /**
      * Stop from the Computer view or the pill: ends this task now and keeps the
-     * chat allowed for the person's next message.
+     * access available for the next message.
      * @param {ChatInput} input
      */
     async halt({ sessionId } = {}) {
@@ -747,7 +747,7 @@ export function createComputerControl({ adapter, presence = null,
     /**
      * The renderer reports the `computerUse` feature. Turning it off (including
      * the kill switch) ends any running session and every waiting request at
-     * once; saved allowances stay, so turning it back on asks nobody again.
+     * once. Turning it back on restores access without another prompt.
      */
     async setFeatureEnabled(enabled) {
       if (featureEnabled !== (enabled === true)) featureGeneration++;
@@ -761,8 +761,7 @@ export function createComputerControl({ adapter, presence = null,
       return false;
     },
     /**
-     * The person's answer to an in-chat request: allow this chat, always
-     * allow, or not now. Setup itself is answered by macOS permissions.
+     * Dismiss the system setup card. System permissions are granted in macOS.
      * @param {ChatInput & { answer?: "dismiss" }} input
      */
     async answerRequest({ sessionId, answer } = {}) {
@@ -804,8 +803,7 @@ export function createComputerControl({ adapter, presence = null,
         if (!grant.enabled) {
           return failure("not_allowed", "Computer use stopped earlier in this turn, because the person stopped it or after a failure. It turns back on with the person's next message, so do not ask them to re-enable it; tell them what failed.");
         }
-        // Setup or this chat's allowance missing: ask the person in the chat and
-        // carry on once they answer, so the agent never has to ask them itself.
+        // Missing macOS permissions show the system setup checklist.
         const status = name === "computer_discover" || name === "computer_open" ? await readiness() : null;
         if (status && status.readiness !== "ready") {
           if (status && ["unsupported", "unavailable"].includes(status.readiness)) return failure("setup_required", status.detail);
@@ -827,7 +825,7 @@ export function createComputerControl({ adapter, presence = null,
       } finally { limit?.dispose(); }
     },
     /**
-     * The chat's turn ended: release its native session and re-arm Always allow.
+     * The chat's turn ended: release its native session and re-arm access.
      * @param {ChatInput} input
      */
     async endTurn({ sessionId } = {}) {

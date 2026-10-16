@@ -44,6 +44,7 @@ export function ComputerControl({ sessionId }: { sessionId: string }) {
       if (current === generation.current) setReadError(message(cause))
     } finally { reading.current = false }
   }
+  useEffect(() => () => { generation.current++ }, [])
   const readLatest = useEffectEvent(refresh)
   const working = Boolean(snapshot?.session || snapshot?.cleanupPending)
   useEffect(() => {
@@ -53,7 +54,6 @@ export function ComputerControl({ sessionId }: { sessionId: string }) {
     window.addEventListener("focus", update)
     document.addEventListener("visibilitychange", update)
     return () => {
-      generation.current++
       window.clearInterval(timer)
       window.removeEventListener("focus", update)
       document.removeEventListener("visibilitychange", update)

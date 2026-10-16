@@ -40,7 +40,7 @@ renderer (`panel/browser-presentation-store.ts`):
 - **Floating**: a small card on the right of the chat pane, above the composer.
   It snaps to top, middle or bottom (drag, Up/Down/Home/End or its menu) and
   shows a preview of the on-screen tab, its site and its state. "Needs you" in
-  amber means a browser approval or handoff waits. Clicking the card opens the
+  amber means the browser needs attention or a handoff waits. Clicking the card opens the
   browser beside the chat. The native page is not shown while floating.
 - **Side**: today's docked side panel, with its remembered width.
 - **Full screen**: the browser over the whole window. Escape, in OpenWork or
@@ -51,7 +51,7 @@ The header Browser button toggles between hidden and the last floating or side
 choice. A page the agent opens comes up beside the chat (or stays full screen),
 because the agent acts only on a page the person can see; the person can float
 it from there. Reading and navigating keep working while floating. A browser
-approval, or an action that needs the page on screen (`needs_attention`), moves
+handoff, or an action that needs the page on screen (`needs_attention`), moves
 a floating or hidden browser beside the chat, where the prompt is.
 
 ## Execution contract

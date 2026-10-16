@@ -33,7 +33,7 @@ function Row({ done, waiting, title, detail, children, testId }: { done: boolean
 }
 
 /**
- * One live checklist: both macOS permissions and this chat's allowance. Every
+ * One live checklist for the required macOS system permissions. Every
  * status comes from a fresh helper probe; guidance never grants anything.
  */
 export function ComputerSetup({ snapshot, readError, actionError, busy, onPermission, onReset, onRefresh, onClose }: {

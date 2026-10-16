@@ -47,52 +47,87 @@ on both engines.
 
 ## What migration does
 
-Migration requires the OpenWork host token and explicit confirmation. It snapshots
-the active profile's v1 SQLite database using SQLite backup (or `VACUUM INTO` on Bun), including committed
-WAL writes, without modifying the original. A temporary, isolated instance of the
-pinned v2 engine opens that snapshot and performs OpenCode's native conversion.
-OpenWork waits for `/api/experimental/migration/v1` to report completion, then
-exports converted chats and imports them into the existing v2 engine using its
-native APIs. Parents precede children. Existing IDs return a conflict and are
-skipped, so retries preserve v2 conversations and do not duplicate imports.
-Temporary snapshots and the converter are cleaned up afterward.
+Migration requires the OpenWork host token and explicit confirmation. It takes
+an immutable SQLite snapshot of the active profile's v1 database, including
+committed WAL writes. The original database is never modified.
 
-Migration keeps the selected engine. It can partially complete if a chat fails;
-retrying imports the remaining chats. Existing imported IDs are never overwritten,
-so later edits in v1 do not sync. Active v1 tasks block the snapshot unless the
-person chooses to migrate anyway.
-The migration includes local history across workspaces in the active profile,
-not history on connected remote servers. Development profiles remain isolated.
+The copy has durable stages: snapshot, reversible payload externalization,
+native conversion, payload restoration, and transactional transfer. Large JSON
+strings are held in SQLite and replaced with unique references in the private
+conversion workspace. The pinned native converter processes those references;
+SQLite restores their exact values afterward, including inline files. No chat
+is trimmed, and no whole-chat export or import body is allocated in JavaScript.
 
-OpenCode's conversion resets session permissions and revert state, converts
-interrupted tool activity, and may omit malformed rows or unsupported attachments.
-Its transfer API exports settled messages. Review permissions before continuing
-migrated chats. V1 plugin implementations require v2-compatible replacements;
-this operation does not rewrite configuration, skills, or plugin files.
+The v2 engine initializes its own schema and then closes before the transfer.
+Managed engine leases and a pending-copy fence keep other managed app instances
+from opening that database during an unfinished copy. Running v2 tasks prevent
+the copy from starting. V1 remains available; v2 chats pause until completion.
+The projected schemas must match before target writes begin.
+
+Messages move in bounded row batches, including a single very large payload
+without decoding it in JavaScript. Each batch commits its progress in the target
+SQLite database. A killed worker rolls back its active transaction; retry or
+restart resumes the retained workspace and committed batches. Conversion and
+payload restoration have their own restart checkpoints. Errors never blacklist
+a chat or mark a partial copy complete.
+
+Existing v2 messages are preserved. For earlier reduced copies, the migration
+reconstructs the retired trimmer's selected scalar values without trimming the
+new copy. It restores a scalar only when its current value exactly matches that
+legacy omission. Other edits, newer v2-only messages, session metadata and event
+history are retained. Missing historical messages are inserted in source order
+before newer v2 messages; an atomic, durable ordering map keeps restart from
+changing that order. Event sequence allocation never rewinds. An edited omission
+that cannot be reconciled safely stops with an actionable error and preserves
+both versions for reconciliation.
+
+Every original v1 message and part is also retained byte-for-byte in the target's
+`openwork_v1_message` and `openwork_v1_part` archive tables, keyed by the snapshot's
+SHA-256. Original session fields are retained in `openwork_v1_session`. This
+preserves fields and older part types that the native v2 projection does not
+represent. The archive is not a promise that v2 renders unsupported legacy items.
+Source rows and projected message identities are verified before completion.
+Only then is the staging workspace removed. Existing v2 history is backed up
+before the transfer, and the two most recent backups remain on disk.
+
+The saved snapshot time remains the migration cutoff after restart: chats
+created in v1 after that snapshot still need a later copy. Completion/error
+receipts remain visible after restart. The copy stays local to this profile;
+it neither imports remote-server history nor merges later edits automatically.
+
+OpenCode's conversion still resets session permissions and revert state and
+normalizes interrupted activity. Review permissions before continuing migrated
+chats. V1 plugin implementations require v2-compatible replacements; migration
+does not rewrite configuration, skills, or plugin files.
 
 ## Upstream contract reviewed
 
-Implementation was checked against the published `@opencode-ai/core`,
-`@opencode-ai/protocol`, and `@opencode-ai/server` packages at the repository pin,
-`0.0.0-beta-19086`, and against the upstream v2 sources:
+Implementation was checked against the native engine at the repository pin,
+`2.0.26`, and its upstream source commit
+`9b4ec5714d481559990db0a816d5dec19541a814`:
 
-- [Native migration](https://github.com/anomalyco/opencode/blob/v2/packages/core/src/database/v1-migration.bun.ts)
-- [Migration status API](https://github.com/anomalyco/opencode/blob/v2/packages/protocol/src/groups/migration.ts)
-- [Native session transfer](https://github.com/anomalyco/opencode/blob/v2/packages/core/src/session/transfer.ts)
-- [V1 compatibility guide](https://github.com/anomalyco/opencode/blob/v2/services/www/src/docs/content/migrate-v1.mdx)
+- [Native migration](https://github.com/anomalyco/opencode/blob/9b4ec5714d481559990db0a816d5dec19541a814/packages/core/src/database/v1-migration.bun.ts)
+- [Migration status API](https://github.com/anomalyco/opencode/blob/9b4ec5714d481559990db0a816d5dec19541a814/packages/protocol/src/groups/migration.ts)
+- [Native session transfer](https://github.com/anomalyco/opencode/blob/9b4ec5714d481559990db0a816d5dec19541a814/packages/core/src/session/transfer.ts)
+- [V1 compatibility guide](https://github.com/anomalyco/opencode/blob/9b4ec5714d481559990db0a816d5dec19541a814/services/www/src/docs/content/migrate-v1.mdx)
 
 ## Verification
 
-`apps/server/src/opencode-v2-migration.test.ts` checks WAL snapshots and missing
-history. Its opt-in real-engine test creates v1 parent/child sessions, verifies
-converted text, keeps an existing v2 chat, retries without duplicates, and checks
-the source database hash. Run it with `OPENWORK_MIGRATION_LIVE_TEST=1`,
-`OPENWORK_MIGRATION_V1_BIN`, and `OPENWORK_OPENCODE2_BIN` set to the pinned binaries.
+`apps/server/test/opencode-v2-staged-history.test.ts` is an isolated integration
+test against the pinned real engine. It creates a 260 MiB single tool output,
+Unicode text, base64 and percent-encoded files, and multiple transfer batches.
+It kills a worker after a committed batch, resumes from another process,
+repairs a legacy omission, restores a missing message, preserves newer v2
+messages and historical edits, checks the original database digest, and opens
+the result through a fresh native engine. Without a binary it explicitly skips.
 
-The desktop `opencode-v2-chat-routing.e2e.test.ts` exercises both palette switches,
-the warning and cancellation from settings and palette, and real chat turns on
-both engines. UI consent/blocked/progress tests and desktop target mapping tests
-also run in the core checks.
+```sh
+OPENWORK_OPENCODE2_BIN="$(command -v opencode2)" pnpm --filter openwork-server test:history-migration
+```
+
+The same integration can be bundled and run on Node with a small V8 heap to
+exercise the desktop database implementation. No production history, provider
+credentials, external records, or inference are needed.
 
 Design: P3 (details disclosure), P5 (existing ToggleGroup, Button, AlertDialog,
 Dialog, Progress and Alert), P9 (migration data and risks), P10 (desktop

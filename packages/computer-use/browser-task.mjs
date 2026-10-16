@@ -25,26 +25,77 @@ function safeUrl(value) {
 // Node, IPC, browser profile or network tools. References never enter page DOM.
 function observePage(id) {
   const key = "__openworkBrowserObservation";
-  globalThis[key]?.observer?.disconnect();
   const nodes = new Map();
   const elements = [];
-  const candidates = document.querySelectorAll('a[href],button,input,textarea,select,[role="button"],[role="link"],[contenteditable="true"]');
+  const describe = (element) => {
+    const text = (value, limit = 200) => (value || "").trim().slice(0, limit);
+    const referenced = (attribute) => (element.getAttribute(attribute) || "").split(/\s+/)
+      .map(id => document.getElementById(id)?.textContent || "").join(" ").trim();
+    const labelText = (label) => {
+      const copy = label.cloneNode(true);
+      if (copy instanceof HTMLElement) for (const control of copy.querySelectorAll("input,textarea,select,button")) control.remove();
+      return copy.textContent || "";
+    };
+    const input = element instanceof HTMLInputElement;
+    const textarea = element instanceof HTMLTextAreaElement;
+    const select = element instanceof HTMLSelectElement;
+    const sensitive = element.matches('input[type="password"],input[autocomplete="one-time-code"]');
+    const role = element.getAttribute("role");
+    /** @type {{ tag: string, role: string | null, name: string, disabled: boolean, sensitive: boolean, required: boolean, readOnly: boolean,
+     * type?: string, value?: string, valueTruncated?: boolean, checked?: boolean | "mixed", expanded?: boolean, selected?: boolean,
+     * multiple?: boolean, options?: { value: string, label: string, selected: boolean, disabled: boolean }[], optionsTruncated?: boolean,
+     * selectedValues?: string[], valid?: boolean, validationMessage?: string, description?: string }} */
+    const state = {
+      tag: element.tagName.toLowerCase(), role,
+      name: text(referenced("aria-labelledby") || element.getAttribute("aria-label") ||
+        (input || textarea || select ? [...(element.labels || [])].map(labelText).join(" ") : "") ||
+        (input && ["submit", "button", "reset"].includes(element.type) ? element.value : "") ||
+        (!input && !textarea && !select ? element.innerText : "") || element.getAttribute("placeholder") || element.getAttribute("name")),
+      disabled: element.matches(":disabled") || element.getAttribute("aria-disabled") === "true" || !!element.closest("[inert]"),
+      sensitive,
+      required: element.required === true || element.getAttribute("aria-required") === "true",
+      readOnly: element.readOnly === true || element.getAttribute("aria-readonly") === "true",
+    };
+    if (input) state.type = element.type;
+    if (!sensitive && (input || textarea || select || element.isContentEditable || ["textbox", "combobox"].includes(role))) {
+      const value = input || textarea || select ? element.value : element.isContentEditable ? element.innerText : element.getAttribute("aria-valuetext") || element.textContent || "";
+      state.value = value.slice(0, 8000); state.valueTruncated = value.length > 8000;
+    }
+    if (input && ["checkbox", "radio"].includes(element.type)) state.checked = element.indeterminate ? "mixed" : element.checked;
+    else if (element.hasAttribute("aria-checked")) state.checked = element.getAttribute("aria-checked") === "mixed" ? "mixed" : element.getAttribute("aria-checked") === "true";
+    if (element.hasAttribute("aria-expanded")) state.expanded = element.getAttribute("aria-expanded") === "true";
+    if (element.hasAttribute("aria-selected")) state.selected = element.getAttribute("aria-selected") === "true";
+    if (select) {
+      state.multiple = element.multiple;
+      state.options = [...element.options].slice(0, 200).map(option => ({ value: option.value, label: text(option.label),
+        selected: option.selected, disabled: option.disabled || (option.parentElement instanceof HTMLOptGroupElement && option.parentElement.disabled) }));
+      state.optionsTruncated = element.options.length > 200;
+      state.selectedValues = [...element.selectedOptions].map(option => option.value).slice(0, 200);
+    }
+    if (element.validity || element.hasAttribute("aria-invalid")) {
+      state.valid = (element.validity?.valid ?? true) && !["true", "grammar", "spelling"].includes(element.getAttribute("aria-invalid"));
+      state.validationMessage = sensitive ? "" : text(element.validationMessage || referenced("aria-errormessage"), 1000);
+    }
+    const description = referenced("aria-describedby");
+    if (description && !sensitive) state.description = text(description, 1000);
+    return state;
+  };
+  const candidates = document.querySelectorAll('a[href],button,input,textarea,select,[role="button"],[role="link"],[role="textbox"],[role="combobox"],[role="checkbox"],[role="radio"],[role="switch"],[role="option"],[role="listbox"],[contenteditable]:not([contenteditable="false"])');
+  const snapshots = new Map();
   for (const element of candidates) {
     if (!(element instanceof HTMLElement)) continue;
     if (elements.length >= 200) break;
     const rect = element.getBoundingClientRect();
     const style = getComputedStyle(element);
-    if (!rect.width || !rect.height || style.visibility === "hidden" || style.display === "none") continue;
+    if (!rect.width || !rect.height || style.visibility !== "visible" || style.display === "none" || rect.right <= 0 || rect.bottom <= 0 || rect.x >= innerWidth || rect.y >= innerHeight) continue;
     const ref = `e${elements.length + 1}`;
-    const password = element.matches('input[type="password"],input[autocomplete="one-time-code"]');
-    const label = element.getAttribute("aria-label") || (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement || element instanceof HTMLSelectElement ? element.labels?.[0]?.innerText : "") || element.innerText || element.getAttribute("placeholder") || element.getAttribute("name") || "";
+    const control = describe(element);
     nodes.set(ref, element);
-    elements.push({ ref, tag: element.tagName.toLowerCase(), role: element.getAttribute("role"), name: label.trim().slice(0, 200), disabled: element.hasAttribute("disabled"), sensitive: password, bounds: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } });
+    snapshots.set(element, JSON.stringify(control));
+    elements.push({ ref, ...control, bounds: { x: rect.x, y: rect.y, width: rect.width, height: rect.height } });
   }
   const observation = { id, nodes, bounds: new Map(elements.map(({ ref, bounds }) => [ref, bounds])), activeElement: document.activeElement,
-    changed: false, observer: null, width: innerWidth, height: innerHeight, x: scrollX, y: scrollY };
-  observation.observer = new MutationObserver(() => { observation.changed = true; });
-  observation.observer.observe(document, { subtree: true, childList: true, attributes: true, characterData: true });
+    used: false, createdAt: performance.now(), describe, snapshots, width: innerWidth, height: innerHeight, x: scrollX, y: scrollY };
   globalThis[key] = observation;
   return { title: document.title.slice(0, 300), text: (document.body?.innerText || "").slice(0, 16000), elements,
     viewport: { width: innerWidth, height: innerHeight }, scroll: { x: scrollX, y: scrollY }, hasPasswordField: [...document.querySelectorAll('input[type="password"],input[autocomplete="one-time-code"]')].some((element) => { const rect = element.getBoundingClientRect(); return rect.width > 0 && rect.height > 0; }),
@@ -53,29 +104,46 @@ function observePage(id) {
 }
 function prepareAction(id, action) {
   const state = globalThis.__openworkBrowserObservation;
-  if (!state || state.id !== id || state.changed || state.width !== innerWidth || state.height !== innerHeight || state.x !== scrollX || state.y !== scrollY) throw new Error("stale_observation");
+  if (!state || state.id !== id || state.used || performance.now() - state.createdAt > 60_000 || state.width !== innerWidth || state.height !== innerHeight || state.x !== scrollX || state.y !== scrollY) throw new Error("stale_observation");
   const element = action.ref ? state.nodes.get(action.ref) : null;
   if (action.ref && (!element || !element.isConnected)) throw new Error("stale_element");
   if (element?.matches('input[type="password"],input[autocomplete="one-time-code"]')) throw new Error("sign_in_required");
-  if (element?.disabled || element?.getAttribute("aria-disabled") === "true") throw new Error("element_disabled");
+  if (element && state.describe(element).disabled) throw new Error("element_disabled");
+  // Revalidate the chosen control rather than invalidating every control when
+  // an unrelated spinner, clock or live region changes elsewhere on the page.
+  const target = element || (action.type === "key" ? document.activeElement : null);
+  if (target && state.snapshots.get(target) !== JSON.stringify(state.describe(target))) throw new Error("stale_observation");
   if (action.type === "key" && state.activeElement !== document.activeElement) throw new Error("stale_observation");
   if (action.type === "key" && document.activeElement?.matches('input[type="password"],input[type="file"],input[autocomplete="one-time-code"]')) throw new Error("sign_in_required");
-  // These native controls cannot host a shadow root. A frame, custom editor or
-  // generic container can conceal a different focused descendant during review.
-  if (action.type === "key" && !["INPUT", "TEXTAREA", "SELECT", "BUTTON", "A"].includes(document.activeElement?.tagName)) throw new Error("unverifiable_focus");
+  // Only a directly focused, observed control can receive keys. Frames and
+  // generic containers can conceal a different focused descendant.
+  if (action.type === "key" && !document.activeElement?.matches('input,textarea,select,button,a,[contenteditable]:not([contenteditable="false"]),[role="textbox"],[role="combobox"],[role="listbox"],[role="option"],[role="checkbox"],[role="radio"],[role="switch"]')) throw new Error("unverifiable_focus");
   let x = action.x, y = action.y;
   if (element) {
     const rect = element.getBoundingClientRect();
     const bounds = state.bounds.get(action.ref);
-    if (!bounds || !["x", "y", "width", "height"].every((key) => rect[key] === bounds[key])) throw new Error("stale_observation");
+    const style = getComputedStyle(element);
+    if (!bounds || style.visibility !== "visible" || style.display === "none" || !["x", "y", "width", "height"].every((key) => rect[key] === bounds[key])) throw new Error("stale_observation");
     x = rect.x + rect.width / 2; y = rect.y + rect.height / 2;
     if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) throw new Error("element_outside_viewport");
     const hit = document.elementFromPoint(x, y);
     if (!hit || (hit !== element && !element.contains(hit))) throw new Error("element_obscured");
   }
   if (action.type === "fill") {
-    const editable = element instanceof HTMLTextAreaElement || element?.isContentEditable || (element instanceof HTMLInputElement && ["text", "search", "email", "url", "tel", "number"].includes(element.type));
-    if (!editable || element.readOnly) throw new Error("not_editable");
+    const editable = element instanceof HTMLTextAreaElement || element?.isContentEditable || (element instanceof HTMLInputElement && ["text", "search", "email", "url", "tel", "number", "date", "time", "datetime-local", "month", "week"].includes(element.type));
+    if (!editable || state.describe(element).readOnly) throw new Error("not_editable");
+  }
+  if (action.type === "select") {
+    if (!(element instanceof HTMLSelectElement) || (!element.multiple && action.values.length > 1)) throw new Error("not_selectable");
+    for (const value of action.values) {
+      const option = [...element.options].find(option => option.value === value);
+      if (!option || option.disabled || (option.parentElement instanceof HTMLOptGroupElement && option.parentElement.disabled)) throw new Error("option_unavailable");
+    }
+  }
+  if (action.type === "set_checked") {
+    const native = element instanceof HTMLInputElement && ["checkbox", "radio"].includes(element.type);
+    if ((!native && !["checkbox", "radio", "switch"].includes(element?.getAttribute("role"))) || state.describe(element).readOnly) throw new Error("not_checkable");
+    if ((element.type === "radio" || element.getAttribute("role") === "radio") && !action.checked) throw new Error("not_checkable");
   }
   if ((action.type === "click" || action.type === "scroll") && (!Number.isFinite(x) || !Number.isFinite(y) || x < 0 || y < 0 || x >= innerWidth || y >= innerHeight)) throw new Error("outside_viewport");
   if (!element && action.type === "click") {
@@ -83,16 +151,52 @@ function prepareAction(id, action) {
     if (hit?.matches('input[type="password"],input[type="file"],input[autocomplete="one-time-code"]')) throw new Error("sign_in_required");
   }
   // Consume before input; a result read failure must never replay this action.
-  state.changed = true;
-  state.observer.disconnect();
+  state.used = true;
+  return { x, y, unchanged: action.type === "set_checked" && state.describe(element).checked === action.checked };
+}
+function applyFormAction(id, action) {
+  const state = globalThis.__openworkBrowserObservation;
+  const element = state?.id === id ? state.nodes.get(action.ref) : null;
+  if (!element?.isConnected) throw new Error("stale_element");
+  if (state.snapshots.get(element) !== JSON.stringify(state.describe(element))) throw new Error("stale_observation");
+  element.focus();
+  if (document.activeElement !== element || !element.isConnected) throw new Error("stale_element");
+  if (action.type === "select") {
+    for (const option of element.options) option.selected = action.values.includes(option.value);
+    if (!action.values.length) element.selectedIndex = -1;
+    element.dispatchEvent(new Event("input", { bubbles: true }));
+    element.dispatchEvent(new Event("change", { bubbles: true }));
+    return { inserted: true };
+  }
   if (action.type === "fill") {
-    element.focus();
-    if (document.activeElement !== element) throw new Error("stale_element");
+    if (element instanceof HTMLInputElement && ["date", "time", "datetime-local", "month", "week"].includes(element.type)) {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value").set.call(element, action.text);
+      element.dispatchEvent(new Event("input", { bubbles: true }));
+      element.dispatchEvent(new Event("change", { bubbles: true }));
+      return { inserted: true };
+    }
     if (element.isContentEditable) document.getSelection()?.selectAllChildren(element);
     else element.select();
     if (document.activeElement !== element || !element.isConnected) throw new Error("stale_element");
   }
-  return { x, y };
+  return { inserted: false };
+}
+async function verifyFormAction(id, action) {
+  const state = globalThis.__openworkBrowserObservation;
+  const element = state?.id === id ? state.nodes.get(action.ref) : null;
+  const deadline = performance.now() + 1500;
+  let matchingSince = null, control;
+  do {
+    if (!element?.isConnected) throw new Error("stale_element");
+    control = state.describe(element);
+    const matches = action.type === "set_checked" ? control.checked === action.checked
+      : action.type === "select" ? control.selectedValues.length === new Set(action.values).size && action.values.every(value => control.selectedValues.includes(value))
+      : !control.valueTruncated && control.value === (element instanceof HTMLTextAreaElement ? action.text.replace(/\r\n?/g, "\n") : action.text);
+    matchingSince = matches ? matchingSince ?? performance.now() : null;
+    if (matchingSince !== null && performance.now() - matchingSince >= 150) return { verified: true, control };
+    await new Promise(resolve => setTimeout(resolve, 50));
+  } while (performance.now() < deadline);
+  return { verified: false, control };
 }
 async function captureObservation(webContents, viewport) {
   if (typeof webContents.captureObservation === "function") return webContents.captureObservation(viewport);
@@ -105,7 +209,7 @@ async function isolated(webContents, fn, ...args) {
 }
 
 export function createBrowserTaskHost({ getTab, tabsFor, ownerOf, activeFor, isVisible, openTab, navigate,
-  allowed, enabled, changed, siteTools, runSiteTool }) {
+  allowed, enabled, changed, siteTools, runSiteTool, beforeInput = async (_tab) => {} }) {
   const states = new Map();
   const controls = new Map();
   const pausedSessions = new Set();
@@ -258,7 +362,7 @@ export function createBrowserTaskHost({ getTab, tabsFor, ownerOf, activeFor, isV
     return { ok: true, tabId: tab.tabId, observationId: id, url: safeUrl(url), trust: TRUST, ...page, ...(image ? { image } : {}) };
   }
   /**
-   * @param {{ sessionId?: string, operation?: string, args?: { tabId?: string, url?: string, provider?: string, includeImage?: boolean, observationId?: string, toolId?: string, input?: unknown, action?: { type?: string, ref?: string, text?: string, key?: string, x?: number, y?: number, deltaY?: number } } }} request
+   * @param {{ sessionId?: string, operation?: string, args?: { tabId?: string, url?: string, provider?: string, includeImage?: boolean, observationId?: string, toolId?: string, input?: unknown, action?: { type?: string, ref?: string, text?: string, checked?: boolean, values?: string[], key?: string, x?: number, y?: number, deltaY?: number } } }} request
    * @param {{ signal?: AbortSignal }} options
    */
   async function request({ sessionId, operation, args = {} } = {}, { signal } = {}) {
@@ -358,21 +462,29 @@ export function createBrowserTaskHost({ getTab, tabsFor, ownerOf, activeFor, isV
         const observed = state.observation;
         if (!observed || observed.id !== args.observationId || observed.revision !== tab.webMcpRevision || observed.url !== tab.view.webContents.getURL()) fail("stale_observation", "Observe the current page before acting.");
         const action = structuredClone(args.action);
-        if (!action || !["click", "fill", "key", "scroll"].includes(action.type)) fail("invalid_action", "Use click, fill, key or scroll.");
+        if (!action || !["click", "fill", "select", "set_checked", "key", "scroll"].includes(action.type)) fail("invalid_action", "Use click, fill, select, set_checked, key or scroll.");
         if (action.type === "click" && !action.ref && !observed.digest) fail("image_required", "Observe with includeImage before clicking image coordinates.");
         if (action.type === "fill" && (typeof action.text !== "string" || action.text.length > 8000 || !action.ref)) fail("invalid_action", "Fill needs an observed editable reference and text of at most 8000 characters.");
+        if (action.type === "select" && (!action.ref || !Array.isArray(action.values) || action.values.length > 200 || !action.values.every(value => typeof value === "string" && value.length <= 8000))) fail("invalid_action", "Select needs an observed select reference and an array of option values.");
+        if (action.type === "set_checked" && (!action.ref || typeof action.checked !== "boolean")) fail("invalid_action", "Set_checked needs an observed checkbox, radio or switch reference and checked true or false.");
         const keys = { Enter: "Enter", Tab: "Tab", Escape: "Escape", ArrowDown: "Down", ArrowUp: "Up", ArrowLeft: "Left", ArrowRight: "Right", Backspace: "Backspace", Space: "Space" };
         if (action.type === "key" && !Object.hasOwn(keys, action.key)) fail("invalid_key", "Use Enter, Tab, Escape, arrows, Backspace or Space. System shortcuts are unavailable.");
         if (action.type === "scroll" && (!Number.isFinite(action.deltaY) || Math.abs(action.deltaY) > 1200)) fail("invalid_scroll", "Scroll distance must be between -1200 and 1200.");
         if (!await allowed(observed.url) || state.observation !== observed || observed.revision !== tab.webMcpRevision || observed.url !== tab.view.webContents.getURL()) fail("page_changed", "The page changed or access was blocked while preparing the action. Observe again.");
         requestSignal.throwIfAborted();
         if (action.type === "click" && !action.ref && imageDigest(await captureObservation(tab.view.webContents, observed.viewport)) !== observed.digest) fail("stale_observation", "The image changed. Observe again before choosing coordinates.");
+        if (action.type === "fill" || action.type === "select") {
+          // DOM-backed form edits must release the same native input lease as
+          // keyboard and pointer events on the shared cloud desktop.
+          await beforeInput(tab);
+          requestSignal.throwIfAborted();
+        }
         checkNavigation(navigationScope);
         let point;
         try { point = await isolated(tab.view.webContents, prepareAction, observed.id, action); }
         catch (error) {
-          const code = ["stale_observation", "stale_element", "sign_in_required", "unverifiable_focus", "element_disabled", "element_outside_viewport", "element_obscured", "not_editable", "outside_viewport"].find((item) => String(error?.message).includes(item));
-          if (code === "unverifiable_focus") fail(code, "Keyboard input requires a directly focused native page control. Take over for embedded or custom editors.");
+          const code = ["stale_observation", "stale_element", "sign_in_required", "unverifiable_focus", "element_disabled", "element_outside_viewport", "element_obscured", "not_editable", "not_selectable", "option_unavailable", "not_checkable", "outside_viewport"].find((item) => String(error?.message).includes(item));
+          if (code === "unverifiable_focus") fail(code, "Keyboard input requires a directly focused observed page control. Click the control and observe again.");
           if (code) fail(code, code === "sign_in_required" ? "Take over and sign in directly in the browser, then resume." : "The observed control is no longer ready. Observe again before choosing an action.");
           throw error;
         }
@@ -381,9 +493,19 @@ export function createBrowserTaskHost({ getTab, tabsFor, ownerOf, activeFor, isV
         state.observation = null; requestSignal.throwIfAborted();
         publish(tab.tabId, "running", action.type);
         const contents = tab.view.webContents;
-        dispatched = true;
-        if (action.type === "fill") await contents.insertText(action.text);
-        if (action.type === "click" || action.type === "scroll") {
+        dispatched = !point.unchanged;
+        if (action.type === "fill" || action.type === "select") {
+          const prepared = await isolated(contents, applyFormAction, observed.id, action);
+          if (action.type === "fill" && !prepared.inserted) {
+            if (action.text) await contents.insertText(action.text);
+            else {
+              await contents.sendInputEvent({ type: "keyDown", keyCode: "Backspace" });
+              requestSignal.throwIfAborted();
+              await contents.sendInputEvent({ type: "keyUp", keyCode: "Backspace" });
+            }
+          }
+        }
+        if (action.type === "click" || action.type === "scroll" || (action.type === "set_checked" && !point.unchanged)) {
           // sendInputEvent targets the main widget, not an OOPIF's widget.
           // Chromium's input router hit-tests these observed CSS pixels.
           const cdp = contents.debugger;
@@ -402,6 +524,13 @@ export function createBrowserTaskHost({ getTab, tabsFor, ownerOf, activeFor, isV
           }
         }
         if (action.type === "key") { await contents.sendInputEvent({ type: "keyDown", keyCode: keys[action.key] }); requestSignal.throwIfAborted(); await contents.sendInputEvent({ type: "keyUp", keyCode: keys[action.key] }); }
+        if (["fill", "select", "set_checked"].includes(action.type)) {
+          const result = await isolated(contents, verifyFormAction, observed.id, action);
+          requestSignal.throwIfAborted();
+          return { ok: result.verified, dispatched, mayHaveChangedState: dispatched, outcome: result.verified ? "verified" : "value_mismatch", retrySafe: false,
+            ...(result.verified ? {} : { code: "value_mismatch", error: "The control did not retain the requested value. Observe its current state before deciding how to continue." }),
+            tabId: tab.tabId, control: result.control, next: "observe" };
+        }
         return { ok: true, dispatched: true, outcome: "not_yet_verified", retrySafe: false, tabId: tab.tabId, next: "observe", message: "Observe the page and verify the requested outcome before reporting success." };
       };
       const result = await Promise.race([run(), canceled]);

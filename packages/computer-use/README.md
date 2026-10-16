@@ -134,6 +134,19 @@ remain enforced.
 
 ## Shared cloud runtime
 
+Browser observations include accessible field names, current non-sensitive
+values, input types, required/read-only/disabled state, checkbox state, select
+options and validation messages. `fill` replaces or clears text and date/time
+fields; `select` accepts observed option values (including multiple selection);
+`set_checked` sets a checkbox, radio or custom switch without toggling an
+already correct control. Form receipts verify the retained value and expose
+`value_mismatch` when a page rewrites or rejects it. Submission still requires
+observing the resulting page; an uncertain submit must never be replayed.
+References expire after a minute and are consumed once. Before input, the host
+revalidates the target's state, geometry and hit test, while unrelated page
+updates can continue. Embedded frames and closed custom controls retain the
+image/computer fallback.
+
 The JavaScript browser host, computer broker and X11 adapter are shared with
 Electron. They live in this package; the desktop imports its explicit exports.
 `cloud.mjs` composes them for a member-owned Web worker. See

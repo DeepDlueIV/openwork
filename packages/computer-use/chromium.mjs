@@ -76,6 +76,7 @@ export function createCloudBrowser({ statePath, assertActive, enabled, beforeInp
       getURL: () => currentUrl,
       getTitle: () => title,
       stop: () => { void wire.send("Page.stopLoading", {}, false).catch(() => {}); },
+      async prepareInput() { await beforeInput(); await wire.send("Page.bringToFront"); },
       async executeJavaScriptInIsolatedWorld(_world, scripts) {
         assertActive();
         if (context === null) {
@@ -156,6 +157,7 @@ export function createCloudBrowser({ statePath, assertActive, enabled, beforeInp
     // and shell access. Local apps and private sites are intentionally reachable.
     // Network restrictions belong at the VM boundary, not solely in this tool.
     isVisible: () => true, enabled, allowed: async () => true, changed: () => {},
+    beforeInput: (tab) => tab.view.webContents.prepareInput(),
     async openTab(url, sessionId, signal, admit) {
       if (tabs.size >= 12) throw new Error("Close a browser tab before opening another.");
       assertActive(); signal.throwIfAborted();

@@ -166,7 +166,7 @@ tofu -chdir=examples/complete validate
 tofu init -backend=false && tofu test
 ```
 
-Mocks never contact Azure. `evals/specs/azure-terraform-contract.test.ts` negative-controls the read-only completion observer without requiring Azure access. Run the module HCL suite with both CLI commands above; the normal application CI lane does not install Terraform/OpenTofu. Live attached-Den specs stay local because CI has no live deployment.
+Mocks never contact Azure. `python3 scripts/test-wait-for-migration.py` runs five credential-free success/failure/timeout controls for the read-only observer, without requiring Azure CLI or an account. Run the HCL suite with both tools as above. Native testkit driver evidence is retained with the conformance report; local-only legacy/live drivers are not added to the retired CI spec path or made to require a live deployment in application CI.
 
 ## Cost notes
 

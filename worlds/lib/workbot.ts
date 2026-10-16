@@ -468,7 +468,7 @@ export async function bootWorkbotOnDaytona(stack: AsyncDisposableStack, place: P
   if (options.computerSnapshot) {
     const auth = await worldDaytonaAuth();
     if (auth.mode !== "api-key") throw new Error("The desktop runner needs a scoped Daytona API key, not a browser-session token.");
-    const { createDaytonaClient } = await import("../../packages/sandbox-daytona/src/index.ts");
+    const { createDaytonaClient } = await import("../../packages/sandbox-daytona/dist/index.js");
     const client = createDaytonaClient({ ...auth, target: process.env.DAYTONA_TARGET ?? "us-west-3" });
     const snapshot = await client.snapshot?.get(options.computerSnapshot);
     if (snapshot?.sandboxClass !== "linux-vm") throw new Error("The desktop snapshot must be a Daytona Linux microVM.");

@@ -165,12 +165,17 @@ run "rejects_bad_name" {
   variables { name = "OpenWork_Prod" }
   expect_failures = [var.name]
 }
-run "https_and_ingress_restrictions" {
-  command = apply
+run "rejects_unverified_restricted_ingress" {
+  command = plan
   variables { allowed_ingress_cidrs = ["203.0.113.0/24"] }
+  expect_failures = [var.allowed_ingress_cidrs]
+}
+
+run "https_without_ingress_restrictions" {
+  command = apply
   assert {
-    condition     = azapi_resource.api.body.properties.configuration.ingress.external && !azapi_resource.api.body.properties.configuration.ingress.allowInsecure && azapi_resource.api.body.properties.configuration.ingress.targetPort == 8788 && !azapi_resource.web.body.properties.configuration.ingress.allowInsecure && azapi_resource.web.body.properties.configuration.ingress.ipSecurityRestrictions[0].ipAddressRange == "203.0.113.0/24"
-    error_message = "Public endpoints must be HTTPS-only with the requested ingress restriction."
+    condition     = azapi_resource.api.body.properties.configuration.ingress.external && !azapi_resource.api.body.properties.configuration.ingress.allowInsecure && azapi_resource.api.body.properties.configuration.ingress.targetPort == 8788 && !azapi_resource.web.body.properties.configuration.ingress.allowInsecure && length(azapi_resource.api.body.properties.configuration.ingress.ipSecurityRestrictions) == 0 && length(azapi_resource.web.body.properties.configuration.ingress.ipSecurityRestrictions) == 0
+    error_message = "The supported empty default must keep both endpoints HTTPS-only without silently adding or removing requested CIDR rules."
   }
 }
 run "existing_subnets_private_database" {

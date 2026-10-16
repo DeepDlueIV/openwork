@@ -37,7 +37,7 @@ The experimental module deploys Den API and web as HTTPS-only Container Apps, a 
 | Date | Tools / release | Result |
 | --- | --- | --- |
 | 2026-10-13–14 | Terraform 1.16 / OpenTofu 1.11; legacy module, 0.18.58 to dev, one API replica | Setup, browser, isolated desktop, retained organization and teardown Passed; not proof of the new Job topology |
-| 2026-10-16 | Terraform 1.16.5 / OpenTofu 1.11.14, AzureRM 5.10 / AzAPI 2.13 | Contract offline suite Passed, 32 mocked runs each; registry-specific example locks |
+| 2026-10-16 | Terraform 1.16.5 / OpenTofu 1.11.14, AzureRM 5.10 / AzAPI 2.13 | Contract offline suite Passed, 33 mocked runs each; selected root locks and fail-closed restricted-ingress guard |
 | 2026-10-15 | Default state-free secrets; two API replicas; 0.18.58 to dev ae7483e | Setup, browser, isolated Electron and retained data/core secrets/session Passed; 15 resources destroyed and log purge verified |
 
 ### Support level
@@ -47,6 +47,8 @@ The experimental module deploys Den API and web as HTTPS-only Container Apps, a 
 </Warning>
 
 Use Terraform or OpenTofu >= 1.11, < 2.0, and AzAPI >= 2.13. The root binds the module's `azapi` and `azapi.secret_read` provider names (the complete example binds both to the same authenticated provider). You provide an existing resource group with resource creation, Job start and execution-read permissions; the default database deletion lock also needs management-lock write/delete permission. The module creates no role assignments. A subscription owner registers `Microsoft.App`, `Microsoft.DBforMySQL`, `Microsoft.Network` and `Microsoft.OperationalInsights` first. Default hosts have Microsoft-managed HTTPS certificates. Email is optional for setup/sign-in; invites and password reset require SMTP or Resend.
+
+**CIDR ingress filtering is not currently supported:** only `allowed_ingress_cidrs = []` is accepted, which performs no app-level IP filtering. A non-empty list now fails validation instead of accepting an unverified configuration that may break sign-in or `/setup`. This is a deliberate restriction of the earlier prototype option. Do not clear a required allow-list just to deploy; use a separately verified network boundary or defer deployment. Microsoft's [inter-app routing documentation](https://learn.microsoft.com/azure/container-apps/connect-apps) says generated-FQDN traffic within one environment stays internal, but its [IP-restriction documentation](https://learn.microsoft.com/azure/container-apps/ip-restrictions) does not establish an exemption for that route. Restricted-CIDR sign-in/setup remains unverified; the tested empty-default HTTPS route is unchanged.
 
 ### Upgrade notes
 

@@ -23,7 +23,7 @@ Workbot, runners, Slack and OpenWork Web are not deployed. Existing product flag
 | --- | --- | --- | --- |
 | 2026-10-13 | Terraform 1.16, OpenTofu 1.11; AzureRM 5.0 / 5.9 | Legacy init-container module, 0.18.58, private MySQL, setup/browser/isolated desktop, destroy | Passed; not proof of the new Job topology |
 | 2026-10-14 | Terraform 1.16.5 / OpenTofu 1.11.14; AzureRM 5.9 | Legacy module, 0.18.58 to dev, one API replica, retained administrator/org, browser/desktop, destroy | Passed; not a two-replica result |
-| 2026-10-16 | Terraform 1.16.5 / OpenTofu 1.11.14; AzureRM 5.10, AzAPI 2.13, external 2.4, random 3.9 | Contract mocked tests, 32 runs on each tool; registry-specific example locks | Passed |
+| 2026-10-16 | Terraform 1.16.5 / OpenTofu 1.11.14; AzureRM 5.10, AzAPI 2.13, external 2.4, random 3.9 | Contract mocked tests, 33 runs on each tool; registry-specific example locks and fail-closed restricted-ingress guard | Passed |
 | 2026-10-15 | Same providers | State-free defaults, two API replicas, 0.18.58 to dev ae7483e; setup, retained data/secrets/session, browser and isolated Electron | Passed; 15 managed resources destroyed, permanent log purge and empty inventories verified |
 
 ## Support level
@@ -33,6 +33,12 @@ Workbot, runners, Slack and OpenWork Web are not deployed. Existing product flag
 The migration **starts natively**, but terminal completion observation currently requires Python 3 and an already authenticated Azure CLI on the Terraform runner. AzAPI's ARM start long-running operation completes on acceptance, not migration success. A read-only `external` data source polls the returned execution's ARM status, bounded by the Job deadline plus 120 seconds, failing closed on errors. It never starts, retries or stops a Job. This is an explicit portability limitation, not a claim of a provider-native terminal waiter; replace it when AzureRM/AzAPI provides that waiter. Automation runners must support Azure CLI authentication as well as provider authentication.
 
 The database lock protects out-of-band deletions. **Terraform destroy removes its own lock**; this is not `prevent_destroy`. AzureRM does not expose a MySQL server deletion-protection field. Keep production database state separate from application rollout state where stronger lifecycle separation is needed.
+
+### Ingress restriction support
+
+Only the empty `allowed_ingress_cidrs = []` default is supported; it performs **no app-level IP filtering**. Non-empty lists now fail variable validation rather than risk breaking den-web's server-side sign-in and `/setup` calls to den-api. This deliberately rejects a previously accepted, unverified prototype option. **Do not clear a required allow-list just to pass validation**: use a separately verified network boundary or defer deployment.
+
+[Microsoft documents](https://learn.microsoft.com/azure/container-apps/connect-apps) that calls between apps in the same environment using the generated FQDN stay inside that environment. Therefore, adding public outbound IPs is not an established remedy. The [IP-restriction documentation](https://learn.microsoft.com/azure/container-apps/ip-restrictions) does not establish an exemption for this request path; restricted-CIDR sign-in/setup has not been live-certified here. An `.internal.` hostname belongs to an app configured with internal ingress; this module does not invent one while leaving external ingress enabled. The existing HTTPS route and empty default are unchanged.
 
 ## Before you start
 
@@ -125,7 +131,7 @@ The reusable module has no lock file; the executable `examples/complete` root **
 | `create_log_analytics_workspace`, `log_analytics_workspace_id`, `log_retention_days` | `true`, `""`, `30` | New/existing log sink and retention |
 | `app_name_prefix`, `user_assigned_identity_ids` | `""`, `[]` | App name namespace; preauthorized identities |
 | `domain_name`, `api_domain_name`, `custom_domain_certificate` | `""`, `""`, `null` | Default HTTPS hosts or custom hostnames and sensitive PFX |
-| `allowed_ingress_cidrs` | `[]` | Empty permits all HTTPS ingress |
+| `allowed_ingress_cidrs` | `[]` only | No app-level IP filtering; non-empty lists fail validation until restricted inter-app routing is verified |
 | `org_name`, `org_slug` | `OpenWork`, `default` | Organization display name and slug |
 | `initial_admin_bootstrap_code` | Ephemeral generation, preserved in cloud | Ephemeral optional one-time setup code |
 | `better_auth_secret`, `db_encryption_key`, `database_admin_password` | Ephemeral generation, preserved in cloud | Ephemeral preservation inputs for adoption; never state outputs |

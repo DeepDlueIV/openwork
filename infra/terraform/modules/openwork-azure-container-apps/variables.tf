@@ -219,9 +219,15 @@ variable "custom_domain_certificate" {
 }
 
 variable "allowed_ingress_cidrs" {
-  description = "CIDRs allowed to reach both apps. Empty allows everyone."
+  description = "Reserved for CIDR-restricted ingress; currently only [] is supported (no app-level IP filtering). Non-empty lists fail validation until den-web to den-api traffic under these restrictions is verified."
   type        = list(string)
   default     = []
+  nullable    = false
+
+  validation {
+    condition     = length(var.allowed_ingress_cidrs) == 0
+    error_message = "Non-empty allowed_ingress_cidrs is not supported: den-web to den-api calls under app-level IP restrictions have not been verified. Do not clear a required allow-list just to deploy; use a separately verified network boundary or defer deployment."
+  }
 }
 
 # ---------------------------------------------------------------------------

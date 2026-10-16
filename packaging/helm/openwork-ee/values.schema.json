@@ -18,6 +18,26 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "offlineRecovery": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Connection failure presentation: Show compact App connection failures and a discreet offline indicator in OpenCode v2 conversations. Renders DEN_FEATURE_OFFLINE_RECOVERY."
+            },
+            "rememberLastOrganization": {
+              "enum": [
+                "",
+                "true",
+                "false",
+                true,
+                false
+              ],
+              "description": "Remember last organization: Return to the last organization used by the same account on this server after signing in again. Invite and installation links keep their selected organization. Renders DEN_FEATURE_REMEMBER_LAST_ORGANIZATION."
+            },
             "secureSecretFields": {
               "enum": [
                 "",

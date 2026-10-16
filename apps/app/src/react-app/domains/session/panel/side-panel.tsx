@@ -489,17 +489,6 @@ function BrowserPanelContent({
             ) : null}
           </div>
         ) : null}
-        {tab.browserApproval ? (
-          <div className="absolute inset-0 z-10 flex flex-col justify-center gap-3 overflow-y-auto bg-background p-5 text-sm" role="region" aria-label="Browser permission request">
-            <h3 className="font-semibold">{tab.browserApproval.title}</h3>
-            <p className="font-medium">{tab.browserApproval.message}</p>
-            <p className="max-h-[60vh] overflow-y-auto whitespace-pre-wrap break-words text-muted-foreground">{tab.browserApproval.detail}</p>
-            <div className="flex gap-2">
-              <Button size="sm" onClick={() => { if (tab.browserApproval) void window.__OPENWORK_ELECTRON__?.browser?.approve?.(tab.id, tab.browserApproval.id, true); }}>{tab.browserApproval.approveLabel ?? "Allow once"}</Button>
-              <Button size="sm" variant="outline" onClick={() => { if (tab.browserApproval) void window.__OPENWORK_ELECTRON__?.browser?.approve?.(tab.id, tab.browserApproval.id, false); }}>Deny</Button>
-            </div>
-          </div>
-        ) : null}
       </div>
     </>
   );
@@ -508,10 +497,9 @@ function BrowserPanelContent({
 const browserOperationLabels: Record<string, string> = {
   observe: "Reading this page", site_tools: "Finding website tools", site_tool: "Using a website tool",
   navigate: "Opening a page", click: "Clicking a control", fill: "Entering text", key: "Using the keyboard", scroll: "Scrolling",
-  "Browser control": "Allow control for this thread", website_blocked: "This website is blocked", browser_disabled: "Browser control is disabled",
-  stale_observation: "A fresh page view is needed", stale_tool: "Website tools have changed", user_denied: "The action was declined",
-  needs_attention: "Review this page", sign_in_required: "Sign in directly in this browser", timeout: "Check the page before continuing",
-  result_withheld: "Website result was kept private",
+  website_blocked: "This website is blocked", browser_disabled: "Browser control is disabled",
+  stale_observation: "A fresh page view is needed", stale_tool: "Website tools have changed",
+  needs_attention: "Review this page", sign_in_required: "Sign in directly in this browser",
 };
 
 export function SidePanel({

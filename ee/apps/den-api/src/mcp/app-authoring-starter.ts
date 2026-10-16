@@ -689,8 +689,9 @@ export default function App({ input, hostContext }) {
 }
 `
 
-const STARTER_CSS = `body { margin: 0; }
-.app { box-sizing: border-box; container-type: inline-size; display: grid; gap: 12px; min-width: 0; padding: 12px 14px; color: var(--color-text-primary, CanvasText); font: 13px/1.5 var(--font-sans, system-ui, sans-serif); }
+const STARTER_CSS = `:root { color-scheme: light dark; }
+body { margin: 0; }
+.app { box-sizing: border-box; container-type: inline-size; display: grid; gap: 12px; min-width: 0; padding: 12px 14px; color: var(--color-text-primary, CanvasText); background: var(--color-background-primary, Canvas); font: 13px/1.5 var(--font-sans, system-ui, sans-serif); }
 .app *, .app *::before, .app *::after { box-sizing: border-box; }
 .controls { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; }
 .field { display: grid; flex: 1 1 140px; gap: 4px; min-width: 0; }

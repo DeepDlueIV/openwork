@@ -2,7 +2,7 @@ import { afterAll, beforeAll, expect, mock, spyOn, test } from "bun:test"
 import { randomUUID } from "node:crypto"
 import { serializeSignedCookie } from "better-call"
 import { createDenTypeId, normalizeDenTypeId } from "@openwork-ee/utils/typeid"
-import type { CachedAuthSession } from "../src/cache.js"
+import type { CachedAuthSession } from "../../src/cache.js"
 
 // Real-database coverage for sharing a device API key with an organization.
 // Requires an isolated, schema-prepared MySQL database (see test:local-key-share:db).
@@ -10,7 +10,7 @@ import type { CachedAuthSession } from "../src/cache.js"
 const API_ORIGIN = "http://127.0.0.1:8790"
 const PROXY_BASE_URL = "https://inference.example.test"
 const SESSION_COOKIE = "better-auth.session_token"
-const FRESH_SESSION_MAX_AGE_MS = 15 * 60 * 1000
+const { PRIVILEGED_SESSION_MAX_AGE_MS: FRESH_SESSION_MAX_AGE_MS } = await import("../../src/privileged-session.js")
 
 function seedRequiredEnv() {
   const databaseUrl = process.env.DEN_TEST_DATABASE_URL
@@ -104,12 +104,12 @@ const catalog = {
   },
 }
 
-let app: typeof import("../src/app.js").default
-let db: typeof import("../src/db.js").db
+let app: typeof import("../../src/app.js").default
+let db: typeof import("../../src/db.js").db
 let schema: typeof import("@openwork-ee/den-db/schema")
 let drizzle: typeof import("@openwork-ee/den-db/drizzle")
-let cacheModule: typeof import("../src/cache.js")
-let shareModule: typeof import("../src/llm/gateway-local-key-share.js")
+let cacheModule: typeof import("../../src/cache.js")
+let shareModule: typeof import("../../src/llm/gateway-local-key-share.js")
 
 const ownerUserId = createDenTypeId("user")
 const adminUserId = createDenTypeId("user")
@@ -185,8 +185,8 @@ beforeAll(async () => {
   mock.restore()
 
   const realDb = (await import("@openwork-ee/den-db")).createDenDb({ databaseUrl: process.env.DATABASE_URL, mode: "mysql" }).db
-  mock.module("../src/db.js", () => ({ db: realDb }))
-  mock.module("../src/llm/models-dev.js", () => ({
+  mock.module("../../src/db.js", () => ({ db: realDb }))
+  mock.module("../../src/llm/models-dev.js", () => ({
     getModelsDevProvider: async (providerId: string) => {
       if (providerId === "anthropic") return catalog.anthropic
       if (providerId === "openai") return catalog.openai
@@ -197,9 +197,11 @@ beforeAll(async () => {
     getModelsDevProviders: async (providerIds: readonly string[]) => Object.values(catalog).filter((provider) => providerIds.includes(provider.id)),
   }))
 
-  const [appModule, dbModule, schemaModule, drizzleModule, cacheImport, shareImport] = await Promise.all([
-    import("../src/app.js"), import("../src/db.js"), import("@openwork-ee/den-db/schema"), import("@openwork-ee/den-db/drizzle"),
-    import("../src/cache.js"), import("../src/llm/gateway-local-key-share.js"),
+  // Boot the app before importing consumers of auth; parallel imports enter its auth cycle early.
+  const appModule = await import("../../src/app.js")
+  const [dbModule, schemaModule, drizzleModule, cacheImport, shareImport] = await Promise.all([
+    import("../../src/db.js"), import("@openwork-ee/den-db/schema"), import("@openwork-ee/den-db/drizzle"),
+    import("../../src/cache.js"), import("../../src/llm/gateway-local-key-share.js"),
   ])
   app = appModule.default
   db = dbModule.db
@@ -263,7 +265,7 @@ afterAll(async () => {
   await db.delete(schema.GatewayProviderTable).where(drizzle.eq(schema.GatewayProviderTable.organization_id, organizationId))
   await db.delete(schema.AuthApiKeyTable).where(drizzle.inArray(schema.AuthApiKeyTable.referenceId, [ownerUserId, adminUserId, memberUserId]))
 
-  const { cache } = await import("../src/cache.js")
+  const { cache } = await import("../../src/cache.js")
   const tokens = [ownerSessionToken, adminSessionToken, memberSessionToken, staleOwnerSessionToken, expiredOwnerSessionToken]
   await Promise.all(tokens.map((token) => cache.auth.deleteSession(token)))
   await db.delete(schema.AuthSessionTable).where(drizzle.inArray(schema.AuthSessionTable.id, [ownerSessionId, adminSessionId, memberSessionId, staleOwnerSessionId, expiredOwnerSessionId]))
@@ -363,8 +365,8 @@ test("expired session: rejected by the session layer, and re-checked against sto
 })
 
 test("api-key principal: eligibility and share are refused without writing anything", async () => {
-  const { auth } = await import("../src/auth.js")
-  const { buildOrganizationApiKeyMetadata } = await import("../src/api-keys.js")
+  const { auth } = await import("../../src/auth.js")
+  const { buildOrganizationApiKeyMetadata } = await import("../../src/api-keys.js")
   const apiKey = await auth.api.createApiKey({ body: {
     userId: ownerUserId, name: "Local key share fixture", rateLimitEnabled: false,
     metadata: buildOrganizationApiKeyMetadata({ organizationId, orgMembershipId: ownerMemberId, issuedByUserId: ownerUserId, issuedByOrgMembershipId: ownerMemberId }),

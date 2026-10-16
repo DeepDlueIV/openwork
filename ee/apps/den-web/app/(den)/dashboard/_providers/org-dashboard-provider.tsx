@@ -19,6 +19,8 @@ import { DenSecretRevealProvider } from "../../_components/ui/secret-input";
 import {
   type DenOrgContext,
   type DenOrgSummary,
+  PENDING_ORG_INVITATION_STORAGE_KEY,
+  PENDING_WORKSPACE_CLAIM_STORAGE_KEY,
   getOrgDashboardRoute,
   getOrgAccessFlags,
   orgFeatureEnabled,
@@ -27,7 +29,8 @@ import {
   roleIncludesCanonicalRole,
   permissionLockReason,
 } from "../../_lib/den-org";
-import { shouldOpenOrgSelection } from "../../_lib/org-selection";
+import { consumeOrgSelectionRequest, shouldOpenOrgSelection } from "../../_lib/org-selection";
+import { restoreRememberedOrganization, setActiveOrganizationAndRemember } from "../../_lib/org-memory";
 import { ORG_SCOPE_HEADER, OrganizationNotFoundError, getRequestOrgScope, setRequestOrgScope } from "../../_lib/org-scope";
 
 type OrgDashboardContextValue = {
@@ -87,7 +90,7 @@ export function OrgDashboardProvider({
   const router = useRouter();
   const queryClient = useQueryClient();
   const pathname = usePathname();
-  const { user, sessionHydrated, signOut, runtimeConfig, runtimeConfigLoaded, setupOrganizationId } = useDenFlow();
+  const { user, sessionHydrated, signOut, runtimeConfig, runtimeConfigLoaded, setupPending, setupOrganizationId } = useDenFlow();
   const [orgDirectory, setOrgDirectory] = useState<DenOrgSummary[]>([]);
   const [orgContext, setOrgContext] = useState<DenOrgContext | null>(null);
   const [orgSelectionOpen, setOrgSelectionOpen] = useState(false);
@@ -160,7 +163,7 @@ export function OrgDashboardProvider({
   }
 
   async function loadOrgDirectory() {
-    const { response, payload } = await requestJson("/v1/me/orgs", { method: "GET" }, 12000);
+    const { response, payload } = await requestJson("/v1/me/orgs", { method: "GET", cache: "no-store" }, 12000);
     if (!response.ok) {
       throw new Error(getErrorMessage(payload, `Failed to load organizations (${response.status}).`));
     }
@@ -186,7 +189,7 @@ export function OrgDashboardProvider({
   async function loadOrgContext(organizationId: string) {
     const { response, payload } = await requestJson(
       "/v1/org",
-      { method: "GET", headers: { [ORG_SCOPE_HEADER]: organizationId } },
+      { method: "GET", headers: { [ORG_SCOPE_HEADER]: organizationId }, cache: "no-store" },
       12000,
     );
     if (!response.ok) {
@@ -230,7 +233,9 @@ export function OrgDashboardProvider({
       return;
     }
     const generation = ++orgLoadRef.current.generation;
-    const isCurrent = () => generation === orgLoadRef.current.generation;
+    const userId = user?.id ?? null;
+    const isCurrent = () => orgLoadRef.current.mounted
+      && generation === orgLoadRef.current.generation && orgLoadRef.current.userId === userId;
     if (!user) {
       orgLoadRef.current.organizationId = null;
       orgLoadRef.current.switching = false;
@@ -253,6 +258,29 @@ export function OrgDashboardProvider({
     try {
       let directoryPayload = await loadOrgDirectory();
       if (!isCurrent()) return;
+      // Always consume the handshake, including required-picker and setup loads.
+      const selectionRequested = consumeOrgSelectionRequest();
+      // A direct dashboard visit may restore only when no explicit/session org
+      // or post-auth chooser request owns this load. Never replace a linked org.
+      if (!displayedOrgId && !directoryPayload.orgs.some((entry) => entry.isActive)
+        && !selectionRequested && !setupPending && !isSingleOrgMode
+        && !window.sessionStorage.getItem(PENDING_ORG_INVITATION_STORAGE_KEY)
+        && !window.sessionStorage.getItem(PENDING_WORKSPACE_CLAIM_STORAGE_KEY)) {
+        const remembered = await restoreRememberedOrganization({
+          userId: user.id,
+          organizations: directoryPayload.orgs,
+          loadContext: loadOrgContext,
+          setActive: (organizationId) => setActiveOrganization({ organizationId }),
+          isCurrent,
+        });
+        if (!isCurrent()) return;
+        if (remembered) {
+          directoryPayload = {
+            ...directoryPayload,
+            orgs: directoryPayload.orgs.map((entry) => ({ ...entry, isActive: entry.id === remembered.id })),
+          };
+        }
+      }
       // A tab's unfinished setup owns its org even when another tab switches the session.
       const displayedOrg = displayedOrgId
         ? directoryPayload.orgs.find((entry) => entry.id === displayedOrgId) ?? null
@@ -307,7 +335,7 @@ export function OrgDashboardProvider({
       // Single-org deployments never surface the picker; otherwise the
       // org-selection module decides from the directory plus any pending
       // sign-in request.
-      if (!setupOrganizationId && !isSingleOrgMode && shouldOpenOrgSelection(directoryPayload.orgs)) {
+      if (!setupOrganizationId && !isSingleOrgMode && shouldOpenOrgSelection(directoryPayload.orgs, selectionRequested)) {
         orgLoadRef.current.organizationId = null;
         setRequestOrgScope(null);
         setOrgDirectory(directoryPayload.orgs);
@@ -547,7 +575,9 @@ export function OrgDashboardProvider({
     }
 
     const generation = ++orgLoadRef.current.generation;
-    const isCurrent = () => generation === orgLoadRef.current.generation;
+    const userId = user?.id ?? null;
+    const isCurrent = () => orgLoadRef.current.mounted
+      && generation === orgLoadRef.current.generation && orgLoadRef.current.userId === userId;
     orgLoadRef.current.switching = true;
     orgLoadRef.current.organizationId = targetOrg.id;
     // Unmount scoped consumers before changing the shared request header, not
@@ -564,8 +594,14 @@ export function OrgDashboardProvider({
       try {
         if (!isCurrent()) return;
         setRequestOrgScope(targetOrg.id);
-        await setActiveOrganization({ organizationId: targetOrg.id });
-        if (!isCurrent()) return;
+        // A slow/failed details request must not lose the acknowledged choice;
+        // a newer switch/account must never overwrite it with a stale response.
+        if (!await setActiveOrganizationAndRemember({
+          userId: user.id,
+          organizationId: targetOrg.id,
+          setActive: (organizationId) => setActiveOrganization({ organizationId }),
+          isCurrent,
+        })) return;
         const context = await loadOrgContext(targetOrg.id);
         if (!isCurrent()) return;
         setOrgDirectory((current) => current.map((entry) => ({ ...entry, isActive: entry.id === context.organization.id })));
@@ -979,7 +1015,7 @@ export function OrgDashboardProvider({
       orgLoadRef.current.generation += 1;
       orgLoadRef.current.switching = false;
     };
-  }, [router, sessionHydrated, user?.id, isSingleOrgMode, setupOrganizationId]);
+  }, [router, sessionHydrated, user?.id, isSingleOrgMode, setupPending, setupOrganizationId]);
 
   const value: OrgDashboardContextValue = {
     orgSlug: activeOrg?.slug ?? null,

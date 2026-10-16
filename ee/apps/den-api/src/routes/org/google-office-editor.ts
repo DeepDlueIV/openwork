@@ -170,7 +170,7 @@ export function registerGoogleOfficeEditorRoutes<T extends { Variables: OrgRoute
     if (!draft || !service || !officeTicketMatches(draft, c.req.query("access_token") ?? bearer) || !await serviceAuthorized(c, draft)) return null
     if (write) {
       const auth = await selected(c, draft.connectionId)
-      if (!draft.canEdit || !auth.ok || !auth.token.account.scopes?.includes(scope) || !auth.token.enabledScopes.includes(scope)) return null
+      if (!draft.canEdit || !auth.ok || !canWriteDriveDocument(auth.token.account.scopes, auth.token.enabledScopes)) return null
       const meta = await metadata(c, auth.deps, draft.savedFileId ?? draft.fileId)
       if (!meta.ok || ((!draft.saveAsCopy || draft.savedFileId) && !meta.file.capabilities?.canEdit)) return null
     }

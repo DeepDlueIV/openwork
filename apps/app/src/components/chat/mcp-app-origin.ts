@@ -1,3 +1,4 @@
+import { isLocalNetworkEndpoint, onlineRequestsPaused } from "@/react-app/domains/session/status/offline-recovery-store";
 import type { OpenworkMcpAppResource, OpenworkServerClient } from "@/app/lib/openwork-server";
 import { startMcpAppTiming } from "@openwork/types/mcp-app-timing";
 
@@ -31,11 +32,32 @@ export function createMcpAppActions(
   const assertActive = () => {
     if (!active) throw new Error("This App view has closed or changed. Reopen it before using its actions.");
     if (origin.readOnly) throw new Error("This view is read-only and cannot perform App actions.");
+    if (onlineRequestsPaused() && (app.serverName.startsWith("openwork-cloud") || !isLocalNetworkEndpoint(origin.client.baseUrl))) {
+      throw new Error("Online actions are paused. Check your connection before trying again.");
+    }
+
     if (!app.launchId) throw new Error("This App has no live launch context. Update OpenWork and reopen the App.");
   };
   return {
     dispose: () => { active = false; },
     assertActive,
+    /** The verified server identity when a call that needs no approval is allowed now, checked without running the tool. */
+    checkRead: async (name: string, args?: Record<string, unknown>) => {
+      assertActive();
+      const result = await origin.client.callMcpAppTool(origin.workspaceId, {
+        launchId: app.launchId,
+        sessionId: origin.sessionId,
+        ...(origin.engine ? { engine: origin.engine } : {}),
+        serverName: app.serverName,
+        resourceUri: app.resourceUri,
+        name,
+        arguments: snapshotMcpAppArguments(args),
+        checkOnly: true,
+      });
+      assertActive();
+      const identity = result._meta?.["openwork/providerIdentity"];
+      return result._meta?.["openwork/readOnly"] === true && result.isError !== true && typeof identity === "string" ? identity : null;
+    },
     callTool: async (name: string, args?: Record<string, unknown>, userInteraction = false) => {
       assertActive();
       const request = {

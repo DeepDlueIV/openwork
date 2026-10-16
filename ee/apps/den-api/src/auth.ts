@@ -1,4 +1,5 @@
 import * as crypto from "node:crypto";
+import { recordFreeAutoSignIn } from "@openwork-ee/den-db";
 import { readOrganizationMetadata } from "@openwork/types/den/managed-models-policy";
 import { invalidateTeamInferenceOAuth, revokeMemberGatewayCredentials } from "./llm/inference-provider-lifecycle.js";
 import { ensureMemberGatewayKey } from "./gateway-keys.js";
@@ -6,6 +7,7 @@ import { getInitialActiveOrganizationIdForUser } from "./active-organization.js"
 import { db } from "./db.js";
 import { resolveOrganizationMemberAuthority } from "./organization-team-roles.js";
 import { env } from "./env.js";
+import { organizationFeatureEnabled } from "./features.js";
 import { appLogger } from "./observability/logger.js";
 import {
   deleteMcpOAuthGrantFamilyForSession,
@@ -443,6 +445,46 @@ async function hasPendingInvitationForEmail(input: { invitationIdOrToken: string
   return Boolean(invitation);
 }
 
+/** The invitation a sign-up names: `?invite=` on the request, then the query or body field. */
+function readSignUpInvite(ctx: { request?: Request; query?: unknown; body?: unknown } | null | undefined) {
+  if (!ctx) return null;
+  return readRequestQueryParam(ctx.request, "invite") ?? readStringProperty(ctx.query, "invite") ?? readStringProperty(ctx.body, "invite");
+}
+
+/**
+ * Whether signing up from an invitation link counts as verifying the email
+ * (inviteLinkVerifiesEmail). Only the join token proves it, never the
+ * invitation id, which every member can see; the invitation must be pending,
+ * unexpired and addressed to this email.
+ */
+async function invitationLinkVerifiesEmail(input: { inviteToken: string | null; email: string }) {
+  if (!input.inviteToken) {
+    return false;
+  }
+
+  const [invitation] = await db
+    .select({ organizationId: schema.InvitationTable.organizationId })
+    .from(schema.InvitationTable)
+    .where(and(
+      eq(schema.InvitationTable.inviteToken, input.inviteToken),
+      eq(schema.InvitationTable.status, "pending"),
+      gt(schema.InvitationTable.expiresAt, new Date()),
+      sql`lower(${schema.InvitationTable.email}) = ${input.email.trim().toLowerCase()}`,
+    ))
+    .limit(1);
+
+  return invitation ? organizationFeatureEnabled(invitation.organizationId, "inviteLinkVerifiesEmail") : false;
+}
+
+async function isEmailAlreadyVerified(email: string) {
+  const [user] = await db
+    .select({ emailVerified: schema.AuthUserTable.emailVerified })
+    .from(schema.AuthUserTable)
+    .where(eq(schema.AuthUserTable.email, normalizeLoginEmail(email)))
+    .limit(1);
+  return user?.emailVerified === true;
+}
+
 function normalizeRawRoleValue(roleValue: string) {
   return splitOrganizationRoles(roleValue)
     .map((role) => normalizeOrganizationRoleName(role))
@@ -747,10 +789,13 @@ export const auth = betterAuth({
           if (ssoProviderId && await isScimDeprovisionedEmailForSsoProvider({ ssoProviderId, email })) {
             throw new APIError("FORBIDDEN", { message: SCIM_DEPROVISIONED_SIGN_IN_MESSAGE });
           }
+          const verifiedByInvitation = context?.path === "/sign-up/email"
+            && await invitationLinkVerifiesEmail({ inviteToken: readSignUpInvite(context), email });
           return {
             data: {
               ...user,
               email,
+              ...(verifiedByInvitation ? { emailVerified: true } : {}),
             },
           };
         },
@@ -878,6 +923,8 @@ export const auth = betterAuth({
         // Every sign-in path that creates a session row: session.created in
         // the session's organization (src/audit/domain/sessions.ts).
         after: async (session, context) => {
+          await recordFreeAutoSignIn(db, { userId: normalizeDenTypeId("user", session.userId), now: session.createdAt })
+            .catch(() => logger.warn("Free Auto sign-in behavior could not be recorded."));
           await runAuditHook("session.create", () => recordSessionCreated(session, auditSessionMethod(context)));
         },
       },
@@ -1097,7 +1144,7 @@ export const auth = betterAuth({
       const email = getAuthBodyEmail(ctx.body);
       if (ctx.path === "/sign-up/email") {
         const invitationAllowsSignup = await hasPendingInvitationForEmail({
-          invitationIdOrToken: readRequestQueryParam(ctx.request, "invite") ?? readStringProperty(ctx.query, "invite") ?? readStringProperty(ctx.body, "invite"),
+          invitationIdOrToken: readSignUpInvite(ctx),
           email,
         });
         const bootstrapGrant = readInitialAdminBootstrapGrantFromBody(ctx.body);
@@ -1355,6 +1402,11 @@ export const auth = betterAuth({
       expiresIn: 600,
       allowedAttempts: 5,
       async sendVerificationOTP({ email, otp, type }) {
+        // better-auth sends a sign-up code even when the new user is already
+        // verified (an invitation link verified it); there is nothing to verify.
+        if (type === "email-verification" && await isEmailAlreadyVerified(email)) {
+          return;
+        }
         await sendEmail({
           to: email,
           template: "verification",

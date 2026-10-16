@@ -605,18 +605,9 @@ export class AutomationService {
     return !registration?.capabilities.includes(REMOTE_SESSION_ONLY_RUNNER_CAPABILITY)
   }
 
+  /** The work route records the runner's presence before calling this. */
   async discoverDesktopRunnerWork(scope: DesktopRunnerScope) {
     if (!await this.canRunScheduledAutomations(scope)) return []
-    try {
-      await this.touchDesktopRunner(scope)
-    } catch (error) {
-      logger.warn("automation desktop runner touch failed", {
-        organization_id: scope.organizationId,
-        owner_member_id: scope.ownerMemberId,
-        runner_id: scope.runnerId,
-        error,
-      })
-    }
     // Every desktop sees all of the owner's queued runs and skips the ones
     // pinned to a workspace it lacks, so the window must reach past them.
     return automationRepository.discoverDesktopWork({ ...scope, now: Date.now(), limit: AUTOMATION_RUNNER_WORK_RUN_LIMIT })

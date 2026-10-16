@@ -6,7 +6,7 @@ import { z } from "zod"
  * health reports are identical on every provider.
  */
 export const managedDeploymentProviderSchema = z.enum(["aws", "azure", "gcp"])
-export const availableProviders = ["aws"] as const
+export const availableProviders = ["aws", "gcp"] as const
 
 export const awsRegionSchema = z.enum(["us-east-1", "us-east-2", "us-west-2", "eu-west-1", "eu-central-1", "ap-southeast-1", "ap-southeast-2"])
 const subnetIdsSchema = (label: string) => z.array(z.string().trim().regex(/^subnet-[0-9a-f]{8,17}$/, `Enter ${label} subnet IDs such as subnet-0abc12345.`))
@@ -52,6 +52,15 @@ export const awsTargetSchema = z.object({
 })
 export type AwsTarget = z.infer<typeof awsTargetSchema>
 
+export const gcpRegionSchema = z.enum(["us-central1", "us-east1", "us-east4", "us-west1", "us-west2", "europe-west1", "europe-west2", "europe-west3", "asia-southeast1", "australia-southeast1"])
+export const gcpTargetSchema = z.object({
+  projectId: z.string().trim().regex(/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/, "Enter a Google Cloud project ID."),
+  projectNumber: z.string().regex(/^\d{1,20}$/, "Enter the numeric Google Cloud project number."),
+  region: gcpRegionSchema,
+  dnsZoneName: z.string().trim().regex(/^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$/, "Enter a Cloud DNS managed zone name."),
+}).strict()
+export type GcpTarget = z.infer<typeof gcpTargetSchema>
+
 const hostnameSchema = z.string().trim().toLowerCase().max(200)
   .regex(/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/, "Enter a hostname such as openwork.example.com.")
 
@@ -63,6 +72,7 @@ const commonInput = {
 }
 export const managedDeploymentInputSchema = z.discriminatedUnion("provider", [
   z.object({ ...commonInput, provider: z.literal("aws"), target: awsTargetSchema }).strict(),
+  z.object({ ...commonInput, provider: z.literal("gcp"), target: gcpTargetSchema }).strict(),
 ])
 export type ManagedDeploymentInput = z.infer<typeof managedDeploymentInputSchema>
 
@@ -101,6 +111,9 @@ export const healthCheckSchema = z.object({
 }).strict()
 export const versionSchema = z.string().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/).max(80)
 export const healthReportSchema = z.object({
+  // A fresh nonce gives Google metadata tokens a unique exact-body audience even
+  // when successive health snapshots are identical. AWS reports stay compatible.
+  nonce: z.string().regex(/^[a-f0-9]{32}$/).optional(),
   version: versionSchema.optional(),
   checks: z.array(healthCheckSchema).min(1).max(20)
     .refine((checks) => new Set(checks.map((check) => check.id)).size === checks.length, "Duplicate check"),
@@ -128,11 +141,9 @@ export const deploymentRunSchema = z.object({
   expired: z.boolean(),
   events: z.array(deploymentEventSchema),
 })
-export const managedDeploymentSchema = z.object({
+const managedDeploymentViewSchema = z.object({
   id: z.string().uuid(),
   name: z.string(),
-  provider: managedDeploymentProviderSchema,
-  target: awsTargetSchema,
   domainName: z.string(),
   ownerEmail: z.string(),
   size: z.literal("small"),
@@ -146,6 +157,10 @@ export const managedDeploymentSchema = z.object({
   health: deploymentHealthSchema,
   run: deploymentRunSchema.nullable(),
 })
+export const managedDeploymentSchema = z.discriminatedUnion("provider", [
+  managedDeploymentViewSchema.extend({ provider: z.literal("aws"), target: awsTargetSchema }),
+  managedDeploymentViewSchema.extend({ provider: z.literal("gcp"), target: gcpTargetSchema }),
+])
 export const managedDeploymentListSchema = z.object({ deployments: z.array(managedDeploymentSchema) })
 export const managedDeploymentLaunchInputSchema = z.object({ kind: deploymentRunKindSchema.default("install") }).strict()
 export const managedDeploymentLaunchSchema = z.object({
@@ -155,10 +170,27 @@ export const managedDeploymentLaunchSchema = z.object({
   approvalUrl: z.string().url().nullable(),
   /** Account-checked command for the customer's cloud shell, updating the existing installer. */
   command: z.string().nullable(),
+  /**
+   * The one step the person takes in their own cloud, for agents and other API
+   * clients: approve at `url` (open_link), or open the cloud shell at `url` and
+   * run `command` (run_in_cloud_shell). OpenWork never runs it for them.
+   * The API always sends it; optional only so a Den web build deployed before
+   * the API keeps parsing launches. Make it required once both have shipped.
+   */
+  handoff: z.discriminatedUnion("action", [
+    z.object({ action: z.literal("open_link"), url: z.string().url(), command: z.null(), instructions: z.string() }),
+    z.object({ action: z.literal("run_in_cloud_shell"), url: z.string().url(), command: z.string(), instructions: z.string() }),
+  ]).optional(),
   expiresAt: z.string().datetime(),
 })
 export const managedDeploymentConfigurationSchema = z.object({
-  providers: z.array(z.object({ provider: managedDeploymentProviderSchema, available: z.boolean(), version: versionSchema.nullable() })),
+  providers: z.array(z.object({
+    provider: managedDeploymentProviderSchema,
+    available: z.boolean(),
+    version: versionSchema.nullable(),
+    reason: z.enum(["ready", "not_configured", "invalid_configuration", "not_supported", "feature_disabled"]).optional(),
+    missingFields: z.array(z.string()).optional(),
+  })),
   updateMode: z.literal("approval"),
 })
 export type ManagedDeployment = z.infer<typeof managedDeploymentSchema>

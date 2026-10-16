@@ -1,6 +1,5 @@
 /** @jsxImportSource react */
 import { isAutomationCloudDefaultModel, type AutomationModel } from "@openwork/types/automations"
-import { AutomationModelSummary } from "@/react-app/domains/automations/automation-model-button"
 import { findAutomationModelOption, type AutomationModelOption } from "@/react-app/domains/automations/automation-model-options"
 import { ProviderIcon } from "@/react-app/design-system/provider-icon"
 import { resolveExtensionIconSrc } from "@/react-app/design-system/extension-icon-src"
@@ -9,10 +8,8 @@ import { resolveExtensionIconSrc } from "@/react-app/design-system/extension-ico
 export function CalendarModelSummary(props: {
   model: AutomationModel
   options: readonly AutomationModelOption[]
-  polish?: boolean
   organizationDefaultName?: string | null
 }) {
-  if (!props.polish) return <AutomationModelSummary model={props.model} options={props.options} size="sm" />
   if (!isAutomationCloudDefaultModel(props.model)) {
     const option = findAutomationModelOption(props.options, props.model)
     if (!option) return <span className="text-muted-foreground">Model no longer available</span>

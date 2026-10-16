@@ -48,3 +48,12 @@ Notes go to the job summary and into the proof record. The trusted publisher
 adds them to the Evidence preview check; the review report shows them on each screenshot (count in the gallery,
 outlined regions, notes and code hooks in the viewer). The step is
 `continue-on-error`: a finding or a provider error never fails the job.
+`run-advisory-design-review.mjs` gives the entire advisory pass a **120-second
+wall-clock budget**, then kills its process group (including stuck model work
+and subprocesses). A three-minute step timeout is a runner-level backstop.
+Completed notes and measured findings are checkpointed atomically between
+screenshots and before model calls; completed run summaries are appended as
+runs finish. On timeout, these partial notes are uploaded with the judged
+records and a warning says remaining screenshots were not reviewed. Screenshot
+assertion judgments run first, outside this budget; their records and verdicts
+are never changed by the advisory fallback. Local design review has no cap.

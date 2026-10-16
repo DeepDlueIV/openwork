@@ -111,6 +111,11 @@ const CONNECTION_ACTION_LABELS = {
   contact_openwork: "Contact OpenWork support",
 }
 
+/** OpenWork Cloud's own capability tools, whose results the host may present natively. */
+export function isOpenworkCloudCapabilityTool(toolName: string): boolean {
+  return isConnectionTool(toolName)
+}
+
 function isConnectionTool(toolName: string): boolean {
   return OPENWORK_CLOUD_CAPABILITY_TOOLS.has(toolName) || /^openwork(?:-cloud)?_run_artifact_[A-Za-z0-9_-]+$/.test(toolName)
 }

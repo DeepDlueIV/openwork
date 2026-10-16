@@ -76,6 +76,7 @@ import {
 import { cache, type CachedOrgMember } from "../../../cache.js"
 import { db } from "../../../db.js"
 import { requestReadFor } from "../../../request-reads.js"
+import { latestConfigObjectVersions } from "../../../config-object-versions.js"
 import { keysetAfter, keysetPage, type KeysetCursor } from "../../../list-pagination.js"
 import { resolveOrganizationMemberAuthority } from "../../../organization-team-roles.js"
 import { resolveMemberPermissions, resolvePermissionsForMember } from "../../../permissions/resolve.js"
@@ -775,24 +776,7 @@ function pageItems<TItem extends { id: string }>(items: TItem[], cursor: string 
 }
 
 async function getLatestVersions(configObjectIds: ConfigObjectId[]) {
-  if (configObjectIds.length === 0) {
-    return new Map<string, ConfigObjectVersionRow>()
-  }
-
-  const rows = await db
-    .select()
-    .from(ConfigObjectVersionTable)
-    .where(inArray(ConfigObjectVersionTable.configObjectId, configObjectIds))
-    .orderBy(desc(ConfigObjectVersionTable.createdAt), desc(ConfigObjectVersionTable.id))
-
-  const latestByObjectId = new Map<string, ConfigObjectVersionRow>()
-  for (const row of rows) {
-    if (!latestByObjectId.has(row.configObjectId)) {
-      latestByObjectId.set(row.configObjectId, row)
-    }
-  }
-
-  return latestByObjectId
+  return latestConfigObjectVersions(configObjectIds)
 }
 
 function serializeVersion(row: ConfigObjectVersionRow) {
@@ -3095,10 +3079,49 @@ export async function listPluginMemberships(input: { context: PluginArchActorCon
     .select()
     .from(PluginConfigObjectTable)
     .where(input.onlyActive ? and(eq(PluginConfigObjectTable.pluginId, input.pluginId), isNull(PluginConfigObjectTable.removedAt)) : eq(PluginConfigObjectTable.pluginId, input.pluginId))
-    .orderBy(desc(PluginConfigObjectTable.createdAt))
+    .orderBy(desc(PluginConfigObjectTable.createdAt), desc(PluginConfigObjectTable.id))
 
+  return { items: await serializePluginMemberships(memberships, input), nextCursor: null }
+}
+
+/**
+ * GET /v1/plugins/:pluginId/resolved for many plugins in one request: the same
+ * viewer check and the same body per plugin, read with one query per table
+ * instead of one set of queries per plugin.
+ */
+export async function listResolvedPlugins(input: { context: PluginArchActorContext; pluginIds: PluginId[] }) {
+  const pluginIds = [...new Set(input.pluginIds)]
+  const roles = await resolvePluginArchPluginRoles(input.context, pluginIds)
+  const visibleIds = pluginIds.filter((pluginId) => roles.has(pluginId))
+  const hiddenIds = pluginIds.filter((pluginId) => !roles.has(pluginId))
+  const existingHiddenIds = new Set(hiddenIds.length === 0 ? [] : (await db
+    .select({ id: PluginTable.id })
+    .from(PluginTable)
+    .where(and(eq(PluginTable.organizationId, input.context.organizationContext.organization.id), inArray(PluginTable.id, hiddenIds))))
+    .map((row) => row.id))
+
+  const memberships = visibleIds.length === 0 ? [] : await db
+    .select()
+    .from(PluginConfigObjectTable)
+    .where(and(inArray(PluginConfigObjectTable.pluginId, visibleIds), isNull(PluginConfigObjectTable.removedAt)))
+    .orderBy(desc(PluginConfigObjectTable.createdAt), desc(PluginConfigObjectTable.id))
+  const items = await serializePluginMemberships(memberships, { includeConfigObjects: true, legacyWorkflowObjectType: true, onlyActive: true })
+
+  const plugins: Record<string, { items: typeof items; nextCursor: null }> = {}
+  for (const pluginId of visibleIds) plugins[pluginId] = { items: [], nextCursor: null }
+  for (const item of items) plugins[item.pluginId]?.items.push(item)
+  const failures: Record<string, { status: 403 | 404; error: string; message: string }> = {}
+  for (const pluginId of hiddenIds) {
+    failures[pluginId] = existingHiddenIds.has(pluginId)
+      ? { status: 403, error: "forbidden", message: "Missing viewer access for plugin." }
+      : { status: 404, error: "plugin_not_found", message: "Plugin not found." }
+  }
+  return { plugins, failures }
+}
+
+async function serializePluginMemberships(memberships: PluginMembershipRow[], input: { includeConfigObjects?: boolean; legacyWorkflowObjectType?: boolean; onlyActive?: boolean }) {
   if (!input.includeConfigObjects) {
-    return { items: memberships.map((membership) => serializeMembership(membership)), nextCursor: null }
+    return memberships.map((membership) => serializeMembership(membership))
   }
 
   const configObjects = await db.select().from(ConfigObjectTable).where(inArray(ConfigObjectTable.id, memberships.map((membership) => membership.configObjectId)))
@@ -3116,7 +3139,7 @@ export async function listPluginMemberships(input: { context: PluginArchActorCon
       ? { ...serialized, objectType: "script" }
       : serialized]
   }))
-  return { items: resolvedMemberships.map((membership) => serializeMembership(membership, byId.get(membership.configObjectId))), nextCursor: null }
+  return resolvedMemberships.map((membership) => serializeMembership(membership, byId.get(membership.configObjectId)))
 }
 
 export async function addPluginMembership(input: { configObjectId: ConfigObjectId; context: PluginArchActorContext; membershipSource?: PluginMembershipRow["membershipSource"]; pluginId: PluginId }) {
@@ -5682,7 +5705,7 @@ function validatePluginMcpRequirementAuth(input: {
   authType: PluginMcpRequirementAuthType
   credentialMode: PluginMcpRequirementCredentialMode
   oauthClient?: { clientId: string; clientSecret?: string }
-}) {
+}, options: { awaitingKey?: boolean } = {}) {
   const apiKey = normalizedPluginMcpApiKey(input.apiKey)
   if (input.oauthClient && input.authType !== "oauth") {
     throw new PluginArchRouteFailure(400, "invalid_mcp_auth", "oauthClient is only allowed when authType is oauth.")
@@ -5693,7 +5716,7 @@ function validatePluginMcpRequirementAuth(input: {
   if (input.authType === "apikey" && input.credentialMode !== "shared") {
     throw new PluginArchRouteFailure(400, "invalid_mcp_auth", "authType apikey requires credentialMode shared.")
   }
-  if (input.authType === "apikey" && !apiKey) {
+  if (input.authType === "apikey" && !apiKey && !options.awaitingKey) {
     throw new PluginArchRouteFailure(400, "invalid_mcp_auth", "authType apikey requires apiKey.")
   }
   if (input.credentialMode === "per_member" && input.authType !== "oauth") {
@@ -5792,16 +5815,22 @@ async function validateConfiguredPluginMcpConnection(input: {
     )
   } catch (error) {
     const diagnostic = externalMcpDiagnosticForResponse(error, input.connection.id, "MCP_INITIALIZE")
+    // Provider text can repeat a just-entered key; keep only server-owned fields.
     console.error("plugin_mcp_connection_validation_failed", {
       connectionId: input.connection.id,
       organizationId: input.connection.organizationId,
       connectionEndpoint: safeExternalMcpEndpointForLog(input.connection.url),
-      ...externalMcpDiagnosticForLog(error, input.connection.id, "MCP_INITIALIZE"),
+      category: diagnostic.category,
+      httpStatus: diagnostic.httpStatus ?? null,
+      referenceId: diagnostic.referenceId,
     })
+    if (diagnostic.httpStatus === 401 || diagnostic.httpStatus === 403) {
+      throw new PluginArchRouteFailure(400, "credential_rejected", `${input.connection.name} did not accept this key.`)
+    }
     throw new PluginArchRouteFailure(
       502,
       "connection_validation_failed",
-      `Could not validate "${input.connection.name}": ${diagnostic.message} Reference: ${diagnostic.referenceId}.`,
+      `Could not reach ${input.connection.name} to check it. Reference: ${diagnostic.referenceId}.`,
     )
   }
 
@@ -5985,8 +6014,11 @@ export async function configureMarketplacePluginMcpRequirement(input: {
   oauthClient?: { clientId: string; clientSecret?: string }
   pluginId: PluginId
   serverName: string
+  /** Secure keys in chat: set up a shared API-key connection now; a person adds the key next. */
+  awaitKey?: boolean
 }) {
-  validatePluginMcpRequirementAuth(input)
+  const awaitingKey = input.awaitKey === true && input.authType === "apikey" && !normalizedPluginMcpApiKey(input.apiKey)
+  validatePluginMcpRequirementAuth(input, { awaitingKey })
   const organizationId = input.context.organizationContext.organization.id
   const requirement = await activePluginMcpRequirement({
     configObjectId: input.configObjectId,
@@ -6043,7 +6075,8 @@ export async function configureMarketplacePluginMcpRequirement(input: {
   const connection = connectionResult.connection
 
   try {
-    await validateConfiguredPluginMcpConnection({ authType: input.authType, connection })
+    // A connection still waiting for its key is checked when the key is saved.
+    if (!(awaitingKey && !connection.apiKey)) await validateConfiguredPluginMcpConnection({ authType: input.authType, connection })
   } catch (error) {
     if (connectionResult.created) {
       await deleteExternalMcpConnection({ connectionId: connection.id, organizationId })
@@ -6089,6 +6122,8 @@ export async function configureMarketplacePluginMcpRequirement(input: {
   const refreshedConnection = await getExternalMcpConnection({ connectionId: connection.id, organizationId })
 
   return {
+    awaitingKey: awaitingKey && !(refreshedConnection ?? connection).apiKey,
+    connectionRow: refreshedConnection ?? connection,
     binding: serializePluginMcpRequirementBinding(binding),
     connection: serializePluginMcpRequirementConnection(refreshedConnection ?? connection),
     links: {

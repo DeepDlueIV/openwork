@@ -325,7 +325,6 @@ export function ScimScreen() {
         icon={Shield}
         title="SCIM"
         description="Provision organization members from your identity provider with an org-scoped SCIM connector."
-        colors={["#ECFEFF", "#155E75", "#06B6D4", "#A5F3FC"]}
       >
         <div className="rounded-[28px] border border-gray-200 bg-white px-6 py-10 text-[15px] text-gray-500">
           Loading organization details...
@@ -339,7 +338,6 @@ export function ScimScreen() {
       icon={Shield}
       title="SCIM"
       description="Create one SCIM connector per workspace, then give your identity provider the base URL and bearer token shown here."
-      colors={["#ECFEFF", "#155E75", "#06B6D4", "#A5F3FC"]}
     >
       {!access.canViewScim ? (
         <div className="rounded-[28px] border border-[var(--dls-border)] bg-[var(--dls-hover)] px-6 py-5 text-[14px] text-[var(--dls-text-primary)]">

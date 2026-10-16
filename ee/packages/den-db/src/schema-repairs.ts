@@ -194,6 +194,26 @@ async function ensureInferenceOrgLimitAmountNullable(executor: Executor) {
   console.log("[den-db] inference_org_limit_policies.limit_amount made nullable")
 }
 
+async function ensureOrgDefaultModelTeamIndex(executor: Executor) {
+  const tableName = "org_default_model"
+  const indexName = "org_default_model_team_id"
+  if (!(await tableExists(executor, tableName))) {
+    return
+  }
+  // 0145 once created the table and index in separate statements; a database
+  // that kept the table after the index failed is missing this index.
+  const rows = await executor.query(
+    `SELECT 1 AS present FROM information_schema.STATISTICS
+     WHERE table_schema = DATABASE() AND table_name = ? AND index_name = ? LIMIT 1`,
+    [tableName, indexName],
+  )
+  if (rows.length > 0) {
+    return
+  }
+  await runDdl(executor, `CREATE INDEX \`${indexName}\` ON \`${tableName}\` (\`team_id\`)`)
+  console.log(`[den-db] ${tableName}.team_id index created`)
+}
+
 export async function ensureSchemaRepairs(executor: Executor): Promise<void> {
   for (const repair of ORGANIZATION_REPAIRS) {
     if (!(await tableExists(executor, repair.table))) {
@@ -211,4 +231,5 @@ export async function ensureSchemaRepairs(executor: Executor): Promise<void> {
   }
 
   await ensureInferenceOrgLimitAmountNullable(executor)
+  await ensureOrgDefaultModelTeamIndex(executor)
 }

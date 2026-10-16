@@ -1,6 +1,7 @@
 import type { ComputerProviderConfig } from "@openwork-ee/headless-computer"
 import { dirname, join } from "node:path"
 import { z } from "zod"
+import { parseDsn, type ErrorReportingConfig } from "./error-reporting.js"
 
 /** Allow https anywhere, and plain http only for loopback development hosts. */
 function isSafeUrl(value: string) {
@@ -17,6 +18,12 @@ const csv = z
   .string()
   .optional()
   .transform((value) => (value ? value.split(",").map((item) => item.trim()).filter(Boolean) : []))
+
+/** Empty means unset, as an env file's `NAME=` line usually intends. */
+const optionalText = z
+  .string()
+  .optional()
+  .transform((value) => value?.trim() || undefined)
 
 const configSchema = z.object({
   HEADLESS_API_TOKEN: z.string().min(32, "HEADLESS_API_TOKEN must be at least 32 characters"),
@@ -82,6 +89,15 @@ const configSchema = z.object({
   HEADLESS_COMPUTER_SNAPSHOT: z.string().min(1).optional(),
   HEADLESS_COMPUTER_PAUSE_SECONDS: z.coerce.number().int().min(10).default(300),
   HEADLESS_COMPUTER_KEEP_DAYS: z.coerce.number().int().min(1).max(365).default(14),
+  /**
+   * Optional error reports to Sentry (see error-reporting.ts). Unset, nothing is sent anywhere: self-hosted runners
+   * ship without one. The release defaults to `headless-runner@<HEADLESS_RUNNER_VERSION>`.
+   */
+  HEADLESS_SENTRY_DSN: optionalText.refine((value) => value === undefined || parseDsn(value) !== null, "must be a Sentry DSN (https://<key>@<host>/<project>)"),
+  HEADLESS_SENTRY_ENVIRONMENT: optionalText,
+  HEADLESS_SENTRY_RELEASE: optionalText,
+  /** Set by the runner image at build time; tagged on error reports. */
+  HEADLESS_RUNNER_VERSION: optionalText,
 })
 
 export type Config = {
@@ -111,6 +127,8 @@ export type Config = {
     | { kind: "vercel"; token: string }
   fileLimits: { maxFileBytes: number; maxSessionBytes: number }
   computer?: ComputerProviderConfig & { scope?: string; idlePauseMs: number; keepDays: number }
+  /** Where error reports go; unset (no DSN) sends none. */
+  errorReporting?: ErrorReportingConfig
 }
 
 export function loadConfig(env: Record<string, string | undefined> = process.env): Config {
@@ -145,6 +163,18 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     files: filesConfig(value),
     fileLimits: { maxFileBytes: value.HEADLESS_FILES_MAX_BYTES, maxSessionBytes: value.HEADLESS_FILES_MAX_SESSION_BYTES },
     computer: computerConfig(value),
+    errorReporting: errorReportingConfig(value),
+  }
+}
+
+function errorReportingConfig(value: z.infer<typeof configSchema>): Config["errorReporting"] {
+  if (!value.HEADLESS_SENTRY_DSN) return undefined
+  const version = value.HEADLESS_RUNNER_VERSION && value.HEADLESS_RUNNER_VERSION !== "dev" ? value.HEADLESS_RUNNER_VERSION : undefined
+  return {
+    dsn: value.HEADLESS_SENTRY_DSN,
+    environment: value.HEADLESS_SENTRY_ENVIRONMENT,
+    release: value.HEADLESS_SENTRY_RELEASE ?? (version ? `headless-runner@${version}` : undefined),
+    runnerVersion: value.HEADLESS_RUNNER_VERSION,
   }
 }
 

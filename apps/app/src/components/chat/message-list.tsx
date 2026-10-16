@@ -1,6 +1,9 @@
 "use memo";
 
-import { appCreationRuns } from "@/react-app/domains/apps/app-creation-progress"
+import { useOfflineRecoveryStore } from "@/react-app/domains/session/status/offline-recovery-store";
+import { isConnectivityError } from "@/react-app/domains/session/status/use-session-offline-recovery";
+import { appBuildActivity, appBuildInProgress, appCreationRuns } from "@/react-app/domains/apps/app-creation-progress"
+import { useAppBuildProgressEnabled } from "@/react-app/domains/apps/use-app-build-progress-feature"
 import { BuiltAppPreviewSync } from "@/react-app/domains/apps/built-app-chat-preview"
 import { builtAppSummary } from "@/react-app/domains/apps/built-mcp-app-model"
 import { AppBuilderStep } from "./app-builder-step"
@@ -38,6 +41,8 @@ import { useOpenTargets } from "@/lib/target-provider"
 import { openTargetFromUrl } from "@/react-app/domains/session/artifacts/open-target"
 import { presentOpencodeSessionError, sessionErrorPresentationFromUIMessage } from "@/react-app/domains/session/sync/session-error"
 import { TaskRecovery } from "./task-recovery"
+import { BackgroundTaskNotice, BackgroundTasksLabel, BackgroundTasksMessage, backgroundShellNoticeFromMessage } from "./background-tasks"
+import { sessionBackgroundShells, useBackgroundShellStore, type BackgroundShell } from "@/react-app/domains/session/status/background-shell-store"
 import { messageAutoAccessWall } from "@/app/lib/inference-access"
 import { AutoAccessNotice } from "@/react-app/domains/cloud/auto-access-ui"
 import { rejectedRecoveryFromMessage } from "@/react-app/domains/session/sync/rejected-turn"
@@ -100,6 +105,8 @@ import { Tool } from "@/components/ui/tool"
 import { CapabilityCallLine } from "@/components/chat/capability-call-line"
 import { CodeModeTool, isSilentCodeModePart } from "@/components/chat/code-mode-tool"
 import { ConnectionCard } from "@/components/chat/connection-card"
+import { CredentialPromptCard } from "@/components/chat/credential-prompt-card"
+import { credentialPromptCall } from "@/components/chat/credential-prompt"
 import { connectionFromChatToolPart } from "@/components/tools/error-attribution"
 import { isReservedConnectionQuestion, type ChatConnectionDecisionBinding } from "@/react-app/domains/session/surface/mcp-chat-reconnect"
 import { codeModeToolCalls } from "@/lib/code-mode-tools"
@@ -107,6 +114,9 @@ import { dedupeRenderedTurnErrors } from "@/react-app/domains/session/sync/trans
 import { builtMcpAppId, hasPreservedMcpAppResult, isNativeConnectionAppLaunch, McpAppFrame } from "@/components/chat/mcp-app-frame"
 import { ReasoningBlock } from "@/components/chat/reasoning-block"
 import { SubagentRunLine } from "@/components/chat/subagent-run-line"
+import { RemoteThreadRunLine } from "@/components/chat/remote-thread-run-line"
+import { isRemoteThreadStatusCheck, remoteThreadFromToolPart, type RemoteThreadStart } from "@/lib/remote-session-thread"
+import { useRemoteThreadsEnabled, useReviveRemoteThread } from "@/react-app/domains/session/remote-threads/remote-thread-store"
 import { ToolAggregateGroup } from "@/components/chat/tool-aggregate-group"
 import {
   CurrentToolLifecycleProvider,
@@ -151,6 +161,17 @@ const SEARCH_HIGHLIGHT_MARK_CLASS = "rounded px-0.5 bg-amber-4/70 text-current"
 const COLLAPSED_STEP_RUN_MIN_ROWS = 4
 
 const AppCreationPartsContext = React.createContext<ReadonlySet<string>>(new Set())
+/**
+ * While an App is being built (appBuildProgress), its panel is the one live
+ * thing in the chat: thinking and plain tool rows fold away and the panel
+ * shows the latest of them. Approvals, connection cards, questions and
+ * sub-agents still show.
+ */
+const AppPanelLiveContext = React.createContext(false)
+const AppPanelFoldContext = React.createContext(false)
+/** Remote task rows a folded turn shows below its fold; inside it they render nothing. */
+const NO_PINNED_REMOTE_THREADS: ReadonlySet<string> = new Set()
+const PinnedRemoteThreadsContext = React.createContext<ReadonlySet<string>>(NO_PINNED_REMOTE_THREADS)
 const ParentRunActiveContext = React.createContext(true)
 
 function MessageTimestamp({ message, className }: { message: UIMessage; className?: string }) {
@@ -237,20 +258,53 @@ function isReservedConnectionQuestionPart(part: ToolUIPart | DynamicToolUIPart):
 
 const ToolMessageInner = ({ part }: ToolMessageProps) => {
   const { connectorIdentities, onMcpReconnect, onMcpReopenAuthorization, connectionQuestionToolCallId, getConnectionDecision } = useMessageList()
+  const remoteThreads = useRemoteThreadsEnabled()
+  const pinnedRemoteThreads = React.useContext(PinnedRemoteThreadsContext)
+  // The agent following up on a task the chat shows makes it run again.
+  useReviveRemoteThread(remoteThreads && part.type === "dynamic-tool" ? part : null)
   const parentActive = React.useContext(ParentRunActiveContext)
   const resolveLifecycle = useCurrentToolLifecycleResolver()
   const lifecycle = resolveLifecycle(part.toolCallId, isToolPartInFlight(part))
   const connectionCardParts = React.useContext(ConnectionCardPartsContext)
   const appCreationParts = React.useContext(AppCreationPartsContext)
+  const appPanelFold = React.useContext(AppPanelFoldContext)
   if (appCreationParts.has(part.toolCallId)) return null
   if (part.toolCallId === connectionQuestionToolCallId || isReservedConnectionQuestionPart(part)) return null
+  const promptCall = credentialPromptCall(part)
+  const remoteStart = remoteThreads && part.type === "dynamic-tool" ? remoteThreadFromToolPart(part) : null
+  const calls = part.type === "dynamic-tool" ? codeModeToolCalls(part) : null
+  const remoteStarts = remoteThreads && calls && part.type === "dynamic-tool" ? (codeModeCallsWithResults(part) ?? []).flatMap((call) => {
+    const start = remoteThreadFromToolPart(call)
+    return start ? [{ start, call }] : []
+  }) : []
+  const foldTool = appPanelFold && lifecycle !== "waiting" && !connectionCardParts.has(part.toolCallId) && !promptCall && !isTaskToolPart(part)
+  if (foldTool && !remoteStart && remoteStarts.length === 0) return null
 
   // Delegated work has its own lifecycle, even after a parent follow-up/error.
   if (isTaskToolPart(part)) return <SubagentRunLine part={part} parentActive={parentActive} />
 
+  // So does a task started on another computer: it reads as a sub-agent.
+  if (remoteStart && part.type === "dynamic-tool") {
+    return pinnedRemoteThreads.has(part.toolCallId) ? null : <RemoteThreadRunLine start={remoteStart} part={part} />
+  }
+
   if (part.type === "dynamic-tool") {
-    const calls = codeModeToolCalls(part)
-    if (calls) return <CodeModeTool part={part} calls={calls} lifecycle={lifecycle} connectors={connectorIdentities} />
+    if (calls && remoteStarts.length > 0) {
+      const started = new Set(remoteStarts.map(({ call }) => call.toolCallId))
+      return (
+        <div className="flex min-w-0 flex-col gap-1">
+          {!foldTool && <CodeModeTool part={part} calls={calls.filter((call) => !started.has(call.toolCallId))} lifecycle={lifecycle} connectors={connectorIdentities} />}
+          {promptCall && <CredentialPromptCard part={promptCall} continueToolCallId={part.toolCallId} />}
+          {remoteStarts.filter(({ call }) => !pinnedRemoteThreads.has(call.toolCallId))
+            .map(({ start, call }) => <RemoteThreadRunLine key={start.key} start={start} part={call} />)}
+        </div>
+      )
+    }
+    if (calls) {
+      const script = <CodeModeTool part={part} calls={calls} lifecycle={lifecycle} connectors={connectorIdentities} />
+      // A key the script's Den call asked for is entered in the host's private field.
+      return promptCall ? <>{script}<CredentialPromptCard part={promptCall} continueToolCallId={part.toolCallId} /></> : script
+    }
   }
 
   if (lifecycle === "waiting") {
@@ -342,6 +396,11 @@ const ToolMessageInner = ({ part }: ToolMessageProps) => {
     return <ConnectionCard part={part} allowDiscovery={Boolean(getConnectionDecision?.(part.toolCallId))} />
   }
 
+  // A key an agent asked for is entered in the host's private field, never in chat.
+  if (part.type === "dynamic-tool" && promptCall) {
+    return <CredentialPromptCard part={promptCall} continueToolCallId={part.toolCallId} />
+  }
+
   // Failed calls use the same sentence line with the "failures are
   // instructions" treatment (inline Reconnect/Retry).
   if (part.type === "dynamic-tool") {
@@ -366,11 +425,13 @@ const ToolMessageInner = ({ part }: ToolMessageProps) => {
 
 const isEmptyMessage = (message: UIMessage): boolean => message.parts.length === 0
 
-function withoutSilentSteps(messages: UIMessage[]): UIMessage[] {
+function withoutSilentSteps(messages: UIMessage[], remoteThreads: boolean): UIMessage[] {
   let changed = false
   const next = messages.flatMap((message) => {
     if (message.role !== "assistant") return [message]
-    const parts = message.parts.filter((part) => !(part.type === "dynamic-tool" && isSilentCodeModePart(part)))
+    // With tasks on other computers shown live, the agent's own checks on them are plumbing.
+    const parts = message.parts.filter((part) => !(part.type === "dynamic-tool"
+      && (isSilentCodeModePart(part) || remoteThreads && isRemoteThreadStatusCheck(part))))
     if (parts.length === message.parts.length) return [message]
     changed = true
     return parts.length > 0 ? [{ ...message, parts }] : []
@@ -1036,8 +1097,10 @@ type MessageComponentProps = {
 
 const MessageComponent = React.memo(
   ({ message, isLastMessage, isStreaming, isLastStep, hideReasoning }: MessageComponentProps) => {
+    const connectivityIssue = useOfflineRecoveryStore((state) => state.enabled && state.issue !== null);
     if (isSessionErrorMessage(message)) {
       const presentation = sessionErrorPresentationFromUIMessage(message)
+      if (connectivityIssue && isConnectivityError(presentation?.kind)) return null;
       if (presentation?.autoAccessWall) return <TranscriptAutoAccessNotice wall={presentation.autoAccessWall} />
       return (
         <ErrorMessage
@@ -1053,6 +1116,9 @@ const MessageComponent = React.memo(
         />
       )
     }
+
+    const backgroundShellNotice = backgroundShellNoticeFromMessage(message)
+    if (backgroundShellNotice) return <BackgroundTaskNotice message={message} notice={backgroundShellNotice} />
 
     if (isEmptyMessage(message)) {
       return null
@@ -1086,13 +1152,35 @@ function TranscriptAutoAccessNotice({ wall }: { wall: NonNullable<ReturnType<typ
 
 MessageComponent.displayName = "MessageComponent"
 
-const LoadingMessage = React.memo(({ elapsedSeconds, starting }: { elapsedSeconds: number; starting: boolean }) => (
+const NO_BACKGROUND_SHELLS: BackgroundShell[] = []
+
+const LoadingMessage = React.memo(({ elapsedSeconds, starting, backgroundShells = NO_BACKGROUND_SHELLS, backgroundStale = false }: {
+  elapsedSeconds: number
+  starting: boolean
+  /** Commands left running in the background share this line while the turn runs. */
+  backgroundShells?: BackgroundShell[]
+  backgroundStale?: boolean
+}) => {
+  const background = backgroundShells.length > 0 ? (
+    <>
+      <span aria-hidden="true"> · </span>
+      <BackgroundTasksLabel shells={backgroundShells} stale={backgroundStale} shimmer={false} />
+    </>
+  ) : null
+  return (
     <Message className="mx-auto flex w-full max-w-3xl flex-col items-start gap-2 px-2 md:px-10">
       <div role={starting ? "status" : undefined} data-loading-message={starting ? "starting" : "working"} className="py-1 text-sm text-muted-foreground">
-        <span className="ow-text-shimmer tabular-nums">{starting ? "Starting…" : `Working ${formatElapsedSeconds(elapsedSeconds)}`}</span>
+        {/* One shimmer sweeps the whole line, so Working and the count move as
+            one. A count the connection cannot confirm stays outside it, still. */}
+        <span className="ow-text-shimmer tabular-nums">
+          {starting ? "Starting…" : `Working ${formatElapsedSeconds(elapsedSeconds)}`}
+          {backgroundStale ? null : background}
+        </span>
+        {backgroundStale ? background : null}
       </div>
     </Message>
-))
+  )
+})
 
 LoadingMessage.displayName = "LoadingMessage"
 
@@ -1218,12 +1306,15 @@ const RetryMessage = React.memo(({ status }: RetryMessageProps) => {
     : `Retrying · attempt ${status.attempt}`
   const action = status.action
   const freeModelLimit = action?.reason === "free_tier_limit"
+  const connectivityIssue = useOfflineRecoveryStore((state) => state.enabled && state.issue !== null);
   const presentation = presentOpencodeSessionError({ name: "APIError", data: { message: status.message } })
   // Transport failures are the engine reconnecting, not a failure yet: say so
   // and show progress instead of echoing the raw fetch error.
   const reconnecting = !freeModelLimit && !action
     && ["network-unavailable", "provider-unreachable", "provider-connection-dropped"].includes(presentation.kind)
   const progress = seconds > 0 ? `Attempt ${status.attempt}, next try in ${seconds}s` : `Attempt ${status.attempt}`
+
+  if (connectivityIssue && isConnectivityError(presentation.kind)) return null;
 
   return (
     <TaskRecovery state="retrying" testId="session-retrying"
@@ -1259,7 +1350,7 @@ function getRenderableMessage(message: UIMessage) {
  * Running steps only ever grow. When a finished step folds its live detail
  * before the next step's row arrives, the area briefly got shorter and the
  * chat jumped; holding the tallest height seen during the run keeps it still.
- * The hold ends when the turn folds (this element unmounts).
+ * The hold ends when the turn folds or the App panel replaces these steps.
  */
 function LiveSteps({ children, active }: { children: React.ReactNode; active: boolean }) {
   const ref = React.useRef<HTMLDivElement>(null)
@@ -1346,7 +1437,6 @@ interface AssistantMessageGroupProps {
   isStreaming: boolean
   /** Newline-joined tool call ids of each built App's newest card in the conversation. */
   newestAppCallIds: string
-  creationRequested: boolean
 }
 
 function isMcpAppFramePart(part: UIMessage["parts"][number]): part is DynamicToolUIPart {
@@ -1354,6 +1444,33 @@ function isMcpAppFramePart(part: UIMessage["parts"][number]): part is DynamicToo
     && (part.state === "output-available" || part.state === "output-error")
     && hasPreservedMcpAppResult(part)
     && !isNativeConnectionAppLaunch(part)
+}
+
+/**
+ * A script's calls with their results. A one-call script whose call kept no
+ * result of its own returned that call's result, as its row already shows.
+ */
+function codeModeCallsWithResults(part: DynamicToolUIPart): DynamicToolUIPart[] | null {
+  const calls = codeModeToolCalls(part)
+  const only = calls?.length === 1 ? calls[0] : undefined
+  if (!only || only.state !== "output-available" || only.output !== undefined || part.state !== "output-available") return calls
+  return [{ ...only, output: part.output }]
+}
+
+/** Tasks a group's steps started on other computers, directly or from a script. */
+function collectRemoteThreadStarts(items: UIMessageWithIndex[]) {
+  const starts = new Map<string, { start: RemoteThreadStart; part: DynamicToolUIPart }>()
+  for (const item of items) {
+    if (item.message.role !== "assistant" || isSessionErrorMessage(item.message)) continue
+    for (const part of item.message.parts) {
+      if (part.type !== "dynamic-tool") continue
+      for (const call of codeModeCallsWithResults(part) ?? [part]) {
+        const start = remoteThreadFromToolPart(call)
+        if (start && !starts.has(start.key)) starts.set(start.key, { start, part: call })
+      }
+    }
+  }
+  return [...starts.values()]
 }
 
 function collectMcpAppParts(items: UIMessageWithIndex[]): DynamicToolUIPart[] {
@@ -1390,7 +1507,6 @@ function MessageGroup({
   isLastGroup,
   isStreaming,
   newestAppCallIds,
-  creationRequested,
 }: AssistantMessageGroupProps) {
   const { onRevertToUserMessage, onForkAtMessage, forkingMessageId, showThinking, readOnly, getConnectionDecision } = useMessageList()
   const connectionCardParts = React.useMemo(() => connectionCardPartIds(items, getConnectionDecision), [items, getConnectionDecision])
@@ -1401,9 +1517,17 @@ function MessageGroup({
   // silently corrupt fork/revert boundaries.
   const lastRealItem = items.findLast((item) => !isSessionErrorMessage(item.message))
   const parentActive = React.useContext(ParentRunActiveContext)
-  const creationRuns = React.useMemo(() => appCreationRuns(items.map(item => item.message), creationRequested), [items, creationRequested])
+  const panelLive = React.useContext(AppPanelLiveContext) && isLastGroup
+  const creationLive = (parentActive || panelLive) && isLastGroup && !readOnly
+  const creationRuns = React.useMemo(() => appCreationRuns(items.map(item => item.message), creationLive), [items, creationLive])
   const creationParts = React.useMemo(() => new Set(creationRuns.flatMap(run => [...(run.executions ?? []).map(part => part.toolCallId), ...(run.discoveries ?? []).map(part => part.toolCallId), ...(run.attempts ?? []).map(part => part.toolCallId), ...(run.preparation ? [run.preparation.toolCallId] : []), ...run.builds.map(part => part.toolCallId)])), [creationRuns])
-  const isLiveGroup = isStreaming && isLastGroup
+  const isLiveGroup = (isStreaming || (creationLive && creationRuns.length > 0)) && isLastGroup
+  const panelActivity = React.useMemo(
+    () => panelLive ? appBuildActivity(items.map(item => item.message), creationParts, showThinking) : null,
+    [panelLive, items, creationParts, showThinking],
+  )
+  const remoteThreads = useRemoteThreadsEnabled()
+  const remoteThreadStarts = React.useMemo(() => remoteThreads ? collectRemoteThreadStarts(items) : [], [items, remoteThreads])
 
   if (!lastItem || isMessageEmptyGroup(items)) {
     return null;
@@ -1484,6 +1608,10 @@ function MessageGroup({
   // A short finished run reads fine as a list, so only long ones fold away.
   const collapseSteps =
     !isLiveGroup && stepItems.length > 0 && stepRowCount > COLLAPSED_STEP_RUN_MIN_ROWS
+  // A task on another computer outlives the turn that started it and may still
+  // need the person, so its row stays in view below a folded run.
+  const pinnedRemoteThreads = collapseSteps ? remoteThreadStarts : []
+  const pinnedRemoteIds = pinnedRemoteThreads.length > 0 ? new Set(pinnedRemoteThreads.map(({ part }) => part.toolCallId)) : NO_PINNED_REMOTE_THREADS
   const replyStartedAt = stepsStartedAt ?? (lastRealItem ? getMessageCreated(lastRealItem.message) : null)
   const replySummaryLabel = replyStartedAt !== null && stepsEndedAt !== null && stepsEndedAt > replyStartedAt
     ? `Worked for ${formatToolCallDuration(stepsEndedAt - replyStartedAt)}${stepRowCount ? ` · ${stepRowCount} ${stepRowCount === 1 ? "step" : "steps"}` : ""}`
@@ -1525,6 +1653,11 @@ function MessageGroup({
     let run: { parts: AnyToolPart[]; key: string } | null = null
     const flush = () => {
       if (!run) return
+      // Plain command, read and search runs fold into the App panel while it is live.
+      if (panelLive) {
+        run = null
+        return
+      }
       nodes.push(
         <div key={`aggregate-${run.key}`}>
           <Message className="mx-auto flex w-full max-w-3xl flex-col items-start gap-2 px-2 md:px-10">
@@ -1554,6 +1687,8 @@ function MessageGroup({
   return (
     <DevProfiler id={`MessageGroup:${lastItem.message.id}`}>
       <AppCreationPartsContext.Provider value={creationParts}>
+      <AppPanelFoldContext.Provider value={panelLive}>
+      <PinnedRemoteThreadsContext.Provider value={pinnedRemoteIds}>
       <ConnectionCardPartsContext.Provider value={connectionCardParts}>
       <div className="flex flex-col gap-2 group/message-group">
       {/* The scroll area keeps the same 8px rhythm the parts inside a single
@@ -1571,14 +1706,21 @@ function MessageGroup({
             </div>
           </CompletedStepRun>
         ) : (
-          <LiveSteps active={isLiveGroup}>
-            {renderItems(stepItems, 0)}
+          <LiveSteps active={isLiveGroup && !panelLive}>
+            {/* The App panel replaces ordinary steps. Release their held height
+                as they fold away, otherwise an empty rail pushes the panel down. */}
+            {renderItems(stepItems, 0, panelLive)}
           </LiveSteps>
         )
       ) : null}
-      {creationRuns.map(run => <Message key={`creation-${run.id}`} className="mx-auto flex w-full max-w-3xl flex-col px-2 md:px-10"><AppBuilderStep run={run} active={parentActive && isLastGroup && !readOnly && (run === creationRuns.at(-1) || Boolean(run.preparation && isToolPartInFlight(run.preparation)) || run.builds.some(isToolPartInFlight))} /></Message>)}
+      {creationRuns.map(run => <Message key={`creation-${run.id}`} className="mx-auto flex w-full max-w-3xl flex-col px-2 md:px-10"><AppBuilderStep run={run} startedAt={getMessageCreated(items[0]!.message)} completedAt={getMessageCompleted(lastItem.message)} activity={run === creationRuns.at(-1) ? panelActivity : null} active={creationLive && (run === creationRuns.at(-1) || Boolean(run.preparation && isToolPartInFlight(run.preparation)) || run.builds.some(isToolPartInFlight))} /></Message>)}
       {mcpAppParts.map(appFrame)}
-      {renderItems(proseItems, stepItems.length, collapseSteps)}
+      {pinnedRemoteThreads.map(({ start, part }) => (
+        <Message key={`remote-thread-${start.key}`} className="mx-auto flex w-full max-w-3xl flex-col px-2 md:px-10">
+          <RemoteThreadRunLine start={start} part={part} />
+        </Message>
+      ))}
+      {renderItems(proseItems, stepItems.length, collapseSteps || panelLive)}
       {lastTextMessage && !isStreaming && (
         <div className={cn("mx-auto flex w-full max-w-3xl flex-wrap items-center gap-2 px-2 transition-opacity duration-150 group-hover/message-group:opacity-100 max-lg:opacity-100 pointer-coarse:opacity-100 md:px-8", forkingMessageId && forkingMessageId === lastRealItem?.message.id ? "opacity-100" : "opacity-0")}>
           <MessageActions className="flex gap-0">
@@ -1618,6 +1760,8 @@ function MessageGroup({
       )}
       </div>
       </ConnectionCardPartsContext.Provider>
+      </PinnedRemoteThreadsContext.Provider>
+      </AppPanelFoldContext.Provider>
       </AppCreationPartsContext.Provider>
     </DevProfiler>
   )
@@ -1626,7 +1770,6 @@ function MessageGroup({
 function sameMessageGroupProps(left: AssistantMessageGroupProps, right: AssistantMessageGroupProps): boolean {
   return left.isLastGroup === right.isLastGroup
     && left.isStreaming === right.isStreaming
-    && left.creationRequested === right.creationRequested
     && left.newestAppCallIds === right.newestAppCallIds
     && left.items.length === right.items.length
     && left.items.every((item, index) => (
@@ -1685,8 +1828,22 @@ export function shouldShowRunReconnecting(status: ThreadStatus, syncDegraded: bo
   return status === "submitted" || status === "streaming" || status === "retrying"
 }
 
-export function MessageList({ messages, messageIdReplacements, status, activityStatus, retryStatus, syncHealth, viewport, sessionErrorHandled = false }: MessageListProps) {
+export function MessageList({ messages: transcript, messageIdReplacements, status, activityStatus, retryStatus, syncHealth, viewport, sessionErrorHandled = false }: MessageListProps) {
   const { workspaceId, sessionId, onStopSubagentSession } = useMessageList()
+  const backgroundTasksEnabled = useBackgroundShellStore((state) => state.enabled)
+  const runningShells = useBackgroundShellStore((state) => state.booksByWorkspaceId[workspaceId]?.running)
+  const backgroundShells = React.useMemo(
+    () => backgroundTasksEnabled ? sessionBackgroundShells(runningShells, sessionId) : [],
+    [backgroundTasksEnabled, runningShells, sessionId],
+  )
+  // With the feature off, completion rows cached earlier must not change the
+  // transcript's grouping either.
+  const messages = React.useMemo(
+    () => backgroundTasksEnabled || !transcript.some((message) => message.role === "system")
+      ? transcript
+      : transcript.filter((message) => !backgroundShellNoticeFromMessage(message)),
+    [backgroundTasksEnabled, transcript],
+  )
   const [stoppingBackground, setStoppingBackground] = React.useState(false)
   const workspace = useWorkspaceMaybe()
   const tasks = React.useMemo(() => activeDelegatedTasks(messages), [messages])
@@ -1710,6 +1867,10 @@ export function MessageList({ messages, messageIdReplacements, status, activityS
   }))
   const isStreaming = status === "streaming" || status === "retrying"
   const runActive = status === "streaming" || status === "retrying"
+  const appBuildStaged = useAppBuildProgressEnabled()
+  const appRunActive = runActive || activityStatus === "thinking" || activityStatus === "responding" || activityStatus === "compacting" || activityStatus === "waiting"
+  // The App panel replaces the Working line and the thinking rows while it builds.
+  const appPanelLive = React.useMemo(() => appBuildStaged && (appRunActive || status === "submitted") && appBuildInProgress(messages), [appBuildStaged, appRunActive, status, messages])
   const syncDegraded = syncHealth?.degraded === true
   const activityActive = runActive || tasks.length > 0
   const runStartedAtRef = React.useRef<number | null>(null)
@@ -1749,7 +1910,13 @@ export function MessageList({ messages, messageIdReplacements, status, activityS
   }, [activityActive, runStartedAt, syncDegraded])
   const latestUserMessageId = React.useMemo(() => messages.findLast((message) => message.role === "user")?.id, [messages])
   // Steps that render nothing are removed before layout, so they leave no gap.
-  const items = React.useMemo(() => groupMessages(dedupeRenderedTurnErrors(withoutSilentSteps(messages)), status), [messages, status]);
+  const remoteThreads = useRemoteThreadsEnabled()
+  const visibleMessages = React.useMemo(() => dedupeRenderedTurnErrors(withoutSilentSteps(messages, remoteThreads)), [messages, remoteThreads]);
+  const items = React.useMemo(() => groupMessages(visibleMessages, status), [visibleMessages, status]);
+  // groupMessages indexes the visible transcript. Comparing those positions
+  // with the unfiltered transcript marks the live turn historical as soon as
+  // a silent script or duplicate error is removed.
+  const lastVisibleIndex = visibleMessages.length - 1;
   const error = useSessionErrorMessage();
   const hasSessionErrorMessage = React.useMemo(() => messages.some(isSessionErrorMessage), [messages])
   const latestAssistantToolParts = React.useMemo(
@@ -1779,7 +1946,8 @@ export function MessageList({ messages, messageIdReplacements, status, activityS
   )
 
   return (
-    <ParentRunActiveContext.Provider value={runActive}>
+    <ParentRunActiveContext.Provider value={appRunActive}>
+    <AppPanelLiveContext.Provider value={appPanelLive}>
     <BuiltAppPreviewSync key={sessionId} messages={messages} active={runActive}>
     <CurrentToolLifecycleProvider
       activityStatus={activityStatus}
@@ -1800,17 +1968,16 @@ export function MessageList({ messages, messageIdReplacements, status, activityS
             <MemoizedMessageGroup
               key={item.messages[0]?.message.id ?? "empty-assistant-group"}
               items={item.messages}
-              isLastGroup={item.messages.at(-1)?.index === messages.length - 1}
-              isStreaming={isStreaming && item.messages.at(-1)?.index === messages.length - 1}
+              isLastGroup={item.messages.at(-1)?.index === lastVisibleIndex}
+              isStreaming={isStreaming && item.messages.at(-1)?.index === lastVisibleIndex}
               newestAppCallIds={newestAppCallIds}
-              creationRequested={messages.slice(0, item.messages[0]?.index ?? 0).findLast(message => message.role === "user")?.parts.some(part => part.type === "text" && /\b(?:build|create|make|edit|update)\b[\s\S]*\b(?:mcp\s+)?app\b/i.test(part.text)) ?? false}
             />
           )
         }
 
-        const isLastMessage = item.index === messages.length - 1
+        const isLastMessage = item.index === lastVisibleIndex
         const isLastStep =
-          !messages[item.index + 1] || messages[item.index + 1].role !== item.message.role
+          !visibleMessages[item.index + 1] || visibleMessages[item.index + 1].role !== item.message.role
 
         return (
           <StandaloneMessage
@@ -1843,13 +2010,19 @@ export function MessageList({ messages, messageIdReplacements, status, activityS
             </button>
           ) : null}
         </div>}
-        {showLoading && <LoadingMessage elapsedSeconds={runElapsedSeconds} starting={status === "submitted"} />}
+        {/* One rule for commands left running in the background: while the turn
+            runs, the count joins its Working line; otherwise it takes that
+            line's place on its own. One line either way, so the chat does not
+            move when the turn ends and the count stays. */}
+        {showLoading && !appPanelLive && <LoadingMessage elapsedSeconds={runElapsedSeconds} starting={status === "submitted"} backgroundShells={backgroundShells} backgroundStale={syncDegraded} />}
         {showReconnecting && <ReconnectingMessage lastConfirmedAt={syncHealth?.lastConfirmedAt ?? null} />}
+        {!showLoading && backgroundShells.length > 0 && <BackgroundTasksMessage shells={backgroundShells} stale={syncDegraded} />}
         {retryStatus ? <RetryMessage status={retryStatus} /> : null}
         {error && !hasSessionErrorMessage && !sessionErrorHandled ? <ErrorMessage error={error} /> : null}
       </ProgressiveMessageList>
     </CurrentToolLifecycleProvider>
     </BuiltAppPreviewSync>
+    </AppPanelLiveContext.Provider>
     </ParentRunActiveContext.Provider>
   )
 }

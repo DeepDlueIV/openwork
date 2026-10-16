@@ -220,6 +220,7 @@ export async function rotateGatewayUsageEpoch(
                     { ...input.actor, memberId: member.memberId },
                     frame,
                     gatewayUsagePeriod(frame, now).start,
+                    null,
                   ),
                 ),
               ),

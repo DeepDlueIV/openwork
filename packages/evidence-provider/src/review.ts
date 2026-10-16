@@ -52,6 +52,8 @@ export interface ReviewPreviewProvider {
   readonly label: string;
   /** The review server has this provider's credentials. */
   configured(): boolean;
+  /** Can launch fresh previews of a commit (not only open saved checkpoints). */
+  readonly supportsPreviews: boolean;
   /** This commit already has a launchable preview for the world. */
   hasSnapshot(gitSha: string, world: PreviewWorld): Promise<boolean>;
   /** Builds the commit's preview. Runs after the response; may take minutes. */
@@ -74,6 +76,7 @@ export function notReadyReviewProvider(id: EvidenceProviderId): ReviewPreviewPro
     id,
     label: EVIDENCE_PROVIDER_LABELS[id],
     configured: () => false,
+    supportsPreviews: false,
     hasSnapshot: async () => fail(),
     buildSnapshot: async () => fail(),
     buildProgress: async () => fail(),

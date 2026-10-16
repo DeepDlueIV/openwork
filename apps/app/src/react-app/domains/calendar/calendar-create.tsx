@@ -50,7 +50,6 @@ const CAN_USE_SHORT: Record<AutomationCanUse, string> = {
 export type CreateAnchor = { slot: CalendarSlot; x: number; y: number }
 
 export function CreateAutomationCard(props: {
-  polish?: boolean
   organizationDefaultName?: string | null
   anchor: CreateAnchor
   context: AutomationsDenContext
@@ -206,7 +205,7 @@ export function CreateAutomationCard(props: {
                 <div className="flex flex-col gap-1.5">
                   <span className="text-xs font-medium">Model</span>
                   {usesCloudDefault && model ? (
-                    <div className="flex h-8 items-center rounded-md border border-border px-2 text-sm"><CalendarModelSummary model={model} options={[cloudDefaultModelOption]} polish={props.polish} organizationDefaultName={props.organizationDefaultName} /></div>
+                    <div className="flex h-8 items-center rounded-md border border-border px-2 text-sm"><CalendarModelSummary model={model} options={[cloudDefaultModelOption]} organizationDefaultName={props.organizationDefaultName} /></div>
                   ) : model ? (
                     <AutomationModelButton model={model} options={modelOptions} size="sm" onClick={() => setPickerOpen(true)} />
                   ) : (

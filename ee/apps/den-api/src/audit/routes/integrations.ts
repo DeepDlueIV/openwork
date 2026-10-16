@@ -66,6 +66,7 @@ export const integrationsAuditRoutes: readonly AuditRouteDeclaration[] = [
   support(`${GW}/*`, "capabilities_google_workspace", "app.use contextStorage so token resolvers can read signed internal capability headers; concrete handlers are declared."),
   support(`${MS}/*`, "capabilities_microsoft_365", "app.use contextStorage for the Microsoft token resolver; concrete handlers are declared."),
   support("/v1/direct-uploads/google-workspace/*", "direct_uploads_google_workspace", "app.use contextStorage for direct-upload handlers; concrete handlers are declared."),
+  support("/v1/direct-downloads/google-workspace/*", "direct_downloads_google_workspace", "app.use contextStorage for direct-download handlers; concrete handlers are declared."),
 
   // Google Workspace capabilities
   read(`${GW}/gmail-labels`, "capability.gmail.label.list", GWK, res("gmail_label"), CAP),
@@ -104,6 +105,10 @@ export const integrationsAuditRoutes: readonly AuditRouteDeclaration[] = [
   external("POST", `${GW}/drive-upload-sessions`, "capability.google_drive.upload.prepare", GWK, res("google_drive_file"), GOOGLE, `${CAP} Returns a secret resumable upload URL; no file bytes or session URL are captured in audit evidence.`),
   external("POST", "/v1/direct-uploads/google-workspace/drive-upload-sessions", "capability.google_drive.host_upload.prepare", GWK, res("google_drive_file"), GOOGLE, "cloudTransportRoute; host prepares a selected-account resumable session, bytes bypass Den. Session URL is not audit evidence."),
   external("POST", "/v1/direct-uploads/google-workspace/drive-files", "capability.google_drive.file.upload", GWK, res("google_drive_file"), GOOGLE, "cloudTransportRoute (MCP OAuth token, org from token); host file transport, bytes not echoed. Conditional token refresh write."),
+  read("/v1/direct-downloads/google-workspace/drive-files/:fileId", "capability.google_drive.host_download.prepare", GWK, res("google_drive_file", "fileId"), "cloudTransportReadRoute (MCP OAuth token, org from token); file metadata and pull plan only, no content."),
+  access("GET", "/v1/direct-downloads/google-workspace/drive-files/:fileId/content", "capability.google_drive.host_download.content", GWK, res("google_drive_file", "fileId"), "cloudTransportReadRoute; streams the member's file bytes to their host, never stored or used as audit evidence. Conditional token refresh write."),
+  access("POST", `${GW}/drive-download-links`, "capability.google_drive.download_link.create", GWK, res("google_drive_file"), `${CAP} Returns a five-minute signed link to one file; the link is not audit evidence.`),
+  handlerRoute("tenant_access", "GET", "/v1/direct-downloads/google-workspace/drive-link", "capability.google_drive.download_link.use", GWK, res("google_drive_file"), { notes: "Signed five-minute link bound to one member, connection, file and format; attributed to that member after verification, with organization access rechecked. Bytes are not audit evidence." }),
   external("POST", "/v1/direct-uploads/google-workspace/gmail-drafts", "capability.gmail.draft.attachments.create", GWK, res("gmail_draft"), GOOGLE, "cloudTransportRoute (MCP OAuth token, org from token); creates a draft with attachments, never sends. Conditional token refresh write."),
 
   // Microsoft 365 capabilities
@@ -232,6 +237,7 @@ export const integrationsAuditRoutes: readonly AuditRouteDeclaration[] = [
   handlerRoute("tenant_external", "POST", "/v1/inference-providers/oauth/browser-litellm-check", "inference_provider.member_oauth.browser_litellm_check", IPO, res("provider_credential"), { external: LITELLM, notes: "Public route. Attributed like browser-litellm-key once the cookie user matches the entry and the provider/set binding and litellm feature are rechecked; before LiteLLM key creation for that member." }),
 
   // Models analytics
+  read("/v1/inference/analytics/usage", "models_analytics.usage.read", MA, res("inference_usage"), "Shared Models usage limits for the feature-gated analytics dashboard."),
   route("tenant_signal", "POST", "/v1/inference/analytics/events", "models_analytics.events.report", MA, res("models_analytics_event"), "org_context", { notes: "Desktop task metadata for the caller's own OpenWork Models calls; dropped unless the organization opted in. High volume." }),
   access("GET", "/v1/inference/analytics/activity", "models_analytics.activity.list", MA, res("models_analytics_event"), "Per-member task analytics payloads (tool/skill/model metadata)."),
   read("/v1/inference/analytics/consumption", "models_analytics.consumption.read", MA, res("models_analytics_event"), "Aggregates only."),
@@ -247,7 +253,8 @@ export const integrationsAuditRoutes: readonly AuditRouteDeclaration[] = [
   read("/v1/telemetry/adoption", "telemetry.adoption.read", "telemetry.adoption", res("telemetry_event"), "Aggregates only."),
   read("/v1/telemetry/analytics", "telemetry.analytics.read", "telemetry.adoption", res("telemetry_event"), "Aggregates only."),
 
-  // Library usage (libraryUsage feature)
+  // Library usage
+  read("/v1/library-usage", "library_usage.breakdown.read", "library_usage.reporting", res("capability_usage_event"), "Aggregates only: use, failure, distinct member and per-source counts grouped by item, member id and UTC day; member ids, never names or content."),
   read("/v1/library-usage/:kind", "library_usage.read", "library_usage.reporting", res("capability_usage_event"), "Aggregates only: per skill, plugin or connector use counts, failure counts, distinct member counts and last use; no member identities."),
 
   // Legacy LLM providers
@@ -287,6 +294,7 @@ export const integrationsAuditRoutes: readonly AuditRouteDeclaration[] = [
   change("DELETE", "/v1/mcp-connections/by-key/:externalKey", "mcp_connection.by_key.delete", MCP, res("mcp_connection", "externalKey")),
   change("PUT", "/v1/mcp-connections/:connectionId/access", "mcp_connection.access.replace", MCP, res("mcp_connection", "connectionId")),
   change("PUT", "/v1/mcp-connections/:connectionId/tool-policy", "mcp_connection.tool_policy.update", MCP, res("mcp_connection", "connectionId")),
+  external("PUT", "/v1/mcp-connections/:connectionId/shared-credential", "mcp_connection.shared_credential.set", MCP, res("mcp_connection", "connectionId"), "Upstream MCP server (initialize with the new key)", "Hidden; signed-in people only (API keys and MCP internal calls get 403); secureSecretFields. Stores the shared key encrypted, keeps a rejected key out, and never returns or logs the key or provider text."),
   change("POST", "/v1/mcp-connections/:connectionId/disconnect", "mcp_connection.disconnect_all", MCPO, res("mcp_connection", "connectionId"), "Removes all stored member credentials; no upstream revocation."),
   change("POST", "/v1/mcp-connections/:connectionId/disconnect-my-account", "mcp_connection.member_account.disconnect", MCPO, res("mcp_connection", "connectionId"), "No upstream revocation."),
   change("PUT", "/v1/mcp-connections/:connectionId/my-credential", "mcp_connection.member_credential.set_own", MCPO, res("mcp_connection", "connectionId"), "Session-only (API keys and MCP internal calls get 403); stores the caller's personal API key encrypted for a member-api-key connection; response is ok only. Removal uses disconnect-my-account."),

@@ -366,7 +366,6 @@ export function BillingDashboardScreen() {
             ? "OpenWork Web is included for this organization at no charge. Team seats and built-in AI model access remain separate purchases."
             : "OpenWork Web, team seats, and built-in AI model access are separate purchases. Your expected monthly total reflects the subscriptions shown below."
           : "Team seats and built-in AI model access are separate purchases. Your expected monthly total reflects the subscriptions shown below."}
-        colors={["#F5F3FF", "#312E81", "#635BFF", "#C4B5FD"]}
       >
       {stripeError && stripeBilling ? (
         <DenNotice message={stripeError} className="mb-6" />

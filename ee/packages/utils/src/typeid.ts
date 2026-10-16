@@ -102,8 +102,6 @@ export const idTypesMapNameToPrefix = {
 
 
   tempFile: "tmpf",
-  dashboard: "dsb",
-  dashboardAccessGrant: "dsg",
   inferenceProvider: "ipr",
   inferenceProviderModel: "ipm",
   inferenceProviderCredential: "ipc",
@@ -126,6 +124,10 @@ export const idTypesMapNameToPrefix = {
   permissionSetPermission: "psp",
   permissionSetTeam: "pst",
   capabilityUsageEvent: "cue",
+  capabilityUsageRollup: "cur",
+  agentPermissionPolicy: "agp",
+  agentPermissionSetting: "aps",
+  orgDefaultModel: "odm",
 } as const
 
 export const denTypeIdPrefixes = idTypesMapNameToPrefix

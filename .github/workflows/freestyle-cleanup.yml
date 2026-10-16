@@ -5,10 +5,11 @@ name: Evidence world cleanup
 # versions, previews nobody launched for a day, superseded cache layers and
 # expired checkpoints. Snapshots with other names (personal worlds) are never
 # touched. The job fails when too many remain, so a new leak is visible.
-# Daytona evidence snapshots and sandboxes are reclaimed the same way.
+# Daytona evidence snapshots and sandboxes are reclaimed the same way, every 15
+# minutes: CI fills the Daytona snapshot quota within hours otherwise.
 on:
   schedule:
-    - cron: "17 * * * *"
+    - cron: "2,17,32,47 * * * *"
   workflow_dispatch:
     inputs:
       dry_run:

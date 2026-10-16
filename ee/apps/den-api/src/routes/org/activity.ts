@@ -4,7 +4,6 @@ import { z } from "zod"
 import { INSUFFICIENT_SCOPE_CHALLENGE, requiresAdminError } from "../../agent-error-envelope.js"
 import { listActivePluginArchIds, readDashboardActivity, type DashboardActivityAccess } from "../../dashboard-activity.js"
 import { DASHBOARD_ACTIVITY_LIMIT } from "../../dashboard-activity-rows.js"
-import { requireFeature } from "../../features.js"
 import { gatewayManagementUnavailable } from "../../gateway-deployment.js"
 import { orgMemberRoute, resolveMemberTeamsMiddleware, verifyOrgRole } from "../../middleware/index.js"
 import { forbiddenSchema, jsonResponse, unauthorizedSchema } from "../../openapi.js"
@@ -39,7 +38,6 @@ export const dashboardActivityResponseSchema = z.object({
   activity: z.array(entrySchema).max(DASHBOARD_ACTIVITY_LIMIT),
 }).meta({ ref: "DashboardActivity" })
 
-const featureDisabledSchema = z.object({ error: z.literal("feature_disabled"), feature: z.string() })
 
 export function registerOrgActivityRoutes<T extends { Variables: OrgRouteVariables }>(app: Hono<T>) {
   app.get(
@@ -50,17 +48,15 @@ export function registerOrgActivityRoutes<T extends { Variables: OrgRouteVariabl
       description: [
         "Returns the organization's five newest additions for the admin dashboard, newest first (ties by event id): connections and model providers by their stored creation time, plugins added to an active marketplace (excluding the built-in catalog) by the attachment's creation time, and published versions of active skills in active plugins.",
         "A snapshot of existing resources, not an audit log: removed or archived resources do not contribute. Each source follows the permission of its own admin list (View all connections, View all providers, View Gateway providers on a Gateway-enabled deployment, Manage everything shared or the caller's plugin and marketplace access).",
-        "Workspace owners and admins only, with the dashboardActivity feature.",
+        "Workspace owners and admins only.",
       ].join(" "),
       responses: {
         200: jsonResponse("The newest dashboard activity.", dashboardActivityResponseSchema),
         401: jsonResponse("Authentication required.", unauthorizedSchema),
         403: jsonResponse("Only workspace owners and admins can read dashboard activity.", forbiddenSchema),
-        404: jsonResponse("The organization was not found, or dashboard activity is off.", featureDisabledSchema),
       },
     }),
     orgMemberRoute(),
-    requireFeature("dashboardActivity"),
     resolveMemberTeamsMiddleware,
     async (c) => {
       const organizationContext = c.get("organizationContext")

@@ -1,13 +1,12 @@
 "use client";
 
 import type { TelemetryAnalyticsModels } from "@openwork-ee/telemetry-contracts";
-import { analyticsSurfaceClass, AnalyticsEmptyState, useAnalyticsIntegrated } from "./analytics-layout";
+import { analyticsSurfaceClass, AnalyticsEmptyState } from "./analytics-layout";
 
 export function ModelUsageList({ models, isLoading }: {
   models: TelemetryAnalyticsModels["usage30d"];
   isLoading: boolean;
 }) {
-  const integrated = useAnalyticsIntegrated();
   const max = Math.max(1, ...models.map((model) => model.sessions));
 
   return (
@@ -24,7 +23,7 @@ export function ModelUsageList({ models, isLoading }: {
               <span className="shrink-0 tabular-nums text-[#637291]">{model.sessions}</span>
             </div>
             <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-[#EBEEF4]">
-              <div className={`h-full rounded-full ${integrated ? "bg-[var(--dls-accent)]" : "bg-[#6F3DFF]"}`} style={{ width: `${(model.sessions / max) * 100}%` }} />
+              <div className="h-full rounded-full bg-[var(--dls-accent)]" style={{ width: `${(model.sessions / max) * 100}%` }} />
             </div>
           </div>
         ))}

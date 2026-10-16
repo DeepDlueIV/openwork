@@ -1,7 +1,7 @@
 # Testing without blocking unrelated work
 
-OpenWork has no package-level unit tests. All executable coverage lives in the
-E2E journeys under `evals/specs` (see `evals/README.md`). Install both
+Unit and API tests live next to the code they test. End-to-end coverage is the
+nine journeys in `evals/core` (see `evals/README.md`). Install both
 workspaces with `pnpm install --frozen-lockfile` and
 `pnpm --dir evals install --frozen-lockfile` first. Use Node 24, Bun 1.3.14,
 pnpm 11.4.0, and the OpenCode version in `constants.json` on PATH, matching CI.
@@ -11,9 +11,9 @@ pnpm 11.4.0, and the OpenCode version in `constants.json` on PATH, matching CI.
 The `openwork-tests-required` check keeps its existing name and fails closed.
 For ordinary code changes it requires two independent Linux jobs:
 
-- **Core journeys:** the headless runner typecheck and the PR journeys selected
-  by `pnpm --dir evals run test:core` (remembered thread approvals, effective
-  permission attribution, PDF model routing, and session-list routing).
+- **Eval framework:** the headless runner typecheck, spec lint
+  (`pnpm --dir evals lint:specs`) and its rule fixtures
+  (`pnpm --dir evals run test:framework`).
 - **Packaging:** outbound-access declarations, the server's actual Node-target
   plugin build, Electron's IPC contract typecheck, and the packaged desktop
   smoke.
@@ -22,7 +22,7 @@ Model-snapshot-only and docs-only PRs keep their existing dedicated validation.
 New commits cancel obsolete runs on the same PR. Dev pushes still run the core
 and packaging checks.
 
-To expand coverage, extend or add a journey in `evals/specs`. A failing journey
+To expand coverage, add a step to a core journey in `evals/core`. A failing journey
 must be diagnosed and fixed, not retried until green or silently ignored.
 
 ## Broader coverage

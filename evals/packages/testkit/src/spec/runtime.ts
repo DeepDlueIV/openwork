@@ -18,6 +18,7 @@ import {
 } from "@openwork/behaviors";
 import {
   callFunctionOnSurface,
+  CdpPageError,
   addInitScript,
   callFunction, connect, debuggerUrlFor, listTargets,
   clickTarget,
@@ -61,7 +62,7 @@ import type {
   TraceEntry,
   TraceEntryInput,
 } from "@openwork/test-evidence";
-import { eventually } from "../eventually.ts";
+import { eventually } from "@openwork/env";
 import { denLink as startDenLink } from "../link.ts";
 import { readConnectState } from "../state.ts";
 import type {
@@ -266,7 +267,10 @@ async function createSessionWhenReady(surface: Surface): Promise<string> {
       if (attempt === 1) throw new Error("session.create_task returned no session ID after one retry.");
     } catch (error) {
       const emptyResult = /did not return a session ID|returned no session ID|invalid session ID/i.test(messageText(error));
-      if (attempt === 1 || !emptyResult) throw error;
+      // The action can turn disabled again between the readiness check and the
+      // call (the previous task is still being selected); nothing ran, so retry.
+      const disabledMeanwhile = /Action is disabled/i.test(messageText(error));
+      if (attempt === 1 || !(emptyResult || disabledMeanwhile)) throw error;
     }
     await new Promise((resolve) => setTimeout(resolve, CONTROL_POLL_INTERVAL_MS));
   }
@@ -553,6 +557,14 @@ function focusLabel(target: Target, located: Located): string {
 function requireSurface(surface: Surface | null): Surface {
   if (!surface) throw new Error("This world has no primary surface; bind one with user.on(surface), agent.on(surface), or probe.on(surface).");
   return surface;
+}
+
+/** A request the page made itself failed (a stalled local server ends as "signal timed out"); say which one. */
+function namePageFailure(label: string): (error: unknown) => never {
+  return (error) => {
+    if (error instanceof CdpPageError) throw new Error(`${label} failed in the page: ${error.message}`, { cause: error });
+    throw error;
+  };
 }
 
 function sessionFromWebOptions(options: SeedWebOptions) {
@@ -844,8 +856,23 @@ export class UserChannel implements User {
       if (this.#runtime.adapters.user?.click) await this.#runtime.adapters.user.click(surface, target, 1);
       else await clickTarget(surface, target);
       if (options.sensitive) {
-        const masked = await callFunctionOnSurface(surface, () => document.activeElement instanceof HTMLInputElement && document.activeElement.type === 'password', []);
-        if (masked !== true) throw new Error("Sensitive typing requires a masked password input");
+        // A password input, or a multi-line secret field (pasted key files) masked with text-security.
+        const maskedFocus = () => callFunctionOnSurface(surface, () => {
+          const active = document.activeElement;
+          if (active instanceof HTMLInputElement) return active.type === 'password' ? 'masked' : `input:${active.type}`;
+          if (!(active instanceof HTMLTextAreaElement)) return active ? active.tagName.toLowerCase() : 'nothing';
+          const style = getComputedStyle(active);
+          const security = style.getPropertyValue('-webkit-text-security') || style.getPropertyValue('text-security');
+          return security && security !== 'none' ? 'masked' : `textarea:${security || 'unmasked'}`;
+        }, []);
+        let masked = await maskedFocus();
+        if (masked !== 'masked' && masked !== null && typeof masked === 'string' && !masked.startsWith('input:') && !masked.startsWith('textarea:')) {
+          // Focus moved (the page re-rendered under the click); click the target once more.
+          if (this.#runtime.adapters.user?.click) await this.#runtime.adapters.user.click(surface, target, 1);
+          else await clickTarget(surface, target);
+          masked = await maskedFocus();
+        }
+        if (masked !== 'masked') throw new Error(`Sensitive typing requires a masked password input (focused: ${String(masked)})`);
       }
       const mac = surface.handle.hostKind !== "daytona" && process.platform === "darwin";
       await pressKey(surface, options.replace ? (mac ? "Meta+A" : "Control+A") : (mac ? "Meta+ArrowDown" : "Control+End"));
@@ -1029,11 +1056,21 @@ export class AgentChannel implements Agent {
       if (!path.startsWith("/") || path.startsWith("//") || /[\\\s]/.test(path)) throw new Error("A root-relative server path is required.");
       const value = await callFunctionOnSurface(surface, async (path, encodedInput) => {
         const input = JSON.parse(encodedInput);
+        // Desktop: the bridge reports the embedded server. App in a browser:
+        // the app keeps the same address and token in localStorage.
         const info = await window.__OPENWORK_ELECTRON__?.invokeDesktop?.("openworkServerInfo");
-        if (!info?.running || !info.baseUrl) return { status: 0, body: { error: "local_server_unavailable" } };
-        const response = await fetch(String(info.baseUrl).replace(/\/+$/, "") + path, {
+        let baseUrl = info?.running && info.baseUrl ? String(info.baseUrl) : "";
+        let token = baseUrl ? String(info?.ownerToken ?? info?.clientToken ?? "") : "";
+        if (!baseUrl) {
+          const override = (localStorage.getItem("openwork.server.urlOverride") ?? "").trim();
+          const port = (localStorage.getItem("openwork.server.port") ?? "").trim();
+          baseUrl = override || (port ? "http://127.0.0.1:" + port : "");
+          token = (localStorage.getItem("openwork.server.token") ?? "").trim();
+        }
+        if (!baseUrl) return { status: 0, body: { error: "local_server_unavailable" } };
+        const response = await fetch(baseUrl.replace(/\/+$/, "") + path, {
           method: input.method,
-          headers: { Authorization: "Bearer " + String(info.ownerToken ?? info.clientToken ?? ""), "Content-Type": "application/json" },
+          headers: { Authorization: "Bearer " + token, "Content-Type": "application/json" },
           body: input.body === undefined ? undefined : JSON.stringify(input.body),
           redirect: "error", signal: AbortSignal.timeout(30_000),
         });
@@ -1041,7 +1078,7 @@ export class AgentChannel implements Agent {
         let body = text;
         try { body = JSON.parse(text); } catch {}
         return { status: response.status, body };
-      }, [path, JSON.stringify(input)], { awaitPromise: true, timeoutMs: 35_000 });
+      }, [path, JSON.stringify(input)], { awaitPromise: true, timeoutMs: 35_000 }).catch(namePageFailure(`agent.desktopApi(${input.method} ${path})`));
       if (!isRecord(value) || typeof value.status !== "number") throw new Error("Invalid desktop API result");
       return { status: value.status, body: value.body };
     });
@@ -1206,10 +1243,44 @@ export class ProbeChannel implements Probe {
     return pick ? pick(value) : value;
   }
 
+  /** The page address, as shown in the browser's address bar. */
+  url(): Promise<string> {
+    const surface = requireSurface(this.#surface);
+    return this.#runtime.call("probe", "url", "url", surface, async () => {
+      const value = await evaluateOnSurface(surface, () => window.location.href);
+      if (typeof value !== "string") throw new Error("location.href was not a string.");
+      return value;
+    });
+  }
+
+  /**
+   * What a person can read or copy from visible links and read-only fields
+   * matching `selector`: each link's destination and each field's shown text.
+   * Password and editable fields are never read.
+   */
+  linkTargets(selector: string): Promise<string[]> {
+    const surface = requireSurface(this.#surface);
+    return this.#runtime.call("probe", "linkTargets", `linkTargets(${JSON.stringify(redacted(selector))})`, surface, async () => {
+      const values = await callFunctionOnSurface(surface, (input: string) => Array.from(document.querySelectorAll(input)).flatMap((element) => {
+        const box = element.getBoundingClientRect();
+        if (box.width === 0 || box.height === 0) return [];
+        if (element instanceof HTMLAnchorElement) return [element.href];
+        if (element instanceof HTMLInputElement && element.readOnly && element.type !== "password") return [element.value];
+        return [];
+      }), [selector]);
+      if (!Array.isArray(values) || !values.every((value) => typeof value === "string")) throw new Error("linkTargets returned an invalid list.");
+      return values;
+    });
+  }
+
   hash(): Promise<string> {
     const surface = requireSurface(this.#surface);
     return this.#runtime.call("probe", "hash", "hash", surface, async () => {
-      const value = await evaluateOnSurface(surface, () => (window.location.hash));
+      // The desktop routes by hash. The app in a browser routes by path, so its
+      // route is reported in the same "#/workspace/..." form.
+      const value = await evaluateOnSurface(surface, () => (
+        window.location.hash || (window.__OPENWORK_ELECTRON__ || window.location.pathname === "/" ? "" : `#${window.location.pathname}`)
+      ));
       if (typeof value !== "string") throw new Error("window.location.hash was not a string.");
       return value;
     });
@@ -1249,11 +1320,21 @@ export class ProbeChannel implements Probe {
         throw new Error("probe.desktopApi requires a root-relative server path.");
       }
       const value = await callFunctionOnSurface(surface, async (path) => {
+        // Desktop: the bridge reports the embedded server. App in a browser:
+        // the app keeps the same address and token in localStorage.
         const info = await window.__OPENWORK_ELECTRON__?.invokeDesktop?.("openworkServerInfo");
-        if (!info?.running || !info.baseUrl) return { status: 0, body: { error: "local_server_unavailable" } };
-        const response = await fetch(String(info.baseUrl).replace(/\/+$/, "") + path, {
+        let baseUrl = info?.running && info.baseUrl ? String(info.baseUrl) : "";
+        let token = baseUrl ? String(info?.ownerToken ?? info?.clientToken ?? "") : "";
+        if (!baseUrl) {
+          const override = (localStorage.getItem("openwork.server.urlOverride") ?? "").trim();
+          const port = (localStorage.getItem("openwork.server.port") ?? "").trim();
+          baseUrl = override || (port ? "http://127.0.0.1:" + port : "");
+          token = (localStorage.getItem("openwork.server.token") ?? "").trim();
+        }
+        if (!baseUrl) return { status: 0, body: { error: "local_server_unavailable" } };
+        const response = await fetch(baseUrl.replace(/\/+$/, "") + path, {
           method: "GET",
-          headers: { Authorization: "Bearer " + String(info.ownerToken ?? info.clientToken ?? "") },
+          headers: { Authorization: "Bearer " + token },
           redirect: "error",
           signal: AbortSignal.timeout(15_000),
         });
@@ -1261,7 +1342,7 @@ export class ProbeChannel implements Probe {
         let body = text;
         try { body = text ? JSON.parse(text) : null; } catch {}
         return { status: response.status, body };
-      }, [path], { awaitPromise: true, timeoutMs: 20_000 });
+      }, [path], { awaitPromise: true, timeoutMs: 20_000 }).catch(namePageFailure(`probe.desktopApi(GET ${path})`));
       if (!isRecord(value) || typeof value.status !== "number" || !("body" in value)) {
         throw new Error("Invalid desktop API probe response.");
       }
@@ -1273,7 +1354,7 @@ export class ProbeChannel implements Probe {
     return this.#runtime.call("probe", "toolCalls", `toolCalls(${options.name ?? "any"})`, null, () => mock.toolCalls(options));
   }
 
-  eventually<T>(fn: () => Promise<T> | T, options: import("../eventually.ts").EventuallyOptions<T>): Promise<T> {
+  eventually<T>(fn: () => Promise<T> | T, options: import("@openwork/env").EventuallyOptions<T>): Promise<T> {
     return this.#runtime.call("probe", "eventually", `eventually(${options.label ?? "condition"})`, null, () => eventually(fn, options));
   }
 }

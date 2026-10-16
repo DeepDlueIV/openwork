@@ -2687,11 +2687,15 @@ export function createClientV2(
       parameters: SessionParameters & { messageID?: string },
       options?: RequestOptions,
     ): Promise<FieldsResult<Session>> => {
-      // Both adapters exclude the supplied boundary. Omitting it copies the
-      // complete conversation; native v2 calls this a "through" boundary.
-      const result = await request("POST", `/api/session/${encodeURIComponent(parameters.sessionID)}/fork`, {
-        boundary: parameters.messageID ? { type: "before", messageID: parameters.messageID } : { type: "through" },
-      }, options?.signal);
+      // Both engines copy history strictly before the supplied message. Native
+      // v2 drops unknown payload keys, so the field must be exactly `before`;
+      // omitting it copies the complete conversation.
+      const result = await request(
+        "POST",
+        `/api/session/${encodeURIComponent(parameters.sessionID)}/fork`,
+        parameters.messageID ? { before: parameters.messageID } : {},
+        options?.signal,
+      );
       if (!result.response.ok) return failedResult(result);
       const mapped = mapV2Session(result.payload, directory);
       return mapped ? successfulResult(result, mapped) : failedResult({ ...result, payload: { name: "InvalidV2SessionResponse" } });

@@ -150,11 +150,16 @@ docs-page section:
 5. State guidance
 6. Cost notes
 
-Additional setup/reference sections may follow. Show a visible **beta** callout;
-ask users to contact OpenWork through the official
-[GitHub issue templates](https://github.com/different-ai/openwork/issues/new/choose)
-for bugs or usage questions. Follow [SUPPORT.md](../../SUPPORT.md); report
-security issues privately through [SECURITY.md](../../SECURITY.md).
+Additional setup/reference sections may follow. Show a visible callout using:
+
+> OpenWork's Terraform modules are **beta**. If you hit an issue:
+> - **Customers with a support agreement:** contact your OpenWork team through your usual support channel.
+> - **Everyone else:** [open a GitHub issue](https://github.com/different-ai/openwork/issues/new/choose).
+> - **Security issues:** report them privately ([SECURITY.md](https://github.com/different-ai/openwork/blob/dev/SECURITY.md)).
+
+Keep reports free of secrets and private state. Public bug/usage reporting follows
+[SUPPORT.md](../../SUPPORT.md); existing support agreements retain their usual
+channel.
 State guidance must cover encrypted, access-controlled remote state and locking.
 For S3 use `use_lockfile = true`, not deprecated DynamoDB locking.
 

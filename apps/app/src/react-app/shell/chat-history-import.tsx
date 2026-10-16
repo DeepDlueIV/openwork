@@ -34,6 +34,8 @@ import { resolveOpenworkConnection } from "./openwork-connection";
  * stay visible app-wide, and a running import can continue in the background.
  */
 
+export const CHAT_HISTORY_IMPORTED_EVENT = "openwork-history-imported";
+
 export type ChatImportClient = Pick<OpenworkServerClient, "getEngineStatus" | "importV1History">;
 
 type ConsentState = {
@@ -127,6 +129,9 @@ async function confirmChatImport() {
 function observeChatImport(client: ChatImportClient, status: EngineStatus) {
   const migration = status.migration;
   if (!migration) return;
+  if (migration.state === "completed" && useChatImportStore.getState().progress?.migration.state !== "completed") {
+    window.dispatchEvent(new Event(CHAT_HISTORY_IMPORTED_EVENT));
+  }
   if (useChatImportStore.getState().progress) {
     updateProgress({ migration });
     return;

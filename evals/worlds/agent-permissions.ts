@@ -364,14 +364,14 @@ async function desktopWorld(seed: Seed, place: Place, { feature }: { feature: bo
        */
       async restartEngine(): Promise<{ running: boolean; error: string | null }> {
 
-        // Stop routing before stopping the process; start the process before routing to it.
-        const stopped = await localServer(app, "/experimental/engine-v2-preview", { method: "PUT", body: { enabled: false, chatRouting: false } });
-        if (stopped.status !== 200) return { running: false, error: `Stopping the engine failed: HTTP ${stopped.status}` };
-        const started = await localServer(app, "/experimental/engine-v2-preview", { method: "PUT", body: { enabled: true, chatRouting: true } });
-        if (started.status !== 200) return { running: false, error: `Starting the engine failed: HTTP ${started.status}` };
+        await seed.evalIn(app, browserScript(async () => {
+          if (!window.__OPENWORK_ELECTRON__?.invokeDesktop) throw new Error("The desktop restart bridge is unavailable");
+          await window.__OPENWORK_ELECTRON__.invokeDesktop("engineRestart");
+          return true;
+        }), { awaitPromise: true, timeoutMs: 120_000 });
         const deadline = Date.now() + 120_000;
         while (Date.now() < deadline) {
-          const { body } = await localServer(app, "/experimental/engine-v2-preview/status");
+          const { body } = await localServer(app, "/engine/status");
           const lastError = isRecord(body) && typeof body.lastError === "string" ? body.lastError : null;
           if (isRecord(body) && body.running === true) return { running: true, error: lastError };
           if (lastError) return { running: false, error: lastError };

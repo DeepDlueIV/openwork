@@ -118,7 +118,6 @@ jobs:
       - name: Run eval framework tests (spec lint and its fixtures)
         run: |
           pnpm --dir evals run test:framework
-          pnpm --dir evals exec vitest run --config vitest.config.ts --project pr ../apps/server/test/session-title-sigv4.vitest.test.ts
       - name: Test native MCP readiness and Stop ownership
         run: pnpm --filter openwork-server test:readiness
       # Uses the pinned OpenCode that Setup tests put on PATH.

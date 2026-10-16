@@ -42,6 +42,7 @@ import {
 } from "@/react-app/infra/workspace-server-client";
 import { useLocal } from "@/react-app/kernel/local-provider";
 import { useDenAuth } from "@/react-app/domains/cloud/den-auth-provider";
+import { CHAT_HISTORY_IMPORTED_EVENT } from "./chat-history-import";
 import { useBootState } from "./boot-state";
 import {
   ensureDesktopLocalOpenworkConnection,
@@ -503,6 +504,15 @@ export function useWorkspaceRouteState(input: UseWorkspaceRouteStateInput) {
     await loadWorkspaceSessionsInBackground([workspace]);
     if (hadInFlightLoad) await loadWorkspaceSessionsInBackground([workspace]);
   }, [loadWorkspaceSessionsInBackground]);
+  useEffect(() => {
+    const reloadImportedSessions = () => {
+      for (const workspace of workspacesRef.current) {
+        if (workspace.workspaceType === "local") void reloadWorkspaceSessions(workspace.id);
+      }
+    };
+    window.addEventListener(CHAT_HISTORY_IMPORTED_EVENT, reloadImportedSessions);
+    return () => window.removeEventListener(CHAT_HISTORY_IMPORTED_EVENT, reloadImportedSessions);
+  }, [reloadWorkspaceSessions]);
   const workspaceSelectionCommitRef = useRef<(workspaceId: string) => Promise<void>>(async () => undefined);
   workspaceSelectionCommitRef.current = async (workspaceId) => {
     await commitRouteWorkspaceSelection({

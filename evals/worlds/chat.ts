@@ -152,10 +152,10 @@ export async function configureProvider(
       const base = "http://127.0.0.1:" + localStorage.getItem("openwork.server.port");
       const headers = { Authorization: "Bearer " + localStorage.getItem("openwork.server.token") };
       try {
-        const statusResponse = await fetch(base + "/experimental/engine-v2-preview/status", { headers });
+        const statusResponse = await fetch(base + "/engine/status", { headers });
         const status = statusResponse.ok ? await statusResponse.json() : null;
-        const selected = status ? status.enabled && status.chatRouting : false;
-        if ((engine === "v2") !== selected || (!statusResponse.ok && statusResponse.status !== 404)) {
+        const selected = status?.running === true;
+        if (!selected || !statusResponse.ok) {
           await new Promise((resolve) => setTimeout(resolve, 250));
           continue;
         }
@@ -1250,9 +1250,8 @@ export async function streamedMarkdown(seed: Seed) {
     const headers = { Authorization: "Bearer " + localStorage.getItem("openwork.server.token") };
     const deadline = Date.now() + 60000;
     while (Date.now() < deadline) {
-      const status = await (await fetch(base + "/experimental/engine-v2-preview/status", { headers })).json();
-      if (engine === "v1" && !status.chatRouting) return true;
-      if (engine === "v2" && status.running && status.chatRouting) {
+      const status = await (await fetch(base + "/engine/status", { headers })).json();
+      if (status.running) {
         const response = await fetch(base + "/workspace/" + workspaceId + "/opencode2/api/model", { headers });
         if (response.ok) {
           const catalog = JSON.stringify(await response.json());
@@ -2270,8 +2269,8 @@ export async function workspaceEngineUpgrade(seed: Seed) {
         }, [workspaceId, engine, since]));
       },
       async createOtherWorkspace() {
-        const status = await request("/experimental/engine-v2-preview/status");
-        if (!isRecord(status.json) || status.json.chatRouting !== true || status.json.running !== true) {
+        const status = await request("/engine/status");
+        if (!isRecord(status.json) || status.json.running !== true) {
           throw new Error("Workspace B must be created only after the Settings switch to v2");
         }
         const other = await seed.workspace(app, otherPath, { create: true });
@@ -2312,16 +2311,6 @@ export async function skillLifecycle(seed: Seed) {
     };
     const providerId = live ? await liveProviderId(request, managed.id) : "skill-lifecycle";
     const modelId = live ? liveOpenAiModel() : "skill-lifecycle-model";
-    // This world arranges an opted-in native v2 conversation, including when
-    // invoked by the standard E2E command without an engine override.
-    await seed.evalIn(app, async () => {
-      const response = await fetch("http://127.0.0.1:" + localStorage.getItem("openwork.server.port") + "/experimental/engine-v2-preview", {
-        method: "PUT", headers: { Authorization: "Bearer " + localStorage.getItem("openwork.server.token"), "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled: true, chatRouting: true }), signal: AbortSignal.timeout(180000),
-      });
-      if (!response.ok) throw new Error("Could not enable the native engine");
-      return true;
-    }, { awaitPromise: true, timeoutMs: 185_000 });
     await configureProvider(seed, app, workspace.workspaceId, providerId, modelId, {
       permission: { skill: "allow" },
       ...(!live ? { provider: { [providerId]: {
@@ -2372,8 +2361,8 @@ export async function skillLifecycle(seed: Seed) {
           && (!live || (isRecord(message.tokens) && typeof message.tokens.output === "number" && message.tokens.output > 0)));
       },
       async runtimeIdentity() {
-        const result = await request("/experimental/engine-v2-preview/status");
-        if (!isRecord(result.json) || result.json.running !== true || result.json.chatRouting !== true
+        const result = await request("/engine/status");
+        if (!isRecord(result.json) || result.json.running !== true
           || typeof result.json.pid !== "number") throw new Error("The v2 conversation runtime is not running");
         return result.json.pid;
       },

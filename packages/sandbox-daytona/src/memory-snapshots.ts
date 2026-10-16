@@ -2,7 +2,9 @@ import { RuntimeProviderError, type SandboxSnapshots } from "@openwork/sandbox"
 
 /** Same hot-snapshot REST contract used by Daytona evidence worlds; no build or warm pool. */
 export function memorySnapshots(config: { apiKey: string; apiUrl: string }, sandboxId: (ref: Parameters<SandboxSnapshots["create"]>[0]["ref"]) => string, request: typeof fetch = fetch): SandboxSnapshots {
-  const url = config.apiUrl.replace(/\/+$/, "")
+  let end = config.apiUrl.length
+  while (end > 0 && config.apiUrl[end - 1] === "/") end--
+  const url = config.apiUrl.slice(0, end)
   const error = (code: "invalid_state" | "conflict" | "timeout" | "unknown", message: string) => new RuntimeProviderError({ providerId: "daytona", code, retryable: false, message })
   async function call(method: string, path: string, deadline: number, body?: unknown) {
     if (Date.now() >= deadline) throw error("timeout", "Daytona snapshot deadline exceeded; inspect its state before retrying")

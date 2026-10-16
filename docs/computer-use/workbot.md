@@ -25,6 +25,9 @@ with the existing `bash` and `look` tools available on the same machine.
 Build `ee/packages/headless-computer/Dockerfile.desktop` using a pinned
 `node:24-bookworm-slim@sha256:…` base, push it to your registry, and create a
 Daytona Linux VM snapshot from the resulting image digest.
+The **Daytona Eval Image** workflow offers a manual `computer-desktop` target:
+it publishes AMD64 to an immutable `computer-desktop-<commit>` tag without
+changing the existing eval image's `dev` tag. Its run summary records the digest.
 [Daytona’s snapshot requirements](https://www.daytona.io/docs/en/snapshots/)
 require an AMD64 image and an existing image reference for Linux VMs:
 

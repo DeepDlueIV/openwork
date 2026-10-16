@@ -205,7 +205,14 @@ async function captureObservation(webContents, viewport) {
 }
 function imageDigest(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
 async function isolated(webContents, fn, ...args) {
-  return webContents.executeJavaScriptInIsolatedWorld(WORLD, [{ code: `(${fn.toString()})(...${JSON.stringify(args)})` }]);
+  // Electron strips exceptions crossing an isolated world to a generic error.
+  // Carry our validation result as data so a refused control keeps its reason.
+  const result = await webContents.executeJavaScriptInIsolatedWorld(WORLD, [{ code: `(async () => {
+    try { return { ok: true, value: await (${fn.toString()})(...${JSON.stringify(args)}) }; }
+    catch (error) { return { ok: false, message: typeof error?.message === "string" ? error.message : "Browser page operation failed" }; }
+  })()` }]);
+  if (!result.ok) throw new Error(result.message);
+  return result.value;
 }
 
 export function createBrowserTaskHost({ getTab, tabsFor, ownerOf, activeFor, isVisible, openTab, navigate,

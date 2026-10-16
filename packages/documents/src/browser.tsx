@@ -31,7 +31,7 @@ function size(value: number | null) {
 }
 function ItemIcon({ item }: { item: DocumentItem }) {
   const type = documentType(item)
-  const Icon = item.kind === "folder" ? Folder : /Sheets|Excel|CSV/.test(type) ? FileSpreadsheet : /Slides|PowerPoint/.test(type) ? Presentation : type === "Image" ? Image : FileText
+  const Icon = item.kind === "folder" ? Folder : /Sheets|Excel|CSV|spreadsheet/.test(type) ? FileSpreadsheet : /Slides|PowerPoint|presentation/.test(type) ? Presentation : type === "Image" ? Image : FileText
   return <Icon className="ow-documents-item-icon" data-kind={type} size={20} strokeWidth={1.5} aria-hidden />
 }
 
@@ -167,3 +167,5 @@ export function DocumentsBrowser({ provider, editor, scope, enabled, connections
 }
 
 export { OfficeEditorTab } from "./office-editor"
+export { DocumentToolbar, EditorToolbarButton, EditorToolbarMenu } from "./document-toolbar"
+export type { EditorAction, EditorCommand, EditorController, EditorSelection } from "./editor-controller"

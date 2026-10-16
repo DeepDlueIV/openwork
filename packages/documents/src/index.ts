@@ -90,6 +90,9 @@ export function documentType(item: DocumentItem): string {
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "Excel",
     "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "Word",
     "application/vnd.openxmlformats-officedocument.presentationml.presentation": "PowerPoint",
+    "application/vnd.oasis.opendocument.text": "OpenDocument text",
+    "application/vnd.oasis.opendocument.spreadsheet": "OpenDocument spreadsheet",
+    "application/vnd.oasis.opendocument.presentation": "OpenDocument presentation",
   }
   return native[item.mimeType] ?? (item.mimeType.startsWith("image/") ? "Image" : item.mimeType.startsWith("text/") ? "Text" : "File")
 }

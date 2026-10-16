@@ -19,9 +19,11 @@ provider/editor contracts without embedding Workbot.
 
 | File | Inline experience | Save path |
 | --- | --- | --- |
-| Word `.docx` | Full Collabora document editor: page layout, rich formatting, tables, images, comments, find/replace | Explicit Save to Drive updates the original Office file |
-| Excel `.xlsx` | Full Collabora spreadsheet editor: formulas and recalculation, formatting, worksheets, charts, sorting/filtering | Explicit Save to Drive updates the original Office file |
-| Native Google Doc / Sheet | Exported Word / Excel copy in the same full editor, with a visible copy notice | First save creates an Office file in My Drive; later saves update that copy. The native original is preserved. Use Open original in Drive to edit it natively |
+| Word `.docx` | OpenWork formatting controls and a document canvas; page layout, tables, images, comments and find/replace remain available | Explicit Save to Drive updates the original Office file |
+| Excel `.xlsx` | OpenWork formatting controls, formula bar and worksheets; the engine retains formulas, recalculation, charts, sorting/filtering | Explicit Save to Drive updates the original Office file |
+| PowerPoint `.pptx` | Slide thumbnails, text/shapes, formatting, add/duplicate/delete, layouts, speaker notes and presentation mode | Explicit Save to Drive updates the original PowerPoint file |
+| OpenDocument `.odt` / `.ods` / `.odp` | Full document, spreadsheet or presentation engine with the same OpenWork controls | Explicit Save to Drive updates the original OpenDocument file in its original format |
+| Native Google Doc / Sheet / Slides | Exported Word / Excel / PowerPoint copy in the full editor, with a visible copy notice | First save creates an Office file in My Drive; later saves update that copy. The native original is preserved. Use Open original in Drive to edit it natively |
 | UTF-8 text | Plain text editing, up to 1 MB | Explicit save to the original file |
 | PDF and common raster images | Read-only inline preview | No edits |
 | Other formats | Link to original editor | No edits |
@@ -34,6 +36,10 @@ installed by the integration. Complex OOXML round trips can differ from desktop 
 representative customer files need acceptance testing before rollout. Office
 files retain the shared bounded ZIP protections (12 MB compressed, 10 MB inflated,
 128 parts); signed, encrypted and macro-enabled packages are refused.
+OpenDocument also verifies its MIME entry and scans bounded UTF-8 XML for
+encryption, event scripts and DTDs before opening or staging a save. Legacy
+binary Office formats are not accepted through this editing path. PDF/images
+remain previews; text/CSV remain in the existing text editor.
 
 Editor autosave synchronizes to the document service. Only **Save to Drive**
 commits to Drive. WOPI writes stage snapshots and never write to Google. Unsaved indicators remain until Drive confirms the write. The explicit commit binds the exact staged draft version.
@@ -41,9 +47,9 @@ commits to Drive. WOPI writes stage snapshots and never write to Google. Unsaved
 ## Free and open-source editor
 
 Documents uses **Collabora Online**, whose editor source is MPL-2.0, with
-LibreOffice Writer and Calc underneath. No paid SDK, vendor license key,
+LibreOffice Writer, Calc and Impress underneath. No paid SDK, vendor license key,
 commercial-only import/export or proprietary editing dependency is required.
-The integration also uses free MIT-licensed React, React DOM, Zod and htmlparser2.
+The integration also uses free MIT-licensed React, React DOM, Base UI, Zod and htmlparser2.
 
 - [Editor source and MPL-2.0 license](https://github.com/CollaboraOnline/online/blob/main/COPYING)
 - [Source mirror and build instructions](https://github.com/CollaboraOnline/online.mirror)
@@ -56,6 +62,40 @@ production. A maintained MPL source build is also an option without a paid edito
 license; maintainers then own builds, updates, security and operation. The
 integration calls the open WOPI protocol and does not depend on subscription-only
 features. Hosting the service still uses infrastructure resources.
+
+## OpenWork editing controls
+
+The default surface has one compact React toolbar, the file tabs and save action,
+and the document canvas. The stock ribbon, duplicate title, navigation, status
+bar and side panels stay hidden. **More tools** reveals the engine's complete
+controls on demand; it does not reopen the document or change its editing session.
+The spreadsheet formula bar and worksheet tabs stay available in the compact view.
+
+`DocumentToolbar`, `EditorToolbarButton` and `EditorToolbarMenu` compose over the
+typed `EditorController` contract. They do not read an engine global or iframe DOM.
+`collabora-controller.ts` translates bounded commands at the engine boundary and
+validates selection events with Zod. The small TypeScript integration in
+`collabora/branding.ts` owns the pinned engine's selection/layout integration;
+it sends formatting state only, never document content, file bytes or credentials.
+Both directions check the exact frame/parent window and configured WOPI host origin.
+Menus and popovers use Base UI for keyboard behavior, focus and viewport collision
+handling, and copy semantic theme tokens when portaling outside their host.
+
+Build the integrator theme and its editor image from the repository root:
+
+```sh
+pnpm --filter @openwork/documents build:collabora-theme
+docker build -f packages/documents/collabora/Dockerfile \
+  -t openwork-documents-editor packages/documents/collabora
+```
+
+Run that image with the same WOPI allowlist, TLS, sandboxing, macro settings,
+network policy and resource limits as the existing service. The image appends
+the OpenWork integration beside Collabora's branding hooks and preserves its
+notices and About screen. Customization applies only to frames launched with
+`integrator=openwork`. The base engine version is pinned; upgrades need the
+focused editing/selection/layout checks again. A service without this integration
+keeps its existing editing controls and reports that an admin needs to update it.
 
 Configure Den, leaving `workbotDocuments` off until the service is ready:
 
@@ -76,7 +116,8 @@ must match the exact iframe window and configured service origin.
 WOPI reads, locks and writes independently recheck the pinned connection,
 membership, both flags, connector grants and provider access. WOPI PutFile only
 stages encrypted temporary bytes. It cannot upload to Google. Save to Drive asks
-the editor to finish a snapshot, waits for its response, then explicitly commits
+the editor to finish a snapshot, waits for its response and the matching WOPI
+upload receipt (a bounded, per-save request ID), then explicitly commits
 that exact draft version with the user's authenticated Workbot request. A newer
 staged version rejects the commit instead of silently selecting different bytes.
 The standard WOPI LOCK/REFRESH_LOCK/GET_LOCK/UNLOCK operations serialize editing.
@@ -108,7 +149,8 @@ warns on expiry and allows recovery downloads from the open editor.
   snapshot reads; no Google credentials, authentication framework or Drive writes.
 - `@openwork/documents/office`: existing bounded cell/text edit helpers for hosts
   that explicitly choose that smaller editing surface.
-- `@openwork/documents/react`: `DocumentsBrowser` and its file editors.
+- `@openwork/documents/react`: `DocumentsBrowser`, file editors, composable
+  toolbar controls and the `EditorController`/`EditorCommand` types.
 - `@openwork/documents/styles.css`: scoped semantic styles.
 
 A host imports styles, renders inside TanStack Query, supplies its authenticated

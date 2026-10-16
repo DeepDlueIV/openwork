@@ -81114,7 +81114,7 @@
     "/v1/documents/google-drive/files/{fileId}/office": {
       "post": {
         "operationId": "openGoogleDriveOfficeEditor",
-        "summary": "Open the full Word or Excel editor",
+        "summary": "Open a document, spreadsheet or presentation editor",
         "tags": [
           "Documents"
         ],
@@ -81156,7 +81156,11 @@
                       "type": "string",
                       "enum": [
                         "docx",
-                        "xlsx"
+                        "xlsx",
+                        "pptx",
+                        "odt",
+                        "ods",
+                        "odp"
                       ]
                     }
                   },
@@ -81242,7 +81246,7 @@
         ],
         "x-mint": {
           "metadata": {
-            "og:description": "Open the full Word or Excel editor API reference in OpenWork Docs."
+            "og:description": "Open a document, spreadsheet or presentation editor API reference in OpenWork Docs."
           }
         }
       }
@@ -81270,6 +81274,11 @@
                       "type": "integer",
                       "minimum": -9007199254740991,
                       "maximum": 9007199254740991
+                    },
+                    "saveRequestId": {
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$"
                     },
                     "savedFileId": {
                       "type": "string"

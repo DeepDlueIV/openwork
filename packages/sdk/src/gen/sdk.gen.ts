@@ -9649,7 +9649,7 @@ export class DenClient extends HeyApiClient {
   }
 
   /**
-   * Open the full Word or Excel editor
+   * Open a document, spreadsheet or presentation editor
    */
   public openGoogleDriveOfficeEditor<ThrowOnError extends boolean = false>(
     parameters: {

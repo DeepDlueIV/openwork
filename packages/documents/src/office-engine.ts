@@ -1,15 +1,24 @@
 import { z } from "zod"
 
-export const officeMimeTypes = new Set([
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  "application/vnd.google-apps.document", "application/vnd.google-apps.spreadsheet",
-])
+export const officeFileTypeSchema = z.enum(["docx", "xlsx", "pptx", "odt", "ods", "odp"])
+export type OfficeFileType = z.infer<typeof officeFileTypeSchema>
+export const officeFormats: Record<OfficeFileType, { mimeType: string; kind: "document" | "spreadsheet" | "presentation"; label: string }> = {
+  docx: { mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", kind: "document", label: "Word" },
+  xlsx: { mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", kind: "spreadsheet", label: "Excel" },
+  pptx: { mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation", kind: "presentation", label: "PowerPoint" },
+  odt: { mimeType: "application/vnd.oasis.opendocument.text", kind: "document", label: "OpenDocument text" },
+  ods: { mimeType: "application/vnd.oasis.opendocument.spreadsheet", kind: "spreadsheet", label: "OpenDocument spreadsheet" },
+  odp: { mimeType: "application/vnd.oasis.opendocument.presentation", kind: "presentation", label: "OpenDocument presentation" },
+}
+export const nativeOfficeFormats: Record<string, OfficeFileType> = {
+  "application/vnd.google-apps.document": "docx", "application/vnd.google-apps.spreadsheet": "xlsx", "application/vnd.google-apps.presentation": "pptx",
+}
+export const officeMimeTypes = new Set([...Object.values(officeFormats).map(format => format.mimeType), ...Object.keys(nativeOfficeFormats)])
 export const officeSessionSchema = z.object({
   id: z.string().uuid(), serverUrl: z.string().url(), editorUrl: z.string().url(), accessToken: z.string(), expiresAt: z.number(),
-  saveAsCopy: z.boolean(), canEdit: z.boolean(), fileType: z.enum(["docx", "xlsx"]),
+  saveAsCopy: z.boolean(), canEdit: z.boolean(), fileType: officeFileTypeSchema,
 })
-export const officeStatusSchema = z.object({ expiresAt: z.number(), draftVersion: z.number().int(), savedFileId: z.string().optional() })
+export const officeStatusSchema = z.object({ expiresAt: z.number(), draftVersion: z.number().int(), saveRequestId: z.string().uuid().optional(), savedFileId: z.string().optional() })
 export type OfficeSession = z.infer<typeof officeSessionSchema>
 export type OfficeStatus = z.infer<typeof officeStatusSchema>
 export type OfficeEditor = {

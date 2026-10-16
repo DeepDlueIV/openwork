@@ -4,6 +4,8 @@
   --doc-muted: var(--wb-muted, var(--muted-foreground));
   --doc-chip: var(--wb-chip, var(--muted));
   --doc-line: var(--wb-hairline, var(--border));
+  --doc-surface: var(--wb-surface, var(--background));
+  --doc-panel-shadow: var(--wb-panel-shadow, var(--dls-card-shadow, 0 0 0 1px var(--doc-line)));
   --doc-focus: color-mix(in srgb, var(--doc-text) 60%, var(--doc-bg));
   color: var(--doc-text); background: var(--doc-bg); display: flex; flex: 1; min-width: 0; min-height: 0; font: 13px/1.5 system-ui, sans-serif;
 }
@@ -147,3 +149,31 @@
 
 .ow-office-frame { display: block; border: 0; width: 100%; height: 100%; min-height: 550px; flex: 1; }
 .ow-office-canvas { display: flex; flex-direction: column; }
+
+/* The workspace controls are composed in React, independent of the file engine. */
+.ow-document-commandbar { display: flex; align-items: center; flex-wrap: wrap; gap: 3px; flex-shrink: 0; min-height: 44px; padding: 6px 12px; border-bottom: 1px solid var(--doc-line); background: var(--doc-bg); }
+.ow-editor-control-group { display: flex; align-items: center; gap: 2px; }
+.ow-document-commandbar .ow-editor-control { display: inline-flex; align-items: center; justify-content: center; gap: 7px; height: 30px; padding: 5px 8px; border-radius: 6px; white-space: nowrap; font-size: 12px; font-weight: 400; }
+.ow-document-commandbar .ow-editor-icon-control { width: 30px; padding: 0; }
+.ow-editor-control svg { flex-shrink: 0; stroke-width: 1.5; }
+.ow-document-commandbar .ow-editor-control[aria-pressed=true] { color: var(--doc-text); background: var(--doc-chip); }
+.ow-editor-style-control { max-width: 130px; overflow: hidden; text-overflow: ellipsis; }
+.ow-editor-font-control { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+.ow-editor-control-separator { width: 1px; height: 16px; margin: 0 5px; flex-shrink: 0; background: var(--doc-line); }
+.ow-editor-control-space { flex: 1; }
+.ow-editor-positioner { z-index: 60; }
+/* Portals inherit the host's semantic palette without requiring a Workbot ancestor. */
+.ow-editor-menu {
+  --doc-bg: var(--wb-bg, var(--background)); --doc-text: var(--wb-text, var(--foreground)); --doc-muted: var(--wb-muted, var(--muted-foreground)); --doc-chip: var(--wb-chip, var(--muted)); --doc-line: var(--wb-hairline, var(--border));
+  min-width: 160px; max-width: min(300px, var(--available-width)); max-height: min(360px, var(--available-height)); overflow-y: auto; overscroll-behavior: contain; padding: 4px; border-radius: 8px; background: var(--doc-surface); color: var(--doc-text); box-shadow: var(--doc-panel-shadow); font: 13px/1.5 system-ui, sans-serif; outline: none;
+}
+.ow-editor-menu-item { display: flex; align-items: center; gap: 10px; min-height: 32px; padding: 6px 9px; border-radius: 5px; cursor: default; outline: none; }
+.ow-editor-menu-item > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ow-editor-menu-item[data-highlighted] { background: var(--doc-chip); }
+.ow-editor-menu-item[data-disabled] { opacity: .5; }
+.ow-editor-colors { min-width: 210px; padding: 8px 12px; }
+.ow-editor-colors label { display: flex; align-items: center; gap: 10px; min-height: 38px; }
+.ow-editor-colors label span { flex: 1; }
+.ow-editor-colors input { width: 28px; height: 28px; padding: 2px; border: 1px solid var(--doc-line); border-radius: 6px; background: transparent; cursor: pointer; }
+.ow-editor-colors input:focus-visible { outline: 2px solid var(--doc-muted); outline-offset: 2px; }
+@media (max-width: 800px) { .ow-document-commandbar { gap: 2px; padding-inline: 8px; } .ow-editor-tools-label { display: none; } }

@@ -24177,7 +24177,7 @@ export type OpenGoogleDriveOfficeEditorResponses = {
     expiresAt: number;
     saveAsCopy: boolean;
     canEdit: boolean;
-    fileType: "docx" | "xlsx";
+    fileType: "docx" | "xlsx" | "pptx" | "odt" | "ods" | "odp";
   };
 };
 
@@ -24221,6 +24221,7 @@ export type GetGoogleDriveOfficeEditorStatusResponses = {
   200: {
     expiresAt: number;
     draftVersion: number;
+    saveRequestId?: string;
     savedFileId?: string;
   };
 };

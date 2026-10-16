@@ -4,7 +4,7 @@ import { bodyLimit } from "hono/body-limit"
 import { describeRoute, type DescribeRouteOptions } from "hono-openapi"
 import { z } from "zod"
 import { normalizeDenTypeId } from "@openwork-ee/utils/typeid"
-import { officeSessionSchema, officeStatusSchema } from "@openwork/documents/office-engine"
+import { nativeOfficeFormats, officeFileTypeSchema, officeFormats, officeSessionSchema, officeStatusSchema } from "@openwork/documents/office-engine"
 import { createCollaboraService, officeTicketMatches, validateOfficePackage, officeBytes, OFFICE_TTL_SECONDS, type OfficeDraft } from "@openwork/documents/office-server"
 import { documentIdSchema } from "@openwork/documents/model"
 import { configuredOfficeStore } from "../../documents-office-store.js"
@@ -21,7 +21,6 @@ const ROOT = "/v1/documents/google-drive/files/:fileId/office"
 const SERVICE = "/v1/documents/wopi/files/:sessionId"
 const scope = "https://www.googleapis.com/auth/drive"
 const READ = [scope, `${scope}.readonly`]
-const MIME = { docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }
 const params = z.object({ fileId: documentIdSchema })
 const sessionParams = params.extend({ sessionId: z.string().uuid() })
 const fileSchema = z.object({ id: documentIdSchema, name: z.string(), mimeType: z.string(), version: z.string(), trashed: z.boolean().optional(), capabilities: z.object({ canEdit: z.boolean().optional() }).optional() })
@@ -85,24 +84,24 @@ export function registerGoogleOfficeEditorRoutes<T extends { Variables: OrgRoute
     return (await metadata(c, auth.deps, draft.savedFileId ?? draft.fileId)).ok
   }
 
-  app.post(ROOT, description("openGoogleDriveOfficeEditor", "Open the full Word or Excel editor", officeSessionSchema), orgMemberRoute(), guard, bodyLimit({ maxSize: 1024 }), paramValidator(params), async c => {
+  app.post(ROOT, description("openGoogleDriveOfficeEditor", "Open a document, spreadsheet or presentation editor", officeSessionSchema), orgMemberRoute(), guard, bodyLimit({ maxSize: 1024 }), paramValidator(params), async c => {
     if (!store || !service) return failure(c, "The document editor is unavailable.")
     try {
       const { fileId } = c.req.valid("param"); const auth = await selected(c); if (!auth.ok) return auth.reply
       const meta = await metadata(c, auth.deps, fileId); if (!meta.ok) return meta.reply
-      const native = meta.file.mimeType === "application/vnd.google-apps.document" ? "docx" : meta.file.mimeType === "application/vnd.google-apps.spreadsheet" ? "xlsx" : null
-      const fileType = native ?? (meta.file.mimeType === MIME.docx ? "docx" : meta.file.mimeType === MIME.xlsx ? "xlsx" : null)
-      if (!fileType) return failure(c, "The full editor supports Word and Excel documents.")
-      const url = fileUrl(fileId, native ? "/export" : ""); url.searchParams.set(native ? "mimeType" : "alt", native ? MIME[fileType] : "media")
+      const native = Object.hasOwn(nativeOfficeFormats, meta.file.mimeType) ? nativeOfficeFormats[meta.file.mimeType] : null
+      const fileType = native ?? officeFileTypeSchema.options.find(type => officeFormats[type].mimeType === meta.file.mimeType)
+      if (!fileType) return failure(c, "Open a Word, Excel, PowerPoint or OpenDocument file, or a Google Doc, Sheet or Slides presentation.")
+      const url = fileUrl(fileId, native ? "/export" : ""); url.searchParams.set(native ? "mimeType" : "alt", native ? officeFormats[fileType].mimeType : "media")
       const media = await requestGoogleAction(c, auth.deps, READ, url); if (!media.ok) return media.reply
-      const bytes = await officeBytes(media.response); validateOfficePackage(bytes, fileType)
+      const bytes = await officeBytes(media.response); await validateOfficePackage(bytes, fileType)
       const latest = await metadata(c, auth.deps, fileId); if (!latest.ok) return latest.reply
       if (meta.file.version !== latest.file.version) return failure(c, "This file changed while opening. Open the latest version again.")
       const context = c.get("organizationContext")!
       const canWrite = auth.token.account.scopes?.includes(scope) === true && auth.token.enabledScopes.includes(scope)
       const draft: OfficeDraft = {
         id: randomUUID(), organizationId: context.organization.id, memberId: context.currentMember.id, userId: context.currentMember.userId, connectionId: auth.connectionId,
-        fileId, revision: meta.file.version, name: native ? `${meta.file.name}.${fileType}` : meta.file.name, mimeType: MIME[fileType], fileType,
+        fileId, revision: meta.file.version, name: native ? `${meta.file.name}.${fileType}` : meta.file.name, mimeType: officeFormats[fileType].mimeType, fileType,
         canEdit: canWrite && (native !== null || meta.file.capabilities?.canEdit === true), saveAsCopy: native !== null,
         expiresAt: Date.now() + OFFICE_TTL_SECONDS * 1000, ticket: randomBytes(32).toString("base64url"), source: Buffer.from(bytes).toString("base64"), draftVersion: 0,
       }
@@ -116,7 +115,7 @@ export function registerGoogleOfficeEditorRoutes<T extends { Variables: OrgRoute
       const input = c.req.valid("param"); const draft = await owned(c, input.sessionId, input.fileId)
       const auth = await selected(c, draft.connectionId); if (!auth.ok) return auth.reply
       const check = await metadata(c, auth.deps, draft.savedFileId ?? draft.fileId); if (!check.ok) return check.reply
-      return c.json({ expiresAt: draft.expiresAt, draftVersion: draft.draftVersion, savedFileId: draft.savedFileId })
+      return c.json({ expiresAt: draft.expiresAt, draftVersion: draft.draftVersion, saveRequestId: draft.saveRequestId, savedFileId: draft.savedFileId })
     } catch (error) { return failure(c, error instanceof Error ? error.message : "Couldn't check the save.") }
   })
 
@@ -133,7 +132,7 @@ export function registerGoogleOfficeEditorRoutes<T extends { Variables: OrgRoute
         const meta = await metadata(c, auth.deps, target); if (!meta.ok) return meta.reply
         const copy = draft.saveAsCopy && !draft.savedFileId
         if (!copy && (meta.file.version !== draft.revision || meta.file.mimeType !== draft.mimeType || !meta.file.capabilities?.canEdit)) return failure(c, "This file changed in Drive or is read-only. Keep this tab open and download a copy from the editor, then reopen the Drive file.")
-        const bytes = new Uint8Array(Buffer.from(draft.draft ?? draft.source, "base64")); validateOfficePackage(bytes, draft.fileType)
+        const bytes = new Uint8Array(Buffer.from(draft.draft ?? draft.source, "base64")); await validateOfficePackage(bytes, draft.fileType)
         let body: BodyInit = bytes.buffer; let contentType = draft.mimeType
         const url = new URL(`/upload/drive/v3/files${copy ? "" : `/${target}`}`, env.googleApiBaseUrl ?? "https://www.googleapis.com")
         url.searchParams.set("uploadType", copy ? "multipart" : "media"); url.searchParams.set("fields", "id,name,mimeType,version"); url.searchParams.set("supportsAllDrives", "true")
@@ -178,7 +177,9 @@ export function registerGoogleOfficeEditorRoutes<T extends { Variables: OrgRoute
     c.header("cache-control", "no-store"); c.header("x-content-type-options", "nosniff")
     return draft
   }
-  const wopiFailure = (c: GoogleContext, error: unknown) => error instanceof Response ? error : c.json({ error: "invalid_document_request" }, 403)
+  // Storage/lock failures are temporary, not revoked credentials. A 403 makes
+  // the engine invalidate a still-valid session and can strand unsaved edits.
+  const wopiFailure = (c: GoogleContext, error: unknown) => error instanceof Response ? error : c.json({ error: "document_service_unavailable" }, 503)
   const lockConflict = (c: GoogleContext, value: string) => c.json({ error: "lock_mismatch" }, 409, { "X-WOPI-Lock": value })
 
   app.get(SERVICE, description("getOfficeFileInfo", "Read metadata for one temporary editor session", z.unknown(), []), tokenRoute, async c => {
@@ -200,12 +201,16 @@ export function registerGoogleOfficeEditorRoutes<T extends { Variables: OrgRoute
     try {
       const draft = await wopiDraft(c, true)
       if (!draft) return c.json({ error: "not_found" }, 403)
-      const bytes = await officeBytes(new Response(c.req.raw.body)); validateOfficePackage(bytes, draft.fileType)
+      const bytes = await officeBytes(new Response(c.req.raw.body))
+      try { await validateOfficePackage(bytes, draft.fileType) }
+      catch { return c.json({ error: "invalid_document_package" }, 400) }
       return await store.lock(draft.id, async () => {
         const current = await store.get(draft.id); if (!current) return c.json({ error: "expired" }, 403)
         const lock = current.wopiLock && current.wopiLock.expiresAt > Date.now() ? current.wopiLock.value : ""
         if (lock && lock !== c.req.header("x-wopi-lock")) return lockConflict(c, lock)
         current.draft = Buffer.from(bytes).toString("base64"); current.draftVersion++
+        const requestId = z.string().uuid().safeParse(c.req.header("x-cool-wopi-extendeddata") ?? c.req.header("x-lool-wopi-extendeddata"))
+        current.saveRequestId = requestId.success ? requestId.data : undefined
         await store.put(current)
         return c.json({ LastModifiedTime: new Date().toISOString() }, 200, { "X-WOPI-ItemVersion": String(current.draftVersion) })
       })

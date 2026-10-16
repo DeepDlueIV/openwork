@@ -1,22 +1,47 @@
 import { timingSafeEqual } from "node:crypto"
 import { Parser } from "htmlparser2"
 import { z } from "zod"
-import { listZipEntries } from "@openwork/workbook"
-import type { OfficeSession } from "./office-engine"
+import { listZipEntries, readZipEntryData, utf8Text } from "@openwork/workbook"
+import { officeFileTypeSchema, officeFormats, type OfficeFileType, type OfficeSession } from "./office-engine"
 
 export const OFFICE_MAX_BYTES = 12 * 1024 * 1024
 export const OFFICE_TTL_SECONDS = 4 * 60 * 60
-export function validateOfficePackage(bytes: Uint8Array, fileType: "docx" | "xlsx") {
+export async function validateOfficePackage(bytes: Uint8Array, fileType: OfficeFileType) {
   const entries = listZipEntries(bytes)
-  if (!entries.some(entry => entry.name === (fileType === "docx" ? "word/document.xml" : "xl/workbook.xml"))) throw new Error("The document service returned a different file format.")
-  if (entries.some(entry => /vbaproject|_xmlsignatures|encryptedpackage/i.test(entry.name))) throw new Error("Macro-enabled, encrypted and signed Office packages cannot be edited here.")
+  if (entries.some(entry => /vbaproject|_xmlsignatures|encryptedpackage|(?:^|\/)(?:Basic|Scripts)\/|META-INF\/(?:document|macro|package)signatures\.xml/i.test(entry.name))) throw new Error("Macro-enabled, encrypted and signed document packages cannot be edited here.")
+  const part = fileType === "docx" ? "word/document.xml" : fileType === "xlsx" ? "xl/workbook.xml" : fileType === "pptx" ? "ppt/presentation.xml" : "content.xml"
+  if (!entries.some(entry => entry.name === part)) throw new Error("The document service returned a different file format.")
+  if (["odt", "ods", "odp"].includes(fileType)) {
+    const mime = entries.find(entry => entry.name === "mimetype")
+    const manifest = entries.find(entry => entry.name === "META-INF/manifest.xml")
+    if (!mime || !manifest || utf8Text(await readZipEntryData(bytes, mime)) !== officeFormats[fileType].mimeType) throw new Error("The document service returned a different OpenDocument format.")
+    let unsafe = false
+    for (const entry of entries.filter(entry => entry.name.endsWith(".xml"))) {
+      const xml = new TextDecoder("utf-8", { fatal: true }).decode(await readZipEntryData(bytes, entry))
+      if (xml.includes("\0")) throw new Error("OpenDocument XML must use UTF-8 encoding.")
+      let scripts = 0
+      const parser = new Parser({
+        onopentag(name) {
+          const local = name.split(":").pop() ?? ""
+          if (scripts > 0 || ["encryption-data", "script", "event-listener"].includes(local)) unsafe = true
+          if (local === "scripts") scripts++
+        },
+        onclosetag(name) { if (name.split(":").pop() === "scripts") scripts-- },
+        ontext(text) { if (scripts > 0 && text.trim()) unsafe = true },
+        onprocessinginstruction(name) { if (name.toLowerCase() === "!doctype") unsafe = true },
+      }, { xmlMode: true })
+      parser.write(xml); parser.end()
+    }
+    if (unsafe) throw new Error("Documents with macros, encryption or event scripts cannot be edited here.")
+  }
 }
 export const officeDraftSchema = z.object({
   id: z.string().uuid(), organizationId: z.string(), memberId: z.string(), userId: z.string(), connectionId: z.string(),
   fileId: z.string(), revision: z.string(), name: z.string(), mimeType: z.string(),
-  fileType: z.enum(["docx", "xlsx"]), canEdit: z.boolean(), saveAsCopy: z.boolean(),
+  fileType: officeFileTypeSchema, canEdit: z.boolean(), saveAsCopy: z.boolean(),
   expiresAt: z.number(), ticket: z.string(), source: z.string(),
   draft: z.string().optional(), draftVersion: z.number().int().default(0),
+  saveRequestId: z.string().uuid().optional(),
   wopiLock: z.object({ value: z.string(), expiresAt: z.number() }).optional(),
   savedFileId: z.string().optional(), error: z.string().optional(), uncertain: z.boolean().optional(),
 })

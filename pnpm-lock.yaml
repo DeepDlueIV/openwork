@@ -1523,6 +1523,9 @@ importers:
 
   packages/documents:
     dependencies:
+      '@base-ui/react':
+        specifier: ^1.4.1
+        version: 1.4.1(@types/react@19.2.14)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@openwork/workbook':
         specifier: workspace:*
         version: link:../workbook

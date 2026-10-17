@@ -156,6 +156,7 @@ export interface WorkshopInferenceWitness {
 }
 
 export interface WorkshopInferenceProxyOptions {
+  maxConcurrentRequests?: number;
   maxRequests?: number;
   maxOutputTokens?: number;
   maxTotalOutputTokens?: number;
@@ -179,6 +180,7 @@ export async function startWorkshopInferenceProxy(stack: AsyncDisposableStack, p
   if (JSON.stringify(trusted) !== JSON.stringify(profile)) throw new Error("Untrusted workshop inference profile.");
   if (!paidKey.trim() || paidKey.trim() === "*not found*") throw new Error(`BLOCKED: missing ${profile.credentialEnv}; no inference attempted.`);
   const limits = {
+    maxConcurrentRequests: options.maxConcurrentRequests ?? 4,
     maxRequests: options.maxRequests ?? 180,
     maxOutputTokens: options.maxOutputTokens ?? 8192,
     maxTotalOutputTokens: options.maxTotalOutputTokens ?? 131072,
@@ -194,10 +196,10 @@ export async function startWorkshopInferenceProxy(stack: AsyncDisposableStack, p
   const syntheticKey = `workshop-only-${randomUUID()}`;
   const witnesses: WorkshopInferenceWitness[] = [];
   const started = Date.now();
-  const controllers = new Set<AbortController>();
+  const controllers = new Map<number, AbortController>();
   let inputBytes = 0;
   let outputReserved = 0;
-  let active = false;
+  let active = 0;
   let stopped = false;
   const server = createServer(async (request, response) => {
     const requestStart = Date.now();
@@ -224,7 +226,6 @@ export async function startWorkshopInferenceProxy(stack: AsyncDisposableStack, p
     if (witnesses.length >= limits.maxRequests) { reject(429, "request-budget-exhausted"); return; }
     witnesses.push(witness);
     if (stopped || Date.now() - started >= limits.lifetimeMs) { reject(410, "world-inference-lifetime-exhausted"); return; }
-    if (active) { reject(429, "concurrent-inference-not-permitted"); return; }
     if (request.method !== "POST" || request.url !== `/v1${profile.route}`) { reject(400, "wrong-protocol-route"); return; }
     const chunks: Buffer[] = [];
     let size = 0;
@@ -257,11 +258,12 @@ export async function startWorkshopInferenceProxy(stack: AsyncDisposableStack, p
       if (profile.route === "/responses") body.store = false;
       if (profile.route === "/chat/completions" && body.stream === true) body.stream_options = { include_usage: true };
       witness.forwardedMaxOutputTokens = allowance;
+      if (active >= limits.maxConcurrentRequests) { reject(429, "world-concurrent-request-budget-exhausted"); return; }
       inputBytes += size;
       outputReserved += allowance;
-      active = true;
+      active++;
       const controller = new AbortController();
-      controllers.add(controller);
+      controllers.set(witness.sequence, controller);
       const timer = setTimeout(() => controller.abort(), limits.requestTimeoutMs);
       const disconnected = () => { if (!response.writableEnded) controller.abort(); };
       response.once("close", disconnected);
@@ -271,7 +273,7 @@ export async function startWorkshopInferenceProxy(stack: AsyncDisposableStack, p
       function observe(value: unknown) {
         if (!record(value)) return;
         const result = record(value.response) ? value.response : value;
-        if (result.status === "failed" || result.status === "incomplete" || value.type === "error" || value.error !== undefined) upstreamFailed = true;
+        if (result.status === "failed" || result.status === "incomplete" || value.type === "error" || value.error !== undefined && value.error !== null) upstreamFailed = true;
         if (typeof result.service_tier === "string") witness.returnedServiceTier = result.service_tier;
         if (record(result.reasoning) && typeof result.reasoning.effort === "string") witness.returnedReasoningEffort = result.reasoning.effort;
         const usage = record(result.usage) ? result.usage : undefined;
@@ -333,8 +335,8 @@ export async function startWorkshopInferenceProxy(stack: AsyncDisposableStack, p
       } finally {
         clearTimeout(timer);
         response.off("close", disconnected);
-        controllers.delete(controller);
-        active = false;
+        controllers.delete(witness.sequence);
+        active--;
         // Keep the whole reservation for an interrupted/unknown-usage request.
         if (observedOutput !== null) outputReserved -= Math.max(0, allowance - observedOutput);
         witness.elapsedMs = Date.now() - requestStart;
@@ -358,7 +360,7 @@ export async function startWorkshopInferenceProxy(stack: AsyncDisposableStack, p
   async function stop() {
     if (stopped) return;
     stopped = true;
-    for (const controller of controllers) controller.abort();
+    for (const controller of controllers.values()) controller.abort();
     server.closeAllConnections();
     await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   }
@@ -386,7 +388,8 @@ export async function startWorkshopInferenceProxy(stack: AsyncDisposableStack, p
     if (latest.status === "started") return { status: "running", reason: null };
     return { status: "blocked", reason: latest.rejection ?? `upstream-${latest.httpStatus ?? latest.status}` };
   }
-  return { baseUrl, providerId, modelId: profile.model, variant: profile.variant, provider, witnesses, limits, stop, status,
+  function abortAfter(sequence: number) { for (const [id, controller] of controllers) if (id >= sequence) controller.abort(); }
+  return { baseUrl, providerId, modelId: profile.model, variant: profile.variant, provider, witnesses, limits, stop, status, abortAfter,
     metadata: { profile: profile.name, upstream: `${profile.upstream}${profile.route}`, requestedVariant: profile.variant ?? "default", status: "configured-not-yet-witnessed" } };
 }
 

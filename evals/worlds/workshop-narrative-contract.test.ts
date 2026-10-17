@@ -12,7 +12,7 @@ function assistant(parts: unknown[]) { return { info: { role: "assistant", provi
 function evidence(id: SceneId, parts: unknown[] = []): SceneEvidence { return { id, before: snapshot(), after: { ...snapshot(), messages: [assistant(parts)] }, expected: { providerID: "provider", modelID: "model", sessionId: "session" }, elapsedMs: 1000, costUsd: 0.01 }; }
 function productCalls() { return [pageA, pageB].map((p) => tool("confluence_get_page", { metadata: { id: p.id, content: { value: p.body, format: "storage" } } })); }
 function comparison(): SceneEvidence {
-  const file = { id: "comparison-file", name: "comparison.txt", webUrl: "https://owned.test/onedrive/comparison-file", preview: { text: "Atlas 2 vs Atlas Lift. Sources: product-a and product-b." } };
+  const file = { id: "comparison-file", name: "comparison.txt", webUrl: "https://owned.test/onedrive/comparison-file", preview: { text: "| Spec | Atlas 2 | Atlas Lift |\n|---|---|---|\n| Payload | 300 kg | 1,200 kg |\n| Top speed | 2.0 m/s | 1.5 m/s |\n| Runtime | 10 h | 8 h |\nAtlas 2 supports warehouse picking; Atlas Lift supports pallet moves. Sources: product-a and product-b." } };
   const draft = { id: "reply-draft", isDraft: true, parentFolderId: "drafts", conversationId: source.conversationId, body: { content: file.webUrl } };
   const e = evidence("T01", [...productCalls(), tool("mail_search", { value: [source] }), tool("file_write", file), tool("file_read", file), tool("mail_create_reply_draft", draft), tool("mail_read", draft)]);
   e.after.microsoft = { files: [file], messages: [source, draft] };
@@ -109,7 +109,8 @@ test("pre-existing business writes and unsent-draft prose are not a new comparis
 test("UI feedback requires real persistence, not model prose", () => {
   const e = evidence("T08", [{ type: "text", text: "Feedback saved!" }]);
   assert.equal(verifyWorkshopScene(e).status, "BLOCKED");
-  e.feedback = { feedbackId: "feedback", sessionId: "session", messageId: "answer", text: "Not helpful: the missing-policy uncertainty and next step were not clear enough.", persisted: true, source: "product-ui", observedViaReadback: true };
+  e.before.messages = [{ info: { id: "answer", role: "assistant" }, parts: [{ type: "text", text: "No dog policy found; ask People Ops." }] }];
+  e.feedback = { feedbackId: "feedback", sessionId: "session", messageId: "answer", text: "Not helpful: the missing-policy uncertainty and next step were not clear enough.", submittedText: "Not helpful: the missing-policy uncertainty and next step were not clear enough. Reference session session, response answer.", persisted: true, source: "product-ui", observedViaReadback: true, providerOperation: "createThread", openedFromApp: true };
   assert.equal(verifyWorkshopScene(e).status, "PASS");
   e.feedback.text = "Helpful: clearly distinguished missing policy from permission.";
   assert.equal(verifyWorkshopScene(e).status, "FAIL", "Positive feedback is not the requested negative feedback");
@@ -232,6 +233,23 @@ test("calendar_read is accepted for the actual exact rescheduled Graph meeting",
 test("calendar creation without real update and exact final state cannot pass", () => {
   const e = evidence("T11", [tool("calendar_list", []), tool("calendar_create", { id: "event" })]);
   e.after.microsoft = { events: [{ id: "event", subject: "Acme Atlas review", start: { dateTime: "2026-10-20T11:00:00", timeZone: "UTC" } }] };
+  assert.equal(verifyWorkshopScene(e).status, "FAIL");
+});
+
+test("numeric-string Confluence IDs correlate with actual update/comment and readback results", () => {
+  const addition = "Workshop review: office guidance checked on 2026-10-16; dog-policy confirmation remains with People Ops.";
+  const review = "Workshop review complete; please confirm the dog-policy gap with People Ops.";
+  const old = { id: "163840002", title: "Working at the office", body: "<h1>Working at the office</h1><p>Badge in at reception.</p>", version: 6, comments: [] };
+  const comment = { id: "163840027", body: `<p>${review}</p>` };
+  const updated = { ...old, body: old.body + `<p>${addition}</p>`, version: 7, comments: [comment] };
+  const link = "http://owned.test/confluence/pages/viewpage.action?pageId=163840002";
+  const draft = { id: "reply-draft", isDraft: true, parentFolderId: "drafts", conversationId: source.conversationId, body: { content: `Reviewed ${link}, version 7. ${review}` } };
+  const e = evidence("T12", [tool("confluence_get_page", { metadata: { id: old.id, content: { value: old.body }, url: link } }), tool("confluence_update_page", { message: "Page updated successfully", page: { id: updated.id } }), tool("confluence_get_page", { metadata: { id: updated.id, content: { value: updated.body }, url: link } }), tool("confluence_add_comment", { success: true, comment: { id: comment.id, body: review } }), tool("confluence_get_comments", [{ id: comment.id, body: review }]), tool("mail_search", { value: [source] }), tool("mail_create_reply_draft", draft), tool("mail_read", draft)]);
+  e.before.atlassian = { confluence: { pages: [old] } };
+  e.after.atlassian = { confluence: { pages: [updated] } };
+  e.after.microsoft = { files: [], messages: [source, draft] };
+  assert.equal(verifyWorkshopScene(e).status, "PASS");
+  updated.body = "<p>Only the new note, original content removed.</p>";
   assert.equal(verifyWorkshopScene(e).status, "FAIL");
 });
 

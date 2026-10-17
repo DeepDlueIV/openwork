@@ -179,6 +179,19 @@ test("proxy never sends paid credentials to a modified profile endpoint", async 
   await assert.rejects(() => startWorkshopInferenceProxy(stack, { ...workshopModelProfile(["--model-profile", "gpt-sol-fast"]), upstream: "https://example.test" }, "paid-fixture"), /Untrusted/);
 });
 
+test("bounded simultaneous delegates are allowed and a null Responses error is successful", async () => {
+  await using stack = new AsyncDisposableStack();
+  let active = 0, peak = 0;
+  const proxy = await startWorkshopInferenceProxy(stack, workshopModelProfile(["--model-profile", "gpt-sol-fast"]), "paid-secret-fixture", { upstreamFetch: async () => {
+    active++; peak = Math.max(peak, active); await new Promise((resolve) => setTimeout(resolve, 40)); active--;
+    return new Response(JSON.stringify({ model: "gpt-6.1-sol", service_tier: "fast", status: "completed", error: null, output: [], usage: { input_tokens: 2, output_tokens: 3 } }), { headers: { "content-type": "application/json" } });
+  } });
+  const call = () => fetch(`${proxy.baseUrl}/responses`, { method: "POST", headers: { authorization: `Bearer ${proxy.provider.options.apiKey}`, "content-type": "application/json" }, body: JSON.stringify({ model: proxy.modelId, service_tier: "priority", input: "Transport regression only" }) }).then(async (response) => { await response.text(); return response.status; });
+  assert.deepEqual(await Promise.all([call(), call()]), [200, 200]);
+  assert.equal(peak, 2);
+  assert.ok(proxy.witnesses.every((entry) => entry.status === "completed"));
+});
+
 test("Qwen selection is exact and does not inherit GPT Fast", () => {
   const profile = workshopModelProfile(["--model-profile", "qwen-27b"]);
   assert.equal(assertWorkshopModel(profile, { models: [{ id: "qwen-alias", upstreamModelId: profile.model, config: {} }] }).id, "qwen-alias");

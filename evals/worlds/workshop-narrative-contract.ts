@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { comparisonRequirements } from "./workshop-comparison-semantics.ts";
 
 /** Pure observer contract. This module never starts a world, calls a service, or writes business state. */
 export const WORKSHOP_INITIAL_LOCAL = "2026-10-16T08:55:00";
@@ -13,7 +14,7 @@ const scene = (id: SceneId, title: string, prompt: string): WorkshopScene => Obj
 /** Shared verbatim across both models; scene failures do not prevent later scenes. */
 export const WORKSHOP_SCENES: readonly WorkshopScene[] = Object.freeze([
   scene("T10", "09:00 news digest", "Register a daily 09:00 America/Los_Angeles job using the connected isolated news scheduler. Its model-authored saved instructions must produce a digest from the fictional news corpus covering France, United States, Germany and Japan, with titles, summaries, outlet, country and links. The job must save the digest into a OneDrive Morning news folder and create an unsent Outlook draft. Do NOT generate or deliver the digest before 09:00. The operator will advance the isolated clock and dispatch your saved job instructions to this real paid agent when due. Label this an isolated simulated schedule, not a production Automation. Verify the registered job; never use external news services."),
-  scene("T01", "Grounded customer comparison", "Find and read the complete latest customer request in Outlook. Search Confluence for the Atlas 2 and Atlas Lift datasheets, then read both full pages, not search excerpts. Compare the products against the customer's requirements with page citations. Save a comparison in OneDrive and create an unsent threaded Outlook reply linking it. Verify the saved document and draft."),
+  scene("T01", "Grounded customer comparison", "Find and read the complete latest customer request in Outlook. Search Confluence for the Atlas 2 and Atlas Lift datasheets, then read both full pages, not search excerpts. Compare the products against every material requirement in that request with page citations. Include a compact table with separate Atlas 2 and Atlas Lift columns and payload, top speed and runtime rows; distinguish verified product facts from the customer's unconfirmed safety and site requirements. Save a comparison in OneDrive and create an unsent threaded Outlook reply linking it. Verify the saved document and draft."),
   scene("T02", "Save and rerun a native Workflow", "Turn the customer comparison into a saved native OpenWork Workflow named Acme product comparison with a customerRequest input. Test it using 'Compare Atlas 2 and Atlas Lift for warehouse picking', retain the successful test receipt, and save its version. Rerun that same saved version with the different input 'Compare Atlas Lift for cold-storage pallet moves'. Verify the persisted Workflow, both execution receipts and the different inputs. A chat answer, local script or skill is not a saved native Workflow."),
   scene("T03", "Recipient execution of a shared Workflow", "Share the saved Acme product comparison Workflow with the fictional Acme teammate Nora Patel (nora@acme.test) as a viewer allowed to execute, not an owner. Have that recipient execute the saved version with 'Compare Atlas 2 for line-side replenishment'. Verify the actual grant and recipient execution provenance. Do not substitute an owner run; if recipient execution is unavailable report that blocker."),
   scene("T04", "Account intelligence", "Read the full existing Confluence account plans for Northwind Logistics and Blue Harbor Foods. Compare annual recurring revenue, number and value of orders in the last 12 months, relationship strength, growth potential and churn risk. Preserve exact financial values and distinguish ARR from order revenue. Cite each account plan and ground the relationship, growth and churn assessment in the pages. Save this grounded report as 'Acme account analysis.md' in OneDrive and read it back to verify its actual content."),
@@ -66,6 +67,9 @@ export interface ScheduleWitness {
 export interface FeedbackWitness {
   feedbackId: string; sessionId: string; messageId: string; text: string;
   persisted: boolean; source: "product-ui"; observedViaReadback: boolean;
+  submittedText?: string;
+  providerOperation?: "createThread";
+  openedFromApp?: boolean;
 }
 export interface ArtifactWitness {
   fileId: string; sha256: string; validZip: boolean; validPresentation: boolean;
@@ -85,6 +89,7 @@ export interface SceneEvidence {
   serviceCalls?: readonly ObservedServiceCall[];
   workflow?: WorkflowWitness; sharing?: SharingWitness; schedule?: ScheduleWitness;
   feedback?: FeedbackWitness; artifact?: ArtifactWitness;
+  scheduleRegistration?: ObserverSnapshot;
 }
 export interface SceneVerdict {
   id: SceneId; status: "PASS" | "FAIL" | "BLOCKED"; reasons: string[];
@@ -112,8 +117,11 @@ function matches(call: Call, operation: string) { return call.name === operation
 function callsFor(calls: Call[], operation: string) { return calls.filter((c) => matches(c, operation)); }
 function containsId(value: unknown, id: string): boolean {
   if (!id) return false;
+  // Confluence IDs are numeric strings. Compare the real scalar before JSON
+  // parsing: parsing "163840002" turns it into a number and used to lose it.
+  if ((typeof value === "string" || typeof value === "number") && String(value) === id) return true;
   const parsed = parse(value);
-  if (typeof parsed === "string") return parsed === id;
+  if (typeof parsed === "string" || typeof parsed === "number") return String(parsed) === id;
   if (Array.isArray(parsed)) return parsed.some((v) => containsId(v, id));
   return Object.entries(obj(parsed)).some(([key, value]) => key !== "code" && containsId(value, id));
 }
@@ -194,6 +202,16 @@ function completeFileRead(calls: Call[], file: JsonRecord): boolean {
 
 /** Snapshot deltas + successful call provenance are mandatory; model claims never satisfy a write. */
 export function verifyWorkshopScene(evidence: SceneEvidence): SceneVerdict {
+  // Feedback is a human UI action, not another model turn. It must be read back
+  // from the real form's provider transport and name the actual preceding answer.
+  if (evidence.id === "T08") {
+    const feedback = evidence.feedback;
+    const base = "Not helpful: the missing-policy uncertainty and next step were not clear enough.";
+    if (evidence.elapsedMs > WORKSHOP_LIMITS.sceneMs || (evidence.costUsd != null && evidence.costUsd > WORKSHOP_LIMITS.sceneCostUsd) || (evidence.tokens != null && evidence.tokens > WORKSHOP_LIMITS.sceneTokens)) return { id: evidence.id, status: "FAIL", reasons: ["Feedback scene time, token or observed cost budget exceeded"] };
+    if (!feedback?.persisted || !feedback.observedViaReadback || feedback.source !== "product-ui" || !feedback.feedbackId || !feedback.openedFromApp || feedback.providerOperation !== "createThread") return { id: evidence.id, status: "BLOCKED", reasons: ["Actual app-opened feedback form and provider/disk persistence were not verified"] };
+    const valid = feedback.sessionId === evidence.expected.sessionId && feedback.messageId.length > 0 && feedback.text === base && feedback.submittedText?.startsWith(base) && feedback.submittedText.includes(feedback.sessionId) && feedback.submittedText.includes(feedback.messageId) && messages(evidence.before).some((message) => obj(message.info).id === feedback.messageId && obj(message.info).role === "assistant");
+    return { id: evidence.id, status: valid ? "PASS" : "FAIL", reasons: valid ? [] : ["Feedback must contain the requested negative note and reference the actual preceding session/message"] };
+  }
   // A reused session must not reuse earlier source calls to satisfy a later scene.
   const previousMessageIds = new Set(messages(evidence.before).map((m) => str(obj(m.info).id)).filter(Boolean));
   evidence = { ...evidence, after: { ...evidence.after, messages: messages(evidence.after).filter((m) => !previousMessageIds.has(str(obj(m.info).id))) } };
@@ -230,7 +248,8 @@ export function verifyWorkshopScene(evidence: SceneEvidence): SceneVerdict {
       requireProducts();
       const source = latestInbox(before); need(source && completeMailRead(calls, source), "Read the complete latest Inbox request (full-body mail_search is valid)");
       const document = newItems(files(before), files(after)).find((f) => /Atlas\s*2/i.test(fileText(f)) && /Atlas\s*Lift/i.test(fileText(f)) && productPages.every((p) => fileText(f).includes(str(p.id))));
-      need(document && wrote(calls, "file_write", document) && readBack(calls, "file_read", document), "Comparison must be created and read back in OneDrive with product citations");
+      need(document && wrote(calls, "file_write", document) && completeFileRead(calls, document), "Comparison must be created and fully read back in OneDrive with product citations");
+      if (document && source) for (const reason of comparisonRequirements(fileText(document), bodyContent(source))) failures.push(reason);
       const draft = newItems(mails(before), mails(after)).find((m) => m.isDraft === true && m.parentFolderId === "drafts" && m.conversationId === source?.conversationId && document && (bodyContent(m).includes(str(document.webUrl)) || bodyContent(m).includes(str(document.id))));
       need(draft && wrote(calls, "mail_create_reply_draft", draft) && readBack(calls, "mail_read", draft), "Create and read back an unsent threaded reply linking the document");
       break;
@@ -315,15 +334,19 @@ export function verifyWorkshopScene(evidence: SceneEvidence): SceneVerdict {
       need(!toolParts(after).some((p) => /web.?search|web.?fetch|browse|exa|google_search|bing|playwright/i.test(str(p.tool)) || /web.?search|web.?fetch|browse|exa|google_search|bing|playwright/i.test(str(obj(obj(p.state).input).name))), "External tool invocation/attempt is not approved");
       break;
     }
-    case "T08": {
-      const f = evidence.feedback;
-      block(f?.persisted && f.observedViaReadback && f.source === "product-ui" && f.feedbackId, "Real persisted product UI feedback witness unavailable; model claim is insufficient");
-      if (f) need(f.sessionId === evidence.expected.sessionId && f.messageId.length > 0 && f.text === "Not helpful: the missing-policy uncertainty and next step were not clear enough.", "Feedback must target the actual session/message with the requested text");
-      break;
-    }
     case "T10": {
       block(evidence.schedule, "09:00 simulated scheduling plus actual inference/delivery witness unavailable");
       const s = evidence.schedule;
+      if (s?.inferenceExecuted && s.deliveryExecuted) {
+        const registered = evidence.scheduleRegistration;
+        block(registered, "A pre-09:00 business-state observation is required to rule out premature delivery");
+        if (registered) {
+          need(!newItems(files(before), files(registered)).some((file) => !file.folder), "No digest file may be generated or delivered before 09:00");
+          need(!mails(registered).some((mail) => !mails(before).some((old) => old.id === mail.id && bodyContent(old) === bodyContent(mail) && old.parentFolderId === mail.parentFolderId)), "No new or modified mail may be delivered before 09:00");
+          const previousAudit = arr(obj(before.microsoft).audit).map(obj);
+          need(!arr(obj(registered.microsoft).audit).map(obj).some((call) => call.status === "completed" && !previousAudit.some((old) => old.sequence === call.sequence) && /^(?:file_write|mail_create_draft|mail_create_reply_draft|mail_send)$/.test(str(call.name))), "No transient pre-clock delivery write may be hidden by deleting its object");
+        }
+      }
       if (s) {
         block(s.inferenceExecuted && s.deliveryExecuted && s.runnerSessionId, "Scheduler due event alone is not execution or delivery");
         need(s.timeZone === WORKSHOP_TIME_ZONE && s.dueAt === "2026-10-16T16:00:00.000Z" && Date.parse(s.clockBefore) < Date.parse(s.dueAt) && Date.parse(s.clockAfter) >= Date.parse(s.dueAt), "Witness the simulated 09:00 Los Angeles boundary exactly");
@@ -339,6 +362,7 @@ export function verifyWorkshopScene(evidence: SceneEvidence): SceneVerdict {
           const usedArticles = arr(news.articles).map(obj).filter((article) => fileText(digest).includes(str(article.url)) && fileText(digest).includes(str(article.title)) && fileText(digest).includes(str(article.outlet)));
           need(["France", "United States", "Germany", "Japan"].every((country) => usedArticles.some((article) => article.country === country && sourceCalls.some((call) => containsId(call.output, str(article.id))))), "Every country needs a real source title, outlet, country and link in the delivered digest");
           need(usedArticles.every((article) => str(article.summary).toLowerCase().split(/\W+/).filter((word) => word.length > 4).filter((word) => fileText(digest).toLowerCase().includes(word)).length >= 4), "Delivered news summaries must retain source content, not only titles and links");
+          need(Boolean(str(digest.webUrl) && bodyContent(draft).includes(str(digest.webUrl))) || (usedArticles.length > 0 && usedArticles.every((article) => bodyContent(draft).includes(str(article.url)))), "The actual unsent draft must link the delivered digest or contain all selected source links, not just a placeholder");
           const folder = files(after).find((file) => file.folder && str(file.name).toLowerCase() === "morning news");
           need(folder && obj(digest.parentReference).id === folder.id, "Digest must actually be saved inside the requested OneDrive folder");
           if (s.inferenceExecuted && s.deliveryExecuted) need(wrote(calls, "file_write", digest) && (wrote(calls, "mail_create_draft", draft) || wrote(calls, "mail_create_reply_draft", draft)), "Correlate due-run digest and draft with actual successful service writes");

@@ -17,7 +17,7 @@ async function sourceDigest() {
   for (const path of evidenceFiles) hash.update(path).update(await readFile(join(root, path)));
   return hash.digest("hex");
 }
-evidenceFiles.push("evals/worlds/workshop-workflow-witness.ts", "evals/worlds/workshop-comparison-semantics.ts", "evals/worlds/workshop-feedback.ts", "evals/docs-shots/shots/workshop.ts", "evals/packages/labs/src/workshop-feedback.mjs", "evals/packages/labs/src/workshop-feedback-preload.mjs");
+evidenceFiles.push("evals/worlds/workshop-pptx.ts", "evals/worlds/workshop-run-budget.ts", "evals/worlds/workshop-workflow-witness.ts", "evals/worlds/workshop-comparison-semantics.ts", "evals/worlds/workshop-feedback.ts", "evals/docs-shots/shots/workshop.ts", "evals/packages/labs/src/workshop-feedback.mjs", "evals/packages/labs/src/workshop-feedback-preload.mjs");
 const hash = await sourceDigest();
 const promptDigest = createHash("sha256").update(JSON.stringify({ scenes: WORKSHOP_SCENES, limits: WORKSHOP_LIMITS })).digest("hex");
 const phases: Record<string, unknown>[] = [];

@@ -65,6 +65,7 @@ test("a fictional team rehearses every workshop scene without hidden task writes
               await user.on(surface).click({ role: "button", label: "Send feedback" });
               await user.on(surface).see({ text: "Feedback sent" }, { timeoutMs: 45000 });
               const persisted = await world.readFeedback();
+              await world.retainFeedbackEvidence();
               const thread = persisted.threads.find((item) => !prior.threads.some((old) => old.id === item.id) && item.input.components.some((component) => component.componentPlainText.plainText.includes(note)));
               const after = await world.observe();
               const verdict = verifyWorkshopScene({ id: "T08", before, after, expected: { ...world.expectedModel, sessionId: before.sessionId }, elapsedMs: Date.now() - started, feedback: thread ? { feedbackId: thread.id, sessionId: before.sessionId, messageId, text: negative, submittedText: note, persisted: true, source: "product-ui", observedViaReadback: true, providerOperation: "createThread", openedFromApp: true } : undefined });
@@ -147,10 +148,12 @@ test("a fictional team rehearses every workshop scene without hidden task writes
               }
               let verdict = verifyWorkshopScene(check);
               if (scene.id === "T05" && verdict.artifactCandidate) {
-                const artifact = await world.inspectPptx(verdict.artifactCandidate.path, after.sessionId ?? "");
+                const artifact = await world.inspectPptx(verdict.artifactCandidate.fileId, after.sessionId ?? "");
                 if ("artifact" in artifact) { check.artifact = artifact.artifact; verdict = verifyWorkshopScene(check); }
+                else verdict.reasons.push(artifact.reason);
               }
               if (scene.id === "T10" && !scheduled) verdict = { id: scene.id, status: "BLOCKED", reasons: ["No model-registered isolated due job was available for real paid dispatch at the 09:00 clock boundary; a manually created digest is not scheduled-execution proof.", ...verdict.reasons] };
+              await world.retainSceneEvidence(check);
               const tierOk = forwarded.some((request) => request.status === "completed") && forwarded.every((request) => profile !== "gpt-sol-fast" || (request.requestedServiceTier === "priority" && (request.status !== "completed" || ["fast", "priority"].includes(request.returnedServiceTier ?? ""))));
               const reasons = [...verdict.reasons, ...(!completed ? ["Real assistant turn exceeded the common time bound or waited for approval; stopped through the product"] : []), ...(!tierOk ? ["Actual inference protocol/Fast tier was not verified for every request"] : [])];
               row = { id: scene.id, title: scene.title, status: !completed || !tierOk ? "FAIL" : verdict.status, reason: reasons.join("; ") || "Actual model calls, backend state and provenance matched", latencyMs: Date.now() - started, sessionId: after.sessionId ?? undefined, evidence: { usage: verdict.usage, requestCount: witnessed.length, rejectedBeforeUpstream: witnessed.filter((request) => request.status === "rejected").map((request) => ({ sequence: request.sequence, reason: request.rejection })), upstreamErrors: forwarded.filter((request) => request.status !== "completed").map((request) => ({ sequence: request.sequence, status: request.status, httpStatus: request.httpStatus })), inputTokens: witnessed.reduce((sum, request) => sum + (request.inputTokens ?? 0), 0), outputTokens: witnessed.reduce((sum, request) => sum + (request.outputTokens ?? 0), 0), estimatedUsd: knownCost, costStatus: knownCost === null ? "unavailable" : "estimated-not-billed", sourceCalls: check.serviceCalls?.length ?? 0, artifact: check.artifact ? { fileId: check.artifact.fileId, sha256: check.artifact.sha256, downloadedSha256: check.artifact.downloadedSha256, validZip: check.artifact.validZip, validPresentation: check.artifact.validPresentation, slideCount: check.artifact.slideCount } : null, workflowVerification: record(check.workflow).verification ?? null, sharingVerification: record(check.sharing).verification ?? null, schedule: check.schedule ?? null } };

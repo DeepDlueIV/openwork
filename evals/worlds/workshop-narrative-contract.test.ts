@@ -1,5 +1,8 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
 import { test } from "node:test";
+import { fileURLToPath } from "node:url";
 import { WORKSHOP_LIMITS, WORKSHOP_SCENES, WORKSHOP_MODEL_ORDER, WORKSHOP_INITIAL_INSTANT, seedSemanticHash, verifyWorkshopScene, verifyWorkshopMatrix } from "./workshop-narrative-contract.ts";
 import type { SceneEvidence, SceneId, SceneVerdict, ObserverSnapshot, JsonRecord } from "./workshop-narrative-contract.ts";
 
@@ -11,11 +14,12 @@ function tool(name: string, output: unknown, input: unknown = {}): JsonRecord { 
 function assistant(parts: unknown[]) { return { info: { role: "assistant", providerID: "provider", modelID: "model", agent: "openwork", sessionID: "session", finish: "stop", time: { completed: 1 } }, parts }; }
 function evidence(id: SceneId, parts: unknown[] = []): SceneEvidence { return { id, before: snapshot(), after: { ...snapshot(), messages: [assistant(parts)] }, expected: { providerID: "provider", modelID: "model", sessionId: "session" }, elapsedMs: 1000, costUsd: 0.01 }; }
 function productCalls() { return [pageA, pageB].map((p) => tool("confluence_get_page", { metadata: { id: p.id, content: { value: p.body, format: "storage" } } })); }
-function comparison(): SceneEvidence {
-  const file = { id: "comparison-file", name: "comparison.txt", webUrl: "https://owned.test/onedrive/comparison-file", preview: { text: "| Spec | Atlas 2 | Atlas Lift |\n|---|---|---|\n| Payload | 300 kg | 1,200 kg |\n| Top speed | 2.0 m/s | 1.5 m/s |\n| Runtime | 10 h | 8 h |\nAtlas 2 supports warehouse picking; Atlas Lift supports pallet moves. Sources: product-a and product-b." } };
-  const draft = { id: "reply-draft", isDraft: true, parentFolderId: "drafts", conversationId: source.conversationId, body: { content: file.webUrl } };
-  const e = evidence("T01", [...productCalls(), tool("mail_search", { value: [source] }), tool("file_write", file), tool("file_read", file), tool("mail_create_reply_draft", draft), tool("mail_read", draft)]);
-  e.after.microsoft = { files: [file], messages: [source, draft] };
+function comparison(request = source, requirements = "", options: { fileReadText?: string; draftConversationId?: string } = {}): SceneEvidence {
+  const file = { id: "comparison-file", name: "comparison.txt", webUrl: "https://owned.test/onedrive/comparison-file", preview: { text: "| Spec | Atlas 2 | Atlas Lift |\n|---|---|---|\n| Payload | 300 kg | 1,200 kg |\n| Top speed | 2.0 m/s | 1.5 m/s |\n| Runtime | 10 h | 8 h |\nAtlas 2 supports warehouse picking; Atlas Lift supports pallet moves. Sources: product-a and product-b." + requirements } };
+  const draft = { id: "reply-draft", isDraft: true, parentFolderId: "drafts", conversationId: options.draftConversationId ?? request.conversationId, body: { content: file.webUrl } };
+  const e = evidence("T01", [...productCalls(), tool("mail_search", { value: [request] }), tool("file_write", file), tool("file_read", options.fileReadText === undefined ? file : { id: file.id, text: options.fileReadText }), tool("mail_create_reply_draft", draft), tool("mail_read", draft)]);
+  e.before.microsoft = { files: [], messages: [request] };
+  e.after.microsoft = { files: [file], messages: [request, draft] };
   return e;
 }
 function replaceParts(e: SceneEvidence, parts: unknown[]) { e.after.messages = [assistant(parts)]; }
@@ -44,6 +48,81 @@ test("scene order, deterministic clock and model-independent bounded prompts", (
 
 test("complete-body mail_search is a valid source read, not restricted to mail_read", () => {
   assert.equal(verifyWorkshopScene(comparison()).status, "PASS");
+});
+
+const comparisonArtifactReason = "Comparison must be created and fully read back in OneDrive with product citations";
+const comparisonDraftReason = "Create and read back an unsent threaded reply linking the document";
+
+test("T01 full source reads and a chat-only comparison still fail both artifact requirements", () => {
+  const e = evidence("T01", [...productCalls(), tool("mail_read", source), { type: "text", text: "I read the sources, but found only internal customer-related correspondence. Atlas 2: 300 kg, 2.0 m/s, 10 h. Atlas Lift: 1,200 kg, 1.5 m/s, 8 h. Sources: product-a and product-b." }]);
+  const verdict = verifyWorkshopScene(e);
+  assert.equal(verdict.status, "FAIL");
+  assert.deepEqual(verdict.reasons, [comparisonArtifactReason, comparisonDraftReason]);
+});
+
+test("T01 complete file and threaded unsent draft readbacks satisfy both artifact requirements", () => {
+  const verdict = verifyWorkshopScene(comparison());
+  assert.equal(verdict.status, "PASS");
+  assert.deepEqual(verdict.reasons, []);
+});
+
+test("T01 partial file readback fails even when the file write and threaded draft are valid", () => {
+  const e = comparison(source, "", { fileReadText: "Atlas 2 and Atlas Lift: product-a and product-b" });
+  const verdict = verifyWorkshopScene(e);
+  assert.equal(verdict.status, "FAIL");
+  assert.deepEqual(verdict.reasons, [comparisonArtifactReason]);
+});
+
+test("T01 a read-back unsent draft in another thread fails despite a verified comparison", () => {
+  const e = comparison(source, "", { draftConversationId: "unrelated-thread" });
+  const verdict = verifyWorkshopScene(e);
+  assert.equal(verdict.status, "FAIL");
+  assert.deepEqual(verdict.reasons, [comparisonDraftReason]);
+});
+
+test("T01 and T12 source prompts align with the actual newest internal customer-related Inbox fixture", { timeout: 10_000 }, async (t) => {
+  // Read the real, unchanged synthetic seed; no MCP mutations, native world or inference.
+  const child = spawn(process.execPath, [fileURLToPath(new URL("../packages/labs/src/demo-microsoft365.mjs", import.meta.url))], { env: { PATH: process.env.PATH, HOST: "127.0.0.1", PORT: "0", DEMO_NOW: WORKSHOP_INITIAL_INSTANT }, stdio: ["ignore", "pipe", "ignore"] });
+  t.after(async () => {
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    const exited = once(child, "exit");
+    child.kill();
+    await exited;
+  });
+  assert.ok(child.stdout);
+  const ready = once(child.stdout, "data", { signal: AbortSignal.timeout(5_000) });
+  await once(child, "spawn");
+  const [output] = await ready;
+  const origin = /http:\/\/127\.0\.0\.1:\d+/.exec(String(output))?.[0];
+  assert.ok(origin, "Synthetic fixture must announce its loopback listener");
+  const response = await fetch(`${origin}/state`, { signal: AbortSignal.timeout(5_000) });
+  assert.equal(response.status, 200);
+  const state: unknown = await response.json();
+  const record = (value: unknown): value is JsonRecord => value !== null && typeof value === "object" && !Array.isArray(value);
+  assert.ok(record(state) && Array.isArray(state.messages));
+  const inbox = state.messages.filter(record).filter((mail) => mail.parentFolderId === "inbox").sort((a, b) => String(b.receivedDateTime).localeCompare(String(a.receivedDateTime)));
+  const latest = inbox[0];
+  assert.ok(latest);
+  assert.equal(latest.id, "mail-blueharbor-2");
+  assert.equal(latest.conversationId, "thread-blueharbor");
+  assert.equal(latest.receivedDateTime, "2026-10-16T13:55:00.000Z");
+  assert.match(String(latest.subject), /Blue Harbor.*safety review and customer meeting/);
+  assert.ok(record(latest.from) && record(latest.from.emailAddress));
+  assert.equal(latest.from.emailAddress.address, "nora@acme.test");
+  assert.ok(record(latest.body) && typeof latest.body.content === "string");
+  assert.match(latest.body.content, /customer sign-off/);
+  for (const id of ["T01", "T12"]) {
+    const prompt = WORKSHOP_SCENES.find((scene) => scene.id === id)?.prompt;
+    assert.ok(prompt);
+    assert.match(prompt, /latest customer-related Inbox message in Outlook, including internal staff correspondence about the customer/);
+  }
+  assert.ok(typeof latest.id === "string");
+  assert.ok(typeof latest.conversationId === "string");
+  assert.ok(typeof latest.receivedDateTime === "string");
+  const request = { id: latest.id, conversationId: latest.conversationId, receivedDateTime: latest.receivedDateTime, parentFolderId: "inbox", body: { content: latest.body.content } };
+  const verdict = verifyWorkshopScene(comparison(request, "\nCustomer sign-off remains unconfirmed for approved level-floor routes. Operator training is two sessions per shift; supervised operation only, no unattended operation. Charging bay dimensions remain unconfirmed."));
+  assert.equal(verdict.status, "PASS");
+  assert.deepEqual(verdict.reasons, []);
 });
 
 test("actual MCP metadata markdownify setext headings match full HTML bodies", () => {

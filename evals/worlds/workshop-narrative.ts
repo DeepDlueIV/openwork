@@ -6,8 +6,9 @@ import { execFile } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 import { createHash, randomUUID } from "node:crypto";
-import { seedSemanticHash } from "./workshop-narrative-contract.ts";
+import { seedSemanticHash, type SceneEvidence } from "./workshop-narrative-contract.ts";
 import { workshopRunBudget } from "./workshop-run-budget.ts";
+import { inspectWorkshopPptx, verifyWorkshopPptxPrerequisite } from "./workshop-pptx.ts";
 import type { NativeWorkflowObservation } from "./workshop-narrative-witnesses.ts";
 import { addInitScript, allocateFreePort, browserScript, connect, evaluateOnSurface, listTargets, navigate, type Surface } from "@openwork/cdp";
 import { chrome } from "@openwork/hosts";
@@ -52,6 +53,9 @@ export async function workshopNarrative(seed: Seed, { place }: { place: Place })
     async [Symbol.asyncDispose]() { await resources.disposeAsync(); },
   });
   try {
+    setupStage = "independent PPTX parser prerequisite (before paid inference)";
+    await verifyWorkshopPptxPrerequisite();
+    setupStage = "exact inference preflight";
     const inference = await startNarrativeInference(profile, resources);
     subjectMetadata = inference.metadata;
     if (!inference.ready) return blocked(inference.reason, inference.metadata);
@@ -183,6 +187,11 @@ export async function workshopNarrative(seed: Seed, { place }: { place: Place })
       profile, ready: true as const, blockedReason: null, model: inference.metadata, expectedModel: { providerID: inference.providerId, modelID: inference.modelId, variant: inference.variant }, app: owner.app, recipientApp: recipient.app, ownerWeb, recipientWeb, serviceBrowser, controlBrowser, docshots,
       nativeWorkflows,
       readFeedback: feedback.read,
+      async retainFeedbackEvidence() {
+        const directory = join(reportDir, "private-observer");
+        await mkdir(directory, { recursive: true });
+        await writeFile(join(directory, "T08-provider.json"), JSON.stringify(await feedback.read(), null, 2) + "\n", { mode: 0o600 });
+      },
       async feedbackSurface(): Promise<Surface> {
         const deadline = Date.now() + 15000;
         while (Date.now() < deadline) {
@@ -209,26 +218,21 @@ export async function workshopNarrative(seed: Seed, { place }: { place: Place })
         return { ...current, atlassian: await stateJson(`${atlassian.baseUrl}/state`), microsoft: await stateJson(`${microsoft.baseUrl}/state`), news: await stateJson(`${news.baseUrl}/state`), workflows: workflows.body, inference: inference.observations(), identity, actorEmail: actor.email };
       },
       assertIsolation,
+      async retainSceneEvidence(scene: SceneEvidence) {
+        // Only owned synthetic business-state/audit readbacks, never runtime,
+        // auth configuration, raw requests, or whole conversation snapshots.
+        const business = (snapshot: SceneEvidence["before"]) => ({ atlassian: snapshot.atlassian, microsoft: snapshot.microsoft, news: snapshot.news, workflows: snapshot.workflows });
+        const directory = join(reportDir, "private-observer");
+        await mkdir(directory, { recursive: true });
+        let json = JSON.stringify({ id: scene.id, expected: scene.expected, before: business(scene.before), after: business(scene.after), serviceCalls: scene.serviceCalls, artifact: scene.artifact, workflow: scene.workflow, sharing: scene.sharing, schedule: scene.schedule }, null, 2);
+        for (const secret of [operatorKey, ...redactions, owner.manifest.token, owner.manifest.hostToken, recipient.manifest.token, recipient.manifest.hostToken]) if (secret) json = json.replaceAll(secret, "[credential-redacted]");
+        await writeFile(join(directory, `${scene.id}.json`), json + "\n", { mode: 0o600 });
+      },
       async outsiderWorkflows() { return (await readDen(den.members.outsider!, "/v1/workflows")).body; },
       async workflowDetail(id: string, identity: "owner" | "recipient" = "owner") { return (await readDen(identity === "owner" ? den.admin : den.members.teammate!, `/v1/workflows/${encodeURIComponent(id)}`)).body; },
       assertScreenshotSafe: assertSafe,
-      async inspectPptx(name: string, sessionId: string) {
-        const state = await stateJson(`${microsoft.baseUrl}/state`);
-        const file = state.files.find((entry: Record<string, unknown>) => entry.name === name);
-        if (!file) return { valid: false, reason: "Model did not save the requested PPTX" };
-        const url = new URL(`/download/${encodeURIComponent(file.id)}`, microsoft.baseUrl);
-        const response = await fetch(url, { redirect: "error" });
-        if (!response.ok) return { valid: false, reason: `PPTX download HTTP ${response.status}` };
-        const path = join(root, "observed-report.pptx");
-        const bytes = Buffer.from(await response.arrayBuffer());
-        await writeFile(path, bytes);
-        const digest = createHash("sha256").update(bytes).digest("hex");
-        try {
-          const uvx = process.env.OPENWORK_WORKSHOP_UVX ?? "uvx";
-          const parsed = await run(uvx, ["--from", "python-pptx", "python", "-c", "import json,sys,zipfile;from pptx import Presentation;p=Presentation(sys.argv[1]);texts=[s.text for slide in p.slides for s in slide.shapes if s.has_text_frame];texts += [c.text for slide in p.slides for s in slide.shapes if s.has_table for row in s.table.rows for c in row.cells];texts += [r.target_ref for slide in p.slides for r in slide.part.rels.values() if r.is_external];print(json.dumps({'slides':len(p.slides),'validZip':zipfile.is_zipfile(sys.argv[1]),'text':'\\n'.join(texts)}))", path], { timeout: 60_000 });
-          const result: unknown = JSON.parse(parsed.stdout);
-          return { valid: record(result) && typeof result.slides === "number" && result.slides >= 3 && typeof result.text === "string" && /Northwind/i.test(result.text) && /Blue Harbor/i.test(result.text), parser: "python-pptx", result, artifact: { fileId: String(file.id), sha256: digest, downloadedSha256: digest, validZip: record(result) && result.validZip === true, validPresentation: record(result), slideCount: record(result) && typeof result.slides === "number" ? result.slides : 0, extractedText: record(result) && typeof result.text === "string" ? result.text : "", generatedBySessionId: sessionId }, reason: "OOXML opened by python-pptx; no Office application rendering claim" };
-        } catch { return { valid: false, reason: "PPTX parser/openability failed or python-pptx unavailable" }; }
+      async inspectPptx(fileId: string, sessionId: string) {
+        return inspectWorkshopPptx({ origin: microsoft.baseUrl, fileId, sessionId, directory: join(reportDir, "private-artifacts") });
       },
       async acknowledgeScheduledExecution(input: { eventId: string; sessionId: string; digestFileId: string; draftId: string; inferenceWitnessSequence: number }) {
         const current = await latestSession("owner");

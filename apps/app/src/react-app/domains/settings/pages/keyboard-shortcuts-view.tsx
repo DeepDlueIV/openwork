@@ -9,7 +9,6 @@ import { ChevronDown, Lock, Pencil, Plus, Trash2, Zap } from "lucide-react";
 import { FAST_DEFAULT_VARIANT, FAST_VARIANT_PREFIX } from "@openwork/types/cloud-model-fast";
 
 import type { Client, ModelOption, ModelRef } from "@/app/types";
-import { getModelBehaviorSummary } from "@/app/lib/model-behavior";
 import { isDesktopProviderBlocked } from "@/app/cloud/desktop-app-restrictions";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -53,6 +52,8 @@ type CatalogModel = ModelRef & {
 
 export type KeyboardShortcutsViewProps = {
   client: Client | null;
+  /** The shared model catalog, the same list the chat's model picker shows. */
+  pickerOptions?: readonly ModelOption[];
   baseUrl: string;
   directory: string;
   onOpenProviders: () => void;
@@ -344,15 +345,15 @@ export function KeyboardShortcutsView(props: KeyboardShortcutsViewProps) {
   const catalog = catalogQuery.data;
   const rowCatalog = useMemo(() => (catalog ? { all: catalog.all ?? [], connected: getConnectedProviderItems(catalog) } : null), [catalog]);
 
-  const models = useMemo<CatalogModel[]>(() => getConnectedProviderItems(catalog).flatMap((provider) =>
-    Object.entries(provider.models).map(([modelID, model]) => ({
-      providerID: provider.id,
-      modelID,
-      title: model.name || modelID,
-      providerName: provider.name,
-      behaviorOptions: getModelBehaviorSummary(provider.id, model, null, provider.name).options,
-    }))).sort((a, b) => a.title.localeCompare(b.title)), [catalog]);
-  const pickerOptions = useMemo(() => (catalog ? runtimeModelOptions(catalog) : []), [catalog]);
+  const runtimeOptions = useMemo(() => (catalog ? runtimeModelOptions(catalog) : []), [catalog]);
+  const pickerOptions = props.pickerOptions?.length ? props.pickerOptions : runtimeOptions;
+  const models = useMemo<CatalogModel[]>(() => pickerOptions.filter((option) => !option.disabled).map((option) => ({
+    providerID: option.providerID,
+    modelID: option.modelID,
+    title: option.title,
+    providerName: option.description ?? option.providerID,
+    behaviorOptions: option.behaviorOptions ?? [],
+  })).sort((a, b) => a.title.localeCompare(b.title)), [pickerOptions]);
   const modelsByKey = useMemo(() => new Map(models.map((model) => [modelRefKey(model), model])), [models]);
   const savedKeys = useMemo(() => new Set(favorites.map(modelRefKey)), [favorites]);
   const unassigned = favorites.filter((favorite) => !shortcutForModel(shortcuts, favorite) && modelsByKey.has(modelRefKey(favorite)));

@@ -190,17 +190,18 @@ export function modelGroups(options: readonly ModelOption[], personal: readonly 
   const shown = new Set<string>();
   const search = query.trim().toLowerCase();
   const available = options.filter((option) => !option.disabled);
-  const add = (value: string, candidates: readonly ModelOption[]) => {
+  // `claim`: listed only here. Recent is a shortcut; its models still appear under their provider.
+  const add = (value: string, candidates: readonly ModelOption[], claim = true) => {
     const items = candidates.filter((option) => {
       const key = modelRefKey(option);
       if (shown.has(key) || (search && !`${modelTitle(option)} ${modelSubtitle(option)} ${key}`.toLowerCase().includes(search))) return false;
-      shown.add(key);
+      if (claim) shown.add(key);
       return true;
     });
     if (items.length) groups.push({ value, items });
   };
   add("Pinned", orderedModelPins(available, personal));
-  add("Recent", recent.flatMap((model) => available.filter((option) => modelRefKey(option) === modelRefKey(model))));
+  add("Recent", recent.flatMap((model) => available.filter((option) => modelRefKey(option) === modelRefKey(model))), false);
   add("OpenWork Models", available.filter((option) => option.providerID === "openwork" || option.providerID === AUTO_PROVIDER_ID));
   const providers = [...new Set(available.map((option) => option.providerID))].sort((a, b) => {
     const name = (id: string) => available.find((option) => option.providerID === id)?.description || id;

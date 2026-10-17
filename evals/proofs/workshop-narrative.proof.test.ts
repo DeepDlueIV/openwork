@@ -7,6 +7,7 @@ import { observedServiceCalls, observedNativeWorkflowCalls, sharingWitness, work
 import type { WorkflowWitnessContext } from "../worlds/workshop-workflow-witness.ts";
 import { WORKSHOP_SHOT_IDS } from "../docs-shots/shots/workshop.ts";
 import { workshopTurnTerminal as terminal } from "../worlds/workshop-turn-diagnostics.ts";
+import { workshopWorkflowFrame } from "../worlds/workshop-workflow-frame.ts";
 
 const test = spec.world(workshopNarrative, {
   timeout: 420_000,
@@ -205,14 +206,11 @@ test("a fictional team rehearses every workshop scene without hidden task writes
                   await world.assertScreenshotSafe(surface); await user.on(surface).screenshot();
                   shotSurface = surface; shotExpectation = "Acme product comparison";
                   if (verdict.status === "PASS") {
-                    const actualValue = JSON.stringify(record(record(record(nativeAfter.details).script).latestSnapshot).value);
-                    const atlas2 = actualValue?.match(/\b300\s*(?:kg|kilograms?)/i)?.[0];
-                    const lift = actualValue?.match(/\b1[,. ]?200\s*(?:kg|kilograms?)/i)?.[0];
-                    if (!atlas2 || !lift) throw new Error("Verified latest comparison lacked renderable actual product payload facts");
+                    const frame = workshopWorkflowFrame(record(record(record(nativeAfter.details).script).latestSnapshot).value);
                     await world.docshots.capture(scene.id === "T02" ? "workshop-t02-context" : "workshop-t03-context", surface, { expect: ["Acme product comparison", scene.id === "T02" ? "Compare Atlas Lift for cold-storage pallet moves" : "Compare Atlas 2 for line-side replenishment"], route: /\/dashboard\/library\/workflows\// });
-                    workflowPayloads = ["Atlas 2", "Atlas Lift", atlas2, lift];
-                    await user.on(surface).see({ text: atlas2 });
-                    await user.on(surface).see({ text: lift });
+                    workflowPayloads = frame.expect;
+                    await user.on(surface).see(frame.atlas2);
+                    await user.on(surface).see(frame.lift);
                     shotExpectation = "Atlas 2";
                     await world.assertScreenshotSafe(surface); await user.on(surface).screenshot();
                   }

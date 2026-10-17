@@ -46,6 +46,7 @@ test("scene order, deterministic clock and model-independent bounded prompts", (
   assert.ok(WORKSHOP_SCENES.every((s) => s.prompt.includes("workshop starts") && s.prompt.includes("current time thereafter") && !s.prompt.includes("It is Friday")));
   assert.ok(WORKSHOP_SCENES.find((s) => s.id === "T08")?.prompt.includes("negative feedback"));
   assert.ok(WORKSHOP_SCENES.find((s) => s.id === "T02")?.prompt.includes("Every Workflow output must assess both Atlas 2 and Atlas Lift"));
+  assert.ok(WORKSHOP_SCENES.find((s) => s.id === "T05")?.prompt.includes("omit content entirely"));
   assert.ok(WORKSHOP_SCENES.every((s) => s.limitMs === WORKSHOP_LIMITS.sceneMs && !/cob_|plg_|cov_|163840|localhost|127\.0\.0\.1|providerID|modelID/.test(s.prompt)));
 });
 

@@ -26,6 +26,7 @@ config:
   #   "false" off for everyone; /admin shows "Set by deployment config"
   # The /admin kill switch still turns a feature off, even when locked on.
   features:
+    liveProviderSync: ""           # default off · Keep desktop OpenCode v2 models up to date with the organization's AI Gateway in real time.
     googleDocumentTools: ""        # default off · Connected assistants inspect document tabs and headings, read or search bounded passages, and replace text against the revision they read.
     offlineRecovery: ""            # default off · Show compact App connection failures and a discreet offline indicator in OpenCode v2 conversations.
     rememberLastOrganization: ""   # default off · Return to the last organization used by the same account on this server after signing in again. Invite and installation links keep their selected organization.

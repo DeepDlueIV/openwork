@@ -87,6 +87,7 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible"
 import { ImageAttachmentBadge } from "@/components/chat/image-attachment-badge"
+import { ImageGallery } from "@/components/chat/image-lightbox"
 import { AttachmentFileChip, ComposerBadgeChip, ComposerPillChip, PastedTextChip } from "@/components/chat/composer-pill"
 import { agentBadge, fileMentionBadge } from "@/react-app/domains/session/surface/composer/composer-chips"
 import { isChatAttachmentUrl } from "@/react-app/domains/session/sync/attachment-file-part"
@@ -1811,6 +1812,7 @@ export function MessageList({ messages: transcript, messageIdReplacements, statu
 
   return (
     <ParentRunActiveContext.Provider value={runActive}>
+    <ImageGallery>
     <BuiltAppPreviewSync key={sessionId} messages={messages} active={runActive}>
     <CurrentToolLifecycleProvider
       activityStatus={activityStatus}
@@ -1885,6 +1887,7 @@ export function MessageList({ messages: transcript, messageIdReplacements, statu
       </ProgressiveMessageList>
     </CurrentToolLifecycleProvider>
     </BuiltAppPreviewSync>
+    </ImageGallery>
     </ParentRunActiveContext.Provider>
   )
 }

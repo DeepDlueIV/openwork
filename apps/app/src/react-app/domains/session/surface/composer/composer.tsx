@@ -699,7 +699,8 @@ export const ReactSessionComposer = memo(function ReactSessionComposer(props: Co
 
   // Draft image chip clicked: show it full-size so it can be inspected before sending.
   const [expandedAttachmentId, setExpandedAttachmentId] = useState<string | null>(null);
-  const expandedAttachment = props.attachments.find((attachment) => attachment.id === expandedAttachmentId);
+  const expandableAttachments = props.attachments.filter((attachment) => isImageAttachment(attachment) && attachment.previewUrl);
+  const expandedIndex = expandableAttachments.findIndex((attachment) => attachment.id === expandedAttachmentId);
 
   const activeMenu = slashOpen ? "slash" : mentionOpen ? "mention" : null;
   const activeItems = activeMenu === "slash" ? slashFiltered : activeMenu === "mention" ? mentionFiltered : [];
@@ -1569,14 +1570,15 @@ export const ReactSessionComposer = memo(function ReactSessionComposer(props: Co
       </div>
     </div>
     {/* Sibling of the composer root so Escape closes the lightbox without arming stop. */}
-    {expandedAttachment?.previewUrl ? (
+    {expandedIndex >= 0 ? (
       <ImageLightbox
-        src={expandedAttachment.previewUrl}
-        alt={expandedAttachment.name}
+        images={expandableAttachments.map((attachment) => ({ src: attachment.previewUrl ?? "", alt: attachment.name }))}
+        index={expandedIndex}
         open
         onOpenChange={(open) => {
           if (!open) setExpandedAttachmentId(null);
         }}
+        onIndexChange={(index) => setExpandedAttachmentId(expandableAttachments[index]?.id ?? null)}
       />
     ) : null}
     </DevProfiler>

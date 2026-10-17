@@ -3,6 +3,7 @@ import { ArrowUp, GripVertical, ListPlus, LoaderCircle, X } from "lucide-react";
 import { Fragment, useRef, useState, type DragEvent, type ReactNode } from "react";
 
 import { ImageAttachmentBadge } from "@/components/chat/image-attachment-badge";
+import { ImageGallery } from "@/components/chat/image-lightbox";
 import { t } from "@/i18n";
 import type { ComposerAttachment, ComposerDraft, ComposerPart } from "@/app/types";
 import { AttachmentFileChip, ComposerBadgeChip, ComposerPillChip } from "@/components/chat/composer-pill";
@@ -309,6 +310,7 @@ export function QueuedMessagesPanel(props: QueuedMessagesPanelProps) {
         </div>
       </div>
 
+      <ImageGallery>
       <div className="max-h-48 space-y-2 overflow-auto px-4 py-3">
         {props.items.map((item) => (
           <QueuedDraftRow
@@ -324,6 +326,7 @@ export function QueuedMessagesPanel(props: QueuedMessagesPanelProps) {
           />
         ))}
       </div>
+      </ImageGallery>
     </div>
   );
 }

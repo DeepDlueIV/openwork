@@ -1,10 +1,6 @@
 import * as React from "react"
 
-import {
-  Dialog,
-  DialogContent,
-  DialogTitle,
-} from "@/components/ui/dialog"
+import { useExpandableImage } from "@/components/chat/image-lightbox"
 import { cn } from "@/lib/utils"
 
 export type GeneratedImageLike = {
@@ -48,7 +44,6 @@ export const Image = ({
   ...props
 }: ImageProps) => {
   const [objectUrl, setObjectUrl] = React.useState<string | undefined>(undefined)
-  const [open, setOpen] = React.useState(false)
 
   React.useEffect(() => {
     if (uint8Array && mediaType) {
@@ -65,6 +60,7 @@ export const Image = ({
 
   const base64Src = getImageSrc({ base64, mediaType })
   const imageSrc = src ?? base64Src ?? objectUrl
+  const { ref, expand, lightbox } = useExpandableImage(imageSrc ?? "", alt)
 
   if (!imageSrc) {
     return (
@@ -112,24 +108,16 @@ export const Image = ({
   return (
     <>
       <button
+        ref={ref}
         type="button"
         className="inline-block max-w-full cursor-zoom-in rounded-md text-left transition-opacity hover:opacity-90"
-        onClick={() => setOpen(true)}
+        onClick={expand}
         aria-label={`Expand ${alt}`}
         title={alt}
       >
         {image}
       </button>
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[95vh] w-auto max-w-[95vw] overflow-hidden border-none bg-transparent p-0 shadow-none ring-0 lg:w-max lg:max-w-[95vw]">
-          <DialogTitle className="sr-only">{alt}</DialogTitle>
-          <img
-            src={imageSrc}
-            alt={alt}
-            className="max-h-[92vh] w-auto max-w-full rounded-xl object-contain"
-          />
-        </DialogContent>
-      </Dialog>
+      {lightbox}
     </>
   )
 }

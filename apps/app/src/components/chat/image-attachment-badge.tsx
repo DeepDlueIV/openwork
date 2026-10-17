@@ -1,7 +1,6 @@
-import * as React from "react"
 import { X } from "lucide-react"
 
-import { ImageLightbox } from "@/components/chat/image-lightbox"
+import { useExpandableImage } from "@/components/chat/image-lightbox"
 import { cn } from "@/lib/utils"
 
 type ImageAttachmentBadgeProps = {
@@ -17,14 +16,15 @@ export function ImageAttachmentBadge({
   onRemove,
   className,
 }: ImageAttachmentBadgeProps) {
-  const [open, setOpen] = React.useState(false)
+  const { ref, expand, lightbox } = useExpandableImage(src, alt)
 
   return (
     <div className={cn("relative inline-flex shrink-0", className)}>
       <button
+        ref={ref}
         type="button"
         className="h-10 w-10 overflow-hidden rounded-xl border border-border/70 bg-background/50 transition-opacity hover:opacity-90"
-        onClick={() => setOpen(true)}
+        onClick={expand}
         aria-label={`Expand ${alt}`}
         title={alt}
       >
@@ -50,7 +50,7 @@ export function ImageAttachmentBadge({
           <X className="size-3" />
         </button>
       ) : null}
-      <ImageLightbox src={src} alt={alt} open={open} onOpenChange={setOpen} />
+      {lightbox}
     </div>
   )
 }

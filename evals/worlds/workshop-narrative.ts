@@ -1,13 +1,15 @@
 import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { execFile } from "node:child_process";
+import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 import { createHash, randomUUID } from "node:crypto";
 import { seedSemanticHash } from "./workshop-narrative-contract.ts";
+import { workshopRunBudget } from "./workshop-run-budget.ts";
 import type { NativeWorkflowObservation } from "./workshop-narrative-witnesses.ts";
-import { addInitScript, allocateFreePort, browserScript, evaluateOnSurface, navigate, type Surface } from "@openwork/cdp";
+import { addInitScript, allocateFreePort, browserScript, connect, evaluateOnSurface, listTargets, navigate, type Surface } from "@openwork/cdp";
 import { chrome } from "@openwork/hosts";
 import type { Place, Seed } from "@openwork/env";
 import { denFetch, type DenSession } from "@openwork/behaviors";
@@ -16,6 +18,8 @@ import { denForAppWeb } from "./signed-in-app-web.ts";
 import { connectDemoServer, startDemoScript } from "../../worlds/lib/demo-workspace.ts";
 import { assertAcmeConnections, assertAcmeMcpOrigins, connectAcmeRuntime } from "../../worlds/lib/acme-runtime.ts";
 import { startNarrativeInference } from "./workshop-narrative-inference.ts";
+import { startWorkshopFeedback, waitForWorkshopFeedbackForm } from "./workshop-feedback.ts";
+import { createWorkshopShotContext } from "../docs-shots/shots/workshop.ts";
 
 const REPO = fileURLToPath(new URL("../../", import.meta.url));
 const FIXED_NOW = "2026-10-16T15:55:00Z";
@@ -71,6 +75,8 @@ export async function workshopNarrative(seed: Seed, { place }: { place: Place })
     await connectDemoServer(den, "news", "Fictional morning news", `${news.baseUrl}/mcp`);
     const ownedOrigins = [atlassian.baseUrl, microsoft.baseUrl, news.baseUrl];
     await assertAcmeConnections(den, ownedOrigins);
+    setupStage = "owned existing feedback UI/backend";
+    const feedback = await startWorkshopFeedback(resources, join(root, "feedback"));
     const org = await seed.api(den.admin, "/v1/org");
     const orgId = record(org.body) && record(org.body.organization) ? org.body.organization.id : undefined;
     if (typeof orgId !== "string") throw new Error("Owned workshop organization missing.");
@@ -80,7 +86,7 @@ export async function workshopNarrative(seed: Seed, { place }: { place: Place })
       await mkdir(workspacePath, { recursive: true });
       await writeFile(join(workspacePath, "WORKSHOP.md"), brief);
       await writeFile(join(workspacePath, "opencode.json"), JSON.stringify({ provider: { [inference.providerId]: inference.provider }, model: `${inference.providerId}/${inference.modelId}`, small_model: `${inference.providerId}/${inference.modelId}`, enabled_providers: [inference.providerId], permission: { skill: "allow", webfetch: "ask", websearch: "ask" } }));
-      const app = await seed.appWeb({ name: `workshop-${profile}-${identity}`, engine: "v1", workspacePath, mouse: true, den: den.ref, ...(port ? { webPort: port } : {}), env: { VITE_OPENWORK_FEEDBACK_URL: `${news.baseUrl}/feedback-unavailable`, VITE_DISABLE_OPENWORK_MODELS: "1" } });
+      const app = await seed.appWeb({ name: `workshop-${profile}-${identity}`, engine: "v1", workspacePath, mouse: true, den: den.ref, ...(port ? { webPort: port } : {}), env: { VITE_OPENWORK_FEEDBACK_URL: feedback.feedbackUrl, VITE_DISABLE_OPENWORK_MODELS: "1" } });
       resources.adopt(app, (owned) => owned.stop());
       // Seed-only profile bootstrap; task actions below use the real composer and product controls.
       await using init = await addInitScript(app.client, browserScript((model, variant) => {
@@ -103,6 +109,11 @@ export async function workshopNarrative(seed: Seed, { place }: { place: Place })
     const recipient = await appFor("teammate", recipientPort);
     setupStage = "native browser surfaces and isolation assertions";
     const serviceBrowser = resources.use(await chrome({ host: place.host(), name: `workshop-${profile}-service`, startUrl: `${ui.baseUrl}/jira`, headless: true }));
+    const baselineUiFile = join(root, "recorded-before-ui.mjs");
+    const baselineUiSource = await run("git", ["show", "be0acb54e9:evals/packages/labs/src/demo-workplace-ui.mjs"], { cwd: REPO, maxBuffer: 1024 * 1024 });
+    await writeFile(baselineUiFile, baselineUiSource.stdout);
+    const controlUi = await startDemoScript(resources, den, { url: pathToFileURL(baselineUiFile), label: "recorded-before-ui", daytonaPort: 3985 }, { ATLASSIAN_BASE_URL: atlassian.baseUrl });
+    const controlBrowser = resources.use(await chrome({ host: place.host(), name: "workshop-recorded-before-ui", startUrl: `${controlUi.baseUrl}/jira`, headless: true }));
     const ownerWeb = await seed.web({ den, signedInAs: "admin", startPath: "/dashboard/library", headless: true, viewport: { width: 1440, height: 1000 } });
     const recipientWeb = await seed.web({ den, signedInAs: "teammate", startPath: "/dashboard/library", headless: true, viewport: { width: 1440, height: 1000 } });
     const stateJson = async (url: string) => { const response = await fetch(url, { redirect: "error", signal: AbortSignal.timeout(15_000) }); if (!response.ok) throw new Error(`Owned service read failed: ${response.status}`); return response.json(); };
@@ -122,36 +133,73 @@ export async function workshopNarrative(seed: Seed, { place }: { place: Place })
     const seedDigest = seedSemanticHash(initial, [...ownedOrigins, ui.baseUrl]);
     const readDen = (actor: DenSession, path: string) => denFetch(actor, path, { headers: { authorization: `Bearer ${actor.token}` } });
     const recipientOrg = await readDen(den.members.teammate!, "/v1/org");
+    const outsiderOrg = await readDen(den.members.outsider!, "/v1/org");
     const ownerMemberId = record(org.body) && record(org.body.currentMember) ? String(org.body.currentMember.id) : "";
     const recipientMemberId = record(recipientOrg.body) && record(recipientOrg.body.currentMember) ? String(recipientOrg.body.currentMember.id) : "";
+    const outsiderMemberId = record(outsiderOrg.body) && record(outsiderOrg.body.currentMember) ? String(outsiderOrg.body.currentMember.id) : "";
     async function nativeWorkflows(): Promise<NativeWorkflowObservation> {
       const list = await readDen(den.admin, "/v1/workflows");
       const items = record(list.body) && Array.isArray(list.body.items) ? list.body.items.filter(record) : [];
       const workflow = items.find((item) => item.title === "Acme product comparison");
       let details: unknown = null, grants: unknown = null, snapshots: unknown = null;
+      const pluginGrants: { pluginId: string; access: unknown }[] = [];
+      const boundary: NonNullable<NativeWorkflowObservation["boundary"]> = { outsiderMemberId };
       if (typeof workflow?.configObjectId === "string") {
         const id = encodeURIComponent(workflow.configObjectId);
         details = (await readDen(den.admin, `/v1/workflows/${id}`)).body;
         grants = (await readDen(den.admin, `/v1/config-objects/${id}/access`)).body;
         snapshots = { owner: (await readDen(den.admin, `/v1/workflows/${id}/snapshots`)).body, recipient: (await readDen(den.members.teammate!, `/v1/workflows/${id}/snapshots`)).body };
+        if (typeof workflow.pluginId === "string") pluginGrants.push({ pluginId: workflow.pluginId, access: (await readDen(den.admin, `/v1/plugins/${encodeURIComponent(workflow.pluginId)}/access`)).body });
+        for (const [key, actor, path] of [["recipientDetail", den.members.teammate!, `/v1/workflows/${id}`], ["outsiderList", den.members.outsider!, "/v1/workflows"], ["outsiderDetail", den.members.outsider!, `/v1/workflows/${id}`], ["outsiderSnapshots", den.members.outsider!, `/v1/workflows/${id}/snapshots`]] as const) {
+          const read = await readDen(actor, path); boundary[key] = { status: read.response.status, body: read.body };
+        }
       }
       let runs: Record<string, unknown>[] = [];
       if (den.database) {
         // Fixed read-only query against ONLY the disposable world's database; encrypted source/results are excluded.
-        const observed = await run(process.execPath, ["--input-type=module", "-e", "import mysql from 'mysql2/promise';const c=await mysql.createConnection(process.env.WORKSHOP_OWNED_DB);try{const [r]=await c.query('SELECT id,org_membership_id,config_object_id,config_object_version_id,code_digest,status,source,script_input_digest,started_at,finished_at FROM workflow_run ORDER BY started_at');console.log(JSON.stringify(r))}finally{await c.end()}"], { cwd: join(REPO, "ee/packages/den-db"), env: { PATH: process.env.PATH, HOME: root, WORKSHOP_OWNED_DB: den.database.url }, timeout: 15000 });
+        const observed = await run(process.execPath, ["--input-type=module", "-e", "import mysql from 'mysql2/promise';const c=await mysql.createConnection(process.env.WORKSHOP_OWNED_DB);try{const [r]=await c.query('SELECT id,org_membership_id,plugin_id,config_object_id,config_object_version_id,code_digest,status,source,script_input_digest,tool_calls,result_digest,input_schema_digest,output_schema_digest,CAST(UNIX_TIMESTAMP(started_at)*1000 AS UNSIGNED) AS started_at,CAST(UNIX_TIMESTAMP(finished_at)*1000 AS UNSIGNED) AS finished_at FROM workflow_run ORDER BY started_at');console.log(JSON.stringify(r))}finally{await c.end()}"], { cwd: join(REPO, "ee/packages/den-db"), env: { PATH: process.env.PATH, HOME: root, WORKSHOP_OWNED_DB: den.database.url }, timeout: 15000 });
         const parsed: unknown = JSON.parse(observed.stdout); if (Array.isArray(parsed)) runs = parsed.filter(record);
       }
-      return { list: list.body, details, grants, snapshots, runs, ownerMemberId, recipientMemberId };
+      return { list: list.body, details, grants, snapshots, runs, ownerMemberId, recipientMemberId, pluginGrants, boundary };
     }
     const latestSession = async (identity: "owner" | "recipient") => {
       const target = identity === "owner" ? owner : recipient;
       const route = await evaluateOnSurface(target.app, () => location.pathname);
       return /\/session\/([^/]+)/.exec(route)?.[1] ?? null;
     };
+    const assertSafe = async (surface: Surface) => {
+      const secrets = [operatorKey, ...redactions, owner.manifest.token, owner.manifest.hostToken, recipient.manifest.token, recipient.manifest.hostToken];
+      const safe = await evaluateOnSurface(surface, browserScript((values) => { const visible = [document.body?.innerText ?? "", location.href, ...Array.from(document.querySelectorAll("input,textarea")).map((element) => element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement ? element.value : "")].join("\n"); return !values.some((value) => value && visible.includes(value)); }, [secrets]));
+      if (!safe) throw new Error("Screenshot blocked: an owned credential is visibly present.");
+    };
+    const docshotDirectory = join(REPO, "evals/results/workshop-docshots", `${profile}-${randomUUID()}`);
+    const docshots = createWorkshopShotContext({ directory: docshotDirectory, readState: async () => {
+      const clean = (state: Record<string, unknown>) => Object.fromEntries(Object.entries(state).filter(([key]) => key !== "audit"));
+      const persistedFeedback = await feedback.read();
+      return { atlassian: clean(await stateJson(`${atlassian.baseUrl}/state`)), microsoft: clean(await stateJson(`${microsoft.baseUrl}/state`)), news: clean(await stateJson(`${news.baseUrl}/state`)), feedback: { customers: persistedFeedback.customers, threads: persistedFeedback.threads } };
+    }, assertSafe });
+    resources.adopt(docshots, (owned) => owned.dispose());
     return {
-      profile, ready: true as const, blockedReason: null, model: inference.metadata, expectedModel: { providerID: inference.providerId, modelID: inference.modelId, variant: inference.variant }, app: owner.app, recipientApp: recipient.app, ownerWeb, recipientWeb, serviceBrowser,
+      profile, ready: true as const, blockedReason: null, model: inference.metadata, expectedModel: { providerID: inference.providerId, modelID: inference.modelId, variant: inference.variant }, app: owner.app, recipientApp: recipient.app, ownerWeb, recipientWeb, serviceBrowser, controlBrowser, docshots,
       nativeWorkflows,
-      urls: { denWeb: den.ref.webUrl, jira: `${ui.baseUrl}/jira`, confluence: `${ui.baseUrl}/confluence`, outlook: `${microsoft.baseUrl}/outlook`, oneDrive: `${microsoft.baseUrl}/onedrive`, news: `${news.baseUrl}/state` },
+      readFeedback: feedback.read,
+      async feedbackSurface(): Promise<Surface> {
+        const deadline = Date.now() + 15000;
+        while (Date.now() < deadline) {
+          const target = (await listTargets(owner.app.handle.cdpUrl)).find((page) => page.type === "page" && page.url.startsWith(feedback.feedbackUrl) && page.webSocketDebuggerUrl);
+          if (target?.webSocketDebuggerUrl) {
+            const surface: Surface = { handle: { ...owner.app.handle, name: "actual-app-feedback-tab" }, client: await connect(target.webSocketDebuggerUrl) };
+            resources.adopt(surface, (owned) => owned.client.close());
+            await waitForWorkshopFeedbackForm(surface);
+            return surface;
+          }
+          await delay(100);
+        }
+        throw new Error("The actual app Feedback action did not open its owned landing form");
+      },
+      settleInference: inference.settle,
+      abortInferenceAfter: inference.abortAfter,
+      urls: { feedback: feedback.feedbackUrl, controlJira: `${controlUi.baseUrl}/jira`, denWeb: den.ref.webUrl, jira: `${ui.baseUrl}/jira`, confluence: `${ui.baseUrl}/confluence`, outlook: `${microsoft.baseUrl}/outlook`, oneDrive: `${microsoft.baseUrl}/onedrive`, news: `${news.baseUrl}/state` },
       reportDir, rows, fixedNow: FIXED_NOW, seedDigest,
       async current(identity: "owner" | "recipient" = "owner") { const sessionId = await latestSession(identity); const messages = sessionId ? await engineRead(identity, `/session/${sessionId}/message`) : []; return { sessionId, messages }; },
       async observe(identity: "owner" | "recipient" = "owner") {
@@ -163,11 +211,7 @@ export async function workshopNarrative(seed: Seed, { place }: { place: Place })
       assertIsolation,
       async outsiderWorkflows() { return (await readDen(den.members.outsider!, "/v1/workflows")).body; },
       async workflowDetail(id: string, identity: "owner" | "recipient" = "owner") { return (await readDen(identity === "owner" ? den.admin : den.members.teammate!, `/v1/workflows/${encodeURIComponent(id)}`)).body; },
-      async assertScreenshotSafe(surface: Surface) {
-        const secrets = [operatorKey, owner.manifest.token, owner.manifest.hostToken, recipient.manifest.token, recipient.manifest.hostToken, den.admin.token, den.admin.password, den.members.teammate!.token, den.members.teammate!.password, inference.provider.options.apiKey];
-        const safe = await evaluateOnSurface(surface, browserScript((values) => { const visible = [document.body?.innerText ?? "", location.href, ...Array.from(document.querySelectorAll("input,textarea")).map((element) => element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement ? element.value : "")].join("\n"); return !values.some((value) => value && visible.includes(value)); }, [secrets]));
-        if (!safe) throw new Error("Screenshot blocked: an owned credential is visibly present.");
-      },
+      assertScreenshotSafe: assertSafe,
       async inspectPptx(name: string, sessionId: string) {
         const state = await stateJson(`${microsoft.baseUrl}/state`);
         const file = state.files.find((entry: Record<string, unknown>) => entry.name === name);
@@ -202,8 +246,11 @@ export async function workshopNarrative(seed: Seed, { place }: { place: Place })
       recordRow: (row: NarrativeRow) => rows.push(row),
       async finish() {
         const observations = inference.observations();
-        const report = { verdict: rows.every((row) => row.status === "PASS") ? "PASS" : "INCOMPLETE", profile, model: inference.metadata, fixedNow: FIXED_NOW, seedDigest, durationMs: Date.now() - startedAt, rows, inference: observations };
+        const durationMs = Date.now() - startedAt;
+        const aggregate = workshopRunBudget(rows, durationMs, observations);
+        const report = { verdict: rows.every((row) => row.status === "PASS") && aggregate.reasons.length === 0 ? "PASS" : "INCOMPLETE", aggregate, docshotDirectory, profile, model: inference.metadata, fixedNow: FIXED_NOW, seedDigest, durationMs, rows, inference: observations };
         await writeFile(join(reportDir, "matrix.json"), JSON.stringify(report, null, 2) + "\n");
+        if (aggregate.reasons.length) throw new Error(`Workshop aggregate verification failed: ${aggregate.reasons.join("; ")}`);
       },
       async [Symbol.asyncDispose]() { await resources.disposeAsync(); },
     };

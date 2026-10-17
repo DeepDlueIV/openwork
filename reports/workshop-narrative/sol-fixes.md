@@ -118,6 +118,14 @@ Head `72efe886c4`: **INCOMPLETE — native exit 1; 9 PASS, 3 FAIL, 0 BLOCKED**. 
 
 Shared prompt clarification directs binary generation and upload programmatically within existing script/code execution, with only `content_base64` and no placeholder `content`; no upload validation or output/time limit is relaxed. The unchanged Microsoft fixture suite passes **17 tests**. A separate T04→T05 diagnostic will first require the actual subject to create/read the account report, then generate/upload/parse its real presentation. It seeds neither report nor deck and cannot establish full workshop acceptance.
 
+## Targeted artifact diagnostic at `c75d1bab52`
+
+**Failed — native exit 1; T04 PASS, T05 FAIL**, not a full-matrix result. T04 created/read the actual report; T05 uploaded new bytes using the corrected binary transport, but independent python-pptx validation rejected them. The retained original is a CRC-valid 79,890-byte ZIP with eleven slide parts and SHA-256 `7d0fc0e5dc890379c03ca8ea72859a7d89926d397ad3cc73ab9f119da664962c`.
+
+Exact defect: `/ppt/presentation.xml` was declared as `application/vnd.openxmlformats-officedocument.presentationml.presentation+xml` instead of the standard `application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml`. A free **in-memory diagnostic control** changing only that declaration opened all eleven slides. The original file was not mutated, uploaded again, or accepted. The parser's failure flags represent unsuccessful validation; the independent ZIP inspection establishes that this particular original was a valid ZIP but an invalid presentation.
+
+The common prompt now explicitly states the generic OOXML main-part requirement; no customer/account facts are supplied by the observer and no format assertion is relaxed. A free malformed-main-type control confirms that the parser still rejects a valid ZIP with the wrong PowerPoint main type. The existing rejected upload and invalid presentation remain failures.
+
 ## Publication and remaining work
 
 Pending: a fresh committed-head Sol run after these bounded corrections, acceptance audit, protected evidence publication, then a separate stacked Qwen branch and unchanged fixed baseline. The normal CI producer currently triggers only for PRs targeting `dev`, while this PR intentionally targets the demo branch; no approved local-evidence import route is configured. Do not retarget or manually publish merely to obtain links.

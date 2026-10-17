@@ -38,7 +38,10 @@ test("a member opens Workbot's Computer tab directly when the rollout is enabled
   await step("turning the flags off closes Computer and rejects new viewer connections", async () => {
     await world.setEnabled(false);
     await probe.eventually(async () => (await world.call("/v1/workbot/computer/viewer", { method: "POST", body: JSON.stringify({ view: "computer" }) })).status, { within: 65_000, until: value => value === 403 });
-    await user.notSee({ role: "button", label: "Computer" }, { timeoutMs: 65_000 });
+    // The API cache and the page refresh independently. Home returns in the
+    // classic navigation once the page has observed the revoked rollouts.
+    await user.see({ role: "button", label: "Home" }, { timeoutMs: 65_000 });
+    await user.notSee({ role: "button", label: "Computer" });
     await user.screenshot();
   });
 });

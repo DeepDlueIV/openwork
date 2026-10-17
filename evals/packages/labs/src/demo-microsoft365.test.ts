@@ -107,6 +107,24 @@ describe("fictional Microsoft 365 demo", () => {
     expect((await rest("/me/messages/missing")).status).toBe(404);
   });
 
+  test("mail command-bar mutations update shared folders and unread counts without delivery", async () => {
+    const id = "mail-blueharbor-2";
+    expect((await rest(`/me/messages/${id}`, { method: "PATCH", body: JSON.stringify({ isRead: true }) })).status).toBe(200);
+    expect((await toolValue("mail_read", { message_id: id })).isRead).toBe(true);
+    const moved = await json(await rest(`/me/messages/${id}/move`, { method: "POST", body: JSON.stringify({ destinationId: "archive" }) }));
+    expect(moved).toMatchObject({ id, parentFolderId: "archive", isDraft: false });
+    expect(await json(await rest("/me/mailFolders/archive"))).toMatchObject({ totalItemCount: 1, unreadItemCount: 0 });
+    expect((await rest(`/me/messages/${id}`, { method: "PATCH", body: JSON.stringify({ isRead: false }) })).status).toBe(200);
+    expect(await json(await rest("/me/mailFolders/archive"))).toMatchObject({ totalItemCount: 1, unreadItemCount: 1 });
+    expect((await rest(`/me/messages/${id}/move`, { method: "POST", body: JSON.stringify({ destinationId: "missing" }) })).status).toBe(400);
+    expect((await toolValue("mail_read", { message_id: id })).parentFolderId).toBe("archive");
+    await rest(`/me/messages/${id}/move`, { method: "POST", body: JSON.stringify({ destinationId: "deleteditems" }) });
+    expect(await json(await rest("/me/mailFolders/deleteditems"))).toMatchObject({ totalItemCount: 1, unreadItemCount: 1 });
+    await rest(`/me/messages/${id}/move`, { method: "POST", body: JSON.stringify({ destinationId: "inbox" }) });
+    expect((await toolValue("mail_read", { message_id: id })).parentFolderId).toBe("inbox");
+    expect(array((await json(await rest("/me/mailFolders/sentitems/messages"))).value)).toHaveLength(0);
+  });
+
   test("seeds useful real Office ZIP bytes with document, workbook and presentation parts", async () => {
     const files = array((await json(await rest("/me/drive/root/children"))).value).map(record);
     expect(files).toHaveLength(4);

@@ -2,8 +2,7 @@ export const summary = "The seeded Acme demo stack: Den, AI Gateway, and the web
 export const supportedTargets = ["local/host", "daytona/linux", "freestyle/linux"];
 
 import { randomUUID } from "node:crypto";
-import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
+import { acmeRuntimeFixture, connectAcmeRuntime, assertAcmeConnections } from "./lib/acme-runtime.ts";
 import { fileURLToPath } from "node:url";
 import { allocateFreePort } from "../evals/packages/cdp/src/index.ts";
 import { launchHeadlessWeb } from "../packages/world/src/headless-web.ts";
@@ -41,6 +40,9 @@ export interface AcmeWebWorld {
 
 /** Seeded Acme Den + real AI Gateway + isolated web runtime; only the upstream model is fake. */
 export async function bootAcmeWeb(stack: AsyncDisposableStack, preview?: { app: string; den: string; api: string }, checkpoint?: AcmeStreamCheckpoint, options: { atlassian?: boolean; atlassianBrowserUrl?: string; beforeRuntime?: (den: Den, model: Awaited<ReturnType<typeof seedAcmeGateway>>) => Promise<void> } = {}): Promise<AcmeWebWorld> {
+  if (["OPENWORK_EVAL_DEN_API_URL", "OPENWORK_EVAL_DAYTONA_DEN_SANDBOX", "OPENWORK_EVAL_DAYTONA_SANDBOX"].some((key) => process.env[key]?.trim())) {
+    throw new Error("Acme worlds require owned infrastructure; remove Den/sandbox reuse overrides.");
+  }
   const place = resolvePlace();
   if (place.kind !== "local") {
     throw new Error("Run acme-web co-located with MySQL (--place local), including inside a prepared Daytona sandbox.");
@@ -68,11 +70,10 @@ export async function bootAcmeWeb(stack: AsyncDisposableStack, preview?: { app: 
   await connectDemoWorkspace(den, demo);
   const atlassian = options.atlassian ? await addDemoAtlassian(stack, den, options.atlassianBrowserUrl) : null;
   await options.beforeRuntime?.(den, model);
+  await assertAcmeConnections(den, [demo.baseUrl, ...(atlassian ? [atlassian.baseUrl] : [])]);
   const name = `${receiptName(ACME_WEB_NAME, resolveStage(process.env))}-${randomUUID().slice(0, 8)}`;
-  const workspace = join(REPO_ROOT, "tmp", "worlds", name, "workspace");
-  await mkdir(workspace, { recursive: true });
-  const engineConfig = join(workspace, ".config", "opencode");
-  await mkdir(engineConfig, { recursive: true });
+  const fixture = await acmeRuntimeFixture(stack);
+  const workspace = fixture.workspace;
   const web = await launchHeadlessWeb({
     repoRoot: REPO_ROOT,
     name,
@@ -80,11 +81,7 @@ export async function bootAcmeWeb(stack: AsyncDisposableStack, preview?: { app: 
     state: "isolated",
     browserHostSuffix: preview ? `.${new URL(preview.app).hostname.split(".").slice(1).join(".")}` : undefined,
     env: {
-      ...process.env,
-      // This seeded world owns its provider and configuration. Never import the coding agent's
-      // config (which may use another engine version, private plugins, or live connections).
-      OPENCODE_CONFIG_DIR: engineConfig,
-      XDG_CONFIG_HOME: join(workspace, ".config"),
+      ...fixture.env,
       OPENWORK_WEB_PORT: String(webPort),
       OPENWORK_DEV_HEADLESS_WEB_DEN_PROXY: "1",
       OPENWORK_DEV_DEN_PROXY_TARGET: den.ref.webUrl,
@@ -100,6 +97,7 @@ export async function bootAcmeWeb(stack: AsyncDisposableStack, preview?: { app: 
     signal: AbortSignal.timeout(30_000),
   });
   if (!synced.ok) throw new Error(`Acme runtime sign-in failed: HTTP ${synced.status}`);
+  await connectAcmeRuntime(den, web, model.orgId);
   return { den, web, model, upstream, demo, atlassian, gatewayUrl: gateway.baseUrl };
 }
 

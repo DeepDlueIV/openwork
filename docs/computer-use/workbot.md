@@ -45,6 +45,9 @@ oneshot unit, ordered before Daytona's command daemon, to restore the packaged
 `sudo` and Chromium sandbox helpers on boot. The command and GUI users remain
 unprivileged; Chromium keeps its native sandbox enabled. Desktop startup also
 reapplies shared-folder default ACLs, which the image conversion does not retain.
+The image builds pinned x11vnc 0.9.17 with XComposite support so Browser view
+retains its pixels behind other desktop apps. The matching source archive and
+license are included under `/usr/local/share/doc/openwork-x11vnc`.
 
 Configure the existing headless runner (these are operator capabilities, not
 organization rollout flags):

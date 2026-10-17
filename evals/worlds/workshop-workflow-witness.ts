@@ -151,11 +151,28 @@ export function workflowComparisonSemantics(value: unknown, request: "test" | "r
     if (typeof decoded !== "string") return decoded;
     return Object.values(WORKSHOP_WORKFLOW_INPUTS).reduce((text, input) => text.replaceAll(input.customerRequest, ""), decoded);
   };
-  const compared = JSON.stringify(assessment(value)) ?? "";
+  const assessed = assessment(value);
+  const compared = JSON.stringify(assessed) ?? "";
   if (!/Atlas\s*2/i.test(compared) || !/Atlas\s*Lift/i.test(compared) || !/\b300\s*(?:kg|kilogram)/i.test(compared) || !/\b1[,. ]?200\s*(?:kg|kilogram)/i.test(compared)) return false;
   // These three requests name published use cases. Missing site parameters may
   // qualify deployment, but cannot erase the documented use-case match.
-  if (/no documented (?:match|use.case)|(?:use.case|line.side).{0,50}not documented/i.test(compared)) return false;
+  const target = request === "rerun" ? "lift" : "2";
+  const productName = (item: unknown) => /^Atlas\s*(2|Lift)$/i.exec(str(item))?.[1].toLowerCase() ?? "";
+  const contradictsMatch = (item: unknown, scope = ""): boolean => {
+    if (Array.isArray(item)) return item.some((child) => contradictsMatch(child, scope));
+    if (item !== null && typeof item === "object") {
+      const row = obj(item);
+      const local = Object.values(row).map(productName).find(Boolean) ?? scope;
+      return Object.entries(row).some(([key, child]) => contradictsMatch(child, productName(key) || local));
+    }
+    if (typeof item !== "string" || (scope && scope !== target)) return false;
+    return item.split(/[.!?\n]/).some((sentence) => {
+      if (!/no documented (?:match|use.case)|(?:use.case|line.side).{0,50}not documented/i.test(sentence)) return false;
+      const names = [...sentence.matchAll(/Atlas\s*(2|Lift)/gi)].map((match) => match[1].toLowerCase());
+      return names.length === 0 || names.includes(target);
+    });
+  };
+  if (contradictsMatch(assessed)) return false;
   if (request === "test") return /warehouse|goods.to.person/i.test(compared) && /pick/i.test(compared);
   if (request === "recipient") return /(?:Atlas\s*2[^.!?\n]{0,300}line.side[^.!?\n]{0,60}replenish|line.side[^.!?\n]{0,60}replenish[^.!?\n]{0,300}Atlas\s*2)/i.test(compared);
   return /cold.storage/i.test(compared) && /pallet/i.test(compared) && /[-−]25\s*(?:°\s*)?C\b/i.test(compared) && /optional|kit/i.test(compared);

@@ -6,6 +6,7 @@ import { WORKSHOP_SCENES, WORKSHOP_LIMITS, verifyWorkshopScene, type SceneEviden
 import { observedServiceCalls, sharingWitness, workflowWitness } from "../worlds/workshop-narrative-witnesses.ts";
 import type { WorkflowWitnessContext } from "../worlds/workshop-workflow-witness.ts";
 import { WORKSHOP_SHOT_IDS } from "../docs-shots/shots/workshop.ts";
+import { workshopTurnTerminal as terminal } from "../worlds/workshop-turn-diagnostics.ts";
 
 const test = spec.world(workshopNarrative, {
   timeout: 420_000,
@@ -13,13 +14,8 @@ const test = spec.world(workshopNarrative, {
   resources: { surfaces: ["appWeb", "web"], services: ["den"] },
 });
 const profile = process.env.OPENWORK_WORKSHOP_PROFILE ?? "gpt-sol-fast";
-const recipientPrompt = "As Nora Patel, discover the saved Acme product comparison Workflow shared with me. Run its actual saved version with customerRequest 'Compare Atlas 2 for line-side replenishment'. Verify its real execution receipt and output, including that its latest saved result is this line-side execution. Do not create another Workflow, impersonate Alex, or claim an owner run as mine. Use only our connected fictional services; do not send mail.";
+const recipientPrompt = "As Nora Patel, discover the saved Acme product comparison Workflow shared with me. Run its actual saved version with customerRequest 'Compare Atlas 2 for line-side replenishment'. Its saved comparison output must assess both Atlas 2 and Atlas Lift even though this request focuses on Atlas 2. Verify its real execution receipt and output, including that its latest saved result is this line-side execution. Do not create another Workflow, impersonate Alex, or claim an owner run as mine. Use only our connected fictional services; do not send mail.";
 function record(value: unknown): Record<string, unknown> { return value !== null && typeof value === "object" && !Array.isArray(value) ? Object.fromEntries(Object.entries(value)) : {}; }
-function terminal(messages: unknown, oldIds: Set<unknown>) {
-  const fresh = Array.isArray(messages) ? messages.map(record).filter((message) => record(message.info).role === "assistant" && !oldIds.has(record(message.info).id)) : [];
-  const last = fresh.at(-1); const info = record(last?.info);
-  return Boolean(last && (info.error || (typeof info.finish === "string" && info.finish !== "tool-calls" && info.finish !== "unknown" && typeof record(info.time).completed === "number")));
-}
 
 test("a fictional team rehearses every workshop scene without hidden task writes", { timeout: 1_800_000 }, async ({ world, user, agent, probe, step, evidence }) => {
   const matrixStarted = Date.now();
@@ -85,6 +81,7 @@ test("a fictional team rehearses every workshop scene without hidden task writes
               let completed = true;
               await probe.eventually(() => world.current(), { within: scene.limitMs, intervalMs: 500, label: `${scene.id} real paid assistant completion`, until: (value) => terminal(value.messages, oldIds) }).catch(async () => {
                 completed = false;
+                await world.captureTurnDiagnostic(`${scene.id}-before-stop`).catch(() => undefined);
                 await appAgent.run("composer.stop").catch(() => undefined);
                 world.abortInferenceAfter(inferenceStart + 1);
               });
@@ -103,7 +100,7 @@ test("a fictional team rehearses every workshop scene without hidden task writes
                   // This dispatcher submits the MODEL'S saved job, never a scripted assistant result or a business write.
                   await appUser.type("composer", `${job.instructions}\n\nThe isolated scheduler has now reached 09:00 America/Los_Angeles on 2026-10-16. Execute this due job using actual connected news/OneDrive/Outlook calls, verify the results, and do not send mail or use external news.`, { replace: true });
                   await appUser.click("Run task");
-                  await probe.eventually(() => world.current(), { within: Math.max(1000, scene.limitMs - (Date.now() - started)), intervalMs: 500, label: "09:00 due job actually executes paid inference", until: (value) => terminal(value.messages, dueIds) }).catch(async () => { completed = false; await appAgent.run("composer.stop").catch(() => undefined); });
+                  await probe.eventually(() => world.current(), { within: Math.max(1000, scene.limitMs - (Date.now() - started)), intervalMs: 500, label: "09:00 due job actually executes paid inference", until: (value) => terminal(value.messages, dueIds) }).catch(async () => { completed = false; await world.captureTurnDiagnostic(`${scene.id}-due-before-stop`).catch(() => undefined); await appAgent.run("composer.stop").catch(() => undefined); });
                 }
               }
               if (!completed) world.abortInferenceAfter(inferenceStart + 1);
@@ -118,7 +115,7 @@ test("a fictional team rehearses every workshop scene without hidden task writes
                 const recipientIds = new Set((Array.isArray(recipientBefore.messages) ? recipientBefore.messages : []).map((message) => record(record(message).info).id));
                 await user.on(world.recipientApp).type("composer", recipientPrompt, { replace: true });
                 await user.on(world.recipientApp).click("Run task");
-                await probe.eventually(() => world.current("recipient"), { within: Math.max(1000, scene.limitMs - (Date.now() - started)), intervalMs: 500, label: "Nora actually runs the shared Workflow", until: (value) => terminal(value.messages, recipientIds) }).catch(async () => { completed = false; await recipientAgent.run("composer.stop").catch(() => undefined); world.abortInferenceAfter(recipientInferenceStart + 1); });
+                await probe.eventually(() => world.current("recipient"), { within: Math.max(1000, scene.limitMs - (Date.now() - started)), intervalMs: 500, label: "Nora actually runs the shared Workflow", until: (value) => terminal(value.messages, recipientIds) }).catch(async () => { completed = false; await world.captureTurnDiagnostic(`${scene.id}-recipient-before-stop`, "recipient").catch(() => undefined); await recipientAgent.run("composer.stop").catch(() => undefined); world.abortInferenceAfter(recipientInferenceStart + 1); });
                 await world.settleInference();
                 const recipientAfter = await world.observe("recipient");
                 recipientContext = { before: recipientBefore, after: recipientAfter, expected: { ...world.expectedModel, sessionId: recipientAfter.sessionId ?? "" }, inference: { upstreamModel: world.expectedModel.modelID, requests: recipientAfter.inference.slice(recipientInferenceStart) } };

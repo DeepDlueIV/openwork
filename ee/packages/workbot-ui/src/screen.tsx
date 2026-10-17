@@ -580,7 +580,7 @@ function useWorkbotTab(beforeLeave?: (next: WorkbotTab) => boolean, preserveSear
 function WorkbotNav({ tab, onTab }: { tab: WorkbotTab; onTab: (tab: WorkbotTab) => void }) {
   return (
     <nav className="ml-4 flex items-center gap-0.5" aria-label="Workbot">
-      {(["home", ...(workbotHost().calendar ? ["calendar" as const] : []), "documents"] as const).map((entry) => (
+      {(["home", ...(workbotHost().calendar ? ["calendar" as const] : []), ...(workbotHost().documents ? ["documents" as const] : [])] as const).map((entry) => (
         <button
           key={entry}
           type="button"
@@ -588,7 +588,7 @@ function WorkbotNav({ tab, onTab }: { tab: WorkbotTab; onTab: (tab: WorkbotTab) 
           onClick={() => onTab(entry)}
           className={`flex h-8 items-center rounded-lg px-3 text-[13px] leading-4 transition-colors duration-150 focus-visible:outline-none focus-visible:shadow-[var(--wb-focus)] ${tab === entry ? "bg-[#EDF0F2] font-semibold text-[#11181C]" : "font-medium text-[#687076] hover:text-[#11181C]"}`}
         >
-          {entry === "home" ? "Home" : entry === "calendar" ? "Calendar" : "Documents"}{entry === "documents" && !workbotHost().documents ? <Lock size={12} className="ml-1.5" aria-label="Unavailable" /> : null}
+          {entry === "home" ? "Home" : entry === "calendar" ? "Calendar" : "Documents"}
         </button>
       ))}
     </nav>

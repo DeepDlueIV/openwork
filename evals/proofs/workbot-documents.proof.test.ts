@@ -10,7 +10,13 @@ test("a member opens and edits a Drive document while unavailable access stays b
     await user.navigate(`${world.url}documents?documents=off&assistant=off`);
     await user.see({ text: "Documents is off for your workspace. An admin can turn it on." });
     await user.notSee({ role: "textbox", label: "Document text" });
+    await user.notSee({ role: "button", label: /^Documents/ });
     evidence.recordAssertionEvidence("The feature starts off", "The locked state contains no document editor", (await probe.dom(".ow-editor-plain")).elements.length === 0);
+    await user.screenshot();
+    await user.navigate(`${world.url}calendar?documents=off`);
+    await user.click({ role: "button", label: "Open workspace navigation" });
+    await user.notSee({ role: "button", label: /^Documents/ });
+    await user.notSee({ text: "Recent documents" });
     await user.screenshot();
   });
   await step("after: a connected member opens a recent Drive document in an editable tab", async () => {

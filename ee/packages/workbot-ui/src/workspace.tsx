@@ -45,18 +45,17 @@ export function WorkspaceMenu({ page, onPage, onDocument, onChats, drafts }: { p
         <nav aria-label="Workspace" className="px-2">
           <button type="button" className={row} aria-current={page === "home" ? "page" : undefined} onClick={() => navigate("home")}><House size={16} strokeWidth={1.5} aria-hidden />Home</button>
           <button type="button" className={row} disabled={!host.calendar} aria-current={page === "calendar" ? "page" : undefined} onClick={() => navigate("calendar")} title={!host.calendar ? "Calendar is off. An admin can turn it on." : undefined}><CalendarDays size={16} strokeWidth={1.5} aria-hidden />Calendar{!host.calendar && <Lock size={13} aria-label="Off for this workspace" />}</button>
-          <button type="button" className={row} aria-current={page === "documents" ? "page" : undefined} onClick={() => navigate("documents")}><FileText size={16} strokeWidth={1.5} aria-hidden />Documents{!host.documents && <Lock size={13} aria-label="Off for this workspace" />}</button>
+          {host.documents === true && <button type="button" className={row} aria-current={page === "documents" ? "page" : undefined} onClick={() => navigate("documents")}><FileText size={16} strokeWidth={1.5} aria-hidden />Documents</button>}
           {onChats && <button type="button" className={row} disabled={drafts} title={drafts ? "Save or close document drafts before switching chats." : undefined} onClick={() => { setOpen(false); onChats(); }}><MessageCircle size={16} strokeWidth={1.5} aria-hidden />Chats{drafts && <Lock size={13} aria-label="Save or close document drafts first" />}</button>}
           {drafts && onChats && <p className="px-3 py-1 text-[12px] text-[var(--wb-muted)]">Save or close drafts to switch chats.</p>}
         </nav>
-        <div className="mt-5 min-h-0 flex-1 overflow-y-auto px-2 pb-4">
+        {host.documents === true && <div className="mt-5 min-h-0 flex-1 overflow-y-auto px-2 pb-4">
           <h2 className="px-3 pb-2 text-[12px] font-medium text-[var(--wb-muted)]">Recent documents</h2>
-          {!host.documents ? <p className="px-3 text-[12px] text-[var(--wb-muted)]">Documents is off. An admin can turn it on.</p>
-            : recent.isError ? <div className="px-3 text-[12px] text-[var(--wb-muted)]" role="status">Couldn't read recent documents. <button type="button" className="underline" onClick={() => void recent.refetch()}>Try again</button></div>
+          {recent.isError ? <div className="px-3 text-[12px] text-[var(--wb-muted)]" role="status">Couldn't read recent documents. <button type="button" className="underline" onClick={() => void recent.refetch()}>Try again</button></div>
             : recent.isPending ? <div className="flex flex-col gap-3 px-3" aria-label="Loading recent documents" aria-busy="true">{[0, 1, 2].map(id => <span key={id} className="h-5 rounded bg-[var(--wb-chip)]" />)}</div>
             : recent.data.items.filter(item => item.kind === "file").slice(0, 12).map(item => <button type="button" key={item.id} aria-label={`Open ${item.name}`} className={row} onClick={() => { onDocument(item.id); setOpen(false); }}><FileText size={16} strokeWidth={1.5} aria-hidden /><span className="truncate">{item.name}</span></button>)}
           {recent.isSuccess && recent.data.items.every(item => item.kind !== "file") && <p className="px-3 text-[12px] text-[var(--wb-muted)]">No recent documents.</p>}
-        </div>
+        </div>}
       </Dialog.Popup>
     </Dialog.Portal>
   </Dialog.Root>;

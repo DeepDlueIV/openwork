@@ -30,6 +30,18 @@ test("line-side assessment recognizes the documented Atlas 2 use case instead of
   assert.equal(workflowComparisonSemantics({ ...actualShape, comparison: `${base} Atlas 2 supports documented line-side replenishment.`, focus: "line-side replenishment", recommendation: "Atlas 2 is a documented use-case candidate; confirm payload and layout before deployment." }, "recipient", pages), true);
   assert.equal(workflowComparisonSemantics({ ...actualShape, comparison: `${base} Atlas 2 supports documented line-side replenishment.` }, "recipient", pages), false, "A copied use-case sentence cannot excuse a contradictory recommendation");
 });
+test("the explicit two-product contract rejects filtering out the unnamed product", () => {
+  const coldOnly = { customerRequest: WORKSHOP_WORKFLOW_INPUTS.rerun.customerRequest, products: [{ name: "Atlas Lift", payload: "1,200 kg", assessment: "Cold-storage pallet moves to -25 °C with optional kit." }], sources: [{ id: "product-a" }, { id: "product-b" }] };
+  const lineOnly = { customerRequest: WORKSHOP_WORKFLOW_INPUTS.recipient.customerRequest, products: [{ name: "Atlas 2", payload: "300 kg", assessment: "Documented line-side replenishment candidate." }], sources: [{ id: "product-a" }, { id: "product-b" }] };
+  assert.equal(workflowComparisonSemantics(coldOnly, "rerun", pages), false);
+  assert.equal(workflowComparisonSemantics(lineOnly, "recipient", pages), false);
+});
+
+test("a documented target match permits the other product to be explicitly unsuitable", () => {
+  const output = { customerRequest: WORKSHOP_WORKFLOW_INPUTS.recipient.customerRequest, products: [{ name: "Atlas 2", payload: "300 kg", assessment: "Documented line-side replenishment use case; confirm site constraints." }, { name: "Atlas Lift", payload: "1,200 kg", assessment: "No documented match for line-side replenishment." }], recommendation: "Atlas 2 is a documented line-side replenishment candidate, subject to site review.", sources: [{ id: "product-a" }, { id: "product-b" }] };
+  assert.equal(workflowComparisonSemantics(output, "recipient", pages), true);
+});
+
 test("raw datasheet source bodies cannot replace a computed comparison", () => {
   assert.equal(workflowComparisonSemantics({ customerRequest: WORKSHOP_WORKFLOW_INPUTS.recipient.customerRequest, sources: [{ body: `${base} Atlas 2 line-side replenishment.` }], comparison: "No documented match established." }, "recipient", pages), false);
 });

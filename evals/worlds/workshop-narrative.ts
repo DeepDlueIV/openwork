@@ -9,6 +9,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { seedSemanticHash, observedWorkshopCalls, type SceneEvidence } from "./workshop-narrative-contract.ts";
 import { workshopRunBudget } from "./workshop-run-budget.ts";
 import { workshopRunIdentity } from "./workshop-run-identity.ts";
+import { workshopTurnDiagnostic } from "./workshop-turn-diagnostics.ts";
 import { inspectWorkshopPptx, verifyWorkshopPptxPrerequisite } from "./workshop-pptx.ts";
 import type { NativeWorkflowObservation } from "./workshop-narrative-witnesses.ts";
 import { addInitScript, allocateFreePort, browserScript, connect, evaluateOnSurface, listTargets, navigate, type Surface } from "@openwork/cdp";
@@ -220,6 +221,17 @@ export async function workshopNarrative(seed: Seed, { place }: { place: Place })
         return { ...current, atlassian: await stateJson(`${atlassian.baseUrl}/state`), microsoft: await stateJson(`${microsoft.baseUrl}/state`), news: await stateJson(`${news.baseUrl}/state`), workflows: workflows.body, inference: inference.observations(), identity, actorEmail: actor.email };
       },
       assertIsolation,
+      async captureTurnDiagnostic(label: string, identity: "owner" | "recipient" = "owner") {
+        if (!/^[A-Za-z0-9_-]{1,80}$/.test(label)) throw new Error("Invalid private diagnostic label");
+        const current = await this.current(identity);
+        const readFailures: string[] = [];
+        const read = (path: string) => engineRead(identity, path).catch(() => { readFailures.push(path); return undefined; });
+        const [statuses, permissions, questions] = await Promise.all([read("/session/status"), read("/permission"), read("/question")]);
+        const diagnostic = workshopTurnDiagnostic({ sessionId: current.sessionId ?? "", messages: current.messages, statuses, permissions, questions });
+        const directory = join(reportDir, "private-observer"); await mkdir(directory, { recursive: true });
+        await writeFile(join(directory, `${label}.diagnostic.json`), JSON.stringify({ at: Date.now(), ...diagnostic, readFailures }, null, 2) + "\n", { mode: 0o600 });
+        return diagnostic;
+      },
       async retainSceneEvidence(scene: SceneEvidence, native: { before: NativeWorkflowObservation; after: NativeWorkflowObservation }, recipientMessages?: unknown) {
         // Only owned synthetic business-state/audit readbacks, never runtime,
         // auth configuration, raw requests, or whole conversation snapshots.
@@ -258,6 +270,10 @@ export async function workshopNarrative(seed: Seed, { place }: { place: Place })
         return stateJson(`${news.baseUrl}/state`);
       },
       recordRow: (row: NarrativeRow) => rows.push(row),
+      async finishDiagnostic(row: NarrativeRow) {
+        await writeFile(join(reportDir, "diagnostic-result.json"), JSON.stringify({ ...identity, scope: "single-scene diagnosis only; not full workshop acceptance", profile, row, inference: inference.observations() }, null, 2) + "\n", { mode: 0o600 });
+        if ((await workshopRunIdentity()).sourceDigest !== identity.sourceDigest) throw new Error("Workshop source changed during the diagnostic");
+      },
       async finish() {
         const observations = inference.observations();
         const durationMs = Date.now() - startedAt;

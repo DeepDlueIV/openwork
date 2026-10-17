@@ -239,6 +239,41 @@ test("T05 cannot substitute a file-list snippet for reading the preceding full a
   assert.equal(verifyWorkshopScene(e).status, "FAIL");
 });
 
+function scheduledDigest(registration: JsonRecord): SceneEvidence {
+  const articles = ["France", "United States", "Germany", "Japan"].map((country, index) => ({ id: `article-${index}`, country, title: `${country} report`, outlet: "Owned fictional news", url: `https://owned.test/article-${index}`, summary: "Measured fictional outcomes remain explicitly uncertain" }));
+  const folder = { id: "morning-folder", name: "Morning news", folder: {} };
+  const digest = { id: "digest", name: "digest.md", webUrl: "https://owned.test/digest", parentReference: { id: folder.id }, preview: { text: articles.map((article) => `${article.country}: ${article.title}; ${article.outlet}; ${article.url}; ${article.summary}`).join("\n") } };
+  const draft = { id: "digest-draft", isDraft: true, parentFolderId: "drafts", body: { content: digest.webUrl } };
+  const e = evidence("T10", [registration, ...articles.map((article) => tool("news_read", article)), tool("file_write", digest), tool("mail_create_draft", draft)]);
+  e.before.news = { now: WORKSHOP_INITIAL_INSTANT, articles, jobs: [], events: [] };
+  e.scheduleRegistration = structuredClone(e.before);
+  e.after.news = { now: "2026-10-16T16:00:00.000Z", articles, jobs: [{ id: "job-1" }], events: [{ id: "event-1", jobId: "job-1" }] };
+  e.after.microsoft = { files: [folder, digest], messages: [source, draft] };
+  e.schedule = { jobId: "job-1", dueEventId: "event-1", dueAt: "2026-10-16T16:00:00.000Z", timeZone: "America/Los_Angeles", clockBefore: WORKSHOP_INITIAL_INSTANT, clockAfter: "2026-10-16T16:00:00.000Z", inferenceExecuted: true, deliveryExecuted: true, digestFileId: digest.id, draftId: draft.id, runnerSessionId: "session" };
+  return e;
+}
+
+test("direct scheduling tool business name cannot replace its actual operation identity", () => {
+  const e = scheduledDigest(tool("connected_news_schedule_create", { content: [{ type: "text", text: JSON.stringify({ id: "job-1" }) }], isError: false }, { name: "Acme Morning News — isolated simulated schedule", hour: 9 }));
+  const verdict = verifyWorkshopScene(e);
+  assert.equal(verdict.status, "PASS", verdict.reasons.join("; "));
+});
+
+test("registration still requires the exact returned job ID and a completed model call", () => {
+  const wrong = scheduledDigest(tool("connected_news_schedule_create", { id: "other-job" }, { name: "Morning news" }));
+  assert.ok(verifyWorkshopScene(wrong).reasons.includes("Model must actually register the observed schedule"));
+  const failed = tool("connected_news_schedule_create", { id: "job-1" }, { name: "Morning news" });
+  failed.state = { ...Object.fromEntries(Object.entries(failed.state ?? {})), status: "error" };
+  assert.ok(verifyWorkshopScene(scheduledDigest(failed)).reasons.includes("Model must actually register the observed schedule"));
+});
+
+test("generic execute_capability uses its operation name but unrelated tool name inputs cannot forge registration", () => {
+  const generic = scheduledDigest(tool("openwork-cloud_execute_capability", { id: "job-1" }, { name: "news_schedule_create", body: { name: "Morning news" } }));
+  assert.equal(verifyWorkshopScene(generic).status, "PASS");
+  const forged = scheduledDigest(tool("unrelated_read", { id: "job-1" }, { name: "news_schedule_create" }));
+  assert.ok(verifyWorkshopScene(forged).reasons.includes("Model must actually register the observed schedule"));
+});
+
 test("a simulated due event without inference/delivery remains blocked", () => {
   const e = evidence("T10", [tool("news_search", []), tool("news_read", { id: "news" }), tool("fixture_schedule_create", { id: "job" })]);
   e.after.news = { jobs: [{ id: "job" }], events: [{ id: "due", jobId: "job" }] };

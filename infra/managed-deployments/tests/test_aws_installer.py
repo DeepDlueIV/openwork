@@ -138,6 +138,93 @@ class RunnerTests(unittest.TestCase):
         plan = {"resource_changes": [{"address": "x", "type": "aws_lambda_function", "change": {"actions": ["delete", "create"]}}]}
         self.assertEqual(runner.unsafe_changes(plan), [])
 
+    @staticmethod
+    def tls_upgrade():
+        old = {"DATABASE_URL": "mysql://app:unchanged@db.example.test:3306/openwork?sslaccept=accept",
+               "BETTER_AUTH_SECRET": "auth-unchanged", "DEN_DB_ENCRYPTION_KEY": "encryption-unchanged",
+               "DEN_INITIAL_ADMIN_BOOTSTRAP_CODE": "bootstrap-unchanged", "SMTP_PASS": "smtp-unchanged"}
+        new = {**old, "DATABASE_URL": old["DATABASE_URL"].replace("sslaccept=accept", "sslaccept=strict")}
+        before = {"secret_id": "arn:aws:secretsmanager:us-east-1:123456789012:secret:ow-test-den-app",
+                  "secret_string": json.dumps(old), "version_stages": ["AWSCURRENT"], "secret_binary": None,
+                  "has_secret_string_wo": False}
+        return {"address": "module.platform.aws_secretsmanager_secret_version.app",
+                "type": "aws_secretsmanager_secret_version", "change": {
+                    "actions": ["delete", "create"], "before": before,
+                    "after": {**before, "secret_string": json.dumps(new), "version_stages": None},
+                    "after_unknown": {"version_id": True, "version_stages": True}}}
+
+    def test_only_exact_tls_secret_upgrade_is_allowed(self):
+        resource = self.tls_upgrade()
+        self.assertTrue(runner.tls_only_secret_upgrade(resource))
+        self.assertEqual(runner.unsafe_changes({"resource_changes": [resource]}), [])
+        # An allowed version update never exempts deletion of its parent or DB.
+        protected = {"address": "module.platform.aws_secretsmanager_secret.app", "type": "aws_secretsmanager_secret",
+                     "change": {"actions": ["delete", "create"]}}
+        self.assertEqual(runner.unsafe_changes({"resource_changes": [resource, protected]}), [protected["address"]])
+
+    def test_tls_upgrade_refuses_key_rotation_or_database_identity_changes(self):
+        for key in ["BETTER_AUTH_SECRET", "DEN_DB_ENCRYPTION_KEY", "DEN_INITIAL_ADMIN_BOOTSTRAP_CODE", "SMTP_PASS"]:
+            resource = self.tls_upgrade()
+            values = json.loads(resource["change"]["after"]["secret_string"])
+            values[key] = "rotated"
+            resource["change"]["after"]["secret_string"] = json.dumps(values)
+            with self.subTest(key=key):
+                self.assertFalse(runner.tls_only_secret_upgrade(resource))
+        for old, new in [("app:", "other:"), (":unchanged@", ":new-password@"),
+                         ("db.example.test", "other.example.test"), ("/openwork?", "/other?"),
+                         (":3306/", ":3307/"), ("sslaccept=strict", "sslaccept=accept")]:
+            resource = self.tls_upgrade()
+            resource["change"]["after"]["secret_string"] = resource["change"]["after"]["secret_string"].replace(old, new)
+            with self.subTest(database_change=old):
+                self.assertFalse(runner.tls_only_secret_upgrade(resource))
+
+    def test_tls_upgrade_fails_closed_on_unknown_or_nonstandard_plans(self):
+        candidates = []
+        for field, value in [("secret_string", None), ("secret_string", "not-json"), ("secret_string", "[]"),
+                             ("secret_string", "{}"), ("secret_id", "different"), ("secret_binary", "binary"),
+                             ("version_stages", ["CUSTOM"]), ("has_secret_string_wo", True)]:
+            resource = self.tls_upgrade()
+            resource["change"]["after"][field] = value
+            candidates.append(resource)
+        for field in ["secret_string", "secret_id"]:
+            resource = self.tls_upgrade()
+            resource["change"]["after_unknown"][field] = True
+            candidates.append(resource)
+        for stages in [None, [], ["AWSPREVIOUS"], ["AWSCURRENT", "CUSTOM"]]:
+            resource = self.tls_upgrade()
+            resource["change"]["before"]["version_stages"] = stages
+            candidates.append(resource)
+        for key, value in [("address", "module.other.aws_secretsmanager_secret_version.app"), ("type", "aws_db_instance")]:
+            resource = self.tls_upgrade()
+            resource[key] = value
+            candidates.append(resource)
+        for actions in [["delete"], ["create", "delete"], ["update"]]:
+            resource = self.tls_upgrade()
+            resource["change"]["actions"] = actions
+            candidates.append(resource)
+        for resource in candidates:
+            with self.subTest(resource=resource["address"], actions=resource["change"]["actions"]):
+                self.assertFalse(runner.tls_only_secret_upgrade(resource))
+
+    def test_real_apply_guard_allows_only_the_saved_tls_upgrade(self):
+        for rotate in [False, True]:
+            resource = self.tls_upgrade()
+            if rotate:
+                resource["change"]["after"]["secret_string"] = resource["change"]["after"]["secret_string"].replace("auth-unchanged", "rotated")
+            with tempfile.TemporaryDirectory() as directory, \
+                    patch.dict(os.environ, {"DEPLOYMENT_ID": "test", "STATE_BUCKET": "state", "AWS_REGION": "us-east-1"}), \
+                    patch.object(runner, "terraform_binary", return_value="terraform"), \
+                    patch.object(runner, "terraform_inputs", return_value={}), \
+                    patch.object(runner, "certificate_states", return_value={}), \
+                    patch.object(runner.subprocess, "run") as run, \
+                    patch.object(runner.subprocess, "check_output", side_effect=[json.dumps({"resource_changes": [resource]}), "{}"]):
+                if rotate:
+                    with self.assertRaisesRegex(ValueError, "manual review"):
+                        runner.apply(Path(directory), Path(directory))
+                else:
+                    self.assertEqual(runner.apply(Path(directory), Path(directory)), {})
+                self.assertEqual(any(call.args[0][1] == "apply" for call in run.call_args_list), not rotate)
+
     def test_health_rejects_unexpected_origins(self):
         with patch.dict(os.environ, {"DOMAIN_NAME": "den.example.test"}):
             with self.assertRaises(ValueError):

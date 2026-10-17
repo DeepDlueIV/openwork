@@ -35,22 +35,35 @@ runner behavior updates, without adopting the direct module's contract lifecycle
 
 ## Frozen AWS platform boundary
 
-The complete snapshot is byte-identical to the shared module at source commit
+The baseline is the shared module at source commit
 `8b586b13ab89b78379fbecd8ddb9c7c7caba31f8`, Git tree
-`561d5b63514a13df471ad7458eae2b620cfc5803`. This refresh includes the current
-runner behavior rather than reverting to an older installer snapshot. The
-release builder packages its ten operational Terraform files under the managed
-root, excludes examples/tests and the evolving direct-user module, and suppresses
-macOS metadata sidecars. Regression tests pin the whole snapshot and compare
-actual archive members and file bytes. Existing GCP image resolution and
-mandatory registry verification are retained independently.
+`561d5b63514a13df471ad7458eae2b620cfc5803`, including current runner behavior.
+One reviewed TLS-only exception changes `ecs.tf` (CA setup before the legacy
+migration, API and web commands), `variables.tf` (strict TLS default/validation),
+`versions.tf` (HTTP provider) and adds `tls.tf` (verified regional RDS CA fetch).
+All other module files remain byte-identical. The release builder packages all
+eleven operational Terraform files under the managed root, excluding
+examples/tests, the direct-user module and macOS metadata sidecars. Regressions
+reconstruct the exact baseline tree outside those four files and compare every
+actual archive member/checksum with its local source. Existing GCP image
+resolution and mandatory registry verification remain independent.
 
-This is a compatibility boundary, not adoption of the newer module's security
-or migration lifecycle. Do not refresh the snapshot as part of unrelated module
-work. A separate owner-reviewed installer migration must handle supporting-file
-packaging, deployment-scoped Lambda/IAM/log permissions and customer re-approval,
-legacy maintenance/drain fencing, and update/version semantics. Current dev's
-bootstrap, runner, health-agent and provider-pin behavior is retained.
+This is a compatibility boundary, not adoption of the newer module's migration
+or secret lifecycle. The AWS/random/archive provider pins and bootstrap IAM are
+unchanged; only the HTTP provider/lock entry is added for a verified public CA
+fetch. The runner's data-preservation guard permits exactly the existing app
+SecretVersion's `sslaccept=accept` to `sslaccept=strict` replacement, only when
+all other secret JSON values, DB identity/credentials and secret ARN are known
+and unchanged, with the old version carrying only `AWSCURRENT`. Other protected
+replacements still require manual review. The pinned AWS provider skips removing
+that label before putting the new version, using already-granted permissions.
+No secret rotation is intended. Session/data preservation still requires live
+baseline-to-Retry validation; offline tests alone do not certify it.
+
+Do not refresh the snapshot as part of unrelated work. Separate owner-reviewed
+contract adoption must handle supporting-file packaging, deployment-scoped
+Lambda/IAM/log permissions and customer re-approval, legacy maintenance/drain
+fencing, and update/version semantics.
 
 ## The contract every cloud implements
 

@@ -502,9 +502,13 @@ variable "database" {
     deletion_protection   = optional(bool, true)
     skip_final_snapshot   = optional(bool, false)
     apply_immediately     = optional(bool, false)
-    tls_query             = optional(string, "sslaccept=accept")
+    tls_query             = optional(string, "sslaccept=strict")
   })
   default = {}
+  validation {
+    condition     = contains(["sslaccept=strict", "sslmode=verify-full"], var.database.tls_query)
+    error_message = "Database connections must verify TLS; sslaccept=accept is not permitted."
+  }
 }
 
 variable "create_redis" {

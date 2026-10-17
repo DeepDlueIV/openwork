@@ -144,7 +144,8 @@ resource "aws_ecs_task_definition" "api" {
       name        = "migrate"
       image       = local.den_api_image
       essential   = false
-      command     = ["node", "/app/ee/packages/den-db/dist/scripts/bootstrap.js"]
+      entryPoint  = ["/bin/sh", "-ec"]
+      command     = ["${local.tls_setup}exec node /app/ee/packages/den-db/dist/scripts/bootstrap.js"]
       environment = local.environment_list
       secrets     = local.api_secrets_list
       logConfiguration = {
@@ -155,6 +156,8 @@ resource "aws_ecs_task_definition" "api" {
     {
       name         = "den-api"
       image        = local.den_api_image
+      entryPoint   = ["/bin/sh", "-ec"]
+      command      = ["${local.tls_setup}exec node /app/ee/apps/den-api/dist/main.js"]
       essential    = true
       portMappings = [{ containerPort = 8788, protocol = "tcp" }]
       environment  = concat(local.environment_list, [{ name = "PORT", value = "8788" }])
@@ -198,6 +201,8 @@ resource "aws_ecs_task_definition" "web" {
     {
       name         = "den-web"
       image        = local.den_web_image
+      entryPoint   = ["/bin/sh", "-ec"]
+      command      = ["${local.tls_setup}exec /app/ee/apps/den-web/node_modules/.bin/next start --hostname 0.0.0.0 --port 3005"]
       essential    = true
       portMappings = [{ containerPort = 3005, protocol = "tcp" }]
       environment  = concat(local.environment_list, [{ name = "PORT", value = "3005" }])

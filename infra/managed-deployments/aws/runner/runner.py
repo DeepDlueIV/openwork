@@ -204,12 +204,50 @@ def certificate_states(binary, tf_root):
     return found
 
 
+def tls_only_secret_upgrade(resource):
+    """Allow only the known app-secret version's accept-to-strict promotion.
+
+    Compare plan values only in memory. Never print secret JSON or URLs.
+    Unknown values, key rotation, other labels and other resources fail closed.
+    """
+    change = resource.get("change", {})
+    if (resource.get("address") != "module.platform.aws_secretsmanager_secret_version.app"
+            or resource.get("type") != "aws_secretsmanager_secret_version"
+            or change.get("actions") != ["delete", "create"]):
+        return False
+    before, after = change.get("before"), change.get("after")
+    unknown = change.get("after_unknown", {})
+    if not isinstance(before, dict) or not isinstance(after, dict) or not isinstance(unknown, dict):
+        return False
+    if (unknown.get("secret_id", False) is not False or unknown.get("secret_string", False) is not False
+            or not isinstance(before.get("secret_id"), str) or not before["secret_id"]
+            or before["secret_id"] != after.get("secret_id")
+            or before.get("version_stages") != ["AWSCURRENT"]
+            or after.get("version_stages") not in (None, ["AWSCURRENT"])
+            or before.get("secret_binary") is not None or after.get("secret_binary") is not None
+            or before.get("has_secret_string_wo") or after.get("has_secret_string_wo")):
+        return False
+    try:
+        old, new = json.loads(before["secret_string"]), json.loads(after["secret_string"])
+    except (KeyError, TypeError, ValueError):
+        return False
+    required = {"DATABASE_URL", "BETTER_AUTH_SECRET", "DEN_DB_ENCRYPTION_KEY", "DEN_INITIAL_ADMIN_BOOTSTRAP_CODE"}
+    if not isinstance(old, dict) or not isinstance(new, dict) or not required <= old.keys():
+        return False
+    url = old["DATABASE_URL"]
+    if not isinstance(url, str) or not url.startswith("mysql://") or not url.endswith("?sslaccept=accept"):
+        return False
+    expected = {**old, "DATABASE_URL": url.removesuffix("sslaccept=accept") + "sslaccept=strict"}
+    return new == expected
+
+
 def unsafe_changes(plan):
-    """Return planned deletions/replacements of data-bearing resources."""
+    """Return data-bearing deletions/replacements, except the exact TLS upgrade."""
     unsafe = []
     for change in plan.get("resource_changes", []):
         if change.get("type") in PROTECTED_TYPES and "delete" in change.get("change", {}).get("actions", []):
-            unsafe.append(change["address"])
+            if not tls_only_secret_upgrade(change):
+                unsafe.append(change["address"])
     return unsafe
 
 

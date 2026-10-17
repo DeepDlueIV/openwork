@@ -102,14 +102,20 @@ test("GCP CLI cannot disable registry verification or use unsupported options", 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const modulePath = "infra/managed-deployments/aws/terraform/modules/openwork-aws-ecs";
 // Current dev at 8b586b13ab89b78379fbecd8ddb9c7c7caba31f8, including runner updates.
-// Pin the whole snapshot, never the moving shared module or a network lookup.
-const frozenTree = "561d5b63514a13df471ad7458eae2b620cfc5803";
+// Only the reviewed TLS overlay may differ from this complete dev snapshot.
+const baselineTree = "561d5b63514a13df471ad7458eae2b620cfc5803";
+const baselineBlobs = {
+  "ecs.tf": "376f3f89bd7220eead002a35ab130e2ee3fa95f6",
+  "variables.tf": "311952c9651de29b756815b00ee04ace0c9a049f",
+  "versions.tf": "a5b975afb4a825ad41cf4bda2c75d0f6a8085aed",
+};
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");
 const objectHash = (kind, bytes) => createHash("sha1")
   .update(Buffer.from(`${kind} ${bytes.length}\0`)).update(bytes).digest();
 
 function treeHash(directory) {
-  const entries = readdirSync(directory).map((name) => {
+  const baselineRoot = directory === resolve(root, modulePath);
+  const entries = readdirSync(directory).filter((name) => !baselineRoot || name !== "tls.tf").map((name) => {
     const path = join(directory, name);
     const info = lstatSync(path);
     assert.equal(info.isSymbolicLink(), false, "Frozen sources cannot be symlinks");
@@ -119,16 +125,21 @@ function treeHash(directory) {
       sortKey: Buffer.from(name + (directoryEntry ? "/" : "")),
       entry: Buffer.concat([
         Buffer.from(`${directoryEntry ? "40000" : "100644"} ${name}\0`),
-        directoryEntry ? treeHash(path) : objectHash("blob", readFileSync(path)),
+        directoryEntry ? treeHash(path) : baselineRoot && baselineBlobs[name]
+          ? Buffer.from(baselineBlobs[name], "hex") : objectHash("blob", readFileSync(path)),
       ]),
     };
   }).sort((left, right) => Buffer.compare(left.sortKey, right.sortKey));
   return objectHash("tree", Buffer.concat(entries.map(({ entry }) => entry)));
 }
 
-test("managed AWS implementation stays byte-identical to its pinned dev snapshot", () => {
-  assert.equal(treeHash(resolve(root, modulePath)).toString("hex"), frozenTree,
-    "Changing the frozen implementation requires a separately reviewed installer adoption");
+test("managed AWS differs from its pinned dev snapshot only in the reviewed TLS files", () => {
+  assert.equal(treeHash(resolve(root, modulePath)).toString("hex"), baselineTree,
+    "Outside ecs.tf, variables.tf, versions.tf and added tls.tf, every byte must match pinned dev");
+  const tls = readFileSync(resolve(root, modulePath, "tls.tf"), "utf8");
+  assert.match(tls, /https:\/\/truststore\.pki\.rds\.amazonaws\.com/);
+  assert.match(tls, /NODE_EXTRA_CA_CERTS/);
+  assert.doesNotMatch(tls, /insecure\s*=\s*true/);
   const main = readFileSync(resolve(root, "infra/managed-deployments/aws/terraform/main.tf"), "utf8");
   assert.match(main, /source\s*=\s*"\.\/modules\/openwork-aws-ecs"/);
   assert.doesNotMatch(main, /source\s*=\s*"\.\.\/\.\.\/\.\.\/terraform\/modules\/openwork-aws-ecs"/);
@@ -149,7 +160,7 @@ test("installer archive contains only the frozen operational module, with identi
       "import json,sys,tarfile; a=tarfile.open(sys.argv[1]); print(json.dumps([e.name for e in a.getmembers() if e.isfile()]))", bundle], { encoding: "utf8" }));
     assert.deepEqual(archiveNames.sort(), [...names, "release.json"].sort());
     const expected = readdirSync(resolve(root, modulePath)).filter((name) => name.endsWith(".tf")).map((name) => `${modulePath}/${name}`).sort();
-    assert.equal(expected.length, 10);
+    assert.equal(expected.length, 11);
     assert.deepEqual(names.filter((name) => name.startsWith(modulePath + "/")).sort(), expected);
     assert.equal(names.some((name) => name.startsWith("infra/terraform/modules/openwork-aws-ecs/")), false);
     assert.equal(names.some((name) => name.includes("/examples/") || name.includes("/tests/")), false);

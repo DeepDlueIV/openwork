@@ -36,6 +36,11 @@ mock_provider "aws" {
 }
 mock_provider "random" {}
 mock_provider "archive" {}
+mock_provider "http" {
+  mock_data "http" {
+    defaults = { status_code = 200, response_body = "-----BEGIN CERTIFICATE-----test" }
+  }
+}
 
 variables {
   deployment_id        = "0cf7aa5c-4c1a-43dc-ac34-819509b527fa"

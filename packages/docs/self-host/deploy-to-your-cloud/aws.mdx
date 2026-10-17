@@ -30,7 +30,10 @@ For exact CLI commands, values, DNS/TLS choices, migration troubleshooting, veri
 
 These instructions and contract-v1 results apply to **direct Terraform users**.
 The managed-deployments installer is decoupled onto its own frozen pre-contract
-module; its existing customer behavior and provider pins do not change here.
+module. Its separate TLS-only update verifies RDS certificates with the public
+regional CA; it does not adopt the contract lifecycle, secret mode or AWS IAM
+changes. Existing AWS/random/archive pins remain; only the HTTP CA-fetch
+provider is added.
 
 ### What it deploys
 

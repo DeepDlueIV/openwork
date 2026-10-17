@@ -1,7 +1,8 @@
 # openwork-aws-ecs (Terraform)
 
 For **direct Terraform users**. The managed AWS installer uses a separate frozen
-pre-contract module, not this implementation; its customer behavior is unchanged.
+pre-contract module, not this implementation; its only adopted security change
+is verified RDS TLS with the public regional CA, not the contract lifecycle.
 
 ## What it deploys
 

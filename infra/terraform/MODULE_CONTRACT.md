@@ -211,8 +211,12 @@ OAuth/protocol-handler handoff. Screenshots illustrate results, not decide them.
   state through the provider's certificate arguments. Protect state or manage
   certificates externally; core state-free credentials do not cover this path.
 - **AWS managed-installer boundary:** the installer uses a frozen pre-contract
-  module with its original provider pins. It is not certified by direct-module
-  conformance. The prior cross-major compatibility exception is removed; the
+  module with its original AWS/random/archive pins. A reviewed TLS-only overlay
+  adds strict certificate verification, public RDS CA trust and the HTTP provider;
+  the runner permits only a known, key-preserving TLS-query SecretVersion update.
+  It is not certified by direct-module conformance. No migration lifecycle,
+  secret-mode or IAM adoption is included. The prior cross-major compatibility
+  exception is removed; the
   direct module uses AWS `~> 6.69`. Future managed adoption needs supporting-file
   packaging, migration IAM/log permissions and customer re-approval, a legacy
   maintenance fence, and explicit update/version semantics.

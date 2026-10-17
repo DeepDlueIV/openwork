@@ -96,6 +96,14 @@ normalizes interrupted activity. Review permissions before continuing migrated
 chats. V1 plugin implementations require v2-compatible replacements; migration
 does not rewrite configuration, skills, or plugin files.
 
+## Provider catalog ownership
+
+The optional `liveProviderSync` rollout gives the bundled OpenWork plugin
+ownership of the v2 AI Gateway catalog. V1 and the flag-off path retain the
+existing server materialization flow. See [live provider sync](live-provider-sync.md)
+for stream convergence, account isolation, credential hand-off and kill-switch
+semantics.
+
 ## Upstream contract reviewed
 
 Implementation was checked against the native engine at the repository pin,

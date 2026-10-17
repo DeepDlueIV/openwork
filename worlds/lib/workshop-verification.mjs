@@ -14,6 +14,7 @@ export function verifyWorkshop({ messages, atlassian, microsoft, marker, provide
   assert.ok(tools.every((part) => !["pending", "running"].includes(part.state?.status)), "A tool is awaiting completion or approval");
   const executions = tools.filter((part) => part.state?.status === "completed" && !/search_capabilities/.test(part.tool));
   const calls = (name) => executions.filter((part) => String(part.state?.input?.name ?? part.tool).endsWith(name));
+  assert.equal(calls("mail_send").length, 0, "Rehearsal must not send mail");
   const output = (part) => typeof part.state.output === "string" ? part.state.output : JSON.stringify(part.state.output);
   const datasheets = atlassian.confluence.pages.filter((page) => /datasheet/i.test(page.title) && /Atlas (2|Lift)/.test(page.title));
   assert.equal(datasheets.length, 2, "Expected both seeded product datasheets");
@@ -28,7 +29,12 @@ export function verifyWorkshop({ messages, atlassian, microsoft, marker, provide
   assert.ok(document && /Atlas\s*2/i.test(document.preview?.text ?? "") && /Atlas\s*Lift/i.test(document.preview?.text ?? ""), "OneDrive comparison content missing");
   assert.ok(calls("file_write").some((part) => output(part).includes(document.id)), "Session must write the observed document");
   const source = microsoft.messages.filter((mail) => mail.parentFolderId === "inbox").sort((a, b) => b.receivedDateTime.localeCompare(a.receivedDateTime))[0];
-  assert.ok(source && calls("mail_read").some((part) => output(part).includes(source.id)), "Session must read the latest inbox message");
+  const readLatest = source && (calls("mail_read").some((part) => output(part).includes(source.id)) || calls("mail_search").some((part) => {
+    // This demo's mail search returns complete Graph message bodies, not snippets.
+    // Accept that actual provider read only when it contains the exact latest body.
+    try { const found = JSON.parse(output(part)).value; return Array.isArray(found) && found.some((mail) => mail.id === source.id && typeof source.body?.content === "string" && mail.body?.content === source.body.content); } catch { return false; }
+  }));
+  assert.ok(readLatest, "Session must read the complete latest inbox message");
   const draft = microsoft.messages.find((mail) => mail.isDraft && mail.parentFolderId === "drafts" && mail.conversationId === source.conversationId && (mail.body?.content?.includes(document.webUrl) || mail.body?.content?.includes(document.id)));
   assert.ok(draft, "No unsent threaded reply linking the comparison document");
   assert.ok(calls("mail_create_reply_draft").some((part) => output(part).includes(draft.id)), "Session must create the observed reply draft");

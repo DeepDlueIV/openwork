@@ -57,7 +57,7 @@ async function rest(path: string, init: RequestInit = {}) {
   return { status: response.status, body: response.status === 204 ? null : await response.json() };
 }
 
-describe("MCP surface (mcp-atlassian 3.4.9)", () => {
+describe("MCP surface (mcp-atlassian with FastMCP 3.4.9)", () => {
   test("offers the mcp-atlassian Jira, Service Management and Confluence tools", async () => {
     const init = await mcp("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } });
     expect(init.result.serverInfo).toEqual({ name: "Atlassian MCP", version: "3.4.9" });

@@ -55,7 +55,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   const microsoft = await startDemoScript(stack, world.den, {
     url: new URL("../evals/packages/labs/src/demo-microsoft365.mjs", import.meta.url), label: "demo-microsoft365", daytonaPort: 3988,
   });
-  await connectDemoServer(world.den, "microsoft365", "Microsoft 365 (demo)", `${microsoft.baseUrl}/mcp`);
+  await connectDemoServer(world.den, "microsoft365", "Microsoft 365 (Outlook & OneDrive demo)", `${microsoft.baseUrl}/mcp`);
   await assertAcmeConnections(world.den, [world.demo.baseUrl, world.atlassian.baseUrl, microsoft.baseUrl]);
   const serviceUi = await startDemoScript(stack, world.den, {
     url: new URL("../evals/packages/labs/src/demo-workplace-ui.mjs", import.meta.url), label: "demo-workplace-ui", daytonaPort: 3987, localPort: uiPort,
@@ -64,11 +64,16 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   const manifest = world.web.manifest;
 
   // This is a fixture, not a customer brief. Everything stays in the world's scratch workspace.
-  const brief = `# Acme Robotics workday\n\nYou are Alex Chen. This is a fictional workshop; all services are demo data.\n\nUse the connected Atlassian and Microsoft 365 tools to do work, never fabricate their results.\n\n- Jira projects: FLEET, DOC and ITSD (IT service desk). Nora Patel owns documentation.\n- Confluence spaces: HB (handbook), PROD (datasheets), SALES (account plans), ENG.\n- Products: Atlas 2 and Atlas Lift. Customers: Northwind Logistics and Blue Harbor Foods.\n- Use Outlook and OneDrive for mail and documents. Emails never leave the demo.\n- Save generated files in this workspace. Open and validate Office files, not just their extensions.\n- Ask before sending mail, assigning tickets or publishing updates unless the user has explicitly requested that action.\n- If a policy cannot be found, say so. Do not invent internal rules.\n\n## Start here\nFind the latest customer request in Outlook, read the relevant Confluence product pages, and draft a customer-ready comparison of Atlas 2 and Atlas Lift. Save it as a document and draft a reply with the link. Do not send yet.\n`;
+  const brief = `# Acme Robotics workday\n\nYou are Alex Chen. This is a fictional workshop; all services are demo data.\n\nUse the connected Atlassian and Microsoft 365 tools to do work, never fabricate their results. Capability discovery finds tool metadata, not document contents. Confluence search returns excerpts: use confluence_get_page with the discovered page IDs for complete source pages. Outlook uses mail_search, mail_read and mail_create_reply_draft; OneDrive uses file_find, file_read and file_write. Discover their exact capability names and schemas before calling them. Never use a literal-return script as evidence of a service read.\n\n- Jira projects: FLEET, DOC and ITSD (IT service desk). Nora Patel owns documentation.\n- Confluence spaces: HB (handbook), PROD (datasheets), SALES (account plans), ENG.\n- Products: Atlas 2 and Atlas Lift. Customers: Northwind Logistics and Blue Harbor Foods.\n- Use Outlook and OneDrive for mail and documents. Emails never leave the demo.\n- Save generated files in this workspace. Open and validate Office files, not just their extensions.\n- Ask before sending mail, assigning tickets or publishing updates unless the user has explicitly requested that action.\n- If a policy cannot be found, say so. Do not invent internal rules.\n\n## Start here\nFind the latest customer request in Outlook, read the relevant Confluence product pages, and draft a customer-ready comparison of Atlas 2 and Atlas Lift. Save it as a document and draft a reply with the link. Do not send yet.\n`;
   const workspace = await fetch(`${manifest.openworkUrl}/workspaces`, { headers: { authorization: `Bearer ${manifest.token}` } }).then((response) => response.json());
   const item = record(workspace) && Array.isArray(workspace.items) ? workspace.items.find(record) : undefined;
   if (!item || typeof item.path !== "string" || typeof item.id !== "string") throw new Error("Workshop workspace missing.");
   await writeFile(join(item.path, "WORKSHOP.md"), brief);
+  const defaultModel = await fetch(`${manifest.openworkUrl}/workspace/${item.id}/default-model`, {
+    method: "PUT", headers: { authorization: `Bearer ${manifest.token}`, "content-type": "application/json" },
+    body: JSON.stringify({ model: { providerID: paid.providerId, modelID: paid.modelId } }),
+  });
+  if (!defaultModel.ok) throw new Error(`Workshop default model setup failed: HTTP ${defaultModel.status}`);
 
   await hold({ name: "enterprise-workshop", outputs: {
     webUrl: output(manifest.webUrl, { group: "Workday" }),

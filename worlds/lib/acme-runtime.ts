@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
@@ -11,7 +11,9 @@ import { record } from "./acme-gateway.ts";
 
 /** Seeded worlds must not inherit the developer's config, plugins, credentials or repository ancestors. */
 export async function acmeRuntimeFixture(stack: AsyncDisposableStack) {
-  const root = await mkdtemp(join(tmpdir(), "openwork-acme-world-"));
+  // macOS /var aliases /private/var. The engine canonicalizes its directory;
+  // matching it here prevents ordinary workspace reads being treated as external.
+  const root = await realpath(await mkdtemp(join(tmpdir(), "openwork-acme-world-")));
   stack.defer(() => rm(root, { recursive: true, force: true }));
   await trackResource({ kind: "tmpdir", id: root, label: "isolated Acme runtime" });
   await Promise.all(["workspace", "home", "cache", "config/openwork", "config/opencode", "data/openwork", "data/opencode", "state"].map((path) => mkdir(join(root, path), { recursive: true })));
@@ -21,7 +23,8 @@ export async function acmeRuntimeFixture(stack: AsyncDisposableStack) {
 
 /** A script world owns its process. Den/build children get no ambient developer secrets or injection hooks either. */
 export function acmeProcessEnvironment(source: NodeJS.ProcessEnv, runtimeEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const harness = Object.fromEntries(Object.entries(source).filter(([key]) => key.startsWith("OPENWORK_WORLD_") || key === "OPENWORK_EVAL_MYSQL_URL"));
+  const keys = new Set(["OPENWORK_WORLD_STAGE", "OPENWORK_WORLD_PLACE", "OPENWORK_WORLD_OS", "OPENWORK_WORLD_SNAPSHOT_DIR", "OPENWORK_WORLD_RECIPE_HASH", "OPENWORK_WORLD_INVOCATION_HASH", "OPENWORK_WORLD_EVENTS", "OPENWORK_WORLD_LEDGER", "OPENWORK_WORLD_SEEDS", "OPENWORK_WORLD_SOURCES", "OPENWORK_WORLD_HEARTBEAT_MS", "OPENWORK_EVAL_MYSQL_URL"]);
+  const harness = Object.fromEntries(Object.entries(source).filter(([key]) => keys.has(key)));
   return { ...harness, ...runtimeEnv };
 }
 

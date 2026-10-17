@@ -130,10 +130,15 @@ test("workplace UI shares demo REST state and supports real browser workflows", 
     const browserKey = await evaluate("location.pathname.split('/').at(-1)");
     await click("edit-issue");
     await change("edit-issue-summary", "Browser-edited issue");
-    await change("edit-issue-description", "Description edited in the issue dialog");
+    const richDescription = "Description edited in the issue dialog\n\n*Atlas 2*\n* Payload: 300 kg\n* Top speed: {{2.0 m/s}}\n\n<img src=x onerror=window.bad=true>";
+    await change("edit-issue-description", richDescription);
     await evaluate("document.getElementById('edit-issue-form').requestSubmit()");
     await waitFor(() => evaluate("document.getElementById('issue-title').textContent === 'Browser-edited issue'"), "Issue edit did not persist");
-    assert.equal((await proxy(`/jira/rest/api/2/issue/${browserKey}`)).fields.description, "Description edited in the issue dialog");
+    assert.equal((await proxy(`/jira/rest/api/2/issue/${browserKey}`)).fields.description, richDescription);
+    assert.equal(await evaluate("document.querySelector('#issue-description strong')?.textContent"), "Atlas 2");
+    assert.equal(await evaluate("document.querySelectorAll('#issue-description ul li').length"), 2);
+    assert.equal(await evaluate("document.querySelector('#issue-description code')?.textContent"), "2.0 m/s");
+    assert.equal(await evaluate("document.querySelectorAll('#issue-description img').length"), 0);
     await click("add-comment");
     assert.equal(await evaluate("document.activeElement.id"), "comment-body");
     await change("comment-body", "Browser comment <script>window.bad=true</script>");

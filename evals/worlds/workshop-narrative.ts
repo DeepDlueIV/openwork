@@ -276,7 +276,7 @@ export async function workshopNarrative(seed: Seed, { place }: { place: Place })
       },
       recordRow: (row: NarrativeRow) => rows.push(row),
       async finishDiagnostic(row: NarrativeRow) {
-        await writeFile(join(reportDir, "diagnostic-result.json"), JSON.stringify({ ...identity, scope: "single-scene diagnosis only; not full workshop acceptance", profile, row, inference: inference.observations() }, null, 2) + "\n", { mode: 0o600 });
+        await writeFile(join(reportDir, "diagnostic-result.json"), JSON.stringify({ ...identity, scope: "targeted diagnosis only; not full workshop acceptance", profile, row, rows: rows.length ? rows : [row], inference: inference.observations() }, null, 2) + "\n", { mode: 0o600 });
         if ((await workshopRunIdentity()).sourceDigest !== identity.sourceDigest) throw new Error("Workshop source changed during the diagnostic");
       },
       async finish() {

@@ -65,7 +65,7 @@ async function main() {
   const receipt = JSON.parse(await readFile(receiptPath, "utf8"));
   const out = receipt.outputs;
   if (!out || typeof out.openworkToken !== "string" || !out.openworkToken || typeof out.workspaceId !== "string") fail("Private world receipt lacks runtime credentials/workspace.");
-  for (const key of ["webUrl", "openworkUrl", "jira", "confluence", "outlook", "oneDrive", "atlassianState", "microsoftState"]) ownedUrl(out[key]);
+  for (const key of ["webUrl", "openworkUrl", "denApi", "denWeb", "jira", "confluence", "outlook", "oneDrive", "atlassianState", "microsoftState"]) ownedUrl(out[key]);
   assert.equal(new URL(out.jira).origin, new URL(out.confluence).origin, "Atlassian browser origins differ");
   assert.equal(new URL(out.outlook).origin, new URL(out.microsoftState).origin, "Outlook is not the receipt's backend");
   assert.equal(new URL(out.oneDrive).origin, new URL(out.microsoftState).origin, "OneDrive is not the receipt's backend");
@@ -137,14 +137,16 @@ async function main() {
     };
     const navigate = async (url, condition) => {
       await cdp("Page.navigate", { url });
-      await waitFor(() => evaluate(condition), "Expected service data did not render.");
+      try { await waitFor(() => evaluate(condition), "Expected service data did not render."); }
+      catch (error) { await screenshot("failure-" + stage.replace(/[^a-z0-9]+/gi, "-").toLowerCase()).catch(() => undefined); throw error; }
     };
     await cdp("Runtime.enable"); await cdp("Page.enable");
     await cdp("Emulation.setDeviceMetricsOverride", { width: 1440, height: 1000, deviceScaleFactor: 1, mobile: false });
     const captures = [];
+    const browserSecrets = [out.openworkToken, out.password].filter(Boolean);
     const screenshot = async (name) => {
       // Guard all actual visible content, form values and the URL before writing any image.
-      const safe = await evaluate(`(() => { const secrets=${JSON.stringify([out.openworkToken, out.password].filter(Boolean))}; const visible=[document.body?.innerText || '', location.href, ...[...document.querySelectorAll('input,textarea')].map(e=>e.value)].join('\\n'); return !secrets.some(secret=>visible.includes(secret)) && !document.querySelector('vite-error-overlay'); })()`);
+      const safe = await evaluate(`(() => { const secrets=${JSON.stringify(browserSecrets)}; const visible=[document.body?.innerText || '', location.href, ...[...document.querySelectorAll('input,textarea')].map(e=>e.value)].join('\\n'); return !secrets.some(secret=>visible.includes(secret)) && !document.querySelector('vite-error-overlay'); })()`);
       if (!safe) fail("Screenshot blocked: secret or development error overlay visible.");
       await evaluate("document.fonts.ready.then(()=>true)");
       const image = await cdp("Page.captureScreenshot", { format: "png", captureBeyondViewport: false });
@@ -181,10 +183,26 @@ async function main() {
       // Existing runtime/bootstrap conventions: scoped runtime token, server override and shell session memory.
       // Only this disposable Chrome profile is changed. Never set a token in the URL or print storage.
       const appOrigin = new URL(out.webUrl).origin;
-      const boot = { origin: appOrigin, runtime: out.openworkUrl, token: out.openworkToken, workspaceId: out.workspaceId, sessionId };
-      await cdp("Page.addScriptToEvaluateOnNewDocument", { source: `(() => { const b=${JSON.stringify(boot)}; if(location.origin!==b.origin)return; localStorage.setItem('openwork.server.urlOverride',b.runtime); localStorage.setItem('openwork.server.token',b.token); localStorage.setItem('openwork.react.activeWorkspace',b.workspaceId); localStorage.setItem('openwork.react.sessionByWorkspace',JSON.stringify({[b.workspaceId]:b.sessionId})); })()` });
+      const boot = { origin: appOrigin, runtime: out.openworkUrl, token: out.openworkToken, workspaceId: out.workspaceId, sessionId, model: { providerID: out.providerId, modelID: out.modelId } };
+      await cdp("Page.addScriptToEvaluateOnNewDocument", { source: `(() => { const b=${JSON.stringify(boot)}; if(location.origin!==b.origin)return; localStorage.setItem('openwork.preferences',JSON.stringify({defaultModel:b.model,modelVariant:null,providerStepCompleted:true})); localStorage.setItem('openwork.defaultModel',b.model.providerID+'/'+b.model.modelID); localStorage.setItem('openwork.server.urlOverride',b.runtime); localStorage.setItem('openwork.server.token',b.token); localStorage.setItem('openwork.react.activeWorkspace',b.workspaceId); localStorage.setItem('openwork.react.sessionByWorkspace',JSON.stringify({[b.workspaceId]:b.sessionId})); })()` });
       const route = `/workspace/${encodeURIComponent(out.workspaceId)}/session/${encodeURIComponent(sessionId)}`;
-      await navigate(new URL(route, out.webUrl).href, `location.pathname === ${JSON.stringify(route)} && !!document.querySelector('main') && document.body.innerText.includes(${JSON.stringify(issue.key)}) && !document.querySelector('vite-error-overlay')`);
+      await navigate(new URL(route, out.webUrl).href, `!!window.__openworkControl?.listActions?.().some(action=>action.id==='auth.exchange-grant')`);
+      // Supported seeded-world sign-in, not invented credentials or a production account.
+      // The browser's local profile still needs its own Den session to expose paid models.
+      const denPost = async (path, body, token) => {
+        const response = await fetch(out.denApi + path, { method: "POST", redirect: "error", headers: { origin: out.denWeb, "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify(body), signal: AbortSignal.timeout(30000) });
+        if (!response.ok) fail(`Owned Den sign-in failed: HTTP ${response.status}; private response omitted.`);
+        return response.json();
+      };
+      const signedIn = await denPost("/api/auth/sign-in/email", { email: out.email, password: out.password });
+      if (typeof signedIn.token !== "string") fail("Owned Den returned no sign-in token.");
+      browserSecrets.push(signedIn.token);
+      const handoff = await denPost("/v1/auth/desktop-handoff", { desktopScheme: "openwork" }, signedIn.token);
+      if (typeof handoff.grant !== "string") fail("Owned Den returned no handoff grant.");
+      browserSecrets.push(handoff.grant);
+      await evaluate(`window.__openworkControl.execute('auth.exchange-grant',${JSON.stringify({ grant: handoff.grant, baseUrl: out.denWeb, apiBaseUrl: out.denApi })}).then(()=>true)`);
+      await waitFor(() => evaluate("!!localStorage.getItem('openwork.den.authToken') && !!localStorage.getItem('openwork.den.activeOrgId')"), "Seeded browser sign-in did not settle.", 60000);
+      await navigate(new URL(route, out.webUrl).href, `location.pathname === ${JSON.stringify(route)} && !!document.querySelector('main') && document.body.innerText.includes(${JSON.stringify(issue.key)}) && /gpt.?4\\.1/i.test(document.body.innerText) && !document.querySelector('vite-error-overlay')`);
       await screenshot("openwork-completed-session");
     }
     stage = "proof report";

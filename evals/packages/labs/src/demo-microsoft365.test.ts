@@ -201,7 +201,11 @@ describe("fictional Microsoft 365 demo", () => {
   test("MCP handshake, schemas, notifications and errors are sensible demo-only surfaces", async () => {
     const init = await rpc("initialize", { protocolVersion: "2025-06-18" }); expect(record(init.result).protocolVersion).toBe("2025-06-18"); expect(record(record(init.result).serverInfo).name).toContain("DEMO");
     const tools = array(record((await rpc("tools/list")).result).tools).map(record); expect(tools).toHaveLength(10);
-    for (const entry of tools) { expect(string(entry.description)).toContain("DEMO ONLY"); expect(record(entry.annotations).openWorldHint).toBe(false); }
+    for (const entry of tools) {
+      expect(string(entry.description)).toContain("DEMO ONLY");
+      expect(string(entry.description)).toContain(string(entry.name).startsWith("file_") ? "OneDrive" : "Outlook");
+      expect(record(entry.annotations).openWorldHint).toBe(false);
+    }
     expect(record(tools.find((entry) => entry.name === "mail_send")?.annotations).destructiveHint).toBe(true);
     expect((await tool("mail_read", {})).isError).toBe(true); expect((await tool("missing_tool", {})).isError).toBe(true);
     expect((await fetch(`${base}/mcp`, { method: "POST", body: JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) })).status).toBe(202);

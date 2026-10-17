@@ -299,7 +299,7 @@ async function graph(method, path, url, input, bytes, headers = {}) {
 
 const strSchema = { type: "string" };
 function definition(name, description, properties, required, readOnly = true, destructive = false) {
-  return { name, description: `DEMO ONLY — ${description} Fictional Acme Robotics data; not the official Microsoft Graph MCP.`, inputSchema: { type: "object", properties, required, additionalProperties: false }, annotations: { title: description.split(".")[0], readOnlyHint: readOnly, destructiveHint: destructive, idempotentHint: readOnly, openWorldHint: false } };
+  return { name, description: `DEMO ONLY — ${name.startsWith("file_") ? "OneDrive files and documents." : name.startsWith("calendar_") ? "Outlook calendar." : "Outlook mail and Inbox messages."} ${description} Fictional Acme Robotics data; not the official Microsoft Graph MCP.`, inputSchema: { type: "object", properties, required, additionalProperties: false }, annotations: { title: description.split(".")[0], readOnlyHint: readOnly, destructiveHint: destructive, idempotentHint: readOnly, openWorldHint: false } };
 }
 const TOOLS = [
   definition("mail_search", "Search demo mail by text", { query: strSchema, folder: { type: "string", enum: ["inbox", "drafts", "sentitems", "archive", "deleteditems"] }, limit: { type: "integer", minimum: 1, maximum: 100 } }, []),
@@ -309,7 +309,7 @@ const TOOLS = [
   definition("mail_send", "Move a draft into demo Sent Items; never delivers external email", { message_id: strSchema }, ["message_id"], false, true),
   definition("file_find", "Find shared demo files by filename", { query: strSchema }, []),
   definition("file_read", "Read file metadata, safe text extraction and original base64 bytes", { item_id: strSchema }, ["item_id"]),
-  definition("file_write", "Write shared file bytes; pass content for text or content_base64 for binary, not both. Existing filenames are replaced; eTag guards revisions", { path: strSchema, content: strSchema, content_base64: strSchema, if_match: strSchema }, ["path"], false, true),
+  definition("file_write", "Create, upload or update a OneDrive document or file; pass content for text or content_base64 for binary, not both. Existing filenames are replaced; eTag guards revisions", { path: strSchema, content: strSchema, content_base64: strSchema, if_match: strSchema }, ["path"], false, true),
   definition("calendar_list", "List demo calendar events", { start: strSchema, end: strSchema }, []),
   definition("calendar_create", "Create a demo event without sending real invitations. Use ISO timestamps with timezone offsets", { subject: strSchema, start: strSchema, end: strSchema, location: strSchema, attendees: { type: "array", items: strSchema, maxItems: 100 } }, ["subject", "start", "end"], false),
 ];

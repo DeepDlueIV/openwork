@@ -1,5 +1,5 @@
 import type { ObserverSnapshot, ObservedServiceCall, JsonRecord } from "./workshop-narrative-contract.ts";
-export { workflowWitness, sharingWitness } from "./workshop-workflow-witness.ts";
+export { workflowWitness, sharingWitness, observedNativeWorkflowCalls } from "./workshop-workflow-witness.ts";
 export type { NativeWorkflowObservation, NativeWorkflowRead, WorkflowWitnessContext, WorkflowActorEvidence, VerifiedWorkflowWitness, VerifiedSharingWitness } from "./workshop-workflow-witness.ts";
 const obj = (value: unknown): JsonRecord => value !== null && typeof value === "object" && !Array.isArray(value) ? Object.fromEntries(Object.entries(value)) : {};
 const arr = (value: unknown): unknown[] => Array.isArray(value) ? value : [];

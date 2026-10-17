@@ -1,6 +1,15 @@
-# Sol fix verification — in progress
+# Sol fix verification
 
-The frozen red comparison at `69e44ec4a3` is unchanged. This stacked fix does **not** yet establish complete workshop acceptance. Qwen-specific fixes have not started.
+**Final native result: 12 PASS / 0 FAIL / 0 BLOCKED, exit 0**, tested at `8d40f1bba1275419d222a359fe8479a842dfe373` in draft stacked PR [#6112](https://github.com/different-ai/openwork/pull/6112). Two independent read-only audits accept all twelve technical rehearsal outcomes **within the explicit fictional/isolated scope**, not unconditional production or presentation-quality approval. Machine-readable counts, source/prompt/seed digests, usage and limitations: [sol-fixed.json](./sol-fixed.json).
+
+- Exact model: `gpt-6.1-sol`, Responses API, requested variant `__openwork_fast_v1/default` and priority tier; all 176 completed requests reported `fast`.
+- Final run: 828 seconds including native lifecycle; 5,882,802 input / 47,989 output tokens; **$24.490988 available-request estimate, not billed cost**. Aggregate limits passed; all twelve scene latencies remained below the unchanged bound.
+- **16 fresh genuine Docshots**, including same-business-state accessibility before/after and separate Workflow context/substantive-comparison frames, have matching tested-SHA review receipts. Originals remain private; protected hosted publication is blocked pending an approved local-evidence import route.
+- All three actual Workflow input/output digests were independently recomputed; saved code causally uses retrieved source content. Recipient viewer execution and outsider boundaries are verified. Sharing is Plugin-scoped, not permanently single-Workflow-only.
+- Actual downloaded **14-slide** PPTX passes independent opening, ZIP CRC/XML and source-fact checks. Office rendering/typography/overflow are not verified; slides 10 and 14 contain heading/footer only, so polish approval is withheld.
+- T10 is simulated scheduling with operator due dispatch, not a production Automation. New mail stays unsent; ITSD is a request, not an accomplished reset. T08 references the actual preceding response in a persisted note, not a dedicated rating control.
+
+The frozen red comparison at `69e44ec4a3` and every intervening failed run remain unchanged. One green run does not establish repeated-run reliability. Qwen's separate stacked phase begins from this fixed baseline with unchanged prompts, assertions, fixtures and limits.
 
 ## Mechanism regressions
 
@@ -126,8 +135,29 @@ Exact defect: `/ppt/presentation.xml` was declared as `application/vnd.openxmlfo
 
 The common prompt now explicitly states the generic OOXML main-part requirement; no customer/account facts are supplied by the observer and no format assertion is relaxed. A free malformed-main-type control confirms that the parser still rejects a valid ZIP with the wrong PowerPoint main type. The existing rejected upload and invalid presentation remain failures.
 
+## Final fresh full run and independent acceptance audit
+
+The T04→T05 control at `8d40f1bba1` passed with a new independently validated 7-slide deck; it did not replace the full run. The subsequent fresh full matrix on the same head passed every scene in shared order (native 1 passed, 0 failed/skipped, exit 0). The final full-run presentation is a different **14-slide** artifact; no diagnostic output was substituted.
+
+| Scene | Native | Independent technical rehearsal audit | Latency |
+|---|---|---|---:|
+| T10 | PASS | Accepted — isolated/operator-dispatched, no send | 70.0 s |
+| T01 | PASS | Accepted — actual latest customer-related message, full comparison/readback, unsent thread | 59.4 s |
+| T02 | PASS | Accepted — exact authoring and latest saved outputs/digests, meaningful visible comparison | 116.3 s |
+| T03 | PASS | Accepted — real recipient, Plugin viewer scope, outsider denied | 110.0 s |
+| T04 | PASS | Accepted — exact account facts and saved report hash | 67.2 s |
+| T05 | PASS | Accepted bytes/content — Office rendering and polish withheld | 178.2 s |
+| T06 | PASS | Accepted — actual DOC task and Nora assignee | 16.5 s |
+| T07 | PASS | Accepted — Windows reset request, not completed reset | 42.6 s |
+| T09 | PASS | Accepted — honest missing-policy answer and People Ops next step | 12.9 s |
+| T08 | PASS | Accepted — real form/provider persistence and response reference | 10.1 s |
+| T11 | PASS | Accepted — same calendar event updated, no invitation-delivery claim | 17.5 s |
+| T12 | PASS | Accepted — preserved HTML/history, incremented version, comment and unsent reply | 40.5 s |
+
+Independent audits recomputed all three Workflow input/output digests, saved code/schema digests, actual report/PPTX hashes, all PNG CRCs/review receipts and canonical same-business-state hashes. The before/after state hash is `8242a2f13e7dded94a33e9eb070b3f0bbd573f2e324e2136c3694b50e85b8b3f`; this proves identical business data, not that pixels alone demonstrate the accessibility correction. The focused baseline locator regression separately establishes its red→green mechanism.
+
 ## Publication and remaining work
 
-Pending: a fresh committed-head Sol run after these bounded corrections, acceptance audit, protected evidence publication, then a separate stacked Qwen branch and unchanged fixed baseline. The normal CI producer currently triggers only for PRs targeting `dev`, while this PR intentionally targets the demo branch; no approved local-evidence import route is configured. Do not retarget or manually publish merely to obtain links.
+Sol source validation and the scoped independent audit are complete. Pending: protected evidence publication and the separate stacked Qwen branch's unchanged fixed baseline followed by any Qwen-specific fixes. The normal CI producer currently triggers only for PRs targeting `dev`, while this PR intentionally targets the demo branch; no approved local-evidence import route is configured. Do not retarget or manually publish merely to obtain links.
 
 Drive access is unavailable (401/no credentials). No upload or sign-in has been attempted. Raw logs, tokens, native transcripts, and provider receipts remain private and must not be committed.

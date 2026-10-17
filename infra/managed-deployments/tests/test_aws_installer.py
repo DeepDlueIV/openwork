@@ -145,13 +145,32 @@ class RunnerTests(unittest.TestCase):
                "DEN_INITIAL_ADMIN_BOOTSTRAP_CODE": "bootstrap-unchanged", "SMTP_PASS": "smtp-unchanged"}
         new = {**old, "DATABASE_URL": old["DATABASE_URL"].replace("sslaccept=accept", "sslaccept=strict")}
         before = {"secret_id": "arn:aws:secretsmanager:us-east-1:123456789012:secret:ow-test-den-app",
-                  "secret_string": json.dumps(old), "version_stages": ["AWSCURRENT"], "secret_binary": None,
+                  "secret_string": json.dumps(old), "version_stages": ["AWSCURRENT"], "secret_binary": "",
                   "has_secret_string_wo": False}
         return {"address": "module.platform.aws_secretsmanager_secret_version.app",
                 "type": "aws_secretsmanager_secret_version", "change": {
                     "actions": ["delete", "create"], "before": before,
                     "after": {**before, "secret_string": json.dumps(new), "version_stages": None},
                     "after_unknown": {"version_id": True, "version_stages": True}}}
+
+    def test_tls_upgrade_accepts_provider_empty_binary_absence(self):
+        # AWS 5.100's real retained state uses "" for absent binary, not null.
+        for before in [None, ""]:
+            for after in [None, ""]:
+                resource = self.tls_upgrade()
+                resource["change"]["before"]["secret_binary"] = before
+                resource["change"]["after"]["secret_binary"] = after
+                with self.subTest(before=before, after=after):
+                    self.assertTrue(runner.tls_only_secret_upgrade(resource))
+        for side in ["before", "after"]:
+            resource = self.tls_upgrade()
+            resource["change"][side]["secret_binary"] = "nonempty-binary-payload"
+            with self.subTest(binary_side=side):
+                self.assertFalse(runner.tls_only_secret_upgrade(resource))
+        # Other observed metadata keeps its original constraints: stages is an
+        # AWSCURRENT array and the write-only marker is false, not coerced text.
+        self.assertEqual(self.tls_upgrade()["change"]["before"]["version_stages"], ["AWSCURRENT"])
+        self.assertIs(self.tls_upgrade()["change"]["before"]["has_secret_string_wo"], False)
 
     def test_only_exact_tls_secret_upgrade_is_allowed(self):
         resource = self.tls_upgrade()
@@ -186,7 +205,7 @@ class RunnerTests(unittest.TestCase):
             resource = self.tls_upgrade()
             resource["change"]["after"][field] = value
             candidates.append(resource)
-        for field in ["secret_string", "secret_id"]:
+        for field in ["secret_string", "secret_id", "secret_binary"]:
             resource = self.tls_upgrade()
             resource["change"]["after_unknown"][field] = True
             candidates.append(resource)

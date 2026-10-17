@@ -65,7 +65,7 @@ API defaults to 1 vCPU / 2 GiB and web to 0.5 vCPU / 1 GiB. Managed RDS deletion
 </Warning>
 
 The table records the tested core only, not production load, backup restoration,
-legacy handover, or every optional component. Pin a reviewed source commit.
+legacy handover, or every optional component. Complete your review before pinning a source commit.
 Contract improvements remain under [AWS module review](https://github.com/different-ai/openwork/pull/5967)
 until that review lands on `dev`; the managed installer remains separate.
 See the [shared module contract](https://github.com/different-ai/openwork/blob/dev/infra/terraform/MODULE_CONTRACT.md)
@@ -79,7 +79,7 @@ Existing inputs remain, including the deprecated nested `database.deletion_prote
 
 ### State guidance
 
-Use Terraform or OpenTofu **>= 1.11, < 2.0** with encrypted, access-controlled remote state. An S3 root backend should set `encrypt = true` and `use_lockfile = true`; do not create a new DynamoDB locking table. The reusable module configures neither a provider nor a backend and ships no cross-registry lock file. Generate and retain the root lock with your chosen tool. This direct-user module uses the live-tested AWS `~> 6.69` provider line and random `~> 3.9`; the previous cross-major compatibility exception is no longer needed. The managed AWS installer instead uses a frozen pre-contract module with its original provider lock and behavior. It does not inherit these direct-module changes. Packaging, bootstrap permissions/re-approval, legacy maintenance fencing and version semantics for a future installer adoption are separate owner-reviewed work.
+Use Terraform or OpenTofu **>= 1.11, < 2.0** with encrypted, access-controlled remote state. An S3 root backend should set `encrypt = true` and `use_lockfile = true`; do not create a new DynamoDB locking table. The reusable module configures neither a provider nor a backend and ships no cross-registry lock file. Generate and retain the root lock with your chosen tool. This direct-user module uses the live-tested AWS `~> 6.69` provider line and random `~> 3.9`; the previous cross-major compatibility exception is no longer needed. The managed AWS installer instead uses a frozen pre-contract module with original AWS/random/archive pins and a separate strict-TLS/CA exception. It does not inherit the direct migration or secret lifecycle. Packaging, bootstrap permissions/re-approval, legacy maintenance fencing and version semantics for future contract adoption require separate work and owner review.
 
 For new installs, use `write_only_secrets = true` with persistent core values supplied through the ephemeral `secret_values_wo` input: RDS and Secrets Manager write-only fields keep those values out of new state snapshots. Write-only mode is the new default. Existing installations must explicitly set `write_only_secrets = false` before upgrading to retain their current keys/state, or securely preserve and supply the **exact existing** keys and DB password before converting. Missing ephemeral values fail validation before changes, rather than silently regenerating auth/encryption keys. Never regenerate an encryption key during an infrastructure upgrade. Optional integration secrets retain their state-backed compatibility path; restrict state history accordingly. Secret settings belong in `extra_secrets`, not plain `extra_environment`.
 

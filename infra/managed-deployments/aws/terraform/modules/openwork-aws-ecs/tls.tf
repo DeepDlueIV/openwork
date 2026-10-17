@@ -1,4 +1,4 @@
-# Reviewed TLS-only exception to the pinned pre-contract managed module.
+# TLS-only exception to the pinned pre-contract managed module.
 # No migration, secret-mode, resource-address or IAM changes are adopted.
 data "http" "rds_ca" {
   url      = "https://truststore.pki.rds.amazonaws.com/${local.region}/${local.region}-bundle.pem"

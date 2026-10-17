@@ -16,7 +16,7 @@ one shared contract; document platform exceptions instead of hiding them.
   deployments with explicit value preservation before conversion.
 - The managed AWS installer consumes its own frozen `openwork-aws-ecs` copy,
   not the evolving direct-user module. Preserve its pinned source tree and
-  original AWS/random/archive pins; refresh only deliberately. Its reviewed
+  original AWS/random/archive pins; refresh only deliberately. Its
   TLS-only overlay adds the HTTP provider/CA trust and strict mode, not the
   migration lifecycle, secret mode or AWS IAM changes. Further contract adoption
   requires separate installer-owner review.

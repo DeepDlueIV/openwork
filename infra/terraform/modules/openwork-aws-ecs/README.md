@@ -69,8 +69,8 @@ What has been applied end to end in an AWS test account with
 > - **Security issues:** report them privately ([SECURITY.md](https://github.com/different-ai/openwork/blob/dev/SECURITY.md)).
 
 Only the recorded core scenarios above are qualified. Optional headless runner,
-Workbot and Slack paths remain unqualified by the contract-v1 live run. Pin a
-reviewed source commit; the contract improvements are not available on `dev`
+Workbot and Slack paths remain unqualified by the contract-v1 live run. Complete your review before pinning a
+source commit; the contract improvements are not available on `dev`
 until the [AWS module review](https://github.com/different-ai/openwork/pull/5967)
 lands. The shared [module contract](../../MODULE_CONTRACT.md) describes the
 baseline and known limits, not a production load or legacy-upgrade guarantee.
@@ -311,7 +311,7 @@ frozen pre-contract copy under
 its original behavior and AWS 5.100.0 / random 3.7.2 / archive 2.8.1 lock.
 Its earlier legacy-mode adapter, extra HTTP lock entry and migration mocks are
 not needed. The standalone live results here do not certify a managed-installer
-upgrade. Adopting the new module requires separate owner-reviewed work for
+upgrade. Adopting the new module requires separate work and owner review for
 supporting-file packaging, bootstrap permissions/re-approval, a legacy fence
 and update/version handling. See the managed-deployments README for provenance.
 

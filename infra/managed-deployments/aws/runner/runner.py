@@ -220,11 +220,12 @@ def tls_only_secret_upgrade(resource):
     if not isinstance(before, dict) or not isinstance(after, dict) or not isinstance(unknown, dict):
         return False
     if (unknown.get("secret_id", False) is not False or unknown.get("secret_string", False) is not False
+            or unknown.get("secret_binary", False) is not False
             or not isinstance(before.get("secret_id"), str) or not before["secret_id"]
             or before["secret_id"] != after.get("secret_id")
             or before.get("version_stages") != ["AWSCURRENT"]
             or after.get("version_stages") not in (None, ["AWSCURRENT"])
-            or before.get("secret_binary") is not None or after.get("secret_binary") is not None
+            or before.get("secret_binary") not in (None, "") or after.get("secret_binary") not in (None, "")
             or before.get("has_secret_string_wo") or after.get("has_secret_string_wo")):
         return False
     try:

@@ -102,7 +102,7 @@ test("GCP CLI cannot disable registry verification or use unsupported options", 
 const root = fileURLToPath(new URL("../../../", import.meta.url));
 const modulePath = "infra/managed-deployments/aws/terraform/modules/openwork-aws-ecs";
 // Current dev at 8b586b13ab89b78379fbecd8ddb9c7c7caba31f8, including runner updates.
-// Only the reviewed TLS overlay may differ from this complete dev snapshot.
+// Only the TLS overlay may differ from this complete dev snapshot.
 const baselineTree = "561d5b63514a13df471ad7458eae2b620cfc5803";
 const baselineBlobs = {
   "ecs.tf": "376f3f89bd7220eead002a35ab130e2ee3fa95f6",
@@ -133,7 +133,7 @@ function treeHash(directory) {
   return objectHash("tree", Buffer.concat(entries.map(({ entry }) => entry)));
 }
 
-test("managed AWS differs from its pinned dev snapshot only in the reviewed TLS files", () => {
+test("managed AWS differs from its pinned dev snapshot only in the TLS files", () => {
   assert.equal(treeHash(resolve(root, modulePath)).toString("hex"), baselineTree,
     "Outside ecs.tf, variables.tf, versions.tf and added tls.tf, every byte must match pinned dev");
   const tls = readFileSync(resolve(root, modulePath, "tls.tf"), "utf8");

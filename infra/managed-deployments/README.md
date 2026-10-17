@@ -38,7 +38,7 @@ runner behavior updates, without adopting the direct module's contract lifecycle
 The baseline is the shared module at source commit
 `8b586b13ab89b78379fbecd8ddb9c7c7caba31f8`, Git tree
 `561d5b63514a13df471ad7458eae2b620cfc5803`, including current runner behavior.
-One reviewed TLS-only exception changes `ecs.tf` (CA setup before the legacy
+One TLS-only exception changes `ecs.tf` (CA setup before the legacy
 migration, API and web commands), `variables.tf` (strict TLS default/validation),
 `versions.tf` (HTTP provider) and adds `tls.tf` (verified regional RDS CA fetch).
 All other module files remain byte-identical. The release builder packages all
@@ -60,8 +60,8 @@ that label before putting the new version, using already-granted permissions.
 No secret rotation is intended. Session/data preservation still requires live
 baseline-to-Retry validation; offline tests alone do not certify it.
 
-Do not refresh the snapshot as part of unrelated work. Separate owner-reviewed
-contract adoption must handle supporting-file packaging, deployment-scoped
+Do not refresh the snapshot as part of unrelated work. Separate contract
+adoption requires owner review and must handle supporting-file packaging, deployment-scoped
 Lambda/IAM/log permissions and customer re-approval, legacy maintenance/drain
 fencing, and update/version semantics.
 

@@ -211,7 +211,7 @@ OAuth/protocol-handler handoff. Screenshots illustrate results, not decide them.
   state through the provider's certificate arguments. Protect state or manage
   certificates externally; core state-free credentials do not cover this path.
 - **AWS managed-installer boundary:** the installer uses a frozen pre-contract
-  module with its original AWS/random/archive pins. A reviewed TLS-only overlay
+  module with its original AWS/random/archive pins. A TLS-only overlay
   adds strict certificate verification, public RDS CA trust and the HTTP provider;
   the runner permits only a known, key-preserving TLS-query SecretVersion update.
   It is not certified by direct-module conformance. No migration lifecycle,

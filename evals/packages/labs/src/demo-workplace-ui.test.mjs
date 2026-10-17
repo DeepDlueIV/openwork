@@ -51,6 +51,8 @@ test("workplace UI shares demo REST state and supports real browser workflows", 
   const created = await proxy("/jira/rest/api/2/issue", "POST", { fields: { project: { key: "DOC" }, summary: "HTTP integration issue", issuetype: { name: "Task" } } });
   const directIssue = await (await fetch(`${backend}/jira/rest/api/2/issue/${created.key}`, { headers: { Authorization: "Bearer demo-pat" } })).json();
   assert.equal(directIssue.fields.summary, "HTTP integration issue");
+  const resetRequest = await proxy("/jira/rest/servicedeskapi/request", "POST", { serviceDeskId: "1", requestTypeId: "11", requestFieldValues: { summary: "Fixture Windows reset", customfield_10500: "10600" } });
+  assert.equal((await proxy(`/jira/rest/api/2/issue/${resetRequest.issueKey}`)).fields.customfield_10500.value, "Windows login");
   for (const route of ["/jira", `/jira/browse/${created.key}`, "/confluence", "/confluence/pages/163840001"]) assert.equal((await fetch(base + route)).status, 200);
 
   await t.test("headless browser: search, create, comments, mutations, polling, document edit and sanitization", { timeout: 70000 }, async (browserTest) => {
@@ -93,6 +95,10 @@ test("workplace UI shares demo REST state and supports real browser workflows", 
     };
     await navigate("/jira", "document.querySelectorAll('#issue-rows tr').length > 3");
     await screenshot("jira-issues");
+    await navigate(`/jira/browse/${resetRequest.issueKey}`, "document.getElementById('service-request-fields')?.innerText.includes('Windows login')");
+    assert.equal(await evaluate("document.getElementById('service-request-fields').innerText.includes('Reset a password')"), true);
+    await screenshot("jira-windows-reset");
+    await navigate("/jira", "document.querySelectorAll('#issue-rows tr').length > 3");
     await change("project-filter", "DOC", "change");
     assert.ok(await evaluate("[...document.querySelectorAll('#issue-rows tr')].every(r=>r.textContent.includes('DOC-'))"));
     await evaluate("document.querySelector('[data-view=board]').click()");

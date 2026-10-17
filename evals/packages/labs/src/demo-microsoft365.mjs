@@ -26,7 +26,13 @@ const ALEX = recipient(ME.mail, ME.displayName);
 const escape = (value) => String(value).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const unescape = (value) => value.replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&apos;|&#39;/g, "'").replace(/&amp;/g, "&");
 const strip = (text) => unescape(String(text).replace(/<[^>]*>/g, " ")).replace(/ +/g, " ").trim();
-const now = () => new Date().toISOString();
+// Opt-in deterministic comparison clock/IDs; ordinary demo worlds retain wall-clock behavior.
+const FIXED_NOW = process.env.DEMO_NOW ? Date.parse(process.env.DEMO_NOW) : undefined;
+if (FIXED_NOW !== undefined && !Number.isFinite(FIXED_NOW)) throw new Error("DEMO_NOW must be an ISO timestamp.");
+let sequence = 0;
+const clock = () => FIXED_NOW ?? Date.now();
+const now = () => new Date(clock()).toISOString();
+const uuid = () => FIXED_NOW === undefined ? randomUUID() : `demo-${String(++sequence).padStart(6, "0")}`;
 class ApiError extends Error {
   constructor(status, code, message) { super(message); this.status = status; this.code = code; }
 }
@@ -134,9 +140,15 @@ function preview(bytes, name) {
 }
 
 let state;
+let auditSequence = 0;
+function auditCall(at, name, input, output, status) {
+  // Snapshot actual provider values: later event/file mutations cannot rewrite provenance.
+  state.audit.push(JSON.parse(JSON.stringify({ sequence: ++auditSequence, at, name: name ?? null, input, output, status })));
+  if (state.audit.length > 1000) state.audit.shift();
+}
 function message(input = {}, draft = true) {
-  object(input); const id = `mail-${randomUUID()}`; const body = bodyValue(input.body);
-  return { id, conversationId: input.conversationId || `thread-${randomUUID()}`, subject: input.subject === undefined ? "" : text(input.subject, "Subject", 1000), body, bodyPreview: strip(body.content).slice(0, 255), from: ALEX, sender: ALEX, toRecipients: addresses(input.toRecipients), ccRecipients: addresses(input.ccRecipients), bccRecipients: addresses(input.bccRecipients), isDraft: draft, isRead: draft, hasAttachments: false, importance: "normal", categories: [], parentFolderId: draft ? "drafts" : "inbox", createdDateTime: now(), receivedDateTime: now(), lastModifiedDateTime: now(), webLink: `${PUBLIC_ORIGIN}/outlook?message=${id}` };
+  object(input); const id = `mail-${uuid()}`; const body = bodyValue(input.body);
+  return { id, conversationId: input.conversationId || `thread-${uuid()}`, subject: input.subject === undefined ? "" : text(input.subject, "Subject", 1000), body, bodyPreview: strip(body.content).slice(0, 255), from: ALEX, sender: ALEX, toRecipients: addresses(input.toRecipients), ccRecipients: addresses(input.ccRecipients), bccRecipients: addresses(input.bccRecipients), isDraft: draft, isRead: draft, hasAttachments: false, importance: "normal", categories: [], parentFolderId: draft ? "drafts" : "inbox", createdDateTime: now(), receivedDateTime: now(), lastModifiedDateTime: now(), webLink: `${PUBLIC_ORIGIN}/outlook?message=${id}` };
 }
 function putFile(path, bytes, contentType, existing) {
   text(path, "File path", 500); const segments = path.replace(/^\/+/, "").split("/");
@@ -148,30 +160,50 @@ function putFile(path, bytes, contentType, existing) {
   const parentPath = segments.slice(0, -1).join("/"); const parent = parentPath ? state.files.find((file) => file.folder && file.path === parentPath) : null;
   if (parentPath && !parent) throw missing();
   const revision = (item?.revision || 0) + 1;
-  const file = { id: item?.id || `file-${randomUUID()}`, name: segments.at(-1), path: key, bytes: Buffer.from(bytes), mime: contentType || MIME[segments.at(-1).split(".").pop().toLowerCase()] || "application/octet-stream", revision, eTag: `"${item?.id || createHash("sha256").update(key).digest("hex").slice(0, 12)},${revision}"`, createdDateTime: item?.createdDateTime || now(), lastModifiedDateTime: now(), parentId: parent?.id || "root" };
+  const file = { id: item?.id || `file-${uuid()}`, name: segments.at(-1), path: key, bytes: Buffer.from(bytes), mime: contentType || MIME[segments.at(-1).split(".").pop().toLowerCase()] || "application/octet-stream", revision, eTag: `"${item?.id || createHash("sha256").update(key).digest("hex").slice(0, 12)},${revision}"`, createdDateTime: item?.createdDateTime || now(), lastModifiedDateTime: now(), parentId: parent?.id || "root" };
   if (item) state.files[state.files.indexOf(item)] = file; else state.files.push(file); return file;
 }
 function fileJson(file) {
   return { id: file.id, name: file.name, size: file.bytes?.length || 0, eTag: file.eTag, cTag: file.eTag, revision: file.revision, createdDateTime: file.createdDateTime, lastModifiedDateTime: file.lastModifiedDateTime, webUrl: `${PUBLIC_ORIGIN}/onedrive?item=${file.id}`, parentReference: { driveId: "acme-shared", id: file.parentId, path: `/drive/root:/${file.path.split("/").slice(0, -1).join("/")}` }, createdBy: { user: { displayName: "Alex Chen", email: ME.mail } }, lastModifiedBy: { user: { displayName: "Alex Chen", email: ME.mail } }, ...(file.folder ? { folder: { childCount: state.files.filter((child) => child.parentId === file.id).length } } : { file: { mimeType: file.mime, hashes: { sha256Hash: createHash("sha256").update(file.bytes).digest("hex") } }, "@microsoft.graph.downloadUrl": `${PUBLIC_ORIGIN}/download/${file.id}` }) };
 }
-function event(input) {
-  object(input); const subject = text(input.subject, "Subject", 1000);
-  for (const key of ["start", "end"]) {
-    object(input[key]); text(input[key].dateTime, `${key}.dateTime`, 64); text(input[key].timeZone, `${key}.timeZone`, 100);
-    if (!Number.isFinite(Date.parse(input[key].dateTime))) throw bad(`Invalid ${key}.dateTime.`);
-    try { new Intl.DateTimeFormat("en", { timeZone: input[key].timeZone }); } catch { throw bad(`Unsupported ${key}.timeZone; use an IANA zone or UTC in this demo.`); }
+// Graph dateTimeTimeZone values may be local wall times. This fixture supports IANA
+// zones and these common Windows aliases, not Graph's complete timezone catalog.
+const ZONE_ALIASES = { "Pacific Standard Time": "America/Los_Angeles", "Eastern Standard Time": "America/New_York", "GMT Standard Time": "Europe/London", "W. Europe Standard Time": "Europe/Berlin", "Romance Standard Time": "Europe/Paris" };
+function eventTime(value) {
+  object(value); const date = text(value.dateTime, "dateTime", 64); const zone = text(value.timeZone, "timeZone", 100);
+  const timeZone = ZONE_ALIASES[zone] || zone;
+  let formatter;
+  try { formatter = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23" }); } catch { throw bad("Unsupported timeZone; use an IANA zone, UTC or a documented Windows alias in this demo."); }
+  if (!/^\d{4}-\d\d-\d\dT\d\d:\d\d(?::\d\d(?:\.\d{1,7})?)?(?:Z|[+-]\d\d:\d\d)?$/.test(date) || !Number.isFinite(Date.parse(date))) throw bad("Invalid dateTime.");
+  if (/(?:Z|[+-]\d\d:\d\d)$/.test(date)) return Date.parse(date);
+  const wall = Date.parse(date + "Z"); let instant = wall;
+  for (let i = 0; i < 3; i++) {
+    const parts = Object.fromEntries(formatter.formatToParts(new Date(instant)).map((part) => [part.type, part.value]));
+    const rendered = Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), Number(parts.hour), Number(parts.minute), Number(parts.second)) + ((instant % 1000) + 1000) % 1000;
+    const adjustment = wall - rendered;
+    if (!adjustment) return instant;
+    instant += adjustment;
   }
-  if (Date.parse(input.end.dateTime) <= Date.parse(input.start.dateTime)) throw bad("Event end must be after start.");
-  const id = `event-${randomUUID()}`; const body = bodyValue(input.body);
+  throw bad("Local dateTime does not exist in this timezone; supply an explicit offset.");
+}
+function event(input, existing) {
+  object(input); const subject = text(input.subject, "Subject", 1000);
+  if (eventTime(input.end) <= eventTime(input.start)) throw bad("Event end must be after start.");
+  const id = existing?.id || `event-${uuid()}`; const body = bodyValue(input.body);
   if (input.attendees !== undefined && (!Array.isArray(input.attendees) || input.attendees.length > 100)) throw bad("attendees must be an array of at most 100 recipients.");
-  const attendees = (input.attendees || []).map((entry) => ({ ...addresses([entry])[0], type: entry.type || "required", status: { response: "none", time: now() } }));
-  return { id, subject, body, bodyPreview: strip(body.content).slice(0, 255), start: { dateTime: input.start.dateTime, timeZone: input.start.timeZone }, end: { dateTime: input.end.dateTime, timeZone: input.end.timeZone }, attendees, organizer: ALEX, location: { displayName: input.location ? text(object(input.location).displayName, "Location", 500) : "" }, isAllDay: input.isAllDay === true, isCancelled: false, showAs: "busy", createdDateTime: now(), lastModifiedDateTime: now(), webLink: `${PUBLIC_ORIGIN}/outlook?event=${id}`, onlineMeeting: null };
+  const attendees = existing && input.attendees === existing.attendees ? existing.attendees : (input.attendees || []).map((entry) => {
+    if (entry.type !== undefined && !["required", "optional", "resource"].includes(entry.type)) throw bad("Unsupported attendee type.");
+    return { ...addresses([entry])[0], type: entry.type || "required", status: { response: "none", time: now() } };
+  });
+  return { id, subject, body, bodyPreview: strip(body.content).slice(0, 255), start: { dateTime: input.start.dateTime, timeZone: input.start.timeZone }, end: { dateTime: input.end.dateTime, timeZone: input.end.timeZone }, attendees, organizer: ALEX, location: { displayName: input.location ? text(object(input.location).displayName, "Location", 500) : "" }, isAllDay: input.isAllDay === true, isCancelled: false, showAs: "busy", createdDateTime: existing?.createdDateTime || now(), lastModifiedDateTime: now(), webLink: `${PUBLIC_ORIGIN}/outlook?event=${id}`, onlineMeeting: null };
 }
 function reset() {
-  state = { messages: [], events: [], files: [] };
+  sequence = 0;
+  auditSequence = 0;
+  state = { messages: [], events: [], files: [], audit: [] };
   const addMail = (id, thread, subject, sender, content, hours, folder = "inbox") => {
     const item = message({ subject, body: { contentType: "Text", content }, toRecipients: [ALEX], conversationId: thread }, false);
-    Object.assign(item, { id, from: recipient(sender[0], sender[1]), sender: recipient(sender[0], sender[1]), parentFolderId: folder, isRead: hours > 8, receivedDateTime: new Date(Date.now() - hours * 3600000).toISOString(), webLink: `${PUBLIC_ORIGIN}/outlook?message=${id}` }); state.messages.push(item);
+    Object.assign(item, { id, from: recipient(sender[0], sender[1]), sender: recipient(sender[0], sender[1]), parentFolderId: folder, isRead: hours > 8, receivedDateTime: new Date(clock() - hours * 3600000).toISOString(), webLink: `${PUBLIC_ORIGIN}/outlook?message=${id}` }); state.messages.push(item);
   };
   addMail("mail-northwind-1", "thread-northwind", "Northwind | Atlas2 warehouse pilot readiness", ["liam@acme.test", "Liam O'Connor"], "Alex, Northwind's distribution team wants 12 Atlas2 units in the first wave. Acceptance: 98.5% mission completion, zero safety stops caused by navigation regressions, and a signed IT network checklist. Priya owns firmware 2.0-rc4 validation; Kenji owns site readiness. The open blocker is the Wi-Fi handoff test in aisle C. Please review Northwind-pilot-brief.docx before our customer meeting.", 30);
   addMail("mail-northwind-2", "thread-northwind", "RE: Northwind | Atlas2 warehouse pilot readiness", ["priya@acme.test", "Priya Shah"], "Firmware 2.0-rc4 passed 497 of 500 missions (99.4%) in the lab. The aisle C roaming test is still pending; do not call the pilot production-ready. Jamal will attach the field logs by Friday. The workbook separates committed units from the expansion option. Please keep the 24-unit option out of the committed forecast.", 5);
@@ -180,7 +212,7 @@ function reset() {
   addMail("mail-finance", "thread-forecast", "Q4 pilot forecast: committed vs. expansion", ["sam@acme.test", "Sam Okafor"], "The committed forecast is 12 Atlas2 units for Northwind at $32,000 each and 8 AtlasLift units for Blue Harbor at $48,000 each: $768,000 total. Expansion options are not booked revenue. Northwind's additional 24 Atlas2 units would add $768,000 only after pilot acceptance. Update the shared workbook if dates change.", 10);
   addMail("mail-design", "thread-design", "Atlas2 fleet dashboard: customer feedback", ["morgan@acme.test", "Morgan Lee"], "The Northwind operators asked for a clearer blocked-mission explanation and battery status on the fleet overview. Ivy and I have a compact layout ready. Sofia is checking the telemetry labels against field data. The demo should show actual mission state rather than an optimistic placeholder.", 25);
   const draft = message({ subject: "Customer meeting follow-up — draft", toRecipients: [recipient("mateo@acme.test", "Mateo Rivera")], body: { contentType: "Text", content: "Mateo,\n\nAfter the Northwind and Blue Harbor customer meetings, please confirm the pilot acceptance owners and dates.\n\nAlex" } }); state.messages.push(draft);
-  const day = new Date(); day.setUTCDate(day.getUTCDate() + 1); day.setUTCHours(16, 0, 0, 0);
+  const day = new Date(clock()); day.setUTCDate(day.getUTCDate() + 1); day.setUTCHours(16, 0, 0, 0);
   state.events.push(event({ subject: "Northwind / Blue Harbor customer pilot review", start: { dateTime: day.toISOString(), timeZone: "UTC" }, end: { dateTime: new Date(day.getTime() + 3600000).toISOString(), timeZone: "UTC" }, attendees: [recipient("mateo@acme.test", "Mateo Rivera"), recipient("priya@acme.test", "Priya Shah"), recipient("nora@acme.test", "Nora Patel"), recipient("kenji@acme.test", "Kenji Tanaka")], location: { displayName: "Acme Robotics · customer briefing room" }, body: { contentType: "Text", content: "Fictional demo customer review. Northwind Atlas2 roaming test; Blue Harbor AtlasLift safety and training; forecast and next actions. Documents are in shared OneDrive." } }));
   const brief = ["Acme Robotics | Northwind pilot brief", "Fictional demo · Owner: Liam O'Connor · Engineering: Priya Shah · Field operations: Kenji Tanaka", "Product: Atlas2 autonomous mobile robot. Initial deployment: 12 units at $32,000 per unit ($384,000). Expansion option: 24 units, not committed.", "Acceptance gates: mission completion >=98.5%; approved safety checklist; IT network sign-off; operator training complete.", "Latest evidence: firmware 2.0-rc4 completed 497/500 lab missions (99.4%). This is lab evidence, not site acceptance.", "Open blocker: aisle C Wi-Fi roaming test. Jamal Brooks to provide field logs. Do not announce production readiness before validation.", "Customer meeting decisions: confirm the network-test owner, agree the two-week supervised pilot window, and assign acceptance sign-off.", "Next actions: Priya validates firmware; Kenji checks charging and network layout; Nora ships the operator guide; Mateo confirms commercial terms."];
   putFile("Northwind-pilot-brief.docx", docx(brief));
@@ -253,7 +285,7 @@ async function graph(method, path, url, input, bytes, headers = {}) {
     if (method === "GET") {
       const start = url.searchParams.get("startDateTime"); const end = url.searchParams.get("endDateTime");
       if ((start && !Number.isFinite(Date.parse(start))) || (end && !Number.isFinite(Date.parse(end)))) throw bad("Invalid calendar range.");
-      return [200, collection(state.events.filter((entry) => (!start || Date.parse(entry.end.dateTime) > Date.parse(start)) && (!end || Date.parse(entry.start.dateTime) < Date.parse(end))), url)];
+      return [200, collection(state.events.filter((entry) => (!start || eventTime(entry.end) > Date.parse(start)) && (!end || eventTime(entry.start) < Date.parse(end))), url)];
     }
     if (method === "POST" && path !== "/me/calendarView") { const item = event(input); state.events.push(item); return [201, item]; }
   }
@@ -262,7 +294,11 @@ async function graph(method, path, url, input, bytes, headers = {}) {
     const item = state.events.find((entry) => entry.id === eventMatch[1]); if (!item) throw missing();
     if (method === "GET") return [200, item];
     if (method === "DELETE") { state.events.splice(state.events.indexOf(item), 1); return [204, null]; }
-    if (method === "PATCH") { const updated = event({ ...item, ...object(input) }); Object.assign(item, updated, { id: item.id, webLink: item.webLink, createdDateTime: item.createdDateTime }); return [200, item]; }
+    if (method === "PATCH") {
+      object(input); const allowed = ["subject", "body", "start", "end", "attendees", "location", "isAllDay"];
+      if (Object.keys(input).some((key) => !allowed.includes(key))) throw bad("This demo can update subject, body, start, end, attendees, location and isAllDay only.");
+      const updated = event({ ...item, ...input }, item); Object.assign(item, updated); return [200, item];
+    }
   }
   if (path === "/me/drive" && method === "GET") return [200, { id: "acme-shared", name: "Acme Robotics shared documents", driveType: "business", owner: { user: { displayName: "Acme Robotics" } } }];
   if (path === "/me/drive/root" && method === "GET") return [200, { id: "root", name: "Acme Robotics", folder: { childCount: state.files.filter((entry) => entry.parentId === "root").length } }];
@@ -278,7 +314,7 @@ async function graph(method, path, url, input, bytes, headers = {}) {
       if (!name || /[\\/:*?"<>|\x00-\x1f]/.test(name) || [".", ".."].includes(name)) throw bad("Invalid folder name.");
       const folderPath = parent ? `${parent.path}/${name}` : name;
       if (state.files.some((entry) => entry.path.toLowerCase() === folderPath.toLowerCase())) throw new ApiError(409, "nameAlreadyExists", "An item with this name already exists.");
-      const item = { id: `folder-${randomUUID()}`, name, path: folderPath, parentId, folder: true, revision: 1, eTag: `"${randomUUID()},1"`, createdDateTime: now(), lastModifiedDateTime: now() }; state.files.push(item); return [201, fileJson(item)];
+      const item = { id: `folder-${uuid()}`, name, path: folderPath, parentId, folder: true, revision: 1, eTag: `"${uuid()},1"`, createdDateTime: now(), lastModifiedDateTime: now() }; state.files.push(item); return [201, fileJson(item)];
     }
   }
   const byPath = path.match(/^\/me\/drive\/root:\/(.+?)(?::\/(content))?$/);
@@ -301,6 +337,28 @@ const strSchema = { type: "string" };
 function definition(name, description, properties, required, readOnly = true, destructive = false) {
   return { name, description: `DEMO ONLY — ${name.startsWith("file_") ? "OneDrive files and documents." : name.startsWith("calendar_") ? "Outlook calendar." : "Outlook mail and Inbox messages."} ${description} Fictional Acme Robotics data; not the official Microsoft Graph MCP.`, inputSchema: { type: "object", properties, required, additionalProperties: false }, annotations: { title: description.split(".")[0], readOnlyHint: readOnly, destructiveHint: destructive, idempotentHint: readOnly, openWorldHint: false } };
 }
+const calendarFields = {
+  subject: strSchema,
+  body: { anyOf: [strSchema, { type: "object", properties: { contentType: { type: "string", enum: ["Text", "HTML"] }, content: strSchema }, required: ["contentType", "content"], additionalProperties: false }], description: "Graph itemBody or plain text" },
+  start: { anyOf: [strSchema, { type: "object", properties: { dateTime: strSchema, timeZone: strSchema }, required: ["dateTime", "timeZone"], additionalProperties: false }] },
+  end: { anyOf: [strSchema, { type: "object", properties: { dateTime: strSchema, timeZone: strSchema }, required: ["dateTime", "timeZone"], additionalProperties: false }] },
+  time_zone: { type: "string", description: "Zone for string start/end; defaults to UTC. IANA or Pacific/Eastern/GMT/W. Europe/Romance Standard Time." },
+  location: strSchema,
+  attendees: { type: "array", maxItems: 100, items: { anyOf: [strSchema, { type: "object", properties: { emailAddress: { type: "object", properties: { address: strSchema, name: strSchema }, required: ["address"], additionalProperties: false }, type: { type: "string", enum: ["required", "optional", "resource"] } }, required: ["emailAddress"], additionalProperties: false }] } },
+};
+function calendarInput(args) {
+  const input = {};
+  for (const key of ["subject", "body", "start", "end", "location", "attendees"]) {
+    if (args[key] === undefined) continue;
+    const value = args[key];
+    input[key] = key === "body" && typeof value === "string" ? { contentType: "Text", content: value }
+      : ["start", "end"].includes(key) && typeof value === "string" ? { dateTime: value, timeZone: args.time_zone || "UTC" }
+      : key === "location" ? { displayName: value }
+      : key === "attendees" ? value.map((entry) => typeof entry === "string" ? recipient(entry) : entry) : value;
+  }
+  if (args.time_zone !== undefined && !args.start && !args.end) throw bad("time_zone requires start or end.");
+  return input;
+}
 const TOOLS = [
   definition("mail_search", "Search demo mail by text", { query: strSchema, folder: { type: "string", enum: ["inbox", "drafts", "sentitems", "archive", "deleteditems"] }, limit: { type: "integer", minimum: 1, maximum: 100 } }, []),
   definition("mail_read", "Read a demo mail message", { message_id: strSchema }, ["message_id"]),
@@ -309,9 +367,12 @@ const TOOLS = [
   definition("mail_send", "Move a draft into demo Sent Items; never delivers external email", { message_id: strSchema }, ["message_id"], false, true),
   definition("file_find", "Find shared demo files by filename", { query: strSchema }, []),
   definition("file_read", "Read file metadata, safe text extraction and original base64 bytes", { item_id: strSchema }, ["item_id"]),
+  definition("file_create_folder", "Create a OneDrive folder under root or an existing parent folder ID", { name: strSchema, parent_id: strSchema }, ["name"], false),
   definition("file_write", "Create, upload or update a OneDrive document or file; pass content for text or content_base64 for binary, not both. Existing filenames are replaced; eTag guards revisions", { path: strSchema, content: strSchema, content_base64: strSchema, if_match: strSchema }, ["path"], false, true),
   definition("calendar_list", "List demo calendar events", { start: strSchema, end: strSchema }, []),
-  definition("calendar_create", "Create a demo event without sending real invitations. Use ISO timestamps with timezone offsets", { subject: strSchema, start: strSchema, end: strSchema, location: strSchema, attendees: { type: "array", items: strSchema, maxItems: 100 } }, ["subject", "start", "end"], false),
+  definition("calendar_read", "Read a demo event by ID including agenda, attendees and timezone", { event_id: strSchema }, ["event_id"]),
+  definition("calendar_create", "Create a demo event without sending real invitations. Graph dateTimeTimeZone/itemBody/attendee objects supported; string shorthand also accepted", calendarFields, ["subject", "start", "end"], false),
+  definition("calendar_update", "Update or reschedule an existing demo event by ID. Omitted fields are preserved; no real invitations delivered", { event_id: strSchema, ...calendarFields }, ["event_id"], false),
 ];
 async function callTool(name, args) {
   const tool = TOOLS.find((entry) => entry.name === name); if (!tool) throw bad(`Unknown demo tool: ${name}`); object(args);
@@ -320,7 +381,7 @@ async function callTool(name, args) {
     const schema = tool.inputSchema.properties[key]; if (!schema) throw bad(`Unknown argument: ${key}`);
     if (schema.type === "string") text(value, key, key === "content_base64" ? Math.ceil(MAX_BODY * 4 / 3) : MAX_BODY);
     if (schema.type === "integer" && (!Number.isInteger(value) || value < schema.minimum || value > schema.maximum)) throw bad(`Invalid ${key}.`);
-    if (schema.type === "array" && (!Array.isArray(value) || value.length > schema.maxItems || value.some((entry) => typeof entry !== "string"))) throw bad(`Invalid ${key}.`);
+    if (schema.type === "array" && (!Array.isArray(value) || value.length > schema.maxItems || (schema.items.type === "string" && value.some((entry) => typeof entry !== "string")))) throw bad(`Invalid ${key}.`);
     if (schema.enum && !schema.enum.includes(value)) throw bad(`Invalid ${key}.`);
   }
   const url = new URL("http://demo.local/v1.0/me");
@@ -330,6 +391,7 @@ async function callTool(name, args) {
   if (name === "mail_create_reply_draft") return (await graph("POST", `/me/messages/${encodeURIComponent(args.message_id)}/createReply`, url, { comment: args.body }))[1];
   if (name === "mail_send") { const item = findMessage(args.message_id); sendDraft(item); return { id: item.id, status: "sent_in_demo_only", deliveredExternally: false }; }
   if (name === "file_find") return { value: state.files.filter((entry) => entry.name.toLowerCase().includes((args.query || "").toLowerCase())).map(fileJson) };
+  if (name === "file_create_folder") return (await graph("POST", args.parent_id && args.parent_id !== "root" ? `/me/drive/items/${encodeURIComponent(args.parent_id)}/children` : "/me/drive/root/children", url, { name: args.name, folder: {} }))[1];
   if (name === "file_read") { const file = findFile(args.item_id); if (file.folder) return fileJson(file); return { ...fileJson(file), ...preview(file.bytes, file.name), content_base64: file.bytes.toString("base64") }; }
   if (name === "file_write") {
     if ((args.content === undefined) === (args.content_base64 === undefined)) throw bad("Provide exactly one of content or content_base64.");
@@ -338,7 +400,9 @@ async function callTool(name, args) {
     const result = await graph("PUT", `/me/drive/root:/${args.path.replace(/^\/+/, "")}:/content`, url, {}, bytes, args.if_match ? { "if-match": args.if_match } : {}); return result[1];
   }
   if (name === "calendar_list") { if (args.start) url.searchParams.set("startDateTime", args.start); if (args.end) url.searchParams.set("endDateTime", args.end); return (await graph("GET", "/me/calendarView", url, {}))[1]; }
-  if (name === "calendar_create") { const item = event({ subject: args.subject, start: { dateTime: args.start, timeZone: "UTC" }, end: { dateTime: args.end, timeZone: "UTC" }, location: { displayName: args.location || "" }, attendees: (args.attendees || []).map((address) => recipient(address)) }); state.events.push(item); return item; }
+  if (name === "calendar_read") return (await graph("GET", `/me/events/${encodeURIComponent(args.event_id)}`, url, {}))[1];
+  if (name === "calendar_create") { const item = event(calendarInput(args)); state.events.push(item); return item; }
+  if (name === "calendar_update") return (await graph("PATCH", `/me/events/${encodeURIComponent(args.event_id)}`, url, calendarInput(args)))[1];
 }
 async function rpc(payload) {
   object(payload); const { id, method, params = {} } = payload;
@@ -350,8 +414,16 @@ async function rpc(payload) {
   if (method === "ping") return result({});
   if (method === "tools/list") return result({ tools: TOOLS });
   if (method === "tools/call") {
-    try { const value = await callTool(params.name, params.arguments || {}); return result({ content: [{ type: "text", text: JSON.stringify(value) }], isError: false }); }
-    catch (error) { return result({ content: [{ type: "text", text: `${error.code || "DemoError"}: ${error.message}` }], isError: true }); }
+    const at = Date.now(); const input = params.arguments || {};
+    try {
+      const value = await callTool(params.name, input); const providerText = JSON.stringify(value);
+      auditCall(at, params.name, input, JSON.parse(providerText), "completed");
+      return result({ content: [{ type: "text", text: providerText }], isError: false });
+    } catch (error) {
+      const providerText = `${error.code || "DemoError"}: ${error.message}`;
+      auditCall(at, params.name, input, providerText, "error");
+      return result({ content: [{ type: "text", text: providerText }], isError: true });
+    }
   }
   return { jsonrpc: "2.0", id, error: { code: -32601, message: "Method not found" } };
 }
@@ -433,12 +505,12 @@ async function showFile(file){if(file.folder){parentId=file.id;parentPath=file.p
 }
 function editText(file,content){mode='editfile';$('detail').innerHTML='<h1>'+esc(file.name)+'</h1><form id="textform"><label>Text contents<textarea id="filecontents"></textarea></label><button class="primary">Save changes</button> <button id="canceltext" type="button">Cancel editing</button></form>';$('filecontents').value=content;$('canceltext').onclick=()=>{mode='read';lastSnapshot='';render().catch(fail)};$('textform').onsubmit=async e=>{e.preventDefault();try{const r=await fetch('/v1.0/me/drive/items/'+file.id+'/content',{method:'PUT',headers:{authorization:'Bearer '+TOKEN,'content-type':file.file.mimeType,'if-match':file.eTag},body:$('filecontents').value});if(!r.ok)throw Error((await r.json()).error.message);mode='read';lastSnapshot='';notice('Saved changes');await render()}catch(e){fail(e)}}}
 function compose(m){mode='compose';draftId=m?.id||null;selected=draftId;$('detail').innerHTML='<h1>'+(m?'Edit draft':'New message')+'</h1><form id="composeform"><label>To (comma-separated email addresses)<input id="to" type="text" required></label><label>Subject<input id="subject" maxlength="1000"></label><label>Message<textarea id="body"></textarea></label><div class="actions"><button type="submit">Save draft</button><button type="button" id="send" class="primary">Send in demo only</button><button type="button" id="closecompose">Close compose</button></div></form>';$('to').value=(m?.toRecipients||[]).map(x=>x.emailAddress.address).join(', ');$('subject').value=m?.subject||'';$('body').value=m?.body.content||'';$('to').focus();$('closecompose').onclick=()=>{if(!confirm('Close compose? Unsaved changes will be lost.'))return;mode='read';lastSnapshot='';$('detail').innerHTML='<h1>Inbox</h1>';render().catch(fail)};async function save(){const payload={subject:$('subject').value,body:{contentType:'Text',content:$('body').value},toRecipients:$('to').value.split(',').map(x=>x.trim()).filter(Boolean).map(address=>({emailAddress:{address}}))};const m=await api(draftId?'/me/messages/'+draftId:'/me/messages',draftId?'PATCH':'POST',payload);draftId=m.id;selected=m.id;folder='drafts';notice('Saved draft');await render();return m}let busy=false;async function action(send){if(busy)return;busy=true;try{if(send&&!confirm('Send this message in the fictional demo? No external email will be delivered.'))return;await save();if(send){await api('/me/messages/'+draftId+'/send','POST',{});mode='read';folder='sentitems';lastSnapshot='';notice('Sent in demo only — no external delivery');await render()}}catch(e){fail(e)}finally{busy=false}}$('composeform').onsubmit=e=>{e.preventDefault();action(false)};$('send').onclick=()=>action(true)}
-async function renderCalendar(){const events=(await api('/me/events')).value;const list=$('eventlist');if(list)list.innerHTML=events.length?events.map(e=>'<article><h2>'+esc(e.subject)+'</h2><p>'+esc(new Date(e.start.dateTime).toLocaleString())+' — '+esc(new Date(e.end.dateTime).toLocaleTimeString())+'</p><p>'+esc(e.location.displayName)+'</p><p class="muted">'+esc(mailAddresses(e.attendees))+'</p></article>').join(''):'<p>No events. Create a demo event below.</p>'}
+async function renderCalendar(){const events=(await api('/me/events')).value;const list=$('eventlist');const eventId=new URLSearchParams(location.search).get('event');if(list)rows('eventlist',events.length?events.filter(e=>!eventId||e.id===eventId).map(e=>'<article data-event-id="'+esc(e.id)+'"><h2><a href="'+esc(e.webLink)+'">'+esc(e.subject)+'</a></h2><p>'+esc(e.start.dateTime)+' — '+esc(e.end.dateTime)+'</p><p>'+esc(e.start.timeZone)+(e.end.timeZone!==e.start.timeZone?' / '+esc(e.end.timeZone):'')+'</p><p>'+esc(e.location.displayName)+'</p><p class="muted">'+esc(mailAddresses(e.attendees))+'</p><pre>'+esc(e.body.contentType==='HTML'?e.body.content.replace(/<[^>]*>/g,' '):e.body.content)+'</pre></article>').join(''):'<p>No events. Create a demo event below.</p>')}
 async function calendar(){mode='calendar';$('detail').innerHTML='<h1>Calendar</h1><div id="eventlist"></div><h2>Create demo event</h2><form id="eventform"><label>Subject<input id="eventsubject" required></label><label>Start (local time)<input id="eventstart" type="datetime-local" required></label><label>End (local time)<input id="eventend" type="datetime-local" required></label><label>Location<input id="eventlocation"></label><button class="primary">Create event</button></form>';$('eventform').onsubmit=async e=>{e.preventDefault();try{await api('/me/events','POST',{subject:$('eventsubject').value,start:{dateTime:new Date($('eventstart').value).toISOString(),timeZone:'UTC'},end:{dateTime:new Date($('eventend').value).toISOString(),timeZone:'UTC'},location:{displayName:$('eventlocation').value}});$('eventform').reset();notice('Created demo event — no invitations delivered');await renderCalendar()}catch(e){fail(e)}};await renderCalendar()}
 $('list').onclick=async e=>{const row=e.target.closest('[data-id]');if(!row)return;if(mode==='compose'&&!confirm('Leave compose? Unsaved changes will be lost.'))return;selected=row.dataset.id;mode='read';lastSnapshot='';if(!DRIVE){const item=items.find(x=>x.id===selected);if(item&&!item.isRead)try{await api('/me/messages/'+selected,'PATCH',{isRead:true})}catch(e){fail(e)}}history.replaceState(null,'',location.pathname+'?'+(DRIVE?'item=':'message=')+encodeURIComponent(selected));render().catch(fail)};$('search').oninput=()=>render().catch(fail);
 $('listfilter').onchange=()=>render().catch(fail);
 if(DRIVE){function rootFolder(){parentId='root';parentPath='';selected=null;lastSnapshot='';$('search').value='';$('backfolder').hidden=true;document.querySelector('main').classList.remove('has-preview');history.replaceState(null,'',location.pathname);$('detail').innerHTML='<h1>Shared documents</h1>';render().catch(fail)}$('backfolder').onclick=rootFolder;$('myfiles').onclick=rootFolder;$('refreshlist').onclick=()=>render().catch(fail);$('newfolder').onclick=()=>{$('folderform').hidden=false;$('foldername').focus()};$('cancelfolder').onclick=()=>{$('folderform').hidden=true;$('folderform').reset()};$('folderform').onsubmit=async e=>{e.preventDefault();try{const created=await api(parentId==='root'?'/me/drive/root/children':'/me/drive/items/'+parentId+'/children','POST',{name:$('foldername').value,folder:{}});$('folderform').reset();$('folderform').hidden=true;notice('Created folder '+created.name);await render()}catch(e){fail(e)}};$('upload').onchange=async()=>{const file=$('upload').files[0];if(!file)return;try{if(file.size>10485760)throw Error('Upload limit is 10 MB');if(items.some(x=>x.name.toLowerCase()===file.name.toLowerCase())&&!confirm('Replace the existing shared file '+file.name+'?'))return;const r=await fetch('/v1.0/me/drive/root:/'+(parentPath?parentPath.split('/').map(encodeURIComponent).join('/')+'/':'')+encodeURIComponent(file.name)+':/content',{method:'PUT',headers:{authorization:'Bearer '+TOKEN,'content-type':file.type||'application/octet-stream'},body:file});if(!r.ok)throw Error((await r.json()).error.message);const item=await r.json();selected=item.id;lastSnapshot='';notice('Uploaded '+file.name);await render()}catch(e){fail(e)}finally{$('upload').value=''}}}else{$('compose').onclick=()=>{if(mode==='compose'&&!confirm('Start another message? Unsaved changes will be lost.'))return;compose()};$('calendar').onclick=()=>{if(mode==='compose'&&!confirm('Leave compose? Unsaved changes will be lost.'))return;calendar().catch(fail)};$('folders').onclick=e=>{const button=e.target.closest('[data-folder]');if(!button)return;if(mode==='compose'&&!confirm('Leave compose? Unsaved changes will be lost.'))return;folder=button.dataset.folder;selected=null;mode='read';$('detail').innerHTML='<h1>'+esc(button.textContent)+'</h1>';render().catch(fail)}}
-let refreshing=false;async function refresh(){if(refreshing)return;refreshing=true;try{await render()}catch(e){fail(e)}finally{refreshing=false}}refresh();if(!DRIVE&&new URLSearchParams(location.search).get('view')==='calendar')calendar().catch(fail);setInterval(refresh,1800);
+let refreshing=false;async function refresh(){if(refreshing)return;refreshing=true;try{await render()}catch(e){fail(e)}finally{refreshing=false}}refresh();if(!DRIVE&&(new URLSearchParams(location.search).get('view')==='calendar'||new URLSearchParams(location.search).has('event')))calendar().catch(fail);setInterval(refresh,1800);
 </script></body></html>`;
 }
 
@@ -458,7 +530,7 @@ const server = createServer(async (request, response) => {
     const url = new URL(request.url, `http://${request.headers.host || "localhost"}`);
     if (request.headers.origin && request.headers.origin !== url.origin) throw new ApiError(403, "accessDenied", "Cross-origin demo requests are not allowed.");
     if (request.method === "GET" && url.pathname === "/health") return send(response, 200, { ok: true, service: "demo-microsoft365", fictional: true, externalDelivery: false });
-    if (request.method === "GET" && url.pathname === "/state") return send(response, 200, { fictional: true, user: ME, folders: folders(), messages: state.messages, events: state.events, files: state.files.map((file) => ({ ...fileJson(file), ...(!file.folder ? { preview: preview(file.bytes, file.name) } : {}) })) });
+    if (request.method === "GET" && url.pathname === "/state") return send(response, 200, { fictional: true, user: ME, audit: state.audit, folders: folders(), messages: state.messages, events: state.events, files: state.files.map((file) => ({ ...fileJson(file), ...(!file.folder ? { preview: preview(file.bytes, file.name) } : {}) })) });
     if (request.method === "POST" && url.pathname === "/reset") { await readBody(request); reset(); return send(response, 200, { reset: true }); }
     if (request.method === "GET" && url.pathname === "/") return send(response, 200, '<!doctype html><html lang="en"><meta charset="utf-8"><title>Acme Microsoft 365 demo</title><body style="font:14px/1.6 system-ui;margin:48px"><h1>Acme Robotics · Microsoft 365 demo</h1><p>Fictional in-memory data. Mail and invitations are never delivered externally.</p><p><a href="/outlook">Open Outlook mail & calendar</a></p><p><a href="/onedrive">Open OneDrive shared files</a></p><details><summary>Demo connection details</summary><p>Standalone unofficial MCP: <code>/mcp</code>. Graph-shaped REST: <code>/v1.0</code>. Synthetic Bearer token: <code>demo-microsoft365-token</code>.</p><p>Restarting or POST /reset restores the seed. Upload limit: 10 MB per file, 60 MB total. Private demo use only; not production authentication.</p></details></body></html>');
     if (request.method === "GET" && ["/outlook", "/onedrive"].includes(url.pathname)) return send(response, 200, page(url.pathname.slice(1)));

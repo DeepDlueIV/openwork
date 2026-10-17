@@ -132,6 +132,15 @@ test("Microsoft demo: real headless Outlook and OneDrive share REST/MCP state", 
   await waitFor(async () => (await state()).events.some((e) => e.subject === "Acme browser pilot gate"), "Browser calendar create not shared");
   await waitFor(() => evaluate("document.getElementById('eventlist').textContent.includes('Acme browser pilot gate')"), "Calendar event not displayed");
   await screenshot("outlook-calendar");
+  const calendarEvent = await tool("calendar_create", { subject: "MCP detailed review", body: { contentType: "Text", content: "Review the lab evidence <script>window.injected=true</script>" }, start: { dateTime: "2026-11-23T09:00:00", timeZone: "Europe/Paris" }, end: { dateTime: "2026-11-23T10:00:00", timeZone: "Europe/Paris" }, attendees: [{ emailAddress: { address: "priya@acme.test", name: "Priya Shah" }, type: "required" }], location: "Lab B" });
+  await navigate(new URL(calendarEvent.webLink).pathname + new URL(calendarEvent.webLink).search, "document.getElementById('eventlist')?.textContent.includes('MCP detailed review')");
+  assert.match(await evaluate("document.getElementById('eventlist').textContent"), /Priya Shah.*Review the lab evidence/s);
+  assert.equal(await evaluate("window.injected===undefined"), true);
+  await tool("calendar_update", { event_id: calendarEvent.id, start: "2026-11-24T11:00:00", end: "2026-11-24T12:00:00", time_zone: "Europe/Paris" });
+  await waitFor(() => evaluate("document.getElementById('eventlist').textContent.includes('2026-11-24T11:00:00')"), "Rescheduled event did not poll into detail deep link");
+  assert.match(await evaluate("document.getElementById('eventlist').textContent"), /Europe\/Paris.*Priya Shah.*Review the lab evidence/s);
+  assert.equal(await evaluate("document.querySelectorAll('[data-event-id]').length"), 1);
+  await screenshot("outlook-rescheduled-event-detail");
 
   await navigate("/onedrive", "document.querySelectorAll('.filetable tbody tr').length===4");
   assert.equal(await evaluate("document.querySelector('main').classList.contains('has-preview')"), false);

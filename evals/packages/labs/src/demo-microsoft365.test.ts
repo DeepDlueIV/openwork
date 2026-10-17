@@ -39,7 +39,7 @@ async function freePort(): Promise<number> {
 }
 beforeAll(async () => {
   const port = await freePort(); base = `http://127.0.0.1:${port}`;
-  child = spawn(process.execPath, [SCRIPT], { env: { PATH: process.env.PATH, HOST: "127.0.0.1", PORT: String(port) }, stdio: "ignore" });
+  child = spawn(process.execPath, [SCRIPT], { env: { PATH: process.env.PATH, HOST: "127.0.0.1", PORT: String(port), DEMO_NOW: "2026-10-16T15:55:00Z" }, stdio: "ignore" });
   const deadline = Date.now() + 10000;
   while (Date.now() < deadline) { if (await fetch(`${base}/health`).then((r) => r.ok).catch(() => false)) return; await new Promise((resolve) => setTimeout(resolve, 50)); }
   throw new Error("Demo Microsoft 365 did not start");
@@ -178,7 +178,7 @@ describe("fictional Microsoft 365 demo", () => {
 
   test("folders require real parents and prevent unsafe paths or collisions", async () => {
     expect((await rest("/me/drive/root:/Missing/file.txt:/content", { method: "PUT", body: "x" })).status).toBe(404);
-    const folder = await json(await rest("/me/drive/root/children", { method: "POST", body: JSON.stringify({ name: "Customer reviews", folder: {} }) }));
+    const folder = await toolValue("file_create_folder", { name: "Customer reviews" });
     expect((await rest("/me/drive/root/children", { method: "POST", body: JSON.stringify({ name: "Customer reviews", folder: {} }) })).status).toBe(409);
     expect((await tool("file_write", { path: "../unsafe.txt", content: "no" })).isError).toBe(true);
     const created = await toolValue("file_write", { path: "Customer reviews/next-actions.txt", content: "Priya owns the field validation." });
@@ -198,9 +198,53 @@ describe("fictional Microsoft 365 demo", () => {
     expect((await rest(`/me/events/${id}`)).status).toBe(404);
   });
 
+  test("MCP reschedules Graph-shaped events atomically while preserving agenda, attendees and identity", async () => {
+    const created = await toolValue("calendar_create", {
+      subject: "Acceptance review", body: { contentType: "HTML", content: "<p>Review field logs, then assign owners.</p>" },
+      start: { dateTime: "2026-11-20T09:00:00", timeZone: "Pacific Standard Time" },
+      end: { dateTime: "2026-11-20T10:00:00", timeZone: "Pacific Standard Time" },
+      attendees: [{ emailAddress: { address: "priya@acme.test", name: "Priya Shah" }, type: "optional" }], location: "Lab B",
+    });
+    const id = string(created.id);
+    const updated = await toolValue("calendar_update", { event_id: id, start: "2026-11-23T11:00:00", end: "2026-11-23T12:00:00", time_zone: "Europe/Paris" });
+    expect(updated).toMatchObject({ id, subject: created.subject, body: created.body, attendees: created.attendees, organizer: created.organizer, location: created.location, createdDateTime: created.createdDateTime, webLink: created.webLink });
+    expect(updated.start).toEqual({ dateTime: "2026-11-23T11:00:00", timeZone: "Europe/Paris" });
+    expect(await toolValue("calendar_read", { event_id: id })).toEqual(updated);
+    expect(array((await toolValue("calendar_list", { start: "2026-11-23T10:30:00Z", end: "2026-11-23T10:45:00Z" })).value)).toHaveLength(1);
+    expect(array((await toolValue("calendar_list", { start: "2026-11-23T11:00:00Z", end: "2026-11-23T12:00:00Z" })).value)).toHaveLength(0);
+    expect((await tool("calendar_update", { event_id: id, subject: "Must not persist", end: "2026-11-23T08:00:00Z" })).isError).toBe(true);
+    expect(await toolValue("calendar_read", { event_id: id })).toEqual(updated);
+    expect((await rest(`/me/events/${id}`, { method: "PATCH", body: JSON.stringify({ subject: "Must not persist", unsupported: true }) })).status).toBe(400);
+    expect(await toolValue("calendar_read", { event_id: id })).toEqual(updated);
+    const pacific = await toolValue("calendar_create", { subject: "Pacific range", start: "2026-11-20T09:00:00", end: "2026-11-20T10:00:00", time_zone: "Pacific Standard Time" });
+    expect(array((await toolValue("calendar_list", { start: "2026-11-20T17:30:00Z", end: "2026-11-20T17:45:00Z" })).value).map(record).map((item) => item.id)).toEqual([pacific.id]);
+  });
+
+  test("audits only actual MCP calls with wall-clock correlation, immutable provider outputs, bounded retention and reset", async () => {
+    const started = Date.now();
+    const created = await toolValue("calendar_create", { subject: "Audit original", start: "2026-11-20T09:00:00Z", end: "2026-11-20T10:00:00Z" });
+    const failed = await tool("calendar_read", { event_id: "missing" });
+    const ended = Date.now();
+    await rest(`/me/events/${string(created.id)}`, { method: "PATCH", body: JSON.stringify({ subject: "REST change is not an MCP call" }) });
+    await rpc("tools/list"); await rpc("ping");
+    const audit = array((await json(await fetch(`${base}/state`))).audit).map(record);
+    expect(audit).toHaveLength(2);
+    expect(audit[0]).toMatchObject({ sequence: 1, name: "calendar_create", status: "completed", output: created });
+    expect(record(audit[0]?.output).subject).toBe("Audit original");
+    expect(audit[1]).toMatchObject({ sequence: 2, name: "calendar_read", input: { event_id: "missing" }, output: failed.text, status: "error" });
+    for (const entry of audit) { expect(entry.at).toBeGreaterThanOrEqual(started); expect(entry.at).toBeLessThanOrEqual(ended); expect(entry).not.toHaveProperty("callId"); }
+    for (let i = 0; i < 1001; i++) await toolValue("calendar_read", { event_id: string(created.id) });
+    const retained = array((await json(await fetch(`${base}/state`))).audit).map(record);
+    expect(retained).toHaveLength(1000); expect(retained[0]?.sequence).toBe(4); expect(retained.at(-1)?.sequence).toBe(1003);
+    await fetch(`${base}/reset`, { method: "POST" });
+    expect((await json(await fetch(`${base}/state`))).audit).toEqual([]);
+    await toolValue("calendar_list", {});
+    expect(record(array((await json(await fetch(`${base}/state`))).audit)[0]).sequence).toBe(1);
+  });
+
   test("MCP handshake, schemas, notifications and errors are sensible demo-only surfaces", async () => {
     const init = await rpc("initialize", { protocolVersion: "2025-06-18" }); expect(record(init.result).protocolVersion).toBe("2025-06-18"); expect(record(record(init.result).serverInfo).name).toContain("DEMO");
-    const tools = array(record((await rpc("tools/list")).result).tools).map(record); expect(tools).toHaveLength(10);
+    const tools = array(record((await rpc("tools/list")).result).tools).map(record); expect(tools).toHaveLength(13);
     for (const entry of tools) {
       expect(string(entry.description)).toContain("DEMO ONLY");
       expect(string(entry.description)).toContain(string(entry.name).startsWith("file_") ? "OneDrive" : "Outlook");
@@ -237,6 +281,7 @@ describe("fictional Microsoft 365 demo", () => {
     await toolValue("mail_create_draft", { subject: "temporary", body: "ephemeral", to: [] });
     await fetch(`${base}/reset`, { method: "POST" }); const restored = await json(await fetch(`${base}/state`));
     expect(array(restored.files)).toHaveLength(array(original.files).length); expect(array(restored.messages)).toHaveLength(array(original.messages).length); expect(array(restored.events)).toHaveLength(1);
+    expect(restored).toEqual(original); // DEMO_NOW also resets generated IDs and seed timestamps.
     expect(array(restored.files).map(record).map((entry) => entry.name)).not.toContain("temporary.txt");
     expect(array(restored.files).map(record).map((entry) => record(record(entry.file).hashes).sha256Hash)).toEqual(array(original.files).map(record).map((entry) => record(record(entry.file).hashes).sha256Hash));
   });

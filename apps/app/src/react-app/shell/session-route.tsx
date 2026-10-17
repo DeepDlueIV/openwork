@@ -123,9 +123,10 @@ import { DashboardPage } from "@/react-app/domains/dashboard/dashboard-page";
 import { useDashboardDeploymentAvailability } from "@/react-app/domains/dashboard/dashboard-availability";
 import { useAutomationDeploymentEnabled } from "@/react-app/domains/automations/automation-availability";
 import { automationsStateChangedEvent } from "@/react-app/domains/automations/automation-events";
-import type {
-  NewTaskComposerContext,
-  NewTaskComposerHandoff,
+import {
+  MOVE_NEW_TASK_DRAFT_EVENT,
+  type NewTaskComposerContext,
+  type NewTaskComposerHandoff,
 } from "@/react-app/domains/session/chat/new-task-composer";
 import { isDesktopProviderBlocked } from "@/app/cloud/desktop-app-restrictions";
 import { useCheckDesktopRestriction, useOrgRestrictions } from "@/react-app/domains/cloud/desktop-config-provider";
@@ -3256,14 +3257,35 @@ export function SessionRoute() {
     return items;
   }, [currentSessionForGroupMove, currentSessionPinned, opencodeClient, selectedSessionId, selectedWorkspaceId]);
 
-  const currentSessionGroupId = selectedSessionId
-    ? selectedWorkspaceGroupState?.assignments[selectedSessionId] ?? null
-    : null;
+  // An empty composer has a group too: the one its new task will be created in.
+  // The focused unsent side chat wins over the main empty composer.
+  const paletteDraftDestination = useWorkbenchStore((state) => (
+    state.focusedPane === "secondary" && state.secondary?.draftDestination ? state.secondary.draftDestination : null
+  ));
+  const paletteDraftGroupMove = useMemo(() => {
+    if (!selectedWorkspaceId) return null;
+    const draftGroup = new URLSearchParams(location.search).get("draftGroup") || undefined;
+    const destination = paletteDraftDestination
+      ?? (selectedSessionId ? null : { workspaceId: selectedWorkspaceId, groupId: draftGroup });
+    // Groups are listed for the selected workspace only.
+    if (!destination || destination.workspaceId !== selectedWorkspaceId) return null;
+    const draftOwnerKey = newSessionDraftOwnerKey(sessionDraftScope, destination);
+    return draftOwnerKey ? { draftOwnerKey, groupId: destination.groupId ?? null } : null;
+  }, [location.search, paletteDraftDestination, selectedSessionId, selectedWorkspaceId, sessionDraftScope]);
+
+  const currentSessionGroupId = paletteDraftGroupMove
+    ? paletteDraftGroupMove.groupId
+    : selectedSessionId ? selectedWorkspaceGroupState?.assignments[selectedSessionId] ?? null : null;
 
   const handleMoveCurrentSessionToGroup = useCallback((groupId: string) => {
+    if (paletteDraftGroupMove) {
+      window.dispatchEvent(new CustomEvent(MOVE_NEW_TASK_DRAFT_EVENT, { detail: { draftOwnerKey: paletteDraftGroupMove.draftOwnerKey, groupId } }));
+      focusPromptSoon();
+      return;
+    }
     if (!selectedWorkspaceId || !selectedSessionId) return;
     assignSessionToGroup(selectedWorkspaceId, selectedSessionId, groupId);
-  }, [assignSessionToGroup, selectedSessionId, selectedWorkspaceId]);
+  }, [assignSessionToGroup, paletteDraftGroupMove, selectedSessionId, selectedWorkspaceId]);
 
   const sessionSearchPaletteItem = useMemo<PaletteItem>(() => ({
     id: "session-search.open",
@@ -4139,7 +4161,7 @@ export function SessionRoute() {
       }}
       sessions={paletteSessionOptions}
       sessionGroups={paletteSessionGroups}
-      currentSessionForGroupMove={currentSessionForGroupMove}
+      currentSessionForGroupMove={paletteDraftGroupMove ? { title: "this new task" } : currentSessionForGroupMove}
       currentSessionGroupId={currentSessionGroupId}
       onMoveCurrentSessionToGroup={handleMoveCurrentSessionToGroup}
       extraItems={[...currentSessionActionPaletteItems, ...(sessionFindPaletteItem ? [sessionFindPaletteItem] : []), sessionSearchPaletteItem, ...terminalPaletteItems, ...(checkDesktopRestriction({ restriction: "allowControlSettings" }) ? [] : [developerModePaletteItem]), diagnosticsCopyPaletteItem, diagnosticsExportPaletteItem, nextSessionTabPaletteItem, prevSessionTabPaletteItem, reloadConfigPaletteItem]}

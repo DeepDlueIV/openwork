@@ -1388,6 +1388,67 @@ function LineBoundaryKeysPlugin() {
   return null;
 }
 
+function $isCaretAtPromptStart(selection = $getSelection()): boolean {
+  if (!$isRangeSelection(selection) || !selection.isCollapsed() || selection.anchor.offset !== 0) return false;
+  const node = selection.anchor.getNode();
+  const first = $getRoot().getFirstDescendant();
+  return node.is($getRoot()) || node.is($getRoot().getFirstChild()) || Boolean(first && node.is(first));
+}
+
+// Coming back to the prompt from the command palette, a model picker or any
+// other dialog focuses the editor programmatically, and the browser then puts
+// the caret at the very start. Put it back where the person left it instead.
+// A click or tap still places the caret where it lands.
+function KeepCaretOnRefocusPlugin() {
+  const [editor] = useLexicalComposerContext();
+
+  useEffect(() => {
+    let saved: ReturnType<typeof $createRangeSelection> | null = null;
+    let pointerFocus = false;
+    const unregisterUpdate = editor.registerUpdateListener(({ editorState }) => {
+      editorState.read(() => {
+        const selection = $getSelection();
+        if ($isRangeSelection(selection)) saved = selection.clone();
+      });
+    });
+    const onPointerDown = () => { pointerFocus = true; };
+    const onBlur = () => { pointerFocus = false; };
+    const onFocus = () => {
+      const fromPointer = pointerFocus;
+      pointerFocus = false;
+      const restore = saved;
+      if (fromPointer || !restore) return;
+      // After the browser has applied its own caret, so ours wins.
+      requestAnimationFrame(() => {
+        if (document.activeElement !== editor.getRootElement()) return;
+        editor.update(() => {
+          // Only undo the browser's jump to the start; a caret code placed on purpose stays.
+          if (!$isCaretAtPromptStart() || $isCaretAtPromptStart(restore)) return;
+          if (restore.anchor.getNode().isAttached() && restore.focus.getNode().isAttached()) $setSelection(restore.clone());
+        });
+      });
+    };
+    const unregisterRoot = editor.registerRootListener((root, previous) => {
+      previous?.removeEventListener("pointerdown", onPointerDown, true);
+      previous?.removeEventListener("focus", onFocus);
+      previous?.removeEventListener("blur", onBlur);
+      root?.addEventListener("pointerdown", onPointerDown, true);
+      root?.addEventListener("focus", onFocus);
+      root?.addEventListener("blur", onBlur);
+    });
+    return () => {
+      unregisterUpdate();
+      unregisterRoot();
+      const root = editor.getRootElement();
+      root?.removeEventListener("pointerdown", onPointerDown, true);
+      root?.removeEventListener("focus", onFocus);
+      root?.removeEventListener("blur", onBlur);
+    };
+  }, [editor]);
+
+  return null;
+}
+
 function ImperativeHandlePlugin(props: { editorRef: ForwardedRef<LexicalPromptEditorHandle> }) {
   const [editor] = useLexicalComposerContext();
 
@@ -1554,6 +1615,7 @@ export const LexicalPromptEditor = forwardRef<LexicalPromptEditorHandle, EditorP
         <AttachmentChipPlugin onRemoveAttachment={props.onRemoveAttachment} onExpandAttachment={props.onExpandAttachment} />
         <MentionChipNavigationPlugin />
         <LineBoundaryKeysPlugin />
+        <KeepCaretOnRefocusPlugin />
         <ImperativeHandlePlugin editorRef={ref} />
       </div>
     </LexicalComposer>

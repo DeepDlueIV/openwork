@@ -137,6 +137,12 @@ type ComposerProps = {
 
 const FLUSH_PROMPT_EVENT = "openwork:flushPromptDraft";
 const FOCUS_PROMPT_EVENT = "openwork:focusPrompt";
+/**
+ * The composer the person last typed in. With a side window open, "focus the
+ * prompt" (after a palette pick, a dialog, a model change) returns to that one
+ * instead of whichever composer registered last.
+ */
+let lastFocusedComposerRoot: HTMLElement | null = null;
 const DEFAULT_AGENT_NAME = "openwork";
 
 function isNonDefaultAgent(agent: Agent) {
@@ -994,6 +1000,7 @@ export const ReactSessionComposer = memo(function ReactSessionComposer(props: Co
     const handleFocus = () => {
       const root = rootRef.current;
       if (!root) return;
+      if (lastFocusedComposerRoot?.isConnected && lastFocusedComposerRoot !== root) return;
       const editable = root.querySelector<HTMLElement>("[contenteditable='true']");
       editable?.focus({ preventScroll: window.matchMedia("(max-width: 1023px)").matches });
     };
@@ -1252,6 +1259,7 @@ export const ReactSessionComposer = memo(function ReactSessionComposer(props: Co
     <DevProfiler id="SessionComposer">
     <div
       ref={rootRef}
+      onFocusCapture={() => { lastFocusedComposerRoot = rootRef.current; }}
       className={props.flush ? `relative ${toolMenuOpen ? "z-50" : "z-20"}` : `sticky bottom-0 shrink-0 ${toolMenuOpen ? "z-50" : "z-20"} bg-gradient-to-t from-dls-surface via-dls-surface/95 to-transparent px-4 pb-[max(0.5rem,env(safe-area-inset-bottom))] max-lg:px-3 lg:px-8 ${props.compactTopSpacing ? "pt-0" : "pt-1"}`}
       style={{ contain: "layout style" }}
       onKeyDownCapture={handleKeyDownCapture}

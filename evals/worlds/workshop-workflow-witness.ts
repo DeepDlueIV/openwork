@@ -1,5 +1,5 @@
 import { artifactDigest } from "../../ee/apps/den-api/src/workflow-artifacts.ts";
-import type { JsonRecord, ObserverSnapshot, WorkflowWitness, SharingWitness } from "./workshop-narrative-contract.ts";
+import type { JsonRecord, ObserverSnapshot, ObservedServiceCall, WorkflowWitness, SharingWitness } from "./workshop-narrative-contract.ts";
 
 const obj = (value: unknown): JsonRecord => value !== null && typeof value === "object" && !Array.isArray(value) ? Object.fromEntries(Object.entries(value)) : {};
 const arr = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
@@ -186,6 +186,24 @@ function savedRunEvidence(row: JsonRecord, saved: NonNullable<ReturnType<typeof 
   const snapshot = records(obj(after.snapshots)[identity]).find((snapshot) => snapshot.receiptId === row.id && snapshot.configObjectId === saved.workflowId && snapshot.configObjectVersionId === saved.versionId && snapshot.status === "succeeded" && snapshot.codeDigest === saved.version.codeDigest && snapshot.contentDeletedAt == null && snapshot.value !== undefined && snapshot.value !== null);
   if (!snapshot || artifactDigest(snapshot.value) !== row.result_digest || !workflowComparisonSemantics(snapshot.value, request, pages)) return undefined;
   return { tool, pages, snapshot };
+}
+
+/** Normalize real saved executions hidden inside Code Mode. The name/receipt
+ * come from the native DB, never script text or stdout. Each call still needs
+ * the caller's completed tool window, actual returned receipt, exact actor,
+ * saved code/schema/input/output digests, full source reads and saved output. */
+export function observedNativeWorkflowCalls(before: NativeWorkflowObservation, after: NativeWorkflowObservation, context: WorkflowWitnessContext): ObservedServiceCall[] {
+  const saved = savedWorkflow(after);
+  if (!saved) return [];
+  const result: ObservedServiceCall[] = [];
+  for (const [identity, request, actor] of [["owner", "rerun", context.owner], ["recipient", "recipient", context.recipient]] satisfies ["owner" | "recipient", "rerun" | "recipient", WorkflowActorEvidence | undefined][]) {
+    for (const row of freshRuns(before, after)) {
+      const evidence = savedRunEvidence(row, saved, after, actor, identity, request);
+      if (!evidence) continue;
+      result.push({ callId: str(evidence.tool.callID), name: str(row.source), input: { canonicalInputDigest: row.script_input_digest }, output: { receiptId: row.id, configObjectId: row.config_object_id, configObjectVersionId: row.config_object_version_id, resultDigest: row.result_digest }, status: "completed", service: "den" });
+    }
+  }
+  return result;
 }
 
 /** Exact input objects are corroborated by Den's canonical digest; raw caller inputs are deliberately not retained.

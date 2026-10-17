@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { artifactDigest } from "../../ee/apps/den-api/src/workflow-artifacts.ts";
-import { observedServiceCalls, workflowWitness, sharingWitness, type NativeWorkflowObservation, type WorkflowWitnessContext } from "./workshop-narrative-witnesses.ts";
-import type { ObserverSnapshot } from "./workshop-narrative-contract.ts";
+import { observedServiceCalls, observedNativeWorkflowCalls, workflowWitness, sharingWitness, type NativeWorkflowObservation, type WorkflowWitnessContext } from "./workshop-narrative-witnesses.ts";
+import { verifyWorkshopScene, type ObserverSnapshot, type SceneEvidence } from "./workshop-narrative-contract.ts";
 const snapshot = (): ObserverSnapshot => ({ messages: [], atlassian: { audit: [] }, microsoft: { audit: [] }, news: { audit: [] }, workflows: { items: [] } });
 test("opaque scripts need real server calls in a unique completed tool time window", () => {
   const before = snapshot(), after = snapshot();
@@ -40,9 +40,10 @@ function fixture() {
   const message = (member: string, start: number, receiptId: string, value: unknown) => ({ info: { id: `message-${receiptId}`, role: "assistant", sessionID: `${member}-session`, providerID: "paid-provider", modelID: "exact-model", agent: "openwork", finish: "stop", time: { completed: start + 100 } }, parts: [{ type: "tool", callID: `call-${receiptId}`, tool: "openwork-cloud_execute_capability_script", state: { status: "completed", time: { start, end: start + 100 }, output: JSON.stringify({ value, metadata: { receiptId, executionType: receiptId === "test" ? "authoring-test" : "saved-workflow", retention: { available: true, canSaveByReceipt: true } } }) } }] });
   const audit = [150, 350, 550].flatMap((at, index) => pages.map((page, pageIndex) => ({ sequence: index * 2 + pageIndex, at, name: "confluence_get_page", input: { page_id: page.id }, output: { metadata: { id: page.id, content: { value: page.body, format: "storage" } } }, status: "completed" })));
   const testMessage = message("owner", 100, "test", comparison(testInput.customerRequest));
-  const context: WorkflowWitnessContext = { owner: { before: snapshot(), after: { ...snapshot(), messages: [testMessage, message("owner", 300, "rerun", comparison(rerunInput.customerRequest))], atlassian: { confluence: { pages }, audit } }, expected: { sessionId: "owner-session", providerID: "paid-provider", modelID: "exact-model" } }, recipient: { before: snapshot(), after: { ...snapshot(), messages: [message("recipient", 500, "recipient-run", comparison(recipientInput.customerRequest))], atlassian: { confluence: { pages }, audit } }, expected: { sessionId: "recipient-session", providerID: "paid-provider", modelID: "exact-model" } } };
+  const rerunMessage = message("owner", 300, "rerun", comparison(rerunInput.customerRequest));
+  const context: WorkflowWitnessContext = { owner: { before: snapshot(), after: { ...snapshot(), messages: [testMessage, rerunMessage], atlassian: { confluence: { pages }, audit } }, expected: { sessionId: "owner-session", providerID: "paid-provider", modelID: "exact-model" } }, recipient: { before: snapshot(), after: { ...snapshot(), messages: [message("recipient", 500, "recipient-run", comparison(recipientInput.customerRequest))], atlassian: { confluence: { pages }, audit } }, expected: { sessionId: "recipient-session", providerID: "paid-provider", modelID: "exact-model" } } };
   for (const actor of [context.owner, context.recipient]) if (actor) actor.inference = { upstreamModel: "actual-upstream", requests: [{ upstreamModel: "actual-upstream", status: "completed", httpStatus: 200 }] };
-  return { before, after, context, authoringState: testMessage.parts[0].state };
+  return { before, after, context, authoringState: testMessage.parts[0].state, rerunState: rerunMessage.parts[0].state };
 }
 test("native authoring test is not mislabeled as a second saved execution; exact inputs are digest-corroborated", () => {
   const { before, after, context } = fixture();
@@ -54,6 +55,54 @@ test("native authoring test is not mislabeled as a second saved execution; exact
   assert.deepEqual(witness?.authoringResultValue, comparison(testInput.customerRequest));
   assert.equal(artifactDigest(witness?.authoringResultValue), witness?.verification.testResultDigest);
 });
+test("native Code Mode saved execution is correlated without treating its script/stdout as a provider call", () => {
+  const { before, after, context } = fixture();
+  const actor = context.owner!;
+  const messages = Array.isArray(actor.after.messages) ? actor.after.messages : [];
+  actor.after.messages = [messages[0], { info: { id: "creation-message", role: "assistant", sessionID: "owner-session", providerID: "paid-provider", modelID: "exact-model", agent: "openwork", finish: "tool-calls", time: { completed: 250 } }, parts: [{ type: "tool", callID: "save-call", tool: "workflow_create", state: { status: "completed", time: { start: 200, end: 250 }, output: JSON.stringify({ configObjectId: "workflow", configObjectVersionId: "version" }) } }] }, messages[1]];
+  actor.after.workflows = after.list;
+  const check: SceneEvidence = { id: "T02", before: actor.before, after: actor.after, expected: actor.expected, elapsedMs: 1000, workflow: workflowWitness(before, after, context), serviceCalls: observedServiceCalls(actor.before, actor.after) };
+  assert.deepEqual(verifyWorkshopScene(check).reasons, ["Model must actually rerun the saved native Workflow"], "Fixture reproduces the incomplete fixture-only observer");
+  const nativeCalls = observedNativeWorkflowCalls(before, after, context);
+  assert.ok(nativeCalls.some((call) => call.callId === "call-rerun" && call.name === "plugin:plugin:workflow" && JSON.stringify(call.output).includes('"receiptId":"rerun"')));
+  check.serviceCalls = [...(check.serviceCalls ?? []), ...nativeCalls];
+  assert.equal(verifyWorkshopScene(check).status, "PASS");
+  check.serviceCalls = nativeCalls.map((call) => ({ ...call, callId: "fabricated-tool-id" }));
+  assert.ok(verifyWorkshopScene(check).reasons.includes("Model must actually rerun the saved native Workflow"), "Native records still require the actual completed caller tool ID");
+});
+
+test("native execution normalization rejects missing actor evidence and altered backend receipts", () => {
+  const first = fixture();
+  assert.deepEqual(observedNativeWorkflowCalls(first.before, first.after, {}), []);
+  for (const key of ["source", "result_digest", "code_digest", "script_input_digest"]) {
+    const { before, after, context } = fixture();
+    after.runs[1][key] = "forged";
+    assert.ok(!observedNativeWorkflowCalls(before, after, context).some((call) => call.callId === "call-rerun"), key);
+  }
+});
+
+test("native execution normalization keeps freshness, caller, actor, source and snapshot boundaries", () => {
+  const mutations: [string, (state: ReturnType<typeof fixture>) => void][] = [
+    ["no native row", ({ after }) => { after.runs = []; }],
+    ["already observed receipt", ({ before, after }) => { before.runs.push({ ...after.runs[1] }); }],
+    ["receipt only in code", ({ rerunState }) => { rerunState.output = JSON.stringify({ code: JSON.stringify({ receiptId: "rerun" }) }); }],
+    ["receipt only in stdout", ({ rerunState }) => { rerunState.output = JSON.stringify({ stdout: JSON.stringify({ receiptId: "rerun" }) }); }],
+    ["receipt absent from actual caller output", ({ rerunState }) => { rerunState.output = "No native receipt"; }],
+    ["outside caller window", ({ after }) => { after.runs[1].started_at = 5000; after.runs[1].finished_at = 5100; }],
+    ["wrong member", ({ after }) => { after.runs[1].org_membership_id = "recipient"; }],
+    ["missing full source reads", ({ context }) => { context.owner!.after.atlassian = { confluence: { pages }, audit: [] }; }],
+    ["schema mismatch", ({ after }) => { after.runs[1].input_schema_digest = "different-schema"; }],
+    ["snapshot missing", ({ after }) => { after.snapshots = { owner: { items: [] }, recipient: { items: [] } }; }],
+    ["actor inference absent", ({ context }) => { delete context.owner!.inference; }],
+  ];
+  for (const [name, mutate] of mutations) {
+    const state = fixture(); mutate(state);
+    assert.ok(!observedNativeWorkflowCalls(state.before, state.after, state.context).some((call) => call.callId === "call-rerun"), name);
+  }
+  const recipient = fixture(); recipient.after.runs[2].org_membership_id = "owner";
+  assert.ok(!observedNativeWorkflowCalls(recipient.before, recipient.after, recipient.context).some((call) => call.callId === "call-recipient-run"), "recipient owner fallback");
+});
+
 const workflowMutations: [string, (after: NativeWorkflowObservation, context: WorkflowWitnessContext) => void][] = [
   ["later example run supersedes the required cold-storage rerun", (after) => { after.details = { script: { configObjectId: "workflow", currentVersion: { id: "version", codeDigest: "code", inputSchemaDigest: "schema", outputSchemaDigest: null }, latestSnapshot: { receiptId: "later-example", value: comparison(testInput.customerRequest) } } }; }],
   ["arbitrary distinct digests", (after) => { after.runs[0].script_input_digest = "different-a"; after.runs[1].script_input_digest = "different-b"; }],

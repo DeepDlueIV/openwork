@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { once } from "node:events";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { WORKSHOP_LIMITS, WORKSHOP_SCENES, WORKSHOP_MODEL_ORDER, WORKSHOP_INITIAL_INSTANT, seedSemanticHash, verifyWorkshopScene, verifyWorkshopMatrix } from "./workshop-narrative-contract.ts";
+import { WORKSHOP_LIMITS, WORKSHOP_SCENES, WORKSHOP_TOOL_PERMISSIONS, WORKSHOP_MODEL_ORDER, WORKSHOP_INITIAL_INSTANT, seedSemanticHash, verifyWorkshopScene, verifyWorkshopMatrix } from "./workshop-narrative-contract.ts";
 import type { SceneEvidence, SceneId, SceneVerdict, ObserverSnapshot, JsonRecord } from "./workshop-narrative-contract.ts";
 
 const pageA = { id: "product-a", title: "Atlas 2 – datasheet", body: "<h1>Atlas 2</h1><p>300 kg payload, 10 h runtime.</p>" };
@@ -40,6 +40,8 @@ function accountPresentation(): SceneEvidence {
 test("scene order, deterministic clock and model-independent bounded prompts", () => {
   assert.deepEqual(WORKSHOP_SCENES.map((s) => s.id), ["T10", "T01", "T02", "T03", "T04", "T05", "T06", "T07", "T09", "T08", "T11", "T12"]);
   assert.deepEqual(WORKSHOP_MODEL_ORDER, ["gpt-sol-fast", "qwen-27b"]);
+  assert.deepEqual(WORKSHOP_TOOL_PERMISSIONS, { skill: "allow", webfetch: "deny", websearch: "deny", "browser_*": "deny" });
+  assert.ok(WORKSHOP_SCENES.find((scene) => scene.id === "T07")?.prompt.includes("Use connected APIs only"));
   assert.equal(WORKSHOP_INITIAL_INSTANT, "2026-10-16T15:55:00.000Z");
   assert.ok(WORKSHOP_SCENES.every((s) => s.prompt.includes("workshop starts") && s.prompt.includes("current time thereafter") && !s.prompt.includes("It is Friday")));
   assert.ok(WORKSHOP_SCENES.find((s) => s.id === "T08")?.prompt.includes("negative feedback"));
@@ -290,12 +292,18 @@ test("missing news source calls fails even with digest text and schedule claim",
 test("Windows in description does not satisfy required ITSD Application field", () => {
   const issue = { id: "it", key: "ITSD-999", project: "ITSD", requestType: "reset", description: "Windows login" };
   const guidance = { id: "guidance", title: "IT and security", body: "Never share a password" };
-  const e = evidence("T07", [tool("confluence_get_page", guidance), tool("jira_get_request_types", [{ id: "reset", name: "Reset a password" }]), tool("jira_get_request_type_fields", { fields: [{ field_id: "customfield_10500", name: "Application", required: true, valid_values: [{ value: "10600", label: "Windows login" }] }] }), tool("jira_create_customer_request", { request_key: issue.key }), tool("jira_get_issue", issue)]);
+  const parts = [tool("confluence_get_page", guidance), tool("jira_get_request_types", [{ id: "reset", name: "Reset a password" }]), tool("jira_get_request_type_fields", { fields: [{ field_id: "customfield_10500", name: "Application", required: true, valid_values: [{ value: "10600", label: "Windows login" }] }] }), tool("jira_create_customer_request", { request_key: issue.key }), tool("jira_get_issue", issue)];
+  const e = evidence("T07", parts);
   e.before.atlassian = { confluence: { pages: [guidance] }, jira: { issues: [] } };
   e.after.atlassian = { confluence: { pages: [guidance] }, jira: { issues: [issue] } };
   assert.equal(verifyWorkshopScene(e).status, "FAIL");
   Object.assign(issue, { application: "Windows login" });
   assert.equal(verifyWorkshopScene(e).status, "PASS");
+  for (const name of ["webfetch", "browser_tabs", "websearch"]) {
+    replaceParts(e, [...parts, tool(name, { denied: true })]);
+    assert.equal(verifyWorkshopScene(e).status, "FAIL", `${name} is not needed after the connected API readback`);
+    assert.ok(verifyWorkshopScene(e).reasons.includes("T07 must finish through connected APIs without browsing or external fetch/search attempts"));
+  }
 });
 
 test("DOC ticket must persist nora assignee, not just mention Nora", () => {

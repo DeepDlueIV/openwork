@@ -6,7 +6,7 @@ import { execFile } from "node:child_process";
 import { setTimeout as delay } from "node:timers/promises";
 import { promisify } from "node:util";
 import { createHash, randomUUID } from "node:crypto";
-import { seedSemanticHash, observedWorkshopCalls, type SceneEvidence } from "./workshop-narrative-contract.ts";
+import { seedSemanticHash, observedWorkshopCalls, WORKSHOP_TOOL_PERMISSIONS, type SceneEvidence } from "./workshop-narrative-contract.ts";
 import { workshopRunBudget } from "./workshop-run-budget.ts";
 import { workshopRunIdentity } from "./workshop-run-identity.ts";
 import { workshopTurnDiagnostic } from "./workshop-turn-diagnostics.ts";
@@ -87,12 +87,12 @@ export async function workshopNarrative(seed: Seed, { place }: { place: Place })
     const org = await seed.api(den.admin, "/v1/org");
     const orgId = record(org.body) && record(org.body.organization) ? org.body.organization.id : undefined;
     if (typeof orgId !== "string") throw new Error("Owned workshop organization missing.");
-    const brief = `# Acme Robotics workshop\n\nThis is a fictional workplace. Today is 2026-10-16, 08:55 America/Los_Angeles. Use only connected owned tools and files in this workspace. No external business connectors or mail sends. News links are fictional fixtures, not the public web.\n\nProducts: Atlas 2 and Atlas Lift; full datasheets in Confluence PROD. Customer account plans in SALES document revenue, orders, relationship, growth and churn. Jira DOC belongs to documentation; Nora Patel is the documentation owner. ITSD is the IT service desk and password-reset requests require an application field. Use Windows as the requested application.\n\nDiscover exact service capabilities and schemas. Capability search finds tools, not documents. Confluence search is excerpt-only: read complete pages. Never return literal data from a script as if it came from a provider. Outlook uses mail_search/mail_read/mail_create_reply_draft; OneDrive uses file_find/file_read/file_write/file_create_folder. Calendar supports actual event reads/create/update; do not claim full Outlook parity. Native Workflows require real retained successful executions, saving and sharing, not a local text description.\n\nAsk before external searches when an internal policy is absent. Do not invent policy. Office artifacts must contain actual valid OOXML and be grounded in the report, not copied unrelated seed slides.\n`;
+    const brief = `# Acme Robotics workshop\n\nThis is a fictional workplace. Today is 2026-10-16, 08:55 America/Los_Angeles. Use only connected owned tools and files in this workspace. No external business connectors or mail sends. News links are fictional fixtures, not the public web.\n\nProducts: Atlas 2 and Atlas Lift; full datasheets in Confluence PROD. Customer account plans in SALES document revenue, orders, relationship, growth and churn. Jira DOC belongs to documentation; Nora Patel is the documentation owner. ITSD is the IT service desk and password-reset requests require an application field. Use Windows as the requested application.\n\nDiscover exact service capabilities and schemas. Capability search finds tools, not documents. Confluence search is excerpt-only: read complete pages. Never return literal data from a script as if it came from a provider. Outlook uses mail_search/mail_read/mail_create_reply_draft; OneDrive uses file_find/file_read/file_write/file_create_folder. Calendar supports actual event reads/create/update; do not claim full Outlook parity. Native Workflows require real retained successful executions, saving and sharing, not a local text description.\n\nAgent webfetch, external search and browser tools are disabled in this connected-API rehearsal. Use connected APIs; ask People Ops when an internal policy is absent. Do not invent policy. Office artifacts must contain actual valid OOXML and be grounded in the report, not copied unrelated seed slides.\n`;
     const appFor = async (identity: "admin" | "teammate", port?: number) => {
       const workspacePath = join(root, identity, "workspace");
       await mkdir(workspacePath, { recursive: true });
       await writeFile(join(workspacePath, "WORKSHOP.md"), brief);
-      await writeFile(join(workspacePath, "opencode.json"), JSON.stringify({ provider: { [inference.providerId]: inference.provider }, model: `${inference.providerId}/${inference.modelId}`, small_model: `${inference.providerId}/${inference.modelId}`, enabled_providers: [inference.providerId], permission: { skill: "allow", webfetch: "ask", websearch: "ask" } }));
+      await writeFile(join(workspacePath, "opencode.json"), JSON.stringify({ provider: { [inference.providerId]: inference.provider }, model: `${inference.providerId}/${inference.modelId}`, small_model: `${inference.providerId}/${inference.modelId}`, enabled_providers: [inference.providerId], permission: WORKSHOP_TOOL_PERMISSIONS }));
       const app = await seed.appWeb({ name: `workshop-${profile}-${identity}`, engine: "v1", workspacePath, mouse: true, den: den.ref, ...(port ? { webPort: port } : {}), env: { VITE_OPENWORK_FEEDBACK_URL: feedback.feedbackUrl, VITE_DISABLE_OPENWORK_MODELS: "1" } });
       resources.adopt(app, (owned) => owned.stop());
       // Seed-only profile bootstrap; task actions below use the real composer and product controls.
@@ -132,7 +132,12 @@ export async function workshopNarrative(seed: Seed, { place }: { place: Place })
     };
     const assertIsolation = async () => {
       await assertAcmeConnections(den, ownedOrigins);
-      for (const identity of ["owner", "recipient"] as const) assertAcmeMcpOrigins(await engineRead(identity, "/config"), den.ref.apiUrl);
+      for (const identity of ["owner", "recipient"] as const) {
+        const config = await engineRead(identity, "/config");
+        assertAcmeMcpOrigins(config, den.ref.apiUrl);
+        const permissions = record(config) && record(config.permission) ? config.permission : {};
+        if (Object.entries(WORKSHOP_TOOL_PERMISSIONS).some(([key, value]) => permissions[key] !== value)) throw new Error("Owned engine did not retain the shared connected-API tool restrictions");
+      }
     };
     await assertIsolation();
     const initial = { atlassian: await stateJson(`${atlassian.baseUrl}/state`), microsoft: await stateJson(`${microsoft.baseUrl}/state`), news: await stateJson(`${news.baseUrl}/state`) };

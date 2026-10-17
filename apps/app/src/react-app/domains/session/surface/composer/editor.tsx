@@ -13,6 +13,7 @@ import {
   $createParagraphNode,
   $createTextNode,
   $getNearestNodeFromDOMNode,
+  $getNodeByKey,
   $getRoot,
   $getSelection,
   $nodesOfType,
@@ -1388,8 +1389,17 @@ function LineBoundaryKeysPlugin() {
   return null;
 }
 
+/** The point's node still exists, is in the document, and the offset is still inside it. */
+function $isLivePoint(point: { key: NodeKey; offset: number; type: "text" | "element" }): boolean {
+  const node = $getNodeByKey(point.key);
+  if (!node || !node.isAttached()) return false;
+  if (point.type === "text") return $isTextNode(node) && point.offset <= node.getTextContentSize();
+  return $isElementNode(node) && point.offset <= node.getChildrenSize();
+}
+
 function $isCaretAtPromptStart(selection = $getSelection()): boolean {
   if (!$isRangeSelection(selection) || !selection.isCollapsed() || selection.anchor.offset !== 0) return false;
+  if (!$isLivePoint(selection.anchor)) return false;
   const node = selection.anchor.getNode();
   const first = $getRoot().getFirstDescendant();
   return node.is($getRoot()) || node.is($getRoot().getFirstChild()) || Boolean(first && node.is(first));
@@ -1403,12 +1413,16 @@ function KeepCaretOnRefocusPlugin() {
   const [editor] = useLexicalComposerContext();
 
   useEffect(() => {
-    let saved: ReturnType<typeof $createRangeSelection> | null = null;
+    // The caret together with the text it was in: a caret is only put back
+    // into the same text, never after a send, clear or any other edit.
+    let saved: { selection: ReturnType<typeof $createRangeSelection>; text: string } | null = null;
     let pointerFocus = false;
     const unregisterUpdate = editor.registerUpdateListener(({ editorState }) => {
       editorState.read(() => {
         const selection = $getSelection();
-        if ($isRangeSelection(selection)) saved = selection.clone();
+        const text = $getRoot().getTextContent();
+        if ($isRangeSelection(selection)) saved = { selection: selection.clone(), text };
+        else if (saved && saved.text !== text) saved = null;
       });
     });
     const onPointerDown = () => { pointerFocus = true; };
@@ -1422,9 +1436,11 @@ function KeepCaretOnRefocusPlugin() {
       requestAnimationFrame(() => {
         if (document.activeElement !== editor.getRootElement()) return;
         editor.update(() => {
-          // Only undo the browser's jump to the start; a caret code placed on purpose stays.
-          if (!$isCaretAtPromptStart() || $isCaretAtPromptStart(restore)) return;
-          if (restore.anchor.getNode().isAttached() && restore.focus.getNode().isAttached()) $setSelection(restore.clone());
+          // Only undo the browser's jump to the start, in unchanged text; a caret code placed on purpose stays.
+          if ($getRoot().getTextContent() !== restore.text) return;
+          if (!$isLivePoint(restore.selection.anchor) || !$isLivePoint(restore.selection.focus)) return;
+          if (!$isCaretAtPromptStart() || $isCaretAtPromptStart(restore.selection)) return;
+          $setSelection(restore.selection.clone());
         });
       });
     };

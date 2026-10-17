@@ -16,7 +16,7 @@ This is an Atlassian-inspired, deliberately bounded fixture, not a pixel-identic
 
 ## Implemented interactions
 
-- Jira: project navigation/deep links, list and board views, project/status/assignee filters, updated/key sorting, search, issue creation with project context, issue summary/description editing, comments, status transitions, priority and assignee changes.
+- Jira: project navigation/deep links, list and board views, project/status/assignee filters, updated/key sorting, search, issue creation with project context, issue summary/description editing, safe Jira wiki heading/emphasis/list/code rendering, comments, status transitions, priority and assignee changes.
 - Confluence: space-scoped search, linked ancestors, native nested page disclosures, selected-page state, preserved disclosure state across polling, real document heading anchors, metadata, labels, safe rich-text editing and version-aware saves.
 - The board is a projection of shared REST issue state. Cards open real issue detail; it does not pretend to offer drag-and-drop.
 - Polling preserves drafts and focus, reflects agent-side writes, and keeps the last known document visible when the backend is offline.
@@ -46,4 +46,4 @@ Actual 1440×1000 captures are emitted when `DEMO_SCREENSHOT_DIR` is set:
 - `confluence-handbook.png`
 - `confluence-offline.png`
 
-The latest local artifacts live under the approved OpenCode temporary directory in `atlassian-ui-evidence/`; they are not committed. Parent session owns connected rehearsal, runtime isolation, API/parity verification, and any final evidence publication. This browser proof makes no claim that the connected workshop is safe or ready.
+The final local artifacts live in the ignored `evals/results/enterprise-workshop/atlassian/` directory; they are not committed. See `worlds/enterprise-workshop-handoff.md` for the separately verified connected rehearsal, runtime isolation and API/parity results. This standalone browser test alone is not an end-to-end verdict.

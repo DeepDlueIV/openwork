@@ -89,11 +89,11 @@ export function parseGatewayProvider(value: unknown): GatewayProvider | null {
  * The same two calls the desktop makes: the usable list, then `connect` per
  * provider with models (which carries the member's gateway key).
  */
-export async function fetchGatewayInventory(fetcher: Fetch, session: DenSession, signal?: AbortSignal): Promise<GatewayInventory> {
-  return fetchGatewayInventoryOnce(fetcher, session, signal, false)
+export async function fetchGatewayInventory(fetcher: Fetch, session: DenSession, signal?: AbortSignal, credentialScope: "den" | "desktop" = "den"): Promise<GatewayInventory> {
+  return fetchGatewayInventoryOnce(fetcher, session, signal, false, credentialScope)
 }
 
-async function fetchGatewayInventoryOnce(fetcher: Fetch, session: DenSession, signal: AbortSignal | undefined, relisted: boolean): Promise<GatewayInventory> {
+async function fetchGatewayInventoryOnce(fetcher: Fetch, session: DenSession, signal: AbortSignal | undefined, relisted: boolean, credentialScope: "den" | "desktop"): Promise<GatewayInventory> {
   let listed: unknown
   try {
     listed = await denRequest(fetcher, session, "/v1/inference-providers?scope=usable", { signal })
@@ -131,14 +131,15 @@ async function fetchGatewayInventoryOnce(fetcher: Fetch, session: DenSession, si
       if (!(error instanceof DenRequestError) || error.status !== 403) throw error
       // Access may have changed between list and connect. Reconcile the whole
       // list once; a still-denied provider must not retain its old credentials.
-      if (!relisted) return fetchGatewayInventoryOnce(fetcher, session, signal, true)
+      if (!relisted) return fetchGatewayInventoryOnce(fetcher, session, signal, true, credentialScope)
       skipped.push({ id: provider.id, name: provider.name, reason: "missing_credentials" })
       continue
     }
     const detail = isRecord(connected) ? connected.inferenceProvider : null
     const key = isRecord(detail) ? readString(detail.apiKey) : null
     const parsed = parseGatewayProvider(detail) ?? provider
-    if (!key || !key.startsWith("ow_gw_") || parsed.id !== provider.id) {
+    const allowedKey = credentialScope === "desktop" ? key === "ow_local_catalog" : key?.startsWith("ow_gw_")
+    if (!key || !allowedKey || parsed.id !== provider.id) {
       skipped.push({ id: provider.id, name: provider.name, reason: "missing_credentials" })
       continue
     }

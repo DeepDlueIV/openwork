@@ -11,13 +11,14 @@ import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { SseParser } from "../../../packages/opencode-plugin/src/inventory-events.ts";
 import { providerCredentialBrokerSource } from "../src/opencode-v2-provider-channel.ts";
+import { assertNativeSecretsAbsent, localProviderAccess } from "./fixtures/native-provider-security-assertions.ts";
 
 // This is deliberately a binary integration test, not a mock of the provider fold.
 // OPENWORK_TEST_OPENCODE2 may point at the same pinned binary on Linux/CI.
 const binary = process.env.OPENWORK_TEST_OPENCODE2 ?? "/Applications/OpenWork.app/Contents/Resources/sidecars/opencode2";
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
-const providerID = "ipr_native_sync";
-const disabledID = "ipr_native_disabled";
+const providerID = "ipr_nativesync";
+const disabledID = "ipr_nativedisabled";
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -157,9 +158,10 @@ test("pinned V2 replays desktop inventory and real model filters through native 
   });
   assert.equal(bridgeBuild.status, 0, bridgeBuild.stderr);
   const bridgeModule: typeof import("../src/opencode-v2-provider-session.ts") = await import(pathToFileURL(bridgeModulePath).href);
-  const bridge = await bridgeModule.createV2ProviderSessionBridge(() => session ? {
+  const createBridge = () => bridgeModule.createV2ProviderSessionBridge(() => session ? {
     baseUrl: session.apiBaseUrl, token: session.token, orgId: session.orgId,
   } : null);
+  let bridge = await createBridge();
   cleanups.push(() => bridge.close());
 
   // Source models are NOT in config: bundled ConfigProvider's later model transform
@@ -189,7 +191,7 @@ export default {
       }
     } } });
     const disposeDesktop = await desktop.setup({ ...ctx, options: {
-      liveProviderSync: true, desktopSession: ${JSON.stringify(bridge.url)}
+      liveProviderSync: true, desktopSession: process.env.OPENWORK_TEST_SESSION_ENDPOINT
     } });
     return async () => {
       await disposeDesktop?.();
@@ -227,6 +229,7 @@ export default {
         OPENCODE_PASSWORD: "native-engine-test-password",
         OPENWORK_PROVIDER_SESSION_FD: "3",
         OPENWORK_PROVIDER_SESSION_BROKER: broker,
+        OPENWORK_TEST_SESSION_ENDPOINT: bridge.url,
       },
       stdio: ["ignore", "pipe", "pipe", "pipe"],
     });
@@ -256,6 +259,8 @@ export default {
   cleanups.push(stopChild);
   const restart = async () => {
     await stopChild();
+    await bridge.close();
+    bridge = await createBridge();
     logs = "";
     child = startChild();
     captureLogs();
@@ -379,9 +384,25 @@ export default {
   });
 
   await scenario("11: warm engine restart reads persistent cache while Den is unavailable, then reconciles", async () => {
+    const oldAccess = localProviderAccess(await request(`/api/provider?location[directory]=${encodeURIComponent(directory)}`), providerID, gatewayKey("native-session-one", "org_native_one"));
     inventoryStatus = 503;
     await restart();
     await until(models, value => value.length === 1 && value[0]?.name === "Recovered by retry", "real V2 storage restores matching cache");
+    const access = localProviderAccess(await request(`/api/provider?location[directory]=${encodeURIComponent(directory)}`), providerID, gatewayKey("native-session-one", "org_native_one"));
+    assert.notEqual(access.apiKey, oldAccess.apiKey, "warm native cache rebinds to this engine's new ephemeral inference key");
+    assert.notEqual(access.baseURL, oldAccess.baseURL, "warm native cache rebinds to the new scoped loopback bridge");
+    const inference = (apiKey: string) => fetch(`${access.baseURL.replace(/\/$/, "")}/chat/completions`, {
+      method: "POST", headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+      body: JSON.stringify({ model: "gwm_keep", messages: [{ role: "user", content: "Offline catalog is not inference authorization" }] }), signal: AbortSignal.timeout(2000),
+    });
+    const stale = await inference(oldAccess.apiKey);
+    assert.ok([401, 403, 409, 410].includes(stale.status), "old engine inference key cannot authorize the restarted bridge");
+    await stale.body?.cancel();
+    const offline = await inference(access.apiKey);
+    assert.ok([502, 503].includes(offline.status), `cached catalog remains usable, but Den connect must authorize inference while offline: ${offline.status}`);
+    await offline.body?.cancel();
+    assert.equal(inferenceRequests, 0, "offline inference never reaches an upstream Gateway using cached reusable credentials");
+    await assertNativeSecretsAbsent(home, [gatewayKey("native-session-one", "org_native_one")]);
     providers = [gateway(providerID, [{ id: "gwm_added", name: "Fresh after restart" }])];
     inventoryStatus = 200;
     await until(models, value => value.length === 1 && value[0]?.name === "Fresh after restart", "restart retry replaces cached model");
@@ -403,9 +424,10 @@ export default {
     session = { apiBaseUrl: mockUrl, token: "native-session-two", orgId: "org_native_one" };
     providers = [gateway(providerID, [{ id: "gwm_keep", name: "Rotated token" }])];
     await until(models, value => value.length === 1 && value[0]?.name === "Rotated token", "fresh token authorizes new snapshot");
-    const rotatedProviders = JSON.stringify(await request(`/api/provider?location[directory]=${encodeURIComponent(directory)}`));
-    assert.ok(rotatedProviders.includes(gatewayKey("native-session-two", "org_native_one")), "native provider uses rotated Gateway credential");
-    assert.ok(!rotatedProviders.includes(gatewayKey("native-session-one", "org_native_one")));
+    const rotatedProviders = await request(`/api/provider?location[directory]=${encodeURIComponent(directory)}`);
+    const oldAccountAccess = localProviderAccess(rotatedProviders, providerID, gatewayKey("native-session-two", "org_native_one"));
+    assert.ok(!JSON.stringify(rotatedProviders).includes(gatewayKey("native-session-one", "org_native_one")));
+    await assertNativeSecretsAbsent(home, [gatewayKey("native-session-one", "org_native_one"), gatewayKey("native-session-two", "org_native_one")]);
     await until(async () => subscriptions.size, size => size > 0, "rotated-token subscription");
     holdNextInventory = true;
     changed();
@@ -419,9 +441,17 @@ export default {
     heldInventory = undefined;
     await delay(250);
     assert.deepEqual((await models()).map(model => model.name), ["Second account"], "late old-account fetch cannot overwrite the new fold");
-    const switchedProviders = JSON.stringify(await request(`/api/provider?location[directory]=${encodeURIComponent(directory)}`));
-    assert.ok(switchedProviders.includes(gatewayKey("native-session-three", "org_native_two")));
-    assert.ok(!switchedProviders.includes(gatewayKey("native-session-two", "org_native_one")), "native provider retains no old account Gateway key");
+    const switchedProviders = await request(`/api/provider?location[directory]=${encodeURIComponent(directory)}`);
+    const currentAccess = localProviderAccess(switchedProviders, providerID, gatewayKey("native-session-three", "org_native_two"));
+    assert.notEqual(currentAccess.apiKey, oldAccountAccess.apiKey, "account/org switch rotates the bound local inference authority");
+    assert.ok(!JSON.stringify(switchedProviders).includes(gatewayKey("native-session-two", "org_native_one")), "native provider retains no old account reusable Gateway key");
+    const staleAccount = await fetch(`${currentAccess.baseURL.replace(/\/$/, "")}/chat/completions`, {
+      method: "POST", headers: { authorization: `Bearer ${oldAccountAccess.apiKey}`, "content-type": "application/json" },
+      body: JSON.stringify({ model: "gwm_added", messages: [{ role: "user", content: "An old identity must not authorize the new organization" }] }), signal: AbortSignal.timeout(2000),
+    });
+    assert.ok([401, 403, 409, 410].includes(staleAccount.status), "old identity's captured ephemeral key cannot invoke the new org's Gateway");
+    await staleAccount.body?.cancel();
+    await assertNativeSecretsAbsent(home, [gatewayKey("native-session-two", "org_native_one"), gatewayKey("native-session-three", "org_native_two")]);
     assert.ok(credentials.slice(credentialBoundary).some(item => item.token === "Bearer native-session-three" && item.org === "org_native_two"));
     // Every request is also checked against the currently selected identity by the fake Den.
     session = null;
@@ -430,7 +460,9 @@ export default {
       destroyed: response.destroyed, closed: response.closed,
       writableEnded: response.writableEnded, writableFinished: response.writableFinished,
     })), responses => responses.length === 0, "sign-out closes old subscription");
-    assert.ok(!JSON.stringify(await request(`/api/provider?location[directory]=${encodeURIComponent(directory)}`)).includes(gatewayKey("native-session-three", "org_native_two")), "sign-out removes the actual native Gateway credential");
+    const signedOutProviders = JSON.stringify(await request(`/api/provider?location[directory]=${encodeURIComponent(directory)}`));
+    assert.ok(!signedOutProviders.includes(gatewayKey("native-session-three", "org_native_two")), "sign-out exposes no reusable Gateway credential");
+    assert.ok(!signedOutProviders.includes(currentAccess.apiKey), "sign-out removes the actual native ephemeral inference credential");
     const signedOutReads = inventoryReads;
     await delay(1100);
     assert.equal(inventoryReads, signedOutReads, "signed out engine never fetches old account inventory");
@@ -493,6 +525,6 @@ export default {
   });
   assert.equal(await readFile(configPath, "utf8"), config, "live inventory never materializes providers/models into config");
   assert.deepEqual(await request("/api/config"), initialConfig, "all native config sources remain unchanged");
-  assert.equal(inferenceRequests, 0, "no external or synthetic inference request is needed");
+  assert.equal(inferenceRequests, 0, "offline and stale-key loopback probes never reach upstream inference");
   assert.equal(events.some(event => event.type === "catalog.updated"), false);
 });

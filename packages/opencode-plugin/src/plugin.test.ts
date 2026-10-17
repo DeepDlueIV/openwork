@@ -19,7 +19,7 @@ import { createDesktopProviderPlugin as createDesktopProviderPluginSource, isDes
 import { createHash } from "node:crypto"
 import type { DenSession, Fetch } from "./den.ts"
 import { setTimeout as delay } from "node:timers/promises"
-import { API, createFakeDen, GATEWAY_KEY, MCP_TOKEN, ORG_ID, PROVIDER_ID, SESSION_TOKEN } from "./test-den.ts"
+import { API, createFakeDen, gatewaySummary, GATEWAY_KEY, MCP_TOKEN, ORG_ID, PROVIDER_ID, SESSION_TOKEN } from "./test-den.ts"
 
 // Emulate the server-only transport around existing fake Den fixtures. The
 // plugin sees only identity metadata and local inventory responses, never token.
@@ -36,15 +36,18 @@ function createDesktopProviderPlugin(deps: NonNullable<Parameters<typeof createD
       assert.ok(typeof value.apiBaseUrl === "string" && typeof value.token === "string" && (value.orgId === null || typeof value.orgId === "string"))
       source = { apiBaseUrl: value.apiBaseUrl, token: value.token, orgId: value.orgId }
       const identity = createHash("sha256").update(JSON.stringify(source)).digest("hex")
-      return Response.json({ apiBaseUrl: source.apiBaseUrl, orgId: source.orgId, identity })
+      return Response.json({ apiBaseUrl: source.apiBaseUrl, orgId: source.orgId, identity,
+        inferenceOrigin: url.origin, inferenceKey: `ow_local_${"b".repeat(64)}` })
     }
     assert.ok(source, "inventory transport requires current identity")
     assert.equal(init?.method ?? "GET", "GET")
     assert.equal(new Headers(init?.headers).get("authorization"), "Bearer capability")
     assert.match(new Headers(init?.headers).get("x-openwork-provider-identity") ?? "", /^[a-f0-9]{64}$/)
-    return upstream(source.apiBaseUrl + url.pathname + url.search, { ...init, headers: {
+    const response = await upstream(source.apiBaseUrl + url.pathname + url.search, { ...init, headers: {
       authorization: `Bearer ${source.token}`, "x-openwork-org-id": source.orgId ?? "", "x-openwork-legacy-org-id": source.orgId ?? "",
     } })
+    if (response.headers.get("content-type")?.includes("text/event-stream")) return response
+    return new Response((await response.text()).replace(/ow_gw_[A-Za-z0-9_-]+/g, "ow_local_catalog"), { status: response.status, headers: response.headers })
   } })
 }
 
@@ -451,7 +454,8 @@ test("desktop bridge accepts only literal loopback and never follows redirects o
     calls++
     assert.equal(new Headers(init?.headers).get("authorization"), "Bearer process-capability")
     assert.equal(init?.redirect, "error")
-    return Response.json({ apiBaseUrl: API, identity: "a".repeat(64), orgId: ORG_ID })
+    return Response.json({ apiBaseUrl: API, identity: "a".repeat(64), orgId: ORG_ID,
+      inferenceOrigin: "http://127.0.0.1:1234", inferenceKey: `ow_local_${"b".repeat(64)}` })
   }, "http://127.0.0.1:1234/session", "process-capability")
   assert.equal(calls, 1)
   assert.equal(session?.identity, "a".repeat(64))
@@ -647,6 +651,43 @@ test("five desktop Locations share one session stream, fan out changes, and rele
   assert.ok(hosts.slice(1).every(host => host.providers().size === 1))
   for (const cleanup of cleanups.slice(1)) await cleanup?.()
   assert.equal(den.cancelled, 1, "last reference closed the stream")
+})
+
+test("desktop warm offline cache rebinds public catalogs to a new engine port/key without persisting inference credentials", async () => {
+  const identity = "a".repeat(64)
+  const firstOrigin = "http://127.0.0.1:1234"
+  const nextOrigin = "http://127.0.0.1:5678"
+  const firstKey = `ow_local_${"b".repeat(64)}`
+  const nextKey = `ow_local_${"c".repeat(64)}`
+  const make = (origin: string, key: string, offline: boolean) => {
+    const endpoint = `${origin}/session`
+    return createDesktopProviderPluginSource({ capability: () => "inventory-capability", retryMs: 60_000, fetch: async (url, init) => {
+      assert.equal(new URL(url).origin, origin, "no direct Gateway/Den inference credential fetches in the engine")
+      if (url === endpoint) return Response.json({ apiBaseUrl: API, identity, orgId: ORG_ID, inferenceOrigin: origin, inferenceKey: key })
+      assert.equal(new Headers(init?.headers).get("x-openwork-provider-identity"), identity)
+      if (offline) throw new Error("inventory unavailable")
+      if (url.endsWith("/inventory/events")) return Response.json({ error: "feature_disabled" }, { status: 404 })
+      if (url.endsWith("/connect")) return Response.json({ inferenceProvider: { ...gatewaySummary(), apiKey: "ow_local_catalog" } })
+      return Response.json({ inferenceProviders: [gatewaySummary()] })
+    } })
+  }
+  const one = createHost({ desktopSession: `${firstOrigin}/session`, liveProviderSync: true })
+  const stopOne = await make(firstOrigin, firstKey, false).setup(one.ctx)
+  await settle()
+  assert.equal(one.providers().get(PROVIDER_ID)?.info.settings?.apiKey, firstKey)
+  assert.equal(one.providers().get(PROVIDER_ID)?.info.settings?.baseURL, `${firstOrigin}/api/v1/providers/${PROVIDER_ID}`)
+  const portable = JSON.stringify([...one.storage])
+  assert.ok(portable.includes("ow_local_catalog"))
+  for (const forbidden of [GATEWAY_KEY, SESSION_TOKEN, firstKey, firstOrigin, "inventory-capability"]) assert.ok(!portable.includes(forbidden), forbidden)
+  await stopOne?.()
+  const two = createHost({ desktopSession: `${nextOrigin}/session`, liveProviderSync: true })
+  for (const [key, value] of one.storage) two.storage.set(key, value)
+  const stopTwo = await make(nextOrigin, nextKey, true).setup(two.ctx)
+  await settle()
+  assert.equal(two.providers().get(PROVIDER_ID)?.info.settings?.apiKey, nextKey)
+  assert.equal(two.providers().get(PROVIDER_ID)?.info.settings?.baseURL, `${nextOrigin}/api/v1/providers/${PROVIDER_ID}`)
+  assert.ok(!JSON.stringify([...two.storage]).includes(nextKey))
+  await stopTwo?.()
 })
 
 test("five standalone Locations share a stream and one account change cannot abort the others", async () => {

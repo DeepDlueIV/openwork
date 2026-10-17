@@ -72,7 +72,13 @@ test("credential handoff requires its dedicated capability and reads the current
     assert.equal(signedOut.headers.get("cache-control"), "no-store");
     assert.equal(await signedOut.json(), null);
     current = session;
-    assert.deepEqual(await (await fetch(bridge.url, { headers })).json(), { apiBaseUrl: session.baseUrl, identity: providerSessionIdentity(session), orgId: session.orgId });
+    const metadata = await (await fetch(bridge.url, { headers })).json();
+    assert.equal(metadata.apiBaseUrl, session.baseUrl);
+    assert.equal(metadata.identity, providerSessionIdentity(session));
+    assert.equal(metadata.orgId, session.orgId);
+    assert.equal(metadata.inferenceOrigin, new URL(bridge.url).origin);
+    assert.match(metadata.inferenceKey, /^ow_local_[a-f0-9]{64}$/);
+    assert.ok(!JSON.stringify(metadata).includes(session.token));
     current = { ...session, token: "new-test-secret", orgId: "org_other" };
     assert.equal((await (await fetch(bridge.url, { headers })).json()).orgId, "org_other");
     current = null;

@@ -29,7 +29,11 @@ test("a stolen engine capability permits inventory only, never Den sessions, adm
   const endpoint = new URL(bridge.url).origin;
   try {
     const metadata = await (await fetch(bridge.url, { headers: auth })).json();
-    assert.deepEqual(metadata, { apiBaseUrl: original.baseUrl, orgId: original.orgId, identity: providerSessionIdentity(original) });
+    assert.equal(metadata.apiBaseUrl, original.baseUrl);
+    assert.equal(metadata.orgId, original.orgId);
+    assert.equal(metadata.identity, providerSessionIdentity(original));
+    assert.equal(metadata.inferenceOrigin, endpoint);
+    assert.match(metadata.inferenceKey, /^ow_local_[a-f0-9]{64}$/);
     assert.ok(!JSON.stringify(metadata).includes(original.token));
     const headers = { ...auth, "x-openwork-provider-identity": metadata.identity, "x-openwork-org-id": "org_evil", "x-malicious": "yes", cookie: "untrusted" };
     for (const path of ["/v1/me", "/v1/org", "/v1/admin", "/mcp/agent", "/v1/mcp/token", "/api/auth/sign-out", "/session?token=true", "/v1/inference-providers?scope=all", "/v1/inference-providers?scope=usable&extra=1", "/v1/inference-providers/ipr_fixture/connect?extra=1"]) {
@@ -48,7 +52,8 @@ test("a stolen engine capability permits inventory only, never Den sessions, adm
       assert.equal(response.headers.get("location"), null);
       const body = await response.text();
       assert.ok(!body.includes(original.token));
-      assert.ok(path.endsWith("/events") ? body.includes("event: inventory.changed\ndata: {}") : body.includes("ow_gw_inventory_only"));
+      assert.ok(!body.includes("ow_gw_"));
+      assert.ok(path.endsWith("/events") ? body.includes("event: inventory.changed\ndata: {}") : body.includes("ow_local_catalog"));
     }
     const identity = metadata.identity;
     session = { ...original, token: "different-session", orgId: "org_other" };

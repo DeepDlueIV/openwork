@@ -132,6 +132,29 @@ before its correction and now passes: only an authenticated organization
 response confirming rollout-off can restore legacy polling. Unavailable,
 denied or malformed responses retain the authority fence.
 
+## Long-lived Gateway key and shared-registry boundaries
+
+Warden's subsequent review of `4a375d76c7ab23ab07d043ff0f35fe7fe66002cb`
+identified two further exposures: reusable Gateway credentials in the engine,
+and credential-returning listener options in the global shared registry.
+
+Desktop inventory now contains only a dummy catalog credential. The server
+keeps reusable Gateway keys private and freshly resolves authorized Den
+`connect` for each inference request. The engine uses an identity-bound,
+per-bridge ephemeral loopback key; old-engine/account keys are denied. Fresh
+and cached catalogs rebind to the current route/key, and persistent catalog
+storage contains neither reusable credential. There is no server catalog
+cache, materialization or polling. OpenAI-compatible, Anthropic and Gemini
+HTTP requests are exercised through the real native engine; quota 429s remain
+terminal after exactly one request. Cross-chunk response redaction prevents
+upstream diagnostic echoes from exposing either reusable credential.
+
+The process-wide subscription hub now exposes only a frozen join facade.
+Its listener map, raw options and credential-resolution callbacks are private
+in a closure; callers cannot look up another session by hash, mutate its
+owner/fetcher, or retrieve credentials. Separate-graph/fanout/lifetime tests
+retain the original sharing and cancellation assertions.
+
 ## Scenario matrix
 
 All fixtures use isolated seeded organizations or synthetic localhost native
@@ -170,23 +193,42 @@ The test subscribes to process completion before sending the descriptor packet
 so an absent runtime reports its spawn error rather than masking it with EPIPE.
 Neither runtime variant is skipped, and the credential assertions are unchanged.
 
+## CodeQL fixture correction
+
+On `4a375d76c7ab23ab07d043ff0f35fe7fe66002cb`, the three CodeQL analysis
+jobs succeeded, but the derived CodeQL policy check `117326154694` failed
+with **one new high alert**. Inspected analysis `1971936587` and its SARIF:
+CodeQL **2.27.2**, rule `js/clear-text-storage-of-sensitive-data`, points to
+`live-provider-session-project-plugin-native.test.ts:31`, where the synthetic
+Den server put its synthetic bearer into a session cookie. The query command
+was `codeql database run-queries` in the unchanged GitHub CodeQL workflow;
+this is not a failed application test or a pre-existing exception.
+
+The cookie fixture now uses a non-auth canary with secure attributes. The
+adversarial bearer remains in the upstream body/header to exercise redaction,
+and every metadata/body/header/cookie no-leak assertion remains unchanged.
+The malicious native-plugin test passes **1/0/0** on Bun and Electron Node
+(using the TypeScript loader for source `.js` imports). The CodeQL CLI is not
+installed locally; the unchanged CI scanner must confirm the correction on
+the final pushed head before completion. No query or alert was suppressed.
+
 ## Local results
 
 - Exact CI provisioned command:
   `node evals/scripts/run-parity-proof.mjs evals/proofs/live-provider-sync.proof.test.ts`
   with external `opencode2` absent from PATH and v1 available.
 - Placement: **local**; real appWeb + Den + pinned OpenCode **2.0.26**.
-- **Exit 0; 3 passed, 0 failed, 0 skipped**; 210.62 seconds (scoped bridge).
-- CLI receipt: `evals/results/.testkit/cli-run-1792216739624-88151.json`.
+- **Exit 0; 3 passed, 0 failed, 0 skipped**; 201.01 seconds (ephemeral inference transport and private shared hub).
+- CLI receipt: `evals/results/.testkit/cli-run-1792218944774-6027.json`.
 - Three runs each record **18 acknowledged mutations**, exact model IDs/names,
   absence/sibling preservation, and unchanged document/route/open picker.
 - 54 timed observations: 51 visible picker transitions plus three negative-scope
   observations where the signed-in member's picker correctly remains unchanged.
-- Visible-transition latency: **1,020–2,072 ms**, median **1,533 ms**. Including
-  negative-scope observations: 11–2,072 ms, median 1,532 ms. These are local
+- Visible-transition latency: **1,019–2,069 ms**, median **1,534 ms**. Including
+  negative-scope observations: 10–2,069 ms, median 1,533 ms. These are local
   ACK-to-observation measurements, not a production SLA or a best-case sample.
-- Plugin tests: **126/0/0**. Server unit/bridge/quota/routing-race tests:
-  **20/0/0**. Den unit + real-DB isolation tests: **17/0/0**.
+- Plugin tests: **131/0/0**. Server unit/bridge/quota/routing-race and inference-proxy tests:
+  **24/0/0**. Den unit + real-DB isolation tests: **17/0/0**.
 - Native lifecycle and managed/new-workspace tests pass separately on Bun and
   Electron Node with both manifest-provisioned and installed 2.0.26 binaries
   (eight commands, each exit 0, one framework test passed, no skips). Named
@@ -203,7 +245,11 @@ Neither runtime variant is skipped, and the credential assertions are unchanged.
 ## Limits
 
 No production latency/load measurement, packaged Windows/macOS release smoke,
-or v1 inference parity claim is made by this proof. An offline catalog can be
-stale; it converges after reconnection, and a verified auth revocation clears
-it. A running engine retains its selected single owner through a kill; the
+or v1 inference parity claim is made by this proof. Arbitrary catalog-model
+rename/per-model status are not exposed by the current Den API; supported
+metadata/group operations are tested instead. The scoped transport supports
+HTTP inference; experimental WebSockets are not proxied. An offline catalog
+can be shown from cache, but inference requires fresh Den authorization and
+fails unavailable if that authorization service cannot be reached. The
+catalog converges after reconnection; verified auth revocation clears it. A running engine retains its selected single owner through a kill; the
 next engine start freshly resolves the rollout and restores legacy when off.

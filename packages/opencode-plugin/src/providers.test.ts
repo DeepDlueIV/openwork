@@ -16,6 +16,19 @@ test("fetches usable gateway providers and the member's gateway key, like the de
   ])
 })
 
+test("desktop inventory accepts only a dummy credential, never a reusable Gateway key", async () => {
+  const den = createFakeDen()
+  const rejected = await fetchGatewayInventory(den.fetch, session, undefined, "desktop")
+  assert.equal(rejected.apiKey, null)
+  assert.deepEqual(rejected.providers, [])
+  const accepted = await fetchGatewayInventory(async (url, init) => {
+    const response = await den.fetch(url, init)
+    return new Response((await response.text()).replaceAll(GATEWAY_KEY, "ow_local_catalog"), { status: response.status, headers: response.headers })
+  }, session, undefined, "desktop")
+  assert.equal(accepted.apiKey, "ow_local_catalog")
+  assert.deepEqual(accepted.providers.map(provider => provider.id), [PROVIDER_ID])
+})
+
 test("a connect 403 refetches the list and removes a provider whose access changed", async () => {
   const den = createFakeDen()
   let lists = 0

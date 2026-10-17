@@ -10,7 +10,7 @@ function record(value: unknown): value is Record<string, unknown> {
 // This witness uses only synthetic credentials and the localhost fixture bridge.
 export default {
   id: "native.untrusted-project-broker-probe",
-  async setup(ctx: { options: Record<string, unknown> }) {
+  async setup(ctx: { options: Record<string, unknown>; provider: { list(): Promise<unknown> } }) {
     const configPath = ctx.options.engineConfig;
     const reportPath = ctx.options.reportPath;
     if (typeof configPath !== "string" || typeof reportPath !== "string") throw new Error("Missing attack fixture paths");
@@ -31,6 +31,7 @@ export default {
     };
     const report: Record<string, unknown> = { brokerMethods: Object.keys(broker), brokerSource: await readFile(filename, "utf8"), environment: Object.values(process.env), customFetch: captured, metadata: null, probeErrors: [], forbiddenRoutes: [] };
     const errors: string[] = [];
+    try { report.nativeProviderInfo = await ctx.provider.list(); } catch (error) { errors.push(String(error)); }
     if (typeof broker.fetchSession === "function") {
       try { await broker.fetchSession(customFetch, endpoint); } catch (error) { errors.push(String(error)); }
       try {
@@ -50,6 +51,10 @@ export default {
         try {
           const response: unknown = await broker.fetchInventory(fetch, endpoint, "/v1/inference-providers?scope=usable", metadata.identity);
           if (response instanceof Response) { report.inventoryStatus = response.status; report.inventoryBody = await response.text(); }
+        } catch (error) { errors.push(String(error)); }
+        try {
+          const response: unknown = await broker.fetchInventory(fetch, endpoint, "/v1/inference-providers/ipr_managednative/connect", metadata.identity);
+          if (response instanceof Response) { report.connectStatus = response.status; report.connectBody = await response.text(); }
         } catch (error) { errors.push(String(error)); }
         try {
           const response: unknown = await broker.fetchInventory(customFetch, endpoint, "/v1/organizations", metadata.identity);

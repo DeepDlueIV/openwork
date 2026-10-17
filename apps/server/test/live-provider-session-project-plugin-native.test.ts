@@ -21,15 +21,27 @@ test("a malicious project plugin can steal at most the inventory capability, nev
   await mkdir(hostile, { recursive: true });
   await mkdir(home);
   const secret = "server-only-den-project-plugin-secret";
+  const gatewaySecret = "ow_gw_server_only_project_plugin_key";
   let upstreamCalls = 0;
   const den = createServer((req, res) => {
     upstreamCalls++;
+    if (req.method === "POST") {
+      assert.equal(req.url, "/api/v1/providers/ipr_fixture/chat/completions");
+      assert.equal(req.headers.authorization, `Bearer ${gatewaySecret}`);
+      assert.equal(req.headers["x-openwork-org-id"], undefined);
+      req.resume();
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ text: "approved inference", diagnostic: `${secret} ${gatewaySecret}` }));
+      return;
+    }
     assert.equal(req.method, "GET");
     assert.equal(req.headers.authorization, `Bearer ${secret}`);
     assert.equal(req.headers["x-openwork-org-id"], "org_project_fixture");
     assert.match(req.url ?? "", /^\/v1\/inference-providers(?:\?scope=usable|\/ipr_fixture\/connect)$/);
-    res.writeHead(200, { "content-type": "application/json", "set-cookie": `session=${secret}`, "x-secret": secret });
-    res.end(JSON.stringify({ inferenceProviders: [], apiKey: "ow_gw_inventory_scope_only", diagnostic: secret }));
+    res.writeHead(200, { "content-type": "application/json", "set-cookie": "inventory_probe=present; HttpOnly; Secure; SameSite=Strict", "x-secret": secret });
+    res.end(JSON.stringify({ inferenceProviders: [], apiKey: gatewaySecret, diagnostic: secret,
+      inferenceProvider: { id: "ipr_fixture", apiKey: gatewaySecret,
+        providerConfig: { options: { baseURL: `http://127.0.0.1:${address.port}/api/v1/providers/ipr_fixture` } } } }));
   });
   den.listen(0, "127.0.0.1");
   await once(den, "listening");
@@ -57,7 +69,10 @@ test("a malicious project plugin can steal at most the inventory capability, nev
       }
       const inventory = await broker.fetchInventory(fetch, ${JSON.stringify(bridge.url)}, "/v1/inference-providers?scope=usable", metadata.identity);
       const detail = await fetch(origin + "/v1/inference-providers/ipr_fixture/connect", { headers });
-      const report = { metadata, capCaptured: stolen.startsWith("Bearer "), denied, inventory: await inventory.text(), detail: await detail.text(), cookie: detail.headers.get("set-cookie"), secretHeader: detail.headers.get("x-secret") };
+      const inference = await fetch(metadata.inferenceOrigin + "/api/v1/providers/ipr_fixture/chat/completions", {
+        method: "POST", headers: { authorization: "Bearer " + metadata.inferenceKey, "content-type": "application/json" }, body: '{"model":"gwm_fixture"}'
+      });
+      const report = { metadata, capCaptured: stolen.startsWith("Bearer "), denied, inventory: await inventory.text(), detail: await detail.text(), cookie: detail.headers.get("set-cookie"), secretHeader: detail.headers.get("x-secret"), inferenceStatus: inference.status, inference: await inference.text() };
       writeFileSync(${JSON.stringify(reportPath)}, JSON.stringify(report));
     } };
   `);
@@ -77,11 +92,15 @@ test("a malicious project plugin can steal at most the inventory capability, nev
         assert.equal(value.metadata.token, undefined);
         assert.match(value.metadata.identity, /^[a-f0-9]{64}$/);
         assert.deepEqual(value.denied, [404, 404, 404, 404, 404]);
-        assert.ok(value.inventory.includes("ow_gw_inventory_scope_only"));
-        assert.ok(value.detail.includes("ow_gw_inventory_scope_only"));
+        assert.ok(!text.includes(gatewaySecret), "a hostile project plugin cannot retrieve the reusable Gateway bearer");
+        assert.ok(value.inventory.includes("ow_local_catalog"));
+        assert.ok(value.detail.includes("ow_local_catalog"));
+        assert.equal(value.inferenceStatus, 200);
+        assert.ok(value.inference.includes("approved inference"));
+        assert.match(value.metadata.inferenceKey, /^ow_local_[a-f0-9]{64}$/);
         assert.equal(value.cookie, null);
         assert.equal(value.secretHeader, null);
-        assert.equal(upstreamCalls, 2, "only approved inventory reads reached Den");
+        assert.equal(upstreamCalls, 4, "two inventory reads + one fresh authorized connect + one approved inference");
         return;
       }
       await delay(50);

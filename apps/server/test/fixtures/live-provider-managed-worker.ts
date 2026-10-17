@@ -8,6 +8,8 @@ import { createEngineV2Preview } from "../../src/engine-v2-preview.js";
 import { SseParser } from "../../../../packages/opencode-plugin/src/inventory-events.ts";
 import { readGlobalRuntimeOpencodeConfig, writeGlobalRuntimeOpencodeConfig } from "../../src/runtime-opencode-config-store.js";
 import type { ServerConfig } from "../../src/types.js";
+import { assertNativeSecretsAbsent, localProviderAccess } from "./native-provider-security-assertions.ts";
+import { nativeProtocols, nativeProtocolResponse } from "./native-provider-protocol-fixtures.ts";
 
 // Executed in its own minimal HOME/XDG process: never read a developer's auth DB.
 const root = process.argv[2];
@@ -24,16 +26,28 @@ const legacyID = "lpr_managed_native";
 let name = "Live initial";
 let inventoryReads = 0;
 let quotaRequests = 0;
+let quotaMode = false;
+let connectReads = 0;
+const inferenceRequests: { providerID: string; path: string }[] = [];
 let unrelatedDenRequests = 0;
 let flag: boolean | "unavailable" = false;
 let flagReads = 0;
 const streams = new Set<ServerResponse>();
 const den = createServer((req, res) => {
-  if (req.url?.startsWith(`/api/v1/providers/${gatewayID}/`)) {
-    assert.equal(req.headers.authorization, "Bearer ow_gw_managed_synthetic");
-    quotaRequests++;
-    res.writeHead(429, { "content-type": "application/json", "X-OpenWork-Error-Code": "openwork_gateway_usage_limit_exceeded", "X-OpenWork-Usage-State": "blocked" });
-    res.end(JSON.stringify({ error: { code: "openwork_gateway_usage_limit_exceeded", source: "openwork_gateway", type: "usage_limit_error", message: "You have reached your AI Gateway usage limit." } }));
+  const protocol = nativeProtocols.find(item => req.url?.startsWith(`/api/v1/providers/${item.providerID}/`));
+  if (protocol) {
+    assert.equal(req.method, "POST");
+    const upstreamCredentials = [req.headers.authorization, req.headers["x-api-key"], req.headers["x-goog-api-key"]];
+    assert.ok(upstreamCredentials.includes("Bearer ow_gw_managed_synthetic") || upstreamCredentials.includes("ow_gw_managed_synthetic"), "only the server-side inference proxy supplies the reusable Gateway credential upstream");
+    if (quotaMode) {
+      quotaRequests++;
+      res.writeHead(429, { "content-type": "application/json", "X-OpenWork-Error-Code": "openwork_gateway_usage_limit_exceeded", "X-OpenWork-Usage-State": "blocked" });
+      res.end(JSON.stringify({ error: { code: "openwork_gateway_usage_limit_exceeded", source: "openwork_gateway", type: "usage_limit_error", message: "You have reached your AI Gateway usage limit." } }));
+    } else {
+      inferenceRequests.push({ providerID: protocol.providerID, path: req.url ?? "" });
+      res.writeHead(200, { "content-type": "text/event-stream" });
+      res.end(nativeProtocolResponse(protocol.protocol, protocol.modelID, `Native ${protocol.protocol} proxy success`));
+    }
     return;
   }
   assert.equal(req.headers.authorization, "Bearer native-managed-session");
@@ -46,16 +60,19 @@ const den = createServer((req, res) => {
     req.on("close", () => streams.delete(res));
     return;
   }
-  const provider = {
-    id: gatewayID, providerId: "openai-compatible", name: "Managed Gateway", credentialStatus: "ready",
-    providerConfig: { npm: "@ai-sdk/openai-compatible", options: { baseURL: `${denURL}/api/v1/providers/${gatewayID}` } },
-    models: [{ id: "gwm_live", name, config: { id: "gwm_live", limit: { context: 8192, output: 1024 }, tool_call: true } }],
-  };
+  const providers = nativeProtocols.map(protocol => ({
+    id: protocol.providerID, providerId: protocol.protocol === "openai" ? "openai-compatible" : protocol.protocol, name: `Managed ${protocol.protocol} Gateway`, credentialStatus: "ready",
+    providerConfig: { npm: protocol.npm, options: { baseURL: `${denURL}/api/v1/providers/${protocol.providerID}` } },
+    models: [{ id: protocol.modelID, name: protocol.providerID === gatewayID ? name : `Native ${protocol.protocol}`, config: { id: protocol.modelID, limit: { context: 8192, output: 1024 }, tool_call: true } }],
+  }));
   res.setHeader("content-type", "application/json");
   if (url.pathname === "/v1/inference-providers") {
     inventoryReads++;
-    res.end(JSON.stringify({ inferenceProviders: [provider] }));
-  } else if (url.pathname === `/v1/inference-providers/${gatewayID}/connect`) {
+    res.end(JSON.stringify({ inferenceProviders: providers }));
+  } else if (providers.some(provider => url.pathname === `/v1/inference-providers/${provider.id}/connect`)) {
+    connectReads++;
+    const provider = providers.find(provider => url.pathname === `/v1/inference-providers/${provider.id}/connect`);
+    assert.ok(provider);
     res.end(JSON.stringify({ inferenceProvider: { ...provider, apiKey: "ow_gw_managed_synthetic" } }));
   } else {
     unrelatedDenRequests++;
@@ -236,6 +253,8 @@ try {
   assert.ok(!report.missingFetchSession, "malicious witness actually exercises the canonical broker API");
   assert.equal(report.metadataStatus, 200, reportText);
   assert.ok(!reportText.includes("native-managed-session"), "a same-process malicious project plugin must never obtain the full Den bearer through broker custom fetch or metadata");
+  assert.ok(!reportText.includes("ow_gw_managed_synthetic"), "broker connect/list and native provider API never disclose the reusable member Gateway key to a project plugin");
+  assert.equal(report.connectStatus, 200, "the attack actually redeems the scoped connect route, but receives only a local ephemeral inference key");
   assert.equal(typeof report.metadata, "string");
   const metadata: unknown = JSON.parse(String(report.metadata));
   assert.ok(record(metadata) && !Object.hasOwn(metadata, "token"), "engine session metadata contains no Den bearer field");
@@ -256,8 +275,26 @@ try {
   await until(() => models(attackerDirectory), rows => rows.some(model => model.name === name), "untrusted plugin probe cannot steal or corrupt legitimate inventory capability");
   assert.equal(await generatedConfig(), beforeConfig);
   assert.equal(streams.size, 1);
-  console.log("Passed managed security: actual malicious project plugin custom-fetch broker probe obtains no Den bearer; unrelated APIs denied; legitimate inventory still refreshes");
+  await assertNativeSecretsAbsent(join(root, "opencode-v2", "state"), ["native-managed-session", "ow_gw_managed_synthetic"]);
+  console.log("Passed managed security: actual malicious project plugin custom-fetch/connect/provider probe obtains neither Den bearer nor reusable Gateway key; unrelated APIs denied; private native cache contains neither secret");
 
+  const beforeInferenceListReads = inventoryReads;
+  const beforeInferenceConnectReads = connectReads;
+  for (const protocol of nativeProtocols) {
+    localProviderAccess(await native(`/api/provider?location[directory]=${encodeURIComponent(directory)}`), protocol.providerID, "ow_gw_managed_synthetic");
+    const created = await native("/api/session", { title: `Synthetic ${protocol.protocol} proxy`, location: { directory }, model: { providerID: protocol.providerID, id: protocol.modelID } });
+    assert.ok(record(created) && record(created.data) && typeof created.data.id === "string", JSON.stringify(created));
+    await native(`/api/session/${created.data.id}/prompt`, { text: `Exercise ${protocol.protocol} through the scoped inference transport.` });
+    const messages = await until(() => native(`/api/session/${created.data.id}/message`), value => JSON.stringify(value).includes(`Native ${protocol.protocol} proxy success`), `actual native ${protocol.protocol} inference completes through the local proxy`);
+    assert.ok(!JSON.stringify(messages).includes("ow_gw_managed_synthetic"));
+    assert.equal(inferenceRequests.filter(request => request.providerID === protocol.providerID).length, 1, `${protocol.protocol} inference reaches the fake Gateway once with only the server-side reusable key`);
+  }
+  assert.equal(inventoryReads, beforeInferenceListReads, "inference authorization performs no inventory/catalog polling");
+  assert.ok(connectReads >= beforeInferenceConnectReads + nativeProtocols.length, "each native inference is freshly authorized by Den connect, not a cached Gateway credential");
+  await assertNativeSecretsAbsent(join(root, "opencode-v2", "state"), ["native-managed-session", "ow_gw_managed_synthetic"]);
+  console.log("Passed managed protocols: actual OpenAI-compatible, Anthropic, and Gemini native prompts stream through the scoped inference proxy; reusable key appears only at the fake Gateway; authorization connects without catalog polling");
+
+  quotaMode = true;
   const created = await native("/api/session", { title: "Synthetic quota", location: { directory }, model: { providerID: gatewayID, id: "gwm_live" } });
   assert.ok(record(created) && record(created.data) && typeof created.data.id === "string", JSON.stringify(created));
   const sessionID = created.data.id;

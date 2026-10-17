@@ -64,8 +64,10 @@ engine lifetime.
 Desktop uses its existing Den session, not a second device login. That bearer
 stays inside the OpenWork server: project-loaded plugins share the engine
 process, so putting it anywhere in that process is not a sufficient boundary.
-A private loopback bridge exposes only session identity metadata and scoped
-Gateway inventory GET/stream access, authenticated by a per-engine capability
+A private loopback bridge exposes only identity metadata, scoped inventory
+reads/streams and authorized model inference. Long-lived Gateway credentials
+also stay server-side. The engine uses an identity-bound, per-engine ephemeral
+loopback credential, not a reusable Gateway key. The transport capability is
 delivered over a one-shot anonymous pipe. Neither the initial process environment nor a config file,
 argument, URL or named socket contains that capability. A trusted inert
 consumer loads even on flag-off boot and closes the descriptor before native
@@ -77,22 +79,24 @@ loaded through a canonical native `createRequire` filename shares one frozen
 request API through the process-wide native module cache. Its private closure
 owns the scoped inventory capability, bound to one bridge endpoint. Broker
 code on disk contains no credential, and there is no global credential getter.
-Even another plugin obtaining this scoped capability cannot obtain the Den
-bearer, access administration/MCP endpoints or perform mutations. The bridge
-accepts only explicit inventory routes and binds requests to the current
-identity; session replacement fences pending reads and streams. This is necessary:
+The transport does not expose the Den bearer or reusable Gateway key, even
+to another engine plugin. It permits only inventory and authorized inference
+routes, not administration, MCP or provider mutations. It binds requests to
+the current identity; session replacement fences pending reads and streams. This is necessary:
 independent ESM closures would leave later workspaces permanently empty after
 the first graph consumed the pipe. The bridge returns no session until live
 ownership is selected. No Den session token is written into `opencode.json`,
 plugin options, a URL, or a command line. A loopback listener without
 authentication is not an acceptable substitute.
 
-The provider cache contains a gateway snapshot, including the gateway key,
-just as the standalone plugin's private storage does. It must be account- and
-organization-scoped. It is not repository data. Session replacement must
-cancel the old stream and fence its pending fetches so one identity cannot
-publish after another signs in. Den authorization continues to be enforced
-on every inference request; a cached catalog does not grant access.
+The desktop cache contains account/org-scoped catalog metadata, not reusable
+Gateway credentials. Cached definitions are rebound to the current engine's
+loopback route and ephemeral credential before publication, including warm
+startup; old bridge ports/credentials cannot survive in the active provider
+settings. Standalone users retain their explicit device-login behavior.
+Session replacement cancels the old stream and fences pending fetches so one
+identity cannot publish after another signs in. Den authorization continues
+on inference requests: a cached catalog is not offline authorization.
 
 ## Timing and limits
 

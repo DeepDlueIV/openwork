@@ -24,6 +24,8 @@ export interface DesktopSession {
   readonly apiBaseUrl: string
   readonly identity: string
   readonly orgId: string | null
+  readonly inferenceOrigin: string
+  readonly inferenceKey: string
 }
 
 // The shared inventory helpers accept a token-shaped identity key. In desktop
@@ -40,20 +42,23 @@ export async function readDesktopSession(fetcher: Fetch, endpoint: string, capab
     redirect: "error",
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(1500)]) : AbortSignal.timeout(1500),
   })
-  return parseDesktopSession(response)
+  return parseDesktopSession(response, endpoint)
 }
 
-async function parseDesktopSession(response: Response | null): Promise<DesktopSession | null> {
+async function parseDesktopSession(response: Response | null, endpoint: string): Promise<DesktopSession | null> {
   if (!response) return null
   if (!response.ok) throw new Error("Desktop session unavailable")
   const value: unknown = await response.json()
   if (value === null) return null
   if (!isRecord(value) || typeof value.apiBaseUrl !== "string" || !isAllowedApiBaseUrl(value.apiBaseUrl)
     || "token" in value || typeof value.identity !== "string" || !/^[a-f0-9]{64}$/.test(value.identity)
-    || !(value.orgId === null || typeof value.orgId === "string")) {
+    || !(value.orgId === null || typeof value.orgId === "string")
+    || typeof value.inferenceOrigin !== "string" || value.inferenceOrigin !== new URL(endpoint).origin
+    || typeof value.inferenceKey !== "string" || !/^ow_local_[a-f0-9]{64}$/.test(value.inferenceKey)) {
     throw new Error("Invalid desktop session")
   }
-  return { apiBaseUrl: normalizeBaseUrl(value.apiBaseUrl), identity: value.identity, orgId: value.orgId }
+  return { apiBaseUrl: normalizeBaseUrl(value.apiBaseUrl), identity: value.identity, orgId: value.orgId,
+    inferenceOrigin: value.inferenceOrigin, inferenceKey: value.inferenceKey }
 }
 
 /** Provider-only host path: never registers login methods, revokes Den sessions, or touches MCP. */
@@ -112,7 +117,21 @@ export function createDesktopProviderPlugin(deps: { fetch?: Fetch; now?: () => n
         await ctx.provider.reload()
         if (providers === next) applied = fingerprint // Failed/stale reloads remain retryable.
       }
-      const records = (value: Inventory | null) => snapshotFrom(value, options, { type: "env", name: "openwork-desktop" }).providers
+      const safeHeaders = (headers: Record<string, string> | undefined) => headers ? Object.fromEntries(Object.entries(headers)
+        .filter(([name]) => !["authorization", "x-api-key", "api-key", "x-goog-api-key", "cookie", "host"].includes(name.toLowerCase()))) : undefined
+      const records = (value: Inventory | null): readonly ProviderRecord[] => {
+        if (!session || value?.gateway?.apiKey !== "ow_local_catalog") return []
+        // Cached catalog definitions stay portable/public. Only publication binds
+        // them to this engine's current loopback origin and identity-scoped key.
+        const source = session
+        return snapshotFrom(value, options, { type: "env", name: "openwork-desktop" }).providers.map(provider => {
+          const baseURL = `${source.inferenceOrigin}/api/v1/providers/${provider.info.id}`
+          return {
+            info: { ...provider.info, settings: { ...provider.info.settings, baseURL, apiKey: source.inferenceKey }, headers: safeHeaders(provider.info.headers) },
+            models: provider.models.map(model => ({ ...model, settings: { ...model.settings, baseURL, apiKey: source.inferenceKey }, headers: safeHeaders(model.headers) })),
+          }
+        })
+      }
       const revoked = () => {
         epoch++
         retry.reset()
@@ -149,11 +168,12 @@ export function createDesktopProviderPlugin(deps: { fetch?: Fetch; now?: () => n
         running = (async () => {
           try {
             // Deliberately no 30s freshness shortcut: every event/reconnect is authoritative.
-            const gateway = await fetchGatewayInventory(inventoryFetch(source), inventorySession(source), refreshController.signal)
+            const gateway = await fetchGatewayInventory(inventoryFetch(source), inventorySession(source), refreshController.signal, "desktop")
             if (!current()) return
             const next: Inventory = { version: 1, connectionKey: accountKey, apiBaseUrl: source.apiBaseUrl, fetchedAt: now(), gateway, mcp: null }
             inventory = next
-            // Only gateway credentials are cached. The Den session/capability never is.
+            // Public definitions + a dummy credential only. Never persist raw
+            // reusable credentials or engine-specific origin/ephemeral keys.
             const json: Json = JSON.parse(JSON.stringify(next))
             await ctx.storage.set(CACHE_KEY, json).catch(() => {})
             if (!current()) return
@@ -182,10 +202,11 @@ export function createDesktopProviderPlugin(deps: { fetch?: Fetch; now?: () => n
           // This local-only check detects sign-out/account/org/token changes without polling Den inventory.
           const next = await (capability
             ? readDesktopSession(fetcher, endpoint, capability, lifetime.signal)
-            : fetchDesktopSession(fetcher, endpoint, lifetime.signal).then(parseDesktopSession)).catch(() => null)
+            : fetchDesktopSession(fetcher, endpoint, lifetime.signal).then(response => parseDesktopSession(response, endpoint))).catch(() => null)
           if (lifetime.signal.aborted) return
-          const nextKey = next ? digest(next) : ""
+          const nextKey = next ? digest({ apiBaseUrl: next.apiBaseUrl, identity: next.identity, orgId: next.orgId }) : ""
           if (nextKey === key) {
+            if (session) session = next
             // A failed reload is independent of the network subscription and remains retryable.
             await publish(records(inventory)).catch(() => {})
             return
@@ -206,7 +227,7 @@ export function createDesktopProviderPlugin(deps: { fetch?: Fetch; now?: () => n
             return
           }
           const cached = parseInventory(await ctx.storage.get(CACHE_KEY).catch(() => undefined))
-          if (cached?.connectionKey === key && !lifetime.signal.aborted) {
+          if (cached?.connectionKey === key && cached.gateway?.apiKey === "ow_local_catalog" && !lifetime.signal.aborted) {
             inventory = cached
             await publish(records(cached)).catch(() => {})
           }

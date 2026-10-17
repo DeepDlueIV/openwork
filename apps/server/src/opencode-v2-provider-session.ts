@@ -1,4 +1,5 @@
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { proxyV2ProviderInference } from "./opencode-v2-inference-proxy.js";
 import { serve } from "./serve-node.js";
 import { externalFetch } from "./server-fetch.js";
 import type { CloudProviderDenSession } from "./cloud-provider-sync.js";
@@ -27,32 +28,39 @@ function json(value: unknown, status = 200): Response {
 }
 
 /**
- * Inventory-only transport. The Den bearer never leaves the OpenWork server,
- * even to another plugin in the engine process. No provider state/cache/writer.
+ * Scoped inventory/inference transport. Reusable Den and Gateway bearers never
+ * leave the OpenWork server, even to another engine plugin. No catalog owner,
+ * provider state/cache/writer, or background inventory polling.
  */
 export async function createV2ProviderSessionBridge(current: () => CloudProviderDenSession | null, options: { fetch?: InventoryFetch } = {}) {
   const token = randomBytes(32).toString("base64url");
+  const inferenceSecret = randomBytes(32);
+  const inferenceKey = (identity: string) => `ow_local_${createHmac("sha256", inferenceSecret).update(identity).digest("hex")}`;
   const fetcher = options.fetch ?? externalFetch;
   const active = new Set<AbortController>();
   const server = await serve({ hostname: "127.0.0.1", port: 0, fetch: async request => {
+    const url = new URL(request.url);
+    const session = current();
+    const identity = session ? providerSessionIdentity(session) : "";
+    const sameIdentity = () => {
+      const next = current();
+      return next !== null && providerSessionIdentity(next) === identity;
+    };
+    if (url.pathname.startsWith("/api/v1/providers/")) return proxyV2ProviderInference({
+      request, session, expectedKey: inferenceKey(identity), current: sameIdentity, fetch: fetcher, active,
+    });
     const supplied = Buffer.from(request.headers.get("authorization")?.replace(/^Bearer /, "") ?? "");
     const expected = Buffer.from(token);
     if (supplied.length !== expected.length || !timingSafeEqual(supplied, expected)) return json(null, 401);
     // Do not forward caller methods, headers, URLs, request bodies, or redirects.
     if (request.headers.has("origin") || request.method !== "GET") return json(null, 404);
-    const url = new URL(request.url);
     const path = url.pathname + url.search;
-    const session = current();
     if (path === "/session") return json(session ? {
-      apiBaseUrl: session.baseUrl.replace(/\/+$/, ""), orgId: session.orgId, identity: providerSessionIdentity(session),
+      apiBaseUrl: session.baseUrl.replace(/\/+$/, ""), orgId: session.orgId, identity,
+      inferenceOrigin: url.origin, inferenceKey: inferenceKey(identity),
     } : null);
     if (!allowedPath(path)) return json(null, 404);
     if (!session) return json(null, 401);
-    const identity = providerSessionIdentity(session);
-    const sameIdentity = () => {
-      const next = current();
-      return next !== null && providerSessionIdentity(next) === identity;
-    };
     if (request.headers.get(IDENTITY_HEADER) !== identity) return json({ error: "provider_identity_changed" }, 409);
     if (!allowedBase(session.baseUrl)) return json({ error: "provider_inventory_unavailable" }, 502);
     const controller = new AbortController();
@@ -154,7 +162,8 @@ export async function createV2ProviderSessionBridge(current: () => CloudProvider
       try { value = text ? JSON.parse(text) : null; }
       catch { if (upstream.ok) throw new Error("Invalid inventory JSON"); }
       const safe = JSON.stringify(value, (_key, item: unknown) => typeof item === "string" ? item.replaceAll(session.token, "[redacted]") : item)
-        .replaceAll(JSON.stringify(session.token).slice(1, -1), "[redacted]");
+        .replaceAll(JSON.stringify(session.token).slice(1, -1), "[redacted]")
+        .replace(/ow_gw_[A-Za-z0-9_-]+/g, "ow_local_catalog");
       const headers: Record<string, string> = { "content-type": "application/json", "cache-control": "no-store" };
       const retry = upstream.headers.get("retry-after");
       if (retry && !retry.includes(session.token) && retry.length <= 100 && (/^\d{1,9}$/.test(retry) || Number.isFinite(Date.parse(retry)))) headers["retry-after"] = retry;

@@ -15,16 +15,21 @@ interface SharedSubscription {
   denied: "session" | "organization" | null
 }
 
-// OpenCode creates one plugin instance per Location. Share across all copies of
-// this module in a process too; otherwise a fifth Location hits Den's stream cap.
-declare global {
-  var __openworkInventorySubscriptions: Map<string, SharedSubscription> | undefined
+type SharedSubscriptionOptions = SubscriptionOptions & { identity: DenSession }
+
+interface InventoryHub {
+  readonly join: (options: SharedSubscriptionOptions) => Promise<void>
 }
 
-/** Ref-counted fanout; one Location may only release its own subscription. */
-export function subscribeSharedInventory(options: SubscriptionOptions & { identity: DenSession }): Promise<void> {
+// OpenCode creates one plugin instance per Location, including separate ESM
+// graphs. Expose only an immutable capability, never the registry or callbacks
+// that resolve Den credentials. All credential-bearing state stays in a closure.
+declare global {
+  var __openworkInventorySubscriptions: InventoryHub | undefined
+}
+
+function joinSharedInventory(shared: Map<string, SharedSubscription>, options: SharedSubscriptionOptions): Promise<void> {
   if (options.signal.aborted) return Promise.resolve()
-  const shared = globalThis.__openworkInventorySubscriptions ??= new Map<string, SharedSubscription>()
   const key = inventorySessionKey(options.identity)
   let entry = shared.get(key)
   const first = !entry
@@ -98,6 +103,31 @@ export function subscribeSharedInventory(options: SubscriptionOptions & { identi
     })
   }
   return result
+}
+
+function createInventoryHub(): InventoryHub {
+  const shared = new Map<string, SharedSubscription>()
+  const join = (options: SharedSubscriptionOptions) => joinSharedInventory(shared, options)
+  // A caller may join only with its own identity and release only through its
+  // own AbortSignal. No lookup-by-hash, callback access, or registry mutation is
+  // available, and a joining fetcher never replaces an existing stream's owner.
+  return Object.freeze({ join: Object.freeze(join) })
+}
+
+/** Ref-counted fanout; one Location may only release its own subscription. */
+export function subscribeSharedInventory(options: SharedSubscriptionOptions): Promise<void> {
+  if (options.signal.aborted) return Promise.resolve()
+  let hub = globalThis.__openworkInventorySubscriptions
+  if (!hub) {
+    hub = createInventoryHub()
+    Object.defineProperty(globalThis, "__openworkInventorySubscriptions", {
+      value: hub,
+      writable: false,
+      configurable: false,
+      enumerable: false,
+    })
+  }
+  return hub.join(options)
 }
 
 /** Incremental SSE framing: UTF-8 decoding belongs to the caller. Comments are heartbeats. */

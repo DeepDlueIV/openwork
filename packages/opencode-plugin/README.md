@@ -160,24 +160,38 @@ broker shares the capability across Location-scoped ESM/source graphs and reload
 with the credential retained only in its module closure; it signs requests only to
 the bound endpoint. `OPENWORK_PROVIDER_SESSION_BROKER` contains only the absolute
 path to that credential-free broker code (not a credential/config file). Thus late rollout activation needs no still-open credential descriptor.
-The capability is **inventory-only**, not a Den session. `desktopSession` returns
-only `{apiBaseUrl, identity, orgId}` or JSON `null` while signed out. The opaque
-identity hash is stable across engine ports/capabilities and changes with the
-account, org, or Den credential. The Den bearer stays exclusively in the OpenWork
-server, never in the engine, including its other project plugins. The bridge
-accepts only GET usable-provider-list, per-provider-connect, and inventory-event
-requests, each bound to the expected identity. It rejects admin, MCP, mutation,
-redirect, and arbitrary proxy requests, ignores caller auth/org headers, strips
-upstream response headers, and emits only canonical invalidation/heartbeat SSE.
-Only literal HTTP loopback addresses are accepted, and redirects are refused.
+The capability is scoped to catalog transport and ephemeral local inference, not
+a Den session or reusable Gateway credential. `desktopSession` returns only
+`{apiBaseUrl, identity, orgId, inferenceOrigin, inferenceKey}` or JSON `null` while
+signed out. The opaque identity hash is stable across engine ports/capabilities
+and changes with the account, org, or Den credential. **Both the Den bearer and
+raw member `ow_gw_` key stay exclusively in the OpenWork server**, never in the
+engine, including its other project plugins. Inventory connects return only the
+`ow_local_catalog` placeholder. Public cached catalogs are rebound on publication
+to the current loopback inference origin and identity-bound ephemeral `ow_local_`
+key; neither loopback endpoints nor ephemeral keys are persisted in that cache.
+
+The bridge accepts only GET usable-provider-list, per-provider-connect, and
+inventory-event requests, each bound to the expected identity. For inference it
+accepts only POST chat/completions, responses, messages, and Gemini generateContent
+or streamGenerateContent routes (including v1/v1beta prefixes). It resolves the
+current authorized provider connection for each inference request and supplies
+the real Gateway bearer server-side. Old-identity/old-engine keys cannot authorize
+another identity or bridge. Caller auth/org/cookie/Host headers are not forwarded;
+semantic protocol headers and quota markers are preserved. Real inference JSON/SSE
+is streamed with credential redaction across chunk boundaries; inventory SSE is
+canonicalized to invalidations/heartbeats. Admin, MCP, arbitrary URLs, other
+mutations, redirects and WebSocket upgrades are unsupported. This transport
+supports HTTP inference only; native WebSocket routes must use HTTP fallback.
+Only literal HTTP loopback addresses are accepted for the engine-facing endpoint.
 
 This mode registers only providers: no MCP, standalone login, remote sessions,
 or Den sign-out. It checks the local handoff every second and fetches Den
 inventory on session changes, stream connection/reconnection, and
 `inventory.changed` events. Account/org/token changes cancel and fence old
 requests. Startup cache is scoped by a hash of the API URL, org, and session;
-only gateway inventory/key material is cached, never the Den session token or
-loopback capability. A feature-disabled stream `404` stops reconnection for that
+only public gateway inventory and a dummy credential are cached, never reusable
+Den/Gateway keys, ephemeral inference keys, or the loopback capability. A feature-disabled stream `404` stops reconnection for that
 session while preserving its last snapshot. Heartbeat stalls and transient
 failures reconnect with bounded backoff. Locations in one engine share a single
 session-scoped stream with reference-counted fanout; unloading one Location never

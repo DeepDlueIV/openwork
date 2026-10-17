@@ -55,7 +55,8 @@ const localDate = (ms) => new Date(ms + zoneOffsetMinutes(new Date(ms)) * 60000)
 const MINUTE = 60000; const HOUR = 60 * MINUTE; const DAY = 24 * HOUR;
 const ago = (ms) => clockNow() - ms;
 
-// ── People: the same Acme Robotics team as the other demo apps. The signed-in person is Alex Chen. ─────────
+// ── People: the same Acme Robotics team as the other demo apps. The signed-in person is Alex Chen unless
+// DEMO_PERSON="Display Name|handle|Title" names another fictional teammate (Alex stays in the org). ─────────
 
 const DOMAIN = "acme.test";
 const PEOPLE = [
@@ -65,12 +66,13 @@ const PEOPLE = [
   ["olivia", "Olivia Martin", "Head of Marketing"], ["harper", "Harper Wilson", "Support Lead"], ["kenji", "Kenji Tanaka", "Field Operations"],
   ["zoe", "Zoe Kim", "Content Marketing"], ["sam", "Sam Okafor", "Finance Manager"], ["maya", "Maya Singh", "Legal Counsel"],
   ["ezra", "Ezra Cohen", "Data Engineer"], ["camila", "Camila Torres", "People Operations"], ["dev", "Devon Park", "IT Support"],
+  ...(process.env.DEMO_PERSON ? [(([name, handle, title]) => [handle, name, title])(process.env.DEMO_PERSON.split("|"))] : []),
 ].map(([handle, displayName, title], index) => {
   const [first, ...rest] = displayName.toLowerCase().replace(/[^a-z ]/g, "").split(" ");
   const name = `${first}.${rest.join("")}`;
   return { handle, name, key: `JIRAUSER${10100 + index}`, displayName, title, emailAddress: `${handle}@${DOMAIN}`, userKey: `8a7f80c${(0x1a2b3c + index).toString(16)}0185c3d4e5f60001` };
 });
-const ME = PEOPLE.find((person) => person.handle === "alex");
+const ME = PEOPLE.find((person) => person.handle === (process.env.DEMO_PERSON ? process.env.DEMO_PERSON.split("|")[1] : "alex"));
 
 /** Resolves an email, username, user key, display name, first name or "currentUser()" to a person. */
 function findPerson(value) {
@@ -149,10 +151,10 @@ function seedJira() {
     const entry = {
       id: String(nextId++), key: `${projectKey}-${counters[projectKey]}`, project: project.key, issuetype: type, summary,
       description: fields.description ?? null, status: fields.status ?? (project.projectTypeKey === "service_desk" ? "Waiting for support" : "To Do"),
-      priority: fields.priority ?? "Medium", assignee: fields.assignee ?? null, reporter: fields.reporter ?? "alex", creator: fields.reporter ?? "alex",
+      priority: fields.priority ?? "Medium", assignee: fields.assignee ?? null, reporter: fields.reporter ?? ME.handle, creator: fields.reporter ?? ME.handle,
       labels: fields.labels ?? [], components: fields.components ?? [], fixVersions: fields.fixVersions ?? [], versions: [], duedate: fields.duedate ?? null,
       parent: fields.parent ?? null, epicLink: fields.epicLink ?? null, created, updated: fields.updated ?? Math.max(created, ago((2 + nextId % 48) * HOUR)),
-      resolution: null, resolutiondate: null, comments: [], watchers: [fields.reporter ?? "alex"], changelog: [], requestType: fields.requestType ?? null, remoteLinks: [],
+      resolution: null, resolutiondate: null, comments: [], watchers: [fields.reporter ?? ME.handle], changelog: [], requestType: fields.requestType ?? null, remoteLinks: [],
     };
     if (status(entry.status).statusCategory.key === "done") { entry.resolution = "Done"; entry.resolutiondate = entry.updated; }
     for (const [handle, body, minutesAgo] of fields.comments ?? []) entry.comments.push(newComment(handle, body, ago(minutesAgo * MINUTE)));
@@ -229,7 +231,7 @@ function seedConfluence() {
   const page = (spaceKey, title, parent, markdown, extra = {}) => {
     const created = extra.created ?? ago(120 * DAY);
     const entry = { id: String(nextId++), type: "page", status: "current", spaceKey, title, parentId: parent?.id ?? null,
-      body: markdownToStorage(markdown), version: 1, versions: [], creator: extra.creator ?? "alex", created, lastModifier: extra.lastModifier ?? extra.creator ?? "alex",
+      body: markdownToStorage(markdown), version: 1, versions: [], creator: extra.creator ?? ME.handle, created, lastModifier: extra.lastModifier ?? extra.creator ?? ME.handle,
       lastModified: extra.lastModified ?? Math.max(created, ago((extra.editedDaysAgo ?? 9) * DAY)), labels: extra.labels ?? [], comments: [], views: extra.views ?? 40 };
     entry.version = extra.version ?? 1 + Math.floor(Math.abs(Math.sin(nextId)) * 6);
     pages.push(entry);

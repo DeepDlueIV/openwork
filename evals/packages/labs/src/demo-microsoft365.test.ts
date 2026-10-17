@@ -242,9 +242,27 @@ describe("fictional Microsoft 365 demo", () => {
     expect(record(array((await json(await fetch(`${base}/state`))).audit)[0]).sequence).toBe(1);
   });
 
+  test("mail folders: create To do / In progress / Done, move received mail, reject duplicates and drafts", async () => {
+    const todo = record(await toolValue("mail_create_folder", { name: "To do" }));
+    expect(todo.displayName).toBe("To do");
+    await toolValue("mail_create_folder", { name: "In progress" });
+    const moved = record(await toolValue("mail_move", { message_id: "mail-finance", folder_id: string(todo.id) }));
+    expect(moved.parentFolderId).toBe(todo.id);
+    const listed = array(record(await toolValue("mail_list_folders", {})).value).map(record);
+    expect(listed.find((folder) => folder.id === todo.id)?.totalItemCount).toBe(1);
+    expect(listed.map((folder) => folder.displayName)).toEqual(expect.arrayContaining(["Inbox", "To do", "In progress"]));
+    const inFolder = array(record(await toolValue("mail_search", { query: "", folder: string(todo.id) })).value).map(record);
+    expect(inFolder.map((mail) => mail.id)).toEqual(["mail-finance"]);
+    const duplicate = await rpc("tools/call", { name: "mail_create_folder", arguments: { name: "to do" } });
+    expect(record(duplicate.result).isError).toBe(true);
+    const draft = record(await toolValue("mail_create_draft", { subject: "x", body: "y", to: ["nora@acme.test"] }));
+    const blocked = await rpc("tools/call", { name: "mail_move", arguments: { message_id: string(draft.id), folder_id: string(todo.id) } });
+    expect(record(blocked.result).isError).toBe(true);
+  });
+
   test("MCP handshake, schemas, notifications and errors are sensible demo-only surfaces", async () => {
     const init = await rpc("initialize", { protocolVersion: "2025-06-18" }); expect(record(init.result).protocolVersion).toBe("2025-06-18"); expect(record(record(init.result).serverInfo).name).toContain("DEMO");
-    const tools = array(record((await rpc("tools/list")).result).tools).map(record); expect(tools).toHaveLength(13);
+    const tools = array(record((await rpc("tools/list")).result).tools).map(record); expect(tools).toHaveLength(16);
     for (const entry of tools) {
       expect(string(entry.description)).toContain("DEMO ONLY");
       expect(string(entry.description)).toContain(string(entry.name).startsWith("file_") ? "OneDrive" : "Outlook");

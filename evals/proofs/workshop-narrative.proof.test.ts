@@ -160,6 +160,7 @@ test("a fictional team rehearses every workshop scene without hidden task writes
               const state = record(after.microsoft), atlassian = record(after.atlassian), jira = record(atlassian.jira);
               let shotSurface: Surface = world.app;
               let shotExpectation = scene.id === "T09" ? "People Ops" : "Acme";
+              let workflowPayloads: string[] = [];
               const targets: Array<{ url: string; text: string }> = [];
               const previousIssues = record(record(before.atlassian).jira); const oldIssueIds = new Set((Array.isArray(previousIssues.issues) ? previousIssues.issues : []).map((item) => record(item).id));
               const issue = Array.isArray(jira.issues) ? jira.issues.map(record).find((item) => !oldIssueIds.has(item.id) && (scene.id === "T06" ? item.summary === "Update documentation for Project XYZ" : scene.id === "T07" && item.project === "ITSD")) : undefined;
@@ -202,10 +203,22 @@ test("a fictional team rehearses every workshop scene without hidden task writes
                   await user.on(surface).see({ text: "Acme product comparison" });
                   await world.assertScreenshotSafe(surface); await user.on(surface).screenshot();
                   shotSurface = surface; shotExpectation = "Acme product comparison";
+                  if (verdict.status === "PASS") {
+                    const actualValue = JSON.stringify(record(record(record(nativeAfter.details).script).latestSnapshot).value);
+                    const atlas2 = actualValue?.match(/\b300\s*(?:kg|kilograms?)/i)?.[0];
+                    const lift = actualValue?.match(/\b1[,. ]?200\s*(?:kg|kilograms?)/i)?.[0];
+                    if (!atlas2 || !lift) throw new Error("Verified latest comparison lacked renderable actual product payload facts");
+                    await world.docshots.capture(scene.id === "T02" ? "workshop-t02-context" : "workshop-t03-context", surface, { expect: ["Acme product comparison", scene.id === "T02" ? "Compare Atlas Lift for cold-storage pallet moves" : "Compare Atlas 2 for line-side replenishment"], route: /\/dashboard\/library\/workflows\// });
+                    workflowPayloads = ["Atlas 2", "Atlas Lift", atlas2, lift];
+                    await user.on(surface).see({ text: atlas2 });
+                    await user.on(surface).see({ text: lift });
+                    shotExpectation = "Atlas 2";
+                    await world.assertScreenshotSafe(surface); await user.on(surface).screenshot();
+                  }
                 }
               }
               const shot = WORKSHOP_SHOT_IDS.find((id) => id === `workshop-${scene.id.toLowerCase()}-final`);
-              if (shot) await world.docshots.capture(shot, shotSurface, { expect: [shotExpectation, ...(scene.id === "T02" ? ["Compare Atlas Lift for cold-storage pallet moves"] : scene.id === "T03" ? ["Compare Atlas 2 for line-side replenishment"] : [])], never: verdict.status === "PASS" ? ["Request failed", "Unexpected server error"] : [], route: shotSurface === world.app ? /\/workspace\/.+\/session\// : shotSurface === world.ownerWeb || shotSurface === world.recipientWeb ? /\/dashboard\/library\/workflows\// : /\/(?:jira|confluence|outlook|onedrive)(?:\/|\?|$)/ });
+              if (shot) await world.docshots.capture(shot, shotSurface, { expect: [shotExpectation, ...workflowPayloads, ...(workflowPayloads.length ? [] : scene.id === "T02" ? ["Compare Atlas Lift for cold-storage pallet moves"] : scene.id === "T03" ? ["Compare Atlas 2 for line-side replenishment"] : [])], never: verdict.status === "PASS" ? ["Request failed", "Unexpected server error"] : [], route: shotSurface === world.app ? /\/workspace\/.+\/session\// : shotSurface === world.ownerWeb || shotSurface === world.recipientWeb ? /\/dashboard\/library\/workflows\// : /\/(?:jira|confluence|outlook|onedrive)(?:\/|\?|$)/ });
               if (verdict.status === "PASS" && !["T02", "T03"].includes(scene.id) && targets.length === 0) throw new Error("Backend claim had no corresponding real browser object to capture");
             }
           } catch (error) {

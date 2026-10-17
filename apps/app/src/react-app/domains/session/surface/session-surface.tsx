@@ -600,6 +600,8 @@ export type SessionSurfaceProps = {
   workspaceRoot: string;
   sessionId: string;
   draftScope: string | null;
+  /** The draft scope is still being confirmed, so history waits behind its loading state. */
+  draftScopePending?: boolean;
   isControlTarget: boolean;
   chatPane?: "primary" | "secondary";
   opencodeBaseUrl: string;
@@ -3457,7 +3459,7 @@ export function SessionSurface(props: SessionSurfaceProps) {
                 onOpenModelPicker={handleOpenModelPicker}
               />
             ) : null}
-            <SessionHistoryBoundary owner={sessionOwner} pending={pendingSessionLoad}
+            <SessionHistoryBoundary owner={sessionOwner} pending={pendingSessionLoad || Boolean(props.draftScopePending)}
               failed={Boolean(openingHistory.openingError) || snapshotQuery.isError && !snapshotQuery.isFetching} saved={initialScroll}>
             {renderedMessages.length === 0 && effectiveActivityStatus !== "idle" && !error ? (
               <div className="px-6 py-12">

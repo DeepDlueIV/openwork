@@ -202,8 +202,7 @@ when available (required on Daytona); this is not a full source receipt or
 proof of uncommitted source contents.
 
 The other cases and legacy worlds in these mixed files, including
-`streamedMarkdown`, `streamedToolHistory`, and the existing live-tool switching
-setup, are untouched and explicitly deferred. Shared `worlds/chat.ts` and the
+`streamedMarkdown` and the existing live-tool switching setup, are untouched and explicitly deferred. Shared `worlds/chat.ts` and the
 rest of the legacy world inventory are outside this bounded migration. Running
 an entire mixed file still includes its legacy setup; selecting a migrated case
 does not certify or migrate the other cases.
@@ -657,7 +656,7 @@ launched mocks are loopback-only and therefore unreachable from a remote Den.
 | --- | --- | --- |
 | Settings | `[data-testid="account-status-menu"]`, then `Settings` | `domains/session/sidebar/account-status-menu.tsx` |
 | Back to app | button text `Back to app` | `domains/settings/shell/settings-shell.tsx` |
-| New task | `button[aria-label="New task"]` | `domains/session/sidebar/app-sidebar.tsx` |
+| New session | `button[aria-label="New session"]` | `domains/session/sidebar/app-sidebar.tsx` |
 | Run task | button text `Run task` | `domains/session/surface/composer/composer.tsx` |
 | Model selector | `button[aria-label="Change model"]` | `domains/session/surface/composer/composer.tsx` |
 | Composer | `[contenteditable="true"][data-lexical-editor="true"]` | `domains/session/surface/composer/editor.tsx` |

@@ -367,7 +367,17 @@ function taskCreateUnavailableToastId(workspaceId: string) {
 function focusPromptSoon() {
   if (typeof window === "undefined") return;
   const focus = () => window.dispatchEvent(new Event("openwork:focusPrompt"));
-  [0, 80, 240, 600].forEach((delay) => window.setTimeout(focus, delay));
+  const timers = [0, 80, 240, 600].map((delay) => window.setTimeout(focus, delay));
+  // Once the person presses something, a late retry would pull focus out of
+  // what they just opened (closing the agent menu), so drop the rest.
+  const stop = () => {
+    timers.forEach((timer) => window.clearTimeout(timer));
+    window.removeEventListener("pointerdown", stop, true);
+    window.removeEventListener("keydown", stop, true);
+  };
+  window.addEventListener("pointerdown", stop, true);
+  window.addEventListener("keydown", stop, true);
+  window.setTimeout(stop, 600);
 }
 
 const EVAL_UNAVAILABLE_PROVIDER_ID = "eval-unavailable-provider";
@@ -442,6 +452,10 @@ export function SessionRoute() {
     hasCloudCredential: Boolean(denSettings.authToken?.trim()),
     verifiedIdentity: denAuth.verifiedIdentity,
   });
+  // Until the first cloud session check settles, a signed-in conversation's
+  // owner is not known yet; showing its history under a provisional owner
+  // would flash it away and back once the account is confirmed.
+  const sessionDraftScopePending = denAuthChecking && Boolean(denSettings.authToken?.trim()) && sessionDraftScope === null;
   const pendingConversations = usePendingConversationStore((state) => state.conversations);
   const requestedPendingId = new URLSearchParams(location.search).get("pendingConversation");
   const [automationsNeedAttention, setAutomationsNeedAttention] = useState(false);
@@ -1556,6 +1570,7 @@ export function SessionRoute() {
     return {
       workspaceRoot: selectedWorkspaceRoot,
       draftScope: sessionDraftScope,
+      draftScopePending: sessionDraftScopePending,
       developerMode,
       modelLabel,
       onModelClick: (sessionId?: string) => {
@@ -1849,6 +1864,7 @@ export function SessionRoute() {
       onApplyEnvironmentChanges: isDesktopRuntime() ? handleApplyEnvironmentChanges : undefined,
     };
   }, [
+    sessionDraftScopePending,
     client,
     modelPicker.options,
     modelPicker.compactOpen,

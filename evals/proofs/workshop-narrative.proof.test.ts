@@ -80,6 +80,7 @@ test("a fictional team rehearses every workshop scene without hidden task writes
               await appUser.type("composer", scene.prompt, { replace: true });
               await appUser.click("Run task");
               world.markScene(`${scene.id}:prompt`);
+              let stopFollow = world.followLatest();
               await appUser.see({ text: scene.prompt });
               let completed = true;
               await probe.eventually(() => world.current(), { within: scene.limitMs, intervalMs: 500, label: `${scene.id} real paid assistant completion`, until: (value) => terminal(value.messages, oldIds) }).catch(async () => {
@@ -91,6 +92,8 @@ test("a fictional team rehearses every workshop scene without hidden task writes
               let scheduled: { job: Record<string, unknown>; event: Record<string, unknown>; dueWall: number; inferenceStart: number } | undefined;
               let scheduleRegistration: SceneEvidence["scheduleRegistration"];
               if (scene.id === "T10") {
+                await stopFollow();
+                world.markScene(`${scene.id}:registered`);
                 await world.settleInference();
                 scheduleRegistration = await world.observe();
                 const clock = record(await world.advanceNewsClock()); // Only advances time and emits due jobs.
@@ -103,9 +106,14 @@ test("a fictional team rehearses every workshop scene without hidden task writes
                   // This dispatcher submits the MODEL'S saved job, never a scripted assistant result or a business write.
                   await appUser.type("composer", `${job.instructions}\n\nThe isolated scheduler has now reached 09:00 America/Los_Angeles on 2026-10-16. Execute this due job using actual connected news/OneDrive/Outlook calls, verify the results, and do not send mail or use external news.`, { replace: true });
                   await appUser.click("Run task");
+                  world.markScene(`${scene.id}:due-prompt`);
+                  await stopFollow();
+                  stopFollow = world.followLatest();
                   await probe.eventually(() => world.current(), { within: Math.max(1000, scene.limitMs - (Date.now() - started)), intervalMs: 500, label: "09:00 due job actually executes paid inference", until: (value) => terminal(value.messages, dueIds) }).catch(async () => { completed = false; await world.captureTurnDiagnostic(`${scene.id}-due-before-stop`).catch(() => undefined); await appAgent.run("composer.stop").catch(() => undefined); });
+                  await stopFollow();
                 }
               }
+              await stopFollow();
               world.markScene(`${scene.id}:answered`);
               if (!completed) world.abortInferenceAfter(inferenceStart + 1);
               await world.settleInference();
@@ -120,7 +128,10 @@ test("a fictional team rehearses every workshop scene without hidden task writes
                 await user.on(world.recipientApp).type("composer", recipientPrompt, { replace: true });
                 await user.on(world.recipientApp).click("Run task");
                 world.markScene(`${scene.id}:recipient-prompt`);
+                const stopRecipientFollow = world.followLatest("recipient");
                 await probe.eventually(() => world.current("recipient"), { within: Math.max(1000, scene.limitMs - (Date.now() - started)), intervalMs: 500, label: "Nora actually runs the shared Workflow", until: (value) => terminal(value.messages, recipientIds) }).catch(async () => { completed = false; await world.captureTurnDiagnostic(`${scene.id}-recipient-before-stop`, "recipient").catch(() => undefined); await recipientAgent.run("composer.stop").catch(() => undefined); world.abortInferenceAfter(recipientInferenceStart + 1); });
+                await stopRecipientFollow();
+                world.markScene(`${scene.id}:recipient-answered`);
                 await world.settleInference();
                 const recipientAfter = await world.observe("recipient");
                 recipientContext = { before: recipientBefore, after: recipientAfter, expected: { ...world.expectedModel, sessionId: recipientAfter.sessionId ?? "" }, inference: { upstreamModel: world.expectedModel.modelID, requests: recipientAfter.inference.slice(recipientInferenceStart) } };

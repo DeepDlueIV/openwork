@@ -290,6 +290,17 @@ export async function workshopNarrative(seed: Seed, { place }: { place: Place })
       },
       recordRow: (row: NarrativeRow) => rows.push(row),
       markScene(label: string) { if (filmRoot) markers.push({ label, at: Date.now() }); },
+      /** Film-only: keep the visible transcript on the newest output by pressing the app's own
+       * "Jump to latest" control. Scroll position only; never types, submits or changes business state. */
+      followLatest(identity: "owner" | "recipient" = "owner") {
+        if (!filmRoot) return async () => undefined;
+        const surface = identity === "owner" ? owner.app : recipient.app;
+        const press = () => evaluateOnSurface(surface, () => { const button = Array.from(document.querySelectorAll("button")).find((element) => element.textContent?.trim() === "Jump to latest"); button?.click(); return Boolean(button); }).catch(() => false);
+        let active = true;
+        const loop = (async () => { while (active) { await press(); for (let slice = 0; active && slice < 10; slice++) await delay(250); } })();
+        // The transcript stays static after the turn, so the film keeps the final answer without adding scene time.
+        return async () => { if (!active) return; active = false; await loop; await press(); await delay(600); await press(); };
+      },
       async finishDiagnostic(row: NarrativeRow) {
         await writeFile(join(reportDir, "diagnostic-result.json"), JSON.stringify({ ...identity, scope: "targeted diagnosis only; not full workshop acceptance", profile, row, rows: rows.length ? rows : [row], inference: inference.observations() }, null, 2) + "\n", { mode: 0o600 });
         if ((await workshopRunIdentity()).sourceDigest !== identity.sourceDigest) throw new Error("Workshop source changed during the diagnostic");

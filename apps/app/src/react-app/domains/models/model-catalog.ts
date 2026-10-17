@@ -103,6 +103,13 @@ export function autoProviderSubtitle() {
   return "Auto";
 }
 
+/** Only what is true about this model right now, without its provider (rows already show the logo and group). */
+export function modelStateLabel(model: ModelOption): string | null {
+  if (model.gatewayAuthorization) return "Sign-in required";
+  if (model.organizationPinOrder !== undefined) return "Pinned by your org";
+  return null;
+}
+
 export function modelSubtitle(model: ModelOption, exhausted = false) {
   if (isAutoModel(model)) return exhausted ? "Limit used up" : "OpenWork picks the model";
   // Gateway models assigned to the member that wait on their own provider sign-in.

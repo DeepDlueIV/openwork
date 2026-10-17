@@ -5,7 +5,10 @@
   "type": "module",
   "exports": {
     "./workbot-context": {
-      "types": "./src/workbot-context.ts",
+      "types": {
+        "openwork-build": "./dist/types/src/workbot-context.d.ts",
+        "default": "./src/workbot-context.ts"
+      },
       "development": "./src/workbot-context.ts",
       "default": "./src/workbot-context.ts"
     },

@@ -19,6 +19,12 @@ export async function acmeRuntimeFixture(stack: AsyncDisposableStack) {
   return { workspace: join(root, "workspace"), env: { ...executable, ...isolatedRuntimeEnvironment(root, "v1") } };
 }
 
+/** A script world owns its process. Den/build children get no ambient developer secrets or injection hooks either. */
+export function acmeProcessEnvironment(source: NodeJS.ProcessEnv, runtimeEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const harness = Object.fromEntries(Object.entries(source).filter(([key]) => key.startsWith("OPENWORK_WORLD_") || key === "OPENWORK_EVAL_MYSQL_URL"));
+  return { ...harness, ...runtimeEnv };
+}
+
 /** Fail closed: every remote engine server must belong to this world's Den, not a hosted account. */
 export function assertAcmeMcpOrigins(config: unknown, denApiUrl: string) {
   if (!record(config) || !record(config.mcp)) throw new Error("Acme runtime has no MCP configuration.");
@@ -28,7 +34,7 @@ export function assertAcmeMcpOrigins(config: unknown, denApiUrl: string) {
     if (!record(entry)) throw new Error(`Invalid Acme MCP entry: ${name}`);
     if (entry.type !== "remote" || typeof entry.url !== "string") throw new Error(`Unexpected non-Den Acme MCP server: ${name}`);
     const url = new URL(entry.url);
-    if (url.origin !== expected || url.username || url.password || url.search || url.hash || !url.pathname.startsWith("/mcp/agent")) throw new Error(`Acme MCP origin isolation failed: ${name}`);
+    if (url.origin !== expected || url.username || url.password || url.search || url.hash || !(url.pathname === "/mcp/agent" || url.pathname.startsWith("/mcp/agent/connections/"))) throw new Error(`Acme MCP origin isolation failed: ${name}`);
     if (name === "openwork-cloud" && entry.enabled !== false) owned = true;
   }
   if (!owned) throw new Error("Acme runtime has no enabled owned Den MCP server.");

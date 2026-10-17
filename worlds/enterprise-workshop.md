@@ -58,7 +58,7 @@ For parity against the real `mcp-atlassian`, set `DEMO_ATLASSIAN_PARITY=1` for t
 Isolation regressions:
 
 ```sh
-node --test worlds/lib/acme-runtime.test.ts
+node --test worlds/lib/acme-runtime.test.ts worlds/lib/workshop-verification.test.mjs
 ```
 
 Explicit paid connected rehearsal (creates one DOC ticket, OneDrive text file and Outlook draft; never sends mail):
@@ -68,4 +68,15 @@ node worlds/lib/enterprise-workshop-probe.ts \
   evals/results/.worlds/scripts/enterprise-workshop--rehearsal.json
 ```
 
-The receipt is private local runtime state, not an evidence artifact. Do not commit or transfer it. The probe checks MCP origin isolation before prompting the default agent and reads mock backend state afterward. Browser visibility must additionally be checked against the same world; service unit/browser tests alone do not prove a real-model run.
+The receipt is private local runtime state, not an evidence artifact. Do not commit or transfer it. The probe checks MCP origin isolation before prompting the app's default OpenWork agent. It requires a normally completed turn using the selected paid provider/model, both complete Confluence product reads, a DOC ticket structurally assigned to Nora, comparison content in OneDrive, and an unsent threaded reply to the latest Inbox update. Created IDs must appear in successful service tool outputs as well as backend state; discovery metadata or the user prompt cannot satisfy those assertions. A failed HTTP turn is aborted rather than left writing in the background.
+
+Read-only, same-world browser evidence after the paid probe passes:
+
+```sh
+DEMO_SCREENSHOT_DIR=evals/results/enterprise-workshop/connected \
+node worlds/lib/enterprise-workshop-browser-proof.mjs \
+  evals/results/.worlds/scripts/enterprise-workshop--rehearsal.json \
+  --session <session-id-from-probe> --marker <marker-from-probe>
+```
+
+This repeats the correlated backend/tool-trace assertions and verifies the real browser DOM before capturing Jira, Outlook, OneDrive, both Confluence datasheets and the app-web session at 1440×1000. No model call or service write is performed by the browser proof. Service unit/browser tests alone do not prove a real-model run.

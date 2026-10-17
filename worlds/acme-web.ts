@@ -2,7 +2,7 @@ export const summary = "The seeded Acme demo stack: Den, AI Gateway, and the web
 export const supportedTargets = ["local/host", "daytona/linux", "freestyle/linux"];
 
 import { randomUUID } from "node:crypto";
-import { acmeRuntimeFixture, connectAcmeRuntime, assertAcmeConnections } from "./lib/acme-runtime.ts";
+import { acmeRuntimeFixture, connectAcmeRuntime, assertAcmeConnections, acmeProcessEnvironment } from "./lib/acme-runtime.ts";
 import { fileURLToPath } from "node:url";
 import { allocateFreePort } from "../evals/packages/cdp/src/index.ts";
 import { launchHeadlessWeb } from "../packages/world/src/headless-web.ts";
@@ -47,6 +47,10 @@ export async function bootAcmeWeb(stack: AsyncDisposableStack, preview?: { app: 
   if (place.kind !== "local") {
     throw new Error("Run acme-web co-located with MySQL (--place local), including inside a prepared Daytona sandbox.");
   }
+  const fixture = await acmeRuntimeFixture(stack);
+  const isolated = acmeProcessEnvironment(process.env, fixture.env);
+  for (const key of Object.keys(process.env)) delete process.env[key];
+  Object.assign(process.env, isolated);
   const upstream = await startAcmeUpstream(stack, checkpoint);
   const gateway = await gatewayEnvironment(upstream.baseUrl);
   const webPort = await allocateFreePort();
@@ -72,7 +76,6 @@ export async function bootAcmeWeb(stack: AsyncDisposableStack, preview?: { app: 
   await options.beforeRuntime?.(den, model);
   await assertAcmeConnections(den, [demo.baseUrl, ...(atlassian ? [atlassian.baseUrl] : [])]);
   const name = `${receiptName(ACME_WEB_NAME, resolveStage(process.env))}-${randomUUID().slice(0, 8)}`;
-  const fixture = await acmeRuntimeFixture(stack);
   const workspace = fixture.workspace;
   const web = await launchHeadlessWeb({
     repoRoot: REPO_ROOT,

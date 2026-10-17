@@ -23,7 +23,7 @@ type Json = Record<string, unknown>;
 const record = (value: unknown): Json => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Json : {};
 const list = (value: unknown): unknown[] => Array.isArray(value) ? value : [];
 const text = (value: unknown) => JSON.stringify(value ?? "");
-interface Row { id: string; title: string; status: "PASS" | "FAIL" | "BLOCKED"; reasons: string[]; latencyMs: number; prompt?: string; operator?: string; evidence?: Json }
+interface Row { askedQuestion?: string; id: string; title: string; status: "PASS" | "FAIL" | "BLOCKED"; reasons: string[]; latencyMs: number; prompt?: string; operator?: string; evidence?: Json }
 
 test("a day with Lena: short prompts, real tools, independent readback", { timeout: 2_400_000 }, async ({ world: subject, user, agent, probe, step }) => {
   const rows: Row[] = [];
@@ -57,9 +57,28 @@ test("a day with Lena: short prompts, real tools, independent readback", { timeo
     await stopFollow();
     world.markScene(`${id}:answered`);
     await world.settleInference();
-    const after = await world.observe();
+    let after = await world.observe();
+    // A person answers a clarifying question; record that it happened rather than hiding it.
+    let askedQuestion = "";
+    const firstAnswer = assistantText(after.messages, since).trim();
+    if (completed && /\?\s*$/.test(firstAnswer) && firstAnswer.length < 600) {
+      askedQuestion = firstAnswer.split("\n").at(-1) ?? firstAnswer;
+      const replySince = ids(after.messages);
+      await appUser.type("composer", "Yes, please go ahead.", { replace: true });
+      await appUser.click("Run task");
+      world.markScene(`${id}:reply`);
+      const stopReplyFollow = world.followLatest();
+      await probe.eventually(() => world.current(), { within: TURN_MS, intervalMs: 500, label: `${id} assistant finished after reply`, until: (value) => terminal(value.messages, replySince) }).catch(async () => {
+        completed = false;
+        await appAgent.run("composer.stop").catch(() => undefined);
+      });
+      await stopReplyFollow();
+      world.markScene(`${id}:answered`);
+      await world.settleInference();
+      after = await world.observe();
+    }
     const latencyMs = Date.now() - started;
-    return { before, after, since, completed, latencyMs, answer: assistantText(after.messages, since), tools: toolNames(after.messages, since), requests: after.inference.slice(inferenceStart) };
+    return { before, after, since, completed, latencyMs, askedQuestion, answer: assistantText(after.messages, since), tools: toolNames(after.messages, since), requests: after.inference.slice(inferenceStart) };
   }
   async function show(id: string, url: string, expectText: string, label = expectText) {
     await services.navigate(url);
@@ -92,32 +111,54 @@ test("a day with Lena: short prompts, real tools, independent readback", { timeo
 
   // ── Morning: the brief Lena set up last week (setup shown later as "how it's set up").
   const setupPrompt = "Every weekday at 9am, put a short news brief for France, the US, Germany and Japan in my OneDrive and leave me a draft email with the highlights.";
+  let automationInstructions = "";
   await scene("D0", "Set up the morning brief (shown later)", async () => {
     const t = await turn("D0", setupPrompt, { session: "Morning brief" });
     const jobs = list(ms(t.after.news).jobs).map(record);
-    const reasons = checks([[jobs.length > 0, "No schedule registered"], [!newItems(files(t.before), files(t.after)).some((file) => /brief|news/i.test(String(file.name))), "Brief was produced before 09:00"]]);
-    return { status: verdict(reasons, t.completed), reasons, latencyMs: t.latencyMs, prompt: setupPrompt, evidence: { jobs: jobs.map((job) => ({ id: job.id, time: job.time ?? job.schedule, tz: job.time_zone })) } };
+    // OpenWork's own answer to "every weekday at 9" is an Automation proposal card; Lena reviews and creates it.
+    const card = await evaluateOnSurface(world.app, () => { const node = document.querySelector("[data-openwork-automation-proposal]"); return node ? { instructions: node.querySelector("p.whitespace-pre-wrap")?.textContent ?? "", schedule: node.textContent ?? "" } : null; });
+    let created = "";
+    if (card) {
+      automationInstructions = card.instructions;
+      world.markScene("D0:proposal");
+      await appUser.click({ role: "button", label: "Create Automation" }).catch(() => undefined);
+      const deadline = Date.now() + 20_000;
+      while (Date.now() < deadline && !created) {
+        created = String(await evaluateOnSurface(world.app, () => document.querySelector("[data-openwork-automation-proposal]")?.getAttribute("data-automation-created") ?? ""));
+        if (!created) await new Promise((resolve) => setTimeout(resolve, 500));
+      }
+      world.markScene("D0:created");
+      await new Promise((resolve) => setTimeout(resolve, 1500));
+    }
+    const reasons = checks([[jobs.length > 0 || Boolean(card), "Neither an Automation proposal nor a schedule"], [Boolean(created) || jobs.length > 0, "Automation was proposed but could not be created"], [!newItems(files(t.before), files(t.after)).some((file) => /brief|news/i.test(String(file.name))), "Brief was produced before 09:00"]]);
+    return { status: verdict(reasons, t.completed), reasons, latencyMs: t.latencyMs, askedQuestion: t.askedQuestion || undefined, prompt: setupPrompt, evidence: { path: card ? "OpenWork Automation" : "news scheduler", automationId: created, schedule: card?.schedule.slice(0, 300), jobs: jobs.map((job) => job.id) } };
   });
   await scene("D1", "09:00 the brief arrives", async () => {
-    const clock = record(await world.advanceNewsClock());
-    const event = list(clock.events).map(record).find((item) => item.status === "due");
-    const job = event ? list(clock.jobs).map(record).find((item) => item.id === event.jobId) : undefined;
-    if (!job || typeof job.instructions !== "string") return { status: "BLOCKED", reasons: ["No due job to dispatch"], latencyMs: 0, operator: "advanced simulated clock" };
-    const dispatch = `${job.instructions}\n\n(Scheduled run: it is now 09:00 America/Los_Angeles on 2026-10-16.)`;
-    const t = await turn("D1", dispatch);
+    let instructions = automationInstructions;
+    let operator = "Simulated 09:00 run: the created Automation's own instructions were run once in a new session (cloud Automation runner not available locally)";
+    if (!instructions) {
+      const clock = record(await world.advanceNewsClock());
+      const event = list(clock.events).map(record).find((item) => item.status === "due");
+      const job = event ? list(clock.jobs).map(record).find((item) => item.id === event.jobId) : undefined;
+      instructions = typeof job?.instructions === "string" ? job.instructions : "";
+      operator = "Simulated clock advanced to 09:00; the model's own saved job text was dispatched";
+    }
+    if (!instructions) return { status: "BLOCKED", reasons: ["Nothing scheduled to run"], latencyMs: 0, operator };
+    const dispatch = `${instructions}\n\n(Scheduled run: it is now 09:00 America/Los_Angeles on Friday 2026-10-16.)`;
+    const t = await turn("D1", dispatch, { session: "Morning brief · 09:00" });
     const digest = newItems(files(t.before), files(t.after)).find((file) => ["France", "Germany", "Japan"].every((country) => String(record(file.preview).text ?? "").includes(country)));
     const draft = newItems(mails(t.before), mails(t.after)).find((mail) => mail.isDraft === true);
-    const reasons = checks([[Boolean(digest), "No brief with all four countries saved in OneDrive"], [Boolean(draft), "No draft email"], [sentNothing(t.before, t.after), "Mail was sent"]]);
+    const reasons = checks([[Boolean(digest), "No brief with the four countries saved in OneDrive"], [Boolean(draft), "No draft email"], [sentNothing(t.before, t.after), "Mail was sent"]]);
     if (digest) await show("D1", `${world.urls.oneDrive}?item=${encodeURIComponent(String(digest.id))}`, String(digest.name));
     if (draft) await show("D1", `${world.urls.outlook}?message=${encodeURIComponent(String(draft.id))}`, "Edit draft", "draft");
-    return { status: verdict(reasons, t.completed), reasons, latencyMs: t.latencyMs, operator: "Simulated clock advanced to 09:00; the model's own saved job text was dispatched", evidence: { digest: digest?.name, draft: draft?.subject } };
+    return { status: verdict(reasons, t.completed), reasons, latencyMs: t.latencyMs, askedQuestion: t.askedQuestion || undefined, operator, evidence: { digest: digest?.name, draft: draft?.subject } };
   });
   const followPrompt = "Anything in there that matters for Blue Harbor or Northwind?";
   await scene("D2", "Ask about the brief", async () => {
     const t = await turn("D2", followPrompt);
     const writes = list(ms(t.after.microsoft).audit).length - list(ms(t.before.microsoft).audit).length;
     const reasons = checks([[t.answer.trim().length > 40, "No useful answer"], [sentNothing(t.before, t.after), "Mail was sent"]]);
-    return { status: verdict(reasons, t.completed), reasons, latencyMs: t.latencyMs, prompt: followPrompt, evidence: { serviceCalls: writes } };
+    return { status: verdict(reasons, t.completed), reasons, latencyMs: t.latencyMs, askedQuestion: t.askedQuestion || undefined, prompt: followPrompt, evidence: { serviceCalls: writes } };
   });
 
   // ── Organise the day.
@@ -131,7 +172,7 @@ test("a day with Lena: short prompts, real tools, independent readback", { timeo
     const sorted = received.filter((mail) => customIds.has(mail.parentFolderId));
     const reasons = checks([[wanted.every(Boolean), "Missing one of To do / In progress / Done"], [sorted.length >= 5, `Only ${sorted.length} of 6 inbox messages sorted`], [received.length === 6, "A message disappeared"]]);
     await show("D3", world.urls.outlook, "To do", "folders");
-    return { status: verdict(reasons, t.completed), reasons, latencyMs: t.latencyMs, prompt: sortPrompt, evidence: { folders: wanted.map((folder) => folder ? { name: folder.displayName, count: folder.totalItemCount } : null) } };
+    return { status: verdict(reasons, t.completed), reasons, latencyMs: t.latencyMs, askedQuestion: t.askedQuestion || undefined, prompt: sortPrompt, evidence: { folders: wanted.map((folder) => folder ? { name: folder.displayName, count: folder.totalItemCount } : null) } };
   });
 
   // ── Customer work, then make it repeatable.
@@ -146,7 +187,7 @@ test("a day with Lena: short prompts, real tools, independent readback", { timeo
     const reasons = checks([[check.ok, check.reason], [Boolean(reply), "No draft reply in the Blue Harbor thread"], [sentNothing(t.before, t.after), "Mail was sent"]]);
     if (deck) await show("D4", `${world.urls.oneDrive}?item=${encodeURIComponent(String(deck.id))}`, String(deck.name));
     if (reply) await show("D4", `${world.urls.outlook}?message=${encodeURIComponent(String(reply.id))}`, "Edit draft", "reply");
-    return { status: verdict(reasons, t.completed), reasons, latencyMs: t.latencyMs, prompt: comparePrompt, evidence: { deck: deck?.name, slides: check.slides, sha256: check.sha256 } };
+    return { status: verdict(reasons, t.completed), reasons, latencyMs: t.latencyMs, askedQuestion: t.askedQuestion || undefined, prompt: comparePrompt, evidence: { deck: deck?.name, slides: check.slides, sha256: check.sha256 } };
   });
   const skillPrompt = "That's exactly what I needed. Save it as a skill so I can do this for other customers.";
   let skillPluginId = "";
@@ -158,7 +199,7 @@ test("a day with Lena: short prompts, real tools, independent readback", { timeo
     const pluginId = /plg_[0-9a-z]{26}/.exec(text(t.after.messages).split("create_skill").slice(1).join(""))?.[0] ?? "";
     skillPluginId = pluginId;
     const reasons = checks([[Boolean(created), "create_skill was not called"], [text(library) !== libraryBefore, "Library unchanged"], [Boolean(pluginId), "No skill plugin id returned"]]);
-    return { status: verdict(reasons, t.completed), reasons, latencyMs: t.latencyMs, prompt: skillPrompt, evidence: { pluginId } };
+    return { status: verdict(reasons, t.completed), reasons, latencyMs: t.latencyMs, askedQuestion: t.askedQuestion || undefined, prompt: skillPrompt, evidence: { pluginId } };
   });
   const reusePrompt = "Northwind is asking the same thing for moving totes from the dock to the line. Use my comparison skill.";
   await scene("D6", "Second customer, using the skill", async () => {
@@ -169,7 +210,7 @@ test("a day with Lena: short prompts, real tools, independent readback", { timeo
     const reply = newItems(mails(t.before), mails(t.after)).find((mail) => mail.isDraft === true && mail.conversationId === "thread-northwind");
     const reasons = checks([[usedSkill, "The saved skill was not loaded"], [check.ok, check.reason], [Boolean(reply), "No draft reply in the Northwind thread"], [sentNothing(t.before, t.after), "Mail was sent"]]);
     if (deck) await show("D6", `${world.urls.oneDrive}?item=${encodeURIComponent(String(deck.id))}`, String(deck.name));
-    return { status: verdict(reasons, t.completed), reasons, latencyMs: t.latencyMs, prompt: reusePrompt, evidence: { usedSkill, firstMs: firstComparisonMs, secondMs: t.latencyMs, deck: deck?.name, slides: check.slides, sha256: check.sha256 } };
+    return { status: verdict(reasons, t.completed), reasons, latencyMs: t.latencyMs, askedQuestion: t.askedQuestion || undefined, prompt: reusePrompt, evidence: { usedSkill, firstMs: firstComparisonMs, secondMs: t.latencyMs, deck: deck?.name, slides: check.slides, sha256: check.sha256 } };
   });
   const sharePrompt = "Nice. Share that skill with Nora.";
   await scene("D7", "Share the skill with Nora", async () => {
@@ -179,7 +220,7 @@ test("a day with Lena: short prompts, real tools, independent readback", { timeo
     const access = skillPluginId ? await world.readDenAs("owner", `/v1/plugins/${skillPluginId}/access`) : null;
     const grant = list(record(access).items).map(record).find((item) => item.orgMembershipId === noraMember && !item.removedAt);
     const reasons = checks([[Boolean(skillPluginId), "No skill to share"], [Boolean(grant), "Nora has no access grant"]]);
-    return { status: verdict(reasons, t.completed), reasons, latencyMs: t.latencyMs, prompt: sharePrompt, evidence: { role: grant?.role } };
+    return { status: verdict(reasons, t.completed), reasons, latencyMs: t.latencyMs, askedQuestion: t.askedQuestion || undefined, prompt: sharePrompt, evidence: { role: grant?.role } };
   });
 
   // ── Account review.
@@ -190,7 +231,7 @@ test("a day with Lena: short prompts, real tools, independent readback", { timeo
     const check = await pptxCheck(deck, t.after.sessionId, [/Northwind/i, /Blue\s*Harbor/i, /1\.46|1,460/]);
     const reasons = checks([[check.ok, check.reason], [check.slides >= 3, `Only ${check.slides} slides`]]);
     if (deck) await show("D8", `${world.urls.oneDrive}?item=${encodeURIComponent(String(deck.id))}`, String(deck.name));
-    return { status: verdict(reasons, t.completed), reasons, latencyMs: t.latencyMs, prompt: deckPrompt, evidence: { deck: deck?.name, slides: check.slides, sha256: check.sha256 } };
+    return { status: verdict(reasons, t.completed), reasons, latencyMs: t.latencyMs, askedQuestion: t.askedQuestion || undefined, prompt: deckPrompt, evidence: { deck: deck?.name, slides: check.slides, sha256: check.sha256 } };
   });
 
   // ── Small admin.
@@ -201,7 +242,7 @@ test("a day with Lena: short prompts, real tools, independent readback", { timeo
     const issue = list(record(ms(t.after.atlassian).jira).issues).map(record).find((item) => !before.has(item.id) && item.project === "DOC");
     const reasons = checks([[Boolean(issue), "No DOC issue"], [issue?.assignee === "nora", "Not assigned to Nora"], [/xyz/i.test(String(issue?.summary ?? "")), "Summary doesn't mention Project XYZ"]]);
     if (issue) await show("D9", `${world.urls.jira}/browse/${issue.key}`, String(issue.key));
-    return { status: verdict(reasons, t.completed), reasons, latencyMs: t.latencyMs, prompt: jiraPrompt, evidence: { key: issue?.key, summary: issue?.summary } };
+    return { status: verdict(reasons, t.completed), reasons, latencyMs: t.latencyMs, askedQuestion: t.askedQuestion || undefined, prompt: jiraPrompt, evidence: { key: issue?.key, summary: issue?.summary } };
   });
   const itPrompt = "I'm locked out of Windows. Can you open an IT ticket for me?";
   await scene("D10", "IT ticket", async () => {
@@ -210,13 +251,13 @@ test("a day with Lena: short prompts, real tools, independent readback", { timeo
     const issue = list(record(ms(t.after.atlassian).jira).issues).map(record).find((item) => !before.has(item.id) && item.project === "ITSD");
     const reasons = checks([[Boolean(issue), "No IT service desk request"], [/windows login/i.test(text(issue)), "Application is not Windows login"], [!/password\s*[:=]/i.test(t.answer), "Asked for or echoed a password"]]);
     if (issue) await show("D10", `${world.urls.jira}/browse/${issue.key}`, "Windows login");
-    return { status: verdict(reasons, t.completed), reasons, latencyMs: t.latencyMs, prompt: itPrompt, evidence: { key: issue?.key } };
+    return { status: verdict(reasons, t.completed), reasons, latencyMs: t.latencyMs, askedQuestion: t.askedQuestion || undefined, prompt: itPrompt, evidence: { key: issue?.key } };
   });
   const dogPrompt = "Can I bring my dog to the office?";
   await scene("D11", "Honest answer when the handbook is silent", async () => {
     const t = await turn("D11", dogPrompt, { session: "Office question" });
     const reasons = checks([[/people ops/i.test(t.answer), "Doesn't point to People Ops"], [/(couldn.t|could not|didn.t|did not|no) .{0,40}(find|policy|mention)/i.test(t.answer), "Doesn't say the policy wasn't found"]]);
-    return { status: verdict(reasons, t.completed), reasons, latencyMs: t.latencyMs, prompt: dogPrompt };
+    return { status: verdict(reasons, t.completed), reasons, latencyMs: t.latencyMs, askedQuestion: t.askedQuestion || undefined, prompt: dogPrompt };
   });
   const bookPrompt = "Book 30 minutes with Nora and Priya on Monday at 10 to go over the Atlas comparison.";
   const movePrompt = "Actually, can you move it to Tuesday at 11?";
@@ -229,7 +270,7 @@ test("a day with Lena: short prompts, real tools, independent readback", { timeo
     const people = text(meeting?.attendees);
     const reasons = checks([[created.length === 1, `${created.length} Atlas meetings exist (want exactly one)`], [/2026-10-20T11:00/.test(start), `Final start is ${start || "missing"}, not Tuesday 11:00`], [/nora@acme\.test/.test(people) && /priya@acme\.test/.test(people), "Nora and Priya not both invited"]]);
     if (meeting) await show("D12", `${world.urls.outlook}?event=${encodeURIComponent(String(meeting.id))}`, String(meeting.subject));
-    return { status: verdict(reasons, first.completed && second.completed), reasons, latencyMs: first.latencyMs + second.latencyMs, prompt: `${bookPrompt} → ${movePrompt}`, evidence: { start, tz: record(meeting?.start).timeZone } };
+    return { status: verdict(reasons, first.completed && second.completed), reasons, latencyMs: first.latencyMs + second.latencyMs, askedQuestion: [first.askedQuestion, second.askedQuestion].filter(Boolean).join(" | ") || undefined, prompt: `${bookPrompt} → ${movePrompt}`, evidence: { start, tz: record(meeting?.start).timeZone } };
   });
   const donePrompt = "I've answered Blue Harbor and Northwind — move those threads to Done.";
   await scene("D13", "Close the loop: threads to Done", async () => {
@@ -238,7 +279,7 @@ test("a day with Lena: short prompts, real tools, independent readback", { timeo
     const threadMail = mails(t.after).filter((mail) => !mail.isDraft && ["thread-blueharbor", "thread-northwind"].includes(String(mail.conversationId)));
     const reasons = checks([[Boolean(done), "No Done folder"], [threadMail.length > 0 && threadMail.every((mail) => mail.parentFolderId === done?.id), "Not every Blue Harbor/Northwind message is in Done"]]);
     await show("D13", world.urls.outlook, "Done", "folders");
-    return { status: verdict(reasons, t.completed), reasons, latencyMs: t.latencyMs, prompt: donePrompt };
+    return { status: verdict(reasons, t.completed), reasons, latencyMs: t.latencyMs, askedQuestion: t.askedQuestion || undefined, prompt: donePrompt };
   });
 
   // ── Optional advanced: an App (only when the Den App builder is on).
@@ -250,7 +291,7 @@ test("a day with Lena: short prompts, real tools, independent readback", { timeo
       const reasons = checks([[created, "create_app was not called"], [!/error|failed/i.test(t.answer.slice(-200)) || created, "App build failed"]]);
       await new Promise((resolve) => setTimeout(resolve, 6000));
       world.markScene("D14:app-visible");
-      return { status: verdict(reasons, t.completed), reasons, latencyMs: t.latencyMs, prompt: appPrompt };
+      return { status: verdict(reasons, t.completed), reasons, latencyMs: t.latencyMs, askedQuestion: t.askedQuestion || undefined, prompt: appPrompt };
     });
   }
 

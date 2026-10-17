@@ -4,7 +4,8 @@ import { bootAcmeWeb } from "./acme-web.ts";
 import { assertAcmeConnections } from "./lib/acme-runtime.ts";
 import { record } from "./lib/acme-gateway.ts";
 import { connectDemoServer, startDemoScript } from "./lib/demo-workspace.ts";
-import { denFetch } from "../evals/packages/behaviors/src/den.ts";
+import type { Den } from "../evals/packages/env/src/den.ts";
+import { workshopModelProfile, takeWorkshopCredential, seedWorkshopInference, probeWorkshopInference } from "./lib/workshop-inference.ts";
 import { allocateFreePort } from "../evals/packages/cdp/src/index.ts";
 import { hold } from "../packages/world/src/hold.ts";
 import { output, secret } from "../packages/world/src/outputs.ts";
@@ -12,45 +13,31 @@ import { output, secret } from "../packages/world/src/outputs.ts";
 export const summary = "A fictional enterprise workday: real model, Jira, Confluence, Outlook and OneDrive with browser views and mutable demo data.";
 export const supportedTargets = ["local/host"];
 
-/** Keep the paid credential out of child processes. Only the disposable Den provider receives it. */
-function takeOpenAiKey(): string {
-  const key = process.env.OPENAI_API_KEY?.trim();
-  delete process.env.OPENAI_API_KEY;
-  if (!key || key === "*not found*") throw new Error("Set OPENAI_API_KEY for this command from Infisical (dev, /). No service was started.");
-  return key;
+export interface WorkshopHooks {
+  /** Owned fixture additions run after inference seeding, before any engine starts. */
+  beforeRuntime?: (den: Den, baseline: { orgId: string; providerId: string; modelId: string }) => Promise<void>;
 }
 
-export async function main(argv = process.argv.slice(2)): Promise<void> {
+export async function main(argv = process.argv.slice(2), hooks: WorkshopHooks = {}): Promise<void> {
   if (process.env.OPENWORK_WORLD_PLACE && process.env.OPENWORK_WORLD_PLACE !== "local") throw new Error("enterprise-workshop currently supports local only. Paid keys are never baked into remote snapshots.");
-  const key = takeOpenAiKey();
-  const index = argv.indexOf("--model");
-  const modelName = index >= 0 ? argv[index + 1] : "gpt-4.1";
-  if (!modelName || !/^[a-zA-Z0-9._-]+$/.test(modelName)) throw new Error("--model requires an OpenAI model ID.");
+  const profile = workshopModelProfile(argv);
+  const key = takeWorkshopCredential(profile);
+  if (argv.includes("--probe-inference") && profile.name !== "gpt-sol-fast") throw new Error("--probe-inference is supported only for gpt-sol-fast; no Qwen inference is performed during startup.");
   await using stack = new AsyncDisposableStack();
   const uiPort = await allocateFreePort();
   const uiOrigin = `http://127.0.0.1:${uiPort}`;
-  let paid: { providerId: string; modelId: string } | undefined;
+  let paid: { providerId: string; modelId: string; variant?: string } | undefined;
   const world = await bootAcmeWeb(stack, undefined, undefined, {
     atlassian: true, atlassianBrowserUrl: uiOrigin,
     async beforeRuntime(den, baseline) {
-      const headers = { authorization: `Bearer ${den.admin.token}`, "x-openwork-org-id": baseline.orgId };
-      const created = await denFetch(den.admin, "/v1/inference-providers", {
-        method: "POST", headers,
-        body: JSON.stringify({ name: "Workshop OpenAI", providerId: "openai", modelIds: [modelName],
-          credential: { kind: "api_key", secret: key }, allMembers: true }),
-      });
-      const provider = record(created.body) && record(created.body.inferenceProvider) ? created.body.inferenceProvider : undefined;
-      if (created.response.status !== 201 || typeof provider?.id !== "string") throw new Error(`Workshop provider creation failed: HTTP ${created.response.status}. Response omitted to protect credentials.`);
-      const connected = await denFetch(den.admin, `/v1/inference-providers/${provider.id}/connect`, { headers });
-      const inference = record(connected.body) && record(connected.body.inferenceProvider) ? connected.body.inferenceProvider : undefined;
-      const model = Array.isArray(inference?.models) ? inference.models.find(record) : undefined;
-      if (!connected.response.ok || typeof model?.id !== "string") throw new Error("Workshop model was not usable.");
-      const removed = await denFetch(den.admin, `/v1/inference-providers/${baseline.providerId}`, { method: "DELETE", headers });
-      if (removed.response.status !== 204) throw new Error(`Could not remove the workshop's synthetic model: HTTP ${removed.response.status}`);
-      paid = { providerId: provider.id, modelId: model.id };
+      paid = await seedWorkshopInference(den, baseline, profile, key);
+      await hooks.beforeRuntime?.(den, baseline);
     },
   });
   if (!paid) throw new Error("Workshop model was not seeded before the runtime started.");
+  const inferenceWitness = argv.includes("--probe-inference")
+    ? await probeWorkshopInference(world.den, world.model.orgId, world.gatewayUrl, paid, profile)
+    : undefined;
   if (!world.atlassian) throw new Error("Workshop Atlassian server was not started.");
   const microsoft = await startDemoScript(stack, world.den, {
     url: new URL("../evals/packages/labs/src/demo-microsoft365.mjs", import.meta.url), label: "demo-microsoft365", daytonaPort: 3988,
@@ -71,7 +58,7 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   await writeFile(join(item.path, "WORKSHOP.md"), brief);
   const defaultModel = await fetch(`${manifest.openworkUrl}/workspace/${item.id}/default-model`, {
     method: "PUT", headers: { authorization: `Bearer ${manifest.token}`, "content-type": "application/json" },
-    body: JSON.stringify({ model: { providerID: paid.providerId, modelID: paid.modelId } }),
+    body: JSON.stringify({ model: { providerID: paid.providerId, modelID: paid.modelId, ...(paid.variant ? { variant: paid.variant } : {}) } }),
   });
   if (!defaultModel.ok) throw new Error(`Workshop default model setup failed: HTTP ${defaultModel.status}`);
 
@@ -83,7 +70,11 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
     oneDrive: output(`${microsoft.baseUrl}/onedrive`, { group: "Workday" }),
     denWeb: output(world.den.ref.webUrl, { group: "Accounts" }),
     denApi: output(world.den.ref.apiUrl, { group: "Technical" }),
-    model: output(modelName, { group: "Model", note: "Live paid inference; synthetic service data only" }),
+    model: output(profile.model, { group: "Model", note: "Live paid inference; synthetic service data only" }),
+    modelProfile: output(profile.name, { group: "Model" }),
+    modelVariant: output(paid.variant ?? "default", { group: "Model", note: "Fast is priority service tier, not reduced reasoning" }),
+    inferenceRoute: output(`${profile.upstream}${profile.route}`, { group: "Model", note: "Configured upstream protocol; not per-turn evidence" }),
+    ...(inferenceWitness ? { inferenceWitness: output(JSON.stringify(inferenceWitness), { group: "Model", note: "Bounded explicit gateway probe, not narrative/engine proof" }) } : {}),
     modelId: output(paid.modelId, { group: "Model" }),
     providerId: output(paid.providerId, { group: "Model" }),
     workspaceId: output(item.id, { group: "Model" }),

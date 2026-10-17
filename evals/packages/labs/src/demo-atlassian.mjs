@@ -32,6 +32,10 @@ const CONFLUENCE_VERSION = "8.5.16";
 
 // ── Time ────────────────────────────────────────────────────────────────────────────────────────────────
 
+const fixedNow = process.env.DEMO_NOW ? Date.parse(process.env.DEMO_NOW) : null;
+if (fixedNow !== null && !Number.isFinite(fixedNow)) throw new Error("DEMO_NOW must be an ISO timestamp.");
+const clockNow = () => fixedNow ?? Date.now();
+
 function zoneOffsetMinutes(date) {
   const parts = Object.fromEntries(new Intl.DateTimeFormat("en-US", {
     timeZone: TIME_ZONE, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit",
@@ -49,7 +53,7 @@ function jiraTime(ms) {
 const confluenceTime = (ms) => jiraTime(ms).replace(/([+-]\d{2})(\d{2})$/, "$1:$2");
 const localDate = (ms) => new Date(ms + zoneOffsetMinutes(new Date(ms)) * 60000).toISOString().slice(0, 10);
 const MINUTE = 60000; const HOUR = 60 * MINUTE; const DAY = 24 * HOUR;
-const ago = (ms) => Date.now() - ms;
+const ago = (ms) => clockNow() - ms;
 
 // ── People: the same Acme Robotics team as the other demo apps. The signed-in person is Alex Chen. ─────────
 
@@ -124,7 +128,7 @@ const WORKFLOWS = {
 };
 
 function seedJira() {
-  const now = Date.now();
+  const now = clockNow();
   const lead = (handle) => PEOPLE.find((p) => p.handle === handle);
   const projects = [
     { id: "10000", key: "FLEET", name: "Fleet Software", projectTypeKey: "software", lead: lead("sofia"), description: "Robot firmware, navigation and the fleet manager.",
@@ -182,7 +186,7 @@ function seedJira() {
   return { projects, issues, counters, nextId, nextCommentId: 30000 };
 }
 let commentSeq = 30000;
-function newComment(handle, body, at = Date.now()) {
+function newComment(handle, body, at = clockNow()) {
   return { id: String(commentSeq++), author: handle, body, created: at, updated: at };
 }
 
@@ -466,7 +470,8 @@ function wikiToMarkdown(wiki) {
 function seed() { commentSeq = 30000; return { jira: seedJira(), confluence: seedConfluence() }; }
 let state = seed();
 let touched = false;
-function reset() { state = seed(); touched = false; }
+let audit = [], auditSequence = 0;
+function reset() { state = seed(); touched = false; audit = []; auditSequence = 0; }
 
 // ── Jira: views in the shape of the REST API v2 ─────────────────────────────────────────────────────────
 
@@ -518,6 +523,8 @@ function issueFields(issue, ctx = {}) {
       fields: { summary: entry.summary, status: statusView(entry.status, ctx), priority: priorityView(entry.priority, ctx), issuetype: issueTypeView(entry.issuetype, ctx) } })),
     ...(parent ? { parent: { id: parent.id, key: parent.key, self: `${jiraBase(ctx)}/rest/api/2/issue/${parent.id}`, fields: { summary: parent.summary, status: statusView(parent.status, ctx), priority: priorityView(parent.priority, ctx), issuetype: issueTypeView(parent.issuetype, ctx) } } } : {}),
     [EPIC_LINK_FIELD]: issue.epicLink, [EPIC_NAME_FIELD]: issue.issuetype === "Epic" ? issue.summary : null, [STORY_POINTS_FIELD]: null,
+    ...(issue.application ? { customfield_10500: { value: issue.application } } : {}),
+    ...(issue.hardware ? { customfield_10501: { value: issue.hardware } } : {}),
     [REQUEST_TYPE_FIELD]: requestType ? { _links: { jiraRest: `${jiraBase(ctx)}/rest/api/2/issue/${issue.id}` }, requestType: requestTypeView(requestType, ctx), currentStatus: { status: issue.status, statusCategory: status(issue.status).statusCategory.key.toUpperCase(), statusDate: { iso8601: jiraTime(issue.updated) } } } : null,
   };
 }
@@ -570,7 +577,7 @@ function findProject(idOrKey) {
 }
 function recordChange(issue, field, from, to) {
   if (from === to) return;
-  issue.changelog.push({ id: String(40000 + issue.changelog.length + Number(issue.id)), author: ME.handle, created: Date.now(), items: [{ field, fieldtype: "jira", from: null, fromString: from ?? null, to: null, toString: to ?? null }] });
+  issue.changelog.push({ id: String(40000 + issue.changelog.length + Number(issue.id)), author: ME.handle, created: clockNow(), items: [{ field, fieldtype: "jira", from: null, fromString: from ?? null, to: null, toString: to ?? null }] });
 }
 const userHandle = (value) => {
   if (value === null || value === undefined || value === "" || value === "-1") return null;
@@ -614,7 +621,7 @@ function createIssue(fields, ctx = {}) {
   if (type.subtask && !fields.parent) throw badRequest("", { parent: "Could not find parent issue. Sub-tasks need a parent." });
   if (!String(fields.summary ?? "").trim()) throw badRequest("", { summary: "You must specify a summary of the issue." });
   state.jira.counters[project.key] += 1;
-  const now = Date.now();
+  const now = clockNow();
   const issue = { id: String(state.jira.nextId++), key: `${project.key}-${state.jira.counters[project.key]}`, project: project.key, issuetype: type.name, summary: "", description: null,
     status: project.projectTypeKey === "service_desk" ? "Waiting for support" : "To Do", priority: "Medium", assignee: null, reporter: ctx.actor ?? ME.handle, creator: ctx.actor ?? ME.handle,
     labels: [], components: [], fixVersions: [], versions: [], duedate: null, parent: null, epicLink: null, created: now, updated: now, resolution: null, resolutiondate: null,
@@ -632,12 +639,12 @@ function transitionIssue(issue, transitionId, fields = {}, comment) {
   if (!transition) throw badRequest(`It seems that you have tried to perform a workflow operation (${transitionId}) that is not valid for the current state of this issue (${issue.key}).`, { transition: `Transition id '${transitionId}' is not valid for this issue.` });
   const before = issue.status; issue.status = transition[1];
   recordChange(issue, "status", before, issue.status);
-  if (status(issue.status).statusCategory.key === "done") { issue.resolution = nameOf(fields?.resolution) ?? "Done"; issue.resolutiondate = Date.now(); }
+  if (status(issue.status).statusCategory.key === "done") { issue.resolution = nameOf(fields?.resolution) ?? "Done"; issue.resolutiondate = clockNow(); }
   else { issue.resolution = null; issue.resolutiondate = null; }
   const rest = { ...(fields ?? {}) }; delete rest.resolution;
   applyFields(issue, rest);
   if (comment) issue.comments.push(newComment(ME.handle, comment));
-  issue.updated = Date.now();
+  issue.updated = clockNow();
   touched = true;
 }
 
@@ -711,13 +718,13 @@ function parseQuery(query) {
 function dateValue(value) {
   if (value && typeof value === "object" && value.fn) {
     const fn = value.fn.toLowerCase(); const arg = value.args[0];
-    const base = fn === "now" ? Date.now() : (() => { const d = new Date(Date.now() + zoneOffsetMinutes(new Date()) * 60000); d.setUTCHours(0, 0, 0, 0);
+    const base = fn === "now" ? clockNow() : (() => { const d = new Date(clockNow() + zoneOffsetMinutes(new Date(clockNow())) * 60000); d.setUTCHours(0, 0, 0, 0);
       if (fn === "startofweek") d.setUTCDate(d.getUTCDate() - d.getUTCDay()); if (fn === "startofmonth") d.setUTCDate(1); if (fn === "startofyear") d.setUTCMonth(0, 1);
-      return d.getTime() - zoneOffsetMinutes(new Date()) * 60000; })();
+      return d.getTime() - zoneOffsetMinutes(new Date(clockNow())) * 60000; })();
     return arg ? base + relative(arg) : base;
   }
   const text = String(value);
-  if (/^[+-]?\d+[mhdwMy]$/.test(text)) return Date.now() + relative(text);
+  if (/^[+-]?\d+[mhdwMy]$/.test(text)) return clockNow() + relative(text);
   const parsed = Date.parse(text.length === 10 ? `${text}T00:00:00` : text.replace(" ", "T"));
   if (!Number.isFinite(parsed)) throw badRequest(`Date value '${text}' for field is invalid. Valid formats include: 'yyyy/MM/dd HH:mm', 'yyyy-MM-dd HH:mm', 'yyyy/MM/dd', 'yyyy-MM-dd', or a period format e.g. '-5d', '4w 2d'.`);
   return parsed;
@@ -928,7 +935,7 @@ function savePage(page, { title, body, parentId, versionNumber, message }) {
   }
   if (body !== undefined) page.body = body;
   if (parentId !== undefined && parentId !== null) page.parentId = findPage(parentId).id;
-  page.version += 1; page.lastModifier = ME.handle; page.lastModified = Date.now(); page.versionMessage = message ?? "";
+  page.version += 1; page.lastModifier = ME.handle; page.lastModified = clockNow(); page.versionMessage = message ?? "";
   touched = true;
 }
 function createPage({ spaceKey, title, body, parentId, type = "page" }) {
@@ -938,7 +945,7 @@ function createPage({ spaceKey, title, body, parentId, type = "page" }) {
   if (state.confluence.pages.some((p) => p.spaceKey === space.key && p.title.toLowerCase() === String(title).toLowerCase() && p.status === "current" && p.type === "page")) {
     throw new ApiError(400, `A page with this title already exists: A page already exists with the title ${title} in the space with key ${space.key}`, { statusCode: 400 });
   }
-  const now = Date.now();
+  const now = clockNow();
   const page = { id: String(state.confluence.nextId++), type, status: "current", spaceKey: space.key, title: String(title), parentId: parentId ? findPage(parentId).id : space.homepageId,
     body: body ?? "", version: 1, versions: [], creator: ME.handle, created: now, lastModifier: ME.handle, lastModified: now, labels: [], comments: [], views: 0 };
   state.confluence.pages.push(page);
@@ -967,7 +974,7 @@ function customerRequestView(issue, ctx = {}) {
 
 async function jiraRest(method, path, query, body, ctx) {
   let m;
-  if (path === "/rest/api/2/serverInfo") return { baseUrl: JIRA_SITE, version: JIRA_VERSION, versionNumbers: JIRA_VERSION.split(".").map(Number), deploymentType: "Server", buildNumber: 912015, buildDate: "2026-08-20T00:00:00.000+0000", serverTime: jiraTime(Date.now()), scmInfo: "demo", serverTitle: "Acme Robotics Jira" };
+  if (path === "/rest/api/2/serverInfo") return { baseUrl: JIRA_SITE, version: JIRA_VERSION, versionNumbers: JIRA_VERSION.split(".").map(Number), deploymentType: "Server", buildNumber: 912015, buildDate: "2026-08-20T00:00:00.000+0000", serverTime: jiraTime(clockNow()), scmInfo: "demo", serverTitle: "Acme Robotics Jira" };
   if (path === "/rest/api/2/myself") return { ...userView(ME, ctx), groups: { size: 2, items: [] }, applicationRoles: { size: 1, items: [] }, expand: "groups,applicationRoles" };
   if (path === "/rest/api/2/user") { const person = findPerson(query.get("username") ?? query.get("key") ?? query.get("accountId")); if (!person) throw new ApiError(404, `The user named '${query.get("username") ?? query.get("key")}' does not exist`, { errorMessages: [`The user named '${query.get("username") ?? query.get("key")}' does not exist`] }); return userView(person, ctx); }
   if (path === "/rest/api/2/user/search" || path === "/rest/api/2/user/picker" || path === "/rest/api/2/user/assignable/search" || path === "/rest/api/2/user/assignable/multiProjectSearch") {
@@ -1021,20 +1028,20 @@ async function jiraRest(method, path, query, body, ctx) {
         else if (field === "comment" && operation.add) issue.comments.push(newComment(ME.handle, operation.add.body));
         else applyFields(issue, { [field]: operation.set ?? operation.add });
       }
-      issue.updated = Date.now(); touched = true; return { status: 204 };
+      issue.updated = clockNow(); touched = true; return { status: 204 };
     }
     if (method === "DELETE") { if (state.jira.issues.some((entry) => entry.parent === issue.key) && query.get("deleteSubtasks") !== "true") throw badRequest("The issue has subtasks; set deleteSubtasks=true to delete them."); state.jira.issues = state.jira.issues.filter((entry) => entry !== issue && entry.parent !== issue.key); touched = true; return { status: 204 }; }
   }
-  if ((m = /^\/rest\/api\/2\/issue\/([^/]+)\/assignee$/.exec(path)) && method === "PUT") { const issue = findIssue(m[1]); applyFields(issue, { assignee: body?.name ?? body?.accountId ?? body?.key ?? null }); issue.updated = Date.now(); touched = true; return { status: 204 }; }
+  if ((m = /^\/rest\/api\/2\/issue\/([^/]+)\/assignee$/.exec(path)) && method === "PUT") { const issue = findIssue(m[1]); applyFields(issue, { assignee: body?.name ?? body?.accountId ?? body?.key ?? null }); issue.updated = clockNow(); touched = true; return { status: 204 }; }
   if ((m = /^\/rest\/api\/2\/issue\/([^/]+)\/comment$/.exec(path))) {
     const issue = findIssue(m[1]);
-    if (method === "POST") { if (!String(body?.body ?? "").trim()) throw badRequest("", { comment: "Comment body can not be empty!" }); const comment = newComment(ME.handle, String(body.body)); issue.comments.push(comment); issue.updated = Date.now(); touched = true; return { status: 201, body: commentView(comment, issue, ctx) }; }
+    if (method === "POST") { if (!String(body?.body ?? "").trim()) throw badRequest("", { comment: "Comment body can not be empty!" }); const comment = newComment(ME.handle, String(body.body)); issue.comments.push(comment); issue.updated = clockNow(); touched = true; return { status: 201, body: commentView(comment, issue, ctx) }; }
     const comments = issue.comments.map((c) => commentView(c, issue, ctx)); const startAt = Number(query.get("startAt") ?? 0); const maxResults = Number(query.get("maxResults") ?? 50);
     return { startAt, maxResults, total: comments.length, comments: comments.slice(startAt, startAt + maxResults) };
   }
   if ((m = /^\/rest\/api\/2\/issue\/([^/]+)\/comment\/([^/]+)$/.exec(path))) {
     const issue = findIssue(m[1]); const comment = issue.comments.find((c) => c.id === m[2]); if (!comment) throw notFound("Can not find a comment for the id: " + m[2] + ".");
-    if (method === "PUT") { comment.body = String(body?.body ?? comment.body); comment.updated = Date.now(); touched = true; }
+    if (method === "PUT") { comment.body = String(body?.body ?? comment.body); comment.updated = clockNow(); touched = true; }
     if (method === "DELETE") { issue.comments = issue.comments.filter((c) => c !== comment); touched = true; return { status: 204 }; }
     return commentView(comment, issue, ctx);
   }
@@ -1099,13 +1106,13 @@ async function jiraRest(method, path, query, body, ctx) {
   if ((m = /^\/rest\/servicedeskapi\/request\/([^/]+)$/.exec(path))) return customerRequestView(findIssue(m[1]), ctx);
   if ((m = /^\/rest\/servicedeskapi\/request\/([^/]+)\/comment$/.exec(path))) {
     const issue = findIssue(m[1]);
-    if (method === "POST") { const comment = newComment(ME.handle, String(body?.body ?? "")); comment.public = body?.public !== false; issue.comments.push(comment); issue.updated = Date.now(); touched = true; return { status: 201, body: { id: comment.id, body: comment.body, public: comment.public, author: userView(ME, ctx), created: { iso8601: jiraTime(comment.created), epochMillis: comment.created } } }; }
+    if (method === "POST") { const comment = newComment(ME.handle, String(body?.body ?? "")); comment.public = body?.public !== false; issue.comments.push(comment); issue.updated = clockNow(); touched = true; return { status: 201, body: { id: comment.id, body: comment.body, public: comment.public, author: userView(ME, ctx), created: { iso8601: jiraTime(comment.created), epochMillis: comment.created } } }; }
     return { size: issue.comments.length, start: 0, limit: 50, isLastPage: true, values: issue.comments.map((c) => ({ id: c.id, body: c.body, public: c.public !== false, author: userView(c.author, ctx), created: { iso8601: jiraTime(c.created), epochMillis: c.created } })) };
   }
   if ((m = /^\/rest\/servicedeskapi\/request\/([^/]+)\/(status|sla|participant|approval|attachment)$/.exec(path))) {
     const issue = findIssue(m[1]);
     if (m[2] === "status") return { size: 1, start: 0, limit: 50, isLastPage: true, values: [customerRequestView(issue, ctx).currentStatus] };
-    if (m[2] === "sla") return { size: 1, start: 0, limit: 50, isLastPage: true, values: [{ id: "1", name: "Time to first response", completedCycles: [], ongoingCycle: { startTime: { iso8601: jiraTime(issue.created), epochMillis: issue.created }, breachTime: { iso8601: jiraTime(issue.created + 8 * HOUR), epochMillis: issue.created + 8 * HOUR }, breached: Date.now() > issue.created + 8 * HOUR, paused: false, withinCalendarHours: true, goalDuration: { millis: 8 * HOUR, friendly: "8h" }, elapsedTime: { millis: Date.now() - issue.created }, remainingTime: { millis: issue.created + 8 * HOUR - Date.now() } } }] };
+    if (m[2] === "sla") return { size: 1, start: 0, limit: 50, isLastPage: true, values: [{ id: "1", name: "Time to first response", completedCycles: [], ongoingCycle: { startTime: { iso8601: jiraTime(issue.created), epochMillis: issue.created }, breachTime: { iso8601: jiraTime(issue.created + 8 * HOUR), epochMillis: issue.created + 8 * HOUR }, breached: clockNow() > issue.created + 8 * HOUR, paused: false, withinCalendarHours: true, goalDuration: { millis: 8 * HOUR, friendly: "8h" }, elapsedTime: { millis: clockNow() - issue.created }, remainingTime: { millis: issue.created + 8 * HOUR - clockNow() } } }] };
     if (m[2] === "participant") return { size: issue.watchers.length, start: 0, limit: 50, isLastPage: true, values: issue.watchers.map((h) => userView(h, ctx)) };
     return { size: 0, start: 0, limit: 50, isLastPage: true, values: [] };
   }
@@ -1141,7 +1148,7 @@ async function confluenceRest(method, path, query, body, ctx) {
   if ((path === "/rest/api/content" || path === "/rest/api/content/") && method === "POST") {
     const storage = body?.body?.storage?.value ?? body?.body?.editor?.value ?? body?.body?.wiki?.value ?? "";
     if (body?.type === "comment") {
-      const page = findPage(body?.container?.id); const comment = { id: String(state.confluence.nextId++), author: ME.handle, body: storage, created: Date.now(), parentCommentId: body?.ancestors?.[0]?.id ?? null };
+      const page = findPage(body?.container?.id); const comment = { id: String(state.confluence.nextId++), author: ME.handle, body: storage, created: clockNow(), parentCommentId: body?.ancestors?.[0]?.id ?? null };
       page.comments.push(comment); touched = true; return contentView(commentAsContent(comment, page), ctx, "body.storage,version,container");
     }
     const page = createPage({ spaceKey: body?.space?.key, title: body?.title, body: storage, parentId: body?.ancestors?.[0]?.id, type: body?.type ?? "page" });
@@ -1712,7 +1719,7 @@ const server = createServer(async (req, res) => {
     const url = new URL(req.url ?? "/", "http://localhost");
     const path = url.pathname.replace(/\/+$/, "") || "/";
     if (path === "/health") return send(res, 200, { ok: true, services: ["jira", "confluence"], mcp: "/mcp" });
-    if (path === "/state" && req.method === "GET") return send(res, 200, { touched, ...state });
+    if (path === "/state" && req.method === "GET") return send(res, 200, { touched, ...state, audit });
     if (path === "/reset" && req.method === "POST") { reset(); log("state reset"); return send(res, 200, { ok: true }); }
     if (path === "/mcp") {
       if (req.method === "GET") return send(res, 405, { error: "SSE stream not offered; use POST." }, { allow: "POST, DELETE" });
@@ -1721,7 +1728,17 @@ const server = createServer(async (req, res) => {
       let payload;
       try { payload = JSON.parse(await readBody(req)); } catch { return send(res, 400, { jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }); }
       const sessionHeader = { "mcp-session-id": req.headers["mcp-session-id"] || randomUUID() };
-      const respond = async (message) => { const handled = handleRpc(message); return handled?.pending ? callTool(handled.message) : handled; };
+      const respond = async (message) => {
+        const handled = handleRpc(message);
+        if (!handled?.pending) return handled;
+        const at = Date.now(); // Real time binds the observed call to an assistant tool window, not the simulated business clock.
+        const response = await callTool(handled.message);
+        const input = structuredClone(message.params?.arguments ?? {});
+        const output = response.result.content?.[0]?.text ?? "";
+        audit.push({ sequence: ++auditSequence, at, name: String(message.params?.name ?? ""), input: JSON.stringify(input).length <= 65536 ? input : { truncated: true }, output: output.length <= 65536 ? output : { truncated: true }, status: response.result.isError ? "error" : "completed" });
+        if (audit.length > 300) audit.shift();
+        return response;
+      };
       if (Array.isArray(payload)) { const responses = (await Promise.all(payload.map(respond))).filter(Boolean); return responses.length ? send(res, 200, responses, sessionHeader) : send(res, 202, undefined, sessionHeader); }
       const response = await respond(payload);
       return response ? send(res, 200, response, sessionHeader) : send(res, 202, undefined, sessionHeader);

@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { isolatedRuntimeEnvironment } from "../../evals/packages/env/src/app-web-runtime.ts";
-import { denFetch } from "../../evals/packages/behaviors/src/den.ts";
+import { denFetch, type DenSession } from "../../evals/packages/behaviors/src/den.ts";
 import type { Den } from "../../evals/packages/env/src/den.ts";
 import type { HeadlessWebHandle } from "../../packages/world/src/headless-web.ts";
 import { trackResource } from "../../packages/world/src/ledger.ts";
@@ -55,9 +55,9 @@ export async function assertAcmeConnections(den: Den, ownedMockOrigins: string[]
 }
 
 /** Use the supported seeded-world MCP token/reconciliation path; never copy a user's connection. */
-export async function connectAcmeRuntime(den: Den, web: HeadlessWebHandle, orgId: string) {
-  const issued = await denFetch(den.admin, "/v1/mcp/token", {
-    method: "POST", headers: { authorization: `Bearer ${den.admin.token}`, "x-openwork-org-id": orgId },
+export async function connectAcmeRuntime(den: Den, web: Pick<HeadlessWebHandle, "manifest">, orgId: string, actor: DenSession = den.admin) {
+  const issued = await denFetch(actor, "/v1/mcp/token", {
+    method: "POST", headers: { authorization: `Bearer ${actor.token}`, "x-openwork-org-id": orgId },
     body: JSON.stringify({ scopes: ["mcp:read", "mcp:write"] }),
   });
   const token = record(issued.body) ? issued.body.token : undefined;
@@ -76,8 +76,12 @@ export async function connectAcmeRuntime(den: Den, web: HeadlessWebHandle, orgId
   await request(`${base}/mcp/openwork-cloud/reconcile`, {
     config: { type: "remote", url: `${den.ref.apiUrl}/mcp/agent`, enabled: true, oauth: false, headers: { Authorization: `Bearer ${token}` } }, trigger: "seeded-acme-world",
   });
-  // Reconciliation rolls the managed engine asynchronously. Do not send a prompt
-  // (or force a competing reload) until the new generation actually sees it.
+  // Native app-web worlds may have no managed inference catalog change to trigger
+  // a generation rollover. Ask the supported engine endpoint to reload the freshly
+  // reconciled global file; 503 can mean the existing rollover is coalescing.
+  const reload = await fetch(`${manifest.openworkUrl}${base}/engine/reload`, { method: "POST", headers, body: "{}", signal: AbortSignal.timeout(30_000) });
+  if (!reload.ok && reload.status !== 503) throw new Error(`Acme owned engine reload failed: HTTP ${reload.status}`);
+  // Do not send a paid prompt until the new generation actually sees the owned MCP.
   const deadline = Date.now() + 45_000;
   let lastFailure: unknown;
   while (Date.now() < deadline) {

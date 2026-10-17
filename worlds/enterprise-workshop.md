@@ -68,6 +68,8 @@ node worlds/lib/enterprise-workshop-probe.ts \
   evals/results/.worlds/scripts/enterprise-workshop--rehearsal.json
 ```
 
+To re-check a completed paid session without repeating its writes, add `--verify-session <session-id> --marker <marker>` to the probe command. Its result clearly labels this as read-only verification rather than a new paid rehearsal.
+
 The receipt is private local runtime state, not an evidence artifact. Do not commit or transfer it. The probe checks MCP origin isolation before prompting the app's default OpenWork agent. It requires a normally completed turn using the selected paid provider/model, both complete Confluence product reads, a DOC ticket structurally assigned to Nora, comparison content in OneDrive, and an unsent threaded reply to the latest Inbox update. Created IDs must appear in successful service tool outputs as well as backend state; discovery metadata or the user prompt cannot satisfy those assertions. A failed HTTP turn is aborted rather than left writing in the background.
 
 Read-only, same-world browser evidence after the paid probe passes:
@@ -79,4 +81,4 @@ node worlds/lib/enterprise-workshop-browser-proof.mjs \
   --session <session-id-from-probe> --marker <marker-from-probe>
 ```
 
-This repeats the correlated backend/tool-trace assertions and verifies the real browser DOM before capturing Jira, Outlook, OneDrive, both Confluence datasheets and the app-web session at 1440×1000. No model call or service write is performed by the browser proof. Service unit/browser tests alone do not prove a real-model run.
+This repeats the correlated backend/tool-trace assertions and verifies the real browser DOM before capturing Jira, Outlook, OneDrive, both Confluence datasheets and the app-web session at 1440×1000. The browser proof signs its disposable profile into the owned Den using the supported fixture handoff, and may sync runtime model preferences. It performs no new model turn or workplace-domain write. Service unit/browser tests alone do not prove a real-model run.

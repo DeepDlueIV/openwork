@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Read-only proof against an already-running owned workshop. No model turn or service writes.
+// Workplace-domain read-only proof of an owned workshop. Fixture sign-in/model preference sync only; no new model turn.
 // DEMO_SCREENSHOT_DIR=evals/results/workshop node worlds/lib/enterprise-workshop-browser-proof.mjs <private-receipt.json> <session-id> [marker]
 // Equivalent flags: --session <id> --marker <marker>. Node 22+ and Google Chrome required.
 import assert from "node:assert/strict";
@@ -202,6 +202,7 @@ async function main() {
       browserSecrets.push(handoff.grant);
       await evaluate(`window.__openworkControl.execute('auth.exchange-grant',${JSON.stringify({ grant: handoff.grant, baseUrl: out.denWeb, apiBaseUrl: out.denApi })}).then(()=>true)`);
       await waitFor(() => evaluate("!!localStorage.getItem('openwork.den.authToken') && !!localStorage.getItem('openwork.den.activeOrgId')"), "Seeded browser sign-in did not settle.", 60000);
+      browserSecrets.push(await evaluate("localStorage.getItem('openwork.den.authToken')"));
       await navigate(new URL(route, out.webUrl).href, `location.pathname === ${JSON.stringify(route)} && !!document.querySelector('main') && document.body.innerText.includes(${JSON.stringify(issue.key)}) && /gpt.?4\\.1/i.test(document.body.innerText) && !document.querySelector('vite-error-overlay')`);
       await screenshot("openwork-completed-session");
     }

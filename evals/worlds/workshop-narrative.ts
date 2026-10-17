@@ -35,6 +35,10 @@ export async function workshopNarrative(seed: Seed, { place }: { place: Place })
   if (place.kind !== "local") throw new Error("Workshop comparison must run on this Mac with --local.");
   for (const key of ["OPENWORK_EVAL_DEN_API_URL", "OPENWORK_EVAL_DAYTONA_DEN_SANDBOX", "OPENWORK_EVAL_DAYTONA_SANDBOX"]) if (process.env[key]) throw new Error("Workshop proof refuses shared/reused Den infrastructure.");
   const profile = process.env.OPENWORK_WORKSHOP_PROFILE ?? "gpt-sol-fast";
+  // "Day in the life" demo variant: Lena as the signed-in person, short human prompts, optional App builder.
+  const day = process.env.OPENWORK_WORKSHOP_DAY === "1";
+  const person = day ? { name: "Lena Hoffmann", email: "lena@acme.test", fixture: "Lena Hoffmann|lena|Account Manager" } : { name: "Alex Chen", email: "alex@acme.test", fixture: "" };
+  const personEnv: Record<string, string> = person.fixture ? { DEMO_PERSON: person.fixture } : {};
   if (!["gpt-sol-fast", "qwen-27b"].includes(profile)) throw new Error("Unknown workshop model profile.");
   if (profile === "qwen-27b" && process.env.OPENWORK_WORKSHOP_GPT_PHASE_DONE !== "1") throw new Error("Run the GPT Sol Fast phase before Qwen.");
   const resources = new AsyncDisposableStack();
@@ -65,18 +69,18 @@ export async function workshopNarrative(seed: Seed, { place }: { place: Place })
     redactions.push(inference.provider.options.apiKey);
     setupStage = "owned native Den";
     const clearEnv = Object.fromEntries(Object.keys(process.env).map((key) => [key, undefined]));
-    const ownedEnv = { ...clearEnv, PATH: process.env.PATH, HOME: root, XDG_CONFIG_HOME: join(root, "config"), XDG_DATA_HOME: join(root, "data"), XDG_CACHE_HOME: join(root, "cache"), NODE_OPTIONS: "", RESEND_API_KEY: "", SMTP_HOST: "", DEN_AUTOMATIONS_ENABLED: "true", DEN_AUTOMATIONS_RUNTIME_ENABLED: "true", DEN_BOOTSTRAP_ADMIN_EMAILS: "" };
+    const ownedEnv = { ...clearEnv, PATH: process.env.PATH, HOME: root, XDG_CONFIG_HOME: join(root, "config"), XDG_DATA_HOME: join(root, "data"), XDG_CACHE_HOME: join(root, "cache"), NODE_OPTIONS: "", RESEND_API_KEY: "", SMTP_HOST: "", DEN_AUTOMATIONS_ENABLED: "true", DEN_AUTOMATIONS_RUNTIME_ENABLED: "true", DEN_BOOTSTRAP_ADMIN_EMAILS: "", ...(day && process.env.OPENWORK_WORKSHOP_DAY_APPS === "1" ? { DEN_APP_MCP_SERVERS_ENABLED: "true" } : {}) };
     const recipientPort = await allocateFreePort();
-    const { den, webPort } = await denForAppWeb(seed, { web: true, trustedOrigins: [`http://127.0.0.1:${recipientPort}`], env: ownedEnv, org: { name: "Acme Robotics", admin: { name: "Alex Chen", email: "alex@acme.test" }, members: { teammate: { name: "Nora Patel", email: "nora@acme.test" }, outsider: { name: "Zoe Kim", email: "zoe@acme.test" } } } });
+    const { den, webPort } = await denForAppWeb(seed, { web: true, trustedOrigins: [`http://127.0.0.1:${recipientPort}`], env: ownedEnv, org: { name: "Acme Robotics", admin: { name: person.name, email: person.email }, members: { teammate: { name: "Nora Patel", email: "nora@acme.test" }, outsider: { name: "Zoe Kim", email: "zoe@acme.test" } } } });
     redactions.push(den.admin.token, den.admin.password, den.members.teammate!.token, den.members.teammate!.password);
     setupStage = "owned synthetic services";
     const uiPort = await allocateFreePort();
     const uiOrigin = `http://127.0.0.1:${uiPort}`;
-    const atlassian = await startDemoScript(resources, den, { url: new URL("../packages/labs/src/demo-atlassian.mjs", import.meta.url), label: "narrative-atlassian", daytonaPort: 3989 }, { DEMO_NOW: FIXED_NOW, DEMO_JIRA_URL: `${uiOrigin}/jira`, DEMO_CONFLUENCE_URL: `${uiOrigin}/confluence` });
-    const microsoft = await startDemoScript(resources, den, { url: new URL("../packages/labs/src/demo-microsoft365.mjs", import.meta.url), label: "narrative-microsoft365", daytonaPort: 3988 }, { DEMO_NOW: FIXED_NOW });
+    const atlassian = await startDemoScript(resources, den, { url: new URL("../packages/labs/src/demo-atlassian.mjs", import.meta.url), label: "narrative-atlassian", daytonaPort: 3989 }, { DEMO_NOW: FIXED_NOW, DEMO_JIRA_URL: `${uiOrigin}/jira`, DEMO_CONFLUENCE_URL: `${uiOrigin}/confluence`, ...personEnv });
+    const microsoft = await startDemoScript(resources, den, { url: new URL("../packages/labs/src/demo-microsoft365.mjs", import.meta.url), label: "narrative-microsoft365", daytonaPort: 3988 }, { DEMO_NOW: FIXED_NOW, ...personEnv });
     const operatorKey = randomUUID(); redactions.push(operatorKey);
     const news = await startDemoScript(resources, den, { url: new URL("../packages/labs/src/demo-workshop-news.mjs", import.meta.url), label: "narrative-news", daytonaPort: 3986 }, { DEMO_NOW: FIXED_NOW, WORKSHOP_OPERATOR_TOKEN: operatorKey });
-    const ui = await startDemoScript(resources, den, { url: new URL("../packages/labs/src/demo-workplace-ui.mjs", import.meta.url), label: "narrative-workplace-ui", daytonaPort: 3987, localPort: uiPort }, { ATLASSIAN_BASE_URL: atlassian.baseUrl });
+    const ui = await startDemoScript(resources, den, { url: new URL("../packages/labs/src/demo-workplace-ui.mjs", import.meta.url), label: "narrative-workplace-ui", daytonaPort: 3987, localPort: uiPort }, { ATLASSIAN_BASE_URL: atlassian.baseUrl, ...personEnv });
     await connectDemoServer(den, "atlassian", "Atlassian (Jira & Confluence)", `${atlassian.baseUrl}/mcp`);
     await connectDemoServer(den, "microsoft365", "Microsoft 365 (Outlook & OneDrive demo)", `${microsoft.baseUrl}/mcp`);
     await connectDemoServer(den, "news", "Fictional morning news", `${news.baseUrl}/mcp`);
@@ -87,11 +91,29 @@ export async function workshopNarrative(seed: Seed, { place }: { place: Place })
     const org = await seed.api(den.admin, "/v1/org");
     const orgId = record(org.body) && record(org.body.organization) ? org.body.organization.id : undefined;
     if (typeof orgId !== "string") throw new Error("Owned workshop organization missing.");
+    // Day demo: the morning-news connector starts as Lena's only, so a later team grant is a real access change
+    // that Nora's Activity feed can report. Admin-only setup, never performed by the model.
+    const newsConnectionAccess = async (access: { orgWide: boolean; memberIds: string[] }) => {
+      const listed = await denFetch(den.admin, "/v1/mcp-connections?scope=manageable", { headers: { authorization: `Bearer ${den.admin.token}` } });
+      const connections = record(listed.body) && Array.isArray(listed.body.connections) ? listed.body.connections.filter(record) : [];
+      const news = connections.find((connection) => typeof connection.url === "string" && new URL(connection.url).origin === new URL(news_.baseUrl).origin);
+      if (typeof news?.id !== "string") throw new Error("Owned morning-news connection missing.");
+      const updated = await denFetch(den.admin, `/v1/mcp-connections/${encodeURIComponent(news.id)}/access`, { method: "PUT", headers: { authorization: `Bearer ${den.admin.token}` }, body: JSON.stringify({ access: { ...access, teamIds: [] } }) });
+      if (!updated.response.ok) throw new Error(`Could not update morning-news access: HTTP ${updated.response.status}`);
+      return news.name;
+    };
+    const news_ = news;
+    if (day) {
+      const ownerMember = record(org.body) && record(org.body.currentMember) ? String(org.body.currentMember.id) : "";
+      await newsConnectionAccess({ orgWide: false, memberIds: [ownerMember] });
+    }
     const brief = `# Acme Robotics workshop\n\nThis is a fictional workplace. Today is 2026-10-16, 08:55 America/Los_Angeles. Use only connected owned tools and files in this workspace. No external business connectors or mail sends. News links are fictional fixtures, not the public web.\n\nProducts: Atlas 2 and Atlas Lift; full datasheets in Confluence PROD. Customer account plans in SALES document revenue, orders, relationship, growth and churn. Jira DOC belongs to documentation; Nora Patel is the documentation owner. ITSD is the IT service desk and password-reset requests require an application field. Use Windows as the requested application.\n\nDiscover exact service capabilities and schemas. Capability search finds tools, not documents. Confluence search is excerpt-only: read complete pages. Never return literal data from a script as if it came from a provider. Outlook uses mail_search/mail_read/mail_create_reply_draft; OneDrive uses file_find/file_read/file_write/file_create_folder. Calendar supports actual event reads/create/update; do not claim full Outlook parity. Native Workflows require real retained successful executions, saving and sharing, not a local text description.\n\nAgent webfetch, external search and browser tools are disabled in this connected-API rehearsal. Use connected APIs; ask People Ops when an internal policy is absent. Do not invent policy. Office artifacts must contain actual valid OOXML and be grounded in the report, not copied unrelated seed slides.\n`;
+    // Workspace instructions a real team would keep in the workspace: context and preferences, so prompts can stay short.
+    const dayBrief = `# Acme Robotics — Lena's workspace\n\nFictional company for a workshop. Lena Hoffmann is an account manager. Customers: Northwind Logistics (Atlas 2 warehouse pilot) and Blue Harbor Foods (AtlasLift pallet pilot). Teammates: Nora Patel (product/documentation), Priya Shah (engineering), Mateo Rivera (sales), Sam Okafor (finance). Today is Friday 2026-10-16, America/Los_Angeles; use the connected clock when one exists.\n\nUse only the connected tools: Outlook mail and calendar, OneDrive, Confluence, Jira, the morning-news feed, and OpenWork itself (skills, sharing, Workflows). Product datasheets and account plans are in Confluence; read full pages, not search snippets. Jira DOC is documentation; ITSD is the IT service desk (password resets need the Application field).\n\nHow Lena likes to work:\n- When a request is clear, just do it; make sensible assumptions and say what you assumed. Don't stop to ask questions.\n- Never send email or invitations. Leave drafts for her to review.\n- She works in PowerPoint and Word, never Markdown. Save documents she will open as .pptx or .docx in OneDrive.\n- Keep answers short and cite where facts came from.\n- Don't invent policies or numbers. If something isn't documented, say so and suggest who to ask.\n\nTechnical notes for building Office files: generate the file in your code execution (python-pptx/python-docx are fine), check it opens, then upload the bytes with file_write using content_base64 only (no content field). A .pptx main part must use content type application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml. No web browsing or external search is available.\n`;
     const appFor = async (identity: "admin" | "teammate", port?: number) => {
       const workspacePath = join(root, identity, "workspace");
       await mkdir(workspacePath, { recursive: true });
-      await writeFile(join(workspacePath, "WORKSHOP.md"), brief);
+      await writeFile(join(workspacePath, day ? "AGENTS.md" : "WORKSHOP.md"), day ? dayBrief : brief);
       await writeFile(join(workspacePath, "opencode.json"), JSON.stringify({ provider: { [inference.providerId]: inference.provider }, model: `${inference.providerId}/${inference.modelId}`, small_model: `${inference.providerId}/${inference.modelId}`, enabled_providers: [inference.providerId], permission: WORKSHOP_TOOL_PERMISSIONS }));
       const app = await seed.appWeb({ name: `workshop-${profile}-${identity}`, engine: "v1", workspacePath, mouse: true, den: den.ref, ...(port ? { webPort: port } : {}), env: { VITE_OPENWORK_FEEDBACK_URL: feedback.feedbackUrl, VITE_DISABLE_OPENWORK_MODELS: "1" } });
       resources.adopt(app, (owned) => owned.stop());
@@ -290,6 +312,20 @@ export async function workshopNarrative(seed: Seed, { place }: { place: Place })
       },
       recordRow: (row: NarrativeRow) => rows.push(row),
       markScene(label: string) { if (filmRoot) markers.push({ label, at: Date.now() }); },
+      person,
+      /** Day demo, off camera: an admin opens the morning-news connector to the whole team. */
+      async grantTeamConnector() { return newsConnectionAccess({ orgWide: true, memberIds: [] }); },
+      async readDenAs(identity: "owner" | "recipient", path: string) { return (await readDen(identity === "owner" ? den.admin : den.members.teammate!, path)).body; },
+      /** Opens Activity the way a person does: the sidebar bell, then View all. */
+      async openActivity(identity: "owner" | "recipient" = "recipient") {
+        const surface = identity === "owner" ? owner.app : recipient.app;
+        const clicked = await evaluateOnSurface(surface, () => { const bell = Array.from(document.querySelectorAll("button")).find((element) => /^Activity/.test(element.getAttribute("aria-label") ?? "")); bell?.click(); return Boolean(bell); });
+        if (!clicked) throw new Error("Activity bell not found");
+        await delay(800);
+        await evaluateOnSurface(surface, () => { const link = Array.from(document.querySelectorAll("a,button")).find((element) => element.textContent?.trim() === "View all"); (link as HTMLElement | undefined)?.click(); return Boolean(link); });
+        return surface;
+      },
+      async activityText(identity: "owner" | "recipient" = "recipient") { return evaluateOnSurface(identity === "owner" ? owner.app : recipient.app, () => document.querySelector("[data-activity-page]")?.textContent ?? ""); },
       /** Film-only: keep the visible transcript on the newest output by pressing the app's own
        * "Jump to latest" control. Scroll position only; never types, submits or changes business state. */
       followLatest(identity: "owner" | "recipient" = "owner") {

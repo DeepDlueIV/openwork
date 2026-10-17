@@ -64,9 +64,15 @@ for (const runtime of [process.execPath, ...(process.execPath.endsWith("/bun") ?
     child.stderr.on("data", chunk => { errors += String(chunk) })
     const channel = child.stdio[3]
     assert.ok(channel && "end" in channel)
+    let channelError: Error | undefined
+    channel.on("error", error => { channelError = error })
+    // Subscribe before writing so a missing required runtime reports its spawn
+    // error, rather than an incidental EPIPE hiding the CI prerequisite.
+    const closed = once(child, "close")
     channel.end(JSON.stringify({ endpoint, token: capability }))
-    const [code] = await once(child, "exit")
+    const [code] = await closed
     assert.equal(code, 0, errors)
+    assert.equal(channelError, undefined, `credential delivery failed: ${channelError?.message ?? ""}`)
     assert.match(output, /private-channel-ok/)
   })
 }

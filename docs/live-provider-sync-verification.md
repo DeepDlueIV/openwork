@@ -97,8 +97,40 @@ The final read-only review also found an unchanged-credential-event recovery
 race in standalone use. Its denial subscription was aborted, then an early
 return prevented recreating it. Extended tests reproduced **0 passed, 2 failed**
 (exit 1) for 403/404; restoring only the retry rail, without clearing authority,
-passes **2/0/0** (exit 0). The reviewer found no remaining actionable findings
-after inspecting that fix; this is source review, not independent test execution.
+passes **2/0/0** (exit 0). These are parent-session test results; source
+inspection is not a substitute for runtime evidence or CI clearance.
+
+## Scoped inventory transport
+
+The follow-up Warden review on `95634400b587596fcc7355e7402a3e60704ae596`
+identified that project-loaded plugins share the engine process and could use
+the private broker to obtain the full Den bearer. Keeping that bearer out of
+shell environments was not a sufficient authority boundary.
+
+The Den bearer now stays in the OpenWork server. The bridge returns only
+public API-base/org metadata and an opaque stable identity. Its capability
+permits explicit inventory GET/stream routes only: usable-provider list,
+provider connect, and inventory events. No generic proxy, administration, MCP,
+mutation or redirect is permitted. Caller org/auth headers are not forwarded;
+responses/headers are bounded and sanitized; identity is fenced before and
+after awaited reads and before each stream chunk. Provider state remains
+owned by the plugin; the bridge does not poll, cache or materialize inventory.
+
+A real malicious project-loaded plugin deliberately steals the scoped
+capability. Permitted inventory still works, forbidden routes cannot reach
+Den, and metadata/config/environment/body/header observations contain no Den
+bearer. Native model-approved-shell tests also retain the descriptor/env
+boundary. Ordinary cancellation and identity replacement close streams as
+EOF; unexpected streaming failures still error the response.
+
+A final denial-path regression test also reproduced whole-list 403 stopping
+recovery in both desktop and standalone use (**0 passed, 2 failed**, exit 1).
+Those paths now preserve the recovery subscription for membership 403 while
+401 remains terminal. The same tests pass **2/0/0**, including unchanged-token
+regrant. An additional standalone revoke→rollout-kill→regrant witness failed
+before its correction and now passes: only an authenticated organization
+response confirming rollout-off can restore legacy polling. Unavailable,
+denied or malformed responses retain the authority fence.
 
 ## Scenario matrix
 
@@ -122,22 +154,39 @@ fixtures; none mutate a real user's organization.
 | 13. Sign-out/account/org switch | Actual native model/credential replacement, held old-account fetch fence, sign-out/cache removal |
 | 14. Unavailable Den/invalid auth | Native transient 503/cache/retry/recovery; actual 401 and membership 403/404/regrant. Fresh rollout verification unavailable defaults new engines to legacy, not an unverified live grant |
 
+## Follow-up CI prerequisite diagnosis
+
+On pushed head `95634400b587596fcc7355e7402a3e60704ae596`, plugin CI runs
+`39006295011` / `39006294978` failed the exact `pnpm test` command:
+**exit 1; 124 passed, 1 failed, 0 skipped**. First actionable error was
+`write EPIPE` in the Bun variant of the private-channel test. The workflows
+installed Node but not the now-required Bun test runtime. Reproduced the same
+command on that SHA with Node/pnpm present and Bun absent, obtaining the same
+counts and EPIPE. This is an introduced test-prerequisite omission, not a
+pre-existing exception.
+
+Both plugin workflows now install pinned Bun through the pinned setup action.
+The test subscribes to process completion before sending the descriptor packet
+so an absent runtime reports its spawn error rather than masking it with EPIPE.
+Neither runtime variant is skipped, and the credential assertions are unchanged.
+
 ## Local results
 
 - Exact CI provisioned command:
   `node evals/scripts/run-parity-proof.mjs evals/proofs/live-provider-sync.proof.test.ts`
   with external `opencode2` absent from PATH and v1 available.
 - Placement: **local**; real appWeb + Den + pinned OpenCode **2.0.26**.
-- **Exit 0; 3 passed, 0 failed, 0 skipped**; 206.05 seconds.
-- CLI receipt: `evals/results/.testkit/cli-run-1792214304532-94671.json`.
+- **Exit 0; 3 passed, 0 failed, 0 skipped**; 210.62 seconds (scoped bridge).
+- CLI receipt: `evals/results/.testkit/cli-run-1792216739624-88151.json`.
 - Three runs each record **18 acknowledged mutations**, exact model IDs/names,
   absence/sibling preservation, and unchanged document/route/open picker.
 - 54 timed observations: 51 visible picker transitions plus three negative-scope
   observations where the signed-in member's picker correctly remains unchanged.
-- Visible-transition latency: **1,015–2,048 ms**, median **1,530 ms**. Including
-  negative-scope observations: 11–2,048 ms, median 1,529.5 ms. These are local
+- Visible-transition latency: **1,020–2,072 ms**, median **1,533 ms**. Including
+  negative-scope observations: 11–2,072 ms, median 1,532 ms. These are local
   ACK-to-observation measurements, not a production SLA or a best-case sample.
-- Plugin tests: **125/0/0**. Den unit + real-DB isolation tests: **17/0/0**.
+- Plugin tests: **126/0/0**. Server unit/bridge/quota/routing-race tests:
+  **20/0/0**. Den unit + real-DB isolation tests: **17/0/0**.
 - Native lifecycle and managed/new-workspace tests pass separately on Bun and
   Electron Node with both manifest-provisioned and installed 2.0.26 binaries
   (eight commands, each exit 0, one framework test passed, no skips). Named

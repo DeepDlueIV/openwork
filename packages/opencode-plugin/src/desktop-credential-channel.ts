@@ -4,11 +4,13 @@ import type { Fetch } from "./den.ts"
 interface CredentialBroker {
   initialize(): Promise<void>
   fetchSession(fetcher: Fetch, endpoint: string, signal?: AbortSignal): Promise<Response | null>
+  fetchInventory(fetcher: Fetch, endpoint: string, path: string, identity: string, signal?: AbortSignal): Promise<Response | null>
 }
 function isBroker(value: unknown): value is CredentialBroker {
   return typeof value === "object" && value !== null
     && "initialize" in value && typeof value.initialize === "function"
     && "fetchSession" in value && typeof value.fetchSession === "function"
+    && "fetchInventory" in value && typeof value.fetchInventory === "function"
 }
 
 // The native source loader gives each Location/import graph its own ESM module
@@ -28,4 +30,8 @@ export async function initializeDesktopCredentialChannel(): Promise<void> {
 /** Shared by every Location/reload; deliberately never exports the capability. */
 export async function fetchDesktopSession(fetcher: Fetch, endpoint: string, signal?: AbortSignal): Promise<Response | null> {
   return broker ? broker.fetchSession(fetcher, endpoint, signal) : null
+}
+
+export async function fetchDesktopInventory(fetcher: Fetch, endpoint: string, path: string, identity: string, signal?: AbortSignal): Promise<Response | null> {
+  return broker ? broker.fetchInventory(fetcher, endpoint, path, identity, signal) : null
 }

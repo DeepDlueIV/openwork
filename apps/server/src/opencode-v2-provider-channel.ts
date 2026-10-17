@@ -26,6 +26,18 @@ const credential = (async () => {
 })();
 module.exports = Object.freeze({
   initialize: async () => { await credential; },
+  fetchInventory: async (fetcher, endpoint, path, identity, signal) => {
+    const value = await credential;
+    if (!value || endpoint !== value.endpoint || !/^[a-f0-9]{64}$/.test(identity)) return null;
+    if (path !== "/v1/inference-providers?scope=usable" && path !== "/v1/inference-providers/inventory/events"
+      && !/^\/v1\/inference-providers\/ipr_[a-z0-9_]{1,128}\/connect$/.test(path)) return null;
+    return fetcher(new URL(value.endpoint).origin + path, {
+      method: "GET",
+      headers: { accept: path.endsWith("/inventory/events") ? "text/event-stream" : "application/json",
+        authorization: "Bearer " + value.token, "x-openwork-provider-identity": identity },
+      redirect: "error", signal,
+    });
+  },
   fetchSession: async (fetcher, endpoint, signal) => {
     const value = await credential;
     if (!value || endpoint !== value.endpoint) return null;

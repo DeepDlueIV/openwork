@@ -24,6 +24,7 @@ const legacyID = "lpr_managed_native";
 let name = "Live initial";
 let inventoryReads = 0;
 let quotaRequests = 0;
+let unrelatedDenRequests = 0;
 let flag: boolean | "unavailable" = false;
 let flagReads = 0;
 const streams = new Set<ServerResponse>();
@@ -57,6 +58,7 @@ const den = createServer((req, res) => {
   } else if (url.pathname === `/v1/inference-providers/${gatewayID}/connect`) {
     res.end(JSON.stringify({ inferenceProvider: { ...provider, apiKey: "ow_gw_managed_synthetic" } }));
   } else {
+    unrelatedDenRequests++;
     res.statusCode = 404;
     res.end("{}");
   }
@@ -215,6 +217,46 @@ try {
     }
   }
   console.log("Passed managed workspace: two new app sessions outside engine working directory receive live models and location-scoped native events without config copying/warming; one shared Den stream");
+
+  const attackerDirectory = join(root, "untrusted-project");
+  await mkdir(attackerDirectory);
+  const attackReport = join(attackerDirectory, "broker-probe.json");
+  await writeFile(join(attackerDirectory, "opencode.json"), JSON.stringify({ plugins: [{
+    package: join(root, "plugins", "untrusted-project"),
+    options: { engineConfig: join(root, "opencode-v2", "state", "config", "opencode.json"), reportPath: attackReport },
+  }] }));
+  await native("/api/session", { title: "Untrusted project plugin", location: { directory: attackerDirectory } });
+  await models(attackerDirectory);
+  const reportText = await until(() => readFile(attackReport, "utf8").catch(() => ""), Boolean, "actual native project plugin executes broker attack witness").catch(async error => {
+    const plugins = await native(`/api/plugin?location[directory]=${encodeURIComponent(attackerDirectory)}`).catch(String);
+    throw new Error(`${String(error)}; projectPlugins=${JSON.stringify(plugins)}`);
+  });
+  const report: unknown = JSON.parse(reportText);
+  assert.ok(record(report), reportText);
+  assert.ok(!report.missingFetchSession, "malicious witness actually exercises the canonical broker API");
+  assert.equal(report.metadataStatus, 200, reportText);
+  assert.ok(!reportText.includes("native-managed-session"), "a same-process malicious project plugin must never obtain the full Den bearer through broker custom fetch or metadata");
+  assert.equal(typeof report.metadata, "string");
+  const metadata: unknown = JSON.parse(String(report.metadata));
+  assert.ok(record(metadata) && !Object.hasOwn(metadata, "token"), "engine session metadata contains no Den bearer field");
+  assert.equal(report.inventoryStatus, 200, reportText);
+  assert.equal(report.unrelatedBrokerResult, "denied", "broker refuses unrelated API paths even with a valid opaque identity");
+  assert.ok(Array.isArray(report.customFetch) && report.customFetch.length >= 2, "attacker actually intercepts metadata and inventory transport credentials");
+  assert.equal(unrelatedDenRequests, 0, "forbidden routes are blocked before reaching Den, not merely rejected by the fake Den");
+  assert.ok(Array.isArray(report.forbiddenRoutes));
+  assert.equal(report.forbiddenRoutes.length, 4, "captured scoped capability is actually exercised against forbidden bridge routes");
+  for (const attempt of report.forbiddenRoutes.filter(record)) {
+    if (typeof attempt.path === "string" && !attempt.path.startsWith("/session?")) {
+      assert.ok(typeof attempt.status === "number" && attempt.status >= 400, "a captured scoped capability cannot forward unrelated Den APIs or mutations");
+    }
+  }
+  await until(() => models(attackerDirectory), rows => rows.some(model => model.id === "gwm_live"), "legitimate inventory still works beside the malicious project plugin");
+  name = "Legitimate refresh after malicious broker probe";
+  for (const stream of streams) stream.write("event: inventory.changed\ndata: {}\n\n");
+  await until(() => models(attackerDirectory), rows => rows.some(model => model.name === name), "untrusted plugin probe cannot steal or corrupt legitimate inventory capability");
+  assert.equal(await generatedConfig(), beforeConfig);
+  assert.equal(streams.size, 1);
+  console.log("Passed managed security: actual malicious project plugin custom-fetch broker probe obtains no Den bearer; unrelated APIs denied; legitimate inventory still refreshes");
 
   const created = await native("/api/session", { title: "Synthetic quota", location: { directory }, model: { providerID: gatewayID, id: "gwm_live" } });
   assert.ok(record(created) && record(created.data) && typeof created.data.id === "string", JSON.stringify(created));

@@ -61,10 +61,12 @@ engine lifetime.
 
 ## Credentials and account boundaries
 
-Desktop uses its existing Den session, not a second device login. A private
-loopback bridge exposes the current session only to the managed engine,
-authenticated by a per-engine random capability delivered over a one-shot
-anonymous pipe. Neither the initial process environment nor a config file,
+Desktop uses its existing Den session, not a second device login. That bearer
+stays inside the OpenWork server: project-loaded plugins share the engine
+process, so putting it anywhere in that process is not a sufficient boundary.
+A private loopback bridge exposes only session identity metadata and scoped
+Gateway inventory GET/stream access, authenticated by a per-engine capability
+delivered over a one-shot anonymous pipe. Neither the initial process environment nor a config file,
 argument, URL or named socket contains that capability. A trusted inert
 consumer loads even on flag-off boot and closes the descriptor before native
 tools can run; it makes no Den/session requests until live ownership starts.
@@ -73,8 +75,12 @@ This permits late sign-in without exposing an unread pipe to tool subprocesses.
 OpenCode isolates ESM graphs across Locations. A credential-free CJS broker
 loaded through a canonical native `createRequire` filename shares one frozen
 request API through the process-wide native module cache. Its private closure
-owns the credential, bound to one bridge endpoint. Broker code on disk contains
-no credential, and there is no global credential getter. This is necessary:
+owns the scoped inventory capability, bound to one bridge endpoint. Broker
+code on disk contains no credential, and there is no global credential getter.
+Even another plugin obtaining this scoped capability cannot obtain the Den
+bearer, access administration/MCP endpoints or perform mutations. The bridge
+accepts only explicit inventory routes and binds requests to the current
+identity; session replacement fences pending reads and streams. This is necessary:
 independent ESM closures would leave later workspaces permanently empty after
 the first graph consumed the pipe. The bridge returns no session until live
 ownership is selected. No Den session token is written into `opencode.json`,
@@ -132,12 +138,14 @@ Reviewed against OpenCode `v2.0.26`, upstream commit
    recreate explicitly configured models. Keeping live-owned providers out of
    generated config is a correctness and policy requirement, not an
    optimization. Preserve filter rules independently of mirrored models.
-3. **Credential hand-off — adapted.** The standalone plugin expects its own
-   OpenCode OAuth connection. Desktop instead supplies its current in-memory
-   Den session through a dedicated loopback capability. This intentionally
-   grants the trusted bundled plugin the member's Den session authority;
-   it does not grant the broader OpenWork server host token. Desktop does
-   not enable the standalone plugin's sign-in or MCP integration.
+3. **Credential hand-off — narrowed after review.** The standalone plugin
+   expects its own OpenCode OAuth connection. Desktop retains the Den bearer
+   in the OpenWork server and gives the engine only a scoped inventory
+   transport capability plus stable opaque identity metadata. Neither the
+   Den bearer nor the OpenWork host token enters the engine process. The
+   bridge forwards authorized reads/streams without owning provider state,
+   caching inventory or polling Den. Desktop does not enable the standalone
+   plugin's sign-in or MCP integration.
 
 Upstream source: [provider state](https://github.com/anomalyco/opencode/blob/9b4ec5714d481559990db0a816d5dec19541a814/packages/core/src/provider.ts),
 [model state](https://github.com/anomalyco/opencode/blob/9b4ec5714d481559990db0a816d5dec19541a814/packages/core/src/model.ts),

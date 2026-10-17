@@ -160,10 +160,16 @@ broker shares the capability across Location-scoped ESM/source graphs and reload
 with the credential retained only in its module closure; it signs requests only to
 the bound endpoint. `OPENWORK_PROVIDER_SESSION_BROKER` contains only the absolute
 path to that credential-free broker code (not a credential/config file). Thus late rollout activation needs no still-open credential descriptor.
-The plugin sends the capability as a bearer to `desktopSession`; that endpoint
-must return the current `{apiBaseUrl, token, orgId}` or JSON `null` while signed
-out. Only literal HTTP loopback addresses are accepted, and redirects are refused.
-The endpoint must continue reporting the current session after a rollout kill.
+The capability is **inventory-only**, not a Den session. `desktopSession` returns
+only `{apiBaseUrl, identity, orgId}` or JSON `null` while signed out. The opaque
+identity hash is stable across engine ports/capabilities and changes with the
+account, org, or Den credential. The Den bearer stays exclusively in the OpenWork
+server, never in the engine, including its other project plugins. The bridge
+accepts only GET usable-provider-list, per-provider-connect, and inventory-event
+requests, each bound to the expected identity. It rejects admin, MCP, mutation,
+redirect, and arbitrary proxy requests, ignores caller auth/org headers, strips
+upstream response headers, and emits only canonical invalidation/heartbeat SSE.
+Only literal HTTP loopback addresses are accepted, and redirects are refused.
 
 This mode registers only providers: no MCP, standalone login, remote sessions,
 or Den sign-out. It checks the local handoff every second and fetches Den

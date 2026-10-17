@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { fetchDesktopSession } from "./desktop-credential-channel.ts"
+import { fetchDesktopInventory, fetchDesktopSession } from "./desktop-credential-channel.ts"
 import { DenAuthError, isAllowedApiBaseUrl, isRecord, normalizeBaseUrl, type DenSession, type Fetch } from "./den.ts"
 import { subscribeSharedInventory } from "./inventory-events.ts"
 import { inventoryRetry } from "./inventory-retry.ts"
@@ -20,7 +20,20 @@ export function isDesktopSessionEndpoint(value: unknown): value is string {
   } catch { return false }
 }
 
-export async function readDesktopSession(fetcher: Fetch, endpoint: string, capability: string, signal?: AbortSignal): Promise<DenSession | null> {
+export interface DesktopSession {
+  readonly apiBaseUrl: string
+  readonly identity: string
+  readonly orgId: string | null
+}
+
+// The shared inventory helpers accept a token-shaped identity key. In desktop
+// mode this is ONLY an opaque hash, never a Den bearer, and the transport below
+// replaces those helper headers with an identity-bound local inventory request.
+function inventorySession(value: DesktopSession): DenSession {
+  return { apiBaseUrl: value.apiBaseUrl, token: value.identity, orgId: value.orgId }
+}
+
+export async function readDesktopSession(fetcher: Fetch, endpoint: string, capability: string, signal?: AbortSignal): Promise<DesktopSession | null> {
   if (!isDesktopSessionEndpoint(endpoint) || !capability) return null
   const response = await fetcher(endpoint, {
     headers: { accept: "application/json", authorization: `Bearer ${capability}` },
@@ -30,16 +43,17 @@ export async function readDesktopSession(fetcher: Fetch, endpoint: string, capab
   return parseDesktopSession(response)
 }
 
-async function parseDesktopSession(response: Response | null): Promise<DenSession | null> {
+async function parseDesktopSession(response: Response | null): Promise<DesktopSession | null> {
   if (!response) return null
   if (!response.ok) throw new Error("Desktop session unavailable")
   const value: unknown = await response.json()
   if (value === null) return null
   if (!isRecord(value) || typeof value.apiBaseUrl !== "string" || !isAllowedApiBaseUrl(value.apiBaseUrl)
-    || typeof value.token !== "string" || !value.token || !(value.orgId === null || typeof value.orgId === "string")) {
+    || "token" in value || typeof value.identity !== "string" || !/^[a-f0-9]{64}$/.test(value.identity)
+    || !(value.orgId === null || typeof value.orgId === "string")) {
     throw new Error("Invalid desktop session")
   }
-  return { apiBaseUrl: normalizeBaseUrl(value.apiBaseUrl), token: value.token, orgId: value.orgId }
+  return { apiBaseUrl: normalizeBaseUrl(value.apiBaseUrl), identity: value.identity, orgId: value.orgId }
 }
 
 /** Provider-only host path: never registers login methods, revokes Den sessions, or touches MCP. */
@@ -58,8 +72,24 @@ export function createDesktopProviderPlugin(deps: { fetch?: Fetch; now?: () => n
         throw new Error("OpenWork provider sync needs OpenCode V2 provider and storage APIs")
       }
       const options = { ...readOptions(ctx.options), mcp: false }
+      const inventoryFetch = (source: DesktopSession): Fetch => async (input, init) => {
+        const base = normalizeBaseUrl(source.apiBaseUrl)
+        if (!input.startsWith(`${base}/`) || (init?.method ?? "GET") !== "GET" || init?.body != null) return new Response(null, { status: 404 })
+        const path = input.slice(base.length)
+        if (path !== "/v1/inference-providers?scope=usable" && path !== "/v1/inference-providers/inventory/events"
+          && !/^\/v1\/inference-providers\/ipr_[a-z0-9_]{1,128}\/connect$/.test(path)) return new Response(null, { status: 404 })
+        const signal = init?.signal ?? undefined
+        const response = capability
+          ? await fetcher(new URL(endpoint).origin + path, {
+            method: "GET", redirect: "error", signal,
+            headers: { accept: path.endsWith("/inventory/events") ? "text/event-stream" : "application/json",
+              authorization: `Bearer ${capability}`, "x-openwork-provider-identity": source.identity },
+          })
+          : await fetchDesktopInventory(fetcher, endpoint, path, source.identity, signal)
+        return response ?? new Response(null, { status: 503 })
+      }
       const lifetime = new AbortController()
-      let session: DenSession | null = null
+      let session: DesktopSession | null = null
       let key = ""
       let epoch = 0
       let stream: AbortController | null = null
@@ -119,7 +149,7 @@ export function createDesktopProviderPlugin(deps: { fetch?: Fetch; now?: () => n
         running = (async () => {
           try {
             // Deliberately no 30s freshness shortcut: every event/reconnect is authoritative.
-            const gateway = await fetchGatewayInventory(fetcher, source, refreshController.signal)
+            const gateway = await fetchGatewayInventory(inventoryFetch(source), inventorySession(source), refreshController.signal)
             if (!current()) return
             const next: Inventory = { version: 1, connectionKey: accountKey, apiBaseUrl: source.apiBaseUrl, fetchedAt: now(), gateway, mcp: null }
             inventory = next
@@ -132,7 +162,8 @@ export function createDesktopProviderPlugin(deps: { fetch?: Fetch; now?: () => n
           } catch (error) {
             if (!current()) return
             if (error instanceof DenAuthError) {
-              unauthorized()
+              if (error.status === 403) revoked()
+              else unauthorized()
             } else {
               retry.schedule()
               await publish(records(inventory))
@@ -184,14 +215,14 @@ export function createDesktopProviderPlugin(deps: { fetch?: Fetch; now?: () => n
           stream = controller
           // Re-resolve the handoff on reconnect, rather than retaining an expired token.
           void subscribeSharedInventory({
-            identity: next,
+            identity: inventorySession(next),
             unauthorized,
             revoked,
-            fetch: fetcher,
+            fetch: inventoryFetch(next),
             signal: AbortSignal.any([lifetime.signal, controller.signal]),
             session: async () => {
               await pollSession()
-              return controller.signal.aborted ? null : session
+              return controller.signal.aborted || !session ? null : inventorySession(session)
             },
             changed: () => { void refresh() },
           })

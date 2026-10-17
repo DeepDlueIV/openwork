@@ -284,13 +284,27 @@ export function createPlugin(deps: { fetch?: Fetch; now?: () => number; retryMs?
       let queued = false
       let forceQueued = false
       const retry = inventoryRetry(() => { void refresh(true) }, deps.retryMs)
+      const revokeAuthority = (identity: string) => {
+        revokedIdentity = identity
+        generation++
+        retry.reset()
+        refreshController.abort()
+        refreshController = new AbortController()
+        queued = false
+        forceQueued = false
+        // A membership denial is recoverable with this same session. Keep the
+        // subscription that can authoritatively acknowledge the regrant.
+        void ctx.storage.remove(INVENTORY_KEY).catch(() => {})
+        void publish(EMPTY).catch(() => {})
+      }
 
-      const featureEnabled = async (session: DenSession) => {
+      const authorizedFeatureState = async (session: DenSession): Promise<boolean | null> => {
         try {
           const body = await denRequest(fetcher, session, "/v1/org")
-          return isRecord(body) && isRecord(body.features) && body.features.liveProviderSync === true
-        } catch { return false }
+          return isRecord(body) && isRecord(body.features) ? body.features.liveProviderSync === true : null
+        } catch { return null }
       }
+      const featureEnabled = async (session: DenSession) => await authorizedFeatureState(session) === true
       const syncStream = (session: DenSession, enabled: boolean) => {
         const key = fingerprint(session)
         if (!enabled || !options.providers) { stopStream(); return }
@@ -303,16 +317,7 @@ export function createPlugin(deps: { fetch?: Fetch; now?: () => number; retryMs?
           identity: session,
           revoked: () => {
             if (controller.signal.aborted || disposed) return
-            revokedIdentity = key
-            generation++
-            retry.reset()
-            refreshController.abort()
-            refreshController = new AbortController()
-            queued = false
-            forceQueued = false
-            // Retain this stream and identity for same-session membership regrant.
-            void ctx.storage.remove(INVENTORY_KEY).catch(() => {})
-            void publish(EMPTY).catch(() => {})
+            revokeAuthority(key)
           },
           unauthorized: () => {
             if (controller.signal.aborted || disposed) return
@@ -392,12 +397,22 @@ export function createPlugin(deps: { fetch?: Fetch; now?: () => number; retryMs?
           return
         }
         if (identity === revokedIdentity) {
-          // Any credential event can abort the old subscription even when
-          // OpenWork's token is unchanged. Keep the denial fence, but restore
-          // its retry-only rail so a real same-session regrant can recover.
-          syncStream(session, true)
-          await publish(EMPTY)
-          return
+          // A regrant may coincide with the rollout being killed. Only a real
+          // authenticated organization response can restore legacy polling;
+          // an unavailable/denied lookup never clears the authority fence.
+          const feature = await authorizedFeatureState(session)
+          if (!current()) return
+          if (feature === false) {
+            revokedIdentity = ""
+            stopStream()
+          } else {
+            // An unrelated credential event may have aborted the recovery rail.
+            // Recreate only its subscription; successful SSE still confirms a
+            // live-mode regrant before any inventory can be published.
+            syncStream(session, true)
+            await publish(EMPTY)
+            return
+          }
         }
         if (revokedIdentity !== identity) revokedIdentity = ""
         if (unauthorizedIdentity !== identity) unauthorizedIdentity = ""
@@ -457,6 +472,10 @@ export function createPlugin(deps: { fetch?: Fetch; now?: () => number; retryMs?
         } catch (error) {
           if (!current()) return
           if (error instanceof DenAuthError) {
+            if (error.status === 403 && streamKey) {
+              revokeAuthority(fingerprint(session))
+              return
+            }
             retry.reset()
             queued = false
             forceQueued = false

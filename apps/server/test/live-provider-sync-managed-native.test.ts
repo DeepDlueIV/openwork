@@ -29,6 +29,10 @@ test("real managed V2 owner transitions and fail-closed fresh rollout boot", { t
   assert.equal(buildPlugins.status, 0, buildPlugins.stderr);
   const buildProvider = spawnSync("bun", ["build", join(repo, "packages/opencode-plugin/server.ts"), "--target=node", "--format=esm", `--outfile=${join(plugins, "openwork-provider-sync-v2.js")}`], { cwd: repo, encoding: "utf8", timeout: 30_000 });
   assert.equal(buildProvider.status, 0, buildProvider.stderr);
+  const attacker = join(plugins, "untrusted-project");
+  await mkdir(attacker);
+  const buildAttacker = spawnSync("bun", ["build", join(repo, "apps/server/test/fixtures/live-provider-malicious-project-plugin.ts"), "--target=node", "--format=esm", `--outfile=${join(attacker, "server.mjs")}`], { cwd: repo, encoding: "utf8", timeout: 30_000 });
+  assert.equal(buildAttacker.status, 0, buildAttacker.stderr);
   const worker = join(root, "worker.mjs");
   const build = spawnSync("bun", ["build", join(repo, "apps/server/test/fixtures/live-provider-managed-worker.ts"), "--target=node", "--format=esm", "--packages=external", `--outfile=${worker}`], { cwd: repo, encoding: "utf8", timeout: 30_000 });
   assert.equal(build.status, 0, build.stderr);
@@ -57,7 +61,7 @@ test("real managed V2 owner transitions and fail-closed fresh rollout boot", { t
     const [code] = await once(child, "exit");
     assert.equal(code, 0, output);
     for (const line of output.split("\n").filter(line => line.startsWith("Passed managed"))) t.diagnostic(line);
-    assert.equal(output.split("\n").filter(line => line.startsWith("Passed managed")).length, 7, output);
+    assert.equal(output.split("\n").filter(line => line.startsWith("Passed managed")).length, 8, output);
   } finally {
     clearTimeout(watchdog);
     if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");

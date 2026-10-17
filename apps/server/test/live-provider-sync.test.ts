@@ -10,7 +10,7 @@ import { createEngineV2Preview, resolveLiveProviderSyncForEngineStart, shouldSyn
 import { managedDesktopPolicy } from "../src/managed-desktop-policy.js";
 import { serve } from "../src/serve-node.js";
 import { renderOpencodeV2Config, type OpencodeV2ProviderSpec } from "../src/managed-opencode-v2.js";
-import { createV2ProviderSessionBridge } from "../src/opencode-v2-provider-session.js";
+import { createV2ProviderSessionBridge, providerSessionIdentity } from "../src/opencode-v2-provider-session.js";
 import type { ServerConfig } from "../src/types.js";
 import { readGlobalRuntimeOpencodeConfig, writeGlobalRuntimeOpencodeConfig } from "../src/runtime-opencode-config-store.js";
 import { writeOpenworkWorkspaceConfig } from "../src/openwork-workspace-config-store.js";
@@ -72,7 +72,7 @@ test("credential handoff requires its dedicated capability and reads the current
     assert.equal(signedOut.headers.get("cache-control"), "no-store");
     assert.equal(await signedOut.json(), null);
     current = session;
-    assert.deepEqual(await (await fetch(bridge.url, { headers })).json(), { apiBaseUrl: session.baseUrl, token: session.token, orgId: session.orgId });
+    assert.deepEqual(await (await fetch(bridge.url, { headers })).json(), { apiBaseUrl: session.baseUrl, identity: providerSessionIdentity(session), orgId: session.orgId });
     current = { ...session, token: "new-test-secret", orgId: "org_other" };
     assert.equal((await (await fetch(bridge.url, { headers })).json()).orgId, "org_other");
     current = null;

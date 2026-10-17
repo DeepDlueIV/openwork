@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import { access, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
@@ -7,7 +8,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { test } from "node:test";
 import { setTimeout as delay } from "node:timers/promises";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { SseParser } from "../../../packages/opencode-plugin/src/inventory-events.ts";
 import { providerCredentialBrokerSource } from "../src/opencode-v2-provider-channel.ts";
 
@@ -17,7 +18,6 @@ const binary = process.env.OPENWORK_TEST_OPENCODE2 ?? "/Applications/OpenWork.ap
 const repo = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
 const providerID = "ipr_native_sync";
 const disabledID = "ipr_native_disabled";
-const capability = "native-test-loopback-capability";
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -43,6 +43,12 @@ async function until<T>(read: () => Promise<T>, accept: (value: T) => boolean, l
     await delay(50);
   }
   throw new Error(`Timed out: ${label}; last=${JSON.stringify(latest)}; error=${String(error)}`);
+}
+
+function gatewayKey(token: string, orgId: string): string {
+  // Gateway keys are distinct credentials, never a concatenation containing the
+  // Den bearer (the scoped bridge correctly redacts Den-bearer response echoes).
+  return `ow_gw_${createHash("sha256").update(JSON.stringify([orgId, token])).digest("hex")}`;
 }
 
 function gateway(id: string, models: { id: string; name: string }[], name = "Native provider") {
@@ -93,12 +99,6 @@ test("pinned V2 replays desktop inventory and real model filters through native 
   const subscriptions = new Set<ServerResponse>();
   const mock = createServer((req, res) => {
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
-    if (url.pathname === "/session") {
-      assert.equal(req.headers.authorization, `Bearer ${capability}`);
-      res.setHeader("content-type", "application/json");
-      res.end(JSON.stringify(session));
-      return;
-    }
     credentials.push({ token: req.headers.authorization, org: req.headers["x-openwork-org-id"] });
     assert.equal(req.headers.authorization, `Bearer ${session?.token}`);
     assert.equal(req.headers["x-openwork-org-id"], session?.orgId);
@@ -131,7 +131,7 @@ test("pinned V2 replays desktop inventory and real model filters through native 
     }
     const provider = providers.find(item => url.pathname === `/v1/inference-providers/${item.id}/connect`);
     if (provider) {
-      res.end(JSON.stringify({ inferenceProvider: { ...provider, apiKey: `ow_gw_${session?.orgId}_${session?.token}` } }));
+      res.end(JSON.stringify({ inferenceProvider: { ...provider, apiKey: gatewayKey(session?.token ?? "", session?.orgId ?? "") } }));
       return;
     }
     inferenceRequests++;
@@ -148,6 +148,19 @@ test("pinned V2 replays desktop inventory and real model filters through native 
     assert.ok(subscriptions.size, "the real desktop plugin owns a Den SSE subscription");
     for (const response of subscriptions) response.write("event: inventory.changed\ndata: {}\n\n");
   };
+
+  // Exercise the production inventory-only bridge, not a fake /session that
+  // would put the full Den session back inside the engine under test.
+  const bridgeModulePath = join(root, "provider-session-bridge.mjs");
+  const bridgeBuild = spawnSync("bun", ["build", join(repo, "apps/server/src/opencode-v2-provider-session.ts"), "--target=node", "--format=esm", `--outfile=${bridgeModulePath}`], {
+    encoding: "utf8", cwd: repo, timeout: 30_000,
+  });
+  assert.equal(bridgeBuild.status, 0, bridgeBuild.stderr);
+  const bridgeModule: typeof import("../src/opencode-v2-provider-session.ts") = await import(pathToFileURL(bridgeModulePath).href);
+  const bridge = await bridgeModule.createV2ProviderSessionBridge(() => session ? {
+    baseUrl: session.apiBaseUrl, token: session.token, orgId: session.orgId,
+  } : null);
+  cleanups.push(() => bridge.close());
 
   // Source models are NOT in config: bundled ConfigProvider's later model transform
   // can resurrect explicit config models after an external filter removed them.
@@ -176,7 +189,7 @@ export default {
       }
     } } });
     const disposeDesktop = await desktop.setup({ ...ctx, options: {
-      liveProviderSync: true, desktopSession: ${JSON.stringify(`${mockUrl}/session`)}
+      liveProviderSync: true, desktopSession: ${JSON.stringify(bridge.url)}
     } });
     return async () => {
       await disposeDesktop?.();
@@ -220,7 +233,7 @@ export default {
     // Keep the fixture's transport in one place, matching the managed child path.
     const channel = engine.stdio[3];
     assert.ok(channel && "end" in channel);
-    channel.end(JSON.stringify({ endpoint: `${mockUrl}/session`, token: capability }));
+    channel.end(JSON.stringify({ endpoint: bridge.url, token: bridge.token }));
     return engine;
   };
   let child = startChild();
@@ -391,8 +404,8 @@ export default {
     providers = [gateway(providerID, [{ id: "gwm_keep", name: "Rotated token" }])];
     await until(models, value => value.length === 1 && value[0]?.name === "Rotated token", "fresh token authorizes new snapshot");
     const rotatedProviders = JSON.stringify(await request(`/api/provider?location[directory]=${encodeURIComponent(directory)}`));
-    assert.ok(rotatedProviders.includes("ow_gw_org_native_one_native-session-two"), "native provider uses rotated Gateway credential");
-    assert.ok(!rotatedProviders.includes("ow_gw_org_native_one_native-session-one"));
+    assert.ok(rotatedProviders.includes(gatewayKey("native-session-two", "org_native_one")), "native provider uses rotated Gateway credential");
+    assert.ok(!rotatedProviders.includes(gatewayKey("native-session-one", "org_native_one")));
     await until(async () => subscriptions.size, size => size > 0, "rotated-token subscription");
     holdNextInventory = true;
     changed();
@@ -407,8 +420,8 @@ export default {
     await delay(250);
     assert.deepEqual((await models()).map(model => model.name), ["Second account"], "late old-account fetch cannot overwrite the new fold");
     const switchedProviders = JSON.stringify(await request(`/api/provider?location[directory]=${encodeURIComponent(directory)}`));
-    assert.ok(switchedProviders.includes("ow_gw_org_native_two_native-session-three"));
-    assert.ok(!switchedProviders.includes("ow_gw_org_native_one_native-session-two"), "native provider retains no old account Gateway key");
+    assert.ok(switchedProviders.includes(gatewayKey("native-session-three", "org_native_two")));
+    assert.ok(!switchedProviders.includes(gatewayKey("native-session-two", "org_native_one")), "native provider retains no old account Gateway key");
     assert.ok(credentials.slice(credentialBoundary).some(item => item.token === "Bearer native-session-three" && item.org === "org_native_two"));
     // Every request is also checked against the currently selected identity by the fake Den.
     session = null;
@@ -417,7 +430,7 @@ export default {
       destroyed: response.destroyed, closed: response.closed,
       writableEnded: response.writableEnded, writableFinished: response.writableFinished,
     })), responses => responses.length === 0, "sign-out closes old subscription");
-    assert.ok(!JSON.stringify(await request(`/api/provider?location[directory]=${encodeURIComponent(directory)}`)).includes("ow_gw_org_native_two_native-session-three"), "sign-out removes the actual native Gateway credential");
+    assert.ok(!JSON.stringify(await request(`/api/provider?location[directory]=${encodeURIComponent(directory)}`)).includes(gatewayKey("native-session-three", "org_native_two")), "sign-out removes the actual native Gateway credential");
     const signedOutReads = inventoryReads;
     await delay(1100);
     assert.equal(inventoryReads, signedOutReads, "signed out engine never fetches old account inventory");

@@ -15,10 +15,38 @@ import type {
   RemoteMcpConfig,
 } from "./opencode.ts"
 import { createPlugin, readOptions } from "./plugin.ts"
-import { createDesktopProviderPlugin, isDesktopSessionEndpoint, readDesktopSession } from "./desktop.ts"
+import { createDesktopProviderPlugin as createDesktopProviderPluginSource, isDesktopSessionEndpoint, readDesktopSession } from "./desktop.ts"
+import { createHash } from "node:crypto"
 import type { DenSession, Fetch } from "./den.ts"
 import { setTimeout as delay } from "node:timers/promises"
 import { API, createFakeDen, GATEWAY_KEY, MCP_TOKEN, ORG_ID, PROVIDER_ID, SESSION_TOKEN } from "./test-den.ts"
+
+// Emulate the server-only transport around existing fake Den fixtures. The
+// plugin sees only identity metadata and local inventory responses, never token.
+function createDesktopProviderPlugin(deps: NonNullable<Parameters<typeof createDesktopProviderPluginSource>[0]> = {}) {
+  const upstream = deps.fetch ?? fetch
+  let source: DenSession | null = null
+  return createDesktopProviderPluginSource({ ...deps, fetch: async (input, init) => {
+    const url = new URL(input)
+    if (url.pathname === "/session") {
+      const response = await upstream(input, init)
+      const value: unknown = await response.json()
+      if (value === null) { source = null; return Response.json(null) }
+      assert.ok(typeof value === "object" && value !== null && "apiBaseUrl" in value && "token" in value && "orgId" in value)
+      assert.ok(typeof value.apiBaseUrl === "string" && typeof value.token === "string" && (value.orgId === null || typeof value.orgId === "string"))
+      source = { apiBaseUrl: value.apiBaseUrl, token: value.token, orgId: value.orgId }
+      const identity = createHash("sha256").update(JSON.stringify(source)).digest("hex")
+      return Response.json({ apiBaseUrl: source.apiBaseUrl, orgId: source.orgId, identity })
+    }
+    assert.ok(source, "inventory transport requires current identity")
+    assert.equal(init?.method ?? "GET", "GET")
+    assert.equal(new Headers(init?.headers).get("authorization"), "Bearer capability")
+    assert.match(new Headers(init?.headers).get("x-openwork-provider-identity") ?? "", /^[a-f0-9]{64}$/)
+    return upstream(source.apiBaseUrl + url.pathname + url.search, { ...init, headers: {
+      authorization: `Bearer ${source.token}`, "x-openwork-org-id": source.orgId ?? "", "x-openwork-legacy-org-id": source.orgId ?? "",
+    } })
+  } })
+}
 
 /** A small stand-in for the OpenCode V2 plugin host: replays transforms on reload like the real one. */
 function createHost(options: Record<string, unknown> = {}) {
@@ -423,10 +451,11 @@ test("desktop bridge accepts only literal loopback and never follows redirects o
     calls++
     assert.equal(new Headers(init?.headers).get("authorization"), "Bearer process-capability")
     assert.equal(init?.redirect, "error")
-    return Response.json({ apiBaseUrl: API, token: SESSION_TOKEN, orgId: ORG_ID })
+    return Response.json({ apiBaseUrl: API, identity: "a".repeat(64), orgId: ORG_ID })
   }, "http://127.0.0.1:1234/session", "process-capability")
   assert.equal(calls, 1)
-  assert.equal(session?.token, SESSION_TOKEN)
+  assert.equal(session?.identity, "a".repeat(64))
+  assert.ok(!JSON.stringify(session).includes(SESSION_TOKEN))
 })
 
 test("desktop provider-only mode reacts to local org changes and sign-out without inventory polling", async () => {
@@ -663,6 +692,11 @@ for (const desktop of [false, true]) {
     assert.equal(host.providers().size, 0)
     assert.equal(host.storage.has(desktop ? "desktop/provider-inventory" : "inventory"), false)
     assert.equal(host.credentials.size, 1, "does not delete the host's credential")
+    assert.equal(den.cancelled, 0, "an inventory-list membership denial must retain the recovery subscription")
+    denied = false
+    den.streams.at(-1)?.close()
+    for (let i = 0; i < 350 && !host.providers().size; i++) await delay(10)
+    assert.equal(host.providers().size, 1, "same-token regrant recovers after an inventory-list 403 without restart or new credentials")
     await cleanup?.()
   })
 
@@ -715,6 +749,35 @@ for (const desktop of [false, true]) {
   })
   }
 }
+
+test("standalone membership regrant after a rollout kill restores authorized legacy polling", async () => {
+  const den = liveDen()
+  const host = createHost({ apiBaseUrl: API })
+  host.credentials.set("cred_1", signedIn())
+  let denied = false
+  const fetcher: Fetch = async (url, init) => {
+    if (denied && (url.endsWith("/v1/org") || url.endsWith("/inventory/events"))) return Response.json({ error: "organization_not_found" }, { status: 403 })
+    return den.fetch(url, init)
+  }
+  const cleanup = await createPlugin({ fetch: fetcher }).setup(host.ctx)
+  try {
+    await settle()
+    assert.equal(host.providers().size, 1)
+    denied = true
+    den.streams.at(-1)?.close()
+    for (let i = 0; i < 150 && host.providers().size; i++) await delay(10)
+    assert.equal(host.providers().size, 0)
+    den.enabled = false
+    denied = false
+    host.emitCredentialEvent()
+    for (let i = 0; i < 350 && !host.providers().size; i++) await delay(10)
+    assert.equal(host.providers().size, 1, "an authenticated org response can restore legacy mode after regrant and kill")
+    const cached = host.storage.get("inventory")
+    assert.ok(cached && typeof cached === "object" && !Array.isArray(cached))
+    assert.equal(cached.liveProviderSync, false)
+    assert.equal(den.streams.length, 1, "legacy restoration does not reactivate the killed stream")
+  } finally { await cleanup?.() }
+})
 
 test("desktop rollout off does not register providers, MCP, integration or make requests", async () => {
   const host = createHost({ desktopSession: "http://127.0.0.1:1234/session", liveProviderSync: false })

@@ -7,6 +7,8 @@ const catalogSchema = z.object({
     description: z.string(),
     capability: z.string().regex(/^(?:skill:[^:]+|plugin:[^:]+:[^:]+)$/),
     modelDiscovery: z.boolean().optional(),
+    // Den's built-in product guides (no member access check) arrive whole.
+    content: z.string().max(32_000).optional(),
   })),
 });
 
@@ -19,9 +21,15 @@ export type CloudSkillContext = {
   };
 };
 
-/** Only discovery metadata is registered. Never cache a Cloud skill body or
- * authorization decision: even an old model snapshot must retrieve the body
- * from Den, which rechecks member access on every get_skill call. */
+function withoutFrontmatter(source: string): string {
+  return source.replace(/^---\n[\s\S]*?\n---\n+/, "").trim();
+}
+
+/** Only discovery metadata is registered for member-gated skills. Never cache
+ * their body or authorization decision: even an old model snapshot must
+ * retrieve the body from Den, which rechecks member access on every get_skill
+ * call. Den sends a body only for its built-in guides, which need no access
+ * check; those load in one step and refresh with the catalog. */
 export function discoverySkills(value: unknown): NativeSkill[] {
   const catalog = catalogSchema.parse(value);
   let remaining = 24_000;
@@ -40,7 +48,7 @@ export function discoverySkills(value: unknown): NativeSkill[] {
       // Not SKILL.md: the native skill tool must not scan a fake directory.
       // The pinned v2 beta uses location (newer upstream versions use path).
       location: `/openwork/remote-skills/${skill.name}.md`,
-      content: [
+      content: skill.content ? withoutFrontmatter(skill.content) : [
         "This is discovery metadata, NOT the skill's instructions or proof of access.",
         `Retrieve the current full skill through OpenWork Connect get_skill with ${JSON.stringify({ name: skill.capability })}.`,
         "Use get_skill directly when exposed, or through execute with its exact Code Mode catalog path. Only search inside execute if get_skill is not already listed; do not guess a tool name.",

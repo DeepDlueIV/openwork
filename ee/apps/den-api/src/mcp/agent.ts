@@ -56,6 +56,7 @@ import {
 } from "./workflow-artifact-app.js"
 import {
   executeBuiltinSkillCapability,
+  inlineBuiltinSkillSource,
   listBuiltinSkillDescriptors,
 } from "./builtin-skills.js"
 import {
@@ -207,7 +208,7 @@ function agentMcpInstructions(appServers: boolean): string {
     "Use create_skill to create one private Cloud skill in a new Plugin, and update_skill to publish a new immutable version of an existing skill. Both return text and structured skill details; do not route these flows through execute_capability, postPlugins, or postConfigObjectsVersions.",
     "Skills have direct tools: list_skills returns every built-in and marketplace skill this member may use, and get_skill returns one skill's SKILL.md by its name or exact capability. Prefer them over keyword search for skills; search_capabilities with type skills and execute_capability still return the same skills, and the skill:// resources are unchanged.",
     "Built-in remote skills create-skill, share-plugin, add-to-marketplace, and add-user-to-marketplace are always listed by list_skills and in the skill index. Retrieve and follow the matching one with get_skill (or by executing its exact capability); do not invent a local copy.",
-    appServers ? "To build or change an App (a dashboard, tracker, lookup, form, calculator, or other interactive view), read the build-an-app skill with get_skill and follow it. It uses the direct prepare_app, create_app, read_app, and update_app tools, whose presence means App building is on; never substitute save_artifact_view, config-object writes, or a local HTML file. Create a Workflow only for a reusable procedure, and an Automation only when the user asks for a schedule." :"For an app, dashboard, or artifact view of Workflow results, call the direct MCP tool save_artifact_view and follow its prerequisites. It is a Cloud MCP tool, not a desktop-only RPC or a search_capabilities match. Its presence in the available tools confirms availability; an empty capability search does not establish a disabled feature flag. Do not substitute a local HTML file for an in-app artifact. Build the complete app in one shot without asking about Workflow internals, names, or runtime code. Live workflows use server-supplied input.runtime for current dates and caller timezone. Use one friendly name for the workflow and app; the user previews the draft and chooses Save to keep both on their dashboard. Only create an Automation when the user asks for a schedule.",
+    appServers ? "To build or change an App (a dashboard, tracker, lookup, form, calculator, or other interactive view), first load the build-an-app skill and follow it exactly: from your skill list when it is there, otherwise with get_skill { name: \"skill:build-an-app\" }. It uses the direct prepare_app, create_app, read_app, and update_app tools, whose presence means App building is on; never substitute save_artifact_view, config-object writes, or a local HTML file. Create a Workflow only for a reusable procedure, and an Automation only when the user asks for a schedule." :"For an app, dashboard, or artifact view of Workflow results, call the direct MCP tool save_artifact_view and follow its prerequisites. It is a Cloud MCP tool, not a desktop-only RPC or a search_capabilities match. Its presence in the available tools confirms availability; an empty capability search does not establish a disabled feature flag. Do not substitute a local HTML file for an in-app artifact. Build the complete app in one shot without asking about Workflow internals, names, or runtime code. Live workflows use server-supplied input.runtime for current dates and caller timezone. Use one friendly name for the workflow and app; the user previews the draft and chooses Save to keep both on their dashboard. Only create an Automation when the user asks for a schedule.",
     "Skills teach how to perform work. Workflows are saved procedures discovered through search_capabilities and run through execute_capability. Author an ad hoc procedure with execute_capability_script; Workflow runs produce artifacts rendered by render_workflow_artifact, and Automations trigger Workflows. To keep a successful Code Mode result, save it as a Workflow inside the existing Plugin the member names (pass that pluginId); omit pluginId only for a private Workflow in their My Workflows Plugin. A Workflow inherits discovery and sharing from its Plugin and Marketplaces; never create a separate Workflow package or marketplace entry.",
     "To open an App, execute its kind mcp_app match from search_capabilities. Never import, convert, or browse for a standalone HTML URL instead; standalone URL-imported Apps are not part of this release.",
     "To add a public GitHub plugin to an organization marketplace, search for the marketplace list, GitHub plugin import preview, GitHub plugin marketplace import, and resolved marketplace detail capabilities. Preview first; do not recreate the plugin by hand. Before importing, confirm the target marketplace, selected skill/server keys, and who can use them; omitting selectedSkillKeys imports every supported skill. A marketplace repository (for example a Claude Cowork marketplace) lists each plugin in the preview: import one plugin per call with its folder URL (https://github.com/<owner>/<repo>/tree/<branch>/<plugin folder>). Importing the same plugin again from the same repository updates it in place (mode: updated, with updatedSkills and unchanged), so a migration can be re-run safely; skills and MCP servers deleted upstream since the last import are removed from the plugin and listed in removed, while components added by hand are kept. Do not choose one authentication type for every server: the import route resolves known presets and plugin declarations, and the request authType is only a fallback for unknown servers. Claude-specific connectors are mapped to what OpenWork already knows: each preview server reports mapsTo (a preset, or native Google Workspace / Microsoft 365) and reuse (the organization's existing connection it will use); tell the person it uses their existing <reuse.connectionName> connection instead of promising a new one. Servers skipped as native_connector are Claude-only; relay connecting that provider in OpenWork as the next step.",
@@ -242,6 +243,12 @@ async function mcpRequestInfo(request: Request): Promise<{ method: string | null
 export const AGENT_SKILL_INDEX_URI = "skill://index.json"
 export const AGENT_SKILL_INDEX_SCHEMA = "https://schemas.agentskills.io/discovery/0.2.0/schema.json"
 
+/** Built-in guides that need no access check travel whole, so a skill list can load them in one step. */
+function inlineContent(capability: string): { content?: string } {
+  const content = inlineBuiltinSkillSource(capability)
+  return content ? { content } : {}
+}
+
 export function buildAgentSkillIndex(skills: RemoteSkillDescriptor[]) {
   return {
     $schema: AGENT_SKILL_INDEX_SCHEMA,
@@ -253,6 +260,7 @@ export function buildAgentSkillIndex(skills: RemoteSkillDescriptor[]) {
       modelDiscovery: true,
       url: skill.location,
       capability: skill.capability,
+      ...inlineContent(skill.capability),
       ...(skill.marketplaceName ? { marketplaceName: skill.marketplaceName } : {}),
       ...(skill.pluginName ? { pluginName: skill.pluginName } : {}),
     })),

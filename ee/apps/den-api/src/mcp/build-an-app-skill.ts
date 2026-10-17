@@ -11,7 +11,7 @@ export const BUILTIN_BUILD_AN_APP_CAPABILITY = "skill:build-an-app"
 export const BUILD_AN_APP_SKILL_SOURCE = `---
 name: build-an-app
 description: |
-  Build or change an App: a small interactive view, such as a dashboard, tracker, lookup, form, or calculator, that opens beside the chat and in any MCP Apps host.
+  Required before any prepare_app, create_app, read_app, or update_app call. Build or change an App: a small interactive view, such as a dashboard, tracker, lookup, form, or calculator, that opens beside the chat and in any MCP Apps host.
 
   Triggers when the user asks to:
   - build, make, or create an app, dashboard, tracker, calculator, form, or interactive view
@@ -23,21 +23,41 @@ description: |
 
 An App is a small React view that OpenWork compiles and publishes as its own MCP server. It runs as the person using it, with their own access and connections, and opens again with live data in chat, the side panel, and dashboards.
 
+Follow these steps exactly. A good App takes four calls: search, prepare, create, reply. Do not explore, ask about flags, or look for other builders.
+
 ## Decide first
 
-- Build an App when the person will come back to it or needs inputs, filters, or buttons. When one answer settles the question, answer in chat.
+- Build an App when the person will come back to it or needs inputs, filters, or buttons. When one answer settles the question, answer in chat instead.
 - One App does one job. Name its focal element before writing anything: the list, number, status, or button the person came for.
-- A self-contained App, such as a calculator or checklist, binds no tools. Anything that shows or changes the person's data binds the tools it needs.
+- A self-contained App, such as a calculator or checklist, binds no tools: skip step 1. Anything that shows or changes the person's data binds the tools it needs.
 
 ## Steps
 
-1. Find the data and actions it needs, unless it is self-contained: search_capabilities with 2-4 keyword variants, then pick exact matches that create_app can bind. Prefer tools that only read (readOnly: true), which the App can load as it opens. When the data must be combined or computed on every open, save a live Workflow first, as execute_capability_script describes.
-2. Call prepare_app with a title that names the outcome ("Open Linear issues", not "Dashboard"), one sentence on what the person sees and does, and those exact tools. It verifies them and returns their input schemas and a starter already wired to them.
-3. Write the App from that starter. Keep its theme, state handling, and tool calls. Replace the general result view with the focal view, rename buttons to their outcome, and keep only the inputs the person needs.
-4. Call create_app with the preparationId, the same tools, the complete React and CSS, and a textFallback of one or two sentences on what the App shows. If it fails, fix exactly what the error names and call create_app again with the same preparationId. Never fall back to a local HTML file, save_artifact_view, or config-object writes.
-5. Reply in one or two sentences: what the App shows and one thing to try in it. OpenWork shows the build as it happens and opens the App, so do not narrate the steps, claim stages in prose, or paste the source.
+1. **Find the tools.** Call search_capabilities once with 2-4 keyword variants of the data and action, such as { "query": "linear issues list assigned", "type": "mcp" }. Pick exact matches. Prefer ones that only read (readOnly: true): the App loads them as it opens. When the data must be combined or computed on every open, save a live Workflow first, as execute_capability_script describes, and bind that.
+2. **Prepare.** Call prepare_app with a title that names the outcome ("Open Linear issues", not "Dashboard"), one sentence on what the person sees and does, and those tools. It verifies them and returns their input schemas, a preparationId, and a starter already wired to them.
+3. **Write from the starter.** Keep its theme, state components, and tool calls. Only change what nextSteps names: the focal view, button labels, and inputs. Never start from a blank file.
+4. **Create.** Call create_app with the preparationId, the same title and tools, the complete reactSource and cssSource, and a textFallback of one or two sentences on what the App shows. If it fails, fix exactly what the error names and call create_app again with the same preparationId. Never fall back to a local HTML file, save_artifact_view, or config-object writes.
+5. **Reply** in one or two sentences: what the App shows and one thing to try in it. OpenWork shows the build and opens the App, so do not narrate the steps, claim stages, or paste the source.
 
-To change an App, keep its purpose and tools unless the person asks otherwise, and follow update_app.
+## Example
+
+The person asks: "Make me a dashboard of my open Linear issues."
+
+1. search_capabilities { "query": "linear issues list assigned open", "type": "mcp", "limit": 5 } returns a match such as linear.list_issues (readOnly: true). Use the exact capability string it returns.
+2. prepare_app:
+
+   { "title": "My open Linear issues", "description": "Shows the person's open Linear issues, newest first, with a refresh button.", "tools": [{ "name": "list_issues", "description": "List the person's open issues.", "capability": "linear.list_issues" }] }
+
+   It returns the lookup starter: it calls list_issues as it opens and shows its result.
+3. In the starter, replace ResultView with a list of the top 10 issues (identifier, title, state) and a line such as "23 open · updated 9:41". Rename the button to "Refresh issues". Leave useTheme, useToolCall, and the loading, empty, and error states as they are.
+4. create_app with that preparationId, the same title and tools, the edited reactSource, the starter's cssSource, and "textFallback": "Your open Linear issues, newest first."
+5. Reply: "Your open Linear issues are on the board. Try Refresh issues after you close one."
+
+A calculator ("a tip calculator") skips search: prepare_app with no tools returns the standalone starter. Replace FIELDS and compute() with the bill, tip percentage, and people, then create_app.
+
+## Change an App
+
+Call read_app with its appId, keep its purpose and tools unless the person asks otherwise, change only what they asked, and call update_app with read_app's revisionId as expectedRevisionId.
 
 ## Starters
 

@@ -660,7 +660,8 @@ export async function mcpAppServersChat(seed: Seed, benchmark: boolean | { place
         ? [toolStep("search_capabilities", { query: "Inventory lookup unit price", type: "mcp", limit: 2 })]
         : kind === "guided"
         // The agent reads the guide, finds the tool, prepares, and publishes prepare_app's starter unchanged.
-        ? [toolStep("get_skill", { name: "build-an-app" }), toolStep("search_capabilities", { query: "Inventory lookup unit price", type: "mcp", limit: 2 }),
+        // v2 loads it from its native skill list in one call; v1 fetches it with get_skill.
+        ? [engine === "v2" ? { tool: "skill", argumentsFrom: "skill-catalog", arguments: { skill: "Build an App" } } : toolStep("get_skill", { name: "build-an-app" }), toolStep("search_capabilities", { query: "Inventory lookup unit price", type: "mcp", limit: 2 }),
           toolStep("prepare_app", { title: guidedTitle, description: "Look up a product's unit price in Inventory.", tools: lookup }),
           { ...(engine === "v2"
             ? { tool: "execute", arguments: { code: `return await tools["openwork-cloud"].create_app({ ...${JSON.stringify({ title: guidedTitle, tools: lookup, textFallback: "Looks up a product's unit price in Inventory." })}, ..."__APP_STARTER__" });` } }

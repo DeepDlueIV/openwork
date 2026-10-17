@@ -641,7 +641,10 @@ async function creationJourney({ world, agent, user, probe, step, evidence }: Sp
       expect(steps[0]?.text).toContain("build-an-app");
       expect(steps[0]?.text).toContain("Inventory lookup unit price");
       // The guide the agent read is OpenWork Cloud's built-in skill.
-      expect(JSON.stringify(await world.den.mocks.inventory.agentRequests({ promptMarker: prompt }))).toContain("# Build an App");
+      const guided = JSON.stringify(await world.den.mocks.inventory.agentRequests({ promptMarker: prompt }));
+      expect(guided).toContain("# Build an App");
+      // v2's native skill carries the whole guide, not a pointer to fetch it.
+      if (world.engine === "v2") expect(guided).not.toContain("This is discovery metadata");
       // prepare_app's starter, published unchanged, asks for the tool's input and loads it on one click.
       frame = await world.appFrameShowing(guidedTitle, "Show unit price");
       await user.on(frame).type({ role: "textbox", label: "Sku" }, launchInput.sku);

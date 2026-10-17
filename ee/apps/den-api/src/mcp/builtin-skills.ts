@@ -10,6 +10,11 @@ export type BuiltinSkillDefinition = {
   searchExtraTokens: string
   /** Listed only while the tools it teaches exist on this deployment. */
   available?: () => boolean
+  /**
+   * Product guidance with no member access check, sent whole in the skill
+   * index so an agent can follow it from its skill list in one load.
+   */
+  inline?: boolean
 }
 
 export const BUILTIN_CREATE_SKILL_CAPABILITY = "skill:create-skill"
@@ -257,13 +262,14 @@ export const BUILTIN_SKILLS: BuiltinSkillDefinition[] = [
     descriptor: {
       name: "build-an-app",
       title: "Build an App",
-      description: "Build or change an App, such as a dashboard, tracker, lookup, form, or calculator, that opens beside the chat.",
+      description: "Required before building or changing an App (a dashboard, tracker, lookup, form, or calculator that opens beside the chat): the exact steps and a worked example.",
       capability: BUILTIN_BUILD_AN_APP_CAPABILITY,
       location: "skill://build-an-app/SKILL.md",
     },
     source: BUILD_AN_APP_SKILL_SOURCE,
     searchExtraTokens: "app apps build make create edit update dashboard tracker calculator form lookup interactive view mcp artifact",
     available: () => env.appMcpServersEnabled,
+    inline: true,
   },
 ]
 
@@ -285,6 +291,12 @@ export type BuiltinSkillExecutePayload = {
 
 function findBuiltinSkill(capability: string): BuiltinSkillDefinition | undefined {
   return availableBuiltinSkills().find((skill) => skill.descriptor.capability === capability)
+}
+
+/** The full SKILL.md of an available built-in that is sent whole in the skill index. */
+export function inlineBuiltinSkillSource(capability: string): string | undefined {
+  const skill = findBuiltinSkill(capability)
+  return skill?.inline ? skill.source : undefined
 }
 
 export function listBuiltinSkillDescriptors(): RemoteSkillDescriptor[] {

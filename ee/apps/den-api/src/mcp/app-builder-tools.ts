@@ -121,6 +121,9 @@ export type AppBuilderService = {
 }
 
 /** Connect prepares and builds Apps; each completed App serves itself. */
+/** Every App builder points at the one guide, so an agent that reaches a builder first is sent back to it. */
+const FOLLOW_BUILD_AN_APP = "Load the build-an-app skill before calling this and follow it: it has the exact steps and a worked example."
+
 export function registerAppBuilderTools(input: {
   server: McpServer
   scopes: ReadonlySet<string>
@@ -135,7 +138,7 @@ export function registerAppBuilderTools(input: {
   }
   input.server.registerTool("prepare_app", {
     title: "Prepare an App",
-    description: "Prepare an App before writing its source: a title that names its outcome, one sentence on what the person sees and does, and the exact tools from search_capabilities (none for a self-contained App). Verifies the tools and returns their input schemas, a preparationId for create_app, and a React/CSS starter already wired to them: lookup when every tool reads, action when one changes data, standalone with no tools. Does not run tools, create a Plugin, or publish an App. Requires mcp:write.",
+    description: FOLLOW_BUILD_AN_APP + " Prepare an App before writing its source: a title that names its outcome, one sentence on what the person sees and does, and the exact tools from search_capabilities (none for a self-contained App). Verifies the tools and returns their input schemas, a preparationId for create_app, and a React/CSS starter already wired to them: lookup when every tool reads, action when one changes data, standalone with no tools. Does not run tools, create a Plugin, or publish an App. Requires mcp:write.",
     inputSchema: prepareMcpAppInputSchema,
     outputSchema: prepareMcpAppOutputSchema,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: false },
@@ -151,6 +154,7 @@ export function registerAppBuilderTools(input: {
   input.server.registerTool("create_app", {
     title: "Create an App",
     description: [
+      FOLLOW_BUILD_AN_APP,
       "Create an App, which is its own MCP server, from complete React/CSS source, a readable textFallback, and the tools it needs. It needs no Workflow, output schema, or Automation.",
       "Pass prepare_app's preparationId so OpenWork shows this build as the App it prepared; this call still checks bindings, compiles the source, and saves the App itself. Older clients may omit it.",
       "Each tool has a snake_case name, a description, and one exact capability from search_capabilities: a saved Workflow, a connection tool, or an OpenWork action that reads (GET). OpenWork actions are read-only here: to change OpenWork data, bind a saved Workflow that makes the change. Use mode live for a Workflow that reads input.runtime. Tools run as the person using the App.",
@@ -181,6 +185,7 @@ export function registerAppBuilderTools(input: {
   input.server.registerTool("update_app", {
     title: "Update an App",
     description: [
+      FOLLOW_BUILD_AN_APP,
       "Update an existing App with complete replacement React source, title, and textFallback, following create_app's rules.",
       "First read_app, and copy its revisionId to expectedRevisionId. Omit cssSource, description, or tools to keep the current ones, or pass complete replacements.",
       "Publishes an immutable revision in the same Plugin and MCP server; newly bound Workflows join that Plugin, so everyone it is shared with can run them. Requires editor access and the mcp:write scope.",

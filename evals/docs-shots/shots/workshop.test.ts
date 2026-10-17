@@ -10,7 +10,7 @@ const frame = {
 const manifest = (entry: unknown = frame) => ({ organization: "Acme Robotics", fictional: true, frames: { "workshop-t07-final": entry } });
 
 test("all workshop scenes are discoverable without provisioning and have unique private outputs", () => {
-  assert.equal(workshopShots.length, 14);
+  assert.equal(workshopShots.length, 16);
   assert.equal(new Set(workshopShots.map((shot) => shot.id)).size, WORKSHOP_SHOT_IDS.length);
   assert.ok(workshopShots.every((shot) => shot.out.startsWith("evals/results/workshop-docshots/")));
   assert.ok(!documentationShots.some((shot) => shot.id.startsWith("workshop-")));

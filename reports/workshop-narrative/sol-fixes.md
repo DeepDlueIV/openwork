@@ -93,6 +93,12 @@ T02/T03 now pass the explicit two-product, useful-assessment, recipient and late
 
 The bounded correction keeps the same T07 business task and time limit: explicitly finish through connected Jira APIs with the verified issue key/type/Application, forbid unnecessary browser/fetch/search attempts in the T07 contract, and disable those agent tools in the isolated workspace rather than leaving external fetch/search on `ask`. The same workspace restriction applies to both subjects; person-driven fixture UI captures remain unchanged. The connected-API boundary regression failed before this guard and passes afterward. Typecheck and spec lint remain clean; the focused contract/diagnostic/identity check reports 41 passing tests.
 
+## Connected-API T07 control
+
+Head `484f5c9712`: the exact shared T07 diagnostic passes in **45,265 ms**, with 16 subject requests, 452,345 tokens and a $1.829860 available-request estimate (not billed). Native diagnostic: **1 passed, 0 failed/skipped, exit 0**. Setup independently reads both isolated engines' effective config and verifies the shared tool restrictions. The strengthened T07 contract verifies the Jira business result and rejects browser/fetch/search attempts. This is a targeted control, not a full-matrix pass.
+
+Final evidence refinements preserve the actually returned, digest-verified authoring-test value privately (rather than only its digest), so all three Workflow outputs can be independently inspected. Workflow captures now have separate context and substantive comparison frames: the context binds the visible latest input, while the result frame requires both actual product names and payload facts to be visible. No old image is relabeled; the full run must generate these fresh frames.
+
 ## Publication and remaining work
 
 Pending: a fresh committed-head Sol run after these bounded corrections, acceptance audit, protected evidence publication, then a separate stacked Qwen branch and unchanged fixed baseline. The normal CI producer currently triggers only for PRs targeting `dev`, while this PR intentionally targets the demo branch; no approved local-evidence import route is configured. Do not retarget or manually publish merely to obtain links.

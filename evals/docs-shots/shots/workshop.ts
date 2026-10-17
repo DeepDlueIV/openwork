@@ -16,6 +16,7 @@ import type { Shot } from "./shot.ts";
 /** Read-only captures. The paid proof owns the world, prompts and all business writes. */
 export const WORKSHOP_SHOT_IDS = [
   "workshop-before-regression", "workshop-after-regression",
+  "workshop-t02-context", "workshop-t03-context",
   "workshop-t01-final", "workshop-t02-final", "workshop-t03-final",
   "workshop-t04-final", "workshop-t05-final", "workshop-t06-final",
   "workshop-t07-final", "workshop-t08-final", "workshop-t09-final",

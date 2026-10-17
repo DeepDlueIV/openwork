@@ -51,6 +51,8 @@ test("native authoring test is not mislabeled as a second saved execution; exact
   assert.deepEqual(witness?.rerun.input, rerunInput);
   assert.equal(witness?.verification.testExecutionType, "authoring-test");
   assert.equal(witness?.verification.rerunExecutionType, "saved-version");
+  assert.deepEqual(witness?.authoringResultValue, comparison(testInput.customerRequest));
+  assert.equal(artifactDigest(witness?.authoringResultValue), witness?.verification.testResultDigest);
 });
 const workflowMutations: [string, (after: NativeWorkflowObservation, context: WorkflowWitnessContext) => void][] = [
   ["later example run supersedes the required cold-storage rerun", (after) => { after.details = { script: { configObjectId: "workflow", currentVersion: { id: "version", codeDigest: "code", inputSchemaDigest: "schema", outputSchemaDigest: null }, latestSnapshot: { receiptId: "later-example", value: comparison(testInput.customerRequest) } } }; }],

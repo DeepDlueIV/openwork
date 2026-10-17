@@ -70,6 +70,8 @@ export interface WorkflowActorEvidence {
 }
 export interface WorkflowWitnessContext { owner?: WorkflowActorEvidence; recipient?: WorkflowActorEvidence }
 export interface VerifiedWorkflowWitness extends WorkflowWitness {
+  /** Exact verified authoring output, retained privately so its digest can be recomputed. */
+  authoringResultValue: unknown;
   verification: {
     inputEvidence: "owned-db-canonical-digest";
     testExecutionType: "authoring-test"; rerunExecutionType: "saved-version";
@@ -206,7 +208,7 @@ export function workflowWitness(before: NativeWorkflowObservation, after: Native
   const textPart = outputs.find((output) => output.type === "text" && typeof output.text === "string" && artifactDigest(output.text) === test.result_digest);
   const value = wrapped ? wrapped.value : textPart ? textPart.text : outputs.find((output) => artifactDigest(output) === test.result_digest);
   if (!metadata || value === undefined || !workflowComparisonSemantics(value, "test", pages)) return undefined;
-  return { workflowId: saved.workflowId, versionId: saved.versionId, savedNativeWorkflow: true, observedViaDenGet: true,
+  return { workflowId: saved.workflowId, versionId: saved.versionId, savedNativeWorkflow: true, observedViaDenGet: true, authoringResultValue: value,
     test: { receiptId: str(test.id), workflowId: saved.workflowId, versionId: saved.versionId, status: "succeeded", input: { ...WORKSHOP_WORKFLOW_INPUTS.test } },
     rerun: { receiptId: str(rerun.id), workflowId: saved.workflowId, versionId: saved.versionId, status: "succeeded", input: { ...WORKSHOP_WORKFLOW_INPUTS.rerun } },
     verification: { inputEvidence: "owned-db-canonical-digest", testExecutionType: "authoring-test", rerunExecutionType: "saved-version", testCodeDigest: str(test.code_digest), rerunCodeDigest: str(rerun.code_digest), testInputDigest: str(test.script_input_digest), rerunInputDigest: str(rerun.script_input_digest), testResultDigest: str(test.result_digest), rerunResultDigest: str(rerun.result_digest), ownerSessionId: context.owner!.expected.sessionId, providerID: context.owner!.expected.providerID, modelID: context.owner!.expected.modelID, upstreamModel: context.owner!.inference!.upstreamModel, executionEngine: "deterministic-codemode", sourcePageIds: pages.map((page) => str(page.id)) } };

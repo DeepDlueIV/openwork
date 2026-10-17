@@ -23,8 +23,8 @@ export const DEMO_WORKSPACE_SERVICES = [
 ] as const;
 
 const SCRIPT_URL = new URL("../../evals/packages/labs/src/demo-workspace-mcp.mjs", import.meta.url);
-/** Fixed port inside a Daytona Den sandbox; locally a free port is allocated. */
-const DAYTONA_PORT = 3990;
+/** Fixed port inside a Daytona Den sandbox (3990 is the Acme model upstream, 3991 the calendar mock); locally a free port is allocated. */
+const DAYTONA_PORT = 3992;
 
 export type DemoWorkspace = {
   /** Where Den API reaches the servers: `${baseUrl}/<service>/mcp`. */

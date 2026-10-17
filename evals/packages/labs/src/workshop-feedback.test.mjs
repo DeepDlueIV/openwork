@@ -9,10 +9,9 @@ import { feedbackFetch } from './workshop-feedback-preload.mjs';
 const customerQuery = 'mutation LandingUpsertCustomer($input: UpsertCustomerInput!) { upsertCustomer(input: $input) { customer { id } error { code } } }';
 const threadQuery = 'mutation LandingCreateThread($input: CreateThreadInput!) { createThread(input: $input) { thread { id } error { code } } }';
 
-test('real GraphQL HTTP transport persists only accepted provider mutations and supports operator readback', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'workshop-feedback-test-'));
-  try {
-    await using witness = await startPlainWitness({ directory: root, token: 'owned-test-only' });
+test('real GraphQL HTTP transport keeps only accepted provider mutations in memory and supports operator readback', async () => {
+  {
+    await using witness = await startPlainWitness({ token: 'owned-test-only' });
     const transport = feedbackFetch({ origin: witness.origin, token: 'owned-test-only', fetch });
     const call = (query, input) => transport('https://core-api.uk.plain.com/graphql/v1', { method: 'POST', headers: { authorization: 'Bearer owned-test-only', 'content-type': 'application/json' }, body: JSON.stringify({ query, variables: { input } }) });
     assert.equal((await witness.read()).threads.length, 0);
@@ -29,11 +28,14 @@ test('real GraphQL HTTP transport persists only accepted provider mutations and 
     assert.equal(state.threads.length, 1);
     assert.equal(state.threads[0].input.components[0].componentPlainText.plainText, message);
     assert.equal(state.audit.length, 2);
-    assert.deepEqual(JSON.parse(await readFile(join(root, 'plain-state.json'), 'utf8')), state);
     const operator = await fetch(`${witness.origin}/operator/state`, { headers: { authorization: 'Bearer owned-test-only' } });
     assert.deepEqual(await operator.json(), state);
     assert.equal((await fetch(`${witness.origin}/operator/state`)).status, 401);
-  } finally { await rm(root, { recursive: true, force: true }); }
+    state.threads.length = 0;
+    assert.equal((await witness.read()).threads.length, 1, 'readback is a copy; callers cannot mutate provider state');
+  }
+  await using fresh = await startPlainWitness({ token: 'owned-test-only' });
+  assert.deepEqual(await fresh.read(), { customers: [], threads: [], audit: [] }, 'a new provider never inherits earlier state');
 });
 
 test('preload fails closed: never sends a real key, unrelated external request, or alternate Plain path', async () => {

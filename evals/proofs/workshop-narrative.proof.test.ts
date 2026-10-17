@@ -36,6 +36,7 @@ test("a fictional team rehearses every workshop scene without hidden task writes
       for (const scene of WORKSHOP_SCENES) {
         await step(`${scene.id}: ${scene.title}`, async () => {
           const started = Date.now();
+          world.markScene(`${scene.id}:start`);
           let row: NarrativeRow;
           try {
             if (Date.now() - matrixStarted > WORKSHOP_LIMITS.matrixMs) {
@@ -78,6 +79,7 @@ test("a fictional team rehearses every workshop scene without hidden task writes
               const oldIds = new Set((Array.isArray(before.messages) ? before.messages : []).map((message) => record(record(message).info).id));
               await appUser.type("composer", scene.prompt, { replace: true });
               await appUser.click("Run task");
+              world.markScene(`${scene.id}:prompt`);
               await appUser.see({ text: scene.prompt });
               let completed = true;
               await probe.eventually(() => world.current(), { within: scene.limitMs, intervalMs: 500, label: `${scene.id} real paid assistant completion`, until: (value) => terminal(value.messages, oldIds) }).catch(async () => {
@@ -104,6 +106,7 @@ test("a fictional team rehearses every workshop scene without hidden task writes
                   await probe.eventually(() => world.current(), { within: Math.max(1000, scene.limitMs - (Date.now() - started)), intervalMs: 500, label: "09:00 due job actually executes paid inference", until: (value) => terminal(value.messages, dueIds) }).catch(async () => { completed = false; await world.captureTurnDiagnostic(`${scene.id}-due-before-stop`).catch(() => undefined); await appAgent.run("composer.stop").catch(() => undefined); });
                 }
               }
+              world.markScene(`${scene.id}:answered`);
               if (!completed) world.abortInferenceAfter(inferenceStart + 1);
               await world.settleInference();
               const ownerAfter = await world.observe();
@@ -116,6 +119,7 @@ test("a fictional team rehearses every workshop scene without hidden task writes
                 const recipientIds = new Set((Array.isArray(recipientBefore.messages) ? recipientBefore.messages : []).map((message) => record(record(message).info).id));
                 await user.on(world.recipientApp).type("composer", recipientPrompt, { replace: true });
                 await user.on(world.recipientApp).click("Run task");
+                world.markScene(`${scene.id}:recipient-prompt`);
                 await probe.eventually(() => world.current("recipient"), { within: Math.max(1000, scene.limitMs - (Date.now() - started)), intervalMs: 500, label: "Nora actually runs the shared Workflow", until: (value) => terminal(value.messages, recipientIds) }).catch(async () => { completed = false; await world.captureTurnDiagnostic(`${scene.id}-recipient-before-stop`, "recipient").catch(() => undefined); await recipientAgent.run("composer.stop").catch(() => undefined); world.abortInferenceAfter(recipientInferenceStart + 1); });
                 await world.settleInference();
                 const recipientAfter = await world.observe("recipient");
@@ -181,8 +185,10 @@ test("a fictional team rehearses every workshop scene without hidden task writes
                 const draft = Array.isArray(state.messages) ? state.messages.map(record).find((mail) => mail.isDraft && !oldMailIds.has(mail.id)) : undefined;
                 if (draft) targets.push({ url: `${world.urls.outlook}?message=${encodeURIComponent(String(draft.id))}`, text: "Edit draft" });
               }
+              world.markScene(`${scene.id}:verify`);
               for (const target of targets) {
                 await user.on(world.serviceBrowser).navigate(target.url);
+                world.markScene(`${scene.id}:service:${target.text}`);
                 await user.on(world.serviceBrowser).see({ text: target.text });
                 if (scene.id === "T06") {
                   await user.on(world.controlBrowser).navigate(`${world.urls.controlJira}/browse/${issue?.key}`);
@@ -202,6 +208,7 @@ test("a fictional team rehearses every workshop scene without hidden task writes
                 if (item && (scene.id === "T02" || check.sharing)) {
                   const surface = scene.id === "T02" ? world.ownerWeb : world.recipientWeb;
                   await user.on(surface).navigate(`${world.urls.denWeb}/dashboard/library/workflows/${item.configObjectId}`);
+                  world.markScene(`${scene.id}:library`);
                   await user.on(surface).see({ text: "Acme product comparison" });
                   await world.assertScreenshotSafe(surface); await user.on(surface).screenshot();
                   shotSurface = surface; shotExpectation = "Acme product comparison";
@@ -226,6 +233,7 @@ test("a fictional team rehearses every workshop scene without hidden task writes
             await appAgent.run("composer.stop").catch(() => undefined);
             world.abortInferenceAfter(0); await world.settleInference().catch(() => undefined);
           }
+          world.markScene(`${scene.id}:end:${row.status}`);
           world.recordRow(row);
           console.log(`[workshop ${profile}] ${row.id} ${row.status} ${Math.round(row.latencyMs / 1000)}s — ${row.reason.split(". On screen:")[0].slice(0, 240)}`);
           evidence.recordAssertionEvidence(`${scene.id} ${scene.title}`, `${row.status}: ${row.reason}`, row.status === "PASS");

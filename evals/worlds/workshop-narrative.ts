@@ -12,7 +12,7 @@ import { workshopRunIdentity } from "./workshop-run-identity.ts";
 import { workshopTurnDiagnostic } from "./workshop-turn-diagnostics.ts";
 import { inspectWorkshopPptx, verifyWorkshopPptxPrerequisite } from "./workshop-pptx.ts";
 import type { NativeWorkflowObservation } from "./workshop-narrative-witnesses.ts";
-import { addInitScript, allocateFreePort, browserScript, connect, evaluateOnSurface, listTargets, navigate, type Surface } from "@openwork/cdp";
+import { addInitScript, allocateFreePort, browserScript, captureBrowserFilm, connect, evaluateOnSurface, listTargets, navigate, type Surface } from "@openwork/cdp";
 import { chrome } from "@openwork/hosts";
 import type { Place, Seed } from "@openwork/env";
 import { denFetch, type DenSession } from "@openwork/behaviors";
@@ -123,6 +123,19 @@ export async function workshopNarrative(seed: Seed, { place }: { place: Place })
     const controlBrowser = resources.use(await chrome({ host: place.host(), name: "workshop-recorded-before-ui", startUrl: `${controlUi.baseUrl}/jira`, headless: true }));
     const ownerWeb = await seed.web({ den, signedInAs: "admin", startPath: "/dashboard/library", headless: true, viewport: { width: 1440, height: 1000 } });
     const recipientWeb = await seed.web({ den, signedInAs: "teammate", startPath: "/dashboard/library", headless: true, viewport: { width: 1440, height: 1000 } });
+    // Optional passive CDP films for a narrated demo cut. Frames only; never drives the UI or changes timing.
+    const filmRoot = process.env.OPENWORK_WORKSHOP_FILM_DIR ? join(process.env.OPENWORK_WORKSHOP_FILM_DIR, profile) : null;
+    const markers: { label: string; at: number }[] = [];
+    const films = new Map<string, Awaited<ReturnType<typeof captureBrowserFilm>>>();
+    const film = async (label: string, surface: Surface) => {
+      if (!filmRoot || films.has(label)) return;
+      films.set(label, await captureBrowserFilm(surface, join(filmRoot, label)));
+    };
+    if (filmRoot) {
+      await mkdir(filmRoot, { recursive: true });
+      resources.defer(async () => { for (const capture of films.values()) await capture.stop().catch(() => undefined); await writeFile(join(filmRoot, "markers.json"), JSON.stringify(markers, null, 2) + "\n"); });
+      for (const [label, surface] of [["owner-app", owner.app], ["recipient-app", recipient.app], ["services", serviceBrowser], ["owner-web", ownerWeb], ["recipient-web", recipientWeb]] as const) await film(label, surface);
+    }
     const stateJson = async (url: string) => { const response = await fetch(url, { redirect: "error", signal: AbortSignal.timeout(15_000) }); if (!response.ok) throw new Error(`Owned service read failed: ${response.status}`); return response.json(); };
     const engineRead = async (identity: "owner" | "recipient", path: string) => {
       const target = identity === "owner" ? owner : recipient;
@@ -208,6 +221,7 @@ export async function workshopNarrative(seed: Seed, { place }: { place: Place })
             const surface: Surface = { handle: { ...owner.app.handle, name: "actual-app-feedback-tab" }, client: await connect(target.webSocketDebuggerUrl) };
             resources.adopt(surface, (owned) => owned.client.close());
             await waitForWorkshopFeedbackForm(surface);
+            await film("feedback", surface);
             return surface;
           }
           await delay(100);
@@ -275,6 +289,7 @@ export async function workshopNarrative(seed: Seed, { place }: { place: Place })
         return stateJson(`${news.baseUrl}/state`);
       },
       recordRow: (row: NarrativeRow) => rows.push(row),
+      markScene(label: string) { if (filmRoot) markers.push({ label, at: Date.now() }); },
       async finishDiagnostic(row: NarrativeRow) {
         await writeFile(join(reportDir, "diagnostic-result.json"), JSON.stringify({ ...identity, scope: "targeted diagnosis only; not full workshop acceptance", profile, row, rows: rows.length ? rows : [row], inference: inference.observations() }, null, 2) + "\n", { mode: 0o600 });
         if ((await workshopRunIdentity()).sourceDigest !== identity.sourceDigest) throw new Error("Workshop source changed during the diagnostic");

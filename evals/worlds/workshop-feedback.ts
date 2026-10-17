@@ -30,7 +30,7 @@ export async function waitForWorkshopFeedbackForm(surface: Surface) {
 export async function startWorkshopFeedback(resources: AsyncDisposableStack, directory: string) {
   await mkdir(directory, { recursive: true });
   const token = `workshop-synthetic-${randomUUID()}`;
-  const witness = resources.use(await startPlainWitness({ directory: join(directory, "provider"), token }));
+  const witness = resources.use(await startPlainWitness({ token }));
   const cwd = fileURLToPath(new URL("../../ee/apps/landing/", import.meta.url));
   const require = createRequire(join(cwd, "package.json"));
   const next = require.resolve("next/dist/bin/next");

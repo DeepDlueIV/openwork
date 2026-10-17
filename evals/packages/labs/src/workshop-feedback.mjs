@@ -1,24 +1,16 @@
 import { createServer } from 'node:http';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
 
 const object = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const localEmail = (value) => typeof value === 'string' && /^[^@\s]+@acme\.test$/.test(value);
 
 /** Owned synthetic Plain GraphQL boundary, not a replacement /api/app-feedback route.
  * Only the real landing POST may construct mutations. Never preseed feedback here.
+ * State lives only in this process's memory: every world starts empty and nothing
+ * survives teardown, matching the other in-memory workplace fixtures.
  */
-export async function startPlainWitness({ directory, token }) {
-  if (!directory || !token) throw new Error('Owned storage directory and synthetic token required');
-  await mkdir(directory, { recursive: true });
-  const path = join(directory, 'plain-state.json');
-  let state = { customers: [], threads: [], audit: [] };
-  try { state = JSON.parse(await readFile(path, 'utf8')); } catch (error) { if (error.code !== 'ENOENT') throw error; }
-  const persist = async () => {
-    await writeFile(`${path}.tmp`, `${JSON.stringify(state, null, 2)}\n`, { mode: 0o600 });
-    await rename(`${path}.tmp`, path);
-  };
-  await persist();
+export async function startPlainWitness({ token }) {
+  if (!token) throw new Error('Synthetic token required');
+  const state = { customers: [], threads: [], audit: [] };
   let queue = Promise.resolve();
   const handle = async (request, response) => {
     const send = (status, body) => { response.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }); response.end(JSON.stringify(body)); };
@@ -51,7 +43,6 @@ export async function startPlainWitness({ directory, token }) {
       result = { thread: { id: thread.id }, error: null };
     } else return send(400, { error: 'Unsupported Plain mutation' });
     state.audit.push({ sequence: state.audit.length + 1, at, operation, input: structuredClone(input), result });
-    await persist();
     return send(200, { data: { [operation]: result } });
   };
   const server = createServer((request, response) => {
@@ -62,7 +53,7 @@ export async function startPlainWitness({ directory, token }) {
   const origin = `http://127.0.0.1:${address.port}`;
   return {
     origin,
-    async read() { return JSON.parse(await readFile(path, 'utf8')); },
+    async read() { return structuredClone(state); },
     async [Symbol.asyncDispose]() { server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)); },
   };
 }

@@ -159,23 +159,34 @@ describe.skipIf(!parity)("parity with the real mcp-atlassian", () => {
     .replace(/\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(\.\d+)?([+-]\d{2}:?\d{2}| [A-Z]{3,4})?/g, "<TIME>");
 
   async function realResults(): Promise<string[]> {
-    const real = spawn("uvx", ["mcp-atlassian"], { env: { ...process.env, JIRA_URL: `${base}/jira`, JIRA_PERSONAL_TOKEN: "demo-pat", CONFLUENCE_URL: `${base}/confluence`, CONFLUENCE_PERSONAL_TOKEN: "demo-pat" }, stdio: ["pipe", "pipe", "ignore"] });
-    let buffer = ""; const waiting = new Map<number, (value: { result: { content: { text: string }[] } }) => void>();
+    // 3.4.9 in serverInfo is FastMCP's version, not the mcp-atlassian distribution version.
+    const real = spawn("uvx", ["--from", "mcp-atlassian==0.23.1", "--with", "fastmcp==3.4.9", "mcp-atlassian"], { env: { ...process.env, JIRA_URL: `${base}/jira`, JIRA_PERSONAL_TOKEN: "demo-pat", CONFLUENCE_URL: `${base}/confluence`, CONFLUENCE_PERSONAL_TOKEN: "demo-pat" }, stdio: ["pipe", "pipe", "ignore"] });
+    type RpcReply = { result: { content: { text: string }[] } };
+    let buffer = "";
+    const waiting = new Map<number, { resolve: (value: RpcReply) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }>();
+    const failPending = (error: Error) => { for (const call of waiting.values()) { clearTimeout(call.timer); call.reject(error); } waiting.clear(); };
+    real.on("error", () => failPending(new Error("Could not launch real mcp-atlassian parity server.")));
+    real.on("exit", (code) => failPending(new Error(`Real mcp-atlassian parity server exited (${code}).`)));
     real.stdout.on("data", (chunk: Buffer) => {
       buffer += chunk.toString();
       let newline: number;
       while ((newline = buffer.indexOf("\n")) >= 0) {
         const line = buffer.slice(0, newline); buffer = buffer.slice(newline + 1);
-        try { const message = JSON.parse(line); waiting.get(message.id)?.(message); } catch { /* log line */ }
+        try { const message = JSON.parse(line); const call = waiting.get(message.id); if (call) { clearTimeout(call.timer); waiting.delete(message.id); call.resolve(message); } } catch { /* log line */ }
       }
     });
-    const request = (id: number, method: string, params: unknown) => new Promise<{ result: { content: { text: string }[] } }>((resolve) => { waiting.set(id, resolve); real.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`); });
-    await request(0, "initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "parity", version: "1" } });
-    real.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`);
-    const texts: string[] = [];
-    for (const [index, [name, args]] of CALLS.entries()) texts.push((await request(index + 1, "tools/call", { name, arguments: args })).result.content[0].text);
-    real.kill();
-    return texts;
+    const request = (id: number, method: string, params: unknown) => new Promise<RpcReply>((resolve, reject) => {
+      const timer = setTimeout(() => { waiting.delete(id); real.kill(); reject(new Error(`Real mcp-atlassian ${method} timed out.`)); }, 90_000);
+      waiting.set(id, { resolve, reject, timer });
+      real.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id, method, params })}\n`);
+    });
+    try {
+      await request(0, "initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "parity", version: "1" } });
+      real.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" })}\n`);
+      const texts: string[] = [];
+      for (const [index, [name, args]] of CALLS.entries()) texts.push((await request(index + 1, "tools/call", { name, arguments: args })).result.content[0].text);
+      return texts;
+    } finally { real.kill(); }
   }
 
   test("same answers for the same calls", async () => {

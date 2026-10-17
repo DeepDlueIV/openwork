@@ -305,6 +305,7 @@ const TOOLS = [
   definition("mail_search", "Search demo mail by text", { query: strSchema, folder: { type: "string", enum: ["inbox", "drafts", "sentitems", "archive", "deleteditems"] }, limit: { type: "integer", minimum: 1, maximum: 100 } }, []),
   definition("mail_read", "Read a demo mail message", { message_id: strSchema }, ["message_id"]),
   definition("mail_create_draft", "Create a draft; does not send", { subject: strSchema, body: strSchema, to: { type: "array", items: strSchema, maxItems: 100 } }, ["subject", "body", "to"], false),
+  definition("mail_create_reply_draft", "Create an unsent reply draft in an existing message conversation", { message_id: strSchema, body: strSchema }, ["message_id", "body"], false),
   definition("mail_send", "Move a draft into demo Sent Items; never delivers external email", { message_id: strSchema }, ["message_id"], false, true),
   definition("file_find", "Find shared demo files by filename", { query: strSchema }, []),
   definition("file_read", "Read file metadata, safe text extraction and original base64 bytes", { item_id: strSchema }, ["item_id"]),
@@ -326,6 +327,7 @@ async function callTool(name, args) {
   if (name === "mail_search") { url.searchParams.set("$search", args.query || ""); url.searchParams.set("$top", String(args.limit || 25)); return collection(searchMail(url, args.folder ? state.messages.filter((entry) => entry.parentFolderId === args.folder) : state.messages), url); }
   if (name === "mail_read") return findMessage(args.message_id);
   if (name === "mail_create_draft") { const item = message({ subject: args.subject, body: { contentType: "Text", content: args.body }, toRecipients: args.to.map((address) => recipient(address)) }); state.messages.push(item); return item; }
+  if (name === "mail_create_reply_draft") return (await graph("POST", `/me/messages/${encodeURIComponent(args.message_id)}/createReply`, url, { comment: args.body }))[1];
   if (name === "mail_send") { const item = findMessage(args.message_id); sendDraft(item); return { id: item.id, status: "sent_in_demo_only", deliveredExternally: false }; }
   if (name === "file_find") return { value: state.files.filter((entry) => entry.name.toLowerCase().includes((args.query || "").toLowerCase())).map(fileJson) };
   if (name === "file_read") { const file = findFile(args.item_id); if (file.folder) return fileJson(file); return { ...fileJson(file), ...preview(file.bytes, file.name), content_base64: file.bytes.toString("base64") }; }

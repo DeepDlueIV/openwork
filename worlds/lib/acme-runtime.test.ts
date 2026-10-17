@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { assertAcmeMcpOrigins, acmeRuntimeFixture } from "./acme-runtime.ts";
+import { assertAcmeMcpOrigins, acmeRuntimeFixture, acmeProcessEnvironment } from "./acme-runtime.ts";
 
 const den = "http://127.0.0.1:40123";
 const config = (url: string) => ({ mcp: { "openwork-cloud": { type: "remote", url, enabled: true } } });
@@ -11,6 +11,10 @@ test("seeded Acme MCP refuses hosted or foreign connections, including disabled 
   }
   assert.throws(() => assertAcmeMcpOrigins({ mcp: { ...config(`${den}/mcp/agent`).mcp, stale: { type: "remote", url: "https://example.test/mcp", enabled: false } } }, den));
   assert.throws(() => assertAcmeMcpOrigins({ mcp: {} }, den));
+});
+test("Den and build child environments discard ambient secrets and injection hooks", () => {
+  const env = acmeProcessEnvironment({ OPENAI_API_KEY: "sentinel", AWS_SECRET_ACCESS_KEY: "sentinel", NODE_OPTIONS: "--import=private-plugin", OPENCODE_CONFIG_CONTENT: "sentinel", OPENWORK_EVAL_MYSQL_URL: "mysql://fixture", OPENWORK_WORLD_STAGE: "test" }, { HOME: "/owned/home", PATH: "/owned/bin" });
+  assert.deepEqual(env, { OPENWORK_EVAL_MYSQL_URL: "mysql://fixture", OPENWORK_WORLD_STAGE: "test", HOME: "/owned/home", PATH: "/owned/bin" });
 });
 test("seeded runtime workspace and credentials are outside the checkout and developer home", async () => {
   await using stack = new AsyncDisposableStack();

@@ -83,6 +83,16 @@ describe("fictional Microsoft 365 demo", () => {
     expect((await rest("/me/messages?$filter=unknown")).status).toBe(400);
   });
 
+  test("MCP creates a real reply draft in the source conversation without sending", async () => {
+    const inbox = await json(await rest("/me/mailFolders/inbox/messages"));
+    const source = record(array(inbox.value)[0]);
+    const draft = await toolValue("mail_create_reply_draft", { message_id: string(source.id), body: "Product comparison: http://127.0.0.1/document" });
+    expect(draft).toMatchObject({ isDraft: true, parentFolderId: "drafts", conversationId: source.conversationId });
+    expect(array(draft.toRecipients)).toEqual([source.from]);
+    expect(await json(await rest(`/me/messages/${string(draft.id)}`))).toMatchObject({ conversationId: source.conversationId, isDraft: true });
+    expect(array((await json(await rest("/me/mailFolders/sentitems/messages"))).value)).toHaveLength(0);
+  });
+
   test("draft, patch and send share one state with MCP; sends never deliver externally", async () => {
     const draft = await toolValue("mail_create_draft", { subject: "Northwind decision notes", body: "Please verify the aisle C test.", to: ["priya@acme.test"] }); const id = string(draft.id);
     expect(draft.isDraft).toBe(true);
@@ -190,7 +200,7 @@ describe("fictional Microsoft 365 demo", () => {
 
   test("MCP handshake, schemas, notifications and errors are sensible demo-only surfaces", async () => {
     const init = await rpc("initialize", { protocolVersion: "2025-06-18" }); expect(record(init.result).protocolVersion).toBe("2025-06-18"); expect(record(record(init.result).serverInfo).name).toContain("DEMO");
-    const tools = array(record((await rpc("tools/list")).result).tools).map(record); expect(tools).toHaveLength(9);
+    const tools = array(record((await rpc("tools/list")).result).tools).map(record); expect(tools).toHaveLength(10);
     for (const entry of tools) { expect(string(entry.description)).toContain("DEMO ONLY"); expect(record(entry.annotations).openWorldHint).toBe(false); }
     expect(record(tools.find((entry) => entry.name === "mail_send")?.annotations).destructiveHint).toBe(true);
     expect((await tool("mail_read", {})).isError).toBe(true); expect((await tool("missing_tool", {})).isError).toBe(true);

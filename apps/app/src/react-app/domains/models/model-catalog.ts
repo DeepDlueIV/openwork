@@ -103,6 +103,21 @@ export function autoProviderSubtitle() {
   return "Auto";
 }
 
+const MODEL_MAKERS: readonly [RegExp, string][] = [
+  [/\bclaude\b/, "anthropic"], [/\b(gpt|codex|o[1-9])(\b|-|\d)/, "openai"], [/\b(gemini|gemma)\b/, "google"],
+  [/\bgrok\b/, "xai"], [/\bllama\b/, "meta"], [/\b(mistral|codestral|devstral|magistral)\b/, "mistral"], [/\bdeepseek\b/, "deepseek"],
+];
+
+/**
+ * Who made a model, from its name: Claude is Anthropic's wherever it is served.
+ * The picker shows this maker's logo, so a gateway or self-hosted provider
+ * without a logo of its own still reads at a glance. Null when unknown.
+ */
+export function modelMakerId(model: ModelRef & { title?: string }): string | null {
+  const text = `${model.title ?? ""} ${model.modelID}`.toLowerCase();
+  return MODEL_MAKERS.find(([pattern]) => pattern.test(text))?.[1] ?? null;
+}
+
 /** Only what is true about this model right now, without its provider (rows already show the logo and group). */
 export function modelStateLabel(model: ModelOption): string | null {
   if (model.gatewayAuthorization) return "Sign-in required";

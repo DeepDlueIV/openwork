@@ -160,6 +160,8 @@ export interface EngineV2PreviewStatus {
   enabled: boolean;
   running: boolean;
   chatRouting: boolean;
+  /** Effective server ownership of the live provider catalog. Older servers omit it. */
+  liveProviderSync?: boolean;
   version?: string;
   pid?: number;
   binSource?: string;
@@ -212,6 +214,8 @@ function parseEngineV2PreviewStatus(value: unknown): EngineV2PreviewStatus {
     enabled: value.enabled,
     running: value.running,
     chatRouting: "chatRouting" in value && typeof value.chatRouting === "boolean" ? value.chatRouting : false,
+    ...("liveProviderSync" in value && typeof value.liveProviderSync === "boolean"
+      ? { liveProviderSync: value.liveProviderSync } : {}),
     version: "version" in value && typeof value.version === "string" ? value.version : undefined,
     pid: "pid" in value && typeof value.pid === "number" ? value.pid : undefined,
     binSource: "binSource" in value && typeof value.binSource === "string" ? value.binSource : undefined,

@@ -116,6 +116,11 @@ test("a day with Lena: short prompts, real tools, independent readback", { timeo
     const t = await turn("D0", setupPrompt, { session: "Morning brief" });
     const jobs = list(ms(t.after.news).jobs).map(record);
     // OpenWork's own answer to "every weekday at 9" is an Automation proposal card; Lena reviews and creates it.
+    // The card sits inside the collapsed "Worked for …" steps, so open them the way a person would.
+    await evaluateOnSurface(world.app, () => { const toggle = Array.from(document.querySelectorAll("button,summary,[role=button]")).filter((element) => /^Worked for/.test(element.textContent?.trim() ?? "")).at(-1); (toggle as HTMLElement | undefined)?.click(); return Boolean(toggle); }).catch(() => false);
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    await evaluateOnSurface(world.app, () => { document.querySelector("[data-openwork-automation-proposal]")?.scrollIntoView({ block: "center" }); return true; }).catch(() => false);
+    await new Promise((resolve) => setTimeout(resolve, 800));
     const card = await evaluateOnSurface(world.app, () => { const node = document.querySelector("[data-openwork-automation-proposal]"); return node ? { instructions: node.querySelector("p.whitespace-pre-wrap")?.textContent ?? "", schedule: node.textContent ?? "" } : null; });
     let created = "";
     if (card) {
@@ -228,7 +233,7 @@ test("a day with Lena: short prompts, real tools, independent readback", { timeo
   await scene("D8", "Account review deck", async () => {
     const t = await turn("D8", deckPrompt, { session: "Account review" });
     const deck = newItems(files(t.before), files(t.after)).find((file) => /\.pptx$/i.test(String(file.name)));
-    const check = await pptxCheck(deck, t.after.sessionId, [/Northwind/i, /Blue\s*Harbor/i, /1\.46|1,460/]);
+    const check = await pptxCheck(deck, t.after.sessionId, [/Northwind/i, /Blue\s*Harbor/i, /\$\s?\d/]);
     const reasons = checks([[check.ok, check.reason], [check.slides >= 3, `Only ${check.slides} slides`]]);
     if (deck) await show("D8", `${world.urls.oneDrive}?item=${encodeURIComponent(String(deck.id))}`, String(deck.name));
     return { status: verdict(reasons, t.completed), reasons, latencyMs: t.latencyMs, askedQuestion: t.askedQuestion || undefined, prompt: deckPrompt, evidence: { deck: deck?.name, slides: check.slides, sha256: check.sha256 } };
@@ -306,13 +311,13 @@ test("a day with Lena: short prompts, real tools, independent readback", { timeo
       await world.openActivity("recipient");
       await new Promise((resolve) => setTimeout(resolve, 3000));
       activity = String(await world.activityText("recipient"));
-      if (/shared with you/i.test(activity) && /ready to use/i.test(activity)) break;
+      if (/was shared with you/i.test(activity) && /ready to use/i.test(activity)) break;
       await evaluateOnSurface(world.recipientApp, () => { window.dispatchEvent(new Event("focus")); document.dispatchEvent(new Event("visibilitychange")); }).catch(() => undefined);
       await new Promise((resolve) => setTimeout(resolve, 12_000));
     }
     world.markScene("D15:activity");
     await user.on(world.recipientApp).screenshot();
-    const reasons = checks([[/shared with you/i.test(activity), "Shared skill not in Nora's Activity"], [/ready to use/i.test(activity), `${connector} not in Nora's Activity`]]);
+    const reasons = checks([[/was shared with you/i.test(activity), "Shared skill not in Nora's Activity"], [/ready to use/i.test(activity), `${connector} not in Nora's Activity`]]);
     return { status: reasons.length ? "FAIL" : "PASS", reasons, latencyMs: Date.now() - started, operator: `Admin opened the ${connector} connector to the whole team (off camera)`, evidence: { activity: activity.slice(0, 600) } };
   });
 

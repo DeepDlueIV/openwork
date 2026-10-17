@@ -1,5 +1,15 @@
 # Enterprise workshop handoff
 
+## Latest full-narrative assessment — INCOMPLETE
+
+The full twelve-scene paid comparison was executed on this Mac in **GPT-6.1 Sol FAST → Qwen3.8 27B** order against frozen implementation `be0acb54e9`. Both real tool-call preflights passed; both native runs used fresh owned worlds with matching initial business-state hashes and identical prompts/limits.
+
+Frozen contract results: **Sol 8 PASS / 2 FAIL / 2 BLOCKED; Qwen 5 PASS / 5 FAIL / 2 BLOCKED**. These are bounded checks, not whole-workshop acceptance. The independent review additionally withholds acceptance for incompletely asserted one-pager requirements, reusable Workflow output semantics and digest delivery details. Actual feedback persistence and recipient-execution provenance remain blocked; Jira browser and Confluence verification checks failed. The aggregate comparison also exceeded its declared time threshold.
+
+Read **`reports/workshop-narrative/README.md`**, `summary.json` and the reviewed screenshot gallery for the per-task matrix, costs/tokens/timing, exact models/tier, limitations and cleanup. Run `node evals/scripts/run-workshop-narrative.ts` with the owned local MySQL override to repeat; setup is documented in `worlds/workshop-narrative.md`. The proof/harness is opt-in and uses no production business connector or external mail send. Native worlds were disposed; only the read-only evidence preview may remain running.
+
+The older scoped four-step success below is historical and must **not** be represented as an entire-narrative pass.
+
 ## Mac Studio continuation
 
 Implementation checkpoint: `832dfa0244` on `feat/demo-atlassian-services` (pushed to `different-ai/openwork`, not merged). Work is isolated in a dedicated sibling worktree; the existing checkout and other worktrees were not changed. This is internal evaluation/demo tooling, not a production rollout or MCP App.

@@ -67,8 +67,9 @@ API defaults to 1 vCPU / 2 GiB and web to 0.5 vCPU / 1 GiB. Managed RDS deletion
 
 The table records the tested core only, not production load, backup restoration,
 legacy handover, or every optional component. Complete your review before pinning a source commit.
-Contract improvements remain under [AWS module review](https://github.com/different-ai/openwork/pull/5967)
-until that review lands on `dev`; the managed installer remains separate.
+The [module](https://github.com/different-ai/openwork/tree/dev/infra/terraform/modules/openwork-aws-ecs)
+and its deployment-contract improvements are available on `dev` in **beta**;
+the managed installer remains separate.
 See the [shared module contract](https://github.com/different-ai/openwork/blob/dev/infra/terraform/MODULE_CONTRACT.md)
 for baseline checks and known limits.
 

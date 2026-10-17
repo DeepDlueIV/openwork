@@ -19,13 +19,13 @@ Want hosted workspaces, team Collections, or shared providers without running in
 | Helm on Amazon EKS | Production on AWS with Amazon RDS for MySQL | [Deploy on AWS](/self-host/deploy-to-your-cloud/aws) |
 | Helm on Azure AKS | Production on Azure with Azure Database for MySQL | [Deploy on Azure](/self-host/deploy-to-your-cloud/azure) |
 | Helm on Google GKE | Production on Google Cloud with Cloud SQL for MySQL | [Deploy on Google Cloud](/self-host/deploy-to-your-cloud/google-cloud) |
-| Terraform modules (beta) | Core Den web/API on ECS Fargate, Cloud Run, or Container Apps; availability varies by cloud | [Terraform options and review status](/self-host/deploy-to-your-cloud/overview#terraform-modules-beta) |
+| Terraform modules (beta) | Core Den web/API on ECS Fargate, Cloud Run, or Container Apps; all three modules on `dev` | [Terraform options and support](/self-host/deploy-to-your-cloud/overview#terraform-modules-beta) |
 | Another container platform | Teams maintaining their own infrastructure code | Use the published images and the service boundaries below |
 
 The published Helm chart on managed Kubernetes remains the production deployment
-path described in these guides. The repository also includes an AWS ECS Fargate
-Terraform module; Google Cloud Run and Azure Container Apps modules are under
-review. These Terraform options are **beta**, not equivalent to full Helm feature
+path described in these guides. The repository also includes Terraform modules
+for AWS ECS Fargate, Google Cloud Run, and Azure Container Apps on `dev`.
+All three Terraform options are **beta**, not equivalent to full Helm feature
 coverage. Check [Deploy to your cloud](/self-host/deploy-to-your-cloud/overview#terraform-modules-beta)
 for source links, availability, support, and tested-scope limitations.
 
@@ -185,8 +185,8 @@ You can check the [**Enterprise**](/cloud/enterprise) page or [book a 30-minute 
     The desktop app is free and open source, and self-hosting the full platform is free for organizations with up to 5 users under the EE License; larger organizations need a plan. Shared keys, skills, and SSO need the Team plan, and SCIM and desktop policies need Enterprise; plans cost the same on Cloud and self-hosted. See [Pricing and licensing](/start-here/pricing-and-licensing).
   </Accordion>
   <Accordion title="Is there a Terraform module or an ECS deployment?">
-    Yes: the repository includes an AWS ECS Fargate Terraform module in **beta**.
-    Google Cloud Run and Azure Container Apps modules are also under review.
+    Yes: the repository includes Terraform modules for AWS ECS Fargate,
+    Google Cloud Run, and Azure Container Apps on `dev`. All three are **beta**.
     Check the [Terraform options](/self-host/deploy-to-your-cloud/overview#terraform-modules-beta)
     for each cloud's availability, source, tested scenarios, and support limits.
     Helm on EKS, AKS, or GKE remains the production path described in these guides.

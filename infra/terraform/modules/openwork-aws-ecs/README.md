@@ -71,9 +71,8 @@ What has been applied end to end in an AWS test account with
 
 Only the recorded core scenarios above are qualified. Optional headless runner,
 Workbot and Slack paths remain unqualified by the contract-v1 live run. Complete your review before pinning a
-source commit; the contract improvements are not available on `dev`
-until the [AWS module review](https://github.com/different-ai/openwork/pull/5967)
-lands. The shared [module contract](../../MODULE_CONTRACT.md) describes the
+source commit. The module and its deployment-contract improvements are available
+on `dev` in **beta**. The shared [module contract](../../MODULE_CONTRACT.md) describes the
 baseline and known limits, not a production load or legacy-upgrade guarantee.
 
 ## Before you start
